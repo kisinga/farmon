@@ -8,7 +8,7 @@
 # 3. Coolify installation for container management
 # 4. WiFi hotspot setup for Heltec device connectivity
 #
-# Usage: curl -sSL https://github.com/yourusername/farm/raw/main/edge/pi/setup_farm_pi.sh | bash
+# Usage: curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
 
 set -e
 
@@ -22,7 +22,7 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 # --- Configuration ---
-REPO_URL="https://github.com/yourusername/farm.git"
+REPO_URL="https://github.com/kisinga/farmon.git"
 PI_USER="pi"
 INSTALL_DIR="/home/$PI_USER/farm"
 

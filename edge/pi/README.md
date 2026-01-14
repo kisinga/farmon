@@ -15,13 +15,8 @@ Farm monitoring edge server configuration and deployment files.
 
 ```bash
 # One-line Pi setup (run on fresh Raspbian install)
-curl -sSL https://github.com/yourusername/farm/raw/main/edge/pi/setup_farm_pi.sh | bash
+curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
 
-# Check connected Heltec devices
-sudo ./wifi_hotspot.sh check
-
-# Reconfigure hotspot if needed
-sudo ./wifi_hotspot.sh setup
 ```
 
 ## Network Details
