@@ -23,7 +23,7 @@ BOLD='\033[1m'
 
 # --- Configuration ---
 REPO_URL="https://github.com/kisinga/farmon.git"
-PI_USER="pi"
+PI_USER="${USER:-$(whoami)}"
 INSTALL_DIR="/home/$PI_USER/farm"
 
 # --- Helper Functions ---
