@@ -1,0 +1,20 @@
+# ChirpStack Gateway Bridge Configuration
+# See https://www.chirpstack.io/docs/chirpstack-gateway-bridge/configuration.html
+
+[general]
+log_level = 4
+
+[backend]
+type = "semtech_udp"
+
+  [backend.semtech_udp]
+  udp_bind = "0.0.0.0:1700"
+
+[integration]
+marshaler = "protobuf"
+
+  [integration.mqtt]
+  event_topic_template = "eu868/gateway/{{ .GatewayID }}/event/{{ .EventType }}"
+  state_topic_template = "eu868/gateway/{{ .GatewayID }}/state/{{ .StateType }}"
+  command_topic_template = "eu868/gateway/{{ .GatewayID }}/command/#"
+  server = "tcp://mosquitto:1883/"

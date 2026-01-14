@@ -1,12 +1,6 @@
 #!/bin/bash
 
 # Farm Monitoring System - Raspberry Pi Setup Script
-# 
-# This script automates the complete setup of a Raspberry Pi for farm monitoring:
-# 1. System preparation and updates
-# 2. Tailscale VPN installation and setup  
-# 3. Coolify installation for container management
-# 4. WiFi hotspot setup for Heltec device connectivity
 #
 # Usage: curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
 
@@ -53,7 +47,6 @@ setup_system() {
     sudo apt install -y \
         git curl wget unzip \
         docker.io docker-compose \
-        network-manager \
         htop tmux vim nano
     
     log_info "Adding user to docker group..."
@@ -77,48 +70,21 @@ setup_tailscale() {
     fi
     
     log_info "Starting Tailscale..."
-    # Support non-interactive setup via TS_AUTHKEY if provided; otherwise try to reuse existing login
     if [[ -n "${TS_AUTHKEY:-}" ]]; then
         sudo tailscale up --authkey "$TS_AUTHKEY" --ssh --hostname "farm-pi" || true
     else
         sudo tailscale up --ssh --hostname "farm-pi" || true
     fi
 
-    # If still not logged in, prompt once with clear message
     if ! tailscale status >/dev/null 2>&1; then
         echo ""
         echo -e "${YELLOW}Tailscale requires authentication.${NC}"
         echo -e "Run: ${BOLD}sudo tailscale up --authkey <tskey> --ssh --hostname farm-pi${NC}"
-        echo -e "or authenticate via the interactive flow.${NC}"
         echo ""
     fi
     
     TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
     log_success "Tailscale setup complete. Pi IP: $TAILSCALE_IP"
-}
-
-setup_coolify() {
-    echo -e "${BOLD}${BLUE}=== Coolify Installation ===${NC}"
-    
-    log_info "Installing Coolify..."
-    curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash
-    
-    log_info "Waiting for Coolify to start..."
-    sleep 30
-    
-    echo ""
-    echo -e "${YELLOW}Coolify Installation Complete!${NC}"
-    echo -e "${CYAN}Access Coolify at: http://localhost:8000${NC}"
-    echo -e "${CYAN}Or via Tailscale: http://$TAILSCALE_IP:8000${NC}"
-    echo ""
-    echo -e "${YELLOW}Next steps:${NC}"
-    echo -e "1. Open Coolify in your browser"
-    echo -e "2. Complete initial setup"
-    echo -e "3. Add this Pi as a server using Tailscale IP"
-    echo -e "4. Deploy the farm monitoring stack"
-    echo ""
-    
-    read -p "Press Enter after setting up Coolify and deploying the Docker stack..."
 }
 
 clone_repository() {
@@ -137,31 +103,72 @@ clone_repository() {
     log_success "Repository ready at $INSTALL_DIR"
 }
 
+setup_directories() {
+    echo -e "${BOLD}${BLUE}=== Creating Data Directories ===${NC}"
+    
+    log_info "Creating persistent volume directories..."
+    sudo mkdir -p /srv/chirpstack/postgres
+    sudo mkdir -p /srv/chirpstack/redis
+    sudo mkdir -p /srv/mosquitto/data
+    sudo mkdir -p /srv/mosquitto/log
+    sudo mkdir -p /srv/nodered
+    sudo mkdir -p /srv/influxdb/data
+    sudo mkdir -p /srv/influxdb/config
+    
+    log_info "Setting permissions..."
+    sudo chown -R 1000:1000 /srv/nodered
+    sudo chown -R 1883:1883 /srv/mosquitto
+    
+    log_success "Data directories ready"
+}
+
+deploy_stack() {
+    echo -e "${BOLD}${BLUE}=== Deploying Docker Stack ===${NC}"
+    
+    cd "$INSTALL_DIR/edge/pi"
+    
+    log_info "Starting services..."
+    docker-compose up -d
+    
+    log_info "Waiting for services to start..."
+    sleep 30
+    
+    log_success "Docker stack deployed"
+}
 
 verify_setup() {
     echo -e "${BOLD}${BLUE}=== Setup Verification ===${NC}"
     
-    # Check Docker
     if docker ps >/dev/null 2>&1; then
         log_success "Docker is running"
+        echo ""
+        docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+        echo ""
     else
         log_error "Docker is not running properly"
     fi
     
-    # Check Tailscale
     if tailscale status >/dev/null 2>&1; then
         log_success "Tailscale is connected"
     else
         log_warning "Tailscale may not be properly configured"
     fi
     
- 
+    TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo 'localhost')
     
     echo ""
     echo -e "${BOLD}${GREEN}=== Setup Summary ===${NC}"
-    echo -e "${CYAN}Tailscale IP:${NC} $(tailscale ip -4 2>/dev/null || echo 'Not available')"
-    echo -e "${CYAN}Coolify:${NC} http://$(tailscale ip -4 2>/dev/null || echo 'localhost'):8000"
-    
+    echo -e "${CYAN}Tailscale IP:${NC} $TAILSCALE_IP"
+    echo ""
+    echo -e "${BOLD}Service URLs:${NC}"
+    echo -e "  ChirpStack:  http://$TAILSCALE_IP:8080  (admin/admin)"
+    echo -e "  Node-RED:    http://$TAILSCALE_IP:1880"
+    echo -e "  InfluxDB:    http://$TAILSCALE_IP:8086"
+    echo ""
+    echo -e "${YELLOW}Next steps:${NC}"
+    echo -e "1. Configure your SX1302 gateway to point to $TAILSCALE_IP:1700 (UDP)"
+    echo -e "2. Login to ChirpStack and register your gateway"
+    echo -e "3. Create device profiles and register your Heltec devices"
 }
 
 # --- Main Execution ---
@@ -178,12 +185,12 @@ main() {
     setup_system
     setup_tailscale
     clone_repository
-    setup_coolify
+    setup_directories
+    deploy_stack
     verify_setup
     
+    echo ""
     echo -e "${BOLD}${GREEN}Setup complete! Your Pi is ready for farm monitoring.${NC}"
-    echo -e "${YELLOW}Remember to configure your Heltec devices to connect to the 'PiHotspot' network.${NC}"
 }
 
-# Run main - works both when executed directly and when piped
 main "$@"

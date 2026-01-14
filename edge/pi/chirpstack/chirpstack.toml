@@ -1,0 +1,52 @@
+# ChirpStack Configuration
+# See https://www.chirpstack.io/docs/chirpstack/configuration.html
+
+[logging]
+level = "info"
+
+[postgresql]
+dsn = "postgres://postgres:chirpstack@chirpstack-postgres/chirpstack?sslmode=disable"
+max_open_connections = 10
+min_idle_connections = 0
+
+[redis]
+servers = ["redis://chirpstack-redis/"]
+cluster = false
+
+[network]
+net_id = "000000"
+enabled_regions = ["eu868"]  # Change to your region: us915, au915, as923, etc.
+
+[monitoring]
+bind = "0.0.0.0:8070"
+
+[api]
+bind = "0.0.0.0:8080"
+secret = "you-must-replace-this-with-a-secure-secret"
+
+[gateway]
+allow_unknown_gateways = true
+
+[integration]
+enabled = ["mqtt"]
+
+  [integration.mqtt]
+  server = "tcp://mosquitto:1883/"
+  json = true
+  event_topic = "application/{{application_id}}/device/{{dev_eui}}/event/{{event}}"
+  state_topic = "application/{{application_id}}/device/{{dev_eui}}/state"
+  command_topic = "application/{{application_id}}/device/{{dev_eui}}/command/{{command}}"
+
+# Region-specific configuration
+[[regions]]
+id = "eu868"
+description = "EU868"
+
+  [regions.gateway]
+    [regions.gateway.backend]
+    enabled = "mqtt"
+
+      [regions.gateway.backend.mqtt]
+      event_topic = "eu868/gateway/+/event/+"
+      state_topic = "eu868/gateway/+/state/+"
+      command_topic = "eu868/gateway/{{ gateway_id }}/command/{{ command }}"
