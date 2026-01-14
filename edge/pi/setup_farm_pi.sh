@@ -137,20 +137,6 @@ clone_repository() {
     log_success "Repository ready at $INSTALL_DIR"
 }
 
-setup_wifi_hotspot() {
-    echo -e "${BOLD}${BLUE}=== WiFi Hotspot Setup ===${NC}"
-    
-    log_info "Setting up WiFi hotspot for Heltec devices..."
-    
-    # Make hotspot script executable
-    chmod +x "$INSTALL_DIR/edge/pi/wifi_hotspot.sh"
-    
-    # Run hotspot setup
-    sudo "$INSTALL_DIR/edge/pi/wifi_hotspot.sh" setup
-    
-    log_success "WiFi hotspot setup complete"
-    log_info "Heltec devices can now connect to 'PiHotspot' network"
-}
 
 verify_setup() {
     echo -e "${BOLD}${BLUE}=== Setup Verification ===${NC}"
@@ -169,31 +155,13 @@ verify_setup() {
         log_warning "Tailscale may not be properly configured"
     fi
     
-    # Check hotspot
-    if nmcli connection show | grep -q "PiHotspot\|Hotspot"; then
-        log_success "WiFi hotspot is configured"
-    else
-        log_warning "WiFi hotspot may not be properly configured"
-    fi
+ 
     
     echo ""
     echo -e "${BOLD}${GREEN}=== Setup Summary ===${NC}"
     echo -e "${CYAN}Tailscale IP:${NC} $(tailscale ip -4 2>/dev/null || echo 'Not available')"
     echo -e "${CYAN}Coolify:${NC} http://$(tailscale ip -4 2>/dev/null || echo 'localhost'):8000"
-    # Read hotspot credentials if available
-    WIFI_ENV_FILE="$INSTALL_DIR/edge/pi/.wifi_hotspot.env"
-    if [[ -f "$WIFI_ENV_FILE" ]]; then
-        # shellcheck disable=SC1090
-        source "$WIFI_ENV_FILE"
-        echo -e "${CYAN}WiFi Hotspot:${NC} ${SSID:-PiHotspot} (Password stored in .wifi_hotspot.env)"
-    else
-        echo -e "${CYAN}WiFi Hotspot:${NC} PiHotspot (Set persistent password in edge/pi/.wifi_hotspot.env)"
-    fi
-    echo -e "${CYAN}Repository:${NC} $INSTALL_DIR"
-    echo ""
-    echo -e "${YELLOW}To check connected Heltec devices:${NC}"
-    echo -e "sudo $INSTALL_DIR/edge/pi/wifi_hotspot.sh check"
-    echo ""
+    
 }
 
 # --- Main Execution ---
@@ -211,7 +179,6 @@ main() {
     setup_tailscale
     clone_repository
     setup_coolify
-    setup_wifi_hotspot
     verify_setup
     
     echo -e "${BOLD}${GREEN}Setup complete! Your Pi is ready for farm monitoring.${NC}"
