@@ -185,7 +185,5 @@ main() {
     echo -e "${YELLOW}Remember to configure your Heltec devices to connect to the 'PiHotspot' network.${NC}"
 }
 
-# Allow script to be sourced for testing
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
-fi
+# Run main - works both when executed directly and when piped
+main "$@"
