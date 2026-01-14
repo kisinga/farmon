@@ -1,12 +1,10 @@
 # Edge
 
-This directory contains all code and configuration for devices and services running on the farm site.
+Farm site devices and services.
 
-## Subdirectories
+| Folder    | Description                                      |
+| --------- | ------------------------------------------------ |
+| `pi/`     | Raspberry Pi: ChirpStack, Docker stack, setup    |
+| `heltec/` | Heltec LoRaWAN node firmware for field sensors   |
 
-| Folder           | Description                                |
-| :--------------- | :----------------------------------------- |
-| `pi/`            | Raspberry Pi code and configuration.       |
-| `heltec/`      | Firmware for the Heltec remote and relay nodes. |
-
-For detailed information, see the [main documentation](../docs/README.md).
+All Heltec nodes communicate via LoRaWAN to the SX1302 gateway, which forwards packets to ChirpStack on the Pi.
