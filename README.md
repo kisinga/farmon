@@ -1,6 +1,6 @@
 ![far-mon Logo](docs/images/far-mon.png)
 
-# far-mon
+# farmon
 
 **Monitor your farm. From far. Farm on!**
 
