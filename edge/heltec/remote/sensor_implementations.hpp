@@ -4,105 +4,118 @@
 #include <Arduino.h>
 #include "sensor_interface.hpp"
 #include "lib/core_logger.h"
-#include "lib/hal_lora.h"
+#include "lib/svc_lorawan.h"
 #include "lib/common_message_types.h"
 #include <vector>
-#include "lib/hal_persistence.h" // Include the new persistence HAL
-#include "lib/svc_battery.h" // Include for IBatteryService
-#include <limits> // For NaN
-#include "ArduinoJson.h" 
-#include "lib/core_config.h" // For RemoteConfig
-#include "lib/telemetry_keys.h" // For consistent keys
+#include "lib/hal_persistence.h"
+#include "lib/svc_battery.h"
+#include <limits>
+#include "lib/core_config.h"
+#include "lib/telemetry_keys.h"
 
 // Forward-declare the config struct to avoid circular dependency
 struct RemoteConfig;
 
 // ============================================================================
-// LoRa Batch Transmitter Implementation
+// LoRaWAN Batch Transmitter Implementation
 // ============================================================================
 
-class LoRaBatchTransmitter : public SensorBatchTransmitter {
+// Maximum payload size for LoRaWAN (depends on data rate, use conservative value)
+static constexpr uint8_t LORAWAN_MAX_PAYLOAD = 51;  // DR0 on EU868
+
+class LoRaWANBatchTransmitter : public SensorBatchTransmitter {
 public:
-    LoRaBatchTransmitter(ILoRaHal* loraHal, const RemoteConfig& config);
+    LoRaWANBatchTransmitter(ILoRaWANService* lorawanService, const RemoteConfig& config);
     bool queueBatch(const std::vector<SensorReading>& readings) override;
     void update(uint32_t nowMs) override;
     bool isReady() const override;
 
 private:
     String formatReadings(const std::vector<SensorReading>& readings);
-    ILoRaHal* _loraHal;
+    ILoRaWANService* _lorawanService;
     const RemoteConfig& _config;
     std::vector<SensorReading> _readings;
     uint32_t _lastTxTimeMs = 0;
 };
 
-LoRaBatchTransmitter::LoRaBatchTransmitter(ILoRaHal* loraHal, const RemoteConfig& config)
-    : _loraHal(loraHal), _config(config) {}
+LoRaWANBatchTransmitter::LoRaWANBatchTransmitter(ILoRaWANService* lorawanService, const RemoteConfig& config)
+    : _lorawanService(lorawanService), _config(config) {}
 
-bool LoRaBatchTransmitter::queueBatch(const std::vector<SensorReading>& readings) {
+bool LoRaWANBatchTransmitter::queueBatch(const std::vector<SensorReading>& readings) {
     if (!_readings.empty()) {
-        LOGD("LoRaBatchTransmitter", "Buffer is not empty, refusing to queue new batch.");
-        return false; // Refuse to overwrite a batch that hasn't been sent
+        LOGD("LoRaWANTx", "Buffer not empty, refusing to queue new batch");
+        return false;
     }
     _readings = readings;
     return true;
 }
 
-void LoRaBatchTransmitter::update(uint32_t nowMs) {
+void LoRaWANBatchTransmitter::update(uint32_t nowMs) {
     if (_readings.empty()) {
-        return; // Nothing to send
-    }
-
-    // Do not attempt to transmit if not connected to the master.
-    if (!_loraHal || !_loraHal->isConnected()) {
-        LOGD("LoRaBatchTransmitter", "Not connected, deferring transmission of %u readings.", _readings.size());
         return;
     }
-    
-    // Respect the HAL's busy state.
-    if (!_loraHal->isReadyForTx()) {
-        LOGD("LoRaBatchTransmitter", "LoRa HAL is busy, deferring transmission of %u readings.", _readings.size());
+
+    // Check if we're joined to the network
+    if (!_lorawanService || !_lorawanService->isJoined()) {
+        LOGD("LoRaWANTx", "Not joined, deferring transmission of %u readings", _readings.size());
+        return;
+    }
+
+    // Respect duty cycle / ready state
+    // Note: LoRaWAN stack handles duty cycle internally, but we can add throttling
+    uint32_t minInterval = _config.communication.lorawan.txIntervalMs;
+    if (nowMs - _lastTxTimeMs < minInterval && _lastTxTimeMs > 0) {
+        LOGD("LoRaWANTx", "TX throttled, %u ms remaining", 
+             minInterval - (nowMs - _lastTxTimeMs));
         return;
     }
 
     String payload = formatReadings(_readings);
 
-    LOGD("LoRaBatchTransmitter", "Formatted %u sensor readings into payload: '%s'",
-         (unsigned)_readings.size(), payload.c_str());
+    LOGD("LoRaWANTx", "Formatted %u readings: '%s'", _readings.size(), payload.c_str());
 
     if (payload.length() == 0) {
-        LOGW("LoRaBatchTransmitter", "Failed to format sensor readings for transmission");
-        _readings.clear(); // Clear the buffer to prevent repeated failures
+        LOGW("LoRaWANTx", "Failed to format readings");
+        _readings.clear();
         return;
     }
     
-    // The underlying LoRaComm library has a max payload size. We must respect it.
-    if (payload.length() > LORA_COMM_MAX_PAYLOAD) {
-        LOGW("LoRaBatchTransmitter", "Payload of %d bytes exceeds max of %d. Dropping batch.", payload.length(), LORA_COMM_MAX_PAYLOAD);
+    // Check payload size
+    if (payload.length() > LORAWAN_MAX_PAYLOAD) {
+        LOGW("LoRaWANTx", "Payload %d bytes exceeds max %d. Dropping.", 
+             payload.length(), LORAWAN_MAX_PAYLOAD);
         _readings.clear();
         return;
     }
 
-    // Pass the RAW payload string to the HAL
-    bool success = _loraHal->sendData(_config.masterNodeId,
-                                     (const uint8_t*)payload.c_str(),
-                                     (uint8_t)payload.length(),
-                                     true); // require ACK
+    // Send via LoRaWAN service
+    // Use default port from config, unconfirmed for telemetry
+    uint8_t port = _config.communication.lorawan.defaultPort;
+    bool confirmed = _config.communication.lorawan.useConfirmedUplinks;
+    
+    bool success = _lorawanService->sendData(
+        port,
+        (const uint8_t*)payload.c_str(),
+        (uint8_t)payload.length(),
+        confirmed
+    );
 
     if (success) {
-        LOGI("LoRaBatchTransmitter", "Successfully queued telemetry message for transmission");
-        _readings.clear(); // Clear the buffer ONLY on successful queueing
+        LOGI("LoRaWANTx", "Queued %d bytes on port %d", payload.length(), port);
+        _readings.clear();
+        _lastTxTimeMs = nowMs;
     } else {
-        LOGW("LoRaBatchTransmitter", "Failed to queue telemetry message for transmission");
-        // Do not clear the buffer, we will retry on the next update.
+        LOGW("LoRaWANTx", "Failed to queue message");
+        // Keep readings for retry
     }
 }
 
-bool LoRaBatchTransmitter::isReady() const {
-    return _loraHal != nullptr;
+bool LoRaWANBatchTransmitter::isReady() const {
+    return _lorawanService != nullptr && _lorawanService->isJoined();
 }
 
-String LoRaBatchTransmitter::formatReadings(const std::vector<SensorReading>& readings) {
+String LoRaWANBatchTransmitter::formatReadings(const std::vector<SensorReading>& readings) {
+    // Compact format: key:value,key:value,...
     String payload = "";
     for (size_t i = 0; i < readings.size(); ++i) {
         if (i > 0) payload += ",";
@@ -162,15 +175,12 @@ private:
     // Pulse counting
     static void IRAM_ATTR pulseCounter();
     static volatile uint32_t _pulseCount;
-    static volatile bool _interruptFired; // Flag for debug logging
+    static volatile bool _interruptFired;
     
-    // Last read time for flow rate calculation
     unsigned long _lastReadTimeMs = 0;
-    
-    // Total volume tracking
     uint32_t _totalPulses = 0;
 
-    // YF-S201 constant: pulses per liter (can be calibrated)
+    // YF-S201 constant: pulses per liter
     static constexpr float PULSES_PER_LITER = 450.0f;
 };
 
@@ -195,7 +205,7 @@ void YFS201WaterFlowSensor::begin() {
         _persistence->begin(_persistence_namespace);
         _totalPulses = _persistence->loadU32("totalPulses");
         _persistence->end();
-        LOGD(getName(), "Loaded total pulses from memory: %u", _totalPulses);
+        LOGD(getName(), "Loaded total pulses: %u", _totalPulses);
     }
 
     pinMode(_pin, INPUT_PULLUP);
@@ -225,12 +235,12 @@ void YFS201WaterFlowSensor::read(std::vector<SensorReading>& readings) {
 
     _lastReadTimeMs = currentTimeMs;
 
-    // Report the raw pulse delta. The relay will calculate rate.
+    // Report raw pulse delta
     readings.push_back({TelemetryKeys::PulseDelta, (float)currentPulses, currentTimeMs});
 
-    // We still report total volume for the remote's display and persistence.
+    // Report total volume
     _totalPulses += currentPulses;
-    float totalVolumeLiters = (float)_totalPulses / YFS201WaterFlowSensor::PULSES_PER_LITER;
+    float totalVolumeLiters = (float)_totalPulses / PULSES_PER_LITER;
     readings.push_back({TelemetryKeys::TotalVolume, totalVolumeLiters, currentTimeMs});
     
     LOGD(getName(), "Read %u pulses", currentPulses);
@@ -239,30 +249,27 @@ void YFS201WaterFlowSensor::read(std::vector<SensorReading>& readings) {
 void YFS201WaterFlowSensor::resetTotalVolume() {
     if (!_enabled) return;
     
-    LOGI(getName(), "Resetting total volume. Old value (pulses): %u", _totalPulses);
+    LOGI(getName(), "Resetting total volume. Old: %u pulses", _totalPulses);
     _totalPulses = 0;
-    saveTotalVolume(); // Persist the reset immediately
+    saveTotalVolume();
 }
 
 void YFS201WaterFlowSensor::saveTotalVolume() {
-    if (!_enabled || !_persistence) {
-        return;
-    }
+    if (!_enabled || !_persistence) return;
     
-    if (_persistence) {
-        _persistence->begin(_persistence_namespace);
-        bool success = _persistence->saveU32("totalPulses", _totalPulses);
-        _persistence->end();
-        if (success) {
-            LOGD(getName(), "Successfully saved total pulses: %u", _totalPulses);
-        } else {
-            LOGW(getName(), "Failed to save total pulses.");
-        }
+    _persistence->begin(_persistence_namespace);
+    bool success = _persistence->saveU32("totalPulses", _totalPulses);
+    _persistence->end();
+    
+    if (success) {
+        LOGD(getName(), "Saved total pulses: %u", _totalPulses);
+    } else {
+        LOGW(getName(), "Failed to save total pulses");
     }
 }
 
 // ============================================================================
-// REAL SENSOR IMPLEMENTATIONS
+// Battery Monitor Sensor Implementation
 // ============================================================================
 
 class BatteryMonitorSensor : public ISensor {
@@ -270,9 +277,7 @@ public:
     BatteryMonitorSensor(IBatteryService* batteryService, bool enabled) 
       : _batteryService(batteryService), _enabled(enabled) {}
 
-    void begin() override {
-        // Nothing to initialize, service is managed externally
-    }
+    void begin() override {}
 
     void read(std::vector<SensorReading>& readings) override {
         if (_enabled && _batteryService) {
@@ -282,9 +287,7 @@ public:
         }
     }
 
-    const char* getName() const override {
-        return "BatteryMonitor";
-    }
+    const char* getName() const override { return "BatteryMonitor"; }
 
 private:
     IBatteryService* _batteryService;
@@ -296,16 +299,18 @@ private:
 // ============================================================================
 
 namespace SensorFactory {
-    std::shared_ptr<YFS201WaterFlowSensor> createYFS201WaterFlowSensor(uint8_t pin, bool enabled, IPersistenceHal* persistence, const char* persistence_namespace) {
+    std::shared_ptr<YFS201WaterFlowSensor> createYFS201WaterFlowSensor(
+        uint8_t pin, 
+        bool enabled, 
+        IPersistenceHal* persistence, 
+        const char* persistence_namespace
+    ) {
         return std::make_shared<YFS201WaterFlowSensor>(pin, enabled, persistence, persistence_namespace);
     }
 
     std::shared_ptr<ISensor> createBatteryMonitorSensor(IBatteryService* batteryService, bool enabled) {
         return std::make_shared<BatteryMonitorSensor>(batteryService, enabled);
     }
-
-    // In a real implementation, you would have factory functions here like:
-    // std::unique_ptr<ISensor> createUltrasonicSensor(...);
 }
 
 #endif // SENSOR_IMPLEMENTATIONS_HPP

@@ -44,26 +44,42 @@ struct UsbConfig {
     bool enableFlowControl = false;    // Hardware flow control (RTS/CTS)
 };
 
-// LoRa Configuration
-struct LoraConfig {
-    bool enableLora = true;            // Enable LoRa communication
-    uint32_t frequency = 868000000UL;  // Operating frequency (Hz)
-    uint8_t txPower = 14;              // Transmit power (dBm)
-    uint8_t spreadingFactor = 7;       // Spreading factor (6-12)
-    uint8_t codingRate = 1;            // Coding rate (1=4/5, 2=4/6, 3=4/7, 4=4/8)
-    uint8_t bandwidth = 0;             // Bandwidth (0=125kHz, 1=250kHz, 2=500kHz)
-    uint8_t preambleLength = 8;        // Preamble length
-    uint32_t symbolTimeout = 0;        // Symbol timeout
-    bool iqInvert = false;             // IQ invert for RX
-    uint8_t maxPayload = 64;           // Maximum payload size
-    uint8_t maxOutbox = 8;             // Maximum outgoing message queue
-    uint8_t maxPeers = 16;             // Maximum peer count (master mode)
-    uint32_t ackTimeoutMs = 1500;      // ACK timeout
-    uint8_t maxRetries = 4;            // Maximum retry attempts
-    uint32_t pingIntervalMs = 30000;   // Ping interval (slave mode)
+// LoRaWAN Region codes
+enum class LoRaWANRegion : uint8_t {
+    EU868 = 0,
+    US915 = 1,
+    AU915 = 2,
+    AS923 = 3,
+    IN865 = 4,
+    KR920 = 5
+};
 
-    // Advanced timing
-    uint32_t masterTtlMs = 15000;      // Master TTL for peer tracking
+// LoRaWAN Configuration
+struct LoRaWANConfig {
+    bool enableLoRaWAN = true;         // Enable LoRaWAN communication
+    
+    // LoRaWAN keys (shared across fleet, DevEUI derived from chip ID)
+    uint8_t appEui[8] = {0};           // Application EUI (shared across fleet)
+    uint8_t appKey[16] = {0};          // Application Key (shared across fleet)
+    
+    // Regional settings
+    LoRaWANRegion region = LoRaWANRegion::EU868;  // LoRaWAN region
+    
+    // ADR and power settings
+    bool adrEnabled = true;            // Adaptive Data Rate
+    uint8_t txPower = 14;              // Transmit power (dBm)
+    uint8_t dataRate = 5;              // Default data rate (SF7 on EU868)
+    
+    // Application settings
+    uint8_t defaultPort = 1;           // Default application port for telemetry
+    bool useConfirmedUplinks = false;  // Use confirmed uplinks by default
+    
+    // Timing
+    uint32_t joinTimeoutMs = 30000;    // Join timeout
+    uint32_t txIntervalMs = 60000;     // Minimum interval between transmissions
+    
+    // Device class
+    uint8_t deviceClass = 0;           // 0=Class A, 1=Class B, 2=Class C
 };
 
 // WiFi Configuration
@@ -123,7 +139,7 @@ struct RoutingConfig {
 struct CommunicationConfig {
     // Transport configurations
     UsbConfig usb;
-    LoraConfig lora;
+    LoRaWANConfig lorawan;
     WifiCommConfig wifi;
     ScreenConfig screen;
     MqttConfig mqtt;

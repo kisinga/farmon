@@ -1,26 +1,32 @@
 #include "remote_app.h"
 
-// Includes from remote.ino
+// Core includes
 #include "lib/core_config.h"
 #include "lib/core_system.h"
 #include "lib/core_scheduler.h"
 #include "lib/core_logger.h"
+
+// HAL includes
 #include "lib/hal_display.h"
-#include "lib/hal_lora.h"
+#include "lib/hal_lorawan.h"
 #include "lib/hal_wifi.h"
 #include "lib/hal_battery.h"
-#include "lib/hal_persistence.h" // <-- Add include
+#include "lib/hal_persistence.h"
+
+// Service includes
 #include "lib/svc_ui.h"
 #include "lib/svc_comms.h"
 #include "lib/svc_battery.h"
 #include "lib/svc_wifi.h"
-#include "lib/svc_lora.h"
+#include "lib/svc_lorawan.h"
 
+// Config and sensors
 #include "remote_sensor_config.h"
 #include "config.h"
 #include "sensor_interface.hpp"
 #include "sensor_implementations.hpp"
 
+// UI includes
 #include "lib/ui_battery_icon_element.h"
 #include "lib/ui_header_status_element.h"
 #include "lib/ui_main_content_layout.h"
@@ -45,49 +51,40 @@ private:
     CoreScheduler scheduler;
     CommonAppState appState;
 
-
+    // HALs
     std::unique_ptr<IDisplayHal> displayHal;
-    std::unique_ptr<ILoRaHal> loraHal;
+    std::unique_ptr<ILoRaWANHal> lorawanHal;
     std::unique_ptr<IWifiHal> wifiHal;
     std::unique_ptr<IBatteryHal> batteryHal;
-    std::unique_ptr<IPersistenceHal> persistenceHal; // <-- Add member
+    std::unique_ptr<IPersistenceHal> persistenceHal;
 
+    // Services
     std::unique_ptr<UiService> uiService;
     std::unique_ptr<CommsService> commsService;
     std::unique_ptr<IBatteryService> batteryService;
     std::unique_ptr<IWifiService> wifiService;
-    std::unique_ptr<ILoRaService> loraService;
+    std::unique_ptr<ILoRaWANService> lorawanService;
 
+    // Sensors
     SensorManager sensorManager;
-    std::unique_ptr<LoRaBatchTransmitter> sensorTransmitter;
-    std::shared_ptr<YFS201WaterFlowSensor> waterFlowSensor; // <-- Add member
+    std::unique_ptr<LoRaWANBatchTransmitter> sensorTransmitter;
+    std::shared_ptr<YFS201WaterFlowSensor> waterFlowSensor;
 
     // UI Elements must be stored to manage their lifetime
     std::vector<std::shared_ptr<UIElement>> uiElements;
-    // Pointers for easy access to specific elements
     std::shared_ptr<TextElement> idElement;
-    std::shared_ptr<HeaderStatusElement> loraStatusElement;
+    std::shared_ptr<HeaderStatusElement> lorawanStatusElement;
     std::shared_ptr<BatteryIconElement> batteryElement;
     std::shared_ptr<TextElement> statusTextElement;
 
+    // State tracking
     uint32_t _errorCount = 0;
     uint32_t _lastResetMs = 0;
+    uint32_t _lastTxMs = 0;
 
-    // Application-level message statistics
-    struct LoRaMessageStats {
-        uint32_t successful = 0;
-        uint32_t recovered = 0;
-        uint32_t dropped = 0;
-    } loraStats;
-
-    uint32_t lastSuccessfulAckMs = 0;
-
-    void onLoraAckReceived(uint8_t srcId, uint16_t messageId, uint8_t attempts);
-    void onLoraMessageDropped(uint16_t messageId, uint8_t attempts);
-    void onLoraDataReceived(uint8_t srcId, const uint8_t *payload, uint8_t length);
-    static void staticOnAckReceived(uint8_t srcId, uint16_t messageId, uint8_t attempts);
-    static void staticOnMessageDropped(uint16_t messageId, uint8_t attempts);
-    static void staticOnLoraDataReceived(uint8_t srcId, const uint8_t *payload, uint8_t length);
+    // LoRaWAN downlink command handler
+    void onDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length);
+    static void staticOnDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length);
     static RemoteApplicationImpl* callbackInstance;
 
     void setupUi();
@@ -103,8 +100,6 @@ RemoteApplicationImpl::RemoteApplicationImpl() :
 }
 
 void RemoteApplicationImpl::initialize() {
-    // config and sensorConfig are now initialized in the constructor
-    
     // ---
     // Critical: HALs must be created FIRST
     // ---
@@ -123,18 +118,17 @@ void RemoteApplicationImpl::initialize() {
     _lastResetMs = persistenceHal->loadU32("lastResetMs", 0);
     persistenceHal->end();
 
-    LOGI("Remote", "Creating other HALs");
+    LOGI("Remote", "Creating HALs");
     displayHal = std::make_unique<OledDisplayHal>();
-    loraHal = std::make_unique<LoRaCommHal>();
-    loraHal->setVerbose(config.communication.usb.verboseLogging);
+    lorawanHal = std::make_unique<LoRaWANHal>();
     batteryHal = std::make_unique<BatteryMonitorHal>(config.battery);
 
     LOGI("Remote", "Creating services");
     uiService = std::make_unique<UiService>(*displayHal);
     commsService = std::make_unique<CommsService>();
-    commsService->setLoraHal(loraHal.get());
+    commsService->setLoRaWANHal(lorawanHal.get());
     batteryService = std::make_unique<BatteryService>(*batteryHal);
-    loraService = std::make_unique<LoRaService>(*loraHal);
+    lorawanService = std::make_unique<LoRaWANService>(*lorawanHal);
 
     // Only create WiFi components if WiFi is enabled
     if (config.communication.wifi.enableWifi) {
@@ -154,15 +148,30 @@ void RemoteApplicationImpl::initialize() {
     displayHal->begin();
     LOGI("Remote", "Display initialized");
 
-    loraHal->begin(ILoRaHal::Mode::Slave, config.deviceId);
-    LOGI("Remote", "LoRa initialized");
-    loraHal->setOnAckReceived(&RemoteApplicationImpl::staticOnAckReceived);
-    loraHal->setOnMessageDropped(&RemoteApplicationImpl::staticOnMessageDropped);
-    loraHal->setOnDataReceived(&RemoteApplicationImpl::staticOnLoraDataReceived);
-    loraHal->setMasterNodeId(config.masterNodeId);
-    loraHal->setPeerTimeout(config.peerTimeoutMs);
-    LOGI("Remote", "Sending registration frame...");
-    loraHal->sendData(config.masterNodeId, nullptr, 0, true);
+    // Derive DevEUI from chip ID
+    uint8_t devEui[8];
+    getDevEuiFromChipId(devEui);
+    
+    LOGI("Remote", "DevEUI derived from chip ID: %02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
+         devEui[0], devEui[1], devEui[2], devEui[3],
+         devEui[4], devEui[5], devEui[6], devEui[7]);
+
+    // Initialize LoRaWAN with derived DevEUI and shared credentials
+    lorawanHal->begin(devEui, 
+                      config.communication.lorawan.appEui, 
+                      config.communication.lorawan.appKey);
+    LOGI("Remote", "LoRaWAN HAL initialized");
+
+    // Configure LoRaWAN settings
+    lorawanHal->setAdr(config.communication.lorawan.adrEnabled);
+    lorawanHal->setDeviceClass(config.communication.lorawan.deviceClass);
+    
+    // Set up downlink callback for commands
+    lorawanHal->setOnDataReceived(&RemoteApplicationImpl::staticOnDownlinkReceived);
+
+    // Start join process
+    LOGI("Remote", "Starting LoRaWAN OTAA join...");
+    lorawanHal->join();
 
     // Only begin WiFi if enabled
     if (config.communication.wifi.enableWifi && wifiHal) {
@@ -179,27 +188,20 @@ void RemoteApplicationImpl::initialize() {
     setupSensors();
     LOGI("Remote", "Sensors setup complete");
 
-    // Perform an initial sensor read and telemetry transmission
-    if (sensorConfig.enableSensorSystem) {
-        LOGI("Remote", "Performing initial sensor reading and telemetry transmission...");
-        auto readings = sensorManager.readAll();
-        readings.push_back({TelemetryKeys::ErrorCount, (float)_errorCount, millis()});
-        uint32_t timeSinceResetSec = (millis() - _lastResetMs) / 1000;
-        readings.push_back({TelemetryKeys::TimeSinceReset, (float)timeSinceResetSec, millis()});
-        if (sensorTransmitter) {
-            sensorTransmitter->queueBatch(readings);
-            // We can also trigger an immediate update attempt, which will be handled
-            // by the lora_tx task shortly anyway.
-        }
-    }
-
+    // Register scheduler tasks
     LOGI("Remote", "Registering scheduler tasks");
+    
+    // Heartbeat task
     scheduler.registerTask("heartbeat", [this](CommonAppState& state){
         state.heartbeatOn = !state.heartbeatOn;
     }, config.heartbeatIntervalMs);
+    
+    // Battery monitoring task
     scheduler.registerTask("battery", [this](CommonAppState& state){
         batteryService->update(state.nowMs);
     }, 1000);
+    
+    // Persistence task for water flow sensor
     if (sensorConfig.enableSensorSystem && sensorConfig.waterFlowConfig.enabled) {
         scheduler.registerTask("persistence", [this](CommonAppState& state){
             if (waterFlowSensor) {
@@ -207,39 +209,52 @@ void RemoteApplicationImpl::initialize() {
             }
         }, 60000); // Save volume every minute
     }
+    
+    // Display update task
     scheduler.registerTask("display", [this](CommonAppState& state){
         uiService->tick();
     }, config.displayUpdateIntervalMs);
-    scheduler.registerTask("lora", [this](CommonAppState& state){
-        loraService->update(state.nowMs);
-        Radio.IrqProcess(); // Handle radio interrupts
-        // Update UI elements with new state
-        auto connectionState = loraService->getConnectionState();
-        bool isConnected = (connectionState == ILoRaService::ConnectionState::Connected);
-        loraStatusElement->setLoraStatus(isConnected, loraService->getLastRssiDbm());
+    
+    // LoRaWAN service task - processes radio IRQs and state machine
+    scheduler.registerTask("lorawan", [this](CommonAppState& state){
+        lorawanService->update(state.nowMs);
+        
+        // Update UI elements with connection state
+        auto connectionState = lorawanService->getConnectionState();
+        bool isConnected = lorawanService->isJoined();
+        lorawanStatusElement->setLoraStatus(isConnected, lorawanService->getLastRssiDbm());
         batteryElement->setStatus(batteryService->getBatteryPercent(), batteryService->isCharging());
 
-        // Update main status text with connection and error info
+        // Update main status text
         if (statusTextElement) {
-            char statusStr[32];
-            const char* connStr = isConnected ? "Online" : "Offline";
-            snprintf(statusStr, sizeof(statusStr), "%s\nErrors: %u", connStr, _errorCount);
+            char statusStr[48];
+            const char* connStr = isConnected ? "Joined" : 
+                                  (connectionState == ILoRaWANService::ConnectionState::Connecting ? "Joining..." : "Offline");
+            snprintf(statusStr, sizeof(statusStr), "%s\nUp:%lu Dn:%lu\nErr:%u", 
+                     connStr,
+                     lorawanService->getUplinkCount(),
+                     lorawanService->getDownlinkCount(),
+                     _errorCount);
             statusTextElement->setText(statusStr);
         }
     }, 50);
+    
+    // Debug task for water flow sensor interrupts
     if (config.globalDebugMode) {
         scheduler.registerTask("interrupt_debug", [](CommonAppState& state){
             if (YFS201WaterFlowSensor::getAndClearInterruptFlag()) {
                 LOGD("Interrupt", "Water flow pulse detected!");
             }
-        }, 10); // High-frequency check
+        }, 10);
     }
+    
+    // Sensor reading and telemetry tasks
     if (sensorConfig.enableSensorSystem) {
-        // This task reads sensors and fills the transmitter's buffer
+        // Read sensors and queue for transmission
         scheduler.registerTask("sensors", [this](CommonAppState& state){
             auto readings = sensorManager.readAll();
             
-            // Manually add application-level data to the batch
+            // Add application-level data
             readings.push_back({TelemetryKeys::ErrorCount, (float)_errorCount, state.nowMs});
             uint32_t timeSinceResetSec = (state.nowMs - _lastResetMs) / 1000;
             readings.push_back({TelemetryKeys::TimeSinceReset, (float)timeSinceResetSec, state.nowMs});
@@ -249,23 +264,23 @@ void RemoteApplicationImpl::initialize() {
             }
         }, config.globalDebugMode ? config.debugTelemetryReportIntervalMs : config.telemetryReportIntervalMs);
 
-        // This task attempts to transmit the buffer
-        scheduler.registerTask("lora_tx", [this](CommonAppState& state){
-            if (loraService->isConnected() && sensorTransmitter) {
+        // Attempt to transmit queued telemetry
+        scheduler.registerTask("lorawan_tx", [this](CommonAppState& state){
+            if (lorawanService->isJoined() && sensorTransmitter) {
                 sensorTransmitter->update(state.nowMs);
             }
-        }, 1000); // Attempt to transmit every second
+        }, 1000);
     }
-    scheduler.registerTask("lora_watchdog", [this](CommonAppState& state){
-        if (state.nowMs - lastSuccessfulAckMs > config.maxQuietTimeMs) {
-            LOGW("Remote", "Watchdog: No ACK received recently, forcing reconnect.");
-            loraService->forceReconnect();
-            // Reset the timer to prevent spamming keep-alives before the first one gets a chance to be ACKed
-            lastSuccessfulAckMs = state.nowMs;
+    
+    // LoRaWAN rejoin watchdog - attempt rejoin if not connected for too long
+    scheduler.registerTask("lorawan_watchdog", [this](CommonAppState& state){
+        if (!lorawanService->isJoined()) {
+            LOGW("Remote", "Watchdog: Not joined to network, attempting rejoin...");
+            lorawanService->forceReconnect();
         }
-    }, 30000); // Check every 30 seconds
+    }, 60000); // Check every minute
 
-
+    // WiFi task if enabled
     if (config.communication.wifi.enableWifi && wifiService) {
         scheduler.registerTask("wifi", [this](CommonAppState& state){
             wifiService->update(state.nowMs);
@@ -282,8 +297,8 @@ void RemoteApplicationImpl::setupUi() {
     auto& topBar = layout.getTopBar();
     auto& mainContent = layout.getMainContent();
 
-    // -- Top Bar (Remote) --
-    // [Device ID] [Battery] [Empty] [LoRa Status as centered icon]
+    // -- Top Bar --
+    // [Device ID] [Battery] [LoRaWAN Status]
     idElement = std::make_shared<TextElement>();
     idElement->setText(String("ID: ") + String(config.deviceId, HEX));
     uiElements.push_back(idElement);
@@ -293,20 +308,20 @@ void RemoteApplicationImpl::setupUi() {
     uiElements.push_back(batteryElement);
     topBar.setColumn(TopBarColumn::Battery, batteryElement.get());
 
-    // LoRa status as centered icon in Network column (same position as peer count on relay)
-    loraStatusElement = std::make_shared<HeaderStatusElement>();
-    loraStatusElement->setMode(HeaderStatusElement::Mode::Lora);
-    uiElements.push_back(loraStatusElement);
-    topBar.setColumn(TopBarColumn::Network, loraStatusElement.get());
+    // LoRaWAN status in Network column
+    lorawanStatusElement = std::make_shared<HeaderStatusElement>();
+    lorawanStatusElement->setMode(HeaderStatusElement::Mode::Lora);
+    uiElements.push_back(lorawanStatusElement);
+    topBar.setColumn(TopBarColumn::Network, lorawanStatusElement.get());
 
     // -- Main Content --
     // [Small Logo] [Status Text]
-    mainContent.setLeftColumnWidth(logo_small_width + 8); // logo width + more margin
+    mainContent.setLeftColumnWidth(logo_small_width + 8);
     auto mainLogoElement = std::make_shared<IconElement>(logo_small_bits, logo_small_width, logo_small_height);
     uiElements.push_back(mainLogoElement);
     mainContent.setLeft(mainLogoElement.get());
 
-    statusTextElement = std::make_shared<TextElement>("Ready");
+    statusTextElement = std::make_shared<TextElement>("Initializing...");
     uiElements.push_back(statusTextElement);
     mainContent.setRight(statusTextElement.get());
 }
@@ -316,13 +331,11 @@ void RemoteApplicationImpl::setupSensors() {
         return;
     }
 
-    auto transmitter = std::make_unique<LoRaBatchTransmitter>(loraHal.get(), config);
-    // The transmitter is now managed by the RemoteApplicationImpl, not the SensorManager
+    // Create LoRaWAN transmitter with service reference
+    auto transmitter = std::make_unique<LoRaWANBatchTransmitter>(lorawanService.get(), config);
     sensorTransmitter = std::move(transmitter);
 
     // --- Sensor Creation ---
-    // Create all potential sensors and let them manage their own enabled state.
-
     auto batterySensor = SensorFactory::createBatteryMonitorSensor(
         batteryService.get(),
         sensorConfig.batteryConfig.enabled
@@ -339,74 +352,58 @@ void RemoteApplicationImpl::setupSensors() {
 }
 
 void RemoteApplicationImpl::run() {
-    // This run loop is for high-frequency, non-blocking tasks.
-    // The main application logic is handled by the scheduler.
-
-    // A small delay to prevent this loop from starving other tasks if they
-    // were ever added to the main Arduino loop.
+    // Main run loop - high-frequency, non-blocking tasks
+    // The main application logic is handled by the scheduler
     delay(1);
 }
 
-void RemoteApplicationImpl::onLoraAckReceived(uint8_t srcId, uint16_t messageId, uint8_t attempts) {
-    LOGI("Remote", "ACK received from %u for msgId %u after %u attempts", srcId, messageId, attempts);
-    if (attempts <= 1) {
-        loraStats.successful++;
-    } else {
-        loraStats.recovered++;
-    }
-    lastSuccessfulAckMs = millis();
-}
+// LoRaWAN downlink command handler - routed by port
+void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length) {
+    LOGI("Remote", "Downlink received on port %d, length %d", port, length);
 
-void RemoteApplicationImpl::onLoraMessageDropped(uint16_t messageId, uint8_t attempts) {
-    LOGW("Remote", "Message %u dropped after %u attempts", messageId, attempts);
-    loraStats.dropped++;
-    _errorCount++;
-    persistenceHal->begin("app_state");
-    persistenceHal->saveU32("errorCount", _errorCount);
-    persistenceHal->end();
-}
-
-void RemoteApplicationImpl::onLoraDataReceived(uint8_t srcId, const uint8_t *payload, uint8_t length) {
-    // For commands, we'll use a simple protocol where the first byte of the raw
-    // LoRa payload is the CommandType.
-    if (length >= 1) {
-        Messaging::CommandType cmdType = (Messaging::CommandType)payload[0];
-        if (cmdType == Messaging::CommandType::ResetWaterVolume) {
-            LOGI("Remote", "Received ResetWaterVolume command from master.");
+    // Port-based command routing per migration plan
+    switch (port) {
+        case 10:  // Reset water volume
+            LOGI("Remote", "Received ResetWaterVolume command via port 10");
             if (waterFlowSensor) {
                 waterFlowSensor->resetTotalVolume();
             }
-            if (loraHal) {
-                loraHal->resetCounters();
-            }
+            lorawanService->resetCounters();
             Messaging::Message::resetSequenceId();
-
-            // Reset error counter
+            
+            // Reset error counter and record reset time
             _errorCount = 0;
-            _lastResetMs = millis(); // Record the time of reset
+            _lastResetMs = millis();
             persistenceHal->begin("app_state");
             persistenceHal->saveU32("errorCount", _errorCount);
             persistenceHal->saveU32("lastResetMs", _lastResetMs);
             persistenceHal->end();
-        }
+            break;
+
+        case 11:  // Set reporting interval
+            if (length >= 4) {
+                uint32_t interval = (payload[0] << 24) | (payload[1] << 16) | 
+                                   (payload[2] << 8) | payload[3];
+                LOGI("Remote", "Set reporting interval to %u ms", interval);
+                // Note: Dynamic interval change would require scheduler modification
+            }
+            break;
+
+        case 12:  // Reboot device
+            LOGI("Remote", "Reboot command received");
+            delay(100);
+            ESP.restart();
+            break;
+
+        default:
+            LOGD("Remote", "Unknown command port: %d", port);
+            break;
     }
 }
 
-void RemoteApplicationImpl::staticOnAckReceived(uint8_t srcId, uint16_t messageId, uint8_t attempts) {
+void RemoteApplicationImpl::staticOnDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length) {
     if (callbackInstance) {
-        callbackInstance->onLoraAckReceived(srcId, messageId, attempts);
-    }
-}
-
-void RemoteApplicationImpl::staticOnMessageDropped(uint16_t messageId, uint8_t attempts) {
-    if (callbackInstance) {
-        callbackInstance->onLoraMessageDropped(messageId, attempts);
-    }
-}
-
-void RemoteApplicationImpl::staticOnLoraDataReceived(uint8_t srcId, const uint8_t *payload, uint8_t length) {
-    if (callbackInstance) {
-        callbackInstance->onLoraDataReceived(srcId, payload, length);
+        callbackInstance->onDownlinkReceived(port, payload, length);
     }
 }
 
@@ -424,7 +421,8 @@ void RemoteApplication::run() { impl->run(); }
 #include "lib/svc_comms.cpp"
 #include "lib/svc_battery.cpp"
 #include "lib/svc_wifi.cpp"
-#include "lib/svc_lora.cpp"
+#include "lib/svc_lorawan.cpp"
+#include "lib/hal_lorawan.cpp"
 #include "lib/ui_battery_icon_element.cpp"
 #include "lib/ui_header_status_element.cpp"
 #include "lib/ui_main_content_layout.cpp"

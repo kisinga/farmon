@@ -2,8 +2,8 @@
 
 CommsService::CommsService() {}
 
-void CommsService::setLoraHal(ILoRaHal* loraHal) {
-    _loraHal = loraHal;
+void CommsService::setLoRaWANHal(ILoRaWANHal* lorawanHal) {
+    _lorawanHal = lorawanHal;
 }
 
 void CommsService::setWifiHal(IWifiHal* wifiHal) {
@@ -11,8 +11,8 @@ void CommsService::setWifiHal(IWifiHal* wifiHal) {
 }
 
 void CommsService::update(uint32_t nowMs) {
-    if (_loraHal) {
-        _loraHal->tick(nowMs);
+    if (_lorawanHal) {
+        _lorawanHal->tick(nowMs);
     }
     if (_wifiHal) {
         _wifiHal->update(nowMs);
@@ -21,9 +21,10 @@ void CommsService::update(uint32_t nowMs) {
 
 bool CommsService::sendMessage(const Messaging::Message& message, TransportType transport) {
     switch (transport) {
-        case TransportType::LoRa:
-            if (_loraHal) {
-                return _loraHal->sendData(message.getMetadata().destinationId, message.getPayload(), message.getLength(), message.getMetadata().requiresAck);
+        case TransportType::LoRaWAN:
+            if (_lorawanHal) {
+                // Use default port 1 for telemetry, confirmed based on message metadata
+                return _lorawanHal->sendData(1, message.getPayload(), message.getLength(), message.getMetadata().requiresAck);
             }
             break;
         case TransportType::WiFi:

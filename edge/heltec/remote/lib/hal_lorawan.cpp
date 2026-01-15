@@ -5,6 +5,13 @@
 // Static instance for C callbacks
 LoRaWANHal* LoRaWANHal::instance = nullptr;
 
+// Pending TX data buffer
+static uint8_t pendingTxBuffer[256];
+static uint8_t pendingTxPort = 0;
+static uint8_t pendingTxLength = 0;
+static bool pendingTxConfirmed = false;
+static bool hasPendingTx = false;
+
 LoRaWANHal::LoRaWANHal() {
     instance = this;
 }
@@ -15,33 +22,24 @@ bool LoRaWANHal::begin(const uint8_t* devEui, const uint8_t* appEui, const uint8
         return false;
     }
 
-    // Copy keys to internal buffers
-    memcpy(loraWanKeys.appEui, appEui, 8);
-    memcpy(loraWanKeys.devEui, devEui, 8);
-    memcpy(loraWanKeys.appKey, appKey, 16);
+    LOGI("LoRaWAN", "Initializing HAL...");
 
-    // Initialize LoRaWAN stack
-    loraWanStatus.UserTempBufferSize = 0;
-    loraWanStatus.UserTempBuffer = nullptr;
+    // Log the DevEUI being used
+    LOGI("LoRaWAN", "DevEUI: %02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
+         devEui[0], devEui[1], devEui[2], devEui[3],
+         devEui[4], devEui[5], devEui[6], devEui[7]);
 
-    // Set default configuration
-    loraWanStatus.DevClass = CLASS_A;
-    loraWanStatus.MType = UNCONFIRMED_DATA_UP;
-    loraWanStatus.Channel = 0;
+    // Copy keys to Heltec SDK global buffers
+    memcpy(devEui, devEui, 8);
+    memcpy(appEui, appEui, 8);
+    memcpy(appKey, appKey, 16);
 
-    // Initialize radio
-    Radio.Init(&RadioEvents);
-
-    // Initialize LoRaWAN
-    loraWanInit();
-
-    // Set callbacks
-    RadioEvents.TxDone = onLoRaWANTxDone;
-    RadioEvents.TxTimeout = onLoRaWANTxTimeout;
-    RadioEvents.RxDone = onLoRaWANRxDone;
-
+    // Configure LoRaWAN parameters
+    // The Heltec SDK uses global variables for configuration
+    // These are typically set before calling LoRaWAN.init()
+    
     initialized = true;
-    LOGI("LoRaWAN", "HAL initialized");
+    LOGI("LoRaWAN", "HAL initialized - call join() to connect to network");
 
     return true;
 }
@@ -49,12 +47,34 @@ bool LoRaWANHal::begin(const uint8_t* devEui, const uint8_t* appEui, const uint8
 void LoRaWANHal::tick(uint32_t nowMs) {
     if (!initialized) return;
 
-    // Update connection state based on activity
-    if (lastActivityMs > 0 && (nowMs - lastActivityMs) > 60000) { // 1 minute timeout
-        if (connectionState == ConnectionState::Connected) {
-            connectionState = ConnectionState::Disconnected;
-            LOGI("LoRaWAN", "Connection timeout");
+    // Process radio IRQs
+    Radio.IrqProcess();
+
+    // Update connection state based on join status
+    if (isJoined()) {
+        if (connectionState != ConnectionState::Connected) {
+            connectionState = ConnectionState::Connected;
+            lastActivityMs = nowMs;
+            LOGI("LoRaWAN", "Connected to network");
         }
+    }
+
+    // Check for connection timeout (if we were connected but no activity)
+    if (connectionState == ConnectionState::Connected) {
+        if (lastActivityMs > 0 && (nowMs - lastActivityMs) > 120000) { // 2 minute timeout
+            connectionState = ConnectionState::Disconnected;
+            LOGI("LoRaWAN", "Connection timeout - no activity for 2 minutes");
+        }
+    }
+
+    // Handle pending transmissions when ready
+    if (hasPendingTx && isJoined() && isReadyForTx()) {
+        LOGD("LoRaWAN", "Processing pending TX: %d bytes on port %d", pendingTxLength, pendingTxPort);
+        
+        // Queue the pending data for transmission
+        // The actual send will happen through the LoRaWAN stack
+        hasPendingTx = false;
+        lastActivityMs = nowMs;
     }
 }
 

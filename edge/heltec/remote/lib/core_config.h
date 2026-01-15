@@ -1,5 +1,5 @@
-// Core Configuration System - Unified configuration management
-// Provides centralized, DRY configuration for all device types
+// Core Configuration System - Remote device configuration
+// Provides centralized configuration for LoRaWAN remote sensor nodes
 
 #pragma once
 
@@ -8,17 +8,10 @@
 #include "communication_config.h"
 #include "battery_monitor.h" // Include battery monitor for its config struct
 
-// Device types
-enum class DeviceType : uint8_t {
-    Relay = 1,
-    Remote = 2
-};
-
-// Common device configuration
+// Device configuration for remote sensor nodes
 struct DeviceConfig {
     uint8_t deviceId;
     const char* deviceName = "far-mon";
-    DeviceType deviceType;
     uint32_t heartbeatIntervalMs;
     bool enableDisplay;
     uint32_t displayUpdateIntervalMs;
@@ -30,7 +23,7 @@ struct DeviceConfig {
 };
 
 // ============================================================================
-// UNIFIED CONFIGURATION FACTORY - DRY Implementation
+// CONFIGURATION FACTORY
 // ============================================================================
 
 class DeviceConfigFactory {
@@ -42,46 +35,28 @@ public:
     static constexpr uint32_t DEFAULT_WIFI_RECONNECT_INTERVAL_MS = 30000;
     static constexpr uint32_t DEFAULT_WIFI_STATUS_CHECK_INTERVAL_MS = 5000;
 
-    // Create relay configuration
-    static DeviceConfig createRelayConfig(uint8_t deviceId);
-
     // Create remote configuration
     static DeviceConfig createRemoteConfig(uint8_t deviceId);
 
 private:
-    // Create base configuration common to all devices
-    static DeviceConfig createBaseConfig(uint8_t deviceId, DeviceType deviceType);
+    // Create base configuration
+    static DeviceConfig createBaseConfig(uint8_t deviceId);
 };
 
 // ============================================================================
-// DEVICE-SPECIFIC CONFIG STRUCTURES (for backward compatibility)
+// REMOTE CONFIG STRUCTURE
 // ============================================================================
 
-// Relay configuration - now just a thin wrapper
-struct RelayConfig : DeviceConfig {
-    uint32_t peerMonitorIntervalMs = 2000;
-    uint32_t peerTimeoutMs = 120000; // 2 minutes
-    uint8_t maxPeers = 16;
-
-    RelayConfig() = default;
-
-    // Factory method
-    static RelayConfig create(uint8_t deviceId);
-};
-
-// Remote configuration - now just a thin wrapper
+// Remote configuration for LoRaWAN sensor nodes
 struct RemoteConfig : DeviceConfig {
-    // Legacy analog sensor support (for backward compatibility)
+    // Analog sensor support (for backward compatibility)
     bool enableAnalogSensor = true;
     uint8_t analogInputPin = 34;  // Default for Heltec LoRa 32 V3
     uint32_t analogReadIntervalMs = 200;
     uint32_t telemetryReportIntervalMs = 60000;
     uint32_t debugTelemetryReportIntervalMs = 5000; // Faster reporting for debug
     float analogReferenceVoltage = 3.30f;
-    uint8_t masterNodeId = 1;
     bool useCalibratedAdc = true;  // Use analogReadMilliVolts() for better accuracy
-    uint32_t maxQuietTimeMs = 150000; // 2.5 minutes
-    uint32_t peerTimeoutMs = 125000; // A bit longer than relay's, to ensure relay drops first
 
     RemoteConfig() = default;
 
@@ -90,13 +65,16 @@ struct RemoteConfig : DeviceConfig {
 };
 
 // ============================================================================
-// LEGACY COMPATIBILITY FUNCTIONS
+// LORAWAN UTILITY FUNCTIONS
 // ============================================================================
 
-// Factory functions for backward compatibility
-inline RelayConfig createRelayConfig(uint8_t deviceId) {
-    return RelayConfig::create(deviceId);
-}
+// Derive DevEUI from ESP32 chip ID (eFuse MAC)
+// The DevEUI is 8 bytes, derived from the 6-byte MAC by prepending 0xFF, 0xFE
+void getDevEuiFromChipId(uint8_t* devEui);
+
+// ============================================================================
+// FACTORY FUNCTION
+// ============================================================================
 
 inline RemoteConfig createRemoteConfig(uint8_t deviceId) {
     return RemoteConfig::create(deviceId);

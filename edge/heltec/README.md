@@ -47,13 +47,14 @@ sudo systemctl stop ModemManager
 
 Verify device: `ls /dev/ttyUSB*` or `dmesg -w` while plugging in.
 
-## Subdirectories
+## Project Structure
 
-| Folder    | Description                        |
-| --------- | ---------------------------------- |
-| `remote/` | Sensor node firmware               |
-| `relay/`  | (Legacy) Replaced by SX1302 gateway |
-| `lib/`    | Shared libraries                   |
+| Path | Description |
+| ---- | ----------- |
+| `remote/` | Sensor node firmware and libraries |
+| `remote/lib/` | Shared library code (HALs, services, UI) |
+| `ARCHITECTURE_GUIDE.md` | System architecture documentation |
+| `LORAWAN_SETUP.md` | ChirpStack and device provisioning guide |
 
 ## Troubleshooting
 
