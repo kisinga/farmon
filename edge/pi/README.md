@@ -1,82 +1,53 @@
-# Raspberry Pi Farm Monitoring Server
+# Raspberry Pi Farm Server
 
-LoRaWAN network server and monitoring infrastructure for the farm.
+LoRaWAN network server and IoT platform for the farm.
 
 ## Architecture
 
 ```
-┌─────────────┐    LoRa    ┌───────────────┐    UDP/MQTT    ┌─────────────────┐
-│ Heltec      │ ─────────► │ SX1302 Gateway│ ─────────────► │ Gateway Bridge  │
-│ Remote      │            │               │                └────────┬────────┘
-└─────────────┘            └───────────────┘                         │
-                                                                     ▼
-                           ┌───────────────┐    MQTT         ┌─────────────────┐
-                           │ Node-RED /    │ ◄─────────────  │ ChirpStack      │
-                           │ InfluxDB      │                 │ Network Server  │
-                           └───────────────┘                 └─────────────────┘
+Heltec Nodes → SX1302 Gateway → ChirpStack → MQTT → ThingsBoard
+                   (LoRa)         (UDP)      (decode)   (dashboard/rules)
 ```
 
 ## Services
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| ChirpStack | 8080 | LoRaWAN Network Server Web UI |
-| Gateway Bridge | 1700/udp | Receives packets from SX1302 gateway |
-| Mosquitto | 1883, 9001 | MQTT broker |
-| Node-RED | 1880 | Automation and dashboard |
-| InfluxDB | 8086 | Time-series data storage |
+| Service     | Port      | Purpose                          |
+| ----------- | --------- | -------------------------------- |
+| ChirpStack  | 8080      | LoRaWAN Network Server           |
+| ThingsBoard | 9090      | IoT Platform (dashboard, rules)  |
+| Gateway Bridge | 1700/udp | Receives packets from gateway |
+| Mosquitto   | 1883      | MQTT broker                      |
 
 ## Quick Start
 
 ```bash
-# One-line Pi setup (run on fresh Raspbian)
 curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
 ```
 
-## Setup Flow
+## Default Credentials
 
-1. Install Raspbian on Pi
-2. Run `setup_farm_pi.sh` to install Docker, Tailscale, and prepare configs
-3. Deploy stack via `docker-compose up -d`
-4. Configure your SX1302 gateway to point to the Pi's IP address (port 1700/UDP)
-5. Access ChirpStack at `http://<pi-ip>:8080` (default: admin/admin)
-6. Register gateway and devices in ChirpStack
+- **ChirpStack**: admin / admin
+- **ThingsBoard**:
+  - System Admin: sysadmin@thingsboard.org / sysadmin
+  - Tenant Admin: tenant@thingsboard.org / tenant
 
-## Gateway Configuration
+## Gateway Setup
 
-Point your SX1302 gateway's packet forwarder to:
-- **Server address**: Pi's IP (Tailscale or local)
-- **Server port**: 1700 (UDP)
+Point your SX1302 gateway packet forwarder to:
+- Server: `<pi-ip>`
+- Port: `1700` (UDP)
+
+## ChirpStack → ThingsBoard Integration
+
+1. In ChirpStack: Create application, add MQTT integration
+2. In ThingsBoard: Create MQTT integration subscribing to ChirpStack topics
+3. Map device EUIs between platforms
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `setup_farm_pi.sh` | Complete Pi setup automation |
-| `docker-compose.yml` | Container stack definition |
-| `chirpstack/` | ChirpStack configuration files |
-| `mosquitto/` | Mosquitto MQTT broker config |
-
-## Environment Variables
-
-Create a `.env` file or export these before running:
-
-```bash
-# ChirpStack
-CHIRPSTACK_POSTGRES_PASSWORD=chirpstack
-
-# InfluxDB
-INFLUX_USERNAME=admin
-INFLUX_PASSWORD=please-change
-INFLUX_ORG=farm
-INFLUX_BUCKET=sensors
-INFLUX_RETENTION=90d
-INFLUX_TOKEN=change-this-token
-```
-
-## Access via Tailscale
-
-All services are accessible over your Tailscale network:
-- ChirpStack: `http://<tailscale-ip>:8080`
-- Node-RED: `http://<tailscale-ip>:1880`
-- InfluxDB: `http://<tailscale-ip>:8086`
+| Path | Purpose |
+| ---- | ------- |
+| `docker-compose.yml` | Service definitions |
+| `chirpstack/` | ChirpStack config |
+| `mosquitto/` | MQTT broker config |
+| `postgres/` | Database init script |

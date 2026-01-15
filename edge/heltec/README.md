@@ -2,11 +2,12 @@
 
 Firmware for Heltec ESP32 LoRaWAN nodes that collect sensor data and transmit to ChirpStack via the SX1302 gateway.
 
-## Architecture
+## Data Flow
 
-- **Remote Nodes** – Battery-powered LoRaWAN Class A devices with sensors
-- **SX1302 Gateway** – Receives LoRa packets, forwards to ChirpStack on Pi
-- **ChirpStack** – Manages device registration, decodes payloads, publishes to MQTT
+```
+Heltec Node → SX1302 Gateway → ChirpStack → ThingsBoard
+   (LoRa)         (UDP)         (MQTT)      (dashboard)
+```
 
 ## Setup (Arduino IDE)
 

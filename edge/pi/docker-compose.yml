@@ -1,17 +1,17 @@
 version: "3.8"
 
 services:
-  # ChirpStack LoRaWAN Stack
-  chirpstack-postgres:
+  # Shared PostgreSQL for ChirpStack and ThingsBoard
+  postgres:
     image: postgres:15-alpine
-    container_name: farm-chirpstack-postgres
+    container_name: farm-postgres
     restart: unless-stopped
     volumes:
-      - chirpstack_postgres_data:/var/lib/postgresql/data
-      - ./chirpstack/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     environment:
       - TZ=Africa/Nairobi
-      - POSTGRES_PASSWORD=${CHIRPSTACK_POSTGRES_PASSWORD:-chirpstack}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-farmmon}
     networks:
       - farm_network
     healthcheck:
@@ -21,12 +21,13 @@ services:
       retries: 5
       start_period: 10s
 
-  chirpstack-redis:
+  # Redis for ChirpStack
+  redis:
     image: redis:7-alpine
-    container_name: farm-chirpstack-redis
+    container_name: farm-redis
     restart: unless-stopped
     volumes:
-      - chirpstack_redis_data:/data
+      - redis_data:/data
     environment:
       - TZ=Africa/Nairobi
     networks:
@@ -37,14 +38,37 @@ services:
       timeout: 5s
       retries: 5
 
+  # MQTT Broker - shared by ChirpStack and ThingsBoard
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: farm-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    environment:
+      - TZ=Africa/Nairobi
+    networks:
+      - farm_network
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 mosquitto_sub -h localhost -t '$$SYS/broker/uptime' -C 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ChirpStack LoRaWAN Network Server
   chirpstack:
     image: chirpstack/chirpstack:4
     container_name: farm-chirpstack
     restart: unless-stopped
     depends_on:
-      chirpstack-postgres:
+      postgres:
         condition: service_healthy
-      chirpstack-redis:
+      redis:
         condition: service_healthy
       mosquitto:
         condition: service_healthy
@@ -56,13 +80,8 @@ services:
       - TZ=Africa/Nairobi
     networks:
       - farm_network
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
+  # ChirpStack Gateway Bridge
   chirpstack-gateway-bridge:
     image: chirpstack/chirpstack-gateway-bridge:4
     container_name: farm-chirpstack-gateway-bridge
@@ -79,127 +98,74 @@ services:
     networks:
       - farm_network
 
-  # Core Services
-  mosquitto:
-    image: eclipse-mosquitto:2.0
-    container_name: farm-mosquitto
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-      - "9001:9001"
-    volumes:
-      - mosquitto_data:/mosquitto/data
-      - mosquitto_logs:/mosquitto/log
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    environment:
-      - TZ=Africa/Nairobi
-    networks:
-      - farm_network
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 5 mosquitto_sub -h localhost -t '$$SYS/broker/uptime' -C 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
-  nodered:
-    image: nodered/node-red:3.1-18
-    container_name: farm-nodered
+  # ThingsBoard IoT Platform
+  thingsboard:
+    image: thingsboard/tb-node:4.2.1.1
+    container_name: farm-thingsboard
     restart: unless-stopped
     depends_on:
+      postgres:
+        condition: service_healthy
       mosquitto:
         condition: service_healthy
     ports:
-      - "1880:1880"
+      - "9090:8080"
+      - "7070:7070"
     volumes:
-      - nodered_data:/data
-      - /etc/localtime:/etc/localtime:ro
+      - thingsboard_data:/data
+      - thingsboard_logs:/var/log/thingsboard
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
     environment:
       - TZ=Africa/Nairobi
-      - NODE_RED_ENABLE_SAFE_MODE=false
-      - NODE_RED_ENABLE_PROJECTS=true
+      - TB_SERVICE_ID=tb-node
+      - TB_QUEUE_TYPE=in-memory
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/thingsboard
+      - SPRING_DATASOURCE_USERNAME=thingsboard
+      - SPRING_DATASOURCE_PASSWORD=${THINGSBOARD_DB_PASSWORD:-thingsboard}
     networks:
       - farm_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:1880/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    user: "1000:1000"
-
-  influxdb:
-    image: influxdb:2.7
-    container_name: farm-influxdb
-    restart: unless-stopped
-    ports:
-      - "8086:8086"
-    volumes:
-      - influxdb_data:/var/lib/influxdb2
-      - influxdb_config:/etc/influxdb2
-      - /etc/localtime:/etc/localtime:ro
-    environment:
-      - TZ=Africa/Nairobi
-      - INFLUXDB_HTTP_MAX_BODY_SIZE=20MB
-      - DOCKER_INFLUXDB_INIT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUX_USERNAME:-admin}
-      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUX_PASSWORD:-please-change}
-      - DOCKER_INFLUXDB_INIT_ORG=${INFLUX_ORG:-farm}
-      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUX_BUCKET:-sensors}
-      - DOCKER_INFLUXDB_INIT_RETENTION=${INFLUX_RETENTION:-90d}
-      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN:-change-this-token}
-    networks:
-      - farm_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8086/ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
 volumes:
-  chirpstack_postgres_data:
+  postgres_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /srv/chirpstack/postgres
-  chirpstack_redis_data:
+      device: /srv/farm/postgres
+  redis_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /srv/chirpstack/redis
+      device: /srv/farm/redis
   mosquitto_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /srv/mosquitto/data
+      device: /srv/farm/mosquitto/data
   mosquitto_logs:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /srv/mosquitto/log
-  nodered_data:
+      device: /srv/farm/mosquitto/logs
+  thingsboard_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /srv/nodered
-  influxdb_data:
+      device: /srv/farm/thingsboard/data
+  thingsboard_logs:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /srv/influxdb/data
-  influxdb_config:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /srv/influxdb/config
+      device: /srv/farm/thingsboard/logs
 
 networks:
   farm_network:

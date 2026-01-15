@@ -4,7 +4,7 @@
 
 **Monitor your farm. From far. Farm on!**
 
-A modular, resilient farm-monitoring platform that consolidates sensor data and integrates with ERPNext (or any farm ERP) for unified record-keeping and analytics.
+A modular farm-monitoring platform using LoRaWAN for sensor connectivity and ThingsBoard for data visualization and automation.
 
 ## Architecture
 
@@ -18,33 +18,35 @@ A modular, resilient farm-monitoring platform that consolidates sensor data and 
                                        ┌─────────────────┐
                                        │   Raspberry Pi  │
                                        │  ─────────────  │
-                                       │  ChirpStack     │
-                                       │  MQTT / Node-RED│
-                                       │  InfluxDB       │
+                                       │  ChirpStack     │◄── LoRaWAN Network Server
+                                       │  ThingsBoard    │◄── Dashboards, Rules, Alarms
                                        └────────┬────────┘
                                                 │ Tailscale VPN
                                                 ▼
                                        ┌─────────────────┐
                                        │ Remote Access   │
-                                       │ ERPNext / Cloud │
                                        └─────────────────┘
 ```
 
-- **Heltec Nodes** – LoRaWAN Class A devices with sensors (soil, water, environment)
-- **SX1302 Gateway** – Receives LoRa packets, forwards to Pi via UDP
-- **Raspberry Pi** – Runs ChirpStack (LoRaWAN network server), MQTT, Node-RED, InfluxDB
-- **Remote Access** – Tailscale VPN for secure management; data flows to ERPNext/dashboards
+## Stack
+
+| Component | Role |
+| --------- | ---- |
+| **Heltec Nodes** | LoRaWAN Class A sensors (soil, water, environment) |
+| **SX1302 Gateway** | Receives LoRa packets, forwards to Pi |
+| **ChirpStack** | LoRaWAN network server, device management |
+| **ThingsBoard** | Dashboards, rule engine, alarms, data storage |
+| **Tailscale** | Secure remote access |
 
 ## Capabilities
 
-| Domain    | Measurements                    | Hardware                         |
-| --------- | ------------------------------- | -------------------------------- |
-| Water     | Tank level, borehole flow, rain | HC-SR04, flow sensors, API       |
-| Soil      | Moisture                        | Capacitive probes                |
-| Livestock | Weight, health                  | Manual scale or RFID gate        |
-| Fodder    | Harvest time, regrowth          | Logs + moisture probe            |
-| Hives     | Temp, humidity, activity        | Thermal probe, IR motion counter |
-| System    | Uptime, solar output            | Pulse counters, shunt sensors    |
+| Domain | Measurements |
+| ------ | ------------ |
+| Water | Tank level, flow, rain |
+| Soil | Moisture |
+| Livestock | Weight |
+| Hives | Temperature, humidity |
+| System | Uptime, solar output |
 
 ## Quick Start
 
@@ -53,19 +55,10 @@ A modular, resilient farm-monitoring platform that consolidates sensor data and 
 curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
 ```
 
-See [edge/pi/README.md](edge/pi/README.md) for detailed setup instructions.
-
 ## Directory Structure
 
 ```
 edge/
-├── pi/          # Raspberry Pi: ChirpStack, Docker stack, setup scripts
-└── heltec/      # Heltec LoRaWAN node firmware (remote sensors)
+├── pi/          # Raspberry Pi: ChirpStack + ThingsBoard stack
+└── heltec/      # Heltec LoRaWAN node firmware
 ```
-
-## ERPNext Integration Roadmap
-
-1. Device Registry for sensor metadata
-2. Time-Series Bridge (Pi → MQTT/REST → ERPNext)
-3. Offline Mobile Forms (livestock, crops, maintenance)
-4. Auto-Reports for yield, water use, field conditions

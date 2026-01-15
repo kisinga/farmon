@@ -2,9 +2,9 @@
 
 Farm site devices and services.
 
-| Folder    | Description                                      |
-| --------- | ------------------------------------------------ |
-| `pi/`     | Raspberry Pi: ChirpStack, Docker stack, setup    |
-| `heltec/` | Heltec LoRaWAN node firmware for field sensors   |
+| Folder | Description |
+| ------ | ----------- |
+| `pi/` | Raspberry Pi: ChirpStack + ThingsBoard |
+| `heltec/` | LoRaWAN sensor node firmware |
 
-All Heltec nodes communicate via LoRaWAN to the SX1302 gateway, which forwards packets to ChirpStack on the Pi.
+Data flow: `Heltec → SX1302 Gateway → ChirpStack → ThingsBoard`
