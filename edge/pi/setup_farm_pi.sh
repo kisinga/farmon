@@ -101,6 +101,35 @@ setup_directories() {
     log_info "Creating configuration directories..."
     mkdir -p "$INSTALL_DIR/edge/pi/mosquitto"
     
+    # Create mosquitto.conf if it doesn't exist
+    if [ ! -f "$INSTALL_DIR/edge/pi/mosquitto/mosquitto.conf" ]; then
+        log_info "Creating mosquitto.conf..."
+        cat > "$INSTALL_DIR/edge/pi/mosquitto/mosquitto.conf" << 'EOF'
+# Mosquitto MQTT Broker Configuration
+# For Farm Monitoring System
+
+# Persistence
+persistence true
+persistence_location /mosquitto/data/
+
+# Logging
+log_dest file /mosquitto/log/mosquitto.log
+log_type all
+
+# Network listeners
+listener 1883 0.0.0.0
+allow_anonymous true
+
+# Connection settings
+max_connections -1
+max_inflight_messages 100
+max_queued_messages 1000
+
+# Retained messages
+retained_persistence true
+EOF
+    fi
+    
     log_info "Setting permissions..."
     sudo chown -R 799:799 /srv/farm/thingsboard
     sudo chown -R 1883:1883 /srv/farm/mosquitto
