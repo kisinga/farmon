@@ -96,7 +96,7 @@ setup_directories() {
     log_info "Creating volume directories..."
     sudo mkdir -p /srv/farm/{postgres,redis}
     sudo mkdir -p /srv/farm/mosquitto/{data,logs}
-    sudo mkdir -p /srv/farm/thingsboard/{data,logs}
+    sudo mkdir -p /srv/farm/nodered
     
     log_info "Creating configuration directories..."
     mkdir -p "$INSTALL_DIR/edge/pi/mosquitto"
@@ -131,7 +131,7 @@ EOF
     fi
     
     log_info "Setting permissions..."
-    sudo chown -R 799:799 /srv/farm/thingsboard
+    sudo chown -R 1000:1000 /srv/farm/nodered
     sudo chown -R 1883:1883 /srv/farm/mosquitto
     
     log_success "Directories ready"
@@ -149,14 +149,11 @@ deploy_stack() {
     docker-compose up -d postgres
     sleep 10
     
-    log_info "Initializing ThingsBoard (first run setup)..."
-    docker-compose run --rm -T -e INSTALL_TB=true -e LOAD_DEMO=true thingsboard
-    
     log_info "Starting all services..."
     docker-compose up -d
     
     log_info "Waiting for services to be ready..."
-    sleep 30
+    sleep 15
     
     log_success "All services running"
 }
@@ -170,16 +167,17 @@ print_summary() {
     echo -e "${BOLD}${GREEN}══════════════════════════════════════════${NC}"
     echo ""
     echo -e "${BOLD}Services:${NC}"
-    echo -e "  ChirpStack:   http://$TAILSCALE_IP:8080"
-    echo -e "                ${CYAN}admin / admin${NC}"
-    echo -e "  ThingsBoard:  http://$TAILSCALE_IP:9090"
-    echo -e "                ${CYAN}tenant@thingsboard.org / tenant${NC}"
+    echo -e "  ChirpStack:  http://$TAILSCALE_IP:8080"
+    echo -e "               ${CYAN}admin / admin${NC}"
+    echo -e "  Node-RED:    http://$TAILSCALE_IP:1880"
+    echo -e "               ${CYAN}admin / farmmon${NC}"
+    echo -e "  Dashboard:   http://$TAILSCALE_IP:1880/ui"
     echo ""
     echo -e "${BOLD}Next steps:${NC}"
-    echo -e "  1. Configure SX1302 gateway → $TAILSCALE_IP:1700 (UDP)"
+    echo -e "  1. Run gateway setup: ${CYAN}sudo bash setup_gateway.sh${NC}"
     echo -e "  2. Register gateway in ChirpStack"
-    echo -e "  3. Create ChirpStack → ThingsBoard MQTT integration"
-    echo -e "  4. Add devices in both platforms"
+    echo -e "  3. Add devices in ChirpStack"
+    echo -e "  4. Configure Node-RED flows for your sensors"
     echo ""
 }
 

@@ -1,4 +1,5 @@
-# ChirpStack Configuration
+# ChirpStack v4 Configuration
+# Docs: https://www.chirpstack.io/docs/chirpstack/configuration.html
 
 [logging]
 level = "info"
@@ -11,14 +12,18 @@ max_open_connections = 10
 servers = ["redis://redis/"]
 
 [network]
+# Private network ID (set your own for production)
 net_id = "000000"
 enabled_regions = ["eu868"]
 
 [api]
 bind = "0.0.0.0:8080"
+# Change this in production!
 secret = "change-this-secret-in-production"
 
 [gateway]
+# Allow unknown gateways to connect (gateway will appear in UI)
+# Set to false in production after registering gateways
 allow_unknown_gateways = true
 
 [integration]
@@ -27,17 +32,24 @@ enabled = ["mqtt"]
   [integration.mqtt]
   server = "tcp://mosquitto:1883/"
   json = true
+  # Topics for device events (uplinks, joins, etc.)
   event_topic = "application/{{application_id}}/device/{{dev_eui}}/event/{{event}}"
   command_topic = "application/{{application_id}}/device/{{dev_eui}}/command/{{command}}"
 
+# Region configuration
 [[regions]]
 id = "eu868"
 description = "EU868"
 
+  # Gateway backend - receives data from MQTT Forwarder or Gateway Bridge
   [regions.gateway]
     [regions.gateway.backend]
     enabled = "mqtt"
 
       [regions.gateway.backend.mqtt]
-      event_topic = "eu868/gateway/+/event/+"
-      command_topic = "eu868/gateway/{{ gateway_id }}/command/{{ command }}"
+      # Must match MQTT Forwarder topic_prefix
+      topic_prefix = "eu868"
+      server = "tcp://mosquitto:1883/"
+      qos = 0
+      clean_session = false
+      json = true

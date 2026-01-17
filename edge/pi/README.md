@@ -1,53 +1,95 @@
 # Raspberry Pi Farm Server
 
-LoRaWAN network server and IoT platform for the farm.
+LoRaWAN network server and IoT platform.
 
 ## Architecture
 
 ```
-Heltec Nodes → SX1302 Gateway → ChirpStack → MQTT → ThingsBoard
-                   (LoRa)         (UDP)      (decode)   (dashboard/rules)
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ Heltec Node │────▶│ SX1302 HAT  │────▶│ ChirpStack  │────▶│  Node-RED   │
+│   (LoRa)    │     │(Concentratord)    │  (Docker)   │     │ (Dashboard) │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+                                               │                    │
+                                               ▼                    ▼
+                                        ┌─────────────┐      ┌───────────┐
+                                        │ PostgreSQL  │◀─────│ Automations│
+                                        └─────────────┘      └───────────┘
 ```
-
-## Services
-
-| Service     | Port      | Purpose                          |
-| ----------- | --------- | -------------------------------- |
-| ChirpStack  | 8080      | LoRaWAN Network Server           |
-| ThingsBoard | 9090      | IoT Platform (dashboard, rules)  |
-| Gateway Bridge | 1700/udp | Receives packets from gateway |
-| Mosquitto   | 1883      | MQTT broker                      |
 
 ## Quick Start
 
 ```bash
+# 1. Setup Pi (Docker stack)
 curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
+
+# 2. Setup SX1302 gateway (after HAT is connected)
+cd /home/raspberrypi/farm/edge/pi
+sudo bash setup_gateway.sh
 ```
+
+## Services
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| ChirpStack | 8080 | LoRaWAN Network Server |
+| Node-RED | 1880 | Dashboard, Automations, API |
+| Node-RED UI | 1880/ui | Dashboard Interface |
+| Mosquitto | 1883 | MQTT Broker |
 
 ## Default Credentials
 
-- **ChirpStack**: admin / admin
-- **ThingsBoard**:
-  - System Admin: sysadmin@thingsboard.org / sysadmin
-  - Tenant Admin: tenant@thingsboard.org / tenant
+- **ChirpStack**: `admin` / `admin`
+- **Node-RED**: `admin` / `farmmon`
 
-## Gateway Setup
+## Data Storage
 
-Point your SX1302 gateway packet forwarder to:
-- Server: `<pi-ip>`
-- Port: `1700` (UDP)
+Sensor readings are stored in PostgreSQL (`farmmon` database):
 
-## ChirpStack → ThingsBoard Integration
+```sql
+-- Query recent readings
+SELECT * FROM readings 
+WHERE device_eui = 'your-device-eui' 
+ORDER BY ts DESC LIMIT 10;
 
-1. In ChirpStack: Create application, add MQTT integration
-2. In ThingsBoard: Create MQTT integration subscribing to ChirpStack topics
-3. Map device EUIs between platforms
+-- Query by time range
+SELECT * FROM readings 
+WHERE ts > NOW() - INTERVAL '24 hours';
+```
+
+## Node-RED Flows
+
+The starter flows include:
+
+- **MQTT Subscriber** - Receives ChirpStack device events
+- **PostgreSQL Storage** - Stores readings in time-series table
+- **Threshold Alerts** - Example alert logic
+- **REST API** - `/api/status`, `/api/readings/:device`
+
+Access the flow editor at `http://<pi-ip>:1880`
 
 ## Files
 
 | Path | Purpose |
-| ---- | ------- |
-| `docker-compose.yml` | Service definitions |
-| `chirpstack/` | ChirpStack config |
-| `mosquitto/` | MQTT broker config |
-| `postgres/` | Database init script |
+|------|---------|
+| `docker-compose.yml` | Docker services |
+| `chirpstack/server/` | ChirpStack config |
+| `nodered/` | Node-RED settings and flows |
+| `setup_gateway.sh` | SX1302 gateway setup |
+| `GATEWAY_SETUP.md` | Gateway documentation |
+
+## Useful Commands
+
+```bash
+# View logs
+docker-compose logs -f nodered
+docker-compose logs -f chirpstack
+
+# Restart services
+docker-compose restart nodered
+
+# Access PostgreSQL
+docker exec -it farm-postgres psql -U farmmon -d farmmon
+
+# Check MQTT messages
+docker exec -it farm-mosquitto mosquitto_sub -t '#' -v
+```

@@ -1,5 +1,5 @@
 services:
-  # Shared PostgreSQL for ChirpStack and ThingsBoard
+  # Shared PostgreSQL for ChirpStack and Node-RED
   postgres:
     image: postgres:15-alpine
     container_name: farm-postgres
@@ -36,7 +36,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # MQTT Broker - shared by ChirpStack and ThingsBoard
+  # MQTT Broker - shared by ChirpStack and Node-RED
   mosquitto:
     image: eclipse-mosquitto:2.0
     container_name: farm-mosquitto
@@ -80,51 +80,22 @@ services:
     networks:
       - farm_network
 
-  # ChirpStack Gateway Bridge
-  chirpstack-gateway-bridge:
-    image: chirpstack/chirpstack-gateway-bridge:4
-    container_name: farm-chirpstack-gateway-bridge
+  # Node-RED - Dashboard, Automations, Integrations
+  nodered:
+    image: nodered/node-red:latest
+    container_name: farm-nodered
     restart: unless-stopped
     depends_on:
       mosquitto:
         condition: service_healthy
-    ports:
-      - "1700:1700/udp"
-    volumes:
-      - ./chirpstack/chirpstack-gateway-bridge.toml:/etc/chirpstack-gateway-bridge/chirpstack-gateway-bridge.toml:ro
-    environment:
-      - TZ=Africa/Nairobi
-    networks:
-      - farm_network
-
-  # ThingsBoard IoT Platform
-  thingsboard:
-    image: thingsboard/tb-node:4.2.1.1
-    container_name: farm-thingsboard
-    restart: unless-stopped
-    depends_on:
       postgres:
         condition: service_healthy
-      mosquitto:
-        condition: service_healthy
     ports:
-      - "9090:8080"
-      - "7070:7070"
+      - "1880:1880"
     volumes:
-      - thingsboard_data:/data
-      - thingsboard_logs:/var/log/thingsboard
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "100m"
-        max-file: "5"
+      - nodered_data:/data
     environment:
       - TZ=Africa/Nairobi
-      - TB_SERVICE_ID=tb-node
-      - TB_QUEUE_TYPE=in-memory
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/thingsboard
-      - SPRING_DATASOURCE_USERNAME=thingsboard
-      - SPRING_DATASOURCE_PASSWORD=${THINGSBOARD_DB_PASSWORD:-thingsboard}
     networks:
       - farm_network
 
@@ -153,18 +124,12 @@ volumes:
       type: none
       o: bind
       device: /srv/farm/mosquitto/logs
-  thingsboard_data:
+  nodered_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /srv/farm/thingsboard/data
-  thingsboard_logs:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /srv/farm/thingsboard/logs
+      device: /srv/farm/nodered
 
 networks:
   farm_network:
