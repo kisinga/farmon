@@ -1,94 +1,93 @@
-# US915 Region Configuration for ChirpStack v4
-# Sub-band 2 (channels 8-15): 903.9-905.3 MHz
+# US915 Region Configuration - Sub-band 2 (channels 8-15 + 65)
+# Matches concentratord config: 903.9-905.3 MHz
 
 [[regions]]
-id = "us915_0"
-description = "US915 Sub-band 2"
+  id = "us915_0"
+  description = "US915 (channels 8-15 + 65)"
+  common_name = "US915"
 
-  [regions.common]
-  name = "US915"
-
-  [regions.network]
-  # Installation margin for ADR (dB)
-  installation_margin = 10
-  # RX1 delay (seconds)
-  rx1_delay = 1
-  # RX1 data-rate offset
-  rx1_dr_offset = 0
-  # RX2 data-rate
-  rx2_dr = 8
-  # RX2 frequency (Hz)
-  rx2_frequency = 923300000
-  # Downlink TX power (index)
-  downlink_tx_power = -1
-
-  # Gateway backend config
   [regions.gateway]
-  force_gws_private = false
+    force_gws_private = false
 
     [regions.gateway.backend]
-    enabled = "mqtt"
+      enabled = "mqtt"
 
       [regions.gateway.backend.mqtt]
-      topic_prefix = "us915"
-      server = "tcp://mosquitto:1883/"
-      qos = 0
-      clean_session = false
-      json = true
+        topic_prefix = "us915"
+        server = "tcp://mosquitto:1883/"
+        qos = 0
+        clean_session = false
 
-  # Channel configuration - Sub-band 2 (channels 8-15 + channel 65)
-  # 8 x 125kHz channels + 1 x 500kHz channel
-  [[regions.channels]]
-  frequency = 903900000
-  bandwidth = 125000
-  modulation = "LORA"
-  spreading_factors = [7, 8, 9, 10]
+  # Sub-band 2 channels (8-15)
+  [[regions.gateway.channels]]
+    frequency = 903900000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10]
 
-  [[regions.channels]]
-  frequency = 904100000
-  bandwidth = 125000
-  modulation = "LORA"
-  spreading_factors = [7, 8, 9, 10]
+  [[regions.gateway.channels]]
+    frequency = 904100000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10]
 
-  [[regions.channels]]
-  frequency = 904300000
-  bandwidth = 125000
-  modulation = "LORA"
-  spreading_factors = [7, 8, 9, 10]
+  [[regions.gateway.channels]]
+    frequency = 904300000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10]
 
-  [[regions.channels]]
-  frequency = 904500000
-  bandwidth = 125000
-  modulation = "LORA"
-  spreading_factors = [7, 8, 9, 10]
+  [[regions.gateway.channels]]
+    frequency = 904500000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10]
 
-  [[regions.channels]]
-  frequency = 904700000
-  bandwidth = 125000
-  modulation = "LORA"
-  spreading_factors = [7, 8, 9, 10]
+  [[regions.gateway.channels]]
+    frequency = 904700000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10]
 
-  [[regions.channels]]
-  frequency = 904900000
-  bandwidth = 125000
-  modulation = "LORA"
-  spreading_factors = [7, 8, 9, 10]
+  [[regions.gateway.channels]]
+    frequency = 904900000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10]
 
-  [[regions.channels]]
-  frequency = 905100000
-  bandwidth = 125000
-  modulation = "LORA"
-  spreading_factors = [7, 8, 9, 10]
+  [[regions.gateway.channels]]
+    frequency = 905100000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10]
 
-  [[regions.channels]]
-  frequency = 905300000
-  bandwidth = 125000
-  modulation = "LORA"
-  spreading_factors = [7, 8, 9, 10]
+  [[regions.gateway.channels]]
+    frequency = 905300000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10]
 
-  # 500kHz channel (channel 65 for sub-band 2)
-  [[regions.channels]]
-  frequency = 904600000
-  bandwidth = 500000
-  modulation = "LORA"
-  spreading_factors = [8]
+  # 500kHz channel (channel 65)
+  [[regions.gateway.channels]]
+    frequency = 904600000
+    bandwidth = 500000
+    modulation = "LORA"
+    spreading_factors = [8]
+
+  [regions.network]
+    installation_margin = 10
+    rx_window = 0
+    rx1_delay = 1
+    rx1_dr_offset = 0
+    rx2_dr = 8
+    rx2_frequency = 923300000
+    enabled_uplink_channels = [8, 9, 10, 11, 12, 13, 14, 15, 65]
+
+  [regions.network.rejoin_request]
+    enabled = false
+    max_count_n = 0
+    max_time_n = 0
+
+  [regions.network.class_b]
+    ping_slot_dr = 8
+    ping_slot_frequency = 0
