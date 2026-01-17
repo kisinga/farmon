@@ -98,8 +98,12 @@ setup_directories() {
     sudo mkdir -p /srv/farm/mosquitto/{data,logs}
     sudo mkdir -p /srv/farm/thingsboard/{data,logs}
     
+    log_info "Creating configuration directories..."
+    mkdir -p "$INSTALL_DIR/edge/pi/mosquitto"
+    
     log_info "Setting permissions..."
     sudo chown -R 799:799 /srv/farm/thingsboard
+    sudo chown -R 1883:1883 /srv/farm/mosquitto
     
     log_success "Directories ready"
 }
