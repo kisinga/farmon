@@ -1,4 +1,4 @@
-# EU868 Region Configuration
+# EU868 Region
 
 [[regions]]
   id = "eu868"
@@ -65,16 +65,8 @@
     modulation = "LORA"
     spreading_factors = [7, 8, 9, 10, 11, 12]
 
-  # FSK channel
-  [[regions.gateway.channels]]
-    frequency = 868800000
-    bandwidth = 125000
-    modulation = "FSK"
-    datarate = 50000
-
   [regions.network]
     installation_margin = 10
-    rx_window = 0
     rx1_delay = 1
     rx1_dr_offset = 0
     rx2_dr = 0
@@ -82,8 +74,6 @@
 
   [regions.network.rejoin_request]
     enabled = false
-    max_count_n = 0
-    max_time_n = 0
 
   [regions.network.class_b]
     ping_slot_dr = 0

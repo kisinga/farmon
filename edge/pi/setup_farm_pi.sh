@@ -53,6 +53,17 @@ setup_system() {
     sudo systemctl enable docker
     sudo systemctl start docker
     
+    # Enable SPI for SX1302 gateway HAT
+    log_info "Checking SPI configuration..."
+    if ! grep -q "^dtparam=spi=on" /boot/config.txt 2>/dev/null && \
+       ! grep -q "^dtparam=spi=on" /boot/firmware/config.txt 2>/dev/null; then
+        echo "dtparam=spi=on" | sudo tee -a /boot/config.txt >/dev/null 2>/dev/null || \
+        echo "dtparam=spi=on" | sudo tee -a /boot/firmware/config.txt >/dev/null
+        log_info "SPI enabled - reboot required after setup"
+    else
+        log_success "SPI already enabled"
+    fi
+    
     log_success "System ready"
 }
 
@@ -131,8 +142,9 @@ EOF
     fi
     
     log_info "Setting permissions..."
-    sudo chown -R 1000:1000 /srv/farm/nodered
-    sudo chown -R 1883:1883 /srv/farm/mosquitto
+    sudo chown -R 999:999 /srv/farm/postgres      # postgres user in container
+    sudo chown -R 1000:1000 /srv/farm/nodered     # node-red user
+    sudo chown -R 1883:1883 /srv/farm/mosquitto   # mosquitto user
     
     log_success "Directories ready"
 }

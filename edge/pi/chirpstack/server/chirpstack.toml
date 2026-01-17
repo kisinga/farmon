@@ -12,18 +12,14 @@ max_open_connections = 10
 servers = ["redis://redis/"]
 
 [network]
-# Private network ID (set your own for production)
 net_id = "000000"
 enabled_regions = ["us915_0", "eu868"]
 
 [api]
 bind = "0.0.0.0:8080"
-# Change this in production!
 secret = "change-this-secret-in-production"
 
 [gateway]
-# Allow unknown gateways to connect (gateway will appear in UI)
-# Set to false in production after registering gateways
 allow_unknown_gateways = true
 
 [integration]
@@ -32,9 +28,5 @@ enabled = ["mqtt"]
   [integration.mqtt]
   server = "tcp://mosquitto:1883/"
   json = true
-  # Topics for device events (uplinks, joins, etc.)
   event_topic = "application/{{application_id}}/device/{{dev_eui}}/event/{{event}}"
   command_topic = "application/{{application_id}}/device/{{dev_eui}}/command/{{command}}"
-
-# Region configuration is in region_us915_0.toml
-# See: https://www.chirpstack.io/docs/chirpstack/configuration.html
