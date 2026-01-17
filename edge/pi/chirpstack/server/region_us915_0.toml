@@ -1,0 +1,94 @@
+# US915 Region Configuration for ChirpStack v4
+# Sub-band 2 (channels 8-15): 903.9-905.3 MHz
+
+[[regions]]
+id = "us915_0"
+description = "US915 Sub-band 2"
+
+  [regions.common]
+  name = "US915"
+
+  [regions.network]
+  # Installation margin for ADR (dB)
+  installation_margin = 10
+  # RX1 delay (seconds)
+  rx1_delay = 1
+  # RX1 data-rate offset
+  rx1_dr_offset = 0
+  # RX2 data-rate
+  rx2_dr = 8
+  # RX2 frequency (Hz)
+  rx2_frequency = 923300000
+  # Downlink TX power (index)
+  downlink_tx_power = -1
+
+  # Gateway backend config
+  [regions.gateway]
+  force_gws_private = false
+
+    [regions.gateway.backend]
+    enabled = "mqtt"
+
+      [regions.gateway.backend.mqtt]
+      topic_prefix = "us915"
+      server = "tcp://mosquitto:1883/"
+      qos = 0
+      clean_session = false
+      json = true
+
+  # Channel configuration - Sub-band 2 (channels 8-15 + channel 65)
+  # 8 x 125kHz channels + 1 x 500kHz channel
+  [[regions.channels]]
+  frequency = 903900000
+  bandwidth = 125000
+  modulation = "LORA"
+  spreading_factors = [7, 8, 9, 10]
+
+  [[regions.channels]]
+  frequency = 904100000
+  bandwidth = 125000
+  modulation = "LORA"
+  spreading_factors = [7, 8, 9, 10]
+
+  [[regions.channels]]
+  frequency = 904300000
+  bandwidth = 125000
+  modulation = "LORA"
+  spreading_factors = [7, 8, 9, 10]
+
+  [[regions.channels]]
+  frequency = 904500000
+  bandwidth = 125000
+  modulation = "LORA"
+  spreading_factors = [7, 8, 9, 10]
+
+  [[regions.channels]]
+  frequency = 904700000
+  bandwidth = 125000
+  modulation = "LORA"
+  spreading_factors = [7, 8, 9, 10]
+
+  [[regions.channels]]
+  frequency = 904900000
+  bandwidth = 125000
+  modulation = "LORA"
+  spreading_factors = [7, 8, 9, 10]
+
+  [[regions.channels]]
+  frequency = 905100000
+  bandwidth = 125000
+  modulation = "LORA"
+  spreading_factors = [7, 8, 9, 10]
+
+  [[regions.channels]]
+  frequency = 905300000
+  bandwidth = 125000
+  modulation = "LORA"
+  spreading_factors = [7, 8, 9, 10]
+
+  # 500kHz channel (channel 65 for sub-band 2)
+  [[regions.channels]]
+  frequency = 904600000
+  bandwidth = 500000
+  modulation = "LORA"
+  spreading_factors = [8]

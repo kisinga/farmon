@@ -46,7 +46,7 @@ setup_system() {
     sudo apt update && sudo apt upgrade -y
     
     log_info "Installing docker and dependencies..."
-    sudo apt install -y git curl wget docker.io docker-compose
+    sudo apt install -y git curl wget docker.io docker-compose i2c-tools
     
     log_info "Configuring docker..."
     sudo usermod -aG docker "$PI_USER"
@@ -154,6 +154,12 @@ deploy_stack() {
     
     log_info "Waiting for services to be ready..."
     sleep 15
+    
+    # Restart ChirpStack to ensure MQTT connection is established
+    # (handles race condition where ChirpStack starts before Mosquitto is ready)
+    log_info "Ensuring ChirpStack MQTT connection..."
+    docker-compose restart chirpstack
+    sleep 5
     
     log_success "All services running"
 }

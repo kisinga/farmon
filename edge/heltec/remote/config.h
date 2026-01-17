@@ -35,8 +35,10 @@ inline RemoteConfig buildRemoteConfig() {
     cfg.battery.adcPin = BATTERY_ADC_PIN;
 
     // LoRaWAN configuration
+    // Region/sub-band set in heltec.sh via FQBN board options (US915, sub-band 2)
     cfg.communication.lorawan.enableLoRaWAN = true;
-    cfg.communication.lorawan.region = LoRaWANRegion::EU868;
+    cfg.communication.lorawan.region = LoRaWANRegion::US915;
+    cfg.communication.lorawan.subBand = 2;  // Sub-band 2 = channels 8-15 (903.9-905.3 MHz)
     cfg.communication.lorawan.adrEnabled = true;
     cfg.communication.lorawan.defaultPort = 1;  // Telemetry port
     cfg.communication.lorawan.useConfirmedUplinks = false;  // Unconfirmed for normal telemetry

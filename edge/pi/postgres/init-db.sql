@@ -1,4 +1,4 @@
--- Initialize databases for ChirpStack and Farm Monitoring
+-- Initialize databases for ChirpStack, Node-RED (FarmMon), and ThingsBoard
 -- Note: PostgreSQL 15+ requires explicit schema ownership transfer
 
 -- ChirpStack database
@@ -9,7 +9,7 @@ GRANT ALL PRIVILEGES ON DATABASE chirpstack TO chirpstack;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 ALTER SCHEMA public OWNER TO chirpstack;
 
--- Farm monitoring database (for Node-RED telemetry storage)
+-- FarmMon database (for Node-RED telemetry storage)
 \c postgres
 CREATE DATABASE farmmon;
 CREATE USER farmmon WITH PASSWORD 'farmmon';
@@ -17,27 +17,32 @@ GRANT ALL PRIVILEGES ON DATABASE farmmon TO farmmon;
 \c farmmon
 ALTER SCHEMA public OWNER TO farmmon;
 
--- Readings table for time-series sensor data
+-- Readings table for sensor telemetry
 CREATE TABLE readings (
     id SERIAL PRIMARY KEY,
     device_eui VARCHAR(16) NOT NULL,
-    ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    data JSONB NOT NULL
+    data JSONB NOT NULL,
+    ts TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE INDEX idx_readings_device_eui ON readings(device_eui);
+CREATE INDEX idx_readings_ts ON readings(ts DESC);
 
--- Index for efficient queries by device and time
-CREATE INDEX idx_readings_device_ts ON readings(device_eui, ts DESC);
-
--- Alerts table for tracking triggered alerts
+-- Alerts table for threshold violations
 CREATE TABLE alerts (
     id SERIAL PRIMARY KEY,
     device_eui VARCHAR(16) NOT NULL,
-    ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     alert_type VARCHAR(50) NOT NULL,
     message TEXT,
     acknowledged BOOLEAN DEFAULT FALSE,
-    ack_ts TIMESTAMPTZ
+    ts TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE INDEX idx_alerts_device_eui ON alerts(device_eui);
+CREATE INDEX idx_alerts_ts ON alerts(ts DESC);
 
-CREATE INDEX idx_alerts_device_ts ON alerts(device_eui, ts DESC);
-CREATE INDEX idx_alerts_unack ON alerts(acknowledged) WHERE NOT acknowledged;
+-- ThingsBoard database (optional, for future use)
+\c postgres
+CREATE DATABASE thingsboard;
+CREATE USER thingsboard WITH PASSWORD 'thingsboard';
+GRANT ALL PRIVILEGES ON DATABASE thingsboard TO thingsboard;
+\c thingsboard
+ALTER SCHEMA public OWNER TO thingsboard;

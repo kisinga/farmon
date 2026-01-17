@@ -11,7 +11,7 @@ set -e
 # --- Configuration ---
 CONCENTRATORD_VERSION="4.4.1"
 MQTT_FORWARDER_VERSION="4.2.3"
-REGION="eu868"
+REGION="us915"
 INSTALL_DIR="/home/${SUDO_USER:-$USER}/farm/edge/pi"
 
 # --- Colors ---
@@ -81,55 +81,80 @@ install -m 755 /tmp/chirpstack-mqtt-forwarder /usr/local/bin/
 rm -f /tmp/mqtt-forwarder.tar.gz /tmp/chirpstack-mqtt-forwarder
 ok "MQTT Forwarder installed"
 
-# --- Download Region Config ---
-log "Downloading EU868 region configuration..."
-mkdir -p /etc/chirpstack-concentratord/sx1302
-REGION_URL="https://raw.githubusercontent.com/chirpstack/chirpstack-concentratord/master/chirpstack-concentratord-sx1302/config/region_eu868.toml"
-wget -q -O /etc/chirpstack-concentratord/sx1302/region.toml "$REGION_URL" || {
-    warn "Could not download region config, using embedded defaults"
-}
-ok "Region config ready"
-
 # --- Configure Concentratord ---
 log "Configuring Concentratord..."
-mkdir -p /etc/chirpstack-concentratord/sx1302
+mkdir -p /etc/chirpstack-concentratord
 
-cat > /etc/chirpstack-concentratord/sx1302/concentratord.toml << 'EOF'
-# Concentratord for Waveshare SX1302 HAT
+cat > /etc/chirpstack-concentratord/concentratord.toml << 'EOF'
+# Concentratord for Waveshare SX1302 LoRaWAN Gateway HAT
+# Docs: https://www.chirpstack.io/docs/chirpstack-concentratord/
 
 [concentratord]
 log_level = "INFO"
+log_to_syslog = false
 stats_interval = "30s"
 
-  [concentratord.api]
-  event_bind = "ipc:///tmp/concentratord_event"
-  command_bind = "ipc:///tmp/concentratord_command"
+api.event_bind = "ipc:///tmp/concentratord_event"
+api.command_bind = "ipc:///tmp/concentratord_command"
 
 [gateway]
-# Gateway ID - leave empty to read from hardware, or set manually
-# gateway_id = "0000000000000000"
-
-[sx1302]
-com_path = "/dev/spidev0.0"
-reset_pin = "/dev/gpiochip0/17"
-power_en_pin = ""
 lorawan_public = true
-antenna_gain = 0
-full_duplex = false
+model = "waveshare_sx1302_lorawan_gateway_hat"
+region = "US915"
+model_flags = []
+time_fallback_enabled = true
 
-  [[sx1302.radio]]
-  enable = true
-  radio_type = "SX1250"
-  single_input_mode = false
-  rssi_offset = -215.4
-  tx_enable = true
+[gateway.concentrator]
+# US915 sub-band 2 (channels 8-15)
+multi_sf_channels = [
+  903900000,
+  904100000,
+  904300000,
+  904500000,
+  904700000,
+  904900000,
+  905100000,
+  905300000,
+]
 
-  [[sx1302.radio]]
-  enable = true
-  radio_type = "SX1250"
-  single_input_mode = false
-  rssi_offset = -215.4
-  tx_enable = false
+[gateway.concentrator.lora_std]
+frequency = 904600000
+bandwidth = 500000
+spreading_factor = 8
+
+[gateway.concentrator.fsk]
+frequency = 0
+bandwidth = 0
+datarate = 0
+
+[[gateway.concentrator.radios]]
+enabled = true
+type = "SX1250"
+freq = 904300000
+rssi_offset = -215.4
+tx_enable = true
+tx_freq_min = 902000000
+tx_freq_max = 928000000
+
+[[gateway.concentrator.radios]]
+enabled = true
+type = "SX1250"
+freq = 905300000
+rssi_offset = -215.4
+tx_enable = false
+
+[gateway.com_dev]
+device = "/dev/spidev0.0"
+
+[gateway.i2c_dev]
+device = "/dev/i2c-1"
+temp_sensor_addr = 0x39
+
+[gateway.sx130x_reset]
+reset_chip = "/dev/gpiochip0"
+reset_pin = 23
+power_en_chip = "/dev/gpiochip0"
+power_en_pin = 18
 EOF
 ok "Concentratord configured"
 
@@ -137,10 +162,16 @@ ok "Concentratord configured"
 log "Configuring MQTT Forwarder..."
 mkdir -p /etc/chirpstack-mqtt-forwarder
 
-cat > /etc/chirpstack-mqtt-forwarder/chirpstack-mqtt-forwarder.toml << EOF
+cat > /etc/chirpstack-mqtt-forwarder/mqtt-forwarder.toml << EOF
+# MQTT Forwarder for Waveshare SX1302 HAT
+# Bridges Concentratord to MQTT broker
+
 [backend]
-event_url = "ipc:///tmp/concentratord_event"
-command_url = "ipc:///tmp/concentratord_command"
+enabled = "concentratord"
+
+  [backend.concentratord]
+  event_url = "ipc:///tmp/concentratord_event"
+  command_url = "ipc:///tmp/concentratord_command"
 
 [mqtt]
 server = "tcp://127.0.0.1:1883/"
@@ -160,7 +191,7 @@ Description=ChirpStack Concentratord SX1302
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/chirpstack-concentratord-sx1302 -c /etc/chirpstack-concentratord/sx1302
+ExecStart=/usr/local/bin/chirpstack-concentratord-sx1302 -c /etc/chirpstack-concentratord/concentratord.toml
 Restart=on-failure
 RestartSec=5
 
@@ -175,7 +206,7 @@ After=network.target chirpstack-concentratord.service
 Requires=chirpstack-concentratord.service
 
 [Service]
-ExecStart=/usr/local/bin/chirpstack-mqtt-forwarder -c /etc/chirpstack-mqtt-forwarder
+ExecStart=/usr/local/bin/chirpstack-mqtt-forwarder -c /etc/chirpstack-mqtt-forwarder/mqtt-forwarder.toml
 Restart=on-failure
 RestartSec=5
 

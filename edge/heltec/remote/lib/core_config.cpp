@@ -55,7 +55,7 @@ DeviceConfig DeviceConfigFactory::createBaseConfig(uint8_t deviceId) {
 
     // Apply LoRaWAN settings
     cfg.communication.lorawan.enableLoRaWAN = true;
-    cfg.communication.lorawan.region = LoRaWANRegion::EU868;
+    cfg.communication.lorawan.region = LoRaWANRegion::US915;
     cfg.communication.lorawan.adrEnabled = true;
     cfg.communication.lorawan.txPower = 14;
     cfg.communication.lorawan.dataRate = 5;  // SF7 on EU868

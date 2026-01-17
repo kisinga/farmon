@@ -63,7 +63,8 @@ struct LoRaWANConfig {
     uint8_t appKey[16] = {0};          // Application Key (shared across fleet)
     
     // Regional settings
-    LoRaWANRegion region = LoRaWANRegion::EU868;  // LoRaWAN region
+    LoRaWANRegion region = LoRaWANRegion::US915;  // LoRaWAN region
+    uint8_t subBand = 2;               // Sub-band for US915/AU915 (1-8, set in build flags)
     
     // ADR and power settings
     bool adrEnabled = true;            // Adaptive Data Rate

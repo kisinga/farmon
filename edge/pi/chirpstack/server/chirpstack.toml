@@ -14,7 +14,7 @@ servers = ["redis://redis/"]
 [network]
 # Private network ID (set your own for production)
 net_id = "000000"
-enabled_regions = ["eu868"]
+enabled_regions = ["us915_0"]
 
 [api]
 bind = "0.0.0.0:8080"
@@ -36,20 +36,5 @@ enabled = ["mqtt"]
   event_topic = "application/{{application_id}}/device/{{dev_eui}}/event/{{event}}"
   command_topic = "application/{{application_id}}/device/{{dev_eui}}/command/{{command}}"
 
-# Region configuration
-[[regions]]
-id = "eu868"
-description = "EU868"
-
-  # Gateway backend - receives data from MQTT Forwarder or Gateway Bridge
-  [regions.gateway]
-    [regions.gateway.backend]
-    enabled = "mqtt"
-
-      [regions.gateway.backend.mqtt]
-      # Must match MQTT Forwarder topic_prefix
-      topic_prefix = "eu868"
-      server = "tcp://mosquitto:1883/"
-      qos = 0
-      clean_session = false
-      json = true
+# Region configuration is in region_us915_0.toml
+# See: https://www.chirpstack.io/docs/chirpstack/configuration.html

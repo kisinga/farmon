@@ -45,7 +45,12 @@ fi
 ACTION=$1
 SKETCH_NAME=$2
 PORT=${3:-}  # Optional port parameter, empty if not provided
-FQBN="Heltec-esp32:esp32:heltec_wifi_lora_32_V3"
+
+# LoRaWAN Configuration
+# Sub-band 2 = channels 8-15 (903.9-905.3 MHz) - must match gateway/concentratord
+LORAWAN_REGION="US915"
+LORAWAN_SUBBAND="2"
+FQBN="Heltec-esp32:esp32:heltec_wifi_lora_32_V3:LoRaWanBand=${LORAWAN_REGION},LoRaWanSubBand=${LORAWAN_SUBBAND}"
 SKETCH_DIR="${SKETCH_NAME}"
 
 if [ ! -d "$SKETCH_DIR" ]; then
