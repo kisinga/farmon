@@ -63,6 +63,7 @@ services:
     image: chirpstack/chirpstack:4
     container_name: farm-chirpstack
     restart: unless-stopped
+    command: -c /etc/chirpstack
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,7 +74,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./chirpstack/chirpstack.toml:/etc/chirpstack/chirpstack.toml:ro
+      - ./chirpstack/server:/etc/chirpstack:ro
     environment:
       - TZ=Africa/Nairobi
     networks:
