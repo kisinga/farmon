@@ -150,7 +150,7 @@ deploy_stack() {
     sleep 10
     
     log_info "Initializing ThingsBoard (first run setup)..."
-    docker-compose run --rm -e INSTALL_TB=true -e LOAD_DEMO=true thingsboard
+    docker-compose run --rm -T -e INSTALL_TB=true -e LOAD_DEMO=true thingsboard
     
     log_info "Starting all services..."
     docker-compose up -d
