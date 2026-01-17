@@ -14,7 +14,7 @@ servers = ["redis://redis/"]
 [network]
 # Private network ID (set your own for production)
 net_id = "000000"
-enabled_regions = ["us915_0"]
+enabled_regions = ["us915_0", "eu868"]
 
 [api]
 bind = "0.0.0.0:8080"

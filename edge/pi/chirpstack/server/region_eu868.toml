@@ -1,0 +1,90 @@
+# EU868 Region Configuration
+
+[[regions]]
+  id = "eu868"
+  description = "EU868"
+  common_name = "EU868"
+
+  [regions.gateway]
+    force_gws_private = false
+
+    [regions.gateway.backend]
+      enabled = "mqtt"
+
+      [regions.gateway.backend.mqtt]
+        topic_prefix = "eu868"
+        server = "tcp://mosquitto:1883/"
+        qos = 0
+        clean_session = false
+
+  [[regions.gateway.channels]]
+    frequency = 868100000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10, 11, 12]
+
+  [[regions.gateway.channels]]
+    frequency = 868300000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10, 11, 12]
+
+  [[regions.gateway.channels]]
+    frequency = 868500000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10, 11, 12]
+
+  [[regions.gateway.channels]]
+    frequency = 867100000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10, 11, 12]
+
+  [[regions.gateway.channels]]
+    frequency = 867300000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10, 11, 12]
+
+  [[regions.gateway.channels]]
+    frequency = 867500000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10, 11, 12]
+
+  [[regions.gateway.channels]]
+    frequency = 867700000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10, 11, 12]
+
+  [[regions.gateway.channels]]
+    frequency = 867900000
+    bandwidth = 125000
+    modulation = "LORA"
+    spreading_factors = [7, 8, 9, 10, 11, 12]
+
+  # FSK channel
+  [[regions.gateway.channels]]
+    frequency = 868800000
+    bandwidth = 125000
+    modulation = "FSK"
+    datarate = 50000
+
+  [regions.network]
+    installation_margin = 10
+    rx_window = 0
+    rx1_delay = 1
+    rx1_dr_offset = 0
+    rx2_dr = 0
+    rx2_frequency = 869525000
+
+  [regions.network.rejoin_request]
+    enabled = false
+    max_count_n = 0
+    max_time_n = 0
+
+  [regions.network.class_b]
+    ping_slot_dr = 0
+    ping_slot_frequency = 869525000
