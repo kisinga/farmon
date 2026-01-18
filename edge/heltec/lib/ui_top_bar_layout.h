@@ -8,7 +8,7 @@
 enum class TopBarColumn {
     DeviceId = 0,      // Left-aligned text (ID: XX)
     Battery = 1,       // Centered icon (battery status)
-    Status = 2,        // Centered icons (WiFi status)
+    Status = 2,        // Centered icons (LoRa status)
     Network = 3        // Centered icons (peer count, LoRa status)
 };
 

@@ -1,101 +1,121 @@
 # Farmon Gateway (Raspberry Pi)
 
-ChirpStack + Node-RED + PostgreSQL on Raspberry Pi.
-
-## Services
-
-| Service | Port | Default Login |
-|---------|------|---------------|
-| ChirpStack | 8080 | admin / admin |
-| Node-RED | 1880 | — |
-| Mosquitto | 1883 | — |
-| PostgreSQL | 5432 | farmmon / farmmon |
+ChirpStack + Node-RED + PostgreSQL on Raspberry Pi with SX1302 LoRaWAN HAT.
 
 ## Setup
 
-### 1. Initial Setup
+### 1. Run Setup Script
 
 ```bash
 # Fresh Pi - run as regular user (not root)
 curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
 ```
 
-Or manually:
+This installs Docker, clones the repo, and starts all services.
+
+## Gateway Hardware
+
+### Waveshare HAT GPIO
+
+| Signal | GPIO |
+|--------|------|
+| Reset | 23 |
+| Power Enable | 18 |
+| SPI | /dev/spidev0.0 |
+
+
+### Gateway Config Files
+
+| File | Purpose |
+|------|---------|
+| `/etc/chirpstack-concentratord/concentratord.toml` | Hardware config |
+| `/etc/chirpstack-mqtt-forwarder/mqtt-forwarder.toml` | MQTT connection |
+
+### 2. Install Gateway HAT
+
+Prerequisite: Enable SPI via `sudo raspi-config` → Interface Options → SPI
+
 ```bash
-git clone https://github.com/kisinga/farmon.git ~/farm
-cd ~/farm/edge/pi
-sudo bash setup_farm_pi.sh
+sudo bash ~/farm/edge/pi/setup_gateway.sh
 ```
 
-### 2. Start Services
+This installs:
+- `chirpstack-concentratord-sx1302` (SPI → ZeroMQ)
+- `chirpstack-mqtt-forwarder` (ZeroMQ → MQTT)
 
+Verify:
 ```bash
-cd ~/farm/edge/pi
-docker-compose up -d
+sudo systemctl status chirpstack-concentratord
+sudo systemctl status chirpstack-mqtt-forwarder
 ```
 
-### 3. Install Gateway HAT
-
-See [GATEWAY_SETUP.md](GATEWAY_SETUP.md) for SX1302 hardware installation.
-
-### 4. Configure Node-RED
+### 3. Configure Node-RED
 
 ```bash
 docker exec farm-nodered npm install node-red-contrib-postgresql
-docker cp nodered/flows.json farm-nodered:/data/flows.json
+docker cp ~/farm/edge/pi/nodered/flows.json farm-nodered:/data/flows.json
 docker restart farm-nodered
 ```
 
+### 4. Verify
+
+- ChirpStack: `http://<pi>:8080` (admin / admin) — gateway should appear
+- Node-RED: `http://<pi>:1880` — MQTT nodes should show green "connected"
+
 ## Registering Devices
 
-### Create Device Profile (once)
+One-time setup, then repeat "Add Device" for each sensor.
 
-1. ChirpStack (`http://<pi>:8080`) → **Device profiles** → Add
-2. Configure:
-   - Name: `heltec-otaa`
-   - Region: `US915` (match your gateway)
-   - MAC version: `LoRaWAN 1.0.3`
-   - Supports OTAA: ✓
-3. Codec tab — add decoder (optional):
-   ```javascript
-   function decodeUplink(input) {
-       var str = String.fromCharCode.apply(null, input.bytes);
-       var data = {};
-       str.split(",").forEach(function(p) {
-           var kv = p.split(":");
-           if (kv.length === 2) data[kv[0]] = parseFloat(kv[1]) || kv[1];
-       });
-       return { data: data };
-   }
-   ```
+### Create Device Profile
 
-### Create Application (once)
+ChirpStack → **Device profiles** → Add:
 
-1. **Tenants** → **Applications** → Add
-2. Name: `farm-sensors`
+| Setting | Value |
+|---------|-------|
+| Name | `heltec-otaa` |
+| Region | `US915` (or EU868) |
+| MAC version | `LoRaWAN 1.0.3` |
+| Supports OTAA | ✓ |
 
-### Register Each Device
+Optional — Codec tab decoder:
+```javascript
+function decodeUplink(input) {
+    var str = String.fromCharCode.apply(null, input.bytes);
+    var data = {};
+    str.split(",").forEach(function(p) {
+        var kv = p.split(":");
+        if (kv.length === 2) data[kv[0]] = parseFloat(kv[1]) || kv[1];
+    });
+    return { data: data };
+}
+```
 
-1. **Applications** → `farm-sensors` → Add device
-2. Configure:
-   - Name: Device identifier (e.g., `remote-01`)
-   - Device EUI: From Heltec serial output at boot
-   - Device profile: `heltec-otaa`
-3. After saving → **OTAA keys** tab → Generate
-4. Copy Application Key → paste into Heltec `secrets.h`
+### Create Application
+
+ChirpStack → **Applications** → Add → Name: `farm-sensors`
+
+### Add Device
+
+For each Heltec sensor:
+
+1. **Applications** → `farm-sensors` → **Add device**
+2. Enter: Name, Device EUI (from serial output), select `heltec-otaa` profile
+3. Save → **OTAA keys** tab → **Generate**
+4. Copy the Application Key → use in Heltec [secrets.h](../heltec/README.md)
+
+
 
 ## File Structure
 
 ```
 edge/pi/
-├── docker-compose.yml        # Service definitions
-├── setup_farm_pi.sh          # Initial Pi setup
-├── setup_gateway.sh          # SX1302 HAT installation
-├── GATEWAY_SETUP.md          # Gateway hardware docs
-├── chirpstack/server/        # ChirpStack + region configs
-├── nodered/flows.json        # Node-RED data pipeline
-├── mosquitto/mosquitto.conf  # MQTT broker config
-└── postgres/init-db.sql      # Database schema
+├── docker-compose.yml         # Service definitions
+├── setup_farm_pi.sh           # Initial Pi setup
+├── setup_gateway.sh           # SX1302 HAT installation
+├── chirpstack/server/         # ChirpStack + region configs
+├── nodered/flows.json         # Node-RED data pipeline
+├── mosquitto/mosquitto.conf   # MQTT broker config
+└── postgres/init-db.sql       # Database schema
 ```
 
 ## Troubleshooting
@@ -108,6 +128,16 @@ sudo rm -rf /srv/farm/postgres
 sudo mkdir -p /srv/farm/postgres && sudo chown 999:999 /srv/farm/postgres
 docker-compose up -d
 ```
+### Register Gateway (after database reset)
+
+If gateway doesn't auto-register:
+
+1. Get gateway EUI:
+   ```bash
+   sudo journalctl -u chirpstack-mqtt-forwarder | grep gateway_id | tail -1
+   ```
+
+2. In ChirpStack: Tenants → Gateways → Add → paste Gateway ID
 
 ⚠️ **Deletes all data.** Re-register gateway, profiles, and devices after.
 
@@ -117,7 +147,16 @@ docker-compose up -d
 docker ps                                    # All containers running?
 docker logs farm-chirpstack --tail 50       # ChirpStack errors?
 docker logs farm-nodered --tail 50          # Node-RED errors?
+sudo journalctl -fu chirpstack-concentratord # Gateway HAT logs
 ```
+
+### Gateway Issues
+
+| Problem | Solution |
+|---------|----------|
+| "Failed to set SX1250 in STANDBY_RC mode" | Wrong GPIO pins or HAT not seated |
+| Gateway shows "Never seen" | Topic prefix mismatch — check `mqtt-forwarder.toml` |
+| SPI not found | `sudo raspi-config` → enable SPI, reboot |
 
 ### Test MQTT
 
@@ -125,8 +164,18 @@ docker logs farm-nodered --tail 50          # Node-RED errors?
 # Watch all device events
 docker exec farm-mosquitto mosquitto_sub -t 'application/#' -v
 
+# Watch gateway traffic
+docker exec farm-mosquitto mosquitto_sub -t 'us915/gateway/#' -v -C 3
+
 # Send test message
 docker exec farm-mosquitto mosquitto_pub \
   -t 'application/1/device/test/event/up' \
   -m '{"deviceInfo":{"devEui":"test"},"object":{"temp":25}}'
+```
+
+### Service Management
+
+```bash
+sudo systemctl restart chirpstack-concentratord chirpstack-mqtt-forwarder
+sudo systemctl stop chirpstack-concentratord chirpstack-mqtt-forwarder
 ```

@@ -32,8 +32,6 @@ public:
     static constexpr uint32_t DEFAULT_HEARTBEAT_INTERVAL_MS = 1000;
     static constexpr uint32_t DEFAULT_DISPLAY_UPDATE_INTERVAL_MS = 1000;
     static constexpr uint32_t DEFAULT_ROUTING_INTERVAL_MS = 100;
-    static constexpr uint32_t DEFAULT_WIFI_RECONNECT_INTERVAL_MS = 30000;
-    static constexpr uint32_t DEFAULT_WIFI_STATUS_CHECK_INTERVAL_MS = 5000;
 
     // Create remote configuration
     static DeviceConfig createRemoteConfig(uint8_t deviceId);

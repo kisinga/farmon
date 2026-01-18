@@ -36,9 +36,6 @@ inline RemoteConfig buildRemoteConfig() {
     memcpy(cfg.communication.lorawan.appEui, LORAWAN_APP_EUI, 8);
     memcpy(cfg.communication.lorawan.appKey, LORAWAN_APP_KEY, 16);
 
-    // WiFi disabled for LoRaWAN remotes
-    cfg.communication.wifi.enableWifi = false;
-
     return cfg;
 }
 

@@ -6,7 +6,6 @@
 
 // Transport types for identification
 enum class TransportType : uint8_t {
-    WiFi = 0,
     LoRaWAN = 1,
     USB_Debug = 2,
     Screen = 3,

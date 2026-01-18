@@ -6,7 +6,7 @@
 
 LoRaWAN-based farm monitoring with long-range sensors and local data processing.
 
-## System Overview
+## Architecture
 
 ```
 ┌─────────────────┐      LoRaWAN       ┌─────────────────┐
@@ -27,85 +27,68 @@ LoRaWAN-based farm monitoring with long-range sensors and local data processing.
                                        └─────────────────┘
 ```
 
-## Setup Procedure
+## Setup Guide
 
-### Phase 1: Gateway Infrastructure
+### Step 1: Set Up the Gateway
 
-Set up the Raspberry Pi with all backend services.
+Install the Raspberry Pi infrastructure and gateway hardware.
 
-| Step | Action | Details |
-|------|--------|---------|
-| 1.1 | Flash Raspberry Pi OS | Standard Raspberry Pi OS Lite |
-| 1.2 | Run Pi setup script | [edge/pi/README.md](edge/pi/README.md) |
-| 1.3 | Install SX1302 HAT | [edge/pi/GATEWAY_SETUP.md](edge/pi/GATEWAY_SETUP.md) |
-| 1.4 | Verify gateway online | ChirpStack UI → Gateways |
+```bash
+# On a fresh Raspberry Pi
+curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
 
-**Outcome:** Gateway receiving LoRa packets, ChirpStack running, Node-RED connected.
+# Then install the SX1302 HAT
+sudo bash ~/farm/edge/pi/setup_gateway.sh
+```
 
-### Phase 2: ChirpStack Configuration
+→ Full details: [edge/pi/README.md](edge/pi/README.md)
 
-Configure the LoRaWAN network server for your devices.
+**Verify:** Open ChirpStack at `http://<pi-ip>:8080` — gateway should appear under Gateways.
 
-| Step | Action | Where |
-|------|--------|-------|
-| 2.1 | Create Device Profile | ChirpStack → Device profiles |
-| 2.2 | Create Application | ChirpStack → Applications |
-| 2.3 | Add payload decoder | Device profile → Codec tab |
+### Step 2: Configure ChirpStack
 
-See [edge/pi/README.md#registering-devices](edge/pi/README.md) for settings.
+Create the device profile and application (one-time setup).
+→ Full details: [edge/pi/README.md#registering-devices](edge/pi/README.md#registering-devices)
 
-**Outcome:** ChirpStack ready to accept device registrations.
+### Step 3: Deploy Sensors
 
-### Phase 3: Sensor Deployment
+For each Heltec device:
 
-For each Heltec sensor device:
+1. **Get DevEUI:** Flash firmware, check serial output for `DevEUI: XX:XX:...`
+2. **Register in ChirpStack:** Applications → farm-sensors → Add device → paste DevEUI
+3. **Get AppKey:** Device → OTAA keys → Generate → copy the hex string
+4. **Configure & Flash:**
+   ```bash
+   cd edge/heltec
+   cp secrets.example.h secrets.h
+   # Edit secrets.h with your AppKey
+   ./heltec.sh flash
+   ```
 
-| Step | Action | Details |
-|------|--------|---------|
-| 3.1 | Register device in ChirpStack | Get DevEUI from serial, add to application |
-| 3.2 | Copy Application Key | ChirpStack → Device → OTAA keys |
-| 3.3 | Configure firmware | [edge/heltec/README.md](edge/heltec/README.md) |
-| 3.4 | Flash device | `./heltec.sh flash` |
-| 3.5 | Verify join | Serial shows "joined", ChirpStack shows frames |
+→ Full details: [edge/heltec/README.md](edge/heltec/README.md)
 
-**Outcome:** Device sending telemetry through the full pipeline.
+**Verify:** Serial shows "joined", ChirpStack shows uplink frames, Node-RED debug shows data.
 
-### Phase 4: Verification
+## Services
 
-| Check | Command/Location |
-|-------|------------------|
-| Gateway online | ChirpStack → Gateways → Last seen |
-| Device joined | ChirpStack → Device → LoRaWAN frames |
-| Data flowing | Node-RED debug panel |
-| Data stored | `docker exec farm-postgres psql -U farmmon -d farmmon -c "SELECT * FROM readings"` |
+| Service | URL | Login |
+|---------|-----|-------|
+| ChirpStack | `http://<pi>:8080` | admin / admin |
+| Node-RED | `http://<pi>:1880` | — |
 
-## Directory Structure
+## Project Structure
 
 ```
 farmon/
-├── edge/
-│   ├── pi/           # Gateway: ChirpStack + Node-RED stack
-│   │   ├── README.md           # Setup, device registration
-│   │   └── GATEWAY_SETUP.md    # SX1302 HAT hardware
-│   └── heltec/       # Sensors: ESP32 LoRaWAN firmware
-│       └── README.md           # Build, flash, credentials
-└── docs/             # Images and assets
+├── edge/pi/          # Gateway stack (ChirpStack, Node-RED, PostgreSQL)
+└── edge/heltec/      # Sensor firmware (Heltec ESP32 LoRaWAN)
 ```
-
-## Quick Reference
-
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| ChirpStack | `http://<pi>:8080` | admin / admin |
-| Node-RED | `http://<pi>:1880` | - |
 
 ## Troubleshooting
 
-| Symptom | Check |
+| Problem | Check |
 |---------|-------|
-| Gateway not in ChirpStack | `sudo journalctl -fu chirpstack-concentratord` |
-| Device not joining | AppKey matches? Region matches? |
-| No data in Node-RED | MQTT connected? Topic pattern? |
-| No data in PostgreSQL | Check Node-RED debug for errors |
-
-See component READMEs for detailed troubleshooting.
+| Gateway not appearing | `sudo journalctl -fu chirpstack-concentratord` |
+| Device not joining | AppKey exact match? Region matches gateway? |
+| No data in Node-RED | MQTT broker connected? (green status) |
+| No data in database | Check Node-RED debug panel for errors |

@@ -6,7 +6,6 @@
 
 // Forward declarations
 class LoRaComm;
-class WifiManager;
 namespace BatteryMonitor {
   class BatteryMonitor;
   struct Config;

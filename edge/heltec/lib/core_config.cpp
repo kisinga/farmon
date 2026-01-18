@@ -45,14 +45,6 @@ DeviceConfig DeviceConfigFactory::createBaseConfig(uint8_t deviceId) {
     cfg.communication.enableMessageBuffering = true;
     cfg.communication.bufferSize = 1024;
 
-    // Apply common WiFi settings (disabled by default for remotes)
-    cfg.communication.wifi.enableWifi = false;
-    cfg.communication.wifi.reconnectIntervalMs = DEFAULT_WIFI_RECONNECT_INTERVAL_MS;
-    cfg.communication.wifi.statusCheckIntervalMs = DEFAULT_WIFI_STATUS_CHECK_INTERVAL_MS;
-    cfg.communication.wifi.maxReconnectAttempts = 10;
-    cfg.communication.wifi.enableAutoReconnect = true;
-    cfg.communication.wifi.connectionTimeoutMs = 15000;
-
     // Apply LoRaWAN settings
     cfg.communication.lorawan.enableLoRaWAN = true;
     cfg.communication.lorawan.region = LoRaWANRegion::US915;

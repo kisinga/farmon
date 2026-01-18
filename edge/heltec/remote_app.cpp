@@ -9,7 +9,6 @@
 // HAL includes
 #include "lib/hal_display.h"
 #include "lib/hal_lorawan.h"
-#include "lib/hal_wifi.h"
 #include "lib/hal_battery.h"
 #include "lib/hal_persistence.h"
 
@@ -17,7 +16,6 @@
 #include "lib/svc_ui.h"
 #include "lib/svc_comms.h"
 #include "lib/svc_battery.h"
-#include "lib/svc_wifi.h"
 #include "lib/svc_lorawan.h"
 
 // Config and sensors
@@ -54,7 +52,6 @@ private:
     // HALs
     std::unique_ptr<IDisplayHal> displayHal;
     std::unique_ptr<ILoRaWANHal> lorawanHal;
-    std::unique_ptr<IWifiHal> wifiHal;
     std::unique_ptr<IBatteryHal> batteryHal;
     std::unique_ptr<IPersistenceHal> persistenceHal;
 
@@ -62,7 +59,6 @@ private:
     std::unique_ptr<UiService> uiService;
     std::unique_ptr<CommsService> commsService;
     std::unique_ptr<IBatteryService> batteryService;
-    std::unique_ptr<IWifiService> wifiService;
     std::unique_ptr<ILoRaWANService> lorawanService;
 
     // Sensors
@@ -130,20 +126,6 @@ void RemoteApplicationImpl::initialize() {
     batteryService = std::make_unique<BatteryService>(*batteryHal);
     lorawanService = std::make_unique<LoRaWANService>(*lorawanHal);
 
-    // Only create WiFi components if WiFi is enabled
-    if (config.communication.wifi.enableWifi) {
-        LOGI("Remote", "WiFi enabled, creating WiFi components");
-        WifiManager::Config wifiConfig{
-            .ssid = config.communication.wifi.ssid,
-            .password = config.communication.wifi.password
-        };
-        wifiHal = std::make_unique<WifiManagerHal>(wifiConfig);
-        commsService->setWifiHal(wifiHal.get());
-        wifiService = std::make_unique<WifiService>(*wifiHal);
-    } else {
-        LOGI("Remote", "WiFi disabled, skipping WiFi components");
-    }
-
     LOGI("Remote", "Beginning hardware initialization");
     displayHal->begin();
     LOGI("Remote", "Display initialized");
@@ -172,12 +154,6 @@ void RemoteApplicationImpl::initialize() {
     // Start join process
     LOGI("Remote", "Starting LoRaWAN OTAA join...");
     lorawanHal->join();
-
-    // Only begin WiFi if enabled
-    if (config.communication.wifi.enableWifi && wifiHal) {
-        wifiHal->begin();
-        LOGI("Remote", "WiFi initialized");
-    }
 
     uiService->init(); // Show splash screen
     LOGI("Remote", "UI service initialized");
@@ -279,13 +255,6 @@ void RemoteApplicationImpl::initialize() {
             lorawanService->forceReconnect();
         }
     }, 60000); // Check every minute
-
-    // WiFi task if enabled
-    if (config.communication.wifi.enableWifi && wifiService) {
-        scheduler.registerTask("wifi", [this](CommonAppState& state){
-            wifiService->update(state.nowMs);
-        }, config.communication.wifi.statusCheckIntervalMs);
-    }
 
     LOGI("Remote", "Starting scheduler");
     scheduler.start(appState);
@@ -420,7 +389,6 @@ void RemoteApplication::run() { impl->run(); }
 #include "lib/svc_ui.cpp"
 #include "lib/svc_comms.cpp"
 #include "lib/svc_battery.cpp"
-#include "lib/svc_wifi.cpp"
 #include "lib/svc_lorawan.cpp"
 #include "lib/hal_lorawan.cpp"
 #include "lib/ui_battery_icon_element.cpp"

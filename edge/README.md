@@ -2,55 +2,33 @@
 
 Hardware and firmware for the Farmon edge network.
 
-```
-edge/
-├── pi/       # Raspberry Pi gateway stack
-└── heltec/   # Sensor node firmware
-```
-
 ## Components
 
-### [pi/](pi/) — Gateway Stack
-
-Raspberry Pi running:
-- **ChirpStack** — LoRaWAN network server
-- **Node-RED** — Data processing and alerts  
-- **PostgreSQL** — Telemetry storage
-- **Mosquitto** — MQTT broker
-
-### [heltec/](heltec/) — Sensor Firmware
-
-ESP32 LoRaWAN firmware for Heltec V3 boards:
-- Battery-powered operation
-- Water flow, temperature sensors
-- OLED status display
+| Directory | Description |
+|-----------|-------------|
+| [pi/](pi/) | Raspberry Pi gateway (ChirpStack, Node-RED, PostgreSQL) |
+| [heltec/](heltec/) | Heltec ESP32 sensor firmware |
 
 ## Setup Order
 
-```
-1. Pi infrastructure    →  edge/pi/README.md
-2. SX1302 gateway HAT   →  edge/pi/GATEWAY_SETUP.md  
-3. ChirpStack config    →  edge/pi/README.md#registering-devices
-4. Sensor firmware      →  edge/heltec/README.md
-```
+1. **Gateway infrastructure** → [pi/README.md](pi/README.md)
+2. **ChirpStack configuration** → [pi/README.md#registering-devices](pi/README.md#registering-devices)
+3. **Sensor firmware** → [heltec/README.md](heltec/README.md)
 
 ## Data Flow
 
 ```
-Sensor (Heltec)
-    │ LoRaWAN 915MHz
+Heltec Sensor
+    │ LoRaWAN (915/868 MHz)
     ▼
-Gateway (SX1302 HAT)
+SX1302 Gateway HAT
     │ SPI
     ▼
-Concentratord
-    │ ZeroMQ
-    ▼
-MQTT Forwarder
-    │ MQTT (us915/gateway/#)
+Concentratord → MQTT Forwarder
+    │ MQTT
     ▼
 ChirpStack
-    │ MQTT (application/#)
+    │ MQTT
     ▼
 Node-RED → PostgreSQL
 ```

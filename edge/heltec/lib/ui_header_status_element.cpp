@@ -15,11 +15,6 @@ void HeaderStatusElement::setLoraStatus(bool connected, int16_t rssi) {
     _loraRssi = rssi;
 }
 
-void HeaderStatusElement::setWifiStatus(bool connected, int8_t signalStrength) {
-    _wifiConnected = connected;
-    _wifiSignalStrength = signalStrength;
-}
-
 void HeaderStatusElement::setPeerCount(uint16_t count) {
     _peerCount = count;
 }
@@ -27,7 +22,6 @@ void HeaderStatusElement::setPeerCount(uint16_t count) {
 int16_t HeaderStatusElement::getWidth() const {
     switch (_mode) {
         case Mode::Lora: return 14;
-        case Mode::Wifi: return 14;
         case Mode::PeerCount: {
             // Calculate width for "P:XXX" where XXX can be up to 3 digits
             // "P:" = 2 chars, "XXX" = 3 chars, total 5 chars * 6px each = 30px
@@ -44,9 +38,6 @@ int16_t HeaderStatusElement::getWidthForColumn() const {
         case Mode::Lora:
             // LoRa icon width (calculated from bars)
             return 4 * 2 + 3 * 1; // 4 bars * 2px width + 3 gaps * 1px
-        case Mode::Wifi:
-            // WiFi icon width (same as LoRa since same bar structure)
-            return 4 * 2 + 3 * 1; // 4 bars * 2px width + 3 gaps * 1px
         case Mode::PeerCount:
             // Peer count width - "P:" + number (up to 3 digits) = 2 + 3 chars
             return 5 * 6; // 5 characters * 6px per character
@@ -60,9 +51,6 @@ void HeaderStatusElement::draw(IDisplayHal& display, int16_t x, int16_t y, int16
     switch (_mode) {
         case Mode::Lora:
             drawLoraSignal(display, x, y, w, h);
-            break;
-        case Mode::Wifi:
-            drawWifiStatus(display, x, y, w, h);
             break;
         case Mode::PeerCount:
             drawPeerCount(display, x, y, w, h);
@@ -104,47 +92,6 @@ void HeaderStatusElement::drawLoraSignal(IDisplayHal& d, int16_t x, int16_t y, i
         d.drawLine(startX, y + maxBarHeight - 1, startX + totalWidth - 1, y);
     }
 }
-
-void HeaderStatusElement::drawWifiStatus(IDisplayHal& d, int16_t x, int16_t y, int16_t w, int16_t h) {
-    // Draw WiFi icon using same visual style as LoRa icon
-    const int8_t bars = 4;
-    const int8_t barWidth = 2;
-    const int8_t barGap = 1;
-    const int8_t maxBarHeight = h - 2;
-    const int16_t totalWidth = bars * barWidth + (bars - 1) * barGap;
-    int16_t startX = x + (w - totalWidth); // Right-align like LoRa icon
-
-    uint8_t level = 0;
-    if (_wifiConnected && _wifiSignalStrength >= 0) {
-        // Map signal strength percentage to 0-4 bars
-        if (_wifiSignalStrength > 75) level = 4;
-        else if (_wifiSignalStrength > 50) level = 3;
-        else if (_wifiSignalStrength > 25) level = 2;
-        else if (_wifiSignalStrength > 0) level = 1;
-        else level = 0; // Connected but 0% signal
-    } else {
-        level = 0; // Not connected or invalid signal strength
-    }
-
-    // Draw signal bars (same style as LoRa icon)
-    for (int i = 0; i < bars; i++) {
-        int16_t barX = startX + i * (barWidth + barGap);
-        int8_t barH = (int8_t)((i + 1) * maxBarHeight / bars);
-        int16_t barY = y + (maxBarHeight - barH);
-
-        if (i < level) {
-            d.fillRect(barX, barY, barWidth, barH); // Filled bar
-        } else {
-            d.drawRect(barX, barY, barWidth, barH); // Empty bar outline
-        }
-    }
-    // Draw an 'X' overlay if disconnected
-    if (level == 0) {
-        d.drawLine(startX, y, startX + totalWidth - 1, y + maxBarHeight - 1);
-        d.drawLine(startX, y + maxBarHeight - 1, startX + totalWidth - 1, y);
-    }
-}
-
 
 void HeaderStatusElement::drawPeerCount(IDisplayHal& d, int16_t x, int16_t y, int16_t w, int16_t h) {
     // Draw peer count with "P:" prefix (right-aligned like LoRa icon)

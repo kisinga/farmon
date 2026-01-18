@@ -1,33 +1,10 @@
 // Communication Configuration - Centralized configuration for all communication channels
-// Consolidates USB, LoRa, WiFi, and routing configurations
+// Consolidates USB, LoRaWAN, and routing configurations
 
 #pragma once
 
 #include <stdint.h>
 #include "common_message_types.h"
-
-// MQTT Configuration
-struct MqttConfig {
-    bool enableMqtt = false;            // Enable MQTT publishing over WiFi
-    const char* brokerHost = nullptr;   // MQTT broker hostname or IP
-    uint16_t brokerPort = 1883;         // MQTT broker port
-    const char* clientId = nullptr;     // MQTT client ID
-    const char* username = nullptr;     // Optional username
-    const char* password = nullptr;     // Optional password
-    const char* baseTopic = nullptr;    // Base topic for publishes
-    const char* deviceTopic = nullptr;  // Optional device-specific topic (defaults to deviceId)
-    uint8_t qos = 0;                    // QoS level (0/1)
-    bool retain = false;                // Retain flag
-    
-    // Reliability settings
-    uint32_t connectionTimeoutMs = 10000;    // Connection timeout
-    uint32_t keepAliveMs = 30;               // Keep alive interval
-    uint32_t retryIntervalMs = 5000;         // Base retry interval
-    uint32_t maxRetryIntervalMs = 60000;     // Maximum retry interval (exponential backoff)
-    uint8_t maxRetryAttempts = 10;           // Maximum retry attempts
-    uint16_t maxQueueSize = 50;              // Maximum queued messages
-    bool enableMessageQueue = true;          // Enable message queuing
-};
 
 // USB Configuration
 struct UsbConfig {
@@ -83,27 +60,6 @@ struct LoRaWANConfig {
     uint8_t deviceClass = 0;           // 0=Class A, 1=Class B, 2=Class C
 };
 
-// WiFi Configuration
-struct WifiCommConfig {
-    bool enableWifi = false;           // Enable WiFi communication
-    const char* ssid = nullptr;        // WiFi network name
-    const char* password = nullptr;    // WiFi password
-    uint32_t reconnectIntervalMs = 30000;    // Reconnect interval
-    uint32_t statusCheckIntervalMs = 5000;   // Status check interval
-
-    // Connection settings
-    uint8_t maxReconnectAttempts = 10; // Maximum reconnect attempts
-    bool enableDhcp = true;            // Enable DHCP
-    const char* staticIp = nullptr;    // Static IP (if DHCP disabled)
-    const char* subnetMask = nullptr;  // Subnet mask
-    const char* gateway = nullptr;     // Gateway IP
-    const char* dns = nullptr;         // DNS server
-
-    // Advanced settings
-    uint32_t connectionTimeoutMs = 15000; // Connection timeout
-    bool enableAutoReconnect = true;   // Auto-reconnect on disconnect
-};
-
 // Screen Configuration
 struct ScreenConfig {
     bool enableScreen = false;         // Enable screen output
@@ -123,10 +79,10 @@ struct RoutingConfig {
     struct RoutingRule {
         // Matcher
         Messaging::Message::Type messageType; // Set to Telemetry, Data, etc.
-        TransportType source;       // Set to LoRa, WiFi, etc.
+        TransportType source;       // Source transport type
 
         // Action
-        TransportType destination; // Set to LoRa, WiFi, etc.
+        TransportType destination; // Destination transport type
         bool enabled;                  // Route enabled
         uint8_t priority;              // Route priority (0=highest)
     };
@@ -141,9 +97,7 @@ struct CommunicationConfig {
     // Transport configurations
     UsbConfig usb;
     LoRaWANConfig lorawan;
-    WifiCommConfig wifi;
     ScreenConfig screen;
-    MqttConfig mqtt;
 
     // Routing configuration
     RoutingConfig routing;
