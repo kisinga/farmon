@@ -4,22 +4,13 @@
 #include "remote_sensor_config.h"
 
 // =============================================================================
-// LoRaWAN Credentials
+// Credentials - Create secrets.h from secrets.example.h with your keys
 // =============================================================================
-// Get these from ChirpStack: Applications -> Your App -> Devices -> Your Device
-//
-// AppEUI/JoinEUI: Usually all zeros for ChirpStack v4
-// AppKey: 16-byte key from device OTAA Keys tab
-
-static const uint8_t LORAWAN_APP_EUI[8] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-
-// TODO: Replace with your device's AppKey from ChirpStack
-static const uint8_t LORAWAN_APP_KEY[16] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
-};
+#if __has_include("secrets.h")
+    #include "secrets.h"
+#else
+    #error "Missing secrets.h - copy secrets.example.h to secrets.h and add your LoRaWAN credentials"
+#endif
 
 // =============================================================================
 // Device Configuration
@@ -34,14 +25,14 @@ inline RemoteConfig buildRemoteConfig() {
     cfg.battery.adcPin = 1;
 
     // LoRaWAN settings
-    // Region/sub-band compiled via heltec.sh FQBN options
+    // Region/sub-band set via heltec.sh FQBN options
     cfg.communication.lorawan.enableLoRaWAN = true;
     cfg.communication.lorawan.region = LoRaWANRegion::US915;
     cfg.communication.lorawan.subBand = 2;
     cfg.communication.lorawan.adrEnabled = true;
     cfg.communication.lorawan.defaultPort = 1;
     cfg.communication.lorawan.useConfirmedUplinks = false;
-    
+
     memcpy(cfg.communication.lorawan.appEui, LORAWAN_APP_EUI, 8);
     memcpy(cfg.communication.lorawan.appKey, LORAWAN_APP_KEY, 16);
 

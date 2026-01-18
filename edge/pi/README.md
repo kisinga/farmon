@@ -1,122 +1,132 @@
-# Farm Monitor - Raspberry Pi Gateway
+# Farmon Gateway (Raspberry Pi)
 
-LoRaWAN gateway and data pipeline running on Raspberry Pi with SX1302 HAT.
-
-## Architecture
-
-```
-[Heltec Sensors] --LoRaWAN--> [SX1302 HAT] --SPI--> [Concentratord]
-                                                          |
-                                                     ZeroMQ IPC
-                                                          |
-                                                   [MQTT Forwarder]
-                                                          |
-                              +---------------------------+
-                              |          MQTT             |
-                              v                           v
-                        [ChirpStack] ------------> [Node-RED]
-                              |                           |
-                              v                           v
-                        [PostgreSQL] <--------------------|
-```
+ChirpStack + Node-RED + PostgreSQL on Raspberry Pi.
 
 ## Services
 
-| Service | Port | Description |
-|---------|------|-------------|
-| ChirpStack | 8080 | LoRaWAN Network Server UI |
-| Node-RED | 1880 | Flow editor and API |
-| Mosquitto | 1883 | MQTT broker |
-| PostgreSQL | 5432 | Database (internal) |
+| Service | Port | Default Login |
+|---------|------|---------------|
+| ChirpStack | 8080 | admin / admin |
+| Node-RED | 1880 | — |
+| Mosquitto | 1883 | — |
+| PostgreSQL | 5432 | farmmon / farmmon |
 
-## Quick Start
+## Setup
+
+### 1. Initial Setup
 
 ```bash
-# 1. Initial setup (creates directories, installs Docker)
+# Fresh Pi - run as regular user (not root)
+curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
+```
+
+Or manually:
+```bash
+git clone https://github.com/kisinga/farmon.git ~/farm
+cd ~/farm/edge/pi
 sudo bash setup_farm_pi.sh
+```
 
-# 2. Start the stack
+### 2. Start Services
+
+```bash
+cd ~/farm/edge/pi
 docker-compose up -d
+```
 
-# 3. Install gateway (SX1302 HAT)
-sudo bash setup_gateway.sh
+### 3. Install Gateway HAT
 
-# 4. Setup Node-RED
+See [GATEWAY_SETUP.md](GATEWAY_SETUP.md) for SX1302 hardware installation.
+
+### 4. Configure Node-RED
+
+```bash
 docker exec farm-nodered npm install node-red-contrib-postgresql
 docker cp nodered/flows.json farm-nodered:/data/flows.json
 docker restart farm-nodered
 ```
 
-## Configuration
+## Registering Devices
 
-### Regions
-Both US915 and EU868 are enabled. Select the appropriate region when creating device profiles in ChirpStack.
+### Create Device Profile (once)
 
-- **US915**: For Waveshare US915 HAT, uses sub-band 2 (903.9-905.3 MHz)
-- **EU868**: For Waveshare EU868 HAT (867-869 MHz)
+1. ChirpStack (`http://<pi>:8080`) → **Device profiles** → Add
+2. Configure:
+   - Name: `heltec-otaa`
+   - Region: `US915` (match your gateway)
+   - MAC version: `LoRaWAN 1.0.3`
+   - Supports OTAA: ✓
+3. Codec tab — add decoder (optional):
+   ```javascript
+   function decodeUplink(input) {
+       var str = String.fromCharCode.apply(null, input.bytes);
+       var data = {};
+       str.split(",").forEach(function(p) {
+           var kv = p.split(":");
+           if (kv.length === 2) data[kv[0]] = parseFloat(kv[1]) || kv[1];
+       });
+       return { data: data };
+   }
+   ```
 
-### Gateway MQTT Topics
-- US915: `us915/gateway/+/event/+`
-- EU868: `eu868/gateway/+/event/+`
+### Create Application (once)
 
-### Device Events
-ChirpStack publishes to: `application/{id}/device/{eui}/event/{type}`
+1. **Tenants** → **Applications** → Add
+2. Name: `farm-sensors`
+
+### Register Each Device
+
+1. **Applications** → `farm-sensors` → Add device
+2. Configure:
+   - Name: Device identifier (e.g., `remote-01`)
+   - Device EUI: From Heltec serial output at boot
+   - Device profile: `heltec-otaa`
+3. After saving → **OTAA keys** tab → Generate
+4. Copy Application Key → paste into Heltec `secrets.h`
 
 ## File Structure
 
 ```
 edge/pi/
-├── docker-compose.yml      # Service definitions
-├── setup_farm_pi.sh        # Initial Pi setup
-├── setup_gateway.sh        # SX1302 gateway install
-├── chirpstack/
-│   └── server/
-│       ├── chirpstack.toml     # Main config
-│       ├── region_us915_0.toml # US915 channels
-│       └── region_eu868.toml   # EU868 channels
-├── mosquitto/
-│   └── mosquitto.conf
-├── nodered/
-│   └── flows.json          # Node-RED flows
-└── postgres/
-    └── init-db.sql         # Database initialization
+├── docker-compose.yml        # Service definitions
+├── setup_farm_pi.sh          # Initial Pi setup
+├── setup_gateway.sh          # SX1302 HAT installation
+├── GATEWAY_SETUP.md          # Gateway hardware docs
+├── chirpstack/server/        # ChirpStack + region configs
+├── nodered/flows.json        # Node-RED data pipeline
+├── mosquitto/mosquitto.conf  # MQTT broker config
+└── postgres/init-db.sql      # Database schema
 ```
-
-## Credentials
-
-| Service | User | Password |
-|---------|------|----------|
-| ChirpStack UI | admin | admin |
-| PostgreSQL (chirpstack) | chirpstack | chirpstack |
-| PostgreSQL (farmmon) | farmmon | farmmon |
 
 ## Troubleshooting
 
-### Database not initialized
+### Database Reset
+
 ```bash
 docker-compose down
 sudo rm -rf /srv/farm/postgres
-sudo mkdir -p /srv/farm/postgres
-sudo chown 999:999 /srv/farm/postgres
+sudo mkdir -p /srv/farm/postgres && sudo chown 999:999 /srv/farm/postgres
 docker-compose up -d
 ```
 
-**Warning:** Resetting the database deletes:
-- All registered gateways
-- All applications and devices
-- All device profiles
-- All historical sensor data
+⚠️ **Deletes all data.** Re-register gateway, profiles, and devices after.
 
-After reset, you must re-register your gateway, create applications/device profiles, and re-register devices. See [GATEWAY_SETUP.md](GATEWAY_SETUP.md) for steps.
+### Check Services
 
-### Gateway not appearing in ChirpStack
 ```bash
-# Check concentratord
-sudo journalctl -fu chirpstack-concentratord
-
-# Check MQTT messages
-docker exec farm-mosquitto mosquitto_sub -t 'us915/gateway/#' -v -C 3
+docker ps                                    # All containers running?
+docker logs farm-chirpstack --tail 50       # ChirpStack errors?
+docker logs farm-nodered --tail 50          # Node-RED errors?
 ```
 
-### Node-RED MQTT disconnected
-Verify broker hostname is `mosquitto` (Docker network name), not `localhost`.
+### Test MQTT
+
+```bash
+# Watch all device events
+docker exec farm-mosquitto mosquitto_sub -t 'application/#' -v
+
+# Send test message
+docker exec farm-mosquitto mosquitto_pub \
+  -t 'application/1/device/test/event/up' \
+  -m '{"deviceInfo":{"devEui":"test"},"object":{"temp":25}}'
+```

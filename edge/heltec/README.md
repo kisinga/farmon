@@ -1,63 +1,103 @@
-# Heltec LoRaWAN Firmware
+# Farmon Sensor Firmware (Heltec)
 
-Firmware for Heltec ESP32 LoRaWAN nodes that collect sensor data and transmit to ChirpStack via the SX1302 gateway.
+LoRaWAN firmware for Heltec ESP32 V3 sensor nodes.
 
-## Data Flow
+## Setup
 
-```
-Heltec Node → SX1302 Gateway → ChirpStack → ThingsBoard
-   (LoRa)         (UDP)         (MQTT)      (dashboard)
-```
+### 1. Get Credentials from ChirpStack
 
-## Setup (Arduino IDE)
+First, register your device in ChirpStack (see [../pi/README.md](../pi/README.md#register-each-device)).
 
-### Prerequisites
+Then get the Application Key:
+1. ChirpStack → Applications → your app → Devices → your device
+2. **OTAA keys** tab → Generate (or view existing)
+3. Copy the 32-character hex string
 
-- Arduino IDE 2.x
-- USB data cable (CP210x driver may be required)
-
-### Install Heltec Board Support
-
-1. File → Preferences → Additional Boards Manager URLs:
-   ```
-   https://resource.heltec.cn/download/package_heltec_esp32_index.json
-   ```
-2. Tools → Board → Boards Manager → search "heltec esp32" → Install
-3. Tools → Board → Select your model (e.g., "Heltec WiFi LoRa 32 (V3)")
-
-### Build and Upload
-
-1. Select board and port in Tools menu
-2. Verify/Upload sketch
-3. If upload fails: hold PRG, press RST, release PRG (enters bootloader)
-
-## Linux Serial Setup
+### 2. Configure Secrets
 
 ```bash
-# Add user to serial group
-sudo usermod -aG dialout $USER
-# Log out and back in
-
-# Install pyserial if needed
-python3 -m pip install --user pyserial
-
-# Stop ModemManager if it grabs the port
-sudo systemctl stop ModemManager
+cp secrets.example.h secrets.h
 ```
 
-Verify device: `ls /dev/ttyUSB*` or `dmesg -w` while plugging in.
+Edit `secrets.h` — convert the hex string to bytes:
+```cpp
+// ChirpStack shows: "0102030405060708090a0b0c0d0e0f10"
+// Convert to:
+static const uint8_t LORAWAN_APP_KEY[16] = {
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10
+};
+```
 
-## Project Structure
+### 3. Build and Flash
 
-| Path | Description |
-| ---- | ----------- |
-| `remote/` | Sensor node firmware and libraries |
-| `remote/lib/` | Shared library code (HALs, services, UI) |
-| `ARCHITECTURE_GUIDE.md` | System architecture documentation |
-| `LORAWAN_SETUP.md` | ChirpStack and device provisioning guide |
+```bash
+./heltec.sh flash
+```
+
+### 4. Verify
+
+```bash
+./heltec.sh monitor
+```
+
+Look for:
+```
+DevEUI: XX:XX:XX:XX:XX:XX:XX:XX
+Starting LoRaWAN OTAA join...
+Successfully joined network
+```
+
+## Commands
+
+```bash
+./heltec.sh flash              # Build + upload
+./heltec.sh build              # Compile only  
+./heltec.sh upload             # Upload only
+./heltec.sh monitor            # Serial monitor (115200)
+```
+
+### Region Override
+
+```bash
+LORAWAN_REGION=EU868 ./heltec.sh flash    # EU868 instead of US915
+LORAWAN_SUBBAND=1 ./heltec.sh flash       # Different sub-band
+```
+
+## Configuration
+
+| File | Purpose |
+|------|---------|
+| `secrets.h` | LoRaWAN keys (gitignored) |
+| `config.h` | Device name, region, ports |
+| `remote_sensor_config.h` | Sensor settings |
+
+## Device Info
+
+- **DevEUI**: Auto-derived from ESP32 chip ID (unique per device)
+- **AppEUI**: Usually all zeros for ChirpStack v4
+- **AppKey**: From ChirpStack, stored in `secrets.h`
+- **Region**: US915 sub-band 2 default (configurable)
+- **Class**: A (battery-optimized)
 
 ## Troubleshooting
 
-- **Board not visible**: Restart IDE after installing board core
-- **Wrong board selected**: Causes missing header errors; select exact Heltec model
-- **Port not found**: Check cable, add user to `dialout` group, stop ModemManager
+| Problem | Solution |
+|---------|----------|
+| `Missing secrets.h` | Run `cp secrets.example.h secrets.h` |
+| Not joining | Verify AppKey matches ChirpStack exactly |
+| Wrong region | Check `LORAWAN_REGION` matches gateway |
+| Upload fails | Hold PRG → press RST → release PRG → retry |
+| Port not found | Add user to dialout: `sudo usermod -aG dialout $USER` |
+
+## Prerequisites
+
+```bash
+# Install arduino-cli
+curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+
+# Add Heltec board support
+arduino-cli config add board_manager.additional_urls \
+  https://resource.heltec.cn/download/package_heltec_esp32_index.json
+arduino-cli core install Heltec-esp32:esp32
+```

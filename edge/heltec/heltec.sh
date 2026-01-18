@@ -1,140 +1,111 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This script builds and uploads the specified Arduino sketch.
-# Run this from within the edge/heltec directory.
+# =============================================================================
+# Heltec Build Script
+# =============================================================================
+# Builds and uploads Arduino sketches for Heltec ESP32 LoRa V3
 #
 # Usage:
-#   ./heltec.sh [-v|--verbose] build <sketch_name>
-#   ./heltec.sh [-v|--verbose] upload <sketch_name> [port]
-#   ./heltec.sh [-v|--verbose] build-upload <sketch_name> [port]
+#   ./heltec.sh build [sketch]           Build sketch (default: current dir)
+#   ./heltec.sh upload [sketch] [port]   Upload to device
+#   ./heltec.sh flash [sketch] [port]    Build and upload
+#   ./heltec.sh monitor [port]           Open serial monitor
 #
-# Examples:
-#   ./heltec.sh build relay
-#   ./heltec.sh -v upload remote                    # Auto-detect port (verbose)
-#   ./heltec.sh --verbose upload remote /dev/ttyUSB0 # Manual port (verbose)
-#   ./heltec.sh build-upload relay                  # Auto-detect port
-#   ./heltec.sh -v build-upload relay /dev/ttyUSB0  # Manual port (verbose)
+# Environment:
+#   LORAWAN_REGION   - US915, EU868, AU915, AS923 (default: US915)
+#   LORAWAN_SUBBAND  - 1-8 for US915/AU915 (default: 2)
 
-VERBOSE=false
+# --- Configuration ---
+LORAWAN_REGION="${LORAWAN_REGION:-US915}"
+LORAWAN_SUBBAND="${LORAWAN_SUBBAND:-2}"
+BOARD="Heltec-esp32:esp32:heltec_wifi_lora_32_V3"
+BAUD="115200"
 
-# Parse arguments
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    -v|--verbose)
-      VERBOSE=true
-      shift
-      ;;
-    -*)
-      echo "Unknown option: $1" >&2
-      echo "Usage: $0 [-v|--verbose] {build|upload|build-upload} <sketch_name> [port]"
-      exit 1
-      ;;
-    *)
-      break
-      ;;
-  esac
-done
+# Build FQBN with LoRaWAN options
+FQBN="${BOARD}:LoRaWanBand=${LORAWAN_REGION},LoRaWanSubBand=${LORAWAN_SUBBAND}"
 
-# Check minimum arguments after parsing options
-if [ $# -lt 2 ] || [ $# -gt 3 ]; then
-  echo "Usage: $0 [-v|--verbose] {build|upload|build-upload} <sketch_name> [port]"
-  exit 1
-fi
+# --- Helpers ---
+log()  { echo -e "\033[0;36m→\033[0m $1"; }
+ok()   { echo -e "\033[0;32m✓\033[0m $1"; }
+err()  { echo -e "\033[0;31m✗\033[0m $1" >&2; exit 1; }
 
-ACTION=$1
-SKETCH_NAME=$2
-PORT=${3:-}  # Optional port parameter, empty if not provided
-
-# LoRaWAN Configuration
-# Sub-band 2 = channels 8-15 (903.9-905.3 MHz) - must match gateway/concentratord
-LORAWAN_REGION="US915"
-LORAWAN_SUBBAND="2"
-FQBN="Heltec-esp32:esp32:heltec_wifi_lora_32_V3:LoRaWanBand=${LORAWAN_REGION},LoRaWanSubBand=${LORAWAN_SUBBAND}"
-SKETCH_DIR="${SKETCH_NAME}"
-
-if [ ! -d "$SKETCH_DIR" ]; then
-  echo "Error: Sketch directory not found at '$SKETCH_DIR'"
-  exit 1
-fi
-
-# Ensure the lib symlink exists
-if [ "$VERBOSE" = true ]; then
-  echo "Setting up lib symlinks..."
-fi
-./arduino-include.sh apply $([ "$VERBOSE" = true ] && echo "--verbose")
-
-# Function to get port - uses provided port or auto-detects
 get_port() {
-    if [ -n "$PORT" ]; then
-        echo "$PORT"
-        return 0
+    local port="${1:-}"
+    if [[ -n "$port" ]]; then
+        echo "$port"
+    else
+        arduino-cli board list 2>/dev/null | awk '/USB|ACM/{print $1; exit}'
     fi
-
-    # Auto-detect first available USB port
-    local detected_port
-    detected_port=$(arduino-cli board list | awk '/USB/{print $1; exit}')
-    echo "$detected_port"
 }
 
+check_secrets() {
+    local sketch_dir="${1:-.}"
+    if [[ ! -f "$sketch_dir/secrets.h" ]]; then
+        if [[ -f "$sketch_dir/secrets.example.h" ]]; then
+            err "Missing secrets.h - run: cp $sketch_dir/secrets.example.h $sketch_dir/secrets.h"
+        fi
+    fi
+}
+
+# --- Commands ---
+cmd_build() {
+    local sketch="${1:-.}"
+    [[ -d "$sketch" ]] || err "Sketch directory not found: $sketch"
+    check_secrets "$sketch"
+    
+    log "Building $sketch (${LORAWAN_REGION}, sub-band ${LORAWAN_SUBBAND})..."
+    arduino-cli compile --fqbn "$FQBN" "$sketch"
+    ok "Build complete"
+}
+
+cmd_upload() {
+    local sketch="${1:-.}"
+    local port=$(get_port "${2:-}")
+    [[ -n "$port" ]] || err "No board found. Connect device or specify port."
+    
+    log "Uploading $sketch to $port..."
+    arduino-cli upload -p "$port" --fqbn "$FQBN" "$sketch"
+    ok "Upload complete"
+}
+
+cmd_flash() {
+    local sketch="${1:-.}"
+    local port="${2:-}"
+    cmd_build "$sketch"
+    cmd_upload "$sketch" "$port"
+}
+
+cmd_monitor() {
+    local port=$(get_port "${1:-}")
+    [[ -n "$port" ]] || err "No board found. Connect device or specify port."
+    
+    log "Opening serial monitor on $port at ${BAUD} baud..."
+    log "Press Ctrl+C to exit"
+    arduino-cli monitor -p "$port" -c baudrate=$BAUD
+}
+
+# --- Main ---
+ACTION="${1:-}"
+shift || true
+
 case "$ACTION" in
-  build)
-    if [ "$VERBOSE" = true ]; then
-      echo "Building sketch '$SKETCH_NAME' for board '$FQBN'..."
-      echo "Sketch directory: $SKETCH_DIR"
-      echo "Board FQBN: $FQBN"
-    fi
-    arduino-cli compile --fqbn "$FQBN" "$SKETCH_DIR"
-    echo "Build complete."
-    ;;
-  upload)
-    # Get the serial port (manual or auto-detected)
-    if [ "$VERBOSE" = true ]; then
-      echo "Detecting serial port..."
-    fi
-    PORT=$(get_port)
-
-    if [ -z "$PORT" ]; then
-        echo "Error: Could not find a connected board. Please ensure it is connected and drivers are installed."
+    build)   cmd_build "$@" ;;
+    upload)  cmd_upload "$@" ;;
+    flash)   cmd_flash "$@" ;;
+    monitor) cmd_monitor "$@" ;;
+    *)
+        echo "Usage: $0 {build|upload|flash|monitor} [sketch] [port]"
+        echo ""
+        echo "Commands:"
+        echo "  build [sketch]         Compile sketch"
+        echo "  upload [sketch] [port] Upload to device"
+        echo "  flash [sketch] [port]  Build and upload"
+        echo "  monitor [port]         Serial monitor"
+        echo ""
+        echo "Environment:"
+        echo "  LORAWAN_REGION=$LORAWAN_REGION"
+        echo "  LORAWAN_SUBBAND=$LORAWAN_SUBBAND"
         exit 1
-    fi
-
-    if [ "$VERBOSE" = true ]; then
-      echo "Found board on port: $PORT"
-      echo "Uploading sketch '$SKETCH_NAME' to board '$FQBN' on port $PORT..."
-    fi
-    arduino-cli upload -p "$PORT" --fqbn "$FQBN" "$SKETCH_DIR"
-    echo "Upload complete."
-    ;;
-  build-upload)
-    if [ "$VERBOSE" = true ]; then
-      echo "Building sketch '$SKETCH_NAME' for board '$FQBN'..."
-      echo "Sketch directory: $SKETCH_DIR"
-      echo "Board FQBN: $FQBN"
-    fi
-    arduino-cli compile --fqbn "$FQBN" "$SKETCH_DIR"
-
-    # Get the serial port (manual or auto-detected)
-    if [ "$VERBOSE" = true ]; then
-      echo "Detecting serial port for upload..."
-    fi
-    PORT=$(get_port)
-
-    if [ -z "$PORT" ]; then
-        echo "Error: Could not find a connected board. Please ensure it is connected and drivers are installed."
-        exit 1
-    fi
-
-    if [ "$VERBOSE" = true ]; then
-      echo "Found board on port: $PORT"
-      echo "Uploading sketch '$SKETCH_NAME' to board '$FQBN' on port $PORT..."
-    fi
-    arduino-cli upload -p "$PORT" --fqbn "$FQBN" "$SKETCH_DIR"
-    echo "Build and upload complete."
-    ;;
-  *)
-    echo "Error: Invalid action '$ACTION'. Use 'build', 'upload', or 'build-upload'." >&2
-    exit 1
-    ;;
+        ;;
 esac
-
