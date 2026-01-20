@@ -37,6 +37,10 @@ public:
     virtual void setDataRate(uint8_t dataRate) = 0;
     virtual void setTxPower(uint8_t txPower) = 0;
     virtual void setAdr(bool enable) = 0;
+    
+    // Data rate and payload size queries
+    virtual uint8_t getCurrentDataRate() const = 0;
+    virtual uint8_t getMaxPayloadSize() const = 0;
 
     // Join and session management
     virtual bool isJoined() const = 0;
@@ -53,6 +57,25 @@ public:
 class SX1262;
 class LoRaWANNode;
 
+/**
+ * LoRaWAN Hardware Abstraction Layer implementation using RadioLib
+ * 
+ * Instance Lifecycle:
+ *   1. Create instance: LoRaWANHal hal;
+ *   2. Initialize: hal.begin(devEui, appEui, appKey);
+ *   3. Join network: hal.join(); (blocking, typically 5-15s)
+ *   4. Send data: hal.sendData(port, payload, len, confirmed);
+ *   5. Call tick() periodically: hal.tick(millis());
+ *   6. Destructor cleans up resources automatically
+ * 
+ * Dependencies:
+ *   - radio instance from heltec_unofficial.h (singleton, shared across instances)
+ *   - RadioLib library for LoRaWAN protocol handling
+ * 
+ * Thread Safety:
+ *   - Not thread-safe. All methods should be called from the same thread/task.
+ *   - tick() should be called regularly (e.g., every 50-100ms) from main loop.
+ */
 class LoRaWANHal : public ILoRaWANHal {
 public:
     LoRaWANHal();
@@ -78,6 +101,9 @@ public:
     void setDataRate(uint8_t dataRate) override;
     void setTxPower(uint8_t txPower) override;
     void setAdr(bool enable) override;
+    
+    uint8_t getCurrentDataRate() const override;
+    uint8_t getMaxPayloadSize() const override;
 
     bool isJoined() const override;
     void join() override;
@@ -86,6 +112,10 @@ public:
     uint32_t getUplinkCount() const override;
     uint32_t getDownlinkCount() const override;
     void resetCounters() override;
+
+    // Debug helpers (not in interface, implementation-specific)
+    const char* getRegionName() const;
+    uint8_t getSubBand() const;
 
 private:
     // Callbacks
@@ -103,15 +133,28 @@ private:
     uint32_t downlinkCount = 0;
 
     bool initialized = false;
-    bool joined = false;
-    bool joinInProgress = false;
+    bool joined = false;  // Source of truth for join state
     uint32_t lastJoinAttemptMs = 0;
+    
+    // Stored configuration for applying after join
+    uint8_t configuredDataRate = 0;
+    uint8_t configuredTxPower = 0;
+    
+    // Current data rate tracking (maintained internally since RadioLib may not expose it)
+    uint8_t currentDataRate = 0;
 
     // Stored credentials for rejoin
     uint8_t storedDevEui[8];
     uint8_t storedAppEui[8];
     uint8_t storedAppKey[16];
 
-    // LoRaWAN node pointer (managed externally by heltec library)
+    // LoRaWAN node instance (owned by this HAL instance, created in begin(), deleted in destructor)
     LoRaWANNode* node = nullptr;
+
+    // Downlink buffer for receiving data from network (Class A RX windows)
+    // Only data downlinks are queued here (ACKs are handled immediately)
+    uint8_t downlinkBuffer[256];
+    size_t downlinkLength = 0;
+    uint8_t downlinkPort = 0;
+    bool hasDownlink = false;  // Set when data downlink received, cleared in tick()
 };

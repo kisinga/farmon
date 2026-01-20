@@ -5,6 +5,7 @@
 #include "sensor_interface.hpp"
 #include "lib/core_logger.h"
 #include "lib/svc_lorawan.h"
+#include "lib/hal_lorawan.h"
 #include "lib/common_message_types.h"
 #include <vector>
 #include "lib/hal_persistence.h"
@@ -20,12 +21,9 @@ struct RemoteConfig;
 // LoRaWAN Batch Transmitter Implementation
 // ============================================================================
 
-// Maximum payload size for LoRaWAN (depends on data rate, use conservative value)
-static constexpr uint8_t LORAWAN_MAX_PAYLOAD = 51;  // DR0 on EU868
-
 class LoRaWANBatchTransmitter : public SensorBatchTransmitter {
 public:
-    LoRaWANBatchTransmitter(ILoRaWANService* lorawanService, const RemoteConfig& config);
+    LoRaWANBatchTransmitter(ILoRaWANService* lorawanService, ILoRaWANHal* lorawanHal, const RemoteConfig& config);
     bool queueBatch(const std::vector<SensorReading>& readings) override;
     void update(uint32_t nowMs) override;
     bool isReady() const override;
@@ -33,18 +31,20 @@ public:
 private:
     String formatReadings(const std::vector<SensorReading>& readings);
     ILoRaWANService* _lorawanService;
+    ILoRaWANHal* _lorawanHal;  // For accessing getMaxPayloadSize()
     const RemoteConfig& _config;
     std::vector<SensorReading> _readings;
     uint32_t _lastTxTimeMs = 0;
 };
 
-LoRaWANBatchTransmitter::LoRaWANBatchTransmitter(ILoRaWANService* lorawanService, const RemoteConfig& config)
-    : _lorawanService(lorawanService), _config(config) {}
+LoRaWANBatchTransmitter::LoRaWANBatchTransmitter(ILoRaWANService* lorawanService, ILoRaWANHal* lorawanHal, const RemoteConfig& config)
+    : _lorawanService(lorawanService), _lorawanHal(lorawanHal), _config(config) {}
 
 bool LoRaWANBatchTransmitter::queueBatch(const std::vector<SensorReading>& readings) {
     if (!_readings.empty()) {
-        LOGD("LoRaWANTx", "Buffer not empty, refusing to queue new batch");
-        return false;
+        // Buffer has old data - replace it with newer data
+        // This prevents stale data from blocking new transmissions
+        LOGD("LoRaWANTx", "Buffer not empty, replacing with new batch (%u readings)", readings.size());
     }
     _readings = readings;
     return true;
@@ -60,14 +60,22 @@ void LoRaWANBatchTransmitter::update(uint32_t nowMs) {
         LOGD("LoRaWANTx", "Not joined, deferring transmission of %u readings", _readings.size());
         return;
     }
+    
+    LOGD("LoRaWANTx", "update() called: %u readings, lastTx: %u, now: %u", 
+         _readings.size(), _lastTxTimeMs, nowMs);
 
     // Respect duty cycle / ready state
     // Note: LoRaWAN stack handles duty cycle internally, but we can add throttling
     uint32_t minInterval = _config.communication.lorawan.txIntervalMs;
-    if (nowMs - _lastTxTimeMs < minInterval && _lastTxTimeMs > 0) {
-        LOGD("LoRaWANTx", "TX throttled, %u ms remaining", 
-             minInterval - (nowMs - _lastTxTimeMs));
-        return;
+    if (_lastTxTimeMs > 0) {
+        uint32_t timeSinceLastTx = nowMs - _lastTxTimeMs;
+        if (timeSinceLastTx < minInterval) {
+            LOGD("LoRaWANTx", "TX throttled, %u ms remaining (lastTx: %u, now: %u)", 
+                 minInterval - timeSinceLastTx, _lastTxTimeMs, nowMs);
+            return;
+        }
+        // Throttle period has passed, proceed with transmission
+        LOGD("LoRaWANTx", "Throttle period passed (%u ms since last TX), proceeding", timeSinceLastTx);
     }
 
     String payload = formatReadings(_readings);
@@ -80,13 +88,25 @@ void LoRaWANBatchTransmitter::update(uint32_t nowMs) {
         return;
     }
     
-    // Check payload size
-    if (payload.length() > LORAWAN_MAX_PAYLOAD) {
-        LOGW("LoRaWANTx", "Payload %d bytes exceeds max %d. Dropping.", 
-             payload.length(), LORAWAN_MAX_PAYLOAD);
+    // Validate payload size against current data rate limit
+    if (!_lorawanHal) {
+        LOGW("LoRaWANTx", "HAL not available, cannot validate payload size");
         _readings.clear();
         return;
     }
+    
+    uint8_t maxPayload = _lorawanHal->getMaxPayloadSize();
+    uint8_t currentDR = _lorawanHal->getCurrentDataRate();
+    
+    if (payload.length() > maxPayload) {
+        LOGW("LoRaWANTx", "Payload %d bytes exceeds max %d for DR%d. Dropping.", 
+             payload.length(), maxPayload, currentDR);
+        _readings.clear();
+        return;
+    }
+    
+    LOGI("LoRaWANTx", "Attempting transmission: %d bytes (max %d for DR%d), lastTx: %u, now: %u", 
+         payload.length(), maxPayload, currentDR, _lastTxTimeMs, nowMs);
 
     // Send via LoRaWAN service
     // Use default port from config, unconfirmed for telemetry
@@ -101,12 +121,15 @@ void LoRaWANBatchTransmitter::update(uint32_t nowMs) {
     );
 
     if (success) {
-        LOGI("LoRaWANTx", "Queued %d bytes on port %d", payload.length(), port);
+        LOGI("LoRaWANTx", "Transmission successful: %d bytes on port %d (nowMs: %u)", payload.length(), port, nowMs);
         _readings.clear();
         _lastTxTimeMs = nowMs;
     } else {
-        LOGW("LoRaWANTx", "Failed to queue message");
-        // Keep readings for retry
+        LOGW("LoRaWANTx", "Transmission failed, clearing buffer to allow retry");
+        // Clear buffer on failure to allow new batches
+        // This prevents the "Buffer not empty" issue when transmission fails
+        _readings.clear();
+        // Don't update _lastTxTimeMs on failure - allow immediate retry
     }
 }
 

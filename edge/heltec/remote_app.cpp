@@ -152,6 +152,15 @@ void RemoteApplicationImpl::initialize() {
     // Configure LoRaWAN settings
     lorawanHal->setAdr(config.communication.lorawan.adrEnabled);
     lorawanHal->setDeviceClass(config.communication.lorawan.deviceClass);
+    // Set initial data rate (before ADR takes over, ensures we can send payloads)
+    // Ensure data rate is at least the configured minimum
+    uint8_t dataRate = config.communication.lorawan.dataRate;
+    if (dataRate < config.communication.lorawan.minDataRate) {
+        LOGI("Remote", "Data rate %d below minimum %d, using minimum", dataRate, config.communication.lorawan.minDataRate);
+        dataRate = config.communication.lorawan.minDataRate;
+    }
+    lorawanHal->setDataRate(dataRate);
+    lorawanHal->setTxPower(config.communication.lorawan.txPower);
     
     // Set up downlink callback for commands
     lorawanHal->setOnDataReceived(&RemoteApplicationImpl::staticOnDownlinkReceived);
@@ -308,8 +317,8 @@ void RemoteApplicationImpl::setupSensors() {
         return;
     }
 
-    // Create LoRaWAN transmitter with service reference
-    auto transmitter = std::make_unique<LoRaWANBatchTransmitter>(lorawanService.get(), config);
+    // Create LoRaWAN transmitter with service and HAL references
+    auto transmitter = std::make_unique<LoRaWANBatchTransmitter>(lorawanService.get(), lorawanHal.get(), config);
     sensorTransmitter = std::move(transmitter);
 
     // --- Sensor Creation ---

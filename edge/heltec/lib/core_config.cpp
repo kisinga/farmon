@@ -50,7 +50,11 @@ DeviceConfig DeviceConfigFactory::createBaseConfig(uint8_t deviceId) {
     cfg.communication.lorawan.region = LoRaWANRegion::US915;
     cfg.communication.lorawan.adrEnabled = true;
     cfg.communication.lorawan.txPower = 14;
-    cfg.communication.lorawan.dataRate = 5;  // SF7 on EU868
+    // Default data rate: DR3 (SF7) for US915, DR5 (SF7) for EU868
+    // Note: DR5 on US915 is LR-FHSS which may not be supported, so use DR3 for US915
+    cfg.communication.lorawan.dataRate = (cfg.communication.lorawan.region == LoRaWANRegion::US915) ? 3 : 5;
+    // Minimum data rate: DR1 for US915 (supports 53 bytes), DR0 for EU868 (supports 51 bytes)
+    cfg.communication.lorawan.minDataRate = (cfg.communication.lorawan.region == LoRaWANRegion::US915) ? 1 : 0;
     cfg.communication.lorawan.defaultPort = 1;
     cfg.communication.lorawan.useConfirmedUplinks = false;
     cfg.communication.lorawan.joinTimeoutMs = 30000;
