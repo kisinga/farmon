@@ -274,7 +274,7 @@
         "order": 1,
         "width": "6",
         "height": "4",
-        "gtype": "gage",
+        "gtype": "gauge-tile",
         "title": "Battery",
         "label": "%",
         "format": "{{value}}",
@@ -343,11 +343,31 @@
         "z": "",
         "name": "Farm Monitor",
         "ui_base": "dash-ui",
+        "theme": "dash-theme",
         "path": "",
         "icon": "dashboard",
         "order": 1,
         "disabled": false,
         "hidden": false
+    },
+    {
+        "id": "dash-theme",
+        "type": "ui-theme",
+        "z": "",
+        "name": "Default Theme",
+        "colors": {
+            "surface": "#ffffff",
+            "primary": "#0094ce",
+            "bgPage": "#eeeeee",
+            "groupBg": "#ffffff",
+            "groupOutline": "#cccccc"
+        },
+        "sizes": {
+            "pagePadding": "12px",
+            "groupGap": "12px",
+            "groupBorderRadius": "4px",
+            "widgetGap": "12px"
+        }
     },
     {
         "id": "api-flow-tab",
