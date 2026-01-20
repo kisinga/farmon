@@ -109,6 +109,26 @@ bool LoRaWANHal::begin(const uint8_t* devEui, const uint8_t* appEui, const uint8
     }
     LOGI("LoRaWAN", "Radio initialized successfully");
 
+    // Clear RadioLib's persistent storage (EEPROM) ONCE at initialization
+    // This ensures a clean state on first boot, but allows DevNonce to increment
+    // on subsequent joins. RadioLib will manage the DevNonce counter in EEPROM.
+    // Note: Only clear on first initialization, not on every join attempt
+    LOGI("LoRaWAN", "Clearing RadioLib persistent storage (EEPROM) on initialization...");
+    if (!EEPROM.begin(512)) {
+        LOGW("LoRaWAN", "Failed to initialize EEPROM for clearing");
+    } else {
+        // Clear the region RadioLib uses (first 448 bytes)
+        for (int i = 0; i < 448; i++) {
+            EEPROM.write(i, 0xFF);  // Clear with 0xFF (erased state)
+        }
+        if (EEPROM.commit()) {
+            LOGI("LoRaWAN", "RadioLib EEPROM cleared (448 bytes) - DevNonce will start at 0");
+        } else {
+            LOGW("LoRaWAN", "Failed to commit EEPROM clear");
+        }
+        EEPROM.end();
+    }
+
     // Create LoRaWAN node instance (owned by this HAL instance)
     // Each HAL instance has its own node, but they share the radio hardware
     // Region and sub-band are compile-time constants (see above)
@@ -435,30 +455,11 @@ void LoRaWANHal::join() {
     joinInProgress = true;
     lastJoinAttemptMs = nowMs;
 
-    // Clear RadioLib's persistent storage (EEPROM) to reset DevNonce FIRST
-    // RadioLib uses EEPROM starting at address 0 by default (~448 bytes)
-    // This must be done BEFORE clearSession() so clearSession() doesn't restore from EEPROM
-    // Note: For testing only - in production, DevNonce should persist properly
-    LOGI("LoRaWAN", "Clearing RadioLib persistent storage (EEPROM) to reset DevNonce...");
-    if (!EEPROM.begin(512)) {
-        LOGW("LoRaWAN", "Failed to initialize EEPROM for clearing");
-    } else {
-        // Clear the region RadioLib uses (first 448 bytes)
-        for (int i = 0; i < 448; i++) {
-            EEPROM.write(i, 0xFF);  // Clear with 0xFF (erased state)
-        }
-        if (EEPROM.commit()) {
-            LOGI("LoRaWAN", "RadioLib EEPROM cleared (448 bytes)");
-        } else {
-            LOGW("LoRaWAN", "Failed to commit EEPROM clear");
-        }
-        EEPROM.end();
-    }
-
-    // Clear session after EEPROM is cleared to ensure fresh DevNonce
-    // This prevents "DevNonce has already been used" errors from ChirpStack
-    // when the device reboots and tries to reuse a persisted DevNonce
-    LOGI("LoRaWAN", "Clearing persisted session to ensure fresh DevNonce...");
+    // Clear session to force fresh join
+    // Note: We do NOT clear EEPROM here - RadioLib manages DevNonce counter in EEPROM
+    // Clearing EEPROM would reset DevNonce to 0, causing "DevNonce has already been used" errors
+    // if ChirpStack has already seen DevNonce 0. Instead, let RadioLib increment the counter.
+    LOGI("LoRaWAN", "Clearing session to force fresh join...");
     node->clearSession();
 
     // Small delay before join attempt to ensure radio and network are ready

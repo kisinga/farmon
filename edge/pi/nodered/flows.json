@@ -280,13 +280,11 @@
         "format": "{{value}}",
         "min": 0,
         "max": "100",
-        "colors": [
-            "#00b500",
-            "#e6e600",
-            "#ca3838"
+        "segments": [
+            {"color": "#00b500", "from": 0},
+            {"color": "#e6e600", "from": 20},
+            {"color": "#ca3838", "from": 50}
         ],
-        "seg1": "20",
-        "seg2": "50",
         "className": "",
         "x": 540,
         "y": 100,
