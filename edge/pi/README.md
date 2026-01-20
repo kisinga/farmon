@@ -51,11 +51,22 @@ sudo systemctl status chirpstack-mqtt-forwarder
 
 ### 3. Configure Node-RED
 
+The dashboard and flows are now automatically configured via mounted files. If you need to install packages manually:
+
 ```bash
-docker exec farm-nodered npm install node-red-contrib-postgresql
-docker cp ~/farm/edge/pi/nodered/flows.json farm-nodered:/data/flows.json
+# Install required Node-RED packages (dashboard + postgres)
+docker exec farm-nodered npm install node-red-dashboard node-red-contrib-postgresql
 docker restart farm-nodered
 ```
+
+**Note:** With the updated `docker-compose.yml`, `package.json` is mounted and packages should auto-install on first startup. If the dashboard doesn't work, restart the container:
+
+```bash
+docker restart farm-nodered
+```
+
+**Dashboard Access:** After packages are installed, access the dashboard at:
+- `http://<pi>:1880/ui/farm-monitor`
 
 ### 4. Verify
 
