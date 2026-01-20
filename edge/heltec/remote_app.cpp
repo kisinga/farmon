@@ -103,6 +103,17 @@ void RemoteApplicationImpl::initialize() {
 
     coreSystem.init(config);
 
+    // Initialize display immediately after hardware setup to minimize delay
+    LOGI("Remote", "Creating display HAL");
+    displayHal = std::make_unique<OledDisplayHal>();
+    displayHal->begin();
+    LOGI("Remote", "Display initialized");
+    
+    // Create UI service and show splash screen immediately
+    uiService = std::make_unique<UiService>(*displayHal);
+    uiService->init();
+    LOGI("Remote", "UI service initialized - splash screen shown");
+
     if (config.globalDebugMode) {
         Logger::setLevel(Logger::Level::Debug);
         LOGD("System", "Debug mode is ON. Log level set to DEBUG.");
@@ -114,21 +125,15 @@ void RemoteApplicationImpl::initialize() {
     _lastResetMs = persistenceHal->loadU32("lastResetMs", 0);
     persistenceHal->end();
 
-    LOGI("Remote", "Creating HALs");
-    displayHal = std::make_unique<OledDisplayHal>();
+    LOGI("Remote", "Creating remaining HALs");
     lorawanHal = std::make_unique<LoRaWANHal>();
     batteryHal = std::make_unique<BatteryMonitorHal>(config.battery);
 
     LOGI("Remote", "Creating services");
-    uiService = std::make_unique<UiService>(*displayHal);
     commsService = std::make_unique<CommsService>();
     commsService->setLoRaWANHal(lorawanHal.get());
     batteryService = std::make_unique<BatteryService>(*batteryHal);
     lorawanService = std::make_unique<LoRaWANService>(*lorawanHal);
-
-    LOGI("Remote", "Beginning hardware initialization");
-    displayHal->begin();
-    LOGI("Remote", "Display initialized");
 
     // Derive DevEUI from chip ID
     uint8_t devEui[8];
@@ -150,13 +155,6 @@ void RemoteApplicationImpl::initialize() {
     
     // Set up downlink callback for commands
     lorawanHal->setOnDataReceived(&RemoteApplicationImpl::staticOnDownlinkReceived);
-
-    // Start join process
-    LOGI("Remote", "Starting LoRaWAN OTAA join...");
-    lorawanHal->join();
-
-    uiService->init(); // Show splash screen
-    LOGI("Remote", "UI service initialized");
 
     setupUi();
     LOGI("Remote", "UI setup complete");
@@ -255,6 +253,16 @@ void RemoteApplicationImpl::initialize() {
             lorawanService->forceReconnect();
         }
     }, 60000); // Check every minute
+
+    // LoRaWAN join task - runs after scheduler starts to allow display updates during join
+    scheduler.registerTask("lorawan_join", [this](CommonAppState& state){
+        static bool joinAttempted = false;
+        if (!joinAttempted && !lorawanHal->isJoined()) {
+            joinAttempted = true;
+            LOGI("Remote", "Starting LoRaWAN OTAA join...");
+            lorawanHal->join();
+        }
+    }, 100); // Short interval for initial join attempt
 
     LOGI("Remote", "Starting scheduler");
     scheduler.start(appState);

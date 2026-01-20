@@ -10,6 +10,7 @@ void UiService::init() {
     _splashStartedMs = millis();
     _state = UIState::Splash;
     drawSplashScreen();
+    _displayHal.display(); // Immediately show splash screen
 }
 
 void UiService::tick() {

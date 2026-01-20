@@ -19,11 +19,57 @@ set -euo pipefail
 # --- Configuration ---
 LORAWAN_REGION="${LORAWAN_REGION:-US915}"
 LORAWAN_SUBBAND="${LORAWAN_SUBBAND:-2}"
-BOARD="Heltec-esp32:esp32:heltec_wifi_lora_32_V3"
+# Use Espressif ESP32 package, not Heltec package
+# The ropg library works with standard ESP32 board definitions
+BOARD="esp32:esp32:heltec_wifi_lora_32_V3"
 BAUD="115200"
 
-# Build FQBN with LoRaWAN options
-FQBN="${BOARD}:LoRaWanBand=${LORAWAN_REGION},LoRaWanSubBand=${LORAWAN_SUBBAND}"
+# Build FQBN - Note: LoRaWanBand/SubBand options may not be available
+# RadioLib handles region configuration in code, not via board options
+FQBN="${BOARD}"
+
+# Get script directory for relative path checks
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Find arduino-cli in multiple locations
+find_arduino_cli() {
+    # Check system PATH first
+    if command -v arduino-cli &> /dev/null; then
+        which arduino-cli
+        return 0
+    fi
+    
+    # Check local project bin directory
+    if [ -f "$SCRIPT_DIR/bin/arduino-cli" ]; then
+        echo "$SCRIPT_DIR/bin/arduino-cli"
+        return 0
+    fi
+    
+    # Check user bin directory
+    if [ -f "$HOME/bin/arduino-cli" ]; then
+        echo "$HOME/bin/arduino-cli"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Find arduino-cli and set up PATH
+ARDUINO_CLI=""
+if ARDUINO_CLI=$(find_arduino_cli); then
+    # Add directory to PATH if it's not already there
+    ARDUINO_CLI_DIR=$(dirname "$ARDUINO_CLI")
+    if [[ ":$PATH:" != *":$ARDUINO_CLI_DIR:"* ]]; then
+        export PATH="$ARDUINO_CLI_DIR:$PATH"
+    fi
+else
+    err "arduino-cli not found. Run ./setup_build_env.sh first to install it."
+fi
+
+# Verify arduino-cli is executable
+if [ ! -x "$ARDUINO_CLI" ]; then
+    err "arduino-cli found but not executable: $ARDUINO_CLI"
+fi
 
 # --- Helpers ---
 log()  { echo -e "\033[0;36m→\033[0m $1"; }
@@ -35,7 +81,7 @@ get_port() {
     if [[ -n "$port" ]]; then
         echo "$port"
     else
-        arduino-cli board list 2>/dev/null | awk '/USB|ACM/{print $1; exit}'
+        "$ARDUINO_CLI" board list 2>/dev/null | awk '/USB|ACM/{print $1; exit}'
     fi
 }
 
@@ -55,7 +101,7 @@ cmd_build() {
     check_secrets "$sketch"
     
     log "Building $sketch (${LORAWAN_REGION}, sub-band ${LORAWAN_SUBBAND})..."
-    arduino-cli compile --fqbn "$FQBN" "$sketch"
+    "$ARDUINO_CLI" compile --fqbn "$FQBN" "$sketch"
     ok "Build complete"
 }
 
@@ -65,7 +111,7 @@ cmd_upload() {
     [[ -n "$port" ]] || err "No board found. Connect device or specify port."
     
     log "Uploading $sketch to $port..."
-    arduino-cli upload -p "$port" --fqbn "$FQBN" "$sketch"
+    "$ARDUINO_CLI" upload -p "$port" --fqbn "$FQBN" "$sketch"
     ok "Upload complete"
 }
 
@@ -82,7 +128,7 @@ cmd_monitor() {
     
     log "Opening serial monitor on $port at ${BAUD} baud..."
     log "Press Ctrl+C to exit"
-    arduino-cli monitor -p "$port" -c baudrate=$BAUD
+    "$ARDUINO_CLI" monitor -p "$port" -c baudrate=$BAUD
 }
 
 # --- Main ---

@@ -24,3 +24,5 @@ xcuserdata/
 *.xcodeproj/
 *.xcworkspace/
 .DS_Store
+# Arduino CLI (installed locally as fallback)
+bin/

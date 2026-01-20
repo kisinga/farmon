@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <Arduino.h> // For Print class
 #include "display.h"
-#include "HT_SSD1306Wire.h" // Include for TEXT_ALIGNMENT enum
+#include "SSD1306Wire.h" // Include for TEXT_ALIGNMENT enum
 
 // Forward declaration of the display class
 class SSD1306Wire;
@@ -73,7 +73,7 @@ void OledDisplayHal::setFont(const uint8_t* fontData) {
 }
 
 void OledDisplayHal::setTextAlignment(int alignment) {
-    _oled.getDisplay().setTextAlignment((DISPLAY_TEXT_ALIGNMENT)alignment);
+    _oled.getDisplay().setTextAlignment((OLEDDISPLAY_TEXT_ALIGNMENT)alignment);
 }
 
 void OledDisplayHal::drawString(int16_t x, int16_t y, const String& text) {

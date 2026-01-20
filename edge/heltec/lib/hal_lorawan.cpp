@@ -1,19 +1,34 @@
 #include "hal_lorawan.h"
-#include "LoRaWan_APP.h"
 #include "core_logger.h"
 
-// Static instance for C callbacks
-LoRaWANHal* LoRaWANHal::instance = nullptr;
+// Include Heltec library which provides the radio instance
+#include <heltec_unofficial.h>
+#include <RadioLib.h>
 
-// Pending TX data buffer
-static uint8_t pendingTxBuffer[256];
-static uint8_t pendingTxPort = 0;
-static uint8_t pendingTxLength = 0;
-static bool pendingTxConfirmed = false;
-static bool hasPendingTx = false;
+// LoRaWAN regional settings - US915 with sub-band 2 for most US networks
+static const LoRaWANBand_t* region = &US915;
+static const uint8_t subBand = 2;
+
+// Static node instance
+static LoRaWANNode* loraNode = nullptr;
+
+// Downlink buffer
+static uint8_t downlinkBuffer[256];
+static size_t downlinkLength = 0;
+static uint8_t downlinkPort = 0;
+static bool hasDownlink = false;
 
 LoRaWANHal::LoRaWANHal() {
-    instance = this;
+    memset(storedDevEui, 0, sizeof(storedDevEui));
+    memset(storedAppEui, 0, sizeof(storedAppEui));
+    memset(storedAppKey, 0, sizeof(storedAppKey));
+}
+
+LoRaWANHal::~LoRaWANHal() {
+    if (loraNode) {
+        delete loraNode;
+        loraNode = nullptr;
+    }
 }
 
 bool LoRaWANHal::begin(const uint8_t* devEui, const uint8_t* appEui, const uint8_t* appKey) {
@@ -22,22 +37,47 @@ bool LoRaWANHal::begin(const uint8_t* devEui, const uint8_t* appEui, const uint8
         return false;
     }
 
-    LOGI("LoRaWAN", "Initializing HAL...");
+    LOGI("LoRaWAN", "Initializing RadioLib HAL...");
+
+    // Store credentials for later use
+    memcpy(storedDevEui, devEui, 8);
+    memcpy(storedAppEui, appEui, 8);
+    memcpy(storedAppKey, appKey, 16);
 
     // Log the DevEUI being used
     LOGI("LoRaWAN", "DevEUI: %02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
          devEui[0], devEui[1], devEui[2], devEui[3],
          devEui[4], devEui[5], devEui[6], devEui[7]);
 
-    // Copy keys to Heltec SDK global buffers
-    memcpy(devEui, devEui, 8);
-    memcpy(appEui, appEui, 8);
-    memcpy(appKey, appKey, 16);
+    // Initialize the radio (provided by heltec_unofficial.h)
+    LOGI("LoRaWAN", "Initializing SX1262 radio...");
+    int16_t state = radio.begin();
+    if (state != RADIOLIB_ERR_NONE) {
+        LOGE("LoRaWAN", "Radio init failed with code %d", state);
+        return false;
+    }
+    LOGI("LoRaWAN", "Radio initialized successfully");
 
-    // Configure LoRaWAN parameters
-    // The Heltec SDK uses global variables for configuration
-    // These are typically set before calling LoRaWAN.init()
-    
+    // Create LoRaWAN node
+    loraNode = new LoRaWANNode(&radio, region, subBand);
+    node = loraNode;
+
+    // Convert 8-byte arrays to uint64_t for RadioLib API
+    uint64_t devEui64 = 0;
+    uint64_t joinEui64 = 0;
+    for (int i = 0; i < 8; i++) {
+        devEui64 = (devEui64 << 8) | devEui[i];
+        joinEui64 = (joinEui64 << 8) | appEui[i];
+    }
+
+    // Setup OTAA credentials
+    // For LoRaWAN 1.0.x, nwkKey and appKey are the same
+    state = node->beginOTAA(joinEui64, devEui64, (uint8_t*)appKey, (uint8_t*)appKey);
+    if (state != RADIOLIB_ERR_NONE) {
+        LOGE("LoRaWAN", "OTAA setup failed with code %d", state);
+        return false;
+    }
+
     initialized = true;
     LOGI("LoRaWAN", "HAL initialized - call join() to connect to network");
 
@@ -47,72 +87,91 @@ bool LoRaWANHal::begin(const uint8_t* devEui, const uint8_t* appEui, const uint8
 void LoRaWANHal::tick(uint32_t nowMs) {
     if (!initialized) return;
 
-    // Process radio IRQs
-    Radio.IrqProcess();
+    // Check if join is in progress and we should retry
+    if (joinInProgress && !joined) {
+        // The join is handled synchronously in join(), so nothing to do here
+        // But we can check for timeout
+        if (lastJoinAttemptMs > 0 && (nowMs - lastJoinAttemptMs) > 30000) {
+            LOGW("LoRaWAN", "Join attempt timed out");
+            joinInProgress = false;
+            connectionState = ConnectionState::Disconnected;
+        }
+    }
 
-    // Update connection state based on join status
-    if (isJoined()) {
+    // Update connection state
+    if (joined) {
         if (connectionState != ConnectionState::Connected) {
             connectionState = ConnectionState::Connected;
-            lastActivityMs = nowMs;
             LOGI("LoRaWAN", "Connected to network");
         }
     }
 
-    // Check for connection timeout (if we were connected but no activity)
-    if (connectionState == ConnectionState::Connected) {
-        if (lastActivityMs > 0 && (nowMs - lastActivityMs) > 120000) { // 2 minute timeout
-            connectionState = ConnectionState::Disconnected;
-            LOGI("LoRaWAN", "Connection timeout - no activity for 2 minutes");
-        }
-    }
-
-    // Handle pending transmissions when ready
-    if (hasPendingTx && isJoined() && isReadyForTx()) {
-        LOGD("LoRaWAN", "Processing pending TX: %d bytes on port %d", pendingTxLength, pendingTxPort);
-        
-        // Queue the pending data for transmission
-        // The actual send will happen through the LoRaWAN stack
-        hasPendingTx = false;
-        lastActivityMs = nowMs;
+    // Process any pending downlinks
+    if (hasDownlink && onDataCb) {
+        onDataCb(downlinkPort, downlinkBuffer, downlinkLength);
+        hasDownlink = false;
     }
 }
 
 bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, bool confirmed) {
-    if (!initialized || !isJoined()) {
+    if (!initialized || !joined || !node) {
         LOGW("LoRaWAN", "Not initialized or not joined");
         return false;
     }
 
-    if (length > 242) { // LoRaWAN max payload size for most regions
+    if (length > 242) {
         LOGW("LoRaWAN", "Payload too large: %d bytes", length);
         return false;
     }
 
-    // Prepare application data
-    lora_AppData_t appData;
-    appData.Port = port;
-    appData.Buff = const_cast<uint8_t*>(payload);
-    appData.BuffSize = length;
-    appData.BuffPtr = appData.Buff;
-
-    // Set message type
-    loraWanStatus.MType = confirmed ? CONFIRMED_DATA_UP : UNCONFIRMED_DATA_UP;
-
-    // Send data
-    loraWanSend(&appData);
-
-    uplinkCount++;
-    LOGD("LoRaWAN", "Sent %d bytes on port %d (confirmed: %s)",
+    LOGD("LoRaWAN", "Sending %d bytes on port %d (confirmed: %s)",
          length, port, confirmed ? "true" : "false");
 
-    return true;
+    // Prepare downlink buffer
+    downlinkLength = sizeof(downlinkBuffer);
+
+    // Send uplink and wait for downlink
+    int16_t state;
+    if (confirmed) {
+        state = node->sendReceive((uint8_t*)payload, length, port, downlinkBuffer, &downlinkLength, true);
+    } else {
+        state = node->sendReceive((uint8_t*)payload, length, port, downlinkBuffer, &downlinkLength, false);
+    }
+
+    if (state == RADIOLIB_ERR_NONE) {
+        LOGD("LoRaWAN", "Uplink sent, no downlink received");
+        uplinkCount++;
+        lastActivityMs = millis();
+        if (onTxDoneCb) onTxDoneCb();
+        return true;
+    } else if (state > 0) {
+        // Positive values indicate downlink received in Rx window 1 or 2
+        LOGI("LoRaWAN", "Uplink sent, downlink received (%d bytes)", (int)downlinkLength);
+        uplinkCount++;
+        downlinkCount++;
+        lastActivityMs = millis();
+
+        // Get RSSI/SNR from last reception
+        lastRssiDbm = radio.getRSSI();
+        lastSnr = radio.getSNR();
+
+        // Queue downlink for processing in tick()
+        if (downlinkLength > 0) {
+            hasDownlink = true;
+            downlinkPort = port; // RadioLib doesn't expose downlink port easily
+        }
+
+        if (onTxDoneCb) onTxDoneCb();
+        return true;
+    } else {
+        LOGW("LoRaWAN", "sendReceive failed with code %d", state);
+        if (onTxTimeoutCb) onTxTimeoutCb();
+        return false;
+    }
 }
 
 bool LoRaWANHal::isReadyForTx() const {
-    if (!initialized) return false;
-    // In LoRaWAN, we can always queue messages, but we should check duty cycle
-    return isJoined();
+    return initialized && joined;
 }
 
 void LoRaWANHal::setOnDataReceived(OnDataReceived cb) {
@@ -144,52 +203,73 @@ int8_t LoRaWANHal::getLastSnr() const {
 }
 
 void LoRaWANHal::setDeviceClass(uint8_t deviceClass) {
-    if (initialized) {
-        loraWanStatus.DevClass = (DeviceClass_t)deviceClass;
-        LOGI("LoRaWAN", "Device class set to %d", deviceClass);
-    }
+    // RadioLib handles device class internally
+    LOGD("LoRaWAN", "Device class setting: %d (RadioLib uses Class A by default)", deviceClass);
 }
 
 void LoRaWANHal::setDataRate(uint8_t dataRate) {
-    if (initialized) {
-        // This would require more complex LoRaWAN stack integration
-        LOGD("LoRaWAN", "Data rate setting not implemented in this version");
+    if (node) {
+        node->setDatarate(dataRate);
+        LOGI("LoRaWAN", "Data rate set to %d", dataRate);
     }
 }
 
 void LoRaWANHal::setTxPower(uint8_t txPower) {
-    if (initialized) {
-        // This would require more complex LoRaWAN stack integration
-        LOGD("LoRaWAN", "TX power setting not implemented in this version");
+    if (node) {
+        node->setTxPower(txPower);
+        LOGI("LoRaWAN", "TX power set to %d dBm", txPower);
     }
 }
 
 void LoRaWANHal::setAdr(bool enable) {
-    if (initialized) {
-        loraWanStatus.ADR = enable;
+    if (node) {
+        node->setADR(enable);
         LOGI("LoRaWAN", "ADR %s", enable ? "enabled" : "disabled");
     }
 }
 
 bool LoRaWANHal::isJoined() const {
-    return initialized && (loraWanStatus.Status == LORAWAN_JOINED);
+    return initialized && joined;
 }
 
 void LoRaWANHal::join() {
-    if (!initialized) {
+    if (!initialized || !node) {
         LOGE("LoRaWAN", "Not initialized");
         return;
     }
 
-    LOGI("LoRaWAN", "Starting join process");
+    if (joined) {
+        LOGI("LoRaWAN", "Already joined");
+        return;
+    }
+
+    LOGI("LoRaWAN", "Starting OTAA join process...");
     connectionState = ConnectionState::Connecting;
-    loraWanJoin();
+    joinInProgress = true;
+    lastJoinAttemptMs = millis();
+
+    // Attempt to activate (join) the network
+    // This is a blocking call that may take several seconds
+    int16_t state = node->activateOTAA();
+
+    if (state == RADIOLIB_LORAWAN_NEW_SESSION || state == RADIOLIB_LORAWAN_SESSION_RESTORED) {
+        joined = true;
+        joinInProgress = false;
+        connectionState = ConnectionState::Connected;
+        LOGI("LoRaWAN", "Successfully joined network (state: %d)", state);
+    } else {
+        joined = false;
+        joinInProgress = false;
+        connectionState = ConnectionState::Disconnected;
+        LOGW("LoRaWAN", "Join failed with code %d", state);
+    }
 }
 
 void LoRaWANHal::forceReconnect() {
     if (!initialized) return;
 
-    LOGI("LoRaWAN", "Forcing reconnect");
+    LOGI("LoRaWAN", "Forcing reconnect...");
+    joined = false;
     connectionState = ConnectionState::Disconnected;
     join();
 }
@@ -206,83 +286,4 @@ void LoRaWANHal::resetCounters() {
     uplinkCount = 0;
     downlinkCount = 0;
     LOGI("LoRaWAN", "Counters reset");
-}
-
-// Static callback functions for LoRaWAN_APP
-void LoRaWANHal::onLoRaWANRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
-    if (instance) {
-        instance->handleRxDone(payload, size, rssi, snr);
-    }
-}
-
-void LoRaWANHal::onLoRaWANTxDone(void) {
-    if (instance) {
-        instance->handleTxDone();
-    }
-}
-
-void LoRaWANHal::onLoRaWANTxTimeout(void) {
-    if (instance) {
-        instance->handleTxTimeout();
-    }
-}
-
-void LoRaWANHal::onLoRaWANJoinDone(void) {
-    if (instance) {
-        instance->handleJoinDone();
-    }
-}
-
-// Instance callback handlers
-void LoRaWANHal::handleRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
-    lastActivityMs = millis();
-    lastRssiDbm = rssi;
-    lastSnr = snr;
-    downlinkCount++;
-
-    if (connectionState != ConnectionState::Connected) {
-        connectionState = ConnectionState::Connected;
-        LOGI("LoRaWAN", "Connected to network");
-    }
-
-    LOGD("LoRaWAN", "Received %d bytes, RSSI: %d dBm, SNR: %d dB",
-         size, rssi, snr);
-
-    if (onDataCb && size > 0) {
-        // Extract port from LoRaWAN frame
-        uint8_t port = 1; // Default port
-        if (size > 0) {
-            // In a real implementation, we'd parse the LoRaWAN frame header
-            // For now, assume port 1
-            onDataCb(port, payload, size);
-        }
-    }
-}
-
-void LoRaWANHal::handleTxDone(void) {
-    lastActivityMs = millis();
-
-    LOGD("LoRaWAN", "TX completed");
-
-    if (onTxDoneCb) {
-        onTxDoneCb();
-    }
-}
-
-void LoRaWANHal::handleTxTimeout(void) {
-    LOGW("LoRaWAN", "TX timeout");
-
-    if (onTxTimeoutCb) {
-        onTxTimeoutCb();
-    }
-}
-
-void LoRaWANHal::handleJoinDone(void) {
-    if (loraWanStatus.Status == LORAWAN_JOINED) {
-        connectionState = ConnectionState::Connected;
-        LOGI("LoRaWAN", "Successfully joined network");
-    } else {
-        connectionState = ConnectionState::Disconnected;
-        LOGW("LoRaWAN", "Join failed");
-    }
 }

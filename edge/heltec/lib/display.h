@@ -8,7 +8,8 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include "HT_SSD1306Wire.h"
+#include "board_config.h"  // For SDA_OLED, SCL_OLED, RST_OLED
+#include "SSD1306Wire.h"
 #include "logo.h"
 
 #ifndef OLED_I2C_ADDR
@@ -36,11 +37,11 @@ using RenderCallback = void (*)(SSD1306Wire &display, void *context);
 class OledDisplay {
  public:
   OledDisplay()
-      : display(OLED_I2C_ADDR, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED), initialized(false) {
+      : display(OLED_I2C_ADDR, SDA_OLED, SCL_OLED, GEOMETRY_128_64, I2C_ONE, 500000), initialized(false) {
   }
 
   explicit OledDisplay(uint8_t i2cAddress)
-      : display(i2cAddress, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED), initialized(false) {
+      : display(i2cAddress, SDA_OLED, SCL_OLED, GEOMETRY_128_64, I2C_ONE, 500000), initialized(false) {
   }
 
   // Safe begin that prevents double initialization
@@ -61,6 +62,7 @@ class OledDisplay {
   void unsafeBegin(bool enable) {
     enabled = enable;
     if (!enabled) return;
+    
     // Power on OLED rail
     if (vextPinOverride >= 0) {
       pinMode((uint8_t)vextPinOverride, OUTPUT);
@@ -83,8 +85,15 @@ class OledDisplay {
     Wire.begin(SDA_OLED, SCL_OLED);
 
     display.init();
+    // Flip display vertically for correct orientation on Heltec V3
+    display.flipScreenVertically();
     display.setFont(ArialMT_Plain_10);
     display.setTextAlignment(TEXT_ALIGN_LEFT);
+    
+    // Turn on display immediately and clear it
+    display.displayOn();
+    display.clear();
+    display.display();
 
     initialized = true;
   }

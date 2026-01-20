@@ -3,16 +3,6 @@
 #include <stdint.h>
 #include <functional>
 
-// Forward declaration for LoRaWAN_APP structures
-extern "C" {
-    struct lora_AppData_t {
-        uint8_t* Buff;
-        uint8_t BuffSize;
-        uint8_t Port;
-        uint8_t* BuffPtr;
-    };
-}
-
 class ILoRaWANHal {
 public:
     enum class ConnectionState : uint8_t { Disconnected = 0, Connecting = 1, Connected = 2 };
@@ -59,10 +49,14 @@ public:
     virtual void resetCounters() = 0;
 };
 
+// Forward declarations for RadioLib types
+class SX1262;
+class LoRaWANNode;
+
 class LoRaWANHal : public ILoRaWANHal {
 public:
     LoRaWANHal();
-    ~LoRaWANHal() override = default;
+    ~LoRaWANHal() override;
 
     // ILoRaWANHal implementation
     bool begin(const uint8_t* devEui, const uint8_t* appEui, const uint8_t* appKey) override;
@@ -94,22 +88,12 @@ public:
     void resetCounters() override;
 
 private:
-    // LoRaWAN_APP callbacks
-    static void onLoRaWANRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr);
-    static void onLoRaWANTxDone(void);
-    static void onLoRaWANTxTimeout(void);
-    static void onLoRaWANJoinDone(void);
-
-    void handleRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr);
-    void handleTxDone(void);
-    void handleTxTimeout(void);
-    void handleJoinDone(void);
-
-    // Internal state
+    // Callbacks
     OnDataReceived onDataCb;
     OnTxDone onTxDoneCb;
     OnTxTimeout onTxTimeoutCb;
 
+    // State
     ConnectionState connectionState = ConnectionState::Disconnected;
     uint32_t lastActivityMs = 0;
     int16_t lastRssiDbm = 0;
@@ -119,7 +103,15 @@ private:
     uint32_t downlinkCount = 0;
 
     bool initialized = false;
+    bool joined = false;
+    bool joinInProgress = false;
+    uint32_t lastJoinAttemptMs = 0;
 
-    // Static instance for C callbacks
-    static LoRaWANHal* instance;
+    // Stored credentials for rejoin
+    uint8_t storedDevEui[8];
+    uint8_t storedAppEui[8];
+    uint8_t storedAppKey[16];
+
+    // LoRaWAN node pointer (managed externally by heltec library)
+    LoRaWANNode* node = nullptr;
 };

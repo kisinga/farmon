@@ -2,16 +2,16 @@
 #include "core_logger.h"
 #include "board_config.h"
 #include <Arduino.h>
-#include "LoRaWan_APP.h" // For Mcu.begin()
+#define HELTEC_NO_DISPLAY_INSTANCE  // Disable global display creation
+#include <heltec_unofficial.h>
 
 CoreSystem::CoreSystem() {}
 
 void CoreSystem::init(const DeviceConfig& config) {
-    // 1. Initialize Board Hardware
-    Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
+    // 1. Initialize Board Hardware using Heltec library
+    heltec_setup();
 
-    // 2. Initialize Serial
-    Serial.begin(115200);
+    // 2. Serial is already initialized by heltec_setup()
     delay(500); // Longer delay to ensure serial is ready
     Serial.println();
 
@@ -29,8 +29,8 @@ void CoreSystem::init(const DeviceConfig& config) {
 
     Logger::printf(Logger::Level::Info, "SYS", "Core system initializing...");
 
-    // 4. (Future) Initialize other core components here
-    // For example, power management (vext), etc.
+    // 4. Enable external power for peripherals
+    heltec_ve(true);
 
     Logger::printf(Logger::Level::Info, "SYS", "Core system initialized.");
 }
