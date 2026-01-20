@@ -344,7 +344,7 @@
         "name": "Farm Monitor",
         "ui_base": "dash-ui",
         "theme": "dash-theme",
-        "path": "",
+        "path": "farm-monitor",
         "icon": "dashboard",
         "order": 1,
         "disabled": false,
