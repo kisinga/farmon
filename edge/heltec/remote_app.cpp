@@ -257,9 +257,11 @@ void RemoteApplicationImpl::initialize() {
     
     // LoRaWAN rejoin watchdog - attempt rejoin if not connected for too long
     scheduler.registerTask("lorawan_watchdog", [this](CommonAppState& state){
-        if (!lorawanService->isJoined()) {
+        if (!lorawanService->isJoined() && !lorawanService->isJoinInProgress()) {
             LOGW("Remote", "Watchdog: Not joined to network, attempting rejoin...");
             lorawanService->forceReconnect();
+        } else if (lorawanService->isJoinInProgress()) {
+            LOGD("Remote", "Watchdog: Join already in progress, skipping");
         }
     }, 60000); // Check every minute
 

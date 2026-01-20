@@ -44,6 +44,7 @@ public:
 
     // Join and session management
     virtual bool isJoined() const = 0;
+    virtual bool isJoinInProgress() const = 0;
     virtual void join() = 0;
     virtual void forceReconnect() = 0;
 
@@ -106,6 +107,7 @@ public:
     uint8_t getMaxPayloadSize() const override;
 
     bool isJoined() const override;
+    bool isJoinInProgress() const;  // Check if join is currently in progress
     void join() override;
     void forceReconnect() override;
 
@@ -134,6 +136,7 @@ private:
 
     bool initialized = false;
     bool joined = false;  // Source of truth for join state
+    bool joinInProgress = false;  // Prevents overlapping join attempts
     uint32_t lastJoinAttemptMs = 0;
     
     // Stored configuration for applying after join

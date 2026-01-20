@@ -33,6 +33,8 @@ static const char* getRadioLibErrorString(int16_t errorCode) {
             if (errorCode == -28) {
                 return "LoRaWAN node not ready (possibly not joined or invalid state)";
             }
+            // LoRaWAN specific error codes
+            if (errorCode == -1116) return "No downlink received (RADIOLIB_LORAWAN_NO_DOWNLINK)";
             // Return generic message for unknown codes
             return "Unknown error";
     }
@@ -393,6 +395,10 @@ bool LoRaWANHal::isJoined() const {
     return initialized && joined;
 }
 
+bool LoRaWANHal::isJoinInProgress() const {
+    return joinInProgress;
+}
+
 void LoRaWANHal::join() {
     if (!initialized || !node) {
         LOGE("LoRaWAN", "Not initialized - call begin() first");
@@ -404,15 +410,30 @@ void LoRaWANHal::join() {
         return;
     }
 
-    // Check if already connecting (prevent concurrent join attempts)
-    if (connectionState == ConnectionState::Connecting) {
-        LOGD("LoRaWAN", "Join already in progress");
+    // Prevent overlapping join attempts
+    if (joinInProgress) {
+        LOGD("LoRaWAN", "Join already in progress, skipping");
         return;
+    }
+
+    // Simple linear backoff: enforce minimum interval between join attempts
+    const uint32_t MIN_JOIN_INTERVAL_MS = 30000;  // 30 seconds
+    uint32_t nowMs = millis();
+    if (lastJoinAttemptMs > 0) {
+        uint32_t timeSinceLastAttempt = nowMs - lastJoinAttemptMs;
+        if (timeSinceLastAttempt < MIN_JOIN_INTERVAL_MS) {
+            uint32_t waitTime = MIN_JOIN_INTERVAL_MS - timeSinceLastAttempt;
+            LOGI("LoRaWAN", "Backoff: waiting %lu ms before next join attempt (last attempt was %lu ms ago)",
+                 waitTime, timeSinceLastAttempt);
+            delay(waitTime);
+            nowMs = millis();  // Update time after delay
+        }
     }
 
     LOGI("LoRaWAN", "Starting OTAA join process...");
     connectionState = ConnectionState::Connecting;
-    lastJoinAttemptMs = millis();
+    joinInProgress = true;
+    lastJoinAttemptMs = nowMs;
 
     // Clear RadioLib's persistent storage (EEPROM) to reset DevNonce FIRST
     // RadioLib uses EEPROM starting at address 0 by default (~448 bytes)
@@ -440,13 +461,33 @@ void LoRaWANHal::join() {
     LOGI("LoRaWAN", "Clearing persisted session to ensure fresh DevNonce...");
     node->clearSession();
 
+    // Small delay before join attempt to ensure radio and network are ready
+    // This can help with timing issues, especially after device reboot
+    delay(500);
+
     // Attempt to activate (join) the network
     // This is a blocking call that may take several seconds (typically 5-15s)
     // RadioLib handles retries internally, but we track timeout
     // Note: We cleared the session above, so this will always create a new session
+    LOGI("LoRaWAN", "Calling activateOTAA() - this may take 5-60s depending on retries...");
     uint32_t joinStartMs = millis();
     int16_t state = node->activateOTAA();
     uint32_t joinDurationMs = millis() - joinStartMs;
+    
+    // Log join attempt result with timing
+    if (state == RADIOLIB_LORAWAN_NEW_SESSION || state == RADIOLIB_LORAWAN_SESSION_RESTORED) {
+        LOGI("LoRaWAN", "Join completed in %lu ms", joinDurationMs);
+    } else {
+        const char* errorMsg = getRadioLibErrorString(state);
+        LOGW("LoRaWAN", "Join failed after %lu ms: %s (code %d)", joinDurationMs, errorMsg, state);
+        
+        // Provide helpful hints for common join errors
+        if (state == RADIOLIB_ERR_RX_TIMEOUT) {
+            LOGW("LoRaWAN", "RX timeout - Join Accept not received. Check gateway connectivity and ChirpStack configuration.");
+        } else if (state == -1116) {  // RADIOLIB_LORAWAN_NO_DOWNLINK
+            LOGW("LoRaWAN", "No downlink received - Join Accept not received from network server.");
+        }
+    }
 
     if (state == RADIOLIB_LORAWAN_NEW_SESSION || state == RADIOLIB_LORAWAN_SESSION_RESTORED) {
         joined = true;
@@ -520,10 +561,19 @@ void LoRaWANHal::join() {
             LOGW("LoRaWAN", "Hint: Verify region/sub-band configuration matches gateway");
         }
     }
+    
+    // Always clear joinInProgress flag when join attempt completes (success or failure)
+    joinInProgress = false;
 }
 
 void LoRaWANHal::forceReconnect() {
     if (!initialized || !node) return;
+
+    // Prevent overlapping join attempts
+    if (joinInProgress) {
+        LOGD("LoRaWAN", "Join already in progress, skipping forceReconnect");
+        return;
+    }
 
     LOGI("LoRaWAN", "Forcing reconnect...");
     joined = false;

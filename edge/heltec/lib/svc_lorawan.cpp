@@ -53,6 +53,10 @@ bool LoRaWANService::isJoined() const {
     return lorawanHal.isJoined();
 }
 
+bool LoRaWANService::isJoinInProgress() const {
+    return lorawanHal.isJoinInProgress();
+}
+
 void LoRaWANService::join() {
     lorawanHal.join();
 }

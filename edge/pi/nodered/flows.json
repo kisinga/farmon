@@ -345,6 +345,7 @@
         "ui_base": "dash-ui",
         "theme": "dash-theme",
         "path": "farm-monitor",
+        "layout": "grid",
         "icon": "dashboard",
         "order": 1,
         "disabled": false,

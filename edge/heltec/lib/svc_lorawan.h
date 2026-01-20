@@ -40,6 +40,7 @@ public:
 
     // LoRaWAN specific methods
     virtual bool isJoined() const = 0;
+    virtual bool isJoinInProgress() const = 0;
     virtual void join() = 0;
     virtual void forceReconnect() = 0;
 
@@ -72,6 +73,7 @@ public:
     size_t getTotalPeerCount() const override;
 
     bool isJoined() const override;
+    bool isJoinInProgress() const override;
     void join() override;
     void forceReconnect() override;
 
