@@ -16,6 +16,7 @@ struct DeviceConfig {
     bool enableDisplay;
     uint32_t displayUpdateIntervalMs;
     bool globalDebugMode = false; // System-wide debug flag
+    bool testModeEnabled = true;  // Generate random test data for dashboard testing
 
     // Centralized hardware and communication configuration
     BatteryMonitor::Config battery;

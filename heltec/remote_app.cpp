@@ -78,6 +78,10 @@ private:
     uint32_t _lastResetMs = 0;
     uint32_t _lastTxMs = 0;
 
+    // Test mode state
+    float _testDistance = 100.0;
+    float _testVolume = 1000.0;
+
     // LoRaWAN downlink command handler
     void onDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length);
     static void staticOnDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length);
@@ -85,6 +89,7 @@ private:
 
     void setupUi();
     void setupSensors();
+    void generateTestData(std::vector<SensorReading>& readings, uint32_t nowMs);
 };
 
 RemoteApplicationImpl* RemoteApplicationImpl::callbackInstance = nullptr;
@@ -237,35 +242,41 @@ void RemoteApplicationImpl::initialize() {
         scheduler.registerTask("lorawan_tx", [this](CommonAppState& state){
             // Caller checks connection
             if (!lorawanService->isJoined()) return;
-            
+
             // Caller collects fresh data from services
             std::vector<SensorReading> readings;
-            
-            // Water flow (atomic read, no data loss)
-            if (waterFlowSensor) {
-                waterFlowSensor->read(readings);
+
+            if (config.testModeEnabled) {
+                // Generate random test data
+                generateTestData(readings, state.nowMs);
+            } else {
+                // Use real sensor data
+                // Water flow (atomic read, no data loss)
+                if (waterFlowSensor) {
+                    waterFlowSensor->read(readings);
+                }
+
+                // Battery (cached state, always current)
+                readings.push_back({
+                    TelemetryKeys::BatteryPercent,
+                    (float)batteryService->getBatteryPercent(),
+                    state.nowMs
+                });
+
+                // System state
+                readings.push_back({
+                    TelemetryKeys::ErrorCount,
+                    (float)_errorCount,
+                    state.nowMs
+                });
+                uint32_t timeSinceResetSec = (state.nowMs - _lastResetMs) / 1000;
+                readings.push_back({
+                    TelemetryKeys::TimeSinceReset,
+                    (float)timeSinceResetSec,
+                    state.nowMs
+                });
             }
-            
-            // Battery (cached state, always current)
-            readings.push_back({
-                TelemetryKeys::BatteryPercent,
-                (float)batteryService->getBatteryPercent(),
-                state.nowMs
-            });
-            
-            // System state
-            readings.push_back({
-                TelemetryKeys::ErrorCount,
-                (float)_errorCount,
-                state.nowMs
-            });
-            uint32_t timeSinceResetSec = (state.nowMs - _lastResetMs) / 1000;
-            readings.push_back({
-                TelemetryKeys::TimeSinceReset,
-                (float)timeSinceResetSec,
-                state.nowMs
-            });
-            
+
             // Pure helper: format and transmit
             if (lorawanTransmitter && !readings.empty()) {
                 bool success = lorawanTransmitter->transmit(readings);
@@ -364,6 +375,32 @@ void RemoteApplicationImpl::run() {
     // Main run loop - high-frequency, non-blocking tasks
     // The main application logic is handled by the scheduler
     delay(1);
+}
+
+void RemoteApplicationImpl::generateTestData(std::vector<SensorReading>& readings, uint32_t nowMs) {
+    // Random distance reading (50-200cm for water level)
+    _testDistance += random(-10, 10) / 10.0;
+    if (_testDistance < 50) _testDistance = 50;
+    if (_testDistance > 200) _testDistance = 200;
+    readings.push_back({"pd", _testDistance, nowMs});
+
+    // Random total volume (increasing slowly)
+    _testVolume += random(0, 50) / 10.0;  // Add 0-5 liters each reading
+    readings.push_back({"tv", _testVolume, nowMs});
+
+    // Random battery (70-100%)
+    float testBattery = random(70, 100);
+    readings.push_back({"bp", testBattery, nowMs});
+
+    // Error count (usually 0)
+    readings.push_back({"ec", 0.0f, nowMs});
+
+    // Time since reset
+    uint32_t timeSinceResetSec = (nowMs - _lastResetMs) / 1000;
+    readings.push_back({"tsr", (float)timeSinceResetSec, nowMs});
+
+    LOGI("TestMode", "Generated test data: distance=%.1fcm, volume=%.1fL, battery=%.0f%%",
+         _testDistance, _testVolume, testBattery);
 }
 
 // LoRaWAN downlink command handler - routed by port

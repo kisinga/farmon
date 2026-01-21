@@ -20,6 +20,7 @@ inline RemoteConfig buildRemoteConfig() {
     RemoteConfig cfg = RemoteConfig::create(3);
     cfg.deviceName = "remote-03";
     cfg.globalDebugMode = true;
+    cfg.testModeEnabled = true;  // Set to false to use real sensor data
 
     // Battery monitoring (GPIO1 on Heltec V3)
     cfg.battery.adcPin = 1;
