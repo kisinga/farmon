@@ -1,1536 +1,1536 @@
 [
-    {
-        "id": "farm-flow-tab",
-        "type": "tab",
-        "label": "Farm Monitor",
-        "disabled": false,
-        "info": "Main flow for receiving ChirpStack events and storing to PostgreSQL"
-    },
-    {
-        "id": "dashboard-tab",
-        "type": "tab",
-        "label": "Dashboard",
-        "disabled": false,
-        "info": "Dashboard UI for monitoring farm sensors"
-    },
-    {
-        "id": "api-flow-tab",
-        "type": "tab",
-        "label": "API",
-        "disabled": false,
-        "info": "HTTP endpoints"
-    },
-    {
-        "id": "config-flow-tab",
-        "type": "tab",
-        "label": "Configuration",
-        "disabled": false,
-        "info": "System configuration and calibration"
-    },
-    {
-        "id": "e1b2c3d4e5f6a7b8",
-        "type": "mqtt-broker",
-        "name": "Mosquitto",
-        "broker": "mosquitto",
-        "port": "1883",
-        "clientid": "nodered-farm",
-        "autoConnect": true,
-        "usetls": false,
-        "protocolVersion": "4",
-        "keepalive": "60",
-        "cleansession": true,
-        "autoUnsubscribe": true,
-        "birthTopic": "",
-        "birthQos": "0",
-        "birthPayload": "",
-        "birthMsg": {},
-        "closeTopic": "",
-        "closeQos": "0",
-        "closePayload": "",
-        "closeMsg": {},
-        "willTopic": "",
-        "willQos": "0",
-        "willPayload": "",
-        "willMsg": {},
-        "userProps": "",
-        "sessionExpiry": ""
-    },
-    {
-        "id": "a1b2c3d4e5f6a7b9",
-        "type": "postgreSQLConfig",
-        "name": "FarmMon DB",
-        "host": "postgres",
-        "port": "5432",
-        "database": "farmmon",
-        "ssl": false,
-        "max": "10",
-        "idle": "1000",
-        "connectionTimeout": "10000",
-        "user": "farmmon",
-        "password": "farmmon"
-    },
-    {
-        "id": "dash-ui",
-        "type": "ui-base",
-        "name": "Farm Monitor Dashboard",
-        "path": "/dashboard",
-        "appIcon": "",
-        "includeClientData": true,
-        "acceptsClientConfig": [
-            "ui-control",
-            "ui-notification"
-        ],
-        "showPathInSidebar": true,
-        "headerContent": "page",
-        "navigationStyle": "default",
-        "titleBarStyle": "default",
-        "showReconnectNotification": true,
-        "notificationDisplayTime": 5,
-        "showDisconnectNotification": true,
-        "allowInstall": true
-    },
-    {
-        "id": "dash-theme",
-        "type": "ui-theme",
-        "name": "Modern Dark Theme",
-        "colors": {
-            "surface": "#1e293b",
-            "primary": "#3b82f6",
-            "bgPage": "#0f172a",
-            "groupBg": "#1e293b",
-            "groupOutline": "#334155",
-            "success": "#10b981",
-            "warning": "#f59e0b",
-            "danger": "#ef4444"
-        },
-        "sizes": {
-            "pagePadding": "20px",
-            "groupGap": "20px",
-            "groupBorderRadius": "12px",
-            "widgetGap": "16px"
-        }
-    },
-    {
-        "id": "dash-tab",
-        "type": "ui-page",
-        "name": "Farm Monitor",
-        "ui": "dash-ui",
-        "path": "/farm-monitor",
-        "icon": "dashboard",
-        "layout": "grid",
-        "theme": "dash-theme",
-        "breakpoints": [
-            {
-                "name": "Default",
-                "px": "0",
-                "cols": "3"
-            },
-            {
-                "name": "Tablet",
-                "px": "576",
-                "cols": "6"
-            },
-            {
-                "name": "Small Desktop",
-                "px": "768",
-                "cols": "9"
-            },
-            {
-                "name": "Desktop",
-                "px": "1024",
-                "cols": "12"
-            }
-        ],
-        "order": 1,
-        "className": "",
-        "visible": "true",
-        "disabled": "false"
-    },
-    {
-        "id": "dash-group",
-        "type": "ui-group",
-        "name": "Device Status",
-        "page": "dash-tab",
-        "width": "12",
-        "order": 1,
-        "className": ""
-    },
-    {
-        "id": "dash-group-signal",
-        "type": "ui-group",
-        "name": "Signal Quality",
-        "page": "dash-tab",
-        "width": "12",
-        "order": 2,
-        "className": ""
-    },
-    {
-        "id": "dash-group-history",
-        "type": "ui-group",
-        "name": "Historical Data",
-        "page": "dash-tab",
-        "width": "12",
-        "order": 3,
-        "className": ""
-    },
-    {
-        "id": "dash-group-water",
-        "type": "ui-group",
-        "name": "Water Tank Monitor",
-        "page": "dash-tab",
-        "width": "12",
-        "order": 4,
-        "className": ""
-    },
-    {
-        "id": "72aa6c226990e117",
-        "type": "global-config",
-        "env": [],
-        "modules": {
-            "node-red-contrib-postgresql": "0.15.4",
-            "@flowfuse/node-red-dashboard": "1.30.2"
-        }
-    },
-    {
-        "id": "ead6616b9d4660df",
-        "type": "ui-link",
-        "name": "Link 1",
-        "ui": "dash-ui",
-        "path": "/",
-        "icon": "home",
-        "order": 2,
-        "visible": true,
-        "disabled": false
-    },
-    {
-        "id": "n1a2b3c4d5e6f7g8",
-        "type": "mqtt in",
-        "z": "farm-flow-tab",
-        "name": "ChirpStack Uplinks",
-        "topic": "application/+/device/+/event/up",
-        "qos": "0",
-        "datatype": "json",
-        "broker": "e1b2c3d4e5f6a7b8",
-        "nl": false,
-        "rap": true,
-        "rh": 0,
-        "inputs": 0,
-        "x": 130,
-        "y": 160,
-        "wires": [
-            [
-                "n2a2b3c4d5e6f7g8",
-                "n3a2b3c4d5e6f7g8"
-            ]
-        ]
-    },
-    {
-        "id": "n1b2b3c4d5e6f7g8",
-        "type": "mqtt in",
-        "z": "farm-flow-tab",
-        "name": "ChirpStack Joins",
-        "topic": "application/+/device/+/event/join",
-        "qos": "0",
-        "datatype": "json",
-        "broker": "e1b2c3d4e5f6a7b8",
-        "nl": false,
-        "rap": true,
-        "rh": 0,
-        "inputs": 0,
-        "x": 120,
-        "y": 380,
-        "wires": [
-            [
-                "n4a2b3c4d5e6f7g8"
-            ]
-        ]
-    },
-    {
-        "id": "n2a2b3c4d5e6f7g8",
-        "type": "function",
-        "z": "farm-flow-tab",
-        "name": "Parse Uplink",
-        "func": "// Extract device info and payload from ChirpStack v4 event\nconst deviceEui = msg.payload.deviceInfo?.devEui || 'unknown';\nconst deviceName = msg.payload.deviceInfo?.deviceName || 'unknown';\n\n// Get decoded data (from codec) or raw base64\nlet data = msg.payload.object || {};\nif (Object.keys(data).length === 0 && msg.payload.data) {\n    data = { raw: msg.payload.data };\n}\n\n// Add metadata\ndata._rssi = msg.payload.rxInfo?.[0]?.rssi;\ndata._snr = msg.payload.rxInfo?.[0]?.snr;\ndata._fCnt = msg.payload.fCnt;\ndata._fPort = msg.payload.fPort;\n\n// Prepare for PostgreSQL - params array for $1, $2\nmsg.params = [deviceEui, JSON.stringify(data)];\nmsg.deviceEui = deviceEui;\nmsg.deviceName = deviceName;\nmsg.sensorData = data;\n\nnode.status({fill: 'green', shape: 'dot', text: deviceEui.substring(0,8) + '...'});\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 390,
-        "y": 200,
-        "wires": [
-            [
-                "n5a2b3c4d5e6f7g8",
-                "n6a2b3c4d5e6f7g8",
-                "n7a2b3c4d5e6f7g8",
-                "farm-to-dash-link"
-            ]
-        ]
-    },
-    {
-        "id": "n3a2b3c4d5e6f7g8",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "Raw MQTT",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 370,
-        "y": 100,
-        "wires": []
-    },
-    {
-        "id": "n4a2b3c4d5e6f7g8",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "Join Events",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 390,
-        "y": 380,
-        "wires": []
-    },
-    {
-        "id": "n5a2b3c4d5e6f7g8",
-        "type": "postgresql",
-        "z": "farm-flow-tab",
-        "name": "Store Reading",
-        "query": "INSERT INTO readings (device_eui, data) VALUES ($1, $2::jsonb) RETURNING id",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 680,
-        "y": 100,
-        "wires": [
-            [
-                "n8a2b3c4d5e6f7g8"
-            ]
-        ]
-    },
-    {
-        "id": "n6a2b3c4d5e6f7g8",
-        "type": "function",
-        "z": "farm-flow-tab",
-        "name": "Check Thresholds",
-        "func": "const data = msg.sensorData;\nconst alerts = [];\n\nif (data.water_level !== undefined && data.water_level < 20) {\n    alerts.push({ type: 'water_level_low', message: `Water level low: ${data.water_level}%`, device: msg.deviceEui });\n}\nif (data.temperature !== undefined && data.temperature > 35) {\n    alerts.push({ type: 'temperature_high', message: `High temperature: ${data.temperature}°C`, device: msg.deviceEui });\n}\nif (data.battery !== undefined && data.battery < 20) {\n    alerts.push({ type: 'battery_low', message: `Battery low: ${data.battery}%`, device: msg.deviceEui });\n}\n\nif (alerts.length > 0) {\n    return { payload: alerts, deviceEui: msg.deviceEui };\n}\nreturn null;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 690,
-        "y": 200,
-        "wires": [
-            [
-                "n9a2b3c4d5e6f7g8"
-            ]
-        ]
-    },
-    {
-        "id": "n7a2b3c4d5e6f7g8",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "Parsed Data",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 670,
-        "y": 300,
-        "wires": []
-    },
-    {
-        "id": "n8a2b3c4d5e6f7g8",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "DB Result",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 920,
-        "y": 100,
-        "wires": []
-    },
-    {
-        "id": "n9a2b3c4d5e6f7g8",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "Alerts",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 950,
-        "y": 200,
-        "wires": []
-    },
-    {
-        "id": "n10a2b3c4d5e6f7g",
-        "type": "inject",
-        "z": "farm-flow-tab",
-        "name": "Test Uplink",
-        "props": [
-            {
-                "p": "payload"
-            }
-        ],
-        "repeat": "",
-        "crontab": "",
-        "once": false,
-        "onceDelay": 0.1,
-        "topic": "",
-        "payload": "{\"deviceInfo\":{\"devEui\":\"0011223344556677\",\"deviceName\":\"test-device\"},\"object\":{\"temperature\":25.5,\"battery\":85},\"rxInfo\":[{\"rssi\":-80,\"snr\":7.5}],\"fCnt\":123,\"fPort\":1}",
-        "payloadType": "json",
-        "x": 120,
-        "y": 240,
-        "wires": [
-            [
-                "n2a2b3c4d5e6f7g8"
-            ]
-        ]
-    },
-    {
-        "id": "farm-to-dash-link",
-        "type": "link out",
-        "z": "farm-flow-tab",
-        "name": "To Dashboard",
-        "mode": "link",
-        "links": [
-            "dash-link-in"
-        ],
-        "x": 655,
-        "y": 360,
-        "wires": []
-    },
-    {
-        "id": "73106b72be8a16de",
-        "type": "mqtt out",
-        "z": "farm-flow-tab",
-        "name": "",
-        "topic": "",
-        "qos": "",
-        "retain": "",
-        "respTopic": "",
-        "contentType": "",
-        "userProps": "",
-        "correl": "",
-        "expiry": "",
-        "broker": "e1b2c3d4e5f6a7b8",
-        "x": 650,
-        "y": 540,
-        "wires": []
-    },
-    {
-        "id": "6a670683601fd4f2",
-        "type": "function",
-        "z": "farm-flow-tab",
-        "name": "function 1",
-        "func": "// Test downlink message formatter for ChirpStack v4\n// CRITICAL: devEui must be in the payload AND match the topic\n\n// Configuration - CHANGE THESE:\nconst applicationId = \"885c4dd2-e474-4265-bd25-2f838571f8de\";  // Your ChirpStack application ID (check ChirpStack UI)\nconst devEui = \"48ca43fffe3f0e70\";  // Your device EUI (lowercase, no colons)\nconst port = 20;  // Test port\nconst testMessage = \"Hello from Node-RED!\";  // Your test message\n\n// Convert message to bytes (UTF-8)\nconst messageBytes = Buffer.from(testMessage, 'utf8');\n\n// Convert to base64 (ChirpStack expects base64-encoded data)\nconst dataBase64 = messageBytes.toString('base64');\n\n// ChirpStack v4 downlink command format\n// CRITICAL: devEui field MUST be present and match the topic\nmsg.payload = {\n    devEui: devEui,        // REQUIRED: Must match topic DevEUI\n    confirmed: false,       // Unconfirmed downlink (faster, no ACK required)\n    fPort: port,           // Application port\n    data: dataBase64       // Base64-encoded payload\n};\n\n// Set topic - application ID and DevEUI must match payload\nmsg.topic = `application/${applicationId}/device/${devEui}/command/down`;\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": 0,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 380,
-        "y": 540,
-        "wires": [
-            [
-                "73106b72be8a16de",
-                "5da88bd81d402cb6"
-            ]
-        ]
-    },
-    {
-        "id": "2dca16451615ad3b",
-        "type": "inject",
-        "z": "farm-flow-tab",
-        "name": "Test downlink",
-        "props": [],
-        "repeat": "",
-        "crontab": "",
-        "once": false,
-        "onceDelay": 0.1,
-        "topic": "",
-        "x": 150,
-        "y": 540,
-        "wires": [
-            [
-                "6a670683601fd4f2"
-            ]
-        ]
-    },
-    {
-        "id": "5da88bd81d402cb6",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "debug 1",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "false",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 660,
-        "y": 640,
-        "wires": []
-    },
-    {
-        "id": "dash-link-in",
-        "type": "link in",
-        "z": "dashboard-tab",
-        "name": "Sensor Data Input",
-        "links": [],
-        "x": 55,
-        "y": 220,
-        "wires": [
-            [
-                "dash1"
-            ]
-        ]
-    },
-    {
-        "id": "dash-css-template",
-        "type": "ui-template",
-        "z": "dashboard-tab",
-        "group": "",
-        "page": "",
-        "ui": "dash-ui",
-        "name": "Modern Dark Theme CSS",
-        "order": 0,
-        "width": 0,
-        "height": 0,
-        "head": "",
-        "format": "<style>\n/* Modern Dark Theme Custom CSS */\n\n/* Smooth scrollbar */\n::-webkit-scrollbar {\n    width: 8px;\n    height: 8px;\n}\n\n::-webkit-scrollbar-track {\n    background: #0f172a;\n}\n\n::-webkit-scrollbar-thumb {\n    background: #334155;\n    border-radius: 4px;\n}\n\n::-webkit-scrollbar-thumb:hover {\n    background: #475569;\n}\n\n/* Card enhancements */\n.nrdb-ui-group {\n    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);\n    backdrop-filter: blur(10px);\n    transition: transform 0.2s ease, box-shadow 0.2s ease;\n}\n\n.nrdb-ui-group:hover {\n    transform: translateY(-2px);\n    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);\n}\n\n/* Gauge glow effects */\n.nrdb-ui-gauge-tile,\n.nrdb-ui-gauge-tank {\n    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3));\n    transition: all 0.3s ease;\n}\n\n.nrdb-ui-gauge-tile:hover,\n.nrdb-ui-gauge-tank:hover {\n    filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.5));\n}\n\n/* Text improvements */\n.nrdb-ui-text {\n    font-weight: 500;\n    letter-spacing: 0.02em;\n}\n\n/* Chart styling */\n.nrdb-ui-chart {\n    background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);\n    border-radius: 12px;\n    padding: 16px;\n}\n\n/* KPI Card Styling */\n.kpi-card {\n    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);\n    border: 1px solid #334155;\n    border-radius: 12px;\n    padding: 20px;\n    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);\n    transition: all 0.3s ease;\n}\n\n.kpi-card:hover {\n    transform: translateY(-4px);\n    box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.5);\n    border-color: #3b82f6;\n}\n\n/* Status Badge Styling */\n.status-badge {\n    display: inline-block;\n    padding: 4px 12px;\n    border-radius: 20px;\n    font-size: 12px;\n    font-weight: 600;\n    text-transform: uppercase;\n    letter-spacing: 0.05em;\n    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);\n}\n\n.status-badge.ok {\n    background: #10b981;\n    color: #ffffff;\n}\n\n.status-badge.warning {\n    background: #f59e0b;\n    color: #ffffff;\n}\n\n.status-badge.critical {\n    background: #ef4444;\n    color: #ffffff;\n    animation: pulse 2s infinite;\n}\n\n.status-badge.offline {\n    background: #6b7280;\n    color: #ffffff;\n}\n\n/* Pulse animation for critical alerts */\n@keyframes pulse {\n    0%, 100% {\n        opacity: 1;\n    }\n    50% {\n        opacity: 0.7;\n    }\n}\n\n/* Live indicator dot */\n.live-indicator {\n    display: inline-block;\n    width: 8px;\n    height: 8px;\n    border-radius: 50%;\n    background: #10b981;\n    margin-right: 8px;\n    animation: pulse-dot 2s infinite;\n}\n\n@keyframes pulse-dot {\n    0%, 100% {\n        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);\n    }\n    50% {\n        box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);\n    }\n}\n\n/* Button group styling */\n.nrdb-ui-button-group button {\n    transition: all 0.2s ease;\n}\n\n.nrdb-ui-button-group button:hover {\n    transform: translateY(-2px);\n    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);\n}\n\n/* Page header */\n.nrdb-ui-page-title {\n    font-size: 28px;\n    font-weight: 700;\n    color: #ffffff;\n    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);\n    margin-bottom: 24px;\n}\n\n/* Metric labels */\n.metric-label {\n    font-size: 12px;\n    font-weight: 600;\n    text-transform: uppercase;\n    letter-spacing: 0.1em;\n    color: #94a3b8;\n    margin-bottom: 8px;\n}\n\n/* Chart container */\n.chart-container {\n    background: rgba(30, 41, 59, 0.6);\n    border-radius: 12px;\n    padding: 16px;\n    backdrop-filter: blur(10px);\n}\n\n/* Responsive adjustments */\n@media (max-width: 768px) {\n    .nrdb-ui-group {\n        margin-bottom: 16px;\n    }\n    \n    .kpi-card {\n        padding: 16px;\n    }\n    \n    .nrdb-ui-page-title {\n        font-size: 24px;\n    }\n}\n</style>",
-        "storeOutMessages": false,
-        "passthru": true,
-        "resendOnRefresh": false,
-        "templateScope": "site:style",
-        "className": "",
-        "x": 150,
-        "y": 60,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash1",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Extract Sensor Data",
-        "func": "// Extract all sensor data from the incoming message\nconst data = msg.sensorData || {};\nconst batteryPercent = data.bp;\nconst rssi = data._rssi;\nconst snr = data._snr;\nconst tsr = data.tsr;\n\n// Format device name from EUI\nconst deviceEui = msg.deviceEui || 'unknown';\nconst deviceName = msg.deviceName || deviceEui;\nconst shortEui = deviceEui.substring(0, 8).toUpperCase();\n\n// Create multiple outputs for different dashboard elements\nreturn [\n    // Output 1: Battery data for gauge\n    batteryPercent !== undefined ? {\n        payload: parseFloat(batteryPercent),\n        topic: shortEui,\n        deviceEui: deviceEui,\n        deviceName: deviceName\n    } : null,\n    \n    // Output 2: RSSI data for gauge\n    rssi !== undefined ? {\n        payload: parseFloat(rssi),\n        topic: shortEui,\n        deviceEui: deviceEui\n    } : null,\n    \n    // Output 3: SNR data for gauge\n    snr !== undefined ? {\n        payload: parseFloat(snr),\n        topic: shortEui,\n        deviceEui: deviceEui\n    } : null,\n    \n    // Output 4: Device info for display\n    {\n        payload: `${deviceName} (${shortEui})`,\n        deviceEui: deviceEui,\n        rssi: rssi,\n        snr: snr,\n        battery: batteryPercent\n    },\n    \n    // Output 5: TSR data\n    tsr !== undefined ? {\n        payload: parseFloat(tsr),\n        topic: shortEui\n    } : null,\n    \n    // Output 6: Pass through complete data for water processor\n    {\n        sensorData: data,\n        deviceEui: deviceEui,\n        deviceName: deviceName\n    },\n\n    // Output 7: Battery for history chart\n    batteryPercent !== undefined ? {\n        payload: parseFloat(batteryPercent),\n        topic: 'Battery'\n    } : null,\n\n    // Output 8: RSSI for history chart\n    rssi !== undefined ? {\n        payload: parseFloat(rssi),\n        topic: 'RSSI'\n    } : null,\n\n    // Output 9: SNR for history chart  \n    snr !== undefined ? {\n        payload: parseFloat(snr),\n        topic: 'SNR'\n    } : null,\n\n    // Output 10: RSSI for combined signal chart\n    rssi !== undefined ? {\n        payload: parseFloat(rssi),\n        topic: 'RSSI'\n    } : null,\n\n    // Output 11: SNR for combined signal chart\n    snr !== undefined ? {\n        payload: parseFloat(snr),\n        topic: 'SNR'\n    } : null\n];",
-        "outputs": 11,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 180,
-        "y": 220,
-        "wires": [
-            [
-                "dash-gauge"
-            ],
-            [
-                "dash-rssi-gauge"
-            ],
-            [
-                "dash-snr-gauge"
-            ],
-            [
-                "dash-text"
-            ],
-            [
-                "dash-tsr-text"
-            ],
-            [
-                "water-processor"
-            ],
-            [
-                "dash-battery-chart"
-            ],
-            [
-                "dash-rssi-chart"
-            ],
-            [
-                "dash-snr-chart"
-            ],
-            [
-                "dash-signal-chart"
-            ],
-            [
-                "dash-signal-chart"
-            ]
-        ]
-    },
-    {
-        "id": "dash-gauge",
-        "type": "ui-gauge",
-        "z": "dashboard-tab",
-        "name": "Battery Level",
-        "group": "dash-group",
-        "order": 2,
-        "value": "payload",
-        "valueType": "msg",
-        "width": "4",
-        "height": "3",
-        "gtype": "gauge-battery",
-        "title": "Battery",
-        "alwaysShowTitle": true,
-        "units": "%",
-        "icon": "battery_charging_full",
-        "prefix": "",
-        "suffix": "",
-        "segments": [
-            {
-                "from": "0",
-                "color": "#dc2626",
-                "text": "LOW",
-                "textType": "label"
-            },
-            {
-                "from": "20",
-                "color": "#eab308",
-                "text": "MED",
-                "textType": "label"
-            },
-            {
-                "from": "50",
-                "color": "#10b981",
-                "text": "GOOD",
-                "textType": "label"
-            }
-        ],
-        "min": 0,
-        "max": "100",
-        "sizeThickness": "20",
-        "sizeGap": "4",
-        "sizeKeyThickness": "8",
-        "className": "",
-        "x": 550,
-        "y": 40,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-text",
-        "type": "ui-text",
-        "z": "dashboard-tab",
-        "group": "dash-group",
-        "order": 1,
-        "width": "4",
-        "height": "1",
-        "name": "Device Name",
-        "label": "Device:",
-        "format": "{{msg.payload}}",
-        "layout": "row-spread",
-        "style": false,
-        "font": "",
-        "fontSize": "16",
-        "color": "#ffffff",
-        "wrapText": false,
-        "className": "",
-        "value": "payload",
-        "valueType": "msg",
-        "x": 560,
-        "y": 160,
-        "wires": []
-    },
-    {
-        "id": "dash-tsr-text",
-        "type": "ui-text",
-        "z": "dashboard-tab",
-        "group": "dash-group",
-        "order": 3,
-        "width": "4",
-        "height": "1",
-        "name": "Time Since Reset",
-        "label": "Uptime:",
-        "format": "{{msg.payload}}s",
-        "layout": "row-spread",
-        "style": false,
-        "font": "",
-        "fontSize": "14",
-        "color": "#94a3b8",
-        "wrapText": false,
-        "className": "",
-        "value": "payload",
-        "valueType": "msg",
-        "x": 570,
-        "y": 200,
-        "wires": []
-    },
-    {
-        "id": "water-processor",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Calculate Water Level & Flow",
-        "func": "// Get configuration from global context\nconst config = global.get('waterTankConfig');\n\nif (!config) {\n    node.warn('Water tank config not loaded yet');\n    return null;\n}\n\nconst data = msg.sensorData || {};\nconst deviceEui = msg.deviceEui || 'unknown';\n\n// Extract sensor readings\nconst distanceReading = parseFloat(data[config.sensor.field_name]);\nconst totalVolume = parseFloat(data[config.flow.flow_field_name]);\n\n// Initialize flow tracking in context\nconst flowContext = context.get('flowTracking') || {};\nif (!flowContext[deviceEui]) {\n    flowContext[deviceEui] = {\n        lastVolume: totalVolume || 0,\n        lastTimestamp: Date.now(),\n        flowRate: 0\n    };\n}\n\nconst deviceFlow = flowContext[deviceEui];\n\n// Calculate water level from distance sensor\nlet waterLevelCm = null;\nlet waterLevelPercent = null;\nlet waterVolumeLiters = null;\n\nif (!isNaN(distanceReading) && \n    distanceReading >= config.sensor.min_reading_cm && \n    distanceReading <= config.sensor.max_reading_cm) {\n    \n    // Distance from sensor to water surface\n    const adjustedDistance = distanceReading + config.sensor.offset_cm;\n    \n    // Water level = mounting height - distance to water - tank bottom offset\n    // Assuming tank bottom is at ground level (adjust if needed)\n    waterLevelCm = config.sensor.mounting_height_cm - adjustedDistance;\n    \n    // Ensure water level is within tank bounds\n    waterLevelCm = Math.max(0, Math.min(waterLevelCm, config.tank.height_cm));\n    \n    // Calculate percentage\n    waterLevelPercent = (waterLevelCm / config.tank.height_cm) * 100;\n    \n    // Calculate volume (simplified for cylindrical tank)\n    if (config.tank.shape === 'cylindrical') {\n        const fillRatio = waterLevelCm / config.tank.height_cm;\n        waterVolumeLiters = config.tank.capacity_liters * fillRatio;\n    }\n}\n\n// Calculate flow rate\nlet flowRateLPH = 0;  // Liters per hour\nlet volumeChangeLiters = 0;\n\nif (!isNaN(totalVolume) && config.flow.enable_flow_calculation) {\n    const now = Date.now();\n    const timeDeltaSeconds = (now - deviceFlow.lastTimestamp) / 1000;\n    \n    if (timeDeltaSeconds > 0 && timeDeltaSeconds < 300) {  // Valid time window (< 5 min)\n        volumeChangeLiters = totalVolume - deviceFlow.lastVolume;\n        \n        // Only calculate if change is significant\n        if (Math.abs(volumeChangeLiters) >= config.flow.flow_detection_threshold_liters) {\n            // Convert to liters per hour\n            flowRateLPH = (volumeChangeLiters / timeDeltaSeconds) * 3600;\n            \n            // Update tracking\n            deviceFlow.flowRate = flowRateLPH;\n            deviceFlow.lastVolume = totalVolume;\n            deviceFlow.lastTimestamp = now;\n        }\n    } else if (timeDeltaSeconds >= 300) {\n        // Reset tracking after long gap\n        deviceFlow.lastVolume = totalVolume;\n        deviceFlow.lastTimestamp = now;\n        deviceFlow.flowRate = 0;\n    }\n}\n\n// Save context\nflowContext[deviceEui] = deviceFlow;\ncontext.set('flowTracking', flowContext);\n\n// Prepare outputs\nconst shortEui = deviceEui.substring(0, 8).toUpperCase();\n\nreturn [\n    // Output 1: Water level percentage for gauge\n    waterLevelPercent !== null ? {\n        payload: waterLevelPercent,\n        topic: shortEui,\n        waterLevel_cm: waterLevelCm,\n        waterVolume_liters: waterVolumeLiters\n    } : null,\n    \n    // Output 2: Water volume in liters (text display)\n    waterVolumeLiters !== null ? {\n        payload: Math.round(waterVolumeLiters),\n        topic: shortEui,\n        capacity: config.tank.capacity_liters\n    } : null,\n    \n    // Output 3: Flow rate for display\n    {\n        payload: Math.abs(flowRateLPH).toFixed(1),\n        topic: shortEui,\n        volumeChange: volumeChangeLiters,\n        totalVolume: totalVolume\n    },\n    \n    // Output 4: Total volume for history chart\n    !isNaN(totalVolume) ? {\n        payload: totalVolume,\n        topic: shortEui,\n        timestamp: Date.now()\n    } : null\n];",
-        "outputs": 4,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 560,
-        "y": 460,
-        "wires": [
-            [
-                "dash-water-gauge"
-            ],
-            [
-                "dash-water-volume-text"
-            ],
-            [
-                "dash-flow-rate-text"
-            ],
-            [
-                "dash-water-history-store"
-            ]
-        ]
-    },
-    {
-        "id": "dash-water-gauge",
-        "type": "ui-gauge",
-        "z": "dashboard-tab",
-        "name": "Water Level",
-        "group": "dash-group-water",
-        "order": 1,
-        "value": "payload",
-        "valueType": "msg",
-        "width": "6",
-        "height": "5",
-        "gtype": "gauge-tank",
-        "title": "Water Tank Level",
-        "alwaysShowTitle": true,
-        "units": "%",
-        "icon": "water_drop",
-        "prefix": "",
-        "suffix": "",
-        "segments": [
-            {
-                "from": "0",
-                "color": "#dc2626",
-                "text": "CRITICAL",
-                "textType": "label"
-            },
-            {
-                "from": "10",
-                "color": "#f59e0b",
-                "text": "LOW",
-                "textType": "label"
-            },
-            {
-                "from": "20",
-                "color": "#eab308",
-                "text": "MEDIUM",
-                "textType": "label"
-            },
-            {
-                "from": "50",
-                "color": "#10b981",
-                "text": "GOOD",
-                "textType": "label"
-            }
-        ],
-        "min": 0,
-        "max": "100",
-        "sizeThickness": "20",
-        "sizeGap": "4",
-        "sizeKeyThickness": "10",
-        "className": "",
-        "x": 850,
-        "y": 440,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-water-volume-text",
-        "type": "ui-text",
-        "z": "dashboard-tab",
-        "group": "dash-group-water",
-        "order": 2,
-        "width": "6",
-        "height": "1",
-        "name": "Water Volume",
-        "label": "Volume:",
-        "format": "{{msg.payload}} / {{msg.capacity}} L",
-        "layout": "row-spread",
-        "style": false,
-        "font": "",
-        "fontSize": "18",
-        "color": "#3b82f6",
-        "wrapText": false,
-        "className": "",
-        "value": "payload",
-        "valueType": "msg",
-        "x": 860,
-        "y": 480,
-        "wires": []
-    },
-    {
-        "id": "dash-flow-rate-text",
-        "type": "ui-text",
-        "z": "dashboard-tab",
-        "group": "dash-group-water",
-        "order": 3,
-        "width": "6",
-        "height": "1",
-        "name": "Flow Rate",
-        "label": "Flow Rate:",
-        "format": "{{msg.payload}} L/h",
-        "layout": "row-spread",
-        "style": false,
-        "font": "",
-        "fontSize": "16",
-        "color": "#94a3b8",
-        "wrapText": false,
-        "className": "",
-        "value": "payload",
-        "valueType": "msg",
-        "x": 840,
-        "y": 520,
-        "wires": []
-    },
-    {
-        "id": "dash-water-history-store",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Store for Chart",
-        "func": "// Store water data points in context for charting\nconst historyKey = 'waterHistory_' + msg.topic;\nlet history = context.get(historyKey) || [];\n\n// Add new data point\nhistory.push({\n    x: msg.timestamp || Date.now(),\n    y: msg.payload\n});\n\n// Keep only last 24 hours (assuming 60s interval = 1440 points)\nconst maxPoints = 1440;\nif (history.length > maxPoints) {\n    history = history.slice(-maxPoints);\n}\n\ncontext.set(historyKey, history);\n\n// Pass through for real-time chart update\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 840,
-        "y": 560,
-        "wires": [
-            [
-                "dash-water-flow-chart"
-            ]
-        ]
-    },
-    {
-        "id": "dash-water-flow-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-water",
-        "name": "Water Flow History",
-        "order": 4,
-        "chartType": "line",
-        "xAxisLabel": "Time",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "Total Volume (L)",
-        "ymin": "",
-        "ymax": "",
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100",
-        "width": "12",
-        "height": "6",
-        "className": "",
-        "x": 1070,
-        "y": 600,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-rssi-gauge",
-        "type": "ui-gauge",
-        "z": "dashboard-tab",
-        "name": "Signal Strength (RSSI)",
-        "group": "dash-group-signal",
-        "order": 1,
-        "value": "payload",
-        "valueType": "msg",
-        "width": "4",
-        "height": "4",
-        "gtype": "gauge-half",
-        "gstyle": "needle",
-        "title": "Signal Strength",
-        "alwaysShowTitle": true,
-        "units": "dBm",
-        "icon": "signal_cellular_alt",
-        "prefix": "",
-        "suffix": "",
-        "segments": [
-            {
-                "from": "-120",
-                "color": "#dc2626",
-                "text": "WEAK",
-                "textType": "label"
-            },
-            {
-                "from": "-90",
-                "color": "#eab308",
-                "text": "FAIR",
-                "textType": "label"
-            },
-            {
-                "from": "-60",
-                "color": "#10b981",
-                "text": "STRONG",
-                "textType": "label"
-            }
-        ],
-        "min": "-120",
-        "max": "-30",
-        "sizeThickness": "32",
-        "sizeGap": "2",
-        "sizeKeyThickness": "8",
-        "className": "",
-        "x": 580,
-        "y": 80,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-snr-gauge",
-        "type": "ui-gauge",
-        "z": "dashboard-tab",
-        "name": "SNR",
-        "group": "dash-group-signal",
-        "order": 2,
-        "value": "payload",
-        "valueType": "msg",
-        "width": "4",
-        "height": "4",
-        "gtype": "gauge-half",
-        "gstyle": "needle",
-        "title": "Signal to Noise Ratio",
-        "alwaysShowTitle": true,
-        "units": "dB",
-        "icon": "graphic_eq",
-        "prefix": "",
-        "suffix": "",
-        "segments": [
-            {
-                "from": "-20",
-                "color": "#dc2626",
-                "text": "POOR",
-                "textType": "label"
-            },
-            {
-                "from": "0",
-                "color": "#eab308",
-                "text": "OK",
-                "textType": "label"
-            },
-            {
-                "from": "5",
-                "color": "#10b981",
-                "text": "GOOD",
-                "textType": "label"
-            }
-        ],
-        "min": "-20",
-        "max": "20",
-        "sizeThickness": "32",
-        "sizeGap": "2",
-        "sizeKeyThickness": "8",
-        "className": "",
-        "x": 530,
-        "y": 120,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-battery-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-history",
-        "name": "Battery History",
-        "order": 1,
-        "chartType": "line",
-        "xAxisLabel": "Time",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "Battery %",
-        "ymin": "0",
-        "ymax": "100",
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100",
-        "width": "12",
-        "height": "5",
-        "className": "",
-        "x": 860,
-        "y": 380,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-rssi-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-history",
-        "name": "RSSI History",
-        "order": 2,
-        "chartType": "line",
-        "xAxisLabel": "Time",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "RSSI (dBm)",
-        "ymin": "-120",
-        "ymax": "-30",
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100",
-        "width": "6",
-        "height": "5",
-        "className": "",
-        "x": 850,
-        "y": 240,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-snr-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-history",
-        "name": "SNR History",
-        "order": 3,
-        "chartType": "line",
-        "xAxisLabel": "Time",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "SNR (dB)",
-        "ymin": "-20",
-        "ymax": "20",
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100",
-        "width": "6",
-        "height": "5",
-        "className": "",
-        "x": 550,
-        "y": 340,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-signal-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-signal",
-        "name": "Signal Quality Trend",
-        "order": 3,
-        "chartType": "line",
-        "xAxisLabel": "",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "Value",
-        "ymin": "",
-        "ymax": "",
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100",
-        "width": "12",
-        "height": "4",
-        "className": "",
-        "x": 880,
-        "y": 320,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "hist-manual-trigger",
-        "type": "inject",
-        "z": "dashboard-tab",
-        "name": "Manual Load History",
-        "props": [
-            {
-                "p": "payload"
-            }
-        ],
-        "repeat": "",
-        "crontab": "",
-        "once": false,
-        "onceDelay": 0.1,
-        "topic": "",
-        "payload": "manual",
-        "payloadType": "str",
-        "x": 180,
-        "y": 1020,
-        "wires": [
-            [
-                "hist-load-trigger"
-            ]
-        ]
-    },
-    {
-        "id": "hist-page-control",
-        "type": "ui-control",
-        "z": "dashboard-tab",
-        "name": "Page Load Trigger",
-        "ui": "dash-ui",
-        "events": "all",
-        "x": 150,
-        "y": 1080,
-        "wires": [
-            [
-                "hist-load-trigger"
-            ]
-        ]
-    },
-    {
-        "id": "hist-load-trigger",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Trigger Historical Load",
-        "func": "// Trigger historical data load when page loads\n// Also accepts manual trigger from inject node\n\n// Check if manual trigger (from inject node)\nif (msg.payload === 'manual' || !msg.event) {\n    node.status({fill: 'blue', shape: 'dot', text: 'Manual load triggered'});\n    return { payload: 'load', topic: 'all', _source: 'manual' };\n}\n\n// Trigger on 'load' or 'show' events\nif (msg.event === 'load' || msg.event === 'show') {\n    node.status({fill: 'blue', shape: 'dot', text: 'Loading history...'});\n    // Get all unique device EUIs from database\n    return { payload: 'load', topic: 'all', _event: msg.event };\n}\nreturn null;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 240,
-        "y": 940,
-        "wires": [
-            [
-                "hist-get-devices"
-            ]
-        ]
-    },
-    {
-        "id": "hist-get-devices",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Get Device List",
-        "query": "SELECT DISTINCT device_eui FROM readings ORDER BY device_eui",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 0,
-        "outputs": 1,
-        "x": 200,
-        "y": 860,
-        "wires": [
-            [
-                "hist-format-devices"
-            ]
-        ]
-    },
-    {
-        "id": "hist-format-devices",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Device List",
-        "func": "// Collect all device EUIs and trigger queries for each\nconst devices = msg.payload;\n\n// Check for PostgreSQL errors\nif (msg.error) {\n    node.error('PostgreSQL error: ' + JSON.stringify(msg.error));\n    return null;\n}\n\n// If single row, convert to array\nconst deviceList = Array.isArray(devices) ? devices : [devices];\n\n// Extract device EUIs\nconst deviceEuis = deviceList.map(row => row.device_eui || row).filter(Boolean);\n\nif (deviceEuis.length === 0) {\n    node.warn('No devices found in database');\n    return null;\n}\n\n// Use the first device (or most recent) for historical data\n// In a multi-device setup, you might want to query all devices\nconst deviceEui = deviceEuis[0];\n\n// Create messages with params for PostgreSQL queries\n// Return as array for multiple outputs\nreturn [\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'battery' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'rssi' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'snr' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'signal' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'water' }\n];",
-        "outputs": 5,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 230,
-        "y": 760,
-        "wires": [
-            [
-                "hist-query-battery"
-            ],
-            [
-                "hist-query-rssi"
-            ],
-            [
-                "hist-query-snr"
-            ],
-            [
-                "hist-query-signal"
-            ],
-            [
-                "hist-query-water"
-            ]
-        ]
-    },
-    {
-        "id": "hist-query-battery",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Query Battery History",
-        "query": "SELECT ts, (data->>'bp')::float as value FROM readings WHERE device_eui = $1 AND data ? 'bp' AND (data->>'bp') IS NOT NULL AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 0,
-        "outputs": 1,
-        "x": 240,
-        "y": 480,
-        "wires": [
-            [
-                "hist-format-battery"
-            ]
-        ]
-    },
-    {
-        "id": "hist-format-battery",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Battery Data",
-        "func": "// Format battery history data for chart\n// Check for PostgreSQL errors first\nif (msg.error) {\n    node.error('PostgreSQL error in battery query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\n// PostgreSQL returns array of rows in msg.payload when split=false and rowsPerMsg=0\nconst rows = msg.payload || [];\n\n// Handle empty array or non-array responses\nif (!Array.isArray(rows) || rows.length === 0) {\n    // Empty result is OK - just clear the chart\n    return { payload: [], topic: 'Battery', action: 'replace' };\n}\n\n// Format points: charts with xAxisType='time' expect array of {x, y}\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], topic: 'Battery', action: 'replace' };\n}\n\n// Format as array of points with x (timestamp) and y (value)\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    const value = parseFloat(row.value);\n    return {\n        x: timestamp,\n        y: value\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, topic: 'Battery', action: 'replace' };",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 540,
-        "y": 540,
-        "wires": [
-            [
-                "dash-battery-chart"
-            ]
-        ]
-    },
-    {
-        "id": "hist-query-rssi",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Query RSSI History",
-        "query": "SELECT ts, (data->>'_rssi')::float as value FROM readings WHERE device_eui = $1 AND data ? '_rssi' AND (data->>'_rssi') IS NOT NULL AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 0,
-        "outputs": 1,
-        "x": 230,
-        "y": 420,
-        "wires": [
-            [
-                "hist-format-rssi"
-            ]
-        ]
-    },
-    {
-        "id": "hist-format-rssi",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format RSSI Data",
-        "func": "// Format RSSI history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in RSSI query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], topic: 'RSSI', action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], topic: 'RSSI', action: 'replace' };\n}\n\n// Format as array of points with x (timestamp) and y (value)\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return {\n        x: timestamp,\n        y: parseFloat(row.value)\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, topic: 'RSSI', action: 'replace' };",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 270,
-        "y": 340,
-        "wires": [
-            [
-                "dash-rssi-chart"
-            ]
-        ]
-    },
-    {
-        "id": "hist-query-snr",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Query SNR History",
-        "query": "SELECT ts, (data->>'_snr')::float as value FROM readings WHERE device_eui = $1 AND data ? '_snr' AND (data->>'_snr') IS NOT NULL AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 0,
-        "outputs": 1,
-        "x": 230,
-        "y": 540,
-        "wires": [
-            [
-                "hist-format-snr"
-            ]
-        ]
-    },
-    {
-        "id": "hist-format-snr",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format SNR Data",
-        "func": "// Format SNR history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in SNR query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], topic: 'SNR', action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], topic: 'SNR', action: 'replace' };\n}\n\n// Format as array of points with x (timestamp) and y (value)\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return {\n        x: timestamp,\n        y: parseFloat(row.value)\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, topic: 'SNR', action: 'replace' };",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 530,
-        "y": 600,
-        "wires": [
-            [
-                "dash-snr-chart"
-            ]
-        ]
-    },
-    {
-        "id": "hist-query-signal",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Query Signal History",
-        "query": "SELECT ts, (data->>'_rssi')::float as rssi, (data->>'_snr')::float as snr FROM readings WHERE device_eui = $1 AND (data ? '_rssi' OR data ? '_snr') AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 0,
-        "outputs": 1,
-        "x": 240,
-        "y": 600,
-        "wires": [
-            [
-                "hist-format-signal"
-            ]
-        ]
-    },
-    {
-        "id": "hist-format-signal",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Signal Data",
-        "func": "// Format combined signal history (RSSI + SNR) for chart\nif (msg.error) {\n    node.error('PostgreSQL error in signal query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return [\n        { payload: [], topic: 'RSSI', action: 'replace' },\n        { payload: [], topic: 'SNR', action: 'replace' }\n    ];\n}\n\n// Create separate arrays for RSSI and SNR with x, y format\nconst rssiPoints = [];\nconst snrPoints = [];\n\nrows.forEach(row => {\n    if (!row || !row.ts) return;\n    \n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    \n    if (row.rssi !== null && row.rssi !== undefined && !isNaN(row.rssi)) {\n        rssiPoints.push({\n            x: timestamp,\n            y: parseFloat(row.rssi)\n        });\n    }\n    \n    if (row.snr !== null && row.snr !== undefined && !isNaN(row.snr)) {\n        snrPoints.push({\n            x: timestamp,\n            y: parseFloat(row.snr)\n        });\n    }\n});\n\n// Return single messages with arrays of points\nreturn [\n    { payload: rssiPoints, topic: 'RSSI', action: 'replace' },\n    { payload: snrPoints, topic: 'SNR', action: 'replace' }\n];",
-        "outputs": 2,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 530,
-        "y": 660,
-        "wires": [
-            [
-                "dash-signal-chart"
-            ],
-            [
-                "dash-signal-chart"
-            ]
-        ]
-    },
-    {
-        "id": "hist-query-water",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Query Water History",
-        "query": "SELECT ts, (data->>'tv')::float as value FROM readings WHERE device_eui = $1 AND data ? 'tv' AND (data->>'tv') IS NOT NULL AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 0,
-        "outputs": 1,
-        "x": 240,
-        "y": 660,
-        "wires": [
-            [
-                "hist-format-water"
-            ]
-        ]
-    },
-    {
-        "id": "hist-format-water",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Water Data",
-        "func": "// Format water flow history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in water query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], topic: 'WaterFlow', action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], topic: 'WaterFlow', action: 'replace' };\n}\n\n// Format as array of points with x (timestamp) and y (value)\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return {\n        x: timestamp,\n        y: parseFloat(row.value)\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, topic: 'WaterFlow', action: 'replace' };",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 530,
-        "y": 720,
-        "wires": [
-            [
-                "dash-water-flow-chart"
-            ]
-        ]
-    },
-    {
-        "id": "api1",
-        "type": "http in",
-        "z": "api-flow-tab",
-        "name": "GET /api/status",
-        "url": "/api/status",
-        "method": "get",
-        "upload": false,
-        "swaggerDoc": "",
-        "x": 140,
-        "y": 80,
-        "wires": [
-            [
-                "api2"
-            ]
-        ]
-    },
-    {
-        "id": "api2",
-        "type": "function",
-        "z": "api-flow-tab",
-        "name": "Build Status",
-        "func": "msg.payload = {\n    status: 'ok',\n    timestamp: new Date().toISOString(),\n    service: 'farm-monitor'\n};\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 350,
-        "y": 80,
-        "wires": [
-            [
-                "api3"
-            ]
-        ]
-    },
-    {
-        "id": "api3",
-        "type": "http response",
-        "z": "api-flow-tab",
-        "name": "Response",
-        "statusCode": "200",
-        "headers": {},
-        "x": 540,
-        "y": 80,
-        "wires": []
-    },
-    {
-        "id": "api4",
-        "type": "http in",
-        "z": "api-flow-tab",
-        "name": "GET /api/latest",
-        "url": "/api/latest",
-        "method": "get",
-        "upload": false,
-        "swaggerDoc": "",
-        "x": 140,
-        "y": 160,
-        "wires": [
-            [
-                "api5"
-            ]
-        ]
-    },
-    {
-        "id": "api5",
-        "type": "postgresql",
-        "z": "api-flow-tab",
-        "name": "Latest per Device",
-        "query": "SELECT DISTINCT ON (device_eui) device_eui, data, ts FROM readings ORDER BY device_eui, ts DESC",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 370,
-        "y": 160,
-        "wires": [
-            [
-                "api6"
-            ]
-        ]
-    },
-    {
-        "id": "api6",
-        "type": "http response",
-        "z": "api-flow-tab",
-        "name": "Response",
-        "statusCode": "200",
-        "headers": {},
-        "x": 560,
-        "y": 160,
-        "wires": []
-    },
-    {
-        "id": "config-init",
-        "type": "inject",
-        "z": "config-flow-tab",
-        "name": "Initialize Config on Startup",
-        "props": [
-            {
-                "p": "payload"
-            }
-        ],
-        "repeat": "",
-        "crontab": "",
-        "once": true,
-        "onceDelay": "1",
-        "topic": "",
-        "payload": "",
-        "payloadType": "date",
-        "x": 180,
-        "y": 80,
-        "wires": [
-            [
-                "config-setup"
-            ]
-        ]
-    },
-    {
-        "id": "config-setup",
-        "type": "function",
-        "z": "config-flow-tab",
-        "name": "Setup Water Tank Config",
-        "func": "// Water Tank Configuration\n// This is the single source of truth for tank parameters\n\nconst config = {\n    // Tank Physical Dimensions\n    tank: {\n        height_cm: 200,          // Total tank height in cm\n        capacity_liters: 5000,   // Total tank capacity in liters\n        diameter_cm: 180,        // Tank diameter for visualization\n        shape: 'cylindrical'     // cylindrical, rectangular\n    },\n    \n    // Distance Sensor Configuration\n    sensor: {\n        mounting_height_cm: 210,     // Height where sensor is mounted from ground\n        offset_cm: 0,                 // Calibration offset (adjust after testing)\n        min_reading_cm: 10,           // Minimum valid reading (sensor dead zone)\n        max_reading_cm: 220,          // Maximum valid reading\n        field_name: 'pd'              // Field name in data payload for distance\n    },\n    \n    // Flow Calculation\n    flow: {\n        reporting_interval_seconds: 30,  // How often device reports\n        flow_field_name: 'tv',           // Total volume field name\n        enable_flow_calculation: true,   // Enable flow rate calculations\n        flow_detection_threshold_liters: 5  // Minimum change to detect flow\n    },\n    \n    // Alert Thresholds\n    alerts: {\n        low_level_percent: 20,\n        critical_level_percent: 10,\n        high_flow_rate_lph: 1000  // Liters per hour - potential leak\n    }\n};\n\n// Store in global context\nglobal.set('waterTankConfig', config);\n\n// Return config for debugging\nmsg.payload = config;\nnode.status({fill: 'green', shape: 'dot', text: 'Config loaded'});\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 430,
-        "y": 80,
-        "wires": [
-            [
-                "config-debug"
-            ]
-        ]
-    },
-    {
-        "id": "config-debug",
-        "type": "debug",
-        "z": "config-flow-tab",
-        "name": "Config Loaded",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 680,
-        "y": 80,
-        "wires": []
+  {
+    "id": "farm-flow-tab",
+    "type": "tab",
+    "label": "Farm Monitor",
+    "disabled": false,
+    "info": "Main flow for receiving ChirpStack events and storing to PostgreSQL"
+  },
+  {
+    "id": "dashboard-tab",
+    "type": "tab",
+    "label": "Dashboard",
+    "disabled": false,
+    "info": "Dashboard UI for monitoring farm sensors"
+  },
+  {
+    "id": "api-flow-tab",
+    "type": "tab",
+    "label": "API",
+    "disabled": false,
+    "info": "HTTP endpoints"
+  },
+  {
+    "id": "config-flow-tab",
+    "type": "tab",
+    "label": "Configuration",
+    "disabled": false,
+    "info": "System configuration and calibration"
+  },
+  {
+    "id": "e1b2c3d4e5f6a7b8",
+    "type": "mqtt-broker",
+    "name": "Mosquitto",
+    "broker": "mosquitto",
+    "port": "1883",
+    "clientid": "nodered-farm",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "birthMsg": {},
+    "closeTopic": "",
+    "closeQos": "0",
+    "closePayload": "",
+    "closeMsg": {},
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": "",
+    "willMsg": {},
+    "userProps": "",
+    "sessionExpiry": ""
+  },
+  {
+    "id": "a1b2c3d4e5f6a7b9",
+    "type": "postgreSQLConfig",
+    "name": "FarmMon DB",
+    "host": "postgres",
+    "port": "5432",
+    "database": "farmmon",
+    "ssl": false,
+    "max": "10",
+    "idle": "1000",
+    "connectionTimeout": "10000",
+    "user": "farmmon",
+    "password": "farmmon"
+  },
+  {
+    "id": "dash-ui",
+    "type": "ui-base",
+    "name": "Farm Monitor Dashboard",
+    "path": "/dashboard",
+    "appIcon": "",
+    "includeClientData": true,
+    "acceptsClientConfig": [
+      "ui-control",
+      "ui-notification"
+    ],
+    "showPathInSidebar": true,
+    "headerContent": "page",
+    "navigationStyle": "default",
+    "titleBarStyle": "default",
+    "showReconnectNotification": true,
+    "notificationDisplayTime": 5,
+    "showDisconnectNotification": true,
+    "allowInstall": true
+  },
+  {
+    "id": "dash-theme",
+    "type": "ui-theme",
+    "name": "Modern Dark Theme",
+    "colors": {
+      "surface": "#1e293b",
+      "primary": "#3b82f6",
+      "bgPage": "#0f172a",
+      "groupBg": "#1e293b",
+      "groupOutline": "#334155",
+      "success": "#10b981",
+      "warning": "#f59e0b",
+      "danger": "#ef4444"
+    },
+    "sizes": {
+      "pagePadding": "20px",
+      "groupGap": "20px",
+      "groupBorderRadius": "12px",
+      "widgetGap": "16px"
     }
+  },
+  {
+    "id": "dash-tab",
+    "type": "ui-page",
+    "name": "Farm Monitor",
+    "ui": "dash-ui",
+    "path": "/farm-monitor",
+    "icon": "dashboard",
+    "layout": "grid",
+    "theme": "dash-theme",
+    "breakpoints": [
+      {
+        "name": "Default",
+        "px": "0",
+        "cols": "3"
+      },
+      {
+        "name": "Tablet",
+        "px": "576",
+        "cols": "6"
+      },
+      {
+        "name": "Small Desktop",
+        "px": "768",
+        "cols": "9"
+      },
+      {
+        "name": "Desktop",
+        "px": "1024",
+        "cols": "12"
+      }
+    ],
+    "order": 1,
+    "className": "",
+    "visible": "true",
+    "disabled": "false"
+  },
+  {
+    "id": "dash-group",
+    "type": "ui-group",
+    "name": "Device Status",
+    "page": "dash-tab",
+    "width": "12",
+    "order": 1,
+    "className": ""
+  },
+  {
+    "id": "dash-group-signal",
+    "type": "ui-group",
+    "name": "Signal Quality",
+    "page": "dash-tab",
+    "width": "12",
+    "order": 2,
+    "className": ""
+  },
+  {
+    "id": "dash-group-history",
+    "type": "ui-group",
+    "name": "Historical Data",
+    "page": "dash-tab",
+    "width": "12",
+    "order": 3,
+    "className": ""
+  },
+  {
+    "id": "dash-group-water",
+    "type": "ui-group",
+    "name": "Water Tank Monitor",
+    "page": "dash-tab",
+    "width": "12",
+    "order": 4,
+    "className": ""
+  },
+  {
+    "id": "72aa6c226990e117",
+    "type": "global-config",
+    "env": [],
+    "modules": {
+      "node-red-contrib-postgresql": "0.15.4",
+      "@flowfuse/node-red-dashboard": "1.30.2"
+    }
+  },
+  {
+    "id": "ead6616b9d4660df",
+    "type": "ui-link",
+    "name": "Link 1",
+    "ui": "dash-ui",
+    "path": "/",
+    "icon": "home",
+    "order": 2,
+    "visible": true,
+    "disabled": false
+  },
+  {
+    "id": "n1a2b3c4d5e6f7g8",
+    "type": "mqtt in",
+    "z": "farm-flow-tab",
+    "name": "ChirpStack Uplinks",
+    "topic": "application/+/device/+/event/up",
+    "qos": "0",
+    "datatype": "json",
+    "broker": "e1b2c3d4e5f6a7b8",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 130,
+    "y": 160,
+    "wires": [
+      [
+        "n2a2b3c4d5e6f7g8",
+        "n3a2b3c4d5e6f7g8"
+      ]
+    ]
+  },
+  {
+    "id": "n1b2b3c4d5e6f7g8",
+    "type": "mqtt in",
+    "z": "farm-flow-tab",
+    "name": "ChirpStack Joins",
+    "topic": "application/+/device/+/event/join",
+    "qos": "0",
+    "datatype": "json",
+    "broker": "e1b2c3d4e5f6a7b8",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 120,
+    "y": 380,
+    "wires": [
+      [
+        "n4a2b3c4d5e6f7g8"
+      ]
+    ]
+  },
+  {
+    "id": "n2a2b3c4d5e6f7g8",
+    "type": "function",
+    "z": "farm-flow-tab",
+    "name": "Parse Uplink",
+    "func": "// Extract device info and payload from ChirpStack v4 event\nconst deviceEui = msg.payload.deviceInfo?.devEui || 'unknown';\nconst deviceName = msg.payload.deviceInfo?.deviceName || 'unknown';\n\n// Get decoded data (from codec) or raw base64\nlet data = msg.payload.object || {};\nif (Object.keys(data).length === 0 && msg.payload.data) {\n    data = { raw: msg.payload.data };\n}\n\n// Add metadata\ndata._rssi = msg.payload.rxInfo?.[0]?.rssi;\ndata._snr = msg.payload.rxInfo?.[0]?.snr;\ndata._fCnt = msg.payload.fCnt;\ndata._fPort = msg.payload.fPort;\n\n// Prepare for PostgreSQL - params array for $1, $2\nmsg.params = [deviceEui, JSON.stringify(data)];\nmsg.deviceEui = deviceEui;\nmsg.deviceName = deviceName;\nmsg.sensorData = data;\n\nnode.status({fill: 'green', shape: 'dot', text: deviceEui.substring(0,8) + '...'});\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 390,
+    "y": 200,
+    "wires": [
+      [
+        "n5a2b3c4d5e6f7g8",
+        "n6a2b3c4d5e6f7g8",
+        "n7a2b3c4d5e6f7g8",
+        "farm-to-dash-link"
+      ]
+    ]
+  },
+  {
+    "id": "n3a2b3c4d5e6f7g8",
+    "type": "debug",
+    "z": "farm-flow-tab",
+    "name": "Raw MQTT",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 370,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "n4a2b3c4d5e6f7g8",
+    "type": "debug",
+    "z": "farm-flow-tab",
+    "name": "Join Events",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 390,
+    "y": 380,
+    "wires": []
+  },
+  {
+    "id": "n5a2b3c4d5e6f7g8",
+    "type": "postgresql",
+    "z": "farm-flow-tab",
+    "name": "Store Reading",
+    "query": "INSERT INTO readings (device_eui, data) VALUES ($1, $2::jsonb) RETURNING id",
+    "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
+    "split": false,
+    "rowsPerMsg": 1,
+    "outputs": 1,
+    "x": 680,
+    "y": 100,
+    "wires": [
+      [
+        "n8a2b3c4d5e6f7g8"
+      ]
+    ]
+  },
+  {
+    "id": "n6a2b3c4d5e6f7g8",
+    "type": "function",
+    "z": "farm-flow-tab",
+    "name": "Check Thresholds",
+    "func": "const data = msg.sensorData;\nconst alerts = [];\n\nif (data.water_level !== undefined && data.water_level < 20) {\n    alerts.push({ type: 'water_level_low', message: `Water level low: ${data.water_level}%`, device: msg.deviceEui });\n}\nif (data.temperature !== undefined && data.temperature > 35) {\n    alerts.push({ type: 'temperature_high', message: `High temperature: ${data.temperature}°C`, device: msg.deviceEui });\n}\nif (data.battery !== undefined && data.battery < 20) {\n    alerts.push({ type: 'battery_low', message: `Battery low: ${data.battery}%`, device: msg.deviceEui });\n}\n\nif (alerts.length > 0) {\n    return { payload: alerts, deviceEui: msg.deviceEui };\n}\nreturn null;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 690,
+    "y": 200,
+    "wires": [
+      [
+        "n9a2b3c4d5e6f7g8"
+      ]
+    ]
+  },
+  {
+    "id": "n7a2b3c4d5e6f7g8",
+    "type": "debug",
+    "z": "farm-flow-tab",
+    "name": "Parsed Data",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 670,
+    "y": 300,
+    "wires": []
+  },
+  {
+    "id": "n8a2b3c4d5e6f7g8",
+    "type": "debug",
+    "z": "farm-flow-tab",
+    "name": "DB Result",
+    "active": false,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 920,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "n9a2b3c4d5e6f7g8",
+    "type": "debug",
+    "z": "farm-flow-tab",
+    "name": "Alerts",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 950,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "n10a2b3c4d5e6f7g",
+    "type": "inject",
+    "z": "farm-flow-tab",
+    "name": "Test Uplink",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{\"deviceInfo\":{\"devEui\":\"0011223344556677\",\"deviceName\":\"test-device\"},\"object\":{\"temperature\":25.5,\"battery\":85},\"rxInfo\":[{\"rssi\":-80,\"snr\":7.5}],\"fCnt\":123,\"fPort\":1}",
+    "payloadType": "json",
+    "x": 120,
+    "y": 240,
+    "wires": [
+      [
+        "n2a2b3c4d5e6f7g8"
+      ]
+    ]
+  },
+  {
+    "id": "farm-to-dash-link",
+    "type": "link out",
+    "z": "farm-flow-tab",
+    "name": "To Dashboard",
+    "mode": "link",
+    "links": [
+      "dash-link-in"
+    ],
+    "x": 655,
+    "y": 360,
+    "wires": []
+  },
+  {
+    "id": "73106b72be8a16de",
+    "type": "mqtt out",
+    "z": "farm-flow-tab",
+    "name": "",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "e1b2c3d4e5f6a7b8",
+    "x": 650,
+    "y": 540,
+    "wires": []
+  },
+  {
+    "id": "6a670683601fd4f2",
+    "type": "function",
+    "z": "farm-flow-tab",
+    "name": "function 1",
+    "func": "// Test downlink message formatter for ChirpStack v4\n// CRITICAL: devEui must be in the payload AND match the topic\n\n// Configuration - CHANGE THESE:\nconst applicationId = \"885c4dd2-e474-4265-bd25-2f838571f8de\";  // Your ChirpStack application ID (check ChirpStack UI)\nconst devEui = \"48ca43fffe3f0e70\";  // Your device EUI (lowercase, no colons)\nconst port = 20;  // Test port\nconst testMessage = \"Hello from Node-RED!\";  // Your test message\n\n// Convert message to bytes (UTF-8)\nconst messageBytes = Buffer.from(testMessage, 'utf8');\n\n// Convert to base64 (ChirpStack expects base64-encoded data)\nconst dataBase64 = messageBytes.toString('base64');\n\n// ChirpStack v4 downlink command format\n// CRITICAL: devEui field MUST be present and match the topic\nmsg.payload = {\n    devEui: devEui,        // REQUIRED: Must match topic DevEUI\n    confirmed: false,       // Unconfirmed downlink (faster, no ACK required)\n    fPort: port,           // Application port\n    data: dataBase64       // Base64-encoded payload\n};\n\n// Set topic - application ID and DevEUI must match payload\nmsg.topic = `application/${applicationId}/device/${devEui}/command/down`;\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 540,
+    "wires": [
+      [
+        "73106b72be8a16de",
+        "5da88bd81d402cb6"
+      ]
+    ]
+  },
+  {
+    "id": "2dca16451615ad3b",
+    "type": "inject",
+    "z": "farm-flow-tab",
+    "name": "Test downlink",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "x": 150,
+    "y": 540,
+    "wires": [
+      [
+        "6a670683601fd4f2"
+      ]
+    ]
+  },
+  {
+    "id": "5da88bd81d402cb6",
+    "type": "debug",
+    "z": "farm-flow-tab",
+    "name": "debug 1",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "false",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 660,
+    "y": 640,
+    "wires": []
+  },
+  {
+    "id": "dash-link-in",
+    "type": "link in",
+    "z": "dashboard-tab",
+    "name": "Sensor Data Input",
+    "links": [],
+    "x": 55,
+    "y": 220,
+    "wires": [
+      [
+        "dash1"
+      ]
+    ]
+  },
+  {
+    "id": "dash-css-template",
+    "type": "ui-template",
+    "z": "dashboard-tab",
+    "group": "",
+    "page": "",
+    "ui": "dash-ui",
+    "name": "Modern Dark Theme CSS",
+    "order": 0,
+    "width": 0,
+    "height": 0,
+    "head": "",
+    "format": "<style>\n/* Modern Dark Theme Custom CSS */\n\n/* Smooth scrollbar */\n::-webkit-scrollbar {\n    width: 8px;\n    height: 8px;\n}\n\n::-webkit-scrollbar-track {\n    background: #0f172a;\n}\n\n::-webkit-scrollbar-thumb {\n    background: #334155;\n    border-radius: 4px;\n}\n\n::-webkit-scrollbar-thumb:hover {\n    background: #475569;\n}\n\n/* Card enhancements */\n.nrdb-ui-group {\n    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);\n    backdrop-filter: blur(10px);\n    transition: transform 0.2s ease, box-shadow 0.2s ease;\n}\n\n.nrdb-ui-group:hover {\n    transform: translateY(-2px);\n    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);\n}\n\n/* Gauge glow effects */\n.nrdb-ui-gauge-tile,\n.nrdb-ui-gauge-tank {\n    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3));\n    transition: all 0.3s ease;\n}\n\n.nrdb-ui-gauge-tile:hover,\n.nrdb-ui-gauge-tank:hover {\n    filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.5));\n}\n\n/* Text improvements */\n.nrdb-ui-text {\n    font-weight: 500;\n    letter-spacing: 0.02em;\n}\n\n/* Chart styling */\n.nrdb-ui-chart {\n    background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);\n    border-radius: 12px;\n    padding: 16px;\n}\n\n/* KPI Card Styling */\n.kpi-card {\n    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);\n    border: 1px solid #334155;\n    border-radius: 12px;\n    padding: 20px;\n    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);\n    transition: all 0.3s ease;\n}\n\n.kpi-card:hover {\n    transform: translateY(-4px);\n    box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.5);\n    border-color: #3b82f6;\n}\n\n/* Status Badge Styling */\n.status-badge {\n    display: inline-block;\n    padding: 4px 12px;\n    border-radius: 20px;\n    font-size: 12px;\n    font-weight: 600;\n    text-transform: uppercase;\n    letter-spacing: 0.05em;\n    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);\n}\n\n.status-badge.ok {\n    background: #10b981;\n    color: #ffffff;\n}\n\n.status-badge.warning {\n    background: #f59e0b;\n    color: #ffffff;\n}\n\n.status-badge.critical {\n    background: #ef4444;\n    color: #ffffff;\n    animation: pulse 2s infinite;\n}\n\n.status-badge.offline {\n    background: #6b7280;\n    color: #ffffff;\n}\n\n/* Pulse animation for critical alerts */\n@keyframes pulse {\n    0%, 100% {\n        opacity: 1;\n    }\n    50% {\n        opacity: 0.7;\n    }\n}\n\n/* Live indicator dot */\n.live-indicator {\n    display: inline-block;\n    width: 8px;\n    height: 8px;\n    border-radius: 50%;\n    background: #10b981;\n    margin-right: 8px;\n    animation: pulse-dot 2s infinite;\n}\n\n@keyframes pulse-dot {\n    0%, 100% {\n        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);\n    }\n    50% {\n        box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);\n    }\n}\n\n/* Button group styling */\n.nrdb-ui-button-group button {\n    transition: all 0.2s ease;\n}\n\n.nrdb-ui-button-group button:hover {\n    transform: translateY(-2px);\n    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);\n}\n\n/* Page header */\n.nrdb-ui-page-title {\n    font-size: 28px;\n    font-weight: 700;\n    color: #ffffff;\n    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);\n    margin-bottom: 24px;\n}\n\n/* Metric labels */\n.metric-label {\n    font-size: 12px;\n    font-weight: 600;\n    text-transform: uppercase;\n    letter-spacing: 0.1em;\n    color: #94a3b8;\n    margin-bottom: 8px;\n}\n\n/* Chart container */\n.chart-container {\n    background: rgba(30, 41, 59, 0.6);\n    border-radius: 12px;\n    padding: 16px;\n    backdrop-filter: blur(10px);\n}\n\n/* Responsive adjustments */\n@media (max-width: 768px) {\n    .nrdb-ui-group {\n        margin-bottom: 16px;\n    }\n    \n    .kpi-card {\n        padding: 16px;\n    }\n    \n    .nrdb-ui-page-title {\n        font-size: 24px;\n    }\n}\n</style>",
+    "storeOutMessages": false,
+    "passthru": true,
+    "resendOnRefresh": false,
+    "templateScope": "site:style",
+    "className": "",
+    "x": 150,
+    "y": 60,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dash1",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Extract Sensor Data",
+    "func": "// Extract all sensor data from the incoming message\nconst data = msg.sensorData || {};\nconst batteryPercent = data.bp;\nconst rssi = data._rssi;\nconst snr = data._snr;\nconst tsr = data.tsr;\n\n// Format device name from EUI\nconst deviceEui = msg.deviceEui || 'unknown';\nconst deviceName = msg.deviceName || deviceEui;\nconst shortEui = deviceEui.substring(0, 8).toUpperCase();\n\n// Create multiple outputs for different dashboard elements\nreturn [\n    // Output 1: Battery data for gauge\n    batteryPercent !== undefined ? {\n        payload: parseFloat(batteryPercent),\n        topic: shortEui,\n        deviceEui: deviceEui,\n        deviceName: deviceName\n    } : null,\n    \n    // Output 2: RSSI data for gauge\n    rssi !== undefined ? {\n        payload: parseFloat(rssi),\n        topic: shortEui,\n        deviceEui: deviceEui\n    } : null,\n    \n    // Output 3: SNR data for gauge\n    snr !== undefined ? {\n        payload: parseFloat(snr),\n        topic: shortEui,\n        deviceEui: deviceEui\n    } : null,\n    \n    // Output 4: Device info for display\n    {\n        payload: `${deviceName} (${shortEui})`,\n        deviceEui: deviceEui,\n        rssi: rssi,\n        snr: snr,\n        battery: batteryPercent\n    },\n    \n    // Output 5: TSR data\n    tsr !== undefined ? {\n        payload: parseFloat(tsr),\n        topic: shortEui\n    } : null,\n    \n    // Output 6: Pass through complete data for water processor\n    {\n        sensorData: data,\n        deviceEui: deviceEui,\n        deviceName: deviceName\n    },\n\n    // Output 7: Battery for history chart\n    batteryPercent !== undefined ? {\n        payload: parseFloat(batteryPercent),\n        topic: 'Battery'\n    } : null,\n\n    // Output 8: RSSI for history chart\n    rssi !== undefined ? {\n        payload: parseFloat(rssi),\n        topic: 'RSSI'\n    } : null,\n\n    // Output 9: SNR for history chart  \n    snr !== undefined ? {\n        payload: parseFloat(snr),\n        topic: 'SNR'\n    } : null,\n\n    // Output 10: RSSI for combined signal chart\n    rssi !== undefined ? {\n        payload: parseFloat(rssi),\n        topic: 'RSSI'\n    } : null,\n\n    // Output 11: SNR for combined signal chart\n    snr !== undefined ? {\n        payload: parseFloat(snr),\n        topic: 'SNR'\n    } : null\n];",
+    "outputs": 11,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 180,
+    "y": 220,
+    "wires": [
+      [
+        "dash-gauge"
+      ],
+      [
+        "dash-rssi-gauge"
+      ],
+      [
+        "dash-snr-gauge"
+      ],
+      [
+        "dash-text"
+      ],
+      [
+        "dash-tsr-text"
+      ],
+      [
+        "water-processor"
+      ],
+      [
+        "dash-battery-chart"
+      ],
+      [
+        "dash-rssi-chart"
+      ],
+      [
+        "dash-snr-chart"
+      ],
+      [
+        "dash-signal-chart"
+      ],
+      [
+        "dash-signal-chart"
+      ]
+    ]
+  },
+  {
+    "id": "dash-gauge",
+    "type": "ui-gauge",
+    "z": "dashboard-tab",
+    "name": "Battery Level",
+    "group": "dash-group",
+    "order": 2,
+    "value": "payload",
+    "valueType": "msg",
+    "width": "4",
+    "height": "3",
+    "gtype": "gauge-battery",
+    "title": "Battery",
+    "alwaysShowTitle": true,
+    "units": "%",
+    "icon": "battery_charging_full",
+    "prefix": "",
+    "suffix": "",
+    "segments": [
+      {
+        "from": "0",
+        "color": "#dc2626",
+        "text": "LOW",
+        "textType": "label"
+      },
+      {
+        "from": "20",
+        "color": "#eab308",
+        "text": "MED",
+        "textType": "label"
+      },
+      {
+        "from": "50",
+        "color": "#10b981",
+        "text": "GOOD",
+        "textType": "label"
+      }
+    ],
+    "min": 0,
+    "max": "100",
+    "sizeThickness": "20",
+    "sizeGap": "4",
+    "sizeKeyThickness": "8",
+    "className": "",
+    "x": 550,
+    "y": 40,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dash-text",
+    "type": "ui-text",
+    "z": "dashboard-tab",
+    "group": "dash-group",
+    "order": 1,
+    "width": "4",
+    "height": "1",
+    "name": "Device Name",
+    "label": "Device:",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "style": false,
+    "font": "",
+    "fontSize": "16",
+    "color": "#ffffff",
+    "wrapText": false,
+    "className": "",
+    "value": "payload",
+    "valueType": "msg",
+    "x": 560,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "dash-tsr-text",
+    "type": "ui-text",
+    "z": "dashboard-tab",
+    "group": "dash-group",
+    "order": 3,
+    "width": "4",
+    "height": "1",
+    "name": "Time Since Reset",
+    "label": "Uptime:",
+    "format": "{{msg.payload}}s",
+    "layout": "row-spread",
+    "style": false,
+    "font": "",
+    "fontSize": "14",
+    "color": "#94a3b8",
+    "wrapText": false,
+    "className": "",
+    "value": "payload",
+    "valueType": "msg",
+    "x": 570,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "water-processor",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Calculate Water Level & Flow",
+    "func": "// Get configuration from global context\nconst config = global.get('waterTankConfig');\n\nif (!config) {\n    node.warn('Water tank config not loaded yet');\n    return null;\n}\n\nconst data = msg.sensorData || {};\nconst deviceEui = msg.deviceEui || 'unknown';\n\n// Extract sensor readings\nconst distanceReading = parseFloat(data[config.sensor.field_name]);\nconst totalVolume = parseFloat(data[config.flow.flow_field_name]);\n\n// Initialize flow tracking in context\nconst flowContext = context.get('flowTracking') || {};\nif (!flowContext[deviceEui]) {\n    flowContext[deviceEui] = {\n        lastVolume: totalVolume || 0,\n        lastTimestamp: Date.now(),\n        flowRate: 0\n    };\n}\n\nconst deviceFlow = flowContext[deviceEui];\n\n// Calculate water level from distance sensor\nlet waterLevelCm = null;\nlet waterLevelPercent = null;\nlet waterVolumeLiters = null;\n\nif (!isNaN(distanceReading) && \n    distanceReading >= config.sensor.min_reading_cm && \n    distanceReading <= config.sensor.max_reading_cm) {\n    \n    // Distance from sensor to water surface\n    const adjustedDistance = distanceReading + config.sensor.offset_cm;\n    \n    // Water level = mounting height - distance to water - tank bottom offset\n    // Assuming tank bottom is at ground level (adjust if needed)\n    waterLevelCm = config.sensor.mounting_height_cm - adjustedDistance;\n    \n    // Ensure water level is within tank bounds\n    waterLevelCm = Math.max(0, Math.min(waterLevelCm, config.tank.height_cm));\n    \n    // Calculate percentage\n    waterLevelPercent = (waterLevelCm / config.tank.height_cm) * 100;\n    \n    // Calculate volume (simplified for cylindrical tank)\n    if (config.tank.shape === 'cylindrical') {\n        const fillRatio = waterLevelCm / config.tank.height_cm;\n        waterVolumeLiters = config.tank.capacity_liters * fillRatio;\n    }\n}\n\n// Calculate flow rate\nlet flowRateLPH = 0;  // Liters per hour\nlet volumeChangeLiters = 0;\n\nif (!isNaN(totalVolume) && config.flow.enable_flow_calculation) {\n    const now = Date.now();\n    const timeDeltaSeconds = (now - deviceFlow.lastTimestamp) / 1000;\n    \n    if (timeDeltaSeconds > 0 && timeDeltaSeconds < 300) {  // Valid time window (< 5 min)\n        volumeChangeLiters = totalVolume - deviceFlow.lastVolume;\n        \n        // Only calculate if change is significant\n        if (Math.abs(volumeChangeLiters) >= config.flow.flow_detection_threshold_liters) {\n            // Convert to liters per hour\n            flowRateLPH = (volumeChangeLiters / timeDeltaSeconds) * 3600;\n            \n            // Update tracking\n            deviceFlow.flowRate = flowRateLPH;\n            deviceFlow.lastVolume = totalVolume;\n            deviceFlow.lastTimestamp = now;\n        }\n    } else if (timeDeltaSeconds >= 300) {\n        // Reset tracking after long gap\n        deviceFlow.lastVolume = totalVolume;\n        deviceFlow.lastTimestamp = now;\n        deviceFlow.flowRate = 0;\n    }\n}\n\n// Save context\nflowContext[deviceEui] = deviceFlow;\ncontext.set('flowTracking', flowContext);\n\n// Prepare outputs\nconst shortEui = deviceEui.substring(0, 8).toUpperCase();\n\nreturn [\n    // Output 1: Water level percentage for gauge\n    waterLevelPercent !== null ? {\n        payload: waterLevelPercent,\n        topic: shortEui,\n        waterLevel_cm: waterLevelCm,\n        waterVolume_liters: waterVolumeLiters\n    } : null,\n    \n    // Output 2: Water volume in liters (text display)\n    waterVolumeLiters !== null ? {\n        payload: Math.round(waterVolumeLiters),\n        topic: shortEui,\n        capacity: config.tank.capacity_liters\n    } : null,\n    \n    // Output 3: Flow rate for display\n    {\n        payload: Math.abs(flowRateLPH).toFixed(1),\n        topic: shortEui,\n        volumeChange: volumeChangeLiters,\n        totalVolume: totalVolume\n    },\n    \n    // Output 4: Total volume for history chart\n    !isNaN(totalVolume) ? {\n        payload: totalVolume,\n        topic: shortEui,\n        timestamp: Date.now()\n    } : null\n];",
+    "outputs": 4,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 560,
+    "y": 460,
+    "wires": [
+      [
+        "dash-water-gauge"
+      ],
+      [
+        "dash-water-volume-text"
+      ],
+      [
+        "dash-flow-rate-text"
+      ],
+      [
+        "dash-water-history-store"
+      ]
+    ]
+  },
+  {
+    "id": "dash-water-gauge",
+    "type": "ui-gauge",
+    "z": "dashboard-tab",
+    "name": "Water Level",
+    "group": "dash-group-water",
+    "order": 1,
+    "value": "payload",
+    "valueType": "msg",
+    "width": "6",
+    "height": "5",
+    "gtype": "gauge-tank",
+    "title": "Water Tank Level",
+    "alwaysShowTitle": true,
+    "units": "%",
+    "icon": "water_drop",
+    "prefix": "",
+    "suffix": "",
+    "segments": [
+      {
+        "from": "0",
+        "color": "#dc2626",
+        "text": "CRITICAL",
+        "textType": "label"
+      },
+      {
+        "from": "10",
+        "color": "#f59e0b",
+        "text": "LOW",
+        "textType": "label"
+      },
+      {
+        "from": "20",
+        "color": "#eab308",
+        "text": "MEDIUM",
+        "textType": "label"
+      },
+      {
+        "from": "50",
+        "color": "#10b981",
+        "text": "GOOD",
+        "textType": "label"
+      }
+    ],
+    "min": 0,
+    "max": "100",
+    "sizeThickness": "20",
+    "sizeGap": "4",
+    "sizeKeyThickness": "10",
+    "className": "",
+    "x": 850,
+    "y": 440,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dash-water-volume-text",
+    "type": "ui-text",
+    "z": "dashboard-tab",
+    "group": "dash-group-water",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "name": "Water Volume",
+    "label": "Volume:",
+    "format": "{{msg.payload}} / {{msg.capacity}} L",
+    "layout": "row-spread",
+    "style": false,
+    "font": "",
+    "fontSize": "18",
+    "color": "#3b82f6",
+    "wrapText": false,
+    "className": "",
+    "value": "payload",
+    "valueType": "msg",
+    "x": 860,
+    "y": 480,
+    "wires": []
+  },
+  {
+    "id": "dash-flow-rate-text",
+    "type": "ui-text",
+    "z": "dashboard-tab",
+    "group": "dash-group-water",
+    "order": 3,
+    "width": "6",
+    "height": "1",
+    "name": "Flow Rate",
+    "label": "Flow Rate:",
+    "format": "{{msg.payload}} L/h",
+    "layout": "row-spread",
+    "style": false,
+    "font": "",
+    "fontSize": "16",
+    "color": "#94a3b8",
+    "wrapText": false,
+    "className": "",
+    "value": "payload",
+    "valueType": "msg",
+    "x": 840,
+    "y": 520,
+    "wires": []
+  },
+  {
+    "id": "dash-water-history-store",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Store for Chart",
+    "func": "// Store water data points in context for charting\nconst historyKey = 'waterHistory_' + msg.topic;\nlet history = context.get(historyKey) || [];\n\n// Add new data point\nhistory.push({\n    x: msg.timestamp || Date.now(),\n    y: msg.payload\n});\n\n// Keep only last 24 hours (assuming 60s interval = 1440 points)\nconst maxPoints = 1440;\nif (history.length > maxPoints) {\n    history = history.slice(-maxPoints);\n}\n\ncontext.set(historyKey, history);\n\n// Pass through for real-time chart update\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 840,
+    "y": 560,
+    "wires": [
+      [
+        "dash-water-flow-chart"
+      ]
+    ]
+  },
+  {
+    "id": "dash-water-flow-chart",
+    "type": "ui-chart",
+    "z": "dashboard-tab",
+    "group": "dash-group-water",
+    "name": "Water Flow History",
+    "order": 4,
+    "chartType": "line",
+    "xAxisLabel": "Time",
+    "xAxisType": "time",
+    "xAxisFormat": "HH:mm",
+    "yAxisLabel": "Total Volume (L)",
+    "ymin": "",
+    "ymax": "",
+    "removeOlder": 100,
+    "removeOlderUnit": "point",
+    "removeOlderPoints": "100",
+    "width": "12",
+    "height": "6",
+    "className": "",
+    "x": 1070,
+    "y": 600,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dash-rssi-gauge",
+    "type": "ui-gauge",
+    "z": "dashboard-tab",
+    "name": "Signal Strength (RSSI)",
+    "group": "dash-group-signal",
+    "order": 1,
+    "value": "payload",
+    "valueType": "msg",
+    "width": "4",
+    "height": "4",
+    "gtype": "gauge-half",
+    "gstyle": "needle",
+    "title": "Signal Strength",
+    "alwaysShowTitle": true,
+    "units": "dBm",
+    "icon": "signal_cellular_alt",
+    "prefix": "",
+    "suffix": "",
+    "segments": [
+      {
+        "from": "-120",
+        "color": "#dc2626",
+        "text": "WEAK",
+        "textType": "label"
+      },
+      {
+        "from": "-90",
+        "color": "#eab308",
+        "text": "FAIR",
+        "textType": "label"
+      },
+      {
+        "from": "-60",
+        "color": "#10b981",
+        "text": "STRONG",
+        "textType": "label"
+      }
+    ],
+    "min": "-120",
+    "max": "-30",
+    "sizeThickness": "32",
+    "sizeGap": "2",
+    "sizeKeyThickness": "8",
+    "className": "",
+    "x": 580,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dash-snr-gauge",
+    "type": "ui-gauge",
+    "z": "dashboard-tab",
+    "name": "SNR",
+    "group": "dash-group-signal",
+    "order": 2,
+    "value": "payload",
+    "valueType": "msg",
+    "width": "4",
+    "height": "4",
+    "gtype": "gauge-half",
+    "gstyle": "needle",
+    "title": "Signal to Noise Ratio",
+    "alwaysShowTitle": true,
+    "units": "dB",
+    "icon": "graphic_eq",
+    "prefix": "",
+    "suffix": "",
+    "segments": [
+      {
+        "from": "-20",
+        "color": "#dc2626",
+        "text": "POOR",
+        "textType": "label"
+      },
+      {
+        "from": "0",
+        "color": "#eab308",
+        "text": "OK",
+        "textType": "label"
+      },
+      {
+        "from": "5",
+        "color": "#10b981",
+        "text": "GOOD",
+        "textType": "label"
+      }
+    ],
+    "min": "-20",
+    "max": "20",
+    "sizeThickness": "32",
+    "sizeGap": "2",
+    "sizeKeyThickness": "8",
+    "className": "",
+    "x": 530,
+    "y": 120,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dash-battery-chart",
+    "type": "ui-chart",
+    "z": "dashboard-tab",
+    "group": "dash-group-history",
+    "name": "Battery History",
+    "order": 1,
+    "chartType": "line",
+    "xAxisLabel": "Time",
+    "xAxisType": "time",
+    "xAxisFormat": "HH:mm",
+    "yAxisLabel": "Battery %",
+    "ymin": "0",
+    "ymax": "100",
+    "removeOlder": 100,
+    "removeOlderUnit": "point",
+    "removeOlderPoints": "100",
+    "width": "12",
+    "height": "5",
+    "className": "",
+    "x": 860,
+    "y": 380,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dash-rssi-chart",
+    "type": "ui-chart",
+    "z": "dashboard-tab",
+    "group": "dash-group-history",
+    "name": "RSSI History",
+    "order": 2,
+    "chartType": "line",
+    "xAxisLabel": "Time",
+    "xAxisType": "time",
+    "xAxisFormat": "HH:mm",
+    "yAxisLabel": "RSSI (dBm)",
+    "ymin": "-120",
+    "ymax": "-30",
+    "removeOlder": 100,
+    "removeOlderUnit": "point",
+    "removeOlderPoints": "100",
+    "width": "6",
+    "height": "5",
+    "className": "",
+    "x": 850,
+    "y": 240,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dash-snr-chart",
+    "type": "ui-chart",
+    "z": "dashboard-tab",
+    "group": "dash-group-history",
+    "name": "SNR History",
+    "order": 3,
+    "chartType": "line",
+    "xAxisLabel": "Time",
+    "xAxisType": "time",
+    "xAxisFormat": "HH:mm",
+    "yAxisLabel": "SNR (dB)",
+    "ymin": "-20",
+    "ymax": "20",
+    "removeOlder": 100,
+    "removeOlderUnit": "point",
+    "removeOlderPoints": "100",
+    "width": "6",
+    "height": "5",
+    "className": "",
+    "x": 550,
+    "y": 340,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dash-signal-chart",
+    "type": "ui-chart",
+    "z": "dashboard-tab",
+    "group": "dash-group-signal",
+    "name": "Signal Quality Trend",
+    "order": 3,
+    "chartType": "line",
+    "xAxisLabel": "",
+    "xAxisType": "time",
+    "xAxisFormat": "HH:mm",
+    "yAxisLabel": "Value",
+    "ymin": "",
+    "ymax": "",
+    "removeOlder": 100,
+    "removeOlderUnit": "point",
+    "removeOlderPoints": "100",
+    "width": "12",
+    "height": "4",
+    "className": "",
+    "x": 880,
+    "y": 320,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "hist-manual-trigger",
+    "type": "inject",
+    "z": "dashboard-tab",
+    "name": "Manual Load History",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "manual",
+    "payloadType": "str",
+    "x": 170,
+    "y": 1020,
+    "wires": [
+      [
+        "hist-load-trigger"
+      ]
+    ]
+  },
+  {
+    "id": "hist-page-control",
+    "type": "ui-control",
+    "z": "dashboard-tab",
+    "name": "Page Load Trigger",
+    "ui": "dash-ui",
+    "events": "all",
+    "x": 150,
+    "y": 1080,
+    "wires": [
+      [
+        "hist-load-trigger"
+      ]
+    ]
+  },
+  {
+    "id": "hist-load-trigger",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Trigger Historical Load",
+    "func": "// Trigger historical data load when page loads\n// Also accepts manual trigger from inject node\n\n// Check if manual trigger (from inject node)\nif (msg.payload === 'manual' || !msg.event) {\n    node.status({fill: 'blue', shape: 'dot', text: 'Manual load triggered'});\n    return { payload: 'load', topic: 'all', _source: 'manual' };\n}\n\n// Trigger on 'load' or 'show' events\nif (msg.event === 'load' || msg.event === 'show') {\n    node.status({fill: 'blue', shape: 'dot', text: 'Loading history...'});\n    // Get all unique device EUIs from database\n    return { payload: 'load', topic: 'all', _event: msg.event };\n}\nreturn null;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 240,
+    "y": 940,
+    "wires": [
+      [
+        "hist-get-devices"
+      ]
+    ]
+  },
+  {
+    "id": "hist-get-devices",
+    "type": "postgresql",
+    "z": "dashboard-tab",
+    "name": "Get Device List",
+    "query": "SELECT DISTINCT device_eui FROM readings ORDER BY device_eui",
+    "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
+    "split": false,
+    "rowsPerMsg": 0,
+    "outputs": 1,
+    "x": 200,
+    "y": 860,
+    "wires": [
+      [
+        "hist-format-devices"
+      ]
+    ]
+  },
+  {
+    "id": "hist-format-devices",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Format Device List",
+    "func": "// Collect all device EUIs and trigger queries for each\nconst devices = msg.payload;\n\n// Check for PostgreSQL errors\nif (msg.error) {\n    node.error('PostgreSQL error: ' + JSON.stringify(msg.error));\n    return null;\n}\n\n// If single row, convert to array\nconst deviceList = Array.isArray(devices) ? devices : [devices];\n\n// Extract device EUIs\nconst deviceEuis = deviceList.map(row => row.device_eui || row).filter(Boolean);\n\nif (deviceEuis.length === 0) {\n    node.warn('No devices found in database');\n    return null;\n}\n\n// Use the first device (or most recent) for historical data\n// In a multi-device setup, you might want to query all devices\nconst deviceEui = deviceEuis[0];\n\n// Create messages with params for PostgreSQL queries\n// Return as array for multiple outputs\nreturn [\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'battery' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'rssi' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'snr' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'signal' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'water' }\n];",
+    "outputs": 5,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 230,
+    "y": 760,
+    "wires": [
+      [
+        "hist-query-battery"
+      ],
+      [
+        "hist-query-rssi"
+      ],
+      [
+        "hist-query-snr"
+      ],
+      [
+        "hist-query-signal"
+      ],
+      [
+        "hist-query-water"
+      ]
+    ]
+  },
+  {
+    "id": "hist-query-battery",
+    "type": "postgresql",
+    "z": "dashboard-tab",
+    "name": "Query Battery History",
+    "query": "SELECT ts, (data->>'bp')::float as value FROM readings WHERE device_eui = $1 AND data ? 'bp' AND (data->>'bp') IS NOT NULL AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
+    "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
+    "split": false,
+    "rowsPerMsg": 0,
+    "outputs": 1,
+    "x": 240,
+    "y": 480,
+    "wires": [
+      [
+        "hist-format-battery"
+      ]
+    ]
+  },
+  {
+    "id": "hist-format-battery",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Format Battery Data",
+    "func": "// Format battery history data for chart\n// Check for PostgreSQL errors first\nif (msg.error) {\n    node.error('PostgreSQL error in battery query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\n// PostgreSQL returns array of rows in msg.payload when split=false and rowsPerMsg=0\nconst rows = msg.payload || [];\n\n// Handle empty array or non-array responses\nif (!Array.isArray(rows) || rows.length === 0) {\n    // Empty result is OK - just clear the chart\n    return { payload: [], action: 'replace' };\n}\n\n// Format points: charts with xAxisType='time' expect array of {series, x, y}\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\n\n// Format as array of points with series, x (timestamp) and y (value)\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    const value = parseFloat(row.value);\n    return {\n        series: 'Battery',\n        x: timestamp,\n        y: value\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, action: 'replace' };",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 540,
+    "y": 540,
+    "wires": [
+      [
+        "dash-battery-chart"
+      ]
+    ]
+  },
+  {
+    "id": "hist-query-rssi",
+    "type": "postgresql",
+    "z": "dashboard-tab",
+    "name": "Query RSSI History",
+    "query": "SELECT ts, (data->>'_rssi')::float as value FROM readings WHERE device_eui = $1 AND data ? '_rssi' AND (data->>'_rssi') IS NOT NULL AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
+    "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
+    "split": false,
+    "rowsPerMsg": 0,
+    "outputs": 1,
+    "x": 230,
+    "y": 420,
+    "wires": [
+      [
+        "hist-format-rssi"
+      ]
+    ]
+  },
+  {
+    "id": "hist-format-rssi",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Format RSSI Data",
+    "func": "// Format RSSI history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in RSSI query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\n\n// Format as array of points with x (timestamp) and y (value)\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return { series: \"RSSI\", x: timestamp, y: parseFloat(row.value) };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, action: 'replace' };",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 270,
+    "y": 340,
+    "wires": [
+      [
+        "dash-rssi-chart"
+      ]
+    ]
+  },
+  {
+    "id": "hist-query-snr",
+    "type": "postgresql",
+    "z": "dashboard-tab",
+    "name": "Query SNR History",
+    "query": "SELECT ts, (data->>'_snr')::float as value FROM readings WHERE device_eui = $1 AND data ? '_snr' AND (data->>'_snr') IS NOT NULL AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
+    "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
+    "split": false,
+    "rowsPerMsg": 0,
+    "outputs": 1,
+    "x": 230,
+    "y": 540,
+    "wires": [
+      [
+        "hist-format-snr"
+      ]
+    ]
+  },
+  {
+    "id": "hist-format-snr",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Format SNR Data",
+    "func": "// Format SNR history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in SNR query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\n\n// Format as array of points with x (timestamp) and y (value)\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return { series: \"SNR\", x: timestamp, y: parseFloat(row.value) };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, action: 'replace' };",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 530,
+    "y": 600,
+    "wires": [
+      [
+        "dash-snr-chart"
+      ]
+    ]
+  },
+  {
+    "id": "hist-query-signal",
+    "type": "postgresql",
+    "z": "dashboard-tab",
+    "name": "Query Signal History",
+    "query": "SELECT ts, (data->>'_rssi')::float as rssi, (data->>'_snr')::float as snr FROM readings WHERE device_eui = $1 AND (data ? '_rssi' OR data ? '_snr') AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
+    "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
+    "split": false,
+    "rowsPerMsg": 0,
+    "outputs": 1,
+    "x": 240,
+    "y": 600,
+    "wires": [
+      [
+        "hist-format-signal"
+      ]
+    ]
+  },
+  {
+    "id": "hist-format-signal",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Format Signal Data",
+    "func": "// Format combined signal history (RSSI + SNR) for chart\nif (msg.error) {\n    node.error('PostgreSQL error in signal query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return [\n        { payload: [], action: 'replace' },\n        { payload: [], action: 'replace' }\n    ];\n}\n\n// Create separate arrays for RSSI and SNR with series, x, y format\nconst rssiPoints = [];\nconst snrPoints = [];\n\nrows.forEach(row => {\n    if (!row || !row.ts) return;\n    \n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    \n    if (row.rssi !== null && row.rssi !== undefined && !isNaN(row.rssi)) {\n        rssiPoints.push({\n            series: 'RSSI',\n            x: timestamp,\n            y: parseFloat(row.rssi)\n        });\n    }\n    \n    if (row.snr !== null && row.snr !== undefined && !isNaN(row.snr)) {\n        snrPoints.push({\n            series: 'SNR',\n            x: timestamp,\n            y: parseFloat(row.snr)\n        });\n    }\n});\n\n// Return single messages with arrays of points\nreturn [\n    { payload: rssiPoints, action: 'replace' },\n    { payload: snrPoints, action: 'replace' }\n];",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 530,
+    "y": 660,
+    "wires": [
+      [
+        "dash-signal-chart"
+      ],
+      [
+        "dash-signal-chart"
+      ]
+    ]
+  },
+  {
+    "id": "hist-query-water",
+    "type": "postgresql",
+    "z": "dashboard-tab",
+    "name": "Query Water History",
+    "query": "SELECT ts, (data->>'tv')::float as value FROM readings WHERE device_eui = $1 AND data ? 'tv' AND (data->>'tv') IS NOT NULL AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
+    "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
+    "split": false,
+    "rowsPerMsg": 0,
+    "outputs": 1,
+    "x": 240,
+    "y": 660,
+    "wires": [
+      [
+        "hist-format-water"
+      ]
+    ]
+  },
+  {
+    "id": "hist-format-water",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Format Water Data",
+    "func": "// Format water flow history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in water query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\n\n// Format as array of points with x (timestamp) and y (value)\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return { series: \"WaterFlow\", x: timestamp, y: parseFloat(row.value) };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, action: 'replace' };",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 530,
+    "y": 720,
+    "wires": [
+      [
+        "dash-water-flow-chart"
+      ]
+    ]
+  },
+  {
+    "id": "api1",
+    "type": "http in",
+    "z": "api-flow-tab",
+    "name": "GET /api/status",
+    "url": "/api/status",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 140,
+    "y": 80,
+    "wires": [
+      [
+        "api2"
+      ]
+    ]
+  },
+  {
+    "id": "api2",
+    "type": "function",
+    "z": "api-flow-tab",
+    "name": "Build Status",
+    "func": "msg.payload = {\n    status: 'ok',\n    timestamp: new Date().toISOString(),\n    service: 'farm-monitor'\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 350,
+    "y": 80,
+    "wires": [
+      [
+        "api3"
+      ]
+    ]
+  },
+  {
+    "id": "api3",
+    "type": "http response",
+    "z": "api-flow-tab",
+    "name": "Response",
+    "statusCode": "200",
+    "headers": {},
+    "x": 540,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "api4",
+    "type": "http in",
+    "z": "api-flow-tab",
+    "name": "GET /api/latest",
+    "url": "/api/latest",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 140,
+    "y": 160,
+    "wires": [
+      [
+        "api5"
+      ]
+    ]
+  },
+  {
+    "id": "api5",
+    "type": "postgresql",
+    "z": "api-flow-tab",
+    "name": "Latest per Device",
+    "query": "SELECT DISTINCT ON (device_eui) device_eui, data, ts FROM readings ORDER BY device_eui, ts DESC",
+    "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
+    "split": false,
+    "rowsPerMsg": 1,
+    "outputs": 1,
+    "x": 370,
+    "y": 160,
+    "wires": [
+      [
+        "api6"
+      ]
+    ]
+  },
+  {
+    "id": "api6",
+    "type": "http response",
+    "z": "api-flow-tab",
+    "name": "Response",
+    "statusCode": "200",
+    "headers": {},
+    "x": 560,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "config-init",
+    "type": "inject",
+    "z": "config-flow-tab",
+    "name": "Initialize Config on Startup",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "1",
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 180,
+    "y": 80,
+    "wires": [
+      [
+        "config-setup"
+      ]
+    ]
+  },
+  {
+    "id": "config-setup",
+    "type": "function",
+    "z": "config-flow-tab",
+    "name": "Setup Water Tank Config",
+    "func": "// Water Tank Configuration\n// This is the single source of truth for tank parameters\n\nconst config = {\n    // Tank Physical Dimensions\n    tank: {\n        height_cm: 200,          // Total tank height in cm\n        capacity_liters: 5000,   // Total tank capacity in liters\n        diameter_cm: 180,        // Tank diameter for visualization\n        shape: 'cylindrical'     // cylindrical, rectangular\n    },\n    \n    // Distance Sensor Configuration\n    sensor: {\n        mounting_height_cm: 210,     // Height where sensor is mounted from ground\n        offset_cm: 0,                 // Calibration offset (adjust after testing)\n        min_reading_cm: 10,           // Minimum valid reading (sensor dead zone)\n        max_reading_cm: 220,          // Maximum valid reading\n        field_name: 'pd'              // Field name in data payload for distance\n    },\n    \n    // Flow Calculation\n    flow: {\n        reporting_interval_seconds: 30,  // How often device reports\n        flow_field_name: 'tv',           // Total volume field name\n        enable_flow_calculation: true,   // Enable flow rate calculations\n        flow_detection_threshold_liters: 5  // Minimum change to detect flow\n    },\n    \n    // Alert Thresholds\n    alerts: {\n        low_level_percent: 20,\n        critical_level_percent: 10,\n        high_flow_rate_lph: 1000  // Liters per hour - potential leak\n    }\n};\n\n// Store in global context\nglobal.set('waterTankConfig', config);\n\n// Return config for debugging\nmsg.payload = config;\nnode.status({fill: 'green', shape: 'dot', text: 'Config loaded'});\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 430,
+    "y": 80,
+    "wires": [
+      [
+        "config-debug"
+      ]
+    ]
+  },
+  {
+    "id": "config-debug",
+    "type": "debug",
+    "z": "config-flow-tab",
+    "name": "Config Loaded",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 680,
+    "y": 80,
+    "wires": []
+  }
 ]
