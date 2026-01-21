@@ -173,6 +173,22 @@ deploy_stack() {
     docker-compose restart chirpstack
     sleep 5
     
+    log_info "Verifying Node-RED dashboard packages..."
+    # Wait for Node-RED to fully start
+    sleep 10
+    
+    # Check if dashboard package is installed
+    if docker exec farm-nodered test -d /data/node_modules/@flowfuse/node-red-dashboard 2>/dev/null; then
+        log_success "Dashboard package already installed"
+    else
+        log_info "Installing Node-RED dashboard packages..."
+        docker exec farm-nodered npm install --prefix /data --production 2>&1 | grep -v "npm WARN" || true
+        log_info "Restarting Node-RED to load new packages..."
+        docker-compose restart nodered
+        sleep 10
+        log_success "Dashboard packages installed"
+    fi
+    
     log_success "All services running"
 }
 
@@ -189,7 +205,7 @@ print_summary() {
     echo -e "               ${CYAN}admin / admin${NC}"
     echo -e "  Node-RED:    http://$TAILSCALE_IP:1880"
     echo -e "               ${CYAN}admin / farmmon${NC}"
-    echo -e "  Dashboard:   http://$TAILSCALE_IP:1880/ui"
+    echo -e "  Dashboard:   http://$TAILSCALE_IP:1880/ui/farm-monitor"
     echo ""
     echo -e "${BOLD}Next steps:${NC}"
     echo -e "  1. Run gateway setup: ${CYAN}sudo bash setup_gateway.sh${NC}"

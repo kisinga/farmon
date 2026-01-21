@@ -27,9 +27,6 @@ module.exports = {
     // HTTP node settings
     httpAdminRoot: '/',
     httpNodeRoot: '/api',
-    
-    // Dashboard UI will be at /ui
-    ui: { path: "ui" },
 
     // Logging
     logging: {
