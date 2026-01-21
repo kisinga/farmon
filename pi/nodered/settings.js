@@ -26,7 +26,7 @@ module.exports = {
 
     // HTTP node settings
     httpAdminRoot: '/admin',
-    httpNodeRoot: '/api',
+    httpNodeRoot: '/',
 
     // Logging
     logging: {

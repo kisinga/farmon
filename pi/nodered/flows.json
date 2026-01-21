@@ -67,12 +67,20 @@
         "type": "ui-base",
         "name": "Farm Monitor Dashboard",
         "path": "ui",
+        "appIcon": "",
         "includeClientData": true,
         "acceptsClientConfig": [
             "ui-control",
             "ui-notification"
         ],
-        "showPathInSidebar": true
+        "showPathInSidebar": true,
+        "headerContent": "page",
+        "navigationStyle": "default",
+        "titleBarStyle": "default",
+        "showReconnectNotification": true,
+        "notificationDisplayTime": 5,
+        "showDisconnectNotification": true,
+        "allowInstall": true
     },
     {
         "id": "dash-theme",
@@ -123,7 +131,7 @@
                 "cols": "12"
             }
         ],
-        "order": 2,
+        "order": 1,
         "className": "",
         "visible": "true",
         "disabled": "false"
@@ -134,7 +142,7 @@
         "name": "Battery Monitor",
         "page": "dash-tab",
         "width": "12",
-        "order": 2,
+        "order": 1,
         "className": ""
     },
     {
@@ -145,6 +153,17 @@
             "node-red-contrib-postgresql": "0.15.4",
             "@flowfuse/node-red-dashboard": "1.30.1"
         }
+    },
+    {
+        "id": "ead6616b9d4660df",
+        "type": "ui-link",
+        "name": "Link 1",
+        "ui": "dash-ui",
+        "path": "/",
+        "icon": "home",
+        "order": 2,
+        "visible": true,
+        "disabled": false
     },
     {
         "id": "n1a2b3c4d5e6f7g8",
