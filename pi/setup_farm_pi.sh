@@ -147,6 +147,44 @@ EOF
     sudo chown -R 1000:1000 /srv/farm/nodered     # node-red user
     sudo chown -R 1883:1883 /srv/farm/mosquitto   # mosquitto user
     
+    # Copy Node-RED configuration files into volume (allows Node-RED to write to them)
+    log_info "Copying Node-RED configuration files to data volume..."
+    NODERED_SRC="$INSTALL_DIR/edge/pi/nodered"
+    if [ ! -d "$NODERED_SRC" ]; then
+        # Fallback to pi/nodered if edge/pi doesn't exist
+        NODERED_SRC="$INSTALL_DIR/pi/nodered"
+    fi
+    
+    if [ -d "$NODERED_SRC" ]; then
+        # Copy settings.js if it doesn't exist or is older
+        if [ -f "$NODERED_SRC/settings.js" ]; then
+            if [ ! -f /srv/farm/nodered/settings.js ] || [ "$NODERED_SRC/settings.js" -nt /srv/farm/nodered/settings.js ]; then
+                sudo cp "$NODERED_SRC/settings.js" /srv/farm/nodered/settings.js
+                sudo chown 1000:1000 /srv/farm/nodered/settings.js
+            fi
+        fi
+        
+        # Copy flows.json if it doesn't exist (Node-RED will modify this file)
+        if [ -f "$NODERED_SRC/flows.json" ] && [ ! -f /srv/farm/nodered/flows.json ]; then
+            sudo cp "$NODERED_SRC/flows.json" /srv/farm/nodered/flows.json
+            sudo chown 1000:1000 /srv/farm/nodered/flows.json
+        fi
+        
+        # Copy package.json if it doesn't exist or is newer (triggers npm install)
+        if [ -f "$NODERED_SRC/package.json" ]; then
+            if [ ! -f /srv/farm/nodered/package.json ] || [ "$NODERED_SRC/package.json" -nt /srv/farm/nodered/package.json ]; then
+                sudo cp "$NODERED_SRC/package.json" /srv/farm/nodered/package.json
+                sudo chown 1000:1000 /srv/farm/nodered/package.json
+                # Remove node_modules to force reinstall if package.json changed
+                if [ -d /srv/farm/nodered/node_modules ]; then
+                    sudo rm -rf /srv/farm/nodered/node_modules
+                fi
+            fi
+        fi
+    else
+        log_info "Node-RED source directory not found, skipping file copy"
+    fi
+    
     log_success "Directories ready"
 }
 

@@ -94,11 +94,9 @@ services:
       - "1880:1880"
     volumes:
       - nodered_data:/data
-      - ./nodered/settings.js:/data/settings.js:ro
-      - ./nodered/flows.json:/data/flows.json
-      - ./nodered/package.json:/data/package.json
     environment:
       - TZ=Africa/Nairobi
+      - FLOWS=flows.json
     networks:
       - farm_network
 
