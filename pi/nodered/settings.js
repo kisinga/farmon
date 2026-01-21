@@ -19,7 +19,7 @@ module.exports = {
             username: "admin",
             // Default password: "farmmon" - change in production!
             // Generate new hash: node -e "console.log(require('bcryptjs').hashSync('yourpassword', 8));"
-            password: "$2a$08$zZWtXTja0fB1pzD4sHCMyOCMYz2Z6dNbM6tl8sJogENOMcxWV9DN.",
+            password: "$2b$08$05Wbo0WcTtVvh6XB8F6ZZuCew61HfUEUz2cmdkqmtmg3p58kS8lCu",
             permissions: "*"
         }]
     },

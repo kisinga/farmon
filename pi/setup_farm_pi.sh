@@ -2,7 +2,7 @@
 
 # Farm Monitoring System - Raspberry Pi Setup Script
 #
-# Usage: curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
+# Usage: curl -sSL https://github.com/kisinga/farmon/raw/main/pi/setup_farm_pi.sh | bash
 
 set -e
 
@@ -110,12 +110,12 @@ setup_directories() {
     sudo mkdir -p /srv/farm/nodered
     
     log_info "Creating configuration directories..."
-    mkdir -p "$INSTALL_DIR/edge/pi/mosquitto"
+    mkdir -p "$INSTALL_DIR/pi/mosquitto"
     
     # Create mosquitto.conf if it doesn't exist
-    if [ ! -f "$INSTALL_DIR/edge/pi/mosquitto/mosquitto.conf" ]; then
+    if [ ! -f "$INSTALL_DIR/pi/mosquitto/mosquitto.conf" ]; then
         log_info "Creating mosquitto.conf..."
-        cat > "$INSTALL_DIR/edge/pi/mosquitto/mosquitto.conf" << 'EOF'
+        cat > "$INSTALL_DIR/pi/mosquitto/mosquitto.conf" << 'EOF'
 # Mosquitto MQTT Broker Configuration
 # For Farm Monitoring System
 
@@ -152,7 +152,7 @@ EOF
 deploy_stack() {
     step "Docker Stack"
     
-    cd "$INSTALL_DIR/edge/pi"
+    cd "$INSTALL_DIR/pi"
     
     log_info "Pulling Docker images (this may take a while)..."
     docker-compose pull

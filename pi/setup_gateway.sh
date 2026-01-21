@@ -12,7 +12,7 @@ set -e
 CONCENTRATORD_VERSION="4.4.1"
 MQTT_FORWARDER_VERSION="4.2.3"
 REGION="us915"
-INSTALL_DIR="/home/${SUDO_USER:-$USER}/farm/edge/pi"
+INSTALL_DIR="/home/${SUDO_USER:-$USER}/farm/pi"
 
 # --- Colors ---
 RED='\033[0;31m'

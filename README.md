@@ -35,20 +35,20 @@ Install the Raspberry Pi infrastructure and gateway hardware.
 
 ```bash
 # On a fresh Raspberry Pi
-curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
+curl -sSL https://github.com/kisinga/farmon/raw/main/pi/setup_farm_pi.sh | bash
 
 # Then install the SX1302 HAT
-sudo bash ~/farm/edge/pi/setup_gateway.sh
+sudo bash ~/farm/pi/setup_gateway.sh
 ```
 
-→ Full details: [edge/pi/README.md](edge/pi/README.md)
+→ Full details: [pi/README.md](pi/README.md)
 
 **Verify:** Open ChirpStack at `http://<pi-ip>:8080` — gateway should appear under Gateways.
 
 ### Step 2: Configure ChirpStack
 
 Create the device profile and application (one-time setup).
-→ Full details: [edge/pi/README.md#registering-devices](edge/pi/README.md#registering-devices)
+→ Full details: [pi/README.md#registering-devices](pi/README.md#registering-devices)
 
 ### Step 3: Deploy Sensors
 
@@ -59,13 +59,13 @@ For each Heltec device:
 3. **Get AppKey:** Device → OTAA keys → Generate → copy the hex string
 4. **Configure & Flash:**
    ```bash
-   cd edge/heltec
+   cd heltec
    cp secrets.example.h secrets.h
    # Edit secrets.h with your AppKey
    ./heltec.sh flash
    ```
 
-→ Full details: [edge/heltec/README.md](edge/heltec/README.md)
+→ Full details: [heltec/README.md](heltec/README.md)
 
 **Verify:** Serial shows "joined", ChirpStack shows uplink frames, Node-RED debug shows data.
 
@@ -80,8 +80,8 @@ For each Heltec device:
 
 ```
 farmon/
-├── edge/pi/          # Gateway stack (ChirpStack, Node-RED, PostgreSQL)
-└── edge/heltec/      # Sensor firmware (Heltec ESP32 LoRaWAN)
+├── pi/          # Gateway stack (ChirpStack, Node-RED, PostgreSQL)
+└── heltec/      # Sensor firmware (Heltec ESP32 LoRaWAN)
 ```
 
 ## Troubleshooting

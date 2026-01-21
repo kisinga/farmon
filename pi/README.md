@@ -8,7 +8,7 @@ ChirpStack + Node-RED + PostgreSQL on Raspberry Pi with SX1302 LoRaWAN HAT.
 
 ```bash
 # Fresh Pi - run as regular user (not root)
-curl -sSL https://github.com/kisinga/farmon/raw/main/edge/pi/setup_farm_pi.sh | bash
+curl -sSL https://github.com/kisinga/farmon/raw/main/pi/setup_farm_pi.sh | bash
 ```
 
 This installs Docker, clones the repo, and starts all services.
@@ -36,7 +36,7 @@ This installs Docker, clones the repo, and starts all services.
 Prerequisite: Enable SPI via `sudo raspi-config` → Interface Options → SPI
 
 ```bash
-sudo bash ~/farm/edge/pi/setup_gateway.sh
+sudo bash ~/farm/pi/setup_gateway.sh
 ```
 
 This installs:
@@ -119,7 +119,7 @@ For each Heltec sensor:
 ## File Structure
 
 ```
-edge/pi/
+pi/
 ├── docker-compose.yml         # Service definitions
 ├── setup_farm_pi.sh           # Initial Pi setup
 ├── setup_gateway.sh           # SX1302 HAT installation
