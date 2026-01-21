@@ -66,7 +66,7 @@
         "id": "dash-ui",
         "type": "ui-base",
         "name": "Farm Monitor Dashboard",
-        "path": "ui",
+        "path": "/dashboard",
         "appIcon": "",
         "includeClientData": true,
         "acceptsClientConfig": [
