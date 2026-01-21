@@ -95,7 +95,7 @@ services:
     volumes:
       - nodered_data:/data
       - ./nodered/settings.js:/data/settings.js:ro
-      - ./nodered/flows.json:/data/flows.json:ro
+      - ./nodered/flows.json:/data/flows.json
       - ./nodered/package.json:/data/package.json
     environment:
       - TZ=Africa/Nairobi
