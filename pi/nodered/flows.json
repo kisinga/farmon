@@ -321,7 +321,7 @@
         "type": "function",
         "z": "farm-flow-tab",
         "name": "Check Thresholds",
-        "func": "const data = msg.sensorData;\nconst alerts = [];\n\nif (data.water_level !== undefined && data.water_level < 20) {\n    alerts.push({ type: 'water_level_low', message: `Water level low: ${data.water_level}%`, device: msg.deviceEui });\n}\nif (data.temperature !== undefined && data.temperature > 35) {\n    alerts.push({ type: 'temperature_high', message: `High temperature: ${data.temperature}°C`, device: msg.deviceEui });\n}\nif (data.battery !== undefined && data.battery < 20) {\n    alerts.push({ type: 'battery_low', message: `Battery low: ${data.battery}%`, device: msg.deviceEui });\n}\n\nif (alerts.length > 0) {\n    return { payload: alerts, deviceEui: msg.deviceEui };\n}\nreturn null;",
+        "func": "const data = msg.sensorData;\nconst alerts = [];\n\nif (data.water_level !== undefined && data.water_level < 20) {\n    alerts.push({ type: 'water_level_low', message: `Water level low: ${data.water_level}%`, device: msg.deviceEui });\n}\nif (data.temperature !== undefined && data.temperature > 35) {\n    alerts.push({ type: 'temperature_high', message: `High temperature: ${data.temperature}\u00b0C`, device: msg.deviceEui });\n}\nif (data.battery !== undefined && data.battery < 20) {\n    alerts.push({ type: 'battery_low', message: `Battery low: ${data.battery}%`, device: msg.deviceEui });\n}\n\nif (alerts.length > 0) {\n    return { payload: alerts, deviceEui: msg.deviceEui };\n}\nreturn null;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -491,8 +491,8 @@
         "type": "function",
         "z": "dashboard-tab",
         "name": "Extract Sensor Data",
-        "func": "// Extract all sensor data from the incoming message\nconst data = msg.sensorData || {};\nconst batteryPercent = data.bp;\nconst rssi = data._rssi;\nconst snr = data._snr;\nconst tsr = data.tsr;\n\n// Format device name from EUI\nconst deviceEui = msg.deviceEui || 'unknown';\nconst deviceName = msg.deviceName || deviceEui;\nconst shortEui = deviceEui.substring(0, 8).toUpperCase();\n\n// Create multiple outputs for different dashboard elements\nreturn [\n    // Output 1: Battery data\n    batteryPercent !== undefined ? {\n        payload: parseFloat(batteryPercent),\n        topic: shortEui,\n        deviceEui: deviceEui,\n        deviceName: deviceName\n    } : null,\n    \n    // Output 2: RSSI data\n    rssi !== undefined ? {\n        payload: parseFloat(rssi),\n        topic: shortEui,\n        deviceEui: deviceEui\n    } : null,\n    \n    // Output 3: SNR data\n    snr !== undefined ? {\n        payload: parseFloat(snr),\n        topic: shortEui,\n        deviceEui: deviceEui\n    } : null,\n    \n    // Output 4: Device info for display\n    {\n        payload: `${deviceName} (${shortEui})`,\n        deviceEui: deviceEui,\n        rssi: rssi,\n        snr: snr,\n        battery: batteryPercent\n    },\n    \n    // Output 5: TSR data\n    tsr !== undefined ? {\n        payload: parseFloat(tsr),\n        topic: shortEui\n    } : null,\n    \n    // Output 6: Pass through complete data for water processor\n    {\n        sensorData: data,\n        deviceEui: deviceEui,\n        deviceName: deviceName\n    }\n];",
-        "outputs": 6,
+        "func": "// Extract all sensor data from the incoming message\nconst data = msg.sensorData || {};\nconst batteryPercent = data.bp;\nconst rssi = data._rssi;\nconst snr = data._snr;\nconst tsr = data.tsr;\n\n// Format device name from EUI\nconst deviceEui = msg.deviceEui || 'unknown';\nconst deviceName = msg.deviceName || deviceEui;\nconst shortEui = deviceEui.substring(0, 8).toUpperCase();\n\n// Create multiple outputs for different dashboard elements\nreturn [\n    // Output 1: Battery data for gauge\n    batteryPercent !== undefined ? {\n        payload: parseFloat(batteryPercent),\n        topic: shortEui,\n        deviceEui: deviceEui,\n        deviceName: deviceName\n    } : null,\n    \n    // Output 2: RSSI data for gauge\n    rssi !== undefined ? {\n        payload: parseFloat(rssi),\n        topic: shortEui,\n        deviceEui: deviceEui\n    } : null,\n    \n    // Output 3: SNR data for gauge\n    snr !== undefined ? {\n        payload: parseFloat(snr),\n        topic: shortEui,\n        deviceEui: deviceEui\n    } : null,\n    \n    // Output 4: Device info for display\n    {\n        payload: `${deviceName} (${shortEui})`,\n        deviceEui: deviceEui,\n        rssi: rssi,\n        snr: snr,\n        battery: batteryPercent\n    },\n    \n    // Output 5: TSR data\n    tsr !== undefined ? {\n        payload: parseFloat(tsr),\n        topic: shortEui\n    } : null,\n    \n    // Output 6: Pass through complete data for water processor\n    {\n        sensorData: data,\n        deviceEui: deviceEui,\n        deviceName: deviceName\n    },\n\n    // Output 7: Battery for history chart\n    batteryPercent !== undefined ? {\n        payload: parseFloat(batteryPercent),\n        topic: 'Battery'\n    } : null,\n\n    // Output 8: RSSI for history chart\n    rssi !== undefined ? {\n        payload: parseFloat(rssi),\n        topic: 'RSSI'\n    } : null,\n\n    // Output 9: SNR for history chart  \n    snr !== undefined ? {\n        payload: parseFloat(snr),\n        topic: 'SNR'\n    } : null,\n\n    // Output 10: RSSI for combined signal chart\n    rssi !== undefined ? {\n        payload: parseFloat(rssi),\n        topic: 'RSSI'\n    } : null,\n\n    // Output 11: SNR for combined signal chart\n    snr !== undefined ? {\n        payload: parseFloat(snr),\n        topic: 'SNR'\n    } : null\n];",
+        "outputs": 11,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
@@ -501,12 +501,39 @@
         "x": 190,
         "y": 120,
         "wires": [
-            ["dash-gauge"],
-            ["dash-rssi-gauge"],
-            ["dash-snr-gauge"],
-            ["dash-text"],
-            ["dash-tsr-text"],
-            ["water-processor"]
+            [
+                "dash-gauge"
+            ],
+            [
+                "dash-rssi-gauge"
+            ],
+            [
+                "dash-snr-gauge"
+            ],
+            [
+                "dash-text"
+            ],
+            [
+                "dash-tsr-text"
+            ],
+            [
+                "water-processor"
+            ],
+            [
+                "dash-battery-chart"
+            ],
+            [
+                "dash-rssi-chart"
+            ],
+            [
+                "dash-snr-chart"
+            ],
+            [
+                "dash-signal-chart"
+            ],
+            [
+                "dash-signal-chart"
+            ]
         ]
     },
     {
@@ -682,10 +709,18 @@
         "x": 200,
         "y": 500,
         "wires": [
-            ["dash-water-gauge"],
-            ["dash-water-volume-text"],
-            ["dash-flow-rate-text"],
-            ["dash-water-history-store"]
+            [
+                "dash-water-gauge"
+            ],
+            [
+                "dash-water-volume-text"
+            ],
+            [
+                "dash-flow-rate-text"
+            ],
+            [
+                "dash-water-history-store"
+            ]
         ]
     },
     {
@@ -805,7 +840,9 @@
         "x": 540,
         "y": 600,
         "wires": [
-            ["dash-water-flow-chart"]
+            [
+                "dash-water-flow-chart"
+            ]
         ]
     },
     {
@@ -825,11 +862,18 @@
         "yAxisLabel": "Total Volume (L)",
         "ymin": "",
         "ymax": "",
-        "color": ["#0094ce"],
+        "color": [
+            "#0094ce"
+        ],
         "className": "",
         "x": 780,
         "y": 600,
-        "wires": [[]]
+        "wires": [
+            []
+        ],
+        "removeOlder": 100,
+        "removeOlderUnit": "point",
+        "removeOlderPoints": "100"
     },
     {
         "id": "dash-rssi-gauge",
@@ -976,70 +1020,6 @@
         "wires": []
     },
     {
-        "id": "dash-history-trigger",
-        "type": "inject",
-        "z": "dashboard-tab",
-        "name": "Load History (every 30s)",
-        "props": [
-            {
-                "p": "payload"
-            }
-        ],
-        "repeat": "30",
-        "crontab": "",
-        "once": true,
-        "onceDelay": "2",
-        "topic": "",
-        "payload": "",
-        "payloadType": "date",
-        "x": 180,
-        "y": 400,
-        "wires": [
-            [
-                "dash-history-query"
-            ]
-        ]
-    },
-    {
-        "id": "dash-history-query",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Get Last 24h Data",
-        "query": "SELECT ts, (data->>'bp')::numeric as battery, (data->>'_rssi')::numeric as rssi, (data->>'_snr')::numeric as snr, (data->>'tsr')::numeric as tsr FROM readings WHERE ts > NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 430,
-        "y": 400,
-        "wires": [
-            [
-                "dash-format-charts"
-            ]
-        ]
-    },
-    {
-        "id": "dash-format-charts",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Chart Data",
-        "func": "// Process database results into chart format\nconst rows = msg.payload;\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return null;\n}\n\n// Prepare data arrays for different charts\nconst batteryData = [];\nconst rssiData = [];\nconst snrData = [];\nconst combinedData = [];\n\nrows.forEach(row => {\n    const timestamp = new Date(row.ts).getTime();\n    \n    if (row.battery !== null) {\n        batteryData.push({x: timestamp, y: row.battery});\n    }\n    if (row.rssi !== null) {\n        rssiData.push({x: timestamp, y: row.rssi});\n    }\n    if (row.snr !== null) {\n        snrData.push({x: timestamp, y: row.snr});\n    }\n});\n\n// Return multiple messages for different charts\nreturn [\n    // Battery chart\n    {\n        payload: [{\n            series: ['Battery %'],\n            data: [batteryData],\n            labels: ['']\n        }]\n    },\n    // RSSI chart\n    {\n        payload: [{\n            series: ['RSSI (dBm)'],\n            data: [rssiData],\n            labels: ['']\n        }]\n    },\n    // SNR chart\n    {\n        payload: [{\n            series: ['SNR (dB)'],\n            data: [snrData],\n            labels: ['']\n        }]\n    },\n    // Combined signal chart\n    {\n        payload: [{\n            series: ['RSSI', 'SNR'],\n            data: [rssiData, snrData],\n            labels: ['']\n        }]\n    }\n];",
-        "outputs": 4,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 680,
-        "y": 400,
-        "wires": [
-            ["dash-battery-chart"],
-            ["dash-rssi-chart"],
-            ["dash-snr-chart"],
-            ["dash-signal-chart"]
-        ]
-    },
-    {
         "id": "dash-battery-chart",
         "type": "ui-chart",
         "z": "dashboard-tab",
@@ -1056,11 +1036,18 @@
         "yAxisLabel": "Battery %",
         "ymin": "0",
         "ymax": "100",
-        "color": ["#00b500"],
+        "color": [
+            "#00b500"
+        ],
         "className": "",
         "x": 960,
         "y": 360,
-        "wires": [[]]
+        "wires": [
+            []
+        ],
+        "removeOlder": 100,
+        "removeOlderUnit": "point",
+        "removeOlderPoints": "100"
     },
     {
         "id": "dash-rssi-chart",
@@ -1079,11 +1066,18 @@
         "yAxisLabel": "RSSI (dBm)",
         "ymin": "-120",
         "ymax": "-30",
-        "color": ["#0094ce"],
+        "color": [
+            "#0094ce"
+        ],
         "className": "",
         "x": 950,
         "y": 400,
-        "wires": [[]]
+        "wires": [
+            []
+        ],
+        "removeOlder": 100,
+        "removeOlderUnit": "point",
+        "removeOlderPoints": "100"
     },
     {
         "id": "dash-snr-chart",
@@ -1102,11 +1096,18 @@
         "yAxisLabel": "SNR (dB)",
         "ymin": "-20",
         "ymax": "20",
-        "color": ["#ca3838"],
+        "color": [
+            "#ca3838"
+        ],
         "className": "",
         "x": 940,
         "y": 440,
-        "wires": [[]]
+        "wires": [
+            []
+        ],
+        "removeOlder": 100,
+        "removeOlderUnit": "point",
+        "removeOlderPoints": "100"
     },
     {
         "id": "dash-signal-chart",
@@ -1125,11 +1126,19 @@
         "yAxisLabel": "Value",
         "ymin": "",
         "ymax": "",
-        "color": ["#0094ce", "#ca3838"],
+        "color": [
+            "#0094ce",
+            "#ca3838"
+        ],
         "className": "",
         "x": 970,
         "y": 480,
-        "wires": [[]]
+        "wires": [
+            []
+        ],
+        "removeOlder": 100,
+        "removeOlderUnit": "point",
+        "removeOlderPoints": "100"
     },
     {
         "id": "api4",
