@@ -1,5 +1,26 @@
 [
     {
+        "id": "farm-flow-tab",
+        "type": "tab",
+        "label": "Farm Monitor",
+        "disabled": false,
+        "info": "Main flow for receiving ChirpStack events and storing to PostgreSQL"
+    },
+    {
+        "id": "dashboard-tab",
+        "type": "tab",
+        "label": "Dashboard",
+        "disabled": false,
+        "info": "Dashboard UI for monitoring farm sensors"
+    },
+    {
+        "id": "api-flow-tab",
+        "type": "tab",
+        "label": "API",
+        "disabled": false,
+        "info": "HTTP endpoints"
+    },
+    {
         "id": "e1b2c3d4e5f6a7b8",
         "type": "mqtt-broker",
         "name": "Mosquitto",
@@ -35,20 +56,150 @@
         "port": "5432",
         "database": "farmmon",
         "ssl": false,
-        "user": "farmmon",
-        "password": "farmmon",
         "max": "10",
-        "min": "1",
         "idle": "1000",
         "connectionTimeout": "10000",
-        "requestTimeout": "15000"
+        "user": "farmmon",
+        "password": "farmmon"
     },
     {
-        "id": "farm-flow-tab",
-        "type": "tab",
-        "label": "Farm Monitor",
-        "disabled": false,
-        "info": "Main flow for receiving ChirpStack events and storing to PostgreSQL"
+        "id": "dash-ui",
+        "type": "ui-base",
+        "name": "Farm Monitor Dashboard",
+        "path": "ui",
+        "includeClientData": true,
+        "acceptsClientConfig": [
+            "ui-control",
+            "ui-notification"
+        ],
+        "showPathInSidebar": true
+    },
+    {
+        "id": "dash-theme",
+        "type": "ui-theme",
+        "name": "Default Theme",
+        "colors": {
+            "surface": "#ffffff",
+            "primary": "#0094ce",
+            "bgPage": "#eeeeee",
+            "groupBg": "#ffffff",
+            "groupOutline": "#cccccc"
+        },
+        "sizes": {
+            "pagePadding": "12px",
+            "groupGap": "12px",
+            "groupBorderRadius": "4px",
+            "widgetGap": "12px"
+        }
+    },
+    {
+        "id": "dash-tab",
+        "type": "ui-page",
+        "name": "Farm Monitor",
+        "ui": "dash-ui",
+        "path": "farm-monitor",
+        "icon": "dashboard",
+        "layout": "grid",
+        "theme": "dash-theme",
+        "breakpoints": [
+            {
+                "name": "Default",
+                "px": "0",
+                "cols": "3"
+            },
+            {
+                "name": "Tablet",
+                "px": "576",
+                "cols": "6"
+            },
+            {
+                "name": "Small Desktop",
+                "px": "768",
+                "cols": "9"
+            },
+            {
+                "name": "Desktop",
+                "px": "1024",
+                "cols": "12"
+            }
+        ],
+        "order": 2,
+        "className": "",
+        "visible": "true",
+        "disabled": "false"
+    },
+    {
+        "id": "dash-group",
+        "type": "ui-group",
+        "name": "Battery Monitor",
+        "page": "dash-tab",
+        "width": "12",
+        "order": 2,
+        "className": ""
+    },
+    {
+        "id": "fc769358b507c5b6",
+        "type": "ui-group",
+        "name": "Group Name",
+        "page": "dash-tab",
+        "width": 6,
+        "height": 1,
+        "order": 1,
+        "showTitle": true,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "9e54b516e0948912",
+        "type": "ui-page",
+        "name": "Page Name",
+        "ui": "dash-ui",
+        "path": "/page2",
+        "icon": "home",
+        "layout": "grid",
+        "theme": "dash-theme",
+        "breakpoints": [
+            {
+                "name": "Default",
+                "px": "0",
+                "cols": "3"
+            },
+            {
+                "name": "Tablet",
+                "px": "576",
+                "cols": "6"
+            },
+            {
+                "name": "Small Desktop",
+                "px": "768",
+                "cols": "9"
+            },
+            {
+                "name": "Desktop",
+                "px": "1024",
+                "cols": "12"
+            }
+        ],
+        "order": 1,
+        "className": "",
+        "visible": "true",
+        "disabled": "false"
+    },
+    {
+        "id": "9f3919d23e829d30",
+        "type": "ui-group",
+        "name": "Group Name",
+        "page": "9e54b516e0948912",
+        "width": 6,
+        "height": 1,
+        "order": 1,
+        "showTitle": true,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
     },
     {
         "id": "n1a2b3c4d5e6f7g8",
@@ -65,7 +216,12 @@
         "inputs": 0,
         "x": 130,
         "y": 100,
-        "wires": [["n2a2b3c4d5e6f7g8", "n3a2b3c4d5e6f7g8"]]
+        "wires": [
+            [
+                "n2a2b3c4d5e6f7g8",
+                "n3a2b3c4d5e6f7g8"
+            ]
+        ]
     },
     {
         "id": "n1b2b3c4d5e6f7g8",
@@ -82,7 +238,11 @@
         "inputs": 0,
         "x": 130,
         "y": 180,
-        "wires": [["n4a2b3c4d5e6f7g8"]]
+        "wires": [
+            [
+                "n4a2b3c4d5e6f7g8"
+            ]
+        ]
     },
     {
         "id": "n2a2b3c4d5e6f7g8",
@@ -98,7 +258,13 @@
         "libs": [],
         "x": 330,
         "y": 100,
-        "wires": [["n5a2b3c4d5e6f7g8", "n6a2b3c4d5e6f7g8", "n7a2b3c4d5e6f7g8", "dash1"]]
+        "wires": [
+            [
+                "n5a2b3c4d5e6f7g8",
+                "n6a2b3c4d5e6f7g8",
+                "n7a2b3c4d5e6f7g8"
+            ]
+        ]
     },
     {
         "id": "n3a2b3c4d5e6f7g8",
@@ -146,7 +312,11 @@
         "outputs": 1,
         "x": 530,
         "y": 80,
-        "wires": [["n8a2b3c4d5e6f7g8"]]
+        "wires": [
+            [
+                "n8a2b3c4d5e6f7g8"
+            ]
+        ]
     },
     {
         "id": "n6a2b3c4d5e6f7g8",
@@ -162,7 +332,11 @@
         "libs": [],
         "x": 550,
         "y": 140,
-        "wires": [["n9a2b3c4d5e6f7g8"]]
+        "wires": [
+            [
+                "n9a2b3c4d5e6f7g8"
+            ]
+        ]
     },
     {
         "id": "n7a2b3c4d5e6f7g8",
@@ -220,7 +394,11 @@
         "type": "inject",
         "z": "farm-flow-tab",
         "name": "Test Uplink",
-        "props": [{"p": "payload"}],
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
         "repeat": "",
         "crontab": "",
         "once": false,
@@ -230,24 +408,11 @@
         "payloadType": "json",
         "x": 120,
         "y": 260,
-        "wires": [["n2a2b3c4d5e6f7g8"]]
-    },
-    {
-        "id": "dashboard-tab",
-        "type": "tab",
-        "label": "Dashboard",
-        "disabled": false,
-        "info": "Dashboard UI for monitoring farm sensors"
-    },
-    {
-        "id": "dash-ui",
-        "type": "ui-base",
-        "z": "",
-        "name": "Farm Monitor Dashboard",
-        "path": "ui",
-        "index": false,
-        "allowSvgEdit": false,
-        "showPathInSidebar": true
+        "wires": [
+            [
+                "n2a2b3c4d5e6f7g8"
+            ]
+        ]
     },
     {
         "id": "dash1",
@@ -263,38 +428,68 @@
         "libs": [],
         "x": 340,
         "y": 100,
-        "wires": [["dash-gauge", "dash-battery-text"]]
+        "wires": [
+            [
+                "dash-gauge",
+                "dash-battery-text"
+            ]
+        ]
     },
     {
         "id": "dash-gauge",
         "type": "ui-gauge",
         "z": "dashboard-tab",
         "name": "Battery Level",
-        "group": "dash-group",
+        "group": "9f3919d23e829d30",
         "order": 1,
+        "value": "payload",
+        "valueType": "msg",
         "width": "6",
         "height": "4",
         "gtype": "gauge-tile",
         "title": "Battery",
-        "label": "%",
-        "format": "{{value}}",
+        "alwaysShowTitle": false,
+        "units": "",
+        "icon": "",
+        "prefix": "",
+        "suffix": "",
+        "segments": [
+            {
+                "from": "0",
+                "color": "#00b500",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "20",
+                "color": "#e6e600",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "50",
+                "color": "#ca3838",
+                "text": "",
+                "textType": "label"
+            }
+        ],
         "min": 0,
         "max": "100",
-        "segments": [
-            {"color": "#00b500", "from": 0},
-            {"color": "#e6e600", "from": 20},
-            {"color": "#ca3838", "from": 50}
-        ],
+        "sizeThickness": "",
+        "sizeGap": "",
+        "sizeKeyThickness": "",
         "className": "",
         "x": 540,
         "y": 100,
-        "wires": []
+        "wires": [
+            []
+        ]
     },
     {
         "id": "dash-text",
         "type": "ui-text",
         "z": "dashboard-tab",
-        "group": "dash-group",
+        "group": "9f3919d23e829d30",
         "order": 2,
         "width": "6",
         "height": "1",
@@ -302,7 +497,14 @@
         "label": "Device",
         "format": "{{msg.payload}}",
         "layout": "row-spread",
+        "style": false,
+        "font": "",
+        "fontSize": "",
+        "color": "#000000",
+        "wrapText": false,
         "className": "",
+        "value": "payload",
+        "valueType": "msg",
         "x": 540,
         "y": 160,
         "wires": []
@@ -321,59 +523,11 @@
         "libs": [],
         "x": 360,
         "y": 160,
-        "wires": [["dash-text"]]
-    },
-    {
-        "id": "dash-group",
-        "type": "ui-group",
-        "z": "",
-        "name": "Battery Monitor",
-        "page": "dash-tab",
-        "order": 1,
-        "disp": true,
-        "width": "12",
-        "collapse": false,
-        "className": ""
-    },
-    {
-        "id": "dash-tab",
-        "type": "ui-page",
-        "z": "",
-        "name": "Farm Monitor",
-        "ui_base": "dash-ui",
-        "theme": "dash-theme",
-        "path": "farm-monitor",
-        "layout": "grid",
-        "icon": "dashboard",
-        "order": 1,
-        "disabled": false,
-        "hidden": false
-    },
-    {
-        "id": "dash-theme",
-        "type": "ui-theme",
-        "z": "",
-        "name": "Default Theme",
-        "colors": {
-            "surface": "#ffffff",
-            "primary": "#0094ce",
-            "bgPage": "#eeeeee",
-            "groupBg": "#ffffff",
-            "groupOutline": "#cccccc"
-        },
-        "sizes": {
-            "pagePadding": "12px",
-            "groupGap": "12px",
-            "groupBorderRadius": "4px",
-            "widgetGap": "12px"
-        }
-    },
-    {
-        "id": "api-flow-tab",
-        "type": "tab",
-        "label": "API",
-        "disabled": false,
-        "info": "HTTP endpoints"
+        "wires": [
+            [
+                "dash-text"
+            ]
+        ]
     },
     {
         "id": "api1",
@@ -386,7 +540,11 @@
         "swaggerDoc": "",
         "x": 140,
         "y": 80,
-        "wires": [["api2"]]
+        "wires": [
+            [
+                "api2"
+            ]
+        ]
     },
     {
         "id": "api2",
@@ -402,7 +560,11 @@
         "libs": [],
         "x": 350,
         "y": 80,
-        "wires": [["api3"]]
+        "wires": [
+            [
+                "api3"
+            ]
+        ]
     },
     {
         "id": "api3",
@@ -426,7 +588,11 @@
         "swaggerDoc": "",
         "x": 140,
         "y": 160,
-        "wires": [["api5"]]
+        "wires": [
+            [
+                "api5"
+            ]
+        ]
     },
     {
         "id": "api5",
@@ -440,7 +606,11 @@
         "outputs": 1,
         "x": 370,
         "y": 160,
-        "wires": [["api6"]]
+        "wires": [
+            [
+                "api6"
+            ]
+        ]
     },
     {
         "id": "api6",
@@ -452,5 +622,14 @@
         "x": 560,
         "y": 160,
         "wires": []
+    },
+    {
+        "id": "72aa6c226990e117",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-postgresql": "0.15.4",
+            "@flowfuse/node-red-dashboard": "1.30.1"
+        }
     }
 ]

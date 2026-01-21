@@ -136,7 +136,7 @@ pi/
 ```bash
 docker-compose down
 sudo rm -rf /srv/farm/postgres
-sudo mkdir -p /srv/farm/postgres && sudo chown 999:999 /srv/farm/postgres
+sudo mkdir -p /srv/farm/postgres && sudo chown 70:70 /srv/farm/postgres && sudo chmod 700 /srv/farm/postgres
 docker-compose up -d
 ```
 ### Register Gateway (after database reset)
@@ -152,10 +152,33 @@ If gateway doesn't auto-register:
 
 ⚠️ **Deletes all data.** Re-register gateway, profiles, and devices after.
 
+### PostgreSQL Permission Errors
+
+If you see `could not open file "global/pg_filenode.map": Permission denied`:
+
+```bash
+# Stop services
+docker-compose -f ~/farm/pi/docker-compose.yml stop chirpstack postgres
+
+# Fix ownership and permissions (postgres:15-alpine uses UID 70)
+sudo chown -R 70:70 /srv/farm/postgres
+sudo chmod 700 /srv/farm/postgres
+
+# Restart services
+docker-compose -f ~/farm/pi/docker-compose.yml start postgres
+# Wait for PostgreSQL to be healthy (check with: docker ps)
+docker-compose -f ~/farm/pi/docker-compose.yml start chirpstack
+
+# Verify
+docker logs farm-postgres --tail 20
+docker logs farm-chirpstack --tail 20
+```
+
 ### Check Services
 
 ```bash
 docker ps                                    # All containers running?
+docker logs farm-postgres --tail 50         # PostgreSQL errors?
 docker logs farm-chirpstack --tail 50       # ChirpStack errors?
 docker logs farm-nodered --tail 50          # Node-RED errors?
 sudo journalctl -fu chirpstack-concentratord # Gateway HAT logs
