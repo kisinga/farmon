@@ -92,19 +92,22 @@
     {
         "id": "dash-theme",
         "type": "ui-theme",
-        "name": "Default Theme",
+        "name": "Modern Dark Theme",
         "colors": {
-            "surface": "#ffffff",
-            "primary": "#0094ce",
-            "bgPage": "#eeeeee",
-            "groupBg": "#ffffff",
-            "groupOutline": "#cccccc"
+            "surface": "#1e293b",
+            "primary": "#3b82f6",
+            "bgPage": "#0f172a",
+            "groupBg": "#1e293b",
+            "groupOutline": "#334155",
+            "success": "#10b981",
+            "warning": "#f59e0b",
+            "danger": "#ef4444"
         },
         "sizes": {
-            "pagePadding": "12px",
-            "groupGap": "12px",
-            "groupBorderRadius": "4px",
-            "widgetGap": "12px"
+            "pagePadding": "20px",
+            "groupGap": "20px",
+            "groupBorderRadius": "12px",
+            "widgetGap": "16px"
         }
     },
     {
@@ -515,6 +518,28 @@
         ]
     },
     {
+        "id": "dash-css-template",
+        "type": "ui-template",
+        "z": "dashboard-tab",
+        "group": "",
+        "page": "",
+        "ui": "dash-ui",
+        "name": "Modern Dark Theme CSS",
+        "order": 0,
+        "width": 0,
+        "height": 0,
+        "head": "",
+        "format": "<style>\n/* Modern Dark Theme Custom CSS */\n\n/* Smooth scrollbar */\n::-webkit-scrollbar {\n    width: 8px;\n    height: 8px;\n}\n\n::-webkit-scrollbar-track {\n    background: #0f172a;\n}\n\n::-webkit-scrollbar-thumb {\n    background: #334155;\n    border-radius: 4px;\n}\n\n::-webkit-scrollbar-thumb:hover {\n    background: #475569;\n}\n\n/* Card enhancements */\n.nrdb-ui-group {\n    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);\n    backdrop-filter: blur(10px);\n    transition: transform 0.2s ease, box-shadow 0.2s ease;\n}\n\n.nrdb-ui-group:hover {\n    transform: translateY(-2px);\n    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);\n}\n\n/* Gauge glow effects */\n.nrdb-ui-gauge-tile,\n.nrdb-ui-gauge-tank {\n    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3));\n    transition: all 0.3s ease;\n}\n\n.nrdb-ui-gauge-tile:hover,\n.nrdb-ui-gauge-tank:hover {\n    filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.5));\n}\n\n/* Text improvements */\n.nrdb-ui-text {\n    font-weight: 500;\n    letter-spacing: 0.02em;\n}\n\n/* Chart styling */\n.nrdb-ui-chart {\n    background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);\n    border-radius: 12px;\n    padding: 16px;\n}\n\n/* KPI Card Styling */\n.kpi-card {\n    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);\n    border: 1px solid #334155;\n    border-radius: 12px;\n    padding: 20px;\n    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);\n    transition: all 0.3s ease;\n}\n\n.kpi-card:hover {\n    transform: translateY(-4px);\n    box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.5);\n    border-color: #3b82f6;\n}\n\n/* Status Badge Styling */\n.status-badge {\n    display: inline-block;\n    padding: 4px 12px;\n    border-radius: 20px;\n    font-size: 12px;\n    font-weight: 600;\n    text-transform: uppercase;\n    letter-spacing: 0.05em;\n    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);\n}\n\n.status-badge.ok {\n    background: #10b981;\n    color: #ffffff;\n}\n\n.status-badge.warning {\n    background: #f59e0b;\n    color: #ffffff;\n}\n\n.status-badge.critical {\n    background: #ef4444;\n    color: #ffffff;\n    animation: pulse 2s infinite;\n}\n\n.status-badge.offline {\n    background: #6b7280;\n    color: #ffffff;\n}\n\n/* Pulse animation for critical alerts */\n@keyframes pulse {\n    0%, 100% {\n        opacity: 1;\n    }\n    50% {\n        opacity: 0.7;\n    }\n}\n\n/* Live indicator dot */\n.live-indicator {\n    display: inline-block;\n    width: 8px;\n    height: 8px;\n    border-radius: 50%;\n    background: #10b981;\n    margin-right: 8px;\n    animation: pulse-dot 2s infinite;\n}\n\n@keyframes pulse-dot {\n    0%, 100% {\n        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);\n    }\n    50% {\n        box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);\n    }\n}\n\n/* Button group styling */\n.nrdb-ui-button-group button {\n    transition: all 0.2s ease;\n}\n\n.nrdb-ui-button-group button:hover {\n    transform: translateY(-2px);\n    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);\n}\n\n/* Page header */\n.nrdb-ui-page-title {\n    font-size: 28px;\n    font-weight: 700;\n    color: #ffffff;\n    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);\n    margin-bottom: 24px;\n}\n\n/* Metric labels */\n.metric-label {\n    font-size: 12px;\n    font-weight: 600;\n    text-transform: uppercase;\n    letter-spacing: 0.1em;\n    color: #94a3b8;\n    margin-bottom: 8px;\n}\n\n/* Chart container */\n.chart-container {\n    background: rgba(30, 41, 59, 0.6);\n    border-radius: 12px;\n    padding: 16px;\n    backdrop-filter: blur(10px);\n}\n\n/* Responsive adjustments */\n@media (max-width: 768px) {\n    .nrdb-ui-group {\n        margin-bottom: 16px;\n    }\n    \n    .kpi-card {\n        padding: 16px;\n    }\n    \n    .nrdb-ui-page-title {\n        font-size: 24px;\n    }\n}\n</style>",
+        "storeOutMessages": false,
+        "passthru": true,
+        "resendOnRefresh": false,
+        "templateScope": "site:style",
+        "className": "",
+        "x": 180,
+        "y": 60,
+        "wires": [[]]
+    },
+    {
         "id": "dash1",
         "type": "function",
         "z": "dashboard-tab",
@@ -585,26 +610,26 @@
         "segments": [
             {
                 "from": "0",
-                "color": "#ca3838",
+                "color": "#dc2626",
                 "text": "LOW",
                 "textType": "label"
             },
             {
                 "from": "20",
-                "color": "#e6e600",
+                "color": "#eab308",
                 "text": "MED",
                 "textType": "label"
             },
             {
                 "from": "50",
-                "color": "#00b500",
+                "color": "#10b981",
                 "text": "GOOD",
                 "textType": "label"
             }
         ],
         "min": 0,
         "max": "100",
-        "sizeThickness": "16",
+        "sizeThickness": "20",
         "sizeGap": "4",
         "sizeKeyThickness": "8",
         "className": "",
@@ -628,8 +653,8 @@
         "layout": "row-spread",
         "style": false,
         "font": "",
-        "fontSize": "16",
-        "color": "#000000",
+        "fontSize": "18",
+        "color": "#ffffff",
         "wrapText": false,
         "className": "",
         "value": "payload",
@@ -653,7 +678,7 @@
         "style": false,
         "font": "",
         "fontSize": "14",
-        "color": "#717171",
+        "color": "#94a3b8",
         "wrapText": false,
         "className": "",
         "value": "payload",
@@ -712,25 +737,25 @@
         "segments": [
             {
                 "from": "0",
-                "color": "#ca3838",
+                "color": "#dc2626",
                 "text": "CRITICAL",
                 "textType": "label"
             },
             {
                 "from": "10",
-                "color": "#ff9800",
+                "color": "#f59e0b",
                 "text": "LOW",
                 "textType": "label"
             },
             {
                 "from": "20",
-                "color": "#e6e600",
+                "color": "#eab308",
                 "text": "MEDIUM",
                 "textType": "label"
             },
             {
                 "from": "50",
-                "color": "#00b500",
+                "color": "#10b981",
                 "text": "GOOD",
                 "textType": "label"
             }
@@ -762,7 +787,7 @@
         "style": false,
         "font": "",
         "fontSize": "18",
-        "color": "#0094ce",
+        "color": "#3b82f6",
         "wrapText": false,
         "className": "",
         "value": "payload",
@@ -786,7 +811,7 @@
         "style": false,
         "font": "",
         "fontSize": "16",
-        "color": "#717171",
+        "color": "#94a3b8",
         "wrapText": false,
         "className": "",
         "value": "payload",
@@ -862,26 +887,26 @@
         "segments": [
             {
                 "from": "-120",
-                "color": "#ca3838",
+                "color": "#dc2626",
                 "text": "WEAK",
                 "textType": "label"
             },
             {
                 "from": "-90",
-                "color": "#e6e600",
+                "color": "#eab308",
                 "text": "FAIR",
                 "textType": "label"
             },
             {
                 "from": "-60",
-                "color": "#00b500",
+                "color": "#10b981",
                 "text": "STRONG",
                 "textType": "label"
             }
         ],
         "min": "-120",
         "max": "-30",
-        "sizeThickness": "16",
+        "sizeThickness": "20",
         "sizeGap": "4",
         "sizeKeyThickness": "8",
         "className": "",
@@ -912,26 +937,26 @@
         "segments": [
             {
                 "from": "-20",
-                "color": "#ca3838",
+                "color": "#dc2626",
                 "text": "POOR",
                 "textType": "label"
             },
             {
                 "from": "0",
-                "color": "#e6e600",
+                "color": "#eab308",
                 "text": "OK",
                 "textType": "label"
             },
             {
                 "from": "5",
-                "color": "#00b500",
+                "color": "#10b981",
                 "text": "GOOD",
                 "textType": "label"
             }
         ],
         "min": "-20",
         "max": "20",
-        "sizeThickness": "16",
+        "sizeThickness": "20",
         "sizeGap": "4",
         "sizeKeyThickness": "8",
         "className": "",
