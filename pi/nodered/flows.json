@@ -112,7 +112,7 @@
         "type": "ui-page",
         "name": "Farm Monitor",
         "ui": "dash-ui",
-        "path": "farm-monitor",
+        "path": "/farm-monitor",
         "icon": "dashboard",
         "layout": "grid",
         "theme": "dash-theme",
