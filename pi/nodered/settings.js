@@ -25,7 +25,7 @@ module.exports = {
     // },
 
     // HTTP node settings
-    // httpAdminRoot: '/admin',  // Temporarily disabled to test dashboard routing
+    httpAdminRoot: '/admin',
     httpNodeRoot: '/',
 
     // Logging
