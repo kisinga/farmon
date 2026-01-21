@@ -260,7 +260,8 @@
             [
                 "n5a2b3c4d5e6f7g8",
                 "n6a2b3c4d5e6f7g8",
-                "n7a2b3c4d5e6f7g8"
+                "n7a2b3c4d5e6f7g8",
+                "farm-to-dash-link"
             ]
         ]
     },
@@ -413,6 +414,19 @@
         ]
     },
     {
+        "id": "farm-to-dash-link",
+        "type": "link out",
+        "z": "farm-flow-tab",
+        "name": "To Dashboard",
+        "mode": "link",
+        "links": [
+            "dash-link-in"
+        ],
+        "x": 655,
+        "y": 360,
+        "wires": []
+    },
+    {
         "id": "73106b72be8a16de",
         "type": "mqtt out",
         "z": "farm-flow-tab",
@@ -485,6 +499,20 @@
         "x": 660,
         "y": 640,
         "wires": []
+    },
+    {
+        "id": "dash-link-in",
+        "type": "link in",
+        "z": "dashboard-tab",
+        "name": "Sensor Data Input",
+        "links": [],
+        "x": 55,
+        "y": 220,
+        "wires": [
+            [
+                "dash1"
+            ]
+        ]
     },
     {
         "id": "dash1",
