@@ -13,6 +13,26 @@ curl -sSL https://github.com/kisinga/farmon/raw/main/pi/setup_farm_pi.sh | bash
 
 This installs Docker, clones the repo, and starts all services.
 
+### Updating Configuration
+
+After pulling updates from git, sync configuration files to running services:
+
+```bash
+cd ~/farm/pi
+bash sync_config.sh
+```
+
+This script:
+- Syncs updated `flows.json`, `settings.js`, and `package.json` from git to `/srv/farm/nodered`
+- Only copies files that have changed (use `--force` to sync all files)
+- Automatically restarts Node-RED if changes were made
+- Shows recent logs to verify the update
+
+**When to use:**
+- After `git pull` to apply configuration changes
+- When dashboard or flows aren't working as expected
+- When Node-RED packages need updating
+
 ## Gateway Hardware
 
 ### Waveshare HAT GPIO
@@ -66,7 +86,7 @@ docker restart farm-nodered
 ```
 
 **Dashboard Access:** After packages are installed, access the dashboard at:
-- `http://<pi>:1880/ui/farm-monitor`
+- `http://<pi>:1880/dashboard/farm-monitor`
 
 ### 4. Verify
 

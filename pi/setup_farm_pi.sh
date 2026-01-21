@@ -146,45 +146,7 @@ EOF
     sudo chmod 700 /srv/farm/postgres              # secure directory permissions
     sudo chown -R 1000:1000 /srv/farm/nodered     # node-red user
     sudo chown -R 1883:1883 /srv/farm/mosquitto   # mosquitto user
-    
-    # Copy Node-RED configuration files into volume (allows Node-RED to write to them)
-    log_info "Copying Node-RED configuration files to data volume..."
-    NODERED_SRC="$INSTALL_DIR/edge/pi/nodered"
-    if [ ! -d "$NODERED_SRC" ]; then
-        # Fallback to pi/nodered if edge/pi doesn't exist
-        NODERED_SRC="$INSTALL_DIR/pi/nodered"
-    fi
-    
-    if [ -d "$NODERED_SRC" ]; then
-        # Copy settings.js if it doesn't exist or is older
-        if [ -f "$NODERED_SRC/settings.js" ]; then
-            if [ ! -f /srv/farm/nodered/settings.js ] || [ "$NODERED_SRC/settings.js" -nt /srv/farm/nodered/settings.js ]; then
-                sudo cp "$NODERED_SRC/settings.js" /srv/farm/nodered/settings.js
-                sudo chown 1000:1000 /srv/farm/nodered/settings.js
-            fi
-        fi
-        
-        # Copy flows.json if it doesn't exist (Node-RED will modify this file)
-        if [ -f "$NODERED_SRC/flows.json" ] && [ ! -f /srv/farm/nodered/flows.json ]; then
-            sudo cp "$NODERED_SRC/flows.json" /srv/farm/nodered/flows.json
-            sudo chown 1000:1000 /srv/farm/nodered/flows.json
-        fi
-        
-        # Copy package.json if it doesn't exist or is newer (triggers npm install)
-        if [ -f "$NODERED_SRC/package.json" ]; then
-            if [ ! -f /srv/farm/nodered/package.json ] || [ "$NODERED_SRC/package.json" -nt /srv/farm/nodered/package.json ]; then
-                sudo cp "$NODERED_SRC/package.json" /srv/farm/nodered/package.json
-                sudo chown 1000:1000 /srv/farm/nodered/package.json
-                # Remove node_modules to force reinstall if package.json changed
-                if [ -d /srv/farm/nodered/node_modules ]; then
-                    sudo rm -rf /srv/farm/nodered/node_modules
-                fi
-            fi
-        fi
-    else
-        log_info "Node-RED source directory not found, skipping file copy"
-    fi
-    
+
     log_success "Directories ready"
 }
 
@@ -212,22 +174,9 @@ deploy_stack() {
     docker-compose restart chirpstack
     sleep 5
     
-    log_info "Verifying Node-RED dashboard packages..."
-    # Wait for Node-RED to fully start
-    sleep 10
-    
-    # Check if dashboard package is installed
-    if docker exec farm-nodered test -d /data/node_modules/@flowfuse/node-red-dashboard 2>/dev/null; then
-        log_success "Dashboard package already installed"
-    else
-        log_info "Installing Node-RED dashboard packages..."
-        docker exec farm-nodered npm install --prefix /data --production 2>&1 | grep -v "npm WARN" || true
-        log_info "Restarting Node-RED to load new packages..."
-        docker-compose restart nodered
-        sleep 10
-        log_success "Dashboard packages installed"
-    fi
-    
+    log_info "Syncing Node-RED configuration..."
+    bash "$INSTALL_DIR/pi/sync_config.sh" || log_warn "sync_config.sh failed, continuing anyway"
+
     log_success "All services running"
 }
 
@@ -244,13 +193,16 @@ print_summary() {
     echo -e "               ${CYAN}admin / admin${NC}"
     echo -e "  Node-RED:    http://$TAILSCALE_IP:1880"
     echo -e "               ${CYAN}admin / farmmon${NC}"
-    echo -e "  Dashboard:   http://$TAILSCALE_IP:1880/ui/farm-monitor"
+    echo -e "  Dashboard:   http://$TAILSCALE_IP:1880/dashboard/farm-monitor"
     echo ""
     echo -e "${BOLD}Next steps:${NC}"
     echo -e "  1. Run gateway setup: ${CYAN}sudo bash setup_gateway.sh${NC}"
     echo -e "  2. Register gateway in ChirpStack"
     echo -e "  3. Add devices in ChirpStack"
     echo -e "  4. Configure Node-RED flows for your sensors"
+    echo ""
+    echo -e "${BOLD}Updating configuration after git pull:${NC}"
+    echo -e "  ${CYAN}bash sync_config.sh${NC}  - Sync updated config files to services"
     echo ""
 }
 
