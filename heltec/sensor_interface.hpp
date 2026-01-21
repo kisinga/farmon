@@ -4,9 +4,6 @@
 #include <vector>
 #include <memory> // For std::unique_ptr
 
-// Forward declaration
-class SensorBatchTransmitter;
-
 // Basic structure for a sensor reading
 struct SensorReading {
     const char* type; // e.g., "temp", "hum"
@@ -21,15 +18,6 @@ public:
     virtual void begin() = 0;
     virtual void read(std::vector<SensorReading>& readings) = 0;
     virtual const char* getName() const = 0;
-};
-
-// Interface for transmitting batches of sensor data
-class SensorBatchTransmitter {
-public:
-    virtual ~SensorBatchTransmitter() = default;
-    virtual bool queueBatch(const std::vector<SensorReading>& readings) = 0;
-    virtual void update(uint32_t nowMs) = 0;
-    virtual bool isReady() const = 0;
 };
 
 // Manages a collection of sensors

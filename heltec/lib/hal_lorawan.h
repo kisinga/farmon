@@ -61,6 +61,13 @@ class LoRaWANNode;
 /**
  * LoRaWAN Hardware Abstraction Layer implementation using RadioLib
  * 
+ * Class A Device Compliance:
+ *   - Implements LoRaWAN Class A device behavior (LoRaWAN spec v1.0.x/1.1.x)
+ *   - Opens RX1/RX2 windows after every uplink (confirmed or unconfirmed)
+ *   - RX1 opens 1s after uplink (RECEIVE_DELAY1), RX2 opens 2s after uplink (RECEIVE_DELAY2)
+ *   - Processes downlinks received in RX windows (ACKs, data, MAC commands)
+ *   - RadioLib handles RX window timing internally
+ * 
  * Instance Lifecycle:
  *   1. Create instance: LoRaWANHal hal;
  *   2. Initialize: hal.begin(devEui, appEui, appKey);
@@ -75,7 +82,8 @@ class LoRaWANNode;
  * 
  * Thread Safety:
  *   - Not thread-safe. All methods should be called from the same thread/task.
- *   - tick() should be called regularly (e.g., every 50-100ms) from main loop.
+ *   - tick() must be called regularly (every 50ms recommended) to process downlinks promptly.
+ *   - sendData() may block for 3-6 seconds during RX windows (Class A requirement).
  */
 class LoRaWANHal : public ILoRaWANHal {
 public:

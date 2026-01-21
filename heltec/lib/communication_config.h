@@ -51,7 +51,7 @@ struct LoRaWANConfig {
     
     // Application settings
     uint8_t defaultPort = 1;           // Default application port for telemetry
-    bool useConfirmedUplinks = false;  // Use confirmed uplinks by default
+    bool useConfirmedUplinks = true;   // Use confirmed uplinks by default
     
     // Timing
     uint32_t joinTimeoutMs = 30000;    // Join timeout

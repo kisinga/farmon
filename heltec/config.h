@@ -31,7 +31,7 @@ inline RemoteConfig buildRemoteConfig() {
     cfg.communication.lorawan.subBand = 2;
     cfg.communication.lorawan.adrEnabled = true;
     cfg.communication.lorawan.defaultPort = 1;
-    cfg.communication.lorawan.useConfirmedUplinks = false;
+    cfg.communication.lorawan.useConfirmedUplinks = true;
 
     memcpy(cfg.communication.lorawan.appEui, LORAWAN_APP_EUI, 8);
     memcpy(cfg.communication.lorawan.appKey, LORAWAN_APP_KEY, 16);

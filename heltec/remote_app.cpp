@@ -63,7 +63,7 @@ private:
 
     // Sensors
     SensorManager sensorManager;
-    std::unique_ptr<LoRaWANBatchTransmitter> sensorTransmitter;
+    std::unique_ptr<LoRaWANTransmitter> lorawanTransmitter;
     std::shared_ptr<YFS201WaterFlowSensor> waterFlowSensor;
 
     // UI Elements must be stored to manage their lifetime
@@ -231,28 +231,49 @@ void RemoteApplicationImpl::initialize() {
         }, 10);
     }
     
-    // Sensor reading and telemetry tasks
+    // Sensor telemetry transmission task
     if (sensorConfig.enableSensorSystem) {
-        // Read sensors and queue for transmission
-        scheduler.registerTask("sensors", [this](CommonAppState& state){
-            auto readings = sensorManager.readAll();
-            
-            // Add application-level data
-            readings.push_back({TelemetryKeys::ErrorCount, (float)_errorCount, state.nowMs});
-            uint32_t timeSinceResetSec = (state.nowMs - _lastResetMs) / 1000;
-            readings.push_back({TelemetryKeys::TimeSinceReset, (float)timeSinceResetSec, state.nowMs});
-
-            if (sensorTransmitter) {
-                sensorTransmitter->queueBatch(readings);
-            }
-        }, config.globalDebugMode ? config.debugTelemetryReportIntervalMs : config.telemetryReportIntervalMs);
-
-        // Attempt to transmit queued telemetry
+        // Transmission task: pulls fresh data and transmits
         scheduler.registerTask("lorawan_tx", [this](CommonAppState& state){
-            if (lorawanService->isJoined() && sensorTransmitter) {
-                sensorTransmitter->update(state.nowMs);
+            // Caller checks connection
+            if (!lorawanService->isJoined()) return;
+            
+            // Caller collects fresh data from services
+            std::vector<SensorReading> readings;
+            
+            // Water flow (atomic read, no data loss)
+            if (waterFlowSensor) {
+                waterFlowSensor->read(readings);
             }
-        }, 1000);
+            
+            // Battery (cached state, always current)
+            readings.push_back({
+                TelemetryKeys::BatteryPercent,
+                (float)batteryService->getBatteryPercent(),
+                state.nowMs
+            });
+            
+            // System state
+            readings.push_back({
+                TelemetryKeys::ErrorCount,
+                (float)_errorCount,
+                state.nowMs
+            });
+            uint32_t timeSinceResetSec = (state.nowMs - _lastResetMs) / 1000;
+            readings.push_back({
+                TelemetryKeys::TimeSinceReset,
+                (float)timeSinceResetSec,
+                state.nowMs
+            });
+            
+            // Pure helper: format and transmit
+            if (lorawanTransmitter && !readings.empty()) {
+                bool success = lorawanTransmitter->transmit(readings);
+                if (!success) {
+                    LOGW("Remote", "Transmission failed, will retry on next interval");
+                }
+            }
+        }, config.communication.lorawan.txIntervalMs);
     }
     
     // LoRaWAN rejoin watchdog - attempt rejoin if not connected for too long
@@ -320,8 +341,8 @@ void RemoteApplicationImpl::setupSensors() {
     }
 
     // Create LoRaWAN transmitter with service and HAL references
-    auto transmitter = std::make_unique<LoRaWANBatchTransmitter>(lorawanService.get(), lorawanHal.get(), config);
-    sensorTransmitter = std::move(transmitter);
+    auto transmitter = std::make_unique<LoRaWANTransmitter>(lorawanService.get(), lorawanHal.get(), config);
+    lorawanTransmitter = std::move(transmitter);
 
     // --- Sensor Creation ---
     auto batterySensor = SensorFactory::createBatteryMonitorSensor(

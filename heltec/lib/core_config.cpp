@@ -56,7 +56,7 @@ DeviceConfig DeviceConfigFactory::createBaseConfig(uint8_t deviceId) {
     // Minimum data rate: DR1 for US915 (supports 53 bytes), DR0 for EU868 (supports 51 bytes)
     cfg.communication.lorawan.minDataRate = (cfg.communication.lorawan.region == LoRaWANRegion::US915) ? 1 : 0;
     cfg.communication.lorawan.defaultPort = 1;
-    cfg.communication.lorawan.useConfirmedUplinks = false;
+    cfg.communication.lorawan.useConfirmedUplinks = true;
     cfg.communication.lorawan.joinTimeoutMs = 30000;
     cfg.communication.lorawan.txIntervalMs = 60000;
     cfg.communication.lorawan.deviceClass = 0;  // Class A

@@ -156,6 +156,30 @@ bool LoRaWANHal::begin(const uint8_t* devEui, const uint8_t* appEui, const uint8
     return true;
 }
 
+// =============================================================================
+// Class A Compliance Notes
+// =============================================================================
+// This implementation follows LoRaWAN Class A device requirements:
+//
+// 1. RX Windows: After EVERY uplink (confirmed or unconfirmed), Class A devices
+//    MUST open two receive windows:
+//    - RX1: Opens 1 second (RECEIVE_DELAY1) after uplink transmission completes
+//    - RX2: Opens 2 seconds (RECEIVE_DELAY2) after uplink transmission completes
+//    RadioLib handles RX window timing internally.
+//
+// 2. Downlink Processing: Class A devices must process downlinks received in
+//    RX1 or RX2 windows, regardless of whether the uplink was confirmed or not.
+//    Downlinks can be: ACKs (for confirmed uplinks), data messages, or MAC commands.
+//
+// 3. Timing Constraints: RX windows are timing-critical. The scheduler must call
+//    tick() frequently enough (recommended: 50ms or less) to process downlinks
+//    promptly after they're received. Blocking operations should be avoided during
+//    RX windows (RadioLib handles this internally via non-blocking radio operations).
+//
+// 4. Power Consumption: RX windows consume power (~15-50mA for 3-6 seconds per
+//    transmission). This is inherent to Class A operation and required by the spec.
+// =============================================================================
+
 void LoRaWANHal::tick(uint32_t nowMs) {
     if (!initialized) return;
 
@@ -170,6 +194,8 @@ void LoRaWANHal::tick(uint32_t nowMs) {
     }
 
     // Process any pending downlinks (from confirmed uplinks or Class A RX windows)
+    // Class A: Downlinks are queued during sendData() RX windows and processed here
+    // Call tick() frequently (50ms interval recommended) to process downlinks promptly
     if (hasDownlink && onDataCb) {
         // Bounds check before callback
         if (downlinkLength <= sizeof(downlinkBuffer)) {
@@ -240,13 +266,21 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
     int16_t state;
     
     if (confirmed) {
-        // For confirmed uplinks, wait for ACK in RX windows
+        // Class A Confirmed Uplink:
+        // 1. Transmit uplink with confirmed flag set
+        // 2. Open RX1 window at RECEIVE_DELAY1 (1s) - RadioLib handles timing
+        // 3. Open RX2 window at RECEIVE_DELAY2 (2s) if nothing in RX1 - RadioLib handles timing
+        // 4. Network server must send ACK (or data downlink) in RX1 or RX2
+        // 5. sendReceive() blocks until RX windows complete (3-6 seconds total)
+        //    This is acceptable because it's part of the transmission cycle
         downlinkLength = sizeof(downlinkBuffer);
         state = node->sendReceive((uint8_t*)payload, length, port, downlinkBuffer, &downlinkLength, true);
         
         if (state == RADIOLIB_ERR_NONE) {
-            // Uplink sent successfully, but no ACK received (network may still process it)
-            LOGD("LoRaWAN", "Confirmed uplink sent, no ACK received");
+            // Uplink sent successfully, but no ACK received in RX1/RX2 windows
+            // This can happen if gateway didn't receive the uplink, or network server didn't respond
+            // The network may still process the uplink, but we have no delivery confirmation
+            LOGW("LoRaWAN", "Confirmed uplink sent (port %d, %d bytes), but no ACK received - delivery not confirmed", port, length);
             uplinkCount++;
             lastActivityMs = millis();
             if (onTxDoneCb) onTxDoneCb();
@@ -255,10 +289,19 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
             // Positive values indicate ACK or data received in Rx window 1 or 2
             // Check if it's an ACK (empty payload) or actual data downlink
             bool isAck = (downlinkLength == 0);
+            
+            // Get RSSI/SNR from last reception (for both ACKs and data downlinks)
+            lastRssiDbm = radio.getRSSI();
+            lastSnr = radio.getSNR();
+            
             if (isAck) {
-                LOGD("LoRaWAN", "Confirmed uplink sent, ACK received");
+                // ACK received - delivery confirmed
+                LOGI("LoRaWAN", "Confirmed uplink ACK received (port %d, %d bytes) - delivery confirmed (RSSI: %d dBm, SNR: %.1f)",
+                     port, length, lastRssiDbm, (float)lastSnr);
             } else {
-                LOGI("LoRaWAN", "Confirmed uplink sent, downlink received (%d bytes)", (int)downlinkLength);
+                // Data downlink received in RX window (piggybacked on ACK)
+                LOGI("LoRaWAN", "Confirmed uplink sent, data downlink received (port %d, %d bytes, uplink: %d bytes) - delivery confirmed (RSSI: %d dBm, SNR: %.1f)",
+                     port, (int)downlinkLength, length, lastRssiDbm, (float)lastSnr);
             }
             
             uplinkCount++;
@@ -267,14 +310,18 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
             }
             lastActivityMs = millis();
 
-            // Get RSSI/SNR from last reception
-            lastRssiDbm = radio.getRSSI();
-            lastSnr = radio.getSNR();
-
             // Queue data downlink for processing in tick() (not ACKs)
             // Only queue if there's actual data (not just an ACK)
             if (downlinkLength > 0 && downlinkLength <= sizeof(downlinkBuffer)) {
                 hasDownlink = true;
+                // NOTE: Port handling limitation
+                // RadioLib's sendReceive() API doesn't expose the downlink port directly.
+                // We assume the downlink port matches the uplink port, which is common practice
+                // but not guaranteed by LoRaWAN spec. The network server can send downlinks
+                // on different ports. If this becomes an issue, we may need to:
+                // 1. Check if RadioLib provides port via a separate API call
+                // 2. Parse the LoRaWAN MAC header from the downlink frame directly
+                // 3. Use RadioLib's lower-level API to extract port information
                 downlinkPort = port;
             } else if (downlinkLength > sizeof(downlinkBuffer)) {
                 LOGW("LoRaWAN", "Downlink too large (%d bytes), dropping", (int)downlinkLength);
@@ -310,20 +357,71 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
             return false;
         }
     } else {
-        // For unconfirmed uplinks, use the simpler sendReceive overload (no downlink buffer)
-        // RadioLib 7.x uses sendReceive for all uplinks
-        state = node->sendReceive((uint8_t*)payload, length, port, false);
+        // Class A Unconfirmed Uplink:
+        // Even though the uplink is unconfirmed, Class A devices MUST still open RX windows.
+        // This allows the network to send downlinks (commands, MAC commands, etc.) after
+        // unconfirmed uplinks. The network is not required to send anything, but the device
+        // must be ready to receive.
+        // 1. Transmit unconfirmed uplink
+        // 2. Open RX1 window at RECEIVE_DELAY1 (1s) - RadioLib handles timing
+        // 3. Open RX2 window at RECEIVE_DELAY2 (2s) if nothing in RX1 - RadioLib handles timing
+        // 4. Network server may send data downlinks or MAC commands (no ACK required)
+        // 5. sendReceive() blocks until RX windows complete (3-6 seconds total)
+        downlinkLength = sizeof(downlinkBuffer);
+        state = node->sendReceive((uint8_t*)payload, length, port, downlinkBuffer, &downlinkLength, false);
         
-        if (state == RADIOLIB_ERR_NONE || state > 0) {
-            // Success (positive values indicate downlink received, but we ignore it for unconfirmed)
-            LOGD("LoRaWAN", "Unconfirmed uplink sent successfully");
+        if (state == RADIOLIB_ERR_NONE) {
+            // Uplink sent successfully, no downlink received in RX windows
+            LOGD("LoRaWAN", "Unconfirmed uplink sent successfully, no downlink received");
             uplinkCount++;
             lastActivityMs = millis();
             if (onTxDoneCb) onTxDoneCb();
             return true;
+        } else if (state > 0) {
+            // Positive values indicate data received in Rx window 1 or 2
+            // Class A: unconfirmed uplinks can still receive downlinks
+            if (downlinkLength > 0) {
+                LOGI("LoRaWAN", "Unconfirmed uplink sent, downlink received (%d bytes)", (int)downlinkLength);
+            } else {
+                LOGD("LoRaWAN", "Unconfirmed uplink sent, empty downlink received");
+            }
+            
+            uplinkCount++;
+            if (downlinkLength > 0) {
+                downlinkCount++;
+            }
+            lastActivityMs = millis();
+
+            // Get RSSI/SNR from last reception
+            lastRssiDbm = radio.getRSSI();
+            lastSnr = radio.getSNR();
+
+            // Queue data downlink for processing in tick() (if there's actual data)
+            if (downlinkLength > 0 && downlinkLength <= sizeof(downlinkBuffer)) {
+                hasDownlink = true;
+                // NOTE: Port handling limitation (same as confirmed uplinks above)
+                // RadioLib's sendReceive() API doesn't expose the downlink port directly.
+                // We assume the downlink port matches the uplink port, which is common practice
+                // but not guaranteed by LoRaWAN spec. See detailed comment in confirmed uplink section.
+                downlinkPort = port;
+            } else if (downlinkLength > sizeof(downlinkBuffer)) {
+                LOGW("LoRaWAN", "Downlink too large (%d bytes), dropping", (int)downlinkLength);
+            }
+
+            // Re-apply configured data rate after downlink in case ADR changed it
+            if (configuredDataRate > 0) {
+                node->setDatarate(configuredDataRate);
+                currentDataRate = configuredDataRate;
+                LOGD("LoRaWAN", "Data rate re-applied to DR%d after downlink (ADR may have changed it)",
+                     configuredDataRate);
+            }
+
+            if (onTxDoneCb) onTxDoneCb();
+            return true;
         } else {
+            // Error occurred
             const char* errorMsg = getRadioLibErrorString(state);
-            LOGW("LoRaWAN", "Unconfirmed send failed: %s (code %d)", errorMsg, state);
+            LOGW("LoRaWAN", "Unconfirmed sendReceive failed: %s (code %d)", errorMsg, state);
             
             // Provide helpful hints for common errors
             if (state == RADIOLIB_ERR_PACKET_TOO_LONG) {
