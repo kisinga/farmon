@@ -138,68 +138,13 @@
         "className": ""
     },
     {
-        "id": "fc769358b507c5b6",
-        "type": "ui-group",
-        "name": "Group Name",
-        "page": "dash-tab",
-        "width": 6,
-        "height": 1,
-        "order": 1,
-        "showTitle": true,
-        "className": "",
-        "visible": "true",
-        "disabled": "false",
-        "groupType": "default"
-    },
-    {
-        "id": "9e54b516e0948912",
-        "type": "ui-page",
-        "name": "Page Name",
-        "ui": "dash-ui",
-        "path": "/page2",
-        "icon": "home",
-        "layout": "grid",
-        "theme": "dash-theme",
-        "breakpoints": [
-            {
-                "name": "Default",
-                "px": "0",
-                "cols": "3"
-            },
-            {
-                "name": "Tablet",
-                "px": "576",
-                "cols": "6"
-            },
-            {
-                "name": "Small Desktop",
-                "px": "768",
-                "cols": "9"
-            },
-            {
-                "name": "Desktop",
-                "px": "1024",
-                "cols": "12"
-            }
-        ],
-        "order": 1,
-        "className": "",
-        "visible": "true",
-        "disabled": "false"
-    },
-    {
-        "id": "9f3919d23e829d30",
-        "type": "ui-group",
-        "name": "Group Name",
-        "page": "9e54b516e0948912",
-        "width": 6,
-        "height": 1,
-        "order": 1,
-        "showTitle": true,
-        "className": "",
-        "visible": "true",
-        "disabled": "false",
-        "groupType": "default"
+        "id": "72aa6c226990e117",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-postgresql": "0.15.4",
+            "@flowfuse/node-red-dashboard": "1.30.1"
+        }
     },
     {
         "id": "n1a2b3c4d5e6f7g8",
@@ -426,7 +371,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 340,
+        "x": 180,
         "y": 100,
         "wires": [
             [
@@ -622,14 +567,5 @@
         "x": 560,
         "y": 160,
         "wires": []
-    },
-    {
-        "id": "72aa6c226990e117",
-        "type": "global-config",
-        "env": [],
-        "modules": {
-            "node-red-contrib-postgresql": "0.15.4",
-            "@flowfuse/node-red-dashboard": "1.30.1"
-        }
     }
 ]
