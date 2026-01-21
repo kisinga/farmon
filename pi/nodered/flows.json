@@ -66,7 +66,7 @@
         "id": "dash-ui",
         "type": "ui-base",
         "name": "Farm Monitor Dashboard",
-        "path": "/ui",
+        "path": "ui",
         "appIcon": "",
         "includeClientData": true,
         "acceptsClientConfig": [
@@ -131,7 +131,7 @@
                 "cols": "12"
             }
         ],
-        "order": 1,
+        "order": 2,
         "className": "",
         "visible": "true",
         "disabled": "false"
@@ -161,7 +161,7 @@
         "ui": "dash-ui",
         "path": "/",
         "icon": "home",
-        "order": 2,
+        "order": 3,
         "visible": true,
         "disabled": false
     },
@@ -179,7 +179,7 @@
         "rh": 0,
         "inputs": 0,
         "x": 130,
-        "y": 100,
+        "y": 160,
         "wires": [
             [
                 "n2a2b3c4d5e6f7g8",
@@ -200,8 +200,8 @@
         "rap": true,
         "rh": 0,
         "inputs": 0,
-        "x": 130,
-        "y": 180,
+        "x": 120,
+        "y": 380,
         "wires": [
             [
                 "n4a2b3c4d5e6f7g8"
@@ -220,8 +220,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 330,
-        "y": 100,
+        "x": 390,
+        "y": 200,
         "wires": [
             [
                 "n5a2b3c4d5e6f7g8",
@@ -243,8 +243,8 @@
         "targetType": "msg",
         "statusVal": "",
         "statusType": "auto",
-        "x": 320,
-        "y": 40,
+        "x": 370,
+        "y": 100,
         "wires": []
     },
     {
@@ -260,8 +260,8 @@
         "targetType": "msg",
         "statusVal": "",
         "statusType": "auto",
-        "x": 330,
-        "y": 180,
+        "x": 390,
+        "y": 380,
         "wires": []
     },
     {
@@ -274,8 +274,8 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 530,
-        "y": 80,
+        "x": 680,
+        "y": 100,
         "wires": [
             [
                 "n8a2b3c4d5e6f7g8"
@@ -294,8 +294,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 550,
-        "y": 140,
+        "x": 690,
+        "y": 200,
         "wires": [
             [
                 "n9a2b3c4d5e6f7g8"
@@ -315,8 +315,8 @@
         "targetType": "full",
         "statusVal": "",
         "statusType": "auto",
-        "x": 530,
-        "y": 200,
+        "x": 670,
+        "y": 300,
         "wires": []
     },
     {
@@ -332,8 +332,8 @@
         "targetType": "msg",
         "statusVal": "",
         "statusType": "auto",
-        "x": 720,
-        "y": 80,
+        "x": 920,
+        "y": 100,
         "wires": []
     },
     {
@@ -349,8 +349,8 @@
         "targetType": "msg",
         "statusVal": "",
         "statusType": "auto",
-        "x": 750,
-        "y": 140,
+        "x": 950,
+        "y": 200,
         "wires": []
     },
     {
@@ -371,12 +371,86 @@
         "payload": "{\"deviceInfo\":{\"devEui\":\"0011223344556677\",\"deviceName\":\"test-device\"},\"object\":{\"temperature\":25.5,\"battery\":85},\"rxInfo\":[{\"rssi\":-80,\"snr\":7.5}],\"fCnt\":123,\"fPort\":1}",
         "payloadType": "json",
         "x": 120,
-        "y": 260,
+        "y": 240,
         "wires": [
             [
                 "n2a2b3c4d5e6f7g8"
             ]
         ]
+    },
+    {
+        "id": "73106b72be8a16de",
+        "type": "mqtt out",
+        "z": "farm-flow-tab",
+        "name": "",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e1b2c3d4e5f6a7b8",
+        "x": 650,
+        "y": 540,
+        "wires": []
+    },
+    {
+        "id": "6a670683601fd4f2",
+        "type": "function",
+        "z": "farm-flow-tab",
+        "name": "function 1",
+        "func": "// Test downlink message formatter for ChirpStack v4\n// CRITICAL: devEui must be in the payload AND match the topic\n\n// Configuration - CHANGE THESE:\nconst applicationId = \"885c4dd2-e474-4265-bd25-2f838571f8de\";  // Your ChirpStack application ID (check ChirpStack UI)\nconst devEui = \"48ca43fffe3f0e70\";  // Your device EUI (lowercase, no colons)\nconst port = 20;  // Test port\nconst testMessage = \"Hello from Node-RED!\";  // Your test message\n\n// Convert message to bytes (UTF-8)\nconst messageBytes = Buffer.from(testMessage, 'utf8');\n\n// Convert to base64 (ChirpStack expects base64-encoded data)\nconst dataBase64 = messageBytes.toString('base64');\n\n// ChirpStack v4 downlink command format\n// CRITICAL: devEui field MUST be present and match the topic\nmsg.payload = {\n    devEui: devEui,        // REQUIRED: Must match topic DevEUI\n    confirmed: false,       // Unconfirmed downlink (faster, no ACK required)\n    fPort: port,           // Application port\n    data: dataBase64       // Base64-encoded payload\n};\n\n// Set topic - application ID and DevEUI must match payload\nmsg.topic = `application/${applicationId}/device/${devEui}/command/down`;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 540,
+        "wires": [
+            [
+                "73106b72be8a16de",
+                "5da88bd81d402cb6"
+            ]
+        ]
+    },
+    {
+        "id": "2dca16451615ad3b",
+        "type": "inject",
+        "z": "farm-flow-tab",
+        "name": "Test downlink",
+        "props": [],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 150,
+        "y": 540,
+        "wires": [
+            [
+                "6a670683601fd4f2"
+            ]
+        ]
+    },
+    {
+        "id": "5da88bd81d402cb6",
+        "type": "debug",
+        "z": "farm-flow-tab",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 660,
+        "y": 640,
+        "wires": []
     },
     {
         "id": "dash1",
