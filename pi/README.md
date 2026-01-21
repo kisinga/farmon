@@ -4,94 +4,61 @@ ChirpStack + Node-RED + PostgreSQL on Raspberry Pi with SX1302 LoRaWAN HAT.
 
 ## Setup
 
-### 1. Run Setup Script
+### Initial Setup
 
 ```bash
 # Fresh Pi - run as regular user (not root)
 curl -sSL https://github.com/kisinga/farmon/raw/main/pi/setup_farm_pi.sh | bash
 ```
 
-This installs Docker, clones the repo, and starts all services.
+Installs Docker, clones repo, starts all services.
 
-### Updating Configuration
+### Deployment & Updates
 
-After pulling updates from git, sync configuration files to running services:
+| Script | Purpose | When to Use |
+|--------|---------|-------------|
+| `deploy.sh` | Full deployment: git pull → stop → sync → start | After pushing changes to git |
+| `sync_config.sh` | Sync config files without git pull | Testing local changes |
 
+**Typical workflow:**
 ```bash
+# On your development machine
+git add . && git commit -m "update" && git push
+
+# On the Pi
 cd ~/farm/pi
-bash sync_config.sh
+bash deploy.sh
 ```
 
-This script:
-- Syncs updated `flows.json`, `settings.js`, and `package.json` from git to `/srv/farm/nodered`
-- Only copies files that have changed (use `--force` to sync all files)
-- Automatically restarts Node-RED if changes were made
-- Shows recent logs to verify the update
+**Quick config sync (no git pull):**
+```bash
+cd ~/farm/pi
+bash sync_config.sh          # sync changed files only
+bash sync_config.sh --force  # force sync all files
+```
 
-**When to use:**
-- After `git pull` to apply configuration changes
-- When dashboard or flows aren't working as expected
-- When Node-RED packages need updating
+### Gateway Setup
 
-## Gateway Hardware
-
-### Waveshare HAT GPIO
-
-| Signal | GPIO |
-|--------|------|
-| Reset | 23 |
-| Power Enable | 18 |
-| SPI | /dev/spidev0.0 |
-
-
-### Gateway Config Files
-
-| File | Purpose |
-|------|---------|
-| `/etc/chirpstack-concentratord/concentratord.toml` | Hardware config |
-| `/etc/chirpstack-mqtt-forwarder/mqtt-forwarder.toml` | MQTT connection |
-
-### 2. Install Gateway HAT
-
-Prerequisite: Enable SPI via `sudo raspi-config` → Interface Options → SPI
+Enable SPI: `sudo raspi-config` → Interface Options → SPI
 
 ```bash
 sudo bash ~/farm/pi/setup_gateway.sh
 ```
 
-This installs:
-- `chirpstack-concentratord-sx1302` (SPI → ZeroMQ)
-- `chirpstack-mqtt-forwarder` (ZeroMQ → MQTT)
+Installs concentratord (SPI → ZeroMQ) and MQTT forwarder (ZeroMQ → MQTT).
 
-Verify:
+**Verify:**
 ```bash
-sudo systemctl status chirpstack-concentratord
-sudo systemctl status chirpstack-mqtt-forwarder
+sudo systemctl status chirpstack-concentratord chirpstack-mqtt-forwarder
 ```
 
-### 3. Configure Node-RED
+### Access Services
 
-The dashboard and flows are now automatically configured via mounted files. If you need to install packages manually:
-
-```bash
-# Install required Node-RED packages (dashboard + postgres)
-docker exec farm-nodered npm install node-red-dashboard node-red-contrib-postgresql
-docker restart farm-nodered
-```
-
-**Note:** With the updated `docker-compose.yml`, `package.json` is mounted and packages should auto-install on first startup. If the dashboard doesn't work, restart the container:
-
-```bash
-docker restart farm-nodered
-```
-
-**Dashboard Access:** After packages are installed, access the dashboard at:
-- `http://<pi>:1880/dashboard/farm-monitor`
-
-### 4. Verify
-
-- ChirpStack: `http://<pi>:8080` (admin / admin) — gateway should appear
-- Node-RED: `http://<pi>:1880` — MQTT nodes should show green "connected"
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| ChirpStack | `http://<pi>:8080` | admin / admin |
+| Node-RED | `http://<pi>:1880` | admin / farmmon |
+| Dashboard | `http://<pi>:1880/dashboard/farm-monitor` | - |
 
 ## Registering Devices
 
@@ -136,18 +103,14 @@ For each Heltec sensor:
 
 
 
-## File Structure
+## Scripts
 
-```
-pi/
-├── docker-compose.yml         # Service definitions
-├── setup_farm_pi.sh           # Initial Pi setup
-├── setup_gateway.sh           # SX1302 HAT installation
-├── chirpstack/server/         # ChirpStack + region configs
-├── nodered/flows.json         # Node-RED data pipeline
-├── mosquitto/mosquitto.conf   # MQTT broker config
-└── postgres/init-db.sql       # Database schema
-```
+| Script | Purpose |
+|--------|---------|
+| `setup_farm_pi.sh` | Initial setup: install Docker, clone repo, start services |
+| `setup_gateway.sh` | Install LoRaWAN gateway HAT drivers (run with sudo) |
+| `deploy.sh` | Deploy updates: git pull → stop → sync → start |
+| `sync_config.sh` | Sync config files to running services |
 
 ## Troubleshooting
 

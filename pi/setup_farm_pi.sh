@@ -196,13 +196,11 @@ print_summary() {
     echo -e "  Dashboard:   http://$TAILSCALE_IP:1880/dashboard/farm-monitor"
     echo ""
     echo -e "${BOLD}Next steps:${NC}"
-    echo -e "  1. Run gateway setup: ${CYAN}sudo bash setup_gateway.sh${NC}"
-    echo -e "  2. Register gateway in ChirpStack"
-    echo -e "  3. Add devices in ChirpStack"
-    echo -e "  4. Configure Node-RED flows for your sensors"
+    echo -e "  1. Gateway setup: ${CYAN}sudo bash setup_gateway.sh${NC}"
+    echo -e "  2. Register gateway and devices in ChirpStack"
     echo ""
-    echo -e "${BOLD}Updating configuration after git pull:${NC}"
-    echo -e "  ${CYAN}bash sync_config.sh${NC}  - Sync updated config files to services"
+    echo -e "${BOLD}Deploying updates:${NC}"
+    echo -e "  ${CYAN}bash deploy.sh${NC} - Full deploy (git pull + sync + restart)"
     echo ""
 }
 
