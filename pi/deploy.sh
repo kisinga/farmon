@@ -62,7 +62,7 @@ fi
 
 # Sync configuration
 log_info "Syncing configuration files..."
-if bash "$SCRIPT_DIR/sync_config.sh" --force; then
+if bash "$SCRIPT_DIR/sync_config.sh"; then
     log_success "Configuration synced"
 else
     log_error "Configuration sync failed"

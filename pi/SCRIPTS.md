@@ -52,7 +52,7 @@ sudo bash setup_gateway.sh
 **What it does:**
 1. Git pull
 2. Stop services
-3. Sync config files (calls `sync_config.sh --force`)
+3. Sync config files (calls `sync_config.sh`)
 4. Start services
 5. Show status
 
@@ -74,14 +74,16 @@ bash deploy.sh
 **What it does:**
 - Syncs `flows.json`, `settings.js`, `package.json`
 - Only copies changed files (unless `--force`)
+- Intelligently detects package.json changes (won't reinstall packages unless dependencies actually changed)
 - Restarts Node-RED if needed
-- Handles package updates
 
 **Usage:**
 ```bash
-bash sync_config.sh          # sync changed files only
-bash sync_config.sh --force  # force sync all files
+bash sync_config.sh          # sync changed files only (recommended)
+bash sync_config.sh --force  # force copy all files regardless of timestamps
 ```
+
+**Note:** Using `--force` won't reinstall packages unless `package.json` content actually changed.
 
 ## Workflow Examples
 

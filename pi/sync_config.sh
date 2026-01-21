@@ -101,17 +101,32 @@ if sync_file "$NODERED_SRC/flows.json" "$NODERED_DEST/flows.json"; then
     RESTART_NEEDED=true
 fi
 
-# Sync package.json (triggers npm install if changed)
+# Sync package.json (only remove node_modules if content actually changed)
 PACKAGE_UPDATED=false
 if [ -f "$NODERED_SRC/package.json" ]; then
-    if sync_file "$NODERED_SRC/package.json" "$NODERED_DEST/package.json"; then
-        PACKAGE_UPDATED=true
-        log_info "Removing node_modules to force reinstall..."
-        if [ -d "$NODERED_DEST/node_modules" ]; then
-            sudo rm -rf "$NODERED_DEST/node_modules"
-            log_success "node_modules removed"
+    # Check if package.json content actually differs
+    if [ -f "$NODERED_DEST/package.json" ]; then
+        if ! sudo cmp -s "$NODERED_SRC/package.json" "$NODERED_DEST/package.json"; then
+            # Content differs - this is a real package change
+            PACKAGE_UPDATED=true
         fi
+    else
+        # Destination doesn't exist - this is a new file
+        PACKAGE_UPDATED=true
+    fi
+
+    # Sync the file
+    if sync_file "$NODERED_SRC/package.json" "$NODERED_DEST/package.json"; then
         RESTART_NEEDED=true
+
+        # Only nuke node_modules if packages actually changed
+        if [ "$PACKAGE_UPDATED" = true ]; then
+            log_info "Package dependencies changed, removing node_modules..."
+            if [ -d "$NODERED_DEST/node_modules" ]; then
+                sudo rm -rf "$NODERED_DEST/node_modules"
+                log_success "node_modules removed (will reinstall on startup)"
+            fi
+        fi
     fi
 fi
 
