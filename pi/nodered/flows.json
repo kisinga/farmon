@@ -185,7 +185,7 @@
         "env": [],
         "modules": {
             "node-red-contrib-postgresql": "0.15.4",
-            "@flowfuse/node-red-dashboard": "1.30.1"
+            "@flowfuse/node-red-dashboard": "1.30.2"
         }
     },
     {
@@ -321,7 +321,7 @@
         "type": "function",
         "z": "farm-flow-tab",
         "name": "Check Thresholds",
-        "func": "const data = msg.sensorData;\nconst alerts = [];\n\nif (data.water_level !== undefined && data.water_level < 20) {\n    alerts.push({ type: 'water_level_low', message: `Water level low: ${data.water_level}%`, device: msg.deviceEui });\n}\nif (data.temperature !== undefined && data.temperature > 35) {\n    alerts.push({ type: 'temperature_high', message: `High temperature: ${data.temperature}\u00b0C`, device: msg.deviceEui });\n}\nif (data.battery !== undefined && data.battery < 20) {\n    alerts.push({ type: 'battery_low', message: `Battery low: ${data.battery}%`, device: msg.deviceEui });\n}\n\nif (alerts.length > 0) {\n    return { payload: alerts, deviceEui: msg.deviceEui };\n}\nreturn null;",
+        "func": "const data = msg.sensorData;\nconst alerts = [];\n\nif (data.water_level !== undefined && data.water_level < 20) {\n    alerts.push({ type: 'water_level_low', message: `Water level low: ${data.water_level}%`, device: msg.deviceEui });\n}\nif (data.temperature !== undefined && data.temperature > 35) {\n    alerts.push({ type: 'temperature_high', message: `High temperature: ${data.temperature}°C`, device: msg.deviceEui });\n}\nif (data.battery !== undefined && data.battery < 20) {\n    alerts.push({ type: 'battery_low', message: `Battery low: ${data.battery}%`, device: msg.deviceEui });\n}\n\nif (alerts.length > 0) {\n    return { payload: alerts, deviceEui: msg.deviceEui };\n}\nreturn null;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -498,8 +498,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 190,
-        "y": 120,
+        "x": 180,
+        "y": 220,
         "wires": [
             [
                 "dash-gauge"
@@ -580,9 +580,11 @@
         "sizeGap": "4",
         "sizeKeyThickness": "8",
         "className": "",
-        "x": 540,
-        "y": 80,
-        "wires": []
+        "x": 550,
+        "y": 40,
+        "wires": [
+            []
+        ]
     },
     {
         "id": "dash-text",
@@ -604,8 +606,8 @@
         "className": "",
         "value": "payload",
         "valueType": "msg",
-        "x": 540,
-        "y": 180,
+        "x": 560,
+        "y": 160,
         "wires": []
     },
     {
@@ -628,70 +630,8 @@
         "className": "",
         "value": "payload",
         "valueType": "msg",
-        "x": 560,
-        "y": 220,
-        "wires": []
-    },
-    {
-        "id": "config-init",
-        "type": "inject",
-        "z": "config-flow-tab",
-        "name": "Initialize Config on Startup",
-        "props": [
-            {
-                "p": "payload"
-            }
-        ],
-        "repeat": "",
-        "crontab": "",
-        "once": true,
-        "onceDelay": "1",
-        "topic": "",
-        "payload": "",
-        "payloadType": "date",
-        "x": 180,
-        "y": 80,
-        "wires": [
-            [
-                "config-setup"
-            ]
-        ]
-    },
-    {
-        "id": "config-setup",
-        "type": "function",
-        "z": "config-flow-tab",
-        "name": "Setup Water Tank Config",
-        "func": "// Water Tank Configuration\n// This is the single source of truth for tank parameters\n\nconst config = {\n    // Tank Physical Dimensions\n    tank: {\n        height_cm: 200,          // Total tank height in cm\n        capacity_liters: 5000,   // Total tank capacity in liters\n        diameter_cm: 180,        // Tank diameter for visualization\n        shape: 'cylindrical'     // cylindrical, rectangular\n    },\n    \n    // Distance Sensor Configuration\n    sensor: {\n        mounting_height_cm: 210,     // Height where sensor is mounted from ground\n        offset_cm: 0,                 // Calibration offset (adjust after testing)\n        min_reading_cm: 10,           // Minimum valid reading (sensor dead zone)\n        max_reading_cm: 220,          // Maximum valid reading\n        field_name: 'pd'              // Field name in data payload for distance\n    },\n    \n    // Flow Calculation\n    flow: {\n        reporting_interval_seconds: 60,  // How often device reports\n        flow_field_name: 'tv',           // Total volume field name\n        enable_flow_calculation: true,   // Enable flow rate calculations\n        flow_detection_threshold_liters: 5  // Minimum change to detect flow\n    },\n    \n    // Alert Thresholds\n    alerts: {\n        low_level_percent: 20,\n        critical_level_percent: 10,\n        high_flow_rate_lph: 1000  // Liters per hour - potential leak\n    }\n};\n\n// Store in global context\nglobal.set('waterTankConfig', config);\n\n// Return config for debugging\nmsg.payload = config;\nnode.status({fill: 'green', shape: 'dot', text: 'Config loaded'});\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 430,
-        "y": 80,
-        "wires": [
-            [
-                "config-debug"
-            ]
-        ]
-    },
-    {
-        "id": "config-debug",
-        "type": "debug",
-        "z": "config-flow-tab",
-        "name": "Config Loaded",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 680,
-        "y": 80,
+        "x": 570,
+        "y": 200,
         "wires": []
     },
     {
@@ -706,8 +646,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 200,
-        "y": 500,
+        "x": 420,
+        "y": 520,
         "wires": [
             [
                 "dash-water-gauge"
@@ -773,9 +713,11 @@
         "sizeGap": "4",
         "sizeKeyThickness": "10",
         "className": "",
-        "x": 540,
+        "x": 730,
         "y": 480,
-        "wires": []
+        "wires": [
+            []
+        ]
     },
     {
         "id": "dash-water-volume-text",
@@ -797,7 +739,7 @@
         "className": "",
         "value": "payload",
         "valueType": "msg",
-        "x": 540,
+        "x": 740,
         "y": 520,
         "wires": []
     },
@@ -821,7 +763,7 @@
         "className": "",
         "value": "payload",
         "valueType": "msg",
-        "x": 530,
+        "x": 720,
         "y": 560,
         "wires": []
     },
@@ -837,8 +779,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 540,
-        "y": 600,
+        "x": 660,
+        "y": 720,
         "wires": [
             [
                 "dash-water-flow-chart"
@@ -852,28 +794,24 @@
         "group": "dash-group-water",
         "name": "Water Flow History",
         "order": 4,
-        "width": "12",
-        "height": "6",
         "chartType": "line",
-        "legend": "none",
         "xAxisLabel": "Time",
         "xAxisType": "time",
         "xAxisFormat": "HH:mm",
         "yAxisLabel": "Total Volume (L)",
         "ymin": "",
         "ymax": "",
-        "color": [
-            "#0094ce"
-        ],
+        "removeOlder": 100,
+        "removeOlderUnit": "point",
+        "removeOlderPoints": "100",
+        "width": "12",
+        "height": "6",
         "className": "",
-        "x": 780,
+        "x": 890,
         "y": 600,
         "wires": [
             []
-        ],
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100"
+        ]
     },
     {
         "id": "dash-rssi-gauge",
@@ -919,9 +857,11 @@
         "sizeGap": "4",
         "sizeKeyThickness": "8",
         "className": "",
-        "x": 570,
-        "y": 280,
-        "wires": []
+        "x": 580,
+        "y": 80,
+        "wires": [
+            []
+        ]
     },
     {
         "id": "dash-snr-gauge",
@@ -968,8 +908,114 @@
         "sizeKeyThickness": "8",
         "className": "",
         "x": 530,
+        "y": 120,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "dash-battery-chart",
+        "type": "ui-chart",
+        "z": "dashboard-tab",
+        "group": "dash-group-history",
+        "name": "Battery History",
+        "order": 1,
+        "chartType": "line",
+        "xAxisLabel": "Time",
+        "xAxisType": "time",
+        "xAxisFormat": "HH:mm",
+        "yAxisLabel": "Battery %",
+        "ymin": "0",
+        "ymax": "100",
+        "removeOlder": 100,
+        "removeOlderUnit": "point",
+        "removeOlderPoints": "100",
+        "width": "12",
+        "height": "5",
+        "className": "",
+        "x": 560,
+        "y": 240,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "dash-rssi-chart",
+        "type": "ui-chart",
+        "z": "dashboard-tab",
+        "group": "dash-group-history",
+        "name": "RSSI History",
+        "order": 2,
+        "chartType": "line",
+        "xAxisLabel": "Time",
+        "xAxisType": "time",
+        "xAxisFormat": "HH:mm",
+        "yAxisLabel": "RSSI (dBm)",
+        "ymin": "-120",
+        "ymax": "-30",
+        "removeOlder": 100,
+        "removeOlderUnit": "point",
+        "removeOlderPoints": "100",
+        "width": "6",
+        "height": "5",
+        "className": "",
+        "x": 550,
+        "y": 280,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "dash-snr-chart",
+        "type": "ui-chart",
+        "z": "dashboard-tab",
+        "group": "dash-group-history",
+        "name": "SNR History",
+        "order": 3,
+        "chartType": "line",
+        "xAxisLabel": "Time",
+        "xAxisType": "time",
+        "xAxisFormat": "HH:mm",
+        "yAxisLabel": "SNR (dB)",
+        "ymin": "-20",
+        "ymax": "20",
+        "removeOlder": 100,
+        "removeOlderUnit": "point",
+        "removeOlderPoints": "100",
+        "width": "6",
+        "height": "5",
+        "className": "",
+        "x": 550,
         "y": 320,
-        "wires": []
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "dash-signal-chart",
+        "type": "ui-chart",
+        "z": "dashboard-tab",
+        "group": "dash-group-signal",
+        "name": "Signal Quality Trend",
+        "order": 3,
+        "chartType": "line",
+        "xAxisLabel": "",
+        "xAxisType": "time",
+        "xAxisFormat": "HH:mm",
+        "yAxisLabel": "Value",
+        "ymin": "",
+        "ymax": "",
+        "removeOlder": 100,
+        "removeOlderUnit": "point",
+        "removeOlderPoints": "100",
+        "width": "12",
+        "height": "4",
+        "className": "",
+        "x": 580,
+        "y": 360,
+        "wires": [
+            []
+        ]
     },
     {
         "id": "api1",
@@ -1020,127 +1066,6 @@
         "wires": []
     },
     {
-        "id": "dash-battery-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-history",
-        "name": "Battery History",
-        "order": 1,
-        "width": "12",
-        "height": "5",
-        "chartType": "line",
-        "legend": "none",
-        "xAxisLabel": "Time",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "Battery %",
-        "ymin": "0",
-        "ymax": "100",
-        "color": [
-            "#00b500"
-        ],
-        "className": "",
-        "x": 960,
-        "y": 360,
-        "wires": [
-            []
-        ],
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100"
-    },
-    {
-        "id": "dash-rssi-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-history",
-        "name": "RSSI History",
-        "order": 2,
-        "width": "6",
-        "height": "5",
-        "chartType": "line",
-        "legend": "none",
-        "xAxisLabel": "Time",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "RSSI (dBm)",
-        "ymin": "-120",
-        "ymax": "-30",
-        "color": [
-            "#0094ce"
-        ],
-        "className": "",
-        "x": 950,
-        "y": 400,
-        "wires": [
-            []
-        ],
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100"
-    },
-    {
-        "id": "dash-snr-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-history",
-        "name": "SNR History",
-        "order": 3,
-        "width": "6",
-        "height": "5",
-        "chartType": "line",
-        "legend": "none",
-        "xAxisLabel": "Time",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "SNR (dB)",
-        "ymin": "-20",
-        "ymax": "20",
-        "color": [
-            "#ca3838"
-        ],
-        "className": "",
-        "x": 940,
-        "y": 440,
-        "wires": [
-            []
-        ],
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100"
-    },
-    {
-        "id": "dash-signal-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-signal",
-        "name": "Signal Quality Trend",
-        "order": 3,
-        "width": "12",
-        "height": "4",
-        "chartType": "line",
-        "legend": "show",
-        "xAxisLabel": "",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "Value",
-        "ymin": "",
-        "ymax": "",
-        "color": [
-            "#0094ce",
-            "#ca3838"
-        ],
-        "className": "",
-        "x": 970,
-        "y": 480,
-        "wires": [
-            []
-        ],
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100"
-    },
-    {
         "id": "api4",
         "type": "http in",
         "z": "api-flow-tab",
@@ -1184,6 +1109,68 @@
         "headers": {},
         "x": 560,
         "y": 160,
+        "wires": []
+    },
+    {
+        "id": "config-init",
+        "type": "inject",
+        "z": "config-flow-tab",
+        "name": "Initialize Config on Startup",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "1",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 180,
+        "y": 80,
+        "wires": [
+            [
+                "config-setup"
+            ]
+        ]
+    },
+    {
+        "id": "config-setup",
+        "type": "function",
+        "z": "config-flow-tab",
+        "name": "Setup Water Tank Config",
+        "func": "// Water Tank Configuration\n// This is the single source of truth for tank parameters\n\nconst config = {\n    // Tank Physical Dimensions\n    tank: {\n        height_cm: 200,          // Total tank height in cm\n        capacity_liters: 5000,   // Total tank capacity in liters\n        diameter_cm: 180,        // Tank diameter for visualization\n        shape: 'cylindrical'     // cylindrical, rectangular\n    },\n    \n    // Distance Sensor Configuration\n    sensor: {\n        mounting_height_cm: 210,     // Height where sensor is mounted from ground\n        offset_cm: 0,                 // Calibration offset (adjust after testing)\n        min_reading_cm: 10,           // Minimum valid reading (sensor dead zone)\n        max_reading_cm: 220,          // Maximum valid reading\n        field_name: 'pd'              // Field name in data payload for distance\n    },\n    \n    // Flow Calculation\n    flow: {\n        reporting_interval_seconds: 60,  // How often device reports\n        flow_field_name: 'tv',           // Total volume field name\n        enable_flow_calculation: true,   // Enable flow rate calculations\n        flow_detection_threshold_liters: 5  // Minimum change to detect flow\n    },\n    \n    // Alert Thresholds\n    alerts: {\n        low_level_percent: 20,\n        critical_level_percent: 10,\n        high_flow_rate_lph: 1000  // Liters per hour - potential leak\n    }\n};\n\n// Store in global context\nglobal.set('waterTankConfig', config);\n\n// Return config for debugging\nmsg.payload = config;\nnode.status({fill: 'green', shape: 'dot', text: 'Config loaded'});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 430,
+        "y": 80,
+        "wires": [
+            [
+                "config-debug"
+            ]
+        ]
+    },
+    {
+        "id": "config-debug",
+        "type": "debug",
+        "z": "config-flow-tab",
+        "name": "Config Loaded",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 680,
+        "y": 80,
         "wires": []
     }
 ]
