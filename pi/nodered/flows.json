@@ -1119,7 +1119,7 @@
         "type": "function",
         "z": "dashboard-tab",
         "name": "Trigger Historical Load",
-        "func": "// Trigger historical data load when page loads\n// Also accepts manual trigger from inject node\n\n// Check if manual trigger (from inject node)\nif (msg.payload === 'manual' || !msg.event) {\n    node.status({fill: 'blue', shape: 'dot', text: 'Manual load triggered'});\n    return { payload: 'load', topic: 'all', _source: 'manual' };\n}\n\n// Debug: log all events to see what's happening\nnode.warn('Page event received: ' + msg.event);\n\n// Trigger on 'load' or 'show' events\nif (msg.event === 'load' || msg.event === 'show') {\n    node.status({fill: 'blue', shape: 'dot', text: 'Loading history...'});\n    // Get all unique device EUIs from database\n    return { payload: 'load', topic: 'all', _event: msg.event };\n}\nreturn null;",
+        "func": "// Trigger historical data load when page loads\n// Also accepts manual trigger from inject node\n\n// Check if manual trigger (from inject node)\nif (msg.payload === 'manual' || !msg.event) {\n    node.status({fill: 'blue', shape: 'dot', text: 'Manual load triggered'});\n    return { payload: 'load', topic: 'all', _source: 'manual' };\n}\n\n// Trigger on 'load' or 'show' events\nif (msg.event === 'load' || msg.event === 'show') {\n    node.status({fill: 'blue', shape: 'dot', text: 'Loading history...'});\n    // Get all unique device EUIs from database\n    return { payload: 'load', topic: 'all', _event: msg.event };\n}\nreturn null;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -1130,27 +1130,9 @@
         "y": 940,
         "wires": [
             [
-                "hist-debug-load",
                 "hist-get-devices"
             ]
         ]
-    },
-    {
-        "id": "hist-debug-load",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: Load Trigger",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 480,
-        "y": 940,
-        "wires": []
     },
     {
         "id": "hist-get-devices",
@@ -1166,34 +1148,16 @@
         "y": 860,
         "wires": [
             [
-                "hist-debug-devices",
                 "hist-format-devices"
             ]
         ]
-    },
-    {
-        "id": "hist-debug-devices",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: Device Query",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 440,
-        "y": 860,
-        "wires": []
     },
     {
         "id": "hist-format-devices",
         "type": "function",
         "z": "dashboard-tab",
         "name": "Format Device List",
-        "func": "// Collect all device EUIs and trigger queries for each\nconst devices = msg.payload;\n\n// Debug: log what we received\nnode.warn('Format devices received: ' + JSON.stringify(devices));\n\n// Check for PostgreSQL errors\nif (msg.error) {\n    node.error('PostgreSQL error: ' + JSON.stringify(msg.error));\n    return null;\n}\n\n// If single row, convert to array\nconst deviceList = Array.isArray(devices) ? devices : [devices];\n\n// Extract device EUIs\nconst deviceEuis = deviceList.map(row => row.device_eui || row).filter(Boolean);\n\nif (deviceEuis.length === 0) {\n    node.warn('No devices found in database');\n    return null;\n}\n\n// Use the first device (or most recent) for historical data\n// In a multi-device setup, you might want to query all devices\nconst deviceEui = deviceEuis[0];\n\n// Create messages with params for PostgreSQL queries\n// Return as array for multiple outputs\nreturn [\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'battery' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'rssi' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'snr' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'signal' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'water' }\n];",
+        "func": "// Collect all device EUIs and trigger queries for each\nconst devices = msg.payload;\n\n// Check for PostgreSQL errors\nif (msg.error) {\n    node.error('PostgreSQL error: ' + JSON.stringify(msg.error));\n    return null;\n}\n\n// If single row, convert to array\nconst deviceList = Array.isArray(devices) ? devices : [devices];\n\n// Extract device EUIs\nconst deviceEuis = deviceList.map(row => row.device_eui || row).filter(Boolean);\n\nif (deviceEuis.length === 0) {\n    node.warn('No devices found in database');\n    return null;\n}\n\n// Use the first device (or most recent) for historical data\n// In a multi-device setup, you might want to query all devices\nconst deviceEui = deviceEuis[0];\n\n// Create messages with params for PostgreSQL queries\n// Return as array for multiple outputs\nreturn [\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'battery' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'rssi' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'snr' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'signal' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'water' }\n];",
         "outputs": 5,
         "timeout": "",
         "noerr": 0,
@@ -1234,7 +1198,6 @@
         "y": 480,
         "wires": [
             [
-                "hist-debug-battery-query",
                 "hist-format-battery"
             ]
         ]
@@ -1244,7 +1207,7 @@
         "type": "function",
         "z": "dashboard-tab",
         "name": "Format Battery Data",
-        "func": "// Format battery history data for chart\n// Check for PostgreSQL errors first\nif (msg.error) {\n    node.error('PostgreSQL error in battery query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\n// PostgreSQL returns array of rows in msg.payload when split=false and rowsPerMsg=0\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    node.warn('No battery data found. Payload type: ' + typeof msg.payload + ', value: ' + JSON.stringify(msg.payload?.substring ? msg.payload.substring(0, 100) : msg.payload));\n    return null;\n}\n\n// Format points: send individual messages for each point\n// Charts with xAxisType='time' will automatically use timestamp property\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    node.warn('No valid battery data points after filtering. Raw rows: ' + JSON.stringify(rows.slice(0, 2)));\n    return null;\n}\n\n// Clear chart first with replace action\nnode.send({ payload: [], topic: 'Battery', action: 'replace' });\n\n// Send each point individually for better chart compatibility\n// Small delay between messages to avoid overwhelming chart\nconst points = validRows.map((row, index) => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    const value = parseFloat(row.value);\n    return {\n        payload: value,\n        topic: 'Battery',\n        timestamp: timestamp\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points - chart will accumulate them\nreturn points;",
+        "func": "// Format battery history data for chart\n// Check for PostgreSQL errors first\nif (msg.error) {\n    node.error('PostgreSQL error in battery query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\n// PostgreSQL returns array of rows in msg.payload when split=false and rowsPerMsg=0\nconst rows = msg.payload || [];\n\n// Handle empty array or non-array responses\nif (!Array.isArray(rows) || rows.length === 0) {\n    // Empty result is OK - just clear the chart\n    return { payload: [], topic: 'Battery', action: 'replace' };\n}\n\n// Format points: charts with xAxisType='time' expect array of {timestamp, payload} or {x, y}\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], topic: 'Battery', action: 'replace' };\n}\n\n// Format as array of points with timestamp and payload\n// Node-RED Dashboard charts with xAxisType='time' use timestamp property\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    const value = parseFloat(row.value);\n    return {\n        timestamp: timestamp,\n        payload: value\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, topic: 'Battery', action: 'replace' };",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -1255,44 +1218,9 @@
         "y": 540,
         "wires": [
             [
-                "hist-debug-battery-format",
                 "dash-battery-chart"
             ]
         ]
-    },
-    {
-        "id": "hist-debug-battery-query",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: Battery Query",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 480,
-        "y": 480,
-        "wires": []
-    },
-    {
-        "id": "hist-debug-battery-format",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: Battery Format",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 750,
-        "y": 540,
-        "wires": []
     },
     {
         "id": "hist-query-rssi",
@@ -1308,7 +1236,6 @@
         "y": 420,
         "wires": [
             [
-                "hist-debug-rssi-query",
                 "hist-format-rssi"
             ]
         ]
@@ -1318,7 +1245,7 @@
         "type": "function",
         "z": "dashboard-tab",
         "name": "Format RSSI Data",
-        "func": "// Format RSSI history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in RSSI query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    node.warn('No RSSI data found');\n    return null;\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return null;\n}\n\n// Clear chart first\nnode.send({ payload: [], topic: 'RSSI', action: 'replace' });\n\n// Send individual points\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return {\n        payload: parseFloat(row.value),\n        topic: 'RSSI',\n        timestamp: timestamp\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\nreturn points;",
+        "func": "// Format RSSI history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in RSSI query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], topic: 'RSSI', action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], topic: 'RSSI', action: 'replace' };\n}\n\n// Format as array of points\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return {\n        timestamp: timestamp,\n        payload: parseFloat(row.value)\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, topic: 'RSSI', action: 'replace' };",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -1329,44 +1256,9 @@
         "y": 340,
         "wires": [
             [
-                "hist-debug-rssi-format",
                 "dash-rssi-chart"
             ]
         ]
-    },
-    {
-        "id": "hist-debug-rssi-query",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: RSSI Query",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 470,
-        "y": 420,
-        "wires": []
-    },
-    {
-        "id": "hist-debug-rssi-format",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: RSSI Format",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 480,
-        "y": 340,
-        "wires": []
     },
     {
         "id": "hist-query-snr",
@@ -1382,7 +1274,6 @@
         "y": 540,
         "wires": [
             [
-                "hist-debug-snr-query",
                 "hist-format-snr"
             ]
         ]
@@ -1392,7 +1283,7 @@
         "type": "function",
         "z": "dashboard-tab",
         "name": "Format SNR Data",
-        "func": "// Format SNR history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in SNR query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    node.warn('No SNR data found');\n    return null;\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return null;\n}\n\n// Clear chart first\nnode.send({ payload: [], topic: 'SNR', action: 'replace' });\n\n// Send individual points\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return {\n        payload: parseFloat(row.value),\n        topic: 'SNR',\n        timestamp: timestamp\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\nreturn points;",
+        "func": "// Format SNR history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in SNR query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], topic: 'SNR', action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], topic: 'SNR', action: 'replace' };\n}\n\n// Format as array of points\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return {\n        timestamp: timestamp,\n        payload: parseFloat(row.value)\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, topic: 'SNR', action: 'replace' };",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -1403,44 +1294,9 @@
         "y": 600,
         "wires": [
             [
-                "hist-debug-snr-format",
                 "dash-snr-chart"
             ]
         ]
-    },
-    {
-        "id": "hist-debug-snr-query",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: SNR Query",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 470,
-        "y": 540,
-        "wires": []
-    },
-    {
-        "id": "hist-debug-snr-format",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: SNR Format",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 740,
-        "y": 600,
-        "wires": []
     },
     {
         "id": "hist-query-signal",
@@ -1456,7 +1312,6 @@
         "y": 600,
         "wires": [
             [
-                "hist-debug-signal-query",
                 "hist-format-signal"
             ]
         ]
@@ -1466,7 +1321,7 @@
         "type": "function",
         "z": "dashboard-tab",
         "name": "Format Signal Data",
-        "func": "// Format combined signal history (RSSI + SNR) for chart\nif (msg.error) {\n    node.error('PostgreSQL error in signal query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    node.warn('No signal data found');\n    return null;\n}\n\n// Clear charts first\nnode.send([\n    { payload: [], topic: 'RSSI', action: 'replace' },\n    { payload: [], topic: 'SNR', action: 'replace' }\n]);\n\n// Create separate arrays for RSSI and SNR - send as individual points\nconst rssiPoints = [];\nconst snrPoints = [];\n\nrows.forEach(row => {\n    if (!row || !row.ts) return;\n    \n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    \n    if (row.rssi !== null && row.rssi !== undefined && !isNaN(row.rssi)) {\n        rssiPoints.push({\n            payload: parseFloat(row.rssi),\n            topic: 'RSSI',\n            timestamp: timestamp\n        });\n    }\n    \n    if (row.snr !== null && row.snr !== undefined && !isNaN(row.snr)) {\n        snrPoints.push({\n            payload: parseFloat(row.snr),\n            topic: 'SNR',\n            timestamp: timestamp\n        });\n    }\n});\n\n// Return arrays of individual point messages\nreturn [\n    rssiPoints.length > 0 ? rssiPoints : null,\n    snrPoints.length > 0 ? snrPoints : null\n];",
+        "func": "// Format combined signal history (RSSI + SNR) for chart\nif (msg.error) {\n    node.error('PostgreSQL error in signal query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return [\n        { payload: [], topic: 'RSSI', action: 'replace' },\n        { payload: [], topic: 'SNR', action: 'replace' }\n    ];\n}\n\n// Create separate arrays for RSSI and SNR\nconst rssiPoints = [];\nconst snrPoints = [];\n\nrows.forEach(row => {\n    if (!row || !row.ts) return;\n    \n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    \n    if (row.rssi !== null && row.rssi !== undefined && !isNaN(row.rssi)) {\n        rssiPoints.push({\n            timestamp: timestamp,\n            payload: parseFloat(row.rssi)\n        });\n    }\n    \n    if (row.snr !== null && row.snr !== undefined && !isNaN(row.snr)) {\n        snrPoints.push({\n            timestamp: timestamp,\n            payload: parseFloat(row.snr)\n        });\n    }\n});\n\n// Return single messages with arrays of points\nreturn [\n    { payload: rssiPoints, topic: 'RSSI', action: 'replace' },\n    { payload: snrPoints, topic: 'SNR', action: 'replace' }\n];",
         "outputs": 2,
         "timeout": "",
         "noerr": 0,
@@ -1477,48 +1332,12 @@
         "y": 660,
         "wires": [
             [
-                "hist-debug-signal-format",
                 "dash-signal-chart"
             ],
             [
-                "hist-debug-signal-format",
                 "dash-signal-chart"
             ]
         ]
-    },
-    {
-        "id": "hist-debug-signal-query",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: Signal Query",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 480,
-        "y": 600,
-        "wires": []
-    },
-    {
-        "id": "hist-debug-signal-format",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: Signal Format",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 740,
-        "y": 660,
-        "wires": []
     },
     {
         "id": "hist-query-water",
@@ -1534,7 +1353,6 @@
         "y": 660,
         "wires": [
             [
-                "hist-debug-water-query",
                 "hist-format-water"
             ]
         ]
@@ -1544,7 +1362,7 @@
         "type": "function",
         "z": "dashboard-tab",
         "name": "Format Water Data",
-        "func": "// Format water flow history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in water query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    node.warn('No water data found');\n    return null;\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return null;\n}\n\n// Clear chart first\nnode.send({ payload: [], topic: 'WaterFlow', action: 'replace' });\n\n// Send individual points\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return {\n        payload: parseFloat(row.value),\n        topic: 'WaterFlow',\n        timestamp: timestamp\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\nreturn points;",
+        "func": "// Format water flow history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in water query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], topic: 'WaterFlow', action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], topic: 'WaterFlow', action: 'replace' };\n}\n\n// Format as array of points\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return {\n        timestamp: timestamp,\n        payload: parseFloat(row.value)\n    };\n});\n\nnode.status({fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nreturn { payload: points, topic: 'WaterFlow', action: 'replace' };",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -1555,44 +1373,9 @@
         "y": 720,
         "wires": [
             [
-                "hist-debug-water-format",
                 "dash-water-flow-chart"
             ]
         ]
-    },
-    {
-        "id": "hist-debug-water-query",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: Water Query",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 480,
-        "y": 660,
-        "wires": []
-    },
-    {
-        "id": "hist-debug-water-format",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "Debug: Water Format",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 750,
-        "y": 720,
-        "wires": []
     },
     {
         "id": "api1",
