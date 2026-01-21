@@ -13,16 +13,16 @@ module.exports = {
     flowFilePretty: true,
 
     // Admin UI settings
-    adminAuth: {
-        type: "credentials",
-        users: [{
-            username: "admin",
-            // Default password: "farmmon" - change in production!
-            // Generate new hash: node -e "console.log(require('bcryptjs').hashSync('yourpassword', 8));"
-            password: "$2b$08$05Wbo0WcTtVvh6XB8F6ZZuCew61HfUEUz2cmdkqmtmg3p58kS8lCu",
-            permissions: "*"
-        }]
-    },
+    // adminAuth: {
+    //     type: "credentials",
+    //     users: [{
+    //         username: "admin",
+    //         // Default password: "farmmon" - change in production!
+    //         // Generate new hash: node -e "console.log(require('bcryptjs').hashSync('yourpassword', 8));"
+    //         password: "$2b$08$05Wbo0WcTtVvh6XB8F6ZZuCew61HfUEUz2cmdkqmtmg3p58kS8lCu",
+    //         permissions: "*"
+    //     }]
+    // },
 
     // HTTP node settings
     httpAdminRoot: '/',
