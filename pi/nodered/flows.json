@@ -147,6 +147,15 @@
     "disabled": "false"
   },
   {
+    "id": "dash-group-selector",
+    "type": "ui-group",
+    "name": "Device Selector",
+    "page": "dash-tab",
+    "width": "12",
+    "order": 0,
+    "className": ""
+  },
+  {
     "id": "dash-group",
     "type": "ui-group",
     "name": "Device Status",
@@ -511,6 +520,26 @@
     "links": [],
     "x": 55,
     "y": 220,
+    "wires": [
+      [
+        "device-filter"
+      ]
+    ]
+  },
+  {
+    "id": "device-filter",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Filter by Selected Device",
+    "func": "// Only pass through data for the currently selected device\nconst selectedDevice = flow.get('selectedDevice');\nconst incomingDevice = msg.deviceEui;\n\n// If no device selected yet, pass through (first load)\nif (!selectedDevice) {\n    return msg;\n}\n\n// Only pass if device matches\nif (incomingDevice === selectedDevice) {\n    return msg;\n}\n\n// Filter out other devices\nreturn null;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 110,
+    "y": 160,
     "wires": [
       [
         "dash1"
@@ -1105,6 +1134,72 @@
     ]
   },
   {
+    "id": "device-dropdown",
+    "type": "ui-dropdown",
+    "z": "dashboard-tab",
+    "group": "dash-group-selector",
+    "name": "Device Selector",
+    "label": "Select Device:",
+    "tooltip": "Choose which device to monitor",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "passthru": false,
+    "multiple": false,
+    "options": [],
+    "payload": "",
+    "topic": "device_selected",
+    "topicType": "str",
+    "className": "",
+    "x": 560,
+    "y": 800,
+    "wires": [
+      [
+        "device-selection-handler"
+      ]
+    ]
+  },
+  {
+    "id": "device-selection-handler",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Handle Device Selection",
+    "func": "// Store selected device in flow context\nconst selectedDevice = msg.payload;\nflow.set('selectedDevice', selectedDevice);\n\nnode.status({fill: 'blue', shape: 'dot', text: `Device: ${selectedDevice.substring(0,8)}...`});\n\n// Trigger reload of historical data for new device\nreturn { payload: selectedDevice, params: [selectedDevice], deviceEui: selectedDevice };",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 800,
+    "y": 800,
+    "wires": [
+      [
+        "hist-format-devices"
+      ]
+    ]
+  },
+  {
+    "id": "populate-device-dropdown",
+    "type": "function",
+    "z": "dashboard-tab",
+    "name": "Populate Device Dropdown",
+    "func": "// Format device list for dropdown\nconst devices = msg.payload;\n\nif (!Array.isArray(devices) || devices.length === 0) {\n    return null;\n}\n\n// Create options array for dropdown\nconst options = devices.map(row => {\n    const eui = row.device_eui;\n    const shortEui = eui.substring(0, 16); // Show more of EUI\n    return {\n        label: `Device ${shortEui}`,\n        value: eui\n    };\n});\n\n// Store first device as default\nconst firstDevice = devices[0].device_eui;\nflow.set('selectedDevice', firstDevice);\n\nnode.status({fill: 'green', shape: 'dot', text: `${devices.length} devices`});\n\n// Return message to populate dropdown options\nreturn {\n    options: options,\n    payload: firstDevice  // Set first device as selected\n};",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 250,
+    "y": 800,
+    "wires": [
+      [
+        "device-dropdown"
+      ]
+    ]
+  },
+  {
     "id": "hist-manual-trigger",
     "type": "inject",
     "z": "dashboard-tab",
@@ -1169,7 +1264,7 @@
     "type": "postgresql",
     "z": "dashboard-tab",
     "name": "Get Device List",
-    "query": "SELECT DISTINCT device_eui FROM readings ORDER BY device_eui",
+    "query": "SELECT DISTINCT device_eui FROM readings WHERE device_eui NOT IN ('unknown', '0011223344556677', 'aabbccdd11223344') ORDER BY device_eui",
     "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
     "split": false,
     "rowsPerMsg": 0,
@@ -1178,7 +1273,8 @@
     "y": 860,
     "wires": [
       [
-        "hist-format-devices"
+        "hist-format-devices",
+        "populate-device-dropdown"
       ]
     ]
   },
@@ -1187,8 +1283,8 @@
     "type": "function",
     "z": "dashboard-tab",
     "name": "Format Device List",
-    "func": "// Collect all device EUIs and trigger queries for each\nconst devices = msg.payload;\n\n// Check for PostgreSQL errors\nif (msg.error) {\n    node.error('PostgreSQL error: ' + JSON.stringify(msg.error));\n    return null;\n}\n\n// If single row, convert to array\nconst deviceList = Array.isArray(devices) ? devices : [devices];\n\n// Extract device EUIs\nconst deviceEuis = deviceList.map(row => row.device_eui || row).filter(Boolean);\n\nif (deviceEuis.length === 0) {\n    node.warn('No devices found in database');\n    return null;\n}\n\n// Use the first device (or most recent) for historical data\n// In a multi-device setup, you might want to query all devices\nconst deviceEui = deviceEuis[0];\n\n// Create messages with params for PostgreSQL queries\n// Return as array for multiple outputs\nreturn [\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'battery' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'rssi' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'snr' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'signal' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'water' }\n];",
-    "outputs": 5,
+    "func": "// Load historical data for selected device\n// This function is triggered by: page load, device selection, or manual trigger\n\n// Check if device EUI is already in the message (from device selector)\nlet deviceEui = msg.deviceEui || msg.payload;\n\n// If payload is array (from database query), get selected device from flow context\nif (Array.isArray(msg.payload)) {\n    const devices = msg.payload;\n    \n    // Check for PostgreSQL errors\n    if (msg.error) {\n        node.error('PostgreSQL error: ' + JSON.stringify(msg.error));\n        return null;\n    }\n    \n    // Extract device EUIs\n    const deviceEuis = devices.map(row => row.device_eui || row).filter(Boolean);\n    \n    if (deviceEuis.length === 0) {\n        node.warn('No devices found in database');\n        return null;\n    }\n    \n    // Use selected device from flow context, or first device as default\n    deviceEui = flow.get('selectedDevice') || deviceEuis[0];\n    \n    // Save to flow context if not set\n    if (!flow.get('selectedDevice')) {\n        flow.set('selectedDevice', deviceEui);\n    }\n}\n\n// Ensure we have a valid device EUI\nif (!deviceEui) {\n    node.warn('No device EUI available');\n    return null;\n}\n\nnode.status({fill: 'blue', shape: 'dot', text: `Loading: ${deviceEui.substring(0,8)}...`});\n\n// Create messages with params for PostgreSQL queries\n// Note: RSSI and SNR queries feed both individual and combined signal charts\nreturn [\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'battery' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'rssi' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'snr' },\n    { payload: deviceEui, deviceEui: deviceEui, params: [deviceEui], topic: 'water' }\n];",
+    "outputs": 4,
     "timeout": "",
     "noerr": 0,
     "initialize": "",
@@ -1205,9 +1301,6 @@
       ],
       [
         "hist-query-snr"
-      ],
-      [
-        "hist-query-signal"
       ],
       [
         "hist-query-water"
@@ -1286,7 +1379,8 @@
     "y": 340,
     "wires": [
       [
-        "dash-rssi-chart"
+        "dash-rssi-chart",
+        "dash-signal-chart"
       ]
     ]
   },
@@ -1324,47 +1418,7 @@
     "y": 600,
     "wires": [
       [
-        "dash-snr-chart"
-      ]
-    ]
-  },
-  {
-    "id": "hist-query-signal",
-    "type": "postgresql",
-    "z": "dashboard-tab",
-    "name": "Query Signal History",
-    "query": "SELECT ts, (data->>'_rssi')::float as rssi, (data->>'_snr')::float as snr FROM readings WHERE device_eui = $1 AND (data ? '_rssi' OR data ? '_snr') AND ts >= NOW() - INTERVAL '24 hours' ORDER BY ts ASC",
-    "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-    "split": false,
-    "rowsPerMsg": 0,
-    "outputs": 1,
-    "x": 240,
-    "y": 600,
-    "wires": [
-      [
-        "hist-format-signal"
-      ]
-    ]
-  },
-  {
-    "id": "hist-format-signal",
-    "type": "function",
-    "z": "dashboard-tab",
-    "name": "Format Signal Data",
-    "func": "// Format combined signal history (RSSI + SNR) for chart\nif (msg.error) {\n    node.error('PostgreSQL error in signal query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return [\n        { payload: [], action: 'replace' },\n        { payload: [], action: 'replace' }\n    ];\n}\n\n// Create separate arrays for RSSI and SNR with series, x, y format\nconst rssiPoints = [];\nconst snrPoints = [];\n\nrows.forEach(row => {\n    if (!row || !row.ts) return;\n    \n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    \n    if (row.rssi !== null && row.rssi !== undefined && !isNaN(row.rssi)) {\n        rssiPoints.push({\n            series: 'RSSI',\n            x: timestamp,\n            y: parseFloat(row.rssi)\n        });\n    }\n    \n    if (row.snr !== null && row.snr !== undefined && !isNaN(row.snr)) {\n        snrPoints.push({\n            series: 'SNR',\n            x: timestamp,\n            y: parseFloat(row.snr)\n        });\n    }\n});\n\n// Return single messages with arrays of points\nreturn [\n    { payload: rssiPoints, action: 'replace' },\n    { payload: snrPoints, action: 'replace' }\n];",
-    "outputs": 2,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 530,
-    "y": 660,
-    "wires": [
-      [
-        "dash-signal-chart"
-      ],
-      [
+        "dash-snr-chart",
         "dash-signal-chart"
       ]
     ]
