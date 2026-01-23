@@ -1150,7 +1150,7 @@
         "className": "",
         "typeIsComboBox": true,
         "msgTrigger": "onChange",
-        "x": 340,
+        "x": 360,
         "y": 920,
         "wires": [
             [
@@ -1170,7 +1170,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 560,
+        "x": 600,
         "y": 1000,
         "wires": [
             [
@@ -1201,7 +1201,7 @@
         "topic": "",
         "payload": "manual",
         "payloadType": "str",
-        "x": 110,
+        "x": 130,
         "y": 960,
         "wires": [
             [
@@ -1216,7 +1216,7 @@
         "name": "Page Load Trigger",
         "ui": "dash-ui",
         "events": "all",
-        "x": 110,
+        "x": 130,
         "y": 1040,
         "wires": [
             [
@@ -1234,7 +1234,7 @@
         "split": false,
         "rowsPerMsg": "1",
         "outputs": 1,
-        "x": 320,
+        "x": 340,
         "y": 1000,
         "wires": [
             [
@@ -1297,7 +1297,7 @@
         "type": "function",
         "z": "dashboard-tab",
         "name": "Format RSSI Data",
-        "func": "// Format RSSI history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in RSSI query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\n\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\nconst points = validRows.map(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n    return {\n        x: timestamp,\n        y: row.value,\n        series: \"RSSI\"\n    }\n});\n\nnode.status({ fill: 'green', shape: 'dot', text: `${points.length} points`});\n\n// Send all points in single message with replace action\nmsg.payload = [\n    [1504029632890, 10],\n    [1504029636001, 15],\n    [1504029638656, 8],\n    [1504029641804, 22],\n    [1504029644518, 18]\n];\nmsg.topic = \"Series 1\";",
+        "func": "// Format RSSI history data for chart\nif (msg.error) {\n    node.error('PostgreSQL error in RSSI query: ' + JSON.stringify(msg.error));\n    return null;\n}\n\nconst rows = msg.payload || [];\nif (!Array.isArray(rows) || rows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\n\nconst validRows = rows.filter(row => row && row.value !== null && row.value !== undefined && !isNaN(row.value) && row.ts);\n\nif (validRows.length === 0) {\n    return { payload: [], action: 'replace' };\n}\n\nconst y_axis_data = []\nconst x_axis_data = []\nconst points = []\n\nvalidRows.forEach(row => {\n    const timestamp = row.ts instanceof Date ? row.ts.getTime() : new Date(row.ts).getTime();\n\n  y_axis_data.push(row.value)\n  x_axis_data.push(timestamp)\n  points.push({\n    x: timestamp,\n    y: row.value,\n    series: \"RSSI\"\n  })\n\nnode.send({\n  payload: {\n    x: timestamp,\n    y: row.value,\n    series: \"RSSI\"\n  },\n  });\n});\nmsg.series= [\"RSSI\"]\n\nreturn msg\n\n// node.status({ fill: 'green', shape: 'dot', text: `${points.length} points`});\n// msg.payload = []\n// msg.ui_update = {\n//   chartOptions: {\n//     xAxis: {\n//     type: 'category',\n//     data: x_axis_data\n//   },\n//     series: [\n//       {\n//         data: y_axis_data,\n//         type: 'line',\n//         smooth: true\n//       }\n//     ]\n//   }\n// };\n\n// msg.ui_update = {\n//   chartOptions: {\n//     xAxis: {\n//       type: 'time',\n//       data: ['2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04', '2024-01-05',\n//         '2024-01-06', '2024-01-07', '2024-01-08', '2024-01-09', '2024-01-10'\n//       ]\n//     },\n//     yAxis: {\n//       type: 'value',\n//       data: [78, 45, 90, 100, 200, 167, 47, 73, 50, 167]\n//     },\n//     // series: [\n//     //   {\n//     //     name: 'Series 1',\n//     //     type: 'line',\n//     //     // data: [78, 45, 90, 100, 200, 167, 47, 73, 50, 167]\n//     //     // data: [\n//     //     //   ['2024-01-01', 120],\n//     //     //   ['2024-01-02', 132],\n//     //     //   ['2024-01-03', 101],\n//     //     //   ['2024-01-04', 134],\n//     //     //   ['2024-01-05', 90],\n//     //     //   ['2024-01-06', 230],\n//     //     //   ['2024-01-07', 210],\n//     //     //   ['2024-01-08', 182],\n//     //     //   ['2024-01-09', 191],\n//     //     //   ['2024-01-10', 234]\n//     //     // ]\n//     //   },\n//     // ]\n//   }\n// };\n\n// msg.series = [\"Series 1\"];\n// return msg\n// Send all points in single message with replace action\n// msg.payload = [\n//     { x: Date.now() - 120000, y: 76, series: \"RSSI\" },  // 2 minutes ago\n//     { x: Date.now() - 60000, y: 68, series: \"RSSI\" },   // 1 minute ago\n//     { x: Date.now(), y: 95, series: \"RSSI\" }\n// ]\n// msg.series = [\"RSSI\"];\n\n// msg.ui_update = {\n//   chartOptions:{\n//     series: [\n//     {\n//       data: [76, 68, 95],\n//       // type: 'line',\n//       smooth: true\n//     }\n//   ]\n// }\n// };\n// return msg\n\n// return [\n//   {payload : x_axis_data, series: \"RSSI\"},\n//   {payload : y_axis_data, series: \"RSSI\"}\n// ]",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -1308,9 +1308,9 @@
         "y": 440,
         "wires": [
             [
-                "dash-signal-chart",
                 "dash-rssi-chart",
-                "5d6932bd5aac25e5"
+                "5d6932bd5aac25e5",
+                "dash-signal-chart"
             ]
         ]
     },
@@ -1486,11 +1486,11 @@
         "label": "RSSI History",
         "order": 1,
         "chartType": "line",
-        "category": "topic",
+        "category": "series",
         "categoryType": "msg",
         "xAxisLabel": "Time",
         "xAxisProperty": "x",
-        "xAxisPropertyType": "msg",
+        "xAxisPropertyType": "property",
         "xAxisType": "time",
         "xAxisFormat": "",
         "xAxisFormatType": "auto",
@@ -1498,20 +1498,20 @@
         "xmax": "",
         "yAxisLabel": "RSSI (dBm)",
         "yAxisProperty": "y",
-        "yAxisPropertyType": "msg",
+        "yAxisPropertyType": "property",
         "ymin": "-120",
         "ymax": "-30",
         "bins": "",
-        "action": "replace",
+        "action": "append",
         "stackSeries": false,
         "pointShape": "cross",
         "pointRadius": "2",
-        "showLegend": true,
+        "showLegend": false,
         "removeOlder": 100,
         "removeOlderUnit": "3600",
-        "removeOlderPoints": "",
+        "removeOlderPoints": "1000",
         "colors": [
-            "#1f77b4",
+            "#0000ff",
             "#aec7e8",
             "#ff7f0e",
             "#2ca02c",
@@ -1534,7 +1534,7 @@
         "className": "",
         "interpolation": "smooth",
         "x": 1330,
-        "y": 600,
+        "y": 580,
         "wires": [
             []
         ]
