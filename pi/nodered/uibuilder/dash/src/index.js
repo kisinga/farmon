@@ -16,6 +16,8 @@ const VChart = {
     },
     mounted() {
         this.$nextTick(() => {
+            // Guard: only init if we have valid series
+            if (!this.option?.series?.length) return;
             this.chart = echarts.init(this.$refs.chart);
             this.chart.setOption(this.option);
             if (this.autoresize) {
@@ -30,6 +32,10 @@ const VChart = {
         option: {
             deep: true,
             handler(newOption) {
+                if (!newOption?.series?.length) return;
+                if (!this.chart && this.$refs.chart) {
+                    this.chart = echarts.init(this.$refs.chart);
+                }
                 if (this.chart) this.chart.setOption(newOption, true);
             }
         }
@@ -115,24 +121,35 @@ const GaugeComponent = {
         },
 
         liquidGauge() {
+            // Vertical bar gauge (no liquidFill extension needed)
             const min = this.field.min ?? 0;
             const max = this.field.max ?? 100;
             const value = this.value ?? min;
-            const percent = (value - min) / (max - min);
-            const color = this.getThresholdColor(percent);
+            const percent = Math.round(((value - min) / (max - min)) * 100);
+            const color = this.getThresholdColor(percent / 100);
 
             return {
                 backgroundColor: 'transparent',
+                grid: { left: '30%', right: '30%', top: 20, bottom: 20 },
+                xAxis: { type: 'category', data: ['Level'], show: false },
+                yAxis: { type: 'value', min: 0, max: 100, show: false },
                 series: [{
-                    type: 'liquidFill',
-                    data: [percent, percent - 0.05, percent - 0.1].filter(v => v > 0),
-                    radius: '75%',
-                    center: ['50%', '50%'],
-                    color: [color, color + 'cc', color + '99'],
-                    backgroundStyle: { color: '#1e293b', borderColor: '#475569', borderWidth: 3 },
-                    outline: { show: true, borderDistance: 4, itemStyle: { borderColor: color + '80', borderWidth: 3 } },
-                    label: { show: true, fontSize: 28, fontWeight: 'bold', color: '#fff', insideColor: '#fff', formatter: p => `${Math.round(p.value * 100)}%` },
-                    waveAnimation: true, animationDuration: 2000, animationDurationUpdate: 1000, amplitude: 8, waveLength: '150%'
+                    type: 'bar',
+                    data: [percent],
+                    barWidth: '100%',
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 1, 0, 0, [
+                            { offset: 0, color: color + '40' },
+                            { offset: 1, color: color }
+                        ]),
+                        borderRadius: [4, 4, 0, 0]
+                    },
+                    label: {
+                        show: true, position: 'inside', formatter: '{c}%',
+                        color: '#fff', fontSize: 18, fontWeight: 'bold'
+                    },
+                    showBackground: true,
+                    backgroundStyle: { color: '#1e293b', borderRadius: [4, 4, 0, 0] }
                 }]
             };
         },
@@ -410,7 +427,19 @@ createApp({
             customTo: '',
 
             // Device metadata
-            deviceMeta: null
+            deviceMeta: null,
+
+            // Rule editor state
+            editingRule: {
+                id: null,
+                name: '',
+                condition: { field: '', op: '<', val: 0 },
+                action_control: '',
+                action_state: '',
+                priority: 100,
+                cooldown_seconds: 300,
+                enabled: true
+            }
         };
     },
 
@@ -466,6 +495,24 @@ createApp({
             return this.fieldConfigs
                 .filter(f => f.is_visible && f.category === 'cont' && !systemKeys.includes(f.key))
                 .sort((a, b) => a.sort_order - b.sort_order);
+        },
+
+        // Numeric fields for rule conditions
+        numericFields() {
+            return this.fieldConfigs
+                .filter(f => f.type === 'num')
+                .sort((a, b) => a.sort_order - b.sort_order);
+        },
+
+        // Validate rule form
+        isRuleValid() {
+            const r = this.editingRule;
+            return r.name && r.name.trim() &&
+                   r.condition.field &&
+                   r.condition.op &&
+                   r.condition.val !== '' && r.condition.val !== null &&
+                   r.action_control &&
+                   r.action_state;
         }
     },
 
@@ -489,9 +536,14 @@ createApp({
 
             switch (msg.topic) {
                 case 'devices':
-                    this.devices = msg.payload;
+                    this.devices = Array.isArray(msg.payload) ? msg.payload : [];
+                    console.log('Devices received:', this.devices);
+                    // Auto-select first device if none selected
                     if (this.devices.length > 0 && !this.selectedDevice) {
-                        this.selectDevice(this.devices[0].eui);
+                        const firstDevice = this.devices[0];
+                        if (firstDevice && firstDevice.eui) {
+                            this.selectDevice(firstDevice.eui);
+                        }
                     }
                     break;
 
@@ -551,6 +603,54 @@ createApp({
                 case 'commandAck':
                     // Command acknowledged - could show toast notification
                     console.log('Command acknowledged:', msg.payload);
+                    break;
+
+                case 'rules':
+                    // User rules list
+                    if (msg.payload.eui === this.selectedDevice) {
+                        this.userRules = msg.payload.rules || [];
+                    }
+                    break;
+
+                case 'ruleSaved':
+                    // Rule created or updated
+                    if (msg.payload.eui === this.selectedDevice && msg.payload.rule) {
+                        const idx = this.userRules.findIndex(r => r.id === msg.payload.rule.id);
+                        if (idx >= 0) {
+                            this.userRules[idx] = msg.payload.rule;
+                        } else {
+                            this.userRules.push(msg.payload.rule);
+                        }
+                        this.closeRuleEditor();
+                    }
+                    break;
+
+                case 'ruleDeleted':
+                    // Rule deleted
+                    if (msg.payload.eui === this.selectedDevice) {
+                        this.userRules = this.userRules.filter(r => r.id !== msg.payload.ruleId);
+                    }
+                    break;
+
+                case 'triggerSaved':
+                    // Device trigger updated
+                    if (msg.payload.eui === this.selectedDevice && msg.payload.trigger) {
+                        const idx = this.triggers.findIndex(t => t.key === msg.payload.trigger.trigger_key);
+                        if (idx >= 0) {
+                            this.triggers[idx].enabled = msg.payload.trigger.enabled;
+                        }
+                    }
+                    break;
+
+                case 'controlUpdate':
+                    // Control mode/state updated (e.g., from expired override)
+                    if (msg.payload.eui === this.selectedDevice) {
+                        const ctrl = this.controls[msg.payload.control];
+                        if (ctrl) {
+                            ctrl.current_state = msg.payload.state;
+                            ctrl.mode = msg.payload.mode;
+                        }
+                    }
                     break;
             }
         },
@@ -636,9 +736,149 @@ createApp({
             return this.controls[key] || {};
         },
 
+        // Format value with unit
+        formatValue(field, value) {
+            if (value === null || value === undefined) return '--';
+            if (typeof value === 'number') {
+                const formatted = field.unit === '%' ? Math.round(value) : value.toFixed(1);
+                return field.unit ? `${formatted}${field.unit}` : formatted;
+            }
+            return value;
+        },
+
+        // Get badge class based on threshold
+        getBadgeClass(field, value) {
+            if (field.type !== 'num' || value === null || value === undefined) return 'badge-ghost';
+            const min = field.min ?? 0;
+            const max = field.max ?? 100;
+            const percent = (value - min) / (max - min);
+
+            const thresholds = field.thresholds || [
+                { pct: 0.2, color: '#ef4444' },
+                { pct: 0.5, color: '#f59e0b' },
+                { pct: 1.0, color: '#10b981' }
+            ];
+
+            for (const t of thresholds) {
+                if (percent <= t.pct) {
+                    if (t.color.includes('ef44')) return 'badge-error';
+                    if (t.color.includes('f59e')) return 'badge-warning';
+                    return 'badge-success';
+                }
+            }
+            return 'badge-success';
+        },
+
         // Tab navigation
         setTab(tab) {
             this.activeTab = tab;
+        },
+
+        // =====================================================================
+        // Rules Management
+        // =====================================================================
+
+        toggleTrigger(triggerKey, enabled) {
+            uibuilder.send({
+                topic: 'saveTrigger',
+                payload: {
+                    eui: this.selectedDevice,
+                    triggerKey,
+                    enabled
+                }
+            });
+        },
+
+        toggleRule(rule, enabled) {
+            uibuilder.send({
+                topic: 'saveRule',
+                payload: {
+                    ...rule,
+                    eui: this.selectedDevice,
+                    enabled
+                }
+            });
+        },
+
+        openRuleEditor(rule = null) {
+            if (rule) {
+                // Edit existing rule
+                this.editingRule = {
+                    id: rule.id,
+                    name: rule.name,
+                    condition: rule.condition || { field: '', op: '<', val: 0 },
+                    action_control: rule.action_control,
+                    action_state: rule.action_state,
+                    priority: rule.priority || 100,
+                    cooldown_seconds: rule.cooldown_seconds || 300,
+                    enabled: rule.enabled ?? true
+                };
+            } else {
+                // New rule - set defaults
+                const firstNumeric = this.numericFields[0];
+                const firstState = this.stateFields[0];
+                this.editingRule = {
+                    id: null,
+                    name: '',
+                    condition: {
+                        field: firstNumeric?.key || '',
+                        op: '<',
+                        val: 0
+                    },
+                    action_control: firstState?.key || '',
+                    action_state: this.getEnumValues(firstState?.key)[0] || '',
+                    priority: 100,
+                    cooldown_seconds: 300,
+                    enabled: true
+                };
+            }
+            document.getElementById('rule-editor-modal').showModal();
+        },
+
+        closeRuleEditor() {
+            document.getElementById('rule-editor-modal').close();
+        },
+
+        editRule(rule) {
+            this.openRuleEditor(rule);
+        },
+
+        deleteRule(ruleId) {
+            if (!confirm('Delete this rule?')) return;
+            uibuilder.send({
+                topic: 'deleteRule',
+                payload: {
+                    eui: this.selectedDevice,
+                    ruleId
+                }
+            });
+        },
+
+        saveRule() {
+            if (!this.isRuleValid) return;
+            uibuilder.send({
+                topic: 'saveRule',
+                payload: {
+                    ...this.editingRule,
+                    eui: this.selectedDevice
+                }
+            });
+        },
+
+        getEnumValues(controlKey) {
+            const field = this.fieldConfigs.find(f => f.key === controlKey);
+            if (field && field.enum_values) {
+                return Array.isArray(field.enum_values) ? field.enum_values : JSON.parse(field.enum_values);
+            }
+            return ['off', 'on'];
+        },
+
+        formatTime(ts) {
+            if (!ts) return '';
+            return new Date(ts).toLocaleString('en-US', {
+                month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
         }
     }
 }).mount('#app');
