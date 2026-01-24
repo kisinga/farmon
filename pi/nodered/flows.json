@@ -987,7 +987,7 @@
         "type": "function",
         "z": "dashboard-tab",
         "name": "Build & Send Downlink",
-        "func": "const { eui, control, state } = msg.controlInfo;\n\n// Get command port from device registration\n// For now, use defaults\nconst commandPorts = {\n    'pump': 20,\n    'valve': 21\n};\n\nconst port = commandPorts[control] || 20;\nconst stateValue = (state === 'on' || state === 'open') ? 0x01 : 0x00;\n\n// Log command\nmsg.cmdParams = [eui, `set_${control}`, JSON.stringify({state}), 'user', 'sent'];\n\n// Build downlink\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.downlink = {\n    topic: `application/${appId}/device/${eui}/command/down`,\n    payload: {\n        devEui: eui,\n        confirmed: false,\n        fPort: port,\n        data: Buffer.from([stateValue]).toString('base64')\n    }\n};\n\nreturn msg;",
+        "func": "const { eui, control, state } = msg.controlInfo;\n\n// Get command port from device registration\n// For now, use defaults\nconst commandPorts = {\n    'pump': 20,\n    'valve': 21\n};\n\nconst port = commandPorts[control] || 20;\nconst stateValue = (state === 'on' || state === 'open') ? 0x01 : 0x00;\n\n// Log command\nmsg.cmdParams = [eui, `set_${control}`, JSON.stringify({state}), 'user', 'sent'];\n\n// Build downlink - set topic and payload directly for mqtt out node\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${eui}/command/down`;\nmsg.payload = {\n    devEui: eui,\n    confirmed: false,\n    fPort: port,\n    data: Buffer.from([stateValue]).toString('base64')\n};\n\nreturn msg;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
