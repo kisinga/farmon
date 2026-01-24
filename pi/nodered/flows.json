@@ -111,104 +111,14 @@
         }
     },
     {
-        "id": "dash-tab",
-        "type": "ui-page",
-        "name": "Farm Monitor",
-        "ui": "dash-ui",
-        "path": "/farm-monitor",
-        "icon": "dashboard",
-        "layout": "grid",
-        "theme": "dash-theme",
-        "breakpoints": [
-            {
-                "name": "Default",
-                "px": "0",
-                "cols": "3"
-            },
-            {
-                "name": "Tablet",
-                "px": "576",
-                "cols": "6"
-            },
-            {
-                "name": "Small Desktop",
-                "px": "768",
-                "cols": "9"
-            },
-            {
-                "name": "Desktop",
-                "px": "1024",
-                "cols": "12"
-            }
-        ],
-        "order": 1,
-        "className": "",
-        "visible": "true",
-        "disabled": "false"
-    },
-    {
-        "id": "dash-group-selector",
-        "type": "ui-group",
-        "name": "Device Selector",
-        "page": "dash-tab",
-        "width": "12",
-        "order": 1,
-        "className": ""
-    },
-    {
-        "id": "dash-group-signal",
-        "type": "ui-group",
-        "name": "Device stats",
-        "page": "dash-tab",
-        "width": "12",
-        "height": "",
-        "order": 2,
-        "showTitle": true,
-        "className": "",
-        "visible": "true",
-        "disabled": "false",
-        "groupType": "default"
-    },
-    {
-        "id": "dash-group-water",
-        "type": "ui-group",
-        "name": "Water Tank Monitor",
-        "page": "dash-tab",
-        "width": "12",
-        "order": 3,
-        "className": "",
-        "visible": true,
-        "disabled": false
-    },
-    {
         "id": "72aa6c226990e117",
         "type": "global-config",
         "env": [],
         "modules": {
             "node-red-contrib-postgresql": "0.15.4",
-            "@flowfuse/node-red-dashboard": "1.30.2"
+            "@flowfuse/node-red-dashboard": "1.30.2",
+            "node-red-contrib-uibuilder": "7.5.0"
         }
-    },
-    {
-        "id": "ead6616b9d4660df",
-        "type": "ui-link",
-        "name": "Link 1",
-        "ui": "dash-ui",
-        "path": "/",
-        "icon": "home",
-        "order": 2,
-        "visible": true,
-        "disabled": false
-    },
-    {
-        "id": "be701fc88d0f7f3f",
-        "type": "ui-spacer",
-        "group": "dash-group-selector",
-        "name": "spacer",
-        "order": 2,
-        "width": 6,
-        "height": 1,
-        "className": ""
     },
     {
         "id": "n1a2b3c4d5e6f7g8",
@@ -551,6 +461,7 @@
         "id": "dash-css-template",
         "type": "ui-template",
         "z": "dashboard-tab",
+        "d": true,
         "group": "",
         "page": "",
         "ui": "dash-ui",
@@ -586,136 +497,20 @@
         "x": 580,
         "y": 260,
         "wires": [
-            [
-                "dash-gauge"
-            ],
-            [
-                "dash-rssi-gauge"
-            ],
-            [
-                "dash-snr-gauge"
-            ],
-            [
-                "dash-text"
-            ],
-            [
-                "dash-tsr-text"
-            ],
+            [],
+            [],
+            [],
+            [],
+            [],
             [
                 "water-processor"
             ],
-            [
-                "dash-battery-chart"
-            ],
             [],
-            [
-                "dash-snr-chart"
-            ],
-            [
-                "dash-signal-chart"
-            ],
-            [
-                "dash-signal-chart"
-            ]
-        ]
-    },
-    {
-        "id": "dash-gauge",
-        "type": "ui-gauge",
-        "z": "dashboard-tab",
-        "name": "Battery Level",
-        "group": "dash-group-selector",
-        "order": 3,
-        "value": "payload",
-        "valueType": "msg",
-        "width": 2,
-        "height": 2,
-        "gtype": "gauge-battery",
-        "title": "Battery",
-        "alwaysShowTitle": true,
-        "units": "%",
-        "icon": "battery_charging_full",
-        "prefix": "",
-        "suffix": "",
-        "segments": [
-            {
-                "from": "0",
-                "color": "#dc2626",
-                "text": "LOW",
-                "textType": "label"
-            },
-            {
-                "from": "20",
-                "color": "#eab308",
-                "text": "MED",
-                "textType": "label"
-            },
-            {
-                "from": "50",
-                "color": "#10b981",
-                "text": "GOOD",
-                "textType": "label"
-            }
-        ],
-        "min": 0,
-        "max": "100",
-        "sizeThickness": "20",
-        "sizeGap": "4",
-        "sizeKeyThickness": "8",
-        "className": "",
-        "x": 1330,
-        "y": 40,
-        "wires": [
+            [],
+            [],
+            [],
             []
         ]
-    },
-    {
-        "id": "dash-text",
-        "type": "ui-text",
-        "z": "dashboard-tab",
-        "group": "dash-group-selector",
-        "order": 4,
-        "width": "4",
-        "height": "1",
-        "name": "Device Name",
-        "label": "Device:",
-        "format": "{{msg.payload}}",
-        "layout": "row-spread",
-        "style": false,
-        "font": "",
-        "fontSize": "16",
-        "color": "#ffffff",
-        "wrapText": false,
-        "className": "",
-        "value": "payload",
-        "valueType": "msg",
-        "x": 1340,
-        "y": 160,
-        "wires": []
-    },
-    {
-        "id": "dash-tsr-text",
-        "type": "ui-text",
-        "z": "dashboard-tab",
-        "group": "dash-group-selector",
-        "order": 5,
-        "width": "4",
-        "height": "1",
-        "name": "Time Since Reset",
-        "label": "Uptime:",
-        "format": "{{msg.payload}}s",
-        "layout": "row-spread",
-        "style": false,
-        "font": "",
-        "fontSize": "14",
-        "color": "#94a3b8",
-        "wrapText": false,
-        "className": "",
-        "value": "payload",
-        "valueType": "msg",
-        "x": 1350,
-        "y": 200,
-        "wires": []
     },
     {
         "id": "water-processor",
@@ -732,123 +527,13 @@
         "x": 880,
         "y": 260,
         "wires": [
-            [
-                "dash-water-gauge"
-            ],
-            [
-                "dash-water-volume-text"
-            ],
-            [
-                "dash-flow-rate-text"
-            ],
+            [],
+            [],
+            [],
             [
                 "dash-water-history-store"
             ]
         ]
-    },
-    {
-        "id": "dash-water-gauge",
-        "type": "ui-gauge",
-        "z": "dashboard-tab",
-        "name": "Water Level",
-        "group": "dash-group-water",
-        "order": 1,
-        "value": "payload",
-        "valueType": "msg",
-        "width": 4,
-        "height": 6,
-        "gtype": "gauge-tank",
-        "title": "Water Tank Level",
-        "alwaysShowTitle": true,
-        "units": "%",
-        "icon": "water_drop",
-        "prefix": "",
-        "suffix": "",
-        "segments": [
-            {
-                "from": "0",
-                "color": "#dc2626",
-                "text": "CRITICAL",
-                "textType": "label"
-            },
-            {
-                "from": "10",
-                "color": "#f59e0b",
-                "text": "LOW",
-                "textType": "label"
-            },
-            {
-                "from": "20",
-                "color": "#eab308",
-                "text": "MEDIUM",
-                "textType": "label"
-            },
-            {
-                "from": "50",
-                "color": "#10b981",
-                "text": "GOOD",
-                "textType": "label"
-            }
-        ],
-        "min": 0,
-        "max": "100",
-        "sizeThickness": "20",
-        "sizeGap": "4",
-        "sizeKeyThickness": "10",
-        "className": "",
-        "x": 1330,
-        "y": 240,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-water-volume-text",
-        "type": "ui-text",
-        "z": "dashboard-tab",
-        "group": "dash-group-water",
-        "order": 2,
-        "width": 2,
-        "height": "1",
-        "name": "Water Volume",
-        "label": "Volume:",
-        "format": "{{msg.payload}} / {{msg.capacity}} L",
-        "layout": "row-spread",
-        "style": false,
-        "font": "",
-        "fontSize": "18",
-        "color": "#3b82f6",
-        "wrapText": false,
-        "className": "",
-        "value": "payload",
-        "valueType": "msg",
-        "x": 1340,
-        "y": 280,
-        "wires": []
-    },
-    {
-        "id": "dash-flow-rate-text",
-        "type": "ui-text",
-        "z": "dashboard-tab",
-        "group": "dash-group-water",
-        "order": 3,
-        "width": 2,
-        "height": "1",
-        "name": "Flow Rate",
-        "label": "Flow Rate:",
-        "format": "{{msg.payload}} L/h",
-        "layout": "row-spread",
-        "style": false,
-        "font": "",
-        "fontSize": "16",
-        "color": "#94a3b8",
-        "wrapText": false,
-        "className": "",
-        "value": "payload",
-        "valueType": "msg",
-        "x": 1320,
-        "y": 320,
-        "wires": []
     },
     {
         "id": "dash-water-history-store",
@@ -865,297 +550,7 @@
         "x": 1120,
         "y": 320,
         "wires": [
-            [
-                "dash-water-flow-chart"
-            ]
-        ]
-    },
-    {
-        "id": "dash-water-flow-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-water",
-        "name": "Water Flow History",
-        "order": 4,
-        "chartType": "line",
-        "category": "series",
-        "categoryType": "msg",
-        "xAxisLabel": "Time",
-        "xAxisProperty": "x",
-        "xAxisPropertyType": "msg",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "Total Volume (L)",
-        "yAxisProperty": "y",
-        "yAxisPropertyType": "msg",
-        "ymin": "",
-        "ymax": "",
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100",
-        "width": 8,
-        "height": 5,
-        "className": "",
-        "x": 1350,
-        "y": 360,
-        "wires": [
             []
-        ]
-    },
-    {
-        "id": "dash-rssi-gauge",
-        "type": "ui-gauge",
-        "z": "dashboard-tab",
-        "name": "Signal Strength (RSSI)",
-        "group": "dash-group-signal",
-        "order": 2,
-        "value": "payload",
-        "valueType": "msg",
-        "width": 2,
-        "height": 3,
-        "gtype": "gauge-half",
-        "gstyle": "needle",
-        "title": "Signal Strength",
-        "alwaysShowTitle": true,
-        "units": "dBm",
-        "icon": "signal_cellular_alt",
-        "prefix": "",
-        "suffix": "",
-        "segments": [
-            {
-                "from": "-120",
-                "color": "#dc2626",
-                "text": "WEAK",
-                "textType": "label"
-            },
-            {
-                "from": "-90",
-                "color": "#eab308",
-                "text": "FAIR",
-                "textType": "label"
-            },
-            {
-                "from": "-60",
-                "color": "#10b981",
-                "text": "STRONG",
-                "textType": "label"
-            }
-        ],
-        "min": "-120",
-        "max": "-30",
-        "sizeThickness": "32",
-        "sizeGap": "2",
-        "sizeKeyThickness": "8",
-        "className": "",
-        "x": 1360,
-        "y": 80,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-snr-gauge",
-        "type": "ui-gauge",
-        "z": "dashboard-tab",
-        "name": "SNR",
-        "group": "dash-group-signal",
-        "order": 3,
-        "value": "payload",
-        "valueType": "msg",
-        "width": 2,
-        "height": 3,
-        "gtype": "gauge-half",
-        "gstyle": "needle",
-        "title": "Signal to Noise Ratio",
-        "alwaysShowTitle": true,
-        "units": "dB",
-        "icon": "graphic_eq",
-        "prefix": "",
-        "suffix": "",
-        "segments": [
-            {
-                "from": "-20",
-                "color": "#dc2626",
-                "text": "POOR",
-                "textType": "label"
-            },
-            {
-                "from": "0",
-                "color": "#eab308",
-                "text": "OK",
-                "textType": "label"
-            },
-            {
-                "from": "5",
-                "color": "#10b981",
-                "text": "GOOD",
-                "textType": "label"
-            }
-        ],
-        "min": "-20",
-        "max": "20",
-        "sizeThickness": "32",
-        "sizeGap": "2",
-        "sizeKeyThickness": "8",
-        "className": "",
-        "x": 1310,
-        "y": 120,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-battery-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-signal",
-        "name": "Battery History",
-        "order": 5,
-        "chartType": "line",
-        "category": "series",
-        "categoryType": "msg",
-        "xAxisLabel": "Time",
-        "xAxisProperty": "x",
-        "xAxisPropertyType": "msg",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "Battery %",
-        "yAxisProperty": "y",
-        "yAxisPropertyType": "msg",
-        "ymin": "0",
-        "ymax": "100",
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100",
-        "width": 6,
-        "height": 3,
-        "className": "",
-        "x": 1340,
-        "y": 400,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-snr-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-signal",
-        "name": "SNR History",
-        "order": 4,
-        "chartType": "line",
-        "category": "series",
-        "categoryType": "msg",
-        "xAxisLabel": "Time",
-        "xAxisProperty": "x",
-        "xAxisPropertyType": "msg",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "yAxisLabel": "SNR (dB)",
-        "yAxisProperty": "y",
-        "yAxisPropertyType": "msg",
-        "ymin": "-20",
-        "ymax": "20",
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100",
-        "width": 4,
-        "height": 3,
-        "className": "",
-        "x": 1330,
-        "y": 480,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "dash-signal-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-signal",
-        "name": "Signal Quality Trend",
-        "label": "",
-        "order": 6,
-        "chartType": "line",
-        "category": "series",
-        "categoryType": "msg",
-        "xAxisLabel": "",
-        "xAxisProperty": "x",
-        "xAxisPropertyType": "msg",
-        "xAxisType": "time",
-        "xAxisFormat": "HH:mm",
-        "xAxisFormatType": "auto",
-        "xmin": "",
-        "xmax": "",
-        "yAxisLabel": "Value",
-        "yAxisProperty": "y",
-        "yAxisPropertyType": "msg",
-        "ymin": "",
-        "ymax": "",
-        "bins": "",
-        "stackSeries": false,
-        "pointRadius": "",
-        "showLegend": true,
-        "removeOlder": 100,
-        "removeOlderUnit": "point",
-        "removeOlderPoints": "100",
-        "colors": [
-            "#1f77b4",
-            "#aec7e8",
-            "#ff7f0e",
-            "#2ca02c",
-            "#98df8a",
-            "#d62728",
-            "#ff9896",
-            "#9467bd",
-            "#c5b0d5"
-        ],
-        "textColor": [
-            "#666666"
-        ],
-        "textColorDefault": true,
-        "gridColor": [
-            "#e5e5e5"
-        ],
-        "gridColorDefault": true,
-        "width": 6,
-        "height": 3,
-        "className": "",
-        "interpolation": "linear",
-        "x": 1360,
-        "y": 520,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "device-dropdown",
-        "type": "ui-dropdown",
-        "z": "dashboard-tab",
-        "group": "dash-group-selector",
-        "name": "Device Selector",
-        "label": "Select Device:",
-        "tooltip": "Choose which device to monitor",
-        "order": 1,
-        "width": 4,
-        "height": "1",
-        "passthru": false,
-        "multiple": false,
-        "chips": false,
-        "clearable": false,
-        "options": [],
-        "payload": "",
-        "topic": "device_selected",
-        "topicType": "str",
-        "className": "",
-        "typeIsComboBox": true,
-        "msgTrigger": "onChange",
-        "x": 360,
-        "y": 920,
-        "wires": [
-            [
-                "hist-format-devices"
-            ]
         ]
     },
     {
@@ -1174,7 +569,6 @@
         "y": 1000,
         "wires": [
             [
-                "device-dropdown",
                 "hist-format-devices"
             ]
         ]
@@ -1203,21 +597,6 @@
         "payloadType": "str",
         "x": 130,
         "y": 960,
-        "wires": [
-            [
-                "hist-get-devices"
-            ]
-        ]
-    },
-    {
-        "id": "hist-page-control",
-        "type": "ui-control",
-        "z": "dashboard-tab",
-        "name": "Page Load Trigger",
-        "ui": "dash-ui",
-        "events": "all",
-        "x": 130,
-        "y": 1040,
         "wires": [
             [
                 "hist-get-devices"
@@ -1287,7 +666,6 @@
         "y": 600,
         "wires": [
             [
-                "dash-battery-chart",
                 "3916e4eef1d96e2a"
             ]
         ]
@@ -1308,9 +686,7 @@
         "y": 440,
         "wires": [
             [
-                "dash-rssi-chart",
-                "5d6932bd5aac25e5",
-                "dash-signal-chart"
+                "5d6932bd5aac25e5"
             ]
         ]
     },
@@ -1330,8 +706,6 @@
         "y": 680,
         "wires": [
             [
-                "dash-snr-chart",
-                "dash-signal-chart",
                 "8a9bb68e8d22e1e8"
             ]
         ]
@@ -1370,7 +744,6 @@
         "y": 520,
         "wires": [
             [
-                "dash-water-flow-chart",
                 "b219b11803d63e8d"
             ]
         ]
@@ -1478,68 +851,6 @@
         "wires": []
     },
     {
-        "id": "dash-rssi-chart",
-        "type": "ui-chart",
-        "z": "dashboard-tab",
-        "group": "dash-group-signal",
-        "name": "RSSI History",
-        "label": "RSSI History",
-        "order": 1,
-        "chartType": "line",
-        "category": "series",
-        "categoryType": "msg",
-        "xAxisLabel": "Time",
-        "xAxisProperty": "x",
-        "xAxisPropertyType": "property",
-        "xAxisType": "time",
-        "xAxisFormat": "",
-        "xAxisFormatType": "auto",
-        "xmin": "",
-        "xmax": "",
-        "yAxisLabel": "RSSI (dBm)",
-        "yAxisProperty": "y",
-        "yAxisPropertyType": "property",
-        "ymin": "-120",
-        "ymax": "-30",
-        "bins": "",
-        "action": "append",
-        "stackSeries": false,
-        "pointShape": "cross",
-        "pointRadius": "2",
-        "showLegend": false,
-        "removeOlder": 100,
-        "removeOlderUnit": "3600",
-        "removeOlderPoints": "1000",
-        "colors": [
-            "#0000ff",
-            "#aec7e8",
-            "#ff7f0e",
-            "#2ca02c",
-            "#98df8a",
-            "#d62728",
-            "#ff9896",
-            "#9467bd",
-            "#c5b0d5"
-        ],
-        "textColor": [
-            "#666666"
-        ],
-        "textColorDefault": true,
-        "gridColor": [
-            "#e5e5e5"
-        ],
-        "gridColorDefault": true,
-        "width": 4,
-        "height": 3,
-        "className": "",
-        "interpolation": "smooth",
-        "x": 1330,
-        "y": 580,
-        "wires": [
-            []
-        ]
-    },
-    {
         "id": "5d6932bd5aac25e5",
         "type": "debug",
         "z": "dashboard-tab",
@@ -1555,6 +866,35 @@
         "x": 1020,
         "y": 660,
         "wires": []
+    },
+    {
+        "id": "b3b0c47e274b2ad3",
+        "type": "uibuilder",
+        "z": "dashboard-tab",
+        "name": "",
+        "topic": "",
+        "url": "dash",
+        "okToGo": true,
+        "fwdInMessages": false,
+        "allowScripts": false,
+        "allowStyles": false,
+        "copyIndex": true,
+        "templateFolder": "ext-svelte",
+        "extTemplate": "TotallyInformation/uib-template-svelte-simple",
+        "showfolder": false,
+        "reload": false,
+        "sourceFolder": "src",
+        "deployedVersion": "7.5.0",
+        "showMsgUib": false,
+        "title": "",
+        "descr": "",
+        "editurl": "",
+        "x": 920,
+        "y": 1020,
+        "wires": [
+            [],
+            []
+        ]
     },
     {
         "id": "api1",
