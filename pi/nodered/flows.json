@@ -1,26 +1,5 @@
 [
     {
-        "id": "farm-flow-tab",
-        "type": "tab",
-        "label": "Farm Monitor",
-        "disabled": false,
-        "info": "Main flow for receiving ChirpStack events and storing to PostgreSQL"
-    },
-    {
-        "id": "dashboard-tab",
-        "type": "tab",
-        "label": "Dashboard",
-        "disabled": false,
-        "info": "Dashboard UI for monitoring farm sensors"
-    },
-    {
-        "id": "config-flow-tab",
-        "type": "tab",
-        "label": "Configuration",
-        "disabled": false,
-        "info": "System configuration and calibration"
-    },
-    {
         "id": "72aa6c226990e117",
         "type": "global-config",
         "env": [],
@@ -30,7 +9,7 @@
         }
     },
     {
-        "id": "e1b2c3d4e5f6a7b8",
+        "id": "mqtt-broker",
         "type": "mqtt-broker",
         "name": "Mosquitto",
         "broker": "mosquitto",
@@ -40,25 +19,10 @@
         "usetls": false,
         "protocolVersion": "4",
         "keepalive": "60",
-        "cleansession": true,
-        "autoUnsubscribe": true,
-        "birthTopic": "",
-        "birthQos": "0",
-        "birthPayload": "",
-        "birthMsg": {},
-        "closeTopic": "",
-        "closeQos": "0",
-        "closePayload": "",
-        "closeMsg": {},
-        "willTopic": "",
-        "willQos": "0",
-        "willPayload": "",
-        "willMsg": {},
-        "userProps": "",
-        "sessionExpiry": ""
+        "cleansession": true
     },
     {
-        "id": "a1b2c3d4e5f6a7b9",
+        "id": "pg-config",
         "type": "postgreSQLConfig",
         "name": "FarmMon DB",
         "host": "postgres",
@@ -72,347 +36,537 @@
         "password": "farmmon"
     },
     {
-        "id": "n1a2b3c4d5e6f7g8",
+        "id": "main-flow-tab",
+        "type": "tab",
+        "label": "Message Router",
+        "disabled": false,
+        "info": "Routes ChirpStack messages by fPort"
+    },
+    {
+        "id": "dashboard-tab",
+        "type": "tab",
+        "label": "Dashboard",
+        "disabled": false,
+        "info": "UIBuilder dashboard handlers"
+    },
+    {
+        "id": "mqtt-in-uplinks",
         "type": "mqtt in",
-        "z": "farm-flow-tab",
+        "z": "main-flow-tab",
         "name": "ChirpStack Uplinks",
         "topic": "application/+/device/+/event/up",
         "qos": "0",
         "datatype": "json",
-        "broker": "e1b2c3d4e5f6a7b8",
+        "broker": "mqtt-broker",
         "nl": false,
         "rap": true,
         "rh": 0,
         "inputs": 0,
         "x": 130,
-        "y": 160,
-        "wires": [
-            [
-                "n2a2b3c4d5e6f7g8",
-                "n3a2b3c4d5e6f7g8"
-            ]
-        ]
+        "y": 140,
+        "wires": [["extract-info"]]
     },
     {
-        "id": "n1b2b3c4d5e6f7g8",
-        "type": "mqtt in",
-        "z": "farm-flow-tab",
-        "name": "ChirpStack Joins",
-        "topic": "application/+/device/+/event/join",
-        "qos": "0",
-        "datatype": "json",
-        "broker": "e1b2c3d4e5f6a7b8",
-        "nl": false,
-        "rap": true,
-        "rh": 0,
-        "inputs": 0,
-        "x": 120,
-        "y": 380,
-        "wires": [
-            [
-                "n4a2b3c4d5e6f7g8"
-            ]
-        ]
-    },
-    {
-        "id": "n2a2b3c4d5e6f7g8",
+        "id": "extract-info",
         "type": "function",
-        "z": "farm-flow-tab",
-        "name": "Parse Uplink",
-        "func": "// Extract device info and payload from ChirpStack v4 event\nconst deviceEui = msg.payload.deviceInfo?.devEui || 'unknown';\nconst deviceName = msg.payload.deviceInfo?.deviceName || 'unknown';\n\n// Get decoded data (from codec) or raw base64\nlet data = msg.payload.object || {};\nif (Object.keys(data).length === 0 && msg.payload.data) {\n    data = { raw: msg.payload.data };\n}\n\n// Add metadata\ndata._rssi = msg.payload.rxInfo?.[0]?.rssi;\ndata._snr = msg.payload.rxInfo?.[0]?.snr;\ndata._fCnt = msg.payload.fCnt;\ndata._fPort = msg.payload.fPort;\n\n// Prepare for PostgreSQL - params array for $1, $2\nmsg.params = [deviceEui, JSON.stringify(data)];\nmsg.deviceEui = deviceEui;\nmsg.deviceName = deviceName;\nmsg.sensorData = data;\n\nnode.status({fill: 'green', shape: 'dot', text: deviceEui.substring(8,16)});\n\nreturn msg;",
+        "z": "main-flow-tab",
+        "name": "Extract Device Info",
+        "func": "// Extract device info and fPort from ChirpStack v4 event\nconst deviceEui = msg.payload.deviceInfo?.devEui || 'unknown';\nconst deviceName = msg.payload.deviceInfo?.deviceName || '';\nconst fPort = msg.payload.fPort || 2; // Default to telemetry\n\n// Get decoded data\nlet data = msg.payload.object || {};\n\n// Add metadata\nconst rssi = msg.payload.rxInfo?.[0]?.rssi;\nconst snr = msg.payload.rxInfo?.[0]?.snr;\n\nmsg.deviceEui = deviceEui;\nmsg.deviceName = deviceName;\nmsg.fPort = fPort;\nmsg.data = data;\nmsg.rssi = rssi;\nmsg.snr = snr;\nmsg.rawPayload = msg.payload;\n\nnode.status({fill: 'green', shape: 'dot', text: `${deviceEui.slice(-4)} fPort:${fPort}`});\n\nreturn msg;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 390,
-        "y": 200,
-        "wires": [
-            [
-                "n5a2b3c4d5e6f7g8",
-                "n6a2b3c4d5e6f7g8",
-                "n7a2b3c4d5e6f7g8",
-                "farm-to-dash-link"
-            ]
-        ]
+        "x": 350,
+        "y": 140,
+        "wires": [["fport-switch", "debug-raw"]]
     },
     {
-        "id": "n3a2b3c4d5e6f7g8",
+        "id": "debug-raw",
         "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "Raw MQTT",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 370,
-        "y": 100,
-        "wires": []
-    },
-    {
-        "id": "n4a2b3c4d5e6f7g8",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "Join Events",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 390,
-        "y": 380,
-        "wires": []
-    },
-    {
-        "id": "n5a2b3c4d5e6f7g8",
-        "type": "postgresql",
-        "z": "farm-flow-tab",
-        "name": "Store Reading",
-        "query": "INSERT INTO readings (device_eui, data) VALUES ($1, $2::jsonb) RETURNING id",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 680,
-        "y": 100,
-        "wires": [
-            [
-                "n8a2b3c4d5e6f7g8"
-            ]
-        ]
-    },
-    {
-        "id": "n6a2b3c4d5e6f7g8",
-        "type": "function",
-        "z": "farm-flow-tab",
-        "name": "Check Thresholds",
-        "func": "const data = msg.sensorData;\nconst alerts = [];\n\nif (data.water_level !== undefined && data.water_level < 20) {\n    alerts.push({ type: 'water_level_low', message: `Water level low: ${data.water_level}%`, device: msg.deviceEui });\n}\nif (data.temperature !== undefined && data.temperature > 35) {\n    alerts.push({ type: 'temperature_high', message: `High temperature: ${data.temperature}°C`, device: msg.deviceEui });\n}\nif (data.battery !== undefined && data.battery < 20) {\n    alerts.push({ type: 'battery_low', message: `Battery low: ${data.battery}%`, device: msg.deviceEui });\n}\n\nif (alerts.length > 0) {\n    return { payload: alerts, deviceEui: msg.deviceEui };\n}\nreturn null;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 690,
-        "y": 200,
-        "wires": [
-            [
-                "n9a2b3c4d5e6f7g8"
-            ]
-        ]
-    },
-    {
-        "id": "n7a2b3c4d5e6f7g8",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "Parsed Data",
+        "z": "main-flow-tab",
+        "name": "Raw Messages",
         "active": false,
         "tosidebar": true,
         "console": false,
         "tostatus": false,
         "complete": "true",
         "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 670,
-        "y": 280,
+        "x": 350,
+        "y": 80,
         "wires": []
     },
     {
-        "id": "n8a2b3c4d5e6f7g8",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "DB Result",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 920,
-        "y": 100,
-        "wires": []
-    },
-    {
-        "id": "n9a2b3c4d5e6f7g8",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "Alerts",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 950,
-        "y": 200,
-        "wires": []
-    },
-    {
-        "id": "n10a2b3c4d5e6f7g",
-        "type": "inject",
-        "z": "farm-flow-tab",
-        "name": "Test Uplink",
-        "props": [
-            {
-                "p": "payload"
-            }
+        "id": "fport-switch",
+        "type": "switch",
+        "z": "main-flow-tab",
+        "name": "Route by fPort",
+        "property": "fPort",
+        "propertyType": "msg",
+        "rules": [
+            {"t": "eq", "v": "1", "vt": "num"},
+            {"t": "eq", "v": "2", "vt": "num"},
+            {"t": "eq", "v": "3", "vt": "num"},
+            {"t": "eq", "v": "4", "vt": "num"},
+            {"t": "else"}
         ],
-        "repeat": "",
-        "crontab": "",
-        "once": false,
-        "onceDelay": 0.1,
-        "topic": "",
-        "payload": "{\"deviceInfo\":{\"devEui\":\"0011223344556677\",\"deviceName\":\"test-device\"},\"object\":{\"temperature\":25.5,\"battery\":85},\"rxInfo\":[{\"rssi\":-80,\"snr\":7.5}],\"fCnt\":123,\"fPort\":1}",
-        "payloadType": "json",
-        "x": 120,
-        "y": 240,
+        "checkall": "false",
+        "repair": false,
+        "outputs": 5,
+        "x": 560,
+        "y": 140,
         "wires": [
-            [
-                "n2a2b3c4d5e6f7g8"
-            ]
+            ["registration-handler"],
+            ["telemetry-handler"],
+            ["state-change-handler"],
+            ["command-ack-handler"],
+            ["telemetry-handler"]
         ]
     },
     {
-        "id": "farm-to-dash-link",
-        "type": "link out",
-        "z": "farm-flow-tab",
-        "name": "To Dashboard",
-        "mode": "link",
-        "links": [
-            "dash-link-in"
-        ],
-        "x": 615,
-        "y": 360,
-        "wires": []
-    },
-    {
-        "id": "73106b72be8a16de",
-        "type": "mqtt out",
-        "z": "farm-flow-tab",
-        "name": "",
-        "topic": "",
-        "qos": "",
-        "retain": "",
-        "respTopic": "",
-        "contentType": "",
-        "userProps": "",
-        "correl": "",
-        "expiry": "",
-        "broker": "e1b2c3d4e5f6a7b8",
-        "x": 650,
-        "y": 540,
-        "wires": []
-    },
-    {
-        "id": "6a670683601fd4f2",
+        "id": "registration-handler",
         "type": "function",
-        "z": "farm-flow-tab",
-        "name": "function 1",
-        "func": "// Test downlink message formatter for ChirpStack v4\n// CRITICAL: devEui must be in the payload AND match the topic\n\n// Configuration - CHANGE THESE:\nconst applicationId = \"885c4dd2-e474-4265-bd25-2f838571f8de\";  // Your ChirpStack application ID (check ChirpStack UI)\nconst devEui = \"48ca43fffe3f0e70\";  // Your device EUI (lowercase, no colons)\nconst port = 20;  // Test port\nconst testMessage = \"Hello from Node-RED!\";  // Your test message\n\n// Convert message to bytes (UTF-8)\nconst messageBytes = Buffer.from(testMessage, 'utf8');\n\n// Convert to base64 (ChirpStack expects base64-encoded data)\nconst dataBase64 = messageBytes.toString('base64');\n\n// ChirpStack v4 downlink command format\n// CRITICAL: devEui field MUST be present and match the topic\nmsg.payload = {\n    devEui: devEui,        // REQUIRED: Must match topic DevEUI\n    confirmed: false,       // Unconfirmed downlink (faster, no ACK required)\n    fPort: port,           // Application port\n    data: dataBase64       // Base64-encoded payload\n};\n\n// Set topic - application ID and DevEUI must match payload\nmsg.topic = `application/${applicationId}/device/${devEui}/command/down`;\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": 0,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 380,
-        "y": 540,
-        "wires": [
-            [
-                "73106b72be8a16de",
-                "5da88bd81d402cb6"
-            ]
-        ]
-    },
-    {
-        "id": "2dca16451615ad3b",
-        "type": "inject",
-        "z": "farm-flow-tab",
-        "name": "Test downlink",
-        "props": [],
-        "repeat": "",
-        "crontab": "",
-        "once": false,
-        "onceDelay": 0.1,
-        "topic": "",
-        "x": 150,
-        "y": 540,
-        "wires": [
-            [
-                "6a670683601fd4f2"
-            ]
-        ]
-    },
-    {
-        "id": "5da88bd81d402cb6",
-        "type": "debug",
-        "z": "farm-flow-tab",
-        "name": "debug 1",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "false",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 660,
-        "y": 640,
-        "wires": []
-    },
-    {
-        "id": "dash-link-in",
-        "type": "link in",
-        "z": "dashboard-tab",
-        "name": "Sensor Data Input",
-        "links": [
-            "farm-to-dash-link"
-        ],
-        "x": 25,
-        "y": 260,
-        "wires": [
-            [
-                "device-filter"
-            ]
-        ]
-    },
-    {
-        "id": "device-filter",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Filter by Selected Device",
-        "func": "// Only pass through data for the currently selected device\nconst selectedDevice = flow.get('selectedDevice');\nconst incomingDevice = msg.deviceEui;\n\n// Only pass if device matches\nif (incomingDevice === selectedDevice) {\n    return msg;\n}\n\n// Filter out other devices\nreturn null;",
+        "z": "main-flow-tab",
+        "name": "Registration Handler (fPort 1)",
+        "func": "// Parse registration message from device\nconst deviceEui = msg.deviceEui;\nconst reg = msg.data;\n\nif (!reg || !reg.fields) {\n    node.warn('Invalid registration: missing fields');\n    return null;\n}\n\n// Store full registration\nmsg.registration = reg;\n\n// Prepare device upsert\nmsg.deviceParams = [\n    deviceEui,\n    msg.deviceName || reg.type || 'Unknown',\n    reg.type || 'unknown',\n    reg.fw || '0.0.0',\n    JSON.stringify(reg)\n];\n\nnode.status({fill: 'blue', shape: 'dot', text: `Registered: ${deviceEui.slice(-4)}`});\n\nreturn msg;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 290,
-        "y": 260,
-        "wires": [
-            [
-                "func-format-realtime"
-            ]
-        ]
+        "x": 820,
+        "y": 60,
+        "wires": [["upsert-device"]]
     },
     {
-        "id": "b3b0c47e274b2ad3",
+        "id": "upsert-device",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Upsert Device",
+        "query": "INSERT INTO devices (device_eui, device_name, device_type, firmware_version, registration)\nVALUES ($1, $2, $3, $4, $5::jsonb)\nON CONFLICT (device_eui) DO UPDATE SET\n    device_name = EXCLUDED.device_name,\n    device_type = EXCLUDED.device_type,\n    firmware_version = EXCLUDED.firmware_version,\n    registration = EXCLUDED.registration,\n    last_seen = NOW()\nRETURNING device_eui",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1060,
+        "y": 60,
+        "wires": [["parse-fields"]]
+    },
+    {
+        "id": "parse-fields",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Parse & Store Fields",
+        "func": "const deviceEui = msg.deviceEui;\nconst reg = msg.registration;\n\n// Build batch inserts for fields, controls, triggers\nconst fields = reg.fields || [];\nconst triggers = reg.triggers || [];\nconst cmds = reg.cmds || [];\n\n// Delete existing and re-insert (simpler than upsert for arrays)\nmsg.deleteParams = [deviceEui];\n\n// Prepare field inserts\nmsg.fieldRows = fields.map(f => ({\n    device_eui: deviceEui,\n    field_key: f.k,\n    display_name: f.n,\n    data_type: f.t,\n    unit: f.u || null,\n    category: f.c,\n    min_value: f.min ?? null,\n    max_value: f.max ?? null,\n    enum_values: f.v ? JSON.stringify(f.v) : null\n}));\n\n// Prepare control inserts (for state fields)\nmsg.controlRows = fields\n    .filter(f => f.c === 'state')\n    .map(f => ({\n        device_eui: deviceEui,\n        control_key: f.k,\n        current_state: f.v ? f.v[0] : 'off',\n        mode: 'auto'\n    }));\n\n// Prepare trigger inserts\nmsg.triggerRows = triggers.map(t => ({\n    device_eui: deviceEui,\n    trigger_key: t.k,\n    display_name: t.n,\n    field_key: t.f,\n    operator: t.op,\n    threshold: t.th,\n    action_control: t.ctrl,\n    action_state: t.st,\n    enabled: true\n}));\n\n// Infer viz_config defaults\nmsg.vizRows = fields.map(f => {\n    let vizType = 'badge';\n    let gaugeStyle = null;\n    let chartColor = '#3b82f6';\n    let sortOrder = 100;\n    \n    if (f.c === 'state') {\n        vizType = 'toggle';\n    } else if (f.t === 'num' && f.c === 'cont') {\n        vizType = (f.min !== undefined && f.max !== undefined) ? 'both' : 'chart';\n        gaugeStyle = 'radial';\n        \n        // Special cases by field key\n        const key = f.k.toLowerCase();\n        if (key.includes('level') || key.includes('tank') || key === 'wl') {\n            gaugeStyle = 'liquid';\n            chartColor = '#3b82f6';\n            sortOrder = 10;\n        } else if (key.includes('battery') || key === 'bp') {\n            chartColor = '#10b981';\n            sortOrder = 20;\n        } else if (key.includes('rssi')) {\n            chartColor = '#f59e0b';\n            sortOrder = 80;\n        } else if (key.includes('snr')) {\n            chartColor = '#8b5cf6';\n            sortOrder = 90;\n        }\n    }\n    \n    // Default thresholds for bounded numeric\n    let thresholds = null;\n    if (f.t === 'num' && f.min !== undefined && f.max !== undefined) {\n        thresholds = JSON.stringify([\n            {pct: 0.2, color: '#ef4444'},\n            {pct: 0.5, color: '#f59e0b'},\n            {pct: 1.0, color: '#10b981'}\n        ]);\n    }\n    \n    return {\n        device_eui: deviceEui,\n        field_key: f.k,\n        viz_type: vizType,\n        gauge_style: gaugeStyle,\n        chart_color: chartColor,\n        thresholds: thresholds,\n        is_visible: true,\n        sort_order: sortOrder\n    };\n});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1260,
+        "y": 60,
+        "wires": [["delete-old-fields"]]
+    },
+    {
+        "id": "delete-old-fields",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Delete Old Data",
+        "query": "DELETE FROM device_fields WHERE device_eui = $1;\nDELETE FROM device_controls WHERE device_eui = $1;\nDELETE FROM device_triggers WHERE device_eui = $1;",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1480,
+        "y": 60,
+        "wires": [["insert-fields"]]
+    },
+    {
+        "id": "insert-fields",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Insert Fields",
+        "func": "// Build INSERT for fields\nif (msg.fieldRows.length === 0) return msg;\n\nconst values = msg.fieldRows.map((r, i) => {\n    const offset = i * 9;\n    return `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6}, $${offset+7}, $${offset+8}, $${offset+9}::jsonb)`;\n}).join(',\\n');\n\nmsg.query = `INSERT INTO device_fields \n(device_eui, field_key, display_name, data_type, unit, category, min_value, max_value, enum_values)\nVALUES ${values}`;\n\nmsg.params = msg.fieldRows.flatMap(r => [\n    r.device_eui, r.field_key, r.display_name, r.data_type,\n    r.unit, r.category, r.min_value, r.max_value, r.enum_values\n]);\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1680,
+        "y": 60,
+        "wires": [["exec-insert-fields"]]
+    },
+    {
+        "id": "exec-insert-fields",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Execute",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1850,
+        "y": 60,
+        "wires": [["insert-controls"]]
+    },
+    {
+        "id": "insert-controls",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Insert Controls",
+        "func": "if (msg.controlRows.length === 0) return msg;\n\nconst values = msg.controlRows.map((r, i) => {\n    const offset = i * 4;\n    return `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4})`;\n}).join(',\\n');\n\nmsg.query = `INSERT INTO device_controls \n(device_eui, control_key, current_state, mode)\nVALUES ${values}`;\n\nmsg.params = msg.controlRows.flatMap(r => [\n    r.device_eui, r.control_key, r.current_state, r.mode\n]);\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1680,
+        "y": 120,
+        "wires": [["exec-insert-controls"]]
+    },
+    {
+        "id": "exec-insert-controls",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Execute",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1850,
+        "y": 120,
+        "wires": [["insert-triggers"]]
+    },
+    {
+        "id": "insert-triggers",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Insert Triggers",
+        "func": "if (msg.triggerRows.length === 0) return msg;\n\nconst values = msg.triggerRows.map((r, i) => {\n    const offset = i * 9;\n    return `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6}, $${offset+7}, $${offset+8}, $${offset+9})`;\n}).join(',\\n');\n\nmsg.query = `INSERT INTO device_triggers \n(device_eui, trigger_key, display_name, field_key, operator, threshold, action_control, action_state, enabled)\nVALUES ${values}`;\n\nmsg.params = msg.triggerRows.flatMap(r => [\n    r.device_eui, r.trigger_key, r.display_name, r.field_key,\n    r.operator, r.threshold, r.action_control, r.action_state, r.enabled\n]);\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1680,
+        "y": 180,
+        "wires": [["exec-insert-triggers"]]
+    },
+    {
+        "id": "exec-insert-triggers",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Execute",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1850,
+        "y": 180,
+        "wires": [["upsert-viz-config"]]
+    },
+    {
+        "id": "upsert-viz-config",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Upsert Viz Config",
+        "func": "if (msg.vizRows.length === 0) return msg;\n\nconst values = msg.vizRows.map((r, i) => {\n    const offset = i * 8;\n    return `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6}::jsonb, $${offset+7}, $${offset+8})`;\n}).join(',\\n');\n\nmsg.query = `INSERT INTO viz_config \n(device_eui, field_key, viz_type, gauge_style, chart_color, thresholds, is_visible, sort_order)\nVALUES ${values}\nON CONFLICT (device_eui, field_key) DO UPDATE SET\n    viz_type = COALESCE(viz_config.viz_type, EXCLUDED.viz_type),\n    gauge_style = COALESCE(viz_config.gauge_style, EXCLUDED.gauge_style),\n    chart_color = COALESCE(viz_config.chart_color, EXCLUDED.chart_color)`;\n\nmsg.params = msg.vizRows.flatMap(r => [\n    r.device_eui, r.field_key, r.viz_type, r.gauge_style,\n    r.chart_color, r.thresholds, r.is_visible, r.sort_order\n]);\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1690,
+        "y": 240,
+        "wires": [["exec-upsert-viz"]]
+    },
+    {
+        "id": "exec-upsert-viz",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Execute",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1850,
+        "y": 240,
+        "wires": [["notify-registration"]]
+    },
+    {
+        "id": "notify-registration",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Notify UI",
+        "func": "// Send registration notification to UI\nreturn {\n    topic: 'deviceRegistered',\n    payload: {\n        eui: msg.deviceEui,\n        name: msg.deviceName,\n        type: msg.registration.type,\n        firmware: msg.registration.fw\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1850,
+        "y": 300,
+        "wires": [["uibuilder-node"]]
+    },
+    {
+        "id": "telemetry-handler",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Telemetry Handler (fPort 2)",
+        "func": "// Process telemetry data\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\n// Prepare telemetry insert\nmsg.telemetryParams = [\n    deviceEui,\n    JSON.stringify(data),\n    msg.rssi,\n    msg.snr\n];\n\n// Update last_seen\nmsg.updateDeviceParams = [deviceEui];\n\nnode.status({fill: 'green', shape: 'dot', text: `Telemetry: ${deviceEui.slice(-4)}`});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 830,
+        "y": 140,
+        "wires": [["insert-telemetry", "update-device-seen"]]
+    },
+    {
+        "id": "insert-telemetry",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Store Telemetry",
+        "query": "INSERT INTO telemetry (device_eui, data, rssi, snr) VALUES ($1, $2::jsonb, $3, $4) RETURNING id",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1080,
+        "y": 140,
+        "wires": [["update-controls-state"]]
+    },
+    {
+        "id": "update-device-seen",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Update Last Seen",
+        "query": "UPDATE devices SET last_seen = NOW() WHERE device_eui = $1",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1090,
+        "y": 200,
+        "wires": [[]]
+    },
+    {
+        "id": "update-controls-state",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Update Controls from Telemetry",
+        "func": "// Update device_controls with state values from telemetry\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\n// Get state fields from context (or query later)\n// For now, check common state fields\nconst stateFields = ['pump', 'valve'];\nconst updates = [];\n\nfor (const key of stateFields) {\n    if (data[key] !== undefined) {\n        updates.push({ control_key: key, state: data[key] });\n    }\n}\n\nif (updates.length === 0) {\n    // No state updates, proceed to push telemetry\n    return [msg, null];\n}\n\nmsg.stateUpdates = updates;\nreturn [msg, msg];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1320,
+        "y": 140,
+        "wires": [["push-telemetry"], ["batch-update-controls"]]
+    },
+    {
+        "id": "batch-update-controls",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Build Control Updates",
+        "func": "const deviceEui = msg.deviceEui;\nconst updates = msg.stateUpdates;\n\n// Build update query for each control\nconst cases = updates.map((u, i) => \n    `WHEN control_key = $${i*2+2} THEN $${i*2+3}`\n).join(' ');\n\nconst keys = updates.map(u => u.control_key);\n\nmsg.query = `UPDATE device_controls \nSET current_state = CASE ${cases} END,\n    last_change_at = NOW()\nWHERE device_eui = $1 AND control_key IN (${keys.map((_, i) => `$${i*2+2}`).join(', ')})`;\n\nmsg.params = [deviceEui, ...updates.flatMap(u => [u.control_key, u.state])];\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1570,
+        "y": 200,
+        "wires": [["exec-update-controls"]]
+    },
+    {
+        "id": "exec-update-controls",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Execute",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1770,
+        "y": 200,
+        "wires": [[]]
+    },
+    {
+        "id": "push-telemetry",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Push to UI",
+        "func": "return {\n    topic: 'telemetry',\n    payload: {\n        eui: msg.deviceEui,\n        data: msg.data,\n        rssi: msg.rssi,\n        snr: msg.snr,\n        ts: new Date().toISOString()\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1550,
+        "y": 140,
+        "wires": [["uibuilder-node"]]
+    },
+    {
+        "id": "state-change-handler",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "State Change Handler (fPort 3)",
+        "func": "// Process state change event from device\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\nconst controlKey = data.control || data.ctrl;\nconst newState = data.state || data.st;\nconst reason = data.reason || 'device';\nconst deviceTs = data.ts ? new Date(data.ts * 1000) : null;\n\nif (!controlKey || !newState) {\n    node.warn('Invalid state change: missing control or state');\n    return null;\n}\n\nmsg.stateChange = {\n    control_key: controlKey,\n    new_state: newState,\n    reason: reason,\n    device_ts: deviceTs\n};\n\nmsg.stateParams = [deviceEui, controlKey];\n\nnode.status({fill: 'yellow', shape: 'dot', text: `${controlKey}: ${newState}`});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 840,
+        "y": 220,
+        "wires": [["get-old-state"]]
+    },
+    {
+        "id": "get-old-state",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Get Old State",
+        "query": "SELECT current_state FROM device_controls WHERE device_eui = $1 AND control_key = $2",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1080,
+        "y": 220,
+        "wires": [["insert-state-change"]]
+    },
+    {
+        "id": "insert-state-change",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Insert State Change",
+        "func": "const oldState = msg.payload?.[0]?.current_state || null;\nconst sc = msg.stateChange;\n\nmsg.insertParams = [\n    msg.deviceEui,\n    sc.control_key,\n    oldState,\n    sc.new_state,\n    sc.reason,\n    sc.device_ts\n];\n\nmsg.updateParams = [\n    sc.new_state,\n    sc.reason,\n    msg.deviceEui,\n    sc.control_key\n];\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1290,
+        "y": 220,
+        "wires": [["exec-insert-state"]]
+    },
+    {
+        "id": "exec-insert-state",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Log State Change",
+        "query": "INSERT INTO state_changes (device_eui, control_key, old_state, new_state, reason, device_ts)\nVALUES ($1, $2, $3, $4, $5, $6)",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1510,
+        "y": 220,
+        "wires": [["exec-update-control-state"]]
+    },
+    {
+        "id": "exec-update-control-state",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Update Control",
+        "query": "UPDATE device_controls SET current_state = $1, last_change_at = NOW(), last_change_by = $2\nWHERE device_eui = $3 AND control_key = $4",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1730,
+        "y": 220,
+        "wires": [["push-state-change"]]
+    },
+    {
+        "id": "push-state-change",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Push to UI",
+        "func": "const sc = msg.stateChange;\nreturn {\n    topic: 'stateChange',\n    payload: {\n        eui: msg.deviceEui,\n        control: sc.control_key,\n        state: sc.new_state,\n        reason: sc.reason\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1910,
+        "y": 220,
+        "wires": [["uibuilder-node"]]
+    },
+    {
+        "id": "command-ack-handler",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Command ACK Handler (fPort 4)",
+        "func": "// Process command acknowledgment from device\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\nconst cmdId = data.cmd_id || data.id;\nconst status = data.status || 'acked';\n\nif (!cmdId) {\n    node.warn('Invalid ACK: missing cmd_id');\n    return null;\n}\n\nmsg.ackParams = [status, cmdId, deviceEui];\n\nnode.status({fill: 'green', shape: 'dot', text: `ACK: ${cmdId}`});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 840,
+        "y": 300,
+        "wires": [["update-command-status"]]
+    },
+    {
+        "id": "update-command-status",
+        "type": "postgresql",
+        "z": "main-flow-tab",
+        "name": "Update Command Status",
+        "query": "UPDATE commands SET status = $1, acked_at = NOW() WHERE id = $2 AND device_eui = $3",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1110,
+        "y": 300,
+        "wires": [["push-command-ack"]]
+    },
+    {
+        "id": "push-command-ack",
+        "type": "function",
+        "z": "main-flow-tab",
+        "name": "Push to UI",
+        "func": "return {\n    topic: 'commandAck',\n    payload: {\n        eui: msg.deviceEui,\n        commandId: msg.ackParams[1],\n        status: msg.ackParams[0]\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1310,
+        "y": 300,
+        "wires": [["uibuilder-node"]]
+    },
+    {
+        "id": "uibuilder-node",
         "type": "uibuilder",
         "z": "dashboard-tab",
-        "name": "",
+        "name": "Dashboard",
         "topic": "",
         "url": "dash",
         "okToGo": true,
@@ -421,7 +575,7 @@
         "allowStyles": false,
         "copyIndex": true,
         "templateFolder": "ext-svelte",
-        "extTemplate": "TotallyInformation/uib-template-svelte-simple",
+        "extTemplate": "",
         "showfolder": false,
         "reload": false,
         "sourceFolder": "src",
@@ -429,364 +583,413 @@
         "showMsgUib": false,
         "title": "",
         "descr": "",
-        "editurl": "vscode://vscode-remote/ssh-remote+farm/data/uibuilder/dash/?windowId=_blank",
-        "x": 940,
-        "y": 260,
-        "wires": [
-            [
-                "switch-routes",
-                "095210f707a5800d"
-            ],
-            [
-                "f10783980b3c4254",
-                "cc494d4a82164f4e"
-            ]
-        ]
+        "x": 480,
+        "y": 200,
+        "wires": [["route-ui-messages"], []]
     },
     {
-        "id": "switch-routes",
+        "id": "link-to-ui",
+        "type": "link in",
+        "z": "dashboard-tab",
+        "name": "From Handlers",
+        "links": [],
+        "x": 275,
+        "y": 200,
+        "wires": [["uibuilder-node"]]
+    },
+    {
+        "id": "route-ui-messages",
         "type": "switch",
         "z": "dashboard-tab",
         "name": "Route by Topic",
         "property": "topic",
         "propertyType": "msg",
         "rules": [
-            {
-                "t": "eq",
-                "v": "requestDeviceList",
-                "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "selectDevice",
-                "vt": "str"
-            }
+            {"t": "eq", "v": "getDevices", "vt": "str"},
+            {"t": "eq", "v": "selectDevice", "vt": "str"},
+            {"t": "eq", "v": "getHistory", "vt": "str"},
+            {"t": "eq", "v": "setControl", "vt": "str"},
+            {"t": "eq", "v": "clearOverride", "vt": "str"}
         ],
         "checkall": "true",
         "repair": false,
-        "outputs": 2,
-        "x": 180,
-        "y": 560,
+        "outputs": 5,
+        "x": 680,
+        "y": 200,
         "wires": [
-            [
-                "pg-get-devices"
-            ],
-            [
-                "func-get-current",
-                "func-get-history"
-            ]
+            ["get-devices"],
+            ["get-device-config"],
+            ["get-history"],
+            ["set-control"],
+            ["clear-override"]
         ]
     },
     {
-        "id": "pg-get-devices",
+        "id": "get-devices",
         "type": "postgresql",
         "z": "dashboard-tab",
         "name": "Get Devices",
-        "query": "SELECT DISTINCT device_eui as eui FROM readings WHERE device_eui IS NOT NULL AND device_eui NOT IN ('unknown', '0011223344556677', 'aabbccdd11223344') ORDER BY eui",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
+        "query": "SELECT device_eui as eui, device_name as name, device_type as type, last_seen FROM devices WHERE is_active = true ORDER BY last_seen DESC",
+        "postgreSQLConfig": "pg-config",
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 450,
-        "y": 440,
-        "wires": [
-            [
-                "func-format-devices",
-                "b9f69e7420e7a19e"
-            ]
-        ]
+        "x": 910,
+        "y": 80,
+        "wires": [["format-devices"]]
     },
     {
-        "id": "func-format-devices",
+        "id": "format-devices",
         "type": "function",
         "z": "dashboard-tab",
-        "name": "Format Device List",
-        "func": "const devices = msg.payload.map(row => ({\n    eui: row.eui,\n    name: `Device ${row.eui.substring(0, 8)}...`\n}));\n\nreturn [\n    {\n        topic: 'deviceList',\n        payload: devices\n    },\n    {\n        payload: devices[0].eui\n    }\n];",
-        "outputs": 2,
+        "name": "Format Devices",
+        "func": "return {\n    topic: 'devices',\n    payload: msg.payload\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1100,
+        "y": 80,
+        "wires": [["uibuilder-node"]]
+    },
+    {
+        "id": "get-device-config",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Prepare Query",
+        "func": "const eui = msg.payload?.eui;\nif (!eui) return null;\n\nmsg.params = [eui];\nflow.set('selectedDevice', eui);\nflow.set('selectedRange', msg.payload?.range || '24h');\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 910,
+        "y": 140,
+        "wires": [["query-device-config"]]
+    },
+    {
+        "id": "query-device-config",
+        "type": "postgresql",
+        "z": "dashboard-tab",
+        "name": "Get Fields + Viz",
+        "query": "SELECT \n    f.field_key as key,\n    f.display_name as name,\n    f.data_type as type,\n    f.unit,\n    f.category,\n    f.min_value as min,\n    f.max_value as max,\n    f.enum_values,\n    v.viz_type,\n    v.gauge_style,\n    v.chart_color,\n    v.thresholds,\n    v.is_visible,\n    v.sort_order\nFROM device_fields f\nLEFT JOIN viz_config v ON f.device_eui = v.device_eui AND f.field_key = v.field_key\nWHERE f.device_eui = $1\nORDER BY v.sort_order, f.field_key",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1110,
+        "y": 140,
+        "wires": [["query-controls"]]
+    },
+    {
+        "id": "query-controls",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Store Fields",
+        "func": "msg.fields = msg.payload;\nmsg.params = [msg.params[0]];\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1290,
+        "y": 140,
+        "wires": [["query-device-controls"]]
+    },
+    {
+        "id": "query-device-controls",
+        "type": "postgresql",
+        "z": "dashboard-tab",
+        "name": "Get Controls",
+        "query": "SELECT control_key as key, current_state as state, mode, manual_until, last_change_at, last_change_by\nFROM device_controls WHERE device_eui = $1",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1470,
+        "y": 140,
+        "wires": [["query-triggers"]]
+    },
+    {
+        "id": "query-triggers",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Store Controls",
+        "func": "msg.controls = msg.payload;\nmsg.params = [msg.params[0]];\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1640,
+        "y": 140,
+        "wires": [["query-device-triggers"]]
+    },
+    {
+        "id": "query-device-triggers",
+        "type": "postgresql",
+        "z": "dashboard-tab",
+        "name": "Get Triggers",
+        "query": "SELECT trigger_key as key, display_name as name, field_key as field, operator as op, threshold as th, action_control as ctrl, action_state as st, enabled\nFROM device_triggers WHERE device_eui = $1",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1810,
+        "y": 140,
+        "wires": [["query-latest-telemetry"]]
+    },
+    {
+        "id": "query-latest-telemetry",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Store Triggers",
+        "func": "msg.triggers = msg.payload;\nmsg.params = [msg.params[0]];\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1980,
+        "y": 140,
+        "wires": [["query-telemetry-latest"]]
+    },
+    {
+        "id": "query-telemetry-latest",
+        "type": "postgresql",
+        "z": "dashboard-tab",
+        "name": "Get Latest Telemetry",
+        "query": "SELECT data, rssi, snr, ts FROM telemetry WHERE device_eui = $1 ORDER BY ts DESC LIMIT 1",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 940,
+        "y": 200,
+        "wires": [["format-device-config"]]
+    },
+    {
+        "id": "format-device-config",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Format Config",
+        "func": "const latest = msg.payload?.[0];\n\nreturn {\n    topic: 'deviceConfig',\n    payload: {\n        eui: msg.params[0],\n        fields: msg.fields,\n        controls: msg.controls,\n        triggers: msg.triggers,\n        current: latest ? {\n            data: latest.data,\n            rssi: latest.rssi,\n            snr: latest.snr,\n            ts: latest.ts\n        } : null\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1150,
+        "y": 200,
+        "wires": [["uibuilder-node"]]
+    },
+    {
+        "id": "get-history",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Build History Query",
+        "func": "const eui = msg.payload?.eui || flow.get('selectedDevice');\nconst field = msg.payload?.field;\nconst range = msg.payload?.range || flow.get('selectedRange') || '24h';\n\nif (!eui || !field) return null;\n\nconst intervals = {\n    '1h': '1 hour',\n    '6h': '6 hours',\n    '24h': '24 hours',\n    '7d': '7 days',\n    '30d': '30 days'\n};\n\nconst interval = intervals[range] || '24 hours';\n\nmsg.params = [eui, interval];\nmsg.field = field;\nmsg.query = `SELECT ts, (data->>'${field}')::numeric as value\nFROM telemetry\nWHERE device_eui = $1 AND ts > NOW() - $2::interval AND data->>'${field}' IS NOT NULL\nORDER BY ts`;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 930,
+        "y": 260,
+        "wires": [["exec-history-query"]]
+    },
+    {
+        "id": "exec-history-query",
+        "type": "postgresql",
+        "z": "dashboard-tab",
+        "name": "Execute",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1110,
+        "y": 260,
+        "wires": [["format-history"]]
+    },
+    {
+        "id": "format-history",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Format History",
+        "func": "return {\n    topic: 'history',\n    payload: {\n        eui: msg.params[0],\n        field: msg.field,\n        data: msg.payload.map(r => ({ ts: r.ts, value: r.value }))\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1280,
+        "y": 260,
+        "wires": [["uibuilder-node"]]
+    },
+    {
+        "id": "set-control",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Set Manual Control",
+        "func": "const { eui, control, state, duration } = msg.payload;\n\nif (!eui || !control || !state) return null;\n\n// Calculate manual_until if duration specified\nlet manualUntil = null;\nif (duration) {\n    manualUntil = new Date(Date.now() + duration * 60 * 1000);\n}\n\nmsg.params = [state, 'manual', manualUntil, 'user', eui, control];\nmsg.controlInfo = { eui, control, state };\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 930,
+        "y": 320,
+        "wires": [["update-control-manual"]]
+    },
+    {
+        "id": "update-control-manual",
+        "type": "postgresql",
+        "z": "dashboard-tab",
+        "name": "Update Control",
+        "query": "UPDATE device_controls SET current_state = $1, mode = $2, manual_until = $3, last_change_by = $4, last_change_at = NOW()\nWHERE device_eui = $5 AND control_key = $6\nRETURNING *",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1130,
+        "y": 320,
+        "wires": [["send-downlink-command"]]
+    },
+    {
+        "id": "send-downlink-command",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Build & Send Downlink",
+        "func": "const { eui, control, state } = msg.controlInfo;\n\n// Get command port from device registration\n// For now, use defaults\nconst commandPorts = {\n    'pump': 20,\n    'valve': 21\n};\n\nconst port = commandPorts[control] || 20;\nconst stateValue = (state === 'on' || state === 'open') ? 0x01 : 0x00;\n\n// Log command\nmsg.cmdParams = [eui, `set_${control}`, JSON.stringify({state}), 'user', 'sent'];\n\n// Build downlink\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.downlink = {\n    topic: `application/${appId}/device/${eui}/command/down`,\n    payload: {\n        devEui: eui,\n        confirmed: false,\n        fPort: port,\n        data: Buffer.from([stateValue]).toString('base64')\n    }\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1360,
+        "y": 320,
+        "wires": [["log-command", "mqtt-out-downlink", "notify-control-change"]]
+    },
+    {
+        "id": "log-command",
+        "type": "postgresql",
+        "z": "dashboard-tab",
+        "name": "Log Command",
+        "query": "INSERT INTO commands (device_eui, command_key, payload, initiated_by, status, sent_at)\nVALUES ($1, $2, $3::jsonb, $4, $5, NOW())",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1590,
+        "y": 280,
+        "wires": [[]]
+    },
+    {
+        "id": "mqtt-out-downlink",
+        "type": "mqtt out",
+        "z": "dashboard-tab",
+        "name": "Send Downlink",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "mqtt-broker",
+        "x": 1600,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "notify-control-change",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Notify UI",
+        "func": "const { eui, control, state } = msg.controlInfo;\nreturn {\n    topic: 'stateChange',\n    payload: {\n        eui,\n        control,\n        state,\n        reason: 'user'\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1590,
+        "y": 360,
+        "wires": [["uibuilder-node"]]
+    },
+    {
+        "id": "clear-override",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Clear Override",
+        "func": "const { eui, control } = msg.payload;\n\nif (!eui || !control) return null;\n\nmsg.params = ['auto', eui, control];\nmsg.controlInfo = { eui, control };\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 920,
+        "y": 380,
+        "wires": [["clear-override-db"]]
+    },
+    {
+        "id": "clear-override-db",
+        "type": "postgresql",
+        "z": "dashboard-tab",
+        "name": "Set Auto Mode",
+        "query": "UPDATE device_controls SET mode = $1, manual_until = NULL WHERE device_eui = $2 AND control_key = $3 RETURNING *",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1110,
+        "y": 380,
+        "wires": [["notify-mode-change"]]
+    },
+    {
+        "id": "notify-mode-change",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "Notify UI",
+        "func": "const ctrl = msg.payload?.[0];\nif (!ctrl) return null;\n\nreturn {\n    topic: 'controlUpdate',\n    payload: {\n        eui: msg.controlInfo.eui,\n        control: ctrl.control_key,\n        state: ctrl.current_state,\n        mode: ctrl.mode\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1290,
+        "y": 380,
+        "wires": [["uibuilder-node"]]
+    },
+    {
+        "id": "client-connect",
+        "type": "function",
+        "z": "dashboard-tab",
+        "name": "On Client Connect",
+        "func": "if (msg.uibuilderCtrl === 'client connect') {\n    return { topic: 'getDevices' };\n}\nreturn null;",
+        "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
         "x": 690,
-        "y": 440,
-        "wires": [
-            [
-                "b3b0c47e274b2ad3"
-            ],
-            [
-                "func-get-history",
-                "func-get-current"
-            ]
-        ]
-    },
-    {
-        "id": "func-get-current",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Get Current Data",
-        "func": "const payload = msg.payload;\nconst deviceEui = typeof payload === 'object' ? payload.eui : payload;\n\nif (!deviceEui) return null;\n\nmsg.params = [deviceEui];\nmsg.query = `\n    SELECT\n        ts,\n        data\n    FROM readings\n    WHERE device_eui = $1\n    ORDER BY ts DESC\n    LIMIT 1\n`;\n\nflow.set('selectedDevice', deviceEui);\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 470,
-        "y": 520,
-        "wires": [
-            [
-                "pg-exec-query"
-            ]
-        ]
-    },
-    {
-        "id": "pg-exec-query",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Execute Query",
-        "query": "",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 680,
-        "y": 520,
-        "wires": [
-            [
-                "func-format-current"
-            ]
-        ]
-    },
-    {
-        "id": "func-format-current",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Current Data",
-        "func": "const row = msg.payload[0];\nif (!row) {\n    return {\n        topic: 'deviceData',\n        payload: { current: {} }\n    };\n}\n\nconst data = row.data;\n\n// Calculate uptime\nlet uptime = '--';\nif (data.tsr) {\n    const seconds = parseInt(data.tsr);\n    const days = Math.floor(seconds / 86400);\n    const hours = Math.floor((seconds % 86400) / 3600);\n    const mins = Math.floor((seconds % 3600) / 60);\n    uptime = `${days}d ${hours}h ${mins}m`;\n}\n\nreturn {\n    topic: 'deviceData',\n    payload: {\n        current: {\n            battery: parseFloat(data.bp) || 0,\n            rssi: parseFloat(data._rssi) || -120,\n            snr: parseFloat(data._snr) || -20,\n            waterLevel: parseFloat(data.wl) || 0,\n            waterVolume: parseFloat(data.tv) || 0,\n            flowRate: parseFloat(data.fr) || 0,\n            uptime: uptime,\n            lastSeen: row.ts\n        }\n    }\n};",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 900,
-        "y": 520,
-        "wires": [
-            [
-                "b3b0c47e274b2ad3"
-            ]
-        ]
-    },
-    {
-        "id": "func-get-history",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Query History",
-        "func": "const payload = msg.payload;\nlet deviceEui, range, fromTs, toTs;\n\nif (typeof payload === 'object') {\n    deviceEui = payload.eui;\n    range = payload.range || '24h';\n    fromTs = payload.from;\n    toTs = payload.to;\n} else {\n    deviceEui = payload || flow.get('selectedDevice');\n    range = '24h';\n}\n\nif (!deviceEui) return null;\nflow.set('selectedDevice', deviceEui);\n\n// Build time condition and params\nlet timeCondition;\nif (range === 'custom' && fromTs && toTs) {\n    msg.params = [deviceEui, fromTs, toTs];\n    timeCondition = 'ts BETWEEN $2::timestamp AND $3::timestamp';\n} else {\n    const intervals = { '1h': '1 hour', '6h': '6 hours', '24h': '24 hours', '7d': '7 days', '30d': '30 days' };\n    const interval = intervals[range] || '24 hours';\n    msg.params = [deviceEui, interval];\n    timeCondition = `ts > NOW() - $2::interval`;\n}\n\nmsg.query = `\n    WITH battery AS (\n        SELECT ts, (data->>'bp')::float as value\n        FROM readings\n        WHERE device_eui = $1 AND ${timeCondition} AND data->>'bp' IS NOT NULL\n        ORDER BY ts\n    ),\n    water AS (\n        SELECT ts, (data->>'tv')::float as value\n        FROM readings\n        WHERE device_eui = $1 AND ${timeCondition} AND data->>'tv' IS NOT NULL\n        ORDER BY ts\n    ),\n    rssi AS (\n        SELECT ts, (data->>'_rssi')::float as value\n        FROM readings\n        WHERE device_eui = $1 AND ${timeCondition} AND data->>'_rssi' IS NOT NULL\n        ORDER BY ts\n    ),\n    snr AS (\n        SELECT ts, (data->>'_snr')::float as value\n        FROM readings\n        WHERE device_eui = $1 AND ${timeCondition} AND data->>'_snr' IS NOT NULL\n        ORDER BY ts\n    )\n    SELECT\n        (SELECT json_agg(row_to_json(battery)) FROM battery) as battery,\n        (SELECT json_agg(row_to_json(water)) FROM water) as water,\n        (SELECT json_agg(row_to_json(rssi)) FROM rssi) as rssi,\n        (SELECT json_agg(row_to_json(snr)) FROM snr) as snr\n`;\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 460,
-        "y": 600,
-        "wires": [
-            [
-                "pg-exec-history"
-            ]
-        ]
-    },
-    {
-        "id": "pg-exec-history",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Execute History Query",
-        "query": "",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 700,
-        "y": 600,
-        "wires": [
-            [
-                "func-format-charts"
-            ]
-        ]
-    },
-    {
-        "id": "func-format-charts",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Chart Data",
-        "func": "const result = msg.payload[0];\n\nreturn {\n    topic: 'chartData',\n    payload: {\n        battery: result.battery || [],\n        water: result.water || [],\n        rssi: result.rssi || [],\n        snr: result.snr || []\n    }\n};",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 930,
-        "y": 600,
-        "wires": [
-            [
-                "b3b0c47e274b2ad3"
-            ]
-        ]
-    },
-    {
-        "id": "func-format-realtime",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Real-time Update",
-        "func": "const data = msg.sensorData;\n\nif (!data) {\n    node.warn('No sensor data in message');\n    return null;\n}\n\n// Calculate uptime from tsr (time since reset in seconds)\nlet uptime = '--';\nif (data.tsr) {\n    const seconds = parseInt(data.tsr);\n    const days = Math.floor(seconds / 86400);\n    const hours = Math.floor((seconds % 86400) / 3600);\n    const mins = Math.floor((seconds % 3600) / 60);\n    uptime = `${days}d ${hours}h ${mins}m`;\n}\n\nreturn {\n    topic: 'realtimeUpdate',\n    payload: {\n        battery: parseFloat(data.bp) || 0,\n        rssi: parseFloat(data._rssi) || -120,\n        snr: parseFloat(data._snr) || -20,\n        waterLevel: parseFloat(data.wl) || 0,\n        waterVolume: parseFloat(data.tv) || 0,\n        flowRate: parseFloat(data.fr) || 0,\n        uptime: uptime\n    }\n};",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 610,
-        "y": 260,
-        "wires": [
-            [
-                "b3b0c47e274b2ad3"
-            ]
-        ]
-    },
-    {
-        "id": "b9f69e7420e7a19e",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "debug 3",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 660,
-        "y": 360,
-        "wires": []
-    },
-    {
-        "id": "f10783980b3c4254",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "load devices on connect",
-        "func": "if (msg.uibuilderCtrl === \"client connect\"){\n    msg.topic = \"connected\"\n    return msg\n}\nreturn null",
-        "outputs": 1,
-        "timeout": 0,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 210,
-        "y": 440,
-        "wires": [
-            [
-                "pg-get-devices"
-            ]
-        ]
-    },
-    {
-        "id": "cc494d4a82164f4e",
-        "type": "debug",
-        "z": "dashboard-tab",
-        "name": "debug 4",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 1120,
-        "y": 380,
-        "wires": []
-    },
-    {
-        "id": "095210f707a5800d",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "set range",
-        "func": "\nreturn msg;",
-        "outputs": 1,
-        "timeout": 0,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 160,
-        "y": 680,
-        "wires": [
-            [
-                "func-get-history"
-            ]
-        ]
-    },
-    {
-        "id": "config-init",
-        "type": "inject",
-        "z": "config-flow-tab",
-        "name": "Initialize Config on Startup",
-        "props": [
-            {
-                "p": "payload"
-            }
-        ],
-        "repeat": "",
-        "crontab": "",
-        "once": true,
-        "onceDelay": "1",
-        "topic": "",
-        "payload": "",
-        "payloadType": "date",
-        "x": 180,
         "y": 80,
-        "wires": [
-            [
-                "config-setup"
-            ]
-        ]
-    },
-    {
-        "id": "config-setup",
-        "type": "function",
-        "z": "config-flow-tab",
-        "name": "Setup Water Tank Config",
-        "func": "// Water Tank Configuration\n// This is the single source of truth for tank parameters\n\nconst config = {\n    // Tank Physical Dimensions\n    tank: {\n        height_cm: 200,          // Total tank height in cm\n        capacity_liters: 5000,   // Total tank capacity in liters\n        diameter_cm: 180,        // Tank diameter for visualization\n        shape: 'cylindrical'     // cylindrical, rectangular\n    },\n    \n    // Distance Sensor Configuration\n    sensor: {\n        mounting_height_cm: 210,     // Height where sensor is mounted from ground\n        offset_cm: 0,                 // Calibration offset (adjust after testing)\n        min_reading_cm: 10,           // Minimum valid reading (sensor dead zone)\n        max_reading_cm: 220,          // Maximum valid reading\n        field_name: 'pd'              // Field name in data payload for distance\n    },\n    \n    // Flow Calculation\n    flow: {\n        reporting_interval_seconds: 30,  // How often device reports\n        flow_field_name: 'tv',           // Total volume field name\n        enable_flow_calculation: true,   // Enable flow rate calculations\n        flow_detection_threshold_liters: 5  // Minimum change to detect flow\n    },\n    \n    // Alert Thresholds\n    alerts: {\n        low_level_percent: 20,\n        critical_level_percent: 10,\n        high_flow_rate_lph: 1000  // Liters per hour - potential leak\n    }\n};\n\n// Store in global context\nglobal.set('waterTankConfig', config);\n\n// Return config for debugging\nmsg.payload = config;\nnode.status({fill: 'green', shape: 'dot', text: 'Config loaded'});\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 430,
-        "y": 80,
-        "wires": [
-            [
-                "config-debug"
-            ]
-        ]
-    },
-    {
-        "id": "config-debug",
-        "type": "debug",
-        "z": "config-flow-tab",
-        "name": "Config Loaded",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "payload",
-        "targetType": "msg",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 680,
-        "y": 80,
-        "wires": []
+        "wires": [["get-devices"]]
     }
 ]

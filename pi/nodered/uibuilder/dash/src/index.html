@@ -13,169 +13,302 @@
     <!-- Vue 3 -->
     <script src="../uibuilder/vendor/vue/dist/vue.global.prod.js"></script>
 
-    <!-- ECharts -->
+    <!-- ECharts + Liquid Fill Extension -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts-liquidfill@3.1.0/dist/echarts-liquidfill.min.js"></script>
 
     <!-- UI-Builder Client -->
     <script src="../uibuilder/uibuilder.iife.min.js"></script>
 
     <style>
-        .chart-container {
-            height: 300px;
+        [v-cloak] { display: none; }
+
+        /* Gauge sizes */
+        .gauge-hero { height: 200px; }
+        .gauge-sm { height: 110px; }
+        .chart-container { height: 240px; }
+
+        @media (min-width: 640px) {
+            .gauge-hero { height: 240px; }
+            .gauge-sm { height: 130px; }
+            .chart-container { height: 260px; }
         }
 
-        .gauge-container {
-            height: 200px;
+        /* Consistent collapse styling */
+        .collapse-section {
+            min-width: 0;
+        }
+        .collapse-section .collapse-title {
+            min-height: 2.5rem;
+            padding: 0.5rem 1rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+        .collapse-section .collapse-content {
+            padding: 0 0.75rem 0.75rem 0.75rem;
         }
 
-        [v-cloak] {
-            display: none;
+        /* Main content wrapper */
+        .main-content {
+            min-height: calc(100vh - 4rem);
         }
     </style>
 </head>
 
 <body class="bg-base-300">
     <div id="app" v-cloak>
-        <!-- Header -->
-        <div class="navbar bg-base-100 shadow-lg mb-4">
-            <div class="flex-1">
-                <h1 class="text-2xl font-bold ml-4">🌾 Farm Monitor</h1>
-            </div>
-            <div class="flex-none gap-2 mr-4">
-                <span class="loading loading-ring loading-sm" v-if="loading"></span>
-                <div class="badge" :class="deviceOnline ? 'badge-success' : 'badge-warning'">
-                    {{ deviceOnline ? 'Online' : 'Offline' }}
-                </div>
-            </div>
-        </div>
+        <!-- Drawer wrapper for mobile sidebar (future use) -->
+        <div class="drawer">
+            <input id="main-drawer" type="checkbox" class="drawer-toggle" />
 
-        <div class="container mx-auto px-4 pb-8">
-            <!-- Device Selector Section -->
-            <div class="card bg-base-100 shadow-xl mb-4">
-                <div class="card-body">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <!-- Device Selector -->
-                        <div>
-                            <label class="label"><span class="label-text font-semibold">Device</span></label>
-                            <select class="select select-bordered w-full" v-model="selectedDevice" @change="onDeviceChange">
-                                <option disabled value="">Select device...</option>
-                                <option v-for="device in devices" :key="device.eui" :value="device.eui">
-                                    {{ device.name || device.eui }}
-                                </option>
-                            </select>
+            <!-- Main content area -->
+            <div class="drawer-content flex flex-col">
+
+                <!-- Navbar -->
+                <nav class="navbar bg-base-100 shadow-lg sticky top-0 z-50">
+                    <!-- Mobile menu button -->
+                    <div class="navbar-start">
+                        <label for="main-drawer" class="btn btn-ghost btn-circle lg:hidden">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+                            </svg>
+                        </label>
+                        <!-- Logo/Title -->
+                        <a class="btn btn-ghost text-lg sm:text-xl font-bold normal-case">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 sm:h-6 sm:w-6 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span class="hidden xs:inline">Farm Monitor</span>
+                            <span class="xs:hidden">FarmMon</span>
+                        </a>
+                    </div>
+
+                    <!-- Desktop nav items (hidden on mobile) -->
+                    <div class="navbar-center hidden lg:flex">
+                        <ul class="menu menu-horizontal px-1">
+                            <li><a class="active">Dashboard</a></li>
+                            <li class="disabled"><a class="opacity-50 cursor-not-allowed">Settings</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Right side items -->
+                    <div class="navbar-end gap-2">
+                        <!-- Loading indicator -->
+                        <span class="loading loading-spinner loading-sm" v-if="loading"></span>
+
+                        <!-- Connection status -->
+                        <div class="badge badge-sm sm:badge-md" :class="deviceOnline ? 'badge-success' : 'badge-warning'">
+                            <span class="hidden sm:inline">{{ deviceOnline ? 'Online' : 'Offline' }}</span>
+                            <span class="sm:hidden">{{ deviceOnline ? '●' : '○' }}</span>
                         </div>
+                    </div>
+                </nav>
 
-                        <!-- Time Range Selector -->
-                        <div>
-                            <label class="label"><span class="label-text font-semibold">Time Range</span></label>
-                            <select class="select select-bordered w-full" v-model="timeRange" @change="onTimeRangeChange">
-                                <option value="1h">Last 1 Hour</option>
-                                <option value="6h">Last 6 Hours</option>
-                                <option value="24h">Last 24 Hours</option>
-                                <option value="7d">Last 7 Days</option>
-                                <option value="30d">Last 30 Days</option>
-                                <option value="custom">Custom Range</option>
-                            </select>
-                        </div>
+                <!-- Page Content -->
+                <main class="main-content p-2 sm:p-4">
+                    <div class="max-w-5xl mx-auto space-y-3">
 
-                        <!-- Custom Date Range (shown when custom is selected) -->
-                        <div v-if="timeRange === 'custom'" class="col-span-full grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="label"><span class="label-text font-semibold">From</span></label>
-                                <input type="datetime-local" class="input input-bordered w-full"
-                                       v-model="customFrom" @change="onCustomRangeChange">
+                        <!-- Controls Card -->
+                        <div class="card bg-base-100 shadow-xl">
+                            <div class="card-body p-3">
+                                <div class="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-3">
+                                    <!-- Device Selector -->
+                                    <div class="flex-1 min-w-0">
+                                        <label class="label py-0.5">
+                                            <span class="label-text text-xs uppercase tracking-wide opacity-60">Device</span>
+                                        </label>
+                                        <select class="select select-bordered select-sm w-full" v-model="selectedDevice" @change="onDeviceChange">
+                                            <option disabled value="">Select device...</option>
+                                            <option v-for="device in devices" :key="device.eui" :value="device.eui">
+                                                {{ device.name || device.eui }}
+                                            </option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Time Range -->
+                                    <div class="flex-1 min-w-0">
+                                        <label class="label py-0.5">
+                                            <span class="label-text text-xs uppercase tracking-wide opacity-60">Time Range</span>
+                                        </label>
+                                        <select class="select select-bordered select-sm w-full" v-model="timeRange" @change="onTimeRangeChange">
+                                            <option value="1h">Last 1 Hour</option>
+                                            <option value="6h">Last 6 Hours</option>
+                                            <option value="24h">Last 24 Hours</option>
+                                            <option value="7d">Last 7 Days</option>
+                                            <option value="30d">Last 30 Days</option>
+                                            <option value="custom">Custom</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Custom Date Range -->
+                                    <template v-if="timeRange === 'custom'">
+                                        <div class="flex-1 min-w-0">
+                                            <label class="label py-0.5">
+                                                <span class="label-text text-xs uppercase tracking-wide opacity-60">From</span>
+                                            </label>
+                                            <input type="datetime-local" class="input input-bordered input-sm w-full"
+                                                   v-model="customFrom" @change="onCustomRangeChange">
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <label class="label py-0.5">
+                                                <span class="label-text text-xs uppercase tracking-wide opacity-60">To</span>
+                                            </label>
+                                            <input type="datetime-local" class="input input-bordered input-sm w-full"
+                                                   v-model="customTo" @change="onCustomRangeChange">
+                                        </div>
+                                    </template>
+                                </div>
                             </div>
-                            <div>
-                                <label class="label"><span class="label-text font-semibold">To</span></label>
-                                <input type="datetime-local" class="input input-bordered w-full"
-                                       v-model="customTo" @change="onCustomRangeChange">
+                        </div>
+
+                        <!-- Device Stats Row -->
+                        <div class="flex flex-wrap items-center justify-center gap-2 py-1">
+                            <div class="badge badge-ghost text-xs sm:text-sm">
+                                <span class="opacity-50 mr-1">Up:</span>
+                                <span class="font-mono">{{ current.uptime || '--' }}</span>
+                            </div>
+                            <div class="badge badge-ghost text-xs sm:text-sm">
+                                <span class="opacity-50 mr-1">RSSI:</span>
+                                <span class="font-mono">{{ current.rssi || -120 }}</span>
+                            </div>
+                            <div class="badge badge-ghost text-xs sm:text-sm">
+                                <span class="opacity-50 mr-1">SNR:</span>
+                                <span class="font-mono">{{ current.snr || -20 }}</span>
+                            </div>
+                            <div class="badge text-xs sm:text-sm gap-1" :class="batteryBadgeClass">
+                                {{ current.battery || 0 }}%
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-4 sm:w-4" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M17 6H22V18H17V20C17 20.55 16.55 21 16 21H2C1.45 21 1 20.55 1 20V4C1 3.45 1.45 3 2 3H16C16.55 3 17 3.45 17 4V6ZM15 8H3V16H15V8ZM5 10H7V14H5V10Z"/>
+                                </svg>
                             </div>
                         </div>
 
-                        <!-- Device Stats -->
-                        <div class="stat bg-base-200 rounded-lg">
-                            <div class="stat-title">Battery</div>
-                            <div class="stat-value text-2xl" :class="batteryColor">{{ current.battery || 0 }}%</div>
+                        <!-- Realtime System Status (Collapsed) -->
+                        <div class="collapse collapse-arrow bg-base-100 shadow-xl rounded-box collapse-section">
+                            <input type="checkbox" />
+                            <div class="collapse-title opacity-80">Realtime System Status</div>
+                            <div class="collapse-content">
+                                <div class="grid grid-cols-3 gap-2">
+                                    <div class="bg-base-200 rounded-lg p-1.5">
+                                        <div class="text-[10px] sm:text-xs text-center opacity-60">Battery</div>
+                                        <v-chart :option="batteryGaugeOption" autoresize class="gauge-sm" />
+                                    </div>
+                                    <div class="bg-base-200 rounded-lg p-1.5">
+                                        <div class="text-[10px] sm:text-xs text-center opacity-60">RSSI</div>
+                                        <v-chart :option="rssiGaugeOption" autoresize class="gauge-sm" />
+                                    </div>
+                                    <div class="bg-base-200 rounded-lg p-1.5">
+                                        <div class="text-[10px] sm:text-xs text-center opacity-60">SNR</div>
+                                        <v-chart :option="snrGaugeOption" autoresize class="gauge-sm" />
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="stat bg-base-200 rounded-lg">
-                            <div class="stat-title">Water Level</div>
-                            <div class="stat-value text-2xl text-info">{{ current.waterLevel || 0 }}%</div>
+                        <!-- System History (Collapsed) -->
+                        <div class="collapse collapse-arrow bg-base-100 shadow-xl rounded-box collapse-section">
+                            <input type="checkbox" />
+                            <div class="collapse-title opacity-80">System History</div>
+                            <div class="collapse-content overflow-hidden">
+                                <div class="space-y-2 min-w-0">
+                                    <div class="bg-base-200 rounded-lg p-2 min-w-0">
+                                        <div class="text-xs opacity-60 mb-1">Battery</div>
+                                        <v-chart :option="batteryChartOption" autoresize class="chart-container" />
+                                    </div>
+                                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-2 min-w-0">
+                                        <div class="bg-base-200 rounded-lg p-2 min-w-0">
+                                            <div class="text-xs opacity-60 mb-1">RSSI</div>
+                                            <v-chart :option="rssiChartOption" autoresize class="chart-container" />
+                                        </div>
+                                        <div class="bg-base-200 rounded-lg p-2 min-w-0">
+                                            <div class="text-xs opacity-60 mb-1">SNR</div>
+                                            <v-chart :option="snrChartOption" autoresize class="chart-container" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="stat bg-base-200 rounded-lg">
-                            <div class="stat-title">Uptime</div>
-                            <div class="stat-value text-lg">{{ current.uptime || '--' }}</div>
+                        <!-- Water Tank (Hero) -->
+                        <div class="card bg-base-100 shadow-xl">
+                            <div class="card-body p-3">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h2 class="card-title text-sm sm:text-base">Water Tank</h2>
+                                    <div class="badge badge-info">{{ current.waterLevel || 0 }}%</div>
+                                </div>
+
+                                <v-chart :option="waterGaugeOption" autoresize class="gauge-hero" />
+
+                                <div class="divider my-1 opacity-20"></div>
+
+                                <div class="text-xs opacity-60 mb-1">Volume History</div>
+                                <v-chart :option="waterChartOption" autoresize class="chart-container" />
+
+                                <div class="divider my-1 opacity-20"></div>
+
+                                <div class="text-xs opacity-60 mb-1">Flow Rate</div>
+                                <v-chart :option="flowRateChartOption" autoresize class="chart-container" />
+                            </div>
                         </div>
+
                     </div>
+                </main>
+
+                <!-- Footer -->
+                <footer class="footer footer-center p-4 bg-base-100 text-base-content mt-auto">
+                    <p class="text-xs opacity-50">Farm Monitor Dashboard</p>
+                </footer>
+
+            </div>
+
+            <!-- Drawer sidebar (mobile) -->
+            <div class="drawer-side z-50">
+                <label for="main-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+                <div class="menu p-4 w-64 min-h-full bg-base-200 text-base-content">
+                    <!-- Sidebar header -->
+                    <div class="flex items-center gap-2 mb-6 px-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span class="font-bold text-lg">Farm Monitor</span>
+                    </div>
+
+                    <!-- Navigation -->
+                    <ul class="space-y-1">
+                        <li>
+                            <a class="active">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                                </svg>
+                                Dashboard
+                            </a>
+                        </li>
+                        <li>
+                            <a class="opacity-50 cursor-not-allowed">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                Settings
+                            </a>
+                        </li>
+                    </ul>
+
+                    <!-- Devices section -->
+                    <div class="divider mt-6">Devices</div>
+                    <ul class="space-y-1">
+                        <li v-for="device in devices" :key="device.eui">
+                            <a @click="selectDeviceAndClose(device.eui)" :class="{ active: selectedDevice === device.eui }">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                                </svg>
+                                {{ device.name || device.eui }}
+                            </a>
+                        </li>
+                    </ul>
                 </div>
             </div>
 
-            <!-- Gauges Row -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <div class="card bg-base-100 shadow-xl">
-                    <div class="card-body p-4">
-                        <h3 class="card-title text-sm">Battery</h3>
-                        <v-chart :option="batteryGaugeOption" autoresize class="gauge-container" />
-                    </div>
-                </div>
-
-                <div class="card bg-base-100 shadow-xl">
-                    <div class="card-body p-4">
-                        <h3 class="card-title text-sm">RSSI</h3>
-                        <v-chart :option="rssiGaugeOption" autoresize class="gauge-container" />
-                    </div>
-                </div>
-
-                <div class="card bg-base-100 shadow-xl">
-                    <div class="card-body p-4">
-                        <h3 class="card-title text-sm">SNR</h3>
-                        <v-chart :option="snrGaugeOption" autoresize class="gauge-container" />
-                    </div>
-                </div>
-
-                <div class="card bg-base-100 shadow-xl">
-                    <div class="card-body p-4">
-                        <h3 class="card-title text-sm">Water Level</h3>
-                        <v-chart :option="waterGaugeOption" autoresize class="gauge-container" />
-                    </div>
-                </div>
-            </div>
-
-            <!-- Charts Grid -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <!-- Battery History -->
-                <div class="card bg-base-100 shadow-xl">
-                    <div class="card-body">
-                        <h3 class="card-title">Battery History (24h)</h3>
-                        <v-chart :option="batteryChartOption" autoresize class="chart-container" />
-                    </div>
-                </div>
-
-                <!-- Water Volume -->
-                <div class="card bg-base-100 shadow-xl">
-                    <div class="card-body">
-                        <h3 class="card-title">Water Volume History (24h)</h3>
-                        <v-chart :option="waterChartOption" autoresize class="chart-container" />
-                    </div>
-                </div>
-
-                <!-- RSSI History -->
-                <div class="card bg-base-100 shadow-xl">
-                    <div class="card-body">
-                        <h3 class="card-title">RSSI History (1h)</h3>
-                        <v-chart :option="rssiChartOption" autoresize class="chart-container" />
-                    </div>
-                </div>
-
-                <!-- SNR History -->
-                <div class="card bg-base-100 shadow-xl">
-                    <div class="card-body">
-                        <h3 class="card-title">SNR History (24h)</h3>
-                        <v-chart :option="snrChartOption" autoresize class="chart-container" />
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
