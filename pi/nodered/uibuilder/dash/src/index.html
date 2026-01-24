@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farm Monitor</title>
+
+    <!-- Tailwind CSS + DaisyUI -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.6.0/dist/full.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Vue 3 -->
+    <script src="../uibuilder/vendor/vue/dist/vue.global.prod.js"></script>
+
+    <!-- ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+
+    <!-- UI-Builder Client -->
+    <script src="../uibuilder/uibuilder.iife.min.js"></script>
+
+    <style>
+        .chart-container {
+            height: 300px;
+        }
+
+        .gauge-container {
+            height: 200px;
+        }
+
+        [v-cloak] {
+            display: none;
+        }
+    </style>
+</head>
+
+<body class="bg-base-300">
+    <div id="app" v-cloak>
+        <!-- Header -->
+        <div class="navbar bg-base-100 shadow-lg mb-4">
+            <div class="flex-1">
+                <h1 class="text-2xl font-bold ml-4">🌾 Farm Monitor</h1>
+            </div>
+            <div class="flex-none gap-2 mr-4">
+                <span class="loading loading-ring loading-sm" v-if="loading"></span>
+                <div class="badge" :class="connected ? 'badge-success' : 'badge-error'">
+                    {{ connected ? 'Connected' : 'Disconnected' }}
+                </div>
+            </div>
+        </div>
+
+        <div class="container mx-auto px-4 pb-8">
+            <!-- Device Selector Section -->
+            <div class="card bg-base-100 shadow-xl mb-4">
+                <div class="card-body">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- Device Selector -->
+                        <div>
+                            <label class="label"><span class="label-text font-semibold">Device</span></label>
+                            <select class="select select-bordered w-full" v-model="selectedDevice" @change="onDeviceChange">
+                                <option disabled value="">Select device...</option>
+                                <option v-for="device in devices" :key="device.eui" :value="device.eui">
+                                    {{ device.name || device.eui }}
+                                </option>
+                            </select>
+                        </div>
+
+                        <!-- Device Stats -->
+                        <div class="stat bg-base-200 rounded-lg">
+                            <div class="stat-title">Battery</div>
+                            <div class="stat-value text-2xl" :class="batteryColor">{{ current.battery || 0 }}%</div>
+                        </div>
+
+                        <div class="stat bg-base-200 rounded-lg">
+                            <div class="stat-title">Water Level</div>
+                            <div class="stat-value text-2xl text-info">{{ current.waterLevel || 0 }}%</div>
+                        </div>
+
+                        <div class="stat bg-base-200 rounded-lg">
+                            <div class="stat-title">Uptime</div>
+                            <div class="stat-value text-lg">{{ current.uptime || '--' }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gauges Row -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body p-4">
+                        <h3 class="card-title text-sm">Battery</h3>
+                        <div class="gauge-container" ref="batteryGauge"></div>
+                    </div>
+                </div>
+
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body p-4">
+                        <h3 class="card-title text-sm">RSSI</h3>
+                        <div class="gauge-container" ref="rssiGauge"></div>
+                    </div>
+                </div>
+
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body p-4">
+                        <h3 class="card-title text-sm">SNR</h3>
+                        <div class="gauge-container" ref="snrGauge"></div>
+                    </div>
+                </div>
+
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body p-4">
+                        <h3 class="card-title text-sm">Water Level</h3>
+                        <div class="gauge-container" ref="waterGauge"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <!-- Battery History -->
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body">
+                        <h3 class="card-title">Battery History (24h)</h3>
+                        <div class="chart-container" ref="batteryChart"></div>
+                    </div>
+                </div>
+
+                <!-- Water Flow -->
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body">
+                        <h3 class="card-title">Water Flow History (24h)</h3>
+                        <div class="chart-container" ref="waterChart"></div>
+                    </div>
+                </div>
+
+                <!-- RSSI History -->
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body">
+                        <h3 class="card-title">RSSI History (1h)</h3>
+                        <div class="chart-container" ref="rssiChart"></div>
+                    </div>
+                </div>
+
+                <!-- SNR History -->
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body">
+                        <h3 class="card-title">SNR History (24h)</h3>
+                        <div class="chart-container" ref="snrChart"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="./index.js"></script>
+</body>
+
+</html>

@@ -243,7 +243,7 @@
         "type": "function",
         "z": "farm-flow-tab",
         "name": "Check Thresholds",
-        "func": "const data = msg.sensorData;\nconst alerts = [];\n\nif (data.water_level !== undefined && data.water_level < 20) {\n    alerts.push({ type: 'water_level_low', message: `Water level low: ${data.water_level}%`, device: msg.deviceEui });\n}\nif (data.temperature !== undefined && data.temperature > 35) {\n    alerts.push({ type: 'temperature_high', message: `High temperature: ${data.temperature}\u00b0C`, device: msg.deviceEui });\n}\nif (data.battery !== undefined && data.battery < 20) {\n    alerts.push({ type: 'battery_low', message: `Battery low: ${data.battery}%`, device: msg.deviceEui });\n}\n\nif (alerts.length > 0) {\n    return { payload: alerts, deviceEui: msg.deviceEui };\n}\nreturn null;",
+        "func": "const data = msg.sensorData;\nconst alerts = [];\n\nif (data.water_level !== undefined && data.water_level < 20) {\n    alerts.push({ type: 'water_level_low', message: `Water level low: ${data.water_level}%`, device: msg.deviceEui });\n}\nif (data.temperature !== undefined && data.temperature > 35) {\n    alerts.push({ type: 'temperature_high', message: `High temperature: ${data.temperature}°C`, device: msg.deviceEui });\n}\nif (data.battery !== undefined && data.battery < 20) {\n    alerts.push({ type: 'battery_low', message: `Battery low: ${data.battery}%`, device: msg.deviceEui });\n}\n\nif (alerts.length > 0) {\n    return { payload: alerts, deviceEui: msg.deviceEui };\n}\nreturn null;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -453,7 +453,6 @@
         "y": 260,
         "wires": [
             [
-                "func-format-realtime",
                 "dash1"
             ]
         ]
@@ -890,12 +889,10 @@
         "title": "",
         "descr": "",
         "editurl": "",
-        "x": 1500,
-        "y": 740,
+        "x": 920,
+        "y": 1020,
         "wires": [
-            [
-                "switch-routes"
-            ],
+            [],
             []
         ]
     },
@@ -1055,226 +1052,5 @@
         "x": 680,
         "y": 90,
         "wires": []
-    },
-    {
-        "id": "switch-routes",
-        "type": "switch",
-        "z": "dashboard-tab",
-        "name": "Route by Topic",
-        "property": "topic",
-        "propertyType": "msg",
-        "rules": [
-            {
-                "t": "eq",
-                "v": "requestDeviceList",
-                "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "selectDevice",
-                "vt": "str"
-            }
-        ],
-        "checkall": "true",
-        "repair": false,
-        "outputs": 2,
-        "x": 610,
-        "y": 700,
-        "wires": [
-            [
-                "pg-get-devices"
-            ],
-            [
-                "func-get-current",
-                "func-get-history"
-            ]
-        ]
-    },
-    {
-        "id": "pg-get-devices",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Get Devices",
-        "query": "SELECT DISTINCT device_eui as eui FROM readings WHERE device_eui IS NOT NULL AND device_eui NOT IN ('unknown', '0011223344556677', 'aabbccdd11223344') ORDER BY eui",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 820,
-        "y": 660,
-        "wires": [
-            [
-                "func-format-devices"
-            ]
-        ]
-    },
-    {
-        "id": "func-format-devices",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Device List",
-        "func": "const devices = msg.payload.map(row => ({\n    eui: row.eui,\n    name: `Device ${row.eui.substring(0, 8)}...`\n}));\n\nreturn {\n    topic: 'deviceList',\n    payload: devices\n};",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1040,
-        "y": 660,
-        "wires": [
-            [
-                "b3b0c47e274b2ad3"
-            ]
-        ]
-    },
-    {
-        "id": "func-get-current",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Get Current Data",
-        "func": "const deviceEui = msg.payload;\n\nmsg.params = [deviceEui];\nmsg.query = `\n    SELECT\n        ts,\n        data\n    FROM readings\n    WHERE device_eui = $1\n    ORDER BY ts DESC\n    LIMIT 1\n`;\n\nflow.set('selectedDevice', deviceEui);\nreturn msg;",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 830,
-        "y": 740,
-        "wires": [
-            [
-                "pg-exec-query"
-            ]
-        ]
-    },
-    {
-        "id": "pg-exec-query",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Execute Query",
-        "query": "",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1040,
-        "y": 740,
-        "wires": [
-            [
-                "func-format-current"
-            ]
-        ]
-    },
-    {
-        "id": "func-format-current",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Current Data",
-        "func": "const row = msg.payload[0];\nif (!row) {\n    return {\n        topic: 'deviceData',\n        payload: { current: {} }\n    };\n}\n\nconst data = row.data;\n\n// Calculate uptime\nlet uptime = '--';\nif (data.tsr) {\n    const seconds = parseInt(data.tsr);\n    const days = Math.floor(seconds / 86400);\n    const hours = Math.floor((seconds % 86400) / 3600);\n    const mins = Math.floor((seconds % 3600) / 60);\n    uptime = `${days}d ${hours}h ${mins}m`;\n}\n\nreturn {\n    topic: 'deviceData',\n    payload: {\n        current: {\n            battery: parseFloat(data.bp) || 0,\n            rssi: parseFloat(data._rssi) || -120,\n            snr: parseFloat(data._snr) || -20,\n            waterLevel: parseFloat(data.wl) || 0,\n            waterVolume: parseFloat(data.tv) || 0,\n            flowRate: parseFloat(data.fr) || 0,\n            uptime: uptime\n        }\n    }\n};",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1260,
-        "y": 740,
-        "wires": [
-            [
-                "b3b0c47e274b2ad3"
-            ]
-        ]
-    },
-    {
-        "id": "func-get-history",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Query History",
-        "func": "let deviceEui = msg.payload;\n\nif (!deviceEui) {\n    deviceEui = flow.get('selectedDevice');\n    if (!deviceEui) return null;\n}\n\nmsg.params = [deviceEui];\nmsg.query = `\n    WITH battery AS (\n        SELECT ts, (data->>'bp')::float as value\n        FROM readings\n        WHERE device_eui = $1\n        AND ts > NOW() - INTERVAL '24 hours'\n        AND data->>'bp' IS NOT NULL\n        ORDER BY ts\n    ),\n    water AS (\n        SELECT ts, (data->>'tv')::float as value\n        FROM readings\n        WHERE device_eui = $1\n        AND ts > NOW() - INTERVAL '24 hours'\n        AND data->>'tv' IS NOT NULL\n        ORDER BY ts\n    ),\n    rssi AS (\n        SELECT ts, (data->>'_rssi')::float as value\n        FROM readings\n        WHERE device_eui = $1\n        AND ts > NOW() - INTERVAL '1 hour'\n        AND data->>'_rssi' IS NOT NULL\n        ORDER BY ts\n    ),\n    snr AS (\n        SELECT ts, (data->>'_snr')::float as value\n        FROM readings\n        WHERE device_eui = $1\n        AND ts > NOW() - INTERVAL '24 hours'\n        AND data->>'_snr' IS NOT NULL\n        ORDER BY ts\n    )\n    SELECT\n        (SELECT json_agg(row_to_json(battery)) FROM battery) as battery,\n        (SELECT json_agg(row_to_json(water)) FROM water) as water,\n        (SELECT json_agg(row_to_json(rssi)) FROM rssi) as rssi,\n        (SELECT json_agg(row_to_json(snr)) FROM snr) as snr\n`;\n\nreturn msg;",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 820,
-        "y": 820,
-        "wires": [
-            [
-                "pg-exec-history"
-            ]
-        ]
-    },
-    {
-        "id": "pg-exec-history",
-        "type": "postgresql",
-        "z": "dashboard-tab",
-        "name": "Execute History Query",
-        "query": "",
-        "postgreSQLConfig": "a1b2c3d4e5f6a7b9",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1060,
-        "y": 820,
-        "wires": [
-            [
-                "func-format-charts"
-            ]
-        ]
-    },
-    {
-        "id": "func-format-charts",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Chart Data",
-        "func": "const result = msg.payload[0];\n\nreturn {\n    topic: 'chartData',\n    payload: {\n        battery: result.battery || [],\n        water: result.water || [],\n        rssi: result.rssi || [],\n        snr: result.snr || []\n    }\n};",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1280,
-        "y": 820,
-        "wires": [
-            [
-                "b3b0c47e274b2ad3"
-            ]
-        ]
-    },
-    {
-        "id": "inject-refresh",
-        "type": "inject",
-        "z": "dashboard-tab",
-        "name": "Auto Refresh (30s)",
-        "props": [],
-        "repeat": "30",
-        "crontab": "",
-        "once": false,
-        "onceDelay": 0.1,
-        "topic": "",
-        "x": 620,
-        "y": 820,
-        "wires": [
-            [
-                "func-get-history"
-            ]
-        ]
-    },
-    {
-        "id": "func-format-realtime",
-        "type": "function",
-        "z": "dashboard-tab",
-        "name": "Format Real-time Update",
-        "func": "const data = msg.sensorData;\n\nif (!data) {\n    node.warn('No sensor data in message');\n    return null;\n}\n\n// Calculate uptime from tsr (time since reset in seconds)\nlet uptime = '--';\nif (data.tsr) {\n    const seconds = parseInt(data.tsr);\n    const days = Math.floor(seconds / 86400);\n    const hours = Math.floor((seconds % 86400) / 3600);\n    const mins = Math.floor((seconds % 3600) / 60);\n    uptime = `${days}d ${hours}h ${mins}m`;\n}\n\nreturn {\n    topic: 'realtimeUpdate',\n    payload: {\n        battery: parseFloat(data.bp) || 0,\n        rssi: parseFloat(data._rssi) || -120,\n        snr: parseFloat(data._snr) || -20,\n        waterLevel: parseFloat(data.wl) || 0,\n        waterVolume: parseFloat(data.tv) || 0,\n        flowRate: parseFloat(data.fr) || 0,\n        uptime: uptime\n    }\n};",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 570,
-        "y": 320,
-        "wires": [
-            [
-                "b3b0c47e274b2ad3"
-            ]
-        ]
     }
 ]
