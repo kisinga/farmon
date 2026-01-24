@@ -104,15 +104,13 @@ createApp({
     methods: {
         initUIBuilder() {
             uibuilder.start();
-            console.log("connecting")
-
             uibuilder.onChange('msg', (msg) => {
                 this.handleMessage(msg);
             });
         },
 
         handleMessage(msg) {
-            console.log('Received:', msg);
+            // console.log('Received:', msg);
 
             switch (msg.topic) {
                 case 'deviceList':
@@ -157,7 +155,7 @@ createApp({
         // ============ CHARTS ============
         initChartOptions() {
             this.batteryChartOption = this.getLineChartOption([], 'Battery', '%', '#10b981');
-            this.waterChartOption = this.getLineChartOption([], 'Water Volume', 'L', '#3b82f6');
+            this.waterChartOption = this.getLineChartOption([], 'Flow Rate', 'L/min', '#3b82f6');
             this.rssiChartOption = this.getLineChartOption([], 'RSSI', 'dBm', '#f59e0b');
             this.snrChartOption = this.getLineChartOption([], 'SNR', 'dB', '#8b5cf6');
         },
@@ -213,7 +211,7 @@ createApp({
 
             if (data.water) {
                 const chartData = data.water.map(d => [d.ts, d.value]);
-                this.waterChartOption = this.getLineChartOption(chartData, 'Water Volume', 'L', '#3b82f6');
+                this.waterChartOption = this.getLineChartOption(chartData, 'Flow Rate', 'L/min', '#3b82f6');
             }
 
             if (data.rssi) {
@@ -229,10 +227,10 @@ createApp({
 
         // ============ GAUGES ============
         initGaugeOptions() {
-            this.batteryGaugeOption = this.getGaugeOption(0, 0, 100, '%', [[0.2, '#ef4444'], [0.5, '#f59e0b'], [1, '#10b981']]);
+            this.batteryGaugeOption = this.getBatteryOption(0);
             this.rssiGaugeOption = this.getGaugeOption(-120, -120, 0, 'dBm', [[0.25, '#ef4444'], [0.6, '#f59e0b'], [1, '#10b981']]);
-            this.snrGaugeOption = this.getGaugeOption(-20, -20, 10, 'dB', [[0.33, '#ef4444'], [0.67, '#f59e0b'], [1, '#10b981']]);
-            this.waterGaugeOption = this.getGaugeOption(0, 0, 100, '%', [[0.2, '#ef4444'], [0.5, '#f59e0b'], [1, '#3b82f6']]);
+            this.snrGaugeOption = this.getGaugeOption(-20, -20, 15, 'dB', [[0.25, '#ef4444'], [0.5, '#f59e0b'], [1, '#10b981']]);
+            this.waterGaugeOption = this.getWaterTankOption(0);
         },
 
         getGaugeOption(value, min, max, unit, thresholds) {
@@ -279,12 +277,92 @@ createApp({
             };
         },
 
+        getBatteryOption(percent) {
+            const getColor = (p) => {
+                if (p < 20) return '#ef4444';
+                if (p < 50) return '#f59e0b';
+                return '#10b981';
+            };
+
+            return {
+                backgroundColor: 'transparent',
+                grid: { left: 10, right: 50, top: 40, bottom: 40 },
+                xAxis: {
+                    type: 'value',
+                    max: 100,
+                    show: false
+                },
+                yAxis: {
+                    type: 'category',
+                    data: ['Battery'],
+                    show: false
+                },
+                series: [{
+                    type: 'bar',
+                    data: [percent],
+                    itemStyle: {
+                        color: getColor(percent),
+                        borderRadius: [0, 4, 4, 0]
+                    },
+                    barWidth: 40,
+                    label: {
+                        show: true,
+                        position: 'right',
+                        formatter: '{c}%',
+                        color: '#fff',
+                        fontSize: 18,
+                        fontWeight: 'bold'
+                    }
+                }]
+            };
+        },
+
+        getWaterTankOption(percent) {
+            const getColor = (p) => {
+                if (p < 20) return '#ef4444';
+                if (p < 50) return '#f59e0b';
+                return '#3b82f6';
+            };
+
+            return {
+                backgroundColor: 'transparent',
+                grid: { left: 40, right: 40, top: 30, bottom: 10 },
+                xAxis: {
+                    type: 'category',
+                    data: ['Tank'],
+                    show: false
+                },
+                yAxis: {
+                    type: 'value',
+                    max: 100,
+                    show: false
+                },
+                series: [{
+                    type: 'bar',
+                    data: [percent],
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 1, 0, 0, [
+                            { offset: 0, color: getColor(percent) + '60' },
+                            { offset: 1, color: getColor(percent) }
+                        ]),
+                        borderRadius: [4, 4, 0, 0]
+                    },
+                    barWidth: 60,
+                    label: {
+                        show: true,
+                        position: 'top',
+                        formatter: '{c}%',
+                        color: '#fff',
+                        fontSize: 18,
+                        fontWeight: 'bold'
+                    }
+                }]
+            };
+        },
+
         updateGauges(data) {
             // Battery Gauge
-            this.batteryGaugeOption = this.getGaugeOption(
-                data.battery || 0, 0, 100, '%',
-                [[0.2, '#ef4444'], [0.5, '#f59e0b'], [1, '#10b981']]
-            );
+            this.batteryGaugeOption = this.getBatteryOption(data.battery || 0);
 
             // RSSI Gauge
             this.rssiGaugeOption = this.getGaugeOption(
@@ -294,15 +372,12 @@ createApp({
 
             // SNR Gauge
             this.snrGaugeOption = this.getGaugeOption(
-                data.snr || -20, -20, 10, 'dB',
-                [[0.33, '#ef4444'], [0.67, '#f59e0b'], [1, '#10b981']]
+                data.snr || -20, -20, 15, 'dB',
+                [[0.25, '#ef4444'], [0.5, '#f59e0b'], [1, '#10b981']]
             );
 
             // Water Level Gauge
-            this.waterGaugeOption = this.getGaugeOption(
-                data.waterLevel || 0, 0, 100, '%',
-                [[0.2, '#ef4444'], [0.5, '#f59e0b'], [1, '#3b82f6']]
-            );
+            this.waterGaugeOption = this.getWaterTankOption(data.waterLevel || 0);
         }
     }
 }).mount('#app');
