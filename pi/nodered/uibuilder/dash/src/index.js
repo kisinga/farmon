@@ -2,7 +2,62 @@
 'use strict'
 const { createApp } = Vue;
 
+// Simple v-chart component that mimics vue-echarts behavior
+const VChart = {
+    props: {
+        option: {
+            type: Object,
+            required: true
+        },
+        autoresize: {
+            type: Boolean,
+            default: false
+        }
+    },
+    template: '<div ref="chart"></div>',
+    data() {
+        return {
+            chart: null,
+            resizeObserver: null
+        };
+    },
+    mounted() {
+        this.$nextTick(() => {
+            this.chart = echarts.init(this.$refs.chart);
+            this.chart.setOption(this.option);
+
+            if (this.autoresize) {
+                this.resizeObserver = new ResizeObserver(() => {
+                    this.chart && this.chart.resize();
+                });
+                this.resizeObserver.observe(this.$refs.chart);
+            }
+        });
+    },
+    watch: {
+        option: {
+            deep: true,
+            handler(newOption) {
+                if (this.chart) {
+                    this.chart.setOption(newOption);
+                }
+            }
+        }
+    },
+    beforeUnmount() {
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+        }
+        if (this.chart) {
+            this.chart.dispose();
+        }
+    }
+};
+
 createApp({
+    components: {
+        VChart
+    },
     data() {
         return {
             connected: false,
@@ -18,8 +73,16 @@ createApp({
                 flowRate: 0,
                 uptime: '--'
             },
-            charts: {},
-            gauges: {}
+            // Chart options (reactive)
+            batteryChartOption: {},
+            waterChartOption: {},
+            rssiChartOption: {},
+            snrChartOption: {},
+            // Gauge options (reactive)
+            batteryGaugeOption: {},
+            rssiGaugeOption: {},
+            snrGaugeOption: {},
+            waterGaugeOption: {}
         };
     },
 
@@ -34,8 +97,8 @@ createApp({
 
     mounted() {
         this.initUIBuilder();
-        this.initCharts();
-        this.initGauges();
+        this.initChartOptions();
+        this.initGaugeOptions();
     },
 
     methods: {
@@ -92,21 +155,11 @@ createApp({
         },
 
         // ============ CHARTS ============
-        initCharts() {
-            this.charts.battery = echarts.init(this.$refs.batteryChart);
-            this.charts.water = echarts.init(this.$refs.waterChart);
-            this.charts.rssi = echarts.init(this.$refs.rssiChart);
-            this.charts.snr = echarts.init(this.$refs.snrChart);
-
-            // Set initial empty options
-            Object.values(this.charts).forEach(chart => {
-                chart.setOption(this.getLineChartOption([], 'No data'));
-            });
-
-            // Handle resize
-            window.addEventListener('resize', () => {
-                Object.values(this.charts).forEach(c => c.resize());
-            });
+        initChartOptions() {
+            this.batteryChartOption = this.getLineChartOption([], 'Battery', '%', '#10b981');
+            this.waterChartOption = this.getLineChartOption([], 'Water Volume', 'L', '#3b82f6');
+            this.rssiChartOption = this.getLineChartOption([], 'RSSI', 'dBm', '#f59e0b');
+            this.snrChartOption = this.getLineChartOption([], 'SNR', 'dB', '#8b5cf6');
         },
 
         getLineChartOption(data, seriesName, unit = '', color = '#3b82f6') {
@@ -155,46 +208,31 @@ createApp({
         updateCharts(data) {
             if (data.battery) {
                 const chartData = data.battery.map(d => [d.ts, d.value]);
-                this.charts.battery.setOption(
-                    this.getLineChartOption(chartData, 'Battery', '%', '#10b981')
-                );
+                this.batteryChartOption = this.getLineChartOption(chartData, 'Battery', '%', '#10b981');
             }
 
             if (data.water) {
                 const chartData = data.water.map(d => [d.ts, d.value]);
-                this.charts.water.setOption(
-                    this.getLineChartOption(chartData, 'Water Volume', 'L', '#3b82f6')
-                );
+                this.waterChartOption = this.getLineChartOption(chartData, 'Water Volume', 'L', '#3b82f6');
             }
 
             if (data.rssi) {
                 const chartData = data.rssi.map(d => [d.ts, d.value]);
-                this.charts.rssi.setOption(
-                    this.getLineChartOption(chartData, 'RSSI', 'dBm', '#f59e0b')
-                );
+                this.rssiChartOption = this.getLineChartOption(chartData, 'RSSI', 'dBm', '#f59e0b');
             }
 
             if (data.snr) {
                 const chartData = data.snr.map(d => [d.ts, d.value]);
-                this.charts.snr.setOption(
-                    this.getLineChartOption(chartData, 'SNR', 'dB', '#8b5cf6')
-                );
+                this.snrChartOption = this.getLineChartOption(chartData, 'SNR', 'dB', '#8b5cf6');
             }
         },
 
         // ============ GAUGES ============
-        initGauges() {
-            this.gauges.battery = echarts.init(this.$refs.batteryGauge);
-            this.gauges.rssi = echarts.init(this.$refs.rssiGauge);
-            this.gauges.snr = echarts.init(this.$refs.snrGauge);
-            this.gauges.water = echarts.init(this.$refs.waterGauge);
-
-            // Set initial values
-            this.updateGauges(this.current);
-
-            window.addEventListener('resize', () => {
-                Object.values(this.gauges).forEach(g => g.resize());
-            });
+        initGaugeOptions() {
+            this.batteryGaugeOption = this.getGaugeOption(0, 0, 100, '%', [[0.2, '#ef4444'], [0.5, '#f59e0b'], [1, '#10b981']]);
+            this.rssiGaugeOption = this.getGaugeOption(-120, -120, 0, 'dBm', [[0.25, '#ef4444'], [0.6, '#f59e0b'], [1, '#10b981']]);
+            this.snrGaugeOption = this.getGaugeOption(-20, -20, 10, 'dB', [[0.33, '#ef4444'], [0.67, '#f59e0b'], [1, '#10b981']]);
+            this.waterGaugeOption = this.getGaugeOption(0, 0, 100, '%', [[0.2, '#ef4444'], [0.5, '#f59e0b'], [1, '#3b82f6']]);
         },
 
         getGaugeOption(value, min, max, unit, thresholds) {
@@ -243,28 +281,28 @@ createApp({
 
         updateGauges(data) {
             // Battery Gauge
-            this.gauges.battery.setOption(this.getGaugeOption(
+            this.batteryGaugeOption = this.getGaugeOption(
                 data.battery || 0, 0, 100, '%',
                 [[0.2, '#ef4444'], [0.5, '#f59e0b'], [1, '#10b981']]
-            ));
+            );
 
             // RSSI Gauge
-            this.gauges.rssi.setOption(this.getGaugeOption(
+            this.rssiGaugeOption = this.getGaugeOption(
                 data.rssi || -120, -120, 0, 'dBm',
                 [[0.25, '#ef4444'], [0.6, '#f59e0b'], [1, '#10b981']]
-            ));
+            );
 
             // SNR Gauge
-            this.gauges.snr.setOption(this.getGaugeOption(
+            this.snrGaugeOption = this.getGaugeOption(
                 data.snr || -20, -20, 10, 'dB',
                 [[0.33, '#ef4444'], [0.67, '#f59e0b'], [1, '#10b981']]
-            ));
+            );
 
             // Water Level Gauge
-            this.gauges.water.setOption(this.getGaugeOption(
+            this.waterGaugeOption = this.getGaugeOption(
                 data.waterLevel || 0, 0, 100, '%',
                 [[0.2, '#ef4444'], [0.5, '#f59e0b'], [1, '#3b82f6']]
-            ));
+            );
         }
     }
 }).mount('#app');

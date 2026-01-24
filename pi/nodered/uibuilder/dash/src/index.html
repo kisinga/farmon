@@ -89,28 +89,28 @@
                 <div class="card bg-base-100 shadow-xl">
                     <div class="card-body p-4">
                         <h3 class="card-title text-sm">Battery</h3>
-                        <div class="gauge-container" ref="batteryGauge"></div>
+                        <v-chart :option="batteryGaugeOption" autoresize class="gauge-container" />
                     </div>
                 </div>
 
                 <div class="card bg-base-100 shadow-xl">
                     <div class="card-body p-4">
                         <h3 class="card-title text-sm">RSSI</h3>
-                        <div class="gauge-container" ref="rssiGauge"></div>
+                        <v-chart :option="rssiGaugeOption" autoresize class="gauge-container" />
                     </div>
                 </div>
 
                 <div class="card bg-base-100 shadow-xl">
                     <div class="card-body p-4">
                         <h3 class="card-title text-sm">SNR</h3>
-                        <div class="gauge-container" ref="snrGauge"></div>
+                        <v-chart :option="snrGaugeOption" autoresize class="gauge-container" />
                     </div>
                 </div>
 
                 <div class="card bg-base-100 shadow-xl">
                     <div class="card-body p-4">
                         <h3 class="card-title text-sm">Water Level</h3>
-                        <div class="gauge-container" ref="waterGauge"></div>
+                        <v-chart :option="waterGaugeOption" autoresize class="gauge-container" />
                     </div>
                 </div>
             </div>
@@ -121,7 +121,7 @@
                 <div class="card bg-base-100 shadow-xl">
                     <div class="card-body">
                         <h3 class="card-title">Battery History (24h)</h3>
-                        <div class="chart-container" ref="batteryChart"></div>
+                        <v-chart :option="batteryChartOption" autoresize class="chart-container" />
                     </div>
                 </div>
 
@@ -129,7 +129,7 @@
                 <div class="card bg-base-100 shadow-xl">
                     <div class="card-body">
                         <h3 class="card-title">Water Flow History (24h)</h3>
-                        <div class="chart-container" ref="waterChart"></div>
+                        <v-chart :option="waterChartOption" autoresize class="chart-container" />
                     </div>
                 </div>
 
@@ -137,7 +137,7 @@
                 <div class="card bg-base-100 shadow-xl">
                     <div class="card-body">
                         <h3 class="card-title">RSSI History (1h)</h3>
-                        <div class="chart-container" ref="rssiChart"></div>
+                        <v-chart :option="rssiChartOption" autoresize class="chart-container" />
                     </div>
                 </div>
 
@@ -145,7 +145,7 @@
                 <div class="card bg-base-100 shadow-xl">
                     <div class="card-body">
                         <h3 class="card-title">SNR History (24h)</h3>
-                        <div class="chart-container" ref="snrChart"></div>
+                        <v-chart :option="snrChartOption" autoresize class="chart-container" />
                     </div>
                 </div>
             </div>
