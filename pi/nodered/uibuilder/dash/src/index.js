@@ -71,7 +71,8 @@ createApp({
                 waterLevel: 0,
                 waterVolume: 0,
                 flowRate: 0,
-                uptime: '--'
+                uptime: '--',
+                lastSeen: null
             },
             // Chart options (reactive)
             batteryChartOption: {},
@@ -92,6 +93,11 @@ createApp({
             if (bp < 20) return 'text-error';
             if (bp < 50) return 'text-warning';
             return 'text-success';
+        },
+        deviceOnline() {
+            if (!this.current.lastSeen) return false;
+            const threeMinutes = 3 * 60 * 1000;
+            return (Date.now() - new Date(this.current.lastSeen).getTime()) < threeMinutes;
         }
     },
 
@@ -155,7 +161,7 @@ createApp({
         // ============ CHARTS ============
         initChartOptions() {
             this.batteryChartOption = this.getLineChartOption([], 'Battery', '%', '#10b981');
-            this.waterChartOption = this.getLineChartOption([], 'Flow Rate', 'L/min', '#3b82f6');
+            this.waterChartOption = this.getLineChartOption([], 'Water Volume', 'L', '#3b82f6');
             this.rssiChartOption = this.getLineChartOption([], 'RSSI', 'dBm', '#f59e0b');
             this.snrChartOption = this.getLineChartOption([], 'SNR', 'dB', '#8b5cf6');
         },
@@ -203,25 +209,39 @@ createApp({
             };
         },
 
+        // Moving average smoothing
+        smoothData(data, windowSize = 5) {
+            if (data.length < windowSize) return data;
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                const start = Math.max(0, i - Math.floor(windowSize / 2));
+                const end = Math.min(data.length, i + Math.floor(windowSize / 2) + 1);
+                const window = data.slice(start, end);
+                const avg = window.reduce((sum, d) => sum + d[1], 0) / window.length;
+                result.push([data[i][0], Math.round(avg * 100) / 100]);
+            }
+            return result;
+        },
+
         updateCharts(data) {
             if (data.battery) {
                 const chartData = data.battery.map(d => [d.ts, d.value]);
-                this.batteryChartOption = this.getLineChartOption(chartData, 'Battery', '%', '#10b981');
+                this.batteryChartOption = this.getLineChartOption(this.smoothData(chartData), 'Battery', '%', '#10b981');
             }
 
             if (data.water) {
                 const chartData = data.water.map(d => [d.ts, d.value]);
-                this.waterChartOption = this.getLineChartOption(chartData, 'Flow Rate', 'L/min', '#3b82f6');
+                this.waterChartOption = this.getLineChartOption(this.smoothData(chartData), 'Water Volume', 'L', '#3b82f6');
             }
 
             if (data.rssi) {
                 const chartData = data.rssi.map(d => [d.ts, d.value]);
-                this.rssiChartOption = this.getLineChartOption(chartData, 'RSSI', 'dBm', '#f59e0b');
+                this.rssiChartOption = this.getLineChartOption(this.smoothData(chartData), 'RSSI', 'dBm', '#f59e0b');
             }
 
             if (data.snr) {
                 const chartData = data.snr.map(d => [d.ts, d.value]);
-                this.snrChartOption = this.getLineChartOption(chartData, 'SNR', 'dB', '#8b5cf6');
+                this.snrChartOption = this.getLineChartOption(this.smoothData(chartData), 'SNR', 'dB', '#8b5cf6');
             }
         },
 

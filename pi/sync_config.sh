@@ -33,6 +33,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NODERED_SRC="$SCRIPT_DIR/nodered"
 NODERED_DEST="/srv/farm/nodered"
 
+# UIBuilder dashboard paths
+UIBUILDER_SRC="$NODERED_SRC/uibuilder/dash/src"
+UIBUILDER_DEST="$NODERED_DEST/uibuilder/dash/src"
+
 # Parse arguments
 FORCE_SYNC=false
 if [[ "$1" == "--force" ]]; then
@@ -128,6 +132,38 @@ if [ -f "$NODERED_SRC/package.json" ]; then
             fi
         fi
     fi
+fi
+
+# Sync UIBuilder dashboard files
+log_info "Syncing UIBuilder dashboard files..."
+if [ -d "$UIBUILDER_SRC" ]; then
+    # Create destination directory if it doesn't exist
+    if [ ! -d "$UIBUILDER_DEST" ]; then
+        log_info "Creating UIBuilder dashboard directory..."
+        sudo mkdir -p "$UIBUILDER_DEST"
+        sudo chown -R 1000:1000 "$(dirname "$UIBUILDER_DEST")"
+    fi
+
+    # Sync each file in the dashboard src directory
+    DASHBOARD_UPDATED=false
+    for src_file in "$UIBUILDER_SRC"/*; do
+        if [ -f "$src_file" ]; then
+            filename="$(basename "$src_file")"
+            dest_file="$UIBUILDER_DEST/$filename"
+            if sync_file "$src_file" "$dest_file"; then
+                DASHBOARD_UPDATED=true
+            fi
+        fi
+    done
+
+    if [ "$DASHBOARD_UPDATED" = true ]; then
+        log_success "Dashboard files updated"
+        # Dashboard files don't require a full restart, just a browser refresh
+    else
+        log_info "Dashboard files are up to date"
+    fi
+else
+    log_warn "UIBuilder dashboard source not found: $UIBUILDER_SRC"
 fi
 
 echo ""

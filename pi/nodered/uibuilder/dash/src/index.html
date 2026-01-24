@@ -43,8 +43,8 @@
             </div>
             <div class="flex-none gap-2 mr-4">
                 <span class="loading loading-ring loading-sm" v-if="loading"></span>
-                <div class="badge" :class="connected ? 'badge-success' : 'badge-error'">
-                    {{ connected ? 'Connected' : 'Disconnected' }}
+                <div class="badge" :class="deviceOnline ? 'badge-success' : 'badge-warning'">
+                    {{ deviceOnline ? 'Online' : 'Offline' }}
                 </div>
             </div>
         </div>
@@ -125,10 +125,10 @@
                     </div>
                 </div>
 
-                <!-- Water Flow -->
+                <!-- Water Volume -->
                 <div class="card bg-base-100 shadow-xl">
                     <div class="card-body">
-                        <h3 class="card-title">Flow Rate History (24h)</h3>
+                        <h3 class="card-title">Water Volume History (24h)</h3>
                         <v-chart :option="waterChartOption" autoresize class="chart-container" />
                     </div>
                 </div>
