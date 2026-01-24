@@ -65,6 +65,33 @@
                             </select>
                         </div>
 
+                        <!-- Time Range Selector -->
+                        <div>
+                            <label class="label"><span class="label-text font-semibold">Time Range</span></label>
+                            <select class="select select-bordered w-full" v-model="timeRange" @change="onTimeRangeChange">
+                                <option value="1h">Last 1 Hour</option>
+                                <option value="6h">Last 6 Hours</option>
+                                <option value="24h">Last 24 Hours</option>
+                                <option value="7d">Last 7 Days</option>
+                                <option value="30d">Last 30 Days</option>
+                                <option value="custom">Custom Range</option>
+                            </select>
+                        </div>
+
+                        <!-- Custom Date Range (shown when custom is selected) -->
+                        <div v-if="timeRange === 'custom'" class="col-span-full grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="label"><span class="label-text font-semibold">From</span></label>
+                                <input type="datetime-local" class="input input-bordered w-full"
+                                       v-model="customFrom" @change="onCustomRangeChange">
+                            </div>
+                            <div>
+                                <label class="label"><span class="label-text font-semibold">To</span></label>
+                                <input type="datetime-local" class="input input-bordered w-full"
+                                       v-model="customTo" @change="onCustomRangeChange">
+                            </div>
+                        </div>
+
                         <!-- Device Stats -->
                         <div class="stat bg-base-200 rounded-lg">
                             <div class="stat-title">Battery</div>

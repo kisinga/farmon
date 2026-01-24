@@ -64,6 +64,9 @@ createApp({
             loading: false,
             devices: [],
             selectedDevice: '',
+            timeRange: '24h',
+            customFrom: '',
+            customTo: '',
             current: {
                 battery: 0,
                 rssi: 0,
@@ -146,11 +149,35 @@ createApp({
 
         onDeviceChange() {
             if (!this.selectedDevice) return;
+            if (this.timeRange === 'custom' && (!this.customFrom || !this.customTo)) {
+                // Set default custom range to last 24h
+                const now = new Date();
+                const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                this.customTo = now.toISOString().slice(0, 16);
+                this.customFrom = yesterday.toISOString().slice(0, 16);
+            }
+            this.requestData();
+        },
+
+        onTimeRangeChange() {
+            if (!this.selectedDevice) return;
+            if (this.timeRange === 'custom') return; // Wait for custom dates
+            this.requestData();
+        },
+
+        onCustomRangeChange() {
+            if (!this.selectedDevice || !this.customFrom || !this.customTo) return;
+            this.requestData();
+        },
+
+        requestData() {
             this.loading = true;
-            uibuilder.send({
-                topic: 'selectDevice',
-                payload: this.selectedDevice
-            });
+            const payload = { eui: this.selectedDevice, range: this.timeRange };
+            if (this.timeRange === 'custom' && this.customFrom && this.customTo) {
+                payload.from = this.customFrom;
+                payload.to = this.customTo;
+            }
+            uibuilder.send({ topic: 'selectDevice', payload });
         },
 
         updateCurrentData(data) {
@@ -169,18 +196,24 @@ createApp({
         getLineChartOption(data, seriesName, unit = '', color = '#3b82f6') {
             return {
                 backgroundColor: 'transparent',
-                grid: { left: 60, right: 20, top: 40, bottom: 60 },
+                grid: { left: 60, right: 20, top: 40, bottom: 80 },
                 tooltip: {
                     trigger: 'axis',
                     backgroundColor: 'rgba(0,0,0,0.8)',
                     borderColor: color,
                     textStyle: { color: '#fff' }
                 },
+                dataZoom: [
+                    { type: 'inside', start: 0, end: 100 },
+                    { type: 'slider', start: 0, end: 100, height: 20, bottom: 10,
+                      borderColor: '#334155', backgroundColor: '#1e293b',
+                      fillerColor: color + '30', handleStyle: { color: color } }
+                ],
                 xAxis: {
                     type: 'time',
                     axisLabel: {
                         color: '#94a3b8',
-                        formatter: '{HH}:{mm}'
+                        formatter: '{MM}-{dd} {HH}:{mm}'
                     },
                     axisLine: { lineStyle: { color: '#334155' } }
                 },
@@ -209,39 +242,25 @@ createApp({
             };
         },
 
-        // Moving average smoothing
-        smoothData(data, windowSize = 5) {
-            if (data.length < windowSize) return data;
-            const result = [];
-            for (let i = 0; i < data.length; i++) {
-                const start = Math.max(0, i - Math.floor(windowSize / 2));
-                const end = Math.min(data.length, i + Math.floor(windowSize / 2) + 1);
-                const window = data.slice(start, end);
-                const avg = window.reduce((sum, d) => sum + d[1], 0) / window.length;
-                result.push([data[i][0], Math.round(avg * 100) / 100]);
-            }
-            return result;
-        },
-
         updateCharts(data) {
             if (data.battery) {
                 const chartData = data.battery.map(d => [d.ts, d.value]);
-                this.batteryChartOption = this.getLineChartOption(this.smoothData(chartData), 'Battery', '%', '#10b981');
+                this.batteryChartOption = this.getLineChartOption(chartData, 'Battery', '%', '#10b981');
             }
 
             if (data.water) {
                 const chartData = data.water.map(d => [d.ts, d.value]);
-                this.waterChartOption = this.getLineChartOption(this.smoothData(chartData), 'Water Volume', 'L', '#3b82f6');
+                this.waterChartOption = this.getLineChartOption(chartData, 'Water Volume', 'L', '#3b82f6');
             }
 
             if (data.rssi) {
                 const chartData = data.rssi.map(d => [d.ts, d.value]);
-                this.rssiChartOption = this.getLineChartOption(this.smoothData(chartData), 'RSSI', 'dBm', '#f59e0b');
+                this.rssiChartOption = this.getLineChartOption(chartData, 'RSSI', 'dBm', '#f59e0b');
             }
 
             if (data.snr) {
                 const chartData = data.snr.map(d => [d.ts, d.value]);
-                this.snrChartOption = this.getLineChartOption(this.smoothData(chartData), 'SNR', 'dB', '#8b5cf6');
+                this.snrChartOption = this.getLineChartOption(chartData, 'SNR', 'dB', '#8b5cf6');
             }
         },
 
