@@ -21,10 +21,27 @@
 // fPort 4: Command ACK - Acknowledgment of received downlink commands
 // fPort 10-12: Utility commands (reset, interval, reboot) - kept for backward compatibility
 
-#define FPORT_REGISTRATION  1
-#define FPORT_TELEMETRY     2
-#define FPORT_STATE_CHANGE  3
-#define FPORT_COMMAND_ACK   4
+// Uplink ports (device → server)
+#define FPORT_REGISTRATION  1   // Device registration payload
+#define FPORT_TELEMETRY     2   // Periodic sensor readings
+#define FPORT_STATE_CHANGE  3   // Control state change events
+#define FPORT_COMMAND_ACK   4   // Acknowledgment of downlink commands
+#define FPORT_DIAGNOSTICS   6   // Device status/diagnostics response
+
+// Downlink ports (server → device)
+#define FPORT_REG_ACK       5   // Registration acknowledgment from server
+#define FPORT_CMD_RESET     10  // Reset water volume + error count + counters
+#define FPORT_CMD_INTERVAL  11  // Set reporting interval
+#define FPORT_CMD_REBOOT    12  // Reboot device
+#define FPORT_CMD_CLEAR_ERR 13  // Clear error count only
+#define FPORT_CMD_FORCE_REG 14  // Force re-registration (clear NVS)
+#define FPORT_CMD_STATUS    15  // Request device status uplink
+
+// =============================================================================
+// Registration State (NVS persistence)
+// =============================================================================
+#define REG_MAGIC           0xFAB10001  // Magic number to validate NVS data
+#define CURRENT_REG_VERSION 1           // Increment when registration format changes
 
 // =============================================================================
 // Device Metadata (for registration message)

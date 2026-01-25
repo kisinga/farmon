@@ -79,6 +79,7 @@ private:
     uint32_t _lastTxMs = 0;
     bool _registrationSent = false;  // Track if registration message has been sent after join
     bool _registrationPending = false;  // Flag to trigger registration from main loop (avoid stack overflow)
+    bool _registrationComplete = false;  // True when server has ACKed registration (persisted in NVS)
 
     // Test mode state
     float _testDistance = 100.0;
@@ -88,6 +89,7 @@ private:
     void sendRegistration();      // Send device registration on join (fPort 1)
     void sendTelemetryJson(const std::vector<SensorReading>& readings);  // Send telemetry as JSON (fPort 2)
     void sendCommandAck(uint8_t cmdPort, bool success);  // Send command ACK (fPort 4)
+    void sendDiagnostics();  // Send device diagnostics/status (fPort 6)
 
     // LoRaWAN downlink command handler
     void onDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length);
@@ -136,6 +138,22 @@ void RemoteApplicationImpl::initialize() {
     _errorCount = persistenceHal->loadU32("errorCount", 0);
     _lastResetMs = persistenceHal->loadU32("lastResetMs", 0);
     persistenceHal->end();
+
+    // Load registration state from NVS
+    persistenceHal->begin("reg_state");
+    uint32_t magic = persistenceHal->loadU32("magic", 0);
+    uint32_t regVersion = persistenceHal->loadU32("regVersion", 0);
+    bool registered = persistenceHal->loadU32("registered", 0) == 1;
+    persistenceHal->end();
+
+    if (magic == REG_MAGIC && regVersion == CURRENT_REG_VERSION && registered) {
+        _registrationComplete = true;
+        LOGI("Remote", "Registration state loaded: already registered");
+    } else {
+        _registrationComplete = false;
+        LOGI("Remote", "Registration state: not registered (magic=0x%08X, ver=%u, reg=%d)",
+             magic, regVersion, registered);
+    }
 
     LOGI("Remote", "Creating remaining HALs");
     lorawanHal = std::make_unique<LoRaWANHal>();
@@ -220,12 +238,16 @@ void RemoteApplicationImpl::initialize() {
         lorawanStatusElement->setLoraStatus(isConnected, lorawanService->getLastRssiDbm());
         batteryElement->setStatus(batteryService->getBatteryPercent(), batteryService->isCharging());
 
-        // Send registration message after first successful join
+        // Send registration message after first successful join (if not already registered)
         // This implements Phase 4 device-centric protocol: device announces its capabilities
         // Note: Set flag here, actual send deferred to run() to avoid stack overflow in scheduler task
-        if (isConnected && !_registrationSent && !_registrationPending) {
+        if (isConnected && !_registrationComplete && !_registrationSent && !_registrationPending) {
             LOGI("Remote", "Device joined network - scheduling registration message");
             _registrationPending = true;
+        } else if (isConnected && _registrationComplete && !_registrationSent) {
+            // Already registered from previous session, skip registration
+            _registrationSent = true;  // Mark as sent to prevent re-check
+            LOGI("Remote", "Device joined network - already registered, skipping registration");
         }
 
         // Update main status text
@@ -257,6 +279,12 @@ void RemoteApplicationImpl::initialize() {
         scheduler.registerTask("lorawan_tx", [this](CommonAppState& state){
             // Caller checks connection
             if (!lorawanService->isJoined()) return;
+
+            // Gate telemetry until registration is confirmed by server
+            if (!_registrationComplete) {
+                LOGD("Remote", "Telemetry skipped - awaiting registration ACK from server");
+                return;
+            }
 
             // Caller collects fresh data from services
             std::vector<SensorReading> readings;
@@ -519,6 +547,46 @@ void RemoteApplicationImpl::sendCommandAck(uint8_t cmdPort, bool success) {
     }
 }
 
+void RemoteApplicationImpl::sendDiagnostics() {
+    // Send device diagnostics on fPort 6
+    // Format: reg:1,err:5,uptime:3600,bat:85,rssi:-80,snr:7.5,fw:2.0.0
+    char buffer[128];
+
+    uint32_t uptimeSec = millis() / 1000;
+    int batteryPercent = batteryService ? batteryService->getBatteryPercent() : -1;
+    int rssi = lorawanService ? lorawanService->getLastRssiDbm() : 0;
+    float snr = lorawanService ? lorawanService->getLastSnr() : 0.0f;
+    uint32_t uplinks = lorawanService ? lorawanService->getUplinkCount() : 0;
+    uint32_t downlinks = lorawanService ? lorawanService->getDownlinkCount() : 0;
+
+    int len = snprintf(buffer, sizeof(buffer),
+        "reg:%d,err:%u,up:%lu,bat:%d,rssi:%d,snr:%.1f,ul:%lu,dl:%lu,fw:%s",
+        _registrationComplete ? 1 : 0,
+        _errorCount,
+        uptimeSec,
+        batteryPercent,
+        rssi,
+        snr,
+        uplinks,
+        downlinks,
+        FIRMWARE_VERSION);
+
+    if (len < 0 || len >= (int)sizeof(buffer)) {
+        LOGW("Remote", "Diagnostics message truncated");
+        len = sizeof(buffer) - 1;
+    }
+
+    LOGI("Remote", "Sending diagnostics (%d bytes) on fPort %d", len, FPORT_DIAGNOSTICS);
+    LOGD("Remote", "Diagnostics: %s", buffer);
+
+    bool success = lorawanService->sendData(FPORT_DIAGNOSTICS, (const uint8_t*)buffer, len, false);
+    if (success) {
+        LOGI("Remote", "Diagnostics sent successfully");
+    } else {
+        LOGW("Remote", "Failed to send diagnostics");
+    }
+}
+
 // LoRaWAN downlink command handler - routed by port
 // Phase 4: Commands send ACK responses on fPort 4
 void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length) {
@@ -564,6 +632,49 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
             delay(100);
             ESP.restart();
             return;  // No further processing after reboot
+
+        case FPORT_REG_ACK:  // Registration acknowledgment from server
+            LOGI("Remote", "Registration ACK received from server");
+            // Save registration state to NVS
+            persistenceHal->begin("reg_state");
+            persistenceHal->saveU32("magic", REG_MAGIC);
+            persistenceHal->saveU32("regVersion", CURRENT_REG_VERSION);
+            persistenceHal->saveU32("registered", 1);
+            persistenceHal->end();
+
+            _registrationComplete = true;
+            LOGI("Remote", "Registration confirmed - telemetry enabled");
+            return;  // No ACK needed for registration ACK
+
+        case FPORT_CMD_CLEAR_ERR:  // Clear error count only
+            LOGI("Remote", "Clear error count command received");
+            _errorCount = 0;
+            persistenceHal->begin("app_state");
+            persistenceHal->saveU32("errorCount", _errorCount);
+            persistenceHal->end();
+            success = true;
+            break;
+
+        case FPORT_CMD_FORCE_REG:  // Force re-registration (clear NVS)
+            LOGI("Remote", "Force re-registration command received");
+            // Clear registration state from NVS
+            persistenceHal->begin("reg_state");
+            persistenceHal->saveU32("magic", 0);
+            persistenceHal->saveU32("registered", 0);
+            persistenceHal->end();
+
+            _registrationComplete = false;
+            _registrationSent = false;
+            _registrationPending = true;  // Trigger registration on next loop
+            LOGI("Remote", "Registration cleared - will re-register");
+            success = true;
+            break;
+
+        case FPORT_CMD_STATUS:  // Request device status uplink
+            LOGI("Remote", "Status request command received");
+            sendDiagnostics();
+            success = true;
+            break;
 
         default:
             LOGD("Remote", "Unknown command port: %d", port);
