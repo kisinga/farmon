@@ -177,6 +177,9 @@ deploy_stack() {
     log_info "Syncing Node-RED configuration..."
     bash "$INSTALL_DIR/pi/sync_config.sh" || log_warn "sync_config.sh failed, continuing anyway"
 
+    log_info "Ensuring Node-RED data permissions (uibuilder, etc.)..."
+    sudo chown -R 1000:1000 /srv/farm/nodered
+
     log_success "All services running"
 }
 

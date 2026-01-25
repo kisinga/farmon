@@ -77,10 +77,17 @@ private:
     uint32_t _errorCount = 0;
     uint32_t _lastResetMs = 0;
     uint32_t _lastTxMs = 0;
+    bool _registrationSent = false;  // Track if registration message has been sent after join
+    bool _registrationPending = false;  // Flag to trigger registration from main loop (avoid stack overflow)
 
     // Test mode state
     float _testDistance = 100.0;
     float _testVolume = 1000.0;
+
+    // Message protocol methods (Phase 4: Device-centric framework)
+    void sendRegistration();      // Send device registration on join (fPort 1)
+    void sendTelemetryJson(const std::vector<SensorReading>& readings);  // Send telemetry as JSON (fPort 2)
+    void sendCommandAck(uint8_t cmdPort, bool success);  // Send command ACK (fPort 4)
 
     // LoRaWAN downlink command handler
     void onDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length);
@@ -206,19 +213,27 @@ void RemoteApplicationImpl::initialize() {
     // LoRaWAN service task - processes radio IRQs and state machine
     scheduler.registerTask("lorawan", [this](CommonAppState& state){
         lorawanService->update(state.nowMs);
-        
+
         // Update UI elements with connection state
         auto connectionState = lorawanService->getConnectionState();
         bool isConnected = lorawanService->isJoined();
         lorawanStatusElement->setLoraStatus(isConnected, lorawanService->getLastRssiDbm());
         batteryElement->setStatus(batteryService->getBatteryPercent(), batteryService->isCharging());
 
+        // Send registration message after first successful join
+        // This implements Phase 4 device-centric protocol: device announces its capabilities
+        // Note: Set flag here, actual send deferred to run() to avoid stack overflow in scheduler task
+        if (isConnected && !_registrationSent && !_registrationPending) {
+            LOGI("Remote", "Device joined network - scheduling registration message");
+            _registrationPending = true;
+        }
+
         // Update main status text
         if (statusTextElement) {
             char statusStr[48];
-            const char* connStr = isConnected ? "Joined" : 
+            const char* connStr = isConnected ? "Joined" :
                                   (connectionState == ILoRaWANService::ConnectionState::Connecting ? "Joining..." : "Offline");
-            snprintf(statusStr, sizeof(statusStr), "%s\nUp:%lu Dn:%lu\nErr:%u", 
+            snprintf(statusStr, sizeof(statusStr), "%s\nUp:%lu Dn:%lu\nErr:%u",
                      connStr,
                      lorawanService->getUplinkCount(),
                      lorawanService->getDownlinkCount(),
@@ -238,7 +253,7 @@ void RemoteApplicationImpl::initialize() {
     
     // Sensor telemetry transmission task
     if (sensorConfig.enableSensorSystem) {
-        // Transmission task: pulls fresh data and transmits
+        // Transmission task: pulls fresh data and transmits as JSON (Phase 4 protocol)
         scheduler.registerTask("lorawan_tx", [this](CommonAppState& state){
             // Caller checks connection
             if (!lorawanService->isJoined()) return;
@@ -277,12 +292,9 @@ void RemoteApplicationImpl::initialize() {
                 });
             }
 
-            // Pure helper: format and transmit
-            if (lorawanTransmitter && !readings.empty()) {
-                bool success = lorawanTransmitter->transmit(readings);
-                if (!success) {
-                    LOGW("Remote", "Transmission failed, will retry on next interval");
-                }
+            // Send telemetry as JSON on fPort 2 (Phase 4 protocol)
+            if (!readings.empty()) {
+                sendTelemetryJson(readings);
             }
         }, config.communication.lorawan.txIntervalMs);
     }
@@ -374,6 +386,15 @@ void RemoteApplicationImpl::setupSensors() {
 void RemoteApplicationImpl::run() {
     // Main run loop - high-frequency, non-blocking tasks
     // The main application logic is handled by the scheduler
+
+    // Handle deferred registration (sent from main loop to avoid stack overflow in scheduler tasks)
+    if (_registrationPending) {
+        _registrationPending = false;
+        _registrationSent = true;  // Set BEFORE sending to prevent re-entry during TX
+        LOGI("Remote", "Sending registration message from main loop");
+        sendRegistration();
+    }
+
     delay(1);
 }
 
@@ -403,11 +424,108 @@ void RemoteApplicationImpl::generateTestData(std::vector<SensorReading>& reading
          _testDistance, _testVolume, testBattery);
 }
 
+// =============================================================================
+// Message Protocol Implementation (Phase 4: Device-centric framework)
+// =============================================================================
+// Uses simple text format instead of JSON to minimize stack usage.
+// Format is parsed by Node-RED backend which can handle both JSON and text.
+
+void RemoteApplicationImpl::sendRegistration() {
+    // Simple text registration format (parsed by ChirpStack codec → Node-RED):
+    // v=1|type=water_monitor|fw=2.0.0|fields=bp:Battery:%:0:100,...|states=ps:PumpState:off;on|cmds=reset:10,...
+    // - fields: continuous sensors (key:name:unit:min:max)
+    // - states: controllable fields (key:name:val1;val2;...) - semicolon separates enum values
+    // - cmds: downlink commands (key:port)
+    char buffer[256];
+    int len = snprintf(buffer, sizeof(buffer),
+        "v=1|type=%s|fw=%s|fields=bp:Battery:%%:0:100,pd:PulseDelta,tv:TotalVolume:L,ec:ErrorCount|states=ps:PumpState:off;on|cmds=reset:10,interval:11,reboot:12",
+        DEVICE_TYPE, FIRMWARE_VERSION);
+
+    if (len < 0 || len >= (int)sizeof(buffer)) {
+        LOGW("Remote", "Registration message truncated");
+        len = sizeof(buffer) - 1;
+    }
+
+    LOGI("Remote", "Sending registration (%d bytes) on fPort %d", len, FPORT_REGISTRATION);
+    LOGD("Remote", "Registration: %s", buffer);
+
+    bool success = lorawanService->sendData(FPORT_REGISTRATION, (const uint8_t*)buffer, len, false);
+    if (success) {
+        LOGI("Remote", "Registration sent successfully");
+    } else {
+        LOGW("Remote", "Failed to send registration");
+    }
+}
+
+void RemoteApplicationImpl::sendTelemetryJson(const std::vector<SensorReading>& readings) {
+    if (readings.empty()) {
+        LOGW("Remote", "No readings to send");
+        return;
+    }
+
+    // Simple key:value format (same as original CSV but on fPort 2)
+    // Example: bp:85,pd:42,tv:1234.56,ec:0,tsr:3600
+    char buffer[128];
+    int offset = 0;
+
+    for (size_t i = 0; i < readings.size() && offset < (int)sizeof(buffer) - 20; ++i) {
+        if (isnan(readings[i].value)) continue;
+
+        if (offset > 0) {
+            buffer[offset++] = ',';
+        }
+
+        // Use integer for counters, 2 decimal places for floats
+        if (strcmp(readings[i].type, "pd") == 0 ||
+            strcmp(readings[i].type, "bp") == 0 ||
+            strcmp(readings[i].type, "ec") == 0 ||
+            strcmp(readings[i].type, "tsr") == 0) {
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                              "%s:%d", readings[i].type, (int)readings[i].value);
+        } else {
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                              "%s:%.2f", readings[i].type, readings[i].value);
+        }
+    }
+
+    if (offset == 0) {
+        LOGW("Remote", "No valid readings to send");
+        return;
+    }
+
+    LOGD("Remote", "Sending telemetry (%d bytes) on fPort %d: %s", offset, FPORT_TELEMETRY, buffer);
+
+    bool success = lorawanService->sendData(FPORT_TELEMETRY, (const uint8_t*)buffer, offset,
+                                            config.communication.lorawan.useConfirmedUplinks);
+    if (success) {
+        LOGI("Remote", "Telemetry sent: %d bytes on fPort %d", offset, FPORT_TELEMETRY);
+    } else {
+        LOGW("Remote", "Failed to send telemetry");
+    }
+}
+
+void RemoteApplicationImpl::sendCommandAck(uint8_t cmdPort, bool success) {
+    // Simple format: "port:status" e.g. "10:ok" or "11:error"
+    char buffer[16];
+    int len = snprintf(buffer, sizeof(buffer), "%d:%s", cmdPort, success ? "ok" : "err");
+
+    LOGD("Remote", "Sending ACK on fPort %d: %s", FPORT_COMMAND_ACK, buffer);
+
+    bool sent = lorawanService->sendData(FPORT_COMMAND_ACK, (const uint8_t*)buffer, len, false);
+    if (sent) {
+        LOGI("Remote", "ACK sent for port %d (%s)", cmdPort, success ? "ok" : "error");
+    } else {
+        LOGW("Remote", "Failed to send ACK");
+    }
+}
+
 // LoRaWAN downlink command handler - routed by port
+// Phase 4: Commands send ACK responses on fPort 4
 void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length) {
     LOGI("Remote", "Downlink received on port %d, length %d", port, length);
+    bool success = false;
 
-    // Port-based command routing per migration plan
+    // Port-based command routing per Phase 4 protocol
     switch (port) {
         case 10:  // Reset water volume
             LOGI("Remote", "Received ResetWaterVolume command via port 10");
@@ -416,7 +534,7 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
             }
             lorawanService->resetCounters();
             Messaging::Message::resetSequenceId();
-            
+
             // Reset error counter and record reset time
             _errorCount = 0;
             _lastResetMs = millis();
@@ -424,27 +542,37 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
             persistenceHal->saveU32("errorCount", _errorCount);
             persistenceHal->saveU32("lastResetMs", _lastResetMs);
             persistenceHal->end();
+            success = true;
             break;
 
         case 11:  // Set reporting interval
             if (length >= 4) {
-                uint32_t interval = (payload[0] << 24) | (payload[1] << 16) | 
+                uint32_t interval = (payload[0] << 24) | (payload[1] << 16) |
                                    (payload[2] << 8) | payload[3];
                 LOGI("Remote", "Set reporting interval to %u ms", interval);
                 // Note: Dynamic interval change would require scheduler modification
+                success = true;
+            } else {
+                LOGW("Remote", "Invalid interval payload length: %d (expected 4)", length);
             }
             break;
 
         case 12:  // Reboot device
             LOGI("Remote", "Reboot command received");
+            // Send ACK before reboot (won't get response otherwise)
+            sendCommandAck(port, true);
             delay(100);
             ESP.restart();
-            break;
+            return;  // No further processing after reboot
 
         default:
             LOGD("Remote", "Unknown command port: %d", port);
-            break;
+            // Don't send ACK for unknown commands
+            return;
     }
+
+    // Send ACK response for processed commands (Phase 4 protocol)
+    sendCommandAck(port, success);
 }
 
 void RemoteApplicationImpl::staticOnDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length) {

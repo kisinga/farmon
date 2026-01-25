@@ -122,6 +122,15 @@ else
     log "  cd ~/Arduino/libraries && git clone https://github.com/ropg/Heltec_ESP32_LoRa_v3.git"
 fi
 
+# Install ArduinoJson library (required for JSON message protocol)
+log "Installing ArduinoJson library..."
+if "$ARDUINO_CLI" lib list | grep -q "ArduinoJson"; then
+    ok "ArduinoJson library already installed"
+else
+    "$ARDUINO_CLI" lib install "ArduinoJson@6.21.5"
+    ok "ArduinoJson library installed"
+fi
+
 # List available boards
 log "Available ESP32 boards:"
 "$ARDUINO_CLI" board listall | grep -i "heltec\|esp32" | head -10 || true
