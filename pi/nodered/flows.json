@@ -181,7 +181,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Registration Handler (fPort 1)",
-        "func": "// Parse registration message from device\nconst deviceEui = msg.deviceEui;\nconst reg = msg.data;\n\nif (!reg || !reg.fields) {\n    node.warn('Invalid registration: missing fields');\n    return null;\n}\n\n// Store full registration\nmsg.registration = reg;\n\n// Prepare device upsert (msg.params for PostgreSQL node)\nmsg.params = [\n    deviceEui,\n    msg.deviceName || reg.type || 'Unknown',\n    reg.type || 'unknown',\n    reg.fw || '0.0.0',\n    JSON.stringify(reg)\n];\n\nnode.status({fill: 'blue', shape: 'dot', text: `Registered: ${deviceEui.slice(-4)}`});\n\nreturn msg;",
+        "func": "// Parse registration message from device\nconst deviceEui = msg.deviceEui;\nconst reg = msg.data;\n\nif (!reg || (!reg.fields && !reg.states)) {\n    node.warn('Invalid registration: missing fields/states');\n    return null;\n}\n\n// Store full registration with schema version\nmsg.registration = reg;\nmsg.schemaVersion = reg.sv || 1;\n\n// Prepare device upsert (msg.params for PostgreSQL node)\nmsg.params = [\n    deviceEui,\n    msg.deviceName || reg.type || 'Unknown',\n    reg.type || 'unknown',\n    reg.fw || '0.0.0',\n    JSON.stringify(reg)\n];\n\nnode.status({fill: 'blue', shape: 'dot', text: `Reg v${msg.schemaVersion}: ${deviceEui.slice(-4)}`});\n\nreturn msg;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -258,7 +258,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Parse & Store Fields",
-        "func": "const deviceEui = msg.deviceEui;\nconst reg = msg.registration;\n\n// Build batch inserts for fields, controls, triggers\nconst fields = reg.fields || [];\nconst triggers = reg.triggers || [];\nconst cmds = reg.cmds || [];\n\n// Delete existing and re-insert (simpler than upsert for arrays)\nmsg.params = [deviceEui];\n\n// Deduplicate helper - keep last occurrence of each key\nconst dedup = (arr, keyFn) => {\n    const map = new Map();\n    arr.forEach(item => map.set(keyFn(item), item));\n    return Array.from(map.values());\n};\n\n// Prepare field inserts (deduplicated by field_key)\nmsg.fieldRows = dedup(fields.map(f => ({\n    device_eui: deviceEui,\n    field_key: f.k,\n    display_name: f.n,\n    data_type: f.t,\n    unit: f.u || null,\n    category: f.c,\n    min_value: f.min ?? null,\n    max_value: f.max ?? null,\n    enum_values: f.v ? JSON.stringify(f.v) : null\n})), r => r.field_key);\n\n// Prepare control inserts (for state fields, deduplicated by control_key)\nmsg.controlRows = dedup(fields\n    .filter(f => f.c === 'state')\n    .map(f => ({\n        device_eui: deviceEui,\n        control_key: f.k,\n        current_state: f.v ? f.v[0] : 'off',\n        mode: 'auto'\n    })), r => r.control_key);\n\n// Prepare trigger inserts (deduplicated by trigger_key)\nmsg.triggerRows = dedup(triggers.map(t => ({\n    device_eui: deviceEui,\n    trigger_key: t.k,\n    display_name: t.n,\n    field_key: t.f,\n    operator: t.op,\n    threshold: t.th,\n    action_control: t.ctrl,\n    action_state: t.st,\n    enabled: true\n})), r => r.trigger_key);\n\n// Infer viz_config defaults (deduplicated by field_key)\nmsg.vizRows = dedup(fields.map(f => {\n    let vizType = 'badge';\n    let gaugeStyle = null;\n    let chartColor = '#3b82f6';\n    let sortOrder = 100;\n    \n    if (f.c === 'state') {\n        vizType = 'toggle';\n    } else if (f.t === 'num' && f.c === 'cont') {\n        vizType = (f.min !== undefined && f.max !== undefined) ? 'both' : 'chart';\n        gaugeStyle = 'radial';\n        \n        // Special cases by field key\n        const key = f.k.toLowerCase();\n        if (key.includes('level') || key.includes('tank') || key === 'wl') {\n            gaugeStyle = 'liquid';\n            chartColor = '#3b82f6';\n            sortOrder = 10;\n        } else if (key.includes('battery') || key === 'bp') {\n            chartColor = '#10b981';\n            sortOrder = 20;\n        } else if (key.includes('rssi')) {\n            chartColor = '#f59e0b';\n            sortOrder = 80;\n        } else if (key.includes('snr')) {\n            chartColor = '#8b5cf6';\n            sortOrder = 90;\n        }\n    }\n    \n    // Default thresholds for bounded numeric\n    let thresholds = null;\n    if (f.t === 'num' && f.min !== undefined && f.max !== undefined) {\n        thresholds = JSON.stringify([\n            {pct: 0.2, color: '#ef4444'},\n            {pct: 0.5, color: '#f59e0b'},\n            {pct: 1.0, color: '#10b981'}\n        ]);\n    }\n    \n    return {\n        device_eui: deviceEui,\n        field_key: f.k,\n        viz_type: vizType,\n        gauge_style: gaugeStyle,\n        chart_color: chartColor,\n        thresholds: thresholds,\n        is_visible: true,\n        sort_order: sortOrder\n    };\n}), r => r.field_key);\n\nreturn msg;",
+        "func": "const deviceEui = msg.deviceEui;\nconst reg = msg.registration;\n\n// Build batch inserts for fields, controls, triggers\nconst fields = reg.fields || [];\nconst sysFields = reg.sys || [];\nconst states = reg.states || [];\nconst triggers = reg.triggers || [];\nconst cmds = reg.cmds || [];\n\n// Deduplicate helper - keep last occurrence of each key\nconst dedup = (arr, keyFn) => {\n    const map = new Map();\n    arr.forEach(item => map.set(keyFn(item), item));\n    return Array.from(map.values());\n};\n\n// Combine telemetry fields and system fields\nconst allFields = [...fields, ...sysFields];\n\n// Prepare field inserts (deduplicated by field_key)\nmsg.fieldRows = dedup(allFields.map(f => ({\n    device_eui: deviceEui,\n    field_key: f.k,\n    display_name: f.n,\n    data_type: f.t || 'num',\n    unit: f.u || null,\n    category: f.c || 'cont',\n    min_value: f.min ?? null,\n    max_value: f.max ?? null,\n    enum_values: f.v ? JSON.stringify(f.v) : null\n})), r => r.field_key);\n\n// Prepare control inserts from states array (new format)\nmsg.controlRows = dedup(states.map(s => ({\n    device_eui: deviceEui,\n    control_key: s.k,\n    current_state: s.v ? s.v[0] : 'off',\n    mode: 'auto'\n})), r => r.control_key);\n\n// Prepare trigger inserts (deduplicated by trigger_key)\nmsg.triggerRows = dedup(triggers.map(t => ({\n    device_eui: deviceEui,\n    trigger_key: t.k,\n    display_name: t.n,\n    field_key: t.f,\n    operator: t.op,\n    threshold: t.th,\n    action_control: t.ctrl,\n    action_state: t.st,\n    enabled: true\n})), r => r.trigger_key);\n\n// Prepare schema insert for device_schemas table\nmsg.schemaRow = {\n    device_eui: deviceEui,\n    version: msg.schemaVersion || reg.sv || 1,\n    schema: JSON.stringify({ fields: allFields, controls: states, cmds: cmds })\n};\n\n// Infer viz_config defaults (deduplicated by field_key)\nconst vizFields = [...allFields, ...states.map(s => ({ ...s, c: 'state', t: 'enum' }))];\nmsg.vizRows = dedup(vizFields.map(f => {\n    let vizType = 'badge';\n    let gaugeStyle = null;\n    let chartColor = '#3b82f6';\n    let sortOrder = 100;\n    \n    if (f.c === 'state') {\n        vizType = 'toggle';\n    } else if (f.c === 'sys') {\n        vizType = 'badge';\n        chartColor = '#6b7280';\n        sortOrder = 200;\n    } else if ((f.t === 'num' || !f.t) && f.c === 'cont') {\n        vizType = (f.min !== undefined && f.max !== undefined) ? 'both' : 'chart';\n        gaugeStyle = 'radial';\n        \n        const key = f.k.toLowerCase();\n        if (key.includes('level') || key.includes('tank') || key === 'wl') {\n            gaugeStyle = 'liquid';\n            chartColor = '#3b82f6';\n            sortOrder = 10;\n        } else if (key.includes('battery') || key === 'bp') {\n            chartColor = '#10b981';\n            sortOrder = 20;\n        } else if (key.includes('rssi')) {\n            chartColor = '#f59e0b';\n            sortOrder = 80;\n        } else if (key.includes('snr')) {\n            chartColor = '#8b5cf6';\n            sortOrder = 90;\n        }\n    }\n    \n    let thresholds = null;\n    if ((f.t === 'num' || !f.t) && f.min !== undefined && f.max !== undefined) {\n        thresholds = JSON.stringify([\n            {pct: 0.2, color: '#ef4444'},\n            {pct: 0.5, color: '#f59e0b'},\n            {pct: 1.0, color: '#10b981'}\n        ]);\n    }\n    \n    return {\n        device_eui: deviceEui,\n        field_key: f.k,\n        viz_type: vizType,\n        gauge_style: gaugeStyle,\n        chart_color: chartColor,\n        thresholds: thresholds,\n        is_visible: f.c !== 'sys',\n        sort_order: sortOrder\n    };\n}), r => r.field_key);\n\nreturn msg;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -421,6 +421,44 @@
         "y": 280,
         "wires": [
             [
+                "f8a2b3c4d5e6f7a8"
+            ]
+        ]
+    },
+    {
+        "id": "f8a2b3c4d5e6f7a8",
+        "type": "function",
+        "z": "7e7308018823ce78",
+        "name": "Insert Schema",
+        "func": "// Store schema version in device_schemas for history tracking\nconst s = msg.schemaRow;\nif (!s || !s.device_eui) return msg;\n\nmsg.query = `INSERT INTO device_schemas (device_eui, version, schema)\nVALUES ($1, $2, $3::jsonb)\nON CONFLICT (device_eui, version) DO NOTHING`;\n\nmsg.params = [s.device_eui, s.version, s.schema];\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 2940,
+        "y": 280,
+        "wires": [
+            [
+                "a9b8c7d6e5f4a3b2"
+            ]
+        ]
+    },
+    {
+        "id": "a9b8c7d6e5f4a3b2",
+        "type": "postgresql",
+        "z": "7e7308018823ce78",
+        "name": "Execute Schema",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 3140,
+        "y": 280,
+        "wires": [
+            [
                 "66c1bffb93d6651d"
             ]
         ]
@@ -437,7 +475,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 2940,
+        "x": 3340,
         "y": 280,
         "wires": [
             []
@@ -712,7 +750,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "State Change Handler (fPort 3)",
-        "func": "// Process state change event from device\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\nconst controlKey = data.control || data.ctrl;\nconst newState = data.state || data.st;\nconst reason = data.reason || 'device';\nconst deviceTs = data.ts ? new Date(data.ts * 1000) : null;\n\nif (!controlKey || !newState) {\n    node.warn('Invalid state change: missing control or state');\n    return null;\n}\n\nmsg.stateChange = {\n    control_key: controlKey,\n    new_state: newState,\n    reason: reason,\n    device_ts: deviceTs\n};\n\nmsg.stateParams = [deviceEui, controlKey];\n\nnode.status({fill: 'yellow', shape: 'dot', text: `${controlKey}: ${newState}`});\n\nreturn msg;",
+        "func": "// Process state change event from device (binary format)\n// Binary: control_idx, new_state, old_state, source, rule_id, device_ms(4), seq(2)\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\n// Support both binary (new) and JSON (legacy) formats\nif (data.control_idx !== undefined) {\n    // Binary format from edge rules engine\n    msg.stateChange = {\n        control_idx: data.control_idx,\n        new_state_idx: data.new_state,\n        old_state_idx: data.old_state,\n        source: data.source || 'device',\n        rule_id: data.rule_id,\n        device_ms: data.device_ms,\n        seq: data.seq\n    };\n    msg.needsSchemaLookup = true;\n} else {\n    // Legacy JSON format\n    const controlKey = data.control || data.ctrl;\n    const newState = data.state || data.st;\n    const reason = data.reason || 'device';\n    const deviceTs = data.ts ? new Date(data.ts * 1000) : null;\n    \n    if (!controlKey || !newState) {\n        node.warn('Invalid state change: missing control or state');\n        return null;\n    }\n    \n    msg.stateChange = {\n        control_key: controlKey,\n        new_state: newState,\n        reason: reason,\n        device_ts: deviceTs\n    };\n    msg.needsSchemaLookup = false;\n}\n\nmsg.params = [deviceEui];\nnode.status({fill: 'yellow', shape: 'dot', text: `StateChange: ${deviceEui.slice(-4)}`});\n\nreturn msg;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -720,6 +758,44 @@
         "finalize": "",
         "libs": [],
         "x": 870,
+        "y": 580,
+        "wires": [
+            [
+                "e1f2a3b4c5d6e7f8"
+            ]
+        ]
+    },
+    {
+        "id": "e1f2a3b4c5d6e7f8",
+        "type": "postgresql",
+        "z": "7e7308018823ce78",
+        "name": "Get Latest Schema",
+        "query": "SELECT schema FROM device_schemas WHERE device_eui = $1 ORDER BY version DESC LIMIT 1",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1130,
+        "y": 580,
+        "wires": [
+            [
+                "d2e3f4a5b6c7d8e9"
+            ]
+        ]
+    },
+    {
+        "id": "d2e3f4a5b6c7d8e9",
+        "type": "function",
+        "z": "7e7308018823ce78",
+        "name": "Resolve Schema Indices",
+        "func": "// Map control_idx and state_idx to names using schema\nconst sc = msg.stateChange;\nconst schema = msg.payload?.[0]?.schema;\n\nif (msg.needsSchemaLookup && schema) {\n    const controls = schema.controls || [];\n    const ctrl = controls[sc.control_idx];\n    \n    if (!ctrl) {\n        node.warn(`Unknown control_idx: ${sc.control_idx}`);\n        return null;\n    }\n    \n    const states = ctrl.v || ['off', 'on'];\n    const newStateName = states[sc.new_state_idx] || `state_${sc.new_state_idx}`;\n    const oldStateName = states[sc.old_state_idx] || `state_${sc.old_state_idx}`;\n    \n    sc.control_key = ctrl.k;\n    sc.new_state = newStateName;\n    sc.old_state = oldStateName;\n    sc.reason = sc.source || 'device';\n    \n    // Calculate device timestamp if we have device_ms\n    if (sc.device_ms) {\n        // Approximate - server time minus device uptime\n        // TODO: could improve with server-side time sync\n        sc.device_ts = null;\n    }\n} else if (!msg.needsSchemaLookup) {\n    // Legacy format already has names\n    sc.old_state = null; // Will be fetched from DB\n}\n\nmsg.stateChange = sc;\nmsg.stateParams = [msg.deviceEui, sc.control_key];\n\nnode.status({fill: 'yellow', shape: 'dot', text: `${sc.control_key}: ${sc.new_state}`});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1380,
         "y": 580,
         "wires": [
             [
@@ -737,7 +813,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1110,
+        "x": 1610,
         "y": 580,
         "wires": [
             [
@@ -750,14 +826,14 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Insert State Change",
-        "func": "const oldState = msg.payload?.[0]?.current_state || null;\nconst sc = msg.stateChange;\n\nmsg.insertParams = [\n    msg.deviceEui,\n    sc.control_key,\n    oldState,\n    sc.new_state,\n    sc.reason,\n    sc.device_ts\n];\n\nmsg.updateParams = [\n    sc.new_state,\n    sc.reason,\n    msg.deviceEui,\n    sc.control_key\n];\n\nreturn msg;",
+        "func": "// Use DB old state if not provided by binary format\nconst dbOldState = msg.payload?.[0]?.current_state || null;\nconst sc = msg.stateChange;\nconst oldState = sc.old_state || dbOldState;\n\nmsg.insertParams = [\n    msg.deviceEui,\n    sc.control_key,\n    oldState,\n    sc.new_state,\n    sc.reason,\n    sc.device_ts || null\n];\n\nmsg.updateParams = [\n    sc.new_state,\n    sc.reason,\n    msg.deviceEui,\n    sc.control_key\n];\n\nreturn msg;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1320,
+        "x": 1820,
         "y": 580,
         "wires": [
             [
@@ -775,7 +851,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1540,
+        "x": 2040,
         "y": 580,
         "wires": [
             [
@@ -793,7 +869,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1760,
+        "x": 2260,
         "y": 580,
         "wires": [
             [
@@ -813,7 +889,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1970,
+        "x": 2470,
         "y": 580,
         "wires": [
             []

@@ -24,6 +24,10 @@
 #include "sensor_interface.hpp"
 #include "sensor_implementations.hpp"
 
+// Edge Rules Engine
+#include "lib/message_schema.h"
+#include "lib/edge_rules.h"
+
 // UI includes
 #include "lib/ui_battery_icon_element.h"
 #include "lib/ui_header_status_element.h"
@@ -66,6 +70,10 @@ private:
     std::unique_ptr<LoRaWANTransmitter> lorawanTransmitter;
     std::shared_ptr<YFS201WaterFlowSensor> waterFlowSensor;
 
+    // Edge Rules Engine
+    MessageSchema::Schema _schema;
+    std::unique_ptr<EdgeRules::EdgeRulesEngine> _rulesEngine;
+
     // UI Elements must be stored to manage their lifetime
     std::vector<std::shared_ptr<UIElement>> uiElements;
     std::shared_ptr<TextElement> idElement;
@@ -104,6 +112,24 @@ private:
 };
 
 RemoteApplicationImpl* RemoteApplicationImpl::callbackInstance = nullptr;
+
+// =============================================================================
+// Control Executor Functions (for Edge Rules Engine)
+// =============================================================================
+// These functions are called when a rule triggers a control action.
+// Each function handles the actual hardware control logic.
+
+static bool setPumpState(uint8_t state_idx) {
+    // TODO: RS485 implementation when hardware ready
+    LOGI("Control", "Pump -> %s", state_idx ? "on" : "off");
+    return true;
+}
+
+static bool setValveState(uint8_t state_idx) {
+    // TODO: GPIO/RS485 implementation when hardware ready
+    LOGI("Control", "Valve -> %s", state_idx ? "open" : "closed");
+    return true;
+}
 
 RemoteApplicationImpl::RemoteApplicationImpl() :
     config(buildRemoteConfig()),
@@ -202,6 +228,39 @@ void RemoteApplicationImpl::initialize() {
 
     setupSensors();
     LOGI("Remote", "Sensors setup complete");
+
+    // Build message schema (defines fields and controls)
+    _schema = MessageSchema::SchemaBuilder(1)
+        // Telemetry fields (order matches registration format)
+        .addField("bp", "Battery", "%", MessageSchema::FieldType::FLOAT, 0, 100)
+        .addField("pd", "PulseDelta", "", MessageSchema::FieldType::UINT32, 0, 65535)
+        .addField("tv", "TotalVolume", "L", MessageSchema::FieldType::FLOAT, 0, 999999)
+        .addField("ec", "ErrorCount", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        .addField("tsr", "TimeSinceReset", "s", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        // System fields (read-write where applicable)
+        .addSystemField("tx", "TxInterval", "s", MessageSchema::FieldType::UINT32,
+                        10, 3600, true)  // writable
+        .addSystemField("ul", "UplinkCount", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        .addSystemField("dl", "DownlinkCount", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        .addSystemField("up", "Uptime", "s", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        .addSystemField("bc", "BootCount", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        // Controls
+        .addControl("pump", "Water Pump", {"off", "on"})
+        .addControl("valve", "Valve", {"closed", "open"})
+        .build();
+
+    LOGI("Remote", "Schema built: %d fields, %d controls, version %d",
+         _schema.field_count, _schema.control_count, _schema.version);
+
+    // Initialize edge rules engine
+    _rulesEngine = std::make_unique<EdgeRules::EdgeRulesEngine>(_schema, persistenceHal.get());
+    _rulesEngine->loadFromFlash();
+
+    // Register control executors
+    _rulesEngine->registerControl(0, setPumpState);
+    _rulesEngine->registerControl(1, setValveState);
+
+    LOGI("Remote", "Edge rules engine initialized with %d rules", _rulesEngine->getRuleCount());
 
     // Register scheduler tasks
     LOGI("Remote", "Registering scheduler tasks");
@@ -331,10 +390,44 @@ void RemoteApplicationImpl::initialize() {
             // Send telemetry as JSON on fPort 2 (Phase 4 protocol)
             if (!readings.empty()) {
                 sendTelemetryJson(readings);
+
+                // Evaluate edge rules after telemetry collection
+                if (_rulesEngine && !readings.empty()) {
+                    // Convert readings to float array for rule evaluation
+                    float fieldValues[16];
+                    uint8_t fieldCount = 0;
+                    for (const auto& reading : readings) {
+                        if (fieldCount >= 16) break;
+                        fieldValues[fieldCount++] = reading.value;
+                    }
+                    _rulesEngine->evaluate(fieldValues, fieldCount, state.nowMs);
+                }
             }
         }, config.communication.lorawan.txIntervalMs);
     }
-    
+
+    // State change transmission task - sends pending state changes on fPort 3
+    scheduler.registerTask("state_tx", [this](CommonAppState& state){
+        if (!lorawanService->isJoined() || !_registrationComplete) return;
+        if (!_rulesEngine || !_rulesEngine->hasPendingStateChange()) return;
+
+        uint8_t buffer[16];
+        size_t len = _rulesEngine->formatStateChange(buffer, sizeof(buffer));
+
+        if (len > 0) {
+            LOGI("Remote", "Sending state change (%d bytes): %s",
+                 len, _rulesEngine->stateChangeToText().c_str());
+
+            bool success = lorawanService->sendData(FPORT_STATE_CHANGE, buffer, len, true);
+            if (success) {
+                _rulesEngine->clearPendingStateChange();
+                LOGI("Remote", "State change sent on fPort %d", FPORT_STATE_CHANGE);
+            } else {
+                LOGW("Remote", "Failed to send state change");
+            }
+        }
+    }, 5000);  // Check every 5 seconds
+
     // LoRaWAN rejoin watchdog - attempt rejoin if not connected for too long
     scheduler.registerTask("lorawan_watchdog", [this](CommonAppState& state){
         if (!lorawanService->isJoined() && !lorawanService->isJoinInProgress()) {
@@ -478,15 +571,21 @@ void RemoteApplicationImpl::generateTestData(std::vector<SensorReading>& reading
 // Format is parsed by Node-RED backend which can handle both JSON and text.
 
 void RemoteApplicationImpl::sendRegistration() {
-    // Simple text registration format (parsed by ChirpStack codec → Node-RED):
-    // v=1|type=water_monitor|fw=2.0.0|fields=bp:Battery:%:0:100,...|states=ps:PumpState:off;on|cmds=reset:10,...
-    // - fields: continuous sensors (key:name:unit:min:max)
-    // - states: controllable fields (key:name:val1;val2;...) - semicolon separates enum values
+    // Registration format with schema versioning:
+    // v=1|sv=1|type=water_monitor|fw=2.0.0|fields=...|sys=...|states=...|cmds=...
+    // - sv: schema version (increment when fields/controls change)
+    // - fields: telemetry sensors (key:name:unit:min:max)
+    // - sys: system fields (key:name:unit:min:max:rw) - rw=read-write, r=read-only
+    // - states: controls (key:name:val1;val2;...) - semicolon separates enum values
     // - cmds: downlink commands (key:port)
-    char buffer[256];
+    char buffer[384];
     int len = snprintf(buffer, sizeof(buffer),
-        "v=1|type=%s|fw=%s|fields=bp:Battery:%%:0:100,pd:PulseDelta,tv:TotalVolume:L,ec:ErrorCount|states=ps:PumpState:off;on|cmds=reset:10,interval:11,reboot:12",
-        DEVICE_TYPE, FIRMWARE_VERSION);
+        "v=1|sv=%d|type=%s|fw=%s|"
+        "fields=bp:Battery:%%:0:100,pd:PulseDelta,tv:TotalVolume:L,ec:ErrorCount,tsr:TimeSinceReset:s|"
+        "sys=tx:TxInterval:s:10:3600:rw,ul:UplinkCount:::r,dl:DownlinkCount:::r,up:Uptime:s::r,bc:BootCount:::r|"
+        "states=pump:WaterPump:off;on,valve:Valve:closed;open|"
+        "cmds=reset:10,interval:11,reboot:12,clearerr:13,forcereg:14,status:15,ctrl:20,rule:30",
+        _schema.version, DEVICE_TYPE, FIRMWARE_VERSION);
 
     if (len < 0 || len >= (int)sizeof(buffer)) {
         LOGW("Remote", "Registration message truncated");
@@ -693,6 +792,69 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
             LOGI("Remote", "Status request command received");
             sendDiagnostics();
             success = true;
+            break;
+
+        case FPORT_DIRECT_CTRL:  // Direct control command (7 bytes)
+            if (_rulesEngine && length >= 3) {
+                uint8_t ctrl_idx = payload[0];
+                uint8_t state_idx = payload[1];
+                bool is_manual = (payload[2] & 0x01) != 0;
+                uint32_t timeout_sec = 0;
+
+                if (length >= 7) {
+                    timeout_sec = payload[3] | (payload[4] << 8) |
+                                  (payload[5] << 16) | (payload[6] << 24);
+                }
+
+                LOGI("Remote", "Direct control: ctrl=%d, state=%d, manual=%d, timeout=%u",
+                     ctrl_idx, state_idx, is_manual, timeout_sec);
+
+                // Set control state
+                if (_rulesEngine->setControlState(ctrl_idx, state_idx,
+                        EdgeRules::TriggerSource::DOWNLINK, 0, millis())) {
+                    if (is_manual) {
+                        _rulesEngine->setManualOverride(ctrl_idx, timeout_sec * 1000, millis());
+                    }
+                    success = true;
+                } else {
+                    LOGW("Remote", "Failed to set control state");
+                }
+            } else {
+                LOGW("Remote", "Invalid direct control payload (len=%d)", length);
+            }
+            break;
+
+        case FPORT_RULE_UPDATE:  // Rule management (12 bytes per rule)
+            if (_rulesEngine && length >= 2) {
+                // Check for special commands
+                if (payload[0] == 0xFF && payload[1] == 0x00) {
+                    // Clear all rules
+                    _rulesEngine->clearAllRules();
+                    _rulesEngine->saveToFlash();
+                    LOGI("Remote", "All rules cleared");
+                    success = true;
+                } else if ((payload[1] & 0x80) != 0) {
+                    // Delete specific rule
+                    uint8_t rule_id = payload[0];
+                    if (_rulesEngine->deleteRule(rule_id)) {
+                        _rulesEngine->saveToFlash();
+                        LOGI("Remote", "Rule %d deleted", rule_id);
+                        success = true;
+                    } else {
+                        LOGW("Remote", "Failed to delete rule %d", rule_id);
+                    }
+                } else if (length >= 12) {
+                    // Add or update rule
+                    if (_rulesEngine->addOrUpdateRule(payload, length)) {
+                        _rulesEngine->saveToFlash();
+                        success = true;
+                    } else {
+                        LOGW("Remote", "Failed to add/update rule");
+                    }
+                } else {
+                    LOGW("Remote", "Invalid rule payload length: %d", length);
+                }
+            }
             break;
 
         default:

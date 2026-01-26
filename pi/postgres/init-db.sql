@@ -176,6 +176,42 @@ CREATE TABLE viz_config (
 );
 
 -- =============================================================================
+-- DEVICE_SCHEMAS: Schema version history for bidirectional sync
+-- =============================================================================
+-- Stores each schema version sent by a device, enabling:
+-- - Schema change tracking over firmware updates
+-- - Index validation for rules and telemetry
+-- - Audit trail of device capabilities
+CREATE TABLE device_schemas (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) REFERENCES devices(device_eui) ON DELETE CASCADE,
+    version INTEGER NOT NULL,
+    schema JSONB NOT NULL,          -- Full schema: {fields: [...], controls: [...]}
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (device_eui, version)
+);
+
+-- =============================================================================
+-- EDGE_RULES: Rules stored on device (synced for UI visibility)
+-- =============================================================================
+-- Mirrors rules stored in device flash, enabling UI to display/edit rules
+CREATE TABLE edge_rules (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) REFERENCES devices(device_eui) ON DELETE CASCADE,
+    rule_id INTEGER NOT NULL,       -- Device-assigned rule ID (0-254)
+    field_idx INTEGER NOT NULL,     -- Schema field index
+    operator VARCHAR(10) NOT NULL,  -- <, >, <=, >=, ==, !=
+    threshold NUMERIC NOT NULL,
+    control_idx INTEGER NOT NULL,   -- Schema control index
+    action_state INTEGER NOT NULL,  -- Control state index
+    priority INTEGER DEFAULT 128,   -- 0=highest
+    cooldown_seconds INTEGER DEFAULT 300,
+    enabled BOOLEAN DEFAULT TRUE,
+    synced_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (device_eui, rule_id)
+);
+
+-- =============================================================================
 -- INDEXES
 -- =============================================================================
 CREATE INDEX idx_telemetry_device_ts ON telemetry(device_eui, ts DESC);
@@ -183,5 +219,7 @@ CREATE INDEX idx_state_changes_device_ts ON state_changes(device_eui, ts DESC);
 CREATE INDEX idx_commands_pending ON commands(status) WHERE status = 'pending';
 CREATE INDEX idx_device_triggers_enabled ON device_triggers(device_eui) WHERE enabled = TRUE;
 CREATE INDEX idx_devices_active ON devices(is_active) WHERE is_active = TRUE;
+CREATE INDEX idx_device_schemas_device ON device_schemas(device_eui, version DESC);
+CREATE INDEX idx_edge_rules_enabled ON edge_rules(device_eui) WHERE enabled = TRUE;
 
 RESET ROLE;

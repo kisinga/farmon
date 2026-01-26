@@ -37,6 +37,10 @@
 #define FPORT_CMD_FORCE_REG 14  // Force re-registration (clear NVS)
 #define FPORT_CMD_STATUS    15  // Request device status uplink
 
+// Edge Rules Engine ports
+#define FPORT_DIRECT_CTRL   20  // Direct control command (7 bytes: ctrl_idx, state_idx, flags, timeout)
+#define FPORT_RULE_UPDATE   30  // Rule management (12 bytes per rule, or special commands)
+
 // =============================================================================
 // Registration State (NVS persistence)
 // =============================================================================
