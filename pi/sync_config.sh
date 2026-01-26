@@ -37,6 +37,9 @@ NODERED_DEST="/srv/farm/nodered"
 UIBUILDER_SRC="$NODERED_SRC/uibuilder/dash/src"
 UIBUILDER_DEST="$NODERED_DEST/uibuilder/dash/src"
 
+# Database initialization script
+INIT_DB_SQL="$SCRIPT_DIR/postgres/init-db.sql"
+
 # Parse arguments
 FORCE_SYNC=false
 if [[ "$1" == "--force" ]]; then
@@ -57,6 +60,41 @@ if [ ! -d "$NODERED_DEST" ]; then
     log_error "Node-RED data directory not found: $NODERED_DEST"
     log_error "Has the farm stack been set up? Run setup_farm_pi.sh first."
     exit 1
+fi
+
+# Check if docker-compose.yml exists for database operations
+DOCKER_COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
+    log_warn "docker-compose.yml not found, skipping database initialization"
+else
+    # Run database initialization script
+    if [ -f "$INIT_DB_SQL" ]; then
+        log_info "Initializing/updating database schema..."
+        
+        # Check if PostgreSQL container is running
+        if docker compose -f "$DOCKER_COMPOSE_FILE" ps postgres | grep -q "Up"; then
+            # Execute the SQL script
+            # Use PGPASSWORD from docker-compose environment or default
+            DB_OUTPUT=$(docker compose -f "$DOCKER_COMPOSE_FILE" exec -T postgres psql -U postgres -f - < "$INIT_DB_SQL" 2>&1)
+            DB_EXIT_CODE=$?
+            
+            if [ $DB_EXIT_CODE -eq 0 ]; then
+                log_success "Database schema initialized/updated"
+            else
+                log_error "Failed to execute database initialization script"
+                echo "$DB_OUTPUT" | grep -i error | head -5 | while read line; do
+                    log_error "  $line"
+                done || true
+                log_info "Check PostgreSQL logs with: cd $SCRIPT_DIR && docker compose logs postgres"
+                exit 1
+            fi
+        else
+            log_warn "PostgreSQL container is not running, skipping database initialization"
+            log_info "Start PostgreSQL with: cd $SCRIPT_DIR && docker compose up -d postgres"
+        fi
+    else
+        log_warn "Database initialization script not found: $INIT_DB_SQL"
+    fi
 fi
 
 # Sync function - handles file copying with proper checks
