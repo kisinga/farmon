@@ -1,17 +1,20 @@
 -- PostgreSQL initialization for Farm Monitor stack
 -- Idempotent: safe to run multiple times
 
--- Allow script to continue on "already exists" errors for databases/users
+-- Suppress errors for database/user creation (they may already exist)
 \set ON_ERROR_STOP off
 
 -- =============================================================================
 -- ChirpStack (LoRaWAN Network Server)
 -- =============================================================================
 CREATE DATABASE chirpstack;
-CREATE USER chirpstack WITH PASSWORD 'chirpstack';
-
--- Re-enable error stopping for the rest of the script
-\set ON_ERROR_STOP on
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'chirpstack') THEN
+    CREATE USER chirpstack WITH PASSWORD 'chirpstack';
+  END IF;
+END
+$$;
 
 GRANT ALL PRIVILEGES ON DATABASE chirpstack TO chirpstack;
 \c chirpstack
@@ -23,9 +26,16 @@ GRANT ALL ON SCHEMA public TO chirpstack;
 -- FarmMon (Node-RED telemetry storage)
 -- =============================================================================
 \c postgres
-\set ON_ERROR_STOP off
 CREATE DATABASE farmmon;
-CREATE USER farmmon WITH PASSWORD 'farmmon';
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'farmmon') THEN
+    CREATE USER farmmon WITH PASSWORD 'farmmon';
+  END IF;
+END
+$$;
+
+-- Re-enable error stopping for table creation (tables have IF NOT EXISTS)
 \set ON_ERROR_STOP on
 GRANT ALL PRIVILEGES ON DATABASE farmmon TO farmmon;
 \c farmmon
