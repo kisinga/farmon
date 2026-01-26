@@ -1,17 +1,17 @@
 [
     {
-        "id": "0a00ea51f19dcb75",
-        "type": "tab",
-        "label": "Dashboard",
-        "disabled": false,
-        "info": "UIBuilder dashboard handlers"
-    },
-    {
         "id": "7e7308018823ce78",
         "type": "tab",
         "label": "Message Router",
         "disabled": false,
         "info": "Routes ChirpStack messages by fPort"
+    },
+    {
+        "id": "155f01355999b8a5",
+        "type": "tab",
+        "label": "Dashboard",
+        "disabled": false,
+        "info": "UIBuilder dashboard handlers"
     },
     {
         "id": "72aa6c226990e117",
@@ -63,891 +63,6 @@
         "willMsg": {},
         "userProps": "",
         "sessionExpiry": ""
-    },
-    {
-        "id": "6303b240ed51a34e",
-        "type": "link in",
-        "z": "0a00ea51f19dcb75",
-        "name": "From Handlers",
-        "links": [],
-        "x": 275,
-        "y": 200,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "1961d947f0695190",
-        "type": "switch",
-        "z": "0a00ea51f19dcb75",
-        "name": "Route by Topic",
-        "property": "topic",
-        "propertyType": "msg",
-        "rules": [
-            {
-                "t": "eq",
-                "v": "getDevices",
-                "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "selectDevice",
-                "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "getHistory",
-                "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "setControl",
-                "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "clearOverride",
-                "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "getRules",
-                "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "saveRule",
-                "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "deleteRule",
-                "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "saveTrigger",
-                "vt": "str"
-            }
-        ],
-        "checkall": "true",
-        "repair": false,
-        "outputs": 9,
-        "x": 680,
-        "y": 200,
-        "wires": [
-            [
-                "9ae591084f9c6ad7"
-            ],
-            [
-                "2610fa8ff2269aa6"
-            ],
-            [
-                "75af3011f0d945aa"
-            ],
-            [
-                "31efc664d10efb1d"
-            ],
-            [
-                "dc156d11326bc2a6"
-            ],
-            [
-                "94ab90c9284a8612"
-            ],
-            [
-                "b79f93905c704911"
-            ],
-            [
-                "0676f7b01b29b217"
-            ],
-            [
-                "e02a55b4e84b228c"
-            ]
-        ]
-    },
-    {
-        "id": "9ae591084f9c6ad7",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Get Devices",
-        "query": "SELECT device_eui as eui, device_name as name, device_type as type, last_seen as \"lastSeen\" FROM devices WHERE is_active = true ORDER BY last_seen DESC",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 910,
-        "y": 80,
-        "wires": [
-            [
-                "eb3deb59b1fa997e"
-            ]
-        ]
-    },
-    {
-        "id": "eb3deb59b1fa997e",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Format Devices",
-        "func": "const devices = Array.isArray(msg.payload) ? msg.payload : [];\nreturn {\n    topic: 'devices',\n    payload: devices\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1100,
-        "y": 80,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "2610fa8ff2269aa6",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Prepare Query",
-        "func": "const eui = msg.payload?.eui;\nif (!eui) return null;\n\nmsg.params = [eui];\nflow.set('selectedDevice', eui);\nflow.set('selectedRange', msg.payload?.range || '24h');\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 910,
-        "y": 140,
-        "wires": [
-            [
-                "c9b9b102e3b1af94"
-            ]
-        ]
-    },
-    {
-        "id": "c9b9b102e3b1af94",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Get Fields + Viz",
-        "query": "SELECT \n    f.field_key as key,\n    f.display_name as name,\n    f.data_type as type,\n    f.unit,\n    f.category,\n    f.min_value as min,\n    f.max_value as max,\n    f.enum_values,\n    v.viz_type,\n    v.gauge_style,\n    v.chart_color,\n    v.thresholds,\n    v.is_visible,\n    v.sort_order\nFROM device_fields f\nLEFT JOIN viz_config v ON f.device_eui = v.device_eui AND f.field_key = v.field_key\nWHERE f.device_eui = $1\nORDER BY v.sort_order, f.field_key",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1110,
-        "y": 140,
-        "wires": [
-            [
-                "07031c7c03d3bc88"
-            ]
-        ]
-    },
-    {
-        "id": "07031c7c03d3bc88",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Store Fields",
-        "func": "msg.fields = msg.payload;\nmsg.params = [msg.params[0]];\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1290,
-        "y": 140,
-        "wires": [
-            [
-                "c8d63f073a751d02"
-            ]
-        ]
-    },
-    {
-        "id": "c8d63f073a751d02",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Get Controls",
-        "query": "SELECT control_key as key, current_state as state, mode, manual_until, last_change_at, last_change_by\nFROM device_controls WHERE device_eui = $1",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1470,
-        "y": 140,
-        "wires": [
-            [
-                "b67fe7a184262d8a"
-            ]
-        ]
-    },
-    {
-        "id": "b67fe7a184262d8a",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Store Controls",
-        "func": "msg.controls = msg.payload;\nmsg.params = [msg.params[0]];\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1640,
-        "y": 140,
-        "wires": [
-            [
-                "0dd8dbfc27658a86"
-            ]
-        ]
-    },
-    {
-        "id": "0dd8dbfc27658a86",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Get Triggers",
-        "query": "SELECT trigger_key as key, display_name as name, field_key as field, operator as op, threshold as th, action_control as ctrl, action_state as st, enabled\nFROM device_triggers WHERE device_eui = $1",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1810,
-        "y": 140,
-        "wires": [
-            [
-                "5894067ac046904f"
-            ]
-        ]
-    },
-    {
-        "id": "5894067ac046904f",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Store Triggers",
-        "func": "msg.triggers = msg.payload;\nmsg.params = [msg.params[0]];\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1980,
-        "y": 140,
-        "wires": [
-            [
-                "ec7f9863d3f924dd"
-            ]
-        ]
-    },
-    {
-        "id": "ec7f9863d3f924dd",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Get Latest Telemetry",
-        "query": "SELECT data, rssi, snr, ts FROM telemetry WHERE device_eui = $1 ORDER BY ts DESC LIMIT 1",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 940,
-        "y": 200,
-        "wires": [
-            [
-                "31649829f4c237f3"
-            ]
-        ]
-    },
-    {
-        "id": "31649829f4c237f3",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Format Config",
-        "func": "const latest = msg.payload?.[0];\n\nreturn {\n    topic: 'deviceConfig',\n    payload: {\n        eui: msg.params[0],\n        fields: msg.fields,\n        controls: msg.controls,\n        triggers: msg.triggers,\n        current: latest ? {\n            data: latest.data,\n            rssi: latest.rssi,\n            snr: latest.snr,\n            ts: latest.ts\n        } : null\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1150,
-        "y": 200,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "75af3011f0d945aa",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Build History Query",
-        "func": "const eui = msg.payload?.eui || flow.get('selectedDevice');\nconst field = msg.payload?.field;\nconst range = msg.payload?.range || flow.get('selectedRange') || '24h';\n\nif (!eui || !field) return null;\n\nconst intervals = {\n    '1h': '1 hour',\n    '6h': '6 hours',\n    '24h': '24 hours',\n    '7d': '7 days',\n    '30d': '30 days'\n};\n\nconst interval = intervals[range] || '24 hours';\n\nmsg.params = [eui, interval];\nmsg.field = field;\n\n// Handle special fields that are columns, not in JSONB data\nif (field === 'rssi') {\n    msg.query = `SELECT ts, rssi::numeric as value\nFROM telemetry\nWHERE device_eui = $1 AND ts > NOW() - $2::interval AND rssi IS NOT NULL\nORDER BY ts`;\n} else if (field === 'snr') {\n    msg.query = `SELECT ts, snr::numeric as value\nFROM telemetry\nWHERE device_eui = $1 AND ts > NOW() - $2::interval AND snr IS NOT NULL\nORDER BY ts`;\n} else {\n    msg.query = `SELECT ts, (data->>'${field}')::numeric as value\nFROM telemetry\nWHERE device_eui = $1 AND ts > NOW() - $2::interval AND data->>'${field}' IS NOT NULL\nORDER BY ts`;\n}\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 930,
-        "y": 260,
-        "wires": [
-            [
-                "532ebdfd3f6c8805"
-            ]
-        ]
-    },
-    {
-        "id": "532ebdfd3f6c8805",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Execute",
-        "query": "",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1110,
-        "y": 260,
-        "wires": [
-            [
-                "5d90bbeb0d2b2d75"
-            ]
-        ]
-    },
-    {
-        "id": "5d90bbeb0d2b2d75",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Format History",
-        "func": "return {\n    topic: 'history',\n    payload: {\n        eui: msg.params[0],\n        field: msg.field,\n        data: msg.payload.map(r => ({ ts: r.ts, value: r.value }))\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1280,
-        "y": 260,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "31efc664d10efb1d",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Set Manual Control",
-        "func": "const { eui, control, state, duration } = msg.payload;\n\nif (!eui || !control || !state) return null;\n\n// Calculate manual_until if duration specified\nlet manualUntil = null;\nif (duration) {\n    manualUntil = new Date(Date.now() + duration * 60 * 1000);\n}\n\nmsg.params = [state, 'manual', manualUntil, 'user', eui, control];\nmsg.controlInfo = { eui, control, state };\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 930,
-        "y": 320,
-        "wires": [
-            [
-                "c55c7864b5915d73"
-            ]
-        ]
-    },
-    {
-        "id": "c55c7864b5915d73",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Update Control",
-        "query": "UPDATE device_controls SET current_state = $1, mode = $2, manual_until = $3, last_change_by = $4, last_change_at = NOW()\nWHERE device_eui = $5 AND control_key = $6\nRETURNING *",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1130,
-        "y": 320,
-        "wires": [
-            [
-                "4d2588f6d6a8163a"
-            ]
-        ]
-    },
-    {
-        "id": "4d2588f6d6a8163a",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Build & Send Downlink",
-        "func": "const { eui, control, state } = msg.controlInfo;\n\n// Get command port from device registration\n// For now, use defaults\nconst commandPorts = {\n    'pump': 20,\n    'valve': 21\n};\n\nconst port = commandPorts[control] || 20;\nconst stateValue = (state === 'on' || state === 'open') ? 0x01 : 0x00;\n\n// Log command\nmsg.cmdParams = [eui, `set_${control}`, JSON.stringify({state}), 'user', 'sent'];\n\n// Build downlink - set topic and payload directly for mqtt out node\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${eui}/command/down`;\nmsg.payload = {\n    devEui: eui,\n    confirmed: false,\n    fPort: port,\n    data: Buffer.from([stateValue]).toString('base64')\n};\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1360,
-        "y": 320,
-        "wires": [
-            [
-                "ebb226ff791f8991",
-                "c837752a6f60d7b5",
-                "ea6528910208629b"
-            ]
-        ]
-    },
-    {
-        "id": "ebb226ff791f8991",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Log Command",
-        "query": "INSERT INTO commands (device_eui, command_key, payload, initiated_by, status, sent_at)\nVALUES ($1, $2, $3::jsonb, $4, $5, NOW())",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1590,
-        "y": 280,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "c837752a6f60d7b5",
-        "type": "mqtt out",
-        "z": "0a00ea51f19dcb75",
-        "name": "Send Downlink",
-        "topic": "",
-        "qos": "",
-        "retain": "",
-        "respTopic": "",
-        "contentType": "",
-        "userProps": "",
-        "correl": "",
-        "expiry": "",
-        "broker": "e1b2c3d4e5f6a7b8",
-        "x": 1600,
-        "y": 320,
-        "wires": []
-    },
-    {
-        "id": "ea6528910208629b",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Notify UI",
-        "func": "const { eui, control, state } = msg.controlInfo;\nreturn {\n    topic: 'stateChange',\n    payload: {\n        eui,\n        control,\n        state,\n        reason: 'user'\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1590,
-        "y": 360,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "dc156d11326bc2a6",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Clear Override",
-        "func": "const { eui, control } = msg.payload;\n\nif (!eui || !control) return null;\n\nmsg.params = ['auto', eui, control];\nmsg.controlInfo = { eui, control };\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 920,
-        "y": 380,
-        "wires": [
-            [
-                "4b100331c466fa31"
-            ]
-        ]
-    },
-    {
-        "id": "4b100331c466fa31",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Set Auto Mode",
-        "query": "UPDATE device_controls SET mode = $1, manual_until = NULL WHERE device_eui = $2 AND control_key = $3 RETURNING *",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1110,
-        "y": 380,
-        "wires": [
-            [
-                "fb256b7a72f44ec9"
-            ]
-        ]
-    },
-    {
-        "id": "fb256b7a72f44ec9",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Notify UI",
-        "func": "const ctrl = msg.payload?.[0];\nif (!ctrl) return null;\n\nreturn {\n    topic: 'controlUpdate',\n    payload: {\n        eui: msg.controlInfo.eui,\n        control: ctrl.control_key,\n        state: ctrl.current_state,\n        mode: ctrl.mode\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1290,
-        "y": 380,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "f7bbe8cc31a3dbbd",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "On Client Connect",
-        "func": "if (msg.uibuilderCtrl === 'client connect') {\n    return { topic: 'getDevices' };\n}\nreturn null;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 690,
-        "y": 80,
-        "wires": [
-            [
-                "9ae591084f9c6ad7"
-            ]
-        ]
-    },
-    {
-        "id": "5e8f9e66c6cb1049",
-        "type": "inject",
-        "z": "0a00ea51f19dcb75",
-        "name": "Every 60s",
-        "props": [],
-        "repeat": "60",
-        "crontab": "",
-        "once": true,
-        "onceDelay": "10",
-        "topic": "",
-        "x": 130,
-        "y": 440,
-        "wires": [
-            [
-                "b0c155b053f43cf0"
-            ]
-        ]
-    },
-    {
-        "id": "b0c155b053f43cf0",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Expire Manual Overrides",
-        "query": "UPDATE device_controls\nSET mode = 'auto', manual_until = NULL\nWHERE mode = 'manual' AND manual_until < NOW()\nRETURNING device_eui, control_key, current_state",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 340,
-        "y": 440,
-        "wires": [
-            [
-                "d67a4d619f5e25fc"
-            ]
-        ]
-    },
-    {
-        "id": "d67a4d619f5e25fc",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Notify UI",
-        "func": "const expired = msg.payload || [];\nif (expired.length === 0) return null;\n\n// Send control update for each expired override\nconst msgs = expired.map(c => ({\n    topic: 'controlUpdate',\n    payload: {\n        eui: c.device_eui,\n        control: c.control_key,\n        state: c.current_state,\n        mode: 'auto'\n    }\n}));\n\nreturn [msgs];",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 570,
-        "y": 440,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "94ab90c9284a8612",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Prepare Rules Query",
-        "func": "const eui = msg.payload?.eui;\nif (!eui) return null;\nmsg.params = [eui];\nmsg.deviceEui = eui;\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 930,
-        "y": 500,
-        "wires": [
-            [
-                "26f7c7849dbd262c"
-            ]
-        ]
-    },
-    {
-        "id": "26f7c7849dbd262c",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Get All Rules",
-        "query": "SELECT id, name, description, condition, action_control, action_state, priority, cooldown_seconds, enabled, last_triggered, created_at\nFROM user_rules WHERE device_eui = $1 ORDER BY priority, created_at",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1130,
-        "y": 500,
-        "wires": [
-            [
-                "3bd3438f9b9c5c13"
-            ]
-        ]
-    },
-    {
-        "id": "3bd3438f9b9c5c13",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Format Rules",
-        "func": "return {\n    topic: 'rules',\n    payload: {\n        eui: msg.deviceEui,\n        rules: msg.payload || []\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1300,
-        "y": 500,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "b79f93905c704911",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Build Rule Upsert",
-        "func": "const rule = msg.payload;\nif (!rule || !rule.eui) return null;\n\n// If rule has id, it's an update\nif (rule.id) {\n    msg.query = `UPDATE user_rules SET\n        name = $2, description = $3, condition = $4::jsonb,\n        action_control = $5, action_state = $6, priority = $7,\n        cooldown_seconds = $8, enabled = $9\n    WHERE id = $1 AND device_eui = $10\n    RETURNING *`;\n    msg.params = [\n        rule.id, rule.name, rule.description || null,\n        JSON.stringify(rule.condition), rule.action_control, rule.action_state,\n        rule.priority || 100, rule.cooldown_seconds || 300, rule.enabled ?? true,\n        rule.eui\n    ];\n} else {\n    msg.query = `INSERT INTO user_rules\n        (device_eui, name, description, condition, action_control, action_state, priority, cooldown_seconds, enabled)\n    VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)\n    RETURNING *`;\n    msg.params = [\n        rule.eui, rule.name, rule.description || null,\n        JSON.stringify(rule.condition), rule.action_control, rule.action_state,\n        rule.priority || 100, rule.cooldown_seconds || 300, rule.enabled ?? true\n    ];\n}\n\nmsg.deviceEui = rule.eui;\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 920,
-        "y": 560,
-        "wires": [
-            [
-                "51677dc0a8729abd"
-            ]
-        ]
-    },
-    {
-        "id": "51677dc0a8729abd",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Execute",
-        "query": "",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1110,
-        "y": 560,
-        "wires": [
-            [
-                "b123bec7e12bb41e"
-            ]
-        ]
-    },
-    {
-        "id": "b123bec7e12bb41e",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Notify Rule Saved",
-        "func": "const saved = msg.payload?.[0];\nreturn {\n    topic: 'ruleSaved',\n    payload: {\n        eui: msg.deviceEui,\n        rule: saved\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1310,
-        "y": 560,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "0676f7b01b29b217",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Prepare Delete",
-        "func": "const { eui, ruleId } = msg.payload || {};\nif (!eui || !ruleId) return null;\nmsg.params = [ruleId, eui];\nmsg.deviceEui = eui;\nmsg.ruleId = ruleId;\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 920,
-        "y": 620,
-        "wires": [
-            [
-                "fcc1216c32e7b9e3"
-            ]
-        ]
-    },
-    {
-        "id": "fcc1216c32e7b9e3",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Delete Rule",
-        "query": "DELETE FROM user_rules WHERE id = $1 AND device_eui = $2",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1110,
-        "y": 620,
-        "wires": [
-            [
-                "3a342e174936ee0b"
-            ]
-        ]
-    },
-    {
-        "id": "3a342e174936ee0b",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Notify Rule Deleted",
-        "func": "return {\n    topic: 'ruleDeleted',\n    payload: {\n        eui: msg.deviceEui,\n        ruleId: msg.ruleId\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1320,
-        "y": 620,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "e02a55b4e84b228c",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Update Trigger",
-        "func": "const { eui, triggerKey, enabled } = msg.payload || {};\nif (!eui || !triggerKey || enabled === undefined) return null;\nmsg.params = [enabled, eui, triggerKey];\nmsg.deviceEui = eui;\nmsg.triggerKey = triggerKey;\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 920,
-        "y": 680,
-        "wires": [
-            [
-                "e84c3e3544b8cbed"
-            ]
-        ]
-    },
-    {
-        "id": "e84c3e3544b8cbed",
-        "type": "postgresql",
-        "z": "0a00ea51f19dcb75",
-        "name": "Update Trigger",
-        "query": "UPDATE device_triggers SET enabled = $1 WHERE device_eui = $2 AND trigger_key = $3 RETURNING *",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1120,
-        "y": 680,
-        "wires": [
-            [
-                "55758705f4fc1d63"
-            ]
-        ]
-    },
-    {
-        "id": "55758705f4fc1d63",
-        "type": "function",
-        "z": "0a00ea51f19dcb75",
-        "name": "Notify Trigger Saved",
-        "func": "const saved = msg.payload?.[0];\nreturn {\n    topic: 'triggerSaved',\n    payload: {\n        eui: msg.deviceEui,\n        trigger: saved\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1330,
-        "y": 680,
-        "wires": [
-            [
-                "fe9ff61fa70ce0eb"
-            ]
-        ]
-    },
-    {
-        "id": "fe9ff61fa70ce0eb",
-        "type": "uibuilder",
-        "z": "0a00ea51f19dcb75",
-        "name": "Dashboard",
-        "topic": "",
-        "url": "dash",
-        "okToGo": true,
-        "fwdInMessages": false,
-        "allowScripts": false,
-        "allowStyles": false,
-        "copyIndex": true,
-        "templateFolder": "ext-svelte",
-        "extTemplate": "TotallyInformation/uib-template-svelte-simple",
-        "showfolder": false,
-        "reload": false,
-        "sourceFolder": "src",
-        "deployedVersion": "7.5.0",
-        "showMsgUib": false,
-        "title": "",
-        "descr": "",
-        "editurl": "vscode://vscode-remote/ssh-remote+farm/data/uibuilder/dash/?windowId=_blank",
-        "x": 460,
-        "y": 200,
-        "wires": [
-            [
-                "1961d947f0695190"
-            ],
-            [
-                "f7bbe8cc31a3dbbd"
-            ]
-        ]
     },
     {
         "id": "d1b95fed578f33c0",
@@ -1105,7 +220,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Send Registration ACK",
-        "func": "// Build ChirpStack downlink to acknowledge registration\nconst deviceEui = msg.deviceEui;\n\n// ChirpStack v4 downlink via MQTT\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${deviceEui}/command/down`;\nmsg.payload = {\n    devEui: deviceEui,\n    confirmed: false,\n    fPort: 5,\n    data: 'AQ=='  // 0x01 byte, base64 encoded\n};\n\nnode.status({fill: 'green', shape: 'dot', text: `ACK: ${deviceEui.slice(-4)}`});\n\nreturn msg;",
+        "func": "// Build ChirpStack downlink to acknowledge registration\nconst deviceEui = msg.deviceEui;\n\n// ChirpStack v4 downlink via MQTT\nconst appId =\n  global.get('chirpstackAppId') ||\n  '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${deviceEui}/command/down`;\n\nmsg.payload = {\n  devEui: deviceEui,\n  confirmed: false,\n  fPort: 5,\n  data: 'AQ==' // 0x01 byte, base64 encoded\n};\n\nnode.status({\n  fill: 'green',\n  shape: 'dot',\n  text: `ACK: ${deviceEui.slice(-4)}`\n});\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -1170,7 +285,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 2110,
+        "x": 1510,
         "y": 280,
         "wires": [
             [
@@ -1188,7 +303,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 2300,
+        "x": 1700,
         "y": 280,
         "wires": [
             [
@@ -1208,7 +323,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 2470,
+        "x": 1870,
         "y": 280,
         "wires": [
             [
@@ -1226,7 +341,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 2640,
+        "x": 2040,
         "y": 280,
         "wires": [
             [
@@ -1246,7 +361,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 2830,
+        "x": 2230,
         "y": 280,
         "wires": [
             [
@@ -1264,7 +379,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 2990,
+        "x": 2390,
         "y": 280,
         "wires": [
             [
@@ -1284,7 +399,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 3180,
+        "x": 2580,
         "y": 280,
         "wires": [
             [
@@ -1302,7 +417,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 3360,
+        "x": 2760,
         "y": 280,
         "wires": [
             [
@@ -1322,7 +437,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 3540,
+        "x": 2940,
         "y": 280,
         "wires": [
             []
@@ -1345,7 +460,7 @@
         "wires": [
             [
                 "3737949cca34c751",
-                "d8e9934b853d9ac8"
+                "prep_last_seen_params"
             ]
         ]
     },
@@ -1377,7 +492,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1130,
+        "x": 1330,
         "y": 520,
         "wires": [
             []
@@ -1758,6 +873,911 @@
         "y": 660,
         "wires": [
             []
+        ]
+    },
+    {
+        "id": "prep_last_seen_params",
+        "type": "function",
+        "z": "7e7308018823ce78",
+        "name": "Prep Last Seen",
+        "func": "msg.params = [msg.deviceEui];\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1120,
+        "y": 520,
+        "wires": [
+            [
+                "d8e9934b853d9ac8"
+            ]
+        ]
+    },
+    {
+        "id": "cd6e5f46f99415f5",
+        "type": "link in",
+        "z": "155f01355999b8a5",
+        "name": "From Handlers",
+        "links": [],
+        "x": 275,
+        "y": 200,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "0304e7c0066d4c8e",
+        "type": "switch",
+        "z": "155f01355999b8a5",
+        "name": "Route by Topic",
+        "property": "topic",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "getDevices",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "selectDevice",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "getHistory",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "setControl",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "clearOverride",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "getRules",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "saveRule",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "deleteRule",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "saveTrigger",
+                "vt": "str"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 9,
+        "x": 680,
+        "y": 200,
+        "wires": [
+            [
+                "bde01bd59146141c"
+            ],
+            [
+                "4ff0e79eceed3c53"
+            ],
+            [
+                "0b4fd49c41913671"
+            ],
+            [
+                "b45294202d37855c"
+            ],
+            [
+                "d29a92381ad87b38"
+            ],
+            [
+                "c438376ca9a39cc0"
+            ],
+            [
+                "1edd84a128ef4c79"
+            ],
+            [
+                "5c7a2106be7aa3b2"
+            ],
+            [
+                "7277c0d8cf0390da"
+            ]
+        ]
+    },
+    {
+        "id": "bde01bd59146141c",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Get Devices",
+        "query": "SELECT device_eui as eui, device_name as name, device_type as type, last_seen as \"lastSeen\" FROM devices WHERE is_active = true ORDER BY last_seen DESC",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 910,
+        "y": 80,
+        "wires": [
+            [
+                "d8435395b6339292"
+            ]
+        ]
+    },
+    {
+        "id": "d8435395b6339292",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Devices",
+        "func": "const devices = Array.isArray(msg.payload) ? msg.payload : [];\nreturn {\n    topic: 'devices',\n    payload: devices\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1100,
+        "y": 80,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "4ff0e79eceed3c53",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prepare Query",
+        "func": "const eui = msg.payload?.eui;\nif (!eui) return null;\n\nmsg.params = [eui];\nflow.set('selectedDevice', eui);\nflow.set('selectedRange', msg.payload?.range || '24h');\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 910,
+        "y": 140,
+        "wires": [
+            [
+                "078bcacc401c0bc4"
+            ]
+        ]
+    },
+    {
+        "id": "078bcacc401c0bc4",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Get Fields + Viz",
+        "query": "SELECT \n    f.field_key as key,\n    f.display_name as name,\n    f.data_type as type,\n    f.unit,\n    f.category,\n    f.min_value as min,\n    f.max_value as max,\n    f.enum_values,\n    v.viz_type,\n    v.gauge_style,\n    v.chart_color,\n    v.thresholds,\n    v.is_visible,\n    v.sort_order\nFROM device_fields f\nLEFT JOIN viz_config v ON f.device_eui = v.device_eui AND f.field_key = v.field_key\nWHERE f.device_eui = $1\nORDER BY v.sort_order, f.field_key",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1110,
+        "y": 140,
+        "wires": [
+            [
+                "8c9faa552f923554"
+            ]
+        ]
+    },
+    {
+        "id": "8c9faa552f923554",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Store Fields",
+        "func": "msg.fields = msg.payload;\nmsg.params = [msg.params[0]];\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1290,
+        "y": 140,
+        "wires": [
+            [
+                "162308512dd0bd46"
+            ]
+        ]
+    },
+    {
+        "id": "162308512dd0bd46",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Get Controls",
+        "query": "SELECT control_key as key, current_state as state, mode, manual_until, last_change_at, last_change_by\nFROM device_controls WHERE device_eui = $1",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1470,
+        "y": 140,
+        "wires": [
+            [
+                "53ee42a3c5066025"
+            ]
+        ]
+    },
+    {
+        "id": "53ee42a3c5066025",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Store Controls",
+        "func": "msg.controls = msg.payload;\nmsg.params = [msg.params[0]];\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1640,
+        "y": 140,
+        "wires": [
+            [
+                "b94664a065cef058"
+            ]
+        ]
+    },
+    {
+        "id": "b94664a065cef058",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Get Triggers",
+        "query": "SELECT trigger_key as key, display_name as name, field_key as field, operator as op, threshold as th, action_control as ctrl, action_state as st, enabled\nFROM device_triggers WHERE device_eui = $1",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1810,
+        "y": 140,
+        "wires": [
+            [
+                "adfb20a2d365eda8"
+            ]
+        ]
+    },
+    {
+        "id": "adfb20a2d365eda8",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Store Triggers",
+        "func": "msg.triggers = msg.payload;\nmsg.params = [msg.params[0]];\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1980,
+        "y": 140,
+        "wires": [
+            [
+                "796c2c1065daecfa"
+            ]
+        ]
+    },
+    {
+        "id": "796c2c1065daecfa",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Get Latest Telemetry",
+        "query": "SELECT data, rssi, snr, ts FROM telemetry WHERE device_eui = $1 ORDER BY ts DESC LIMIT 1",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 940,
+        "y": 200,
+        "wires": [
+            [
+                "b37958e3a0e0403f"
+            ]
+        ]
+    },
+    {
+        "id": "b37958e3a0e0403f",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Config",
+        "func": "const latest = msg.payload?.[0];\n\nreturn {\n    topic: 'deviceConfig',\n    payload: {\n        eui: msg.params[0],\n        fields: msg.fields,\n        controls: msg.controls,\n        triggers: msg.triggers,\n        current: latest ? {\n            data: latest.data,\n            rssi: latest.rssi,\n            snr: latest.snr,\n            ts: latest.ts\n        } : null\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1150,
+        "y": 200,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "0b4fd49c41913671",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Build History Query",
+        "func": "const eui = msg.payload?.eui || flow.get('selectedDevice');\nconst field = msg.payload?.field;\nconst range = msg.payload?.range || flow.get('selectedRange') || '24h';\n\nif (!eui || !field) return null;\n\nconst intervals = {\n    '1h': '1 hour',\n    '6h': '6 hours',\n    '24h': '24 hours',\n    '7d': '7 days',\n    '30d': '30 days'\n};\n\nconst interval = intervals[range] || '24 hours';\n\nmsg.params = [eui, interval];\nmsg.field = field;\nmsg.query = `SELECT ts, (data->>'${field}')::numeric as value\nFROM telemetry\nWHERE device_eui = $1 AND ts > NOW() - $2::interval AND data->>'${field}' IS NOT NULL\nORDER BY ts`;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 930,
+        "y": 260,
+        "wires": [
+            [
+                "f1b1a6a02d5788d2"
+            ]
+        ]
+    },
+    {
+        "id": "f1b1a6a02d5788d2",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Execute",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1110,
+        "y": 260,
+        "wires": [
+            [
+                "e6bfa23516fbad35"
+            ]
+        ]
+    },
+    {
+        "id": "e6bfa23516fbad35",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format History",
+        "func": "return {\n    topic: 'history',\n    payload: {\n        eui: msg.params[0],\n        field: msg.field,\n        data: msg.payload.map(r => ({ ts: r.ts, value: r.value }))\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1280,
+        "y": 260,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "b45294202d37855c",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Set Manual Control",
+        "func": "const { eui, control, state, duration } = msg.payload;\n\nif (!eui || !control || !state) return null;\n\n// Calculate manual_until if duration specified\nlet manualUntil = null;\nif (duration) {\n    manualUntil = new Date(Date.now() + duration * 60 * 1000);\n}\n\nmsg.params = [state, 'manual', manualUntil, 'user', eui, control];\nmsg.controlInfo = { eui, control, state };\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 930,
+        "y": 320,
+        "wires": [
+            [
+                "8139f62a3d08df52"
+            ]
+        ]
+    },
+    {
+        "id": "8139f62a3d08df52",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Update Control",
+        "query": "UPDATE device_controls SET current_state = $1, mode = $2, manual_until = $3, last_change_by = $4, last_change_at = NOW()\nWHERE device_eui = $5 AND control_key = $6\nRETURNING *",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1130,
+        "y": 320,
+        "wires": [
+            [
+                "45516147972cfd5d"
+            ]
+        ]
+    },
+    {
+        "id": "45516147972cfd5d",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Build & Send Downlink",
+        "func": "const { eui, control, state } = msg.controlInfo;\n\n// Get command port from device registration\n// For now, use defaults\nconst commandPorts = {\n    'pump': 20,\n    'valve': 21\n};\n\nconst port = commandPorts[control] || 20;\nconst stateValue = (state === 'on' || state === 'open') ? 0x01 : 0x00;\n\n// Log command\nmsg.cmdParams = [eui, `set_${control}`, JSON.stringify({state}), 'user', 'sent'];\n\n// Build downlink - set topic and payload directly for mqtt out node\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${eui}/command/down`;\nmsg.payload = {\n    devEui: eui,\n    confirmed: false,\n    fPort: port,\n    data: Buffer.from([stateValue]).toString('base64')\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1360,
+        "y": 320,
+        "wires": [
+            [
+                "b982e4431d33b7d8",
+                "cbee7274b6c83abe",
+                "5e49c5b7130d0a3e"
+            ]
+        ]
+    },
+    {
+        "id": "b982e4431d33b7d8",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Log Command",
+        "query": "INSERT INTO commands (device_eui, command_key, payload, initiated_by, status, sent_at)\nVALUES ($1, $2, $3::jsonb, $4, $5, NOW())",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1620,
+        "y": 240,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "cbee7274b6c83abe",
+        "type": "mqtt out",
+        "z": "155f01355999b8a5",
+        "name": "Send Downlink",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e1b2c3d4e5f6a7b8",
+        "x": 1600,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "5e49c5b7130d0a3e",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Notify UI",
+        "func": "const { eui, control, state } = msg.controlInfo;\nreturn {\n    topic: 'stateChange',\n    payload: {\n        eui,\n        control,\n        state,\n        reason: 'user'\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1600,
+        "y": 400,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "d29a92381ad87b38",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Clear Override",
+        "func": "const { eui, control } = msg.payload;\n\nif (!eui || !control) return null;\n\nmsg.params = ['auto', eui, control];\nmsg.controlInfo = { eui, control };\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 920,
+        "y": 380,
+        "wires": [
+            [
+                "2d6fa7ccc2178bad"
+            ]
+        ]
+    },
+    {
+        "id": "2d6fa7ccc2178bad",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Set Auto Mode",
+        "query": "UPDATE device_controls SET mode = $1, manual_until = NULL WHERE device_eui = $2 AND control_key = $3 RETURNING *",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1110,
+        "y": 380,
+        "wires": [
+            [
+                "87591b6fd60bf59a"
+            ]
+        ]
+    },
+    {
+        "id": "87591b6fd60bf59a",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Notify UI",
+        "func": "const ctrl = msg.payload?.[0];\nif (!ctrl) return null;\n\nreturn {\n    topic: 'controlUpdate',\n    payload: {\n        eui: msg.controlInfo.eui,\n        control: ctrl.control_key,\n        state: ctrl.current_state,\n        mode: ctrl.mode\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1290,
+        "y": 380,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "22487547345322c9",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "On Client Connect",
+        "func": "if (msg.uibuilderCtrl === 'client connect') {\n    return { topic: 'getDevices' };\n}\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 690,
+        "y": 80,
+        "wires": [
+            [
+                "bde01bd59146141c"
+            ]
+        ]
+    },
+    {
+        "id": "a6e3644596854fbf",
+        "type": "inject",
+        "z": "155f01355999b8a5",
+        "name": "Every 60s",
+        "props": [],
+        "repeat": "60",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "10",
+        "topic": "",
+        "x": 130,
+        "y": 440,
+        "wires": [
+            [
+                "830f22e4b83363c1"
+            ]
+        ]
+    },
+    {
+        "id": "830f22e4b83363c1",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Expire Manual Overrides",
+        "query": "UPDATE device_controls\nSET mode = 'auto', manual_until = NULL\nWHERE mode = 'manual' AND manual_until < NOW()\nRETURNING device_eui, control_key, current_state",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 340,
+        "y": 440,
+        "wires": [
+            [
+                "10c9ed4964ab8883"
+            ]
+        ]
+    },
+    {
+        "id": "10c9ed4964ab8883",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Notify UI",
+        "func": "const expired = msg.payload || [];\nif (expired.length === 0) return null;\n\n// Send control update for each expired override\nconst msgs = expired.map(c => ({\n    topic: 'controlUpdate',\n    payload: {\n        eui: c.device_eui,\n        control: c.control_key,\n        state: c.current_state,\n        mode: 'auto'\n    }\n}));\n\nreturn [msgs];",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 570,
+        "y": 440,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "c438376ca9a39cc0",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prepare Rules Query",
+        "func": "const eui = msg.payload?.eui;\nif (!eui) return null;\nmsg.params = [eui];\nmsg.deviceEui = eui;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 930,
+        "y": 500,
+        "wires": [
+            [
+                "a1cd954cfdd5b117"
+            ]
+        ]
+    },
+    {
+        "id": "a1cd954cfdd5b117",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Get All Rules",
+        "query": "SELECT id, name, description, condition, action_control, action_state, priority, cooldown_seconds, enabled, last_triggered, created_at\nFROM user_rules WHERE device_eui = $1 ORDER BY priority, created_at",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1130,
+        "y": 500,
+        "wires": [
+            [
+                "1ee74b98363e1b51"
+            ]
+        ]
+    },
+    {
+        "id": "1ee74b98363e1b51",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Rules",
+        "func": "return {\n    topic: 'rules',\n    payload: {\n        eui: msg.deviceEui,\n        rules: msg.payload || []\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1300,
+        "y": 500,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "1edd84a128ef4c79",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Build Rule Upsert",
+        "func": "const rule = msg.payload;\nif (!rule || !rule.eui) return null;\n\n// If rule has id, it's an update\nif (rule.id) {\n    msg.query = `UPDATE user_rules SET\n        name = $2, description = $3, condition = $4::jsonb,\n        action_control = $5, action_state = $6, priority = $7,\n        cooldown_seconds = $8, enabled = $9\n    WHERE id = $1 AND device_eui = $10\n    RETURNING *`;\n    msg.params = [\n        rule.id, rule.name, rule.description || null,\n        JSON.stringify(rule.condition), rule.action_control, rule.action_state,\n        rule.priority || 100, rule.cooldown_seconds || 300, rule.enabled ?? true,\n        rule.eui\n    ];\n} else {\n    msg.query = `INSERT INTO user_rules\n        (device_eui, name, description, condition, action_control, action_state, priority, cooldown_seconds, enabled)\n    VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)\n    RETURNING *`;\n    msg.params = [\n        rule.eui, rule.name, rule.description || null,\n        JSON.stringify(rule.condition), rule.action_control, rule.action_state,\n        rule.priority || 100, rule.cooldown_seconds || 300, rule.enabled ?? true\n    ];\n}\n\nmsg.deviceEui = rule.eui;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 920,
+        "y": 560,
+        "wires": [
+            [
+                "759fc956d187cf80"
+            ]
+        ]
+    },
+    {
+        "id": "759fc956d187cf80",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Execute",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1110,
+        "y": 560,
+        "wires": [
+            [
+                "7a3175b02658122c"
+            ]
+        ]
+    },
+    {
+        "id": "7a3175b02658122c",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Notify Rule Saved",
+        "func": "const saved = msg.payload?.[0];\nreturn {\n    topic: 'ruleSaved',\n    payload: {\n        eui: msg.deviceEui,\n        rule: saved\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1310,
+        "y": 560,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "5c7a2106be7aa3b2",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prepare Delete",
+        "func": "const { eui, ruleId } = msg.payload || {};\nif (!eui || !ruleId) return null;\nmsg.params = [ruleId, eui];\nmsg.deviceEui = eui;\nmsg.ruleId = ruleId;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 920,
+        "y": 620,
+        "wires": [
+            [
+                "308dba55bd398d5a"
+            ]
+        ]
+    },
+    {
+        "id": "308dba55bd398d5a",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Delete Rule",
+        "query": "DELETE FROM user_rules WHERE id = $1 AND device_eui = $2",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1110,
+        "y": 620,
+        "wires": [
+            [
+                "48e117f27e2357a3"
+            ]
+        ]
+    },
+    {
+        "id": "48e117f27e2357a3",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Notify Rule Deleted",
+        "func": "return {\n    topic: 'ruleDeleted',\n    payload: {\n        eui: msg.deviceEui,\n        ruleId: msg.ruleId\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1320,
+        "y": 620,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "7277c0d8cf0390da",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Update Trigger",
+        "func": "const { eui, triggerKey, enabled } = msg.payload || {};\nif (!eui || !triggerKey || enabled === undefined) return null;\nmsg.params = [enabled, eui, triggerKey];\nmsg.deviceEui = eui;\nmsg.triggerKey = triggerKey;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 920,
+        "y": 680,
+        "wires": [
+            [
+                "92436a7806185496"
+            ]
+        ]
+    },
+    {
+        "id": "92436a7806185496",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Update Trigger",
+        "query": "UPDATE device_triggers SET enabled = $1 WHERE device_eui = $2 AND trigger_key = $3 RETURNING *",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1120,
+        "y": 680,
+        "wires": [
+            [
+                "63996c57e0835aba"
+            ]
+        ]
+    },
+    {
+        "id": "63996c57e0835aba",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Notify Trigger Saved",
+        "func": "const saved = msg.payload?.[0];\nreturn {\n    topic: 'triggerSaved',\n    payload: {\n        eui: msg.deviceEui,\n        trigger: saved\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1330,
+        "y": 680,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "7a756a0bc95ae6be",
+        "type": "uibuilder",
+        "z": "155f01355999b8a5",
+        "name": "Dashboard",
+        "topic": "",
+        "url": "dash",
+        "okToGo": true,
+        "fwdInMessages": false,
+        "allowScripts": false,
+        "allowStyles": false,
+        "copyIndex": true,
+        "templateFolder": "ext-iife-vue3-nobuild",
+        "extTemplate": "TotallyInformation/uib-template-iife-vue3-nobuild",
+        "showfolder": false,
+        "reload": false,
+        "sourceFolder": "src",
+        "deployedVersion": "7.5.0",
+        "showMsgUib": false,
+        "title": "",
+        "descr": "",
+        "editurl": "vscode://vscode-remote/ssh-remote+farm/data/uibuilder/dash/?windowId=_blank",
+        "x": 450,
+        "y": 200,
+        "wires": [
+            [
+                "0304e7c0066d4c8e"
+            ],
+            [
+                "22487547345322c9"
+            ]
         ]
     }
 ]
