@@ -77,6 +77,8 @@ private:
     uint32_t _errorCount = 0;
     uint32_t _lastResetMs = 0;
     uint32_t _lastTxMs = 0;
+    uint32_t _lastRegAttemptMs = 0;  // Track last registration attempt for retry logic
+    static constexpr uint32_t REG_RETRY_INTERVAL_MS = 30000;  // Retry registration every 30s until ACK
     bool _registrationSent = false;  // Track if registration message has been sent after join
     bool _registrationPending = false;  // Flag to trigger registration from main loop (avoid stack overflow)
     bool _registrationComplete = false;  // True when server has ACKed registration (persisted in NVS)
@@ -253,8 +255,14 @@ void RemoteApplicationImpl::initialize() {
         // Update main status text
         if (statusTextElement) {
             char statusStr[48];
-            const char* connStr = isConnected ? "Joined" :
-                                  (connectionState == ILoRaWANService::ConnectionState::Connecting ? "Joining..." : "Offline");
+            const char* connStr;
+            if (!isConnected) {
+                connStr = (connectionState == ILoRaWANService::ConnectionState::Connecting) ? "Joining..." : "Offline";
+            } else if (!_registrationComplete) {
+                connStr = _registrationSent ? "Registering..." : "Joined";
+            } else {
+                connStr = "Ready";
+            }
             snprintf(statusStr, sizeof(statusStr), "%s\nUp:%lu Dn:%lu\nErr:%u",
                      connStr,
                      lorawanService->getUplinkCount(),
@@ -419,8 +427,19 @@ void RemoteApplicationImpl::run() {
     if (_registrationPending) {
         _registrationPending = false;
         _registrationSent = true;  // Set BEFORE sending to prevent re-entry during TX
+        _lastRegAttemptMs = millis();
         LOGI("Remote", "Sending registration message from main loop");
         sendRegistration();
+    }
+
+    // Retry registration if not yet ACKed (Class A needs uplinks to receive downlinks)
+    if (_registrationSent && !_registrationComplete && lorawanService && lorawanService->isJoined()) {
+        uint32_t now = millis();
+        if (now - _lastRegAttemptMs >= REG_RETRY_INTERVAL_MS) {
+            _lastRegAttemptMs = now;
+            LOGI("Remote", "Retrying registration (awaiting ACK)");
+            sendRegistration();
+        }
     }
 
     delay(1);

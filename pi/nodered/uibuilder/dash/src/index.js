@@ -196,7 +196,13 @@ const ChartComponent = {
             const color = this.field.chart_color || '#3b82f6';
             const unit = this.field.unit || '';
             const name = this.field.name || this.field.key;
-            const hasData = this.data && this.data.length > 0;
+
+            // Filter and validate data - ensure numeric values
+            const validData = (this.data || [])
+                .filter(d => d && d.ts && typeof d.value === 'number' && !isNaN(d.value))
+                .map(d => [d.ts, d.value]);
+
+            const hasData = validData.length > 0;
 
             const option = {
                 backgroundColor: 'transparent',
@@ -237,7 +243,7 @@ const ChartComponent = {
                 },
                 series: [{
                     name, type: 'line',
-                    data: this.data.map(d => [d.ts, d.value]),
+                    data: validData,
                     smooth: 0.3, symbol: 'circle', symbolSize: 5, showSymbol: false,
                     lineStyle: { color, width: 2 },
                     areaStyle: {
@@ -249,6 +255,7 @@ const ChartComponent = {
                 }]
             };
 
+            // Only add dataZoom when we have valid numeric data
             if (hasData) {
                 option.dataZoom = [
                     { type: 'inside', start: 0, end: 100 },
@@ -485,7 +492,7 @@ createApp({
         systemFields() {
             const systemKeys = ['bp', 'battery', 'rssi', 'snr'];
             return this.fieldConfigs
-                .filter(f => f.is_visible && systemKeys.includes(f.key))
+                .filter(f => f.is_visible && (systemKeys.includes(f.key) || f.category === 'sys'))
                 .sort((a, b) => a.sort_order - b.sort_order);
         },
 
@@ -557,15 +564,136 @@ createApp({
 
                 case 'deviceConfig':
                     // Merged fields + viz_config + controls
-                    this.fieldConfigs = msg.payload.fields || [];
+                    // Apply defaults for any missing viz properties
+                    this.fieldConfigs = (msg.payload.fields || []).map(f => {
+                        // Parse JSON strings
+                        let thresholds = f.thresholds;
+                        if (typeof thresholds === 'string') {
+                            try { thresholds = JSON.parse(thresholds); } catch (e) { thresholds = null; }
+                        }
+                        let enumValues = f.enum_values;
+                        if (typeof enumValues === 'string') {
+                            try { enumValues = JSON.parse(enumValues); } catch (e) { enumValues = null; }
+                        }
+
+                        // Parse min/max as numbers (PostgreSQL returns strings)
+                        const minVal = f.min !== null && f.min !== undefined ? parseFloat(f.min) : null;
+                        const maxVal = f.max !== null && f.max !== undefined ? parseFloat(f.max) : null;
+
+                        // Infer default viz_type if not set
+                        let vizType = f.viz_type;
+                        if (!vizType) {
+                            if (f.category === 'state') {
+                                vizType = 'toggle';
+                            } else if (f.type === 'num' && f.category === 'cont') {
+                                vizType = (minVal !== null && maxVal !== null && !isNaN(minVal) && !isNaN(maxVal)) ? 'both' : 'chart';
+                            } else {
+                                vizType = 'badge';
+                            }
+                        }
+
+                        return {
+                            ...f,
+                            min: minVal,
+                            max: maxVal,
+                            viz_type: vizType,
+                            gauge_style: f.gauge_style || 'radial',
+                            chart_color: f.chart_color || '#3b82f6',
+                            thresholds: thresholds || [
+                                { pct: 0.2, color: '#ef4444' },
+                                { pct: 0.5, color: '#f59e0b' },
+                                { pct: 1.0, color: '#10b981' }
+                            ],
+                            enum_values: enumValues,
+                            is_visible: f.is_visible !== false,
+                            sort_order: f.sort_order ?? 100
+                        };
+                    });
+
+                    // Add RSSI and SNR as system pseudo-fields
+                    const current = msg.payload.current;
+                    if (current && !this.fieldConfigs.find(f => f.key === 'rssi')) {
+                        this.fieldConfigs.push({
+                            key: 'rssi',
+                            name: 'Signal Strength',
+                            type: 'num',
+                            unit: 'dBm',
+                            category: 'sys',
+                            min: -120,
+                            max: -20,
+                            viz_type: 'both',
+                            gauge_style: 'radial',
+                            chart_color: '#f59e0b',
+                            thresholds: [
+                                { pct: 0.3, color: '#ef4444' },
+                                { pct: 0.6, color: '#f59e0b' },
+                                { pct: 1.0, color: '#10b981' }
+                            ],
+                            is_visible: true,
+                            sort_order: 80
+                        });
+                    }
+                    if (current && !this.fieldConfigs.find(f => f.key === 'snr')) {
+                        this.fieldConfigs.push({
+                            key: 'snr',
+                            name: 'SNR',
+                            type: 'num',
+                            unit: 'dB',
+                            category: 'sys',
+                            min: -20,
+                            max: 15,
+                            viz_type: 'both',
+                            gauge_style: 'radial',
+                            chart_color: '#8b5cf6',
+                            thresholds: [
+                                { pct: 0.3, color: '#ef4444' },
+                                { pct: 0.6, color: '#f59e0b' },
+                                { pct: 1.0, color: '#10b981' }
+                            ],
+                            is_visible: true,
+                            sort_order: 90
+                        });
+                    }
+
+                    // Map controls - backend returns 'key' and 'state', frontend expects 'control_key' and 'current_state'
                     this.controls = {};
                     (msg.payload.controls || []).forEach(c => {
-                        this.controls[c.control_key] = c;
+                        const controlKey = c.control_key || c.key;
+                        this.controls[controlKey] = {
+                            control_key: controlKey,
+                            current_state: c.current_state || c.state,
+                            mode: c.mode || 'auto',
+                            manual_until: c.manual_until,
+                            last_change_at: c.last_change_at,
+                            last_change_by: c.last_change_by
+                        };
                     });
+
                     this.triggers = msg.payload.triggers || [];
                     this.userRules = msg.payload.rules || [];
                     this.deviceMeta = msg.payload.device || null;
+
+                    // Extract current telemetry data including RSSI/SNR from metadata
+                    if (current) {
+                        const dataValues = {};
+                        // Parse all data values as numbers where applicable
+                        Object.entries(current.data || {}).forEach(([key, val]) => {
+                            dataValues[key] = typeof val === 'string' ? parseFloat(val) : val;
+                            if (isNaN(dataValues[key])) dataValues[key] = val; // Keep original if not a number
+                        });
+                        this.currentData = {
+                            ...dataValues,
+                            rssi: parseFloat(current.rssi) || -120,
+                            snr: parseFloat(current.snr) || -20
+                        };
+                    }
+
                     this.loading = false;
+
+                    // Auto-request history data for charts after config is loaded
+                    this.$nextTick(() => {
+                        this.requestHistory();
+                    });
                     break;
 
                 case 'telemetry':
@@ -594,8 +722,11 @@ createApp({
                     break;
 
                 case 'history':
-                    // Historical data for charts
-                    this.historyData[msg.payload.field] = msg.payload.data;
+                    // Historical data for charts - parse values as numbers
+                    this.historyData[msg.payload.field] = (msg.payload.data || []).map(d => ({
+                        ts: d.ts,
+                        value: typeof d.value === 'string' ? parseFloat(d.value) : d.value
+                    })).filter(d => !isNaN(d.value)); // Filter out invalid values
                     // Force reactivity
                     this.historyData = { ...this.historyData };
                     break;
@@ -687,17 +818,22 @@ createApp({
         },
 
         requestHistory() {
+            if (!this.selectedDevice) return;
+
             const payload = { eui: this.selectedDevice, range: this.timeRange };
             if (this.timeRange === 'custom' && this.customFrom && this.customTo) {
                 payload.from = this.customFrom;
                 payload.to = this.customTo;
             }
 
-            // Request history for each chart field
-            this.chartFields.forEach(f => {
+            // Request history for chart fields AND system fields (unique keys)
+            const fieldsToFetch = [...this.chartFields, ...this.systemFields];
+            const uniqueKeys = [...new Set(fieldsToFetch.map(f => f.key))];
+
+            uniqueKeys.forEach(key => {
                 uibuilder.send({
                     topic: 'getHistory',
-                    payload: { ...payload, field: f.key }
+                    payload: { ...payload, field: key }
                 });
             });
         },

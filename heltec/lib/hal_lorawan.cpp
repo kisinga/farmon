@@ -274,7 +274,8 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
         // 5. sendReceive() blocks until RX windows complete (3-6 seconds total)
         //    This is acceptable because it's part of the transmission cycle
         downlinkLength = sizeof(downlinkBuffer);
-        state = node->sendReceive((uint8_t*)payload, length, port, downlinkBuffer, &downlinkLength, true);
+        LoRaWANEvent_t eventDown;
+        state = node->sendReceive((uint8_t*)payload, length, port, downlinkBuffer, &downlinkLength, true, NULL, &eventDown);
         
         if (state == RADIOLIB_ERR_NONE) {
             // Uplink sent successfully, but no ACK received in RX1/RX2 windows
@@ -314,15 +315,7 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
             // Only queue if there's actual data (not just an ACK)
             if (downlinkLength > 0 && downlinkLength <= sizeof(downlinkBuffer)) {
                 hasDownlink = true;
-                // NOTE: Port handling limitation
-                // RadioLib's sendReceive() API doesn't expose the downlink port directly.
-                // We assume the downlink port matches the uplink port, which is common practice
-                // but not guaranteed by LoRaWAN spec. The network server can send downlinks
-                // on different ports. If this becomes an issue, we may need to:
-                // 1. Check if RadioLib provides port via a separate API call
-                // 2. Parse the LoRaWAN MAC header from the downlink frame directly
-                // 3. Use RadioLib's lower-level API to extract port information
-                downlinkPort = port;
+                downlinkPort = eventDown.fPort;
             } else if (downlinkLength > sizeof(downlinkBuffer)) {
                 LOGW("LoRaWAN", "Downlink too large (%d bytes), dropping", (int)downlinkLength);
             }
@@ -368,7 +361,8 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
         // 4. Network server may send data downlinks or MAC commands (no ACK required)
         // 5. sendReceive() blocks until RX windows complete (3-6 seconds total)
         downlinkLength = sizeof(downlinkBuffer);
-        state = node->sendReceive((uint8_t*)payload, length, port, downlinkBuffer, &downlinkLength, false);
+        LoRaWANEvent_t eventDown;
+        state = node->sendReceive((uint8_t*)payload, length, port, downlinkBuffer, &downlinkLength, false, NULL, &eventDown);
         
         if (state == RADIOLIB_ERR_NONE) {
             // Uplink sent successfully, no downlink received in RX windows
@@ -399,11 +393,7 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
             // Queue data downlink for processing in tick() (if there's actual data)
             if (downlinkLength > 0 && downlinkLength <= sizeof(downlinkBuffer)) {
                 hasDownlink = true;
-                // NOTE: Port handling limitation (same as confirmed uplinks above)
-                // RadioLib's sendReceive() API doesn't expose the downlink port directly.
-                // We assume the downlink port matches the uplink port, which is common practice
-                // but not guaranteed by LoRaWAN spec. See detailed comment in confirmed uplink section.
-                downlinkPort = port;
+                downlinkPort = eventDown.fPort;
             } else if (downlinkLength > sizeof(downlinkBuffer)) {
                 LOGW("LoRaWAN", "Downlink too large (%d bytes), dropping", (int)downlinkLength);
             }
