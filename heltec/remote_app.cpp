@@ -299,16 +299,13 @@ void RemoteApplicationImpl::initialize() {
         lorawanStatusElement->setLoraStatus(isConnected, lorawanService->getLastRssiDbm());
         batteryElement->setStatus(batteryService->getBatteryPercent(), batteryService->isCharging());
 
-        // Send registration message after first successful join (if not already registered)
+        // Send registration message after every successful join (ensures schema sync)
         // This implements Phase 4 device-centric protocol: device announces its capabilities
+        // Server handles duplicates gracefully (ON CONFLICT DO NOTHING for schema)
         // Note: Set flag here, actual send deferred to run() to avoid stack overflow in scheduler task
-        if (isConnected && !_registrationComplete && !_registrationSent && !_registrationPending) {
+        if (isConnected && !_registrationSent && !_registrationPending) {
             LOGI("Remote", "Device joined network - scheduling registration message");
             _registrationPending = true;
-        } else if (isConnected && _registrationComplete && !_registrationSent) {
-            // Already registered from previous session, skip registration
-            _registrationSent = true;  // Mark as sent to prevent re-check
-            LOGI("Remote", "Device joined network - already registered, skipping registration");
         }
 
         // Update main status text
