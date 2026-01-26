@@ -19,178 +19,14 @@ createApp({
     },
 
     data() {
-        return {
-            connected: false,
-            loading: false,
-            activeTab: 'dashboard',
-
-            // Devices
-            devices: [],
-            selectedDevice: null,
-
-            // Selected device config (from backend)
-            fieldConfigs: [],
-            controls: {},
-            triggers: [],
-            userRules: [],
-
-            // Telemetry data
-            currentData: {},
-            historyData: {},
-
-            // Time range
-            timeRange: '24h',
-            customFrom: '',
-            customTo: '',
-
-            // Device metadata
-            deviceMeta: null,
-
-            // Device schema (for edge rules)
-            deviceSchema: null,
-
-            // Edge rules (device-side rules)
-            edgeRules: [],
-
-            // Rule editor state
-            editingRule: {
-                id: null,
-                name: '',
-                condition: { field: '', op: '<', val: 0 },
-                action_control: '',
-                action_state: '',
-                priority: 100,
-                cooldown_seconds: 300,
-                enabled: true
-            },
-
-            // Edge rule editor state
-            editingEdgeRule: {
-                rule_id: null,
-                field_idx: 0,
-                operator: '<',
-                threshold: 0,
-                control_idx: 0,
-                action_state: 0,
-                priority: 128,
-                cooldown_seconds: 300,
-                enabled: true
-            }
-        };
+        // Use the centralized device store - return store directly
+        // Vue will track reactivity from the reactive store
+        return window.deviceStore;
     },
 
     computed: {
-        selectedDeviceName() {
-            const device = this.devices.find(d => d.eui === this.selectedDevice);
-            return device ? (device.name || device.eui) : 'Select Device';
-        },
-
-        deviceOnline() {
-            const device = this.devices.find(d => d.eui === this.selectedDevice);
-            if (!device || !device.lastSeen) return false;
-            const threeMinutes = 3 * 60 * 1000;
-            return (Date.now() - new Date(device.lastSeen).getTime()) < threeMinutes;
-        },
-
-        // Group fields by visualization type
-        gaugeFields() {
-            return this.fieldConfigs
-                .filter(f => f.is_visible && (f.viz_type === 'gauge' || f.viz_type === 'both') && f.category !== 'state')
-                .sort((a, b) => a.sort_order - b.sort_order);
-        },
-
-        chartFields() {
-            return this.fieldConfigs
-                .filter(f => f.is_visible && (f.viz_type === 'chart' || f.viz_type === 'both') && f.category !== 'state')
-                .sort((a, b) => a.sort_order - b.sort_order);
-        },
-
-        stateFields() {
-            return this.fieldConfigs
-                .filter(f => f.is_visible && f.category === 'state')
-                .sort((a, b) => a.sort_order - b.sort_order);
-        },
-
-        badgeFields() {
-            return this.fieldConfigs
-                .filter(f => f.is_visible && f.viz_type === 'badge')
-                .sort((a, b) => a.sort_order - b.sort_order);
-        },
-
-        // System fields (battery, rssi, snr, and sys category)
-        systemFields() {
-            const systemKeys = ['bp', 'battery', 'rssi', 'snr'];
-            return this.fieldConfigs
-                .filter(f => f.is_visible && (systemKeys.includes(f.key) || f.category === 'sys'))
-                .sort((a, b) => a.sort_order - b.sort_order);
-        },
-
-        // Non-system continuous fields (sensors)
-        sensorFields() {
-            const systemKeys = ['bp', 'battery', 'rssi', 'snr'];
-            return this.fieldConfigs
-                .filter(f => f.is_visible && f.category === 'cont' && !systemKeys.includes(f.key))
-                .sort((a, b) => a.sort_order - b.sort_order);
-        },
-
-        // Badge-only fields within sensors
-        sensorBadgeFields() {
-            const systemKeys = ['bp', 'battery', 'rssi', 'snr'];
-            return this.fieldConfigs
-                .filter(f => f.is_visible && f.viz_type === 'badge' && f.category !== 'sys' && !systemKeys.includes(f.key))
-                .sort((a, b) => a.sort_order - b.sort_order);
-        },
-
-        // Badge-only fields within system
-        systemBadgeFields() {
-            const systemKeys = ['bp', 'battery', 'rssi', 'snr'];
-            return this.fieldConfigs
-                .filter(f => f.is_visible && f.viz_type === 'badge' && (f.category === 'sys' || systemKeys.includes(f.key)))
-                .sort((a, b) => a.sort_order - b.sort_order);
-        },
-
-        // Numeric fields for rule conditions
-        numericFields() {
-            return this.fieldConfigs
-                .filter(f => f.type === 'num')
-                .sort((a, b) => a.sort_order - b.sort_order);
-        },
-
-        // Validate rule form
-        isRuleValid() {
-            const r = this.editingRule;
-            return r.name && r.name.trim() &&
-                   r.condition.field &&
-                   r.condition.op &&
-                   r.condition.val !== '' && r.condition.val !== null &&
-                   r.action_control &&
-                   r.action_state;
-        },
-
-        // Check if we have raw telemetry data (for fallback display)
-        hasRawData() {
-            return Object.keys(this.currentData).length > 0;
-        },
-
-        // Schema fields for edge rules
-        schemaFields() {
-            return this.deviceSchema?.fields || [];
-        },
-
-        // Schema controls for edge rules
-        schemaControls() {
-            return this.deviceSchema?.controls || [];
-        },
-
-        // Validate edge rule form
-        isEdgeRuleValid() {
-            const r = this.editingEdgeRule;
-            return r.field_idx !== null && r.field_idx !== undefined &&
-                   r.operator &&
-                   r.threshold !== null && r.threshold !== undefined &&
-                   r.control_idx !== null && r.control_idx !== undefined &&
-                   r.action_state !== null && r.action_state !== undefined;
-        }
+        // Store getters are accessible directly via 'this' since store is returned as data
+        // All field categorization now relies on database category field - no hard-coded keys
     },
 
     mounted() {
@@ -198,6 +34,10 @@ createApp({
     },
 
     methods: {
+        // Note: Helper methods (getSoftLabel, getGaugeStyleHint, isControlValue, getFieldCategoryLabel, getFieldCategoryClass)
+        // are provided by the store and accessible via 'this' since store is returned as data.
+        // These methods no longer contain hard-coded values - they rely on database fields.
+
         initUIBuilder() {
             uibuilder.start();
             uibuilder.onChange('msg', msg => this.handleMessage(msg));
@@ -247,11 +87,20 @@ createApp({
                         const minVal = f.min !== null && f.min !== undefined ? parseFloat(f.min) : null;
                         const maxVal = f.max !== null && f.max !== undefined ? parseFloat(f.max) : null;
 
+                        // Use database display_name, fallback to key if missing
+                        const displayName = f.name || f.key;
+
+                        // Use database gauge_style, fallback to 'radial' if missing
+                        const gaugeStyle = f.gauge_style || 'radial';
+
                         // Infer default viz_type if not set
                         let vizType = f.viz_type;
                         if (!vizType) {
                             if (f.category === 'state') {
                                 vizType = 'toggle';
+                            } else if (gaugeStyle === 'tank') {
+                                // Tank fields should always show gauge + chart
+                                vizType = 'both';
                             } else if (f.type === 'num' && f.category === 'cont') {
                                 vizType = (minVal !== null && maxVal !== null && !isNaN(minVal) && !isNaN(maxVal)) ? 'both' : 'chart';
                             } else {
@@ -261,10 +110,11 @@ createApp({
 
                         return {
                             ...f,
+                            name: displayName,
                             min: minVal,
                             max: maxVal,
                             viz_type: vizType,
-                            gauge_style: f.gauge_style || 'radial',
+                            gauge_style: gaugeStyle,
                             chart_color: f.chart_color || '#3b82f6',
                             thresholds: thresholds || [
                                 { pct: 0.2, color: '#ef4444' },
@@ -277,12 +127,14 @@ createApp({
                         };
                     });
 
-                    // Add RSSI and SNR as system pseudo-fields
+                    // Add RSSI and SNR as system pseudo-fields if they exist in telemetry but not in fieldConfigs
+                    // These are LoRaWAN metadata fields, use key as name until database provides display_name
                     const current = msg.payload.current;
-                    if (current && !this.fieldConfigs.find(f => f.key === 'rssi')) {
-                        this.fieldConfigs.push({
+                    const systemFields = [];
+                    if (current && current.rssi !== undefined && !this.fieldConfigs.find(f => f.key === 'rssi')) {
+                        systemFields.push({
                             key: 'rssi',
-                            name: 'Signal Strength',
+                            name: 'rssi', // Use key until database provides display_name
                             type: 'num',
                             unit: 'dBm',
                             category: 'sys',
@@ -297,13 +149,13 @@ createApp({
                                 { pct: 1.0, color: '#10b981' }
                             ],
                             is_visible: true,
-                            sort_order: 80
+                            sort_order: 100
                         });
                     }
-                    if (current && !this.fieldConfigs.find(f => f.key === 'snr')) {
-                        this.fieldConfigs.push({
+                    if (current && current.snr !== undefined && !this.fieldConfigs.find(f => f.key === 'snr')) {
+                        systemFields.push({
                             key: 'snr',
-                            name: 'SNR',
+                            name: 'snr', // Use key until database provides display_name
                             type: 'num',
                             unit: 'dB',
                             category: 'sys',
@@ -318,23 +170,83 @@ createApp({
                                 { pct: 1.0, color: '#10b981' }
                             ],
                             is_visible: true,
-                            sort_order: 90
+                            sort_order: 100
                         });
                     }
 
                     // Map controls - backend returns 'key' and 'state', frontend expects 'control_key' and 'current_state'
-                    this.controls = {};
+                    const newControls = {};
+                    const additionalFields = [];
+
+                    // Build a set of existing field keys for efficient lookup
+                    const existingFieldKeys = new Set(this.fieldConfigs.map(f => f.key));
+
                     (msg.payload.controls || []).forEach(c => {
                         const controlKey = c.control_key || c.key;
-                        this.controls[controlKey] = {
+                        newControls[controlKey] = {
                             control_key: controlKey,
                             current_state: c.current_state || c.state,
                             mode: c.mode || 'auto',
                             manual_until: c.manual_until,
                             last_change_at: c.last_change_at,
-                            last_change_by: c.last_change_by
+                            last_change_by: c.last_change_by,
+                            enum_values: c.enum_values || ['off', 'on']
                         };
+
+                        // Auto-create field entry for controls not in fieldConfigs
+                        // Use key as name until database provides display_name
+                        if (!existingFieldKeys.has(controlKey)) {
+                            additionalFields.push({
+                                key: controlKey,
+                                name: controlKey, // Use key until database provides display_name
+                                type: 'enum',
+                                category: 'state',
+                                viz_type: 'toggle',
+                                enum_values: c.enum_values || ['off', 'on'],
+                                is_visible: true,
+                                sort_order: 100
+                            });
+                            existingFieldKeys.add(controlKey);
+                        }
                     });
+
+                    // Also detect controls from currentData that have control-like values
+                    const telemetryData = msg.payload.current?.data || {};
+                    Object.entries(telemetryData).forEach(([key, val]) => {
+                        if (this.isControlValue(val) && !existingFieldKeys.has(key)) {
+                            // Looks like a control based on its value
+                            // Use key as name until database provides display_name
+                            additionalFields.push({
+                                key,
+                                name: key, // Use key until database provides display_name
+                                type: 'enum',
+                                category: 'state',
+                                viz_type: 'toggle',
+                                enum_values: ['off', 'on'],
+                                is_visible: true,
+                                sort_order: 100
+                            });
+                            existingFieldKeys.add(key);
+                            // Also add to controls object if not there
+                            if (!newControls[key]) {
+                                newControls[key] = {
+                                    control_key: key,
+                                    current_state: val,
+                                    mode: 'auto',
+                                    enum_values: ['off', 'on']
+                                };
+                            }
+                        }
+                    });
+
+                    // Update reactive state atomically (reassign for Vue reactivity)
+                    this.controls = newControls;
+                    // Combine all field updates into a single array reassignment
+                    if (systemFields.length > 0 || additionalFields.length > 0) {
+                        this.fieldConfigs = [...this.fieldConfigs, ...systemFields, ...additionalFields];
+                    }
+                    // Ensure controls and fieldConfigs stay synchronized
+                    this.syncControlsToFields();
 
                     this.triggers = msg.payload.triggers || [];
                     this.userRules = msg.payload.rules || [];
@@ -378,24 +290,83 @@ createApp({
                     // Real-time telemetry update
                     if (msg.payload.eui === this.selectedDevice) {
                         this.currentData = { ...this.currentData, ...msg.payload.data };
-                        // Update controls state from telemetry
-                        this.stateFields.forEach(f => {
-                            if (msg.payload.data[f.key] !== undefined && this.controls[f.key]) {
-                                this.controls[f.key].current_state = msg.payload.data[f.key];
+
+                        // Track if controls or fieldConfigs need updating
+                        let controlsUpdated = false;
+                        const newControls = { ...this.controls };
+                        const additionalFields = [];
+
+                        // Detect and sync controls from telemetry data
+                        Object.entries(msg.payload.data).forEach(([key, val]) => {
+                            // Check if this looks like a control value
+                            if (this.isControlValue(val)) {
+                                // Add to controls object if not there
+                                if (!newControls[key]) {
+                                    newControls[key] = {
+                                        control_key: key,
+                                        current_state: val,
+                                        mode: 'auto',
+                                        enum_values: ['off', 'on']
+                                    };
+                                    controlsUpdated = true;
+
+                                    // Add to fieldConfigs if not there
+                                    // Use key as name until database provides display_name
+                                    if (!this.fieldConfigs.find(f => f.key === key)) {
+                                        additionalFields.push({
+                                            key,
+                                            name: key, // Use key until database provides display_name
+                                            type: 'enum',
+                                            category: 'state',
+                                            viz_type: 'toggle',
+                                            enum_values: ['off', 'on'],
+                                            is_visible: true,
+                                            sort_order: 100
+                                        });
+                                    }
+                                } else {
+                                    // Update existing control state
+                                    if (newControls[key].current_state !== val) {
+                                        newControls[key] = { ...newControls[key], current_state: val };
+                                        controlsUpdated = true;
+                                    }
+                                }
                             }
                         });
+
+                        // Update existing controls state from telemetry (for known state fields)
+                        this.stateFields.forEach(f => {
+                            if (msg.payload.data[f.key] !== undefined && newControls[f.key]) {
+                                if (newControls[f.key].current_state !== msg.payload.data[f.key]) {
+                                    newControls[f.key] = { ...newControls[f.key], current_state: msg.payload.data[f.key] };
+                                    controlsUpdated = true;
+                                }
+                            }
+                        });
+
+                        // Update reactive state atomically
+                        if (controlsUpdated) {
+                            this.controls = newControls;
+                        }
+                        if (additionalFields.length > 0) {
+                            this.fieldConfigs = [...this.fieldConfigs, ...additionalFields];
+                        }
+                        // Ensure controls and fieldConfigs stay synchronized
+                        if (controlsUpdated || additionalFields.length > 0) {
+                            this.syncControlsToFields();
+                        }
                     }
                     break;
 
                 case 'stateChange':
                     // Control state changed
                     if (msg.payload.eui === this.selectedDevice) {
-                        const ctrl = this.controls[msg.payload.control];
-                        if (ctrl) {
-                            ctrl.current_state = msg.payload.state;
-                            ctrl.last_change_at = msg.payload.ts;
-                            ctrl.last_change_by = msg.payload.reason;
-                        }
+                        // Use store's updateControl method for consistency
+                        this.updateControl(msg.payload.control, {
+                            current_state: msg.payload.state,
+                            last_change_at: msg.payload.ts,
+                            last_change_by: msg.payload.reason
+                        });
                     }
                     break;
 
@@ -454,11 +425,11 @@ createApp({
                 case 'controlUpdate':
                     // Control mode/state updated (e.g., from expired override)
                     if (msg.payload.eui === this.selectedDevice) {
-                        const ctrl = this.controls[msg.payload.control];
-                        if (ctrl) {
-                            ctrl.current_state = msg.payload.state;
-                            ctrl.mode = msg.payload.mode;
-                        }
+                        // Use store's updateControl method for consistency
+                        this.updateControl(msg.payload.control, {
+                            current_state: msg.payload.state,
+                            mode: msg.payload.mode
+                        });
                     }
                     break;
 
@@ -486,12 +457,8 @@ createApp({
         selectDevice(eui) {
             this.selectedDevice = eui;
             this.loading = true;
-            this.currentData = {};
-            this.historyData = {};
-            this.fieldConfigs = [];
-            this.controls = {};
-            this.deviceSchema = null;
-            this.edgeRules = [];
+            // Use store's reset method for consistency
+            this.resetDeviceState();
 
             uibuilder.send({
                 topic: 'selectDevice',
@@ -507,6 +474,10 @@ createApp({
 
         selectDeviceAndClose(eui) {
             this.selectDevice(eui);
+            this.closeDrawer();
+        },
+
+        closeDrawer() {
             const drawer = document.getElementById('main-drawer');
             if (drawer) drawer.checked = false;
         },
@@ -621,6 +592,7 @@ createApp({
             }
             return 'badge-success';
         },
+
 
         // Tab navigation
         setTab(tab) {

@@ -1,13 +1,24 @@
 // GaugeComponent - Dynamic gauge based on gauge_style
 window.GaugeComponent = {
+    components: {
+        'v-chart': window.VChart
+    },
     props: {
         field: { type: Object, required: true },
         value: { type: Number, default: 0 }
     },
-    template: `<v-chart :option="gaugeOption" autoresize class="gauge-container" />`,
+    template: `
+        <div class="gauge-container" :class="{ 'gauge-tank': isTankStyle }">
+            <v-chart :option="gaugeOption" autoresize />
+        </div>
+    `,
     computed: {
+        isTankStyle() {
+            return this.field?.gauge_style === 'tank';
+        },
         gaugeOption() {
             const style = this.field?.gauge_style || 'radial';
+            if (style === 'tank') return this.tankGauge();
             if (style === 'liquid') return this.liquidGauge();
             if (style === 'bar') return this.barGauge();
             return this.radialGauge();
@@ -128,6 +139,100 @@ window.GaugeComponent = {
                     detail: { valueAnimation: true, formatter: '{value}%', color, fontSize: 18, fontWeight: 'bold', offsetCenter: [0, 0] },
                     title: { show: false },
                     data: [{ value: Math.round(percent * 100), name: this.field?.name || '' }]
+                }]
+            };
+        },
+
+        // Tank gauge using echarts-liquidfill for water tank visualization
+        tankGauge() {
+            const min = this.field?.min ?? 0;
+            const max = this.field?.max ?? 100;
+            const value = this.value ?? min;
+            const range = max - min || 1;
+            const percent = Math.max(0, Math.min(1, (value - min) / range));
+            const color = this.getThresholdColor(percent);
+            const unit = this.field?.unit || '';
+
+            // Tank shape path - rectangular tank with rounded bottom
+            const tankPath = 'path://M20,5 L80,5 L80,5 Q85,5 85,10 L85,85 Q85,95 75,95 L25,95 Q15,95 15,85 L15,10 Q15,5 20,5 Z';
+
+            return {
+                backgroundColor: 'transparent',
+                series: [{
+                    type: 'liquidFill',
+                    data: [percent, percent * 0.9, percent * 0.8],
+                    radius: '85%',
+                    center: ['50%', '52%'],
+                    shape: tankPath,
+                    outline: {
+                        show: true,
+                        borderDistance: 0,
+                        itemStyle: {
+                            borderWidth: 3,
+                            borderColor: color,
+                            shadowBlur: 8,
+                            shadowColor: color + '40'
+                        }
+                    },
+                    backgroundStyle: {
+                        color: '#1e293b',
+                        borderWidth: 0
+                    },
+                    color: [
+                        {
+                            type: 'linear',
+                            x: 0, y: 1, x2: 0, y2: 0,
+                            colorStops: [
+                                { offset: 0, color: color + 'cc' },
+                                { offset: 0.5, color: color },
+                                { offset: 1, color: color + 'dd' }
+                            ]
+                        },
+                        {
+                            type: 'linear',
+                            x: 0, y: 1, x2: 0, y2: 0,
+                            colorStops: [
+                                { offset: 0, color: color + '99' },
+                                { offset: 1, color: color + 'bb' }
+                            ]
+                        },
+                        {
+                            type: 'linear',
+                            x: 0, y: 1, x2: 0, y2: 0,
+                            colorStops: [
+                                { offset: 0, color: color + '66' },
+                                { offset: 1, color: color + '88' }
+                            ]
+                        }
+                    ],
+                    label: {
+                        show: true,
+                        fontSize: 20,
+                        fontWeight: 'bold',
+                        color: '#fff',
+                        insideColor: '#fff',
+                        formatter: () => {
+                            const displayVal = Math.round(percent * 100);
+                            return displayVal + '%';
+                        }
+                    },
+                    waveAnimation: true,
+                    animationDuration: 2000,
+                    animationDurationUpdate: 1000,
+                    amplitude: 8,
+                    period: 2000
+                }],
+                // Add value label below tank
+                graphic: [{
+                    type: 'text',
+                    left: 'center',
+                    bottom: 5,
+                    style: {
+                        text: `${value}${unit}`,
+                        fill: '#94a3b8',
+                        fontSize: 11,
+                        fontWeight: 'normal'
+                    }
                 }]
             };
         }

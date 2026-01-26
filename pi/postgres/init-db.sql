@@ -241,4 +241,49 @@ CREATE INDEX IF NOT EXISTS idx_devices_active ON devices(is_active) WHERE is_act
 CREATE INDEX IF NOT EXISTS idx_device_schemas_device ON device_schemas(device_eui, version DESC);
 CREATE INDEX IF NOT EXISTS idx_edge_rules_enabled ON edge_rules(device_eui) WHERE enabled = TRUE;
 
+-- =============================================================================
+-- MIGRATION: Copy existing controls to device_fields
+-- =============================================================================
+-- Ensures all controls from device_controls table are also in device_fields
+-- with category='state' so they appear in frontend queries
+DO $$
+BEGIN
+    INSERT INTO device_fields (
+        device_eui, field_key, display_name, data_type, unit, 
+        category, min_value, max_value, enum_values
+    )
+    SELECT 
+        c.device_eui,
+        c.control_key,
+        c.control_key, -- Use key as name until proper display_name is set
+        'enum',
+        null,
+        'state',
+        null,
+        null,
+        null
+    FROM device_controls c
+    WHERE NOT EXISTS (
+        SELECT 1 FROM device_fields f 
+        WHERE f.device_eui = c.device_eui AND f.field_key = c.control_key
+    )
+    ON CONFLICT DO NOTHING;
+END $$;
+
+-- =============================================================================
+-- MIGRATION: Fix incorrect field categories
+-- =============================================================================
+-- Update battery fields to 'sys' category
+UPDATE device_fields 
+SET category = 'sys'
+WHERE LOWER(field_key) IN ('bp', 'battery', 'batt')
+  AND category != 'sys';
+
+-- Update error count fields to 'diagnostic' category
+UPDATE device_fields 
+SET category = 'diagnostic'
+WHERE (LOWER(field_key) IN ('ec', 'errorcount') 
+   OR LOWER(field_key) LIKE '%error%')
+  AND category != 'diagnostic';
+
 RESET ROLE;

@@ -13,12 +13,16 @@
     <!-- Vue 3 -->
     <script src="../uibuilder/vendor/vue/dist/vue.global.prod.js"></script>
 
-    <!-- ECharts + Liquid Fill Extension -->
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <!-- ECharts + vue-echarts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts-liquidfill@3.1.0/dist/echarts-liquidfill.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue-echarts@6.5.0/dist/index.umd.min.js"></script>
 
     <!-- UI-Builder Client -->
     <script src="../uibuilder/uibuilder.iife.min.js"></script>
+
+    <!-- State Store (must load before components and main app) -->
+    <script src="./store/deviceStore.js"></script>
 
     <!-- Component Scripts (load in dependency order) -->
     <script src="./components/VChart.js"></script>
@@ -36,13 +40,27 @@
         /* Gauge and chart sizes */
         .gauge-container { height: 140px; }
         .gauge-hero { height: 200px; }
+        .gauge-tank { height: 180px; }
         .chart-container { height: 240px; }
 
         @media (min-width: 640px) {
             .gauge-container { height: 160px; }
             .gauge-hero { height: 260px; }
+            .gauge-tank { height: 220px; }
             .chart-container { height: 280px; }
         }
+
+        /* Tank hero size for featured display */
+        .gauge-hero.gauge-tank { height: 240px; }
+        @media (min-width: 640px) {
+            .gauge-hero.gauge-tank { height: 300px; }
+        }
+
+        /* Category badge colors */
+        .badge-sensor { background-color: #3b82f6; color: white; }
+        .badge-system { background-color: #6b7280; color: white; }
+        .badge-diagnostic { background-color: #f59e0b; color: white; }
+        .badge-control { background-color: #10b981; color: white; }
 
         /* Collapse styling */
         .collapse-section .collapse-title {
@@ -58,6 +76,26 @@
         /* Main content wrapper */
         .main-content {
             min-height: calc(100vh - 4rem);
+        }
+
+        /* Mobile-friendly touch targets */
+        @media (max-width: 640px) {
+            .btn-xs { min-height: 2rem; min-width: 2rem; }
+            .toggle { transform: scale(1.1); }
+            .select-sm { min-height: 2.5rem; }
+            .input-sm { min-height: 2.5rem; }
+        }
+
+        /* Smooth scrolling for horizontal scroll areas */
+        .overflow-x-auto {
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+        .overflow-x-auto::-webkit-scrollbar { display: none; }
+
+        /* Better card shadows on mobile */
+        @media (max-width: 640px) {
+            .card { box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
         }
     </style>
 </head>
@@ -215,15 +253,13 @@
 
                                     <!-- Full Dashboard with Schema -->
                                     <template v-else>
-                                        <!-- Simple test - shows current values without charts -->
-                                        <div class="card bg-base-100 shadow-xl mb-3">
-                                            <div class="card-body p-3">
-                                                <h2 class="card-title text-sm">Current Readings</h2>
-                                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                                    <div v-for="f in sensorFields" :key="'simple-' + f.key" class="stat bg-base-200 rounded p-2">
-                                                        <div class="stat-title text-xs">{{ f.name }}</div>
-                                                        <div class="stat-value text-lg">{{ formatValue(f, getValue(f.key)) }}</div>
-                                                    </div>
+                                        <!-- Quick Stats Bar - horizontal scrollable on mobile -->
+                                        <div class="overflow-x-auto pb-2 -mx-2 px-2">
+                                            <div class="flex gap-2 min-w-max sm:grid sm:grid-cols-4 sm:min-w-0">
+                                                <div v-for="f in sensorFields.slice(0, 4)" :key="'quick-' + f.key"
+                                                     class="stat bg-base-100 shadow rounded-lg p-2 min-w-[120px] sm:min-w-0">
+                                                    <div class="stat-title text-[10px] sm:text-xs truncate">{{ f.name }}</div>
+                                                    <div class="stat-value text-base sm:text-lg font-bold">{{ formatValue(f, getValue(f.key)) }}</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -236,8 +272,27 @@
                                             :badge-count="sensorFields.length">
 
                                             <div class="space-y-3 pt-2">
-                                                <!-- Sensor Gauges with optional charts -->
-                                                <div v-for="f in sensorFields.filter(f => f.viz_type === 'gauge' || f.viz_type === 'both')" :key="'gauge-' + f.key"
+                                                <!-- Tank-style gauges get featured display -->
+                                                <div v-for="f in sensorFields.filter(f => (f.viz_type === 'gauge' || f.viz_type === 'both') && f.gauge_style === 'tank')" :key="'tank-' + f.key"
+                                                     class="card bg-base-200">
+                                                    <div class="card-body p-3">
+                                                        <div class="flex items-center justify-between mb-1">
+                                                            <h2 class="card-title text-sm sm:text-base">{{ f.name }}</h2>
+                                                            <div class="badge badge-info">{{ formatValue(f, getValue(f.key)) }}</div>
+                                                        </div>
+                                                        <gauge-component :field="f" :value="getValue(f.key)" class="gauge-hero gauge-tank" />
+
+                                                        <!-- Chart for this field if viz_type is 'both' -->
+                                                        <template v-if="f.viz_type === 'both'">
+                                                            <div class="divider my-1 opacity-20"></div>
+                                                            <div class="text-xs opacity-60 mb-1">History</div>
+                                                            <chart-component :field="f" :data="getHistory(f.key)" />
+                                                        </template>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Regular sensor gauges -->
+                                                <div v-for="f in sensorFields.filter(f => (f.viz_type === 'gauge' || f.viz_type === 'both') && f.gauge_style !== 'tank')" :key="'gauge-' + f.key"
                                                      class="card bg-base-200">
                                                     <div class="card-body p-3">
                                                         <div class="flex items-center justify-between mb-1">
@@ -275,6 +330,25 @@
                                             </div>
                                         </collapsible-section>
 
+                                        <!-- Diagnostics Section (Error counts, timers, etc.) -->
+                                        <collapsible-section
+                                            v-if="diagnosticFields.length > 0"
+                                            title="Diagnostics"
+                                            :default-open="false"
+                                            :badge-count="diagnosticFields.length">
+
+                                            <div class="pt-2">
+                                                <div class="stats stats-vertical sm:stats-horizontal shadow w-full bg-base-200">
+                                                    <div v-for="f in diagnosticFields" :key="'diag-' + f.key" class="stat px-3 py-2">
+                                                        <div class="stat-title text-xs">{{ f.name }}</div>
+                                                        <div class="stat-value text-lg" :class="f.key.toLowerCase().includes('error') && getValue(f.key) > 0 ? 'text-error' : ''">
+                                                            {{ formatValue(f, getValue(f.key)) }}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </collapsible-section>
+
                                         <!-- System Section (Collapsed by default) -->
                                         <collapsible-section
                                             v-if="systemFields.length > 0"
@@ -283,8 +357,8 @@
                                             :badge-count="systemFields.length">
 
                                             <div class="space-y-3 pt-2">
-                                                <!-- System gauges in a grid -->
-                                                <div class="grid gap-2" :class="'grid-cols-' + Math.min(systemFields.filter(f => f.viz_type !== 'badge').length, 3)">
+                                                <!-- System gauges in a compact grid -->
+                                                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                                     <div v-for="f in systemFields.filter(f => f.viz_type !== 'badge')" :key="f.key" class="bg-base-200 rounded-lg p-1.5 min-w-0">
                                                         <div class="text-[10px] sm:text-xs text-center opacity-60">{{ f.name }}</div>
                                                         <gauge-component :field="f" :value="getValue(f.key)" />
@@ -351,7 +425,7 @@
                                         <span>This device has no controllable fields defined in registration.</span>
                                     </div>
 
-                                    <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div v-else class="space-y-3 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0">
                                         <control-card v-for="f in stateFields" :key="f.key"
                                                       :field="f"
                                                       :control="getControl(f.key)"
@@ -469,27 +543,36 @@
 
                         <div class="divider text-xs">Condition</div>
 
-                        <div class="grid grid-cols-3 gap-2 mb-3">
+                        <div class="space-y-2 mb-3">
                             <div class="form-control">
                                 <label class="label"><span class="label-text text-xs">Field</span></label>
-                                <select class="select select-bordered select-sm" v-model="editingRule.condition.field">
-                                    <option v-for="f in numericFields" :key="f.key" :value="f.key">{{ f.name }}</option>
+                                <select class="select select-bordered select-sm w-full" v-model="editingRule.condition.field">
+                                    <option v-for="f in allFieldsForRules" :key="f.key" :value="f.key">
+                                        {{ f.name }} [{{ getFieldCategoryLabel(f) }}]
+                                    </option>
                                 </select>
+                                <div v-if="editingRule.condition.field" class="mt-1">
+                                    <span class="badge badge-xs" :class="getFieldCategoryClass(fieldConfigs.find(f => f.key === editingRule.condition.field))">
+                                        {{ getFieldCategoryLabel(fieldConfigs.find(f => f.key === editingRule.condition.field)) }}
+                                    </span>
+                                </div>
                             </div>
-                            <div class="form-control">
-                                <label class="label"><span class="label-text text-xs">Operator</span></label>
-                                <select class="select select-bordered select-sm" v-model="editingRule.condition.op">
-                                    <option value="&lt;">&lt; Less than</option>
-                                    <option value="&gt;">&gt; Greater than</option>
-                                    <option value="&lt;=">&le; Less or equal</option>
-                                    <option value="&gt;=">&ge; Greater or equal</option>
-                                    <option value="=">= Equal</option>
-                                    <option value="!=">≠ Not equal</option>
-                                </select>
-                            </div>
-                            <div class="form-control">
-                                <label class="label"><span class="label-text text-xs">Value</span></label>
-                                <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.condition.val">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text text-xs">Operator</span></label>
+                                    <select class="select select-bordered select-sm" v-model="editingRule.condition.op">
+                                        <option value="&lt;">&lt; Less than</option>
+                                        <option value="&gt;">&gt; Greater than</option>
+                                        <option value="&lt;=">&le; Less or equal</option>
+                                        <option value="&gt;=">&ge; Greater or equal</option>
+                                        <option value="=">= Equal</option>
+                                        <option value="!=">≠ Not equal</option>
+                                    </select>
+                                </div>
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text text-xs">Value</span></label>
+                                    <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.condition.val">
+                                </div>
                             </div>
                         </div>
 
@@ -549,6 +632,7 @@
                                 <div class="form-control">
                                     <label class="label"><span class="label-text text-xs">Field</span></label>
                                     <select class="select select-bordered select-sm" v-model.number="editingEdgeRule.field_idx">
+                                        <option v-if="schemaFields.length === 0" disabled value="">No fields</option>
                                         <option v-for="(f, idx) in schemaFields" :key="idx" :value="idx">
                                             {{ f.n || f.k || 'Field ' + idx }}
                                         </option>
@@ -557,12 +641,12 @@
                                 <div class="form-control">
                                     <label class="label"><span class="label-text text-xs">Operator</span></label>
                                     <select class="select select-bordered select-sm" v-model="editingEdgeRule.operator">
-                                        <option value="<">&lt; Less than</option>
-                                        <option value=">">&gt; Greater than</option>
-                                        <option value="<=">&le; Less or equal</option>
-                                        <option value=">=">&ge; Greater or equal</option>
-                                        <option value="==">= Equal</option>
-                                        <option value="!=">≠ Not equal</option>
+                                        <option value="<">&lt;</option>
+                                        <option value=">">&gt;</option>
+                                        <option value="<=">&le;</option>
+                                        <option value=">=">&ge;</option>
+                                        <option value="==">=</option>
+                                        <option value="!=">≠</option>
                                     </select>
                                 </div>
                                 <div class="form-control">
@@ -577,6 +661,7 @@
                                 <div class="form-control">
                                     <label class="label"><span class="label-text text-xs">Control</span></label>
                                     <select class="select select-bordered select-sm" v-model.number="editingEdgeRule.control_idx">
+                                        <option v-if="schemaControls.length === 0" disabled value="">No controls</option>
                                         <option v-for="(c, idx) in schemaControls" :key="idx" :value="idx">
                                             {{ c.n || c.k || 'Control ' + idx }}
                                         </option>
@@ -638,7 +723,7 @@
                     <!-- Navigation -->
                     <ul class="space-y-1">
                         <li>
-                            <a :class="{ active: activeTab === 'dashboard' }" @click="setTab('dashboard'); document.getElementById('main-drawer').checked = false">
+                            <a :class="{ active: activeTab === 'dashboard' }" @click="setTab('dashboard'); closeDrawer()">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
                                 </svg>
@@ -646,7 +731,7 @@
                             </a>
                         </li>
                         <li>
-                            <a :class="{ active: activeTab === 'controls' }" @click="setTab('controls'); document.getElementById('main-drawer').checked = false">
+                            <a :class="{ active: activeTab === 'controls' }" @click="setTab('controls'); closeDrawer()">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                                 </svg>
@@ -654,7 +739,7 @@
                             </a>
                         </li>
                         <li>
-                            <a :class="{ active: activeTab === 'rules' }" @click="setTab('rules'); document.getElementById('main-drawer').checked = false">
+                            <a :class="{ active: activeTab === 'rules' }" @click="setTab('rules'); closeDrawer()">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                                 </svg>
