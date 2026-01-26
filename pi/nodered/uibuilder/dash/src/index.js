@@ -13,7 +13,6 @@ createApp({
         'chart-component': window.ChartComponent,
         'control-card': window.ControlCard,
         'badge-component': window.BadgeComponent,
-        'device-selector': window.DeviceSelector,
         'collapsible-section': window.CollapsibleSection,
         'edge-rules-panel': window.EdgeRulesPanel,
         'system-commands': window.SystemCommands
@@ -61,6 +60,19 @@ createApp({
                 action_control: '',
                 action_state: '',
                 priority: 100,
+                cooldown_seconds: 300,
+                enabled: true
+            },
+
+            // Edge rule editor state
+            editingEdgeRule: {
+                rule_id: null,
+                field_idx: 0,
+                operator: '<',
+                threshold: 0,
+                control_idx: 0,
+                action_state: 0,
+                priority: 128,
                 cooldown_seconds: 300,
                 enabled: true
             }
@@ -158,6 +170,26 @@ createApp({
         // Check if we have raw telemetry data (for fallback display)
         hasRawData() {
             return Object.keys(this.currentData).length > 0;
+        },
+
+        // Schema fields for edge rules
+        schemaFields() {
+            return this.deviceSchema?.fields || [];
+        },
+
+        // Schema controls for edge rules
+        schemaControls() {
+            return this.deviceSchema?.controls || [];
+        },
+
+        // Validate edge rule form
+        isEdgeRuleValid() {
+            const r = this.editingEdgeRule;
+            return r.field_idx !== null && r.field_idx !== undefined &&
+                   r.operator &&
+                   r.threshold !== null && r.threshold !== undefined &&
+                   r.control_idx !== null && r.control_idx !== undefined &&
+                   r.action_state !== null && r.action_state !== undefined;
         }
     },
 
@@ -177,12 +209,9 @@ createApp({
         },
 
         handleMessage(msg) {
-            console.log('Received:', msg.topic, msg.payload);
-
             switch (msg.topic) {
                 case 'devices':
                     this.devices = Array.isArray(msg.payload) ? msg.payload : [];
-                    console.log('Devices received:', this.devices);
                     // Auto-select first device if none selected
                     if (this.devices.length > 0 && !this.selectedDevice) {
                         const firstDevice = this.devices[0];
@@ -310,6 +339,7 @@ createApp({
                     this.triggers = msg.payload.triggers || [];
                     this.userRules = msg.payload.rules || [];
                     this.deviceMeta = msg.payload.device || null;
+                    this.deviceSchema = msg.payload.schema || null;
 
                     // Extract current telemetry data including RSSI/SNR from metadata
                     if (current) {
@@ -468,11 +498,7 @@ createApp({
                 payload: { eui, range: this.timeRange }
             });
 
-            // Also request device schema and edge rules
-            uibuilder.send({
-                topic: 'getDeviceSchema',
-                payload: { eui }
-            });
+            // Request edge rules (schema now comes with deviceConfig)
             uibuilder.send({
                 topic: 'getEdgeRules',
                 payload: { eui }
@@ -712,10 +738,62 @@ createApp({
         // Edge Rules Management
         // =====================================================================
 
-        openEdgeRuleEditor() {
-            // TODO: Implement edge rule editor modal
-            console.log('Opening edge rule editor');
-            alert('Edge rule editor coming soon!');
+        openEdgeRuleEditor(rule = null) {
+            if (!this.deviceSchema) {
+                alert('Device schema not available. Cannot create edge rules.');
+                return;
+            }
+            if (rule) {
+                // Edit existing rule
+                this.editingEdgeRule = {
+                    rule_id: rule.rule_id,
+                    field_idx: rule.field_idx,
+                    operator: rule.operator,
+                    threshold: rule.threshold,
+                    control_idx: rule.control_idx,
+                    action_state: rule.action_state,
+                    priority: rule.priority ?? 128,
+                    cooldown_seconds: rule.cooldown_seconds ?? 300,
+                    enabled: rule.enabled ?? true
+                };
+            } else {
+                // New rule
+                this.editingEdgeRule = {
+                    rule_id: null,
+                    field_idx: 0,
+                    operator: '<',
+                    threshold: 0,
+                    control_idx: 0,
+                    action_state: 0,
+                    priority: 128,
+                    cooldown_seconds: 300,
+                    enabled: true
+                };
+            }
+            document.getElementById('edge-rule-editor-modal').showModal();
+        },
+
+        closeEdgeRuleEditor() {
+            document.getElementById('edge-rule-editor-modal').close();
+        },
+
+        saveEdgeRule() {
+            if (!this.isEdgeRuleValid) return;
+            uibuilder.send({
+                topic: 'saveEdgeRule',
+                payload: {
+                    eui: this.selectedDevice,
+                    ...this.editingEdgeRule
+                }
+            });
+            this.closeEdgeRuleEditor();
+        },
+
+        getControlStates(controlIdx) {
+            if (!this.deviceSchema?.controls || controlIdx >= this.deviceSchema.controls.length) {
+                return ['off', 'on'];
+            }
+            return this.deviceSchema.controls[controlIdx]?.v || ['off', 'on'];
         },
 
         deleteEdgeRule(ruleId) {

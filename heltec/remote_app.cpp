@@ -27,6 +27,7 @@
 // Edge Rules Engine
 #include "lib/message_schema.h"
 #include "lib/edge_rules.h"
+#include "lib/command_translator.h"
 
 // UI includes
 #include "lib/ui_battery_icon_element.h"
@@ -90,6 +91,10 @@ private:
     bool _registrationSent = false;  // Track if registration message has been sent after join
     bool _registrationPending = false;  // Flag to trigger registration from main loop (avoid stack overflow)
     bool _registrationComplete = false;  // True when server has ACKed registration (persisted in NVS)
+
+    // Deferred notifications (handled in main loop to avoid callback stack overflow)
+    bool _notifyConnected = false;
+    char _notifyCmd[24] = {0};
 
     // Test mode state
     float _testDistance = 100.0;
@@ -291,6 +296,7 @@ void RemoteApplicationImpl::initialize() {
     
     // LoRaWAN service task - processes radio IRQs and state machine
     scheduler.registerTask("lorawan", [this](CommonAppState& state){
+        static bool wasConnected = false;
         lorawanService->update(state.nowMs);
 
         // Update UI elements with connection state
@@ -298,6 +304,12 @@ void RemoteApplicationImpl::initialize() {
         bool isConnected = lorawanService->isJoined();
         lorawanStatusElement->setLoraStatus(isConnected, lorawanService->getLastRssiDbm());
         batteryElement->setStatus(batteryService->getBatteryPercent(), batteryService->isCharging());
+
+        // Queue connection notification (deferred to main loop)
+        if (isConnected && !wasConnected) {
+            _notifyConnected = true;
+        }
+        wasConnected = isConnected;
 
         // Send registration message after every successful join (ensures schema sync)
         // This implements Phase 4 device-centric protocol: device announces its capabilities
@@ -513,6 +525,16 @@ void RemoteApplicationImpl::run() {
     // Main run loop - high-frequency, non-blocking tasks
     // The main application logic is handled by the scheduler
 
+    // Handle deferred notifications (from main loop to avoid callback stack overflow)
+    if (_notifyConnected) {
+        _notifyConnected = false;
+        uiService->showNotification("Connected", "", 2000, true);
+    }
+    if (_notifyCmd[0] != '\0') {
+        uiService->showNotification("Cmd:", _notifyCmd, 2000, false);
+        _notifyCmd[0] = '\0';
+    }
+
     // Handle deferred registration (sent from main loop to avoid stack overflow in scheduler tasks)
     if (_registrationPending) {
         _registrationPending = false;
@@ -708,6 +730,9 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
     LOGI("Remote", "Downlink received on port %d, length %d", port, length);
     bool success = false;
 
+    // Queue command notification (deferred to main loop)
+    CommandTranslator::translate(port, payload, length, _notifyCmd, sizeof(_notifyCmd));
+
     // Port-based command routing per Phase 4 protocol
     switch (port) {
         case 10:  // Reset water volume
@@ -730,11 +755,21 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
 
         case 11:  // Set reporting interval
             if (length >= 4) {
-                uint32_t interval = (payload[0] << 24) | (payload[1] << 16) |
-                                   (payload[2] << 8) | payload[3];
-                LOGI("Remote", "Set reporting interval to %u ms", interval);
-                // Note: Dynamic interval change would require scheduler modification
-                success = true;
+                uint32_t newIntervalMs = ((uint32_t)payload[0] << 24) |
+                                         ((uint32_t)payload[1] << 16) |
+                                         ((uint32_t)payload[2] << 8) |
+                                         payload[3];
+                // Validate range (10s - 3600s = 10000ms - 3600000ms)
+                if (newIntervalMs >= 10000 && newIntervalMs <= 3600000) {
+                    if (scheduler.setTaskInterval("lorawan_tx", newIntervalMs)) {
+                        LOGI("Remote", "TX interval changed to %lu ms", newIntervalMs);
+                        success = true;
+                    } else {
+                        LOGW("Remote", "Failed to change TX interval");
+                    }
+                } else {
+                    LOGW("Remote", "Interval %lu ms out of range (10000-3600000)", newIntervalMs);
+                }
             } else {
                 LOGW("Remote", "Invalid interval payload length: %d (expected 4)", length);
             }

@@ -27,6 +27,9 @@ public:
     virtual void fillRect(int16_t x, int16_t y, int16_t w, int16_t h) = 0;
     virtual void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) = 0;
     virtual void setPixel(int16_t x, int16_t y) = 0;
+    virtual void displayOn() = 0;
+    virtual void displayOff() = 0;
+    virtual void setColor(uint8_t color) = 0;  // 0=BLACK, 1=WHITE, 2=INVERSE
 };
 
 class OledDisplayHal : public IDisplayHal {
@@ -45,6 +48,9 @@ public:
     void fillRect(int16_t x, int16_t y, int16_t w, int16_t h) override;
     void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) override;
     void setPixel(int16_t x, int16_t y) override;
+    void displayOn() override;
+    void displayOff() override;
+    void setColor(uint8_t color) override;
 
 private:
     OledDisplay _oled;
@@ -102,4 +108,16 @@ void OledDisplayHal::drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
 
 void OledDisplayHal::setPixel(int16_t x, int16_t y) {
     _oled.getDisplay().setPixel(x, y);
+}
+
+void OledDisplayHal::displayOn() {
+    _oled.getDisplay().displayOn();
+}
+
+void OledDisplayHal::displayOff() {
+    _oled.getDisplay().displayOff();
+}
+
+void OledDisplayHal::setColor(uint8_t color) {
+    _oled.getDisplay().setColor((OLEDDISPLAY_COLOR)color);
 }

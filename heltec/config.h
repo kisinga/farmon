@@ -36,6 +36,7 @@
 #define FPORT_CMD_CLEAR_ERR 13  // Clear error count only
 #define FPORT_CMD_FORCE_REG 14  // Force re-registration (clear NVS)
 #define FPORT_CMD_STATUS    15  // Request device status uplink
+#define FPORT_CMD_DISPLAY_TIMEOUT 16  // Set display auto-off timeout (2 bytes: seconds big-endian)
 
 // Edge Rules Engine ports
 #define FPORT_DIRECT_CTRL   20  // Direct control command (7 bytes: ctrl_idx, state_idx, flags, timeout)

@@ -14,6 +14,10 @@ bool CoreScheduler::registerTask(const std::string& name, RtosTaskCallback<Commo
     return _taskManager.addTask(name, callback, intervalMs);
 }
 
+bool CoreScheduler::setTaskInterval(const std::string& name, uint32_t newIntervalMs) {
+    return _taskManager.setTaskInterval(name, newIntervalMs);
+}
+
 void CoreScheduler::start(CommonAppState& initialState) {
     _taskManager.start(initialState);
 }

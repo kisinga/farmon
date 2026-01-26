@@ -26,7 +26,6 @@
     <script src="./components/ChartComponent.js"></script>
     <script src="./components/ControlCard.js"></script>
     <script src="./components/BadgeComponent.js"></script>
-    <script src="./components/DeviceSelector.js"></script>
     <script src="./components/CollapsibleSection.js"></script>
     <script src="./components/EdgeRulesPanel.js"></script>
     <script src="./components/SystemCommands.js"></script>
@@ -126,17 +125,41 @@
                         </div>
 
                         <!-- Device Selector - Always visible when devices exist -->
-                        <template v-else>
-                            <device-selector
-                                :devices="devices"
-                                :selected-device="selectedDevice"
-                                :time-range="timeRange"
-                                :custom-from="customFrom"
-                                :custom-to="customTo"
-                                @select-device="selectDevice"
-                                @time-range-change="onTimeRangeChange"
-                                @custom-range-change="onCustomRangeChange"
-                            />
+                        <div v-if="devices.length > 0">
+                            <div class="card bg-base-100 shadow-xl mb-3">
+                                <div class="card-body p-3">
+                                    <div class="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-3">
+                                        <div class="flex-1 min-w-0">
+                                            <label class="label py-0.5">
+                                                <span class="label-text text-xs uppercase tracking-wide opacity-60">Device</span>
+                                            </label>
+                                            <select class="select select-bordered select-sm w-full"
+                                                    :value="selectedDevice || ''"
+                                                    @change="selectDevice($event.target.value)">
+                                                <option disabled value="">Select device...</option>
+                                                <option v-for="device in devices" :key="device.eui" :value="device.eui">
+                                                    {{ device.name || device.eui }}
+                                                </option>
+                                            </select>
+                                        </div>
+                                        <div v-if="activeTab === 'dashboard'" class="flex-1 min-w-0">
+                                            <label class="label py-0.5">
+                                                <span class="label-text text-xs uppercase tracking-wide opacity-60">Time Range</span>
+                                            </label>
+                                            <select class="select select-bordered select-sm w-full"
+                                                    :value="timeRange"
+                                                    @change="onTimeRangeChange($event.target.value)">
+                                                <option value="1h">Last 1 Hour</option>
+                                                <option value="6h">Last 6 Hours</option>
+                                                <option value="24h">Last 24 Hours</option>
+                                                <option value="7d">Last 7 Days</option>
+                                                <option value="30d">Last 30 Days</option>
+                                                <option value="custom">Custom</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
                             <!-- No Device Selected -->
                             <div v-if="!selectedDevice" class="alert alert-info">
@@ -192,6 +215,19 @@
 
                                     <!-- Full Dashboard with Schema -->
                                     <template v-else>
+                                        <!-- Simple test - shows current values without charts -->
+                                        <div class="card bg-base-100 shadow-xl mb-3">
+                                            <div class="card-body p-3">
+                                                <h2 class="card-title text-sm">Current Readings</h2>
+                                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                    <div v-for="f in sensorFields" :key="'simple-' + f.key" class="stat bg-base-200 rounded p-2">
+                                                        <div class="stat-title text-xs">{{ f.name }}</div>
+                                                        <div class="stat-value text-lg">{{ formatValue(f, getValue(f.key)) }}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         <!-- Sensors Section (Auto-expanded) -->
                                         <collapsible-section
                                             v-if="sensorFields.length > 0"
@@ -334,6 +370,7 @@
                                         :schema="deviceSchema"
                                         :edge-rules="edgeRules"
                                         @add-rule="openEdgeRuleEditor"
+                                        @edit-rule="openEdgeRuleEditor"
                                         @delete-rule="deleteEdgeRule"
                                         @toggle-rule="toggleEdgeRule"
                                     />
@@ -412,89 +449,172 @@
                                         </div>
                                     </div>
 
-                                    <!-- Rule Editor Modal -->
-                                    <dialog id="rule-editor-modal" class="modal">
-                                        <div class="modal-box">
-                                            <h3 class="font-bold text-lg mb-4">{{ editingRule?.id ? 'Edit Rule' : 'Create Rule' }}</h3>
-
-                                            <div class="form-control mb-3">
-                                                <label class="label"><span class="label-text">Rule Name</span></label>
-                                                <input type="text" class="input input-bordered input-sm" v-model="editingRule.name" placeholder="e.g., Low water alert">
-                                            </div>
-
-                                            <div class="divider text-xs">Condition</div>
-
-                                            <div class="grid grid-cols-3 gap-2 mb-3">
-                                                <div class="form-control">
-                                                    <label class="label"><span class="label-text text-xs">Field</span></label>
-                                                    <select class="select select-bordered select-sm" v-model="editingRule.condition.field">
-                                                        <option v-for="f in numericFields" :key="f.key" :value="f.key">{{ f.name }}</option>
-                                                    </select>
-                                                </div>
-                                                <div class="form-control">
-                                                    <label class="label"><span class="label-text text-xs">Operator</span></label>
-                                                    <select class="select select-bordered select-sm" v-model="editingRule.condition.op">
-                                                        <option value="<">&lt; Less than</option>
-                                                        <option value=">">&gt; Greater than</option>
-                                                        <option value="<=">&le; Less or equal</option>
-                                                        <option value=">=">&ge; Greater or equal</option>
-                                                        <option value="=">=  Equal</option>
-                                                        <option value="!=">&ne; Not equal</option>
-                                                    </select>
-                                                </div>
-                                                <div class="form-control">
-                                                    <label class="label"><span class="label-text text-xs">Value</span></label>
-                                                    <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.condition.val">
-                                                </div>
-                                            </div>
-
-                                            <div class="divider text-xs">Action</div>
-
-                                            <div class="grid grid-cols-2 gap-2 mb-3">
-                                                <div class="form-control">
-                                                    <label class="label"><span class="label-text text-xs">Control</span></label>
-                                                    <select class="select select-bordered select-sm" v-model="editingRule.action_control">
-                                                        <option v-for="f in stateFields" :key="f.key" :value="f.key">{{ f.name }}</option>
-                                                    </select>
-                                                </div>
-                                                <div class="form-control">
-                                                    <label class="label"><span class="label-text text-xs">Set to</span></label>
-                                                    <select class="select select-bordered select-sm" v-model="editingRule.action_state">
-                                                        <option v-for="s in getEnumValues(editingRule.action_control)" :key="s" :value="s">{{ s }}</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-
-                                            <div class="divider text-xs">Options</div>
-
-                                            <div class="grid grid-cols-2 gap-2 mb-3">
-                                                <div class="form-control">
-                                                    <label class="label"><span class="label-text text-xs">Priority</span></label>
-                                                    <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.priority" placeholder="100">
-                                                    <label class="label"><span class="label-text-alt opacity-60">Lower = higher priority</span></label>
-                                                </div>
-                                                <div class="form-control">
-                                                    <label class="label"><span class="label-text text-xs">Cooldown (seconds)</span></label>
-                                                    <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.cooldown_seconds" placeholder="300">
-                                                    <label class="label"><span class="label-text-alt opacity-60">Min time between triggers</span></label>
-                                                </div>
-                                            </div>
-
-                                            <div class="modal-action">
-                                                <button class="btn btn-ghost" @click="closeRuleEditor()">Cancel</button>
-                                                <button class="btn btn-primary" @click="saveRule()" :disabled="!isRuleValid">Save Rule</button>
-                                            </div>
-                                        </div>
-                                        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-                                    </dialog>
-
                                 </div>
 
                             </div>
-                        </template>
+                        </div>
 
                     </div>
                 </main>
+
+                <!-- Rule Editor Modal (outside conditionals) -->
+                <dialog id="rule-editor-modal" class="modal">
+                    <div class="modal-box">
+                        <h3 class="font-bold text-lg mb-4">{{ editingRule?.id ? 'Edit Rule' : 'Create Rule' }}</h3>
+
+                        <div class="form-control mb-3">
+                            <label class="label"><span class="label-text">Rule Name</span></label>
+                            <input type="text" class="input input-bordered input-sm" v-model="editingRule.name" placeholder="e.g., Low water alert">
+                        </div>
+
+                        <div class="divider text-xs">Condition</div>
+
+                        <div class="grid grid-cols-3 gap-2 mb-3">
+                            <div class="form-control">
+                                <label class="label"><span class="label-text text-xs">Field</span></label>
+                                <select class="select select-bordered select-sm" v-model="editingRule.condition.field">
+                                    <option v-for="f in numericFields" :key="f.key" :value="f.key">{{ f.name }}</option>
+                                </select>
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text text-xs">Operator</span></label>
+                                <select class="select select-bordered select-sm" v-model="editingRule.condition.op">
+                                    <option value="&lt;">&lt; Less than</option>
+                                    <option value="&gt;">&gt; Greater than</option>
+                                    <option value="&lt;=">&le; Less or equal</option>
+                                    <option value="&gt;=">&ge; Greater or equal</option>
+                                    <option value="=">= Equal</option>
+                                    <option value="!=">≠ Not equal</option>
+                                </select>
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text text-xs">Value</span></label>
+                                <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.condition.val">
+                            </div>
+                        </div>
+
+                        <div class="divider text-xs">Action</div>
+
+                        <div class="grid grid-cols-2 gap-2 mb-3">
+                            <div class="form-control">
+                                <label class="label"><span class="label-text text-xs">Control</span></label>
+                                <select class="select select-bordered select-sm" v-model="editingRule.action_control">
+                                    <option v-for="f in stateFields" :key="f.key" :value="f.key">{{ f.name }}</option>
+                                </select>
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text text-xs">Set to</span></label>
+                                <select class="select select-bordered select-sm" v-model="editingRule.action_state">
+                                    <option v-for="s in getEnumValues(editingRule.action_control)" :key="s" :value="s">{{ s }}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="divider text-xs">Options</div>
+
+                        <div class="grid grid-cols-2 gap-2 mb-3">
+                            <div class="form-control">
+                                <label class="label"><span class="label-text text-xs">Priority</span></label>
+                                <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.priority" placeholder="100">
+                                <label class="label"><span class="label-text-alt opacity-60">Lower = higher priority</span></label>
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text text-xs">Cooldown (seconds)</span></label>
+                                <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.cooldown_seconds" placeholder="300">
+                                <label class="label"><span class="label-text-alt opacity-60">Min time between triggers</span></label>
+                            </div>
+                        </div>
+
+                        <div class="modal-action">
+                            <button class="btn btn-ghost" @click="closeRuleEditor()">Cancel</button>
+                            <button class="btn btn-primary" @click="saveRule()" :disabled="!isRuleValid">Save Rule</button>
+                        </div>
+                    </div>
+                    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+                </dialog>
+
+                <!-- Edge Rule Editor Modal (outside conditionals) -->
+                <dialog id="edge-rule-editor-modal" class="modal">
+                    <div class="modal-box">
+                        <h3 class="font-bold text-lg mb-4">{{ editingEdgeRule?.rule_id !== null ? 'Edit Edge Rule' : 'Create Edge Rule' }}</h3>
+
+                        <div v-if="!deviceSchema" class="alert alert-warning mb-4">
+                            <span>Device schema not available. Cannot create edge rules.</span>
+                        </div>
+
+                        <template v-else>
+                            <div class="divider text-xs">Condition</div>
+
+                            <div class="grid grid-cols-3 gap-2 mb-3">
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text text-xs">Field</span></label>
+                                    <select class="select select-bordered select-sm" v-model.number="editingEdgeRule.field_idx">
+                                        <option v-for="(f, idx) in schemaFields" :key="idx" :value="idx">
+                                            {{ f.n || f.k || 'Field ' + idx }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text text-xs">Operator</span></label>
+                                    <select class="select select-bordered select-sm" v-model="editingEdgeRule.operator">
+                                        <option value="<">&lt; Less than</option>
+                                        <option value=">">&gt; Greater than</option>
+                                        <option value="<=">&le; Less or equal</option>
+                                        <option value=">=">&ge; Greater or equal</option>
+                                        <option value="==">= Equal</option>
+                                        <option value="!=">≠ Not equal</option>
+                                    </select>
+                                </div>
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text text-xs">Threshold</span></label>
+                                    <input type="number" step="any" class="input input-bordered input-sm" v-model.number="editingEdgeRule.threshold">
+                                </div>
+                            </div>
+
+                            <div class="divider text-xs">Action</div>
+
+                            <div class="grid grid-cols-2 gap-2 mb-3">
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text text-xs">Control</span></label>
+                                    <select class="select select-bordered select-sm" v-model.number="editingEdgeRule.control_idx">
+                                        <option v-for="(c, idx) in schemaControls" :key="idx" :value="idx">
+                                            {{ c.n || c.k || 'Control ' + idx }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text text-xs">Set to</span></label>
+                                    <select class="select select-bordered select-sm" v-model.number="editingEdgeRule.action_state">
+                                        <option v-for="(state, idx) in getControlStates(editingEdgeRule.control_idx)" :key="idx" :value="idx">
+                                            {{ state }}
+                                        </option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="divider text-xs">Options</div>
+
+                            <div class="grid grid-cols-2 gap-2 mb-3">
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text text-xs">Priority (0-255)</span></label>
+                                    <input type="number" min="0" max="255" class="input input-bordered input-sm" v-model.number="editingEdgeRule.priority">
+                                    <label class="label"><span class="label-text-alt opacity-60">Lower = higher priority</span></label>
+                                </div>
+                                <div class="form-control">
+                                    <label class="label"><span class="label-text text-xs">Cooldown (seconds)</span></label>
+                                    <input type="number" min="0" class="input input-bordered input-sm" v-model.number="editingEdgeRule.cooldown_seconds">
+                                    <label class="label"><span class="label-text-alt opacity-60">Min time between triggers</span></label>
+                                </div>
+                            </div>
+
+                            <div class="modal-action">
+                                <button class="btn btn-ghost" @click="closeEdgeRuleEditor()">Cancel</button>
+                                <button class="btn btn-primary" @click="saveEdgeRule()" :disabled="!isEdgeRuleValid">Save Edge Rule</button>
+                            </div>
+                        </template>
+                    </div>
+                    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+                </dialog>
 
                 <!-- Footer -->
                 <footer class="footer footer-center p-4 bg-base-100 text-base-content mt-auto">

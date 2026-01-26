@@ -32,6 +32,17 @@ public:
         return true;
     }
 
+    bool setTaskInterval(const std::string& name, uint32_t newIntervalMs) {
+        for (auto& task : _tasks) {
+            if (task.name == name && task.timerHandle) {
+                task.intervalMs = newIntervalMs;
+                return xTimerChangePeriod(task.timerHandle,
+                    pdMS_TO_TICKS(newIntervalMs), portMAX_DELAY) == pdPASS;
+            }
+        }
+        return false;
+    }
+
     void start(TState& initialState) {
         if (_running) {
             return;

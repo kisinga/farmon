@@ -5,7 +5,7 @@ window.EdgeRulesPanel = {
         schema: { type: Object, default: null },
         edgeRules: { type: Array, default: () => [] }
     },
-    emits: ['add-rule', 'update-rule', 'delete-rule', 'toggle-rule'],
+    emits: ['add-rule', 'edit-rule', 'delete-rule', 'toggle-rule'],
     template: `
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body p-3">
@@ -44,6 +44,13 @@ window.EdgeRulesPanel = {
                             </div>
                         </div>
                         <div class="flex items-center gap-2">
+                            <button class="btn btn-xs btn-ghost"
+                                    @click="$emit('edit-rule', rule)"
+                                    title="Edit rule">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                            </button>
                             <button class="btn btn-xs btn-ghost text-error"
                                     @click="$emit('delete-rule', rule.rule_id)"
                                     title="Delete rule">

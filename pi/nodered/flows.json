@@ -900,7 +900,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Command ACK Handler (fPort 4)",
-        "func": "// Process command acknowledgment from device\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\nconst cmdId = data.cmd_id || data.id;\nconst status = data.status || 'acked';\n\nif (!cmdId) {\n    node.warn('Invalid ACK: missing cmd_id');\n    return null;\n}\n\nmsg.ackParams = [status, cmdId, deviceEui];\n\nnode.status({fill: 'green', shape: 'dot', text: `ACK: ${cmdId}`});\n\nreturn msg;",
+        "func": "// Process command acknowledgment from device\nconst deviceEui = msg.deviceEui;\nconst data = msg.data || {};\n\nconst cmdId = data.cmd_id || data.id;\nconst status = data.status || data.result || 'acked';\n\n// Generic ACK without command ID\nif (!cmdId) {\n    node.status({\n        fill: 'yellow',\n        shape: 'dot',\n        text: `ACK: ${deviceEui.slice(-4)}`\n    });\n    return null;\n}\n\nmsg.ackParams = [\n    status,\n    cmdId,\n    deviceEui\n];\n\nnode.status({\n    fill: 'green',\n    shape: 'dot',\n    text: `ACK: ${cmdId}`\n});\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -977,8 +977,8 @@
         "z": "155f01355999b8a5",
         "name": "From Handlers",
         "links": [],
-        "x": 275,
-        "y": 200,
+        "x": 155,
+        "y": 480,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1037,13 +1037,38 @@
                 "t": "eq",
                 "v": "saveTrigger",
                 "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "getEdgeRules",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "saveEdgeRule",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "deleteEdgeRule",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "toggleEdgeRule",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "sendCommand",
+                "vt": "str"
             }
         ],
         "checkall": "true",
         "repair": false,
-        "outputs": 9,
-        "x": 680,
-        "y": 200,
+        "outputs": 14,
+        "x": 640,
+        "y": 480,
         "wires": [
             [
                 "bde01bd59146141c"
@@ -1071,6 +1096,22 @@
             ],
             [
                 "7277c0d8cf0390da"
+            ],
+            [
+                "edgerules_get_prep"
+            ],
+            [
+                "edgerules_save_prep"
+            ],
+            [
+                "edgerules_delete_prep"
+            ],
+            [
+                "edgerules_toggle_prep"
+            ],
+            [
+                "syscmd_input_debug",
+                "syscmd_build_downlink"
             ]
         ]
     },
@@ -1104,7 +1145,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1100,
+        "x": 1140,
         "y": 80,
         "wires": [
             [
@@ -1124,7 +1165,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 910,
+        "x": 920,
         "y": 140,
         "wires": [
             [
@@ -1142,7 +1183,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1110,
+        "x": 1140,
         "y": 140,
         "wires": [
             [
@@ -1162,7 +1203,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1290,
+        "x": 1350,
         "y": 140,
         "wires": [
             [
@@ -1180,7 +1221,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1470,
+        "x": 1530,
         "y": 140,
         "wires": [
             [
@@ -1200,7 +1241,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1640,
+        "x": 1720,
         "y": 140,
         "wires": [
             [
@@ -1218,7 +1259,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1810,
+        "x": 1890,
         "y": 140,
         "wires": [
             [
@@ -1238,7 +1279,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1980,
+        "x": 2060,
         "y": 140,
         "wires": [
             [
@@ -1250,14 +1291,14 @@
         "id": "796c2c1065daecfa",
         "type": "postgresql",
         "z": "155f01355999b8a5",
-        "name": "Get Latest Telemetry",
-        "query": "SELECT data, rssi, snr, ts FROM telemetry WHERE device_eui = $1 ORDER BY ts DESC LIMIT 1",
+        "name": "Get Latest Telemetry + Schema",
+        "query": "SELECT t.data, t.rssi, t.snr, t.ts, d.registration, d.device_type, d.firmware_version FROM devices d LEFT JOIN telemetry t ON d.device_eui = t.device_eui AND t.ts = (SELECT MAX(ts) FROM telemetry WHERE device_eui = $1) WHERE d.device_eui = $1",
         "postgreSQLConfig": "pg-config",
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 940,
-        "y": 200,
+        "x": 2310,
+        "y": 140,
         "wires": [
             [
                 "b37958e3a0e0403f"
@@ -1269,15 +1310,15 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "Format Config",
-        "func": "const latest = msg.payload?.[0];\n\nreturn {\n    topic: 'deviceConfig',\n    payload: {\n        eui: msg.params[0],\n        fields: msg.fields,\n        controls: msg.controls,\n        triggers: msg.triggers,\n        current: latest ? {\n            data: latest.data,\n            rssi: latest.rssi,\n            snr: latest.snr,\n            ts: latest.ts\n        } : null\n    }\n};",
+        "func": "const row = msg.payload?.[0];\nconst reg = row?.registration || {};\n\n// Transform schema to expected structure\n// Raw registration: fields, sys, states, cmds\n// Frontend expects: fields (combined), controls (from states)\nconst schema = {\n    fields: [\n        ...(reg.fields || []),\n        ...(reg.sys || [])\n    ],\n    controls: reg.states || [],\n    cmds: reg.cmds || []\n};\n\nreturn {\n    topic: 'deviceConfig',\n    payload: {\n        eui: msg.params[0],\n        fields: msg.fields,\n        controls: msg.controls,\n        triggers: msg.triggers,\n        schema: schema,\n        device: {\n            type: row?.device_type || reg.type,\n            fw: row?.firmware_version || reg.fw\n        },\n        current: row?.data\n            ? {\n                data: row.data,\n                rssi: row.rssi,\n                snr: row.snr,\n                ts: row.ts\n            }\n            : null\n    }\n};\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1150,
-        "y": 200,
+        "x": 2540,
+        "y": 140,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1297,7 +1338,7 @@
         "finalize": "",
         "libs": [],
         "x": 930,
-        "y": 260,
+        "y": 200,
         "wires": [
             [
                 "f1b1a6a02d5788d2"
@@ -1314,8 +1355,8 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1110,
-        "y": 260,
+        "x": 1120,
+        "y": 200,
         "wires": [
             [
                 "e6bfa23516fbad35"
@@ -1334,8 +1375,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1280,
-        "y": 260,
+        "x": 1360,
+        "y": 200,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1355,7 +1396,7 @@
         "finalize": "",
         "libs": [],
         "x": 930,
-        "y": 320,
+        "y": 260,
         "wires": [
             [
                 "8139f62a3d08df52"
@@ -1372,8 +1413,8 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1130,
-        "y": 320,
+        "x": 1140,
+        "y": 260,
         "wires": [
             [
                 "45516147972cfd5d"
@@ -1385,15 +1426,15 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "Build & Send Downlink",
-        "func": "const { eui, control, state } = msg.controlInfo;\n\n// Get command port from device registration\n// For now, use defaults\nconst commandPorts = {\n    'pump': 20,\n    'valve': 21\n};\n\nconst port = commandPorts[control] || 20;\nconst stateValue = (state === 'on' || state === 'open') ? 0x01 : 0x00;\n\n// Log command\nmsg.cmdParams = [eui, `set_${control}`, JSON.stringify({state}), 'user', 'sent'];\n\n// Build downlink - set topic and payload directly for mqtt out node\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${eui}/command/down`;\nmsg.payload = {\n    devEui: eui,\n    confirmed: false,\n    fPort: port,\n    data: Buffer.from([stateValue]).toString('base64')\n};\n\nreturn msg;",
+        "func": "const { eui, control, state } = msg.controlInfo;\n\n// Get command port from device registration\n// For now, use defaults\nconst commandPorts = {\n  pump: 20,\n  valve: 21\n};\n\nconst port = commandPorts[control] || 20;\nconst stateValue =\n  state === 'on' || state === 'open'\n    ? 0x01\n    : 0x00;\n\n// Params for PostgreSQL logging\nmsg.params = [\n  eui,\n  `set_${control}`,\n  JSON.stringify({ state }),\n  'user',\n  'sent'\n];\n\n// Build ChirpStack downlink (MQTT)\nconst appId =\n  global.get('chirpstackAppId') ||\n  '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${eui}/command/down`;\n\nmsg.payload = {\n  devEui: eui,\n  confirmed: false,\n  fPort: port,\n  data: Buffer.from([stateValue]).toString('base64')\n};\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1360,
-        "y": 320,
+        "x": 1380,
+        "y": 260,
         "wires": [
             [
                 "b982e4431d33b7d8",
@@ -1413,7 +1454,7 @@
         "rowsPerMsg": 1,
         "outputs": 1,
         "x": 1620,
-        "y": 240,
+        "y": 200,
         "wires": [
             []
         ]
@@ -1432,8 +1473,8 @@
         "correl": "",
         "expiry": "",
         "broker": "e1b2c3d4e5f6a7b8",
-        "x": 1600,
-        "y": 320,
+        "x": 1620,
+        "y": 260,
         "wires": []
     },
     {
@@ -1449,7 +1490,7 @@
         "finalize": "",
         "libs": [],
         "x": 1600,
-        "y": 400,
+        "y": 320,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1469,7 +1510,7 @@
         "finalize": "",
         "libs": [],
         "x": 920,
-        "y": 380,
+        "y": 320,
         "wires": [
             [
                 "2d6fa7ccc2178bad"
@@ -1486,8 +1527,8 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1110,
-        "y": 380,
+        "x": 1140,
+        "y": 320,
         "wires": [
             [
                 "87591b6fd60bf59a"
@@ -1506,8 +1547,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1290,
-        "y": 380,
+        "x": 1340,
+        "y": 320,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1545,8 +1586,8 @@
         "once": true,
         "onceDelay": "10",
         "topic": "",
-        "x": 130,
-        "y": 440,
+        "x": 160,
+        "y": 180,
         "wires": [
             [
                 "830f22e4b83363c1"
@@ -1563,8 +1604,8 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 340,
-        "y": 440,
+        "x": 410,
+        "y": 180,
         "wires": [
             [
                 "10c9ed4964ab8883"
@@ -1583,8 +1624,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 570,
-        "y": 440,
+        "x": 660,
+        "y": 180,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1603,8 +1644,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 930,
-        "y": 500,
+        "x": 940,
+        "y": 380,
         "wires": [
             [
                 "a1cd954cfdd5b117"
@@ -1622,7 +1663,7 @@
         "rowsPerMsg": 1,
         "outputs": 1,
         "x": 1130,
-        "y": 500,
+        "y": 380,
         "wires": [
             [
                 "1ee74b98363e1b51"
@@ -1641,8 +1682,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1300,
-        "y": 500,
+        "x": 1360,
+        "y": 380,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1661,8 +1702,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 920,
-        "y": 560,
+        "x": 930,
+        "y": 440,
         "wires": [
             [
                 "759fc956d187cf80"
@@ -1679,8 +1720,8 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1110,
-        "y": 560,
+        "x": 1120,
+        "y": 440,
         "wires": [
             [
                 "7a3175b02658122c"
@@ -1699,8 +1740,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1310,
-        "y": 560,
+        "x": 1370,
+        "y": 440,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1720,7 +1761,7 @@
         "finalize": "",
         "libs": [],
         "x": 920,
-        "y": 620,
+        "y": 500,
         "wires": [
             [
                 "308dba55bd398d5a"
@@ -1737,8 +1778,8 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1110,
-        "y": 620,
+        "x": 1130,
+        "y": 500,
         "wires": [
             [
                 "48e117f27e2357a3"
@@ -1757,8 +1798,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1320,
-        "y": 620,
+        "x": 1370,
+        "y": 500,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1778,7 +1819,7 @@
         "finalize": "",
         "libs": [],
         "x": 920,
-        "y": 680,
+        "y": 560,
         "wires": [
             [
                 "92436a7806185496"
@@ -1795,8 +1836,8 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1120,
-        "y": 680,
+        "x": 1140,
+        "y": 560,
         "wires": [
             [
                 "63996c57e0835aba"
@@ -1815,8 +1856,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1330,
-        "y": 680,
+        "x": 1380,
+        "y": 560,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1845,8 +1886,8 @@
         "title": "",
         "descr": "",
         "editurl": "vscode://vscode-remote/ssh-remote+farm/data/uibuilder/dash/?windowId=_blank",
-        "x": 450,
-        "y": 200,
+        "x": 330,
+        "y": 480,
         "wires": [
             [
                 "0304e7c0066d4c8e"
@@ -1855,5 +1896,319 @@
                 "22487547345322c9"
             ]
         ]
+    },
+    {
+        "id": "edgerules_get_prep",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prep Get Edge Rules",
+        "func": "const eui = msg.payload?.eui;\nif (!eui) return null;\nmsg.params = [eui];\nmsg.deviceEui = eui;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 940,
+        "y": 620,
+        "wires": [
+            [
+                "edgerules_get_query"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_get_query",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Query Edge Rules",
+        "query": "SELECT rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled FROM edge_rules WHERE device_eui = $1 ORDER BY priority, rule_id",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1150,
+        "y": 620,
+        "wires": [
+            [
+                "edgerules_get_format"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_get_format",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Edge Rules",
+        "func": "return {\n    topic: 'edgeRules',\n    payload: {\n        eui: msg.deviceEui,\n        rules: msg.payload || []\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1370,
+        "y": 620,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "edgerules_save_prep",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prep Save Edge Rule",
+        "func": "const p = msg.payload;\nif (!p?.eui) return null;\n\n// Generate new rule_id if not provided\nlet ruleId = p.rule_id;\nif (ruleId === null || ruleId === undefined) {\n    ruleId = Math.floor(Math.random() * 255);\n}\n\nmsg.params = [\n    p.eui,\n    ruleId,\n    p.field_idx,\n    p.operator,\n    p.threshold,\n    p.control_idx,\n    p.action_state,\n    p.priority ?? 128,\n    p.cooldown_seconds ?? 300,\n    p.enabled ?? true\n];\nmsg.deviceEui = p.eui;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 940,
+        "y": 680,
+        "wires": [
+            [
+                "edgerules_save_query"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_save_query",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Upsert Edge Rule",
+        "query": "INSERT INTO edge_rules (device_eui, rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled, synced_at)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())\nON CONFLICT (device_eui, rule_id) DO UPDATE SET\n    field_idx = EXCLUDED.field_idx,\n    operator = EXCLUDED.operator,\n    threshold = EXCLUDED.threshold,\n    control_idx = EXCLUDED.control_idx,\n    action_state = EXCLUDED.action_state,\n    priority = EXCLUDED.priority,\n    cooldown_seconds = EXCLUDED.cooldown_seconds,\n    enabled = EXCLUDED.enabled,\n    synced_at = NOW()\nRETURNING rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1150,
+        "y": 680,
+        "wires": [
+            [
+                "edgerules_save_format"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_save_format",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Saved Edge Rule",
+        "func": "const saved = msg.payload?.[0];\nreturn {\n    topic: 'edgeRuleSaved',\n    payload: {\n        eui: msg.deviceEui,\n        rule: saved\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1390,
+        "y": 680,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "edgerules_delete_prep",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prep Delete Edge Rule",
+        "func": "const p = msg.payload;\nif (!p?.eui || p.ruleId === null || p.ruleId === undefined) return null;\nmsg.params = [p.eui, p.ruleId];\nmsg.deviceEui = p.eui;\nmsg.ruleId = p.ruleId;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 940,
+        "y": 740,
+        "wires": [
+            [
+                "edgerules_delete_query"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_delete_query",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Delete Edge Rule",
+        "query": "DELETE FROM edge_rules WHERE device_eui = $1 AND rule_id = $2",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1150,
+        "y": 740,
+        "wires": [
+            [
+                "edgerules_delete_format"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_delete_format",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Deleted Edge Rule",
+        "func": "return {\n    topic: 'edgeRuleDeleted',\n    payload: {\n        eui: msg.deviceEui,\n        ruleId: msg.ruleId\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1400,
+        "y": 740,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "edgerules_toggle_prep",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prep Toggle Edge Rule",
+        "func": "const p = msg.payload;\nif (!p?.eui || p.ruleId === null || p.ruleId === undefined) return null;\nmsg.params = [p.enabled, p.eui, p.ruleId];\nmsg.deviceEui = p.eui;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 950,
+        "y": 800,
+        "wires": [
+            [
+                "edgerules_toggle_query"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_toggle_query",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Toggle Edge Rule",
+        "query": "UPDATE edge_rules SET enabled = $1, synced_at = NOW() WHERE device_eui = $2 AND rule_id = $3 RETURNING rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1170,
+        "y": 800,
+        "wires": [
+            [
+                "edgerules_toggle_format"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_toggle_format",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Toggled Edge Rule",
+        "func": "const saved = msg.payload?.[0];\nreturn {\n    topic: 'edgeRuleSaved',\n    payload: {\n        eui: msg.deviceEui,\n        rule: saved\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1400,
+        "y": 800,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "syscmd_input_debug",
+        "type": "debug",
+        "z": "155f01355999b8a5",
+        "name": "sendCommand Input",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 940,
+        "y": 940,
+        "wires": []
+    },
+    {
+        "id": "syscmd_build_downlink",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Build System Command Downlink",
+        "func": "const { eui, fPort, command, value } = msg.payload;\n\nif (!eui || !fPort) {\n  node.warn('Missing eui or fPort for system command');\n  return null;\n}\n\n// Build data payload based on command\nlet dataBytes = [];\n\nif (command === 'setInterval' && value) {\n  // setInterval expects a 2-byte value (big endian)\n  const interval = parseInt(value, 10) || 60;\n  dataBytes = [\n    (interval >> 8) & 0xff,\n    interval & 0xff\n  ];\n} else {\n  // Generic single-byte command / ACK\n  dataBytes = [0x01];\n}\n\n// Params for PostgreSQL logging\nmsg.params = [\n  eui,\n  command,\n  JSON.stringify({ fPort, value }),\n  'user',\n  'sent'\n];\n\n// Build ChirpStack downlink\nconst appId =\n  global.get('chirpstackAppId') ||\n  '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${eui}/command/down`;\n\nmsg.payload = {\n  devEui: eui,\n  confirmed: false,\n  fPort: fPort,\n  data: Buffer.from(dataBytes).toString('base64')\n};\n\nnode.status({\n  fill: 'blue',\n  shape: 'dot',\n  text: `${command} -> ${eui.slice(-4)}`\n});\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 980,
+        "y": 860,
+        "wires": [
+            [
+                "syscmd_log_command",
+                "syscmd_debug",
+                "acf85a4f324e8b6a"
+            ]
+        ]
+    },
+    {
+        "id": "syscmd_debug",
+        "type": "debug",
+        "z": "155f01355999b8a5",
+        "name": "System Command Debug",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1270,
+        "y": 940,
+        "wires": []
+    },
+    {
+        "id": "syscmd_log_command",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Log Command",
+        "query": "INSERT INTO commands (device_eui, command_key, payload, initiated_by, status, sent_at) VALUES ($1, $2, $3::jsonb, $4, $5, NOW())",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1240,
+        "y": 900,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "acf85a4f324e8b6a",
+        "type": "mqtt out",
+        "z": "155f01355999b8a5",
+        "name": "Send Downlink",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e1b2c3d4e5f6a7b8",
+        "x": 1240,
+        "y": 860,
+        "wires": []
     }
 ]
