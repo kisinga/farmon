@@ -174,7 +174,7 @@ using ControlExecuteFn = bool(*)(uint8_t state_idx);
 class EdgeRulesEngine {
 public:
     static constexpr uint8_t MAX_RULES = 32;
-    static constexpr uint8_t MAX_CONTROLS = 8;
+    static constexpr uint8_t MAX_CONTROLS = 16;
     static constexpr const char* PERSISTENCE_NAMESPACE = "rules";
     static constexpr const char* PERSISTENCE_KEY_COUNT = "count";
     static constexpr const char* PERSISTENCE_KEY_DATA = "data";

@@ -1,4 +1,5 @@
 #include "remote_app.h"
+#include <stdarg.h>
 
 // Core includes
 #include "lib/core_config.h"
@@ -102,6 +103,7 @@ private:
 
     // Message protocol methods (Phase 4: Device-centric framework)
     void sendRegistration();      // Send device registration on join (fPort 1)
+    void sendRegistrationFrame(const char* key, const char* format, ...);  // Send single registration frame
     void sendTelemetryJson(const std::vector<SensorReading>& readings);  // Send telemetry as JSON (fPort 2)
     void sendCommandAck(uint8_t cmdPort, bool success);  // Send command ACK (fPort 4)
     void sendDiagnostics();  // Send device diagnostics/status (fPort 6)
@@ -236,19 +238,20 @@ void RemoteApplicationImpl::initialize() {
 
     // Build message schema (defines fields and controls)
     _schema = MessageSchema::SchemaBuilder(1)
-        // Telemetry fields (order matches registration format)
-        .addField("bp", "Battery", "%", MessageSchema::FieldType::FLOAT, 0, 100)
+        // Telemetry fields (sensor readings)
         .addField("pd", "PulseDelta", "", MessageSchema::FieldType::UINT32, 0, 65535)
         .addField("tv", "TotalVolume", "L", MessageSchema::FieldType::FLOAT, 0, 999999)
-        .addField("ec", "ErrorCount", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addField("tsr", "TimeSinceReset", "s", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        // System fields (read-write where applicable)
-        .addSystemField("tx", "TxInterval", "s", MessageSchema::FieldType::UINT32,
+        // System fields (device status/config - battery, errors, time, etc.)
+        // Using shortened names to save bytes in registration frame
+        .addSystemField("bp", "Bat", "%", MessageSchema::FieldType::FLOAT, 0, 100)
+        .addSystemField("ec", "Err", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        .addSystemField("tsr", "TimeRst", "s", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        .addSystemField("tx", "TxInt", "s", MessageSchema::FieldType::UINT32,
                         10, 3600, true)  // writable
-        .addSystemField("ul", "UplinkCount", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("dl", "DownlinkCount", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("up", "Uptime", "s", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("bc", "BootCount", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        .addSystemField("ul", "UpCnt", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        .addSystemField("dl", "DnCnt", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        .addSystemField("up", "Up", "s", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        .addSystemField("bc", "Boot", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
         // Controls
         .addControl("pump", "Water Pump", {"off", "on"})
         .addControl("valve", "Valve", {"closed", "open"})
@@ -590,35 +593,162 @@ void RemoteApplicationImpl::generateTestData(std::vector<SensorReading>& reading
 // Format is parsed by Node-RED backend which can handle both JSON and text.
 
 void RemoteApplicationImpl::sendRegistration() {
-    // Registration format with schema versioning:
-    // v=1|sv=1|type=water_monitor|fw=2.0.0|fields=...|sys=...|states=...|cmds=...
-    // - sv: schema version (increment when fields/controls change)
-    // - fields: telemetry sensors (key:name:unit:min:max)
-    // - sys: system fields (key:name:unit:min:max:rw) - rw=read-write, r=read-only
-    // - states: controls (key:name:val1;val2;...) - semicolon separates enum values
-    // - cmds: downlink commands (key:port)
-    char buffer[384];
-    int len = snprintf(buffer, sizeof(buffer),
-        "v=1|sv=%d|type=%s|fw=%s|"
-        "fields=bp:Battery:%%:0:100,pd:PulseDelta,tv:TotalVolume:L,ec:ErrorCount,tsr:TimeSinceReset:s|"
-        "sys=tx:TxInterval:s:10:3600:rw,ul:UplinkCount:::r,dl:DownlinkCount:::r,up:Uptime:s::r,bc:BootCount:::r|"
-        "states=pump:WaterPump:off;on,valve:Valve:closed;open|"
-        "cmds=reset:10,interval:11,reboot:12,clearerr:13,forcereg:14,status:15,ctrl:20,rule:30",
-        _schema.version, DEVICE_TYPE, FIRMWARE_VERSION);
-
-    if (len < 0 || len >= (int)sizeof(buffer)) {
-        LOGW("Remote", "Registration message truncated");
-        len = sizeof(buffer) - 1;
+    // Multi-frame registration format:
+    // Split into 5 independent frames: header, fields, sys, states, cmds
+    // Format: reg:<frameKey>|<data>
+    
+    sendRegistrationFrame("header", "v=1|sv=%d|type=%s|fw=%s", 
+                         _schema.version, DEVICE_TYPE, FIRMWARE_VERSION);
+    delay(100);
+    
+// Helper: Append formatted item with comma separator
+auto appendItem = [](char* buf, int& pos, size_t bufSize, bool& isFirst, const char* item) {
+    if (!isFirst) {
+        int commaLen = snprintf(buf + pos, bufSize - pos, ",");
+        if (commaLen < 0 || commaLen >= (int)(bufSize - pos)) {
+            return false;  // Buffer overflow
+        }
+        pos += commaLen;
     }
+    isFirst = false;
+    int itemLen = snprintf(buf + pos, bufSize - pos, "%s", item);
+    if (itemLen < 0 || itemLen >= (int)(bufSize - pos)) {
+        return false;  // Buffer overflow
+    }
+    pos += itemLen;
+    return true;
+};
 
-    LOGI("Remote", "Sending registration (%d bytes) on fPort %d", len, FPORT_REGISTRATION);
-    LOGD("Remote", "Registration: %s", buffer);
+// Build registration frame data using schema formatting methods
+char fieldsBuf[200] = {0};
+char sysBuf[300] = {0};
+char statesBuf[200] = {0};
 
-    bool success = lorawanService->sendData(FPORT_REGISTRATION, (const uint8_t*)buffer, len, false);
-    if (success) {
-        LOGI("Remote", "Registration sent successfully");
-    } else {
-        LOGW("Remote", "Failed to send registration");
+int fieldsPos = snprintf(fieldsBuf, sizeof(fieldsBuf), "fields=");
+int sysPos = snprintf(sysBuf, sizeof(sysBuf), "sys=");
+int statesPos = snprintf(statesBuf, sizeof(statesBuf), "states=");
+
+bool fieldsFirst = true;
+bool sysFirst = true;
+bool statesFirst = true;
+char itemBuf[64];  // Reusable buffer
+
+// Single loop: categorize and build all field arrays
+uint8_t sysFieldCount = 0;
+for (uint8_t i = 0; i < _schema.field_count; i++) {
+    const auto& field = _schema.fields[i];
+    const bool isSystemField = (field.category == MessageSchema::FieldCategory::SYSTEM);
+    int written = field.formatForRegistration(itemBuf, sizeof(itemBuf));
+    
+    // Validate formatting result
+    bool formatValid = (written > 0 && written < (int)sizeof(itemBuf));
+    if (!formatValid && isSystemField) {
+        LOGW("Remote", "System field %s failed to format: written=%d (bufSize=%d)", 
+             field.key, written, sizeof(itemBuf));
+        continue;
+    }
+    if (!formatValid) {
+        continue;  // Skip invalid non-system fields silently
+    }
+    
+    // Ensure null termination
+    itemBuf[sizeof(itemBuf) - 1] = '\0';
+    
+    // Append to appropriate buffer based on category
+    bool appended = false;
+    switch (field.category) {
+        case MessageSchema::FieldCategory::TELEMETRY:
+            appended = appendItem(fieldsBuf, fieldsPos, sizeof(fieldsBuf), fieldsFirst, itemBuf);
+            break;
+        case MessageSchema::FieldCategory::SYSTEM:
+            appended = appendItem(sysBuf, sysPos, sizeof(sysBuf), sysFirst, itemBuf);
+            if (appended) {
+                sysFieldCount++;
+            } else {
+                LOGW("Remote", "Failed to append system field %s to buffer", field.key);
+            }
+            break;
+        default:
+            break;  // Skip computed and unknown
+    }
+}
+
+// Build states frame from controls
+for (uint8_t i = 0; i < _schema.control_count; i++) {
+    int written = _schema.controls[i].formatForRegistration(itemBuf, sizeof(itemBuf));
+    if (written > 0) {
+        appendItem(statesBuf, statesPos, sizeof(statesBuf), statesFirst, itemBuf);
+    }
+}
+
+// Validate sysBuf has content (should have at least one system field)
+if (sysFieldCount == 0) {
+    LOGW("Remote", "WARNING: No system fields formatted! Schema has %d fields", _schema.field_count);
+    // Log all field categories for debugging
+    for (uint8_t i = 0; i < _schema.field_count; i++) {
+        const auto& field = _schema.fields[i];
+        LOGD("Remote", "Field[%d]: key='%s', category=%d, type=%d", 
+             i, field.key, (int)field.category, (int)field.type);
+    }
+}
+
+// Log buffer contents for debugging
+LOGI("Remote", "Registration buffers: fields='%s' (%d bytes), sys='%s' (%d bytes, %d fields), states='%s' (%d bytes)", 
+     fieldsBuf, fieldsPos, sysBuf, sysPos, sysFieldCount, statesBuf, statesPos);
+    
+// Send frames independently (always send, even if empty - server handles empty frames)
+LOGI("Remote", "Sending registration frame: fields");
+sendRegistrationFrame("fields", "%s", fieldsBuf);
+delay(100);
+
+// Send sys frame (now compacted to fit within limit)
+LOGI("Remote", "Sending registration frame: sys (fieldCount=%d, %d bytes)", sysFieldCount, sysPos);
+sendRegistrationFrame("sys", "%s", sysBuf);
+delay(100);
+
+LOGI("Remote", "Sending registration frame: states");
+sendRegistrationFrame("states", "%s", statesBuf);
+delay(100);
+
+LOGI("Remote", "Sending registration frame: cmds");
+sendRegistrationFrame("cmds", "cmds=reset:10,interval:11,reboot:12,clearerr:13,forcereg:14,status:15,ctrl:20,rule:30");
+
+LOGI("Remote", "Registration frames sent (5 frames total)");
+}
+
+void RemoteApplicationImpl::sendRegistrationFrame(const char* key, const char* format, ...) {
+    // Use static buffer to avoid stack overflow (ESP32 has limited stack)
+    static char buffer[256];
+    int prefixLen = snprintf(buffer, sizeof(buffer), "reg:%s|", key);
+    
+    if (prefixLen < 0 || prefixLen >= (int)sizeof(buffer)) {
+        LOGW("Remote", "Frame prefix too large for %s", key);
+        return;
+    }
+    
+    va_list args;
+    va_start(args, format);
+    int dataLen = vsnprintf(buffer + prefixLen, sizeof(buffer) - prefixLen, format, args);
+    va_end(args);
+    
+    if (dataLen < 0) {
+        LOGW("Remote", "Frame data formatting failed for %s", key);
+        return;
+    }
+    
+    int totalLen = prefixLen + dataLen;
+    
+    // Check against DR3 limit (222 bytes) - conservative check
+    if (totalLen > 222) {
+        LOGW("Remote", "Frame %s too large: %d bytes", key, totalLen);
+        return;
+    }
+    
+    LOGD("Remote", "Sending registration frame %s (%d bytes)", key, totalLen);
+    
+    bool success = lorawanService->sendData(FPORT_REGISTRATION, (const uint8_t*)buffer, totalLen, false);
+    if (!success) {
+        LOGW("Remote", "Failed to send registration frame %s", key);
     }
 }
 

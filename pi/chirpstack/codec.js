@@ -22,6 +22,13 @@ function decodeUplink(input) {
         switch (fPort) {
             case 1: // Registration
                 data = decodeRegistration(text);
+                // If decodeRegistration returns an error, add it to errors
+                if (data && data.error) {
+                    errors.push(data.error);
+                    if (data.raw) {
+                        data = { raw: data.raw, error: data.error };
+                    }
+                }
                 break;
 
             case 2: // Telemetry
@@ -108,6 +115,43 @@ function encodeDownlink(input) {
 // =============================================================================
 // Format: v=1|sv=1|type=water_monitor|fw=2.0.0|fields=...|sys=...|states=...|cmds=...
 function decodeRegistration(text) {
+    // Validate input
+    if (!text || typeof text !== 'string') {
+        return { error: 'Invalid input: text is required' };
+    }
+    
+    // Check if multi-frame format: reg:<frameKey>|<data>
+    if (text.startsWith('reg:')) {
+        const pipeIdx = text.indexOf('|');
+        if (pipeIdx < 0) {
+            return { 
+                error: 'Invalid frame format: missing pipe separator',
+                raw: text 
+            };
+        }
+        
+        const frameKey = text.substring(4, pipeIdx).trim();  // Skip "reg:" and trim
+        const frameData = text.substring(pipeIdx + 1);
+        
+        // Validate frameKey is one of the expected keys
+        const validKeys = ['header', 'fields', 'sys', 'states', 'cmds'];
+        if (!frameKey || validKeys.indexOf(frameKey) === -1) {
+            return {
+                error: 'Invalid frame key: ' + frameKey,
+                frameKey: frameKey,
+                frameData: frameData
+            };
+        }
+        
+        // Return frame structure (frameData can be empty, that's OK)
+        return {
+            isFrame: true,
+            frameKey: frameKey,
+            frameData: frameData || ''  // Ensure frameData is always a string
+        };
+    }
+    
+    // Legacy single-frame format - existing logic unchanged
     const result = {
         v: 1,
         sv: 1,
@@ -178,12 +222,27 @@ function parseFields(text, defaultCategory) {
     }).filter(f => f.k);
 }
 
-// Parse system fields: tx:TxInterval:s:10:3600:rw,ul:UplinkCount:::r,...
+// Parse system fields: tx:TxInt:s:10:3600:w,ul:UpCnt:::r,...
+// Also handles format: sys=tx:TxInt:s:10:3600:w,ul:UpCnt:::r,...
+// Format: key:name:unit:min:max:access (access = 'w' for writable, 'r' for read-only)
 function parseSystemFields(text) {
-    if (!text) return [];
+    if (!text || typeof text !== 'string') return [];
+    
+    // Strip "sys=" prefix if present (for compatibility)
+    let cleanText = text.trim();
+    if (cleanText.startsWith('sys=')) {
+        cleanText = cleanText.substring(4);
+    }
 
-    return text.split(',').map((f, idx) => {
-        const parts = f.split(':');
+    if (!cleanText) return [];
+
+    return cleanText.split(',').map((f, idx) => {
+        const trimmed = f.trim();
+        if (!trimmed) return null;
+        
+        const parts = trimmed.split(':');
+        if (parts.length < 2) return null;  // Need at least key:name
+        
         return {
             idx: idx,
             k: parts[0] || '',
@@ -193,9 +252,9 @@ function parseSystemFields(text) {
             max: parts[4] ? parseFloat(parts[4]) : undefined,
             c: 'sys',
             t: 'num',
-            rw: parts[5] === 'rw'  // Read-write flag
+            rw: parts[5] === 'w'  // Read-write flag (w = writable, r = read-only)
         };
-    }).filter(f => f.k);
+    }).filter(f => f && f.k);  // Filter out nulls and empty keys
 }
 
 // Parse states: pump:WaterPump:off;on,valve:Valve:closed;open

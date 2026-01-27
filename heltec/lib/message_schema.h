@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 
 // =============================================================================
 // Unified Message Schema
@@ -20,7 +21,7 @@ namespace MessageSchema {
 
 // Maximum limits
 constexpr uint8_t MAX_FIELDS = 16;
-constexpr uint8_t MAX_CONTROLS = 8;
+constexpr uint8_t MAX_CONTROLS = 16;
 constexpr uint8_t MAX_STATES_PER_CONTROL = 4;
 
 // Field types
@@ -62,6 +63,74 @@ struct FieldDescriptor {
     // Helper to check if writable
     bool isWritable() const { return flags & FLAG_WRITABLE; }
     bool isReadable() const { return flags & FLAG_READABLE; }
+
+    // Get escaped unit string (% becomes %%)
+    const char* getEscapedUnit() const {
+        static char escaped[16];
+        if (strcmp(unit, "%") == 0) {
+            return "%%";
+        }
+        return unit;
+    }
+
+    // Format field for registration frame based on category
+    // Returns number of bytes written (snprintf-style)
+    int formatForRegistration(char* buf, size_t bufSize) const {
+        const char* unitStr = getEscapedUnit();
+        
+        switch (category) {
+            case FieldCategory::TELEMETRY: {
+                // Format: key:name:unit:min:max or key:name:unit or key:name
+                if (min_val > 0 || max_val > 0) {
+                    return snprintf(buf, bufSize, "%s:%s:%s:%.0f:%.0f",
+                                    key, name, unitStr, min_val, max_val);
+                } else if (unit[0] != '\0') {
+                    return snprintf(buf, bufSize, "%s:%s:%s",
+                                    key, name, unitStr);
+                } else {
+                    return snprintf(buf, bufSize, "%s:%s",
+                                    key, name);
+                }
+            }
+            
+            case FieldCategory::SYSTEM: {
+                // Compact format: key:name:unit:min:max:access
+                // Omit min/max if they are defaults (0 and uint32_max)
+                // Use "w" instead of "rw" for writable (saves 1 byte)
+                const char* access = isWritable() ? "w" : "r";
+                const float UINT32_MAX_F = 4294967295.0f;
+                
+                // Check if min/max are defaults (0 and uint32_max) - can omit them
+                bool isDefaultRange = (min_val == 0.0f && max_val == UINT32_MAX_F);
+                
+                if (isDefaultRange) {
+                    // Omit min/max for default uint32 range
+                    if (unit[0] != '\0') {
+                        return snprintf(buf, bufSize, "%s:%s:%s::%s",
+                                        key, name, unitStr, access);
+                    } else {
+                        return snprintf(buf, bufSize, "%s:%s:::r",
+                                        key, name);
+                    }
+                } else if (min_val > 0 || max_val > 0) {
+                    // Include min/max for non-default ranges
+                    return snprintf(buf, bufSize, "%s:%s:%s:%.0f:%.0f:%s",
+                                    key, name, unitStr, min_val, max_val, access);
+                } else if (unit[0] != '\0') {
+                    return snprintf(buf, bufSize, "%s:%s:%s::%s",
+                                    key, name, unitStr, access);
+                } else {
+                    return snprintf(buf, bufSize, "%s:%s:::r",
+                                    key, name);
+                }
+            }
+            
+            case FieldCategory::COMPUTED:
+            default:
+                // Computed fields are not included in registration
+                return 0;
+        }
+    }
 };
 
 // -----------------------------------------------------------------------------
@@ -80,6 +149,28 @@ struct ControlDescriptor {
             return states[state_idx];
         }
         return "unknown";
+    }
+
+    // Format control for registration frame
+    // Format: key:name:state1;state2;state3
+    // Returns number of bytes written (snprintf-style)
+    int formatForRegistration(char* buf, size_t bufSize) const {
+        int pos = snprintf(buf, bufSize, "%s:%s:", key, name);
+        if (pos < 0 || pos >= (int)bufSize) return pos;
+        
+        for (uint8_t i = 0; i < state_count; i++) {
+            if (i > 0) {
+                int written = snprintf(buf + pos, bufSize - pos, ";");
+                if (written < 0) return written;
+                pos += written;
+                if (pos >= (int)bufSize) return pos;
+            }
+            int written = snprintf(buf + pos, bufSize - pos, "%s", states[i]);
+            if (written < 0) return written;
+            pos += written;
+            if (pos >= (int)bufSize) return pos;
+        }
+        return pos;
     }
 };
 
