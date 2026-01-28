@@ -2,6 +2,8 @@
 // Consolidates USB, LoRaWAN, and routing configurations
 
 #pragma once
+#ifndef COMMUNICATION_CONFIG_H
+#define COMMUNICATION_CONFIG_H
 
 #include <stdint.h>
 #include "common_message_types.h"
@@ -110,4 +112,6 @@ struct CommunicationConfig {
     bool enableMessageBuffering = true;     // Enable message buffering
     uint16_t bufferSize = 1024;             // Message buffer size (bytes)
 };
+
+#endif // COMMUNICATION_CONFIG_H
 

@@ -1,5 +1,7 @@
 # Credentials (contains LoRaWAN keys)
 secrets.h
+# Device-specific secrets
+devices/*/secrets.h
 
 # Arduino build artifacts
 *.o

@@ -33,6 +33,7 @@
     <script src="./components/CollapsibleSection.js"></script>
     <script src="./components/EdgeRulesPanel.js"></script>
     <script src="./components/SystemCommands.js"></script>
+    <script src="./components/CommandHistory.js"></script>
 
     <style>
         [v-cloak] { display: none; }
@@ -132,6 +133,7 @@
                             <li><a :class="{ active: activeTab === 'dashboard' }" @click="setTab('dashboard')">Dashboard</a></li>
                             <li><a :class="{ active: activeTab === 'controls' }" @click="setTab('controls')">Controls</a></li>
                             <li><a :class="{ active: activeTab === 'rules' }" @click="setTab('rules')">Rules</a></li>
+                            <li><a :class="{ active: activeTab === 'history' }" @click="setTab('history')">History</a></li>
                         </ul>
                     </div>
 
@@ -150,6 +152,7 @@
                     <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'dashboard' }" @click="setTab('dashboard')">Dashboard</a>
                     <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'controls' }" @click="setTab('controls')">Controls</a>
                     <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'rules' }" @click="setTab('rules')">Rules</a>
+                    <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'history' }" @click="setTab('history')">History</a>
                 </div>
 
                 <!-- Page Content -->
@@ -410,8 +413,7 @@
                                 </div>
 
                                 <!-- ======================= CONTROLS TAB ======================= -->
-                                <div v-show="activeTab === 'controls'" class="space-y-3">
-
+                                <div v-if="showControlsPage" class="space-y-3">
                                     <!-- System Commands -->
                                     <system-commands
                                         :device-eui="selectedDevice"
@@ -419,20 +421,37 @@
                                         @send-command="sendSystemCommand"
                                     />
 
-                                    <!-- Device Controls -->
-                                    <div v-if="stateFields.length === 0" class="alert">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <!-- Loading State -->
+                                    <div v-if="controlsPageState === 'loading'" class="flex justify-center py-8">
+                                        <span class="loading loading-lg loading-spinner text-primary"></span>
+                                    </div>
+
+                                    <!-- No Controls -->
+                                    <div v-else-if="controlsPageState === 'no-controls'" class="alert">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
                                         <span>This device has no controllable fields defined in registration.</span>
                                     </div>
 
-                                    <div v-else class="space-y-3 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0">
-                                        <control-card v-for="f in stateFields" :key="f.key"
-                                                      :field="f"
-                                                      :control="getControl(f.key)"
-                                                      @set-control="setControl"
-                                                      @clear-override="clearOverride" />
+                                    <!-- Waiting for Config -->
+                                    <div v-else-if="controlsPageState === 'waiting'" class="alert alert-info">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        <span>Waiting for device configuration...</span>
                                     </div>
 
+                                    <!-- Controls Ready -->
+                                    <div v-else-if="controlsPageState === 'ready'" class="space-y-3 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0">
+                                        <control-card 
+                                            v-for="f in stateFields" 
+                                            :key="f.key"
+                                            :field="f"
+                                            :control="getControl(f.key)"
+                                            @set-control="setControl"
+                                            @clear-override="clearOverride" />
+                                    </div>
                                 </div>
 
                                 <!-- ======================= RULES TAB ======================= -->
@@ -523,6 +542,18 @@
                                         </div>
                                     </div>
 
+                                </div>
+
+                                <!-- ======================= HISTORY TAB ======================= -->
+                                <div v-show="activeTab === 'history'" class="space-y-3">
+                                    <div class="card bg-base-100 shadow-xl">
+                                        <div class="card-body p-3">
+                                            <h2 class="card-title text-sm sm:text-base mb-3">Command & State History</h2>
+                                            <p class="text-xs opacity-60 mb-3">View all commands sent to the device and state changes that have occurred.</p>
+                                            
+                                            <command-history :device-eui="selectedDevice" />
+                                        </div>
+                                    </div>
                                 </div>
 
                             </div>
@@ -744,6 +775,14 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                                 </svg>
                                 Rules
+                            </a>
+                        </li>
+                        <li>
+                            <a :class="{ active: activeTab === 'history' }" @click="setTab('history'); closeDrawer()">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                History
                             </a>
                         </li>
                     </ul>

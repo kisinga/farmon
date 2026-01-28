@@ -107,14 +107,5 @@ RemoteConfig RemoteConfig::create(uint8_t deviceId) {
     static_cast<DeviceConfig&>(cfg) = DeviceConfigFactory::createRemoteConfig(deviceId);
     cfg.deviceId = deviceId;
 
-    // Set remote-specific defaults
-    cfg.enableAnalogSensor = true;
-    cfg.analogInputPin = 34;
-    cfg.analogReadIntervalMs = 200;
-    cfg.telemetryReportIntervalMs = 60000;
-    cfg.debugTelemetryReportIntervalMs = 5000;
-    cfg.analogReferenceVoltage = 3.30f;
-    cfg.useCalibratedAdc = true;
-
     return cfg;
 }

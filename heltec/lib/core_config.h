@@ -2,6 +2,8 @@
 // Provides centralized configuration for LoRaWAN remote sensor nodes
 
 #pragma once
+#ifndef CORE_CONFIG_H
+#define CORE_CONFIG_H
 
 #include <stdint.h>
 #include <string.h>
@@ -48,15 +50,6 @@ private:
 
 // Remote configuration for LoRaWAN sensor nodes
 struct RemoteConfig : DeviceConfig {
-    // Analog sensor support (for backward compatibility)
-    bool enableAnalogSensor = true;
-    uint8_t analogInputPin = 34;  // Default for Heltec LoRa 32 V3
-    uint32_t analogReadIntervalMs = 200;
-    uint32_t telemetryReportIntervalMs = 60000;
-    uint32_t debugTelemetryReportIntervalMs = 5000; // Faster reporting for debug
-    float analogReferenceVoltage = 3.30f;
-    bool useCalibratedAdc = true;  // Use analogReadMilliVolts() for better accuracy
-
     RemoteConfig() = default;
 
     // Factory method
@@ -78,3 +71,5 @@ void getDevEuiFromChipId(uint8_t* devEui);
 inline RemoteConfig createRemoteConfig(uint8_t deviceId) {
     return RemoteConfig::create(deviceId);
 }
+
+#endif // CORE_CONFIG_H

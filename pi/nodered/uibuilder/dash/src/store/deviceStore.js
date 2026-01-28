@@ -3,7 +3,7 @@
 // Device State Store - Centralized state management for device data
 // Uses Vue's reactivity system to ensure proper reactivity across components
 
-const { reactive } = Vue;
+const { reactive, computed } = Vue;
 
 // Create reactive store
 const deviceStore = reactive({
@@ -39,6 +39,10 @@ const deviceStore = reactive({
 
     // Edge rules (device-side rules)
     edgeRules: [],
+
+    // Command and state change history
+    commandHistory: [], // Array of { ts, eui, type, command, control, state, source, status }
+    stateChangeHistory: [], // Array of { ts, eui, control, oldState, newState, source, reason }
 
     // Rule editor state
     editingRule: {
@@ -110,40 +114,9 @@ const deviceStore = reactive({
             .sort((a, b) => a.sort_order - b.sort_order);
     },
 
-    // State fields - combines fieldConfigs with category 'state' + detected controls
-    get stateFields() {
-        // Get explicitly defined state fields from fieldConfigs (rely on database category)
-        // Handle NULL is_visible (treat as visible, default true)
-        const explicitStateFields = this.fieldConfigs
-            .filter(f => (f.is_visible !== false) && f.category === 'state');
-
-        // Get controls from the controls object that aren't already in fieldConfigs
-        // These are dynamically detected controls that haven't been registered yet
-        const controlKeys = Object.keys(this.controls);
-        const controlsFromState = controlKeys
-            .filter(key => !this.fieldConfigs.find(f => f.key === key))
-            .map(key => ({
-                key,
-                name: key, // Use key as name until database provides display_name
-                type: 'enum',
-                category: 'state',
-                viz_type: 'toggle',
-                enum_values: this.controls[key]?.enum_values || ['off', 'on'],
-                is_visible: true,
-                sort_order: 100
-            }));
-
-        // Combine all, deduplicate by key
-        const allControls = [...explicitStateFields, ...controlsFromState];
-        const seen = new Set();
-        return allControls
-            .filter(f => {
-                if (seen.has(f.key)) return false;
-                seen.add(f.key);
-                return true;
-            })
-            .sort((a, b) => (a.sort_order ?? 100) - (b.sort_order ?? 100));
-    },
+    // NOTE: stateFields is now a component computed property in index.js
+    // This ensures proper Vue reactivity tracking. The store getter has been removed
+    // to avoid conflicts with the component computed property.
 
     get badgeFields() {
         return this.fieldConfigs
@@ -274,7 +247,17 @@ const deviceStore = reactive({
         return classMap[field.category] || 'badge-ghost';
     },
 
+    // Get category from device schema for a given field key
+    getCategoryFromSchema(key, schema) {
+        if (!schema || !schema.fields) return null;
+        const field = schema.fields.find(f => (f.k || f.key) === key);
+        if (!field) return null;
+        // Device schema uses 'c' for category
+        return field.c || field.category || null;
+    },
+
     // Synchronize controls and fieldConfigs - ensures controls always have corresponding field entries
+    // This method ensures that every control has a corresponding field entry for proper rendering
     syncControlsToFields() {
         const controlKeys = Object.keys(this.controls);
         const existingFieldKeys = new Set(this.fieldConfigs.map(f => f.key));
@@ -282,11 +265,19 @@ const deviceStore = reactive({
 
         controlKeys.forEach(key => {
             if (!existingFieldKeys.has(key)) {
+                // Get category from device schema if available
+                let category = 'state';
+                if (this.deviceSchema) {
+                    const deviceCategory = this.getCategoryFromSchema(key, this.deviceSchema);
+                    if (deviceCategory) {
+                        category = deviceCategory;
+                    }
+                }
                 additionalFields.push({
                     key,
                     name: key, // Use key until database provides display_name
                     type: 'enum',
-                    category: 'state',
+                    category: category,
                     viz_type: 'toggle',
                     enum_values: this.controls[key]?.enum_values || ['off', 'on'],
                     is_visible: true,
@@ -296,6 +287,7 @@ const deviceStore = reactive({
         });
 
         if (additionalFields.length > 0) {
+            // Create new array to ensure Vue detects the change
             this.fieldConfigs = [...this.fieldConfigs, ...additionalFields];
         }
     },
@@ -335,6 +327,41 @@ const deviceStore = reactive({
         this.triggers = [];
         this.userRules = [];
         this.deviceMeta = null;
+    },
+
+    // Add command to history
+    addCommandHistory(entry) {
+        this.commandHistory.unshift({
+            ...entry,
+            ts: entry.ts || Date.now()
+        });
+        // Keep only last 1000 entries
+        if (this.commandHistory.length > 1000) {
+            this.commandHistory = this.commandHistory.slice(0, 1000);
+        }
+    },
+
+    // Add state change to history
+    addStateChangeHistory(entry) {
+        this.stateChangeHistory.unshift({
+            ...entry,
+            ts: entry.ts || Date.now()
+        });
+        // Keep only last 1000 entries
+        if (this.stateChangeHistory.length > 1000) {
+            this.stateChangeHistory = this.stateChangeHistory.slice(0, 1000);
+        }
+    },
+
+    // Get filtered history for current device
+    getCommandHistoryForDevice(eui) {
+        if (!eui) return [];
+        return this.commandHistory.filter(h => h.eui === eui);
+    },
+
+    getStateChangeHistoryForDevice(eui) {
+        if (!eui) return [];
+        return this.stateChangeHistory.filter(h => h.eui === eui);
     }
 });
 

@@ -1,8 +1,11 @@
 #include "remote_app.h"
 #include <stdarg.h>
 
-// Core includes
-#include "lib/core_config.h"
+// Device configuration - must be first to avoid duplicate includes
+// Build script generates device_config_include.h with the correct include
+#include "device_config_include.h"
+
+// Core includes (core_config.h already included via device_config.h)
 #include "lib/core_system.h"
 #include "lib/core_scheduler.h"
 #include "lib/core_logger.h"
@@ -19,9 +22,7 @@
 #include "lib/svc_battery.h"
 #include "lib/svc_lorawan.h"
 
-// Config and sensors
-#include "remote_sensor_config.h"
-#include "config.h"
+// Config and sensors (remote_sensor_config.h included via device_config.h)
 #include "sensor_interface.hpp"
 #include "sensor_implementations.hpp"
 
@@ -139,8 +140,8 @@ static bool setValveState(uint8_t state_idx) {
 }
 
 RemoteApplicationImpl::RemoteApplicationImpl() :
-    config(buildRemoteConfig()),
-    sensorConfig(buildRemoteSensorConfig()) {
+    config(buildDeviceConfig()),
+    sensorConfig(buildDeviceSensorConfig()) {
     callbackInstance = this;
 }
 
@@ -237,25 +238,7 @@ void RemoteApplicationImpl::initialize() {
     LOGI("Remote", "Sensors setup complete");
 
     // Build message schema (defines fields and controls)
-    _schema = MessageSchema::SchemaBuilder(1)
-        // Telemetry fields (sensor readings)
-        .addField("pd", "PulseDelta", "", MessageSchema::FieldType::UINT32, 0, 65535)
-        .addField("tv", "TotalVolume", "L", MessageSchema::FieldType::FLOAT, 0, 999999)
-        // System fields (device status/config - battery, errors, time, etc.)
-        // Using shortened names to save bytes in registration frame
-        .addSystemField("bp", "Bat", "%", MessageSchema::FieldType::FLOAT, 0, 100)
-        .addSystemField("ec", "Err", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("tsr", "TimeRst", "s", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("tx", "TxInt", "s", MessageSchema::FieldType::UINT32,
-                        10, 3600, true)  // writable
-        .addSystemField("ul", "UpCnt", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("dl", "DnCnt", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("up", "Up", "s", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("bc", "Boot", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        // Controls
-        .addControl("pump", "Water Pump", {"off", "on"})
-        .addControl("valve", "Valve", {"closed", "open"})
-        .build();
+    _schema = buildDeviceSchema();
 
     LOGI("Remote", "Schema built: %d fields, %d controls, version %d",
          _schema.field_count, _schema.control_count, _schema.version);

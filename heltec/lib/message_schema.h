@@ -1,4 +1,6 @@
 #pragma once
+#ifndef MESSAGE_SCHEMA_H
+#define MESSAGE_SCHEMA_H
 
 #include <Arduino.h>
 #include <cstdint>
@@ -322,3 +324,5 @@ public:
     // Message type identifier (matches fPort)
     virtual uint8_t getMessageType() const = 0;
 };
+
+#endif // MESSAGE_SCHEMA_H

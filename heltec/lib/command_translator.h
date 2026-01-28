@@ -3,20 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-
-// fPort definitions (from config.h)
-#ifndef FPORT_REG_ACK
-#define FPORT_REG_ACK       5
-#define FPORT_CMD_RESET     10
-#define FPORT_CMD_INTERVAL  11
-#define FPORT_CMD_REBOOT    12
-#define FPORT_CMD_CLEAR_ERR 13
-#define FPORT_CMD_FORCE_REG 14
-#define FPORT_CMD_STATUS    15
-#define FPORT_CMD_DISPLAY_TIMEOUT 16
-#define FPORT_DIRECT_CTRL   20
-#define FPORT_RULE_UPDATE   30
-#endif
+#include "protocol_constants.h"
 
 namespace CommandTranslator {
 

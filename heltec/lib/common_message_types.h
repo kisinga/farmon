@@ -1,4 +1,6 @@
 #pragma once
+#ifndef COMMON_MESSAGE_TYPES_H
+#define COMMON_MESSAGE_TYPES_H
 
 #include <stdint.h>
 #include <string.h>
@@ -113,3 +115,5 @@ namespace Messaging {
     };
 
 } // namespace Messaging
+
+#endif // COMMON_MESSAGE_TYPES_H

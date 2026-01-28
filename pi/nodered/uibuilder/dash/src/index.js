@@ -1,6 +1,6 @@
 // @ts-nocheck
 'use strict'
-const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
+const { createApp, ref, watch, onMounted, nextTick, toRefs, computed: vueComputed } = Vue;
 
 // =============================================================================
 // Main Application
@@ -19,18 +19,77 @@ createApp({
     },
 
     data() {
-        // Use the centralized device store - return store directly
-        // Vue will track reactivity from the reactive store
+        // Return store directly - Vue will make it reactive
+        // All store properties and methods become accessible via 'this'
         return window.deviceStore;
     },
 
+    // Provide store for child components (Vue 3 best practice)
+    provide() {
+        return {
+            deviceStore: window.deviceStore
+        };
+    },
+
     computed: {
-        // Store getters are accessible directly via 'this' since store is returned as data
-        // All field categorization now relies on database category field - no hard-coded keys
+        // State fields - combines controls object with fieldConfigs
+        // Access store properties directly to ensure reactivity
+        stateFields() {
+            // Access store properties directly - Vue tracks these as dependencies
+            const controls = this.controls;
+            const fieldConfigs = this.fieldConfigs;
+            const controlsFromState = [];
+            
+            // Get ALL controls from controls object
+            for (const key in controls) {
+                const control = controls[key];
+                if (control) {
+                    const fieldConfig = fieldConfigs.find(f => f.key === key);
+                    controlsFromState.push({
+                        key,
+                        name: fieldConfig?.name || key,
+                        type: 'enum',
+                        category: 'state',
+                        viz_type: 'toggle',
+                        enum_values: control.enum_values || ['off', 'on'],
+                        is_visible: true,
+                        sort_order: fieldConfig?.sort_order ?? 100
+                    });
+                }
+            }
+
+            // Also get fieldConfigs with category 'state' that aren't in controls object
+            const explicitStateFields = fieldConfigs
+                .filter(f => (f.is_visible !== false) && f.category === 'state' && !controls[f.key]);
+
+            // Combine, deduplicate, sort
+            const allControls = [...controlsFromState, ...explicitStateFields];
+            const seen = new Set();
+            return allControls
+                .filter(f => {
+                    if (seen.has(f.key)) return false;
+                    seen.add(f.key);
+                    return true;
+                })
+                .sort((a, b) => (a.sort_order ?? 100) - (b.sort_order ?? 100));
+        },
+
+        // UI state for controls page
+        controlsPageState() {
+            if (this.loading) return 'loading';
+            if (this.stateFields.length === 0 && this.fieldConfigs.length > 0) return 'no-controls';
+            if (this.stateFields.length === 0) return 'waiting';
+            return 'ready';
+        },
+
+        showControlsPage() {
+            return this.activeTab === 'controls';
+        }
     },
 
     mounted() {
         this.initUIBuilder();
+        this.initRouting();
     },
 
     methods: {
@@ -46,6 +105,31 @@ createApp({
             this.$nextTick(() => {
                 uibuilder.send({ topic: 'getDevices' });
             });
+        },
+
+        initRouting() {
+            // Hash-based routing
+            const updateRoute = () => {
+                const hash = window.location.hash.slice(1) || 'dashboard';
+                const validRoutes = ['dashboard', 'controls', 'rules', 'history'];
+                if (validRoutes.includes(hash)) {
+                    this.activeTab = hash;
+                } else {
+                    this.activeTab = 'dashboard';
+                    window.location.hash = 'dashboard';
+                }
+            };
+
+            // Initial route
+            updateRoute();
+
+            // Listen for hash changes
+            window.addEventListener('hashchange', updateRoute);
+        },
+
+        navigateTo(route) {
+            window.location.hash = route;
+            this.activeTab = route;
         },
 
         handleMessage(msg) {
@@ -70,6 +154,10 @@ createApp({
                     break;
 
                 case 'deviceConfig':
+                    // Store device schema for categorization
+                    const deviceSchema = msg.payload.schema || null;
+                    this.deviceSchema = deviceSchema;
+
                     // Merged fields + viz_config + controls
                     // Apply defaults for any missing viz properties
                     this.fieldConfigs = (msg.payload.fields || []).map(f => {
@@ -93,15 +181,27 @@ createApp({
                         // Use database gauge_style, fallback to 'radial' if missing
                         const gaugeStyle = f.gauge_style || 'radial';
 
+                        // Override category with device-provided category from schema (device categories are authoritative)
+                        let category = f.category;
+                        if (deviceSchema) {
+                            const deviceCategory = this.getCategoryFromSchema(f.key, deviceSchema);
+                            if (deviceCategory) {
+                                category = deviceCategory;
+                            } else if (!category) {
+                                // Field not found in schema - log warning but preserve field (no data loss)
+                                console.warn(`Field ${f.key} not found in device schema, using database category: ${category || 'unknown'}`);
+                            }
+                        }
+
                         // Infer default viz_type if not set
                         let vizType = f.viz_type;
                         if (!vizType) {
-                            if (f.category === 'state') {
+                            if (category === 'state') {
                                 vizType = 'toggle';
                             } else if (gaugeStyle === 'tank') {
                                 // Tank fields should always show gauge + chart
                                 vizType = 'both';
-                            } else if (f.type === 'num' && f.category === 'cont') {
+                            } else if (f.type === 'num' && category === 'cont') {
                                 vizType = (minVal !== null && maxVal !== null && !isNaN(minVal) && !isNaN(maxVal)) ? 'both' : 'chart';
                             } else {
                                 vizType = 'badge';
@@ -113,6 +213,7 @@ createApp({
                             name: displayName,
                             min: minVal,
                             max: maxVal,
+                            category: category, // Use device-provided category
                             viz_type: vizType,
                             gauge_style: gaugeStyle,
                             chart_color: f.chart_color || '#3b82f6',
@@ -196,11 +297,19 @@ createApp({
                         // Auto-create field entry for controls not in fieldConfigs
                         // Use key as name until database provides display_name
                         if (!existingFieldKeys.has(controlKey)) {
+                            // Get category from device schema if available
+                            let category = 'state';
+                            if (deviceSchema) {
+                                const deviceCategory = this.getCategoryFromSchema(controlKey, deviceSchema);
+                                if (deviceCategory) {
+                                    category = deviceCategory;
+                                }
+                            }
                             additionalFields.push({
                                 key: controlKey,
                                 name: controlKey, // Use key until database provides display_name
                                 type: 'enum',
-                                category: 'state',
+                                category: category,
                                 viz_type: 'toggle',
                                 enum_values: c.enum_values || ['off', 'on'],
                                 is_visible: true,
@@ -215,12 +324,20 @@ createApp({
                     Object.entries(telemetryData).forEach(([key, val]) => {
                         if (this.isControlValue(val) && !existingFieldKeys.has(key)) {
                             // Looks like a control based on its value
+                            // Get category from device schema if available
+                            let category = 'state';
+                            if (deviceSchema) {
+                                const deviceCategory = this.getCategoryFromSchema(key, deviceSchema);
+                                if (deviceCategory) {
+                                    category = deviceCategory;
+                                }
+                            }
                             // Use key as name until database provides display_name
                             additionalFields.push({
                                 key,
                                 name: key, // Use key until database provides display_name
                                 type: 'enum',
-                                category: 'state',
+                                category: category,
                                 viz_type: 'toggle',
                                 enum_values: ['off', 'on'],
                                 is_visible: true,
@@ -240,7 +357,7 @@ createApp({
                     });
 
                     // Update reactive state atomically (reassign for Vue reactivity)
-                    this.controls = newControls;
+                    this.controls = { ...newControls };
                     // Combine all field updates into a single array reassignment
                     if (systemFields.length > 0 || additionalFields.length > 0) {
                         this.fieldConfigs = [...this.fieldConfigs, ...systemFields, ...additionalFields];
@@ -289,6 +406,7 @@ createApp({
                 case 'telemetry':
                     // Real-time telemetry update
                     if (msg.payload.eui === this.selectedDevice) {
+                        // Force new object reference to ensure Vue detects the change
                         this.currentData = { ...this.currentData, ...msg.payload.data };
 
                         // Track if controls or fieldConfigs need updating
@@ -313,11 +431,19 @@ createApp({
                                     // Add to fieldConfigs if not there
                                     // Use key as name until database provides display_name
                                     if (!this.fieldConfigs.find(f => f.key === key)) {
+                                        // Get category from device schema if available
+                                        let category = 'state';
+                                        if (this.deviceSchema) {
+                                            const deviceCategory = this.getCategoryFromSchema(key, this.deviceSchema);
+                                            if (deviceCategory) {
+                                                category = deviceCategory;
+                                            }
+                                        }
                                         additionalFields.push({
                                             key,
                                             name: key, // Use key until database provides display_name
                                             type: 'enum',
-                                            category: 'state',
+                                            category: category,
                                             viz_type: 'toggle',
                                             enum_values: ['off', 'on'],
                                             is_visible: true,
@@ -346,7 +472,7 @@ createApp({
 
                         // Update reactive state atomically
                         if (controlsUpdated) {
-                            this.controls = newControls;
+                            this.controls = { ...newControls };
                         }
                         if (additionalFields.length > 0) {
                             this.fieldConfigs = [...this.fieldConfigs, ...additionalFields];
@@ -361,11 +487,25 @@ createApp({
                 case 'stateChange':
                     // Control state changed
                     if (msg.payload.eui === this.selectedDevice) {
+                        // Get old state before updating
+                        const oldState = this.controls[msg.payload.control]?.current_state;
+                        
                         // Use store's updateControl method for consistency
                         this.updateControl(msg.payload.control, {
                             current_state: msg.payload.state,
                             last_change_at: msg.payload.ts,
                             last_change_by: msg.payload.reason
+                        });
+
+                        // Track state change in history
+                        this.addStateChangeHistory({
+                            eui: msg.payload.eui,
+                            control: msg.payload.control,
+                            oldState: oldState,
+                            newState: msg.payload.state,
+                            source: msg.payload.reason || 'unknown',
+                            reason: msg.payload.reason || 'unknown',
+                            ts: msg.payload.ts || Date.now()
                         });
                     }
                     break;
@@ -381,8 +521,16 @@ createApp({
                     break;
 
                 case 'commandAck':
-                    // Command acknowledged - could show toast notification
+                    // Command acknowledged - track in history
                     console.log('Command acknowledged:', msg.payload);
+                    this.addCommandHistory({
+                        eui: msg.payload.eui,
+                        type: 'system',
+                        command: msg.payload.command || 'unknown',
+                        status: msg.payload.status || 'ack',
+                        commandId: msg.payload.commandId,
+                        ts: Date.now()
+                    });
                     break;
 
                 case 'rules':
@@ -518,6 +666,18 @@ createApp({
         },
 
         setControl(data) {
+            // Track command before sending
+            this.addCommandHistory({
+                eui: this.selectedDevice,
+                type: 'control',
+                control: data.control,
+                state: data.state,
+                duration: data.duration,
+                source: 'user',
+                status: 'pending',
+                ts: Date.now()
+            });
+
             uibuilder.send({
                 topic: 'setControl',
                 payload: {
@@ -594,9 +754,9 @@ createApp({
         },
 
 
-        // Tab navigation
+        // Tab navigation (now uses routing)
         setTab(tab) {
-            this.activeTab = tab;
+            this.navigateTo(tab);
         },
 
         // =====================================================================
@@ -750,7 +910,7 @@ createApp({
         },
 
         saveEdgeRule() {
-            if (!this.isEdgeRuleValid) return;
+            if (!this.isEdgeRuleValid.value) return;
             uibuilder.send({
                 topic: 'saveEdgeRule',
                 payload: {
@@ -820,6 +980,17 @@ createApp({
             if (data.command === 'setInterval' && data.value) {
                 payload.value = data.value;
             }
+
+            // Track command before sending
+            this.addCommandHistory({
+                eui: payload.eui,
+                type: 'system',
+                command: data.command,
+                value: data.value,
+                source: 'user',
+                status: 'pending',
+                ts: Date.now()
+            });
 
             console.log('Sending system command:', payload);
             uibuilder.send({
