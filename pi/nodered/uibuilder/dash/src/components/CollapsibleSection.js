@@ -1,6 +1,6 @@
 // CollapsibleSection Component - Generic collapsible wrapper
 // Using custom toggle instead of DaisyUI collapse for better chart rendering
-window.CollapsibleSection = {
+export default {
     props: {
         title: { type: String, required: true },
         defaultOpen: { type: Boolean, default: false },

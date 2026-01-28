@@ -1,5 +1,5 @@
 // SystemCommands Component - Device system controls
-window.SystemCommands = {
+export default {
     props: {
         deviceEui: { type: String, required: true },
         currentInterval: { type: Number, default: 60 }

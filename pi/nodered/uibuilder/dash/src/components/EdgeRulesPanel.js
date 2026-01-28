@@ -1,5 +1,5 @@
 // EdgeRulesPanel Component - Edge rules management (device-side rules)
-window.EdgeRulesPanel = {
+export default {
     props: {
         deviceEui: { type: String, required: true },
         schema: { type: Object, default: null },

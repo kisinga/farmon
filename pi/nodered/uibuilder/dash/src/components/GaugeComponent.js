@@ -1,7 +1,9 @@
 // GaugeComponent - Dynamic gauge based on gauge_style
-window.GaugeComponent = {
+import VChart from './VChart.js';
+
+export default {
     components: {
-        'v-chart': window.VChart
+        'v-chart': VChart
     },
     props: {
         field: { type: Object, required: true },

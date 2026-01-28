@@ -69,6 +69,10 @@ const deviceStore = reactive({
         enabled: true
     },
 
+    // Modal visibility state
+    showRuleEditor: false,
+    showEdgeRuleEditor: false,
+
     // Helper methods
     getSoftLabel(key) {
         // No hard-coded labels - rely on database display_name
@@ -210,6 +214,23 @@ const deviceStore = reactive({
     // Check if we have raw telemetry data (for fallback display)
     get hasRawData() {
         return Object.keys(this.currentData).length > 0;
+    },
+
+    // Dashboard state computed properties
+    get hasSchemaData() {
+        return this.fieldConfigs.length > 0;
+    },
+
+    get shouldShowRawData() {
+        return !this.hasSchemaData && this.hasRawData;
+    },
+
+    get dashboardState() {
+        if (this.loading) return 'loading';
+        if (!this.selectedDevice) return 'no-device';
+        if (!this.hasSchemaData && !this.hasRawData) return 'no-schema';
+        if (this.shouldShowRawData) return 'raw-data';
+        return 'schema-data';
     },
 
     // Validate edge rule form

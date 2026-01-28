@@ -1,5 +1,5 @@
 // CommandHistory Component - Shows command and state change history
-window.CommandHistory = {
+export default {
     props: {
         deviceEui: { type: String, required: true }
     },

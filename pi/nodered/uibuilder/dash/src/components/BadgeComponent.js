@@ -1,5 +1,5 @@
 // BadgeComponent - Simple value display
-window.BadgeComponent = {
+export default {
     props: {
         field: { type: Object, required: true },
         value: { default: null }

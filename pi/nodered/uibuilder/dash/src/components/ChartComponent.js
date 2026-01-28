@@ -1,7 +1,9 @@
 // ChartComponent - Time series line chart using vue-echarts
-window.ChartComponent = {
+import VChart from './VChart.js';
+
+export default {
     components: {
-        'v-chart': window.VChart
+        'v-chart': VChart
     },
     props: {
         field: { type: Object, required: true },

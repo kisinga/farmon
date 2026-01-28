@@ -24,80 +24,8 @@
     <!-- State Store (must load before components and main app) -->
     <script src="./store/deviceStore.js"></script>
 
-    <!-- Component Scripts (load in dependency order) -->
-    <script src="./components/VChart.js"></script>
-    <script src="./components/GaugeComponent.js"></script>
-    <script src="./components/ChartComponent.js"></script>
-    <script src="./components/ControlCard.js"></script>
-    <script src="./components/BadgeComponent.js"></script>
-    <script src="./components/CollapsibleSection.js"></script>
-    <script src="./components/EdgeRulesPanel.js"></script>
-    <script src="./components/SystemCommands.js"></script>
-    <script src="./components/CommandHistory.js"></script>
-
     <style>
-        [v-cloak] { display: none; }
-
-        /* Gauge and chart sizes */
-        .gauge-container { height: 140px; }
-        .gauge-hero { height: 200px; }
-        .gauge-tank { height: 180px; }
-        .chart-container { height: 240px; }
-
-        @media (min-width: 640px) {
-            .gauge-container { height: 160px; }
-            .gauge-hero { height: 260px; }
-            .gauge-tank { height: 220px; }
-            .chart-container { height: 280px; }
-        }
-
-        /* Tank hero size for featured display */
-        .gauge-hero.gauge-tank { height: 240px; }
-        @media (min-width: 640px) {
-            .gauge-hero.gauge-tank { height: 300px; }
-        }
-
-        /* Category badge colors */
-        .badge-sensor { background-color: #3b82f6; color: white; }
-        .badge-system { background-color: #6b7280; color: white; }
-        .badge-diagnostic { background-color: #f59e0b; color: white; }
-        .badge-control { background-color: #10b981; color: white; }
-
-        /* Collapse styling */
-        .collapse-section .collapse-title {
-            min-height: 2.5rem;
-            padding: 0.5rem 1rem;
-            font-weight: 500;
-            font-size: 0.875rem;
-        }
-        .collapse-section .collapse-content {
-            padding: 0 0.75rem 0.75rem 0.75rem;
-        }
-
-        /* Main content wrapper */
-        .main-content {
-            min-height: calc(100vh - 4rem);
-        }
-
-        /* Mobile-friendly touch targets */
-        @media (max-width: 640px) {
-            .btn-xs { min-height: 2rem; min-width: 2rem; }
-            .toggle { transform: scale(1.1); }
-            .select-sm { min-height: 2.5rem; }
-            .input-sm { min-height: 2.5rem; }
-        }
-
-        /* Smooth scrolling for horizontal scroll areas */
-        .overflow-x-auto {
-            -webkit-overflow-scrolling: touch;
-            scrollbar-width: none;
-        }
-        .overflow-x-auto::-webkit-scrollbar { display: none; }
-
-        /* Better card shadows on mobile */
-        @media (max-width: 640px) {
-            .card { box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
-        }
+       /* prefer using the css file */
     </style>
 </head>
 
@@ -111,626 +39,61 @@
             <div class="drawer-content flex flex-col">
 
                 <!-- Navbar -->
-                <nav class="navbar bg-base-100 shadow-lg sticky top-0 z-50">
-                    <div class="navbar-start">
-                        <label for="main-drawer" class="btn btn-ghost btn-circle lg:hidden">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
-                            </svg>
-                        </label>
-                        <a class="btn btn-ghost text-lg sm:text-xl font-bold normal-case">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 sm:h-6 sm:w-6 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span class="hidden xs:inline">Farm Monitor</span>
-                            <span class="xs:hidden">FarmMon</span>
-                        </a>
-                    </div>
-
-                    <!-- Tab Navigation (Desktop) -->
-                    <div class="navbar-center hidden lg:flex">
-                        <ul class="menu menu-horizontal px-1">
-                            <li><a :class="{ active: activeTab === 'dashboard' }" @click="setTab('dashboard')">Dashboard</a></li>
-                            <li><a :class="{ active: activeTab === 'controls' }" @click="setTab('controls')">Controls</a></li>
-                            <li><a :class="{ active: activeTab === 'rules' }" @click="setTab('rules')">Rules</a></li>
-                            <li><a :class="{ active: activeTab === 'history' }" @click="setTab('history')">History</a></li>
-                        </ul>
-                    </div>
-
-                    <!-- Right side items -->
-                    <div class="navbar-end gap-2">
-                        <span class="loading loading-spinner loading-sm" v-if="loading"></span>
-                        <div class="badge badge-sm sm:badge-md" :class="deviceOnline ? 'badge-success' : 'badge-warning'">
-                            <span class="hidden sm:inline">{{ deviceOnline ? 'Online' : 'Offline' }}</span>
-                            <span class="sm:hidden">{{ deviceOnline ? 'On' : 'Off' }}</span>
-                        </div>
-                    </div>
-                </nav>
+                <navbar @set-tab="setTab" />
 
                 <!-- Mobile Tab Navigation -->
-                <div class="tabs tabs-boxed bg-base-100 justify-center lg:hidden p-1">
-                    <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'dashboard' }" @click="setTab('dashboard')">Dashboard</a>
-                    <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'controls' }" @click="setTab('controls')">Controls</a>
-                    <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'rules' }" @click="setTab('rules')">Rules</a>
-                    <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'history' }" @click="setTab('history')">History</a>
-                </div>
+                <tab-navigation @set-tab="setTab" />
 
                 <!-- Page Content -->
                 <main class="main-content p-2 sm:p-4">
                     <div class="max-w-5xl mx-auto space-y-3">
 
                         <!-- No Devices Available -->
-                        <div v-if="devices.length === 0" class="alert alert-warning">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                            <span>No devices registered yet. Waiting for a device to send its registration message...</span>
-                        </div>
+                        <dashboard-empty-state v-if="devices.length === 0" state="no-devices" />
 
                         <!-- Device Selector - Always visible when devices exist -->
-                        <div v-if="devices.length > 0">
-                            <div class="card bg-base-100 shadow-xl mb-3">
-                                <div class="card-body p-3">
-                                    <div class="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-3">
-                                        <div class="flex-1 min-w-0">
-                                            <label class="label py-0.5">
-                                                <span class="label-text text-xs uppercase tracking-wide opacity-60">Device</span>
-                                            </label>
-                                            <select class="select select-bordered select-sm w-full"
-                                                    :value="selectedDevice || ''"
-                                                    @change="selectDevice($event.target.value)">
-                                                <option disabled value="">Select device...</option>
-                                                <option v-for="device in devices" :key="device.eui" :value="device.eui">
-                                                    {{ device.name || device.eui }}
-                                                </option>
-                                            </select>
-                                        </div>
-                                        <div v-if="activeTab === 'dashboard'" class="flex-1 min-w-0">
-                                            <label class="label py-0.5">
-                                                <span class="label-text text-xs uppercase tracking-wide opacity-60">Time Range</span>
-                                            </label>
-                                            <select class="select select-bordered select-sm w-full"
-                                                    :value="timeRange"
-                                                    @change="onTimeRangeChange($event.target.value)">
-                                                <option value="1h">Last 1 Hour</option>
-                                                <option value="6h">Last 6 Hours</option>
-                                                <option value="24h">Last 24 Hours</option>
-                                                <option value="7d">Last 7 Days</option>
-                                                <option value="30d">Last 30 Days</option>
-                                                <option value="custom">Custom</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        <device-selector v-if="devices.length > 0" 
+                                        :show-time-range="activeTab === 'dashboard'"
+                                        @select-device="selectDevice"
+                                        @time-range-change="onTimeRangeChange" />
 
-                            <!-- No Device Selected -->
-                            <div v-if="!selectedDevice" class="alert alert-info">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                <span>Select a device to view data</span>
-                            </div>
+                        <!-- Device Content -->
+                        <div v-if="devices.length > 0" class="space-y-3">
+                            <!-- ======================= DASHBOARD TAB ======================= -->
+                            <dashboard-view v-show="activeTab === 'dashboard'"
+                                           @navigate-to-controls="setTab('controls')" />
 
-                            <!-- Loading State -->
-                            <div v-else-if="loading" class="flex justify-center py-8">
-                                <span class="loading loading-lg loading-spinner text-primary"></span>
-                            </div>
+                            <!-- ======================= CONTROLS TAB ======================= -->
+                            <controls-view v-show="showControlsPage"
+                                          @send-command="sendSystemCommand"
+                                          @set-control="setControl"
+                                          @clear-override="clearOverride" />
 
-                            <!-- Device Content -->
-                            <div v-else class="space-y-3">
+                            <!-- ======================= RULES TAB ======================= -->
+                            <rules-view v-show="activeTab === 'rules'"
+                                       @add-edge-rule="openEdgeRuleEditor"
+                                       @edit-edge-rule="openEdgeRuleEditor"
+                                       @delete-edge-rule="deleteEdgeRule"
+                                       @toggle-edge-rule="toggleEdgeRule"
+                                       @toggle-trigger="toggleTrigger"
+                                       @add-rule="openRuleEditor"
+                                       @edit-rule="editRule"
+                                       @delete-rule="deleteRule"
+                                       @toggle-rule="toggleRule" />
 
-                                <!-- Device Info Bar -->
-                                <div v-if="deviceMeta" class="flex flex-wrap items-center justify-center gap-2 py-1">
-                                    <div class="badge badge-ghost text-xs">
-                                        <span class="opacity-50 mr-1">Type:</span>
-                                        <span>{{ deviceMeta.type || 'unknown' }}</span>
-                                    </div>
-                                    <div class="badge badge-ghost text-xs">
-                                        <span class="opacity-50 mr-1">FW:</span>
-                                        <span class="font-mono">{{ deviceMeta.fw || '--' }}</span>
-                                    </div>
-                                </div>
-
-                                <!-- ======================= DASHBOARD TAB ======================= -->
-                                <div v-show="activeTab === 'dashboard'" class="space-y-3">
-
-                                    <!-- Raw Data Fallback - when no schema but we have telemetry -->
-                                    <div v-if="fieldConfigs.length === 0 && hasRawData" class="card bg-base-100 shadow-xl">
-                                        <div class="card-body p-3">
-                                            <div class="flex items-center justify-between mb-2">
-                                                <h2 class="card-title text-sm sm:text-base">Live Telemetry</h2>
-                                                <span class="badge badge-warning badge-sm">No Schema</span>
-                                            </div>
-                                            <p class="text-xs opacity-60 mb-3">Receiving data. Device schema not yet registered.</p>
-                                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                <div v-for="(value, key) in currentData" :key="key" class="stat bg-base-200 rounded-lg p-2">
-                                                    <div class="stat-title text-xs truncate">{{ key }}</div>
-                                                    <div class="stat-value text-base font-mono">{{ formatRawValue(value) }}</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Waiting for data -->
-                                    <div v-else-if="fieldConfigs.length === 0" class="alert alert-info">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        <span>Waiting for device data...</span>
-                                    </div>
-
-                                    <!-- Full Dashboard with Schema -->
-                                    <template v-else>
-                                        <!-- Quick Stats Bar - horizontal scrollable on mobile -->
-                                        <div class="overflow-x-auto pb-2 -mx-2 px-2">
-                                            <div class="flex gap-2 min-w-max sm:grid sm:grid-cols-4 sm:min-w-0">
-                                                <div v-for="f in sensorFields.slice(0, 4)" :key="'quick-' + f.key"
-                                                     class="stat bg-base-100 shadow rounded-lg p-2 min-w-[120px] sm:min-w-0">
-                                                    <div class="stat-title text-[10px] sm:text-xs truncate">{{ f.name }}</div>
-                                                    <div class="stat-value text-base sm:text-lg font-bold">{{ formatValue(f, getValue(f.key)) }}</div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- Sensors Section (Auto-expanded) -->
-                                        <collapsible-section
-                                            v-if="sensorFields.length > 0"
-                                            title="Sensors"
-                                            :default-open="true"
-                                            :badge-count="sensorFields.length">
-
-                                            <div class="space-y-3 pt-2">
-                                                <!-- Tank-style gauges get featured display -->
-                                                <div v-for="f in sensorFields.filter(f => (f.viz_type === 'gauge' || f.viz_type === 'both') && f.gauge_style === 'tank')" :key="'tank-' + f.key"
-                                                     class="card bg-base-200">
-                                                    <div class="card-body p-3">
-                                                        <div class="flex items-center justify-between mb-1">
-                                                            <h2 class="card-title text-sm sm:text-base">{{ f.name }}</h2>
-                                                            <div class="badge badge-info">{{ formatValue(f, getValue(f.key)) }}</div>
-                                                        </div>
-                                                        <gauge-component :field="f" :value="getValue(f.key)" class="gauge-hero gauge-tank" />
-
-                                                        <!-- Chart for this field if viz_type is 'both' -->
-                                                        <template v-if="f.viz_type === 'both'">
-                                                            <div class="divider my-1 opacity-20"></div>
-                                                            <div class="text-xs opacity-60 mb-1">History</div>
-                                                            <chart-component :field="f" :data="getHistory(f.key)" />
-                                                        </template>
-                                                    </div>
-                                                </div>
-
-                                                <!-- Regular sensor gauges -->
-                                                <div v-for="f in sensorFields.filter(f => (f.viz_type === 'gauge' || f.viz_type === 'both') && f.gauge_style !== 'tank')" :key="'gauge-' + f.key"
-                                                     class="card bg-base-200">
-                                                    <div class="card-body p-3">
-                                                        <div class="flex items-center justify-between mb-1">
-                                                            <h2 class="card-title text-sm sm:text-base">{{ f.name }}</h2>
-                                                            <div class="badge badge-info">{{ formatValue(f, getValue(f.key)) }}</div>
-                                                        </div>
-                                                        <gauge-component :field="f" :value="getValue(f.key)" class="gauge-hero" />
-
-                                                        <!-- Chart for this field if viz_type is 'both' -->
-                                                        <template v-if="f.viz_type === 'both'">
-                                                            <div class="divider my-1 opacity-20"></div>
-                                                            <div class="text-xs opacity-60 mb-1">History</div>
-                                                            <chart-component :field="f" :data="getHistory(f.key)" />
-                                                        </template>
-                                                    </div>
-                                                </div>
-
-                                                <!-- Chart-only fields -->
-                                                <div v-for="f in sensorFields.filter(f => f.viz_type === 'chart')" :key="'chart-' + f.key"
-                                                     class="card bg-base-200">
-                                                    <div class="card-body p-3">
-                                                        <div class="flex items-center justify-between mb-1">
-                                                            <h2 class="card-title text-sm sm:text-base">{{ f.name }}</h2>
-                                                            <div class="badge badge-ghost">{{ formatValue(f, getValue(f.key)) }}</div>
-                                                        </div>
-                                                        <chart-component :field="f" :data="getHistory(f.key)" />
-                                                    </div>
-                                                </div>
-
-                                                <!-- Badge-only fields within sensors -->
-                                                <div v-if="sensorBadgeFields.length > 0" class="stats stats-vertical sm:stats-horizontal shadow w-full">
-                                                    <badge-component v-for="f in sensorBadgeFields" :key="'badge-' + f.key"
-                                                                     :field="f" :value="getValue(f.key)" />
-                                                </div>
-                                            </div>
-                                        </collapsible-section>
-
-                                        <!-- Diagnostics Section (Error counts, timers, etc.) -->
-                                        <collapsible-section
-                                            v-if="diagnosticFields.length > 0"
-                                            title="Diagnostics"
-                                            :default-open="false"
-                                            :badge-count="diagnosticFields.length">
-
-                                            <div class="pt-2">
-                                                <div class="stats stats-vertical sm:stats-horizontal shadow w-full bg-base-200">
-                                                    <div v-for="f in diagnosticFields" :key="'diag-' + f.key" class="stat px-3 py-2">
-                                                        <div class="stat-title text-xs">{{ f.name }}</div>
-                                                        <div class="stat-value text-lg" :class="f.key.toLowerCase().includes('error') && getValue(f.key) > 0 ? 'text-error' : ''">
-                                                            {{ formatValue(f, getValue(f.key)) }}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </collapsible-section>
-
-                                        <!-- System Section (Collapsed by default) -->
-                                        <collapsible-section
-                                            v-if="systemFields.length > 0"
-                                            title="System"
-                                            :default-open="false"
-                                            :badge-count="systemFields.length">
-
-                                            <div class="space-y-3 pt-2">
-                                                <!-- System gauges in a compact grid -->
-                                                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                    <div v-for="f in systemFields.filter(f => f.viz_type !== 'badge')" :key="f.key" class="bg-base-200 rounded-lg p-1.5 min-w-0">
-                                                        <div class="text-[10px] sm:text-xs text-center opacity-60">{{ f.name }}</div>
-                                                        <gauge-component :field="f" :value="getValue(f.key)" />
-                                                    </div>
-                                                </div>
-
-                                                <!-- System charts -->
-                                                <div v-for="f in systemFields.filter(f => f.viz_type === 'both')" :key="'sys-chart-' + f.key"
-                                                     class="card bg-base-200">
-                                                    <div class="card-body p-3">
-                                                        <div class="flex items-center justify-between mb-1">
-                                                            <h2 class="card-title text-sm">{{ f.name }} History</h2>
-                                                            <div class="badge badge-ghost text-xs">{{ formatValue(f, getValue(f.key)) }}</div>
-                                                        </div>
-                                                        <chart-component :field="f" :data="getHistory(f.key)" />
-                                                    </div>
-                                                </div>
-
-                                                <!-- System badges -->
-                                                <div v-if="systemBadgeFields.length > 0" class="stats stats-vertical sm:stats-horizontal shadow w-full bg-base-200">
-                                                    <badge-component v-for="f in systemBadgeFields" :key="'sys-badge-' + f.key"
-                                                                     :field="f" :value="getValue(f.key)" />
-                                                </div>
-                                            </div>
-                                        </collapsible-section>
-
-                                        <!-- Quick Controls Preview -->
-                                        <collapsible-section
-                                            v-if="stateFields.length > 0"
-                                            title="Controls"
-                                            :default-open="true"
-                                            :badge-count="stateFields.length">
-
-                                            <div class="pt-2">
-                                                <div class="flex flex-wrap gap-2">
-                                                    <div v-for="f in stateFields.slice(0, 3)" :key="'ctrl-' + f.key"
-                                                         class="badge badge-lg gap-2"
-                                                         :class="getControl(f.key).current_state === 'on' || getControl(f.key).current_state === 'open' ? 'badge-success' : 'badge-ghost'">
-                                                        {{ f.name }}: {{ getControl(f.key).current_state || 'unknown' }}
-                                                        <span v-if="getControl(f.key).mode === 'manual'" class="badge badge-xs badge-warning">M</span>
-                                                    </div>
-                                                </div>
-                                                <button v-if="stateFields.length > 3" class="btn btn-xs btn-ghost mt-2" @click="setTab('controls')">
-                                                    View All Controls
-                                                </button>
-                                            </div>
-                                        </collapsible-section>
-                                    </template>
-                                </div>
-
-                                <!-- ======================= CONTROLS TAB ======================= -->
-                                <div v-if="showControlsPage" class="space-y-3">
-                                    <!-- System Commands -->
-                                    <system-commands
-                                        :device-eui="selectedDevice"
-                                        :current-interval="getValue('tx') || 60"
-                                        @send-command="sendSystemCommand"
-                                    />
-
-                                    <!-- Loading State -->
-                                    <div v-if="controlsPageState === 'loading'" class="flex justify-center py-8">
-                                        <span class="loading loading-lg loading-spinner text-primary"></span>
-                                    </div>
-
-                                    <!-- No Controls -->
-                                    <div v-else-if="controlsPageState === 'no-controls'" class="alert">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        <span>This device has no controllable fields defined in registration.</span>
-                                    </div>
-
-                                    <!-- Waiting for Config -->
-                                    <div v-else-if="controlsPageState === 'waiting'" class="alert alert-info">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        <span>Waiting for device configuration...</span>
-                                    </div>
-
-                                    <!-- Controls Ready -->
-                                    <div v-else-if="controlsPageState === 'ready'" class="space-y-3 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0">
-                                        <control-card 
-                                            v-for="f in stateFields" 
-                                            :key="f.key"
-                                            :field="f"
-                                            :control="getControl(f.key)"
-                                            @set-control="setControl"
-                                            @clear-override="clearOverride" />
-                                    </div>
-                                </div>
-
-                                <!-- ======================= RULES TAB ======================= -->
-                                <div v-show="activeTab === 'rules'" class="space-y-3">
-
-                                    <!-- Edge Rules (Device-side) -->
-                                    <edge-rules-panel
-                                        :device-eui="selectedDevice"
-                                        :schema="deviceSchema"
-                                        :edge-rules="edgeRules"
-                                        @add-rule="openEdgeRuleEditor"
-                                        @edit-rule="openEdgeRuleEditor"
-                                        @delete-rule="deleteEdgeRule"
-                                        @toggle-rule="toggleEdgeRule"
-                                    />
-
-                                    <!-- Device Triggers -->
-                                    <div class="card bg-base-100 shadow-xl">
-                                        <div class="card-body p-3">
-                                            <h2 class="card-title text-sm sm:text-base mb-2">Device Triggers</h2>
-                                            <p class="text-xs opacity-60 mb-3">These triggers are defined by the device firmware and run on the device itself.</p>
-
-                                            <div v-if="triggers.length === 0" class="text-sm opacity-50">
-                                                No device-defined triggers.
-                                            </div>
-
-                                            <div v-else class="space-y-2">
-                                                <div v-for="t in triggers" :key="t.key"
-                                                     class="flex items-center justify-between p-2 bg-base-200 rounded-lg">
-                                                    <div>
-                                                        <div class="font-medium text-sm">{{ t.name || t.key }}</div>
-                                                        <div class="text-xs opacity-60">
-                                                            If {{ t.field }} {{ t.op }} {{ t.th }}
-                                                            &rarr; {{ t.ctrl }} = {{ t.st }}
-                                                        </div>
-                                                    </div>
-                                                    <input type="checkbox" class="toggle toggle-sm toggle-success"
-                                                           :checked="t.enabled"
-                                                           @change="toggleTrigger(t.key, $event.target.checked)" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- User Rules (Server-side) -->
-                                    <div class="card bg-base-100 shadow-xl">
-                                        <div class="card-body p-3">
-                                            <div class="flex items-center justify-between mb-2">
-                                                <h2 class="card-title text-sm sm:text-base">User Rules</h2>
-                                                <button class="btn btn-xs btn-primary" @click="openRuleEditor()">+ Add Rule</button>
-                                            </div>
-                                            <p class="text-xs opacity-60 mb-3">Custom automation rules that run on the backend server.</p>
-
-                                            <div v-if="userRules.length === 0" class="text-sm opacity-50">
-                                                No user-defined rules. Create one to add custom automation.
-                                            </div>
-
-                                            <div v-else class="space-y-2">
-                                                <div v-for="r in userRules" :key="r.id"
-                                                     class="flex items-center justify-between p-2 bg-base-200 rounded-lg">
-                                                    <div class="flex-1 min-w-0">
-                                                        <div class="font-medium text-sm">{{ r.name }}</div>
-                                                        <div class="text-xs opacity-60">
-                                                            If {{ r.condition?.field }} {{ r.condition?.op }} {{ r.condition?.val }}
-                                                            &rarr; {{ r.action_control }} = {{ r.action_state }}
-                                                        </div>
-                                                        <div v-if="r.last_triggered" class="text-xs opacity-40 mt-1">
-                                                            Last triggered: {{ formatTime(r.last_triggered) }}
-                                                        </div>
-                                                    </div>
-                                                    <div class="flex items-center gap-2">
-                                                        <button class="btn btn-xs btn-ghost" @click="editRule(r)">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                            </svg>
-                                                        </button>
-                                                        <button class="btn btn-xs btn-ghost text-error" @click="deleteRule(r.id)">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                            </svg>
-                                                        </button>
-                                                        <input type="checkbox" class="toggle toggle-sm toggle-success"
-                                                               :checked="r.enabled"
-                                                               @change="toggleRule(r, $event.target.checked)" />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                </div>
-
-                                <!-- ======================= HISTORY TAB ======================= -->
-                                <div v-show="activeTab === 'history'" class="space-y-3">
-                                    <div class="card bg-base-100 shadow-xl">
-                                        <div class="card-body p-3">
-                                            <h2 class="card-title text-sm sm:text-base mb-3">Command & State History</h2>
-                                            <p class="text-xs opacity-60 mb-3">View all commands sent to the device and state changes that have occurred.</p>
-                                            
-                                            <command-history :device-eui="selectedDevice" />
-                                        </div>
-                                    </div>
-                                </div>
-
-                            </div>
+                            <!-- ======================= HISTORY TAB ======================= -->
+                            <history-view v-show="activeTab === 'history'"
+                                         :device-eui="selectedDevice" />
                         </div>
 
                     </div>
                 </main>
 
-                <!-- Rule Editor Modal (outside conditionals) -->
-                <dialog id="rule-editor-modal" class="modal">
-                    <div class="modal-box">
-                        <h3 class="font-bold text-lg mb-4">{{ editingRule?.id ? 'Edit Rule' : 'Create Rule' }}</h3>
+                <!-- Rule Editor Modal -->
+                <rule-editor-modal v-if="showRuleEditor" @close="closeRuleEditor" @save="saveRule" />
 
-                        <div class="form-control mb-3">
-                            <label class="label"><span class="label-text">Rule Name</span></label>
-                            <input type="text" class="input input-bordered input-sm" v-model="editingRule.name" placeholder="e.g., Low water alert">
-                        </div>
-
-                        <div class="divider text-xs">Condition</div>
-
-                        <div class="space-y-2 mb-3">
-                            <div class="form-control">
-                                <label class="label"><span class="label-text text-xs">Field</span></label>
-                                <select class="select select-bordered select-sm w-full" v-model="editingRule.condition.field">
-                                    <option v-for="f in allFieldsForRules" :key="f.key" :value="f.key">
-                                        {{ f.name }} [{{ getFieldCategoryLabel(f) }}]
-                                    </option>
-                                </select>
-                                <div v-if="editingRule.condition.field" class="mt-1">
-                                    <span class="badge badge-xs" :class="getFieldCategoryClass(fieldConfigs.find(f => f.key === editingRule.condition.field))">
-                                        {{ getFieldCategoryLabel(fieldConfigs.find(f => f.key === editingRule.condition.field)) }}
-                                    </span>
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <div class="form-control">
-                                    <label class="label"><span class="label-text text-xs">Operator</span></label>
-                                    <select class="select select-bordered select-sm" v-model="editingRule.condition.op">
-                                        <option value="&lt;">&lt; Less than</option>
-                                        <option value="&gt;">&gt; Greater than</option>
-                                        <option value="&lt;=">&le; Less or equal</option>
-                                        <option value="&gt;=">&ge; Greater or equal</option>
-                                        <option value="=">= Equal</option>
-                                        <option value="!=">≠ Not equal</option>
-                                    </select>
-                                </div>
-                                <div class="form-control">
-                                    <label class="label"><span class="label-text text-xs">Value</span></label>
-                                    <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.condition.val">
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="divider text-xs">Action</div>
-
-                        <div class="grid grid-cols-2 gap-2 mb-3">
-                            <div class="form-control">
-                                <label class="label"><span class="label-text text-xs">Control</span></label>
-                                <select class="select select-bordered select-sm" v-model="editingRule.action_control">
-                                    <option v-for="f in stateFields" :key="f.key" :value="f.key">{{ f.name }}</option>
-                                </select>
-                            </div>
-                            <div class="form-control">
-                                <label class="label"><span class="label-text text-xs">Set to</span></label>
-                                <select class="select select-bordered select-sm" v-model="editingRule.action_state">
-                                    <option v-for="s in getEnumValues(editingRule.action_control)" :key="s" :value="s">{{ s }}</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="divider text-xs">Options</div>
-
-                        <div class="grid grid-cols-2 gap-2 mb-3">
-                            <div class="form-control">
-                                <label class="label"><span class="label-text text-xs">Priority</span></label>
-                                <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.priority" placeholder="100">
-                                <label class="label"><span class="label-text-alt opacity-60">Lower = higher priority</span></label>
-                            </div>
-                            <div class="form-control">
-                                <label class="label"><span class="label-text text-xs">Cooldown (seconds)</span></label>
-                                <input type="number" class="input input-bordered input-sm" v-model.number="editingRule.cooldown_seconds" placeholder="300">
-                                <label class="label"><span class="label-text-alt opacity-60">Min time between triggers</span></label>
-                            </div>
-                        </div>
-
-                        <div class="modal-action">
-                            <button class="btn btn-ghost" @click="closeRuleEditor()">Cancel</button>
-                            <button class="btn btn-primary" @click="saveRule()" :disabled="!isRuleValid">Save Rule</button>
-                        </div>
-                    </div>
-                    <form method="dialog" class="modal-backdrop"><button>close</button></form>
-                </dialog>
-
-                <!-- Edge Rule Editor Modal (outside conditionals) -->
-                <dialog id="edge-rule-editor-modal" class="modal">
-                    <div class="modal-box">
-                        <h3 class="font-bold text-lg mb-4">{{ editingEdgeRule?.rule_id !== null ? 'Edit Edge Rule' : 'Create Edge Rule' }}</h3>
-
-                        <div v-if="!deviceSchema" class="alert alert-warning mb-4">
-                            <span>Device schema not available. Cannot create edge rules.</span>
-                        </div>
-
-                        <template v-else>
-                            <div class="divider text-xs">Condition</div>
-
-                            <div class="grid grid-cols-3 gap-2 mb-3">
-                                <div class="form-control">
-                                    <label class="label"><span class="label-text text-xs">Field</span></label>
-                                    <select class="select select-bordered select-sm" v-model.number="editingEdgeRule.field_idx">
-                                        <option v-if="schemaFields.length === 0" disabled value="">No fields</option>
-                                        <option v-for="(f, idx) in schemaFields" :key="idx" :value="idx">
-                                            {{ f.n || f.k || 'Field ' + idx }}
-                                        </option>
-                                    </select>
-                                </div>
-                                <div class="form-control">
-                                    <label class="label"><span class="label-text text-xs">Operator</span></label>
-                                    <select class="select select-bordered select-sm" v-model="editingEdgeRule.operator">
-                                        <option value="<">&lt;</option>
-                                        <option value=">">&gt;</option>
-                                        <option value="<=">&le;</option>
-                                        <option value=">=">&ge;</option>
-                                        <option value="==">=</option>
-                                        <option value="!=">≠</option>
-                                    </select>
-                                </div>
-                                <div class="form-control">
-                                    <label class="label"><span class="label-text text-xs">Threshold</span></label>
-                                    <input type="number" step="any" class="input input-bordered input-sm" v-model.number="editingEdgeRule.threshold">
-                                </div>
-                            </div>
-
-                            <div class="divider text-xs">Action</div>
-
-                            <div class="grid grid-cols-2 gap-2 mb-3">
-                                <div class="form-control">
-                                    <label class="label"><span class="label-text text-xs">Control</span></label>
-                                    <select class="select select-bordered select-sm" v-model.number="editingEdgeRule.control_idx">
-                                        <option v-if="schemaControls.length === 0" disabled value="">No controls</option>
-                                        <option v-for="(c, idx) in schemaControls" :key="idx" :value="idx">
-                                            {{ c.n || c.k || 'Control ' + idx }}
-                                        </option>
-                                    </select>
-                                </div>
-                                <div class="form-control">
-                                    <label class="label"><span class="label-text text-xs">Set to</span></label>
-                                    <select class="select select-bordered select-sm" v-model.number="editingEdgeRule.action_state">
-                                        <option v-for="(state, idx) in getControlStates(editingEdgeRule.control_idx)" :key="idx" :value="idx">
-                                            {{ state }}
-                                        </option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div class="divider text-xs">Options</div>
-
-                            <div class="grid grid-cols-2 gap-2 mb-3">
-                                <div class="form-control">
-                                    <label class="label"><span class="label-text text-xs">Priority (0-255)</span></label>
-                                    <input type="number" min="0" max="255" class="input input-bordered input-sm" v-model.number="editingEdgeRule.priority">
-                                    <label class="label"><span class="label-text-alt opacity-60">Lower = higher priority</span></label>
-                                </div>
-                                <div class="form-control">
-                                    <label class="label"><span class="label-text text-xs">Cooldown (seconds)</span></label>
-                                    <input type="number" min="0" class="input input-bordered input-sm" v-model.number="editingEdgeRule.cooldown_seconds">
-                                    <label class="label"><span class="label-text-alt opacity-60">Min time between triggers</span></label>
-                                </div>
-                            </div>
-
-                            <div class="modal-action">
-                                <button class="btn btn-ghost" @click="closeEdgeRuleEditor()">Cancel</button>
-                                <button class="btn btn-primary" @click="saveEdgeRule()" :disabled="!isEdgeRuleValid">Save Edge Rule</button>
-                            </div>
-                        </template>
-                    </div>
-                    <form method="dialog" class="modal-backdrop"><button>close</button></form>
-                </dialog>
+                <!-- Edge Rule Editor Modal -->
+                <edge-rule-editor-modal v-if="showEdgeRuleEditor" @close="closeEdgeRuleEditor" @save="saveEdgeRule" />
 
                 <!-- Footer -->
                 <footer class="footer footer-center p-4 bg-base-100 text-base-content mt-auto">
@@ -740,75 +103,12 @@
             </div>
 
             <!-- Drawer sidebar (mobile) -->
-            <div class="drawer-side z-50">
-                <label for="main-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
-                <div class="menu p-4 w-64 min-h-full bg-base-200 text-base-content">
-                    <!-- Sidebar header -->
-                    <div class="flex items-center gap-2 mb-6 px-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span class="font-bold text-lg">Farm Monitor</span>
-                    </div>
-
-                    <!-- Navigation -->
-                    <ul class="space-y-1">
-                        <li>
-                            <a :class="{ active: activeTab === 'dashboard' }" @click="setTab('dashboard'); closeDrawer()">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-                                </svg>
-                                Dashboard
-                            </a>
-                        </li>
-                        <li>
-                            <a :class="{ active: activeTab === 'controls' }" @click="setTab('controls'); closeDrawer()">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                                </svg>
-                                Controls
-                            </a>
-                        </li>
-                        <li>
-                            <a :class="{ active: activeTab === 'rules' }" @click="setTab('rules'); closeDrawer()">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                </svg>
-                                Rules
-                            </a>
-                        </li>
-                        <li>
-                            <a :class="{ active: activeTab === 'history' }" @click="setTab('history'); closeDrawer()">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                History
-                            </a>
-                        </li>
-                    </ul>
-
-                    <!-- Devices section -->
-                    <div class="divider mt-6">Devices</div>
-                    <ul class="space-y-1">
-                        <li v-for="device in devices" :key="device.eui">
-                            <a @click="selectDeviceAndClose(device.eui)" :class="{ active: selectedDevice === device.eui }">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                                </svg>
-                                {{ device.name || device.eui }}
-                            </a>
-                        </li>
-                        <li v-if="devices.length === 0">
-                            <span class="text-xs opacity-50 px-2">No devices registered</span>
-                        </li>
-                    </ul>
-                </div>
-            </div>
+            <sidebar @set-tab="setTab" @select-device="selectDeviceAndClose" />
 
         </div>
     </div>
 
-    <script src="./index.js"></script>
+    <script type="module" src="./index.js"></script>
 </body>
 
 </html>

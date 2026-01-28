@@ -1,5 +1,5 @@
 // ControlCard Component - For state fields with override support
-window.ControlCard = {
+export default {
     props: {
         field: { type: Object, required: true },
         control: { type: Object, default: () => ({}) }
