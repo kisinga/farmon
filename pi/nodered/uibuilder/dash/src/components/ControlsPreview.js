@@ -1,19 +1,22 @@
 // ControlsPreview Component - Quick controls preview in dashboard
+import deviceStore from '../store/deviceStore.js';
+
+const { computed } = Vue;
+
 export default {
-    inject: ['deviceStore'],
-    computed: {
-        stateFields() {
-            // Access stateFields from parent component's computed property
-            // We'll need to pass this as a prop or access via store
-            // For now, we'll compute it here similar to index.js
-            const controls = this.deviceStore?.controls || {};
-            const fieldConfigs = this.deviceStore?.fieldConfigs || [];
+    setup() {
+        const controls = computed(() => deviceStore.state.controls);
+        const fieldConfigs = computed(() => deviceStore.state.fieldConfigs);
+
+        const stateFields = computed(() => {
+            const controlsObj = controls.value;
+            const configs = fieldConfigs.value;
             const controlsFromState = [];
-            
-            for (const key in controls) {
-                const control = controls[key];
+
+            for (const key in controlsObj) {
+                const control = controlsObj[key];
                 if (control) {
-                    const fieldConfig = fieldConfigs.find(f => f.key === key);
+                    const fieldConfig = configs.find(f => f.key === key);
                     controlsFromState.push({
                         key,
                         name: fieldConfig?.name || key,
@@ -27,8 +30,8 @@ export default {
                 }
             }
 
-            const explicitStateFields = fieldConfigs
-                .filter(f => (f.is_visible !== false) && f.category === 'state' && !controls[f.key]);
+            const explicitStateFields = configs
+                .filter(f => (f.is_visible !== false) && f.category === 'state' && !controlsObj[f.key]);
 
             const allControls = [...controlsFromState, ...explicitStateFields];
             const seen = new Set();
@@ -39,15 +42,13 @@ export default {
                     return true;
                 })
                 .sort((a, b) => (a.sort_order ?? 100) - (b.sort_order ?? 100));
-        },
-        controls() {
-            return this.deviceStore?.controls || {};
-        }
+        });
+
+        const getControl = (key) => controls.value[key] || {};
+
+        return { stateFields, controls, getControl };
     },
     methods: {
-        getControl(key) {
-            return this.controls[key] || {};
-        },
         navigateToControls() {
             this.$emit('navigate-to-controls');
         }

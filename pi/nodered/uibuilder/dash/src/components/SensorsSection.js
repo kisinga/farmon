@@ -1,48 +1,56 @@
 // SensorsSection Component - Sensors collapsible section with gauges/charts
+import deviceStore from '../store/deviceStore.js';
+
+const { computed } = Vue;
+
 export default {
-    inject: ['deviceStore'],
-    computed: {
-        sensorFields() {
-            return this.deviceStore?.sensorFields || [];
-        },
-        sensorBadgeFields() {
-            return this.deviceStore?.sensorBadgeFields || [];
-        },
-        currentData() {
-            return this.deviceStore?.currentData || {};
-        },
-        historyData() {
-            return this.deviceStore?.historyData || {};
-        },
-        tankGaugeFields() {
-            return this.sensorFields.filter(f => 
+    setup() {
+        // Create computed refs that properly track deviceStore
+        const sensorFields = computed(() => deviceStore.sensorFields.value);
+        const sensorBadgeFields = computed(() => deviceStore.sensorBadgeFields.value);
+        const currentData = computed(() => deviceStore.state.currentData);
+        const historyData = computed(() => deviceStore.state.historyData);
+
+        const tankGaugeFields = computed(() =>
+            sensorFields.value.filter(f =>
                 (f.viz_type === 'gauge' || f.viz_type === 'both') && f.gauge_style === 'tank'
-            );
-        },
-        regularGaugeFields() {
-            return this.sensorFields.filter(f => 
+            )
+        );
+
+        const regularGaugeFields = computed(() =>
+            sensorFields.value.filter(f =>
                 (f.viz_type === 'gauge' || f.viz_type === 'both') && f.gauge_style !== 'tank'
-            );
-        },
-        chartOnlyFields() {
-            return this.sensorFields.filter(f => f.viz_type === 'chart');
-        }
-    },
-    methods: {
-        getValue(key) {
-            return this.currentData[key];
-        },
-        getHistory(key) {
-            return this.historyData[key] || [];
-        },
-        formatValue(field, value) {
+            )
+        );
+
+        const chartOnlyFields = computed(() =>
+            sensorFields.value.filter(f => f.viz_type === 'chart')
+        );
+
+        const getValue = (key) => currentData.value[key];
+        const getHistory = (key) => historyData.value[key] || [];
+
+        const formatValue = (field, value) => {
             if (value === null || value === undefined) return '--';
             if (typeof value === 'number') {
                 const formatted = field.unit === '%' ? Math.round(value) : value.toFixed(1);
                 return field.unit ? `${formatted}${field.unit}` : formatted;
             }
             return value;
-        }
+        };
+
+        return {
+            sensorFields,
+            sensorBadgeFields,
+            currentData,
+            historyData,
+            tankGaugeFields,
+            regularGaugeFields,
+            chartOnlyFields,
+            getValue,
+            getHistory,
+            formatValue
+        };
     },
     template: `
         <collapsible-section

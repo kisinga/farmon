@@ -21,9 +21,6 @@
     <!-- UI-Builder Client -->
     <script src="../uibuilder/uibuilder.iife.min.js"></script>
 
-    <!-- State Store (must load before components and main app) -->
-    <script src="./store/deviceStore.js"></script>
-
     <style>
        /* prefer using the css file */
     </style>
@@ -36,64 +33,64 @@
             <input id="main-drawer" type="checkbox" class="drawer-toggle" />
 
             <!-- Main content area -->
-            <div class="drawer-content flex flex-col">
+            <div class="drawer-content flex flex-col min-h-screen">
 
                 <!-- Navbar -->
-                <navbar @set-tab="setTab" />
+                <navbar @set-tab="setTab"></navbar>
 
                 <!-- Mobile Tab Navigation -->
-                <tab-navigation @set-tab="setTab" />
+                <tab-navigation @set-tab="setTab"></tab-navigation>
 
                 <!-- Page Content -->
-                <main class="main-content p-2 sm:p-4">
+                <main class="flex-1 p-2 sm:p-4">
                     <div class="max-w-5xl mx-auto space-y-3">
 
                         <!-- No Devices Available -->
-                        <dashboard-empty-state v-if="devices.length === 0" state="no-devices" />
+                        <dashboard-empty-state v-if="devices.length === 0" state="no-devices"></dashboard-empty-state>
 
                         <!-- Device Selector - Always visible when devices exist -->
-                        <device-selector v-if="devices.length > 0" 
-                                        :show-time-range="activeTab === 'dashboard'"
-                                        @select-device="selectDevice"
-                                        @time-range-change="onTimeRangeChange" />
+                        <device-selector
+                            :show-time-range="activeTab === 'dashboard'"
+                            @select-device="selectDevice"
+                            @time-range-change="onTimeRangeChange"></device-selector>
 
                         <!-- Device Content -->
                         <div v-if="devices.length > 0" class="space-y-3">
                             <!-- ======================= DASHBOARD TAB ======================= -->
                             <dashboard-view v-show="activeTab === 'dashboard'"
-                                           @navigate-to-controls="setTab('controls')" />
+                                @navigate-to-controls="setTab('controls')"></dashboard-view>
 
                             <!-- ======================= CONTROLS TAB ======================= -->
                             <controls-view v-show="showControlsPage"
-                                          @send-command="sendSystemCommand"
-                                          @set-control="setControl"
-                                          @clear-override="clearOverride" />
+                                @send-command="sendSystemCommand"
+                                @set-control="setControl"
+                                @clear-override="clearOverride"></controls-view>
 
                             <!-- ======================= RULES TAB ======================= -->
                             <rules-view v-show="activeTab === 'rules'"
-                                       @add-edge-rule="openEdgeRuleEditor"
-                                       @edit-edge-rule="openEdgeRuleEditor"
-                                       @delete-edge-rule="deleteEdgeRule"
-                                       @toggle-edge-rule="toggleEdgeRule"
-                                       @toggle-trigger="toggleTrigger"
-                                       @add-rule="openRuleEditor"
-                                       @edit-rule="editRule"
-                                       @delete-rule="deleteRule"
-                                       @toggle-rule="toggleRule" />
+                                @add-edge-rule="openEdgeRuleEditor"
+                                @edit-edge-rule="openEdgeRuleEditor"
+                                @delete-edge-rule="deleteEdgeRule"
+                                @toggle-edge-rule="toggleEdgeRule"
+                                @toggle-trigger="toggleTrigger"
+                                @add-rule="openRuleEditor"
+                                @edit-rule="editRule"
+                                @delete-rule="deleteRule"
+                                @toggle-rule="toggleRule"></rules-view>
 
                             <!-- ======================= HISTORY TAB ======================= -->
                             <history-view v-show="activeTab === 'history'"
-                                         :device-eui="selectedDevice" />
+                                :device-eui="selectedDevice"></history-view>
                         </div>
 
                     </div>
                 </main>
 
                 <!-- Rule Editor Modal -->
-                <rule-editor-modal v-if="showRuleEditor" @close="closeRuleEditor" @save="saveRule" />
+                <rule-editor-modal v-if="showRuleEditor" @close="closeRuleEditor" @save="saveRule"></rule-editor-modal>
 
                 <!-- Edge Rule Editor Modal -->
-                <edge-rule-editor-modal v-if="showEdgeRuleEditor" @close="closeEdgeRuleEditor" @save="saveEdgeRule" />
+                <edge-rule-editor-modal v-if="showEdgeRuleEditor" @close="closeEdgeRuleEditor" @save="saveEdgeRule"></edge-rule-editor-modal>
 
                 <!-- Footer -->
                 <footer class="footer footer-center p-4 bg-base-100 text-base-content mt-auto">
@@ -103,7 +100,7 @@
             </div>
 
             <!-- Drawer sidebar (mobile) -->
-            <sidebar @set-tab="setTab" @select-device="selectDeviceAndClose" />
+            <sidebar @set-tab="setTab" @select-device="selectDeviceAndClose"></sidebar>
 
         </div>
     </div>

@@ -1,8 +1,10 @@
 // DashboardEmptyState Component - Empty states for dashboard
 export default {
-    inject: ['deviceStore'],
     props: {
         state: { type: String, required: true } // 'no-devices' | 'no-device-selected' | 'loading' | 'waiting-for-data'
+    },
+    mounted() {
+        console.log('[DashboardEmptyState] Mounted with state:', this.state);
     },
     computed: {
         message() {

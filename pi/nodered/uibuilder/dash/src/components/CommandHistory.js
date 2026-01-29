@@ -1,4 +1,6 @@
 // CommandHistory Component - Shows command and state change history
+import deviceStore from '../store/deviceStore.js';
+
 export default {
     props: {
         deviceEui: { type: String, required: true }
@@ -8,28 +10,26 @@ export default {
             activeFilter: 'all' // 'all', 'commands', 'state'
         };
     },
-    // Inject store from parent (Vue 3 best practice)
-    inject: ['deviceStore'],
     computed: {
         commandHistory() {
-            if (!this.deviceEui || !this.deviceStore) return [];
-            return this.deviceStore.getCommandHistoryForDevice(this.deviceEui);
+            if (!this.deviceEui) return [];
+            return deviceStore.getCommandHistoryForDevice(this.deviceEui);
         },
         stateChangeHistory() {
-            if (!this.deviceEui || !this.deviceStore) return [];
-            return this.deviceStore.getStateChangeHistoryForDevice(this.deviceEui);
+            if (!this.deviceEui) return [];
+            return deviceStore.getStateChangeHistoryForDevice(this.deviceEui);
         },
         combinedHistory() {
             const commands = this.commandHistory.map(cmd => ({
                 ...cmd,
                 historyType: 'command',
                 displayType: cmd.type === 'system' ? 'System Command' : 'Control Command',
-                displayName: cmd.type === 'system' 
-                    ? cmd.command 
+                displayName: cmd.type === 'system'
+                    ? cmd.command
                     : `${cmd.control} → ${cmd.state}`,
                 displaySource: cmd.source || 'user'
             }));
-            
+
             const stateChanges = this.stateChangeHistory.map(change => ({
                 ...change,
                 historyType: 'state',
@@ -67,7 +67,7 @@ export default {
             if (diffMins < 60) return `${diffMins}m ago`;
             if (diffHours < 24) return `${diffHours}h ago`;
             if (diffDays < 7) return `${diffDays}d ago`;
-            
+
             return date.toLocaleString('en-US', {
                 month: 'short',
                 day: 'numeric',
@@ -93,7 +93,7 @@ export default {
         <div class="space-y-3">
             <!-- Filter Tabs -->
             <div class="tabs tabs-boxed bg-base-100 justify-center p-1">
-                <a class="tab tab-sm" 
+                <a class="tab tab-sm"
                    :class="{ 'tab-active': activeFilter === 'all' }"
                    @click="activeFilter = 'all'">
                     All
@@ -132,15 +132,15 @@ export default {
                                     </span>
                                     <span class="font-medium text-sm truncate">{{ entry.displayName }}</span>
                                 </div>
-                                
+
                                 <!-- Additional details for commands -->
-                                <div v-if="entry.historyType === 'command' && entry.value !== undefined" 
+                                <div v-if="entry.historyType === 'command' && entry.value !== undefined"
                                      class="text-xs opacity-60">
                                     Value: {{ entry.value }}
                                 </div>
-                                
+
                                 <!-- Additional details for state changes -->
-                                <div v-if="entry.historyType === 'state'" 
+                                <div v-if="entry.historyType === 'state'"
                                      class="text-xs opacity-60">
                                     <span v-if="entry.oldState">From: {{ entry.oldState }}</span>
                                     <span v-if="entry.oldState && entry.newState"> → </span>

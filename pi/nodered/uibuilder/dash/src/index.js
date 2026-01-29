@@ -1,5 +1,6 @@
 // @ts-nocheck
 'use strict'
+import deviceStore, { providableStore } from './store/deviceStore.js';
 import { computeStateFields } from './utils/fieldProcessors.js';
 import { createMessageHandlers } from './utils/messageHandlers.js';
 import { 
@@ -47,60 +48,36 @@ const { createApp, ref, watch, onMounted, nextTick, toRefs, computed: vueCompute
 // =============================================================================
 // Main Application
 // =============================================================================
-createApp({
-    // Register all components
-    components: {
-        'v-chart': VChart,
-        'gauge-component': GaugeComponent,
-        'chart-component': ChartComponent,
-        'control-card': ControlCard,
-        'badge-component': BadgeComponent,
-        'collapsible-section': CollapsibleSection,
-        'edge-rules-panel': EdgeRulesPanel,
-        'system-commands': SystemCommands,
-        'command-history': CommandHistory,
-        'device-selector': DeviceSelector,
-        'device-info-bar': DeviceInfoBar,
-        'dashboard-empty-state': DashboardEmptyState,
-        'raw-data-fallback': RawDataFallback,
-        'quick-stats-bar': QuickStatsBar,
-        'sensors-section': SensorsSection,
-        'diagnostics-section': DiagnosticsSection,
-        'system-section': SystemSection,
-        'controls-preview': ControlsPreview,
-        'dashboard-view': DashboardView,
-        'controls-view': ControlsView,
-        'rules-view': RulesView,
-        'history-view': HistoryView,
-        'navbar': Navbar,
-        'tab-navigation': TabNavigation,
-        'rule-editor-modal': RuleEditorModal,
-        'edge-rule-editor-modal': EdgeRuleEditorModal,
-        'device-triggers': DeviceTriggers,
-        'user-rules': UserRules,
-        'sidebar': Sidebar
-    },
-
-    data() {
-        // Return store directly - Vue will make it reactive
-        // All store properties and methods become accessible via 'this'
-        return window.deviceStore;
-    },
-
-    // Provide store for child components (Vue 3 best practice)
-    provide() {
-        return {
-            deviceStore: window.deviceStore
-        };
-    },
-
+const app = createApp({
+    // Access store via computed properties
     computed: {
-        // State fields - combines controls object with fieldConfigs
+        // State properties from store
+        devices() { return deviceStore.state.devices; },
+        selectedDevice() { return deviceStore.state.selectedDevice; },
+        activeTab() { return deviceStore.state.activeTab; },
+        loading() { return deviceStore.state.loading; },
+        connected() { return deviceStore.state.connected; },
+        fieldConfigs() { return deviceStore.state.fieldConfigs; },
+        controls() { return deviceStore.state.controls; },
+        timeRange() { return deviceStore.state.timeRange; },
+        customFrom() { return deviceStore.state.customFrom; },
+        customTo() { return deviceStore.state.customTo; },
+        currentData() { return deviceStore.state.currentData; },
+        historyData() { return deviceStore.state.historyData; },
+        showRuleEditor() { return deviceStore.state.showRuleEditor; },
+        showEdgeRuleEditor() { return deviceStore.state.showEdgeRuleEditor; },
+
+        // Computed refs from store (unwrap .value)
+        deviceOnline() { return deviceStore.deviceOnline.value; },
+        chartFields() { return deviceStore.chartFields.value; },
+        systemFields() { return deviceStore.systemFields.value; },
+        numericFields() { return deviceStore.numericFields.value; },
+
+        // Existing computed
         stateFields() {
             return computeStateFields(this.controls, this.fieldConfigs);
         },
 
-        // UI state for controls page
         controlsPageState() {
             if (this.loading) return 'loading';
             if (this.stateFields.length === 0 && this.fieldConfigs.length > 0) return 'no-controls';
@@ -114,11 +91,9 @@ createApp({
     },
 
     mounted() {
-        // Initialize message handlers with store context
         this.messageHandlers = createMessageHandlers(this);
         this.rulesManager = createRuleManager(this, uibuilder);
         this.systemCommandManager = createSystemCommandManager(this, uibuilder);
-        
         this.initUIBuilder();
         this.initRouting();
     },
@@ -130,9 +105,16 @@ createApp({
 
         initUIBuilder() {
             uibuilder.start();
-            uibuilder.onChange('msg', msg => this.handleMessage(msg));
 
-            // Request initial device list
+            uibuilder.onChange('msg', msg => {
+                this.handleMessage(msg);
+            });
+
+            uibuilder.onChange('connected', connected => {
+                deviceStore.state.connected = connected;
+                console.log('[UIBUILDER] Connection:', connected ? 'connected' : 'disconnected');
+            });
+
             this.$nextTick(() => {
                 uibuilder.send({ topic: 'getDevices' });
             });
@@ -144,9 +126,9 @@ createApp({
                 const hash = window.location.hash.slice(1) || 'dashboard';
                 const validRoutes = ['dashboard', 'controls', 'rules', 'history'];
                 if (validRoutes.includes(hash)) {
-                    this.activeTab = hash;
+                    deviceStore.state.activeTab = hash;
                 } else {
-                    this.activeTab = 'dashboard';
+                    deviceStore.state.activeTab = 'dashboard';
                     window.location.hash = 'dashboard';
                 }
             };
@@ -160,7 +142,7 @@ createApp({
 
         navigateTo(route) {
             window.location.hash = route;
-            this.activeTab = route;
+            deviceStore.state.activeTab = route;
         },
 
         handleMessage(msg) {
@@ -186,21 +168,22 @@ createApp({
             const handler = handlerMap[msg.topic];
             if (handler) {
                 handler(msg, this);
+            } else {
+                console.warn('[MessageHandler] Unknown topic:', msg.topic);
             }
         },
 
         selectDevice(eui) {
-            this.selectedDevice = eui;
-            this.loading = true;
-            // Use store's reset method for consistency
-            this.resetDeviceState();
+            console.log('[APP] Selecting device:', eui);
+            deviceStore.state.selectedDevice = eui;
+            deviceStore.state.loading = true;
+            deviceStore.resetDeviceState();
 
             uibuilder.send({
                 topic: 'selectDevice',
                 payload: { eui, range: this.timeRange }
             });
 
-            // Request edge rules (schema now comes with deviceConfig)
             uibuilder.send({
                 topic: 'getEdgeRules',
                 payload: { eui }
@@ -224,16 +207,16 @@ createApp({
         },
 
         onTimeRangeChange(newRange) {
-            this.timeRange = newRange;
+            deviceStore.state.timeRange = newRange;
             if (!this.selectedDevice) return;
-            if (this.timeRange === 'custom') return;
+            if (newRange === 'custom') return;
             this.requestHistory();
         },
 
         onCustomRangeChange(range) {
-            this.customFrom = range.from;
-            this.customTo = range.to;
-            if (!this.selectedDevice || !this.customFrom || !this.customTo) return;
+            deviceStore.state.customFrom = range.from;
+            deviceStore.state.customTo = range.to;
+            if (!this.selectedDevice || !range.from || !range.to) return;
             this.requestHistory();
         },
 
@@ -260,7 +243,7 @@ createApp({
 
         setControl(data) {
             // Track command before sending
-            this.addCommandHistory({
+            deviceStore.addCommandHistory({
                 eui: this.selectedDevice,
                 type: 'control',
                 control: data.control,
@@ -400,4 +383,37 @@ createApp({
             this.systemCommandManager.sendSystemCommand(data);
         }
     }
-}).mount('#app');
+});
+
+// Register all components globally so they're available in ALL templates
+app.component('v-chart', VChart);
+app.component('gauge-component', GaugeComponent);
+app.component('chart-component', ChartComponent);
+app.component('control-card', ControlCard);
+app.component('badge-component', BadgeComponent);
+app.component('collapsible-section', CollapsibleSection);
+app.component('edge-rules-panel', EdgeRulesPanel);
+app.component('system-commands', SystemCommands);
+app.component('command-history', CommandHistory);
+app.component('device-selector', DeviceSelector);
+app.component('device-info-bar', DeviceInfoBar);
+app.component('dashboard-empty-state', DashboardEmptyState);
+app.component('raw-data-fallback', RawDataFallback);
+app.component('quick-stats-bar', QuickStatsBar);
+app.component('sensors-section', SensorsSection);
+app.component('diagnostics-section', DiagnosticsSection);
+app.component('system-section', SystemSection);
+app.component('controls-preview', ControlsPreview);
+app.component('dashboard-view', DashboardView);
+app.component('controls-view', ControlsView);
+app.component('rules-view', RulesView);
+app.component('history-view', HistoryView);
+app.component('navbar', Navbar);
+app.component('tab-navigation', TabNavigation);
+app.component('rule-editor-modal', RuleEditorModal);
+app.component('edge-rule-editor-modal', EdgeRuleEditorModal);
+app.component('device-triggers', DeviceTriggers);
+app.component('user-rules', UserRules);
+app.component('sidebar', Sidebar);
+
+app.mount('#app');

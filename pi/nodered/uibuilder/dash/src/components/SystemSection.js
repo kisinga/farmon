@@ -1,41 +1,45 @@
 // SystemSection Component - System fields display
+import deviceStore from '../store/deviceStore.js';
+
+const { computed } = Vue;
+
 export default {
-    inject: ['deviceStore'],
-    computed: {
-        systemFields() {
-            return this.deviceStore?.systemFields || [];
-        },
-        systemBadgeFields() {
-            return this.deviceStore?.systemBadgeFields || [];
-        },
-        currentData() {
-            return this.deviceStore?.currentData || {};
-        },
-        historyData() {
-            return this.deviceStore?.historyData || {};
-        },
-        systemGaugeFields() {
-            return this.systemFields.filter(f => f.viz_type !== 'badge');
-        },
-        systemChartFields() {
-            return this.systemFields.filter(f => f.viz_type === 'both');
-        }
-    },
-    methods: {
-        getValue(key) {
-            return this.currentData[key];
-        },
-        getHistory(key) {
-            return this.historyData[key] || [];
-        },
-        formatValue(field, value) {
+    setup() {
+        const systemFields = computed(() => deviceStore.systemFields.value);
+        const systemBadgeFields = computed(() => deviceStore.systemBadgeFields.value);
+        const currentData = computed(() => deviceStore.state.currentData);
+        const historyData = computed(() => deviceStore.state.historyData);
+
+        const systemGaugeFields = computed(() =>
+            systemFields.value.filter(f => f.viz_type !== 'badge')
+        );
+        const systemChartFields = computed(() =>
+            systemFields.value.filter(f => f.viz_type === 'both')
+        );
+
+        const getValue = (key) => currentData.value[key];
+        const getHistory = (key) => historyData.value[key] || [];
+
+        const formatValue = (field, value) => {
             if (value === null || value === undefined) return '--';
             if (typeof value === 'number') {
                 const formatted = field.unit === '%' ? Math.round(value) : value.toFixed(1);
                 return field.unit ? `${formatted}${field.unit}` : formatted;
             }
             return value;
-        }
+        };
+
+        return {
+            systemFields,
+            systemBadgeFields,
+            currentData,
+            historyData,
+            systemGaugeFields,
+            systemChartFields,
+            getValue,
+            getHistory,
+            formatValue
+        };
     },
     template: `
         <collapsible-section

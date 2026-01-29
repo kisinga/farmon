@@ -1,4 +1,5 @@
 // System command utilities
+import deviceStore from '../store/deviceStore.js';
 
 export function createSystemCommandManager(store, uibuilder) {
     const cmdMap = {
@@ -19,7 +20,7 @@ export function createSystemCommandManager(store, uibuilder) {
             }
 
             const payload = {
-                eui: data.eui || store.selectedDevice,
+                eui: data.eui || deviceStore.state.selectedDevice,
                 fPort: cmdInfo.fPort,
                 command: data.command
             };
@@ -30,7 +31,7 @@ export function createSystemCommandManager(store, uibuilder) {
             }
 
             // Track command before sending
-            store.addCommandHistory({
+            deviceStore.addCommandHistory({
                 eui: payload.eui,
                 type: 'system',
                 command: data.command,

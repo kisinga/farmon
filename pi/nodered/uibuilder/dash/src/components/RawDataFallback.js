@@ -1,9 +1,10 @@
 // RawDataFallback Component - Raw telemetry display when schema unavailable
+import deviceStore from '../store/deviceStore.js';
+
 export default {
-    inject: ['deviceStore'],
     computed: {
         currentData() {
-            return this.deviceStore?.currentData || {};
+            return deviceStore.state.currentData;
         }
     },
     methods: {

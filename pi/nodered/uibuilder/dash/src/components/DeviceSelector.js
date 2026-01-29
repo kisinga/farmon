@@ -1,30 +1,30 @@
 // DeviceSelector Component - Device dropdown and time range selector
+import deviceStore from '../store/deviceStore.js';
+
 export default {
-    inject: ['deviceStore'],
     props: {
         showTimeRange: { type: Boolean, default: false }
     },
+    mounted() {
+        console.log('[DeviceSelector] Mounted - devices:', this.devices.length, 'selected:', this.selectedDevice);
+    },
     computed: {
         devices() {
-            return this.deviceStore?.devices || [];
+            return deviceStore.state.devices;
         },
         selectedDevice() {
-            return this.deviceStore?.selectedDevice || null;
+            return deviceStore.state.selectedDevice;
         },
         timeRange() {
-            return this.deviceStore?.timeRange || '24h';
+            return deviceStore.state.timeRange;
         }
     },
     methods: {
         selectDevice(eui) {
-            if (this.deviceStore) {
-                this.$emit('select-device', eui);
-            }
+            this.$emit('select-device', eui);
         },
         onTimeRangeChange(value) {
-            if (this.deviceStore) {
-                this.$emit('time-range-change', value);
-            }
+            this.$emit('time-range-change', value);
         }
     },
     template: `

@@ -1,15 +1,16 @@
 // Sidebar Component - Mobile drawer sidebar
+import deviceStore from '../store/deviceStore.js';
+
 export default {
-    inject: ['deviceStore'],
     computed: {
         activeTab() {
-            return this.deviceStore?.activeTab || 'dashboard';
+            return deviceStore.state.activeTab;
         },
         devices() {
-            return this.deviceStore?.devices || [];
+            return deviceStore.state.devices;
         },
         selectedDevice() {
-            return this.deviceStore?.selectedDevice || null;
+            return deviceStore.state.selectedDevice;
         }
     },
     methods: {

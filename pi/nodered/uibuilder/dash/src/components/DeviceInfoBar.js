@@ -1,10 +1,12 @@
 // DeviceInfoBar Component - Device metadata display
+import deviceStore from '../store/deviceStore.js';
+
+const { computed } = Vue;
+
 export default {
-    inject: ['deviceStore'],
-    computed: {
-        deviceMeta() {
-            return this.deviceStore?.deviceMeta || null;
-        }
+    setup() {
+        const deviceMeta = computed(() => deviceStore.state.deviceMeta);
+        return { deviceMeta };
     },
     template: `
         <div v-if="deviceMeta" class="flex flex-wrap items-center justify-center gap-2 py-1">

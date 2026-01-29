@@ -1,56 +1,47 @@
 // DashboardView Component - Main dashboard orchestrator
+import deviceStore from '../store/deviceStore.js';
+
+const { computed } = Vue;
+
 export default {
-    inject: ['deviceStore'],
-    computed: {
-        dashboardState() {
-            return this.deviceStore?.dashboardState || 'no-device';
-        },
-        selectedDevice() {
-            return this.deviceStore?.selectedDevice || null;
-        },
-        loading() {
-            return this.deviceStore?.loading || false;
-        },
-        devices() {
-            return this.deviceStore?.devices || [];
-        }
+    setup() {
+        const loading = computed(() => deviceStore.state.loading);
+        const selectedDevice = computed(() => deviceStore.state.selectedDevice);
+        const fieldConfigs = computed(() => deviceStore.state.fieldConfigs);
+        const currentData = computed(() => deviceStore.state.currentData);
+
+        const dashboardState = computed(() => {
+            if (loading.value) return 'loading';
+            if (!selectedDevice.value) return 'no-device';
+            if (fieldConfigs.value.length === 0 && Object.keys(currentData.value).length === 0) return 'no-schema';
+            if (fieldConfigs.value.length === 0 && Object.keys(currentData.value).length > 0) return 'raw-data';
+            return 'schema-data';
+        });
+
+        return { loading, selectedDevice, fieldConfigs, currentData, dashboardState };
     },
     methods: {
-        handleSelectDevice(eui) {
-            this.$emit('select-device', eui);
-        },
-        handleTimeRangeChange(range) {
-            this.$emit('time-range-change', range);
-        },
         handleNavigateToControls() {
             this.$emit('navigate-to-controls');
         }
     },
     template: `
         <div class="space-y-3">
-            <!-- No Device Selected -->
-            <dashboard-empty-state v-if="!selectedDevice" state="no-device-selected" />
+            <dashboard-empty-state v-if="!selectedDevice" state="no-device-selected"></dashboard-empty-state>
+            <dashboard-empty-state v-else-if="loading" state="loading"></dashboard-empty-state>
 
-            <!-- Loading State -->
-            <dashboard-empty-state v-else-if="loading" state="loading" />
-
-            <!-- Device Content -->
             <template v-else>
-                <device-info-bar />
+                <device-info-bar></device-info-bar>
 
-                <!-- Raw Data Fallback - when no schema but we have telemetry -->
-                <raw-data-fallback v-if="dashboardState === 'raw-data'" />
+                <raw-data-fallback v-if="dashboardState === 'raw-data'"></raw-data-fallback>
+                <dashboard-empty-state v-else-if="dashboardState === 'no-schema'" state="waiting-for-data"></dashboard-empty-state>
 
-                <!-- Waiting for data -->
-                <dashboard-empty-state v-else-if="dashboardState === 'no-schema'" state="waiting-for-data" />
-
-                <!-- Full Dashboard with Schema -->
                 <template v-else-if="dashboardState === 'schema-data'">
-                    <quick-stats-bar />
-                    <sensors-section />
-                    <diagnostics-section />
-                    <system-section />
-                    <controls-preview @navigate-to-controls="handleNavigateToControls" />
+                    <quick-stats-bar></quick-stats-bar>
+                    <sensors-section></sensors-section>
+                    <diagnostics-section></diagnostics-section>
+                    <system-section></system-section>
+                    <controls-preview @navigate-to-controls="handleNavigateToControls"></controls-preview>
                 </template>
             </template>
         </div>

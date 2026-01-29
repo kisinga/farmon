@@ -1,30 +1,30 @@
 // ControlsView Component - Controls tab content
+import deviceStore from '../store/deviceStore.js';
 import { computeStateFields } from '../utils/fieldProcessors.js';
 
 export default {
-    inject: ['deviceStore'],
     computed: {
         selectedDevice() {
-            return this.deviceStore?.selectedDevice || null;
+            return deviceStore.state.selectedDevice;
         },
         stateFields() {
-            const controls = this.deviceStore?.controls || {};
-            const fieldConfigs = this.deviceStore?.fieldConfigs || [];
+            const controls = deviceStore.state.controls;
+            const fieldConfigs = deviceStore.state.fieldConfigs;
             return computeStateFields(controls, fieldConfigs);
         },
         controlsPageState() {
-            if (this.deviceStore?.loading) return 'loading';
-            if (this.stateFields.length === 0 && this.deviceStore?.fieldConfigs?.length > 0) return 'no-controls';
+            if (deviceStore.state.loading) return 'loading';
+            if (this.stateFields.length === 0 && deviceStore.state.fieldConfigs.length > 0) return 'no-controls';
             if (this.stateFields.length === 0) return 'waiting';
             return 'ready';
         }
     },
     methods: {
         getValue(key) {
-            return this.deviceStore?.currentData?.[key];
+            return deviceStore.state.currentData[key];
         },
         getControl(key) {
-            return this.deviceStore?.controls?.[key] || {};
+            return deviceStore.state.controls[key] || {};
         }
     },
     template: `
@@ -54,8 +54,8 @@ export default {
             </div>
 
             <div v-else-if="controlsPageState === 'ready'" class="space-y-3 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0">
-                <control-card 
-                    v-for="f in stateFields" 
+                <control-card
+                    v-for="f in stateFields"
                     :key="f.key"
                     :field="f"
                     :control="getControl(f.key)"

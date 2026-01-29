@@ -1,28 +1,28 @@
 // RuleEditorModal Component
+import deviceStore from '../store/deviceStore.js';
 import { computeStateFields } from '../utils/fieldProcessors.js';
 
 export default {
-    inject: ['deviceStore'],
     computed: {
         editingRule() {
-            return this.deviceStore?.editingRule || {};
+            return deviceStore.state.editingRule;
         },
         allFieldsForRules() {
-            return this.deviceStore?.allFieldsForRules || [];
+            return deviceStore.allFieldsForRules.value;
         },
         stateFields() {
-            const controls = this.deviceStore?.controls || {};
-            const fieldConfigs = this.deviceStore?.fieldConfigs || [];
+            const controls = deviceStore.state.controls;
+            const fieldConfigs = deviceStore.state.fieldConfigs;
             return computeStateFields(controls, fieldConfigs);
         },
         fieldConfigs() {
-            return this.deviceStore?.fieldConfigs || [];
+            return deviceStore.state.fieldConfigs;
         },
         isRuleValid() {
-            return this.deviceStore?.isRuleValid || false;
+            return deviceStore.isRuleValid.value;
         },
         show() {
-            return this.deviceStore?.showRuleEditor || false;
+            return deviceStore.state.showRuleEditor;
         }
     },
     watch: {
@@ -52,10 +52,10 @@ export default {
     },
     methods: {
         getFieldCategoryLabel(field) {
-            return this.deviceStore?.getFieldCategoryLabel?.(field) || 'Unknown';
+            return deviceStore.getFieldCategoryLabel(field);
         },
         getFieldCategoryClass(field) {
-            return this.deviceStore?.getFieldCategoryClass?.(field) || 'badge-ghost';
+            return deviceStore.getFieldCategoryClass(field);
         },
         getEnumValues(controlKey) {
             const field = this.fieldConfigs.find(f => f.key === controlKey);
@@ -65,9 +65,7 @@ export default {
             return ['off', 'on'];
         },
         close() {
-            if (this.deviceStore) {
-                this.deviceStore.showRuleEditor = false;
-            }
+            deviceStore.state.showRuleEditor = false;
             this.$emit('close');
         },
         save() {

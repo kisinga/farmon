@@ -1,21 +1,22 @@
 // RulesView Component - Rules tab content
+import deviceStore from '../store/deviceStore.js';
+
 export default {
-    inject: ['deviceStore'],
     computed: {
         selectedDevice() {
-            return this.deviceStore?.selectedDevice || null;
+            return deviceStore.state.selectedDevice;
         },
         deviceSchema() {
-            return this.deviceStore?.deviceSchema || null;
+            return deviceStore.state.deviceSchema;
         },
         edgeRules() {
-            return this.deviceStore?.edgeRules || [];
+            return deviceStore.state.edgeRules;
         },
         triggers() {
-            return this.deviceStore?.triggers || [];
+            return deviceStore.state.triggers;
         },
         userRules() {
-            return this.deviceStore?.userRules || [];
+            return deviceStore.state.userRules;
         }
     },
     template: `

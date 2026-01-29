@@ -1,26 +1,25 @@
 // QuickStatsBar Component - Horizontal scrollable quick stats
+import deviceStore from '../store/deviceStore.js';
+
+const { computed } = Vue;
+
 export default {
-    inject: ['deviceStore'],
-    computed: {
-        sensorFields() {
-            return this.deviceStore?.sensorFields || [];
-        },
-        currentData() {
-            return this.deviceStore?.currentData || {};
-        }
-    },
-    methods: {
-        getValue(key) {
-            return this.currentData[key];
-        },
-        formatValue(field, value) {
+    setup() {
+        const sensorFields = computed(() => deviceStore.sensorFields.value);
+        const currentData = computed(() => deviceStore.state.currentData);
+
+        const getValue = (key) => currentData.value[key];
+
+        const formatValue = (field, value) => {
             if (value === null || value === undefined) return '--';
             if (typeof value === 'number') {
                 const formatted = field.unit === '%' ? Math.round(value) : value.toFixed(1);
                 return field.unit ? `${formatted}${field.unit}` : formatted;
             }
             return value;
-        }
+        };
+
+        return { sensorFields, currentData, getValue, formatValue };
     },
     template: `
         <div class="overflow-x-auto pb-2 -mx-2 px-2">

@@ -1,15 +1,16 @@
 // Navbar Component
+import deviceStore from '../store/deviceStore.js';
+
 export default {
-    inject: ['deviceStore'],
     computed: {
         loading() {
-            return this.deviceStore?.loading || false;
+            return deviceStore.state.loading;
         },
         deviceOnline() {
-            return this.deviceStore?.deviceOnline || false;
+            return deviceStore.deviceOnline.value;
         },
         activeTab() {
-            return this.deviceStore?.activeTab || 'dashboard';
+            return deviceStore.state.activeTab;
         }
     },
     methods: {

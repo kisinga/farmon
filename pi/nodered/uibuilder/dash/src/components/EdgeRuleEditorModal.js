@@ -1,24 +1,25 @@
 // EdgeRuleEditorModal Component
+import deviceStore from '../store/deviceStore.js';
+
 export default {
-    inject: ['deviceStore'],
     computed: {
         editingEdgeRule() {
-            return this.deviceStore?.editingEdgeRule || {};
+            return deviceStore.state.editingEdgeRule;
         },
         deviceSchema() {
-            return this.deviceStore?.deviceSchema || null;
+            return deviceStore.state.deviceSchema;
         },
         schemaFields() {
-            return this.deviceStore?.schemaFields || [];
+            return deviceStore.schemaFields.value;
         },
         schemaControls() {
-            return this.deviceStore?.schemaControls || [];
+            return deviceStore.schemaControls.value;
         },
         isEdgeRuleValid() {
-            return this.deviceStore?.isEdgeRuleValid || false;
+            return deviceStore.isEdgeRuleValid.value;
         },
         show() {
-            return this.deviceStore?.showEdgeRuleEditor || false;
+            return deviceStore.state.showEdgeRuleEditor;
         }
     },
     watch: {
@@ -54,9 +55,7 @@ export default {
             return this.deviceSchema.controls[controlIdx]?.v || ['off', 'on'];
         },
         close() {
-            if (this.deviceStore) {
-                this.deviceStore.showEdgeRuleEditor = false;
-            }
+            deviceStore.state.showEdgeRuleEditor = false;
             this.$emit('close');
         },
         save() {

@@ -1,56 +1,19 @@
-/* Load defaults from `<userDir>/node_modules/node-red-contrib-uibuilder/front-end/uib-brand.min.css`
- * This is optional but reasonably complete and allows for light/dark mode switching.
- */
 @import url("../uibuilder/uib-brand.min.css");
 [v-cloak] { display: none; }
 
-/* Gauge and chart sizes */
+/* Gauge and chart sizing - semantic classes used across components */
 .gauge-container { height: 140px; }
 .gauge-hero { height: 200px; }
 .gauge-tank { height: 180px; }
 .chart-container { height: 240px; }
+.gauge-hero.gauge-tank { height: 240px; }
 
 @media (min-width: 640px) {
     .gauge-container { height: 160px; }
     .gauge-hero { height: 260px; }
     .gauge-tank { height: 220px; }
     .chart-container { height: 280px; }
-}
-
-/* Tank hero size for featured display */
-.gauge-hero.gauge-tank { height: 240px; }
-@media (min-width: 640px) {
     .gauge-hero.gauge-tank { height: 300px; }
-}
-
-/* Category badge colors */
-.badge-sensor { background-color: #3b82f6; color: white; }
-.badge-system { background-color: #6b7280; color: white; }
-.badge-diagnostic { background-color: #f59e0b; color: white; }
-.badge-control { background-color: #10b981; color: white; }
-
-/* Collapse styling */
-.collapse-section .collapse-title {
-    min-height: 2.5rem;
-    padding: 0.5rem 1rem;
-    font-weight: 500;
-    font-size: 0.875rem;
-}
-.collapse-section .collapse-content {
-    padding: 0 0.75rem 0.75rem 0.75rem;
-}
-
-/* Main content wrapper */
-.main-content {
-    min-height: calc(100vh - 4rem);
-}
-
-/* Mobile-friendly touch targets */
-@media (max-width: 640px) {
-    .btn-xs { min-height: 2rem; min-width: 2rem; }
-    .toggle { transform: scale(1.1); }
-    .select-sm { min-height: 2.5rem; }
-    .input-sm { min-height: 2.5rem; }
 }
 
 /* Smooth scrolling for horizontal scroll areas */
@@ -60,7 +23,10 @@
 }
 .overflow-x-auto::-webkit-scrollbar { display: none; }
 
-/* Better card shadows on mobile */
+/* Mobile touch targets */
 @media (max-width: 640px) {
-    .card { box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    .btn-xs { min-height: 2rem; min-width: 2rem; }
+    .toggle { transform: scale(1.1); }
+    .select-sm { min-height: 2.5rem; }
+    .input-sm { min-height: 2.5rem; }
 }

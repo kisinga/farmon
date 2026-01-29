@@ -1,4 +1,5 @@
 // Rules and edge rules management utilities
+import deviceStore from '../store/deviceStore.js';
 
 export function createRuleManager(store, uibuilder) {
     return {
@@ -6,7 +7,7 @@ export function createRuleManager(store, uibuilder) {
             uibuilder.send({
                 topic: 'saveTrigger',
                 payload: {
-                    eui: store.selectedDevice,
+                    eui: deviceStore.state.selectedDevice,
                     triggerKey,
                     enabled
                 }
@@ -18,7 +19,7 @@ export function createRuleManager(store, uibuilder) {
                 topic: 'saveRule',
                 payload: {
                     ...rule,
-                    eui: store.selectedDevice,
+                    eui: deviceStore.state.selectedDevice,
                     enabled
                 }
             });
@@ -26,8 +27,7 @@ export function createRuleManager(store, uibuilder) {
 
         openRuleEditor(rule = null, numericFields, stateFields, getEnumValues) {
             if (rule) {
-                // Edit existing rule
-                store.editingRule = {
+                deviceStore.state.editingRule = {
                     id: rule.id,
                     name: rule.name,
                     condition: rule.condition || { field: '', op: '<', val: 0 },
@@ -38,10 +38,9 @@ export function createRuleManager(store, uibuilder) {
                     enabled: rule.enabled ?? true
                 };
             } else {
-                // New rule - set defaults
                 const firstNumeric = numericFields[0];
                 const firstState = stateFields[0];
-                store.editingRule = {
+                deviceStore.state.editingRule = {
                     id: null,
                     name: '',
                     condition: {
@@ -56,11 +55,11 @@ export function createRuleManager(store, uibuilder) {
                     enabled: true
                 };
             }
-            store.showRuleEditor = true;
+            deviceStore.state.showRuleEditor = true;
         },
 
         closeRuleEditor() {
-            store.showRuleEditor = false;
+            deviceStore.state.showRuleEditor = false;
         },
 
         editRule(rule, numericFields, stateFields, getEnumValues) {
@@ -72,31 +71,30 @@ export function createRuleManager(store, uibuilder) {
             uibuilder.send({
                 topic: 'deleteRule',
                 payload: {
-                    eui: store.selectedDevice,
+                    eui: deviceStore.state.selectedDevice,
                     ruleId
                 }
             });
         },
 
         saveRule() {
-            if (!store.isRuleValid) return;
+            if (!deviceStore.isRuleValid.value) return;
             uibuilder.send({
                 topic: 'saveRule',
                 payload: {
-                    ...store.editingRule,
-                    eui: store.selectedDevice
+                    ...deviceStore.state.editingRule,
+                    eui: deviceStore.state.selectedDevice
                 }
             });
         },
 
         openEdgeRuleEditor(rule = null) {
-            if (!store.deviceSchema) {
+            if (!deviceStore.state.deviceSchema) {
                 alert('Device schema not available. Cannot create edge rules.');
                 return;
             }
             if (rule) {
-                // Edit existing rule
-                store.editingEdgeRule = {
+                deviceStore.state.editingEdgeRule = {
                     rule_id: rule.rule_id,
                     field_idx: rule.field_idx,
                     operator: rule.operator,
@@ -108,8 +106,7 @@ export function createRuleManager(store, uibuilder) {
                     enabled: rule.enabled ?? true
                 };
             } else {
-                // New rule
-                store.editingEdgeRule = {
+                deviceStore.state.editingEdgeRule = {
                     rule_id: null,
                     field_idx: 0,
                     operator: '<',
@@ -121,30 +118,31 @@ export function createRuleManager(store, uibuilder) {
                     enabled: true
                 };
             }
-            store.showEdgeRuleEditor = true;
+            deviceStore.state.showEdgeRuleEditor = true;
         },
 
         closeEdgeRuleEditor() {
-            store.showEdgeRuleEditor = false;
+            deviceStore.state.showEdgeRuleEditor = false;
         },
 
         saveEdgeRule() {
-            if (!store.isEdgeRuleValid.value) return;
+            if (!deviceStore.isEdgeRuleValid.value) return;
             uibuilder.send({
                 topic: 'saveEdgeRule',
                 payload: {
-                    eui: store.selectedDevice,
-                    ...store.editingEdgeRule
+                    eui: deviceStore.state.selectedDevice,
+                    ...deviceStore.state.editingEdgeRule
                 }
             });
             this.closeEdgeRuleEditor();
         },
 
         getControlStates(controlIdx) {
-            if (!store.deviceSchema?.controls || controlIdx >= store.deviceSchema.controls.length) {
+            const schema = deviceStore.state.deviceSchema;
+            if (!schema?.controls || controlIdx >= schema.controls.length) {
                 return ['off', 'on'];
             }
-            return store.deviceSchema.controls[controlIdx]?.v || ['off', 'on'];
+            return schema.controls[controlIdx]?.v || ['off', 'on'];
         },
 
         deleteEdgeRule(ruleId) {
@@ -152,7 +150,7 @@ export function createRuleManager(store, uibuilder) {
             uibuilder.send({
                 topic: 'deleteEdgeRule',
                 payload: {
-                    eui: store.selectedDevice,
+                    eui: deviceStore.state.selectedDevice,
                     ruleId
                 }
             });
@@ -162,7 +160,7 @@ export function createRuleManager(store, uibuilder) {
             uibuilder.send({
                 topic: 'toggleEdgeRule',
                 payload: {
-                    eui: store.selectedDevice,
+                    eui: deviceStore.state.selectedDevice,
                     ruleId: data.ruleId,
                     enabled: data.enabled
                 }

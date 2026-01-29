@@ -1,9 +1,10 @@
 // TabNavigation Component - Mobile tab navigation
+import deviceStore from '../store/deviceStore.js';
+
 export default {
-    inject: ['deviceStore'],
     computed: {
         activeTab() {
-            return this.deviceStore?.activeTab || 'dashboard';
+            return deviceStore.state.activeTab;
         }
     },
     methods: {
