@@ -57,7 +57,20 @@ export function processFieldConfig(field, deviceSchema, getCategoryFromSchema) {
         }
     }
 
-    const vizType = inferVizType(field, category, gaugeStyle, minVal, maxVal);
+    let vizType = inferVizType(field, category, gaugeStyle, minVal, maxVal);
+    let isVisible = field.is_visible !== false;
+
+    // Semantic overrides by field key (composition over rules)
+    const key = field.key;
+    if (key === 'tsr') {
+        vizType = 'badge';
+        isVisible = false; // Shown as duration label in DeviceInfoBar, not System section
+    } else if (key === 'tv' || key === 'pd') {
+        if (vizType === 'both' || vizType === 'gauge') vizType = 'chart';
+    } else if (gaugeStyle === 'radial' && (vizType === 'both' || vizType === 'gauge')) {
+        if (maxVal === null) vizType = vizType === 'both' ? 'chart' : 'badge';
+        else if (minVal != null && (maxVal - minVal) > 10000) vizType = vizType === 'both' ? 'chart' : 'badge';
+    }
 
     return {
         ...field,
@@ -70,7 +83,7 @@ export function processFieldConfig(field, deviceSchema, getCategoryFromSchema) {
         chart_color: field.chart_color || '#3b82f6',
         thresholds: thresholds || getDefaultThresholds(),
         enum_values: enumValues,
-        is_visible: field.is_visible !== false,
+        is_visible: isVisible,
         sort_order: field.sort_order ?? 100
     };
 }

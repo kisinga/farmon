@@ -14,6 +14,7 @@ export default {
         },
         controlsPageState() {
             if (deviceStore.state.loading) return 'loading';
+            if (!deviceStore.state.selectedDevice) return 'no-device';
             if (this.stateFields.length === 0 && deviceStore.state.fieldConfigs.length > 0) return 'no-controls';
             if (this.stateFields.length === 0) return 'waiting';
             return 'ready';
@@ -37,6 +38,13 @@ export default {
 
             <div v-if="controlsPageState === 'loading'" class="flex justify-center py-8">
                 <span class="loading loading-lg loading-spinner text-primary"></span>
+            </div>
+
+            <div v-else-if="controlsPageState === 'no-device'" class="alert">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>Select a device to view controls.</span>
             </div>
 
             <div v-else-if="controlsPageState === 'no-controls'" class="alert">

@@ -36,6 +36,13 @@ export function createMessageHandlers(store) {
         },
 
         handleDeviceConfigMessage(msg, context) {
+            console.log('[DeviceConfig] Received:', {
+                fields: (msg.payload.fields || []).length,
+                controls: (msg.payload.controls || []).length,
+                schema: !!msg.payload.schema,
+                current: !!msg.payload.current
+            });
+
             const deviceSchema = msg.payload.schema || null;
             deviceStore.state.deviceSchema = deviceSchema;
 
@@ -177,6 +184,10 @@ export function createMessageHandlers(store) {
         },
 
         handleHistoryMessage(msg) {
+            const dataLen = (msg.payload.data || []).length;
+            console.log('[History]', msg.payload.field, ':', dataLen, 'points',
+                dataLen > 0 ? '| sample:' : '', dataLen > 0 ? msg.payload.data[0] : '');
+
             deviceStore.state.historyData[msg.payload.field] = (msg.payload.data || []).map(d => ({
                 ts: d.ts,
                 value: typeof d.value === 'string' ? parseFloat(d.value) : d.value

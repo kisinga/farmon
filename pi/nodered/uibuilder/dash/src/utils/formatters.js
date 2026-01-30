@@ -46,3 +46,18 @@ export function formatTime(ts) {
         hour: '2-digit', minute: '2-digit'
     });
 }
+
+/** Format seconds as human-readable duration (e.g. "2d 5h 12m") */
+export function formatDuration(seconds) {
+    if (seconds == null || isNaN(seconds)) return '--';
+    const s = Math.floor(Number(seconds));
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60) % 60;
+    const h = Math.floor(s / 3600) % 24;
+    const d = Math.floor(s / 86400);
+    const parts = [];
+    if (d > 0) parts.push(`${d}d`);
+    if (h > 0) parts.push(`${h}h`);
+    if (m > 0 || parts.length === 0) parts.push(`${m}m`);
+    return parts.join(' ');
+}

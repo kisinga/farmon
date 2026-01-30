@@ -1,28 +1,47 @@
-// ChartComponent - Time series line chart using vue-echarts
-import VChart from './VChart.js';
+// ChartComponent - Time series line chart using echarts directly
 
 export default {
-    components: {
-        'v-chart': VChart
-    },
     props: {
         field: { type: Object, required: true },
         data: { type: Array, default: () => [] }
     },
-    template: `
-        <div class="chart-container">
-            <v-chart :option="chartOption" autoresize />
-        </div>
-    `,
-    computed: {
-        chartOption() {
+    template: `<div ref="chart" class="chart-container"></div>`,
+    mounted() {
+        const el = this.$refs.chart;
+        this.chart = echarts.init(el);
+        this.chart.setOption(this.buildOption());
+        this._ro = new ResizeObserver(() => this.chart?.resize());
+        this._ro.observe(el);
+    },
+    beforeUnmount() {
+        this._ro?.disconnect();
+        this.chart?.dispose();
+    },
+    watch: {
+        data: {
+            handler() {
+                this.chart?.setOption(this.buildOption(), true);
+            },
+            deep: true
+        },
+        field: {
+            handler() { this.chart?.setOption(this.buildOption(), true); },
+            deep: true
+        }
+    },
+    methods: {
+        buildOption() {
             const color = this.field?.chart_color || '#3b82f6';
             const unit = this.field?.unit || '';
             const name = this.field?.name || this.field?.key || 'Value';
 
             const validData = (this.data || [])
-                .filter(d => d && d.ts && typeof d.value === 'number' && !isNaN(d.value))
+                .filter(d => d && d.ts != null && typeof d.value === 'number' && !isNaN(d.value))
                 .map(d => [d.ts, d.value]);
+
+            if (this.data?.length > 0 && validData.length === 0) {
+                console.warn('[Chart]', this.field?.key, '- all', this.data.length, 'points filtered out. Sample:', this.data[0]);
+            }
 
             const hasData = validData.length > 0;
 
@@ -31,11 +50,13 @@ export default {
                 grid: { left: 10, right: 10, top: 25, bottom: hasData ? 60 : 30, containLabel: true },
                 tooltip: {
                     trigger: 'axis',
-                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    confine: true,
+                    renderMode: 'richText',
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
                     borderColor: color,
                     borderWidth: 1,
-                    padding: [10, 14],
-                    textStyle: { color: '#e2e8f0', fontSize: 12 },
+                    padding: [4, 8],
+                    textStyle: { color: '#e2e8f0', fontSize: 11 },
                     formatter: params => {
                         if (!params?.[0]) return '';
                         const p = params[0];
@@ -43,12 +64,7 @@ export default {
                         const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                         const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                         const val = typeof p.value[1] === 'number' ? p.value[1].toFixed(1) : p.value[1];
-                        return `<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${dateStr} ${timeStr}</div>
-                            <div style="display:flex;align-items:center;gap:6px">
-                            <span style="width:8px;height:8px;border-radius:50%;background:${color}"></span>
-                            <span>${name}:</span>
-                            <span style="font-weight:600;color:${color}">${val} ${unit}</span>
-                            </div>`;
+                        return `${dateStr} ${timeStr}  ${name}: ${val} ${unit}`;
                     }
                 },
                 xAxis: {

@@ -1,32 +1,42 @@
-// GaugeComponent - Dynamic gauge based on gauge_style
-import VChart from './VChart.js';
+// GaugeComponent - Dynamic gauge using echarts directly
 
 export default {
-    components: {
-        'v-chart': VChart
-    },
     props: {
         field: { type: Object, required: true },
         value: { type: Number, default: 0 }
     },
-    template: `
-        <div class="gauge-container" :class="{ 'gauge-tank': isTankStyle }">
-            <v-chart :option="gaugeOption" autoresize />
-        </div>
-    `,
+    template: `<div ref="gauge" class="gauge-container" :class="{ 'gauge-tank': isTankStyle }"></div>`,
     computed: {
         isTankStyle() {
             return this.field?.gauge_style === 'tank';
-        },
-        gaugeOption() {
+        }
+    },
+    mounted() {
+        this.chart = echarts.init(this.$refs.gauge);
+        this.chart.setOption(this.buildOption());
+        this._ro = new ResizeObserver(() => this.chart?.resize());
+        this._ro.observe(this.$refs.gauge);
+    },
+    beforeUnmount() {
+        this._ro?.disconnect();
+        this.chart?.dispose();
+    },
+    watch: {
+        value() { this.chart?.setOption(this.buildOption(), true); },
+        field: {
+            handler() { this.chart?.setOption(this.buildOption(), true); },
+            deep: true
+        }
+    },
+    methods: {
+        buildOption() {
             const style = this.field?.gauge_style || 'radial';
             if (style === 'tank') return this.tankGauge();
             if (style === 'liquid') return this.liquidGauge();
             if (style === 'bar') return this.barGauge();
             return this.radialGauge();
-        }
-    },
-    methods: {
+        },
+
         getThresholdColor(percent) {
             const thresholds = this.field?.thresholds || [
                 { pct: 0.2, color: '#ef4444' },
@@ -145,7 +155,6 @@ export default {
             };
         },
 
-        // Tank gauge using echarts-liquidfill for water tank visualization
         tankGauge() {
             const min = this.field?.min ?? 0;
             const max = this.field?.max ?? 100;
@@ -155,7 +164,6 @@ export default {
             const color = this.getThresholdColor(percent);
             const unit = this.field?.unit || '';
 
-            // Tank shape path - rectangular tank with rounded bottom
             const tankPath = 'path://M20,5 L80,5 L80,5 Q85,5 85,10 L85,85 Q85,95 75,95 L25,95 Q15,95 15,85 L15,10 Q15,5 20,5 Z';
 
             return {
@@ -176,14 +184,10 @@ export default {
                             shadowColor: color + '40'
                         }
                     },
-                    backgroundStyle: {
-                        color: '#1e293b',
-                        borderWidth: 0
-                    },
+                    backgroundStyle: { color: '#1e293b', borderWidth: 0 },
                     color: [
                         {
-                            type: 'linear',
-                            x: 0, y: 1, x2: 0, y2: 0,
+                            type: 'linear', x: 0, y: 1, x2: 0, y2: 0,
                             colorStops: [
                                 { offset: 0, color: color + 'cc' },
                                 { offset: 0.5, color: color },
@@ -191,16 +195,14 @@ export default {
                             ]
                         },
                         {
-                            type: 'linear',
-                            x: 0, y: 1, x2: 0, y2: 0,
+                            type: 'linear', x: 0, y: 1, x2: 0, y2: 0,
                             colorStops: [
                                 { offset: 0, color: color + '99' },
                                 { offset: 1, color: color + 'bb' }
                             ]
                         },
                         {
-                            type: 'linear',
-                            x: 0, y: 1, x2: 0, y2: 0,
+                            type: 'linear', x: 0, y: 1, x2: 0, y2: 0,
                             colorStops: [
                                 { offset: 0, color: color + '66' },
                                 { offset: 1, color: color + '88' }
@@ -208,15 +210,9 @@ export default {
                         }
                     ],
                     label: {
-                        show: true,
-                        fontSize: 20,
-                        fontWeight: 'bold',
-                        color: '#fff',
-                        insideColor: '#fff',
-                        formatter: () => {
-                            const displayVal = Math.round(percent * 100);
-                            return displayVal + '%';
-                        }
+                        show: true, fontSize: 20, fontWeight: 'bold',
+                        color: '#fff', insideColor: '#fff',
+                        formatter: () => Math.round(percent * 100) + '%'
                     },
                     waveAnimation: true,
                     animationDuration: 2000,
@@ -224,7 +220,6 @@ export default {
                     amplitude: 8,
                     period: 2000
                 }],
-                // Add value label below tank
                 graphic: [{
                     type: 'text',
                     left: 'center',

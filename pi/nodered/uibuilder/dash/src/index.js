@@ -13,7 +13,6 @@ import { createRuleManager } from './utils/rulesManager.js';
 import { createSystemCommandManager } from './utils/systemCommands.js';
 
 // Import all components
-import VChart from './components/VChart.js';
 import GaugeComponent from './components/GaugeComponent.js';
 import ChartComponent from './components/ChartComponent.js';
 import ControlCard from './components/ControlCard.js';
@@ -232,6 +231,7 @@ const app = createApp({
             // Request history for chart fields AND system fields (unique keys)
             const fieldsToFetch = [...this.chartFields, ...this.systemFields];
             const uniqueKeys = [...new Set(fieldsToFetch.map(f => f.key))];
+            console.log('[RequestHistory] fields:', uniqueKeys);
 
             uniqueKeys.forEach(key => {
                 uibuilder.send({
@@ -386,7 +386,6 @@ const app = createApp({
 });
 
 // Register all components globally so they're available in ALL templates
-app.component('v-chart', VChart);
 app.component('gauge-component', GaugeComponent);
 app.component('chart-component', ChartComponent);
 app.component('control-card', ControlCard);

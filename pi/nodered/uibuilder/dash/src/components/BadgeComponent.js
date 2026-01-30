@@ -14,7 +14,12 @@ export default {
     computed: {
         displayValue() {
             if (this.value === null || this.value === undefined) return '--';
-            if (typeof this.value === 'number') return this.value.toFixed(1);
+            if (typeof this.value === 'number') {
+                if (Math.abs(this.value) >= 1000) {
+                    return this.value.toLocaleString('en-US', { maximumFractionDigits: 1 });
+                }
+                return this.value.toFixed(1);
+            }
             return this.value;
         },
         valueClass() {

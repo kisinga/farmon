@@ -65,7 +65,8 @@ export default {
                             <h2 class="card-title text-sm">{{ f.name }} History</h2>
                             <div class="badge badge-ghost text-xs">{{ formatValue(f, getValue(f.key)) }}</div>
                         </div>
-                        <chart-component :field="f" :data="getHistory(f.key)" />
+                        <chart-component v-if="getHistory(f.key).length > 0" :field="f" :data="getHistory(f.key)" />
+                        <div v-else class="text-center py-6 text-xs opacity-40">No history data</div>
                     </div>
                 </div>
 

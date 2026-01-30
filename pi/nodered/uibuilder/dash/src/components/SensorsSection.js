@@ -70,8 +70,8 @@ export default {
                         </div>
                         <gauge-component :field="f" :value="getValue(f.key)" class="gauge-hero gauge-tank" />
 
-                        <!-- Chart for this field if viz_type is 'both' -->
-                        <template v-if="f.viz_type === 'both'">
+                        <!-- Chart for this field if viz_type is 'both' and history exists -->
+                        <template v-if="f.viz_type === 'both' && getHistory(f.key).length > 0">
                             <div class="divider my-1 opacity-20"></div>
                             <div class="text-xs opacity-60 mb-1">History</div>
                             <chart-component :field="f" :data="getHistory(f.key)" />
@@ -89,8 +89,8 @@ export default {
                         </div>
                         <gauge-component :field="f" :value="getValue(f.key)" class="gauge-hero" />
 
-                        <!-- Chart for this field if viz_type is 'both' -->
-                        <template v-if="f.viz_type === 'both'">
+                        <!-- Chart for this field if viz_type is 'both' and history exists -->
+                        <template v-if="f.viz_type === 'both' && getHistory(f.key).length > 0">
                             <div class="divider my-1 opacity-20"></div>
                             <div class="text-xs opacity-60 mb-1">History</div>
                             <chart-component :field="f" :data="getHistory(f.key)" />
