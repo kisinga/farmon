@@ -70,8 +70,8 @@ export default {
                         </div>
                         <gauge-component :field="f" :value="getValue(f.key)" class="gauge-hero gauge-tank" />
 
-                        <!-- Chart for this field if viz_type is 'both' and history exists -->
-                        <template v-if="f.viz_type === 'both' && getHistory(f.key).length > 0">
+                        <!-- Chart for this field if viz_type is 'both', chartable, and history exists -->
+                        <template v-if="f.chartable !== false && f.viz_type === 'both' && getHistory(f.key).length > 0">
                             <div class="divider my-1 opacity-20"></div>
                             <div class="text-xs opacity-60 mb-1">History</div>
                             <chart-component :field="f" :data="getHistory(f.key)" />
@@ -89,8 +89,8 @@ export default {
                         </div>
                         <gauge-component :field="f" :value="getValue(f.key)" class="gauge-hero" />
 
-                        <!-- Chart for this field if viz_type is 'both' and history exists -->
-                        <template v-if="f.viz_type === 'both' && getHistory(f.key).length > 0">
+                        <!-- Chart for this field if viz_type is 'both', chartable, and history exists -->
+                        <template v-if="f.chartable !== false && f.viz_type === 'both' && getHistory(f.key).length > 0">
                             <div class="divider my-1 opacity-20"></div>
                             <div class="text-xs opacity-60 mb-1">History</div>
                             <chart-component :field="f" :data="getHistory(f.key)" />
@@ -98,15 +98,17 @@ export default {
                     </div>
                 </div>
 
-                <!-- Chart-only fields -->
+                <!-- Chart-only fields (chartable, rely on chartFields) -->
                 <div v-for="f in chartOnlyFields" :key="'chart-' + f.key"
+                     v-show="f.chartable !== false"
                      class="card bg-base-200">
                     <div class="card-body p-3">
                         <div class="flex items-center justify-between mb-1">
                             <h2 class="card-title text-sm sm:text-base">{{ f.name }}</h2>
                             <div class="badge badge-ghost">{{ formatValue(f, getValue(f.key)) }}</div>
                         </div>
-                        <chart-component :field="f" :data="getHistory(f.key)" />
+                        <chart-component v-if="getHistory(f.key).length > 0" :field="f" :data="getHistory(f.key)" />
+                        <div v-else class="text-center py-6 text-xs opacity-40">No history data</div>
                     </div>
                 </div>
 

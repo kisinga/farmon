@@ -37,6 +37,18 @@ export function getDefaultThresholds() {
     ];
 }
 
+/** Semantic overrides by field key - maps known keys to viz/gauge behavior */
+function applySemanticOverrides(field, vizType, gaugeStyle) {
+    const key = field.key;
+    if (key === 'tsr' || key === 'ec') {
+        return { vizType: 'badge', gaugeStyle, chartable: false, isVisible: false };
+    }
+    if (key === 'tv' || key === 'pd') {
+        return { vizType: 'chart', gaugeStyle: 'bar', chartable: true, isVisible: undefined };
+    }
+    return { vizType, gaugeStyle, chartable: true, isVisible: undefined };
+}
+
 // Process a single field config
 export function processFieldConfig(field, deviceSchema, getCategoryFromSchema) {
     const thresholds = parseJsonSafely(field.thresholds, null);
@@ -44,7 +56,7 @@ export function processFieldConfig(field, deviceSchema, getCategoryFromSchema) {
     const minVal = parseNumeric(field.min);
     const maxVal = parseNumeric(field.max);
     const displayName = field.name || field.key;
-    const gaugeStyle = field.gauge_style || 'radial';
+    let gaugeStyle = field.gauge_style || 'radial';
 
     // Override category with device-provided category from schema
     let category = field.category;
@@ -58,16 +70,17 @@ export function processFieldConfig(field, deviceSchema, getCategoryFromSchema) {
     }
 
     let vizType = inferVizType(field, category, gaugeStyle, minVal, maxVal);
-    let isVisible = field.is_visible !== false;
 
-    // Semantic overrides by field key (composition over rules)
-    const key = field.key;
-    if (key === 'tsr') {
-        vizType = 'badge';
-        isVisible = false; // Shown as duration label in DeviceInfoBar, not System section
-    } else if (key === 'tv' || key === 'pd') {
-        if (vizType === 'both' || vizType === 'gauge') vizType = 'chart';
-    } else if (gaugeStyle === 'radial' && (vizType === 'both' || vizType === 'gauge')) {
+    // Apply semantic overrides for known field keys
+    const semantic = applySemanticOverrides(field, vizType, gaugeStyle);
+    vizType = semantic.vizType;
+    gaugeStyle = semantic.gaugeStyle;
+    const chartable = semantic.chartable;
+    let isVisible = semantic.isVisible !== undefined ? semantic.isVisible : (field.is_visible !== false);
+
+    // Fallback: inappropriate radial gauge (no max or huge range) for fields without semantic override
+    const hasSemanticOverride = ['tsr', 'ec', 'tv', 'pd'].includes(field.key);
+    if (!hasSemanticOverride && gaugeStyle === 'radial' && (vizType === 'both' || vizType === 'gauge')) {
         if (maxVal === null) vizType = vizType === 'both' ? 'chart' : 'badge';
         else if (minVal != null && (maxVal - minVal) > 10000) vizType = vizType === 'both' ? 'chart' : 'badge';
     }
@@ -84,6 +97,7 @@ export function processFieldConfig(field, deviceSchema, getCategoryFromSchema) {
         thresholds: thresholds || getDefaultThresholds(),
         enum_values: enumValues,
         is_visible: isVisible,
+        chartable: chartable !== false,
         sort_order: field.sort_order ?? 100
     };
 }
@@ -93,7 +107,7 @@ export function processFieldConfigs(fields, deviceSchema, getCategoryFromSchema)
     return fields.map(f => processFieldConfig(f, deviceSchema, getCategoryFromSchema));
 }
 
-// Create RSSI system field
+// Create RSSI system field (gauge + line chart, chartable)
 export function createRSSIField() {
     return {
         key: 'rssi',
@@ -105,6 +119,7 @@ export function createRSSIField() {
         max: -20,
         viz_type: 'both',
         gauge_style: 'radial',
+        chartable: true,
         chart_color: '#f59e0b',
         thresholds: [
             { pct: 0.3, color: '#ef4444' },
@@ -116,7 +131,7 @@ export function createRSSIField() {
     };
 }
 
-// Create SNR system field
+// Create SNR system field (gauge + line chart, chartable)
 export function createSNRField() {
     return {
         key: 'snr',
@@ -128,6 +143,7 @@ export function createSNRField() {
         max: 15,
         viz_type: 'both',
         gauge_style: 'radial',
+        chartable: true,
         chart_color: '#8b5cf6',
         thresholds: [
             { pct: 0.3, color: '#ef4444' },

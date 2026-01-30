@@ -39,10 +39,6 @@ export default {
                 .filter(d => d && d.ts != null && typeof d.value === 'number' && !isNaN(d.value))
                 .map(d => [d.ts, d.value]);
 
-            if (this.data?.length > 0 && validData.length === 0) {
-                console.warn('[Chart]', this.field?.key, '- all', this.data.length, 'points filtered out. Sample:', this.data[0]);
-            }
-
             const hasData = validData.length > 0;
 
             return {
@@ -61,10 +57,9 @@ export default {
                         if (!params?.[0]) return '';
                         const p = params[0];
                         const date = new Date(p.value[0]);
-                        const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                        const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        const label = date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                         const val = typeof p.value[1] === 'number' ? p.value[1].toFixed(1) : p.value[1];
-                        return `${dateStr} ${timeStr}  ${name}: ${val} ${unit}`;
+                        return `${label}\n${name}: ${val} ${unit}`.trim();
                     }
                 },
                 xAxis: {

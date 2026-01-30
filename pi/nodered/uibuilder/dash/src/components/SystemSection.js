@@ -14,7 +14,7 @@ export default {
             systemFields.value.filter(f => f.viz_type !== 'badge')
         );
         const systemChartFields = computed(() =>
-            systemFields.value.filter(f => f.viz_type === 'both')
+            systemFields.value.filter(f => f.chartable !== false && f.viz_type === 'both')
         );
 
         const getValue = (key) => currentData.value[key];

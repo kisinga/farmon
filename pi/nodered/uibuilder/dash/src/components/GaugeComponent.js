@@ -30,10 +30,13 @@ export default {
     },
     methods: {
         buildOption() {
+            const key = this.field?.key;
             const style = this.field?.gauge_style || 'radial';
+            // tv, pd, tsr: bar gauge (no radial - cumulative/uptime)
+            const useBar = ['tv', 'pd', 'tsr'].includes(key);
             if (style === 'tank') return this.tankGauge();
             if (style === 'liquid') return this.liquidGauge();
-            if (style === 'bar') return this.barGauge();
+            if (style === 'bar' || useBar) return this.barGauge();
             return this.radialGauge();
         },
 

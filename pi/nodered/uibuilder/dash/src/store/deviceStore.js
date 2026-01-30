@@ -100,7 +100,7 @@ const gaugeFields = computed(() =>
 
 const chartFields = computed(() =>
     state.fieldConfigs
-        .filter(f => f.is_visible && (f.viz_type === 'chart' || f.viz_type === 'both') && f.category !== 'state')
+        .filter(f => f.is_visible && f.chartable !== false && (f.viz_type === 'chart' || f.viz_type === 'both') && f.category !== 'state')
         .sort((a, b) => a.sort_order - b.sort_order)
 );
 
