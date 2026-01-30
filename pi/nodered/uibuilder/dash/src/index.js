@@ -89,6 +89,18 @@ const app = createApp({
         }
     },
 
+    watch: {
+        activeTab(newTab) {
+            // Request command/state history when history tab is opened
+            if (newTab === 'history' && this.selectedDevice) {
+                this.$nextTick(() => {
+                    // Trigger history request via HistoryView component
+                    // The component will handle the actual request on mount/watch
+                });
+            }
+        }
+    },
+
     mounted() {
         this.messageHandlers = createMessageHandlers(this);
         this.rulesManager = createRuleManager(this, uibuilder);
@@ -158,6 +170,8 @@ const app = createApp({
                 'telemetry': this.messageHandlers.handleTelemetryMessage,
                 'stateChange': this.messageHandlers.handleStateChangeMessage,
                 'history': this.messageHandlers.handleHistoryMessage,
+                'commandHistory': this.messageHandlers.handleCommandHistoryMessage,
+                'stateHistory': this.messageHandlers.handleStateHistoryMessage,
                 'commandAck': this.messageHandlers.handleCommandAckMessage,
                 'rules': this.messageHandlers.handleRulesMessage,
                 'ruleSaved': this.messageHandlers.handleRuleSavedMessage,

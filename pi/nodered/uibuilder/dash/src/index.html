@@ -86,7 +86,8 @@
 
                             <!-- ======================= HISTORY TAB ======================= -->
                             <history-view v-show="activeTab === 'history'"
-                                :device-eui="selectedDevice"></history-view>
+                                :device-eui="selectedDevice"
+                                @time-range-change="onTimeRangeChange"></history-view>
                         </div>
 
                     </div>

@@ -36,11 +36,14 @@ const state = reactive({
     // Device metadata
     deviceMeta: null,
 
-    // Gateway connection (from MQTT us915/gateway/+/state/conn) — sanity check only
+    // Gateway connection (from MQTT +/gateway/+/state/conn, any band) — sanity check only
     gatewayOnline: true,
 
     /** Ticks every ~10s so deviceOnline recomputes from last_seen (telemetry). */
     statusClock: 0,
+
+    /** Client-side "last telemetry received at" (norm(eui) -> timestamp). Avoids clock skew: we use this when set. */
+    lastSeenReceivedAt: {},
 
     // Device schema (for edge rules)
     deviceSchema: null,
@@ -91,15 +94,23 @@ const selectedDeviceName = computed(() => {
     return device ? (device.name || device.eui) : 'Select Device';
 });
 
-// Device online = last telemetry (last_seen) within a sensible window. No side effects from gateway.
-const DEVICE_ONLINE_WINDOW_MS = 90 * 1000; // 90s — telemetry drives last_seen; beyond this → offline
+// Device online = last telemetry within a sensible window. Prefer client "received at" to avoid clock skew.
+const DEVICE_ONLINE_WINDOW_MS = 90 * 1000; // 90s — beyond this → offline
 
 const deviceOnline = computed(() => {
-    const device = state.devices.find(d => d.eui === state.selectedDevice);
-    if (!device || !device.lastSeen) return false;
-    const elapsed = Date.now() - new Date(device.lastSeen).getTime();
+    const norm = (e) => (e && String(e).toLowerCase().replace(/[^a-f0-9]/g, '')) || '';
+    const device = state.devices.find(d => norm(d.eui) === norm(state.selectedDevice));
+    if (!device) {
+        return false;
+    }
+    // Prefer client-side "last received at" so status is correct even with wrong system time
+    const receivedAt = state.lastSeenReceivedAt[norm(state.selectedDevice)];
+    const elapsed = receivedAt != null
+        ? Date.now() - receivedAt
+        : (device.lastSeen ? Date.now() - new Date(device.lastSeen).getTime() : Infinity);
+    const result = elapsed < DEVICE_ONLINE_WINDOW_MS;
     void state.statusClock;
-    return elapsed < DEVICE_ONLINE_WINDOW_MS;
+    return result;
 });
 
 const gaugeFields = computed(() =>
@@ -371,6 +382,13 @@ function getStateChangeHistoryForDevice(eui) {
     return state.stateChangeHistory.filter(h => h.eui === eui);
 }
 
+/** Record client-side time we last received telemetry for this device (avoids clock skew for online status). */
+function setLastSeenReceivedAt(eui) {
+    if (!eui) return;
+    const norm = (e) => (e && String(e).toLowerCase().replace(/[^a-f0-9]/g, '')) || '';
+    state.lastSeenReceivedAt = { ...state.lastSeenReceivedAt, [norm(eui)]: Date.now() };
+}
+
 // =============================================================================
 // 5. EXPORT STORE
 // =============================================================================
@@ -415,7 +433,8 @@ const methods = {
     addCommandHistory,
     addStateChangeHistory,
     getCommandHistoryForDevice,
-    getStateChangeHistoryForDevice
+    getStateChangeHistoryForDevice,
+    setLastSeenReceivedAt
 };
 
 // Main store export (refs for root component setup())

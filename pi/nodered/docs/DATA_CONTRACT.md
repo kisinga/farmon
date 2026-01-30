@@ -99,7 +99,7 @@ Single convention for how data is stored in PostgreSQL, how Node-RED flows pass 
 
 ## 7. Device online vs gateway status
 
-- **Source**: MQTT topic `us915/gateway/+/state/conn` (gateway connection state).
+- **Source**: MQTT topic `+/gateway/+/state/conn` (gateway connection state; first segment = band, e.g. us915, eu868).
 - **Payload**: `{ "gatewayId": "...", "state": "ONLINE" | "OFFLINE" }`.
 - Node-RED subscribes to this topic, normalizes to `{ topic: 'gatewayStatus', payload: { gatewayId, state } }` and sends to the dashboard. When gateway is offline, the UI shows a critical banner (no data can flow); device status is unchanged — no side effects.
 - The dashboard treats the selected device as **offline** if either the gateway is offline or the device’s `lastSeen` is within (telemetry_interval + margin); Device online = lastSeen (from telemetry) within 90s; gateway offline shown separately, boldly, no side effects on device status.
