@@ -195,19 +195,16 @@ export function createSNRField() {
     };
 }
 
-// Create system fields from current telemetry
+// Create system fields (RSSI/SNR). Always add so History is requested and cards show;
+// they display "No history data" until telemetry with rssi/snr exists.
 export function createSystemFields(current, existingFieldKeys) {
     const systemFields = [];
-    if (!current) return systemFields;
-
-    if (current.rssi !== undefined && !existingFieldKeys.has('rssi')) {
+    if (!existingFieldKeys.has('rssi')) {
         systemFields.push(createRSSIField());
     }
-
-    if (current.snr !== undefined && !existingFieldKeys.has('snr')) {
+    if (!existingFieldKeys.has('snr')) {
         systemFields.push(createSNRField());
     }
-
     return systemFields;
 }
 

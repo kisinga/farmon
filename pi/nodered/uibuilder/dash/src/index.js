@@ -228,9 +228,10 @@ const app = createApp({
                 payload.to = this.customTo;
             }
 
-            // Request history for chart fields AND system fields (unique keys)
+            // Request history for chart fields AND system fields (unique keys).
+            // Always include rssi/snr so their history is fetched even when latest telemetry has nulls.
             const fieldsToFetch = [...this.chartFields, ...this.systemFields];
-            const uniqueKeys = [...new Set(fieldsToFetch.map(f => f.key))];
+            const uniqueKeys = [...new Set([...fieldsToFetch.map(f => f.key), 'rssi', 'snr'])];
             console.log('[RequestHistory] fields:', uniqueKeys);
 
             uniqueKeys.forEach(key => {

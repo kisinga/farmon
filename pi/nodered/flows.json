@@ -90,7 +90,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Extract Device Info",
-        "func": "// Extract device info and fPort from ChirpStack v4 event\nconst deviceEui = msg.payload.deviceInfo?.devEui || 'unknown';\nconst deviceName = msg.payload.deviceInfo?.deviceName || '';\nconst fPort = msg.payload.fPort || 2; // Default to telemetry\n\n// Get decoded data\nlet data = msg.payload.object || {};\n\n// Add metadata\nconst rssi = msg.payload.rxInfo?.[0]?.rssi;\nconst snr = msg.payload.rxInfo?.[0]?.snr;\n\nmsg.deviceEui = deviceEui;\nmsg.deviceName = deviceName;\nmsg.fPort = fPort;\nmsg.data = data;\nmsg.rssi = rssi;\nmsg.snr = snr;\nmsg.rawPayload = msg.payload;\n\nnode.status({fill: 'green', shape: 'dot', text: `${deviceEui.slice(-4)} fPort:${fPort}`});\n\nreturn msg;",
+        "func": "// Extract device info and fPort from ChirpStack v4 event\nconst deviceEui = msg.payload.deviceInfo?.devEui || 'unknown';\nconst deviceName = msg.payload.deviceInfo?.deviceName || '';\nconst fPort = msg.payload.fPort || 2; // Default to telemetry\n\n// Get decoded data\nlet data = msg.payload.object || {};\n\n// Add metadata (ChirpStack v4: rxInfo array; fallback rx_info for alternate encodings)\nconst rx = msg.payload.rxInfo || msg.payload.rx_info || [];\nconst rssi = rx[0]?.rssi;\nconst snr = rx[0]?.snr;\n\nmsg.deviceEui = deviceEui;\nmsg.deviceName = deviceName;\nmsg.fPort = fPort;\nmsg.data = data;\nmsg.rssi = rssi;\nmsg.snr = snr;\nmsg.rawPayload = msg.payload;\n\nnode.status({fill: 'green', shape: 'dot', text: `${deviceEui.slice(-4)} fPort:${fPort}`});\n\nreturn msg;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
