@@ -140,6 +140,12 @@ const systemBadgeFields = computed(() =>
         .sort((a, b) => a.sort_order - b.sort_order)
 );
 
+const topBarFields = computed(() =>
+    state.fieldConfigs
+        .filter(f => f.show_in_top_bar === true)
+        .sort((a, b) => a.sort_order - b.sort_order)
+);
+
 const numericFields = computed(() =>
     state.fieldConfigs
         .filter(f => f.type === 'num')
@@ -240,10 +246,19 @@ function getFieldCategoryClass(field) {
 }
 
 function getCategoryFromSchema(key, schema) {
-    if (!schema || !schema.fields) return null;
-    const field = schema.fields.find(f => (f.k || f.key) === key);
+    if (!schema) return null;
+    const allFields = [...(schema.fields || []), ...(schema.sys || [])];
+    const field = allFields.find(f => (f.k || f.key) === key);
     if (!field) return null;
     return field.c || field.category || null;
+}
+
+function getStateClassFromSchema(key, schema) {
+    if (!schema) return null;
+    const allFields = [...(schema.fields || []), ...(schema.sys || [])];
+    const field = allFields.find(f => (f.k || f.key) === key);
+    if (!field) return null;
+    return field.s || field.state_class || null;
 }
 
 // =============================================================================
@@ -362,6 +377,7 @@ const computedRefs = {
     sensorFields,
     sensorBadgeFields,
     systemBadgeFields,
+    topBarFields,
     numericFields,
     allFieldsForRules,
     schemaFields,
@@ -382,6 +398,7 @@ const methods = {
     getFieldCategoryLabel,
     getFieldCategoryClass,
     getCategoryFromSchema,
+    getStateClassFromSchema,
     syncControlsToFields,
     updateControl,
     resetDeviceState,

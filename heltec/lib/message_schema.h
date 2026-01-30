@@ -48,6 +48,13 @@ enum FieldFlags : uint8_t {
     FLAG_RW = FLAG_READABLE | FLAG_WRITABLE
 };
 
+// State class for display/placement: m=measurement, i=total_increasing, d=delta, u=duration
+constexpr char STATE_CLASS_MEASUREMENT = 'm';
+constexpr char STATE_CLASS_TOTAL_INC = 'i';
+constexpr char STATE_CLASS_DELTA = 'd';
+constexpr char STATE_CLASS_DURATION = 'u';
+constexpr char STATE_CLASS_DEFAULT = 'm';
+
 // -----------------------------------------------------------------------------
 // Field Descriptor - defines a telemetry/system field
 // -----------------------------------------------------------------------------
@@ -61,6 +68,7 @@ struct FieldDescriptor {
     float min_val;          // Minimum value (for validation/UI)
     float max_val;          // Maximum value (for validation/UI)
     uint8_t flags;          // FLAG_READABLE, FLAG_WRITABLE
+    char state_class;      // m, i, d, u for display/placement (0 = default m)
 
     // Helper to check if writable
     bool isWritable() const { return flags & FLAG_WRITABLE; }
@@ -76,60 +84,58 @@ struct FieldDescriptor {
     }
 
     // Format field for registration frame based on category
+    // Appends :s (state_class) for dashboard display/placement. Format: ...:s
     // Returns number of bytes written (snprintf-style)
     int formatForRegistration(char* buf, size_t bufSize) const {
         const char* unitStr = getEscapedUnit();
-        
+        char sc = (state_class != '\0') ? state_class : STATE_CLASS_DEFAULT;
+        int n = 0;
+
         switch (category) {
             case FieldCategory::TELEMETRY: {
-                // Format: key:name:unit:min:max or key:name:unit or key:name
+                // Format: key:name:unit:min:max:s
                 if (min_val > 0 || max_val > 0) {
-                    return snprintf(buf, bufSize, "%s:%s:%s:%.0f:%.0f",
-                                    key, name, unitStr, min_val, max_val);
+                    n = snprintf(buf, bufSize, "%s:%s:%s:%.0f:%.0f:%c",
+                                 key, name, unitStr, min_val, max_val, sc);
                 } else if (unit[0] != '\0') {
-                    return snprintf(buf, bufSize, "%s:%s:%s",
-                                    key, name, unitStr);
+                    n = snprintf(buf, bufSize, "%s:%s:%s:%c",
+                                 key, name, unitStr, sc);
                 } else {
-                    return snprintf(buf, bufSize, "%s:%s",
-                                    key, name);
+                    n = snprintf(buf, bufSize, "%s:%s:%c",
+                                 key, name, sc);
                 }
+                return n;
             }
-            
+
             case FieldCategory::SYSTEM: {
-                // Compact format: key:name:unit:min:max:access
-                // Omit min/max if they are defaults (0 and uint32_max)
-                // Use "w" instead of "rw" for writable (saves 1 byte)
+                // Format: key:name:unit:min:max:access:s (7th part = state_class)
                 const char* access = isWritable() ? "w" : "r";
                 const float UINT32_MAX_F = 4294967295.0f;
-                
-                // Check if min/max are defaults (0 and uint32_max) - can omit them
                 bool isDefaultRange = (min_val == 0.0f && max_val == UINT32_MAX_F);
-                
+
                 if (isDefaultRange) {
-                    // Omit min/max for default uint32 range
                     if (unit[0] != '\0') {
-                        return snprintf(buf, bufSize, "%s:%s:%s::%s",
-                                        key, name, unitStr, access);
+                        n = snprintf(buf, bufSize, "%s:%s:%s::%s:%c",
+                                     key, name, unitStr, access, sc);
                     } else {
-                        return snprintf(buf, bufSize, "%s:%s:::r",
-                                        key, name);
+                        n = snprintf(buf, bufSize, "%s:%s:::r:%c",
+                                     key, name, sc);
                     }
                 } else if (min_val > 0 || max_val > 0) {
-                    // Include min/max for non-default ranges
-                    return snprintf(buf, bufSize, "%s:%s:%s:%.0f:%.0f:%s",
-                                    key, name, unitStr, min_val, max_val, access);
+                    n = snprintf(buf, bufSize, "%s:%s:%s:%.0f:%.0f:%s:%c",
+                                 key, name, unitStr, min_val, max_val, access, sc);
                 } else if (unit[0] != '\0') {
-                    return snprintf(buf, bufSize, "%s:%s:%s::%s",
-                                    key, name, unitStr, access);
+                    n = snprintf(buf, bufSize, "%s:%s:%s::%s:%c",
+                                 key, name, unitStr, access, sc);
                 } else {
-                    return snprintf(buf, bufSize, "%s:%s:::r",
-                                    key, name);
+                    n = snprintf(buf, bufSize, "%s:%s:::r:%c",
+                                 key, name, sc);
                 }
+                return n;
             }
-            
+
             case FieldCategory::COMPUTED:
             default:
-                // Computed fields are not included in registration
                 return 0;
         }
     }
@@ -234,11 +240,12 @@ public:
         _schema.control_count = 0;
     }
 
-    // Add a telemetry field
+    // Add a telemetry field (state_class: m, i, d, u for display/placement)
     SchemaBuilder& addField(const char* key, const char* name, const char* unit,
                             FieldType type, float min_val, float max_val,
                             FieldCategory category = FieldCategory::TELEMETRY,
-                            uint8_t flags = FLAG_READABLE) {
+                            uint8_t flags = FLAG_READABLE,
+                            char state_class = STATE_CLASS_DEFAULT) {
         if (_schema.field_count >= MAX_FIELDS) return *this;
 
         auto& f = _schema.fields[_schema.field_count];
@@ -254,6 +261,7 @@ public:
         f.min_val = min_val;
         f.max_val = max_val;
         f.flags = flags;
+        f.state_class = state_class;
 
         _schema.field_count++;
         return *this;
@@ -262,9 +270,10 @@ public:
     // Add a system field (convenience method)
     SchemaBuilder& addSystemField(const char* key, const char* name, const char* unit,
                                    FieldType type, float min_val, float max_val,
-                                   bool writable = false) {
+                                   bool writable = false,
+                                   char state_class = STATE_CLASS_DEFAULT) {
         uint8_t flags = FLAG_READABLE | (writable ? FLAG_WRITABLE : 0);
-        return addField(key, name, unit, type, min_val, max_val, FieldCategory::SYSTEM, flags);
+        return addField(key, name, unit, type, min_val, max_val, FieldCategory::SYSTEM, flags, state_class);
     }
 
     // Add a control with states

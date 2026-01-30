@@ -16,20 +16,21 @@
 
 inline MessageSchema::Schema buildDeviceSchema() {
     return MessageSchema::SchemaBuilder(1)
-        // Telemetry fields (sensor readings)
-        .addField("pd", "PulseDelta", "", MessageSchema::FieldType::UINT32, 0, 65535)
-        .addField("tv", "TotalVolume", "L", MessageSchema::FieldType::FLOAT, 0, 999999)
-        // System fields (device status/config - battery, errors, time, etc.)
-        // Using shortened names to save bytes in registration frame
-        .addSystemField("bp", "Bat", "%", MessageSchema::FieldType::FLOAT, 0, 100)
-        .addSystemField("ec", "Err", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("tsr", "TimeRst", "s", MessageSchema::FieldType::UINT32, 0, 4294967295)
+        // Telemetry fields (sensor readings) — state_class for display/placement
+        .addField("pd", "PulseDelta", "", MessageSchema::FieldType::UINT32, 0, 65535,
+                  MessageSchema::FieldCategory::TELEMETRY, MessageSchema::FLAG_READABLE, MessageSchema::STATE_CLASS_DELTA)
+        .addField("tv", "TotalVolume", "L", MessageSchema::FieldType::FLOAT, 0, 999999,
+                  MessageSchema::FieldCategory::TELEMETRY, MessageSchema::FLAG_READABLE, MessageSchema::STATE_CLASS_TOTAL_INC)
+        // System fields (device status/config) — mandatory bp, ec, tsr with state_class
+        .addSystemField("bp", "Bat", "%", MessageSchema::FieldType::FLOAT, 0, 100, false, MessageSchema::STATE_CLASS_MEASUREMENT)
+        .addSystemField("ec", "Err", "", MessageSchema::FieldType::UINT32, 0, 4294967295, false, MessageSchema::STATE_CLASS_TOTAL_INC)
+        .addSystemField("tsr", "TimeRst", "s", MessageSchema::FieldType::UINT32, 0, 4294967295, false, MessageSchema::STATE_CLASS_DURATION)
         .addSystemField("tx", "TxInt", "s", MessageSchema::FieldType::UINT32,
-                        10, 3600, true)  // writable
-        .addSystemField("ul", "UpCnt", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("dl", "DnCnt", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("up", "Up", "s", MessageSchema::FieldType::UINT32, 0, 4294967295)
-        .addSystemField("bc", "Boot", "", MessageSchema::FieldType::UINT32, 0, 4294967295)
+                        10, 3600, true, MessageSchema::STATE_CLASS_MEASUREMENT)  // writable
+        .addSystemField("ul", "UpCnt", "", MessageSchema::FieldType::UINT32, 0, 4294967295, false, MessageSchema::STATE_CLASS_MEASUREMENT)
+        .addSystemField("dl", "DnCnt", "", MessageSchema::FieldType::UINT32, 0, 4294967295, false, MessageSchema::STATE_CLASS_MEASUREMENT)
+        .addSystemField("up", "Up", "s", MessageSchema::FieldType::UINT32, 0, 4294967295, false, MessageSchema::STATE_CLASS_MEASUREMENT)
+        .addSystemField("bc", "Boot", "", MessageSchema::FieldType::UINT32, 0, 4294967295, false, MessageSchema::STATE_CLASS_MEASUREMENT)
         // Controls
         .addControl("pump", "Water Pump", {"off", "on"})
         .addControl("valve", "Valve", {"closed", "open"})

@@ -94,11 +94,16 @@ private:
     uint32_t _lastResetMs = 0;
     uint32_t _lastTxMs = 0;
 
-    // Deferred notifications (handled in main loop to avoid callback stack overflow)
+    // Deferred actions (handled in main loop to avoid timer daemon stack overflow)
     bool _notifyConnected = false;
     bool _notifyDisconnected = false;
     bool _notifyReady = false;
+    bool _shouldJoin = false;
     char _notifyCmd[24] = {0};
+
+    // Connection state tracking (members, not static locals, for correct init)
+    bool _wasConnected = false;
+    RegistrationState _prevRegState = RegistrationState::NotStarted;
 
     // Join attempt counter (displayed to user during joining)
     uint16_t _joinAttempts = 0;
@@ -189,6 +194,7 @@ void RemoteApplicationImpl::initialize() {
 
     if (magic == REG_MAGIC && regVersion == CURRENT_REG_VERSION && registered) {
         _regState = RegistrationState::Complete;
+        _prevRegState = RegistrationState::Complete;
         LOGI("Remote", "Registration state loaded: already registered");
     } else {
         _regState = RegistrationState::NotStarted;
@@ -281,8 +287,6 @@ void RemoteApplicationImpl::initialize() {
     
     // LoRaWAN task - processes radio IRQs and state machine
     scheduler.registerTask("lorawan", [this](CommonAppState& state){
-        static bool wasConnected = false;
-        static RegistrationState prevRegState = RegistrationState::NotStarted;
         lorawanHal->tick(state.nowMs);
 
         // Update UI elements with connection state
@@ -292,20 +296,20 @@ void RemoteApplicationImpl::initialize() {
         batteryElement->setStatus(batteryHal->getBatteryPercent(), batteryHal->isCharging());
 
         // Detect connection state changes → queue notifications (deferred to main loop)
-        if (isConnected && !wasConnected) {
+        if (isConnected && !_wasConnected) {
             _notifyConnected = true;
             _joinAttempts = 0;
         }
-        if (!isConnected && wasConnected) {
+        if (!isConnected && _wasConnected) {
             _notifyDisconnected = true;
         }
-        wasConnected = isConnected;
+        _wasConnected = isConnected;
 
         // Detect registration completion → queue "Ready" notification
-        if (_regState == RegistrationState::Complete && prevRegState != RegistrationState::Complete) {
+        if (_regState == RegistrationState::Complete && _prevRegState != RegistrationState::Complete) {
             _notifyReady = true;
         }
-        prevRegState = _regState;
+        _prevRegState = _regState;
 
         // Schedule registration after join (deferred to run() to avoid scheduler stack overflow)
         if (isConnected && _regState == RegistrationState::NotStarted) {
@@ -444,13 +448,12 @@ void RemoteApplicationImpl::initialize() {
         }
     }, 5000);  // Check every 5 seconds
 
-    // LoRaWAN join task - retries indefinitely until joined (boot + mid-session recovery)
-    // Safe to call frequently: join() has joinInProgress guard and 30s backoff internally
+    // LoRaWAN join task - detects "should join" and defers to main loop
+    // join() blocks 30+ seconds (RadioLib activateOTAA); running it here would
+    // starve all other timers.  The main run() loop calls join() instead.
     scheduler.registerTask("lorawan_join", [this](CommonAppState& state){
         if (!lorawanHal->isJoined() && !lorawanHal->isJoinInProgress()) {
-            _joinAttempts++;
-            LOGI("Remote", "Starting LoRaWAN OTAA join (attempt %u)...", _joinAttempts);
-            lorawanHal->join();
+            _shouldJoin = true;
         }
     }, 100);
 
@@ -521,6 +524,14 @@ void RemoteApplicationImpl::setupSensors() {
 void RemoteApplicationImpl::run() {
     // Main run loop - high-frequency, non-blocking tasks
     // The main application logic is handled by the scheduler
+
+    // Handle deferred join (from main loop — join() blocks 30+ seconds)
+    if (_shouldJoin) {
+        _shouldJoin = false;
+        _joinAttempts++;
+        LOGI("Remote", "Starting LoRaWAN OTAA join (attempt %u)...", _joinAttempts);
+        lorawanHal->join();
+    }
 
     // Handle deferred notifications (from main loop to avoid callback stack overflow)
     if (_notifyConnected) {

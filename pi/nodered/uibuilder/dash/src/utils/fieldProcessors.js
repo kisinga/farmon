@@ -37,7 +37,28 @@ export function getDefaultThresholds() {
     ];
 }
 
-/** Semantic overrides by field key - maps known keys to viz/gauge behavior */
+// Single mapping: (category, state_class) → display. Used when state_class is present.
+// category: cont | sys; state_class: m | i | d | u
+const DISPLAY_MAP = {
+    cont: {
+        m: { viz_type: 'both', gauge_style: 'radial', chartable: true, value_format: 'number', show_in_top_bar: false },
+        i: { viz_type: 'chart', gauge_style: 'bar', chartable: true, value_format: 'number', show_in_top_bar: false },
+        d: { viz_type: 'chart', gauge_style: 'bar', chartable: true, value_format: 'number', show_in_top_bar: false }
+    },
+    sys: {
+        m: { viz_type: 'both', gauge_style: 'radial', chartable: true, value_format: 'number', show_in_top_bar: false },
+        i: { viz_type: 'badge', gauge_style: 'bar', chartable: false, value_format: 'integer', show_in_top_bar: true },
+        u: { viz_type: 'badge', gauge_style: 'bar', chartable: false, value_format: 'duration', show_in_top_bar: true }
+    }
+};
+
+function getDisplayFromStateClass(category, stateClass) {
+    if (!category || !stateClass) return null;
+    const row = DISPLAY_MAP[category] && DISPLAY_MAP[category][stateClass];
+    return row || null;
+}
+
+/** Semantic overrides by field key - only when state_class is missing (backward compatibility) */
 function applySemanticOverrides(field, vizType, gaugeStyle) {
     const key = field.key;
     if (key === 'tsr' || key === 'ec') {
@@ -50,7 +71,7 @@ function applySemanticOverrides(field, vizType, gaugeStyle) {
 }
 
 // Process a single field config
-export function processFieldConfig(field, deviceSchema, getCategoryFromSchema) {
+export function processFieldConfig(field, deviceSchema, getCategoryFromSchema, getStateClassFromSchema) {
     const thresholds = parseJsonSafely(field.thresholds, null);
     const enumValues = parseJsonSafely(field.enum_values, null);
     const minVal = parseNumeric(field.min);
@@ -58,7 +79,7 @@ export function processFieldConfig(field, deviceSchema, getCategoryFromSchema) {
     const displayName = field.name || field.key;
     let gaugeStyle = field.gauge_style || 'radial';
 
-    // Override category with device-provided category from schema
+    // Resolve category from schema
     let category = field.category;
     if (deviceSchema && getCategoryFromSchema) {
         const deviceCategory = getCategoryFromSchema(field.key, deviceSchema);
@@ -69,20 +90,37 @@ export function processFieldConfig(field, deviceSchema, getCategoryFromSchema) {
         }
     }
 
-    let vizType = inferVizType(field, category, gaugeStyle, minVal, maxVal);
+    // Resolve state_class from schema (fields + sys)
+    const stateClass = (deviceSchema && getStateClassFromSchema) ? getStateClassFromSchema(field.key, deviceSchema) : null;
+    const displayFromMap = stateClass ? getDisplayFromStateClass(category, stateClass) : null;
 
-    // Apply semantic overrides for known field keys
-    const semantic = applySemanticOverrides(field, vizType, gaugeStyle);
-    vizType = semantic.vizType;
-    gaugeStyle = semantic.gaugeStyle;
-    const chartable = semantic.chartable;
-    let isVisible = semantic.isVisible !== undefined ? semantic.isVisible : (field.is_visible !== false);
+    let vizType;
+    let chartable;
+    let isVisible = field.is_visible !== false;
+    let value_format = 'number';
+    let show_in_top_bar = false;
 
-    // Fallback: inappropriate radial gauge (no max or huge range) for fields without semantic override
-    const hasSemanticOverride = ['tsr', 'ec', 'tv', 'pd'].includes(field.key);
-    if (!hasSemanticOverride && gaugeStyle === 'radial' && (vizType === 'both' || vizType === 'gauge')) {
-        if (maxVal === null) vizType = vizType === 'both' ? 'chart' : 'badge';
-        else if (minVal != null && (maxVal - minVal) > 10000) vizType = vizType === 'both' ? 'chart' : 'badge';
+    if (displayFromMap) {
+        vizType = displayFromMap.viz_type;
+        gaugeStyle = displayFromMap.gauge_style;
+        chartable = displayFromMap.chartable;
+        value_format = displayFromMap.value_format || 'number';
+        show_in_top_bar = displayFromMap.show_in_top_bar || false;
+        // Top-bar-only fields (e.g. tsr, ec) are hidden from sections; DeviceInfoBar shows them by show_in_top_bar
+        isVisible = !show_in_top_bar;
+    } else {
+        vizType = inferVizType(field, category, gaugeStyle, minVal, maxVal);
+        const semantic = applySemanticOverrides(field, vizType, gaugeStyle);
+        vizType = semantic.vizType;
+        gaugeStyle = semantic.gaugeStyle;
+        chartable = semantic.chartable;
+        isVisible = semantic.isVisible !== undefined ? semantic.isVisible : (field.is_visible !== false);
+
+        const hasSemanticOverride = ['tsr', 'ec', 'tv', 'pd'].includes(field.key);
+        if (!hasSemanticOverride && gaugeStyle === 'radial' && (vizType === 'both' || vizType === 'gauge')) {
+            if (maxVal === null) vizType = vizType === 'both' ? 'chart' : 'badge';
+            else if (minVal != null && (maxVal - minVal) > 10000) vizType = vizType === 'both' ? 'chart' : 'badge';
+        }
     }
 
     return {
@@ -98,13 +136,15 @@ export function processFieldConfig(field, deviceSchema, getCategoryFromSchema) {
         enum_values: enumValues,
         is_visible: isVisible,
         chartable: chartable !== false,
-        sort_order: field.sort_order ?? 100
+        sort_order: field.sort_order ?? 100,
+        value_format,
+        show_in_top_bar
     };
 }
 
 // Process array of field configs
-export function processFieldConfigs(fields, deviceSchema, getCategoryFromSchema) {
-    return fields.map(f => processFieldConfig(f, deviceSchema, getCategoryFromSchema));
+export function processFieldConfigs(fields, deviceSchema, getCategoryFromSchema, getStateClassFromSchema) {
+    return fields.map(f => processFieldConfig(f, deviceSchema, getCategoryFromSchema, getStateClassFromSchema));
 }
 
 // Create RSSI system field (gauge + line chart, chartable)

@@ -23,14 +23,15 @@ export default {
         <div class="stat bg-base-200 rounded-lg p-2">
             <div class="stat-title text-xs">{{ field.name }}</div>
             <div class="stat-value text-lg" :class="valueClass">{{ displayValue }}</div>
-            <div v-if="field.unit && field.key !== 'tsr'" class="stat-desc">{{ field.unit }}</div>
+            <div v-if="field.unit && field.value_format !== 'duration'" class="stat-desc">{{ field.unit }}</div>
         </div>
     `,
     computed: {
         displayValue() {
-            if (this.field?.key === 'tsr') return formatDuration(this.value);
+            if (this.field?.value_format === 'duration') return formatDuration(this.value);
             if (this.value === null || this.value === undefined) return '--';
             if (typeof this.value === 'number') {
+                if (this.field?.value_format === 'integer') return Math.round(this.value).toLocaleString();
                 if (Math.abs(this.value) >= 1000) {
                     return this.value.toLocaleString('en-US', { maximumFractionDigits: 1 });
                 }
@@ -39,7 +40,7 @@ export default {
             return this.value;
         },
         valueClass() {
-            if (this.field?.key === 'tsr') return '';
+            if (this.field?.value_format === 'duration') return '';
             if (this.field.type !== 'num' || !this.field.thresholds) return '';
             const min = this.field.min ?? 0;
             const max = this.field.max ?? 100;

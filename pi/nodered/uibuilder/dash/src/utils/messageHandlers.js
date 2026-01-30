@@ -50,7 +50,8 @@ export function createMessageHandlers(store) {
             deviceStore.state.fieldConfigs = processFieldConfigs(
                 msg.payload.fields || [],
                 deviceSchema,
-                (key, schema) => deviceStore.getCategoryFromSchema(key, schema)
+                (key, schema) => deviceStore.getCategoryFromSchema(key, schema),
+                (key, schema) => deviceStore.getStateClassFromSchema(key, schema)
             );
 
             // Add system fields (RSSI/SNR)

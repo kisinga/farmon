@@ -203,7 +203,7 @@ function decodeRegistration(text) {
     return result;
 }
 
-// Parse fields: bp:Battery:%:0:100,pd:PulseDelta,...
+// Parse fields: k:n:u:min:max[:s]. Optional 6th part = state_class (m|i|d|u).
 function parseFields(text, defaultCategory) {
     if (!text) return [];
 
@@ -217,7 +217,8 @@ function parseFields(text, defaultCategory) {
             min: parts[3] ? parseFloat(parts[3]) : undefined,
             max: parts[4] ? parseFloat(parts[4]) : undefined,
             c: defaultCategory,
-            t: 'num'
+            t: 'num',
+            s: parts[5] || ''   // state_class when present (backward compatible)
         };
     }).filter(f => f.k);
 }
@@ -252,7 +253,8 @@ function parseSystemFields(text) {
             max: parts[4] ? parseFloat(parts[4]) : undefined,
             c: 'sys',
             t: 'num',
-            rw: parts[5] === 'w'  // Read-write flag (w = writable, r = read-only)
+            rw: parts[5] === 'w',  // Read-write flag (w = writable, r = read-only)
+            s: parts[6] || ''      // state_class when present (7th part; backward compatible)
         };
     }).filter(f => f && f.k);  // Filter out nulls and empty keys
 }
