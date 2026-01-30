@@ -1,26 +1,10 @@
 #pragma once
 
 #include "core_config.h"
-#include "core_scheduler.h"
-#include "lib/display.h"
 
-// Forward declarations
-class LoRaComm;
-namespace BatteryMonitor {
-  class BatteryMonitor;
-  struct Config;
-}
-
+// Initializes board hardware (heltec_setup), serial, logger, and external power.
 class CoreSystem {
 public:
     CoreSystem();
-
     void init(const DeviceConfig& config);
-
-    // Getter methods for services can be added here if needed
-    // e.g., OledDisplay& getDisplay();
-
-private:
-    CommonAppState appState;
-    CoreScheduler scheduler;
 };

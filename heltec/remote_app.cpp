@@ -18,9 +18,6 @@
 
 // Service includes
 #include "lib/svc_ui.h"
-#include "lib/svc_comms.h"
-#include "lib/svc_battery.h"
-#include "lib/svc_lorawan.h"
 
 // Config and sensors (remote_sensor_config.h included via device_config.h)
 #include "sensor_interface.hpp"
@@ -64,9 +61,6 @@ private:
 
     // Services
     std::unique_ptr<UiService> uiService;
-    std::unique_ptr<CommsService> commsService;
-    std::unique_ptr<IBatteryService> batteryService;
-    std::unique_ptr<ILoRaWANService> lorawanService;
 
     // Sensors
     SensorManager sensorManager;
@@ -84,19 +78,30 @@ private:
     std::shared_ptr<BatteryIconElement> batteryElement;
     std::shared_ptr<TextElement> statusTextElement;
 
+    // Registration state machine
+    enum class RegistrationState : uint8_t {
+        NotStarted,  // Waiting for join, no registration attempted
+        Pending,     // Queued to send from main loop (avoids scheduler stack overflow)
+        Sent,        // Sent, awaiting server ACK
+        Complete     // Server ACKed, telemetry enabled (persisted in NVS)
+    };
+    RegistrationState _regState = RegistrationState::NotStarted;
+    uint32_t _lastRegAttemptMs = 0;
+    static constexpr uint32_t REG_RETRY_INTERVAL_MS = 30000;
+
     // State tracking
     uint32_t _errorCount = 0;
     uint32_t _lastResetMs = 0;
     uint32_t _lastTxMs = 0;
-    uint32_t _lastRegAttemptMs = 0;  // Track last registration attempt for retry logic
-    static constexpr uint32_t REG_RETRY_INTERVAL_MS = 30000;  // Retry registration every 30s until ACK
-    bool _registrationSent = false;  // Track if registration message has been sent after join
-    bool _registrationPending = false;  // Flag to trigger registration from main loop (avoid stack overflow)
-    bool _registrationComplete = false;  // True when server has ACKed registration (persisted in NVS)
 
     // Deferred notifications (handled in main loop to avoid callback stack overflow)
     bool _notifyConnected = false;
+    bool _notifyDisconnected = false;
+    bool _notifyReady = false;
     char _notifyCmd[24] = {0};
+
+    // Join attempt counter (displayed to user during joining)
+    uint16_t _joinAttempts = 0;
 
     // Test mode state
     float _testDistance = 100.0;
@@ -183,10 +188,10 @@ void RemoteApplicationImpl::initialize() {
     persistenceHal->end();
 
     if (magic == REG_MAGIC && regVersion == CURRENT_REG_VERSION && registered) {
-        _registrationComplete = true;
+        _regState = RegistrationState::Complete;
         LOGI("Remote", "Registration state loaded: already registered");
     } else {
-        _registrationComplete = false;
+        _regState = RegistrationState::NotStarted;
         LOGI("Remote", "Registration state: not registered (magic=0x%08X, ver=%u, reg=%d)",
              magic, regVersion, registered);
     }
@@ -194,12 +199,6 @@ void RemoteApplicationImpl::initialize() {
     LOGI("Remote", "Creating remaining HALs");
     lorawanHal = std::make_unique<LoRaWANHal>();
     batteryHal = std::make_unique<BatteryMonitorHal>(config.battery);
-
-    LOGI("Remote", "Creating services");
-    commsService = std::make_unique<CommsService>();
-    commsService->setLoRaWANHal(lorawanHal.get());
-    batteryService = std::make_unique<BatteryService>(*batteryHal);
-    lorawanService = std::make_unique<LoRaWANService>(*lorawanHal);
 
     // Derive DevEUI from chip ID
     uint8_t devEui[8];
@@ -263,7 +262,7 @@ void RemoteApplicationImpl::initialize() {
     
     // Battery monitoring task
     scheduler.registerTask("battery", [this](CommonAppState& state){
-        batteryService->update(state.nowMs);
+        batteryHal->update(state.nowMs);
     }, 1000);
     
     // Persistence task for water flow sensor
@@ -280,48 +279,71 @@ void RemoteApplicationImpl::initialize() {
         uiService->tick();
     }, config.displayUpdateIntervalMs);
     
-    // LoRaWAN service task - processes radio IRQs and state machine
+    // LoRaWAN task - processes radio IRQs and state machine
     scheduler.registerTask("lorawan", [this](CommonAppState& state){
         static bool wasConnected = false;
-        lorawanService->update(state.nowMs);
+        static RegistrationState prevRegState = RegistrationState::NotStarted;
+        lorawanHal->tick(state.nowMs);
 
         // Update UI elements with connection state
-        auto connectionState = lorawanService->getConnectionState();
-        bool isConnected = lorawanService->isJoined();
-        lorawanStatusElement->setLoraStatus(isConnected, lorawanService->getLastRssiDbm());
-        batteryElement->setStatus(batteryService->getBatteryPercent(), batteryService->isCharging());
+        auto connectionState = lorawanHal->getConnectionState();
+        bool isConnected = lorawanHal->isJoined();
+        lorawanStatusElement->setLoraStatus(isConnected, lorawanHal->getLastRssiDbm());
+        batteryElement->setStatus(batteryHal->getBatteryPercent(), batteryHal->isCharging());
 
-        // Queue connection notification (deferred to main loop)
+        // Detect connection state changes → queue notifications (deferred to main loop)
         if (isConnected && !wasConnected) {
             _notifyConnected = true;
+            _joinAttempts = 0;
+        }
+        if (!isConnected && wasConnected) {
+            _notifyDisconnected = true;
         }
         wasConnected = isConnected;
 
-        // Send registration message after every successful join (ensures schema sync)
-        // This implements Phase 4 device-centric protocol: device announces its capabilities
-        // Server handles duplicates gracefully (ON CONFLICT DO NOTHING for schema)
-        // Note: Set flag here, actual send deferred to run() to avoid stack overflow in scheduler task
-        if (isConnected && !_registrationSent && !_registrationPending) {
+        // Detect registration completion → queue "Ready" notification
+        if (_regState == RegistrationState::Complete && prevRegState != RegistrationState::Complete) {
+            _notifyReady = true;
+        }
+        prevRegState = _regState;
+
+        // Schedule registration after join (deferred to run() to avoid scheduler stack overflow)
+        if (isConnected && _regState == RegistrationState::NotStarted) {
             LOGI("Remote", "Device joined network - scheduling registration message");
-            _registrationPending = true;
+            _regState = RegistrationState::Pending;
         }
 
         // Update main status text
         if (statusTextElement) {
             char statusStr[48];
-            const char* connStr;
             if (!isConnected) {
-                connStr = (connectionState == ILoRaWANService::ConnectionState::Connecting) ? "Joining..." : "Offline";
-            } else if (!_registrationComplete) {
-                connStr = _registrationSent ? "Registering..." : "Joined";
+                if (connectionState == ILoRaWANHal::ConnectionState::Connecting) {
+                    snprintf(statusStr, sizeof(statusStr), "Joining... (%u)\nUp:%lu Dn:%lu\nErr:%u",
+                             _joinAttempts,
+                             lorawanHal->getUplinkCount(),
+                             lorawanHal->getDownlinkCount(),
+                             _errorCount);
+                } else {
+                    snprintf(statusStr, sizeof(statusStr), "Offline\nUp:%lu Dn:%lu\nErr:%u",
+                             lorawanHal->getUplinkCount(),
+                             lorawanHal->getDownlinkCount(),
+                             _errorCount);
+                }
             } else {
-                connStr = "Ready";
+                const char* connStr;
+                if (_regState == RegistrationState::Sent) {
+                    connStr = "Registering...";
+                } else if (_regState != RegistrationState::Complete) {
+                    connStr = "Joined";
+                } else {
+                    connStr = "Ready";
+                }
+                snprintf(statusStr, sizeof(statusStr), "%s\nUp:%lu Dn:%lu\nErr:%u",
+                         connStr,
+                         lorawanHal->getUplinkCount(),
+                         lorawanHal->getDownlinkCount(),
+                         _errorCount);
             }
-            snprintf(statusStr, sizeof(statusStr), "%s\nUp:%lu Dn:%lu\nErr:%u",
-                     connStr,
-                     lorawanService->getUplinkCount(),
-                     lorawanService->getDownlinkCount(),
-                     _errorCount);
             statusTextElement->setText(statusStr);
         }
     }, 50);
@@ -339,11 +361,10 @@ void RemoteApplicationImpl::initialize() {
     if (sensorConfig.enableSensorSystem) {
         // Transmission task: pulls fresh data and transmits as JSON (Phase 4 protocol)
         scheduler.registerTask("lorawan_tx", [this](CommonAppState& state){
-            // Caller checks connection
-            if (!lorawanService->isJoined()) return;
+            if (!lorawanHal->isJoined()) return;
 
             // Gate telemetry until registration is confirmed by server
-            if (!_registrationComplete) {
+            if (_regState != RegistrationState::Complete) {
                 LOGD("Remote", "Telemetry skipped - awaiting registration ACK from server");
                 return;
             }
@@ -364,7 +385,7 @@ void RemoteApplicationImpl::initialize() {
                 // Battery (cached state, always current)
                 readings.push_back({
                     TelemetryKeys::BatteryPercent,
-                    (float)batteryService->getBatteryPercent(),
+                    (float)batteryHal->getBatteryPercent(),
                     state.nowMs
                 });
 
@@ -403,7 +424,7 @@ void RemoteApplicationImpl::initialize() {
 
     // State change transmission task - sends pending state changes on fPort 3
     scheduler.registerTask("state_tx", [this](CommonAppState& state){
-        if (!lorawanService->isJoined() || !_registrationComplete) return;
+        if (!lorawanHal->isJoined() || _regState != RegistrationState::Complete) return;
         if (!_rulesEngine || !_rulesEngine->hasPendingStateChange()) return;
 
         uint8_t buffer[16];
@@ -413,7 +434,7 @@ void RemoteApplicationImpl::initialize() {
             LOGI("Remote", "Sending state change (%d bytes): %s",
                  len, _rulesEngine->stateChangeToText().c_str());
 
-            bool success = lorawanService->sendData(FPORT_STATE_CHANGE, buffer, len, true);
+            bool success = lorawanHal->sendData(FPORT_STATE_CHANGE, buffer, len, true);
             if (success) {
                 _rulesEngine->clearPendingStateChange();
                 LOGI("Remote", "State change sent on fPort %d", FPORT_STATE_CHANGE);
@@ -423,25 +444,15 @@ void RemoteApplicationImpl::initialize() {
         }
     }, 5000);  // Check every 5 seconds
 
-    // LoRaWAN rejoin watchdog - attempt rejoin if not connected for too long
-    scheduler.registerTask("lorawan_watchdog", [this](CommonAppState& state){
-        if (!lorawanService->isJoined() && !lorawanService->isJoinInProgress()) {
-            LOGW("Remote", "Watchdog: Not joined to network, attempting rejoin...");
-            lorawanService->forceReconnect();
-        } else if (lorawanService->isJoinInProgress()) {
-            LOGD("Remote", "Watchdog: Join already in progress, skipping");
-        }
-    }, 60000); // Check every minute
-
-    // LoRaWAN join task - runs after scheduler starts to allow display updates during join
+    // LoRaWAN join task - retries indefinitely until joined (boot + mid-session recovery)
+    // Safe to call frequently: join() has joinInProgress guard and 30s backoff internally
     scheduler.registerTask("lorawan_join", [this](CommonAppState& state){
-        static bool joinAttempted = false;
-        if (!joinAttempted && !lorawanHal->isJoined()) {
-            joinAttempted = true;
-            LOGI("Remote", "Starting LoRaWAN OTAA join...");
+        if (!lorawanHal->isJoined() && !lorawanHal->isJoinInProgress()) {
+            _joinAttempts++;
+            LOGI("Remote", "Starting LoRaWAN OTAA join (attempt %u)...", _joinAttempts);
             lorawanHal->join();
         }
-    }, 100); // Short interval for initial join attempt
+    }, 100);
 
     LOGI("Remote", "Starting scheduler");
     scheduler.start(appState);
@@ -487,13 +498,13 @@ void RemoteApplicationImpl::setupSensors() {
         return;
     }
 
-    // Create LoRaWAN transmitter with service and HAL references
-    auto transmitter = std::make_unique<LoRaWANTransmitter>(lorawanService.get(), lorawanHal.get(), config);
+    // Create LoRaWAN transmitter
+    auto transmitter = std::make_unique<LoRaWANTransmitter>(lorawanHal.get(), config);
     lorawanTransmitter = std::move(transmitter);
 
     // --- Sensor Creation ---
     auto batterySensor = SensorFactory::createBatteryMonitorSensor(
-        batteryService.get(),
+        batteryHal.get(),
         sensorConfig.batteryConfig.enabled
     );
     sensorManager.addSensor(batterySensor);
@@ -516,22 +527,29 @@ void RemoteApplicationImpl::run() {
         _notifyConnected = false;
         uiService->showNotification("Connected", "", 2000, true);
     }
+    if (_notifyDisconnected) {
+        _notifyDisconnected = false;
+        uiService->showNotification("Disconnected", "", 1500, false);
+    }
+    if (_notifyReady) {
+        _notifyReady = false;
+        uiService->showNotification("Ready", "", 1500, false);
+    }
     if (_notifyCmd[0] != '\0') {
         uiService->showNotification("Cmd:", _notifyCmd, 2000, false);
         _notifyCmd[0] = '\0';
     }
 
     // Handle deferred registration (sent from main loop to avoid stack overflow in scheduler tasks)
-    if (_registrationPending) {
-        _registrationPending = false;
-        _registrationSent = true;  // Set BEFORE sending to prevent re-entry during TX
+    if (_regState == RegistrationState::Pending) {
+        _regState = RegistrationState::Sent;
         _lastRegAttemptMs = millis();
         LOGI("Remote", "Sending registration message from main loop");
         sendRegistration();
     }
 
     // Retry registration if not yet ACKed (Class A needs uplinks to receive downlinks)
-    if (_registrationSent && !_registrationComplete && lorawanService && lorawanService->isJoined()) {
+    if (_regState == RegistrationState::Sent && lorawanHal->isJoined()) {
         uint32_t now = millis();
         if (now - _lastRegAttemptMs >= REG_RETRY_INTERVAL_MS) {
             _lastRegAttemptMs = now;
@@ -729,7 +747,7 @@ void RemoteApplicationImpl::sendRegistrationFrame(const char* key, const char* f
     
     LOGD("Remote", "Sending registration frame %s (%d bytes)", key, totalLen);
     
-    bool success = lorawanService->sendData(FPORT_REGISTRATION, (const uint8_t*)buffer, totalLen, false);
+    bool success = lorawanHal->sendData(FPORT_REGISTRATION, (const uint8_t*)buffer, totalLen, false);
     if (!success) {
         LOGW("Remote", "Failed to send registration frame %s", key);
     }
@@ -773,8 +791,8 @@ void RemoteApplicationImpl::sendTelemetryJson(const std::vector<SensorReading>& 
 
     LOGD("Remote", "Sending telemetry (%d bytes) on fPort %d: %s", offset, FPORT_TELEMETRY, buffer);
 
-    bool success = lorawanService->sendData(FPORT_TELEMETRY, (const uint8_t*)buffer, offset,
-                                            config.communication.lorawan.useConfirmedUplinks);
+    bool success = lorawanHal->sendData(FPORT_TELEMETRY, (const uint8_t*)buffer, offset,
+                                       config.communication.lorawan.useConfirmedUplinks);
     if (success) {
         LOGI("Remote", "Telemetry sent: %d bytes on fPort %d", offset, FPORT_TELEMETRY);
     } else {
@@ -789,7 +807,7 @@ void RemoteApplicationImpl::sendCommandAck(uint8_t cmdPort, bool success) {
 
     LOGD("Remote", "Sending ACK on fPort %d: %s", FPORT_COMMAND_ACK, buffer);
 
-    bool sent = lorawanService->sendData(FPORT_COMMAND_ACK, (const uint8_t*)buffer, len, false);
+    bool sent = lorawanHal->sendData(FPORT_COMMAND_ACK, (const uint8_t*)buffer, len, false);
     if (sent) {
         LOGI("Remote", "ACK sent for port %d (%s)", cmdPort, success ? "ok" : "error");
     } else {
@@ -803,15 +821,15 @@ void RemoteApplicationImpl::sendDiagnostics() {
     char buffer[128];
 
     uint32_t uptimeSec = millis() / 1000;
-    int batteryPercent = batteryService ? batteryService->getBatteryPercent() : -1;
-    int rssi = lorawanService ? lorawanService->getLastRssiDbm() : 0;
-    float snr = lorawanService ? lorawanService->getLastSnr() : 0.0f;
-    uint32_t uplinks = lorawanService ? lorawanService->getUplinkCount() : 0;
-    uint32_t downlinks = lorawanService ? lorawanService->getDownlinkCount() : 0;
+    int batteryPercent = batteryHal ? batteryHal->getBatteryPercent() : -1;
+    int rssi = lorawanHal ? lorawanHal->getLastRssiDbm() : 0;
+    float snr = lorawanHal ? lorawanHal->getLastSnr() : 0.0f;
+    uint32_t uplinks = lorawanHal ? lorawanHal->getUplinkCount() : 0;
+    uint32_t downlinks = lorawanHal ? lorawanHal->getDownlinkCount() : 0;
 
     int len = snprintf(buffer, sizeof(buffer),
         "reg:%d,err:%u,up:%lu,bat:%d,rssi:%d,snr:%.1f,ul:%lu,dl:%lu,fw:%s",
-        _registrationComplete ? 1 : 0,
+        (_regState == RegistrationState::Complete) ? 1 : 0,
         _errorCount,
         uptimeSec,
         batteryPercent,
@@ -829,7 +847,7 @@ void RemoteApplicationImpl::sendDiagnostics() {
     LOGI("Remote", "Sending diagnostics (%d bytes) on fPort %d", len, FPORT_DIAGNOSTICS);
     LOGD("Remote", "Diagnostics: %s", buffer);
 
-    bool success = lorawanService->sendData(FPORT_DIAGNOSTICS, (const uint8_t*)buffer, len, false);
+    bool success = lorawanHal->sendData(FPORT_DIAGNOSTICS, (const uint8_t*)buffer, len, false);
     if (success) {
         LOGI("Remote", "Diagnostics sent successfully");
     } else {
@@ -853,7 +871,7 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
             if (waterFlowSensor) {
                 waterFlowSensor->resetTotalVolume();
             }
-            lorawanService->resetCounters();
+            lorawanHal->resetCounters();
             Messaging::Message::resetSequenceId();
 
             // Reset error counter and record reset time
@@ -905,7 +923,7 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
             persistenceHal->saveU32("registered", 1);
             persistenceHal->end();
 
-            _registrationComplete = true;
+            _regState = RegistrationState::Complete;
             LOGI("Remote", "Registration confirmed - telemetry enabled");
             return;  // No ACK needed for registration ACK
 
@@ -926,9 +944,7 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
             persistenceHal->saveU32("registered", 0);
             persistenceHal->end();
 
-            _registrationComplete = false;
-            _registrationSent = false;
-            _registrationPending = true;  // Trigger registration on next loop
+            _regState = RegistrationState::Pending;
             LOGI("Remote", "Registration cleared - will re-register");
             success = true;
             break;
@@ -1029,9 +1045,6 @@ void RemoteApplication::run() { impl->run(); }
 #include "lib/core_system.cpp"
 #include "lib/core_scheduler.cpp"
 #include "lib/svc_ui.cpp"
-#include "lib/svc_comms.cpp"
-#include "lib/svc_battery.cpp"
-#include "lib/svc_lorawan.cpp"
 #include "lib/hal_lorawan.cpp"
 #include "lib/ui_battery_icon_element.cpp"
 #include "lib/ui_header_status_element.cpp"

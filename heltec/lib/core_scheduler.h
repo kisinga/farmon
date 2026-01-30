@@ -10,10 +10,6 @@
 #include "core_config.h" 
 #include "rtos_scheduler.h" // Use the full implementation
 
-// Forward declarations for service interfaces used in task callbacks
-class IBatteryService;
-class ICommsService;
-
 // Generic app state for common tasks
 struct CommonAppState {
     uint32_t nowMs = 0;

@@ -3,12 +3,10 @@
 
 #include <Arduino.h>
 #include "lib/core_logger.h"
-#include "lib/svc_lorawan.h"
 #include "lib/hal_lorawan.h"
-#include "lib/common_message_types.h"
+#include "lib/hal_battery.h"
 #include <vector>
 #include "lib/hal_persistence.h"
-#include "lib/svc_battery.h"
 #include <limits>
 #include "lib/core_config.h"
 #include "lib/telemetry_keys.h"
@@ -22,20 +20,19 @@ struct RemoteConfig;
 
 class LoRaWANTransmitter {
 public:
-    LoRaWANTransmitter(ILoRaWANService* service, ILoRaWANHal* hal, const RemoteConfig& config);
-    bool transmit(const std::vector<SensorReading>& readings);  // Returns success/failure
-    
+    LoRaWANTransmitter(ILoRaWANHal* hal, const RemoteConfig& config);
+    bool transmit(const std::vector<SensorReading>& readings);
+
 private:
     String formatReadings(const std::vector<SensorReading>& readings);
     bool validatePayload(const String& payload, uint8_t& maxPayload, uint8_t& currentDR);
-    
-    ILoRaWANService* _service;
+
     ILoRaWANHal* _hal;
     const RemoteConfig& _config;
 };
 
-LoRaWANTransmitter::LoRaWANTransmitter(ILoRaWANService* service, ILoRaWANHal* hal, const RemoteConfig& config)
-    : _service(service), _hal(hal), _config(config) {}
+LoRaWANTransmitter::LoRaWANTransmitter(ILoRaWANHal* hal, const RemoteConfig& config)
+    : _hal(hal), _config(config) {}
 
 bool LoRaWANTransmitter::transmit(const std::vector<SensorReading>& readings) {
     if (readings.empty()) {
@@ -62,7 +59,7 @@ bool LoRaWANTransmitter::transmit(const std::vector<SensorReading>& readings) {
     uint8_t port = _config.communication.lorawan.defaultPort;
     bool confirmed = _config.communication.lorawan.useConfirmedUplinks;
     
-    bool success = _service->sendData(
+    bool success = _hal->sendData(
         port,
         (const uint8_t*)payload.c_str(),
         (uint8_t)payload.length(),
@@ -254,14 +251,14 @@ void YFS201WaterFlowSensor::saveTotalVolume() {
 
 class BatteryMonitorSensor : public ISensor {
 public:
-    BatteryMonitorSensor(IBatteryService* batteryService, bool enabled) 
-      : _batteryService(batteryService), _enabled(enabled) {}
+    BatteryMonitorSensor(IBatteryHal* batteryHal, bool enabled)
+      : _batteryHal(batteryHal), _enabled(enabled) {}
 
     void begin() override {}
 
     void read(std::vector<SensorReading>& readings) override {
-        if (_enabled && _batteryService) {
-            readings.push_back({TelemetryKeys::BatteryPercent, (float)_batteryService->getBatteryPercent(), millis()});
+        if (_enabled && _batteryHal) {
+            readings.push_back({TelemetryKeys::BatteryPercent, (float)_batteryHal->getBatteryPercent(), millis()});
         } else {
             readings.push_back({TelemetryKeys::BatteryPercent, std::numeric_limits<float>::quiet_NaN(), millis()});
         }
@@ -270,7 +267,7 @@ public:
     const char* getName() const override { return "BatteryMonitor"; }
 
 private:
-    IBatteryService* _batteryService;
+    IBatteryHal* _batteryHal;
     const bool _enabled;
 };
 
@@ -288,8 +285,8 @@ namespace SensorFactory {
         return std::make_shared<YFS201WaterFlowSensor>(pin, enabled, persistence, persistence_namespace);
     }
 
-    std::shared_ptr<ISensor> createBatteryMonitorSensor(IBatteryService* batteryService, bool enabled) {
-        return std::make_shared<BatteryMonitorSensor>(batteryService, enabled);
+    std::shared_ptr<ISensor> createBatteryMonitorSensor(IBatteryHal* batteryHal, bool enabled) {
+        return std::make_shared<BatteryMonitorSensor>(batteryHal, enabled);
     }
 }
 

@@ -82,6 +82,10 @@ void UiService::drawFullScreenNotification() {
         _displayHal.setFont(ArialMT_Plain_10);
         _displayHal.drawString(64, 38, _notification.line2);
     }
+
+    // Restore defaults so the next normal draw cycle isn't polluted
+    _displayHal.setFont(ArialMT_Plain_10);
+    _displayHal.setTextAlignment(TEXT_ALIGN_LEFT);
 }
 
 void UiService::drawOverlayNotification() {
