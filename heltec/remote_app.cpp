@@ -1,32 +1,27 @@
 #include "remote_app.h"
 #include <stdarg.h>
 
-// Device configuration - must be first to avoid duplicate includes
-// Build script generates device_config_include.h with the correct include
-#include "device_config_include.h"
-
-// Core includes (core_config.h already included via device_config.h)
+// Core and HAL (before device setup so types are in scope once)
 #include "lib/core_system.h"
 #include "lib/core_scheduler.h"
 #include "lib/core_logger.h"
-
-// HAL includes
 #include "lib/hal_display.h"
 #include "lib/hal_lorawan.h"
 #include "lib/hal_battery.h"
 #include "lib/hal_persistence.h"
-
-// Service includes
 #include "lib/svc_ui.h"
+#include "lib/message_schema.h"
+#include "lib/command_translator.h"
+#include "lib/protocol_constants.h"
+#include "lib/telemetry_keys.h"
 
-// Config and sensors (remote_sensor_config.h included via device_config.h)
+// Sensors and edge rules (before device_setup.h which uses them)
 #include "sensor_interface.hpp"
 #include "sensor_implementations.hpp"
-
-// Edge Rules Engine
-#include "lib/message_schema.h"
 #include "lib/edge_rules.h"
-#include "lib/command_translator.h"
+
+// Device config (schema, config) and device setup (sensor/control wiring)
+#include "device_config_include.h"
 
 // UI includes
 #include "lib/ui_battery_icon_element.h"
@@ -64,7 +59,6 @@ private:
 
     // Sensors
     SensorManager sensorManager;
-    std::unique_ptr<LoRaWANTransmitter> lorawanTransmitter;
     std::shared_ptr<YFS201WaterFlowSensor> waterFlowSensor;
 
     // Edge Rules Engine
@@ -108,9 +102,9 @@ private:
     // Join attempt counter (displayed to user during joining)
     uint16_t _joinAttempts = 0;
 
-    // Test mode state
-    float _testDistance = 100.0;
-    float _testVolume = 1000.0;
+    // Test mode state (schema-aligned: pd=pulse delta, tv=total volume L)
+    float _testPulseDelta = 5.0f;
+    float _testVolume = 1000.0f;
 
     // Message protocol methods (Phase 4: Device-centric framework)
     void sendRegistration();      // Send device registration on join (fPort 1)
@@ -130,24 +124,6 @@ private:
 };
 
 RemoteApplicationImpl* RemoteApplicationImpl::callbackInstance = nullptr;
-
-// =============================================================================
-// Control Executor Functions (for Edge Rules Engine)
-// =============================================================================
-// These functions are called when a rule triggers a control action.
-// Each function handles the actual hardware control logic.
-
-static bool setPumpState(uint8_t state_idx) {
-    // TODO: RS485 implementation when hardware ready
-    LOGI("Control", "Pump -> %s", state_idx ? "on" : "off");
-    return true;
-}
-
-static bool setValveState(uint8_t state_idx) {
-    // TODO: GPIO/RS485 implementation when hardware ready
-    LOGI("Control", "Valve -> %s", state_idx ? "open" : "closed");
-    return true;
-}
 
 RemoteApplicationImpl::RemoteApplicationImpl() :
     config(buildDeviceConfig()),
@@ -252,9 +228,8 @@ void RemoteApplicationImpl::initialize() {
     _rulesEngine = std::make_unique<EdgeRules::EdgeRulesEngine>(_schema, persistenceHal.get());
     _rulesEngine->loadFromFlash();
 
-    // Register control executors
-    _rulesEngine->registerControl(0, setPumpState);
-    _rulesEngine->registerControl(1, setValveState);
+    // Register control drivers (device-specific: lib drivers and/or integrations)
+    registerDeviceControls(*_rulesEngine);
 
     LOGI("Remote", "Edge rules engine initialized with %d rules", _rulesEngine->getRuleCount());
 
@@ -272,7 +247,7 @@ void RemoteApplicationImpl::initialize() {
     }, 1000);
     
     // Persistence task for water flow sensor
-    if (sensorConfig.enableSensorSystem && sensorConfig.waterFlowConfig.enabled) {
+    if (sensorConfig.enableSensorSystem && sensorConfig.waterFlow.enabled) {
         scheduler.registerTask("persistence", [this](CommonAppState& state){
             if (waterFlowSensor) {
                 waterFlowSensor->saveTotalVolume();
@@ -380,20 +355,10 @@ void RemoteApplicationImpl::initialize() {
                 // Generate random test data
                 generateTestData(readings, state.nowMs);
             } else {
-                // Use real sensor data
-                // Water flow (atomic read, no data loss)
-                if (waterFlowSensor) {
-                    waterFlowSensor->read(readings);
-                }
+                // Use real sensor data: all sensors (lib + integrations) via SensorManager
+                readings = sensorManager.readAll();
 
-                // Battery (cached state, always current)
-                readings.push_back({
-                    TelemetryKeys::BatteryPercent,
-                    (float)batteryHal->getBatteryPercent(),
-                    state.nowMs
-                });
-
-                // System state
+                // Append system state (not from sensors)
                 readings.push_back({
                     TelemetryKeys::ErrorCount,
                     (float)_errorCount,
@@ -411,9 +376,8 @@ void RemoteApplicationImpl::initialize() {
             if (!readings.empty()) {
                 sendTelemetryJson(readings);
 
-                // Evaluate edge rules after telemetry collection
-                if (_rulesEngine && !readings.empty()) {
-                    // Convert readings to float array for rule evaluation
+                // Evaluate edge rules after telemetry (skip in test mode: simulated values don't match schema semantics)
+                if (_rulesEngine && !readings.empty() && !config.testModeEnabled) {
                     float fieldValues[16];
                     uint8_t fieldCount = 0;
                     for (const auto& reading : readings) {
@@ -501,24 +465,8 @@ void RemoteApplicationImpl::setupSensors() {
         return;
     }
 
-    // Create LoRaWAN transmitter
-    auto transmitter = std::make_unique<LoRaWANTransmitter>(lorawanHal.get(), config);
-    lorawanTransmitter = std::move(transmitter);
-
-    // --- Sensor Creation ---
-    auto batterySensor = SensorFactory::createBatteryMonitorSensor(
-        batteryHal.get(),
-        sensorConfig.batteryConfig.enabled
-    );
-    sensorManager.addSensor(batterySensor);
-
-    waterFlowSensor = SensorFactory::createYFS201WaterFlowSensor(
-        sensorConfig.pins.waterFlow,
-        sensorConfig.waterFlowConfig.enabled,
-        persistenceHal.get(),
-        "water_meter"
-    );
-    sensorManager.addSensor(waterFlowSensor);
+    // Device-specific sensor setup (lib sensors + optional integrations)
+    setupDeviceSensors(sensorManager, sensorConfig, batteryHal.get(), persistenceHal.get(), &waterFlowSensor);
 }
 
 void RemoteApplicationImpl::run() {
@@ -573,29 +521,21 @@ void RemoteApplicationImpl::run() {
 }
 
 void RemoteApplicationImpl::generateTestData(std::vector<SensorReading>& readings, uint32_t nowMs) {
-    // Random distance reading (50-200cm for water level)
-    _testDistance += random(-10, 10) / 10.0;
-    if (_testDistance < 50) _testDistance = 50;
-    if (_testDistance > 200) _testDistance = 200;
-    readings.push_back({"pd", _testDistance, nowMs});
+    // Schema-aligned test data: pd=pulse delta, tv=total volume (L), bp=%, ec=count, tsr=s
+    _testPulseDelta = random(0, 20);  // Simulated pulses per interval
+    _testVolume += _testPulseDelta / 450.0f;  // ~450 pulses/L
+    readings.push_back({TelemetryKeys::PulseDelta, _testPulseDelta, nowMs});
+    readings.push_back({TelemetryKeys::TotalVolume, _testVolume, nowMs});
 
-    // Random total volume (increasing slowly)
-    _testVolume += random(0, 50) / 10.0;  // Add 0-5 liters each reading
-    readings.push_back({"tv", _testVolume, nowMs});
-
-    // Random battery (70-100%)
     float testBattery = random(70, 100);
-    readings.push_back({"bp", testBattery, nowMs});
+    readings.push_back({TelemetryKeys::BatteryPercent, testBattery, nowMs});
+    readings.push_back({TelemetryKeys::ErrorCount, 0.0f, nowMs});
 
-    // Error count (usually 0)
-    readings.push_back({"ec", 0.0f, nowMs});
-
-    // Time since reset
     uint32_t timeSinceResetSec = (nowMs - _lastResetMs) / 1000;
-    readings.push_back({"tsr", (float)timeSinceResetSec, nowMs});
+    readings.push_back({TelemetryKeys::TimeSinceReset, (float)timeSinceResetSec, nowMs});
 
-    LOGI("TestMode", "Generated test data: distance=%.1fcm, volume=%.1fL, battery=%.0f%%",
-         _testDistance, _testVolume, testBattery);
+    LOGI("TestMode", "Generated test data: pd=%.0f, tv=%.1fL, bp=%.0f%%",
+         _testPulseDelta, _testVolume, testBattery);
 }
 
 // =============================================================================
@@ -783,10 +723,10 @@ void RemoteApplicationImpl::sendTelemetryJson(const std::vector<SensorReading>& 
         }
 
         // Use integer for counters, 2 decimal places for floats
-        if (strcmp(readings[i].type, "pd") == 0 ||
-            strcmp(readings[i].type, "bp") == 0 ||
-            strcmp(readings[i].type, "ec") == 0 ||
-            strcmp(readings[i].type, "tsr") == 0) {
+        if (strcmp(readings[i].type, TelemetryKeys::PulseDelta) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::BatteryPercent) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorCount) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::TimeSinceReset) == 0) {
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                               "%s:%d", readings[i].type, (int)readings[i].value);
         } else {
@@ -797,6 +737,13 @@ void RemoteApplicationImpl::sendTelemetryJson(const std::vector<SensorReading>& 
 
     if (offset == 0) {
         LOGW("Remote", "No valid readings to send");
+        return;
+    }
+
+    uint8_t maxPayload = lorawanHal->getMaxPayloadSize();
+    if (offset > (int)maxPayload) {
+        LOGW("Remote", "Payload %d bytes exceeds max %d for DR%d, skipping",
+             offset, maxPayload, lorawanHal->getCurrentDataRate());
         return;
     }
 
@@ -883,7 +830,6 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
                 waterFlowSensor->resetTotalVolume();
             }
             lorawanHal->resetCounters();
-            Messaging::Message::resetSequenceId();
 
             // Reset error counter and record reset time
             _errorCount = 0;

@@ -27,6 +27,8 @@ LoRaWAN-based farm monitoring with long-range sensors and local data processing.
                                        └─────────────────┘
 ```
 
+→ [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — data flow, scheduler. [docs/FIRMWARE_ARCHITECTURE.md](docs/FIRMWARE_ARCHITECTURE.md) — firmware layers (lib, integrations, devices).
+
 ## Setup Guide
 
 ### Step 1: Set Up the Gateway

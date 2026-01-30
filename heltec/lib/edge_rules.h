@@ -3,6 +3,7 @@
 #include "message_schema.h"
 #include "hal_persistence.h"
 #include "core_logger.h"
+#include "control_driver.h"
 #include <cstring>
 
 // =============================================================================
@@ -186,6 +187,7 @@ public:
         for (uint8_t i = 0; i < MAX_CONTROLS; i++) {
             _control_states[i] = {0, false, 0};
             _executors[i] = nullptr;
+            _drivers[i] = nullptr;
         }
     }
 
@@ -425,8 +427,20 @@ public:
             LOGW("Rules", "Invalid control index for registration: %d", idx);
             return;
         }
+        _drivers[idx] = nullptr;
         _executors[idx] = execute;
         LOGI("Rules", "Registered executor for control %d", idx);
+    }
+
+    // Register a control driver (reusable module or integration)
+    void registerControl(uint8_t idx, IControlDriver* driver) {
+        if (idx >= MAX_CONTROLS) {
+            LOGW("Rules", "Invalid control index for registration: %d", idx);
+            return;
+        }
+        _executors[idx] = nullptr;
+        _drivers[idx] = driver;
+        LOGI("Rules", "Registered driver for control %d", idx);
     }
 
     // -------------------------------------------------------------------------
@@ -518,6 +532,7 @@ private:
 
     ControlState _control_states[MAX_CONTROLS];
     ControlExecuteFn _executors[MAX_CONTROLS];
+    IControlDriver* _drivers[MAX_CONTROLS];
 
     StateChange _pending_change;
     bool _has_pending_change;
@@ -547,8 +562,12 @@ private:
     // Execute an action on a control
     void executeAction(uint8_t ctrl_idx, uint8_t state_idx, TriggerSource source,
                        uint8_t rule_id, uint32_t now_ms) {
-        // Call the registered executor if available
-        if (_executors[ctrl_idx]) {
+        if (_drivers[ctrl_idx]) {
+            if (!_drivers[ctrl_idx]->setState(state_idx)) {
+                LOGW("Rules", "Driver failed for control %d", ctrl_idx);
+                return;
+            }
+        } else if (_executors[ctrl_idx]) {
             if (!_executors[ctrl_idx](state_idx)) {
                 LOGW("Rules", "Executor failed for control %d", ctrl_idx);
                 return;

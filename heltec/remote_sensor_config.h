@@ -1,25 +1,14 @@
 // Remote Sensor Configuration
-// Remote-specific sensor system configuration
+// Device-facing aggregate of sensor-defined config structs (from lib).
+// Device supplies values in buildDeviceSensorConfig().
 
 #pragma once
 
-#include <stdint.h>
+#include "lib/sensor_config_types.h"
 
-// Remote Sensor Configuration
 struct RemoteSensorConfig {
     bool enableSensorSystem = true;
 
-    // --- Real Sensors ---
-    struct {
-        bool enabled = true; // Always on, provides core device status
-    } batteryConfig;
-
-    struct {
-        bool enabled = true; // Enabled by default as it's our focus
-    } waterFlowConfig; 
-
-    // --- Pin Definitions ---
-    struct {
-        uint8_t waterFlow = 7; 
-    } pins;
+    SensorConfig::YFS201WaterFlow waterFlow;
+    SensorConfig::BatteryMonitor battery;
 };

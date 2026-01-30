@@ -1,27 +1,10 @@
-// Communication Configuration - Centralized configuration for all communication channels
-// Consolidates USB, LoRaWAN, and routing configurations
+// Communication Configuration - LoRaWAN and minimal transport settings
 
 #pragma once
 #ifndef COMMUNICATION_CONFIG_H
 #define COMMUNICATION_CONFIG_H
 
 #include <stdint.h>
-#include "common_message_types.h"
-
-// USB Configuration
-struct UsbConfig {
-    bool enableDebug = true;           // Enable USB debug output
-    uint32_t baudRate = 115200;        // Serial baud rate
-    bool enableTimestamp = true;       // Include timestamps in debug output
-    bool enableColorOutput = false;    // Enable ANSI color codes (if supported)
-    uint8_t debugLevel = 3;            // Default debug level (0-5, higher = more verbose)
-    bool verboseLogging = true;        // System-wide verbose logging toggle
-
-    // Advanced settings
-    uint16_t rxBufferSize = 256;       // Receive buffer size
-    uint16_t txBufferSize = 256;       // Transmit buffer size
-    bool enableFlowControl = false;    // Hardware flow control (RTS/CTS)
-};
 
 // LoRaWAN Region codes
 enum class LoRaWANRegion : uint8_t {
@@ -63,54 +46,9 @@ struct LoRaWANConfig {
     uint8_t deviceClass = 0;           // 0=Class A, 1=Class B, 2=Class C
 };
 
-// Screen Configuration
-struct ScreenConfig {
-    bool enableScreen = false;         // Enable screen output
-    uint32_t updateIntervalMs = 1000;  // Screen update interval
-    uint8_t maxLines = 8;              // Maximum lines to display
-    bool enableAutoScroll = true;      // Auto-scroll old messages
-    bool enableTimestamp = true;       // Show timestamps
-    uint16_t messageTimeoutMs = 5000;  // Message display timeout
-};
-
-// Routing Configuration
-struct RoutingConfig {
-    bool enableRouting = false;        // Enable message routing
-    uint32_t routingIntervalMs = 100;  // Routing task interval
-
-    // Route definitions
-    struct RoutingRule {
-        // Matcher
-        Messaging::Message::Type messageType; // Set to Telemetry, Data, etc.
-        TransportType source;       // Source transport type
-
-        // Action
-        TransportType destination; // Destination transport type
-        bool enabled;                  // Route enabled
-        uint8_t priority;              // Route priority (0=highest)
-    };
-
-    // Predefined routes
-    RoutingRule routes[16];                  // Maximum 16 routes
-    uint8_t routeCount = 0;            // Number of active routes
-};
-
-// Main Communication Configuration
+// Main Communication Configuration (LoRaWAN-focused)
 struct CommunicationConfig {
-    // Transport configurations
-    UsbConfig usb;
     LoRaWANConfig lorawan;
-    ScreenConfig screen;
-
-    // Routing configuration
-    RoutingConfig routing;
-
-    // Global settings
-    bool enableCommunicationManager = false; // Enable the communication manager
-    uint32_t updateIntervalMs = 100;        // Communication manager update interval
-    uint8_t maxConcurrentMessages = 8;      // Maximum concurrent messages
-    bool enableMessageBuffering = true;     // Enable message buffering
-    uint16_t bufferSize = 1024;             // Message buffer size (bytes)
 };
 
 #endif // COMMUNICATION_CONFIG_H

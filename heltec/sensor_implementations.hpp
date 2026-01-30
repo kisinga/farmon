@@ -3,117 +3,12 @@
 
 #include <Arduino.h>
 #include "lib/core_logger.h"
-#include "lib/hal_lorawan.h"
 #include "lib/hal_battery.h"
 #include <vector>
 #include "lib/hal_persistence.h"
 #include <limits>
-#include "lib/core_config.h"
 #include "lib/telemetry_keys.h"
-
-// Forward-declare the config struct to avoid circular dependency
-struct RemoteConfig;
-
-// ============================================================================
-// LoRaWAN Transmitter Implementation (Pure Helper)
-// ============================================================================
-
-class LoRaWANTransmitter {
-public:
-    LoRaWANTransmitter(ILoRaWANHal* hal, const RemoteConfig& config);
-    bool transmit(const std::vector<SensorReading>& readings);
-
-private:
-    String formatReadings(const std::vector<SensorReading>& readings);
-    bool validatePayload(const String& payload, uint8_t& maxPayload, uint8_t& currentDR);
-
-    ILoRaWANHal* _hal;
-    const RemoteConfig& _config;
-};
-
-LoRaWANTransmitter::LoRaWANTransmitter(ILoRaWANHal* hal, const RemoteConfig& config)
-    : _hal(hal), _config(config) {}
-
-bool LoRaWANTransmitter::transmit(const std::vector<SensorReading>& readings) {
-    if (readings.empty()) {
-        return false;
-    }
-    
-    // Format payload
-    String payload = formatReadings(readings);
-    if (payload.length() == 0) {
-        LOGW("LoRaWANTx", "Failed to format readings");
-        return false;
-    }
-    
-    // Validate payload size
-    uint8_t maxPayload;
-    uint8_t currentDR;
-    if (!validatePayload(payload, maxPayload, currentDR)) {
-        LOGW("LoRaWANTx", "Payload %d bytes exceeds max %d for DR%d", 
-             payload.length(), maxPayload, currentDR);
-        return false;
-    }
-    
-    // Transmit
-    uint8_t port = _config.communication.lorawan.defaultPort;
-    bool confirmed = _config.communication.lorawan.useConfirmedUplinks;
-    
-    bool success = _hal->sendData(
-        port,
-        (const uint8_t*)payload.c_str(),
-        (uint8_t)payload.length(),
-        confirmed
-    );
-    
-    if (success) {
-        LOGI("LoRaWANTx", "Transmitted %d bytes on port %d", payload.length(), port);
-    } else {
-        LOGW("LoRaWANTx", "Transmission failed");
-    }
-    
-    return success;
-}
-
-bool LoRaWANTransmitter::validatePayload(const String& payload, uint8_t& maxPayload, uint8_t& currentDR) {
-    if (!_hal) {
-        LOGW("LoRaWANTx", "HAL not available, cannot validate payload size");
-        return false;
-    }
-    
-    maxPayload = _hal->getMaxPayloadSize();
-    currentDR = _hal->getCurrentDataRate();
-    
-    if (payload.length() > maxPayload) {
-        return false;
-    }
-    
-    return true;
-}
-
-String LoRaWANTransmitter::formatReadings(const std::vector<SensorReading>& readings) {
-    // Compact format: key:value,key:value,...
-    String payload = "";
-    for (size_t i = 0; i < readings.size(); ++i) {
-        if (i > 0) payload += ",";
-        payload += readings[i].type;
-        payload += ":";
-        if (isnan(readings[i].value)) {
-            payload += "nan";
-        } else {
-            // Use integer for counters, float for others
-            if (strcmp(readings[i].type, TelemetryKeys::PulseDelta) == 0 ||
-                strcmp(readings[i].type, TelemetryKeys::BatteryPercent) == 0 ||
-                strcmp(readings[i].type, TelemetryKeys::ErrorCount) == 0 ||
-                strcmp(readings[i].type, TelemetryKeys::TimeSinceReset) == 0) {
-                payload += String((int)readings[i].value);
-            } else {
-                payload += String(readings[i].value, 2);
-            }
-        }
-    }
-    return payload;
-}
+#include "lib/sensor_config_types.h"
 
 // ============================================================================
 // YF-S201 Water Flow Sensor Implementation
@@ -121,7 +16,10 @@ String LoRaWANTransmitter::formatReadings(const std::vector<SensorReading>& read
 
 class YFS201WaterFlowSensor : public ISensor {
 public:
+    using Config = SensorConfig::YFS201WaterFlow;
+
     YFS201WaterFlowSensor(uint8_t pin, bool enabled, IPersistenceHal* persistence, const char* persistence_namespace);
+    YFS201WaterFlowSensor(const Config& cfg, IPersistenceHal* persistence);
     ~YFS201WaterFlowSensor();
 
     void begin() override;
@@ -167,6 +65,10 @@ volatile bool YFS201WaterFlowSensor::_interruptFired = false;
 
 YFS201WaterFlowSensor::YFS201WaterFlowSensor(uint8_t pin, bool enabled, IPersistenceHal* persistence, const char* persistence_namespace)
     : _pin(pin), _enabled(enabled), _persistence(persistence), _persistence_namespace(persistence_namespace) {
+}
+
+YFS201WaterFlowSensor::YFS201WaterFlowSensor(const Config& cfg, IPersistenceHal* persistence)
+    : _pin(cfg.pin), _enabled(cfg.enabled), _persistence(persistence), _persistence_namespace(cfg.persistence_namespace) {
 }
 
 YFS201WaterFlowSensor::~YFS201WaterFlowSensor() {
@@ -251,8 +153,10 @@ void YFS201WaterFlowSensor::saveTotalVolume() {
 
 class BatteryMonitorSensor : public ISensor {
 public:
-    BatteryMonitorSensor(IBatteryHal* batteryHal, bool enabled)
-      : _batteryHal(batteryHal), _enabled(enabled) {}
+    using Config = SensorConfig::BatteryMonitor;
+
+    BatteryMonitorSensor(IBatteryHal* batteryHal, bool enabled);
+    BatteryMonitorSensor(IBatteryHal* batteryHal, const Config& cfg);
 
     void begin() override {}
 
@@ -271,22 +175,39 @@ private:
     const bool _enabled;
 };
 
+inline BatteryMonitorSensor::BatteryMonitorSensor(IBatteryHal* batteryHal, bool enabled)
+    : _batteryHal(batteryHal), _enabled(enabled) {}
+
+inline BatteryMonitorSensor::BatteryMonitorSensor(IBatteryHal* batteryHal, const Config& cfg)
+    : _batteryHal(batteryHal), _enabled(cfg.enabled) {}
+
 // ============================================================================
 // SENSOR FACTORY
 // ============================================================================
 
 namespace SensorFactory {
     std::shared_ptr<YFS201WaterFlowSensor> createYFS201WaterFlowSensor(
-        uint8_t pin, 
-        bool enabled, 
-        IPersistenceHal* persistence, 
+        uint8_t pin,
+        bool enabled,
+        IPersistenceHal* persistence,
         const char* persistence_namespace
     ) {
         return std::make_shared<YFS201WaterFlowSensor>(pin, enabled, persistence, persistence_namespace);
     }
 
+    std::shared_ptr<YFS201WaterFlowSensor> createYFS201WaterFlowSensor(
+        const SensorConfig::YFS201WaterFlow& cfg,
+        IPersistenceHal* persistence
+    ) {
+        return std::make_shared<YFS201WaterFlowSensor>(cfg, persistence);
+    }
+
     std::shared_ptr<ISensor> createBatteryMonitorSensor(IBatteryHal* batteryHal, bool enabled) {
         return std::make_shared<BatteryMonitorSensor>(batteryHal, enabled);
+    }
+
+    std::shared_ptr<ISensor> createBatteryMonitorSensor(IBatteryHal* batteryHal, const SensorConfig::BatteryMonitor& cfg) {
+        return std::make_shared<BatteryMonitorSensor>(batteryHal, cfg);
     }
 }
 

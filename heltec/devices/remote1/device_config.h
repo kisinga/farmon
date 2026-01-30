@@ -64,5 +64,9 @@ inline RemoteConfig buildDeviceConfig() {
 inline RemoteSensorConfig buildDeviceSensorConfig() {
     RemoteSensorConfig cfg{};
     cfg.enableSensorSystem = true;
+    cfg.waterFlow.pin = 7;
+    cfg.waterFlow.enabled = true;
+    cfg.waterFlow.persistence_namespace = "water_meter";
+    cfg.battery.enabled = true;
     return cfg;
 }

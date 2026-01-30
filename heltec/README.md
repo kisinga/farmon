@@ -32,8 +32,11 @@ static const uint8_t LORAWAN_APP_KEY[16] = {
 ### 3. Build and Flash
 
 ```bash
-./heltec.sh flash
+./heltec.sh build main    # or remote1
+./heltec.sh flash main
 ```
+
+Device selection: `main` or `remote1` (devices in `devices/<name>/`). Schema and sensor/control wiring are per device. See [../docs/FIRMWARE_ARCHITECTURE.md](../docs/FIRMWARE_ARCHITECTURE.md).
 
 ### 4. Verify
 
@@ -54,8 +57,8 @@ Also check ChirpStack → Device → LoRaWAN frames for join and uplink messages
 
 | Command | Action |
 |---------|--------|
-| `./heltec.sh flash` | Build and upload |
-| `./heltec.sh build` | Compile only |
+| `./heltec.sh build <device>` | Compile for main or remote1 |
+| `./heltec.sh flash <device>` | Build and upload |
 | `./heltec.sh monitor` | Serial monitor |
 
 ### Region Override
@@ -70,7 +73,8 @@ LORAWAN_SUBBAND=1 ./heltec.sh flash      # Different sub-band
 | File | Purpose |
 |------|---------|
 | `secrets.h` | LoRaWAN keys (gitignored) |
-| `config.h` | Device name, region, debug mode |
+| `devices/<name>/device_config.h` | Schema, buildDeviceConfig, buildDeviceSensorConfig |
+| `devices/<name>/device_setup.h` | setupDeviceSensors, registerDeviceControls |
 
 ## Troubleshooting
 

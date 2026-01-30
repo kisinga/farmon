@@ -311,27 +311,4 @@ private:
 
 } // namespace MessageSchema
 
-// =============================================================================
-// IMessage Interface - Format-agnostic message abstraction
-// =============================================================================
-// Concrete messages implement this for both binary (compact) and text (debug)
-// serialization. Allows switching formats without changing message logic.
-// =============================================================================
-
-class IMessage {
-public:
-    virtual ~IMessage() = default;
-
-    // Binary serialization (default, compact)
-    virtual size_t serialize(uint8_t* buf, size_t max_len) const = 0;
-    virtual bool deserialize(const uint8_t* buf, size_t len) = 0;
-
-    // Text serialization (for debugging/logging)
-    virtual String toText() const = 0;
-    virtual bool fromText(const String& text) = 0;
-
-    // Message type identifier (matches fPort)
-    virtual uint8_t getMessageType() const = 0;
-};
-
 #endif // MESSAGE_SCHEMA_H

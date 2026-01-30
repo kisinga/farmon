@@ -25,24 +25,11 @@ struct DeviceConfig {
     CommunicationConfig communication;
 };
 
-// ============================================================================
-// CONFIGURATION FACTORY
-// ============================================================================
-
-class DeviceConfigFactory {
-public:
-    // Common configuration defaults
-    static constexpr uint32_t DEFAULT_HEARTBEAT_INTERVAL_MS = 1000;
-    static constexpr uint32_t DEFAULT_DISPLAY_UPDATE_INTERVAL_MS = 1000;
-    static constexpr uint32_t DEFAULT_ROUTING_INTERVAL_MS = 100;
-
-    // Create remote configuration
-    static DeviceConfig createRemoteConfig(uint8_t deviceId);
-
-private:
-    // Create base configuration
-    static DeviceConfig createBaseConfig(uint8_t deviceId);
-};
+// Default intervals (used by RemoteConfig::create)
+namespace DeviceConfigFactory {
+    constexpr uint32_t DEFAULT_HEARTBEAT_INTERVAL_MS = 1000;
+    constexpr uint32_t DEFAULT_DISPLAY_UPDATE_INTERVAL_MS = 1000;
+}
 
 // ============================================================================
 // REMOTE CONFIG STRUCTURE
@@ -63,13 +50,5 @@ struct RemoteConfig : DeviceConfig {
 // Derive DevEUI from ESP32 chip ID (eFuse MAC)
 // The DevEUI is 8 bytes, derived from the 6-byte MAC by prepending 0xFF, 0xFE
 void getDevEuiFromChipId(uint8_t* devEui);
-
-// ============================================================================
-// FACTORY FUNCTION
-// ============================================================================
-
-inline RemoteConfig createRemoteConfig(uint8_t deviceId) {
-    return RemoteConfig::create(deviceId);
-}
 
 #endif // CORE_CONFIG_H
