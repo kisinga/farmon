@@ -90,7 +90,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Extract Device Info",
-        "func": "// Extract device info and fPort from ChirpStack v4 event\nconst deviceEui = msg.payload.deviceInfo?.devEui || 'unknown';\nconst deviceName = msg.payload.deviceInfo?.deviceName || '';\nconst fPort = msg.payload.fPort || 2; // Default to telemetry\n\n// Get decoded data\nlet data = msg.payload.object || {};\n\n// Add metadata (ChirpStack v4: rxInfo array; fallback rx_info for alternate encodings)\nconst rx = msg.payload.rxInfo || msg.payload.rx_info || [];\nconst rssi = rx[0]?.rssi;\nconst snr = rx[0]?.snr;\n\nmsg.deviceEui = deviceEui;\nmsg.deviceName = deviceName;\nmsg.fPort = fPort;\nmsg.data = data;\nmsg.rssi = rssi;\nmsg.snr = snr;\nmsg.rawPayload = msg.payload;\n\nnode.status({fill: 'green', shape: 'dot', text: `${deviceEui.slice(-4)} fPort:${fPort}`});\n\nreturn msg;",
+        "func": "// ChirpStack v4: normalized device message shape (DATA_CONTRACT)\nconst raw = msg.payload;\n\nconst event =\n    raw?.data &&\n        typeof raw.data === 'object' &&\n        raw.data?.deviceInfo &&\n        raw.data?.rxInfo\n        ? raw.data\n        : raw;\n\n// Resolve device EUI\nconst deviceEui =\n    event.deviceInfo?.devEui ||\n    event.deviceInfo?.dev_eui ||\n    'unknown';\n\nif (!deviceEui || deviceEui === 'unknown') {\n    node.status({\n        fill: 'red',\n        shape: 'dot',\n        text: 'no deviceEui'\n    });\n    return null;\n}\n\nconst deviceName =\n    event.deviceInfo?.deviceName ||\n    event.deviceInfo?.device_name ||\n    '';\n\nconst fPort = event.fPort ?? 2;\nconst data = event.object || {};\n\n// RX info (signal metrics)\nconst rx = event.rxInfo || event.rx_info || [];\n\nconst toNum = (v) => {\n    const n = Number(v);\n    return Number.isFinite(n) ? n : null;\n};\n\nconst rssi = toNum(rx[0]?.rssi);\nconst snr = toNum(rx[0]?.snr);\n\n// Normalize onto msg\nmsg.deviceEui = deviceEui;\nmsg.deviceName = deviceName;\nmsg.fPort = fPort;\nmsg.data = data;\nmsg.rssi = rssi;\nmsg.snr = snr;\nmsg.rawPayload = raw;\n\nnode.status({\n    fill: 'green',\n    shape: 'dot',\n    text: `${deviceEui.slice(-4)} fPort:${fPort}`\n});\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -181,7 +181,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Registration Handler (fPort 1)",
-        "func": "// Parser helper functions (reused from codec.js logic)\nfunction parseFields(text, category) {\n    if (!text) return [];\n    return text.split(',').map((f, idx) => {\n        const parts = f.split(':');\n        return {\n            idx: idx,\n            k: parts[0] || '',\n            n: parts[1] || parts[0] || '',\n            u: parts[2] || '',\n            min: parts[3] ? parseFloat(parts[3]) : undefined,\n            max: parts[4] ? parseFloat(parts[4]) : undefined,\n            c: category,\n            t: 'num',\n            s: parts[5] || ''\n        };\n    }).filter(f => f.k);\n}\n\nfunction parseSystemFields(text) {\n    if (!text) return [];\n    return text.split(',').map((f, idx) => {\n        const parts = f.split(':');\n        return {\n            idx: idx,\n            k: parts[0] || '',\n            n: parts[1] || parts[0] || '',\n            u: parts[2] || '',\n            min: parts[3] ? parseFloat(parts[3]) : undefined,\n            max: parts[4] ? parseFloat(parts[4]) : undefined,\n            c: 'sys',\n            t: 'num',\n            rw: parts[5] === 'w',\n            s: parts[6] || ''\n        };\n    }).filter(f => f.k);\n}\n\nfunction parseStates(text) {\n    if (!text) return [];\n    return text.split(',').map((s, idx) => {\n        const parts = s.split(':');\n        const values = (parts[2] || 'off;on').split(';');\n        return {\n            idx: idx,\n            k: parts[0] || '',\n            n: parts[1] || parts[0] || '',\n            c: 'state',\n            t: 'enum',\n            v: values\n        };\n    }).filter(s => s.k);\n}\n\nfunction parseCmds(text) {\n    if (!text) return [];\n    return text.split(',').map(c => {\n        const parts = c.split(':');\n        return {\n            k: parts[0] || '',\n            port: parseInt(parts[1]) || 0\n        };\n    }).filter(c => c.k);\n}\n\nfunction reassembleRegistration(frames) {\n    // Parse header (simple key=value pairs)\n    const header = {};\n    if (frames.header) {\n        frames.header.split('|').forEach(pair => {\n            const eqIdx = pair.indexOf('=');\n            if (eqIdx >= 0) {\n                const k = pair.substring(0, eqIdx);\n                const v = pair.substring(eqIdx + 1);\n                if (k && v) header[k] = v;\n            }\n        });\n    }\n    \n    // Use existing parsers\n    return {\n        v: parseInt(header.v) || 1,\n        sv: parseInt(header.sv) || 1,\n        type: header.type || 'unknown',\n        fw: header.fw || '0.0.0',\n        fields: parseFields(frames.fields ? frames.fields.split('=')[1] : '', 'cont'),\n        sys: parseSystemFields(frames.sys ? frames.sys.split('=')[1] : ''),\n        states: parseStates(frames.states ? frames.states.split('=')[1] : ''),\n        cmds: parseCmds(frames.cmds ? frames.cmds.split('=')[1] : '')\n    };\n}\n\n// Main registration handler\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\n// Multi-frame: buffer and reassemble\nif (data && data.isFrame) {\n    const buffers = context.get('regBuffers') || {};\n    if (!buffers[deviceEui]) {\n        buffers[deviceEui] = { frames: {}, timestamp: Date.now() };\n    }\n    \n    const buffer = buffers[deviceEui];\n    buffer.frames[data.frameKey] = data.frameData;\n    \n    // Check if complete (all 5 frames)\n    const required = ['header', 'fields', 'sys', 'states', 'cmds'];\n    const received = Object.keys(buffer.frames);\n    const complete = required.every(k => received.includes(k));\n    \n    if (complete) {\n        // Reassemble using existing parsers\n        msg.registration = reassembleRegistration(buffer.frames);\n        msg.schemaVersion = msg.registration.sv || 1;\n        \n        // Prepare device upsert\n        msg.params = [\n            deviceEui,\n            msg.deviceName || msg.registration.type || 'Unknown',\n            msg.registration.type || 'unknown',\n            msg.registration.fw || '0.0.0',\n            JSON.stringify(msg.registration)\n        ];\n        \n        delete buffers[deviceEui];\n        context.set('regBuffers', buffers);\n        \n        node.status({fill: 'blue', shape: 'dot', text: `Reg v${msg.schemaVersion}: ${deviceEui.slice(-4)}`});\n        return msg;\n    }\n    \n    // Timeout check (30s)\n    if (Date.now() - buffer.timestamp > 30000) {\n        const missing = required.filter(k => !received.includes(k));\n        node.warn(`Registration timeout: ${deviceEui}, missing: ${missing.join(', ')}`);\n        delete buffers[deviceEui];\n        context.set('regBuffers', buffers);\n        return null;\n    }\n    \n    context.set('regBuffers', buffers);\n    node.status({fill: 'yellow', shape: 'dot', text: `Reg ${received.length}/5: ${deviceEui.slice(-4)}`});\n    return null;  // Wait for more frames\n}\n\n// Legacy single-frame format\nconst reg = data;\nif (!reg || (!reg.fields && !reg.states)) {\n    node.warn('Invalid registration: missing fields/states');\n    return null;\n}\n\n// Store full registration with schema version\nmsg.registration = reg;\nmsg.schemaVersion = reg.sv || 1;\n\n// Prepare device upsert (msg.params for PostgreSQL node)\nmsg.params = [\n    deviceEui,\n    msg.deviceName || reg.type || 'Unknown',\n    reg.type || 'unknown',\n    reg.fw || '0.0.0',\n    JSON.stringify(reg)\n];\n\nnode.status({fill: 'blue', shape: 'dot', text: `Reg v${msg.schemaVersion}: ${deviceEui.slice(-4)}`});\n\nreturn msg;",
+        "func": "// Parser helper functions (reused from codec.js logic)\n\nfunction parseFields(text, category) {\n  if (!text) return [];\n\n  return text\n    .split(',')\n    .map((f, idx) => {\n      const parts = f.split(':');\n      return {\n        idx: idx,\n        k: parts[0] || '',\n        n: parts[1] || parts[0] || '',\n        u: parts[2] || '',\n        min: parts[3] ? parseFloat(parts[3]) : undefined,\n        max: parts[4] ? parseFloat(parts[4]) : undefined,\n        c: category,\n        t: 'num',\n        s: parts[5] || ''\n      };\n    })\n    .filter(f => f.k);\n}\n\nfunction parseSystemFields(text) {\n  if (!text) return [];\n\n  return text\n    .split(',')\n    .map((f, idx) => {\n      const parts = f.split(':');\n      return {\n        idx: idx,\n        k: parts[0] || '',\n        n: parts[1] || parts[0] || '',\n        u: parts[2] || '',\n        min: parts[3] ? parseFloat(parts[3]) : undefined,\n        max: parts[4] ? parseFloat(parts[4]) : undefined,\n        c: 'sys',\n        t: 'num',\n        rw: parts[5] === 'w',\n        s: parts[6] || ''\n      };\n    })\n    .filter(f => f.k);\n}\n\nfunction parseStates(text) {\n  if (!text) return [];\n\n  return text\n    .split(',')\n    .map((s, idx) => {\n      const parts = s.split(':');\n      const values = (parts[2] || 'off;on').split(';');\n\n      return {\n        idx: idx,\n        k: parts[0] || '',\n        n: parts[1] || parts[0] || '',\n        c: 'state',\n        t: 'enum',\n        v: values\n      };\n    })\n    .filter(s => s.k);\n}\n\nfunction parseCmds(text) {\n  if (!text) return [];\n\n  return text\n    .split(',')\n    .map(c => {\n      const parts = c.split(':');\n      return {\n        k: parts[0] || '',\n        port: parseInt(parts[1], 10) || 0\n      };\n    })\n    .filter(c => c.k);\n}\n\nfunction reassembleRegistration(frames) {\n  // Parse header (key=value pairs)\n  const header = {};\n\n  if (frames.header) {\n    frames.header.split('|').forEach(pair => {\n      const eqIdx = pair.indexOf('=');\n      if (eqIdx >= 0) {\n        const k = pair.substring(0, eqIdx);\n        const v = pair.substring(eqIdx + 1);\n        if (k && v) header[k] = v;\n      }\n    });\n  }\n\n  return {\n    v: parseInt(header.v, 10) || 1,\n    sv: parseInt(header.sv, 10) || 1,\n    type: header.type || 'unknown',\n    fw: header.fw || '0.0.0',\n    fields: parseFields(\n      frames.fields ? frames.fields.split('=')[1] : '',\n      'cont'\n    ),\n    sys: parseSystemFields(\n      frames.sys ? frames.sys.split('=')[1] : ''\n    ),\n    states: parseStates(\n      frames.states ? frames.states.split('=')[1] : ''\n    ),\n    cmds: parseCmds(\n      frames.cmds ? frames.cmds.split('=')[1] : ''\n    )\n  };\n}\n\n// Main registration handler\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\n// Multi-frame registration handling\nif (data && data.isFrame) {\n  const buffers = context.get('regBuffers') || {};\n\n  if (!buffers[deviceEui]) {\n    buffers[deviceEui] = {\n      frames: {},\n      timestamp: Date.now()\n    };\n  }\n\n  const buffer = buffers[deviceEui];\n  buffer.frames[data.frameKey] = data.frameData;\n\n  const required = ['header', 'fields', 'sys', 'states', 'cmds'];\n  const received = Object.keys(buffer.frames);\n  const complete = required.every(k => received.includes(k));\n\n  if (complete) {\n    msg.registration = reassembleRegistration(buffer.frames);\n    msg.schemaVersion = msg.registration.sv || 1;\n\n    msg.params = [\n      deviceEui,\n      msg.deviceName || msg.registration.type || 'Unknown',\n      msg.registration.type || 'unknown',\n      msg.registration.fw || '0.0.0',\n      JSON.stringify(msg.registration)\n    ];\n\n    delete buffers[deviceEui];\n    context.set('regBuffers', buffers);\n\n    node.status({\n      fill: 'blue',\n      shape: 'dot',\n      text: `Reg v${msg.schemaVersion}: ${deviceEui.slice(-4)}`\n    });\n\n    return msg;\n  }\n\n  // Timeout (30s)\n  if (Date.now() - buffer.timestamp > 30000) {\n    const missing = required.filter(k => !received.includes(k));\n    node.warn(\n      `Registration timeout: ${deviceEui}, missing: ${missing.join(', ')}`\n    );\n    delete buffers[deviceEui];\n    context.set('regBuffers', buffers);\n    return null;\n  }\n\n  context.set('regBuffers', buffers);\n  node.status({\n    fill: 'yellow',\n    shape: 'dot',\n    text: `Reg ${received.length}/5: ${deviceEui.slice(-4)}`\n  });\n\n  return null;\n}\n\n// Legacy single-frame format\nconst reg = data;\n\nif (!reg || (!reg.fields && !reg.states)) {\n  node.warn('Invalid registration: missing fields/states');\n  return null;\n}\n\nmsg.registration = reg;\nmsg.schemaVersion = reg.sv || 1;\n\nmsg.params = [\n  deviceEui,\n  msg.deviceName || reg.type || 'Unknown',\n  reg.type || 'unknown',\n  reg.fw || '0.0.0',\n  JSON.stringify(reg)\n];\n\nnode.status({\n  fill: 'blue',\n  shape: 'dot',\n  text: `Reg v${msg.schemaVersion}: ${deviceEui.slice(-4)}`\n});\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -258,7 +258,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Parse & Store Fields",
-        "func": "const deviceEui = msg.deviceEui;\nconst reg = msg.registration;\n\n// Build batch inserts for fields, controls, triggers\nconst fields = reg.fields || [];\nconst sysFields = reg.sys || [];\nconst states = reg.states || [];\nconst triggers = reg.triggers || [];\nconst cmds = reg.cmds || [];\n\n// Deduplicate helper - keep last occurrence of each key\nconst dedup = (arr, keyFn) => {\n    const map = new Map();\n    arr.forEach(item => map.set(keyFn(item), item));\n    return Array.from(map.values());\n};\n\n// Combine telemetry fields and system fields\nconst allFields = [...fields, ...sysFields];\n\n// Prepare field inserts (deduplicated by field_key)\n// Use device-provided category (f.c) directly - device categories are consistent and authoritative\nmsg.fieldRows = dedup(allFields.map(f => ({\n    device_eui: deviceEui,\n    field_key: f.k,\n    display_name: f.n,\n    data_type: f.t || 'num',\n    unit: f.u || null,\n    category: f.c,\n    min_value: f.min ?? null,\n    max_value: f.max ?? null,\n    enum_values: f.v ? JSON.stringify(f.v) : null\n})), r => r.field_key);\n\n// Add controls (states) to device_fields table with category='state'\nconst stateFields = states.map(s => ({\n    device_eui: deviceEui,\n    field_key: s.k,\n    display_name: s.n || s.k,\n    data_type: 'enum',\n    unit: null,\n    category: 'state',\n    min_value: null,\n    max_value: null,\n    enum_values: s.v ? JSON.stringify(s.v) : null\n}));\n\n// Merge states into fieldRows (deduplicate by field_key)\nconst allFieldRows = [...msg.fieldRows, ...stateFields];\nmsg.fieldRows = dedup(allFieldRows, r => r.field_key);\n\n// Prepare control inserts from states array (new format)\nmsg.controlRows = dedup(states.map(s => ({\n    device_eui: deviceEui,\n    control_key: s.k,\n    current_state: s.v ? s.v[0] : 'off',\n    mode: 'auto'\n})), r => r.control_key);\n\n// Prepare trigger inserts (deduplicated by trigger_key)\nmsg.triggerRows = dedup(triggers.map(t => ({\n    device_eui: deviceEui,\n    trigger_key: t.k,\n    display_name: t.n,\n    field_key: t.f,\n    operator: t.op,\n    threshold: t.th,\n    action_control: t.ctrl,\n    action_state: t.st,\n    enabled: true\n})), r => r.trigger_key);\n\n// Prepare schema insert for device_schemas table\nmsg.schemaRow = {\n    device_eui: deviceEui,\n    version: msg.schemaVersion || reg.sv || 1,\n    schema: JSON.stringify({ fields: allFields, controls: states, cmds: cmds })\n};\n\n// Infer viz_config defaults (deduplicated by field_key)\nconst vizFields = [...allFields, ...states.map(s => ({ ...s, c: 'state', t: 'enum' }))];\nmsg.vizRows = dedup(vizFields.map(f => {\n    let vizType = 'badge';\n    let gaugeStyle = null;\n    let chartColor = '#3b82f6';\n    let sortOrder = 100;\n    \n    if (f.c === 'state') {\n        vizType = 'toggle';\n    } else if (f.c === 'sys') {\n        vizType = 'badge';\n        chartColor = '#6b7280';\n        sortOrder = 200;\n    } else if ((f.t === 'num' || !f.t) && f.c === 'cont') {\n        vizType = (f.min !== undefined && f.max !== undefined) ? 'both' : 'chart';\n        gaugeStyle = 'radial';\n        \n        const key = f.k.toLowerCase();\n        if (key.includes('level') || key.includes('tank') || key === 'wl') {\n            gaugeStyle = 'liquid';\n            chartColor = '#3b82f6';\n            sortOrder = 10;\n        } else if (key.includes('battery') || key === 'bp') {\n            chartColor = '#10b981';\n            sortOrder = 20;\n        } else if (key.includes('rssi')) {\n            chartColor = '#f59e0b';\n            sortOrder = 80;\n        } else if (key.includes('snr')) {\n            chartColor = '#8b5cf6';\n            sortOrder = 90;\n        }\n    }\n    \n    let thresholds = null;\n    if ((f.t === 'num' || !f.t) && f.min !== undefined && f.max !== undefined) {\n        thresholds = JSON.stringify([\n            {pct: 0.2, color: '#ef4444'},\n            {pct: 0.5, color: '#f59e0b'},\n            {pct: 1.0, color: '#10b981'}\n        ]);\n    }\n    \n    return {\n        device_eui: deviceEui,\n        field_key: f.k,\n        viz_type: vizType,\n        gauge_style: gaugeStyle,\n        chart_color: chartColor,\n        thresholds: thresholds,\n        is_visible: f.c !== 'sys',\n        sort_order: sortOrder\n    };\n}), r => r.field_key);\n\nreturn msg;",
+        "func": "const deviceEui = msg.deviceEui;\nconst reg = msg.registration;\n\n// Build batch inserts\nconst fields = reg.fields || [];\nconst sysFields = reg.sys || [];\nconst states = reg.states || [];\nconst triggers = reg.triggers || [];\nconst cmds = reg.cmds || [];\n\n// Deduplicate helper (keep last)\nconst dedup = (arr, keyFn) => {\n    const map = new Map();\n    arr.forEach(item => map.set(keyFn(item), item));\n    return Array.from(map.values());\n};\n\n// Combine telemetry + system fields\nconst allFields = [...fields, ...sysFields];\n\n// Field inserts (device-provided category is authoritative)\nmsg.fieldRows = dedup(\n    allFields.map(f => ({\n        device_eui: deviceEui,\n        field_key: f.k,\n        display_name: f.n,\n        data_type: f.t || 'num',\n        unit: f.u || null,\n        category: f.c,\n        min_value: f.min ?? null,\n        max_value: f.max ?? null,\n        enum_values: f.v ? JSON.stringify(f.v) : null\n    })),\n    r => r.field_key\n);\n\n// Add states as fields (category = state)\nconst stateFields = states.map(s => ({\n    device_eui: deviceEui,\n    field_key: s.k,\n    display_name: s.n || s.k,\n    data_type: 'enum',\n    unit: null,\n    category: 'state',\n    min_value: null,\n    max_value: null,\n    enum_values: s.v ? JSON.stringify(s.v) : null\n}));\n\nmsg.fieldRows = dedup(\n    [...msg.fieldRows, ...stateFields],\n    r => r.field_key\n);\n\n// Controls from states\nmsg.controlRows = dedup(\n    states.map(s => ({\n        device_eui: deviceEui,\n        control_key: s.k,\n        current_state: s.v ? s.v[0] : 'off',\n        mode: 'auto'\n    })),\n    r => r.control_key\n);\n\n// Triggers\nmsg.triggerRows = dedup(\n    triggers.map(t => ({\n        device_eui: deviceEui,\n        trigger_key: t.k,\n        display_name: t.n,\n        field_key: t.f,\n        operator: t.op,\n        threshold: t.th,\n        action_control: t.ctrl,\n        action_state: t.st,\n        enabled: true\n    })),\n    r => r.trigger_key\n);\n\n// Schema row\nmsg.schemaRow = {\n    device_eui: deviceEui,\n    version: msg.schemaVersion || reg.sv || 1,\n    schema: JSON.stringify({\n        fields: allFields,\n        controls: states,\n        cmds\n    })\n};\n\n// Viz defaults\nconst vizFields = [\n    ...allFields,\n    ...states.map(s => ({ ...s, c: 'state', t: 'enum' }))\n];\n\nmsg.vizRows = dedup(\n    vizFields.map(f => {\n        let vizType = 'badge';\n        let gaugeStyle = null;\n        let chartColor = '#3b82f6';\n        let sortOrder = 100;\n\n        if (f.c === 'state') {\n            vizType = 'toggle';\n        } else if (f.c === 'sys') {\n            chartColor = '#6b7280';\n            sortOrder = 200;\n        } else if ((f.t === 'num' || !f.t) && f.c === 'cont') {\n            vizType =\n                f.min !== undefined && f.max !== undefined\n                    ? 'both'\n                    : 'chart';\n            gaugeStyle = 'radial';\n\n            const key = f.k.toLowerCase();\n            if (key.includes('level') || key.includes('tank') || key === 'wl') {\n                gaugeStyle = 'liquid';\n                sortOrder = 10;\n            } else if (key.includes('battery') || key === 'bp') {\n                chartColor = '#10b981';\n                sortOrder = 20;\n            } else if (key.includes('rssi')) {\n                chartColor = '#f59e0b';\n                sortOrder = 80;\n            } else if (key.includes('snr')) {\n                chartColor = '#8b5cf6';\n                sortOrder = 90;\n            }\n        }\n\n        const thresholds =\n            (f.t === 'num' || !f.t) &&\n                f.min !== undefined &&\n                f.max !== undefined\n                ? JSON.stringify([\n                    { pct: 0.2, color: '#ef4444' },\n                    { pct: 0.5, color: '#f59e0b' },\n                    { pct: 1.0, color: '#10b981' }\n                ])\n                : null;\n\n        return {\n            device_eui: deviceEui,\n            field_key: f.k,\n            viz_type: vizType,\n            gauge_style: gaugeStyle,\n            chart_color: chartColor,\n            thresholds,\n            is_visible: f.c !== 'sys',\n            sort_order: sortOrder\n        };\n    }),\n    r => r.field_key\n);\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -269,7 +269,8 @@
         "y": 280,
         "wires": [
             [
-                "50db4638a39fc128"
+                "50db4638a39fc128",
+                "810308c6f9d1630a"
             ]
         ]
     },
@@ -478,7 +479,9 @@
         "x": 3340,
         "y": 280,
         "wires": [
-            []
+            [
+                "613db87855a6ed79"
+            ]
         ]
     },
     {
@@ -486,7 +489,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Telemetry Handler (fPort 2)",
-        "func": "// Process telemetry data\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\n// Prepare telemetry insert (msg.params for PostgreSQL node)\nmsg.params = [\n    deviceEui,\n    JSON.stringify(data),\n    msg.rssi,\n    msg.snr\n];\n\nnode.status({fill: 'green', shape: 'dot', text: `Telemetry: ${deviceEui.slice(-4)}`});\n\nreturn msg;",
+        "func": "// Telemetry row from normalized message only (DATA_CONTRACT)\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\nmsg.params = [\n    deviceEui,\n    JSON.stringify(data || {}),\n    msg.rssi ?? null,\n    msg.snr ?? null\n];\n\nnode.status({\n    fill: 'green',\n    shape: 'dot',\n    text: `Telemetry: ${deviceEui.slice(-4)}`\n});\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -611,7 +614,8 @@
         "y": 460,
         "wires": [
             [
-                "1edd34bc2dab0ea3"
+                "1edd34bc2dab0ea3",
+                "c6b3476bff3ec6b0"
             ]
         ]
     },
@@ -972,12 +976,57 @@
         ]
     },
     {
+        "id": "810308c6f9d1630a",
+        "type": "debug",
+        "z": "7e7308018823ce78",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1470,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "613db87855a6ed79",
+        "type": "link out",
+        "z": "7e7308018823ce78",
+        "name": "To Handlers",
+        "mode": "link",
+        "links": [
+            "cd6e5f46f99415f5"
+        ],
+        "x": 3475,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "c6b3476bff3ec6b0",
+        "type": "link out",
+        "z": "7e7308018823ce78",
+        "name": "link out 1",
+        "mode": "link",
+        "links": [
+            "cd6e5f46f99415f5"
+        ],
+        "x": 1705,
+        "y": 400,
+        "wires": []
+    },
+    {
         "id": "cd6e5f46f99415f5",
         "type": "link in",
         "z": "155f01355999b8a5",
         "name": "From Handlers",
-        "links": [],
-        "x": 155,
+        "links": [
+            "613db87855a6ed79",
+            "c6b3476bff3ec6b0"
+        ],
+        "x": 45,
         "y": 480,
         "wires": [
             [
@@ -1067,7 +1116,7 @@
         "checkall": "true",
         "repair": false,
         "outputs": 14,
-        "x": 640,
+        "x": 680,
         "y": 480,
         "wires": [
             [
@@ -1125,7 +1174,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 910,
+        "x": 950,
         "y": 80,
         "wires": [
             [
@@ -1145,7 +1194,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1140,
+        "x": 1180,
         "y": 80,
         "wires": [
             [
@@ -1158,14 +1207,14 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "Prepare Query",
-        "func": "const eui = msg.payload?.eui;\nif (!eui) return null;\n\nmsg.params = [eui];\nflow.set('selectedDevice', eui);\nflow.set('selectedRange', msg.payload?.range || '24h');\n\nreturn msg;",
+        "func": "// Device context for device-scoped flows (DATA_CONTRACT)\nconst eui = msg.payload?.eui;\nif (!eui) return null;\n\nconst range = msg.payload?.range || '24h';\n\nmsg.context = { eui, range };\nmsg.params = [eui];\n\nflow.set('selectedDevice', eui);\nflow.set('selectedRange', range);\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 920,
+        "x": 960,
         "y": 140,
         "wires": [
             [
@@ -1178,12 +1227,12 @@
         "type": "postgresql",
         "z": "155f01355999b8a5",
         "name": "Get Fields + Viz",
-        "query": "SELECT \n    f.field_key as key,\n    f.display_name as name,\n    f.data_type as type,\n    f.unit,\n    f.category,\n    f.min_value as min,\n    f.max_value as max,\n    f.enum_values,\n    v.viz_type,\n    v.gauge_style,\n    v.chart_color,\n    v.thresholds,\n    COALESCE(v.is_visible, true) as is_visible,\n    v.sort_order\nFROM device_fields f\nLEFT JOIN viz_config v ON f.device_eui = v.device_eui AND f.field_key = v.field_key\nWHERE f.device_eui = $1\n\nUNION\n\nSELECT \n    c.control_key as key,\n    c.control_key as name,\n    'enum' as type,\n    null as unit,\n    'state' as category,\n    null as min,\n    null as max,\n    null as enum_values,\n    'toggle' as viz_type,\n    null as gauge_style,\n    null as chart_color,\n    null as thresholds,\n    true as is_visible,\n    100 as sort_order\nFROM device_controls c\nWHERE c.device_eui = $1\n  AND NOT EXISTS (\n      SELECT 1 FROM device_fields f \n      WHERE f.device_eui = c.device_eui AND f.field_key = c.control_key\n  )\n\nORDER BY sort_order, key",
+        "query": "SELECT \n    f.field_key as key,\n    f.display_name as name,\n    f.data_type as type,\n    f.unit,\n    f.category,\n    f.min_value as min,\n    f.max_value as max,\n    f.enum_values,\n    v.viz_type,\n    v.gauge_style,\n    v.chart_color,\n    v.thresholds,\n    COALESCE(v.is_visible, true) as is_visible,\n    v.sort_order\nFROM device_fields f\nLEFT JOIN viz_config v ON f.device_eui = v.device_eui AND f.field_key = v.field_key\nWHERE f.device_eui = $1\n\nUNION\n\nSELECT \n    c.control_key as key,\n    COALESCE(f.display_name, c.control_key) as name,\n    'enum' as type,\n    null as unit,\n    'state' as category,\n    null as min,\n    null as max,\n    f.enum_values,\n    'toggle' as viz_type,\n    null as gauge_style,\n    null as chart_color,\n    null as thresholds,\n    true as is_visible,\n    100 as sort_order\nFROM device_controls c\nLEFT JOIN device_fields f ON c.device_eui = f.device_eui AND c.control_key = f.field_key\nWHERE c.device_eui = $1\n  AND NOT EXISTS (\n      SELECT 1 FROM device_fields f2 \n      WHERE f2.device_eui = c.device_eui AND f2.field_key = c.control_key\n  )\nORDER BY sort_order, key",
         "postgreSQLConfig": "pg-config",
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1140,
+        "x": 1180,
         "y": 140,
         "wires": [
             [
@@ -1203,7 +1252,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1350,
+        "x": 1390,
         "y": 140,
         "wires": [
             [
@@ -1216,12 +1265,12 @@
         "type": "postgresql",
         "z": "155f01355999b8a5",
         "name": "Get Controls",
-        "query": "SELECT control_key as key, current_state as state, mode, manual_until, last_change_at, last_change_by\nFROM device_controls WHERE device_eui = $1",
+        "query": "SELECT \n    c.control_key as key, \n    c.current_state as state, \n    c.mode, \n    c.manual_until, \n    c.last_change_at, \n    c.last_change_by,\n    f.enum_values\nFROM device_controls c\nLEFT JOIN device_fields f ON c.device_eui = f.device_eui AND c.control_key = f.field_key\nWHERE c.device_eui = $1",
         "postgreSQLConfig": "pg-config",
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1530,
+        "x": 1570,
         "y": 140,
         "wires": [
             [
@@ -1241,7 +1290,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1720,
+        "x": 1760,
         "y": 140,
         "wires": [
             [
@@ -1259,7 +1308,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1890,
+        "x": 1930,
         "y": 140,
         "wires": [
             [
@@ -1279,7 +1328,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 2060,
+        "x": 2100,
         "y": 140,
         "wires": [
             [
@@ -1297,7 +1346,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 2310,
+        "x": 2350,
         "y": 140,
         "wires": [
             [
@@ -1310,14 +1359,14 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "Format Config",
-        "func": "const row = msg.payload?.[0];\nconst reg = row?.registration || {};\n\n// Transform schema to expected structure\n// Preserve original arrays so frontend can determine correct category\n// Frontend expects: fields (combined for lookup), controls (from states)\n// But also preserve original arrays to check which array field came from\nconst schema = {\n    fields: [\n        ...(reg.fields || []),\n        ...(reg.sys || [])\n    ],\n    fields_original: reg.fields || [],\n    sys_original: reg.sys || [],\n    controls: reg.states || [],\n    cmds: reg.cmds || []\n};\n\nreturn {\n    topic: 'deviceConfig',\n    payload: {\n        eui: msg.params[0],\n        fields: msg.fields,\n        controls: msg.controls,\n        triggers: msg.triggers,\n        schema: schema,\n        device: {\n            type: row?.device_type || reg.type,\n            fw: row?.firmware_version || reg.fw\n        },\n        current: row?.data\n            ? {\n                data: row.data,\n                rssi: row.rssi,\n                snr: row.snr,\n                ts: row.ts\n            }\n            : null\n    }\n};\n",
+        "func": "const row = msg.payload?.[0];\nconst reg = row?.registration || {};\n\n// Transform schema to expected structure\n// Raw registration: fields, sys, states, cmds\n// Frontend expects: fields (combined), controls (from states)\nconst schema = {\n    fields: [\n        ...(reg.fields || []),\n        ...(reg.sys || [])\n    ],\n    controls: reg.states || [],\n    cmds: reg.cmds || []\n};\n\nreturn {\n    topic: 'deviceConfig',\n    payload: {\n        eui: msg.params[0],\n        fields: msg.fields,\n        controls: msg.controls,\n        triggers: msg.triggers,\n        schema: schema,\n        device: {\n            type: row?.device_type || reg.type,\n            fw: row?.firmware_version || reg.fw\n        },\n        current: row?.data\n            ? {\n                data: row.data,\n                rssi: row.rssi,\n                snr: row.snr,\n                ts: row.ts\n            }\n            : null\n    }\n};\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 2540,
+        "x": 2580,
         "y": 140,
         "wires": [
             [
@@ -1330,14 +1379,14 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "Build History Query",
-        "func": "const eui = msg.payload?.eui || flow.get('selectedDevice');\nconst field = msg.payload?.field;\nconst range = msg.payload?.range || flow.get('selectedRange') || '24h';\n\nif (!eui || !field) return null;\n\nconst intervals = {\n    '1h': '1 hour',\n    '6h': '6 hours',\n    '24h': '24 hours',\n    '7d': '7 days',\n    '30d': '30 days'\n};\n\nconst interval = intervals[range] || '24 hours';\n\nmsg.params = [eui, interval];\nmsg.field = field;\n\nlet query;\nif (field === 'rssi') {\n    query = 'SELECT ts, rssi::numeric as value FROM telemetry WHERE device_eui = $1 AND ts > NOW() - $2::interval AND rssi IS NOT NULL ORDER BY ts';\n} else if (field === 'snr') {\n    query = 'SELECT ts, snr::numeric as value FROM telemetry WHERE device_eui = $1 AND ts > NOW() - $2::interval AND snr IS NOT NULL ORDER BY ts';\n} else {\n    query = `SELECT ts, (data->>'${field}')::numeric as value FROM telemetry WHERE device_eui = $1 AND ts > NOW() - $2::interval AND data->>'${field}' IS NOT NULL ORDER BY ts`;\n}\nmsg.query = query;\n\nreturn msg;",
+        "func": "// Unified history: one field -> (query, params) mapping (DATA_CONTRACT)\nconst rawEui =\n    msg.payload?.eui ??\n    msg.context?.eui ??\n    flow.get('selectedDevice');\n\nconst eui = rawEui\n    ? String(rawEui).toLowerCase().replace(/:/g, '')\n    : '';\n\nconst field = msg.payload?.field;\n\nconst range =\n    msg.payload?.range ??\n    msg.context?.range ??\n    flow.get('selectedRange') ??\n    '24h';\n\nif (!eui || !field) return null;\n\nconst intervals = {\n    '1h': '1 hour',\n    '6h': '6 hours',\n    '24h': '24 hours',\n    '7d': '7 days',\n    '30d': '30 days'\n};\n\nconst interval = intervals[range] || '24 hours';\n\nmsg.field = field;\nmsg.historyEui = eui;\n\nif (field === 'rssi') {\n    msg.query = `\n    SELECT ts, rssi::numeric AS value\n    FROM telemetry\n    WHERE device_eui = $1\n      AND ts > NOW() - $2::interval\n      AND rssi IS NOT NULL\n    ORDER BY ts\n  `;\n    msg.params = [eui, interval];\n\n} else if (field === 'snr') {\n    msg.query = `\n    SELECT ts, snr::numeric AS value\n    FROM telemetry\n    WHERE device_eui = $1\n      AND ts > NOW() - $2::interval\n      AND snr IS NOT NULL\n    ORDER BY ts\n  `;\n    msg.params = [eui, interval];\n\n} else {\n    msg.query = `\n    SELECT ts, (data->>$3)::numeric AS value\n    FROM telemetry\n    WHERE device_eui = $1\n      AND ts > NOW() - $2::interval\n      AND data->>$3 IS NOT NULL\n    ORDER BY ts\n  `;\n    msg.params = [eui, interval, field];\n}\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 930,
+        "x": 970,
         "y": 200,
         "wires": [
             [
@@ -1355,7 +1404,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1120,
+        "x": 1160,
         "y": 200,
         "wires": [
             [
@@ -1368,14 +1417,14 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "Format History",
-        "func": "return {\n    topic: 'history',\n    payload: {\n        eui: msg.params[0],\n        field: msg.field,\n        data: msg.payload.map(r => ({ ts: r.ts, value: r.value }))\n    }\n};",
+        "func": "// Unified history response shape (DATA_CONTRACT): eui, field, data\nconst eui = msg.historyEui ?? msg.params?.[0];\nconst field = msg.field;\n\nconst rows = Array.isArray(msg.payload)\n    ? msg.payload\n    : msg.payload != null\n        ? [msg.payload]\n        : [];\n\nreturn {\n    topic: 'history',\n    payload: {\n        eui: eui,\n        field: field,\n        data: rows.map(r => ({\n            ts: r.ts,\n            value: r.value\n        }))\n    }\n};\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1360,
+        "x": 1400,
         "y": 200,
         "wires": [
             [
@@ -1395,7 +1444,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 930,
+        "x": 970,
         "y": 260,
         "wires": [
             [
@@ -1413,7 +1462,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1140,
+        "x": 1180,
         "y": 260,
         "wires": [
             [
@@ -1433,7 +1482,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1380,
+        "x": 1420,
         "y": 260,
         "wires": [
             [
@@ -1453,7 +1502,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1620,
+        "x": 1660,
         "y": 200,
         "wires": [
             []
@@ -1473,7 +1522,7 @@
         "correl": "",
         "expiry": "",
         "broker": "e1b2c3d4e5f6a7b8",
-        "x": 1620,
+        "x": 1660,
         "y": 260,
         "wires": []
     },
@@ -1489,7 +1538,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1600,
+        "x": 1640,
         "y": 320,
         "wires": [
             [
@@ -1509,7 +1558,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 920,
+        "x": 960,
         "y": 320,
         "wires": [
             [
@@ -1527,7 +1576,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1140,
+        "x": 1180,
         "y": 320,
         "wires": [
             [
@@ -1547,7 +1596,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1340,
+        "x": 1380,
         "y": 320,
         "wires": [
             [
@@ -1567,7 +1616,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 690,
+        "x": 730,
         "y": 80,
         "wires": [
             [
@@ -1624,7 +1673,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 660,
+        "x": 700,
         "y": 180,
         "wires": [
             [
@@ -1644,7 +1693,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 940,
+        "x": 980,
         "y": 380,
         "wires": [
             [
@@ -1662,7 +1711,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1130,
+        "x": 1170,
         "y": 380,
         "wires": [
             [
@@ -1682,7 +1731,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1360,
+        "x": 1400,
         "y": 380,
         "wires": [
             [
@@ -1702,7 +1751,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 930,
+        "x": 970,
         "y": 440,
         "wires": [
             [
@@ -1720,7 +1769,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1120,
+        "x": 1160,
         "y": 440,
         "wires": [
             [
@@ -1740,7 +1789,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1370,
+        "x": 1410,
         "y": 440,
         "wires": [
             [
@@ -1760,7 +1809,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 920,
+        "x": 960,
         "y": 500,
         "wires": [
             [
@@ -1778,7 +1827,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1130,
+        "x": 1170,
         "y": 500,
         "wires": [
             [
@@ -1798,7 +1847,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1370,
+        "x": 1410,
         "y": 500,
         "wires": [
             [
@@ -1818,7 +1867,7 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 920,
+        "x": 960,
         "y": 560,
         "wires": [
             [
@@ -1836,7 +1885,7 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1140,
+        "x": 1180,
         "y": 560,
         "wires": [
             [
@@ -1856,13 +1905,327 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1380,
+        "x": 1420,
         "y": 560,
         "wires": [
             [
                 "7a756a0bc95ae6be"
             ]
         ]
+    },
+    {
+        "id": "edgerules_get_prep",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prep Get Edge Rules",
+        "func": "const eui = msg.payload?.eui;\nif (!eui) return null;\nmsg.params = [eui];\nmsg.deviceEui = eui;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 980,
+        "y": 620,
+        "wires": [
+            [
+                "edgerules_get_query"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_get_query",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Query Edge Rules",
+        "query": "SELECT rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled FROM edge_rules WHERE device_eui = $1 ORDER BY priority, rule_id",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1190,
+        "y": 620,
+        "wires": [
+            [
+                "edgerules_get_format"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_get_format",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Edge Rules",
+        "func": "return {\n    topic: 'edgeRules',\n    payload: {\n        eui: msg.deviceEui,\n        rules: msg.payload || []\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1410,
+        "y": 620,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "edgerules_save_prep",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prep Save Edge Rule",
+        "func": "const p = msg.payload;\nif (!p?.eui) return null;\n\n// Generate new rule_id if not provided\nlet ruleId = p.rule_id;\nif (ruleId === null || ruleId === undefined) {\n    ruleId = Math.floor(Math.random() * 255);\n}\n\nmsg.params = [\n    p.eui,\n    ruleId,\n    p.field_idx,\n    p.operator,\n    p.threshold,\n    p.control_idx,\n    p.action_state,\n    p.priority ?? 128,\n    p.cooldown_seconds ?? 300,\n    p.enabled ?? true\n];\nmsg.deviceEui = p.eui;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 980,
+        "y": 680,
+        "wires": [
+            [
+                "edgerules_save_query"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_save_query",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Upsert Edge Rule",
+        "query": "INSERT INTO edge_rules (device_eui, rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled, synced_at)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())\nON CONFLICT (device_eui, rule_id) DO UPDATE SET\n    field_idx = EXCLUDED.field_idx,\n    operator = EXCLUDED.operator,\n    threshold = EXCLUDED.threshold,\n    control_idx = EXCLUDED.control_idx,\n    action_state = EXCLUDED.action_state,\n    priority = EXCLUDED.priority,\n    cooldown_seconds = EXCLUDED.cooldown_seconds,\n    enabled = EXCLUDED.enabled,\n    synced_at = NOW()\nRETURNING rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1190,
+        "y": 680,
+        "wires": [
+            [
+                "edgerules_save_format"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_save_format",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Saved Edge Rule",
+        "func": "const saved = msg.payload?.[0];\nreturn {\n    topic: 'edgeRuleSaved',\n    payload: {\n        eui: msg.deviceEui,\n        rule: saved\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1430,
+        "y": 680,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "edgerules_delete_prep",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prep Delete Edge Rule",
+        "func": "const p = msg.payload;\nif (!p?.eui || p.ruleId === null || p.ruleId === undefined) return null;\nmsg.params = [p.eui, p.ruleId];\nmsg.deviceEui = p.eui;\nmsg.ruleId = p.ruleId;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 980,
+        "y": 740,
+        "wires": [
+            [
+                "edgerules_delete_query"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_delete_query",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Delete Edge Rule",
+        "query": "DELETE FROM edge_rules WHERE device_eui = $1 AND rule_id = $2",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1190,
+        "y": 740,
+        "wires": [
+            [
+                "edgerules_delete_format"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_delete_format",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Deleted Edge Rule",
+        "func": "return {\n    topic: 'edgeRuleDeleted',\n    payload: {\n        eui: msg.deviceEui,\n        ruleId: msg.ruleId\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1440,
+        "y": 740,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "edgerules_toggle_prep",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Prep Toggle Edge Rule",
+        "func": "const p = msg.payload;\nif (!p?.eui || p.ruleId === null || p.ruleId === undefined) return null;\nmsg.params = [p.enabled, p.eui, p.ruleId];\nmsg.deviceEui = p.eui;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 990,
+        "y": 800,
+        "wires": [
+            [
+                "edgerules_toggle_query"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_toggle_query",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Toggle Edge Rule",
+        "query": "UPDATE edge_rules SET enabled = $1, synced_at = NOW() WHERE device_eui = $2 AND rule_id = $3 RETURNING rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1210,
+        "y": 800,
+        "wires": [
+            [
+                "edgerules_toggle_format"
+            ]
+        ]
+    },
+    {
+        "id": "edgerules_toggle_format",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Toggled Edge Rule",
+        "func": "const saved = msg.payload?.[0];\nreturn {\n    topic: 'edgeRuleSaved',\n    payload: {\n        eui: msg.deviceEui,\n        rule: saved\n    }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1440,
+        "y": 800,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "syscmd_input_debug",
+        "type": "debug",
+        "z": "155f01355999b8a5",
+        "name": "sendCommand Input",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 980,
+        "y": 940,
+        "wires": []
+    },
+    {
+        "id": "syscmd_build_downlink",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Build System Command Downlink",
+        "func": "const { eui, fPort, command, value } = msg.payload;\n\nif (!eui || !fPort) {\n  node.warn('Missing eui or fPort for system command');\n  return null;\n}\n\n// Build data payload based on command\nlet dataBytes = [];\n\nif (command === 'setInterval' && value != null) {\n  // Firmware fPort 11:\n  // 4-byte big-endian interval in milliseconds (10s–3600s)\n  const intervalSec = parseInt(value, 10) || 60;\n  const intervalMs = Math.min(\n    3600000,\n    Math.max(10000, intervalSec * 1000)\n  );\n\n  dataBytes = [\n    (intervalMs >>> 24) & 0xff,\n    (intervalMs >>> 16) & 0xff,\n    (intervalMs >>> 8) & 0xff,\n    intervalMs & 0xff\n  ];\n} else {\n  // Generic single-byte command / ACK\n  dataBytes = [0x01];\n}\n\n// Params for PostgreSQL logging\nmsg.params = [\n  eui,\n  command,\n  JSON.stringify({ fPort, value }),\n  'user',\n  'sent'\n];\n\n// Build ChirpStack downlink\nconst appId =\n  global.get('chirpstackAppId') ||\n  '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${eui}/command/down`;\n\nmsg.payload = {\n  devEui: eui,\n  confirmed: false,\n  fPort: fPort,\n  data: Buffer.from(dataBytes).toString('base64')\n};\n\nnode.status({\n  fill: 'blue',\n  shape: 'dot',\n  text: `${command} -> ${eui.slice(-4)}`\n});\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1020,
+        "y": 860,
+        "wires": [
+            [
+                "syscmd_log_command",
+                "syscmd_debug",
+                "acf85a4f324e8b6a"
+            ]
+        ]
+    },
+    {
+        "id": "syscmd_debug",
+        "type": "debug",
+        "z": "155f01355999b8a5",
+        "name": "System Command Debug",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1310,
+        "y": 960,
+        "wires": []
+    },
+    {
+        "id": "syscmd_log_command",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Log Command",
+        "query": "INSERT INTO commands (device_eui, command_key, payload, initiated_by, status, sent_at) VALUES ($1, $2, $3::jsonb, $4, $5, NOW())",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1280,
+        "y": 900,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "acf85a4f324e8b6a",
+        "type": "mqtt out",
+        "z": "155f01355999b8a5",
+        "name": "Send Downlink",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e1b2c3d4e5f6a7b8",
+        "x": 1280,
+        "y": 860,
+        "wires": []
     },
     {
         "id": "7a756a0bc95ae6be",
@@ -1886,11 +2249,11 @@
         "title": "",
         "descr": "",
         "editurl": "vscode://vscode-remote/ssh-remote+farm/data/uibuilder/dash/?windowId=_blank",
-        "x": 330,
+        "x": 210,
         "y": 480,
         "wires": [
             [
-                "0304e7c0066d4c8e"
+                "f9e8d7c6b5a43210"
             ],
             [
                 "22487547345322c9"
@@ -1898,317 +2261,81 @@
         ]
     },
     {
-        "id": "edgerules_get_prep",
-        "type": "function",
+        "id": "f1a0b1c2d3e401",
+        "type": "mqtt in",
         "z": "155f01355999b8a5",
-        "name": "Prep Get Edge Rules",
-        "func": "const eui = msg.payload?.eui;\nif (!eui) return null;\nmsg.params = [eui];\nmsg.deviceEui = eui;\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 940,
-        "y": 620,
-        "wires": [
-            [
-                "edgerules_get_query"
-            ]
-        ]
-    },
-    {
-        "id": "edgerules_get_query",
-        "type": "postgresql",
-        "z": "155f01355999b8a5",
-        "name": "Query Edge Rules",
-        "query": "SELECT rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled FROM edge_rules WHERE device_eui = $1 ORDER BY priority, rule_id",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1150,
-        "y": 620,
-        "wires": [
-            [
-                "edgerules_get_format"
-            ]
-        ]
-    },
-    {
-        "id": "edgerules_get_format",
-        "type": "function",
-        "z": "155f01355999b8a5",
-        "name": "Format Edge Rules",
-        "func": "return {\n    topic: 'edgeRules',\n    payload: {\n        eui: msg.deviceEui,\n        rules: msg.payload || []\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1370,
-        "y": 620,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "edgerules_save_prep",
-        "type": "function",
-        "z": "155f01355999b8a5",
-        "name": "Prep Save Edge Rule",
-        "func": "const p = msg.payload;\nif (!p?.eui) return null;\n\n// Generate new rule_id if not provided\nlet ruleId = p.rule_id;\nif (ruleId === null || ruleId === undefined) {\n    ruleId = Math.floor(Math.random() * 255);\n}\n\nmsg.params = [\n    p.eui,\n    ruleId,\n    p.field_idx,\n    p.operator,\n    p.threshold,\n    p.control_idx,\n    p.action_state,\n    p.priority ?? 128,\n    p.cooldown_seconds ?? 300,\n    p.enabled ?? true\n];\nmsg.deviceEui = p.eui;\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 940,
-        "y": 680,
-        "wires": [
-            [
-                "edgerules_save_query"
-            ]
-        ]
-    },
-    {
-        "id": "edgerules_save_query",
-        "type": "postgresql",
-        "z": "155f01355999b8a5",
-        "name": "Upsert Edge Rule",
-        "query": "INSERT INTO edge_rules (device_eui, rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled, synced_at)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())\nON CONFLICT (device_eui, rule_id) DO UPDATE SET\n    field_idx = EXCLUDED.field_idx,\n    operator = EXCLUDED.operator,\n    threshold = EXCLUDED.threshold,\n    control_idx = EXCLUDED.control_idx,\n    action_state = EXCLUDED.action_state,\n    priority = EXCLUDED.priority,\n    cooldown_seconds = EXCLUDED.cooldown_seconds,\n    enabled = EXCLUDED.enabled,\n    synced_at = NOW()\nRETURNING rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1150,
-        "y": 680,
-        "wires": [
-            [
-                "edgerules_save_format"
-            ]
-        ]
-    },
-    {
-        "id": "edgerules_save_format",
-        "type": "function",
-        "z": "155f01355999b8a5",
-        "name": "Format Saved Edge Rule",
-        "func": "const saved = msg.payload?.[0];\nreturn {\n    topic: 'edgeRuleSaved',\n    payload: {\n        eui: msg.deviceEui,\n        rule: saved\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1390,
-        "y": 680,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "edgerules_delete_prep",
-        "type": "function",
-        "z": "155f01355999b8a5",
-        "name": "Prep Delete Edge Rule",
-        "func": "const p = msg.payload;\nif (!p?.eui || p.ruleId === null || p.ruleId === undefined) return null;\nmsg.params = [p.eui, p.ruleId];\nmsg.deviceEui = p.eui;\nmsg.ruleId = p.ruleId;\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 940,
-        "y": 740,
-        "wires": [
-            [
-                "edgerules_delete_query"
-            ]
-        ]
-    },
-    {
-        "id": "edgerules_delete_query",
-        "type": "postgresql",
-        "z": "155f01355999b8a5",
-        "name": "Delete Edge Rule",
-        "query": "DELETE FROM edge_rules WHERE device_eui = $1 AND rule_id = $2",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1150,
-        "y": 740,
-        "wires": [
-            [
-                "edgerules_delete_format"
-            ]
-        ]
-    },
-    {
-        "id": "edgerules_delete_format",
-        "type": "function",
-        "z": "155f01355999b8a5",
-        "name": "Format Deleted Edge Rule",
-        "func": "return {\n    topic: 'edgeRuleDeleted',\n    payload: {\n        eui: msg.deviceEui,\n        ruleId: msg.ruleId\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1400,
-        "y": 740,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "edgerules_toggle_prep",
-        "type": "function",
-        "z": "155f01355999b8a5",
-        "name": "Prep Toggle Edge Rule",
-        "func": "const p = msg.payload;\nif (!p?.eui || p.ruleId === null || p.ruleId === undefined) return null;\nmsg.params = [p.enabled, p.eui, p.ruleId];\nmsg.deviceEui = p.eui;\nreturn msg;",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 950,
-        "y": 800,
-        "wires": [
-            [
-                "edgerules_toggle_query"
-            ]
-        ]
-    },
-    {
-        "id": "edgerules_toggle_query",
-        "type": "postgresql",
-        "z": "155f01355999b8a5",
-        "name": "Toggle Edge Rule",
-        "query": "UPDATE edge_rules SET enabled = $1, synced_at = NOW() WHERE device_eui = $2 AND rule_id = $3 RETURNING rule_id, field_idx, operator, threshold, control_idx, action_state, priority, cooldown_seconds, enabled",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1170,
-        "y": 800,
-        "wires": [
-            [
-                "edgerules_toggle_format"
-            ]
-        ]
-    },
-    {
-        "id": "edgerules_toggle_format",
-        "type": "function",
-        "z": "155f01355999b8a5",
-        "name": "Format Toggled Edge Rule",
-        "func": "const saved = msg.payload?.[0];\nreturn {\n    topic: 'edgeRuleSaved',\n    payload: {\n        eui: msg.deviceEui,\n        rule: saved\n    }\n};",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1400,
-        "y": 800,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "syscmd_input_debug",
-        "type": "debug",
-        "z": "155f01355999b8a5",
-        "name": "sendCommand Input",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 940,
-        "y": 940,
-        "wires": []
-    },
-    {
-        "id": "syscmd_build_downlink",
-        "type": "function",
-        "z": "155f01355999b8a5",
-        "name": "Build System Command Downlink",
-        "func": "const { eui, fPort, command, value } = msg.payload;\n\nif (!eui || !fPort) {\n  node.warn('Missing eui or fPort for system command');\n  return null;\n}\n\n// Build data payload based on command\nlet dataBytes = [];\n\nif (command === 'setInterval' && value) {\n  // setInterval expects a 2-byte value (big endian)\n  const interval = parseInt(value, 10) || 60;\n  dataBytes = [\n    (interval >> 8) & 0xff,\n    interval & 0xff\n  ];\n} else {\n  // Generic single-byte command / ACK\n  dataBytes = [0x01];\n}\n\n// Params for PostgreSQL logging\nmsg.params = [\n  eui,\n  command,\n  JSON.stringify({ fPort, value }),\n  'user',\n  'sent'\n];\n\n// Build ChirpStack downlink\nconst appId =\n  global.get('chirpstackAppId') ||\n  '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${eui}/command/down`;\n\nmsg.payload = {\n  devEui: eui,\n  confirmed: false,\n  fPort: fPort,\n  data: Buffer.from(dataBytes).toString('base64')\n};\n\nnode.status({\n  fill: 'blue',\n  shape: 'dot',\n  text: `${command} -> ${eui.slice(-4)}`\n});\n\nreturn msg;\n",
-        "outputs": 1,
-        "timeout": "",
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 980,
-        "y": 860,
-        "wires": [
-            [
-                "syscmd_log_command",
-                "syscmd_debug",
-                "acf85a4f324e8b6a"
-            ]
-        ]
-    },
-    {
-        "id": "syscmd_debug",
-        "type": "debug",
-        "z": "155f01355999b8a5",
-        "name": "System Command Debug",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 1270,
-        "y": 940,
-        "wires": []
-    },
-    {
-        "id": "syscmd_log_command",
-        "type": "postgresql",
-        "z": "155f01355999b8a5",
-        "name": "Log Command",
-        "query": "INSERT INTO commands (device_eui, command_key, payload, initiated_by, status, sent_at) VALUES ($1, $2, $3::jsonb, $4, $5, NOW())",
-        "postgreSQLConfig": "pg-config",
-        "split": false,
-        "rowsPerMsg": 1,
-        "outputs": 1,
-        "x": 1240,
-        "y": 900,
-        "wires": [
-            []
-        ]
-    },
-    {
-        "id": "acf85a4f324e8b6a",
-        "type": "mqtt out",
-        "z": "155f01355999b8a5",
-        "name": "Send Downlink",
-        "topic": "",
-        "qos": "",
-        "retain": "",
-        "respTopic": "",
-        "contentType": "",
-        "userProps": "",
-        "correl": "",
-        "expiry": "",
+        "name": "Gateway state/conn",
+        "topic": "us915/gateway/+/state/conn",
+        "qos": "0",
+        "datatype": "json",
         "broker": "e1b2c3d4e5f6a7b8",
-        "x": 1240,
-        "y": 860,
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 110,
+        "y": 660,
+        "wires": [
+            [
+                "f1a0b1c2d3e402"
+            ]
+        ]
+    },
+    {
+        "id": "f1a0b1c2d3e402",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Gateway status to UI",
+        "func": "// us915/gateway/{id}/state/conn -> { gatewayId, state: ONLINE|OFFLINE }\nconst raw = msg.payload;\nconst pl = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch (e) { return {}; } })() : (raw || {});\nconst gatewayId = pl.gatewayId || pl.gateway_id || msg.topic?.split('/')[2] || 'unknown';\nconst state = (pl.state || '').toUpperCase();\n\nif (state === 'OFFLINE') {\n  node.warn('Gateway offline: ' + gatewayId);\n  node.status({ fill: 'red', shape: 'dot', text: 'Gateway offline' });\n} else if (state === 'ONLINE') {\n  node.status({ fill: 'green', shape: 'dot', text: 'Gateway online' });\n}\n\nreturn {\n  topic: 'gatewayStatus',\n  payload: { gatewayId, state: state || 'UNKNOWN' }\n};",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 350,
+        "y": 660,
+        "wires": [
+            [
+                "7a756a0bc95ae6be",
+                "f83743a9bf4e82a5"
+            ]
+        ]
+    },
+    {
+        "id": "f83743a9bf4e82a5",
+        "type": "debug",
+        "z": "155f01355999b8a5",
+        "name": "debug 3",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 550,
+        "y": 740,
         "wires": []
+    },
+    {
+        "id": "f9e8d7c6b5a43210",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Normalize client message",
+        "func": "// UIBuilder may wrap client msg in payload: { topic, payload }. Ensure msg.topic and msg.payload for Route by Topic.\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.topic && !msg.topic) {\n    msg.topic = msg.payload.topic;\n    msg.payload = msg.payload.payload !== undefined ? msg.payload.payload : msg.payload;\n}\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 480,
+        "wires": [
+            [
+                "0304e7c0066d4c8e"
+            ]
+        ]
     }
 ]

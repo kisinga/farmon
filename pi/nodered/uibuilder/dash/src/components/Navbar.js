@@ -9,6 +9,9 @@ export default {
         deviceOnline() {
             return deviceStore.deviceOnline.value;
         },
+        gatewayOnline() {
+            return deviceStore.state.gatewayOnline;
+        },
         activeTab() {
             return deviceStore.state.activeTab;
         }
@@ -46,7 +49,11 @@ export default {
 
             <div class="navbar-end gap-2">
                 <span class="loading loading-spinner loading-sm" v-if="loading"></span>
-                <div class="badge badge-sm sm:badge-md" :class="deviceOnline ? 'badge-success' : 'badge-warning'">
+                <div v-if="!gatewayOnline" class="badge badge-sm sm:badge-md badge-error font-semibold" title="Gateway is offline — no data can flow">
+                    <span class="hidden sm:inline">Gateway offline</span>
+                    <span class="sm:hidden">GW off</span>
+                </div>
+                <div v-else class="badge badge-sm sm:badge-md" :class="deviceOnline ? 'badge-success' : 'badge-warning'">
                     <span class="hidden sm:inline">{{ deviceOnline ? 'Online' : 'Offline' }}</span>
                     <span class="sm:hidden">{{ deviceOnline ? 'On' : 'Off' }}</span>
                 </div>

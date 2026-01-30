@@ -66,8 +66,8 @@ const app = createApp({
         showRuleEditor() { return deviceStore.state.showRuleEditor; },
         showEdgeRuleEditor() { return deviceStore.state.showEdgeRuleEditor; },
 
-        // Computed refs from store (unwrap .value)
         deviceOnline() { return deviceStore.deviceOnline.value; },
+        gatewayOnline() { return deviceStore.state.gatewayOnline; },
         chartFields() { return deviceStore.chartFields.value; },
         systemFields() { return deviceStore.systemFields.value; },
         numericFields() { return deviceStore.numericFields.value; },
@@ -145,6 +145,10 @@ const app = createApp({
         },
 
         handleMessage(msg) {
+            // Support both top-level topic and payload.topic (some UIBuilder configs wrap msg)
+            const topic = msg?.topic ?? msg?.payload?.topic;
+            if (!topic) return;
+
             const handlerMap = {
                 'devices': this.messageHandlers.handleDevicesMessage,
                 'deviceRegistered': this.messageHandlers.handleDeviceRegisteredMessage,
@@ -161,14 +165,15 @@ const app = createApp({
                 'triggerSaved': this.messageHandlers.handleTriggerSavedMessage,
                 'controlUpdate': this.messageHandlers.handleControlUpdateMessage,
                 'edgeRuleSaved': this.messageHandlers.handleEdgeRuleSavedMessage,
-                'edgeRuleDeleted': this.messageHandlers.handleEdgeRuleDeletedMessage
+                'edgeRuleDeleted': this.messageHandlers.handleEdgeRuleDeletedMessage,
+                'gatewayStatus': this.messageHandlers.handleGatewayStatusMessage
             };
 
-            const handler = handlerMap[msg.topic];
+            const handler = handlerMap[topic];
             if (handler) {
                 handler(msg, this);
             } else {
-                console.warn('[MessageHandler] Unknown topic:', msg.topic);
+                console.warn('[MessageHandler] Unknown topic:', topic);
             }
         },
 

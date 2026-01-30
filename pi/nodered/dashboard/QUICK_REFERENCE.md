@@ -1,5 +1,7 @@
 # UIBuilder Dashboard Quick Reference
 
+For the standard message and DB contract (device context, params, request/response shapes, telemetry row, history), see [docs/DATA_CONTRACT.md](../docs/DATA_CONTRACT.md).
+
 ## Architecture Overview
 
 ```
@@ -109,6 +111,27 @@ uibuilder.send({
     payload: '48ca43fffe3f0e70'  // Device EUI
 });
 ```
+
+#### System commands (sendCommand)
+Frontend sends `{ topic: 'sendCommand', payload: { eui, command, value? } }`. Node-RED builds ChirpStack downlink; firmware applies by fPort. All commands validated against `heltec/lib/protocol_constants.h` and `heltec/remote_app.cpp` `onDownlinkReceived`.
+
+| Command        | fPort | Payload (downlink) | Firmware behavior |
+|----------------|-------|--------------------|--------------------|
+| `reset`        | 10    | 1 byte `0x01`      | Reset water volume, error count, counters; persist. |
+| `setInterval`  | 11    | 4 bytes big-endian **milliseconds** (10_000–3_600_000) | `scheduler.setTaskInterval("lorawan_tx", ms)`; valid range 10s–3600s. |
+| `reboot`       | 12    | 1 byte `0x01`      | Send ACK then `ESP.restart()`. |
+| `clearErrors`  | 13    | 1 byte `0x01`      | Clear error count; persist. |
+| `forceReg`     | 14    | 1 byte `0x01`      | Clear NVS reg state; device re-registers. |
+| `requestStatus`| 15    | 1 byte `0x01`      | Send diagnostics uplink on fPort 6. |
+
+Example (setInterval 10 seconds):
+```javascript
+uibuilder.send({
+    topic: 'sendCommand',
+    payload: { eui: '48ca43fffe3e8ee4', command: 'setInterval', value: 10 }
+});
+```
+Node-RED encodes `value` (seconds) as 4-byte interval in ms (clamped 10–3600s) so the device actually changes the TX interval.
 
 ### Messages from Node-RED → Frontend
 

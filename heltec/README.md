@@ -76,6 +76,17 @@ LORAWAN_SUBBAND=1 ./heltec.sh flash      # Different sub-band
 | `devices/<name>/device_config.h` | Schema, buildDeviceConfig, buildDeviceSensorConfig |
 | `devices/<name>/device_setup.h` | setupDeviceSensors, registerDeviceControls |
 
+## Connection status on display
+
+The device shows connection state on the OLED and in the status text:
+
+- **Connected (signal bars)**: Joined and at least one successful uplink in the last **5 minutes**. If no successful TX in 5 min, the device is treated as **offline** (was connected).
+- **Joined (no TX yet)**: Just joined; signal bars shown until first uplink. Status text shows "Joined" until first success, then "Ready" (after registration).
+- **Offline**: Not joined, or joined but no successful TX in 5 min (after having had success). Status text shows "Offline"; icon shows X.
+- **Momentary TX fail**: When any uplink fails (timeout/error), the LoRa icon inverts for **4 seconds** and a "TX failed" notification is shown. Error count is incremented and persisted.
+
+These rules keep the screen accurate for intermittent failures and for real disconnection (e.g. gateway off).
+
 ## Troubleshooting
 
 | Problem | Solution |

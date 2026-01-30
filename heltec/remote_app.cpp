@@ -88,10 +88,18 @@ private:
     uint32_t _lastResetMs = 0;
     uint32_t _lastTxMs = 0;
 
+    // Connection status: "connected" = joined and at least one successful TX recently
+    static constexpr uint32_t OFFLINE_THRESHOLD_MS = 5 * 60 * 1000;  // 5 min without success → Offline
+    static constexpr uint32_t TX_FAIL_DISPLAY_MS = 4000;             // Show TX-fail indicator for 4s
+    uint32_t _lastSuccessfulTxMs = 0;
+    uint32_t _showTxFailUntilMs = 0;
+    bool _persistErrorCount = false;
+
     // Deferred actions (handled in main loop to avoid timer daemon stack overflow)
     bool _notifyConnected = false;
     bool _notifyDisconnected = false;
     bool _notifyReady = false;
+    bool _notifyTxFailPending = false;
     bool _shouldJoin = false;
     char _notifyCmd[24] = {0};
 
@@ -212,6 +220,17 @@ void RemoteApplicationImpl::initialize() {
     // Set up downlink callback for commands
     lorawanHal->setOnDataReceived(&RemoteApplicationImpl::staticOnDownlinkReceived);
 
+    // TX success/failure callbacks for connection status and momentary TX-fail UI
+    lorawanHal->setOnTxDone([this]() {
+        _lastSuccessfulTxMs = millis();
+    });
+    lorawanHal->setOnTxTimeout([this]() {
+        _showTxFailUntilMs = millis() + TX_FAIL_DISPLAY_MS;
+        _errorCount++;
+        _persistErrorCount = true;
+        _notifyTxFailPending = true;
+    });
+
     setupUi();
     LOGI("Remote", "UI setup complete");
 
@@ -264,21 +283,28 @@ void RemoteApplicationImpl::initialize() {
     scheduler.registerTask("lorawan", [this](CommonAppState& state){
         lorawanHal->tick(state.nowMs);
 
-        // Update UI elements with connection state
+        // Connection status: "connected" = joined AND at least one successful TX within OFFLINE_THRESHOLD_MS
         auto connectionState = lorawanHal->getConnectionState();
-        bool isConnected = lorawanHal->isJoined();
-        lorawanStatusElement->setLoraStatus(isConnected, lorawanHal->getLastRssiDbm());
+        bool isJoined = lorawanHal->isJoined();
+        bool hadSuccess = (_lastSuccessfulTxMs != 0);
+        bool recentSuccess = hadSuccess && (state.nowMs - _lastSuccessfulTxMs <= OFFLINE_THRESHOLD_MS);
+        bool considerConnected = isJoined && recentSuccess;
+        // Icon: show bars when joined and (recent success OR not yet had first TX); show X when offline (had success but none recent)
+        bool showBars = isJoined && (!hadSuccess || recentSuccess);
+
+        lorawanStatusElement->setLoraStatus(showBars, lorawanHal->getLastRssiDbm());
+        lorawanStatusElement->setTxFailMomentary(state.nowMs < _showTxFailUntilMs);
         batteryElement->setStatus(batteryHal->getBatteryPercent(), batteryHal->isCharging());
 
         // Detect connection state changes → queue notifications (deferred to main loop)
-        if (isConnected && !_wasConnected) {
+        if (isJoined && !_wasConnected) {
             _notifyConnected = true;
             _joinAttempts = 0;
         }
-        if (!isConnected && _wasConnected) {
+        if (!isJoined && _wasConnected) {
             _notifyDisconnected = true;
         }
-        _wasConnected = isConnected;
+        _wasConnected = isJoined;
 
         // Detect registration completion → queue "Ready" notification
         if (_regState == RegistrationState::Complete && _prevRegState != RegistrationState::Complete) {
@@ -287,15 +313,15 @@ void RemoteApplicationImpl::initialize() {
         _prevRegState = _regState;
 
         // Schedule registration after join (deferred to run() to avoid scheduler stack overflow)
-        if (isConnected && _regState == RegistrationState::NotStarted) {
+        if (isJoined && _regState == RegistrationState::NotStarted) {
             LOGI("Remote", "Device joined network - scheduling registration message");
             _regState = RegistrationState::Pending;
         }
 
-        // Update main status text
+        // Update main status text (use considerConnected for "Offline" when joined but no recent success)
         if (statusTextElement) {
             char statusStr[48];
-            if (!isConnected) {
+            if (!isJoined) {
                 if (connectionState == ILoRaWANHal::ConnectionState::Connecting) {
                     snprintf(statusStr, sizeof(statusStr), "Joining... (%u)\nUp:%lu Dn:%lu\nErr:%u",
                              _joinAttempts,
@@ -304,6 +330,19 @@ void RemoteApplicationImpl::initialize() {
                              _errorCount);
                 } else {
                     snprintf(statusStr, sizeof(statusStr), "Offline\nUp:%lu Dn:%lu\nErr:%u",
+                             lorawanHal->getUplinkCount(),
+                             lorawanHal->getDownlinkCount(),
+                             _errorCount);
+                }
+            } else if (!considerConnected) {
+                // Joined but no recent success: "Offline" only if we had success before (was connected)
+                if (hadSuccess) {
+                    snprintf(statusStr, sizeof(statusStr), "Offline\nUp:%lu Dn:%lu\nErr:%u",
+                             lorawanHal->getUplinkCount(),
+                             lorawanHal->getDownlinkCount(),
+                             _errorCount);
+                } else {
+                    snprintf(statusStr, sizeof(statusStr), "Joined\nUp:%lu Dn:%lu\nErr:%u",
                              lorawanHal->getUplinkCount(),
                              lorawanHal->getDownlinkCount(),
                              _errorCount);
@@ -493,6 +532,16 @@ void RemoteApplicationImpl::run() {
     if (_notifyReady) {
         _notifyReady = false;
         uiService->showNotification("Ready", "", 1500, false);
+    }
+    if (_notifyTxFailPending) {
+        _notifyTxFailPending = false;
+        uiService->showNotification("TX failed", "", 2000, false);
+    }
+    if (_persistErrorCount) {
+        _persistErrorCount = false;
+        persistenceHal->begin("app_state");
+        persistenceHal->saveU32("errorCount", _errorCount);
+        persistenceHal->end();
     }
     if (_notifyCmd[0] != '\0') {
         uiService->showNotification("Cmd:", _notifyCmd, 2000, false);

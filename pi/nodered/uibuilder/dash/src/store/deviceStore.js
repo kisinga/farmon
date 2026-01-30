@@ -36,6 +36,12 @@ const state = reactive({
     // Device metadata
     deviceMeta: null,
 
+    // Gateway connection (from MQTT us915/gateway/+/state/conn) — sanity check only
+    gatewayOnline: true,
+
+    /** Ticks every ~10s so deviceOnline recomputes from last_seen (telemetry). */
+    statusClock: 0,
+
     // Device schema (for edge rules)
     deviceSchema: null,
 
@@ -85,11 +91,15 @@ const selectedDeviceName = computed(() => {
     return device ? (device.name || device.eui) : 'Select Device';
 });
 
+// Device online = last telemetry (last_seen) within a sensible window. No side effects from gateway.
+const DEVICE_ONLINE_WINDOW_MS = 90 * 1000; // 90s — telemetry drives last_seen; beyond this → offline
+
 const deviceOnline = computed(() => {
     const device = state.devices.find(d => d.eui === state.selectedDevice);
     if (!device || !device.lastSeen) return false;
-    const threeMinutes = 3 * 60 * 1000;
-    return (Date.now() - new Date(device.lastSeen).getTime()) < threeMinutes;
+    const elapsed = Date.now() - new Date(device.lastSeen).getTime();
+    void state.statusClock;
+    return elapsed < DEVICE_ONLINE_WINDOW_MS;
 });
 
 const gaugeFields = computed(() =>
@@ -453,6 +463,11 @@ const providableStore = new Proxy({}, {
         return false;
     }
 });
+
+// Start status clock so deviceOnline recomputes ~every 10s (offline when past interval+margin)
+if (typeof setInterval !== 'undefined') {
+    setInterval(() => { state.statusClock = Date.now(); }, 10000);
+}
 
 export default deviceStore;
 export { providableStore };

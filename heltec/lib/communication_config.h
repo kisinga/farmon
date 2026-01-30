@@ -30,7 +30,7 @@ struct LoRaWANConfig {
     
     // ADR and power settings
     bool adrEnabled = true;            // Adaptive Data Rate
-    uint8_t txPower = 14;              // Transmit power (dBm)
+    uint8_t txPower = 22;              // Transmit power (dBm)
     uint8_t dataRate = 5;              // Default data rate (SF7 on EU868)
     uint8_t minDataRate = 1;           // Minimum data rate (prevents ADR from going too low)
     

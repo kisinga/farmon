@@ -107,16 +107,22 @@ export function createMessageHandlers(store) {
         },
 
         handleTelemetryMessage(msg, context) {
-            if (msg.payload.eui !== deviceStore.state.selectedDevice) return;
+            const payload = msg.payload || {};
+            const norm = (e) => (e && String(e).toLowerCase().replace(/[^a-f0-9]/g, '')) || '';
+            if (norm(payload.eui) !== norm(deviceStore.state.selectedDevice)) return;
 
-            deviceStore.state.currentData = { ...deviceStore.state.currentData, ...msg.payload.data };
+            const data = payload.data || {};
+            const next = { ...deviceStore.state.currentData, ...data };
+            if (payload.rssi != null) next.rssi = payload.rssi;
+            if (payload.snr != null) next.snr = payload.snr;
+            deviceStore.state.currentData = next;
 
             let controlsUpdated = false;
             const newControls = { ...deviceStore.state.controls };
             const additionalFields = [];
 
             // Detect and sync controls from telemetry data
-            Object.entries(msg.payload.data).forEach(([key, val]) => {
+            Object.entries(data).forEach(([key, val]) => {
                 if (deviceStore.isControlValue(val)) {
                     if (!newControls[key]) {
                         newControls[key] = {
@@ -142,9 +148,9 @@ export function createMessageHandlers(store) {
             // Access stateFields from context if available (computed property)
             if (context && context.stateFields) {
                 context.stateFields.forEach(f => {
-                    if (msg.payload.data[f.key] !== undefined && newControls[f.key]) {
-                        if (newControls[f.key].current_state !== msg.payload.data[f.key]) {
-                            newControls[f.key] = { ...newControls[f.key], current_state: msg.payload.data[f.key] };
+                    if (data[f.key] !== undefined && newControls[f.key]) {
+                        if (newControls[f.key].current_state !== data[f.key]) {
+                            newControls[f.key] = { ...newControls[f.key], current_state: data[f.key] };
                             controlsUpdated = true;
                         }
                     }
@@ -262,6 +268,20 @@ export function createMessageHandlers(store) {
         handleEdgeRuleDeletedMessage(msg) {
             if (msg.payload.eui === deviceStore.state.selectedDevice) {
                 deviceStore.state.edgeRules = deviceStore.state.edgeRules.filter(r => r.rule_id !== msg.payload.ruleId);
+            }
+        },
+
+        handleGatewayStatusMessage(msg) {
+            const payload = msg.payload || {};
+            const state = (payload.state || '').toUpperCase();
+            const gatewayId = payload.gatewayId || payload.gateway_id || 'unknown';
+            const wasOnline = deviceStore.state.gatewayOnline;
+            deviceStore.state.gatewayOnline = (state === 'ONLINE');
+
+            if (state === 'OFFLINE') {
+                console.warn('[Gateway] Offline:', gatewayId);
+            } else if (state === 'ONLINE' && !wasOnline) {
+                console.log('[Gateway] Back online:', gatewayId);
             }
         }
     };

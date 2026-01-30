@@ -15,6 +15,10 @@ void HeaderStatusElement::setLoraStatus(bool connected, int16_t rssi) {
     _loraRssi = rssi;
 }
 
+void HeaderStatusElement::setTxFailMomentary(bool show) {
+    _txFailMomentary = show;
+}
+
 void HeaderStatusElement::setPeerCount(uint16_t count) {
     _peerCount = count;
 }
@@ -90,6 +94,12 @@ void HeaderStatusElement::drawLoraSignal(IDisplayHal& d, int16_t x, int16_t y, i
     if (level == 0) {
         d.drawLine(startX, y, startX + totalWidth - 1, y + maxBarHeight - 1);
         d.drawLine(startX, y + maxBarHeight - 1, startX + totalWidth - 1, y);
+    }
+    // Momentary "TX fail" overlay: invert a small area and draw "!" when a send just failed
+    if (_txFailMomentary) {
+        d.setColor(2);  // INVERSE
+        d.fillRect(startX, y, totalWidth, maxBarHeight);
+        d.setColor(1);  // restore WHITE
     }
 }
 
