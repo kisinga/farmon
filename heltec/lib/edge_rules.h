@@ -17,10 +17,12 @@
 // - Schema-indexed references (compact, validated)
 // - Composable control execution (function pointers)
 // - Binary persistence to NVS
-// - Single pending state change (simple, sufficient)
+// - State change queue (ring buffer) for uplink; batch within LoRaWAN payload limit
 // =============================================================================
 
 namespace EdgeRules {
+
+static constexpr size_t STATE_CHANGE_QUEUE_CAP = 20;  // 20 * 11 bytes = 220, fits max DR payload
 
 // Rule operator for condition evaluation
 enum class RuleOperator : uint8_t {
@@ -156,6 +158,18 @@ struct StateChange {
         return 11;
     }
 
+    bool fromBinary(const uint8_t* buf, size_t len) {
+        if (len < 11) return false;
+        control_idx = buf[0];
+        new_state = buf[1];
+        old_state = buf[2];
+        source = static_cast<TriggerSource>(buf[3]);
+        rule_id = buf[4];
+        memcpy(&device_ms, buf + 5, sizeof(uint32_t));
+        sequence_id = static_cast<uint16_t>(buf[9] | (buf[10] << 8));
+        return true;
+    }
+
     String toText() const {
         char buf[128];
         const char* src_str[] = {"BOOT", "RULE", "MANUAL", "DOWNLINK"};
@@ -179,10 +193,12 @@ public:
     static constexpr const char* PERSISTENCE_NAMESPACE = "rules";
     static constexpr const char* PERSISTENCE_KEY_COUNT = "count";
     static constexpr const char* PERSISTENCE_KEY_DATA = "data";
+    static constexpr const char* PERSISTENCE_KEY_SC_COUNT = "sc_count";
+    static constexpr const char* PERSISTENCE_KEY_SC_DATA = "sc_data";
 
     EdgeRulesEngine(const MessageSchema::Schema& schema, IPersistenceHal* persistence)
         : _schema(schema), _persistence(persistence), _rule_count(0),
-          _has_pending_change(false), _sequence_id(0) {
+          _queue_head(0), _queue_count(0), _sequence_id(0) {
         // Initialize control states
         for (uint8_t i = 0; i < MAX_CONTROLS; i++) {
             _control_states[i] = {0, false, 0};
@@ -365,8 +381,8 @@ public:
         // Record state change
         _control_states[ctrl_idx].current_state = state_idx;
 
-        // Queue state change for transmission
-        _pending_change = {
+        // Queue state change for transmission (drop oldest if full so latest is kept)
+        StateChange change = {
             ctrl_idx,
             state_idx,
             old_state,
@@ -375,9 +391,16 @@ public:
             now_ms,
             _sequence_id++
         };
-        _has_pending_change = true;
+        if (_queue_count >= STATE_CHANGE_QUEUE_CAP) {
+            _queue_head = (_queue_head + 1) % STATE_CHANGE_QUEUE_CAP;
+            _queue_count--;
+            LOGW("Rules", "State change queue full, dropped oldest");
+        }
+        size_t write_idx = (_queue_head + _queue_count) % STATE_CHANGE_QUEUE_CAP;
+        _state_change_queue[write_idx] = change;
+        _queue_count++;
 
-        LOGI("Rules", "State change: %s", _pending_change.toText().c_str());
+        LOGI("Rules", "State change: %s", change.toText().c_str());
         return true;
     }
 
@@ -447,20 +470,43 @@ public:
     // State Change Transmission
     // -------------------------------------------------------------------------
 
-    bool hasPendingStateChange() const { return _has_pending_change; }
+    bool hasPendingStateChange() const { return _queue_count > 0; }
 
-    size_t formatStateChange(uint8_t* buffer, size_t max_len) const {
-        if (!_has_pending_change) return 0;
-        return _pending_change.toBinary(buffer, max_len);
+    // Fill buffer with up to floor(max_len/11) events from queue head. Returns total bytes written; sets *out_count.
+    size_t formatStateChangeBatch(uint8_t* buffer, size_t max_len, size_t* out_count) const {
+        if (!buffer || !out_count || _queue_count == 0) {
+            if (out_count) *out_count = 0;
+            return 0;
+        }
+        size_t max_events = max_len / 11;
+        if (max_events == 0) {
+            *out_count = 0;
+            return 0;
+        }
+        size_t n = (max_events < _queue_count) ? max_events : _queue_count;
+        size_t offset = 0;
+        for (size_t i = 0; i < n; i++) {
+            size_t idx = (_queue_head + i) % STATE_CHANGE_QUEUE_CAP;
+            offset += _state_change_queue[idx].toBinary(buffer + offset, max_len - offset);
+        }
+        *out_count = n;
+        return offset;
     }
 
     String stateChangeToText() const {
-        if (!_has_pending_change) return "";
-        return _pending_change.toText();
+        if (_queue_count == 0) return "";
+        return _state_change_queue[_queue_head].toText();
     }
 
-    void clearPendingStateChange() {
-        _has_pending_change = false;
+    void clearStateChangeBatch(size_t count) {
+        if (count == 0) return;
+        if (count >= _queue_count) {
+            _queue_count = 0;
+            _queue_head = 0;
+        } else {
+            _queue_head = (_queue_head + count) % STATE_CHANGE_QUEUE_CAP;
+            _queue_count -= count;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -494,6 +540,23 @@ public:
             }
         }
 
+        // Load state change queue (unsent changes survive reboot)
+        uint32_t sc_count = _persistence->loadU32(PERSISTENCE_KEY_SC_COUNT, 0);
+        if (sc_count > 0 && sc_count <= STATE_CHANGE_QUEUE_CAP) {
+            uint8_t blob[STATE_CHANGE_QUEUE_CAP * 11];
+            size_t loaded = _persistence->loadBytes(PERSISTENCE_KEY_SC_DATA, blob, sizeof(blob));
+            if (loaded == sc_count * 11) {
+                _queue_head = 0;
+                _queue_count = sc_count;
+                for (size_t i = 0; i < sc_count; i++) {
+                    _state_change_queue[i].fromBinary(blob + i * 11, 11);
+                }
+                LOGI("Rules", "Loaded %d pending state changes from flash", (int)sc_count);
+            } else {
+                LOGW("Rules", "Invalid state change queue data length, clearing");
+            }
+        }
+
         _persistence->end();
     }
 
@@ -523,6 +586,22 @@ public:
         LOGI("Rules", "Saved %d rules to flash", _rule_count);
     }
 
+    void saveStateChangeQueueToFlash() {
+        if (!_persistence) return;
+        if (!_persistence->begin(PERSISTENCE_NAMESPACE)) return;
+        _persistence->saveU32(PERSISTENCE_KEY_SC_COUNT, (uint32_t)_queue_count);
+        if (_queue_count > 0) {
+            uint8_t blob[STATE_CHANGE_QUEUE_CAP * 11];
+            size_t offset = 0;
+            for (size_t i = 0; i < _queue_count; i++) {
+                size_t idx = (_queue_head + i) % STATE_CHANGE_QUEUE_CAP;
+                offset += _state_change_queue[idx].toBinary(blob + offset, sizeof(blob) - offset);
+            }
+            _persistence->saveBytes(PERSISTENCE_KEY_SC_DATA, blob, _queue_count * 11);
+        }
+        _persistence->end();
+    }
+
 private:
     const MessageSchema::Schema& _schema;
     IPersistenceHal* _persistence;
@@ -534,8 +613,9 @@ private:
     ControlExecuteFn _executors[MAX_CONTROLS];
     IControlDriver* _drivers[MAX_CONTROLS];
 
-    StateChange _pending_change;
-    bool _has_pending_change;
+    StateChange _state_change_queue[STATE_CHANGE_QUEUE_CAP];
+    size_t _queue_head;
+    size_t _queue_count;
     uint16_t _sequence_id;
 
     // Find rule index by ID (-1 if not found)

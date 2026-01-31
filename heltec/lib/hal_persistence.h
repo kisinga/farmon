@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>
 #include <string>
 
 class IPersistenceHal {
@@ -15,6 +16,8 @@ public:
     virtual float loadFloat(const char* key, float defaultValue = 0.0f) = 0;
     virtual bool saveString(const char* key, const std::string& value) = 0;
     virtual std::string loadString(const char* key, const std::string& defaultValue = "") = 0;
+    virtual bool saveBytes(const char* key, const uint8_t* ptr, size_t len) = 0;
+    virtual size_t loadBytes(const char* key, uint8_t* ptr, size_t max_len) = 0;
 };
 
 #include <Preferences.h>
@@ -53,6 +56,14 @@ public:
 
     std::string loadString(const char* key, const std::string& defaultValue = "") override {
         return preferences.getString(key, defaultValue.c_str()).c_str();
+    }
+
+    bool saveBytes(const char* key, const uint8_t* ptr, size_t len) override {
+        return preferences.putBytes(key, ptr, len) > 0;
+    }
+
+    size_t loadBytes(const char* key, uint8_t* ptr, size_t max_len) override {
+        return preferences.getBytes(key, ptr, max_len);
     }
 
 private:

@@ -429,24 +429,31 @@ void RemoteApplicationImpl::initialize() {
         }, config.communication.lorawan.txIntervalMs);
     }
 
-    // State change transmission task - sends pending state changes on fPort 3
+    // State change transmission task - sends batched pending state changes on fPort 3
     scheduler.registerTask("state_tx", [this](CommonAppState& state){
         if (!lorawanHal->isJoined() || _regState != RegistrationState::Complete) return;
         if (!_rulesEngine || !_rulesEngine->hasPendingStateChange()) return;
 
-        uint8_t buffer[16];
-        size_t len = _rulesEngine->formatStateChange(buffer, sizeof(buffer));
+        uint8_t maxPayload = lorawanHal->getMaxPayloadSize();
+        if (maxPayload < 11) return;  // Cannot send even one 11-byte event
 
-        if (len > 0) {
-            LOGI("Remote", "Sending state change (%d bytes): %s",
-                 len, _rulesEngine->stateChangeToText().c_str());
+        size_t max_events = maxPayload / 11;
+        uint8_t buffer[256];  // 20*11=220 max; 256 for safety
+        size_t max_len = (max_events * 11 < sizeof(buffer)) ? (max_events * 11) : (sizeof(buffer) / 11 * 11);
+        size_t num_events = 0;
+        size_t len = _rulesEngine->formatStateChangeBatch(buffer, max_len, &num_events);
 
-            bool success = lorawanHal->sendData(FPORT_STATE_CHANGE, buffer, len, true);
+        if (len > 0 && num_events > 0) {
+            LOGI("Remote", "Sending state change batch (%d bytes, %d events): %s",
+                 (int)len, (int)num_events, _rulesEngine->stateChangeToText().c_str());
+
+            bool success = lorawanHal->sendData(FPORT_STATE_CHANGE, buffer, (uint8_t)len, true);
             if (success) {
-                _rulesEngine->clearPendingStateChange();
-                LOGI("Remote", "State change sent on fPort %d", FPORT_STATE_CHANGE);
+                _rulesEngine->clearStateChangeBatch(num_events);
+                _rulesEngine->saveStateChangeQueueToFlash();
+                LOGI("Remote", "State change batch sent on fPort %d", FPORT_STATE_CHANGE);
             } else {
-                LOGW("Remote", "Failed to send state change");
+                LOGW("Remote", "Failed to send state change batch");
             }
         }
     }, 5000);  // Check every 5 seconds

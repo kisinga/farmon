@@ -316,7 +316,7 @@ function decodeTelemetry(text) {
 // =============================================================================
 // STATE CHANGE DECODER (fPort 3) - BINARY
 // =============================================================================
-// Format: 11 bytes
+// Format: 11 bytes per record. Always returns { stateChanges: [ ... ] } (one shape).
 // [0]    control_idx
 // [1]    new_state
 // [2]    old_state
@@ -328,19 +328,30 @@ function decodeStateChange(bytes) {
     if (bytes.length < 11) {
         return { error: "Invalid state change length: " + bytes.length };
     }
+    if (bytes.length % 11 !== 0) {
+        return { error: "Invalid state change batch length: " + bytes.length + " (must be multiple of 11)" };
+    }
 
     const sources = ['BOOT', 'RULE', 'MANUAL', 'DOWNLINK'];
 
-    return {
-        control_idx: bytes[0],
-        new_state: bytes[1],
-        old_state: bytes[2],
-        source: sources[bytes[3]] || 'UNKNOWN',
-        source_id: bytes[3],
-        rule_id: bytes[4],
-        device_ms: bytes[5] | (bytes[6] << 8) | (bytes[7] << 16) | (bytes[8] << 24),
-        seq: bytes[9] | (bytes[10] << 8)
-    };
+    function decodeOne(offset) {
+        return {
+            control_idx: bytes[offset],
+            new_state: bytes[offset + 1],
+            old_state: bytes[offset + 2],
+            source: sources[bytes[offset + 3]] || 'UNKNOWN',
+            source_id: bytes[offset + 3],
+            rule_id: bytes[offset + 4],
+            device_ms: bytes[offset + 5] | (bytes[offset + 6] << 8) | (bytes[offset + 7] << 16) | (bytes[offset + 8] << 24),
+            seq: bytes[offset + 9] | (bytes[offset + 10] << 8)
+        };
+    }
+
+    const stateChanges = [];
+    for (let i = 0; i < bytes.length; i += 11) {
+        stateChanges.push(decodeOne(i));
+    }
+    return { stateChanges };
 }
 
 // =============================================================================
@@ -480,4 +491,8 @@ function floatToBytes(value) {
         view.getUint8(2),
         view.getUint8(3)
     ];
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { decodeUplink, encodeDownlink, decodeStateChange };
 }
