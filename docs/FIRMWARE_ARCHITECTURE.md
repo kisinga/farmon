@@ -12,6 +12,9 @@ flowchart TB
     IUartHal[IUartHal]
     SensorConfig[sensor_config_types]
     HALs[HALs: battery, display, LoRaWAN, persistence]
+    CommCoordinator[CommCoordinator]
+    DownlinkRouter[DownlinkRouter]
+    RegistrationManager[RegistrationManager]
     BaseSensors[YFS201, BatteryMonitor]
     BaseDrivers[NoOpControlDriver, GpioRelayDriver]
     EdgeRules[EdgeRulesEngine]
@@ -30,7 +33,7 @@ flowchart TB
   subgraph app [remote_app]
     SensorManager[SensorManager]
     RulesEngine[EdgeRulesEngine]
-    TxTask[lorawan_tx: readAll + system fields]
+    TxTask[lorawan_tx: readAll + enqueue]
   end
 
   lib --> integrations
@@ -94,6 +97,16 @@ sequenceDiagram
 - **Lib drivers**: NoOpControlDriver (log only), GpioRelayDriver (pin, begin/setState).
 - **Integration drivers**: e.g. InverterPumpIntegration implements both ISensor and IControlDriver.
 - **Device**: In registerDeviceControls, instantiates drivers (static/file-static), calls engine.registerControl(idx, &driver).
+
+## LoRaWAN Class C
+
+The device runs **permanently as Class C** (receiver always on). The HAL is Class C only; `setDeviceClass` was removed. ChirpStack device profile must have Class C enabled for downlinks (commands, OTA) to arrive. See [pi/nodered/docs/OTA_CLASS_C_REQUIRED.md](../pi/nodered/docs/OTA_CLASS_C_REQUIRED.md).
+
+## Communication Stack (Class C)
+
+- **CommCoordinator**: Single entry point. Owns connection state, uplink TxQueue, HAL callbacks, reconnection events (fPort 7). All uplinks go through `enqueue()`; `tick()` drains one frame per call.
+- **DownlinkRouter**: Port-based dispatch for downlinks. Registers handlers per port/range.
+- **RegistrationManager**: Registration state machine (NotStarted, Pending, Sent, Complete). Builds and enqueues 5 registration frames; retries when awaiting ACK.
 
 ## Build
 

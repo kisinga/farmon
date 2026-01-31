@@ -13,12 +13,14 @@ export default {
         const systemGaugeFields = computed(() =>
             systemFields.value.filter(f => f.viz_type !== 'badge')
         );
-        const systemChartFields = computed(() =>
-            systemFields.value.filter(f => f.chartable !== false && f.viz_type === 'both')
-        );
 
         const getValue = (key) => currentData.value[key];
         const getHistory = (key) => historyData.value[key] || [];
+        const rssiHistory = computed(() => getHistory('rssi'));
+        const snrHistory = computed(() => getHistory('snr'));
+        const hasLinkQualityData = computed(() =>
+            (rssiHistory.value?.length > 0) || (snrHistory.value?.length > 0)
+        );
 
         const formatValue = (field, value) => {
             if (value === null || value === undefined) return '--';
@@ -35,10 +37,12 @@ export default {
             currentData,
             historyData,
             systemGaugeFields,
-            systemChartFields,
             getValue,
             getHistory,
-            formatValue
+            formatValue,
+            rssiHistory,
+            snrHistory,
+            hasLinkQualityData
         };
     },
     template: `
@@ -57,15 +61,17 @@ export default {
                     </div>
                 </div>
 
-                <!-- System charts -->
-                <div v-for="f in systemChartFields" :key="'sys-chart-' + f.key"
-                     class="card bg-base-200">
+                <!-- Link quality: RSSI + SNR on one chart (shared time axis) -->
+                <div class="card bg-base-200">
                     <div class="card-body p-3">
                         <div class="flex items-center justify-between mb-1">
-                            <h2 class="card-title text-sm">{{ f.name }} History</h2>
-                            <div class="badge badge-ghost text-xs">{{ formatValue(f, getValue(f.key)) }}</div>
+                            <h2 class="card-title text-sm">Link quality (RSSI & SNR)</h2>
+                            <div class="flex gap-2">
+                                <span class="badge badge-ghost text-xs">RSSI {{ formatValue({ unit: "dBm" }, getValue("rssi")) }}</span>
+                                <span class="badge badge-ghost text-xs">SNR {{ formatValue({ unit: "dB" }, getValue("snr")) }}</span>
+                            </div>
                         </div>
-                        <chart-component v-if="getHistory(f.key).length > 0" :field="f" :data="getHistory(f.key)" />
+                        <link-quality-chart v-if="hasLinkQualityData" :rssi-data="rssiHistory" :snr-data="snrHistory" />
                         <div v-else class="text-center py-6 text-xs opacity-40">No history data</div>
                     </div>
                 </div>

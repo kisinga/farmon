@@ -82,7 +82,12 @@ const state = reactive({
 
     // Modal visibility state
     showRuleEditor: false,
-    showEdgeRuleEditor: false
+    showEdgeRuleEditor: false,
+
+    // OTA / Firmware
+    otaJobByEui: {},
+    firmwareHistory: [],
+    firmwareErrorLog: []
 });
 
 // =============================================================================

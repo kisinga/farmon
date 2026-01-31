@@ -231,6 +231,24 @@ CREATE TABLE IF NOT EXISTS edge_rules (
 );
 
 -- =============================================================================
+-- FIRMWARE_HISTORY: OTA update audit and error log
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS firmware_history (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) NOT NULL,
+    started_at TIMESTAMPTZ DEFAULT NOW(),
+    finished_at TIMESTAMPTZ,
+    outcome VARCHAR(20) NOT NULL,  -- started, done, failed, cancelled
+    firmware_version VARCHAR(20),
+    total_chunks INTEGER,
+    chunks_received INTEGER,
+    error_message VARCHAR(255),
+    error_chunk_index INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_firmware_history_device ON firmware_history(device_eui, started_at DESC);
+
+-- =============================================================================
 -- INDEXES
 -- =============================================================================
 CREATE INDEX IF NOT EXISTS idx_telemetry_device_ts ON telemetry(device_eui, ts DESC);

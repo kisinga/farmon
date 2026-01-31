@@ -10,6 +10,7 @@ public:
     using OnDataReceived = std::function<void(uint8_t port, const uint8_t *payload, uint8_t length)>;
     using OnTxDone = std::function<void()>;
     using OnTxTimeout = std::function<void()>;
+    using OnTxNoAck = std::function<void()>;  // Confirmed uplink sent but no ACK in RX window
 
     virtual ~ILoRaWANHal() = default;
 
@@ -25,6 +26,7 @@ public:
     virtual void setOnDataReceived(OnDataReceived cb) = 0;
     virtual void setOnTxDone(OnTxDone cb) = 0;
     virtual void setOnTxTimeout(OnTxTimeout cb) = 0;
+    virtual void setOnTxNoAck(OnTxNoAck cb) = 0;
 
     // Status and configuration
     virtual bool isConnected() const = 0;
@@ -32,8 +34,7 @@ public:
     virtual int16_t getLastRssiDbm() const = 0;
     virtual int8_t getLastSnr() const = 0;
 
-    // LoRaWAN specific
-    virtual void setDeviceClass(uint8_t deviceClass) = 0;
+    // LoRaWAN specific (Class C only; device class not configurable)
     virtual void setDataRate(uint8_t dataRate) = 0;
     virtual void setTxPower(uint8_t txPower) = 0;
     virtual void setAdr(bool enable) = 0;
@@ -59,31 +60,16 @@ class SX1262;
 class LoRaWANNode;
 
 /**
- * LoRaWAN Hardware Abstraction Layer implementation using RadioLib
- * 
- * Class A Device Compliance:
- *   - Implements LoRaWAN Class A device behavior (LoRaWAN spec v1.0.x/1.1.x)
- *   - Opens RX1/RX2 windows after every uplink (confirmed or unconfirmed)
- *   - RX1 opens 1s after uplink (RECEIVE_DELAY1), RX2 opens 2s after uplink (RECEIVE_DELAY2)
- *   - Processes downlinks received in RX windows (ACKs, data, MAC commands)
- *   - RadioLib handles RX window timing internally
- * 
- * Instance Lifecycle:
- *   1. Create instance: LoRaWANHal hal;
- *   2. Initialize: hal.begin(devEui, appEui, appKey);
- *   3. Join network: hal.join(); (blocking, typically 5-15s)
- *   4. Send data: hal.sendData(port, payload, len, confirmed);
- *   5. Call tick() periodically: hal.tick(millis());
- *   6. Destructor cleans up resources automatically
- * 
- * Dependencies:
- *   - radio instance from heltec_unofficial.h (singleton, shared across instances)
- *   - RadioLib library for LoRaWAN protocol handling
- * 
- * Thread Safety:
- *   - Not thread-safe. All methods should be called from the same thread/task.
- *   - tick() must be called regularly (every 50ms recommended) to process downlinks promptly.
- *   - sendData() may block for 3-6 seconds during RX windows (Class A requirement).
+ * LoRaWAN Hardware Abstraction Layer — Class C only (RadioLib)
+ *
+ * Class C: Receiver always on except during TX. Downlinks can arrive anytime.
+ * - sendData(): Transmit then open RX1/RX2 for ACK (RadioLib sendReceive).
+ * - tick(): Poll getDownlinkClassC() for idle downlinks; process pending downlinks.
+ *
+ * Lifecycle:
+ *   1. begin(devEui, appEui, appKey)
+ *   2. join() — blocking
+ *   3. sendData() / tick() — call tick() every 50ms
  */
 class LoRaWANHal : public ILoRaWANHal {
 public:
@@ -100,13 +86,13 @@ public:
     void setOnDataReceived(OnDataReceived cb) override;
     void setOnTxDone(OnTxDone cb) override;
     void setOnTxTimeout(OnTxTimeout cb) override;
+    void setOnTxNoAck(OnTxNoAck cb) override;
 
     bool isConnected() const override;
     ConnectionState getConnectionState() const override;
     int16_t getLastRssiDbm() const override;
     int8_t getLastSnr() const override;
 
-    void setDeviceClass(uint8_t deviceClass) override;
     void setDataRate(uint8_t dataRate) override;
     void setTxPower(uint8_t txPower) override;
     void setAdr(bool enable) override;
@@ -132,6 +118,7 @@ private:
     OnDataReceived onDataCb;
     OnTxDone onTxDoneCb;
     OnTxTimeout onTxTimeoutCb;
+    OnTxNoAck onTxNoAckCb;
 
     // State
     ConnectionState connectionState = ConnectionState::Disconnected;
@@ -162,7 +149,7 @@ private:
     // LoRaWAN node instance (owned by this HAL instance, created in begin(), deleted in destructor)
     LoRaWANNode* node = nullptr;
 
-    // Downlink buffer for receiving data from network (Class A RX windows)
+    // Downlink buffer (RX windows + Class C idle polling)
     // Only data downlinks are queued here (ACKs are handled immediately)
     uint8_t downlinkBuffer[256];
     size_t downlinkLength = 0;

@@ -157,27 +157,8 @@ bool LoRaWANHal::begin(const uint8_t* devEui, const uint8_t* appEui, const uint8
 }
 
 // =============================================================================
-// Class A Compliance Notes
-// =============================================================================
-// This implementation follows LoRaWAN Class A device requirements:
-//
-// 1. RX Windows: After EVERY uplink (confirmed or unconfirmed), Class A devices
-//    MUST open two receive windows:
-//    - RX1: Opens 1 second (RECEIVE_DELAY1) after uplink transmission completes
-//    - RX2: Opens 2 seconds (RECEIVE_DELAY2) after uplink transmission completes
-//    RadioLib handles RX window timing internally.
-//
-// 2. Downlink Processing: Class A devices must process downlinks received in
-//    RX1 or RX2 windows, regardless of whether the uplink was confirmed or not.
-//    Downlinks can be: ACKs (for confirmed uplinks), data messages, or MAC commands.
-//
-// 3. Timing Constraints: RX windows are timing-critical. The scheduler must call
-//    tick() frequently enough (recommended: 50ms or less) to process downlinks
-//    promptly after they're received. Blocking operations should be avoided during
-//    RX windows (RadioLib handles this internally via non-blocking radio operations).
-//
-// 4. Power Consumption: RX windows consume power (~15-50mA for 3-6 seconds per
-//    transmission). This is inherent to Class A operation and required by the spec.
+// Class C: Receiver always on. Poll getDownlinkClassC() when idle so downlinks
+// can arrive anytime, not only in RX1/RX2 after sendData(). tick() called every 50ms.
 // =============================================================================
 
 void LoRaWANHal::tick(uint32_t nowMs) {
@@ -193,9 +174,22 @@ void LoRaWANHal::tick(uint32_t nowMs) {
         LOGW("LoRaWAN", "Connection lost");
     }
 
-    // Process any pending downlinks (from confirmed uplinks or Class A RX windows)
-    // Class A: Downlinks are queued during sendData() RX windows and processed here
-    // Call tick() frequently (50ms interval recommended) to process downlinks promptly
+    // Class C: Poll for downlinks that arrived while idle (receiver always on)
+    if (node && joined && !hasDownlink && onDataCb) {
+        downlinkLength = sizeof(downlinkBuffer);
+        LoRaWANEvent_t eventDown;
+        int16_t state = node->getDownlinkClassC(downlinkBuffer, &downlinkLength, &eventDown);
+        if (state > 0 && downlinkLength > 0 && downlinkLength <= sizeof(downlinkBuffer)) {
+            hasDownlink = true;
+            downlinkPort = eventDown.fPort;
+            lastRssiDbm = radio.getRSSI();
+            lastSnr = radio.getSNR();
+            downlinkCount++;
+            LOGD("LoRaWAN", "Class C downlink received (port %d, %zu bytes)", downlinkPort, downlinkLength);
+        }
+    }
+
+    // Process any pending downlinks (from sendReceive RX windows or Class C getDownlinkClassC)
     if (hasDownlink && onDataCb) {
         // Bounds check before callback
         if (downlinkLength <= sizeof(downlinkBuffer)) {
@@ -282,10 +276,11 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
             // This can happen if gateway didn't receive the uplink, or network server didn't respond
             // The network may still process the uplink, but we have no delivery confirmation
             LOGW("LoRaWAN", "Confirmed uplink sent (port %d, %d bytes), but no ACK received - delivery not confirmed", port, length);
-            uplinkCount++;
+            // Do NOT increment uplinkCount (only count confirmed deliveries)
+            // Do NOT call onTxDoneCb (so app does not treat as success; UI connection state stays correct)
             lastActivityMs = millis();
-            if (onTxDoneCb) onTxDoneCb();
-            return true;
+            if (onTxNoAckCb) onTxNoAckCb();
+            return false;
         } else if (state > 0) {
             // Positive values indicate ACK or data received in Rx window 1 or 2
             // Check if it's an ACK (empty payload) or actual data downlink
@@ -311,22 +306,12 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
             }
             lastActivityMs = millis();
 
-            // Queue data downlink for processing in tick() (not ACKs)
-            // Only queue if there's actual data (not just an ACK)
+            // Queue data downlink for processing in tick() (not ACKs); ADR re-apply done in tick()
             if (downlinkLength > 0 && downlinkLength <= sizeof(downlinkBuffer)) {
                 hasDownlink = true;
                 downlinkPort = eventDown.fPort;
             } else if (downlinkLength > sizeof(downlinkBuffer)) {
                 LOGW("LoRaWAN", "Downlink too large (%d bytes), dropping", (int)downlinkLength);
-            }
-
-            // Re-apply configured data rate after downlink in case ADR changed it
-            // This ensures our data rate matches our configuration, not what ADR requested
-            if (configuredDataRate > 0) {
-                node->setDatarate(configuredDataRate);
-                currentDataRate = configuredDataRate;
-                LOGD("LoRaWAN", "Data rate re-applied to DR%d after downlink (ADR may have changed it)",
-                     configuredDataRate);
             }
 
             if (onTxDoneCb) onTxDoneCb();
@@ -390,20 +375,12 @@ bool LoRaWANHal::sendData(uint8_t port, const uint8_t *payload, uint8_t length, 
             lastRssiDbm = radio.getRSSI();
             lastSnr = radio.getSNR();
 
-            // Queue data downlink for processing in tick() (if there's actual data)
+            // Queue data downlink for processing in tick() (if there's actual data); ADR re-apply in tick()
             if (downlinkLength > 0 && downlinkLength <= sizeof(downlinkBuffer)) {
                 hasDownlink = true;
                 downlinkPort = eventDown.fPort;
             } else if (downlinkLength > sizeof(downlinkBuffer)) {
                 LOGW("LoRaWAN", "Downlink too large (%d bytes), dropping", (int)downlinkLength);
-            }
-
-            // Re-apply configured data rate after downlink in case ADR changed it
-            if (configuredDataRate > 0) {
-                node->setDatarate(configuredDataRate);
-                currentDataRate = configuredDataRate;
-                LOGD("LoRaWAN", "Data rate re-applied to DR%d after downlink (ADR may have changed it)",
-                     configuredDataRate);
             }
 
             if (onTxDoneCb) onTxDoneCb();
@@ -448,6 +425,10 @@ void LoRaWANHal::setOnTxTimeout(OnTxTimeout cb) {
     onTxTimeoutCb = cb;
 }
 
+void LoRaWANHal::setOnTxNoAck(OnTxNoAck cb) {
+    onTxNoAckCb = cb;
+}
+
 bool LoRaWANHal::isConnected() const {
     return connectionState == ConnectionState::Connected;
 }
@@ -462,11 +443,6 @@ int16_t LoRaWANHal::getLastRssiDbm() const {
 
 int8_t LoRaWANHal::getLastSnr() const {
     return lastSnr;
-}
-
-void LoRaWANHal::setDeviceClass(uint8_t deviceClass) {
-    // RadioLib handles device class internally
-    LOGD("LoRaWAN", "Device class setting: %d (RadioLib uses Class A by default)", deviceClass);
 }
 
 void LoRaWANHal::setDataRate(uint8_t dataRate) {
@@ -590,8 +566,17 @@ void LoRaWANHal::join() {
         lastActivityMs = millis();
         
         // Small delay to ensure node is fully ready for transmission
-        // This helps avoid error -28 (node not ready) when sending immediately after join
         delay(100);
+        
+        // Set Class C (receiver always on; downlinks can arrive anytime)
+        {
+            int16_t classState = node->setClass(2);
+            if (classState == RADIOLIB_ERR_NONE) {
+                LOGI("LoRaWAN", "Class C enabled after join");
+            } else {
+                LOGW("LoRaWAN", "setClass(2) failed: %d", classState);
+            }
+        }
         
         // Calculate minimum data rate for expected payload size
         // For now, use a conservative estimate (e.g., 30 bytes for telemetry)

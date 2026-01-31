@@ -58,6 +58,10 @@ Single convention for how data is stored in PostgreSQL, how Node-RED flows pass 
 | `saveRule`     | `{ eui, ...rule }`                                |
 | `getEdgeRules` | `{ eui }`                                         |
 | `sendCommand`  | `{ eui, fPort, command, value? }`                 |
+| `otaStart`     | `{ eui, firmware }` (firmware = base64 .bin)       |
+| `otaCancel`    | `{ eui }`                                          |
+| `getFirmwareHistory` | `{ eui }`                                    |
+| `getFirmwareErrorLog`| `{ eui? }` (omit eui for all devices)        |
 
 ---
 
@@ -71,13 +75,31 @@ Single convention for how data is stored in PostgreSQL, how Node-RED flows pass 
 - **List**: `payload` is an array (e.g. `devices` → array of `{ eui, name, type, lastSeen }`).
 - **Device-scoped single resource**: `payload` includes `eui` plus resource (e.g. `deviceConfig`: `{ eui, fields, controls, schema, current, ... }`).
 - **Time-series (history)**: `payload` is always `{ eui, field, data: [{ ts, value }, ...] }`. Used for all history responses whether the value came from `telemetry.data` or from columns `telemetry.rssi` / `telemetry.snr`.
+- **OTA**: `topic: 'otaProgress'`, `payload`: `{ eui, status, chunkIndex?, totalChunks?, percent?, error? }` (status: `sending` | `done` | `failed` | `cancelled`). `topic: 'firmwareHistory'`, `payload`: array of `{ device_eui, started_at, finished_at, outcome, firmware_version?, total_chunks, chunks_received?, error_message? }`. `topic: 'firmwareErrorLog'`, `payload`: array of error entries (same shape, filtered for outcome in `failed`, `cancelled`).
 
 ---
 
-## 5. Telemetry row (storage)
+## 5. Error object (mandatory standard)
+
+All devices that report connectivity/error state **must** include the following keys in telemetry `data`. The UI and backend treat these as the standard error breakdown.
+
+| Key     | Type   | Meaning |
+|---------|--------|---------|
+| `ec`    | number | Total error count (sum of `ec_na` + `ec_jf` + `ec_sf`). Backward-compat single field. |
+| `ec_na` | number | No ACK: confirmed uplink sent but no ACK received in RX window. |
+| `ec_jf` | number | Join fail: OTAA join attempt failed. |
+| `ec_sf` | number | Send fail: `sendData` failed (pre-check or radio error). |
+
+- **Producer**: Firmware includes these in every telemetry payload (fPort 2) when supported.
+- **Consumer**: UI always displays the error breakdown (e.g. in device info bar or diagnostics). Backend stores `data` as JSONB; history can be queried per key.
+- **Display**: Labels in UI must match this contract: "Errors" (ec), "No ACK" (ec_na), "Join fail" (ec_jf), "Send fail" (ec_sf).
+
+---
+
+## 6. Telemetry row (storage)
 
 - **Canonical row**: one row in `telemetry` = `(device_eui, data, rssi, snr)`.
-  - `data`: JSONB — device payload (e.g. `{ bp, pd, tv, ec, tsr }`).
+  - `data`: JSONB — device payload; **must** include error object keys when device supports them: `{ bp, pd, tv, ec, ec_na, ec_jf, ec_sf, tsr, ... }`.
   - `rssi`: number or null (from ChirpStack rxInfo).
   - `snr`: number or null (from ChirpStack rxInfo).
 - **Single producer**: Only the **Extract Device Info** node produces the device message shape; only the **Telemetry Handler (fPort 2)** builds `msg.params` for the INSERT.
@@ -85,7 +107,7 @@ Single convention for how data is stored in PostgreSQL, how Node-RED flows pass 
 
 ---
 
-## 6. History response shape
+## 7. History response shape
 
 - **Unified**: All history responses use the same payload shape regardless of field source:
   - `{ eui, field, data: [{ ts, value }, ...] }`
@@ -97,7 +119,7 @@ Single convention for how data is stored in PostgreSQL, how Node-RED flows pass 
 
 ---
 
-## 7. Device online vs gateway status
+## 8. Device online vs gateway status
 
 - **Source**: MQTT topic `+/gateway/+/state/conn` (gateway connection state; first segment = band, e.g. us915, eu868).
 - **Payload**: `{ "gatewayId": "...", "state": "ONLINE" | "OFFLINE" }`.
@@ -106,7 +128,7 @@ Single convention for how data is stored in PostgreSQL, how Node-RED flows pass 
 
 ---
 
-## 8. Troubleshooting: no history
+## 9. Troubleshooting: no history
 
 If the device is online and sending data but **no history** appears (persistence vs fetch vs UI):
 

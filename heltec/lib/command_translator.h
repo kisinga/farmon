@@ -86,6 +86,30 @@ inline const char* translate(uint8_t port, const uint8_t* payload, uint8_t len,
             }
             break;
 
+        case FPORT_OTA_START:
+            if (len >= 6) {
+                uint32_t sz = (uint32_t)payload[0] | ((uint32_t)payload[1] << 8) |
+                              ((uint32_t)payload[2] << 16) | ((uint32_t)payload[3] << 24);
+                uint16_t n = (uint16_t)payload[4] | ((uint16_t)payload[5] << 8);
+                snprintf(buf, bufSize, "OTA start %lu B, %u chunks", (unsigned long)sz, (unsigned)n);
+            } else {
+                snprintf(buf, bufSize, "OTA start");
+            }
+            break;
+
+        case FPORT_OTA_CHUNK:
+            if (len >= 2) {
+                uint16_t idx = (uint16_t)payload[0] | ((uint16_t)payload[1] << 8);
+                snprintf(buf, bufSize, "OTA chunk %u", (unsigned)idx);
+            } else {
+                snprintf(buf, bufSize, "OTA chunk");
+            }
+            break;
+
+        case FPORT_OTA_CANCEL:
+            snprintf(buf, bufSize, "OTA cancel");
+            break;
+
         default:
             snprintf(buf, bufSize, "Port %d cmd", port);
             break;

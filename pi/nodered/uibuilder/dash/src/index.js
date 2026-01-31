@@ -15,6 +15,7 @@ import { createSystemCommandManager } from './utils/systemCommands.js';
 // Import all components
 import GaugeComponent from './components/GaugeComponent.js';
 import ChartComponent from './components/ChartComponent.js';
+import LinkQualityChart from './components/LinkQualityChart.js';
 import ControlCard from './components/ControlCard.js';
 import BadgeComponent from './components/BadgeComponent.js';
 import CollapsibleSection from './components/CollapsibleSection.js';
@@ -34,6 +35,7 @@ import DashboardView from './components/DashboardView.js';
 import ControlsView from './components/ControlsView.js';
 import RulesView from './components/RulesView.js';
 import HistoryView from './components/HistoryView.js';
+import OtaView from './components/OtaView.js';
 import Navbar from './components/Navbar.js';
 import TabNavigation from './components/TabNavigation.js';
 import RuleEditorModal from './components/RuleEditorModal.js';
@@ -135,7 +137,7 @@ const app = createApp({
             // Hash-based routing
             const updateRoute = () => {
                 const hash = window.location.hash.slice(1) || 'dashboard';
-                const validRoutes = ['dashboard', 'controls', 'rules', 'history'];
+                const validRoutes = ['dashboard', 'controls', 'rules', 'history', 'firmware'];
                 if (validRoutes.includes(hash)) {
                     deviceStore.state.activeTab = hash;
                 } else {
@@ -180,7 +182,10 @@ const app = createApp({
                 'controlUpdate': this.messageHandlers.handleControlUpdateMessage,
                 'edgeRuleSaved': this.messageHandlers.handleEdgeRuleSavedMessage,
                 'edgeRuleDeleted': this.messageHandlers.handleEdgeRuleDeletedMessage,
-                'gatewayStatus': this.messageHandlers.handleGatewayStatusMessage
+                'gatewayStatus': this.messageHandlers.handleGatewayStatusMessage,
+                'otaProgress': this.messageHandlers.handleOtaProgressMessage,
+                'firmwareHistory': this.messageHandlers.handleFirmwareHistoryMessage,
+                'firmwareErrorLog': this.messageHandlers.handleFirmwareErrorLogMessage
             };
 
             const handler = handlerMap[topic];
@@ -408,6 +413,7 @@ const app = createApp({
 // Register all components globally so they're available in ALL templates
 app.component('gauge-component', GaugeComponent);
 app.component('chart-component', ChartComponent);
+app.component('link-quality-chart', LinkQualityChart);
 app.component('control-card', ControlCard);
 app.component('badge-component', BadgeComponent);
 app.component('collapsible-section', CollapsibleSection);
@@ -427,6 +433,7 @@ app.component('dashboard-view', DashboardView);
 app.component('controls-view', ControlsView);
 app.component('rules-view', RulesView);
 app.component('history-view', HistoryView);
+app.component('ota-view', OtaView);
 app.component('navbar', Navbar);
 app.component('tab-navigation', TabNavigation);
 app.component('rule-editor-modal', RuleEditorModal);

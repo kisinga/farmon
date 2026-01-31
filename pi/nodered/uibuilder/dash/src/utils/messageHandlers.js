@@ -7,6 +7,7 @@ import {
     createControlField,
     updateCurrentData
 } from './fieldProcessors.js';
+import { createErrorFields } from './errorFields.js';
 import deviceStore from '../store/deviceStore.js';
 
 /**
@@ -98,12 +99,16 @@ function processDeviceConfig(payload) {
         (key, schema) => deviceStore.getStateClassFromSchema(key, schema)
     );
 
-    // Add system fields (RSSI/SNR)
+    // Add system fields (RSSI/SNR) and mandatory error object fields (DATA_CONTRACT §5)
     const existingFieldKeys = new Set(fieldConfigs.map(f => f.key));
     const systemFields = createSystemFields(payload.current, existingFieldKeys);
-    const allFieldConfigs = systemFields.length > 0 
-        ? [...fieldConfigs, ...systemFields]
-        : fieldConfigs;
+    const existingAfterSystem = new Set([...existingFieldKeys, ...systemFields.map(f => f.key)]);
+    const errorFieldsToAdd = createErrorFields(existingAfterSystem);
+    const allFieldConfigs = [
+        ...fieldConfigs,
+        ...systemFields,
+        ...errorFieldsToAdd
+    ];
 
     // Process controls
     const existingKeys = new Set(allFieldConfigs.map(f => f.key));
@@ -467,6 +472,22 @@ export function createMessageHandlers(store) {
             } else if (isOnline && !wasOnline) {
                 console.log('[Gateway] Back online:', gatewayId);
             }
+        },
+
+        handleOtaProgressMessage(msg) {
+            const p = msg.payload || {};
+            const eui = p.eui;
+            if (!eui) return;
+            const next = { ...deviceStore.state.otaJobByEui[eui], ...p };
+            deviceStore.state.otaJobByEui = { ...deviceStore.state.otaJobByEui, [eui]: next };
+        },
+
+        handleFirmwareHistoryMessage(msg) {
+            deviceStore.state.firmwareHistory = Array.isArray(msg.payload) ? msg.payload : [];
+        },
+
+        handleFirmwareErrorLogMessage(msg) {
+            deviceStore.state.firmwareErrorLog = Array.isArray(msg.payload) ? msg.payload : [];
         }
     };
 }

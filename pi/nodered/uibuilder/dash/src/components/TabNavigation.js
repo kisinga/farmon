@@ -18,6 +18,7 @@ export default {
             <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'controls' }" @click="setTab('controls')">Controls</a>
             <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'rules' }" @click="setTab('rules')">Rules</a>
             <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'history' }" @click="setTab('history')">History</a>
+            <a class="tab tab-sm" :class="{ 'tab-active': activeTab === 'firmware' }" @click="setTab('firmware')">Firmware</a>
         </div>
     `
 };

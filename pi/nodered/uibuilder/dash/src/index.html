@@ -87,6 +87,10 @@
                             <!-- ======================= HISTORY TAB ======================= -->
                             <history-view v-show="activeTab === 'history'"
                                 :device-eui="selectedDevice"></history-view>
+
+                            <!-- ======================= FIRMWARE TAB ======================= -->
+                            <ota-view v-show="activeTab === 'firmware'"
+                                :device-eui="selectedDevice"></ota-view>
                         </div>
 
                     </div>

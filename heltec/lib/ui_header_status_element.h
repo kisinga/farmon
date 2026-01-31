@@ -14,7 +14,7 @@ public:
     HeaderStatusElement();
     void setMode(Mode mode);
     void setLoraStatus(bool connected, int16_t rssi);
-    /** When true, show a momentary "TX fail" overlay (e.g. exclamation) for a few seconds after a failed uplink. */
+    /** When true, show "TX fail" overlay (e.g. exclamation). Caller typically keeps it true until connection is restored. */
     void setTxFailMomentary(bool show);
     void setPeerCount(uint16_t count);
     void draw(IDisplayHal& display, int16_t x, int16_t y, int16_t w, int16_t h) override;

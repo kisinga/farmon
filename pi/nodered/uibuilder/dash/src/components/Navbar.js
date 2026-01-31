@@ -44,6 +44,7 @@ export default {
                     <li><a :class="{ active: activeTab === 'controls' }" @click="setTab('controls')">Controls</a></li>
                     <li><a :class="{ active: activeTab === 'rules' }" @click="setTab('rules')">Rules</a></li>
                     <li><a :class="{ active: activeTab === 'history' }" @click="setTab('history')">History</a></li>
+                    <li><a :class="{ active: activeTab === 'firmware' }" @click="setTab('firmware')">Firmware</a></li>
                 </ul>
             </div>
 

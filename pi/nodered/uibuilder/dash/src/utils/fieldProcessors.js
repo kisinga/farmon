@@ -58,10 +58,11 @@ function getDisplayFromStateClass(category, stateClass) {
     return row || null;
 }
 
-/** Semantic overrides by field key - only when state_class is missing (backward compatibility) */
+/** Semantic overrides by field key - only when state_class is missing (backward compatibility). Error object per DATA_CONTRACT §5. */
 function applySemanticOverrides(field, vizType, gaugeStyle) {
     const key = field.key;
-    if (key === 'tsr' || key === 'ec') {
+    const errorKeys = ['ec', 'ec_na', 'ec_jf', 'ec_sf'];
+    if (key === 'tsr' || errorKeys.includes(key)) {
         return { vizType: 'badge', gaugeStyle, chartable: false, isVisible: false };
     }
     if (key === 'tv' || key === 'pd') {
@@ -116,7 +117,7 @@ export function processFieldConfig(field, deviceSchema, getCategoryFromSchema, g
         chartable = semantic.chartable;
         isVisible = semantic.isVisible !== undefined ? semantic.isVisible : (field.is_visible !== false);
 
-        const hasSemanticOverride = ['tsr', 'ec', 'tv', 'pd'].includes(field.key);
+        const hasSemanticOverride = ['tsr', 'ec', 'ec_na', 'ec_jf', 'ec_sf', 'tv', 'pd'].includes(field.key);
         if (!hasSemanticOverride && gaugeStyle === 'radial' && (vizType === 'both' || vizType === 'gauge')) {
             if (maxVal === null) vizType = vizType === 'both' ? 'chart' : 'badge';
             else if (minVal != null && (maxVal - minVal) > 10000) vizType = vizType === 'both' ? 'chart' : 'badge';

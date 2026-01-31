@@ -47,6 +47,17 @@ function decodeUplink(input) {
                 data = decodeDiagnostics(text);
                 break;
 
+            case 8: // OTA progress (3 bytes: status 1B, chunk index 2B LE)
+                if (bytes.length >= 3) {
+                    data = {
+                        status: bytes[0],
+                        chunkIndex: bytes[1] | (bytes[2] << 8)
+                    };
+                } else {
+                    data = { raw: bytes, error: 'OTA progress payload too short' };
+                }
+                break;
+
             default:
                 warnings.push("Unknown fPort: " + fPort);
                 data = { raw: text };

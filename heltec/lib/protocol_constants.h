@@ -15,6 +15,7 @@
 #define FPORT_STATE_CHANGE  3   // Control state change events
 #define FPORT_COMMAND_ACK   4   // Acknowledgment of downlink commands
 #define FPORT_DIAGNOSTICS   6   // Device status/diagnostics response
+#define FPORT_RECONNECTION  7   // Reconnection event: 4 bytes duration_sec (uint32 LE) since disconnect
 
 // Downlink ports (server → device)
 #define FPORT_REG_ACK       5   // Registration acknowledgment from server
@@ -29,6 +30,12 @@
 // Edge Rules Engine ports
 #define FPORT_DIRECT_CTRL   20  // Direct control command (7 bytes: ctrl_idx, state_idx, flags, timeout)
 #define FPORT_RULE_UPDATE   30  // Rule management (12 bytes per rule, or special commands)
+
+// OTA over LoRaWAN (custom chunked protocol)
+#define FPORT_OTA_PROGRESS  8   // Uplink: OTA progress (status 1B, chunk index 2B LE)
+#define FPORT_OTA_START     40  // Downlink: OTA start (total size 4B LE, total chunks 2B LE, optional CRC32 4B)
+#define FPORT_OTA_CHUNK     41  // Downlink: OTA chunk (index 2B LE, payload 218 B, CRC16 2B) = 222 B max
+#define FPORT_OTA_CANCEL    42  // Downlink: OTA cancel
 
 // =============================================================================
 // Registration State (NVS persistence)

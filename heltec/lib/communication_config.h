@@ -40,10 +40,7 @@ struct LoRaWANConfig {
     
     // Timing
     uint32_t joinTimeoutMs = 30000;    // Join timeout
-    uint32_t txIntervalMs = 30000;     // Minimum interval between transmissions
-    
-    // Device class
-    uint8_t deviceClass = 0;           // 0=Class A, 1=Class B, 2=Class C
+    uint32_t txIntervalMs = 60000;    // Minimum interval between transmissions (default 60s; persisted)
 };
 
 // Main Communication Configuration (LoRaWAN-focused)

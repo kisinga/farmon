@@ -150,12 +150,17 @@
                 "vt": "num"
             },
             {
+                "t": "eq",
+                "v": "8",
+                "vt": "num"
+            },
+            {
                 "t": "else"
             }
         ],
         "checkall": "false",
         "repair": false,
-        "outputs": 5,
+        "outputs": 6,
         "x": 560,
         "y": 380,
         "wires": [
@@ -170,6 +175,9 @@
             ],
             [
                 "d3da543618bdb360"
+            ],
+            [
+                "b8c9d0e1f2a3b4c5"
             ],
             [
                 "ed7fa461dc727bcf"
@@ -754,7 +762,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "State Change Handler (fPort 3)",
-        "func": "// Process state change event(s). Binary only: data.stateChanges from codec.\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\nfunction makeStateChangeMsg(base, stateChange) {\n    const m = Object.assign({}, base);\n    m.stateChange = stateChange;\n    m.needsSchemaLookup = true;\n    m.params = [deviceEui];\n    return m;\n}\n\nif (Array.isArray(data.stateChanges) && data.stateChanges.length > 0) {\n    const out = data.stateChanges.map(sc => makeStateChangeMsg(msg, {\n        control_idx: sc.control_idx,\n        new_state_idx: sc.new_state,\n        old_state_idx: sc.old_state,\n        source: sc.source || 'device',\n        rule_id: sc.rule_id,\n        device_ms: sc.device_ms,\n        seq: sc.seq\n    }));\n    node.status({fill: 'yellow', shape: 'dot', text: `StateChange: ${deviceEui.slice(-4)} (${out.length})`});\n    return out;\n}\n\nif (data.error) node.warn('State change decode error: ' + data.error);\nreturn null;",
+        "func": "// Process state change event(s).\n// Binary only: data.stateChanges from codec.\n\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\nfunction makeStateChangeMsg(base, stateChange) {\n    const m = Object.assign({}, base);\n\n    m.stateChange = stateChange;\n    m.needsSchemaLookup = true;\n    m.params = [deviceEui];\n\n    return m;\n}\n\nif (Array.isArray(data.stateChanges) && data.stateChanges.length > 0) {\n    const out = data.stateChanges.map(sc =>\n        makeStateChangeMsg(msg, {\n            control_idx: sc.control_idx,\n            new_state_idx: sc.new_state,\n            old_state_idx: sc.old_state,\n            source: sc.source || 'device',\n            rule_id: sc.rule_id,\n            device_ms: sc.device_ms,\n            seq: sc.seq\n        })\n    );\n\n    node.status({\n        fill: 'yellow',\n        shape: 'dot',\n        text: `StateChange: ${deviceEui.slice(-4)} (${out.length})`\n    });\n\n    return out;\n}\n\nif (data.error) {\n    node.warn('State change decode error: ' + data.error);\n}\n\nreturn null;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -792,7 +800,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Resolve Schema Indices",
-        "func": "// Map control_idx and state_idx to names using schema\nconst sc = msg.stateChange;\nconst schema = msg.payload?.[0]?.schema;\n\nif (!schema) {\n    node.warn('No schema for state change');\n    return null;\n}\n\nconst controls = schema.controls || [];\nconst ctrl = controls[sc.control_idx];\n\nif (!ctrl) {\n    node.warn(`Unknown control_idx: ${sc.control_idx}`);\n    return null;\n}\n\nconst states = ctrl.v || ['off', 'on'];\nconst newStateName = states[sc.new_state_idx] || `state_${sc.new_state_idx}`;\nconst oldStateName = states[sc.old_state_idx] || `state_${sc.old_state_idx}`;\n\nsc.control_key = ctrl.k;\nsc.new_state = newStateName;\nsc.old_state = oldStateName;\nsc.reason = sc.source || 'device';\n\nif (sc.device_ms) {\n    sc.device_ts = null;\n}\n\nmsg.stateChange = sc;\nmsg.stateParams = [msg.deviceEui, sc.control_key];\n\nnode.status({fill: 'yellow', shape: 'dot', text: `${sc.control_key}: ${sc.new_state}`});\n\nreturn msg;",
+        "func": "// Map control_idx and state_idx to names using schema\nconst sc = msg.stateChange;\nconst schema = msg.payload?.[0]?.schema;\n\nif (msg.needsSchemaLookup && schema) {\n    const controls = schema.controls || [];\n    const ctrl = controls[sc.control_idx];\n    \n    if (!ctrl) {\n        node.warn(`Unknown control_idx: ${sc.control_idx}`);\n        return null;\n    }\n    \n    const states = ctrl.v || ['off', 'on'];\n    const newStateName = states[sc.new_state_idx] || `state_${sc.new_state_idx}`;\n    const oldStateName = states[sc.old_state_idx] || `state_${sc.old_state_idx}`;\n    \n    sc.control_key = ctrl.k;\n    sc.new_state = newStateName;\n    sc.old_state = oldStateName;\n    sc.reason = sc.source || 'device';\n    \n    // Calculate device timestamp if we have device_ms\n    if (sc.device_ms) {\n        // Approximate - server time minus device uptime\n        // TODO: could improve with server-side time sync\n        sc.device_ts = null;\n    }\n} else if (!msg.needsSchemaLookup) {\n    // Legacy format already has names\n    sc.old_state = null; // Will be fetched from DB\n}\n\nmsg.stateChange = sc;\nmsg.stateParams = [msg.deviceEui, sc.control_key];\n\nnode.status({fill: 'yellow', shape: 'dot', text: `${sc.control_key}: ${sc.new_state}`});\n\nreturn msg;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -1018,13 +1026,87 @@
         "wires": []
     },
     {
+        "id": "b8c9d0e1f2a3b4c5",
+        "type": "function",
+        "z": "7e7308018823ce78",
+        "name": "OTA Progress Handler (fPort 8)",
+        "func": "const deviceEuiRaw = msg.deviceEui;\nconst deviceEui = typeof deviceEuiRaw === 'string' ? deviceEuiRaw.toLowerCase().replace(/[^a-f0-9]/g, '') : '';\nif (!deviceEui) return [ null, null, null ];\nconst data = msg.data || {};\nconst status = data.status;\nconst chunkIndex = typeof data.chunkIndex === 'number' ? data.chunkIndex : (data.chunkIndex != null ? parseInt(data.chunkIndex, 10) : -1);\n\nconst jobs = global.get('otaJobByEui') || {};\nconst job = jobs[deviceEui];\nif (!job) { node.warn('OTA Progress: no job for device ' + deviceEui + ' (status=' + status + ' chunkIndex=' + chunkIndex + ')'); return [ null, null, null ]; }\nif (job.status !== 'sending') {\n  if (status === 2 || status === 3 || status === 4) {\n    const progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: status === 2 ? 'done' : status === 3 ? 'failed' : 'cancelled', error: status === 3 ? 'device_reported_fail' : undefined } };\n    return [ null, progressMsg, null ];\n  }\n  return [ null, null, null ];\n}\n\njob.lastProgressAt = Date.now();\nif (status === 0) {\n  job.nextChunkIndex = 0;\n  const progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: 'sending', chunkIndex: 0, totalChunks: job.totalChunks, percent: 0 } };\n  let downlinkMsg = null;\n  if (job.chunks && job.chunks[0]) {\n    const appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n    downlinkMsg = { topic: `application/${appId}/device/${deviceEui}/command/down`, payload: { devEui: deviceEui, confirmed: false, fPort: 41, data: job.chunks[0] } };\n  }\n  global.set('otaJobByEui', jobs);\n  return [ downlinkMsg, progressMsg, null ];\n}\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\nlet downlinkMsg = null;\nlet progressMsg = null;\nlet dbMsg = null;\n\nif (status === 1) {\n  job.nextChunkIndex = chunkIndex + 1;\n  const pct = job.totalChunks > 0 ? Math.round((job.nextChunkIndex / job.totalChunks) * 100) : 0;\n  progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: 'sending', chunkIndex: job.nextChunkIndex - 1, totalChunks: job.totalChunks, percent: pct } };\n  if (job.nextChunkIndex < job.totalChunks && job.chunks && job.chunks[job.nextChunkIndex]) {\n    const chunkPayload = job.chunks[job.nextChunkIndex];\n    downlinkMsg = { topic: `application/${appId}/device/${deviceEui}/command/down`, payload: { devEui: deviceEui, confirmed: false, fPort: 41, data: chunkPayload } };\n  } else if (job.nextChunkIndex >= job.totalChunks) {\n    job.status = 'done';\n    progressMsg.payload.status = 'done';\n    progressMsg.payload.percent = 100;\n  }\n} else if (status === 2) {\n  job.status = 'done';\n  progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: 'done', chunkIndex: job.nextChunkIndex - 1, totalChunks: job.totalChunks, percent: 100 } };\n} else if (status === 3) {\n  job.status = 'failed';\n  job.errorMessage = 'device_reported_fail';\n  progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: 'failed', error: 'device_reported_fail' } };\n} else if (status === 4) {\n  job.status = 'cancelled';\n  job.errorMessage = 'cancelled_by_user';\n  progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: 'cancelled', error: 'cancelled_by_user' } };\n}\n\nif (job.status !== 'sending' && job.historyId) {\n  const outcome = job.status === 'done' ? 'done' : job.status === 'failed' ? 'failed' : 'cancelled';\n  dbMsg = { params: [ job.historyId, outcome, job.nextChunkIndex || 0, job.errorMessage || null ], query: 'UPDATE firmware_history SET finished_at = NOW(), outcome = $2, chunks_received = $3, error_message = $4 WHERE id = $1' };\n}\n\nglobal.set('otaJobByEui', jobs);\nreturn [ downlinkMsg, progressMsg, dbMsg ];\n",
+        "outputs": 3,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 870,
+        "y": 380,
+        "wires": [
+            [
+                "5003f0e851b51bcd"
+            ],
+            [
+                "af722907a66ff83c"
+            ],
+            [
+                "0ed37bca6f2c6695"
+            ]
+        ]
+    },
+    {
+        "id": "5003f0e851b51bcd",
+        "type": "mqtt out",
+        "z": "7e7308018823ce78",
+        "name": "",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e1b2c3d4e5f6a7b8",
+        "x": 1110,
+        "y": 340,
+        "wires": []
+    },
+    {
+        "id": "af722907a66ff83c",
+        "type": "link out",
+        "z": "7e7308018823ce78",
+        "name": "link out 2",
+        "mode": "link",
+        "links": [
+            "cd6e5f46f99415f5"
+        ],
+        "x": 1045,
+        "y": 380,
+        "wires": []
+    },
+    {
+        "id": "0ed37bca6f2c6695",
+        "type": "link call",
+        "z": "7e7308018823ce78",
+        "name": "",
+        "links": [
+            "24c8dea9a817364d"
+        ],
+        "linkType": "static",
+        "timeout": "30",
+        "x": 1170,
+        "y": 420,
+        "wires": [
+            []
+        ]
+    },
+    {
         "id": "cd6e5f46f99415f5",
         "type": "link in",
         "z": "155f01355999b8a5",
         "name": "From Handlers",
         "links": [
             "613db87855a6ed79",
-            "c6b3476bff3ec6b0"
+            "c6b3476bff3ec6b0",
+            "af722907a66ff83c"
         ],
         "x": 45,
         "y": 540,
@@ -1121,11 +1203,31 @@
                 "t": "eq",
                 "v": "getStateHistory",
                 "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "otaStart",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "otaCancel",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "getFirmwareHistory",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "getFirmwareErrorLog",
+                "vt": "str"
             }
         ],
         "checkall": "true",
         "repair": false,
-        "outputs": 16,
+        "outputs": 20,
         "x": 680,
         "y": 540,
         "wires": [
@@ -1176,6 +1278,18 @@
             ],
             [
                 "a1b2c3d4e5f60211"
+            ],
+            [
+                "e9f0a1b2c3d4e5f6"
+            ],
+            [
+                "f0a1b2c3d4e5f6a7"
+            ],
+            [
+                "a1b2c3d4e5f6a7b8"
+            ],
+            [
+                "b2c3d4e5f6a7b8c9"
             ]
         ]
     },
@@ -2371,7 +2485,9 @@
         "x": 1570,
         "y": 940,
         "wires": [
-            []
+            [
+                "7a756a0bc95ae6be"
+            ]
         ]
     },
     {
@@ -2427,7 +2543,345 @@
         "x": 1560,
         "y": 1020,
         "wires": [
+            [
+                "7a756a0bc95ae6be"
+            ]
+        ]
+    },
+    {
+        "id": "e9f0a1b2c3d4e5f6",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "OTA Start",
+        "func": "const eui = msg.payload?.eui;\nconst firmwareB64 = msg.payload?.firmware;\nif (!eui || !firmwareB64) { node.warn('OTA Start: missing eui or firmware'); return null; }\nconst buf = Buffer.from(firmwareB64, 'base64');\nconst totalSize = buf.length;\nconst PAYLOAD_SIZE = 218;\nconst totalChunks = Math.ceil(totalSize / PAYLOAD_SIZE);\nfunction crc16(data) {\n  let crc = 0xFFFF;\n  for (let i = 0; i < data.length; i++) {\n    crc ^= (data[i] << 8);\n    for (let k = 0; k < 8; k++) crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);\n  }\n  return crc & 0xFFFF;\n}\nconst chunks = [];\nfor (let i = 0; i < totalChunks; i++) {\n  const start = i * PAYLOAD_SIZE;\n  const slice = buf.subarray(start, Math.min(start + PAYLOAD_SIZE, buf.length));\n  const pad = Buffer.alloc(PAYLOAD_SIZE);\n  slice.copy(pad);\n  const crc = crc16(pad);\n  const packet = Buffer.alloc(222);\n  packet.writeUInt16LE(i, 0);\n  pad.copy(packet, 2);\n  packet.writeUInt16LE(crc, 220);\n  chunks.push(packet.toString('base64'));\n}\nconst job = { deviceEui: eui, totalSize, totalChunks, chunks, nextChunkIndex: 0, status: 'sending', startedAt: Date.now(), lastProgressAt: Date.now(), historyId: null };\nglobal.set('otaJobPending', { eui, job });\nmsg.params = [ eui, 'started', totalChunks, 0 ];\nmsg.query = 'INSERT INTO firmware_history (device_eui, outcome, total_chunks, chunks_received) VALUES ($1, $2, $3, $4) RETURNING id';\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 940,
+        "y": 1080,
+        "wires": [
+            [
+                "ota-start-insert-id"
+            ]
+        ]
+    },
+    {
+        "id": "ota-start-insert-id",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "OTA Start Insert",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1140,
+        "y": 1080,
+        "wires": [
+            [
+                "ota-start-send-id"
+            ]
+        ]
+    },
+    {
+        "id": "ota-start-send-id",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "OTA Start Send fPort 40",
+        "func": "const pending = global.get('otaJobPending');\nconst job = pending && pending.job;\nconst row = msg.payload && (Array.isArray(msg.payload) ? msg.payload[0] : msg.payload);\nconst historyId = row && (row.id != null ? row.id : row.ID);\nif (job && historyId) job.historyId = historyId;\nconst jobs = global.get('otaJobByEui') || {};\nif (job) { jobs[job.deviceEui] = job; global.set('otaJobByEui', jobs); global.set('otaJobPending', null); }\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\nconst eui = job ? job.deviceEui : (pending && pending.eui);\nif (!eui || !job) return [ null, null ];\nconst topic = `application/${appId}/device/${eui}/command/down`;\nconst sizeBuf = Buffer.alloc(6);\nsizeBuf.writeUInt32LE(job.totalSize, 0);\nsizeBuf.writeUInt16LE(job.totalChunks, 4);\nconst msg40 = { topic, payload: { devEui: eui, confirmed: false, fPort: 40, data: sizeBuf.toString('base64') } };\nconst msgChunk0 = (job.chunks && job.chunks[0]) ? { topic, payload: { devEui: eui, confirmed: false, fPort: 41, data: job.chunks[0] } } : null;\nreturn [ msg40, msgChunk0 ];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1360,
+        "y": 1080,
+        "wires": [
+            [
+                "22afab641ed23d0c",
+                "a8ab75d2f20dafe3"
+            ],
+            [
+                "22afab641ed23d0c"
+            ]
+        ]
+    },
+    {
+        "id": "f0a1b2c3d4e5f6a7",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "OTA Cancel",
+        "func": "const eui = msg.payload?.eui;\nif (!eui) { node.warn('OTA Cancel: missing eui'); return null; }\nconst jobs = global.get('otaJobByEui') || {};\nconst job = jobs[eui];\nif (job) { job.status = 'cancelled'; job.errorMessage = 'cancelled_by_user'; jobs[eui] = job; global.set('otaJobByEui', jobs); }\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\nconst downlink = { topic: `application/${appId}/device/${eui}/command/down`, payload: { devEui: eui, confirmed: false, fPort: 42, data: Buffer.from([0]).toString('base64') } };\nconst updateMsg = job && job.historyId ? { params: [ job.historyId, 'cancelled', job.nextChunkIndex || 0, 'cancelled_by_user' ], query: 'UPDATE firmware_history SET finished_at = NOW(), outcome = $2, chunks_received = $3, error_message = $4 WHERE id = $1' } : null;\nreturn [ downlink, updateMsg ];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 950,
+        "y": 1160,
+        "wires": [
+            [
+                "fcb26e929aab6684"
+            ],
+            [
+                "c8d9e0f1a2b3c4d5"
+            ]
+        ]
+    },
+    {
+        "id": "a1b2c3d4e5f6a7b8",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Get Firmware History",
+        "func": "const eui = msg.payload?.eui;\nif (!eui) return null;\nmsg.params = [ eui ];\nmsg.query = 'SELECT device_eui, started_at, finished_at, outcome, firmware_version, total_chunks, chunks_received, error_message FROM firmware_history WHERE device_eui = $1 ORDER BY started_at DESC LIMIT 50';\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 980,
+        "y": 1220,
+        "wires": [
+            [
+                "ota-history-query-id"
+            ]
+        ]
+    },
+    {
+        "id": "ota-history-query-id",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Query firmware_history",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1210,
+        "y": 1220,
+        "wires": [
+            [
+                "ota-history-format-id"
+            ]
+        ]
+    },
+    {
+        "id": "ota-history-format-id",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format firmwareHistory",
+        "func": "const rows = Array.isArray(msg.payload) ? msg.payload : (msg.payload != null ? [msg.payload] : []);\nreturn { topic: 'firmwareHistory', payload: rows };",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1450,
+        "y": 1220,
+        "wires": [
             []
+        ]
+    },
+    {
+        "id": "b2c3d4e5f6a7b8c9",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Get Firmware Error Log",
+        "func": "const eui = msg.payload?.eui;\nif (eui) {\n  msg.params = [ eui ];\n  msg.query = \"SELECT device_eui, started_at, finished_at, outcome, error_message, error_chunk_index, firmware_version FROM firmware_history WHERE device_eui = $1 AND outcome IN ('failed','cancelled') ORDER BY started_at DESC LIMIT 50\";\n} else {\n  msg.params = [];\n  msg.query = \"SELECT device_eui, started_at, finished_at, outcome, error_message, error_chunk_index, firmware_version FROM firmware_history WHERE outcome IN ('failed','cancelled') ORDER BY started_at DESC LIMIT 50\";\n}\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 990,
+        "y": 1280,
+        "wires": [
+            [
+                "ota-errorlog-query-id"
+            ]
+        ]
+    },
+    {
+        "id": "ota-errorlog-query-id",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Query firmware errors",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1220,
+        "y": 1280,
+        "wires": [
+            [
+                "ota-errorlog-format-id"
+            ]
+        ]
+    },
+    {
+        "id": "ota-errorlog-format-id",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format firmwareErrorLog",
+        "func": "const rows = Array.isArray(msg.payload) ? msg.payload : (msg.payload != null ? [msg.payload] : []);\nreturn { topic: 'firmwareErrorLog', payload: rows };",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1470,
+        "y": 1280,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "fcb26e929aab6684",
+        "type": "mqtt out",
+        "z": "155f01355999b8a5",
+        "name": "",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e1b2c3d4e5f6a7b8",
+        "x": 1170,
+        "y": 1140,
+        "wires": []
+    },
+    {
+        "id": "c8d9e0f1a2b3c4d5",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Update firmware_history",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 1210,
+        "y": 1180,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "ota-timeout-inject-id",
+        "type": "inject",
+        "z": "155f01355999b8a5",
+        "name": "OTA timeout 30s",
+        "props": [],
+        "repeat": "30",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 140,
+        "y": 980,
+        "wires": [
+            [
+                "ota-timeout-check-id"
+            ]
+        ]
+    },
+    {
+        "id": "ota-timeout-check-id",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "OTA resend on timeout",
+        "func": "const jobs = global.get('otaJobByEui') || {};\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\nconst now = Date.now();\nconst TIMEOUT_MS = 60000;\nconst out = [];\nfor (const eui of Object.keys(jobs)) {\n  const job = jobs[eui];\n  if (job.status !== 'sending' || !job.chunks || job.nextChunkIndex <= 0) continue;\n  if (now - job.lastProgressAt < TIMEOUT_MS) continue;\n  const idx = job.nextChunkIndex - 1;\n  if (!job.chunks[idx]) continue;\n  out.push({ topic: `application/${appId}/device/${eui}/command/down`, payload: { devEui: eui, confirmed: false, fPort: 41, data: job.chunks[idx] } });\n}\nreturn out.length ? out : null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 980,
+        "wires": [
+            [
+                "f665b7580c36e43e"
+            ]
+        ]
+    },
+    {
+        "id": "f665b7580c36e43e",
+        "type": "mqtt out",
+        "z": "155f01355999b8a5",
+        "name": "",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e1b2c3d4e5f6a7b8",
+        "x": 590,
+        "y": 980,
+        "wires": []
+    },
+    {
+        "id": "22afab641ed23d0c",
+        "type": "mqtt out",
+        "z": "155f01355999b8a5",
+        "name": "",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "e1b2c3d4e5f6a7b8",
+        "x": 1570,
+        "y": 1080,
+        "wires": []
+    },
+    {
+        "id": "a8ab75d2f20dafe3",
+        "type": "debug",
+        "z": "155f01355999b8a5",
+        "name": "debug 2",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1580,
+        "y": 1120,
+        "wires": []
+    },
+    {
+        "id": "24c8dea9a817364d",
+        "type": "link in",
+        "z": "155f01355999b8a5",
+        "name": "update firmware history",
+        "links": [],
+        "x": 705,
+        "y": 1180,
+        "wires": [
+            [
+                "c8d9e0f1a2b3c4d5"
+            ]
         ]
     }
 ]

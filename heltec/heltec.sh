@@ -112,7 +112,7 @@ cmd_build() {
     echo "#include \"devices/$device_name/device_setup.h\"" >> "$include_file"
     
     log "Building $sketch for device '$device_name' (${LORAWAN_REGION}, sub-band ${LORAWAN_SUBBAND})..."
-    "$ARDUINO_CLI" compile --fqbn "$FQBN" "$sketch"
+    "$ARDUINO_CLI" compile --fqbn "$FQBN" --build-path "$SCRIPT_DIR/build" "$sketch"
     
     # Clean up generated file
     rm -f "$include_file"
@@ -125,8 +125,9 @@ cmd_upload() {
     local port=$(get_port "${2:-}")
     [[ -n "$port" ]] || err "No board found. Connect device or specify port."
     
+    # Use same build path as cmd_build so we upload the binary we just built (not a cached/default one)
     log "Uploading $sketch to $port..."
-    "$ARDUINO_CLI" upload -p "$port" --fqbn "$FQBN" "$sketch"
+    "$ARDUINO_CLI" upload -p "$port" --fqbn "$FQBN" --build-path "$SCRIPT_DIR/build" "$sketch"
     ok "Upload complete"
 }
 

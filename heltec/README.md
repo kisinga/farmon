@@ -53,6 +53,10 @@ Successfully joined network
 
 Also check ChirpStack → Device → LoRaWAN frames for join and uplink messages.
 
+## LoRaWAN Class C
+
+The device runs **permanently as Class C** (receiver always on) so downlinks (commands, OTA) can arrive at any time. **ChirpStack device profile must have Class C enabled** for the device (e.g. heltec-otaa). If the profile has only Class A enabled, no downlinks will arrive. See [pi/nodered/docs/OTA_CLASS_C_REQUIRED.md](../pi/nodered/docs/OTA_CLASS_C_REQUIRED.md) for ChirpStack profile steps.
+
 ## Commands
 
 | Command | Action |
@@ -81,9 +85,9 @@ LORAWAN_SUBBAND=1 ./heltec.sh flash      # Different sub-band
 The device shows connection state on the OLED and in the status text:
 
 - **Connected (signal bars)**: Joined and at least one successful uplink in the last **5 minutes**. If no successful TX in 5 min, the device is treated as **offline** (was connected).
-- **Joined (no TX yet)**: Just joined; signal bars shown until first uplink. Status text shows "Joined" until first success, then "Ready" (after registration).
+- **Joined (no TX yet)**: Just joined; signal bars shown until first uplink. Status text shows "Joined" until registration completes, then "Reconnecting" until first successful uplink, then "Ready".
 - **Offline**: Not joined, or joined but no successful TX in 5 min (after having had success). Status text shows "Offline"; icon shows X.
-- **Momentary TX fail**: When any uplink fails (timeout/error), the LoRa icon inverts for **4 seconds** and a "TX failed" notification is shown. Error count is incremented and persisted.
+- **TX fail**: When any uplink fails (timeout or no ACK), the LoRa icon shows a TX-fail indicator and a "TX failed" notification is shown. The icon **persists until connection is restored** (next successful uplink). Error count is incremented and persisted.
 
 These rules keep the screen accurate for intermittent failures and for real disconnection (e.g. gateway off).
 

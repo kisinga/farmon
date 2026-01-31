@@ -44,8 +44,7 @@ RemoteConfig RemoteConfig::create(uint8_t deviceId) {
     cfg.communication.lorawan.defaultPort = 1;
     cfg.communication.lorawan.useConfirmedUplinks = true;
     cfg.communication.lorawan.joinTimeoutMs = 30000;
-    cfg.communication.lorawan.txIntervalMs = 30000;
-    cfg.communication.lorawan.deviceClass = 0;  // Class A
+    cfg.communication.lorawan.txIntervalMs = 60000;  // default 60s; overridden by persisted value on boot
 
     // Remote-specific: faster display refresh
     cfg.displayUpdateIntervalMs = 200;
