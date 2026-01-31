@@ -372,14 +372,20 @@ function addStateChangeHistory(entry) {
     }
 }
 
+function normEui(e) {
+    return (e && String(e).toLowerCase().replace(/[^a-f0-9]/g, '')) || '';
+}
+
 function getCommandHistoryForDevice(eui) {
     if (!eui) return [];
-    return state.commandHistory.filter(h => h.eui === eui);
+    const n = normEui(eui);
+    return state.commandHistory.filter(h => normEui(h.eui) === n);
 }
 
 function getStateChangeHistoryForDevice(eui) {
     if (!eui) return [];
-    return state.stateChangeHistory.filter(h => h.eui === eui);
+    const n = normEui(eui);
+    return state.stateChangeHistory.filter(h => normEui(h.eui) === n);
 }
 
 /** Record client-side time we last received telemetry for this device (avoids clock skew for online status). */

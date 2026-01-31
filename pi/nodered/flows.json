@@ -1027,7 +1027,7 @@
             "c6b3476bff3ec6b0"
         ],
         "x": 45,
-        "y": 480,
+        "y": 540,
         "wires": [
             [
                 "7a756a0bc95ae6be"
@@ -1111,13 +1111,23 @@
                 "t": "eq",
                 "v": "sendCommand",
                 "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "getCommandHistory",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "getStateHistory",
+                "vt": "str"
             }
         ],
         "checkall": "true",
         "repair": false,
-        "outputs": 14,
+        "outputs": 16,
         "x": 680,
-        "y": 480,
+        "y": 540,
         "wires": [
             [
                 "bde01bd59146141c"
@@ -1159,8 +1169,13 @@
                 "edgerules_toggle_prep"
             ],
             [
-                "syscmd_input_debug",
                 "syscmd_build_downlink"
+            ],
+            [
+                "a1b2c3d4e5f60111"
+            ],
+            [
+                "a1b2c3d4e5f60211"
             ]
         ]
     },
@@ -2138,23 +2153,6 @@
         ]
     },
     {
-        "id": "syscmd_input_debug",
-        "type": "debug",
-        "z": "155f01355999b8a5",
-        "name": "sendCommand Input",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 980,
-        "y": 940,
-        "wires": []
-    },
-    {
         "id": "syscmd_build_downlink",
         "type": "function",
         "z": "155f01355999b8a5",
@@ -2171,27 +2169,9 @@
         "wires": [
             [
                 "syscmd_log_command",
-                "syscmd_debug",
                 "acf85a4f324e8b6a"
             ]
         ]
-    },
-    {
-        "id": "syscmd_debug",
-        "type": "debug",
-        "z": "155f01355999b8a5",
-        "name": "System Command Debug",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "true",
-        "targetType": "full",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 1310,
-        "y": 960,
-        "wires": []
     },
     {
         "id": "syscmd_log_command",
@@ -2203,8 +2183,8 @@
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 1280,
-        "y": 900,
+        "x": 1300,
+        "y": 880,
         "wires": [
             []
         ]
@@ -2223,7 +2203,7 @@
         "correl": "",
         "expiry": "",
         "broker": "e1b2c3d4e5f6a7b8",
-        "x": 1280,
+        "x": 1500,
         "y": 860,
         "wires": []
     },
@@ -2250,7 +2230,7 @@
         "descr": "",
         "editurl": "vscode://vscode-remote/ssh-remote+farm/data/uibuilder/dash/?windowId=_blank",
         "x": 210,
-        "y": 480,
+        "y": 540,
         "wires": [
             [
                 "f9e8d7c6b5a43210"
@@ -2274,7 +2254,7 @@
         "rh": 0,
         "inputs": 0,
         "x": 110,
-        "y": 660,
+        "y": 720,
         "wires": [
             [
                 "f1a0b1c2d3e402"
@@ -2294,7 +2274,7 @@
         "finalize": "",
         "libs": [],
         "x": 350,
-        "y": 660,
+        "y": 720,
         "wires": [
             [
                 "7a756a0bc95ae6be",
@@ -2315,7 +2295,7 @@
         "statusVal": "",
         "statusType": "auto",
         "x": 550,
-        "y": 740,
+        "y": 800,
         "wires": []
     },
     {
@@ -2331,11 +2311,123 @@
         "finalize": "",
         "libs": [],
         "x": 450,
-        "y": 480,
+        "y": 540,
         "wires": [
             [
                 "0304e7c0066d4c8e"
             ]
+        ]
+    },
+    {
+        "id": "a1b2c3d4e5f60111",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Build Command History Query",
+        "func": "const rawEui = msg.payload?.eui ?? msg.context?.eui ?? flow.get('selectedDevice');\nconst eui = rawEui ? String(rawEui).toLowerCase().replace(/:/g, '') : '';\nconst range = msg.payload?.range ?? msg.context?.range ?? flow.get('selectedRange') ?? '24h';\nif (!eui) return null;\n\nconst intervals = { '1h': '1 hour', '6h': '6 hours', '24h': '24 hours', '7d': '7 days', '30d': '30 days' };\nconst interval = intervals[range] || '24 hours';\n\nlet query, params;\nif (range === 'custom' && msg.payload?.from && msg.payload?.to) {\n    query = 'SELECT id, device_eui, command_key, payload, initiated_by, status, sent_at, acked_at, created_at FROM commands WHERE device_eui = $1 AND created_at >= $2::timestamptz AND created_at <= $3::timestamptz ORDER BY created_at DESC';\n    params = [eui, msg.payload.from, msg.payload.to];\n} else {\n    query = 'SELECT id, device_eui, command_key, payload, initiated_by, status, sent_at, acked_at, created_at FROM commands WHERE device_eui = $1 AND created_at > NOW() - $2::interval ORDER BY created_at DESC';\n    params = [eui, interval];\n}\nmsg.query = query;\nmsg.params = params;\nmsg.commandHistoryEui = eui;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1010,
+        "y": 940,
+        "wires": [
+            [
+                "a1b2c3d4e5f60112"
+            ]
+        ]
+    },
+    {
+        "id": "a1b2c3d4e5f60112",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Execute Command History Query",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 0,
+        "outputs": 1,
+        "x": 1300,
+        "y": 940,
+        "wires": [
+            [
+                "a1b2c3d4e5f60113"
+            ]
+        ]
+    },
+    {
+        "id": "a1b2c3d4e5f60113",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format Command History",
+        "func": "const rows = Array.isArray(msg.payload) ? msg.payload : msg.payload != null ? [msg.payload] : [];\nconst eui = msg.commandHistoryEui ?? msg.params?.[0] ?? rows[0]?.device_eui;\nconst commands = rows.map(r => ({\n    id: r.id,\n    command_key: r.command_key,\n    payload: r.payload,\n    initiated_by: r.initiated_by,\n    status: r.status || 'pending',\n    sent_at: r.sent_at,\n    acked_at: r.acked_at,\n    created_at: r.created_at\n}));\nreturn { topic: 'commandHistory', payload: { eui, commands } };",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1570,
+        "y": 940,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "a1b2c3d4e5f60211",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Build State History Query",
+        "func": "const rawEui = msg.payload?.eui ?? msg.context?.eui ?? flow.get('selectedDevice');\nconst eui = rawEui ? String(rawEui).toLowerCase().replace(/:/g, '') : '';\nconst range = msg.payload?.range ?? msg.context?.range ?? flow.get('selectedRange') ?? '24h';\nif (!eui) return null;\n\nconst intervals = { '1h': '1 hour', '6h': '6 hours', '24h': '24 hours', '7d': '7 days', '30d': '30 days' };\nconst interval = intervals[range] || '24 hours';\n\nlet query, params;\nif (range === 'custom' && msg.payload?.from && msg.payload?.to) {\n    query = 'SELECT id, device_eui, control_key, old_state, new_state, reason, device_ts, ts FROM state_changes WHERE device_eui = $1 AND ts >= $2::timestamptz AND ts <= $3::timestamptz ORDER BY ts DESC';\n    params = [eui, msg.payload.from, msg.payload.to];\n} else {\n    query = 'SELECT id, device_eui, control_key, old_state, new_state, reason, device_ts, ts FROM state_changes WHERE device_eui = $1 AND ts > NOW() - $2::interval ORDER BY ts DESC';\n    params = [eui, interval];\n}\nmsg.query = query;\nmsg.params = params;\nmsg.stateHistoryEui = eui;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 990,
+        "y": 1020,
+        "wires": [
+            [
+                "a1b2c3d4e5f60212"
+            ]
+        ]
+    },
+    {
+        "id": "a1b2c3d4e5f60212",
+        "type": "postgresql",
+        "z": "155f01355999b8a5",
+        "name": "Execute State History Query",
+        "query": "",
+        "postgreSQLConfig": "pg-config",
+        "split": false,
+        "rowsPerMsg": 0,
+        "outputs": 1,
+        "x": 1280,
+        "y": 1020,
+        "wires": [
+            [
+                "a1b2c3d4e5f60213"
+            ]
+        ]
+    },
+    {
+        "id": "a1b2c3d4e5f60213",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Format State History",
+        "func": "const rows = Array.isArray(msg.payload) ? msg.payload : msg.payload != null ? [msg.payload] : [];\nconst eui = msg.stateHistoryEui ?? msg.params?.[0] ?? rows[0]?.device_eui;\nconst stateChanges = rows.map(r => ({\n    id: r.id,\n    control_key: r.control_key,\n    old_state: r.old_state,\n    new_state: r.new_state,\n    reason: r.reason,\n    device_ts: r.device_ts,\n    ts: r.ts\n}));\nreturn { topic: 'stateHistory', payload: { eui, stateChanges } };",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1560,
+        "y": 1020,
+        "wires": [
+            []
         ]
     }
 ]

@@ -56,7 +56,7 @@
 
                         <!-- Device Selector - Always visible when devices exist -->
                         <device-selector
-                            :show-time-range="activeTab === 'dashboard'"
+                            :show-time-range="activeTab === 'dashboard' || activeTab === 'history'"
                             @select-device="selectDevice"
                             @time-range-change="onTimeRangeChange"></device-selector>
 
@@ -86,8 +86,7 @@
 
                             <!-- ======================= HISTORY TAB ======================= -->
                             <history-view v-show="activeTab === 'history'"
-                                :device-eui="selectedDevice"
-                                @time-range-change="onTimeRangeChange"></history-view>
+                                :device-eui="selectedDevice"></history-view>
                         </div>
 
                     </div>

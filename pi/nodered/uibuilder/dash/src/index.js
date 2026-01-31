@@ -91,11 +91,11 @@ const app = createApp({
 
     watch: {
         activeTab(newTab) {
-            // Request command/state history when history tab is opened
+            // Request command/state history when history tab is opened (ensure request is sent)
             if (newTab === 'history' && this.selectedDevice) {
                 this.$nextTick(() => {
-                    // Trigger history request via HistoryView component
-                    // The component will handle the actual request on mount/watch
+                    uibuilder.send({ topic: 'getCommandHistory', payload: { eui: this.selectedDevice, range: this.timeRange } });
+                    uibuilder.send({ topic: 'getStateHistory', payload: { eui: this.selectedDevice, range: this.timeRange } });
                 });
             }
         }

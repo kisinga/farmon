@@ -316,7 +316,6 @@ export function createMessageHandlers(store) {
             const payload = msg.payload || {};
             const eui = payload.eui;
             const commands = payload.commands || [];
-            
             console.log('[CommandHistory]', eui, ':', commands.length, 'commands');
 
             // Replace command history for this device (filter out old entries for this device, then add new ones)
@@ -341,7 +340,6 @@ export function createMessageHandlers(store) {
             const payload = msg.payload || {};
             const eui = payload.eui;
             const stateChanges = payload.stateChanges || [];
-            
             console.log('[StateHistory]', eui, ':', stateChanges.length, 'state changes');
 
             // Replace state change history for this device
