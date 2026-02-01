@@ -6,7 +6,6 @@
 #include "lib/core_scheduler.h"
 #include "lib/core_logger.h"
 #include "lib/hal_display.h"
-#include "lib/hal_lorawan.h"
 #include "lib/hal_battery.h"
 #include "lib/hal_persistence.h"
 #include "lib/svc_ui.h"
@@ -21,9 +20,8 @@
 #include "lib/edge_rules.h"
 #include "lib/ota_receiver.h"
 
-// Communication coordinator and routing
-#include "lib/comm_coordinator.h"
-#include "lib/downlink_router.h"
+// Communication: Radio task (replaces HAL + CommCoordinator)
+#include "lib/radio_task.h"
 #include "lib/registration_manager.h"
 
 // Device config (schema, config) and device setup (sensor/control wiring)
@@ -51,18 +49,16 @@ private:
     RemoteSensorConfig sensorConfig;
 
     CoreSystem coreSystem;
-    CoreScheduler scheduler;
+    CoreScheduler scheduler{4096};  // Larger stack for lorawan blocking task (RadioLib + sendData)
     CommonAppState appState;
 
     // HALs
     std::unique_ptr<IDisplayHal> displayHal;
-    std::unique_ptr<ILoRaWANHal> lorawanHal;
     std::unique_ptr<IBatteryHal> batteryHal;
     std::unique_ptr<IPersistenceHal> persistenceHal;
 
-    // Communication (composition)
-    std::unique_ptr<CommCoordinator> commCoordinator;
-    DownlinkRouter downlinkRouter;
+    // Communication (radio task)
+    RadioTaskState* _radioState = nullptr;
     RegistrationManager registrationManager;
 
     // Services
@@ -107,9 +103,8 @@ private:
     bool _notifyReady = false;
     bool _notifyTxFailPending = false;
 
-    // Post-join uplinks: diagnostics and minimal telemetry (ChirpStack sees activity for Class C)
-    bool _sendPostJoinDiagnostics = false;
-    bool _sendPostJoinTelemetry = false;
+    // Post-join sequence: 0=none, 1=send diagnostics, 2=send telemetry, 3=done
+    uint8_t _postJoinStep = 0;
 
     // Test mode state (schema-aligned: pd=pulse delta, tv=total volume L)
     float _testPulseDelta = 5.0f;
@@ -121,6 +116,7 @@ private:
     void sendDiagnostics();  // Send device diagnostics/status (fPort 6)
 
     void onDownlinkReceived(uint8_t port, const uint8_t* payload, uint8_t length);
+    void drainNotifications();
 
     void setupUi();
     void setupSensors();
@@ -178,8 +174,7 @@ void RemoteApplicationImpl::initialize() {
 
     // Registration state will be restored after RegistrationManager is wired
 
-    LOGI("Remote", "Creating remaining HALs");
-    lorawanHal = std::make_unique<LoRaWANHal>();
+    LOGI("Remote", "Initializing battery HAL");
     batteryHal = std::make_unique<BatteryMonitorHal>(config.battery);
 
     // Derive DevEUI from chip ID
@@ -190,57 +185,19 @@ void RemoteApplicationImpl::initialize() {
          devEui[0], devEui[1], devEui[2], devEui[3],
          devEui[4], devEui[5], devEui[6], devEui[7]);
 
-    // Initialize LoRaWAN with derived DevEUI and shared credentials
-    lorawanHal->begin(devEui, 
-                      config.communication.lorawan.appEui, 
-                      config.communication.lorawan.appKey);
-    LOGI("Remote", "LoRaWAN HAL initialized");
-
-    // Configure LoRaWAN settings (Class C is fixed in HAL)
-    lorawanHal->setAdr(config.communication.lorawan.adrEnabled);
-    // Set initial data rate (before ADR takes over, ensures we can send payloads)
-    // Ensure data rate is at least the configured minimum
-    uint8_t dataRate = config.communication.lorawan.dataRate;
-    if (dataRate < config.communication.lorawan.minDataRate) {
-        LOGI("Remote", "Data rate %d below minimum %d, using minimum", dataRate, config.communication.lorawan.minDataRate);
-        dataRate = config.communication.lorawan.minDataRate;
+    // Start radio task (replaces LoRaWAN HAL + CommCoordinator)
+    if (!radioTaskStart(devEui, 
+                        config.communication.lorawan.appEui, 
+                        config.communication.lorawan.appKey,
+                        &config.communication.lorawan,
+                        &_radioState)) {
+        LOGE("Remote", "Failed to start radio task");
+        return;
     }
-    lorawanHal->setDataRate(dataRate);
-    lorawanHal->setTxPower(config.communication.lorawan.txPower);
+    LOGI("Remote", "Radio task started");
 
-    // Create CommCoordinator (owns HAL wiring, TxQueue, connection state)
-    commCoordinator = std::make_unique<CommCoordinator>(*lorawanHal);
-    commCoordinator->setConfig(config.communication.lorawan);
-    commCoordinator->setOnDownlink([this](uint8_t port, const uint8_t* payload, uint8_t length) {
-        downlinkRouter.dispatch(port, payload, length);
-    });
-    commCoordinator->setOnTxDone([this]() {
-        _lastTxWasNoAck = false;
-        _hadSuccessfulTx = true;
-    });
-    commCoordinator->setOnTxTimeout([this]() {
-        _sendFailCount++;
-        _persistErrorCount = true;
-        _notifyTxFailPending = true;
-    });
-    commCoordinator->setOnTxNoAck([this]() {
-        _noAckCount++;
-        _persistErrorCount = true;
-        _lastTxWasNoAck = true;
-        _notifyTxFailPending = true;
-    });
-    commCoordinator->begin();
-
-    // OTA receiver: send via coordinator
-    _ota.setSendCallback([this](uint8_t port, const uint8_t* payload, uint8_t length) {
-        return commCoordinator && commCoordinator->enqueue(port, payload, length, false);
-    });
-
-    // DownlinkRouter: single handler (onDownlinkReceived routes by port, OTA vs commands)
-    downlinkRouter.registerHandlerRange(0, 255, [this](uint8_t port, const uint8_t* payload, uint8_t length) {
-        onDownlinkReceived(port, payload, length);
-        return true;
-    });
+    // OTA receiver: send via radio task TX queue (direct)
+    _ota.setTxQueue(_radioState->txQueue);
 
     setupUi();
     LOGI("Remote", "UI setup complete");
@@ -254,10 +211,8 @@ void RemoteApplicationImpl::initialize() {
     LOGI("Remote", "Schema built: %d fields, %d controls, version %d",
          _schema.field_count, _schema.control_count, _schema.version);
 
-    // RegistrationManager
-    registrationManager.setEnqueueFn([this](uint8_t port, const uint8_t* payload, uint8_t len, bool confirmed) {
-        return commCoordinator && commCoordinator->enqueue(port, payload, len, confirmed);
-    });
+    // RegistrationManager: send via radio task TX queue
+    registrationManager.setTxQueue(_radioState->txQueue);
     registrationManager.setSchema(_schema);
     registrationManager.setDeviceInfo(DEVICE_TYPE, FIRMWARE_VERSION);
     registrationManager.setPersistence(persistenceHal.get());
@@ -300,101 +255,64 @@ void RemoteApplicationImpl::initialize() {
     // Display update task
     scheduler.registerTask("display", [this](CommonAppState& state){
         uiService->tick();
-    }, config.displayUpdateIntervalMs);
-    
-    // LoRaWAN task - single tick entry point (coordinator calls hal.tick)
-    scheduler.registerTask("lorawan", [this](CommonAppState& state){
-        commCoordinator->tick(state.nowMs);
-
-        bool isJoined = commCoordinator->isJoined();
-        bool considerConnected = commCoordinator->isConnected();
-        bool showBars = isJoined && considerConnected;
-
-        lorawanStatusElement->setLoraStatus(showBars, commCoordinator->getLastRssi());
-        lorawanStatusElement->setTxFailMomentary(commCoordinator->getTxFailActive());
-        batteryElement->setStatus(batteryHal->getBatteryPercent(), batteryHal->isCharging());
-
-        // Connection state change notifications (deferred to run)
-        if (isJoined && !_wasConnected) {
-            _notifyConnected = true;
-            _joinAttempts = 0;
-        }
-        if (!isJoined && _wasConnected) {
-            _notifyDisconnected = true;
-        }
-        _wasConnected = isJoined;
-
-        // Registration: on join trigger Pending; tick sends
-        if (isJoined && registrationManager.getState() == RegistrationManager::State::NotStarted) {
-            registrationManager.onJoin();
-        }
-        registrationManager.tick(state.nowMs);
-
-        if (registrationManager.getState() == RegistrationManager::State::Complete && _prevRegState != RegistrationManager::State::Complete) {
-            _notifyReady = true;
-        }
-        if (registrationManager.getState() == RegistrationManager::State::Sent && _prevRegState == RegistrationManager::State::NotStarted) {
-            _sendPostJoinDiagnostics = true;
-        }
-        _prevRegState = registrationManager.getState();
-
-        // Update main status text
-        auto regState = registrationManager.getState();
-        auto connState = commCoordinator->getConnectionState();
-        if (statusTextElement) {
-            char statusStr[48];
-            if (_ota.isActive()) {
-                uint8_t pct = _ota.getProgressPercent();
-                snprintf(statusStr, sizeof(statusStr), "OTA %u%%\n%u/%u",
-                         (unsigned)pct,
-                         (unsigned)_ota.getNextExpectedIndex(),
-                         (unsigned)_ota.getTotalChunks());
-                statusTextElement->setText(statusStr);
-            } else if (!isJoined) {
-                if (connState == ILoRaWANHal::ConnectionState::Connecting) {
-                    snprintf(statusStr, sizeof(statusStr), "Joining... (%u)\nUp:%lu Dn:%lu\nNA:%u J:%u S:%u",
-                             _joinAttempts,
-                             commCoordinator->getUplinkCount(),
-                             commCoordinator->getDownlinkCount(),
-                             _noAckCount, _joinFailCount, _sendFailCount);
-                } else {
-                    snprintf(statusStr, sizeof(statusStr), "Offline\nUp:%lu Dn:%lu\nNA:%u J:%u S:%u",
-                             commCoordinator->getUplinkCount(),
-                             commCoordinator->getDownlinkCount(),
-                             _noAckCount, _joinFailCount, _sendFailCount);
-                }
-            } else if (!considerConnected) {
-                if (_hadSuccessfulTx) {
-                    snprintf(statusStr, sizeof(statusStr), "Offline\nUp:%lu Dn:%lu\nNA:%u J:%u S:%u",
-                             commCoordinator->getUplinkCount(),
-                             commCoordinator->getDownlinkCount(),
-                             _noAckCount, _joinFailCount, _sendFailCount);
-                } else {
-                    snprintf(statusStr, sizeof(statusStr), "Joined\nUp:%lu Dn:%lu\nNA:%u J:%u S:%u",
-                             commCoordinator->getUplinkCount(),
-                             commCoordinator->getDownlinkCount(),
-                             _noAckCount, _joinFailCount, _sendFailCount);
-                }
-            } else {
-                const char* connStr;
-                if (regState == RegistrationManager::State::Sent) {
-                    connStr = "Registering...";
-                } else if (regState != RegistrationManager::State::Complete) {
-                    connStr = "Joined";
-                } else if (!_hadSuccessfulTx) {
-                    connStr = "Reconnecting";
-                } else {
-                    connStr = "Ready";
-                }
-                snprintf(statusStr, sizeof(statusStr), "%s\nUp:%lu Dn:%lu\nNA:%u J:%u S:%u",
-                         connStr,
-                         commCoordinator->getUplinkCount(),
-                         commCoordinator->getDownlinkCount(),
-                         _noAckCount, _joinFailCount, _sendFailCount);
+        
+        // Update LoRaWAN status indicators
+        if (_radioState) {
+            bool isJoined = _radioState->joined;
+            int16_t rssi = _radioState->lastRssi;
+            
+            lorawanStatusElement->setLoraStatus(isJoined, rssi);
+            batteryElement->setStatus(batteryHal->getBatteryPercent(), batteryHal->isCharging());
+            
+            // Connection state change notifications (deferred to run)
+            if (isJoined && !_wasConnected) {
+                _notifyConnected = true;
+                _joinAttempts = 0;
             }
-            statusTextElement->setText(statusStr);
+            if (!isJoined && _wasConnected) {
+                _notifyDisconnected = true;
+            }
+            _wasConnected = isJoined;
+            
+            // Registration: on join trigger Pending; tick sends
+            if (isJoined && registrationManager.getState() == RegistrationManager::State::NotStarted) {
+                registrationManager.onJoin();
+            }
+            registrationManager.tick(state.nowMs);
+            
+            if (registrationManager.getState() == RegistrationManager::State::Complete && _prevRegState != RegistrationManager::State::Complete) {
+                _notifyReady = true;
+            }
+            if (registrationManager.getState() == RegistrationManager::State::Sent && _prevRegState == RegistrationManager::State::NotStarted) {
+                _postJoinStep = 1;
+            }
+            _prevRegState = registrationManager.getState();
+            
+            // Update main status text
+            if (statusTextElement) {
+                char statusStr[48];
+                uint32_t up = _radioState->uplinkCount;
+                uint32_t dn = _radioState->downlinkCount;
+                
+                // Simplified status formatting
+                if (_ota.isActive()) {
+                    snprintf(statusStr, sizeof(statusStr), "OTA %u%%\n%u/%u",
+                             (unsigned)_ota.getProgressPercent(),
+                             (unsigned)_ota.getNextExpectedIndex(),
+                             (unsigned)_ota.getTotalChunks());
+                } else if (!isJoined) {
+                    snprintf(statusStr, sizeof(statusStr), "Offline\nUp:%lu Dn:%lu", up, dn);
+                } else if (registrationManager.getState() == RegistrationManager::State::Sent) {
+                    snprintf(statusStr, sizeof(statusStr), "Registering...\nUp:%lu Dn:%lu", up, dn);
+                } else if (registrationManager.getState() != RegistrationManager::State::Complete) {
+                    snprintf(statusStr, sizeof(statusStr), "Joined\nUp:%lu Dn:%lu", up, dn);
+                } else {
+                    snprintf(statusStr, sizeof(statusStr), "Ready\nUp:%lu Dn:%lu", up, dn);
+                }
+                statusTextElement->setText(statusStr);
+            }
         }
-    }, 50);
+    }, config.displayUpdateIntervalMs);
     
     // Debug task for water flow sensor interrupts
     if (config.globalDebugMode) {
@@ -408,7 +326,7 @@ void RemoteApplicationImpl::initialize() {
     // Sensor telemetry transmission task
     if (sensorConfig.enableSensorSystem) {
         scheduler.registerTask("lorawan_tx", [this](CommonAppState& state){
-            if (!commCoordinator->isJoined()) return;
+            if (!_radioState || !_radioState->joined) return;
 
             if (registrationManager.getState() != RegistrationManager::State::Complete) {
                 LOGD("Remote", "Telemetry skipped - awaiting registration ACK from server");
@@ -462,10 +380,10 @@ void RemoteApplicationImpl::initialize() {
 
     // State change transmission task - sends batched pending state changes on fPort 3
     scheduler.registerTask("state_tx", [this](CommonAppState& state){
-        if (!commCoordinator->isJoined() || registrationManager.getState() != RegistrationManager::State::Complete) return;
+        if (!_radioState || !_radioState->joined || registrationManager.getState() != RegistrationManager::State::Complete) return;
         if (!_rulesEngine || !_rulesEngine->hasPendingStateChange()) return;
 
-        uint8_t maxPayload = commCoordinator->getMaxPayloadSize();
+        const uint8_t maxPayload = 222;  // DR3 max
         if (maxPayload < 11) return;  // Cannot send even one 11-byte event
 
         size_t max_events = maxPayload / 11;
@@ -478,31 +396,51 @@ void RemoteApplicationImpl::initialize() {
             LOGI("Remote", "Sending state change batch (%d bytes, %d events): %s",
                  (int)len, (int)num_events, _rulesEngine->stateChangeToText().c_str());
 
-            bool success = commCoordinator->enqueue(FPORT_STATE_CHANGE, buffer, (uint8_t)len, true);
-            if (success) {
-                _rulesEngine->clearStateChangeBatch(num_events);
-                _rulesEngine->saveStateChangeQueueToFlash();
-                LOGI("Remote", "State change batch sent on fPort %d", FPORT_STATE_CHANGE);
-            } else {
-                if (_lastTxWasNoAck) {
-                    _lastTxWasNoAck = false;
-                    LOGW("Remote", "State change batch sent but no ACK - delivery not confirmed");
+            // Send via TX queue
+            if (_radioState && _radioState->txQueue) {
+                LoRaWANTxMsg msg;
+                msg.port = FPORT_STATE_CHANGE;
+                msg.len = len;
+                msg.confirmed = true;
+                memcpy(msg.payload, buffer, len);
+                
+                if (xQueueSend(_radioState->txQueue, &msg, 0) == pdTRUE) {
+                    _rulesEngine->clearStateChangeBatch(num_events);
+                    _rulesEngine->saveStateChangeQueueToFlash();
+                    LOGI("Remote", "State change batch sent on fPort %d", FPORT_STATE_CHANGE);
                 } else {
                     _sendFailCount++;
                     _persistErrorCount = true;
-                    LOGW("Remote", "Failed to send state change batch");
+                    LOGW("Remote", "Failed to send state change batch (queue full)");
                 }
             }
         }
     }, 5000);  // Check every 5 seconds
 
-    scheduler.registerTask("lorawan_join", [this](CommonAppState& state){
-        commCoordinator->requestJoin();
-    }, 100);
+    // No longer need lorawan_join task - radio task handles join automatically
 
     LOGI("Remote", "Starting scheduler");
     scheduler.start(appState);
     LOGI("Remote", "Scheduler started, initialization complete");
+}
+
+void RemoteApplicationImpl::drainNotifications() {
+    if (_notifyConnected) {
+        _notifyConnected = false;
+        uiService->showNotification("Connected", "", 2000, true);
+    }
+    if (_notifyDisconnected) {
+        _notifyDisconnected = false;
+        uiService->showNotification("Disconnected", "", 1500, false);
+    }
+    if (_notifyReady) {
+        _notifyReady = false;
+        uiService->showNotification("Reconnecting", "", 1500, false);
+    }
+    if (_notifyTxFailPending) {
+        _notifyTxFailPending = false;
+        uiService->showNotification("TX failed", "", 2000, false);
+    }
 }
 
 void RemoteApplicationImpl::setupUi() {
@@ -549,34 +487,9 @@ void RemoteApplicationImpl::setupSensors() {
 }
 
 void RemoteApplicationImpl::run() {
-    // Handle deferred join (join() blocks 30+ seconds)
-    if (commCoordinator->shouldJoin()) {
-        _joinAttempts++;
-        LOGI("Remote", "Starting LoRaWAN OTAA join (attempt %u)...", _joinAttempts);
-        commCoordinator->performJoin();
-        if (!commCoordinator->isJoined()) {
-            _joinFailCount++;
-            _persistErrorCount = true;
-        }
-    }
-
-    // Handle deferred notifications (from main loop to avoid callback stack overflow)
-    if (_notifyConnected) {
-        _notifyConnected = false;
-        uiService->showNotification("Connected", "", 2000, true);
-    }
-    if (_notifyDisconnected) {
-        _notifyDisconnected = false;
-        uiService->showNotification("Disconnected", "", 1500, false);
-    }
-    if (_notifyReady) {
-        _notifyReady = false;
-        uiService->showNotification("Reconnecting", "", 1500, false);
-    }
-    if (_notifyTxFailPending) {
-        _notifyTxFailPending = false;
-        uiService->showNotification("TX failed", "", 2000, false);
-    }
+    // No longer need deferred join - radio task handles join automatically
+    
+    drainNotifications();
     if (_persistErrorCount) {
         _persistErrorCount = false;
         persistenceHal->begin("app_state");
@@ -592,17 +505,21 @@ void RemoteApplicationImpl::run() {
 
     // OTA: tick rebooting state (ESP.restart after delay)
     _ota.tick(millis());
-
-    // Post-join diagnostics (fPort 6) once after registration — stagger one send per run()
-    if (_sendPostJoinDiagnostics && commCoordinator->isJoined()) {
-        LOGI("Remote", "Post-join: sending diagnostics (fPort 6)");
-        sendDiagnostics();
-        _sendPostJoinDiagnostics = false;
-        _sendPostJoinTelemetry = true;
+    
+    // Process RX queue (non-blocking with short timeout)
+    if (_radioState && _radioState->rxQueue) {
+        LoRaWANRxMsg rx;
+        if (xQueueReceive(_radioState->rxQueue, &rx, pdMS_TO_TICKS(1)) == pdTRUE) {
+            onDownlinkReceived(rx.port, rx.payload, rx.len);
+        }
     }
 
-    // Post-join minimal telemetry (fPort 2) once after diagnostics — stagger one send per run()
-    if (_sendPostJoinTelemetry && commCoordinator->isJoined()) {
+    // Post-join sequence: diagnostics then minimal telemetry (ChirpStack sees activity for Class C)
+    if (_postJoinStep == 1 && _radioState && _radioState->joined) {
+        LOGI("Remote", "Post-join: sending diagnostics (fPort 6)");
+        sendDiagnostics();
+        _postJoinStep = 2;
+    } else if (_postJoinStep == 2 && _radioState && _radioState->joined) {
         uint32_t nowMs = millis();
         uint32_t timeSinceResetSec = (nowMs - _lastResetMs) / 1000;
         uint32_t errTotal = _noAckCount + _joinFailCount + _sendFailCount;
@@ -619,7 +536,7 @@ void RemoteApplicationImpl::run() {
         readings.push_back({ TelemetryKeys::TimeSinceReset, (float)timeSinceResetSec, nowMs });
         LOGI("Remote", "Post-join: sending minimal telemetry (fPort 2)");
         sendTelemetryJson(readings);
-        _sendPostJoinTelemetry = false;
+        _postJoinStep = 3;
     }
 
     delay(1);
@@ -691,19 +608,25 @@ void RemoteApplicationImpl::sendTelemetryJson(const std::vector<SensorReading>& 
         return;
     }
 
-    uint8_t maxPayload = commCoordinator->getMaxPayloadSize();
+    uint8_t maxPayload = 222;  // DR3 max
     if (offset > (int)maxPayload) {
-        LOGW("Remote", "Payload %d bytes exceeds max %d for DR%d, skipping",
-             offset, maxPayload, commCoordinator->getCurrentDataRate());
+        LOGW("Remote", "Payload %d bytes exceeds max %d, skipping", offset, maxPayload);
         return;
     }
 
     LOGD("Remote", "Enqueue telemetry (%d bytes) on fPort %d: %s", offset, FPORT_TELEMETRY, buffer);
-    if (!commCoordinator->enqueue(FPORT_TELEMETRY, (const uint8_t*)buffer, offset,
-                                  config.communication.lorawan.useConfirmedUplinks)) {
-        _sendFailCount++;
-        _persistErrorCount = true;
-        LOGW("Remote", "Failed to enqueue telemetry (queue full?)");
+    if (_radioState && _radioState->txQueue) {
+        LoRaWANTxMsg msg;
+        msg.port = FPORT_TELEMETRY;
+        msg.len = offset;
+        msg.confirmed = config.communication.lorawan.useConfirmedUplinks;
+        memcpy(msg.payload, buffer, offset);
+        
+        if (xQueueSend(_radioState->txQueue, &msg, 0) != pdTRUE) {
+            _sendFailCount++;
+            _persistErrorCount = true;
+            LOGW("Remote", "Failed to enqueue telemetry (queue full)");
+        }
     }
 }
 
@@ -712,10 +635,18 @@ void RemoteApplicationImpl::sendCommandAck(uint8_t cmdPort, bool success) {
     int len = snprintf(buffer, sizeof(buffer), "%d:%s", cmdPort, success ? "ok" : "err");
 
     LOGD("Remote", "Enqueue ACK on fPort %d: %s", FPORT_COMMAND_ACK, buffer);
-    if (!commCoordinator->enqueue(FPORT_COMMAND_ACK, (const uint8_t*)buffer, len, false)) {
-        _sendFailCount++;
-        _persistErrorCount = true;
-        LOGW("Remote", "Failed to enqueue ACK");
+    if (_radioState && _radioState->txQueue) {
+        LoRaWANTxMsg msg;
+        msg.port = FPORT_COMMAND_ACK;
+        msg.len = len;
+        msg.confirmed = false;
+        memcpy(msg.payload, buffer, len);
+        
+        if (xQueueSend(_radioState->txQueue, &msg, 0) != pdTRUE) {
+            _sendFailCount++;
+            _persistErrorCount = true;
+            LOGW("Remote", "Failed to enqueue ACK (queue full)");
+        }
     }
 }
 
@@ -724,10 +655,10 @@ void RemoteApplicationImpl::sendDiagnostics() {
 
     uint32_t uptimeSec = millis() / 1000;
     int batteryPercent = batteryHal ? batteryHal->getBatteryPercent() : -1;
-    int rssi = commCoordinator ? commCoordinator->getLastRssi() : 0;
-    float snr = commCoordinator ? commCoordinator->getLastSnr() : 0.0f;
-    uint32_t uplinks = commCoordinator ? commCoordinator->getUplinkCount() : 0;
-    uint32_t downlinks = commCoordinator ? commCoordinator->getDownlinkCount() : 0;
+    int rssi = _radioState ? _radioState->lastRssi : 0;
+    float snr = _radioState ? _radioState->lastSnr : 0.0f;
+    uint32_t uplinks = _radioState ? _radioState->uplinkCount : 0;
+    uint32_t downlinks = _radioState ? _radioState->downlinkCount : 0;
 
     uint32_t errTotal = _noAckCount + _joinFailCount + _sendFailCount;
     int len = snprintf(buffer, sizeof(buffer),
@@ -749,10 +680,18 @@ void RemoteApplicationImpl::sendDiagnostics() {
     }
 
     LOGI("Remote", "Enqueue diagnostics (%d bytes) on fPort %d", len, FPORT_DIAGNOSTICS);
-    if (!commCoordinator->enqueue(FPORT_DIAGNOSTICS, (const uint8_t*)buffer, len, false)) {
-        _sendFailCount++;
-        _persistErrorCount = true;
-        LOGW("Remote", "Failed to enqueue diagnostics");
+    if (_radioState && _radioState->txQueue) {
+        LoRaWANTxMsg msg;
+        msg.port = FPORT_DIAGNOSTICS;
+        msg.len = len;
+        msg.confirmed = false;
+        memcpy(msg.payload, buffer, len);
+        
+        if (xQueueSend(_radioState->txQueue, &msg, 0) != pdTRUE) {
+            _sendFailCount++;
+            _persistErrorCount = true;
+            LOGW("Remote", "Failed to enqueue diagnostics (queue full)");
+        }
     }
 }
 
@@ -765,13 +704,12 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
     // OTA: when OTA is active only handle fPort 40, 41, 42; no command ACK (progress on fPort 8)
     if (_ota.isActive()) {
         if (port == FPORT_OTA_START || port == FPORT_OTA_CHUNK || port == FPORT_OTA_CANCEL) {
-            CommandTranslator::translate(port, payload, length, _notifyCmd, sizeof(_notifyCmd));
             _ota.handleDownlink(port, payload, length);
         }
         return;
     }
 
-    // OTA ports when idle: handle start/chunk/cancel
+    // OTA ports when idle: handle start/chunk/cancel, show one-time notification
     if (port == FPORT_OTA_START || port == FPORT_OTA_CHUNK || port == FPORT_OTA_CANCEL) {
         CommandTranslator::translate(port, payload, length, _notifyCmd, sizeof(_notifyCmd));
         _ota.handleDownlink(port, payload, length);
@@ -788,7 +726,7 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
             if (waterFlowSensor) {
                 waterFlowSensor->resetTotalVolume();
             }
-            commCoordinator->resetCounters();
+            // Note: Radio task tracks its own counters, no reset API needed
 
             // Reset error counters and record reset time
             _noAckCount = 0;
@@ -955,14 +893,12 @@ void RemoteApplication::run() { impl->run(); }
 
 // Force the Arduino build system to compile these implementation files
 #include "lib/ota_receiver.cpp"
-#include "lib/comm_coordinator.cpp"
-#include "lib/downlink_router.cpp"
+#include "lib/radio_task.cpp"
 #include "lib/registration_manager.cpp"
 #include "lib/core_config.cpp"
 #include "lib/core_system.cpp"
 #include "lib/core_scheduler.cpp"
 #include "lib/svc_ui.cpp"
-#include "lib/hal_lorawan.cpp"
 #include "lib/ui_battery_icon_element.cpp"
 #include "lib/ui_header_status_element.cpp"
 #include "lib/ui_main_content_layout.cpp"

@@ -59,7 +59,7 @@ void RegistrationManager::tick(uint32_t nowMs) {
 }
 
 void RegistrationManager::send() {
-    if (_state != State::Pending || !_enqueueFn) return;
+    if (_state != State::Pending || !_txQueue) return;
     _state = State::Sent;
     _lastSendMs = millis();
 
@@ -129,5 +129,11 @@ void RegistrationManager::sendFrame(const char* key, const char* format, ...) {
     int totalLen = prefixLen + dataLen;
     if (totalLen > 222) return;
 
-    _enqueueFn(FPORT_REGISTRATION, (const uint8_t*)buffer, totalLen, false);
+    LoRaWANTxMsg msg;
+    msg.port = FPORT_REGISTRATION;
+    msg.len = totalLen;
+    msg.confirmed = false;
+    memcpy(msg.payload, buffer, totalLen);
+    
+    xQueueSend(_txQueue, &msg, 0);  // Fire and forget
 }

@@ -23,6 +23,7 @@ public:
     ~CoreScheduler();
 
     bool registerTask(const std::string& name, RtosTaskCallback<CommonAppState> callback, uint32_t intervalMs);
+    bool registerBlockingTask(const std::string& name, RtosTaskCallback<CommonAppState> callback, uint32_t intervalMs);
     bool setTaskInterval(const std::string& name, uint32_t newIntervalMs);
     void start(CommonAppState& initialState);
 

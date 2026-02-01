@@ -162,56 +162,11 @@ function decodeRegistration(text) {
         };
     }
     
-    // Legacy single-frame format - existing logic unchanged
-    const result = {
-        v: 1,
-        sv: 1,
-        type: 'unknown',
-        fw: '0.0.0',
-        fields: [],
-        sys: [],
-        states: [],
-        cmds: []
+    // Multi-frame format required (reg:frameKey|data)
+    return {
+        error: 'Multi-frame registration required',
+        raw: text
     };
-
-    // Parse pipe-delimited segments
-    const segments = text.split('|');
-    for (const segment of segments) {
-        const eqIdx = segment.indexOf('=');
-        if (eqIdx < 0) continue;
-
-        const key = segment.substring(0, eqIdx);
-        const value = segment.substring(eqIdx + 1);
-
-        switch (key) {
-            case 'v':
-                result.v = parseInt(value) || 1;
-                break;
-            case 'sv':
-                result.sv = parseInt(value) || 1;
-                break;
-            case 'type':
-                result.type = value;
-                break;
-            case 'fw':
-                result.fw = value;
-                break;
-            case 'fields':
-                result.fields = parseFields(value, 'cont');
-                break;
-            case 'sys':
-                result.sys = parseSystemFields(value);
-                break;
-            case 'states':
-                result.states = parseStates(value);
-                break;
-            case 'cmds':
-                result.cmds = parseCmds(value);
-                break;
-        }
-    }
-
-    return result;
 }
 
 // Parse fields: k:n:u:min:max[:s]. Optional 6th part = state_class (m|i|d|u).

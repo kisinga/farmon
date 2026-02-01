@@ -257,7 +257,7 @@ export function createMessageHandlers(store) {
             const payload = msg.payload || {};
             const eui = payload.eui;
             
-            console.log('[handleTelemetryMessage]', { eui, ts: payload.ts, hasData: !!payload.data });
+            // console.log('[handleTelemetryMessage]', { eui, ts: payload.ts, hasData: !!payload.data });
             
             // Update device's lastSeen for all devices (for online status)
             updateDeviceLastSeen(eui, payload.ts);
@@ -476,9 +476,13 @@ export function createMessageHandlers(store) {
 
         handleOtaProgressMessage(msg) {
             const p = msg.payload || {};
-            const eui = p.eui;
+            const eui = normalizeEui(p.eui) || p.eui;
             if (!eui) return;
-            const next = { ...deviceStore.state.otaJobByEui[eui], ...p };
+            const existing = deviceStore.state.otaJobByEui[eui];
+            const terminal = ['done', 'failed', 'cancelled'].includes(p.status);
+            if (p.status === null && existing?.status === 'sending') return;
+            if (existing && !terminal && p.chunkIndex != null && existing.chunkIndex != null && p.chunkIndex < existing.chunkIndex) return;
+            const next = { ...existing, ...p, eui };
             deviceStore.state.otaJobByEui = { ...deviceStore.state.otaJobByEui, [eui]: next };
         },
 

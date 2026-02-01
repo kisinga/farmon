@@ -2,14 +2,14 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include <functional>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
 // =============================================================================
-// OTA over LoRaWAN — composable chunk receiver
+// OTA over LoRaWAN — sequential chunk receiver
 // =============================================================================
-// No dependency on remote_app beyond: send callback, Update API.
 // fPort 40 = start, 41 = chunk, 42 = cancel; uplink progress on fPort 8.
-// CRC16 over payload only (218 B); in-order acceptance; duplicate chunk = no-op + ACK.
+// One chunk per ACK: device ACKs every chunk; server sends next.
 // =============================================================================
 
 namespace OtaReceiver {
@@ -45,12 +45,13 @@ constexpr size_t OTA_START_MAX_LEN = 10;
 
 class OtaReceiver {
 public:
-    using SendFn = std::function<bool(uint8_t port, const uint8_t* payload, uint8_t length)>;
-
     OtaReceiver() = default;
+    
+    /** Constructor with TX queue (direct queue access, no callback) */
+    explicit OtaReceiver(QueueHandle_t txQueue) : txQueue_(txQueue) {}
 
-    /** Set callback to send uplink (fPort 8). Must be set before handling OTA. */
-    void setSendCallback(SendFn fn) { sendFn_ = std::move(fn); }
+    /** Set TX queue (alternative to constructor) */
+    void setTxQueue(QueueHandle_t txQueue) { txQueue_ = txQueue; }
 
     /**
      * Handle OTA downlink. Returns true if message was consumed (port 40, 41, 42).
@@ -76,14 +77,14 @@ private:
     bool verifyChunkCrc16(const uint8_t* payload, size_t payloadLen, uint16_t expectedCrc16);
     static uint16_t crc16Payload(const uint8_t* data, size_t len);
 
-    SendFn sendFn_;
+    QueueHandle_t txQueue_ = nullptr;
     State state_ = State::Idle;
     uint32_t totalSize_ = 0;
     uint16_t totalChunks_ = 0;
     uint32_t expectedCrc32_ = 0;       // 0 = not provided
     bool hasExpectedCrc32_ = false;
     uint16_t nextExpectedIndex_ = 0;
-    uint32_t rebootAtMs_ = 0;          // when to call ESP.restart() after Verifying
+    uint32_t rebootAtMs_ = 0;
     static constexpr uint32_t REBOOT_DELAY_MS = 500;
 };
 

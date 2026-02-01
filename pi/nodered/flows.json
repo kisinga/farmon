@@ -177,7 +177,8 @@
                 "d3da543618bdb360"
             ],
             [
-                "b8c9d0e1f2a3b4c5"
+                "b8c9d0e1f2a3b4c5",
+                "eb6a507c4d1cd129"
             ],
             [
                 "ed7fa461dc727bcf"
@@ -189,7 +190,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "Registration Handler (fPort 1)",
-        "func": "// Parser helper functions (reused from codec.js logic)\n\nfunction parseFields(text, category) {\n  if (!text) return [];\n\n  return text\n    .split(',')\n    .map((f, idx) => {\n      const parts = f.split(':');\n      return {\n        idx: idx,\n        k: parts[0] || '',\n        n: parts[1] || parts[0] || '',\n        u: parts[2] || '',\n        min: parts[3] ? parseFloat(parts[3]) : undefined,\n        max: parts[4] ? parseFloat(parts[4]) : undefined,\n        c: category,\n        t: 'num',\n        s: parts[5] || ''\n      };\n    })\n    .filter(f => f.k);\n}\n\nfunction parseSystemFields(text) {\n  if (!text) return [];\n\n  return text\n    .split(',')\n    .map((f, idx) => {\n      const parts = f.split(':');\n      return {\n        idx: idx,\n        k: parts[0] || '',\n        n: parts[1] || parts[0] || '',\n        u: parts[2] || '',\n        min: parts[3] ? parseFloat(parts[3]) : undefined,\n        max: parts[4] ? parseFloat(parts[4]) : undefined,\n        c: 'sys',\n        t: 'num',\n        rw: parts[5] === 'w',\n        s: parts[6] || ''\n      };\n    })\n    .filter(f => f.k);\n}\n\nfunction parseStates(text) {\n  if (!text) return [];\n\n  return text\n    .split(',')\n    .map((s, idx) => {\n      const parts = s.split(':');\n      const values = (parts[2] || 'off;on').split(';');\n\n      return {\n        idx: idx,\n        k: parts[0] || '',\n        n: parts[1] || parts[0] || '',\n        c: 'state',\n        t: 'enum',\n        v: values\n      };\n    })\n    .filter(s => s.k);\n}\n\nfunction parseCmds(text) {\n  if (!text) return [];\n\n  return text\n    .split(',')\n    .map(c => {\n      const parts = c.split(':');\n      return {\n        k: parts[0] || '',\n        port: parseInt(parts[1], 10) || 0\n      };\n    })\n    .filter(c => c.k);\n}\n\nfunction reassembleRegistration(frames) {\n  // Parse header (key=value pairs)\n  const header = {};\n\n  if (frames.header) {\n    frames.header.split('|').forEach(pair => {\n      const eqIdx = pair.indexOf('=');\n      if (eqIdx >= 0) {\n        const k = pair.substring(0, eqIdx);\n        const v = pair.substring(eqIdx + 1);\n        if (k && v) header[k] = v;\n      }\n    });\n  }\n\n  return {\n    v: parseInt(header.v, 10) || 1,\n    sv: parseInt(header.sv, 10) || 1,\n    type: header.type || 'unknown',\n    fw: header.fw || '0.0.0',\n    fields: parseFields(\n      frames.fields ? frames.fields.split('=')[1] : '',\n      'cont'\n    ),\n    sys: parseSystemFields(\n      frames.sys ? frames.sys.split('=')[1] : ''\n    ),\n    states: parseStates(\n      frames.states ? frames.states.split('=')[1] : ''\n    ),\n    cmds: parseCmds(\n      frames.cmds ? frames.cmds.split('=')[1] : ''\n    )\n  };\n}\n\n// Main registration handler\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\n// Multi-frame registration handling\nif (data && data.isFrame) {\n  const buffers = context.get('regBuffers') || {};\n\n  if (!buffers[deviceEui]) {\n    buffers[deviceEui] = {\n      frames: {},\n      timestamp: Date.now()\n    };\n  }\n\n  const buffer = buffers[deviceEui];\n  buffer.frames[data.frameKey] = data.frameData;\n\n  const required = ['header', 'fields', 'sys', 'states', 'cmds'];\n  const received = Object.keys(buffer.frames);\n  const complete = required.every(k => received.includes(k));\n\n  if (complete) {\n    msg.registration = reassembleRegistration(buffer.frames);\n    msg.schemaVersion = msg.registration.sv || 1;\n\n    msg.params = [\n      deviceEui,\n      msg.deviceName || msg.registration.type || 'Unknown',\n      msg.registration.type || 'unknown',\n      msg.registration.fw || '0.0.0',\n      JSON.stringify(msg.registration)\n    ];\n\n    delete buffers[deviceEui];\n    context.set('regBuffers', buffers);\n\n    node.status({\n      fill: 'blue',\n      shape: 'dot',\n      text: `Reg v${msg.schemaVersion}: ${deviceEui.slice(-4)}`\n    });\n\n    return msg;\n  }\n\n  // Timeout (30s)\n  if (Date.now() - buffer.timestamp > 30000) {\n    const missing = required.filter(k => !received.includes(k));\n    node.warn(\n      `Registration timeout: ${deviceEui}, missing: ${missing.join(', ')}`\n    );\n    delete buffers[deviceEui];\n    context.set('regBuffers', buffers);\n    return null;\n  }\n\n  context.set('regBuffers', buffers);\n  node.status({\n    fill: 'yellow',\n    shape: 'dot',\n    text: `Reg ${received.length}/5: ${deviceEui.slice(-4)}`\n  });\n\n  return null;\n}\n\n// Legacy single-frame format\nconst reg = data;\n\nif (!reg || (!reg.fields && !reg.states)) {\n  node.warn('Invalid registration: missing fields/states');\n  return null;\n}\n\nmsg.registration = reg;\nmsg.schemaVersion = reg.sv || 1;\n\nmsg.params = [\n  deviceEui,\n  msg.deviceName || reg.type || 'Unknown',\n  reg.type || 'unknown',\n  reg.fw || '0.0.0',\n  JSON.stringify(reg)\n];\n\nnode.status({\n  fill: 'blue',\n  shape: 'dot',\n  text: `Reg v${msg.schemaVersion}: ${deviceEui.slice(-4)}`\n});\n\nreturn msg;\n",
+        "func": "// Parser helper functions (reused from codec.js logic)\n\nfunction parseFields(text, category) {\n    if (!text) return [];\n\n    return text\n        .split(',')\n        .map((f, idx) => {\n            const parts = f.split(':');\n            return {\n                idx: idx,\n                k: parts[0] || '',\n                n: parts[1] || parts[0] || '',\n                u: parts[2] || '',\n                min: parts[3] ? parseFloat(parts[3]) : undefined,\n                max: parts[4] ? parseFloat(parts[4]) : undefined,\n                c: category,\n                t: 'num',\n                s: parts[5] || ''\n            };\n        })\n        .filter(f => f.k);\n}\n\nfunction parseSystemFields(text) {\n    if (!text) return [];\n\n    return text\n        .split(',')\n        .map((f, idx) => {\n            const parts = f.split(':');\n            return {\n                idx: idx,\n                k: parts[0] || '',\n                n: parts[1] || parts[0] || '',\n                u: parts[2] || '',\n                min: parts[3] ? parseFloat(parts[3]) : undefined,\n                max: parts[4] ? parseFloat(parts[4]) : undefined,\n                c: 'sys',\n                t: 'num',\n                rw: parts[5] === 'w',\n                s: parts[6] || ''\n            };\n        })\n        .filter(f => f.k);\n}\n\nfunction parseStates(text) {\n    if (!text) return [];\n\n    return text\n        .split(',')\n        .map((s, idx) => {\n            const parts = s.split(':');\n            const values = (parts[2] || 'off;on').split(';');\n\n            return {\n                idx: idx,\n                k: parts[0] || '',\n                n: parts[1] || parts[0] || '',\n                c: 'state',\n                t: 'enum',\n                v: values\n            };\n        })\n        .filter(s => s.k);\n}\n\nfunction parseCmds(text) {\n    if (!text) return [];\n\n    return text\n        .split(',')\n        .map(c => {\n            const parts = c.split(':');\n            return {\n                k: parts[0] || '',\n                port: parseInt(parts[1], 10) || 0\n            };\n        })\n        .filter(c => c.k);\n}\n\nfunction reassembleRegistration(frames) {\n    // Parse header (key=value pairs)\n    const header = {};\n\n    if (frames.header) {\n        frames.header.split('|').forEach(pair => {\n            const eqIdx = pair.indexOf('=');\n            if (eqIdx >= 0) {\n                const k = pair.substring(0, eqIdx);\n                const v = pair.substring(eqIdx + 1);\n                if (k && v) header[k] = v;\n            }\n        });\n    }\n\n    return {\n        v: parseInt(header.v, 10) || 1,\n        sv: parseInt(header.sv, 10) || 1,\n        type: header.type || 'unknown',\n        fw: header.fw || '0.0.0',\n        fields: parseFields(frames.fields ? frames.fields.split('=')[1] : '', 'cont'),\n        sys: parseSystemFields(frames.sys ? frames.sys.split('=')[1] : ''),\n        states: parseStates(frames.states ? frames.states.split('=')[1] : ''),\n        cmds: parseCmds(frames.cmds ? frames.cmds.split('=')[1] : '')\n    };\n}\n\n// Main registration handler\nconst deviceEui = msg.deviceEui;\nconst data = msg.data;\n\n// Multi-frame registration handling\nif (data && data.isFrame) {\n    const buffers = context.get('regBuffers') || {};\n\n    if (!buffers[deviceEui]) {\n        buffers[deviceEui] = {\n            frames: {},\n            timestamp: Date.now()\n        };\n    }\n\n    const buffer = buffers[deviceEui];\n    buffer.frames[data.frameKey] = data.frameData;\n\n    const required = ['header', 'fields', 'sys', 'states', 'cmds'];\n    const received = Object.keys(buffer.frames);\n    const complete = required.every(k => received.includes(k));\n\n    if (complete) {\n        msg.registration = reassembleRegistration(buffer.frames);\n        msg.schemaVersion = msg.registration.sv || 1;\n\n        msg.params = [\n            deviceEui,\n            msg.deviceName || msg.registration.type || 'Unknown',\n            msg.registration.type || 'unknown',\n            msg.registration.fw || '0.0.0',\n            JSON.stringify(msg.registration)\n        ];\n\n        delete buffers[deviceEui];\n        context.set('regBuffers', buffers);\n\n        node.status({\n            fill: 'blue',\n            shape: 'dot',\n            text: `Reg v${msg.schemaVersion}: ${deviceEui.slice(-4)}`\n        });\n\n        return msg;\n    }\n\n    // Timeout (30s)\n    if (Date.now() - buffer.timestamp > 30000) {\n        const missing = required.filter(k => !received.includes(k));\n        node.warn(`Registration timeout: ${deviceEui}, missing: ${missing.join(', ')}`);\n        delete buffers[deviceEui];\n        context.set('regBuffers', buffers);\n        return null;\n    }\n\n    context.set('regBuffers', buffers);\n    node.status({\n        fill: 'yellow',\n        shape: 'dot',\n        text: `Reg ${received.length}/5: ${deviceEui.slice(-4)}`\n    });\n\n    return null;\n}\n\n// Legacy single-frame format\nconst reg = data;\n\nif (!reg || (!reg.fields && !reg.states)) {\n    node.warn('Invalid registration: missing fields/states');\n    return null;\n}\n\nmsg.registration = reg;\nmsg.schemaVersion = reg.sv || 1;\n\nmsg.params = [\n    deviceEui,\n    msg.deviceName || reg.type || 'Unknown',\n    reg.type || 'unknown',\n    reg.fw || '0.0.0',\n    JSON.stringify(reg)\n];\n\nnode.status({\n    fill: 'blue',\n    shape: 'dot',\n    text: `Reg v${msg.schemaVersion}: ${deviceEui.slice(-4)}`\n});\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -988,7 +989,7 @@
         "type": "debug",
         "z": "7e7308018823ce78",
         "name": "debug 1",
-        "active": true,
+        "active": false,
         "tosidebar": true,
         "console": false,
         "tostatus": false,
@@ -1030,7 +1031,7 @@
         "type": "function",
         "z": "7e7308018823ce78",
         "name": "OTA Progress Handler (fPort 8)",
-        "func": "const deviceEuiRaw = msg.deviceEui;\nconst deviceEui = typeof deviceEuiRaw === 'string' ? deviceEuiRaw.toLowerCase().replace(/[^a-f0-9]/g, '') : '';\nif (!deviceEui) return [ null, null, null ];\nconst data = msg.data || {};\nconst status = data.status;\nconst chunkIndex = typeof data.chunkIndex === 'number' ? data.chunkIndex : (data.chunkIndex != null ? parseInt(data.chunkIndex, 10) : -1);\n\nconst jobs = global.get('otaJobByEui') || {};\nconst job = jobs[deviceEui];\nif (!job) { node.warn('OTA Progress: no job for device ' + deviceEui + ' (status=' + status + ' chunkIndex=' + chunkIndex + ')'); return [ null, null, null ]; }\nif (job.status !== 'sending') {\n  if (status === 2 || status === 3 || status === 4) {\n    const progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: status === 2 ? 'done' : status === 3 ? 'failed' : 'cancelled', error: status === 3 ? 'device_reported_fail' : undefined } };\n    return [ null, progressMsg, null ];\n  }\n  return [ null, null, null ];\n}\n\njob.lastProgressAt = Date.now();\nif (status === 0) {\n  job.nextChunkIndex = 0;\n  const progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: 'sending', chunkIndex: 0, totalChunks: job.totalChunks, percent: 0 } };\n  let downlinkMsg = null;\n  if (job.chunks && job.chunks[0]) {\n    const appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n    downlinkMsg = { topic: `application/${appId}/device/${deviceEui}/command/down`, payload: { devEui: deviceEui, confirmed: false, fPort: 41, data: job.chunks[0] } };\n  }\n  global.set('otaJobByEui', jobs);\n  return [ downlinkMsg, progressMsg, null ];\n}\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\nlet downlinkMsg = null;\nlet progressMsg = null;\nlet dbMsg = null;\n\nif (status === 1) {\n  job.nextChunkIndex = chunkIndex + 1;\n  const pct = job.totalChunks > 0 ? Math.round((job.nextChunkIndex / job.totalChunks) * 100) : 0;\n  progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: 'sending', chunkIndex: job.nextChunkIndex - 1, totalChunks: job.totalChunks, percent: pct } };\n  if (job.nextChunkIndex < job.totalChunks && job.chunks && job.chunks[job.nextChunkIndex]) {\n    const chunkPayload = job.chunks[job.nextChunkIndex];\n    downlinkMsg = { topic: `application/${appId}/device/${deviceEui}/command/down`, payload: { devEui: deviceEui, confirmed: false, fPort: 41, data: chunkPayload } };\n  } else if (job.nextChunkIndex >= job.totalChunks) {\n    job.status = 'done';\n    progressMsg.payload.status = 'done';\n    progressMsg.payload.percent = 100;\n  }\n} else if (status === 2) {\n  job.status = 'done';\n  progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: 'done', chunkIndex: job.nextChunkIndex - 1, totalChunks: job.totalChunks, percent: 100 } };\n} else if (status === 3) {\n  job.status = 'failed';\n  job.errorMessage = 'device_reported_fail';\n  progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: 'failed', error: 'device_reported_fail' } };\n} else if (status === 4) {\n  job.status = 'cancelled';\n  job.errorMessage = 'cancelled_by_user';\n  progressMsg = { topic: 'otaProgress', payload: { eui: deviceEui, status: 'cancelled', error: 'cancelled_by_user' } };\n}\n\nif (job.status !== 'sending' && job.historyId) {\n  const outcome = job.status === 'done' ? 'done' : job.status === 'failed' ? 'failed' : 'cancelled';\n  dbMsg = { params: [ job.historyId, outcome, job.nextChunkIndex || 0, job.errorMessage || null ], query: 'UPDATE firmware_history SET finished_at = NOW(), outcome = $2, chunks_received = $3, error_message = $4 WHERE id = $1' };\n}\n\nglobal.set('otaJobByEui', jobs);\nreturn [ downlinkMsg, progressMsg, dbMsg ];\n",
+        "func": "// ---- normalize EUI ----\nconst deviceEui = typeof msg.deviceEui === 'string'\n  ? msg.deviceEui.toLowerCase().replace(/[^a-f0-9]/g, '')\n  : '';\n\nif (!deviceEui) return [null, null, null];\n\nconst data = msg.data ?? {};\nconst status = data.status;\n\nconst chunkIndex =\n    typeof data.chunkIndex === 'number'\n        ? data.chunkIndex\n        : (data.chunkIndex != null ? parseInt(data.chunkIndex, 10) : -1);\n\nconst jobs = global.get('otaJobByEui') || {};\nconst job = jobs[deviceEui];\n\nif (!job) {\n    node.warn('OTA Progress: no job for device ' + deviceEui);\n    return [null, null, null];\n}\n\nconst appId = global.get('chirpstackAppId')\n    ?? '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nconst topic = `application/${appId}/device/${deviceEui}/command/down`;\n\nconst mkChunk = i => ({\n    topic,\n    payload: {\n        devEui: deviceEui,\n        confirmed: false,\n        fPort: 41,\n        data: job.chunks[i]\n    }\n});\n\nconst mkProgress = (p) => ({\n    topic: 'otaProgress',\n    payload: {\n        eui: deviceEui,\n        ...p\n    }\n});\n\nif (job.status !== 'sending') {\n    if ([2, 3, 4].includes(status)) {\n        return [\n            null,\n            mkProgress({\n                status:\n                    status === 2 ? 'done'\n                    : status === 3 ? 'failed'\n                    : 'cancelled',\n                error: status === 3 ? 'device_reported_fail' : undefined\n            }),\n            null\n        ];\n    }\n    return [null, null, null];\n}\n\njob.lastProgressAt = Date.now();\n\nlet downlinkMsgs = null;\nlet progressMsg = null;\nlet dbMsg = null;\n\nif (status === 0) {\n    job.nextChunkIndex = 0;\n\n    progressMsg = mkProgress({\n        status: 'sending',\n        chunkIndex: 0,\n        totalChunks: job.totalChunks,\n        percent: 0\n    });\n\n    downlinkMsgs = job.chunks?.[0]\n        ? [mkChunk(0)]\n        : null;\n}\nelse if (status === 1) {\n    job.nextChunkIndex = chunkIndex + 1;\n\n    const pct = job.totalChunks\n        ? Math.round((job.nextChunkIndex / job.totalChunks) * 100)\n        : 0;\n\n    progressMsg = mkProgress({\n        status: 'sending',\n        chunkIndex: job.nextChunkIndex - 1,\n        totalChunks: job.totalChunks,\n        percent: pct\n    });\n\n    if (job.nextChunkIndex >= job.totalChunks) {\n        job.status = 'done';\n        progressMsg.payload.status = 'done';\n        progressMsg.payload.percent = 100;\n    } else {\n        downlinkMsgs = job.chunks?.[job.nextChunkIndex]\n            ? [mkChunk(job.nextChunkIndex)]\n            : null;\n    }\n}\nelse if (status === 3) {\n    const failed =\n        chunkIndex >= 0\n            ? chunkIndex\n            : job.nextChunkIndex - 1;\n\n    progressMsg = mkProgress({\n        status: 'sending',\n        chunkIndex: failed - 1,\n        totalChunks: job.totalChunks,\n        percent: job.totalChunks\n            ? Math.round((failed / job.totalChunks) * 100)\n            : 0\n    });\n\n    downlinkMsgs = job.chunks?.[failed]\n        ? [mkChunk(failed)]\n        : null;\n\n    if (!downlinkMsgs) {\n        job.status = 'failed';\n        job.errorMessage = 'device_reported_fail';\n        progressMsg.payload.status = 'failed';\n        progressMsg.payload.error = 'device_reported_fail';\n    }\n}\nelse if (status === 2) {\n    job.status = 'done';\n\n    progressMsg = mkProgress({\n        status: 'done',\n        chunkIndex: job.nextChunkIndex - 1,\n        totalChunks: job.totalChunks,\n        percent: 100\n    });\n}\nelse if (status === 4) {\n    job.status = 'cancelled';\n    job.errorMessage = 'cancelled_by_user';\n\n    progressMsg = mkProgress({\n        status: 'cancelled',\n        error: 'cancelled_by_user'\n    });\n}\n\nif (job.status !== 'sending' && job.historyId) {\n    const outcome =\n        job.status === 'done'\n            ? 'done'\n            : job.status === 'failed'\n                ? 'failed'\n                : 'cancelled';\n\n    dbMsg = {\n        params: [\n            job.historyId,\n            outcome,\n            job.nextChunkIndex || 0,\n            job.errorMessage || null\n        ],\n        query:\n            'UPDATE firmware_history ' +\n            'SET finished_at = NOW(), outcome = $2, chunks_received = $3, error_message = $4 ' +\n            'WHERE id = $1'\n    };\n}\n\nglobal.set('otaJobByEui', jobs);\nreturn [downlinkMsgs, progressMsg, dbMsg];\n",
         "outputs": 3,
         "timeout": "",
         "noerr": 0,
@@ -1041,6 +1042,7 @@
         "y": 380,
         "wires": [
             [
+                "60e91daf47f69f68",
                 "5003f0e851b51bcd"
             ],
             [
@@ -1065,7 +1067,7 @@
         "correl": "",
         "expiry": "",
         "broker": "e1b2c3d4e5f6a7b8",
-        "x": 1110,
+        "x": 1170,
         "y": 340,
         "wires": []
     },
@@ -1092,11 +1094,43 @@
         ],
         "linkType": "static",
         "timeout": "30",
-        "x": 1170,
-        "y": 420,
+        "x": 1230,
+        "y": 400,
         "wires": [
             []
         ]
+    },
+    {
+        "id": "60e91daf47f69f68",
+        "type": "debug",
+        "z": "7e7308018823ce78",
+        "name": "debug 4",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1000,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "eb6a507c4d1cd129",
+        "type": "debug",
+        "z": "7e7308018823ce78",
+        "name": "debug 5",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 800,
+        "y": 420,
+        "wires": []
     },
     {
         "id": "cd6e5f46f99415f5",
@@ -1223,11 +1257,16 @@
                 "t": "eq",
                 "v": "getFirmwareErrorLog",
                 "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "getOtaState",
+                "vt": "str"
             }
         ],
         "checkall": "true",
         "repair": false,
-        "outputs": 20,
+        "outputs": 21,
         "x": 680,
         "y": 540,
         "wires": [
@@ -1290,6 +1329,29 @@
             ],
             [
                 "b2c3d4e5f6a7b8c9"
+            ],
+            [
+                "ota-get-state-id"
+            ]
+        ]
+    },
+    {
+        "id": "ota-get-state-id",
+        "type": "function",
+        "z": "155f01355999b8a5",
+        "name": "Get OTA State",
+        "func": "const raw = msg.payload?.eui;\nconst eui = raw ? String(raw).toLowerCase().replace(/[^a-f0-9]/g, '') : '';\nconst jobs = global.get('otaJobByEui') || {};\nconst job = eui ? jobs[eui] : null;\n\nif (!job) {\n    return { topic: 'otaProgress', payload: { eui: eui || raw, status: null } };\n}\n\nreturn {\n    topic: 'otaProgress',\n    payload: {\n        eui: job.deviceEui,\n        status: job.status,\n        totalChunks: job.totalChunks,\n        chunkIndex: job.nextChunkIndex > 0 ? job.nextChunkIndex - 1 : 0,\n        percent: job.totalChunks > 0 ? Math.round((job.nextChunkIndex / job.totalChunks) * 100) : 0\n    }\n};\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 960,
+        "y": 1320,
+        "wires": [
+            [
+                "7a756a0bc95ae6be"
             ]
         ]
     },
@@ -2271,7 +2333,7 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "Build System Command Downlink",
-        "func": "const { eui, fPort, command, value } = msg.payload;\n\nif (!eui || !fPort) {\n  node.warn('Missing eui or fPort for system command');\n  return null;\n}\n\n// Build data payload based on command\nlet dataBytes = [];\n\nif (command === 'setInterval' && value != null) {\n  // Firmware fPort 11:\n  // 4-byte big-endian interval in milliseconds (10s–3600s)\n  const intervalSec = parseInt(value, 10) || 60;\n  const intervalMs = Math.min(\n    3600000,\n    Math.max(10000, intervalSec * 1000)\n  );\n\n  dataBytes = [\n    (intervalMs >>> 24) & 0xff,\n    (intervalMs >>> 16) & 0xff,\n    (intervalMs >>> 8) & 0xff,\n    intervalMs & 0xff\n  ];\n} else {\n  // Generic single-byte command / ACK\n  dataBytes = [0x01];\n}\n\n// Params for PostgreSQL logging\nmsg.params = [\n  eui,\n  command,\n  JSON.stringify({ fPort, value }),\n  'user',\n  'sent'\n];\n\n// Build ChirpStack downlink\nconst appId =\n  global.get('chirpstackAppId') ||\n  '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${eui}/command/down`;\n\nmsg.payload = {\n  devEui: eui,\n  confirmed: false,\n  fPort: fPort,\n  data: Buffer.from(dataBytes).toString('base64')\n};\n\nnode.status({\n  fill: 'blue',\n  shape: 'dot',\n  text: `${command} -> ${eui.slice(-4)}`\n});\n\nreturn msg;\n",
+        "func": "const { eui, fPort, command, value } = msg.payload;\n\nif (!eui || !fPort) {\n    node.warn('Missing eui or fPort for system command');\n    return null;\n}\n\n// Build data payload based on command\nlet dataBytes = [];\n\nif (command === 'setInterval' && value != null) {\n    // Firmware fPort 11:\n    // 4-byte big-endian interval in milliseconds (10s–3600s)\n    const intervalSec = parseInt(value, 10) || 60;\n    const intervalMs = Math.min(\n        3600000,\n        Math.max(10000, intervalSec * 1000)\n    );\n\n    dataBytes = [\n        (intervalMs >>> 24) & 0xff,\n        (intervalMs >>> 16) & 0xff,\n        (intervalMs >>> 8) & 0xff,\n        intervalMs & 0xff\n    ];\n} else {\n    // Generic single-byte command / ACK\n    dataBytes = [0x01];\n}\n\n// Params for PostgreSQL logging\nmsg.params = [\n    eui,\n    command,\n    JSON.stringify({ fPort, value }),\n    'user',\n    'sent'\n];\n\n// Build ChirpStack downlink\nconst appId =\n    global.get('chirpstackAppId') ||\n    '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nmsg.topic = `application/${appId}/device/${eui}/command/down`;\n\nmsg.payload = {\n    devEui: eui,\n    confirmed: false,\n    fPort: fPort,\n    data: Buffer.from(dataBytes).toString('base64')\n};\n\nnode.status({\n    fill: 'blue',\n    shape: 'dot',\n    text: `${command} -> ${eui.slice(-4)}`\n});\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -2401,7 +2463,7 @@
         "type": "debug",
         "z": "155f01355999b8a5",
         "name": "debug 3",
-        "active": true,
+        "active": false,
         "tosidebar": true,
         "console": false,
         "tostatus": false,
@@ -2553,7 +2615,7 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "OTA Start",
-        "func": "const eui = msg.payload?.eui;\nconst firmwareB64 = msg.payload?.firmware;\nif (!eui || !firmwareB64) { node.warn('OTA Start: missing eui or firmware'); return null; }\nconst buf = Buffer.from(firmwareB64, 'base64');\nconst totalSize = buf.length;\nconst PAYLOAD_SIZE = 218;\nconst totalChunks = Math.ceil(totalSize / PAYLOAD_SIZE);\nfunction crc16(data) {\n  let crc = 0xFFFF;\n  for (let i = 0; i < data.length; i++) {\n    crc ^= (data[i] << 8);\n    for (let k = 0; k < 8; k++) crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);\n  }\n  return crc & 0xFFFF;\n}\nconst chunks = [];\nfor (let i = 0; i < totalChunks; i++) {\n  const start = i * PAYLOAD_SIZE;\n  const slice = buf.subarray(start, Math.min(start + PAYLOAD_SIZE, buf.length));\n  const pad = Buffer.alloc(PAYLOAD_SIZE);\n  slice.copy(pad);\n  const crc = crc16(pad);\n  const packet = Buffer.alloc(222);\n  packet.writeUInt16LE(i, 0);\n  pad.copy(packet, 2);\n  packet.writeUInt16LE(crc, 220);\n  chunks.push(packet.toString('base64'));\n}\nconst job = { deviceEui: eui, totalSize, totalChunks, chunks, nextChunkIndex: 0, status: 'sending', startedAt: Date.now(), lastProgressAt: Date.now(), historyId: null };\nglobal.set('otaJobPending', { eui, job });\nmsg.params = [ eui, 'started', totalChunks, 0 ];\nmsg.query = 'INSERT INTO firmware_history (device_eui, outcome, total_chunks, chunks_received) VALUES ($1, $2, $3, $4) RETURNING id';\nreturn msg;",
+        "func": "const eui = msg.payload?.eui;\nconst firmwareB64 = msg.payload?.firmware;\n\nif (!eui || !firmwareB64) {\n    node.warn('OTA Start: missing eui or firmware');\n    return null;\n}\n\nconst buf = Buffer.from(firmwareB64, 'base64');\nconst totalSize = buf.length;\n\nconst PAYLOAD_SIZE = 218;\nconst totalChunks = Math.ceil(totalSize / PAYLOAD_SIZE);\n\nfunction crc16(data) {\n    let crc = 0xFFFF;\n\n    for (let i = 0; i < data.length; i++) {\n        crc ^= (data[i] << 8);\n        for (let k = 0; k < 8; k++) {\n            crc = (crc & 0x8000)\n                ? ((crc << 1) ^ 0x1021)\n                : (crc << 1);\n        }\n    }\n    return crc & 0xFFFF;\n}\n\nconst chunks = [];\n\nfor (let i = 0; i < totalChunks; i++) {\n    const start = i * PAYLOAD_SIZE;\n    const slice = buf.subarray(\n        start,\n        Math.min(start + PAYLOAD_SIZE, buf.length)\n    );\n\n    const pad = Buffer.alloc(PAYLOAD_SIZE);\n    slice.copy(pad);\n\n    const crc = crc16(pad);\n\n    const packet = Buffer.alloc(222);\n    packet.writeUInt16LE(i, 0);\n    pad.copy(packet, 2);\n    packet.writeUInt16LE(crc, 220);\n\n    chunks.push(packet.toString('base64'));\n}\n\nconst job = {\n    deviceEui: eui,\n    totalSize,\n    totalChunks,\n    chunks,\n    nextChunkIndex: 0,\n    status: 'sending',\n    startedAt: Date.now(),\n    lastProgressAt: Date.now(),\n    historyId: null\n};\n\nglobal.set('otaJobPending', { eui, job });\n\nmsg.params = [\n    eui,\n    'started',\n    totalChunks,\n    0\n];\n\nmsg.query =\n    'INSERT INTO firmware_history ' +\n    '(device_eui, outcome, total_chunks, chunks_received) ' +\n    'VALUES ($1, $2, $3, $4) RETURNING id';\n\nreturn msg;\n",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -2591,8 +2653,8 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "OTA Start Send fPort 40",
-        "func": "const pending = global.get('otaJobPending');\nconst job = pending && pending.job;\nconst row = msg.payload && (Array.isArray(msg.payload) ? msg.payload[0] : msg.payload);\nconst historyId = row && (row.id != null ? row.id : row.ID);\nif (job && historyId) job.historyId = historyId;\nconst jobs = global.get('otaJobByEui') || {};\nif (job) { jobs[job.deviceEui] = job; global.set('otaJobByEui', jobs); global.set('otaJobPending', null); }\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\nconst eui = job ? job.deviceEui : (pending && pending.eui);\nif (!eui || !job) return [ null, null ];\nconst topic = `application/${appId}/device/${eui}/command/down`;\nconst sizeBuf = Buffer.alloc(6);\nsizeBuf.writeUInt32LE(job.totalSize, 0);\nsizeBuf.writeUInt16LE(job.totalChunks, 4);\nconst msg40 = { topic, payload: { devEui: eui, confirmed: false, fPort: 40, data: sizeBuf.toString('base64') } };\nconst msgChunk0 = (job.chunks && job.chunks[0]) ? { topic, payload: { devEui: eui, confirmed: false, fPort: 41, data: job.chunks[0] } } : null;\nreturn [ msg40, msgChunk0 ];",
-        "outputs": 2,
+        "func": "const pending = global.get('otaJobPending');\nconst job = pending?.job;\n\nconst row = Array.isArray(msg.payload)\n    ? msg.payload[0]\n    : msg.payload;\n\nconst historyId = row?.id ?? row?.ID;\n\nif (job && historyId) {\n    job.historyId = historyId;\n}\n\nif (job) {\n    const jobs = global.get('otaJobByEui') || {};\n    jobs[job.deviceEui] = job;\n    global.set('otaJobByEui', jobs);\n    global.set('otaJobPending', null);\n}\n\nif (!job) return null;\n\nconst appId =\n    global.get('chirpstackAppId') ??\n    '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nconst eui = job.deviceEui;\nif (!eui) return null;\n\nconst topic = `application/${appId}/device/${eui}/command/down`;\n\nconst sizeBuf = Buffer.alloc(6);\nsizeBuf.writeUInt32LE(job.totalSize, 0);\nsizeBuf.writeUInt16LE(job.totalChunks, 4);\n\nreturn {\n    topic,\n    payload: {\n        devEui: eui,\n        confirmed: false,\n        fPort: 40,\n        data: sizeBuf.toString('base64')\n    }\n};\n",
+        "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
@@ -2601,10 +2663,6 @@
         "x": 1360,
         "y": 1080,
         "wires": [
-            [
-                "22afab641ed23d0c",
-                "a8ab75d2f20dafe3"
-            ],
             [
                 "22afab641ed23d0c"
             ]
@@ -2615,7 +2673,7 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "OTA Cancel",
-        "func": "const eui = msg.payload?.eui;\nif (!eui) { node.warn('OTA Cancel: missing eui'); return null; }\nconst jobs = global.get('otaJobByEui') || {};\nconst job = jobs[eui];\nif (job) { job.status = 'cancelled'; job.errorMessage = 'cancelled_by_user'; jobs[eui] = job; global.set('otaJobByEui', jobs); }\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\nconst downlink = { topic: `application/${appId}/device/${eui}/command/down`, payload: { devEui: eui, confirmed: false, fPort: 42, data: Buffer.from([0]).toString('base64') } };\nconst updateMsg = job && job.historyId ? { params: [ job.historyId, 'cancelled', job.nextChunkIndex || 0, 'cancelled_by_user' ], query: 'UPDATE firmware_history SET finished_at = NOW(), outcome = $2, chunks_received = $3, error_message = $4 WHERE id = $1' } : null;\nreturn [ downlink, updateMsg ];",
+        "func": "const eui = msg.payload?.eui;\nif (!eui) {\n    node.warn('OTA Cancel: missing eui');\n    return null;\n}\n\nconst jobs = global.get('otaJobByEui') || {};\nconst job = jobs[eui];\n\nif (job) {\n    job.status = 'cancelled';\n    job.errorMessage = 'cancelled_by_user';\n    jobs[eui] = job;\n    global.set('otaJobByEui', jobs);\n}\n\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n\nconst downlink = {\n    topic: `application/${appId}/device/${eui}/command/down`,\n    payload: {\n        devEui: eui,\n        confirmed: false,\n        fPort: 42,\n        data: Buffer.from([0]).toString('base64')\n    }\n};\n\nconst updateMsg = job && job.historyId ? {\n    params: [\n        job.historyId,\n        'cancelled',\n        job.nextChunkIndex || 0,\n        'cancelled_by_user'\n    ],\n    query: 'UPDATE firmware_history SET finished_at = NOW(), outcome = $2, chunks_received = $3, error_message = $4 WHERE id = $1'\n} : null;\n\nreturn [ downlink, updateMsg ];\n",
         "outputs": 2,
         "timeout": "",
         "noerr": 0,
@@ -2803,7 +2861,7 @@
         "type": "function",
         "z": "155f01355999b8a5",
         "name": "OTA resend on timeout",
-        "func": "const jobs = global.get('otaJobByEui') || {};\nconst appId = global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\nconst now = Date.now();\nconst TIMEOUT_MS = 60000;\nconst out = [];\nfor (const eui of Object.keys(jobs)) {\n  const job = jobs[eui];\n  if (job.status !== 'sending' || !job.chunks || job.nextChunkIndex <= 0) continue;\n  if (now - job.lastProgressAt < TIMEOUT_MS) continue;\n  const idx = job.nextChunkIndex - 1;\n  if (!job.chunks[idx]) continue;\n  out.push({ topic: `application/${appId}/device/${eui}/command/down`, payload: { devEui: eui, confirmed: false, fPort: 41, data: job.chunks[idx] } });\n}\nreturn out.length ? out : null;",
+        "func": "const jobs = global.get('otaJobByEui') || {};\n    const appId =\n        global.get('chirpstackAppId') || '885c4dd2-e474-4265-bd25-2f838571f8de';\n\n    const now = Date.now();\n    const TIMEOUT_MS = 60000;\n    const out = [];\n\n    for (const eui of Object.keys(jobs)) {\n        const job = jobs[eui];\n\n        if (job.status !== 'sending') continue;\n        if (!job.chunks || job.nextChunkIndex <= 0) continue;\n        if (now - job.lastProgressAt < TIMEOUT_MS) continue;\n\n        const idx = job.nextChunkIndex - 1;\n        if (!job.chunks[idx]) continue;\n\n        out.push({\n            topic: `application/${appId}/device/${eui}/command/down`,\n            payload: {\n                devEui: eui,\n                confirmed: false,\n                fPort: 41,\n                data: job.chunks[idx]\n            }\n        });\n    }\n\n    return out.length ? out : null;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -2850,24 +2908,8 @@
         "correl": "",
         "expiry": "",
         "broker": "e1b2c3d4e5f6a7b8",
-        "x": 1570,
+        "x": 1590,
         "y": 1080,
-        "wires": []
-    },
-    {
-        "id": "a8ab75d2f20dafe3",
-        "type": "debug",
-        "z": "155f01355999b8a5",
-        "name": "debug 2",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "false",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 1580,
-        "y": 1120,
         "wires": []
     },
     {

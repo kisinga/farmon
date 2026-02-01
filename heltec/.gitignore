@@ -15,6 +15,7 @@ build/
 .build/
 .vs/
 .vscode/
+.cache/
 firmware.*
 *~
 *.tmp

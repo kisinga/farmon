@@ -1,6 +1,7 @@
 #include "ota_receiver.h"
 #include "protocol_constants.h"
 #include "core_logger.h"
+#include "lorawan_messages.h"
 #include <Arduino.h>
 #include <Update.h>
 #include <cstring>
@@ -27,17 +28,23 @@ bool OtaReceiver::verifyChunkCrc16(const uint8_t* payload, size_t payloadLen, ui
 }
 
 void OtaReceiver::sendProgress(ProgressStatus status, uint16_t chunkIndex) {
-    if (!sendFn_) return;
-    uint8_t buf[3];
-    buf[0] = static_cast<uint8_t>(status);
-    buf[1] = (uint8_t)(chunkIndex & 0xFF);
-    buf[2] = (uint8_t)(chunkIndex >> 8);
-    sendFn_(FPORT_OTA_PROGRESS, buf, 3);
+    if (!txQueue_) return;
+    
+    LoRaWANTxMsg msg;
+    msg.port = FPORT_OTA_PROGRESS;
+    msg.len = 3;
+    msg.confirmed = false;
+    msg.payload[0] = static_cast<uint8_t>(status);
+    msg.payload[1] = (uint8_t)(chunkIndex & 0xFF);
+    msg.payload[2] = (uint8_t)(chunkIndex >> 8);
+    
+    xQueueSend(txQueue_, &msg, 0);  // Fire and forget
     LOGI("OTA", "Progress: status=%d index=%u", (int)status, (unsigned)chunkIndex);
 }
 
 bool OtaReceiver::handleDownlink(uint8_t port, const uint8_t* payload, uint8_t length) {
     if (port == FPORT_OTA_START) {
+        LOGI("OTA", "RX fPort 40 Start len=%d", length);
         if (state_ != State::Idle) {
             LOGW("OTA", "Start ignored: already in state %d", (int)state_);
             return true;
@@ -82,31 +89,44 @@ bool OtaReceiver::handleDownlink(uint8_t port, const uint8_t* payload, uint8_t l
             return true;
         }
         uint16_t index = (uint16_t)payload[0] | ((uint16_t)payload[1] << 8);
+        LOGI("OTA", "RX fPort 41 Chunk idx=%u len=%d", (unsigned)index, length);
         const uint8_t* chunkPayload = payload + OTA_INDEX_SIZE;
         uint16_t recvCrc = (uint16_t)payload[OTA_INDEX_SIZE + OTA_PAYLOAD_SIZE] |
                           ((uint16_t)payload[OTA_INDEX_SIZE + OTA_PAYLOAD_SIZE + 1] << 8);
 
+        if (index >= totalChunks_) {
+            LOGW("OTA", "Chunk %u out of range (total %u)", (unsigned)index, (unsigned)totalChunks_);
+            return true;
+        }
+        if (!verifyChunkCrc16(chunkPayload, OTA_PAYLOAD_SIZE, recvCrc)) {
+            LOGW("OTA", "Chunk %u CRC mismatch", (unsigned)index);
+            sendProgress(ProgressStatus::Failed, index);
+            return true;
+        }
         if (index < nextExpectedIndex_) {
-            // Duplicate: no-op write, still ACK so server can advance
             sendProgress(ProgressStatus::ChunkOk, index);
             return true;
         }
         if (index > nextExpectedIndex_) {
-            // Out of order: ignore (server will resend)
+            sendProgress(ProgressStatus::Failed, nextExpectedIndex_);
             return true;
         }
 
-        if (!verifyChunkCrc16(chunkPayload, OTA_PAYLOAD_SIZE, recvCrc)) {
-            LOGW("OTA", "Chunk %u CRC mismatch", (unsigned)index);
-            return true;  // Don't send fPort 8; server will resend on timeout
+        // Diagnostic logging every 100 chunks to track memory
+        if (index % 100 == 0 || index == 2064) {
+            LOGI("OTA", "Chunk %u: heap=%lu min_heap=%lu",
+                 (unsigned)index,
+                 (unsigned long)ESP.getFreeHeap(),
+                 (unsigned long)ESP.getMinFreeHeap());
         }
 
-        // Update.write() takes non-const uint8_t*; copy payload into a buffer
-        uint8_t buf[OTA_PAYLOAD_SIZE];
-        memcpy(buf, chunkPayload, OTA_PAYLOAD_SIZE);
-        size_t written = Update.write(buf, OTA_PAYLOAD_SIZE);
+        // ZERO COPY: Cast away const (Update.write doesn't accept const but won't modify)
+        size_t written = Update.write(const_cast<uint8_t*>(chunkPayload), OTA_PAYLOAD_SIZE);
         if (written != OTA_PAYLOAD_SIZE) {
-            LOGW("OTA", "Update.write failed: wrote %d", (int)written);
+            uint8_t err = Update.getError();
+            LOGW("OTA", "Update.write failed at chunk %u: wrote %d, error=%u, hasError=%d, heap=%lu",
+                 (unsigned)index, (int)written, err, Update.hasError(),
+                 (unsigned long)ESP.getFreeHeap());
             Update.abort();
             state_ = State::Failed;
             sendProgress(ProgressStatus::Failed, index);
@@ -123,10 +143,8 @@ bool OtaReceiver::handleDownlink(uint8_t port, const uint8_t* payload, uint8_t l
                 sendProgress(ProgressStatus::Failed, index);
                 return true;
             }
-            if (hasExpectedCrc32_) {
-                // Optional: verify full-image CRC32 (ESP32 Update may not expose it; skip for v1)
+            if (hasExpectedCrc32_)
                 (void)expectedCrc32_;
-            }
             state_ = State::Verifying;
             sendProgress(ProgressStatus::Done, index);
             rebootAtMs_ = millis() + REBOOT_DELAY_MS;
@@ -137,6 +155,7 @@ bool OtaReceiver::handleDownlink(uint8_t port, const uint8_t* payload, uint8_t l
     }
 
     if (port == FPORT_OTA_CANCEL) {
+        LOGI("OTA", "RX fPort 42 Cancel");
         if (state_ == State::Idle || state_ == State::Failed || state_ == State::Cancelled) {
             return (state_ != State::Idle);
         }

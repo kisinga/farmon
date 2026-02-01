@@ -3,8 +3,10 @@
 #include "message_schema.h"
 #include "protocol_constants.h"
 #include "hal_persistence.h"
+#include "lorawan_messages.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include <stdint.h>
-#include <functional>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -14,7 +16,7 @@
  *
  * States: NotStarted -> Pending -> Sent -> Complete
  * onJoin(): NotStarted -> Pending (triggers send)
- * send(): builds 5 frames, enqueues via enqueueFn (no delay)
+ * send(): builds 5 frames, enqueues via TX queue (no delay)
  * onRegAck(): persist, Sent -> Complete
  * tick(): retry when Sent and elapsed > 30s
  */
@@ -27,11 +29,9 @@ public:
         Complete
     };
 
-    using EnqueueFn = std::function<bool(uint8_t port, const uint8_t* payload, uint8_t len, bool confirmed)>;
-
     RegistrationManager() = default;
 
-    void setEnqueueFn(EnqueueFn fn) { _enqueueFn = std::move(fn); }
+    void setTxQueue(QueueHandle_t queue) { _txQueue = queue; }
     void setSchema(const MessageSchema::Schema& schema) { _schema = schema; }
     void setDeviceInfo(const char* deviceType, const char* fwVersion);
     void setPersistence(IPersistenceHal* hal) { _persistence = hal; }
@@ -53,14 +53,14 @@ public:
 
     State getState() const { return _state; }
 
-    /** Send all 5 registration frames via enqueueFn. Call when Pending. */
+    /** Send all 5 registration frames via TX queue. Call when Pending. */
     void send();
 
 private:
     static constexpr uint32_t REG_RETRY_INTERVAL_MS = 30000;
 
-    EnqueueFn _enqueueFn;
-    MessageSchema::Schema _schema;
+    QueueHandle_t _txQueue = nullptr;
+    MessageSchema::Schema     _schema;
     IPersistenceHal* _persistence = nullptr;
     char _deviceType[32] = "water_monitor";
     char _fwVersion[16] = "2.0.0";

@@ -2,6 +2,12 @@
 
 Single convention for how data is stored in PostgreSQL, how Node-RED flows pass context and params to DB nodes, and how the UI and backend exchange requests/responses.
 
+### Registration (fPort 1)
+
+- **Format:** Multi-frame only. Device sends 5 frames: `reg:header|...`, `reg:fields|...`, `reg:sys|...`, `reg:states|...`, `reg:cmds|...`.
+- **Header fields:** `v`, `sv`, `type`, `fw`.
+- **Legacy single-frame:** Not supported. Codec and flows reject non–multi-frame registration.
+
 ---
 
 ## 1. Device context

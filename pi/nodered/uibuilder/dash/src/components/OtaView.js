@@ -14,9 +14,10 @@ export default {
         const firmwareHistory = computed(() => deviceStore.state.firmwareHistory);
         const firmwareErrorLog = computed(() => deviceStore.state.firmwareErrorLog);
 
+        const normEui = (e) => (e && String(e).toLowerCase().replace(/[^a-f0-9]/g, '')) || '';
         const otaJob = computed(() => {
             const eui = selectedDevice.value;
-            return eui ? (deviceStore.state.otaJobByEui[eui] || null) : null;
+            return eui ? (deviceStore.state.otaJobByEui[normEui(eui)] || deviceStore.state.otaJobByEui[eui] || null) : null;
         });
 
         const otaActive = computed(() => {
@@ -38,10 +39,17 @@ export default {
             uibuilder.send({ topic: 'getFirmwareErrorLog', payload: selectedDevice.value ? { eui: selectedDevice.value } : {} });
         }
 
+        function requestOtaState() {
+            if (selectedDevice.value) {
+                uibuilder.send({ topic: 'getOtaState', payload: { eui: selectedDevice.value } });
+            }
+        }
+
         watch(selectedDevice, (eui) => {
             if (eui) {
                 requestHistory();
                 requestErrorLog();
+                requestOtaState();
             } else {
                 deviceStore.state.firmwareHistory = [];
                 deviceStore.state.firmwareErrorLog = [];
@@ -52,6 +60,7 @@ export default {
             if (selectedDevice.value) {
                 requestHistory();
                 requestErrorLog();
+                requestOtaState();
             }
         });
 
