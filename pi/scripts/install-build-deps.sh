@@ -71,6 +71,18 @@ if [[ "$INSTALL_GO" == "true" ]] && command -v go &>/dev/null; then
   if [[ -n "$installed_go" ]] && version_ge "$installed_go" "$GO_MIN_VERSION"; then
     echo "Go already installed (>= ${GO_MIN_VERSION}): $(go version)"
     GO_SKIP=1
+    # Ensure the working go is prepended in ~/.profile so 'make' in new shells uses it
+    GO_BIN_DIR=$(dirname "$(command -v go)")
+    PROFILE="${HOME}/.profile"
+    if [[ -n "$GO_BIN_DIR" ]] && [[ -f "$PROFILE" || -w "$(dirname "$PROFILE")" ]]; then
+      if ! grep -q "PATH=\"${GO_BIN_DIR}:\$PATH\"" "$PROFILE" 2>/dev/null; then
+        echo "" >> "$PROFILE"
+        echo "# Go - prepend so correct arch is used (pi/scripts/install-build-deps.sh)" >> "$PROFILE"
+        echo "export PATH=\"${GO_BIN_DIR}:\$PATH\"" >> "$PROFILE"
+        grep -q 'GOPATH=' "$PROFILE" 2>/dev/null || echo "export GOPATH=\$HOME/go" >> "$PROFILE"
+        echo "Added Go PATH to $PROFILE. Run: source $PROFILE (or log out and back in), then make will work."
+      fi
+    fi
   fi
 fi
 
