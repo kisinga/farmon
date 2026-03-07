@@ -12,6 +12,7 @@ import (
 	"github.com/chirpstack/chirpstack/api/go/v4/gw"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/kisinga/farmon/pi/internal/codec"
 	"github.com/kisinga/farmon/pi/internal/concentratord"
@@ -136,23 +137,22 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 	log.Printf("uplink: dev_eui=%s f_port=%d (rssi=%v snr=%v)", result.DevEUI, result.FPort, rssi, snr)
 }
 
-// buildDownlinkFrame builds a gw.DownlinkFrame for JoinAccept (or any PHY) with optional uplink context.
+// buildDownlinkFrame builds a gw.DownlinkFrame for JoinAccept (or any PHY) with uplink context.
+// For Class A, the device opens RX1 at 1s after uplink; we set Context + Delay(1s) so the gateway transmits then.
 func buildDownlinkFrame(phyPayload []byte, uplink *gw.UplinkFrame) *gw.DownlinkFrame {
-	df := &gw.DownlinkFrame{
-		Items: []*gw.DownlinkFrameItem{{
-			PhyPayload: phyPayload,
-			TxInfo:     &gw.DownlinkTxInfo{},
-		}},
-	}
-	if rx := uplink.GetRxInfo(); rx != nil {
+	item := &gw.DownlinkFrameItem{PhyPayload: phyPayload, TxInfo: &gw.DownlinkTxInfo{}}
+	df := &gw.DownlinkFrame{Items: []*gw.DownlinkFrameItem{item}}
+	rx := uplink.GetRxInfo()
+	if rx != nil && len(rx.GetContext()) > 0 {
 		df.GatewayId = rx.GetGatewayId()
-		df.Items[0].TxInfo.Context = rx.GetContext()
-		// Use immediately timing if no context; otherwise gateway uses context for Class A.
-		if len(rx.GetContext()) == 0 {
-			df.Items[0].TxInfo.Timing = &gw.Timing{Parameters: &gw.Timing_Immediately{Immediately: &gw.ImmediatelyTimingInfo{}}}
-		}
+		item.TxInfo.Context = rx.GetContext()
+		// RX1 = 1s after uplink; gateway adds Delay to context time to schedule TX.
+		item.TxInfo.Timing = &gw.Timing{Parameters: &gw.Timing_Delay{Delay: &gw.DelayTimingInfo{Delay: durationpb.New(time.Second)}}}
 	} else {
-		df.Items[0].TxInfo.Timing = &gw.Timing{Parameters: &gw.Timing_Immediately{Immediately: &gw.ImmediatelyTimingInfo{}}}
+		if rx != nil {
+			df.GatewayId = rx.GetGatewayId()
+		}
+		item.TxInfo.Timing = &gw.Timing{Parameters: &gw.Timing_Immediately{Immediately: &gw.ImmediatelyTimingInfo{}}}
 	}
 	return df
 }
