@@ -1,6 +1,7 @@
 import { Component, inject, input, signal, OnInit } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ApiService, CredentialsResponse } from '../../../core/services/api.service';
+import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-credentials';
 
 @Component({
   selector: 'app-device-credentials-card',
@@ -36,13 +37,15 @@ import { ApiService, CredentialsResponse } from '../../../core/services/api.serv
             <span class="label"><span class="label-text font-mono text-xs">App Key</span></span>
             <div class="flex flex-wrap gap-2 items-center">
               <input
+                #keyInput
                 [type]="showKey() ? 'text' : 'password'"
                 class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
                 [value]="creds()!.app_key"
                 readonly
               />
               <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
-              <button type="button" class="btn btn-primary btn-sm" (click)="copy(creds()!.app_key)">Copy</button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="copy(keyInput, creds()!.app_key)">Copy hex</button>
+              <button type="button" class="btn btn-primary btn-sm" (click)="copyCpp(creds()!.app_key)">Copy as C++</button>
             </div>
           </label>
         }
@@ -75,8 +78,26 @@ export class DeviceCredentialsCardComponent implements OnInit {
     });
   }
 
-  copy(text: string): void {
-    navigator.clipboard.writeText(text).catch(() => {});
+  async copy(inputEl: HTMLInputElement, text: string): Promise<void> {
+    const ok = await copyToClipboard(text);
+    if (!ok) this.fallbackCopyInput(inputEl, text);
+  }
+
+  async copyCpp(hex: string): Promise<void> {
+    const cpp = formatAppKeyAsCpp(hex);
+    if (cpp) await copyToClipboard(cpp);
+  }
+
+  private fallbackCopyInput(el: HTMLInputElement, text: string): void {
+    el.type = 'text';
+    el.value = text;
+    el.select();
+    el.setSelectionRange(0, text.length);
+    try {
+      document.execCommand('copy');
+    } finally {
+      el.type = this.showKey() ? 'text' : 'password';
+    }
   }
 
   /** Provision this device (same EUI) to set or regenerate App Key. Updates existing record. */

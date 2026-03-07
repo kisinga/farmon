@@ -1,6 +1,7 @@
 import { Component, inject, signal, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService, ProvisionResponse } from '../../../core/services/api.service';
+import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-credentials';
 
 @Component({
   selector: 'app-add-device-modal',
@@ -57,21 +58,23 @@ import { ApiService, ProvisionResponse } from '../../../core/services/api.servic
             <label class="form-control w-full">
               <span class="label"><span class="label-text font-mono text-xs">Device EUI</span></span>
               <div class="flex gap-2">
-                <input type="text" class="input input-bordered input-sm flex-1 font-mono text-xs" [value]="result()!.device_eui" readonly />
-                <button type="button" class="btn btn-ghost btn-sm btn-square" (click)="copy(result()!.device_eui)" title="Copy">📋</button>
+                <input #euiInput type="text" class="input input-bordered input-sm flex-1 font-mono text-xs" [value]="result()!.device_eui" readonly />
+                <button type="button" class="btn btn-ghost btn-sm btn-square" (click)="copy(euiInput, result()!.device_eui)" title="Copy EUI">📋</button>
               </div>
             </label>
             <label class="form-control w-full">
               <span class="label"><span class="label-text font-mono text-xs">App Key</span></span>
               <div class="flex gap-2 flex-wrap">
                 <input
+                  #appKeyInput
                   [type]="showKey() ? 'text' : 'password'"
                   class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
                   [value]="result()!.app_key"
                   readonly
                 />
                 <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
-                <button type="button" class="btn btn-primary btn-sm" (click)="copy(result()!.app_key)">Copy</button>
+                <button type="button" class="btn btn-ghost btn-sm" (click)="copy(appKeyInput, result()!.app_key)">Copy hex</button>
+                <button type="button" class="btn btn-primary btn-sm" (click)="copyCpp(result()!.app_key)">Copy as C++</button>
               </div>
             </label>
             <div class="modal-action mt-6 p-0 justify-end gap-2">
@@ -126,8 +129,26 @@ export class AddDeviceModalComponent {
     this.name = '';
   }
 
-  copy(text: string): void {
-    navigator.clipboard.writeText(text).catch(() => {});
+  async copy(inputEl: HTMLInputElement, text: string): Promise<void> {
+    const ok = await copyToClipboard(text);
+    if (!ok) this.fallbackCopyInput(inputEl, text);
+  }
+
+  async copyCpp(hex: string): Promise<void> {
+    const cpp = formatAppKeyAsCpp(hex);
+    if (cpp) await copyToClipboard(cpp);
+  }
+
+  private fallbackCopyInput(el: HTMLInputElement, text: string): void {
+    el.type = 'text';
+    el.value = text;
+    el.select();
+    el.setSelectionRange(0, text.length);
+    try {
+      document.execCommand('copy');
+    } finally {
+      el.type = this.showKey() ? 'text' : 'password';
+    }
   }
 
   onSubmit(): void {

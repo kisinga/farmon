@@ -178,20 +178,37 @@ func bootstrapCollections(app core.App) {
 		}
 	}
 
-	// lorawan_sessions: LoRaWAN 1.0 session keys and FCnt (by device_eui)
+	// lorawan_sessions: LoRaWAN 1.0 session keys and FCnt (by device_eui).
+	// f_cnt_up/f_cnt_down are optional so 0 is valid (PocketBase required number treats 0 as blank).
 	if _, err := app.FindCollectionByNameOrId("lorawan_sessions"); err != nil {
 		coll := core.NewBaseCollection("lorawan_sessions")
 		coll.Fields.Add(&core.TextField{Name: "device_eui", Required: true})
 		coll.Fields.Add(&core.TextField{Name: "dev_addr_hex", Required: true})
 		coll.Fields.Add(&core.TextField{Name: "nwk_skey_hex", Required: true})
 		coll.Fields.Add(&core.TextField{Name: "app_skey_hex", Required: true})
-		coll.Fields.Add(&core.NumberField{Name: "f_cnt_up", Required: true})
-		coll.Fields.Add(&core.NumberField{Name: "f_cnt_down", Required: true})
+		coll.Fields.Add(&core.NumberField{Name: "f_cnt_up"})
+		coll.Fields.Add(&core.NumberField{Name: "f_cnt_down"})
 		setPublicListAndViewRules(coll)
 		if err := app.Save(coll); err != nil {
 			log.Printf("bootstrap: create lorawan_sessions: %v", err)
 		} else {
 			log.Println("bootstrap: created collection lorawan_sessions")
+		}
+	} else {
+		// Migrate existing: allow 0 for f_cnt_up/f_cnt_down (required number rejects 0).
+		coll, _ := app.FindCollectionByNameOrId("lorawan_sessions")
+		if coll != nil {
+			for _, name := range []string{"f_cnt_up", "f_cnt_down"} {
+				if f := coll.Fields.GetByName(name); f != nil {
+					if nf, ok := f.(*core.NumberField); ok && nf.Required {
+						nf.Required = false
+						log.Printf("bootstrap: lorawan_sessions.%s set optional", name)
+					}
+				}
+			}
+			if err := app.Save(coll); err != nil {
+				log.Printf("bootstrap: save lorawan_sessions migration: %v", err)
+			}
 		}
 	}
 
