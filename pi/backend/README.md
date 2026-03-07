@@ -40,8 +40,8 @@ Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), a
 ## Build and run
 
 - **Local**: `go build -o pocketbase . && ./pocketbase serve --http=0.0.0.0:8090`
-- **Docker** (from `pi/`): `docker compose up -d --build`
-- **Raspberry Pi**: `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o pocketbase .`; copy binary and `pb_public/`.
+- **Docker with pre-built binary** (from `pi/`): Run `make dist-pi` on your machine (builds frontend + backend for linux/arm64 into `dist/`). Commit `dist/` and push. On the Pi: `git pull && docker compose up -d`. The image only copies `dist/pocketbase` and `dist/pb_public/` (no build in container).
+- **Docker build on device**: If you didn't commit `dist/`, uncomment the build stages in `backend/Dockerfile` and point the runtime stage at `--from=backend` and `--from=frontend`; then `docker compose build` from `pi/`.
 
 ## API summary
 

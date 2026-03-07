@@ -1,30 +1,43 @@
-# pi stack: ChirpStack + PocketBase + Angular
-# Run from pi/ directory.
+# pi stack: PocketBase backend + Angular frontend. Run from pi/ directory.
+#
+# Fast path (local machine): make dist-pi → commit dist/ → on Pi: git pull && docker compose up -d
+# On-device build: uncomment build stages in backend/Dockerfile, then docker compose build
 
-.PHONY: build build-pi frontend backend
+.PHONY: build build-pi frontend backend dist dist-pi dist-pi-arm
 
-# Default: build backend binary (expects frontend already built and in backend/pb_public, or use docker)
+# Default: build backend for host (dev). Run after 'make frontend' if you need pb_public.
 build: backend
 	@echo "Backend binary: backend/pocketbase"
-
-# Build for Raspberry Pi (linux/arm64). Builds frontend then backend.
-build-pi: frontend
-	@mkdir -p backend/pb_public
-	@(cp -r frontend/dist/browser/. backend/pb_public/ 2>/dev/null) || (cp -r frontend/dist/frontend/browser/. backend/pb_public/ 2>/dev/null) || cp -r frontend/dist/. backend/pb_public/
-	cd backend && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o pocketbase-pi .
-	@echo "Pi binary: backend/pocketbase-pi — copy to Pi with backend/pb_public/"
 
 # Build frontend only
 frontend:
 	cd frontend && npm ci && npm run build
 
-# Build backend only (host OS). Ensure pb_public is populated or run after frontend.
+# Build backend only (host OS)
 backend:
 	cd backend && go build -o pocketbase .
 
-# Build backend for 32-bit Pi (e.g. Pi Zero 2 W). Uses same pb_public as build-pi.
-build-pi-arm: frontend
-	@mkdir -p backend/pb_public
-	@(cp -r frontend/dist/browser/. backend/pb_public/ 2>/dev/null) || (cp -r frontend/dist/frontend/browser/. backend/pb_public/ 2>/dev/null) || cp -r frontend/dist/. backend/pb_public/
-	cd backend && GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -o pocketbase-pi-arm .
-	@echo "Pi 32-bit binary: backend/pocketbase-pi-arm"
+# --- Pre-built dist for Docker (no build in container) ---
+# Produces dist/pocketbase and dist/pb_public/. Commit dist/ and reference from Dockerfile.
+# On Pi: git pull && docker compose up -d (build uses COPY dist/).
+
+# dist-pi: Linux arm64 (Raspberry Pi 64-bit). Builds frontend deps + frontend + backend deps + backend.
+dist-pi: frontend
+	@mkdir -p dist/pb_public
+	@cp -r frontend/dist/browser/. dist/pb_public/
+	cd backend && go mod download && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o ../dist/pocketbase .
+	@echo "Built dist/pocketbase (linux/arm64) and dist/pb_public/. Commit dist/ then on Pi: git pull && docker compose up -d"
+
+# dist: Linux amd64 (e.g. local Docker or CI). Same layout as dist-pi.
+dist: frontend
+	@mkdir -p dist/pb_public
+	@cp -r frontend/dist/browser/. dist/pb_public/
+	cd backend && go mod download && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ../dist/pocketbase .
+	@echo "Built dist/pocketbase (linux/amd64) and dist/pb_public/"
+
+# dist-pi-arm: 32-bit Pi (e.g. Pi Zero 2 W)
+dist-pi-arm: frontend
+	@mkdir -p dist/pb_public
+	@cp -r frontend/dist/browser/. dist/pb_public/
+	cd backend && go mod download && GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -o ../dist/pocketbase .
+	@echo "Built dist/pocketbase (linux/arm) and dist/pb_public/"
