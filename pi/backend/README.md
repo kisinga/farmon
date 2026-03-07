@@ -84,12 +84,12 @@ Bootstrap sets **List** and **View** rules to empty (public) for all app collect
 
 ### ChirpStack API (downlink and gateway status)
 
-For `POST /api/setControl` and `GET /api/gateway-status` to call ChirpStack:
+For `POST /api/setControl` and `GET /api/gateway-status` to call ChirpStack over gRPC:
 
-- Set **CHIRPSTACK_API_URL** (e.g. `http://chirpstack-rest-api:8080` when using the REST API proxy container).
+- Set **CHIRPSTACK_GRPC_ADDR** (e.g. `chirpstack:8080` in Docker, or `localhost:8080` when ChirpStack runs locally).
 - Set **CHIRPSTACK_API_KEY** (create in ChirpStack UI: API Keys).
 
-If unset, setControl still accepts requests and returns success (no downlink enqueued), and gateway-status returns an empty list.
+The backend talks to ChirpStack directly via gRPC; no separate REST proxy container is required. If either env is unset, setControl still accepts requests and returns success (no downlink enqueued), and gateway-status returns an empty list.
 
 ### Custom API
 

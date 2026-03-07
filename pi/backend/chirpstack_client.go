@@ -1,43 +1,77 @@
 package main
 
 import (
-	"bytes"
-	"encoding/base64"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/chirpstack/chirpstack/api/go/v4/api"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
 	fPortDirectControl = 20
-	defaultHTTPTimeout = 10 * time.Second
+	defaultRPCTimeout  = 10 * time.Second
 )
 
-// ChirpStack client for downlink enqueue and gateway list (HTTP REST).
-// Set CHIRPSTACK_API_URL (e.g. http://chirpstack-rest-api:8090) and CHIRPSTACK_API_KEY.
+// apiToken implements credentials.PerRPCCredentials for ChirpStack gRPC auth.
+type apiToken string
+
+func (a apiToken) GetRequestMetadata(_ context.Context, _ ...string) (map[string]string, error) {
+	return map[string]string{
+		"authorization": "Bearer " + string(a),
+	}, nil
+}
+
+func (a apiToken) RequireTransportSecurity() bool {
+	return false
+}
+
+// ChirpStack client for downlink enqueue and gateway list (gRPC).
+// Set CHIRPSTACK_GRPC_ADDR (e.g. chirpstack:8080) and CHIRPSTACK_API_KEY.
 // If unset, Enqueue and ListGateways no-op and return nil/empty (caller can stub).
 type ChirpStackClient struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
+	addr   string
+	apiKey string
+
+	once sync.Once
+	conn *grpc.ClientConn
+	err  error
+
+	deviceClient  api.DeviceServiceClient
+	gatewayClient api.GatewayServiceClient
 }
 
 func NewChirpStackClient() *ChirpStackClient {
-	base := strings.TrimSuffix(os.Getenv("CHIRPSTACK_API_URL"), "/")
+	addr := strings.TrimSpace(os.Getenv("CHIRPSTACK_GRPC_ADDR"))
 	key := os.Getenv("CHIRPSTACK_API_KEY")
 	return &ChirpStackClient{
-		baseURL:    base,
-		apiKey:     key,
-		httpClient: &http.Client{Timeout: defaultHTTPTimeout},
+		addr:   addr,
+		apiKey: key,
 	}
 }
 
 func (c *ChirpStackClient) Enabled() bool {
-	return c.baseURL != "" && c.apiKey != ""
+	return c.addr != "" && c.apiKey != ""
+}
+
+func (c *ChirpStackClient) ensureConn() (*grpc.ClientConn, error) {
+	c.once.Do(func() {
+		c.conn, c.err = grpc.NewClient(c.addr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithPerRPCCredentials(apiToken(c.apiKey)),
+		)
+		if c.err != nil {
+			return
+		}
+		c.deviceClient = api.NewDeviceServiceClient(c.conn)
+		c.gatewayClient = api.NewGatewayServiceClient(c.conn)
+	})
+	return c.conn, c.err
 }
 
 // EnqueueDownlink sends a downlink to the device queue (fPort 20 = direct control).
@@ -46,37 +80,25 @@ func (c *ChirpStackClient) EnqueueDownlink(devEui string, payload []byte) error 
 	if !c.Enabled() {
 		return nil
 	}
-	// Normalize EUI to 16-char hex (no separators) for API
+	_, err := c.ensureConn()
+	if err != nil {
+		return fmt.Errorf("chirpstack gRPC: %w", err)
+	}
+
 	eui := normalizeEuiForAPI(devEui)
-	url := c.baseURL + "/api/devices/" + eui + "/queue"
+	ctx, cancel := context.WithTimeout(context.Background(), defaultRPCTimeout)
+	defer cancel()
 
-	// ChirpStack REST API (grpc-gateway) uses camelCase in JSON.
-	body := map[string]any{
-		"queueItem": map[string]any{
-			"devEui":    eui,
-			"fPort":     fPortDirectControl,
-			"confirmed": false,
-			"data":      base64.StdEncoding.EncodeToString(payload),
+	_, err = c.deviceClient.Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
+		QueueItem: &api.DeviceQueueItem{
+			DevEui:    eui,
+			FPort:     fPortDirectControl,
+			Confirmed: false,
+			Data:      payload,
 		},
-	}
-	enc, _ := json.Marshal(body)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(enc))
+	})
 	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	// ChirpStack REST proxy may expect gRPC gateway header
-	req.Header.Set("Grpc-Metadata-Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("chirpstack enqueue: %s: %s", resp.Status, string(b))
+		return fmt.Errorf("chirpstack enqueue: %w", err)
 	}
 	return nil
 }
@@ -94,41 +116,35 @@ func (c *ChirpStackClient) ListGateways() ([]GatewaySummary, error) {
 	if !c.Enabled() {
 		return []GatewaySummary{}, nil
 	}
-	// ChirpStack REST: list gateways (path may be /api/gateways or tenant-scoped)
-	url := c.baseURL + "/api/gateways?limit=100"
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	_, err := c.ensureConn()
 	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Grpc-Metadata-Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
 		return []GatewaySummary{}, nil
 	}
 
-	var out struct {
-		Result []struct {
-			GatewayId string `json:"gatewayId"`
-			Name      string `json:"name"`
-			// Connection state may be in a different field; adapt to actual API
-		} `json:"result"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultRPCTimeout)
+	defer cancel()
+
+	resp, err := c.gatewayClient.List(ctx, &api.ListGatewaysRequest{
+		Limit: 100,
+	})
+	if err != nil {
 		return []GatewaySummary{}, nil
 	}
-	list := make([]GatewaySummary, 0, len(out.Result))
-	for _, g := range out.Result {
-		list = append(list, GatewaySummary{
-			ID:     g.GatewayId,
-			Name:   g.Name,
-			Online: false, // Set when API provides connection state
-		})
+
+	list := make([]GatewaySummary, 0, len(resp.Result))
+	for _, g := range resp.Result {
+		summary := GatewaySummary{
+			ID:     g.GetGatewayId(),
+			Name:   g.GetName(),
+			Online: g.GetState() == api.GatewayState_ONLINE,
+		}
+		if ts := g.GetLastSeenAt(); ts != nil {
+			if t := ts.AsTime(); !t.IsZero() {
+				s := t.Format(time.RFC3339)
+				summary.LastSeen = &s
+			}
+		}
+		list = append(list, summary)
 	}
 	return list, nil
 }
@@ -136,11 +152,11 @@ func (c *ChirpStackClient) ListGateways() ([]GatewaySummary, error) {
 func normalizeEuiForAPI(eui string) string {
 	const hex = "0123456789abcdef"
 	out := make([]byte, 0, 16)
-	for _, c := range eui {
-		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') {
-			out = append(out, byte(c))
-		} else if c >= 'A' && c <= 'F' {
-			out = append(out, byte(c-'A'+'a'))
+	for _, ch := range eui {
+		if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') {
+			out = append(out, byte(ch))
+		} else if ch >= 'A' && ch <= 'F' {
+			out = append(out, byte(ch-'A'+'a'))
 		}
 	}
 	if len(out) > 16 {
