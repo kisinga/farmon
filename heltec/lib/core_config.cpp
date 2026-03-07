@@ -40,7 +40,7 @@ RemoteConfig RemoteConfig::create(uint8_t deviceId) {
     cfg.communication.lorawan.adrEnabled = true;
     cfg.communication.lorawan.txPower = 14;
     cfg.communication.lorawan.dataRate = 3;  // DR3 (SF7) for US915
-    cfg.communication.lorawan.minDataRate = 1;  // US915
+    cfg.communication.lorawan.minDataRate = 2;  // US915: DR2 (125B) min so telemetry fits; DR1=53B too small
     cfg.communication.lorawan.defaultPort = 1;
     cfg.communication.lorawan.useConfirmedUplinks = true;
     cfg.communication.lorawan.joinTimeoutMs = 30000;

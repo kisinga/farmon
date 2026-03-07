@@ -5,6 +5,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
+namespace ErrorReporter { class IErrorReporter; }
+
 // =============================================================================
 // OTA over LoRaWAN — sequential chunk receiver
 // =============================================================================
@@ -53,6 +55,9 @@ public:
     /** Set TX queue (alternative to constructor) */
     void setTxQueue(QueueHandle_t txQueue) { txQueue_ = txQueue; }
 
+    /** Optional: report OTA errors (cs=CRC, wf=write fail, tm=timeout/cancel) for telemetry counters */
+    void setErrorReporter(ErrorReporter::IErrorReporter* reporter) { errorReporter_ = reporter; }
+
     /**
      * Handle OTA downlink. Returns true if message was consumed (port 40, 41, 42).
      * When true, caller must not send command ACK; OTA uses fPort 8 for progress.
@@ -78,6 +83,7 @@ private:
     static uint16_t crc16Payload(const uint8_t* data, size_t len);
 
     QueueHandle_t txQueue_ = nullptr;
+    ErrorReporter::IErrorReporter* errorReporter_ = nullptr;
     State state_ = State::Idle;
     uint32_t totalSize_ = 0;
     uint16_t totalChunks_ = 0;

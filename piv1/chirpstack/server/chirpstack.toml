@@ -1,0 +1,32 @@
+# ChirpStack v4 Configuration
+# Docs: https://www.chirpstack.io/docs/chirpstack/configuration.html
+
+[logging]
+level = "info"
+
+[postgresql]
+dsn = "postgres://chirpstack:chirpstack@postgres/chirpstack?sslmode=disable"
+max_open_connections = 10
+
+[redis]
+servers = ["redis://redis/"]
+
+[network]
+net_id = "000000"
+enabled_regions = ["us915_0", "eu868"]
+
+[api]
+bind = "0.0.0.0:8080"
+secret = "change-this-secret-in-production"
+
+[gateway]
+allow_unknown_gateways = true
+
+[integration]
+enabled = ["mqtt"]
+
+  [integration.mqtt]
+  server = "tcp://mosquitto:1883/"
+  json = true
+  event_topic = "application/{{application_id}}/device/{{dev_eui}}/event/{{event}}"
+  command_topic = "application/{{application_id}}/device/{{dev_eui}}/command/{{command}}"

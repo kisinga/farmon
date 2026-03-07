@@ -6,8 +6,9 @@
 #include <freertos/queue.h>
 #include <stdint.h>
 
-// Forward declarations for RadioLib
+// Forward declarations for RadioLib and error reporting
 class LoRaWANNode;
+namespace ErrorReporter { class IErrorReporter; }
 
 // =============================================================================
 // Radio Task: Dedicated FreeRTOS task for LoRaWAN communication
@@ -20,6 +21,7 @@ class LoRaWANNode;
 // - Blocking operations (join, sendReceive) are safe here
 // - App communicates via FreeRTOS queues (zero callback overhead)
 // - Status polling via atomic volatile flags
+// - Optional IErrorReporter for join-fail, no-ack, send-fail, queue-full
 // =============================================================================
 
 // Global radio task state (singleton)
@@ -28,7 +30,8 @@ struct RadioTaskState {
     QueueHandle_t rxQueue;
     LoRaWANNode* node;
     const LoRaWANConfig* lorawanConfig;  // Applied after join (optional)
-    
+    ErrorReporter::IErrorReporter* errorReporter;  // Optional; app implements for error counts
+
     // Status flags (atomic access from any task via volatile)
     volatile bool joined;
     volatile uint32_t uplinkCount;
@@ -45,6 +48,7 @@ struct RadioTaskState {
  * @param appKey 16-byte application key
  * @param lorawanConfig Optional; if non-null, dataRate/minDataRate/txPower/adrEnabled are applied after join
  * @param outState Returns pointer to global state for status queries
+ * @param errorReporter Optional; if non-null, join-fail/no-ack/send-fail/queue-full are reported here
  * @return true on success, false on failure
  *
  * Call once during app initialization. Creates queues, initializes RadioLib,
@@ -55,7 +59,8 @@ bool radioTaskStart(
     const uint8_t* appEui,
     const uint8_t* appKey,
     const LoRaWANConfig* lorawanConfig,
-    RadioTaskState** outState
+    RadioTaskState** outState,
+    ErrorReporter::IErrorReporter* errorReporter = nullptr
 );
 
 /**

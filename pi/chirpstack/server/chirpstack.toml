@@ -1,4 +1,4 @@
-# ChirpStack v4 Configuration
+# ChirpStack v4 — pi: HTTP integration only (no MQTT)
 # Docs: https://www.chirpstack.io/docs/chirpstack/configuration.html
 
 [logging]
@@ -23,10 +23,8 @@ secret = "change-this-secret-in-production"
 allow_unknown_gateways = true
 
 [integration]
-enabled = ["mqtt"]
+enabled = ["http"]
 
-  [integration.mqtt]
-  server = "tcp://mosquitto:1883/"
+  [integration.http]
+  event_endpoint = "http://backend:8090/api/chirpstack"
   json = true
-  event_topic = "application/{{application_id}}/device/{{dev_eui}}/event/{{event}}"
-  command_topic = "application/{{application_id}}/device/{{dev_eui}}/command/{{command}}"

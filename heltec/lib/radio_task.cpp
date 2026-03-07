@@ -1,4 +1,5 @@
 #include "radio_task.h"
+#include "error_reporter.h"
 #include "core_logger.h"
 #include "communication_config.h"
 #include <RadioLib.h>
@@ -42,8 +43,11 @@ bool radioTaskStart(
     const uint8_t* appEui,
     const uint8_t* appKey,
     const LoRaWANConfig* lorawanConfig,
-    RadioTaskState** outState
+    RadioTaskState** outState,
+    ErrorReporter::IErrorReporter* errorReporter
 ) {
+    g_radioState.errorReporter = errorReporter;
+
     // Create queues
     g_radioState.txQueue = xQueueCreate(8, sizeof(LoRaWANTxMsg));
     g_radioState.rxQueue = xQueueCreate(4, sizeof(LoRaWANRxMsg));
@@ -170,6 +174,9 @@ void radioTaskRun(void* param) {
         LOGW("Radio", "Join failed after %lu ms: %s (%d); retrying in %lu s",
              joinDurationMs, getRadioLibErrorString(joinState), joinState,
              (unsigned long)(joinRetryDelayMs / 1000));
+        if (state->errorReporter) {
+            state->errorReporter->reportError(ErrorReporter::Category::Comm, ErrorReporter::Comm::JoinFail);
+        }
         vTaskDelay(pdMS_TO_TICKS(joinRetryDelayMs));
     }
     
@@ -180,10 +187,39 @@ void radioTaskRun(void* param) {
     
     for (;;) {
         // ---------------------------------------------------------------------
-        // 1. Check for TX requests (blocking with 50ms timeout)
+        // 1. Poll Class C downlinks FIRST so we see the next OTA chunk immediately
+        //    (no 1s delay from previous send's RX window)
+        // ---------------------------------------------------------------------
+        if (state->joined) {
+            uint8_t rxBuf[256];
+            size_t rxLen = sizeof(rxBuf);
+            LoRaWANEvent_t event;
+            int16_t result = node->getDownlinkClassC(rxBuf, &rxLen, &event);
+            if (result > 0 && rxLen > 0 && rxLen <= 222) {
+                LOGD("Radio", "Class C downlink: port=%d len=%zu", event.fPort, rxLen);
+                LoRaWANRxMsg rxMsg;
+                rxMsg.port = event.fPort;
+                rxMsg.len = rxLen;
+                rxMsg.rssi = radio.getRSSI();
+                rxMsg.snr = radio.getSNR();
+                memcpy(rxMsg.payload, rxBuf, rxLen);
+                state->lastRssi = rxMsg.rssi;
+                state->lastSnr = rxMsg.snr;
+                state->downlinkCount++;
+                if (xQueueSend(state->rxQueue, &rxMsg, 0) != pdTRUE) {
+                    LOGW("Radio", "RX queue full, dropping Class C downlink");
+                    if (state->errorReporter) {
+                        state->errorReporter->reportError(ErrorReporter::Category::Sys, ErrorReporter::Sys::QueueFull);
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 2. Check for TX requests (unconfirmed OTA ACK returns immediately after patch)
         // ---------------------------------------------------------------------
         LoRaWANTxMsg txMsg;
-        if (xQueueReceive(state->txQueue, &txMsg, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (xQueueReceive(state->txQueue, &txMsg, pdMS_TO_TICKS(1)) == pdTRUE) {
             if (!state->joined) {
                 LOGW("Radio", "TX dropped (not joined): port=%d len=%d", txMsg.port, txMsg.len);
                 continue;
@@ -249,12 +285,18 @@ void radioTaskRun(void* param) {
                     
                     if (xQueueSend(state->rxQueue, &rxMsg, 0) != pdTRUE) {
                         LOGW("Radio", "RX queue full, dropping downlink");
+                        if (state->errorReporter) {
+                            state->errorReporter->reportError(ErrorReporter::Category::Sys, ErrorReporter::Sys::QueueFull);
+                        }
                     }
                 }
             } else if (result == RADIOLIB_ERR_NONE) {
                 // Zero: TX success but no downlink (or no ACK for confirmed)
                 if (txMsg.confirmed) {
                     LOGW("Radio", "Confirmed TX sent but no ACK received");
+                    if (state->errorReporter) {
+                        state->errorReporter->reportError(ErrorReporter::Category::Comm, ErrorReporter::Comm::NoAck);
+                    }
                 } else {
                     state->uplinkCount++;
                     LOGD("Radio", "TX success, no downlink");
@@ -262,38 +304,12 @@ void radioTaskRun(void* param) {
             } else {
                 // Negative: error
                 LOGW("Radio", "TX failed: %s (%d)", getRadioLibErrorString(result), result);
-            }
-        }
-        
-        // ---------------------------------------------------------------------
-        // 2. Poll for Class C downlinks (non-blocking)
-        // ---------------------------------------------------------------------
-        if (state->joined) {
-            uint8_t rxBuf[256];
-            size_t rxLen = sizeof(rxBuf);
-            LoRaWANEvent_t event;
-            
-            int16_t result = node->getDownlinkClassC(rxBuf, &rxLen, &event);
-            if (result > 0 && rxLen > 0 && rxLen <= 222) {
-                LOGD("Radio", "Class C downlink: port=%d len=%zu", event.fPort, rxLen);
-                
-                LoRaWANRxMsg rxMsg;
-                rxMsg.port = event.fPort;
-                rxMsg.len = rxLen;
-                rxMsg.rssi = radio.getRSSI();
-                rxMsg.snr = radio.getSNR();
-                memcpy(rxMsg.payload, rxBuf, rxLen);
-                
-                state->lastRssi = rxMsg.rssi;
-                state->lastSnr = rxMsg.snr;
-                state->downlinkCount++;
-                
-                if (xQueueSend(state->rxQueue, &rxMsg, 0) != pdTRUE) {
-                    LOGW("Radio", "RX queue full, dropping Class C downlink");
+                if (state->errorReporter) {
+                    state->errorReporter->reportError(ErrorReporter::Category::Comm, ErrorReporter::Comm::SendFail);
                 }
             }
         }
         
-        // Loop repeats every ~50ms (from xQueueReceive timeout)
+        // Loop: Class C poll then TX (1ms timeout so OTA ACK is sent promptly)
     }
 }

@@ -1,0 +1,32 @@
+@import url("../uibuilder/uib-brand.min.css");
+[v-cloak] { display: none; }
+
+/* Gauge and chart sizing - semantic classes used across components */
+.gauge-container { height: 140px; }
+.gauge-hero { height: 200px; }
+.gauge-tank { height: 180px; }
+.chart-container { height: 240px; }
+.gauge-hero.gauge-tank { height: 240px; }
+
+@media (min-width: 640px) {
+    .gauge-container { height: 160px; }
+    .gauge-hero { height: 260px; }
+    .gauge-tank { height: 220px; }
+    .chart-container { height: 280px; }
+    .gauge-hero.gauge-tank { height: 300px; }
+}
+
+/* Smooth scrolling for horizontal scroll areas */
+.overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.overflow-x-auto::-webkit-scrollbar { display: none; }
+
+/* Mobile touch targets */
+@media (max-width: 640px) {
+    .btn-xs { min-height: 2rem; min-width: 2rem; }
+    .toggle { transform: scale(1.1); }
+    .select-sm { min-height: 2.5rem; }
+    .input-sm { min-height: 2.5rem; }
+}

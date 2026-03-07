@@ -1,4 +1,4 @@
-# EU868 Region
+# EU868 Region — piv2 (gateway backend: add MQTT broker if using Gateway Bridge with MQTT)
 
 [[regions]]
   id = "eu868"

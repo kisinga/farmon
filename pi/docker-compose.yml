@@ -1,17 +1,20 @@
+# pi: ChirpStack (HTTP integration) + PocketBase backend + Angular frontend
+# No MQTT/Mosquitto. ChirpStack sends decoded events to backend via HTTP.
+# Backend lives in ./backend; frontend build can be in backend/pb_public or embedded.
+
 services:
-  # Shared PostgreSQL for ChirpStack and Node-RED
   postgres:
     image: postgres:15-alpine
-    container_name: farm-postgres
+    container_name: pi-postgres
     restart: unless-stopped
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./postgres/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - pi_postgres_data:/var/lib/postgresql/data
+      - ./backend/postgres/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     environment:
       - TZ=Africa/Nairobi
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-farmmon}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-chirpstack}
     networks:
-      - farm_network
+      - pi_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -19,57 +22,31 @@ services:
       retries: 5
       start_period: 10s
 
-  # Redis for ChirpStack
   redis:
     image: redis:7-alpine
-    container_name: farm-redis
+    container_name: pi-redis
     restart: unless-stopped
     volumes:
-      - redis_data:/data
+      - pi_redis_data:/data
     environment:
       - TZ=Africa/Nairobi
     networks:
-      - farm_network
+      - pi_network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # MQTT Broker - shared by ChirpStack and Node-RED
-  mosquitto:
-    image: eclipse-mosquitto:2.0
-    container_name: farm-mosquitto
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-    volumes:
-      - mosquitto_data:/mosquitto/data
-      - mosquitto_logs:/mosquitto/log
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    environment:
-      - TZ=Africa/Nairobi
-    networks:
-      - farm_network
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 5 mosquitto_sub -h localhost -t '$$SYS/broker/uptime' -C 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
-  # ChirpStack LoRaWAN Network Server
   chirpstack:
     image: chirpstack/chirpstack:4
-    container_name: farm-chirpstack
+    container_name: pi-chirpstack
     restart: unless-stopped
     command: -c /etc/chirpstack
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      mosquitto:
         condition: service_healthy
     ports:
       - "8080:8080"
@@ -78,63 +55,34 @@ services:
     environment:
       - TZ=Africa/Nairobi
     networks:
-      - farm_network
+      - pi_network
 
-  # Node-RED - Dashboard, Automations, Integrations
-  nodered:
-    image: nodered/node-red:latest
-    container_name: farm-nodered
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: pi-backend
     restart: unless-stopped
     depends_on:
-      mosquitto:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+      - chirpstack
     ports:
-      - "1880:1880"
+      - "8090:8090"
     volumes:
-      - nodered_data:/data
+      - pi_pb_data:/app/pb_data
     environment:
       - TZ=Africa/Nairobi
-      - FLOWS=flows.json
+      - POCKETBASE_CHIRPSTACK_URL=http://chirpstack:8080
     networks:
-      - farm_network
+      - pi_network
 
 volumes:
-  postgres_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /srv/farm/postgres
-  redis_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /srv/farm/redis
-  mosquitto_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /srv/farm/mosquitto/data
-  mosquitto_logs:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /srv/farm/mosquitto/logs
-  nodered_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /srv/farm/nodered
+  pi_postgres_data:
+  pi_redis_data:
+  pi_pb_data:
 
 networks:
-  farm_network:
+  pi_network:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/16
+        - subnet: 172.21.0.0/16

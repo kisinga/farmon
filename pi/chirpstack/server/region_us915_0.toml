@@ -1,5 +1,4 @@
-# US915 Region - Sub-band 2 (channels 8-15)
-# Frequencies: 903.9-905.3 MHz (must match concentratord config)
+# US915 Region - Sub-band 2 — piv2 (gateway backend: add MQTT broker if using Gateway Bridge with MQTT)
 
 [[regions]]
   id = "us915_0"

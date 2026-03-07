@@ -13,6 +13,7 @@
 #include "lib/command_translator.h"
 #include "lib/protocol_constants.h"
 #include "lib/telemetry_keys.h"
+#include "lib/error_reporter.h"
 
 // Sensors and edge rules (before device_setup.h which uses them)
 #include "sensor_interface.hpp"
@@ -37,11 +38,13 @@
 #include "lib/ui_icon_element.h"
 
 
-class RemoteApplicationImpl {
+class RemoteApplicationImpl : public ErrorReporter::IErrorReporter {
 public:
     RemoteApplicationImpl();
     void initialize();
     void run();
+
+    void reportError(ErrorReporter::Category cat, uint8_t subCode) override;
 
 private:
     // Configuration must be initialized first
@@ -82,10 +85,14 @@ private:
     std::shared_ptr<BatteryIconElement> batteryElement;
     std::shared_ptr<TextElement> statusTextElement;
 
-    // State tracking - error categories (failure points)
-    uint32_t _noAckCount = 0;      // Confirmed uplink sent, no ACK received
-    uint32_t _joinFailCount = 0;   // OTAA join attempt failed
-    uint32_t _sendFailCount = 0;   // sendData failed (pre-check or radio error)
+    // Error counters (2-char keys: na,jf,sf, sr,dr,dp, cs,wf,tm, mm,qf,ts, rf,cv,pf). Daily reset.
+    uint32_t _noAckCount = 0;
+    uint32_t _joinFailCount = 0;
+    uint32_t _sendFailCount = 0;
+    uint32_t _errSr = 0, _errDr = 0, _errDp = 0;
+    uint32_t _errCs = 0, _errWf = 0, _errTm = 0;
+    uint32_t _errMm = 0, _errQf = 0, _errTs = 0;
+    uint32_t _errRf = 0, _errCv = 0, _errPf = 0;
     uint32_t _lastResetMs = 0;
     uint32_t _lastTxMs = 0;
 
@@ -128,6 +135,40 @@ RemoteApplicationImpl::RemoteApplicationImpl() :
     sensorConfig(buildDeviceSensorConfig()) {
 }
 
+void RemoteApplicationImpl::reportError(ErrorReporter::Category cat, uint8_t subCode) {
+    switch (cat) {
+        case ErrorReporter::Category::Comm:
+            if (subCode == ErrorReporter::Comm::NoAck) _noAckCount++;
+            else if (subCode == ErrorReporter::Comm::JoinFail) _joinFailCount++;
+            else if (subCode == ErrorReporter::Comm::SendFail) _sendFailCount++;
+            break;
+        case ErrorReporter::Category::Hw:
+            if (subCode == ErrorReporter::Hw::SensorRead) _errSr++;
+            else if (subCode == ErrorReporter::Hw::Driver) _errDr++;
+            else if (subCode == ErrorReporter::Hw::Display) _errDp++;
+            break;
+        case ErrorReporter::Category::Ota:
+            if (subCode == ErrorReporter::Ota::Crc) _errCs++;
+            else if (subCode == ErrorReporter::Ota::Write) _errWf++;
+            else if (subCode == ErrorReporter::Ota::Timeout) _errTm++;
+            break;
+        case ErrorReporter::Category::Sys:
+            if (subCode == ErrorReporter::Sys::Memory) _errMm++;
+            else if (subCode == ErrorReporter::Sys::QueueFull) _errQf++;
+            else if (subCode == ErrorReporter::Sys::Task) _errTs++;
+            break;
+        case ErrorReporter::Category::Logic:
+            if (subCode == ErrorReporter::Logic::Rule) _errRf++;
+            else if (subCode == ErrorReporter::Logic::Config) _errCv++;
+            else if (subCode == ErrorReporter::Logic::Persistence) _errPf++;
+            break;
+    }
+    _persistErrorCount = true;
+    if (cat == ErrorReporter::Category::Comm && (subCode == ErrorReporter::Comm::NoAck || subCode == ErrorReporter::Comm::SendFail)) {
+        _notifyTxFailPending = true;
+    }
+}
+
 void RemoteApplicationImpl::initialize() {
     // ---
     // Critical: HALs must be created FIRST
@@ -152,11 +193,23 @@ void RemoteApplicationImpl::initialize() {
         LOGD("System", "Debug mode is ON. Log level set to DEBUG.");
     }
 
-    // Load persistent state
+    // Load persistent state (error counters: ec_na, ec_jf, ec_sf, ec_sr, ...)
     persistenceHal->begin("app_state");
-    _noAckCount = persistenceHal->loadU32("ec_no_ack", 0);
-    _joinFailCount = persistenceHal->loadU32("ec_join_fail", 0);
-    _sendFailCount = persistenceHal->loadU32("ec_send_fail", 0);
+    _noAckCount = persistenceHal->loadU32("ec_na", 0);
+    _joinFailCount = persistenceHal->loadU32("ec_jf", 0);
+    _sendFailCount = persistenceHal->loadU32("ec_sf", 0);
+    _errSr = persistenceHal->loadU32("ec_sr", 0);
+    _errDr = persistenceHal->loadU32("ec_dr", 0);
+    _errDp = persistenceHal->loadU32("ec_dp", 0);
+    _errCs = persistenceHal->loadU32("ec_cs", 0);
+    _errWf = persistenceHal->loadU32("ec_wf", 0);
+    _errTm = persistenceHal->loadU32("ec_tm", 0);
+    _errMm = persistenceHal->loadU32("ec_mm", 0);
+    _errQf = persistenceHal->loadU32("ec_qf", 0);
+    _errTs = persistenceHal->loadU32("ec_ts", 0);
+    _errRf = persistenceHal->loadU32("ec_rf", 0);
+    _errCv = persistenceHal->loadU32("ec_cv", 0);
+    _errPf = persistenceHal->loadU32("ec_pf", 0);
     _lastResetMs = persistenceHal->loadU32("lastResetMs", 0);
     // TX interval: persisted across reboots; default 60s if absent (10s–3600s valid)
     constexpr uint32_t TX_INTERVAL_DEFAULT_MS = 60000;
@@ -185,19 +238,21 @@ void RemoteApplicationImpl::initialize() {
          devEui[0], devEui[1], devEui[2], devEui[3],
          devEui[4], devEui[5], devEui[6], devEui[7]);
 
-    // Start radio task (replaces LoRaWAN HAL + CommCoordinator)
-    if (!radioTaskStart(devEui, 
-                        config.communication.lorawan.appEui, 
+    // Start radio task (replaces LoRaWAN HAL + CommCoordinator); pass this as error reporter
+    if (!radioTaskStart(devEui,
+                        config.communication.lorawan.appEui,
                         config.communication.lorawan.appKey,
                         &config.communication.lorawan,
-                        &_radioState)) {
+                        &_radioState,
+                        this)) {
         LOGE("Remote", "Failed to start radio task");
         return;
     }
     LOGI("Remote", "Radio task started");
 
-    // OTA receiver: send via radio task TX queue (direct)
+    // OTA receiver: send via radio task TX queue; report OTA errors (cs/wf/tm) to this
     _ota.setTxQueue(_radioState->txQueue);
+    _ota.setErrorReporter(this);
 
     setupUi();
     LOGI("Remote", "UI setup complete");
@@ -343,15 +398,26 @@ void RemoteApplicationImpl::initialize() {
                 // Use real sensor data: all sensors (lib + integrations) via SensorManager
                 readings = sensorManager.readAll();
 
-                // Append system state - error categories and total
+                // Append system state - all error counters and total (daily reset)
+                uint32_t errTotal = _noAckCount + _joinFailCount + _sendFailCount
+                    + _errSr + _errDr + _errDp + _errCs + _errWf + _errTm
+                    + _errMm + _errQf + _errTs + _errRf + _errCv + _errPf;
                 readings.push_back({ TelemetryKeys::ErrorNoAck, (float)_noAckCount, state.nowMs });
                 readings.push_back({ TelemetryKeys::ErrorJoinFail, (float)_joinFailCount, state.nowMs });
                 readings.push_back({ TelemetryKeys::ErrorSendFail, (float)_sendFailCount, state.nowMs });
-                readings.push_back({
-                    TelemetryKeys::ErrorCount,
-                    (float)(_noAckCount + _joinFailCount + _sendFailCount),
-                    state.nowMs
-                });
+                readings.push_back({ TelemetryKeys::ErrorSensorRead, (float)_errSr, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorDriver, (float)_errDr, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorDisplay, (float)_errDp, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorOtaCrc, (float)_errCs, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorOtaWrite, (float)_errWf, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorOtaTimeout, (float)_errTm, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorMemory, (float)_errMm, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorQueueFull, (float)_errQf, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorTask, (float)_errTs, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorRule, (float)_errRf, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorConfig, (float)_errCv, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorPersistence, (float)_errPf, state.nowMs });
+                readings.push_back({ TelemetryKeys::ErrorCount, (float)errTotal, state.nowMs });
                 uint32_t timeSinceResetSec = (state.nowMs - _lastResetMs) / 1000;
                 readings.push_back({
                     TelemetryKeys::TimeSinceReset,
@@ -409,7 +475,7 @@ void RemoteApplicationImpl::initialize() {
                     _rulesEngine->saveStateChangeQueueToFlash();
                     LOGI("Remote", "State change batch sent on fPort %d", FPORT_STATE_CHANGE);
                 } else {
-                    _sendFailCount++;
+                    _errQf++;
                     _persistErrorCount = true;
                     LOGW("Remote", "Failed to send state change batch (queue full)");
                 }
@@ -488,14 +554,54 @@ void RemoteApplicationImpl::setupSensors() {
 
 void RemoteApplicationImpl::run() {
     // No longer need deferred join - radio task handles join automatically
-    
+
+    // Automatic daily reset: clear all error counters and tsr baseline every 24h
+    uint32_t nowMs = millis();
+    const uint32_t dayMs = 24U * 3600U * 1000U;
+    if (_lastResetMs != 0 && (nowMs - _lastResetMs) >= dayMs) {
+        _noAckCount = _joinFailCount = _sendFailCount = 0;
+        _errSr = _errDr = _errDp = _errCs = _errWf = _errTm = 0;
+        _errMm = _errQf = _errTs = _errRf = _errCv = _errPf = 0;
+        _lastResetMs = nowMs;
+        persistenceHal->begin("app_state");
+        persistenceHal->saveU32("ec_na", _noAckCount);
+        persistenceHal->saveU32("ec_jf", _joinFailCount);
+        persistenceHal->saveU32("ec_sf", _sendFailCount);
+        persistenceHal->saveU32("ec_sr", _errSr);
+        persistenceHal->saveU32("ec_dr", _errDr);
+        persistenceHal->saveU32("ec_dp", _errDp);
+        persistenceHal->saveU32("ec_cs", _errCs);
+        persistenceHal->saveU32("ec_wf", _errWf);
+        persistenceHal->saveU32("ec_tm", _errTm);
+        persistenceHal->saveU32("ec_mm", _errMm);
+        persistenceHal->saveU32("ec_qf", _errQf);
+        persistenceHal->saveU32("ec_ts", _errTs);
+        persistenceHal->saveU32("ec_rf", _errRf);
+        persistenceHal->saveU32("ec_cv", _errCv);
+        persistenceHal->saveU32("ec_pf", _errPf);
+        persistenceHal->saveU32("lastResetMs", _lastResetMs);
+        persistenceHal->end();
+    }
+
     drainNotifications();
     if (_persistErrorCount) {
         _persistErrorCount = false;
         persistenceHal->begin("app_state");
-        persistenceHal->saveU32("ec_no_ack", _noAckCount);
-        persistenceHal->saveU32("ec_join_fail", _joinFailCount);
-        persistenceHal->saveU32("ec_send_fail", _sendFailCount);
+        persistenceHal->saveU32("ec_na", _noAckCount);
+        persistenceHal->saveU32("ec_jf", _joinFailCount);
+        persistenceHal->saveU32("ec_sf", _sendFailCount);
+        persistenceHal->saveU32("ec_sr", _errSr);
+        persistenceHal->saveU32("ec_dr", _errDr);
+        persistenceHal->saveU32("ec_dp", _errDp);
+        persistenceHal->saveU32("ec_cs", _errCs);
+        persistenceHal->saveU32("ec_wf", _errWf);
+        persistenceHal->saveU32("ec_tm", _errTm);
+        persistenceHal->saveU32("ec_mm", _errMm);
+        persistenceHal->saveU32("ec_qf", _errQf);
+        persistenceHal->saveU32("ec_ts", _errTs);
+        persistenceHal->saveU32("ec_rf", _errRf);
+        persistenceHal->saveU32("ec_cv", _errCv);
+        persistenceHal->saveU32("ec_pf", _errPf);
         persistenceHal->end();
     }
     if (_notifyCmd[0] != '\0') {
@@ -522,7 +628,9 @@ void RemoteApplicationImpl::run() {
     } else if (_postJoinStep == 2 && _radioState && _radioState->joined) {
         uint32_t nowMs = millis();
         uint32_t timeSinceResetSec = (nowMs - _lastResetMs) / 1000;
-        uint32_t errTotal = _noAckCount + _joinFailCount + _sendFailCount;
+        uint32_t errTotal = _noAckCount + _joinFailCount + _sendFailCount
+            + _errSr + _errDr + _errDp + _errCs + _errWf + _errTm
+            + _errMm + _errQf + _errTs + _errRf + _errCv + _errPf;
         int batteryPercent = batteryHal ? batteryHal->getBatteryPercent() : -1;
         if (batteryPercent < 0) batteryPercent = 0;
         std::vector<SensorReading> readings;
@@ -532,6 +640,18 @@ void RemoteApplicationImpl::run() {
         readings.push_back({ TelemetryKeys::ErrorNoAck, (float)_noAckCount, nowMs });
         readings.push_back({ TelemetryKeys::ErrorJoinFail, (float)_joinFailCount, nowMs });
         readings.push_back({ TelemetryKeys::ErrorSendFail, (float)_sendFailCount, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorSensorRead, (float)_errSr, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorDriver, (float)_errDr, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorDisplay, (float)_errDp, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorOtaCrc, (float)_errCs, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorOtaWrite, (float)_errWf, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorOtaTimeout, (float)_errTm, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorMemory, (float)_errMm, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorQueueFull, (float)_errQf, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorTask, (float)_errTs, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorRule, (float)_errRf, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorConfig, (float)_errCv, nowMs });
+        readings.push_back({ TelemetryKeys::ErrorPersistence, (float)_errPf, nowMs });
         readings.push_back({ TelemetryKeys::ErrorCount, (float)errTotal, nowMs });
         readings.push_back({ TelemetryKeys::TimeSinceReset, (float)timeSinceResetSec, nowMs });
         LOGI("Remote", "Post-join: sending minimal telemetry (fPort 2)");
@@ -554,6 +674,18 @@ void RemoteApplicationImpl::generateTestData(std::vector<SensorReading>& reading
     readings.push_back({TelemetryKeys::ErrorNoAck, 0.0f, nowMs});
     readings.push_back({TelemetryKeys::ErrorJoinFail, 0.0f, nowMs});
     readings.push_back({TelemetryKeys::ErrorSendFail, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorSensorRead, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorDriver, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorDisplay, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorOtaCrc, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorOtaWrite, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorOtaTimeout, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorMemory, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorQueueFull, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorTask, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorRule, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorConfig, 0.0f, nowMs});
+    readings.push_back({TelemetryKeys::ErrorPersistence, 0.0f, nowMs});
     readings.push_back({TelemetryKeys::ErrorCount, 0.0f, nowMs});
 
     uint32_t timeSinceResetSec = (nowMs - _lastResetMs) / 1000;
@@ -587,13 +719,25 @@ void RemoteApplicationImpl::sendTelemetryJson(const std::vector<SensorReading>& 
             buffer[offset++] = ',';
         }
 
-        // Use integer for counters, 2 decimal places for floats
+        // Use integer for counters and error keys, 2 decimal places for floats
         if (strcmp(readings[i].type, TelemetryKeys::PulseDelta) == 0 ||
             strcmp(readings[i].type, TelemetryKeys::BatteryPercent) == 0 ||
             strcmp(readings[i].type, TelemetryKeys::ErrorCount) == 0 ||
             strcmp(readings[i].type, TelemetryKeys::ErrorNoAck) == 0 ||
             strcmp(readings[i].type, TelemetryKeys::ErrorJoinFail) == 0 ||
             strcmp(readings[i].type, TelemetryKeys::ErrorSendFail) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorSensorRead) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorDriver) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorDisplay) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorOtaCrc) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorOtaWrite) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorOtaTimeout) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorMemory) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorQueueFull) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorTask) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorRule) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorConfig) == 0 ||
+            strcmp(readings[i].type, TelemetryKeys::ErrorPersistence) == 0 ||
             strcmp(readings[i].type, TelemetryKeys::TimeSinceReset) == 0) {
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                               "%s:%d", readings[i].type, (int)readings[i].value);
@@ -623,7 +767,7 @@ void RemoteApplicationImpl::sendTelemetryJson(const std::vector<SensorReading>& 
         memcpy(msg.payload, buffer, offset);
         
         if (xQueueSend(_radioState->txQueue, &msg, 0) != pdTRUE) {
-            _sendFailCount++;
+            _errQf++;
             _persistErrorCount = true;
             LOGW("Remote", "Failed to enqueue telemetry (queue full)");
         }
@@ -643,7 +787,7 @@ void RemoteApplicationImpl::sendCommandAck(uint8_t cmdPort, bool success) {
         memcpy(msg.payload, buffer, len);
         
         if (xQueueSend(_radioState->txQueue, &msg, 0) != pdTRUE) {
-            _sendFailCount++;
+            _errQf++;
             _persistErrorCount = true;
             LOGW("Remote", "Failed to enqueue ACK (queue full)");
         }
@@ -660,12 +804,18 @@ void RemoteApplicationImpl::sendDiagnostics() {
     uint32_t uplinks = _radioState ? _radioState->uplinkCount : 0;
     uint32_t downlinks = _radioState ? _radioState->downlinkCount : 0;
 
-    uint32_t errTotal = _noAckCount + _joinFailCount + _sendFailCount;
+    uint32_t errTotal = _noAckCount + _joinFailCount + _sendFailCount
+        + _errSr + _errDr + _errDp + _errCs + _errWf + _errTm
+        + _errMm + _errQf + _errTs + _errRf + _errCv + _errPf;
     int len = snprintf(buffer, sizeof(buffer),
-        "reg:%d,err:%u,na:%u,jf:%u,sf:%u,up:%lu,bat:%d,rssi:%d,snr:%.1f,ul:%lu,dl:%lu,fw:%s",
+        "reg:%d,err:%u,na:%u,jf:%u,sf:%u,sr:%u,dr:%u,dp:%u,cs:%u,wf:%u,tm:%u,mm:%u,qf:%u,ts:%u,rf:%u,cv:%u,pf:%u,up:%lu,bat:%d,rssi:%d,snr:%.1f,ul:%lu,dl:%lu,fw:%s",
         (registrationManager.getState() == RegistrationManager::State::Complete) ? 1 : 0,
         (unsigned)errTotal,
         _noAckCount, _joinFailCount, _sendFailCount,
+        (unsigned)_errSr, (unsigned)_errDr, (unsigned)_errDp,
+        (unsigned)_errCs, (unsigned)_errWf, (unsigned)_errTm,
+        (unsigned)_errMm, (unsigned)_errQf, (unsigned)_errTs,
+        (unsigned)_errRf, (unsigned)_errCv, (unsigned)_errPf,
         uptimeSec,
         batteryPercent,
         rssi,
@@ -688,7 +838,7 @@ void RemoteApplicationImpl::sendDiagnostics() {
         memcpy(msg.payload, buffer, len);
         
         if (xQueueSend(_radioState->txQueue, &msg, 0) != pdTRUE) {
-            _sendFailCount++;
+            _errQf++;
             _persistErrorCount = true;
             LOGW("Remote", "Failed to enqueue diagnostics (queue full)");
         }
@@ -728,15 +878,27 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
             }
             // Note: Radio task tracks its own counters, no reset API needed
 
-            // Reset error counters and record reset time
-            _noAckCount = 0;
-            _joinFailCount = 0;
-            _sendFailCount = 0;
+            // Reset all error counters and record reset time (daily reset)
+            _noAckCount = _joinFailCount = _sendFailCount = 0;
+            _errSr = _errDr = _errDp = _errCs = _errWf = _errTm = 0;
+            _errMm = _errQf = _errTs = _errRf = _errCv = _errPf = 0;
             _lastResetMs = millis();
             persistenceHal->begin("app_state");
-            persistenceHal->saveU32("ec_no_ack", _noAckCount);
-            persistenceHal->saveU32("ec_join_fail", _joinFailCount);
-            persistenceHal->saveU32("ec_send_fail", _sendFailCount);
+            persistenceHal->saveU32("ec_na", _noAckCount);
+            persistenceHal->saveU32("ec_jf", _joinFailCount);
+            persistenceHal->saveU32("ec_sf", _sendFailCount);
+            persistenceHal->saveU32("ec_sr", _errSr);
+            persistenceHal->saveU32("ec_dr", _errDr);
+            persistenceHal->saveU32("ec_dp", _errDp);
+            persistenceHal->saveU32("ec_cs", _errCs);
+            persistenceHal->saveU32("ec_wf", _errWf);
+            persistenceHal->saveU32("ec_tm", _errTm);
+            persistenceHal->saveU32("ec_mm", _errMm);
+            persistenceHal->saveU32("ec_qf", _errQf);
+            persistenceHal->saveU32("ec_ts", _errTs);
+            persistenceHal->saveU32("ec_rf", _errRf);
+            persistenceHal->saveU32("ec_cv", _errCv);
+            persistenceHal->saveU32("ec_pf", _errPf);
             persistenceHal->saveU32("lastResetMs", _lastResetMs);
             persistenceHal->end();
             success = true;
@@ -782,15 +944,27 @@ void RemoteApplicationImpl::onDownlinkReceived(uint8_t port, const uint8_t* payl
             LOGI("Remote", "Registration confirmed - telemetry enabled");
             return;  // No ACK needed for registration ACK
 
-        case FPORT_CMD_CLEAR_ERR:  // Clear error counters only
+        case FPORT_CMD_CLEAR_ERR:  // Clear all error counters
             LOGI("Remote", "Clear error counters command received");
-            _noAckCount = 0;
-            _joinFailCount = 0;
-            _sendFailCount = 0;
+            _noAckCount = _joinFailCount = _sendFailCount = 0;
+            _errSr = _errDr = _errDp = _errCs = _errWf = _errTm = 0;
+            _errMm = _errQf = _errTs = _errRf = _errCv = _errPf = 0;
             persistenceHal->begin("app_state");
-            persistenceHal->saveU32("ec_no_ack", _noAckCount);
-            persistenceHal->saveU32("ec_join_fail", _joinFailCount);
-            persistenceHal->saveU32("ec_send_fail", _sendFailCount);
+            persistenceHal->saveU32("ec_na", _noAckCount);
+            persistenceHal->saveU32("ec_jf", _joinFailCount);
+            persistenceHal->saveU32("ec_sf", _sendFailCount);
+            persistenceHal->saveU32("ec_sr", _errSr);
+            persistenceHal->saveU32("ec_dr", _errDr);
+            persistenceHal->saveU32("ec_dp", _errDp);
+            persistenceHal->saveU32("ec_cs", _errCs);
+            persistenceHal->saveU32("ec_wf", _errWf);
+            persistenceHal->saveU32("ec_tm", _errTm);
+            persistenceHal->saveU32("ec_mm", _errMm);
+            persistenceHal->saveU32("ec_qf", _errQf);
+            persistenceHal->saveU32("ec_ts", _errTs);
+            persistenceHal->saveU32("ec_rf", _errRf);
+            persistenceHal->saveU32("ec_cv", _errCv);
+            persistenceHal->saveU32("ec_pf", _errPf);
             persistenceHal->end();
             success = true;
             break;

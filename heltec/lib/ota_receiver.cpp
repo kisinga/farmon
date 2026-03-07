@@ -1,4 +1,5 @@
 #include "ota_receiver.h"
+#include "error_reporter.h"
 #include "protocol_constants.h"
 #include "core_logger.h"
 #include "lorawan_messages.h"
@@ -69,6 +70,7 @@ bool OtaReceiver::handleDownlink(uint8_t port, const uint8_t* payload, uint8_t l
         }
         if (!Update.begin(totalSize_, U_FLASH)) {
             LOGW("OTA", "Update.begin failed");
+            if (errorReporter_) errorReporter_->reportError(ErrorReporter::Category::Ota, ErrorReporter::Ota::Write);
             sendProgress(ProgressStatus::Failed, 0);
             return true;
         }
@@ -100,6 +102,7 @@ bool OtaReceiver::handleDownlink(uint8_t port, const uint8_t* payload, uint8_t l
         }
         if (!verifyChunkCrc16(chunkPayload, OTA_PAYLOAD_SIZE, recvCrc)) {
             LOGW("OTA", "Chunk %u CRC mismatch", (unsigned)index);
+            if (errorReporter_) errorReporter_->reportError(ErrorReporter::Category::Ota, ErrorReporter::Ota::Crc);
             sendProgress(ProgressStatus::Failed, index);
             return true;
         }
@@ -108,6 +111,7 @@ bool OtaReceiver::handleDownlink(uint8_t port, const uint8_t* payload, uint8_t l
             return true;
         }
         if (index > nextExpectedIndex_) {
+            if (errorReporter_) errorReporter_->reportError(ErrorReporter::Category::Ota, ErrorReporter::Ota::Timeout);
             sendProgress(ProgressStatus::Failed, nextExpectedIndex_);
             return true;
         }
@@ -127,6 +131,7 @@ bool OtaReceiver::handleDownlink(uint8_t port, const uint8_t* payload, uint8_t l
             LOGW("OTA", "Update.write failed at chunk %u: wrote %d, error=%u, hasError=%d, heap=%lu",
                  (unsigned)index, (int)written, err, Update.hasError(),
                  (unsigned long)ESP.getFreeHeap());
+            if (errorReporter_) errorReporter_->reportError(ErrorReporter::Category::Ota, ErrorReporter::Ota::Write);
             Update.abort();
             state_ = State::Failed;
             sendProgress(ProgressStatus::Failed, index);
@@ -139,6 +144,7 @@ bool OtaReceiver::handleDownlink(uint8_t port, const uint8_t* payload, uint8_t l
             bool ok = Update.end(true);
             if (!ok) {
                 LOGW("OTA", "Update.end failed");
+                if (errorReporter_) errorReporter_->reportError(ErrorReporter::Category::Ota, ErrorReporter::Ota::Write);
                 state_ = State::Failed;
                 sendProgress(ProgressStatus::Failed, index);
                 return true;
@@ -161,6 +167,7 @@ bool OtaReceiver::handleDownlink(uint8_t port, const uint8_t* payload, uint8_t l
         }
         if (state_ == State::Receiving || state_ == State::Verifying)
             Update.abort();
+        if (errorReporter_) errorReporter_->reportError(ErrorReporter::Category::Ota, ErrorReporter::Ota::Timeout);
         state_ = State::Cancelled;
         sendProgress(ProgressStatus::Cancelled, nextExpectedIndex_);
         LOGI("OTA", "Cancelled");

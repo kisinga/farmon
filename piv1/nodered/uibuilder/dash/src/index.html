@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farm Monitor</title>
+
+    <!-- Tailwind CSS + DaisyUI -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.6.0/dist/full.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Vue 3 -->
+    <script src="../uibuilder/vendor/vue/dist/vue.global.prod.js"></script>
+
+    <!-- ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts-liquidfill@3.1.0/dist/echarts-liquidfill.min.js"></script>
+
+    <!-- UI-Builder Client -->
+    <script src="../uibuilder/uibuilder.iife.min.js"></script>
+
+    <link rel="stylesheet" href="./index.css">
+</head>
+
+<body class="bg-base-300">
+    <div id="app" v-cloak>
+        <!-- Drawer wrapper for mobile sidebar -->
+        <div class="drawer">
+            <input id="main-drawer" type="checkbox" class="drawer-toggle" />
+
+            <!-- Main content area -->
+            <div class="drawer-content flex flex-col min-h-screen">
+
+                <!-- Navbar -->
+                <navbar @set-tab="setTab"></navbar>
+
+                <!-- Gateway offline: critical — no data can flow. Bold, clear, no side effects on device status. -->
+                <div v-if="!gatewayOnline" class="alert alert-error rounded-none shadow-lg flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-center text-center py-4 px-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-8 w-8 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    <div>
+                        <p class="font-bold text-base sm:text-lg">Gateway offline</p>
+                        <p class="text-sm opacity-95">No data can flow until the gateway is back. Please check the gateway and network — nothing else will work until this is fixed.</p>
+                    </div>
+                </div>
+
+                <!-- Mobile Tab Navigation -->
+                <tab-navigation @set-tab="setTab"></tab-navigation>
+
+                <!-- Page Content -->
+                <main class="flex-1 p-2 sm:p-4">
+                    <div class="max-w-5xl mx-auto space-y-3">
+
+                        <!-- No Devices Available -->
+                        <dashboard-empty-state v-if="devices.length === 0" state="no-devices"></dashboard-empty-state>
+
+                        <!-- Device Selector - Always visible when devices exist -->
+                        <device-selector
+                            :show-time-range="activeTab === 'dashboard' || activeTab === 'history'"
+                            @select-device="selectDevice"
+                            @time-range-change="onTimeRangeChange"></device-selector>
+
+                        <!-- Device Content -->
+                        <div v-if="devices.length > 0" class="space-y-3">
+                            <!-- ======================= DASHBOARD TAB ======================= -->
+                            <dashboard-view v-show="activeTab === 'dashboard'"
+                                @navigate-to-controls="setTab('controls')"></dashboard-view>
+
+                            <!-- ======================= CONTROLS TAB ======================= -->
+                            <controls-view v-show="showControlsPage"
+                                @send-command="sendSystemCommand"
+                                @set-control="setControl"
+                                @clear-override="clearOverride"></controls-view>
+
+                            <!-- ======================= RULES TAB ======================= -->
+                            <rules-view v-show="activeTab === 'rules'"
+                                @add-edge-rule="openEdgeRuleEditor"
+                                @edit-edge-rule="openEdgeRuleEditor"
+                                @delete-edge-rule="deleteEdgeRule"
+                                @toggle-edge-rule="toggleEdgeRule"
+                                @toggle-trigger="toggleTrigger"
+                                @add-rule="openRuleEditor"
+                                @edit-rule="editRule"
+                                @delete-rule="deleteRule"
+                                @toggle-rule="toggleRule"></rules-view>
+
+                            <!-- ======================= HISTORY TAB ======================= -->
+                            <history-view v-show="activeTab === 'history'"
+                                :device-eui="selectedDevice"></history-view>
+
+                            <!-- ======================= FIRMWARE TAB ======================= -->
+                            <ota-view v-show="activeTab === 'firmware'"
+                                :device-eui="selectedDevice"></ota-view>
+                        </div>
+
+                    </div>
+                </main>
+
+                <!-- Rule Editor Modal -->
+                <rule-editor-modal v-if="showRuleEditor" @close="closeRuleEditor" @save="saveRule"></rule-editor-modal>
+
+                <!-- Edge Rule Editor Modal -->
+                <edge-rule-editor-modal v-if="showEdgeRuleEditor" @close="closeEdgeRuleEditor" @save="saveEdgeRule"></edge-rule-editor-modal>
+
+                <!-- Footer -->
+                <footer class="footer footer-center p-4 bg-base-100 text-base-content mt-auto">
+                    <p class="text-xs opacity-50">Farm Monitor Dashboard</p>
+                </footer>
+
+            </div>
+
+            <!-- Drawer sidebar (mobile) -->
+            <sidebar @set-tab="setTab" @select-device="selectDeviceAndClose"></sidebar>
+
+        </div>
+    </div>
+
+    <script type="module" src="./index.js"></script>
+</body>
+
+</html>

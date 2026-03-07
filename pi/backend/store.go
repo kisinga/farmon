@@ -1,0 +1,120 @@
+package main
+
+import (
+	"encoding/json"
+	"time"
+
+	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
+)
+
+func upsertDevice(app core.App, deviceEui, deviceName string, obj map[string]any) error {
+	coll, err := app.FindCollectionByNameOrId("devices")
+	if err != nil {
+		return err
+	}
+
+	regJSON := "{}"
+	if obj != nil {
+		b, _ := json.Marshal(obj)
+		regJSON = string(b)
+	}
+
+	existing, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": deviceEui})
+	if err != nil {
+		// Create new
+		rec := core.NewRecord(coll)
+		rec.Set("device_eui", deviceEui)
+		rec.Set("device_name", deviceName)
+		rec.Set("registration", regJSON)
+		rec.Set("last_seen", time.Now().Format(time.RFC3339))
+		return app.Save(rec)
+	}
+
+	existing.Set("device_name", deviceName)
+	existing.Set("last_seen", time.Now().Format(time.RFC3339))
+	if obj != nil {
+		existing.Set("registration", regJSON)
+	}
+	return app.Save(existing)
+}
+
+func insertTelemetry(app core.App, deviceEui string, data map[string]any, rssi *int, snr *float64) error {
+	coll, err := app.FindCollectionByNameOrId("telemetry")
+	if err != nil {
+		return err
+	}
+
+	dataJSON := "{}"
+	if data != nil {
+		b, _ := json.Marshal(data)
+		dataJSON = string(b)
+	}
+
+	rec := core.NewRecord(coll)
+	rec.Set("device_eui", deviceEui)
+	rec.Set("data", dataJSON)
+	if rssi != nil {
+		rec.Set("rssi", *rssi)
+	}
+	if snr != nil {
+		rec.Set("snr", *snr)
+	}
+	rec.Set("ts", time.Now().Format(time.RFC3339))
+	return app.Save(rec)
+}
+
+func insertStateChange(app core.App, deviceEui, controlKey, oldState, newState, reason string, deviceTs time.Time) error {
+	coll, err := app.FindCollectionByNameOrId("state_changes")
+	if err != nil {
+		return err
+	}
+	rec := core.NewRecord(coll)
+	rec.Set("device_eui", deviceEui)
+	rec.Set("control_key", controlKey)
+	rec.Set("old_state", oldState)
+	rec.Set("new_state", newState)
+	rec.Set("reason", reason)
+	if !deviceTs.IsZero() {
+		rec.Set("device_ts", deviceTs.Format(time.RFC3339))
+	}
+	rec.Set("ts", time.Now().Format(time.RFC3339))
+	return app.Save(rec)
+}
+
+func upsertDeviceControl(app core.App, deviceEui, controlKey, currentState, changedBy string) error {
+	coll, err := app.FindCollectionByNameOrId("device_controls")
+	if err != nil {
+		return err
+	}
+	now := time.Now().Format(time.RFC3339)
+	existing, err := app.FindFirstRecordByFilter("device_controls", "device_eui = {:eui} && control_key = {:key}", dbx.Params{"eui": deviceEui, "key": controlKey})
+	if err != nil {
+		rec := core.NewRecord(coll)
+		rec.Set("device_eui", deviceEui)
+		rec.Set("control_key", controlKey)
+		rec.Set("current_state", currentState)
+		rec.Set("last_change_at", now)
+		rec.Set("last_change_by", changedBy)
+		return app.Save(rec)
+	}
+	existing.Set("current_state", currentState)
+	existing.Set("last_change_at", now)
+	existing.Set("last_change_by", changedBy)
+	return app.Save(existing)
+}
+
+func insertFirmwareProgress(app core.App, deviceEui string, status int, chunkIndex int, outcome string) error {
+	coll, err := app.FindCollectionByNameOrId("firmware_history")
+	if err != nil {
+		return err
+	}
+	rec := core.NewRecord(coll)
+	rec.Set("device_eui", deviceEui)
+	rec.Set("started_at", time.Now().Format(time.RFC3339))
+	rec.Set("outcome", outcome)
+	if chunkIndex >= 0 {
+		rec.Set("chunks_received", chunkIndex)
+	}
+	return app.Save(rec)
+}

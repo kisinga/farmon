@@ -1,0 +1,307 @@
+-- PostgreSQL initialization for Farm Monitor stack
+-- Idempotent: safe to run multiple times
+
+-- Suppress errors for database/user creation (they may already exist)
+\set ON_ERROR_STOP off
+
+-- =============================================================================
+-- ChirpStack (LoRaWAN Network Server)
+-- =============================================================================
+CREATE DATABASE chirpstack;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'chirpstack') THEN
+    CREATE USER chirpstack WITH PASSWORD 'chirpstack';
+  END IF;
+END
+$$;
+
+GRANT ALL PRIVILEGES ON DATABASE chirpstack TO chirpstack;
+\c chirpstack
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+ALTER SCHEMA public OWNER TO chirpstack;
+GRANT ALL ON SCHEMA public TO chirpstack;
+
+-- =============================================================================
+-- FarmMon (Node-RED telemetry storage)
+-- =============================================================================
+\c postgres
+CREATE DATABASE farmmon;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'farmmon') THEN
+    CREATE USER farmmon WITH PASSWORD 'farmmon';
+  END IF;
+END
+$$;
+
+-- Re-enable error stopping for table creation (tables have IF NOT EXISTS)
+\set ON_ERROR_STOP on
+GRANT ALL PRIVILEGES ON DATABASE farmmon TO farmmon;
+\c farmmon
+ALTER SCHEMA public OWNER TO farmmon;
+GRANT ALL ON SCHEMA public TO farmmon;
+
+-- Create tables as farmmon user
+SET ROLE farmmon;
+
+-- =============================================================================
+-- DEVICES: Registered devices and their full registration payload
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS devices (
+    device_eui VARCHAR(16) PRIMARY KEY,
+    device_name VARCHAR(100),
+    device_type VARCHAR(50),
+    firmware_version VARCHAR(20),
+    registration JSONB NOT NULL,
+    first_seen TIMESTAMPTZ DEFAULT NOW(),
+    last_seen TIMESTAMPTZ DEFAULT NOW(),
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- =============================================================================
+-- DEVICE_FIELDS: Parsed field definitions from registration
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS device_fields (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) REFERENCES devices(device_eui) ON DELETE CASCADE,
+    field_key VARCHAR(50) NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    data_type VARCHAR(20) NOT NULL,
+    unit VARCHAR(20),
+    category VARCHAR(20) NOT NULL,
+    min_value NUMERIC,
+    max_value NUMERIC,
+    enum_values JSONB,
+    UNIQUE (device_eui, field_key)
+);
+
+-- =============================================================================
+-- DEVICE_CONTROLS: Current state of controllable fields
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS device_controls (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) REFERENCES devices(device_eui) ON DELETE CASCADE,
+    control_key VARCHAR(50) NOT NULL,
+    current_state VARCHAR(50) NOT NULL,
+    mode VARCHAR(20) DEFAULT 'auto',
+    manual_until TIMESTAMPTZ,
+    last_change_at TIMESTAMPTZ DEFAULT NOW(),
+    last_change_by VARCHAR(100),
+    UNIQUE (device_eui, control_key)
+);
+
+-- =============================================================================
+-- DEVICE_TRIGGERS: Device-defined automation (from registration)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS device_triggers (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) REFERENCES devices(device_eui) ON DELETE CASCADE,
+    trigger_key VARCHAR(50) NOT NULL,
+    display_name VARCHAR(100),
+    field_key VARCHAR(50) NOT NULL,
+    operator VARCHAR(10) NOT NULL,
+    threshold NUMERIC NOT NULL,
+    action_control VARCHAR(50) NOT NULL,
+    action_state VARCHAR(50) NOT NULL,
+    enabled BOOLEAN DEFAULT TRUE,
+    UNIQUE (device_eui, trigger_key)
+);
+
+-- =============================================================================
+-- USER_RULES: User-defined automation
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS user_rules (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) REFERENCES devices(device_eui) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    condition JSONB NOT NULL,
+    action_control VARCHAR(50) NOT NULL,
+    action_state VARCHAR(50) NOT NULL,
+    priority INTEGER DEFAULT 100,
+    cooldown_seconds INTEGER DEFAULT 300,
+    enabled BOOLEAN DEFAULT TRUE,
+    last_triggered TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================================================
+-- TELEMETRY: Periodic sensor data (fPort 2)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS telemetry (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) NOT NULL,
+    data JSONB NOT NULL,
+    rssi INTEGER,
+    snr NUMERIC,
+    ts TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================================================
+-- STATE_CHANGES: Control state change events (fPort 3)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS state_changes (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) NOT NULL,
+    control_key VARCHAR(50) NOT NULL,
+    old_state VARCHAR(50),
+    new_state VARCHAR(50) NOT NULL,
+    reason VARCHAR(100),
+    device_ts TIMESTAMPTZ,
+    ts TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================================================
+-- COMMANDS: Downlink command audit log
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS commands (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) NOT NULL,
+    command_key VARCHAR(50) NOT NULL,
+    payload JSONB,
+    initiated_by VARCHAR(100) NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending',
+    sent_at TIMESTAMPTZ,
+    acked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================================================
+-- SETTINGS: System-level configuration
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS settings (
+    category VARCHAR(50) NOT NULL,
+    key VARCHAR(100) NOT NULL,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (category, key)
+);
+
+-- =============================================================================
+-- VIZ_CONFIG: Visualization settings (backend-managed, user-customizable)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS viz_config (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16),
+    field_key VARCHAR(50) NOT NULL,
+    viz_type VARCHAR(20),
+    gauge_style VARCHAR(20),
+    chart_color VARCHAR(20),
+    thresholds JSONB,
+    is_visible BOOLEAN DEFAULT TRUE,
+    sort_order INTEGER DEFAULT 100,
+    UNIQUE (device_eui, field_key)
+);
+
+-- =============================================================================
+-- DEVICE_SCHEMAS: Schema version history for bidirectional sync
+-- =============================================================================
+-- Stores each schema version sent by a device, enabling:
+-- - Schema change tracking over firmware updates
+-- - Index validation for rules and telemetry
+-- - Audit trail of device capabilities
+CREATE TABLE IF NOT EXISTS device_schemas (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) REFERENCES devices(device_eui) ON DELETE CASCADE,
+    version INTEGER NOT NULL,
+    schema JSONB NOT NULL,          -- Full schema: {fields: [...], controls: [...]}
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (device_eui, version)
+);
+
+-- =============================================================================
+-- EDGE_RULES: Rules stored on device (synced for UI visibility)
+-- =============================================================================
+-- Mirrors rules stored in device flash, enabling UI to display/edit rules
+CREATE TABLE IF NOT EXISTS edge_rules (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) REFERENCES devices(device_eui) ON DELETE CASCADE,
+    rule_id INTEGER NOT NULL,       -- Device-assigned rule ID (0-254)
+    field_idx INTEGER NOT NULL,     -- Schema field index
+    operator VARCHAR(10) NOT NULL,  -- <, >, <=, >=, ==, !=
+    threshold NUMERIC NOT NULL,
+    control_idx INTEGER NOT NULL,   -- Schema control index
+    action_state INTEGER NOT NULL,  -- Control state index
+    priority INTEGER DEFAULT 128,   -- 0=highest
+    cooldown_seconds INTEGER DEFAULT 300,
+    enabled BOOLEAN DEFAULT TRUE,
+    synced_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (device_eui, rule_id)
+);
+
+-- =============================================================================
+-- FIRMWARE_HISTORY: OTA update audit and error log
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS firmware_history (
+    id SERIAL PRIMARY KEY,
+    device_eui VARCHAR(16) NOT NULL,
+    started_at TIMESTAMPTZ DEFAULT NOW(),
+    finished_at TIMESTAMPTZ,
+    outcome VARCHAR(20) NOT NULL,  -- started, done, failed, cancelled
+    firmware_version VARCHAR(20),
+    total_chunks INTEGER,
+    chunks_received INTEGER,
+    error_message VARCHAR(255),
+    error_chunk_index INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_firmware_history_device ON firmware_history(device_eui, started_at DESC);
+
+-- =============================================================================
+-- INDEXES
+-- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_telemetry_device_ts ON telemetry(device_eui, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_state_changes_device_ts ON state_changes(device_eui, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_commands_pending ON commands(status) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_device_triggers_enabled ON device_triggers(device_eui) WHERE enabled = TRUE;
+CREATE INDEX IF NOT EXISTS idx_devices_active ON devices(is_active) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_device_schemas_device ON device_schemas(device_eui, version DESC);
+CREATE INDEX IF NOT EXISTS idx_edge_rules_enabled ON edge_rules(device_eui) WHERE enabled = TRUE;
+
+-- =============================================================================
+-- MIGRATION: Copy existing controls to device_fields
+-- =============================================================================
+-- Ensures all controls from device_controls table are also in device_fields
+-- with category='state' so they appear in frontend queries
+DO $$
+BEGIN
+    INSERT INTO device_fields (
+        device_eui, field_key, display_name, data_type, unit, 
+        category, min_value, max_value, enum_values
+    )
+    SELECT 
+        c.device_eui,
+        c.control_key,
+        c.control_key, -- Use key as name until proper display_name is set
+        'enum',
+        null,
+        'state',
+        null,
+        null,
+        null
+    FROM device_controls c
+    WHERE NOT EXISTS (
+        SELECT 1 FROM device_fields f 
+        WHERE f.device_eui = c.device_eui AND f.field_key = c.control_key
+    )
+    ON CONFLICT DO NOTHING;
+END $$;
+
+-- =============================================================================
+-- MIGRATION: Fix incorrect field categories
+-- =============================================================================
+-- Update battery fields to 'sys' category
+UPDATE device_fields 
+SET category = 'sys'
+WHERE LOWER(field_key) IN ('bp', 'battery', 'batt')
+  AND category != 'sys';
+
+-- Update error count fields to 'diagnostic' category
+UPDATE device_fields 
+SET category = 'diagnostic'
+WHERE (LOWER(field_key) IN ('ec', 'errorcount') 
+   OR LOWER(field_key) LIKE '%error%')
+  AND category != 'diagnostic';
+
+RESET ROLE;
