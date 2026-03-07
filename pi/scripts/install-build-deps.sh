@@ -25,12 +25,12 @@ for arg in "$@"; do
   esac
 done
 
-# --- Helpers: validate URL exists (HTTP 200) ---
+# --- Helpers: validate URL exists (HTTP 200 or 302 redirect) ---
 check_url() {
   local url="$1"
   local code
-  code=$(curl -f -sI -o /dev/null -w "%{http_code}" --connect-timeout 10 "$url" 2>/dev/null || true)
-  if [[ "$code" != "200" ]]; then
+  code=$(curl -f -sI -o /dev/null -w "%{http_code}" --connect-timeout 10 -L "$url" 2>/dev/null || true)
+  if [[ "$code" != "200" && "$code" != "302" ]]; then
     echo "ERROR: URL not available (HTTP $code): $url" >&2
     return 1
   fi
