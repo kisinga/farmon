@@ -24,6 +24,7 @@ func main() {
 		// Custom app API (downlink / gateway)
 		se.Router.POST("/api/setControl", setControlHandler(app))
 		se.Router.GET("/api/gateway-status", gatewayStatusHandler(app))
+		se.Router.GET("/api/debug/pipeline", pipelineDebugHandler())
 		se.Router.GET("/api/history", historyHandler(app))
 		se.Router.POST("/api/otaStart", otaStartHandler(app))
 		se.Router.POST("/api/otaCancel", otaCancelHandler(app))

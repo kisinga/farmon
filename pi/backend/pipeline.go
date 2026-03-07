@@ -20,7 +20,9 @@ import (
 func startConcentratordPipeline(ctx context.Context, app core.App) {
 	eventURL := os.Getenv("CONCENTRATORD_EVENT_URL")
 	commandURL := os.Getenv("CONCENTRATORD_COMMAND_URL")
+	gatewayID := os.Getenv("CONCENTRATORD_GATEWAY_ID")
 	if eventURL == "" || commandURL == "" {
+		log.Printf("concentratord: not configured (set CONCENTRATORD_EVENT_URL and CONCENTRATORD_COMMAND_URL); no uplinks will be received")
 		return
 	}
 	store := newPocketbaseLorawanStore(app)
@@ -33,6 +35,9 @@ func startConcentratordPipeline(ctx context.Context, app core.App) {
 	if !client.Enabled() {
 		return
 	}
+	if gatewayID == "" {
+		log.Printf("concentratord: CONCENTRATORD_GATEWAY_ID unset — gateway-status and UI will show 'no gateway online'")
+	}
 	go func() {
 		err := client.Run(ctx, func(frame *gw.UplinkFrame) {
 			handleConcentratordUplink(app, frame, store, codecRunner, client)
@@ -41,20 +46,22 @@ func startConcentratordPipeline(ctx context.Context, app core.App) {
 			log.Printf("concentratord Run: %v", err)
 		}
 	}()
-	log.Println("concentratord pipeline started")
+	log.Printf("concentratord pipeline started (event=%s command=%s gateway_id=%t)", eventURL, commandURL, gatewayID != "")
 }
 
 func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocketbaseLorawanStore, codecRunner *codec.Runner, downlinkSender *concentratord.Client) {
 	phyRaw := frame.GetPhyPayload()
 	if len(phyRaw) == 0 {
+		log.Printf("uplink: ignored (empty phy payload)")
 		return
 	}
 	result, err := lorawan.ProcessUplink(phyRaw, store, store)
 	if err != nil {
-		log.Printf("lorawan ProcessUplink: %v", err)
+		log.Printf("uplink: lorawan error: %v", err)
 		return
 	}
 	if len(result.JoinAcceptPHY) > 0 {
+		log.Printf("uplink: join → sending JoinAccept")
 		// Send JoinAccept downlink with context from uplink so gateway can schedule RX1.
 		df := buildDownlinkFrame(result.JoinAcceptPHY, frame)
 		if _, err := downlinkSender.SendDownlink(context.Background(), df); err != nil {
@@ -82,8 +89,10 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		}
 	}
 	if err := handleUplinkFromPipeline(app, result.DevEUI, deviceName, result.FPort, obj, rssi, snr); err != nil {
-		log.Printf("handleUplinkFromPipeline: %v", err)
+		log.Printf("uplink: persist error dev_eui=%s f_port=%d: %v", result.DevEUI, result.FPort, err)
+		return
 	}
+	log.Printf("uplink: dev_eui=%s f_port=%d (rssi=%v snr=%v)", result.DevEUI, result.FPort, rssi, snr)
 }
 
 // buildDownlinkFrame builds a gw.DownlinkFrame for JoinAccept (or any PHY) with optional uplink context.

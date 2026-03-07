@@ -88,6 +88,21 @@ func gatewayStatusHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
+// pipelineDebugHandler returns whether concentratord is configured (for debugging "no gateway online").
+// GET /api/debug/pipeline — no auth required for local diagnostics.
+func pipelineDebugHandler() func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		eventURL := os.Getenv("CONCENTRATORD_EVENT_URL")
+		commandURL := os.Getenv("CONCENTRATORD_COMMAND_URL")
+		gatewayID := os.Getenv("CONCENTRATORD_GATEWAY_ID")
+		return e.JSON(http.StatusOK, map[string]any{
+			"concentratord_configured": eventURL != "" && commandURL != "",
+			"gateway_id_set":          gatewayID != "",
+			"gateway_id":              gatewayID,
+		})
+	}
+}
+
 // historyHandler returns telemetry history for a device field: GET /api/history?eui=...&field=...&from=...&to=...&limit=500
 func historyHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {

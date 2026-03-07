@@ -1,6 +1,12 @@
 # pi: PocketBase backend (LoRaWAN + codec + store) + Angular frontend
 # No ChirpStack/MQTT/Postgres/Redis. Backend talks to Concentratord via ZMQ when configured.
 # Device provisioning: POST /api/devices, GET /api/devices/credentials?eui=...
+#
+# On Pi with concentratord (after setup_gateway.sh): create .env in this directory with:
+#   CONCENTRATORD_EVENT_URL=ipc:///tmp/concentratord_event
+#   CONCENTRATORD_COMMAND_URL=ipc:///tmp/concentratord_command
+#   CONCENTRATORD_GATEWAY_ID=local
+# Then: docker compose up -d (backend will mount /tmp to reach concentratord IPC).
 
 services:
   backend:
@@ -13,6 +19,8 @@ services:
       - "8090:8090"
     volumes:
       - pi_pb_data:/app/pb_data
+      # Mount host /tmp so backend can use concentratord IPC (ipc:///tmp/...) when CONCENTRATORD_* are set
+      - /tmp:/tmp
     environment:
       - TZ=Africa/Nairobi
       # Codec (default /app/codec.js in image)
