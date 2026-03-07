@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Install Go and Node.js + Angular CLI on the Pi for local builds (no Docker build).
+# After this: cd pi && make dist-pi && docker compose up -d
+# Usage: ./scripts/install-build-deps.sh [--no-node] [--no-go]
+
+set -e
+
+GO_VERSION="1.26.1"
+GO_BASE="https://go.dev/dl"
+NVM_VERSION="v0.40.4"
+NVM_INSTALL_URL="https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh"
+NODE_VERSION="24"
+INSTALL_GO=true
+INSTALL_NODE=true
+
+for arg in "$@"; do
+  case "$arg" in
+    --no-node) INSTALL_NODE=false ;;
+    --no-go)   INSTALL_GO=false ;;
+    -h|--help)
+      echo "Usage: $0 [--no-node] [--no-go]"
+      echo "  Installs Go ${GO_VERSION} and Node.js ${NODE_VERSION} (via nvm) + Angular CLI for building pi stack on device."
+      exit 0
+      ;;
+  esac
+done
+
+# --- Helpers: validate URL exists (HTTP 200) ---
+check_url() {
+  local url="$1"
+  local code
+  code=$(curl -f -sI -o /dev/null -w "%{http_code}" --connect-timeout 10 "$url" 2>/dev/null || true)
+  if [[ "$code" != "200" ]]; then
+    echo "ERROR: URL not available (HTTP $code): $url" >&2
+    return 1
+  fi
+  return 0
+}
+
+# --- Detect Linux arch for Go tarball (Pi: aarch64 or armv7l) ---
+detect_go_arch() {
+  local m
+  m=$(uname -m 2>/dev/null)
+  case "$m" in
+    aarch64|arm64)  echo "linux-arm64" ;;
+    armv7l|armv6l)  echo "linux-armv6l" ;;
+    x86_64)         echo "linux-amd64" ;;
+    *)              echo "linux-arm64" ;; # default for Pi
+  esac
+}
+
+# ========== Go ==========
+if [[ "$INSTALL_GO" == "true" ]]; then
+  GO_ARCH=$(detect_go_arch)
+  GO_TAR="go${GO_VERSION}.${GO_ARCH}.tar.gz"
+  GO_URL="${GO_BASE}/${GO_TAR}"
+
+  echo "Checking Go download: $GO_URL"
+  if ! check_url "$GO_URL"; then
+    echo "Try another Go version or arch. See: https://go.dev/dl/" >&2
+    exit 1
+  fi
+
+  echo "Downloading and installing Go ${GO_VERSION} (${GO_ARCH})..."
+  TMP_GO=$(mktemp -d)
+  trap 'rm -rf "$TMP_GO"' EXIT
+  curl -f -sL -o "$TMP_GO/$GO_TAR" "$GO_URL"
+
+  if command -v sha256sum &>/dev/null; then
+    # Optional: verify checksum (from https://go.dev/dl/)
+    case "$GO_ARCH" in
+      linux-arm64)  want="a290581cfe4fe28ddd737dde3095f3dbeb7f2e4065cab4eae44dfc53b760c2f7" ;;
+      linux-armv6l) want="c9937198994dc173b87630a94a0d323442bef81bf7589b1170d55a8ebf759bda" ;;
+      linux-amd64)  want="031f088e5d955bab8657ede27ad4e3bc5b7c1ba281f05f245bcc304f327c987a" ;;
+      *) want="" ;;
+    esac
+    if [[ -n "$want" ]]; then
+      got=$(sha256sum -b "$TMP_GO/$GO_TAR" | awk '{print $1}')
+      if [[ "$got" != "$want" ]]; then
+        echo "ERROR: Go tarball checksum mismatch (got $got)" >&2
+        exit 1
+      fi
+    fi
+  fi
+
+  if [[ -w /usr/local ]]; then
+    sudo rm -rf /usr/local/go
+    sudo tar -C /usr/local -xzf "$TMP_GO/$GO_TAR"
+    echo "Go installed to /usr/local/go"
+  else
+    mkdir -p "$HOME/go-install"
+    rm -rf "$HOME/go-install/go"
+    tar -C "$HOME/go-install" -xzf "$TMP_GO/$GO_TAR"
+    echo "Go installed to $HOME/go-install/go (add to PATH: export PATH=\"\$HOME/go-install/go/bin:\$PATH\")"
+    export PATH="$HOME/go-install/go/bin:$PATH"
+  fi
+fi
+
+# Ensure go is on PATH for rest of script
+if command -v go &>/dev/null; then
+  echo "Go version: $(go version)"
+else
+  export PATH="/usr/local/go/bin:$PATH"
+  if [[ -d "$HOME/go-install/go/bin" ]]; then
+    export PATH="$HOME/go-install/go/bin:$PATH"
+  fi
+  if ! command -v go &>/dev/null; then
+    echo "Add Go to PATH and re-run, or install to /usr/local with sudo." >&2
+    exit 1
+  fi
+fi
+
+# ========== Node.js (nvm) + Angular CLI ==========
+if [[ "$INSTALL_NODE" == "true" ]]; then
+  if command -v node &>/dev/null && command -v npm &>/dev/null; then
+    echo "Node already installed: $(node -v), $(npm -v)"
+  else
+    echo "Checking nvm install script: $NVM_INSTALL_URL"
+    if ! check_url "$NVM_INSTALL_URL"; then
+      echo "nvm install URL not reachable. Install nvm/Node manually then run: npm install -g @angular/cli" >&2
+      exit 1
+    fi
+
+    echo "Downloading and installing nvm (${NVM_VERSION})..."
+    curl -o- "$NVM_INSTALL_URL" | bash
+
+    # Load nvm in this shell (in lieu of restarting)
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+      . "$NVM_DIR/nvm.sh"
+    else
+      echo "ERROR: nvm.sh not found at $NVM_DIR/nvm.sh" >&2
+      exit 1
+    fi
+
+    echo "Installing Node.js ${NODE_VERSION}..."
+    nvm install "$NODE_VERSION"
+    echo "Node: $(node -v), npm: $(npm -v)"
+  fi
+
+  # Ensure nvm is loaded if we just installed it (node may not be on PATH yet)
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+    . "$NVM_DIR/nvm.sh"
+  fi
+
+  echo "Installing Angular CLI globally..."
+  npm install -g @angular/cli@latest
+  echo "Angular CLI: $(ng version 2>/dev/null | head -1 || ng version)"
+fi
+
+echo ""
+echo "Done. Next: cd pi && make dist-pi && docker compose up -d"
