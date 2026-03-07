@@ -1,16 +1,16 @@
-# Farmon Sensor Firmware (Heltec)
+# FarMon Sensor Firmware (Heltec)
 
 LoRaWAN firmware for Heltec ESP32 V3 sensor nodes.
 
 ## Setup
 
-### 1. Register Device in ChirpStack
+### 1. Provision device in backend
 
-Before flashing, register the device to get credentials.
+Before flashing, create the device in the FarMon backend to get an AppKey.
 
-If you don't have the DevEUI yet, flash first with placeholder secrets, then check serial output.
+If you don't have the DevEUI yet, flash first with placeholder secrets, then check serial output for `DevEUI: XX:XX:...`.
 
-→ See [../pi/README.md#add-device](../pi/README.md#add-device)
+→ See [pi/backend/README.md#device-provisioning-lorawan-otaa](../pi/backend/README.md#device-provisioning-lorawan-otaa): `POST /api/devices` or `GET /api/devices/credentials?eui=...` to get the AppKey.
 
 ### 2. Configure Secrets
 
@@ -18,10 +18,10 @@ If you don't have the DevEUI yet, flash first with placeholder secrets, then che
 cp secrets.example.h secrets.h
 ```
 
-Edit `secrets.h` with your Application Key from ChirpStack:
+Edit `secrets.h` with the Application Key from the backend:
 
 ```cpp
-// ChirpStack shows: "0102030405060708090a0b0c0d0e0f10"
+// Backend returns hex string "0102030405060708090a0b0c0d0e0f10"
 // Convert each pair to 0xNN:
 static const uint8_t LORAWAN_APP_KEY[16] = {
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
@@ -51,11 +51,11 @@ Starting LoRaWAN OTAA join...
 Successfully joined network
 ```
 
-Also check ChirpStack → Device → LoRaWAN frames for join and uplink messages.
+Also check the backend UI or API (device detail, uplinks) to confirm join and uplink messages.
 
 ## LoRaWAN Class C
 
-The device runs **permanently as Class C** (receiver always on) so downlinks (commands, OTA) can arrive at any time. **ChirpStack device profile must have Class C enabled** for the device (e.g. heltec-otaa). If the profile has only Class A enabled, no downlinks will arrive. See [pi/nodered/docs/OTA_CLASS_C_REQUIRED.md](../pi/nodered/docs/OTA_CLASS_C_REQUIRED.md) for ChirpStack profile steps.
+The device runs **permanently as Class C** (receiver always on) so downlinks (commands, OTA) can arrive at any time. The backend and Concentratord expect Class C devices; downlinks are sent accordingly. If the device were Class A only, it would not receive downlinks outside the brief RX windows after each uplink.
 
 ## Commands
 
@@ -96,7 +96,7 @@ These rules keep the screen accurate for intermittent failures and for real disc
 | Problem | Solution |
 |---------|----------|
 | `Missing secrets.h` | `cp secrets.example.h secrets.h` |
-| Not joining | Check AppKey matches ChirpStack exactly |
+| Not joining | Check AppKey matches backend exactly |
 | Upload fails | Hold PRG → press RST → release PRG → retry |
 | Port not found | `sudo usermod -aG dialout $USER`, then logout/login |
 

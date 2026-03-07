@@ -6,6 +6,7 @@
 set -e
 
 GO_VERSION="1.26.1"
+GO_MIN_VERSION="1.25.5"   # go.mod requirement
 GO_BASE="https://go.dev/dl"
 NVM_VERSION="v0.40.4"
 NVM_INSTALL_URL="https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh"
@@ -49,8 +50,31 @@ detect_go_arch() {
   esac
 }
 
+# --- Version comparison: return 0 if $1 >= $2 (e.g. 1.26.1 >= 1.25.5) ---
+version_ge() {
+  local a="$1" b="$2"
+  [[ "$a" == "$b" ]] && return 0
+  local winner
+  winner=$(printf '%s\n' "$a" "$b" | sort -V | tail -1)
+  [[ "$winner" == "$a" ]]
+}
+
 # ========== Go ==========
-if [[ "$INSTALL_GO" == "true" ]]; then
+# Ensure go is on PATH for detection (and for rest of script)
+for d in /usr/local/go/bin "$HOME/go-install/go/bin"; do
+  [[ -x "$d/go" ]] && export PATH="$d:$PATH"
+done
+
+GO_SKIP=
+if [[ "$INSTALL_GO" == "true" ]] && command -v go &>/dev/null; then
+  installed_go=$(go version 2>/dev/null | sed -n 's/.*go\([0-9.]*\).*/\1/p')
+  if [[ -n "$installed_go" ]] && version_ge "$installed_go" "$GO_MIN_VERSION"; then
+    echo "Go already installed (>= ${GO_MIN_VERSION}): $(go version)"
+    GO_SKIP=1
+  fi
+fi
+
+if [[ "$INSTALL_GO" == "true" && -z "$GO_SKIP" ]]; then
   GO_ARCH=$(detect_go_arch)
   GO_TAR="go${GO_VERSION}.${GO_ARCH}.tar.gz"
   GO_URL="${GO_BASE}/${GO_TAR}"
@@ -98,7 +122,7 @@ fi
 
 # Ensure go is on PATH for rest of script
 if command -v go &>/dev/null; then
-  echo "Go version: $(go version)"
+  [[ -z "$GO_SKIP" ]] && echo "Go version: $(go version)"
 else
   export PATH="/usr/local/go/bin:$PATH"
   if [[ -d "$HOME/go-install/go/bin" ]]; then
@@ -112,41 +136,55 @@ fi
 
 # ========== Node.js (nvm) + Angular CLI ==========
 if [[ "$INSTALL_NODE" == "true" ]]; then
-  if command -v node &>/dev/null && command -v npm &>/dev/null; then
-    echo "Node already installed: $(node -v), $(npm -v)"
-  else
-    echo "Checking nvm install script: $NVM_INSTALL_URL"
-    if ! check_url "$NVM_INSTALL_URL"; then
-      echo "nvm install URL not reachable. Install nvm/Node manually then run: npm install -g @angular/cli" >&2
-      exit 1
-    fi
-
-    echo "Downloading and installing nvm (${NVM_VERSION})..."
-    curl -o- "$NVM_INSTALL_URL" | bash
-
-    # Load nvm in this shell (in lieu of restarting)
-    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-    if [[ -s "$NVM_DIR/nvm.sh" ]]; then
-      . "$NVM_DIR/nvm.sh"
-    else
-      echo "ERROR: nvm.sh not found at $NVM_DIR/nvm.sh" >&2
-      exit 1
-    fi
-
-    echo "Installing Node.js ${NODE_VERSION}..."
-    nvm install "$NODE_VERSION"
-    echo "Node: $(node -v), npm: $(npm -v)"
-  fi
-
-  # Ensure nvm is loaded if we just installed it (node may not be on PATH yet)
+  # Load nvm if present (so we can detect Node 24)
   export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
   if [[ -s "$NVM_DIR/nvm.sh" ]]; then
     . "$NVM_DIR/nvm.sh"
   fi
 
-  echo "Installing Angular CLI globally..."
-  npm install -g @angular/cli@latest
-  echo "Angular CLI: $(ng version 2>/dev/null | head -1 || ng version)"
+  NODE_SKIP=
+  if command -v node &>/dev/null && command -v npm &>/dev/null; then
+    echo "Node already installed: $(node -v), $(npm -v)"
+    NODE_SKIP=1
+  fi
+
+  if [[ -z "$NODE_SKIP" ]]; then
+    # No node in PATH: install nvm if missing, then Node
+    if [[ ! -s "$NVM_DIR/nvm.sh" ]]; then
+      echo "Checking nvm install script: $NVM_INSTALL_URL"
+      if ! check_url "$NVM_INSTALL_URL"; then
+        echo "nvm install URL not reachable. Install nvm/Node manually then run: npm install -g @angular/cli" >&2
+        exit 1
+      fi
+      echo "Downloading and installing nvm (${NVM_VERSION})..."
+      curl -o- "$NVM_INSTALL_URL" | bash
+      export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+      . "$NVM_DIR/nvm.sh"
+    else
+      echo "nvm already installed, loading..."
+      . "$NVM_DIR/nvm.sh"
+    fi
+
+    # Install Node only if not already using requested version (e.g. 24)
+    if ! command -v node &>/dev/null; then
+      echo "Installing Node.js ${NODE_VERSION}..."
+      nvm install "$NODE_VERSION"
+    else
+      echo "Node already available: $(node -v), $(npm -v)"
+    fi
+  fi
+
+  # Ensure nvm is loaded for Angular CLI
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  [[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
+
+  if command -v ng &>/dev/null; then
+    echo "Angular CLI already installed: $(ng version 2>/dev/null | head -1 || ng version)"
+  else
+    echo "Installing Angular CLI globally..."
+    npm install -g @angular/cli@latest
+    echo "Angular CLI: $(ng version 2>/dev/null | head -1 || ng version)"
+  fi
 fi
 
 echo ""

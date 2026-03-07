@@ -100,7 +100,7 @@ sequenceDiagram
 
 ## LoRaWAN Class C
 
-The device runs **permanently as Class C** (receiver always on). The HAL is Class C only; `setDeviceClass` was removed. ChirpStack device profile must have Class C enabled for downlinks (commands, OTA) to arrive. See [pi/nodered/docs/OTA_CLASS_C_REQUIRED.md](../pi/nodered/docs/OTA_CLASS_C_REQUIRED.md).
+The device runs **permanently as Class C** (receiver always on). The HAL is Class C only; `setDeviceClass` was removed. The backend and Concentratord expect Class C devices; downlinks (commands, OTA) are sent accordingly.
 
 ## Communication Stack (Class C)
 

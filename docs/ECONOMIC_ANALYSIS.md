@@ -2,12 +2,12 @@
 
 ## Executive Summary
 
-This document analyzes when your self-hosted LoRaWAN solution (Farmon) makes economic sense compared to Arduino Cloud, particularly in scenarios where GSM coverage is guaranteed.
+This document analyzes when your self-hosted LoRaWAN solution (FarMon) makes economic sense compared to Arduino Cloud, particularly in scenarios where GSM coverage is guaranteed.
 
 ## Solution Overview
 
-### Your LoRaWAN Solution (Farmon)
-- **Architecture**: Self-hosted ChirpStack + Node-RED + PostgreSQL on Raspberry Pi
+### Your LoRaWAN Solution (FarMon)
+- **Architecture**: Self-hosted PocketBase (Go) + Concentratord + Angular on Raspberry Pi; SQLite for storage
 - **Gateway**: SX1302 HAT on Raspberry Pi (single gateway)
 - **Devices**: Heltec ESP32 LoRaWAN sensors
 - **Sensors**: Water level, flow, temperature, humidity, ultrasonic distance, battery
@@ -126,14 +126,13 @@ Your solution has **unlimited local data storage** with no transmission limits.
 
 ### 5. **Custom Processing & Integration**
 
-Your solution uses **Node-RED** for custom logic:
-- Complex alerting rules
+Your solution uses the **backend (Go) and Angular UI** for custom logic:
+- Complex alerting rules and edge rules
 - Integration with existing farm management systems
-- Custom dashboards
-- Integration with ERP systems (you have `farm_erp.png` in docs)
+- Custom dashboards and device management
 - Custom data processing pipelines
 
-Arduino Cloud has limited customization compared to full Node-RED flexibility.
+Arduino Cloud has limited customization compared to a self-hosted backend and UI.
 
 ### 6. **Offline Operation**
 
@@ -282,7 +281,7 @@ Consider a **hybrid architecture**:
 | **3+ year deployment** | $835 | $920+ | **Your Solution** |
 | **High data volume** | Unlimited | Limited | **Your Solution** |
 | **Data privacy** | On-premises | Cloud | **Your Solution** |
-| **Custom processing** | Full Node-RED | Limited | **Your Solution** |
+| **Custom processing** | Full backend + UI | Limited | **Your Solution** |
 | **OTA updates** | Manual | Built-in | Arduino Cloud |
 | **Time to market** | Weeks | Days | Arduino Cloud |
 | **Battery life** | Months | Days/weeks | **Your Solution** |
@@ -331,6 +330,6 @@ Your LoRaWAN solution makes **strong economic sense** when:
 - **Battery life** (months vs days)
 - **Range** (single gateway vs multiple SIM cards)
 - **Data volume** (unlimited vs tiered limits)
-- **Customization** (Node-RED vs limited cloud features)
+- **Customization** (self-hosted backend + UI vs limited cloud features)
 
 The main trade-off is **OTA update convenience** and **time-to-market**, which may be acceptable given the significant cost savings and flexibility at scale.

@@ -1,5 +1,7 @@
 # Heltec Development Journey & Lessons Learned
 
+**Current direction:** PocketBase (Go) + Concentratord + Angular. Single binary, no ChirpStack/MQTT/Postgres; native LoRaWAN codec and SQLite. **Benefits:** one process, easy deploy, full control over join/decrypt/codec. **Drawbacks:** less plug-and-play than Node-RED; custom logic lives in Go, not flows. See [root README](../README.md) and [pi/backend/README.md](../pi/backend/README.md).
+
 ## Overview
 
 This document chronicles the real-world experience of implementing firmware for Heltec LoRa devices in the farm monitoring system. It serves as a cautionary tale and learning resource for future development decisions.
