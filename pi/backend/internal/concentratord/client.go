@@ -17,9 +17,28 @@ import (
 )
 
 const (
-	eventTypeUp     = "up"
-	dialRetryEvery  = 5 * time.Second
+	eventTypeUp    = "up"
+	dialRetryEvery = 5 * time.Second
 )
+
+// parseUplinkEvent returns the UplinkFrame from a ZMQ message (topic+body or body only).
+// Concentratord sends gw.Event{ event: UplinkFrame }; we must decode Event then extract the frame.
+func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
+	frames := msg.Frames
+	if len(frames) == 0 {
+		return nil
+	}
+	payload := frames[0]
+	if len(frames) >= 2 && string(frames[0]) == eventTypeUp {
+		payload = frames[1]
+	}
+	var ev gw.Event
+	if err := proto.Unmarshal(payload, &ev); err != nil {
+		log.Printf("concentratord event unmarshal: %v", err)
+		return nil
+	}
+	return ev.GetUplinkFrame()
+}
 
 // Client implements gateway.UplinkSource and gateway.DownlinkSender using
 // Concentratord ZMQ (SUB for events, REQ for commands).
@@ -93,7 +112,6 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error 
 			continue
 		}
 		log.Printf("concentratord SUB connected to %s", c.eventURL)
-		// Recv loop; if connection breaks we'll retry from the top
 		for {
 			msg, err := sub.Recv()
 			if err != nil {
@@ -105,20 +123,9 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error 
 				_ = sub.Close()
 				break
 			}
-			if len(msg.Frames) < 2 {
-				continue
+			if frame := parseUplinkEvent(msg); frame != nil {
+				onUplink(frame)
 			}
-			eventType := string(msg.Frames[0])
-			if eventType != eventTypeUp {
-				continue
-			}
-			body := msg.Frames[1]
-			var ev gw.UplinkFrame
-			if err := proto.Unmarshal(body, &ev); err != nil {
-				log.Printf("concentratord uplink unmarshal: %v", err)
-				continue
-			}
-			onUplink(&ev)
 		}
 	}
 }
@@ -153,13 +160,11 @@ func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw
 	if err != nil {
 		return nil, fmt.Errorf("concentratord REQ recv: %w", err)
 	}
-	// Response is DownlinkTxAck (single frame or first frame)
-	var ackData []byte
-	if len(rep.Frames) > 0 {
-		ackData = rep.Frames[0]
+	if len(rep.Frames) == 0 {
+		return nil, fmt.Errorf("concentratord ack: empty response")
 	}
 	var ack gw.DownlinkTxAck
-	if err := proto.Unmarshal(ackData, &ack); err != nil {
+	if err := proto.Unmarshal(rep.Frames[0], &ack); err != nil {
 		return nil, fmt.Errorf("concentratord ack unmarshal: %w", err)
 	}
 	return &ack, nil
