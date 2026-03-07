@@ -1,4 +1,4 @@
-# ChirpStack v4 — pi: HTTP integration only (no MQTT)
+# ChirpStack v4 — pi: no global MQTT/AMQP/Kafka; HTTP is per-application (see below)
 # Docs: https://www.chirpstack.io/docs/chirpstack/configuration.html
 
 [logging]
@@ -22,9 +22,8 @@ secret = "change-this-secret-in-production"
 [gateway]
 allow_unknown_gateways = true
 
+# Global integrations: only MQTT/Redis/PostgreSQL/AMQP/Kafka go in "enabled".
+# HTTP is per-application: in ChirpStack UI go to Application → Integrations → HTTP,
+# set event endpoint to http://backend:8090/api/chirpstack and enable JSON.
 [integration]
-enabled = ["http"]
-
-  [integration.http]
-  event_endpoint = "http://backend:8090/api/chirpstack"
-  json = true
+enabled = []
