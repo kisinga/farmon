@@ -57,6 +57,22 @@ services:
     networks:
       - pi_network
 
+  # Optional: ChirpStack REST API proxy for backend (downlink + gateway list).
+  # Create an API key in ChirpStack UI and set CHIRPSTACK_API_KEY on backend.
+  chirpstack-rest-api:
+    image: chirpstack/chirpstack-rest-api:4
+    container_name: pi-chirpstack-rest-api
+    restart: unless-stopped
+    depends_on:
+      - chirpstack
+    ports:
+      - "8091:8080"
+    environment:
+      - CHIRPSTACK_GRPC_HOST=chirpstack
+      - CHIRPSTACK_GRPC_PORT=8080
+    networks:
+      - pi_network
+
   backend:
     build:
       context: .
@@ -72,6 +88,8 @@ services:
     environment:
       - TZ=Africa/Nairobi
       - POCKETBASE_CHIRPSTACK_URL=http://chirpstack:8080
+      - CHIRPSTACK_API_URL=http://chirpstack-rest-api:8080
+      - CHIRPSTACK_API_KEY=${CHIRPSTACK_API_KEY:-}
     networks:
       - pi_network
 

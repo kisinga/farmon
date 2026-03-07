@@ -118,3 +118,78 @@ func insertFirmwareProgress(app core.App, deviceEui string, status int, chunkInd
 	}
 	return app.Save(rec)
 }
+
+// HistoryPoint is one (ts, value) for getTelemetryHistory response.
+type HistoryPoint struct {
+	Ts    string  `json:"ts"`
+	Value float64 `json:"value"`
+}
+
+// GetTelemetryHistory returns time-series for one field (telemetry data key or "rssi"/"snr").
+// Filter: device_eui, optional ts >= from and ts <= to. Limit 500. Sort ts asc.
+func GetTelemetryHistory(app core.App, deviceEui, field, from, to string, limit int) ([]HistoryPoint, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 500
+	}
+	filter := "device_eui = {:eui}"
+	params := dbx.Params{"eui": deviceEui}
+	if from != "" {
+		filter += " && ts >= {:from}"
+		params["from"] = from
+	}
+	if to != "" {
+		filter += " && ts <= {:to}"
+		params["to"] = to
+	}
+	records, err := app.FindRecordsByFilter("telemetry", filter, "ts", limit, 0, params)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]HistoryPoint, 0, len(records))
+	for _, rec := range records {
+		ts, _ := rec.Get("ts").(string)
+		if ts == "" {
+			continue
+		}
+		var val float64
+		switch field {
+		case "rssi":
+			if v, ok := rec.Get("rssi").(float64); ok {
+				val = v
+			} else if v, ok := rec.Get("rssi").(int); ok {
+				val = float64(v)
+			}
+		case "snr":
+			if v, ok := rec.Get("snr").(float64); ok {
+				val = v
+			}
+		default:
+			dataRaw := rec.Get("data")
+			if dataRaw == nil {
+				continue
+			}
+			dataStr, ok := dataRaw.(string)
+			if !ok {
+				continue
+			}
+			var data map[string]any
+			if json.Unmarshal([]byte(dataStr), &data) != nil {
+				continue
+			}
+			if v, ok := data[field]; ok {
+				switch n := v.(type) {
+				case float64:
+					val = n
+				case int:
+					val = float64(n)
+				case int64:
+					val = float64(n)
+				}
+			} else {
+				continue
+			}
+		}
+		out = append(out, HistoryPoint{Ts: ts, Value: val})
+	}
+	return out, nil
+}

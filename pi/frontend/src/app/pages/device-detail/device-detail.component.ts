@@ -1,60 +1,71 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { ApiService, Device } from '../../core/services/api.service';
+import { DeviceContextService } from '../../core/services/device-context.service';
+import { ControlsPanelComponent } from '../../shared/components/controls-panel/controls-panel.component';
+import { HistoryChartComponent } from '../../shared/components/history-chart/history-chart.component';
+import { CurrentValuesComponent } from '../../shared/components/current-values/current-values.component';
+import { ErrorBarComponent } from '../../shared/components/error-bar/error-bar.component';
+import { OtaSectionComponent } from '../../shared/components/ota-section/ota-section.component';
+import { EdgeRulesSectionComponent } from '../../shared/components/edge-rules-section/edge-rules-section.component';
+import { ERROR_OBJECT_KEYS } from '../../core/constants/error-fields';
 
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe],
-  template: `
-    <div class="card bg-base-100 shadow-xl">
-      <div class="card-body">
-        <div class="flex items-center gap-2">
-          <a routerLink="/" class="btn btn-ghost btn-sm">← Back</a>
-          <h2 class="card-title">{{ eui() }}</h2>
-        </div>
-        @if (loading()) {
-          <span class="loading loading-spinner loading-md"></span>
-        } @else if (device()) {
-          <div class="grid gap-4">
-            <p><strong>Name:</strong> {{ device()!.device_name || '—' }}</p>
-            <p><strong>Type:</strong> {{ device()!.device_type || '—' }}</p>
-            <p><strong>Last seen:</strong> {{ device()!.last_seen ? (device()!.last_seen | date:'medium') : '—' }}</p>
-          </div>
-          <p class="text-sm text-base-content/60">Controls, history, rules, and OTA will be added in Phase 3.</p>
-        } @else if (error()) {
-          <div class="alert alert-error">{{ error() }}</div>
-        }
-      </div>
-    </div>
-  `,
+  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, OtaSectionComponent, EdgeRulesSectionComponent],
+  templateUrl: './device-detail.component.html',
 })
-export class DeviceDetailComponent implements OnInit {
+export class DeviceDetailComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
-  private api = inject(ApiService);
-  eui = signal<string>('');
-  device = signal<Device | null>(null);
-  loading = signal(true);
-  error = signal<string | null>(null);
+  deviceContext = inject(DeviceContextService);
+  routeError = signal<string | null>(null);
+  timeRange = signal<'1h' | '24h' | '7d'>('24h');
+  rangeEnd = signal<string>(new Date().toISOString());
 
-  ngOnInit() {
+  historyFrom = computed(() => {
+    const toStr = this.rangeEnd();
+    const range = this.timeRange();
+    const to = new Date(toStr);
+    const d = new Date(to);
+    if (range === '1h') d.setHours(d.getHours() - 1);
+    else if (range === '24h') d.setDate(d.getDate() - 1);
+    else if (range === '7d') d.setDate(d.getDate() - 7);
+    return d.toISOString();
+  });
+  historyTo = computed(() => this.rangeEnd());
+
+  onTimeRangeChange(e: Event): void {
+    const v = (e.target as HTMLSelectElement).value as '1h' | '24h' | '7d';
+    if (v === '1h' || v === '24h' || v === '7d') {
+      this.timeRange.set(v);
+      this.rangeEnd.set(new Date().toISOString());
+    }
+  }
+
+  errorObjectFromTelemetry = computed(() => {
+    const data = this.deviceContext.latestTelemetry();
+    if (!data || typeof data !== 'object') return {};
+    const out: Record<string, number> = {};
+    for (const k of ERROR_OBJECT_KEYS) {
+      const v = (data as Record<string, unknown>)[k];
+      if (typeof v === 'number') out[k] = v;
+    }
+    return out;
+  });
+
+  ngOnInit(): void {
     const eui = this.route.snapshot.paramMap.get('eui');
-    if (eui) this.eui.set(eui);
     if (!eui) {
-      this.error.set('Missing device EUI');
-      this.loading.set(false);
+      this.routeError.set('Missing device EUI');
+      this.deviceContext.clear();
       return;
     }
-    this.api.getDeviceConfig(eui).subscribe({
-      next: d => {
-        this.device.set(d);
-        this.loading.set(false);
-      },
-      error: err => {
-        this.error.set(err?.message ?? 'Device not found');
-        this.loading.set(false);
-      },
-    });
+    this.routeError.set(null);
+    this.deviceContext.load(eui);
+  }
+
+  ngOnDestroy(): void {
+    this.deviceContext.clear();
   }
 }

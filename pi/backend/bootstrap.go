@@ -182,6 +182,7 @@ func bootstrapCollections(app core.App) {
 	}
 
 	// Ensure app collections allow public list/view (no auth for now).
+	// edge_rules also needs public create/update for the UI "Add rule" form.
 	collectionNames := []string{"devices", "telemetry", "device_controls", "state_changes", "commands", "firmware_history", "edge_rules", "device_fields", "device_schemas"}
 	empty := ""
 	for _, name := range collectionNames {
@@ -191,6 +192,10 @@ func bootstrapCollections(app core.App) {
 		}
 		coll.ListRule = &empty
 		coll.ViewRule = &empty
+		if name == "edge_rules" {
+			coll.CreateRule = &empty
+			coll.UpdateRule = &empty
+		}
 		if err := app.Save(coll); err != nil {
 			log.Printf("bootstrap: set public rules for %s: %v", name, err)
 		}
