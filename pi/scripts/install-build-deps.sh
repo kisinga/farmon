@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install Go and Node.js + Angular CLI on the Pi for local builds (no Docker build).
-# After this: cd pi && make dist-pi && docker compose up -d
+# After this: cd pi && make dist && docker compose up -d
 # Usage: ./scripts/install-build-deps.sh [--no-node] [--no-go]
 
 set -e
@@ -111,12 +111,30 @@ if [[ "$INSTALL_GO" == "true" && -z "$GO_SKIP" ]]; then
     sudo rm -rf /usr/local/go
     sudo tar -C /usr/local -xzf "$TMP_GO/$GO_TAR"
     echo "Go installed to /usr/local/go"
+    GO_PROFILE_PATH="/usr/local/go/bin"
   else
     mkdir -p "$HOME/go-install"
     rm -rf "$HOME/go-install/go"
     tar -C "$HOME/go-install" -xzf "$TMP_GO/$GO_TAR"
-    echo "Go installed to $HOME/go-install/go (add to PATH: export PATH=\"\$HOME/go-install/go/bin:\$PATH\")"
+    echo "Go installed to $HOME/go-install/go"
     export PATH="$HOME/go-install/go/bin:$PATH"
+    GO_PROFILE_PATH="\$HOME/go-install/go/bin"
+  fi
+
+  # Ensure ~/.profile has Go on PATH and GOPATH (prepend so this install wins)
+  PROFILE="$HOME/.profile"
+  if [[ -n "$GO_PROFILE_PATH" ]]; then
+    if ! grep -q 'go/bin' "$PROFILE" 2>/dev/null; then
+      echo "" >> "$PROFILE"
+      echo "# Go (added by pi/scripts/install-build-deps.sh)" >> "$PROFILE"
+      if [[ "$GO_PROFILE_PATH" == *go-install* ]]; then
+        echo "export PATH=\"\$HOME/go-install/go/bin:\$PATH\"" >> "$PROFILE"
+      else
+        echo "export PATH=\"/usr/local/go/bin:\$PATH\"" >> "$PROFILE"
+      fi
+      echo "export GOPATH=\$HOME/go" >> "$PROFILE"
+      echo "Added Go PATH and GOPATH to $PROFILE. Run: source $PROFILE (or log out and back in)."
+    fi
   fi
 fi
 
@@ -188,4 +206,4 @@ if [[ "$INSTALL_NODE" == "true" ]]; then
 fi
 
 echo ""
-echo "Done. Next: cd pi && make dist-pi && docker compose up -d"
+echo "Done. Next: cd pi && make dist && docker compose up -d"
