@@ -23,6 +23,6 @@ WORKDIR /app
 ENV POCKETBASE_DATA_DIR=/app/pb_data
 EXPOSE 8090
 COPY --from=backend /build/pocketbase .
-# Frontend: Angular 19+ application builder outputs to dist/browser
-COPY --from=frontend /app/frontend/dist/browser ./pb_public
+# Frontend: use normalized /out from frontend stage
+COPY --from=frontend /out ./pb_public
 ENTRYPOINT ["./pocketbase", "serve", "--http=0.0.0.0:8090"]
