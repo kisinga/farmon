@@ -2,11 +2,12 @@ package main
 
 import (
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/kisinga/farmon/pi/internal/gateway"
 )
 
 // controlNameToIndex maps control key to codec control_idx (fPort 20).
@@ -45,7 +46,7 @@ func BuildDirectControlPayload(controlIdx, stateIdx int, timeoutSec uint32) []by
 }
 
 // setControlHandler enqueues a downlink to set device control (e.g. pump on/off).
-func setControlHandler(app core.App) func(*core.RequestEvent) error {
+func setControlHandler(app core.App, cfg *gateway.Config) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var body struct {
 			Eui      string `json:"eui"`
@@ -68,7 +69,7 @@ func setControlHandler(app core.App) func(*core.RequestEvent) error {
 			stateToIndex(body.State),
 			timeoutSec,
 		)
-		if err := EnqueueDownlink(app, body.Eui, 20, payload); err != nil {
+		if err := EnqueueDownlink(cfg, app, body.Eui, 20, payload); err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		}
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "queued"})
@@ -77,12 +78,10 @@ func setControlHandler(app core.App) func(*core.RequestEvent) error {
 
 // gatewayStatusHandler returns gateway status for the UI. When concentratord is configured
 // (event + command URLs set), one gateway is reported online so the banner matches reality.
-func gatewayStatusHandler(app core.App) func(*core.RequestEvent) error {
+func gatewayStatusHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		eventURL := os.Getenv("CONCENTRATORD_EVENT_URL")
-		commandURL := os.Getenv("CONCENTRATORD_COMMAND_URL")
-		gwID := os.Getenv("CONCENTRATORD_GATEWAY_ID")
-		if gwID == "" && eventURL != "" && commandURL != "" {
+		gwID := cfg.GatewayID
+		if gwID == "" && cfg.Enabled() {
 			gwID = "local"
 		}
 		if gwID != "" {
@@ -96,17 +95,15 @@ func gatewayStatusHandler(app core.App) func(*core.RequestEvent) error {
 
 // pipelineDebugHandler returns whether concentratord is configured (for debugging "no gateway online").
 // GET /api/debug/pipeline — no auth required for local diagnostics.
-func pipelineDebugHandler() func(*core.RequestEvent) error {
+func pipelineDebugHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		eventURL := os.Getenv("CONCENTRATORD_EVENT_URL")
-		commandURL := os.Getenv("CONCENTRATORD_COMMAND_URL")
-		gatewayID := os.Getenv("CONCENTRATORD_GATEWAY_ID")
 		return e.JSON(http.StatusOK, map[string]any{
-			"concentratord_configured": eventURL != "" && commandURL != "",
-			"gateway_id_set":          gatewayID != "",
-			"gateway_id":              gatewayID,
-			"event_url":               eventURL,
-			"command_url":             commandURL,
+			"concentratord_configured": cfg.Enabled(),
+			"gateway_id_set":          cfg.GatewayID != "",
+			"gateway_id":              cfg.GatewayID,
+			"event_url":               cfg.EventURL,
+			"command_url":             cfg.CommandURL,
+			"rx1_delay_sec":           cfg.RX1DelaySec,
 		})
 	}
 }
@@ -128,16 +125,14 @@ func lorawanFramesHandler() func(*core.RequestEvent) error {
 
 // lorawanStatsHandler returns frame buffer stats and pipeline status.
 // GET /api/lorawan/stats
-func lorawanStatsHandler() func(*core.RequestEvent) error {
+func lorawanStatsHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		stats := GetFrameStats()
-		eventURL := os.Getenv("CONCENTRATORD_EVENT_URL")
-		commandURL := os.Getenv("CONCENTRATORD_COMMAND_URL")
 		return e.JSON(http.StatusOK, map[string]any{
 			"buffer_size":             stats.BufferSize,
 			"total_uplinks":           stats.TotalUplinks,
 			"total_downlinks":         stats.TotalDownlinks,
-			"concentratord_configured": eventURL != "" && commandURL != "",
+			"concentratord_configured": cfg.Enabled(),
 		})
 	}
 }

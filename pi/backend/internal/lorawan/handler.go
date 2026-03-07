@@ -23,9 +23,16 @@ type UplinkResult struct {
 	JoinAcceptPHY []byte
 }
 
+// ProcessUplinkOptions are optional options for ProcessUplink (e.g. JoinAccept RXDelay).
+type ProcessUplinkOptions struct {
+	// RXDelay is the JoinAccept RXDelay (1–15 seconds). If 0, default 1 is used.
+	RXDelay uint8
+}
+
 // ProcessUplink decodes the PHY payload. For JoinRequest: validates MIC, creates session, returns JoinAcceptPHY.
 // For data: finds session by DevAddr, validates MIC, decrypts, returns DevEUI, FPort, Payload.
-func ProcessUplink(phyRaw []byte, keys DeviceKeysProvider, sessions SessionStore) (*UplinkResult, error) {
+// opts may be nil; RXDelay in opts is used for JoinAccept and must match gateway scheduling.
+func ProcessUplink(phyRaw []byte, keys DeviceKeysProvider, sessions SessionStore, opts *ProcessUplinkOptions) (*UplinkResult, error) {
 	var phy lorawan.PHYPayload
 	if err := phy.UnmarshalBinary(phyRaw); err != nil {
 		return nil, fmt.Errorf("phy unmarshal: %w", err)
@@ -33,7 +40,7 @@ func ProcessUplink(phyRaw []byte, keys DeviceKeysProvider, sessions SessionStore
 
 	switch phy.MHDR.MType {
 	case lorawan.JoinRequest:
-		return processJoinRequest(&phy, keys, sessions)
+		return processJoinRequest(&phy, keys, sessions, opts)
 	case lorawan.UnconfirmedDataUp, lorawan.ConfirmedDataUp:
 		return processDataUp(&phy, sessions)
 	default:
@@ -41,7 +48,7 @@ func ProcessUplink(phyRaw []byte, keys DeviceKeysProvider, sessions SessionStore
 	}
 }
 
-func processJoinRequest(phy *lorawan.PHYPayload, keys DeviceKeysProvider, sessions SessionStore) (*UplinkResult, error) {
+func processJoinRequest(phy *lorawan.PHYPayload, keys DeviceKeysProvider, sessions SessionStore, opts *ProcessUplinkOptions) (*UplinkResult, error) {
 	jr, ok := phy.MACPayload.(*lorawan.JoinRequestPayload)
 	if !ok {
 		return nil, errors.New("invalid join request payload")
@@ -80,6 +87,10 @@ func processJoinRequest(phy *lorawan.PHYPayload, keys DeviceKeysProvider, sessio
 		return nil, fmt.Errorf("save session: %w", err)
 	}
 
+	rxDelay := uint8(1)
+	if opts != nil && opts.RXDelay >= 1 && opts.RXDelay <= 15 {
+		rxDelay = opts.RXDelay
+	}
 	// Build JoinAccept PHY.
 	ja := &lorawan.PHYPayload{
 		MHDR: lorawan.MHDR{MType: lorawan.JoinAccept, Major: lorawan.LoRaWANR1},
@@ -88,7 +99,7 @@ func processJoinRequest(phy *lorawan.PHYPayload, keys DeviceKeysProvider, sessio
 			HomeNetID:  DefaultNetID,
 			DevAddr:    devAddr,
 			DLSettings: lorawan.DLSettings{RX2DataRate: 0, RX1DROffset: 0},
-			RXDelay:    1,
+			RXDelay:    rxDelay,
 		},
 	}
 	if err := ja.SetDownlinkJoinMIC(lorawan.JoinRequestType, jr.JoinEUI, jr.DevNonce, appKey); err != nil {

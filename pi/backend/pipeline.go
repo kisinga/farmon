@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,10 +11,10 @@ import (
 	"github.com/chirpstack/chirpstack/api/go/v4/gw"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
-	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/kisinga/farmon/pi/internal/codec"
 	"github.com/kisinga/farmon/pi/internal/concentratord"
+	"github.com/kisinga/farmon/pi/internal/gateway"
 	"github.com/kisinga/farmon/pi/internal/lorawan"
 )
 
@@ -48,41 +47,42 @@ func shouldLogAppKeyErr(errMsg string) bool {
 
 // startConcentratordPipeline starts the concentratord subscriber and runs the uplink pipeline
 // (LoRaWAN → codec → store). If Concentratord is not configured, it returns without starting.
-func startConcentratordPipeline(ctx context.Context, app core.App) {
-	eventURL := os.Getenv("CONCENTRATORD_EVENT_URL")
-	commandURL := os.Getenv("CONCENTRATORD_COMMAND_URL")
-	gatewayID := os.Getenv("CONCENTRATORD_GATEWAY_ID")
-	log.Printf("concentratord: event_url=%v command_url=%v gateway_id=%v", eventURL != "", commandURL != "", gatewayID != "")
-	if eventURL == "" || commandURL == "" {
+func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.Config) {
+	log.Printf("concentratord: event_url=%v command_url=%v gateway_id=%v rx1_delay=%ds", cfg.EventURL != "", cfg.CommandURL != "", cfg.GatewayID != "", cfg.RX1DelaySec)
+	if !cfg.Enabled() {
 		log.Printf("concentratord: not configured (set CONCENTRATORD_EVENT_URL and CONCENTRATORD_COMMAND_URL); no uplinks will be received")
 		return
 	}
 	store := newPocketbaseLorawanStore(app)
-	client := concentratord.NewClient(eventURL, commandURL)
+	client := concentratord.NewClient(cfg.EventURL, cfg.CommandURL)
 	if !client.Enabled() {
 		return
 	}
-	if gatewayID == "" {
+	if cfg.GatewayID == "" {
 		log.Printf("concentratord: CONCENTRATORD_GATEWAY_ID unset — gateway-status and UI will show 'no gateway online'")
 	}
 	go func() {
 		err := client.Run(ctx, func(frame *gw.UplinkFrame) {
-			handleConcentratordUplink(app, frame, store, client)
+			handleConcentratordUplink(app, frame, store, client, cfg)
 		})
 		if err != nil && ctx.Err() == nil {
 			log.Printf("concentratord Run: %v", err)
 		}
 	}()
-	log.Printf("concentratord pipeline started (event=%s command=%s gateway_id=%t)", eventURL, commandURL, gatewayID != "")
+	log.Printf("concentratord pipeline started (event=%s command=%s gateway_id=%t)", cfg.EventURL, cfg.CommandURL, cfg.GatewayID != "")
 }
 
-func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocketbaseLorawanStore, downlinkSender *concentratord.Client) {
+func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocketbaseLorawanStore, downlinkSender *concentratord.Client, cfg *gateway.Config) {
 	phyRaw := frame.GetPhyPayload()
 	if len(phyRaw) == 0 {
 		log.Printf("uplink: ignored (empty phy payload)")
 		return
 	}
-	result, err := lorawan.ProcessUplink(phyRaw, store, store)
+	opts := &lorawan.ProcessUplinkOptions{RXDelay: uint8(cfg.RX1DelaySec)}
+	if opts.RXDelay < 1 || opts.RXDelay > 15 {
+		opts.RXDelay = 1
+	}
+	result, err := lorawan.ProcessUplink(phyRaw, store, store, opts)
 	if err != nil {
 		errMsg := err.Error()
 		if shouldLogAppKeyErr(errMsg) {
@@ -101,15 +101,20 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		snr = &s
 	}
 	if len(result.JoinAcceptPHY) > 0 {
-		log.Printf("uplink: join → sending JoinAccept")
+		log.Printf("uplink: join → sending JoinAccept (RX1 delay %ds)", cfg.RX1DelaySec)
 		RecordUplink("", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
-		// Send JoinAccept downlink with context from uplink so gateway can schedule RX1.
-		df := buildDownlinkFrame(result.JoinAcceptPHY, frame)
-		if _, err := downlinkSender.SendDownlink(context.Background(), df); err != nil {
+		df := gateway.BuildClassADownlink(cfg, result.JoinAcceptPHY, frame)
+		ack, err := downlinkSender.SendDownlink(context.Background(), df)
+		if err != nil {
 			log.Printf("send JoinAccept: %v", err)
 			RecordDownlink("", 0, "join_accept", nil, len(result.JoinAcceptPHY), err.Error())
 		} else {
-			RecordDownlink("", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), "")
+			gateway.LogDownlinkAck(ack, "JoinAccept")
+			summary := gateway.DownlinkAckSummary(ack)
+			if summary != "" {
+				log.Printf("JoinAccept downlink ack: %s", summary)
+			}
+			RecordDownlink("", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), summary)
 		}
 		return
 	}
@@ -129,33 +134,11 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 	log.Printf("uplink: dev_eui=%s f_port=%d (rssi=%v snr=%v)", result.DevEUI, result.FPort, rssi, snr)
 }
 
-// buildDownlinkFrame builds a gw.DownlinkFrame for JoinAccept (or any PHY) with uplink context.
-// For Class A, the device opens RX1 at 1s after uplink; we set Context + Delay(1s) so the gateway transmits then.
-func buildDownlinkFrame(phyPayload []byte, uplink *gw.UplinkFrame) *gw.DownlinkFrame {
-	item := &gw.DownlinkFrameItem{PhyPayload: phyPayload, TxInfo: &gw.DownlinkTxInfo{}}
-	df := &gw.DownlinkFrame{Items: []*gw.DownlinkFrameItem{item}}
-	rx := uplink.GetRxInfo()
-	if rx != nil && len(rx.GetContext()) > 0 {
-		df.GatewayId = rx.GetGatewayId()
-		item.TxInfo.Context = rx.GetContext()
-		// RX1 = 1s after uplink; gateway adds Delay to context time to schedule TX.
-		item.TxInfo.Timing = &gw.Timing{Parameters: &gw.Timing_Delay{Delay: &gw.DelayTimingInfo{Delay: durationpb.New(time.Second)}}}
-	} else {
-		if rx != nil {
-			df.GatewayId = rx.GetGatewayId()
-		}
-		item.TxInfo.Timing = &gw.Timing{Parameters: &gw.Timing_Immediately{Immediately: &gw.ImmediatelyTimingInfo{}}}
-	}
-	return df
-}
-
 // EnqueueDownlink sends a downlink to the device via concentratord.
-// Returns an error if CONCENTRATORD_EVENT_URL or CONCENTRATORD_COMMAND_URL are not set.
-func EnqueueDownlink(app core.App, devEUI string, fPort uint8, payload []byte) error {
+// Returns an error if gateway config is not enabled.
+func EnqueueDownlink(cfg *gateway.Config, app core.App, devEUI string, fPort uint8, payload []byte) error {
 	devEUI = normalizeEui(devEUI)
-	eventURL := os.Getenv("CONCENTRATORD_EVENT_URL")
-	commandURL := os.Getenv("CONCENTRATORD_COMMAND_URL")
-	if eventURL == "" || commandURL == "" {
+	if !cfg.Enabled() {
 		return fmt.Errorf("gateway not configured: set CONCENTRATORD_EVENT_URL and CONCENTRATORD_COMMAND_URL")
 	}
 	store := newPocketbaseLorawanStore(app)
@@ -163,16 +146,8 @@ func EnqueueDownlink(app core.App, devEUI string, fPort uint8, payload []byte) e
 	if err != nil {
 		return err
 	}
-	client := concentratord.NewClient(eventURL, commandURL)
-	df := &gw.DownlinkFrame{
-		GatewayId: os.Getenv("CONCENTRATORD_GATEWAY_ID"),
-		Items: []*gw.DownlinkFrameItem{{
-			PhyPayload: phyRaw,
-			TxInfo: &gw.DownlinkTxInfo{
-				Timing: &gw.Timing{Parameters: &gw.Timing_Immediately{Immediately: &gw.ImmediatelyTimingInfo{}}},
-			},
-		}},
-	}
+	client := concentratord.NewClient(cfg.EventURL, cfg.CommandURL)
+	df := gateway.BuildImmediateDownlink(cfg, phyRaw)
 	_, err = client.SendDownlink(context.Background(), df)
 	errMsg := ""
 	if err != nil {
