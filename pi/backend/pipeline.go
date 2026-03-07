@@ -24,38 +24,6 @@ var (
 	appKeyErrLastLogMu sync.Mutex
 )
 
-// Lazy US915 config push: on first US915 downlink need, push gateway channel config so concentratord can TX on 923 MHz.
-var us915ConfigPushOnce sync.Once
-
-func ensureUS915ConfigPushed(ctx context.Context, client *concentratord.Client, cfg *gateway.Config, uplinkFreqHz uint32) {
-	if !gateway.IsUS915UplinkFrequency(uplinkFreqHz) {
-		return
-	}
-	us915ConfigPushOnce.Do(func() {
-		gwID := cfg.GatewayID
-		if gwID == "" {
-			ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
-			var err error
-			gwID, err = client.GetGatewayID(ctx2)
-			cancel()
-			if err != nil {
-				log.Printf("concentratord: US915 config push: get gateway ID: %v", err)
-				return
-			}
-			log.Printf("concentratord: got gateway_id for US915 config: %s", gwID)
-		}
-		gwConfig := gateway.BuildUS915GatewayConfig(gwID)
-		ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
-		err := client.SendConfig(ctx2, gwConfig)
-		cancel()
-		if err != nil {
-			log.Printf("concentratord: US915 config push: %v (downlink will fail until concentratord accepts config)", err)
-			return
-		}
-		log.Printf("concentratord: pushed US915 channel config (uplink + 8×923 MHz downlink)")
-	})
-}
-
 func shouldLogAppKeyErr(errMsg string) bool {
 	if !strings.Contains(errMsg, "has no valid app_key") {
 		return true
@@ -93,31 +61,7 @@ func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.
 	if cfg.GatewayID == "" {
 		log.Printf("concentratord: CONCENTRATORD_GATEWAY_ID unset — gateway-status and UI will show 'no gateway online'")
 	}
-	// US915: push gateway channel config so concentratord can TX on all 8 RX1 frequencies (923.3–927.5 MHz). Required for join/downlink.
-	if cfg.Region == "US915" {
-		gwID := cfg.GatewayID
-		if gwID == "" {
-			configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			var err error
-			gwID, err = client.GetGatewayID(configCtx)
-			cancel()
-			if err != nil {
-				log.Printf("concentratord: get gateway ID for US915 config: %v", err)
-			} else {
-				log.Printf("concentratord: got gateway_id from daemon: %s", gwID)
-			}
-		}
-		if gwID != "" {
-			gwConfig := gateway.BuildUS915GatewayConfig(gwID)
-			configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			if err := client.SendConfig(configCtx, gwConfig); err != nil {
-				log.Printf("concentratord: push US915 config: %v (downlink will fail until concentratord accepts config)", err)
-			} else {
-				log.Printf("concentratord: pushed US915 channel config (uplink + 8×923 MHz downlink)")
-			}
-			cancel()
-		}
-	}
+	// US915: do not push config. SX1302 has two radios in uplink band; pushing 8 downlink (923 MHz) channels panics "channels do not fit within the bandwidth of the two radios". Static config has single lora_std at 923.3; we use 923.3 for all RX1.
 	go func() {
 		err := client.Run(ctx, func(frame *gw.UplinkFrame) {
 			handleConcentratordUplink(app, frame, store, client, cfg)
@@ -159,13 +103,6 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 	}
 	if len(result.JoinAcceptPHY) > 0 {
 		RecordUplink("", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
-		uplinkFreqHz := uint32(0)
-		if tx := frame.GetTxInfo(); tx != nil {
-			uplinkFreqHz = tx.GetFrequency()
-		} else if leg := frame.GetTxInfoLegacy(); leg != nil {
-			uplinkFreqHz = leg.GetFrequency()
-		}
-		ensureUS915ConfigPushed(context.Background(), downlinkSender, cfg, uplinkFreqHz)
 		df := gateway.BuildClassADownlink(cfg, result.JoinAcceptPHY, frame)
 		ack, err := downlinkSender.SendDownlink(context.Background(), df)
 		ackStatus := "OK"

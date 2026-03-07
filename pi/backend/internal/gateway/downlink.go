@@ -86,14 +86,9 @@ func rx1FrequencyHz(cfg *Config, uplink *gw.UplinkFrame) uint32 {
 	if uplinkFreqHz == 0 {
 		return 0
 	}
-	// US915: device listens for RX1 in 923 MHz band; reply there, not on uplink frequency.
+	// US915: device listens for RX1 in 923 MHz band. Gateway has only one lora_std (923.3 MHz); pushing 8 downlink channels crashes concentratord ("channels do not fit within the bandwidth of the two radios"). Use 923.3 only.
 	if uplinkFreqHz >= us915UplinkBaseHz && uplinkFreqHz <= us915UplinkMaxHz {
-		channel := (uplinkFreqHz - us915UplinkBaseHz) / us915UplinkStepHz
-		if channel >= us915NumUplinkCh {
-			channel = us915NumUplinkCh - 1
-		}
-		rx1Ch := channel % 8
-		return us915DownlinkBaseHz + rx1Ch*us915DownlinkStepHz
+		return us915DownlinkBaseHz // 923.3 MHz — matches single lora_std in static config
 	}
 	// EU868 etc.: RX1 uses same frequency as uplink.
 	return uplinkFreqHz
