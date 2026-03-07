@@ -32,6 +32,7 @@ Uplinks and downlinks go through Concentratord. Set:
 - **CONCENTRATORD_EVENT_URL** and **CONCENTRATORD_COMMAND_URL** (ZMQ), e.g.  
   `ipc:///tmp/concentratord_event` and `ipc:///tmp/concentratord_command`.
 - **CONCENTRATORD_GATEWAY_ID** (optional) for downlink targeting and gateway-status in the UI.
+- **CONCENTRATORD_REGION** (optional) — Set to `US915` when using a US915 gateway. The backend pushes the gateway channel config (uplink + 923 MHz downlink) at startup so the concentratord can transmit where the device listens for RX1.
 - **CONCENTRATORD_RX1_DELAY** (optional, default `1`) — Class A RX1 delay in seconds (1–15). Must match the device’s first receive window; use `5` if the device or region expects 5s.
 - **CONCENTRATORD_RX1_FREQUENCY_HZ** (optional) — Downlink frequency in Hz for RX1. If unset, the backend may use the uplink frequency (e.g. EU868). Set if the gateway reports TX_FREQ in the downlink ack.
 

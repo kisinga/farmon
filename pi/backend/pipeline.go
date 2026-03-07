@@ -48,7 +48,7 @@ func shouldLogAppKeyErr(errMsg string) bool {
 // startConcentratordPipeline starts the concentratord subscriber and runs the uplink pipeline
 // (LoRaWAN → codec → store). If Concentratord is not configured, it returns without starting.
 func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.Config) {
-	log.Printf("concentratord: event_url=%v command_url=%v gateway_id=%v rx1_delay=%ds", cfg.EventURL != "", cfg.CommandURL != "", cfg.GatewayID != "", cfg.RX1DelaySec)
+	log.Printf("concentratord: event_url=%v command_url=%v gateway_id=%v region=%s rx1_delay=%ds", cfg.EventURL != "", cfg.CommandURL != "", cfg.GatewayID != "", cfg.Region, cfg.RX1DelaySec)
 	if !cfg.Enabled() {
 		log.Printf("concentratord: not configured (set CONCENTRATORD_EVENT_URL and CONCENTRATORD_COMMAND_URL); no uplinks will be received")
 		return
@@ -60,6 +60,17 @@ func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.
 	}
 	if cfg.GatewayID == "" {
 		log.Printf("concentratord: CONCENTRATORD_GATEWAY_ID unset — gateway-status and UI will show 'no gateway online'")
+	}
+	// Push gateway channel config for US915 so concentratord can TX in 923 MHz band (matches device RX1).
+	if cfg.Region == "US915" && cfg.GatewayID != "" {
+		gwConfig := gateway.BuildUS915GatewayConfig(cfg.GatewayID)
+		configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		if err := client.SendConfig(configCtx, gwConfig); err != nil {
+			log.Printf("concentratord: push US915 config: %v (ensure concentratord is running and region=US915)", err)
+		} else {
+			log.Printf("concentratord: pushed US915 channel config (uplink + 923 MHz downlink)")
+		}
+		cancel()
 	}
 	go func() {
 		err := client.Run(ctx, func(frame *gw.UplinkFrame) {

@@ -77,10 +77,11 @@ multi_sf_channels = [
   904700000, 904900000, 905100000, 905300000,
 ]
 
+# US915: Class A downlink (RX1) is in 923–927.5 MHz band, not uplink. Must match device RX1.
 [gateway.concentrator.lora_std]
-frequency = 904600000
+frequency = 923300000
 bandwidth = 500000
-spreading_factor = 8
+spreading_factor = 12
 
 [gateway.concentrator.fsk]
 frequency = 0

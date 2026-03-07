@@ -11,7 +11,8 @@ type Config struct {
 	EventURL        string
 	CommandURL      string
 	GatewayID       string
-	RX1DelaySec     int   // 1–15; delay in seconds for Class A RX1 (join-accept and data downlinks)
+	Region          string // e.g. "US915"; used to push gateway channel config so TX matches RX band
+	RX1DelaySec     int    // 1–15; delay in seconds for Class A RX1 (join-accept and data downlinks)
 	RX1FrequencyHz  uint32 // optional; 0 means not set
 }
 
@@ -30,6 +31,7 @@ func LoadFromEnv() Config {
 		EventURL:   strings.TrimSpace(os.Getenv("CONCENTRATORD_EVENT_URL")),
 		CommandURL: strings.TrimSpace(os.Getenv("CONCENTRATORD_COMMAND_URL")),
 		GatewayID:  strings.TrimSpace(os.Getenv("CONCENTRATORD_GATEWAY_ID")),
+		Region:     strings.TrimSpace(strings.ToUpper(os.Getenv("CONCENTRATORD_REGION"))),
 	}
 	cfg.RX1DelaySec = defaultRX1DelaySec
 	if s := strings.TrimSpace(os.Getenv("CONCENTRATORD_RX1_DELAY")); s != "" {
