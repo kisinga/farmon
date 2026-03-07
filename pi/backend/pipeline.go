@@ -21,6 +21,7 @@ func startConcentratordPipeline(ctx context.Context, app core.App) {
 	eventURL := os.Getenv("CONCENTRATORD_EVENT_URL")
 	commandURL := os.Getenv("CONCENTRATORD_COMMAND_URL")
 	gatewayID := os.Getenv("CONCENTRATORD_GATEWAY_ID")
+	log.Printf("concentratord: event_url=%v command_url=%v gateway_id=%v", eventURL != "", commandURL != "", gatewayID != "")
 	if eventURL == "" || commandURL == "" {
 		log.Printf("concentratord: not configured (set CONCENTRATORD_EVENT_URL and CONCENTRATORD_COMMAND_URL); no uplinks will be received")
 		return

@@ -75,10 +75,16 @@ func setControlHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// gatewayStatusHandler returns gateway status for the UI (CONCENTRATORD_GATEWAY_ID when set).
+// gatewayStatusHandler returns gateway status for the UI. When concentratord is configured
+// (event + command URLs set), one gateway is reported online so the banner matches reality.
 func gatewayStatusHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
+		eventURL := os.Getenv("CONCENTRATORD_EVENT_URL")
+		commandURL := os.Getenv("CONCENTRATORD_COMMAND_URL")
 		gwID := os.Getenv("CONCENTRATORD_GATEWAY_ID")
+		if gwID == "" && eventURL != "" && commandURL != "" {
+			gwID = "local"
+		}
 		if gwID != "" {
 			return e.JSON(http.StatusOK, map[string]any{
 				"gateways": []any{map[string]any{"id": gwID, "name": gwID, "online": true, "lastSeen": nil}},
