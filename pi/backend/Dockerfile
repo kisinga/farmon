@@ -9,7 +9,7 @@ RUN npm run build
 RUN mkdir -p /out && (cp -r dist/frontend/browser/. /out/ 2>/dev/null || cp -r dist/browser/. /out/ 2>/dev/null || cp -r dist/. /out/)
 
 # Stage 2: Build backend (Go)
-FROM golang:1.23-alpine AS backend
+FROM golang:1.25-alpine AS backend
 WORKDIR /build
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
