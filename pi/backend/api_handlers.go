@@ -105,7 +105,48 @@ func pipelineDebugHandler() func(*core.RequestEvent) error {
 			"concentratord_configured": eventURL != "" && commandURL != "",
 			"gateway_id_set":          gatewayID != "",
 			"gateway_id":              gatewayID,
+			"event_url":               eventURL,
+			"command_url":             commandURL,
 		})
+	}
+}
+
+// lorawanFramesHandler returns recent raw LoRaWAN frames (uplinks + downlinks) for the monitor UI.
+// GET /api/lorawan/frames?limit=100
+func lorawanFramesHandler() func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		limit := 100
+		if s := e.Request.URL.Query().Get("limit"); s != "" {
+			if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 500 {
+				limit = n
+			}
+		}
+		frames := GetFrames(limit)
+		return e.JSON(http.StatusOK, map[string]any{"frames": frames})
+	}
+}
+
+// lorawanStatsHandler returns frame buffer stats and pipeline status.
+// GET /api/lorawan/stats
+func lorawanStatsHandler() func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		stats := GetFrameStats()
+		eventURL := os.Getenv("CONCENTRATORD_EVENT_URL")
+		commandURL := os.Getenv("CONCENTRATORD_COMMAND_URL")
+		return e.JSON(http.StatusOK, map[string]any{
+			"buffer_size":             stats.BufferSize,
+			"total_uplinks":           stats.TotalUplinks,
+			"total_downlinks":         stats.TotalDownlinks,
+			"concentratord_configured": eventURL != "" && commandURL != "",
+		})
+	}
+}
+
+// lorawanClearFramesHandler clears the in-memory frame buffer. POST /api/lorawan/frames/clear
+func lorawanClearFramesHandler() func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		ClearFrames()
+		return e.JSON(http.StatusOK, map[string]any{"ok": true})
 	}
 }
 

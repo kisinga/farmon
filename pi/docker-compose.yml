@@ -20,7 +20,7 @@ services:
     volumes:
       - pi_pb_data:/app/pb_data
       # Mount host /tmp so backend can use concentratord IPC (ipc:///tmp/...) when CONCENTRATORD_* are set
-      - /tmp:/tmp
+      # - /tmp:/tmp
     environment:
       - TZ=Africa/Nairobi
       # Codec (default /app/codec.js in image)

@@ -4,13 +4,13 @@ import { Component, input } from '@angular/core';
   selector: 'app-metric-gauge',
   standalone: true,
   template: `
-    <div class="rounded-lg border border-base-300 bg-base-100 p-3 text-center">
-      <p class="text-2xl font-semibold">{{ value() }}{{ unit() ? ' ' + unit() : '' }}</p>
-      <p class="text-sm text-base-content/60">{{ label() }}</p>
+    <div class="rounded-xl border border-base-200 bg-base-100 p-4 text-center shadow-sm">
+      <p class="text-2xl font-bold text-base-content">{{ value() }}{{ unit() ? ' ' + unit() : '' }}</p>
+      <p class="text-sm text-base-content/60 mt-0.5">{{ label() }}</p>
       @if (min() !== undefined && max() !== undefined) {
-        <div class="mt-1 h-1 w-full rounded bg-base-300">
+        <div class="mt-2 h-1.5 w-full rounded-full bg-base-200 overflow-hidden">
           <div
-            class="h-1 rounded bg-primary transition-all"
+            class="h-full rounded-full bg-primary transition-all duration-300"
             [style.width.%]="gaugePercent()"
           ></div>
         </div>

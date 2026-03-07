@@ -21,6 +21,7 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   deviceContext = inject(DeviceContextService);
   routeError = signal<string | null>(null);
+  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'ota' | 'rules'>('overview');
   timeRange = signal<'1h' | '24h' | '7d'>('24h');
   rangeEnd = signal<string>(new Date().toISOString());
 

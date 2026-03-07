@@ -7,21 +7,23 @@ import { ValuePillComponent } from '../value-pill/value-pill.component';
   standalone: true,
   imports: [ValuePillComponent],
   template: `
-    <div class="rounded-lg border border-base-300 bg-base-100 p-2">
-      <h4 class="text-sm font-semibold mb-2">Diagnostics</h4>
+    <div class="rounded-xl border border-base-200 bg-base-100 p-4">
+      <h2 class="section-title">Diagnostics</h2>
       @if (totalCount() === 0) {
-        <p class="text-sm text-base-content/60">No errors</p>
+        <p class="text-sm text-base-content/60">No errors reported.</p>
       } @else {
-        @for (group of categoryGroups(); track group.category) {
-          <div class="mb-2">
-            <p class="text-xs font-medium text-base-content/70">{{ group.category }}</p>
-            <div class="flex flex-wrap gap-1 mt-1">
-              @for (entry of group.entries; track entry.key) {
-                <app-value-pill [label]="entry.label" [value]="entry.value" variant="warning" />
-              }
+        <div class="space-y-3">
+          @for (group of categoryGroups(); track group.category) {
+            <div>
+              <p class="text-xs font-medium text-base-content/70 uppercase tracking-wide">{{ group.category }}</p>
+              <div class="flex flex-wrap gap-2 mt-1.5">
+                @for (entry of group.entries; track entry.key) {
+                  <app-value-pill [label]="entry.label" [value]="entry.value" variant="warning" />
+                }
+              </div>
             </div>
-          </div>
-        }
+          }
+        </div>
       }
     </div>
   `,

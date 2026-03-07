@@ -8,11 +8,14 @@ import { ControlRowComponent } from '../control-row/control-row.component';
   standalone: true,
   imports: [ControlRowComponent],
   template: `
-    <div class="space-y-2">
-      <h3 class="text-lg font-semibold">Controls</h3>
+    <div class="space-y-4">
+      <h2 class="section-title">Controls</h2>
       @if (message()) {
-        <p class="text-sm" [class.text-error]="isError()" [class.text-success]="!isError()">{{ message() }}</p>
+        <div class="alert text-sm rounded-xl" [class.alert-error]="isError()" [class.alert-success]="!isError()">
+          <span>{{ message() }}</span>
+        </div>
       }
+      <div class="space-y-3">
       @for (ctrl of controls(); track ctrl.id) {
         <app-control-row
           [controlKey]="ctrl.control_key"
@@ -26,6 +29,7 @@ import { ControlRowComponent } from '../control-row/control-row.component';
       @if (controls().length === 0 && !loading()) {
         <p class="text-base-content/60 text-sm">No controls defined. They may appear after device registration or state updates.</p>
       }
+      </div>
     </div>
   `,
 })

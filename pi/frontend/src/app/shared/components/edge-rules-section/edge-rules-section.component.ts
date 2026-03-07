@@ -6,44 +6,47 @@ import { ApiService, EdgeRuleRecord } from '../../../core/services/api.service';
   selector: 'app-edge-rules-section',
   standalone: true,
   template: `
-    <div class="space-y-2">
-      <h3 class="text-lg font-semibold">Edge rules</h3>
+    <div class="space-y-4">
+      <h2 class="section-title">Edge rules</h2>
       @if (message()) {
-        <p class="text-sm" [class.text-error]="isError()" [class.text-success]="!isError()">{{ message() }}</p>
+        <div class="alert text-sm rounded-xl" [class.alert-error]="isError()" [class.alert-success]="!isError()">
+          <span>{{ message() }}</span>
+        </div>
       }
-      <div class="overflow-x-auto">
-        <table class="table table-xs">
-          <thead>
-            <tr>
-              <th>Rule</th>
-              <th>Field</th>
-              <th>Op</th>
-              <th>Threshold</th>
-              <th>Control</th>
-              <th>Action</th>
-              <th>Enabled</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (r of rules(); track r.id) {
-              <tr>
-                <td>{{ r.rule_id }}</td>
-                <td>{{ r.field_idx }}</td>
-                <td>{{ r.operator }}</td>
-                <td>{{ r.threshold }}</td>
-                <td>{{ r.control_idx }}</td>
-                <td>{{ r.action_state }}</td>
-                <td>{{ r.enabled !== false ? 'Yes' : 'No' }}</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
       @if (rules().length === 0 && !loading()) {
         <p class="text-sm text-base-content/60">No edge rules. Add one below.</p>
+      } @else {
+        <div class="overflow-x-auto rounded-xl border border-base-200">
+          <table class="table table-sm">
+            <thead>
+              <tr class="bg-base-200/60">
+                <th class="font-semibold">Rule</th>
+                <th class="font-semibold">Field</th>
+                <th class="font-semibold">Op</th>
+                <th class="font-semibold">Threshold</th>
+                <th class="font-semibold">Control</th>
+                <th class="font-semibold">Action</th>
+                <th class="font-semibold">Enabled</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of rules(); track r.id) {
+                <tr>
+                  <td>{{ r.rule_id }}</td>
+                  <td>{{ r.field_idx }}</td>
+                  <td>{{ r.operator }}</td>
+                  <td>{{ r.threshold }}</td>
+                  <td>{{ r.control_idx }}</td>
+                  <td>{{ r.action_state }}</td>
+                  <td>{{ r.enabled !== false ? 'Yes' : 'No' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
       }
-      <div class="rounded-lg border border-base-300 bg-base-100 p-3 space-y-2">
-        <h4 class="text-sm font-medium">Add rule</h4>
+      <div class="rounded-xl border border-base-200 bg-base-200/30 p-4 space-y-3">
+        <h3 class="text-sm font-semibold">Add rule</h3>
         <div class="flex flex-wrap gap-2 items-end">
           <div class="form-control">
             <label class="label text-xs">Field idx</label>
@@ -79,7 +82,7 @@ import { ApiService, EdgeRuleRecord } from '../../../core/services/api.service';
             <label class="label text-xs">Cooldown (s)</label>
             <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="form.cooldown_seconds" min="0" />
           </div>
-          <button type="button" class="btn btn-sm btn-primary" (click)="addRule()" [disabled]="saving()">Add</button>
+          <button type="button" class="btn btn-sm btn-primary" (click)="addRule()" [disabled]="saving()">Add rule</button>
         </div>
       </div>
     </div>

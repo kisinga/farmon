@@ -61,12 +61,26 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		log.Printf("uplink: lorawan error: %v", err)
 		return
 	}
+	var gwID string
+	var rssi *int
+	var snr *float64
+	if rx := frame.GetRxInfo(); rx != nil {
+		gwID = rx.GetGatewayId()
+		r := int(rx.GetRssi())
+		rssi = &r
+		s := float64(rx.GetSnr())
+		snr = &s
+	}
 	if len(result.JoinAcceptPHY) > 0 {
 		log.Printf("uplink: join → sending JoinAccept")
+		RecordUplink("", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
 		// Send JoinAccept downlink with context from uplink so gateway can schedule RX1.
 		df := buildDownlinkFrame(result.JoinAcceptPHY, frame)
 		if _, err := downlinkSender.SendDownlink(context.Background(), df); err != nil {
 			log.Printf("send JoinAccept: %v", err)
+			RecordDownlink("", 0, "join_accept", nil, len(result.JoinAcceptPHY), err.Error())
+		} else {
+			RecordDownlink("", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), "")
 		}
 		return
 	}
@@ -75,20 +89,13 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 	if codecRunner != nil {
 		obj, _ = codecRunner.DecodeUplink(result.FPort, result.Payload)
 	}
-	var rssi *int
-	var snr *float64
-	if rx := frame.GetRxInfo(); rx != nil {
-		r := int(rx.GetRssi())
-		rssi = &r
-		s := float64(rx.GetSnr())
-		snr = &s
-	}
 	deviceName := result.DevEUI
 	if rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": result.DevEUI}); err == nil {
 		if n, _ := rec.Get("device_name").(string); n != "" {
 			deviceName = n
 		}
 	}
+	RecordUplink(result.DevEUI, result.FPort, "data", result.Payload, len(phyRaw), rssi, snr, gwID)
 	if err := handleUplinkFromPipeline(app, result.DevEUI, deviceName, result.FPort, obj, rssi, snr); err != nil {
 		log.Printf("uplink: persist error dev_eui=%s f_port=%d: %v", result.DevEUI, result.FPort, err)
 		return
@@ -142,5 +149,10 @@ func EnqueueDownlink(app core.App, devEUI string, fPort uint8, payload []byte) e
 		}},
 	}
 	_, err = client.SendDownlink(context.Background(), df)
+	errMsg := ""
+	if err != nil {
+		errMsg = err.Error()
+	}
+	RecordDownlink(devEUI, fPort, "data", payload, len(phyRaw), errMsg)
 	return err
 }

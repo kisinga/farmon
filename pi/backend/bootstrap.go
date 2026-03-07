@@ -32,9 +32,18 @@ func bootstrapCollections(app core.App) {
 			return
 		}
 		log.Println("bootstrap: created collection devices")
+	} else {
+		// Ensure existing "devices" collection has app_key (e.g. created before this field was in schema).
+		coll, _ := app.FindCollectionByNameOrId("devices")
+		if coll != nil && coll.Fields.GetByName("app_key") == nil {
+			coll.Fields.Add(&core.TextField{Name: "app_key"})
+			if err := app.Save(coll); err != nil {
+				log.Printf("bootstrap: add app_key to devices: %v", err)
+			} else {
+				log.Println("bootstrap: added app_key field to devices collection")
+			}
+		}
 	}
-	// Note: Existing "devices" collections created before app_key was added need the field
-	// added via PocketBase Admin UI (Settings → devices → New field "app_key", type Text).
 
 	// telemetry
 	if _, err := app.FindCollectionByNameOrId("telemetry"); err != nil {

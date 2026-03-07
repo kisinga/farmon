@@ -9,41 +9,70 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
   standalone: true,
   imports: [RouterLink, DatePipe, AddDeviceModalComponent],
   template: `
-    <div class="card bg-base-100 shadow-xl">
-      <div class="card-body">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 class="card-title">Devices</h2>
-          <button type="button" class="btn btn-primary btn-sm" (click)="openAddModal()">Add device</button>
-        </div>
+    <header class="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="page-title">Devices</h1>
+        <p class="page-description">
+          Manage LoRaWAN devices. Register a device to get an App Key for firmware, or open a device to view telemetry and controls.
+        </p>
+      </div>
+      <button type="button" class="btn btn-primary gap-2 shrink-0" (click)="openAddModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Add device
+      </button>
+    </header>
+
+    <div class="card-elevated">
+      <div class="card-body-spaced">
         @if (loading()) {
-          <span class="loading loading-spinner loading-md"></span>
+          <div class="flex flex-col items-center justify-center py-12 gap-4">
+            <span class="loading loading-spinner loading-lg text-primary"></span>
+            <p class="text-base-content/60">Loading devices…</p>
+          </div>
         } @else if (error()) {
-          <div class="alert alert-error">{{ error() }}</div>
+          <div class="alert alert-error rounded-xl">
+            <span>{{ error() }}</span>
+          </div>
+        } @else if (devices().length === 0) {
+          <div class="flex flex-col items-center justify-center py-12 px-4 text-center">
+            <div class="rounded-full bg-base-200 p-6 mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h2 class="text-lg font-semibold text-base-content mb-1">No devices yet</h2>
+            <p class="text-base-content/70 text-sm max-w-md mb-6">
+              Register a device to get an App Key for your firmware (e.g. <code class="bg-base-200 px-1.5 py-0.5 rounded text-xs">secrets.h</code>), or wait for uplinks to create devices automatically.
+            </p>
+            <button type="button" class="btn btn-primary" (click)="openAddModal()">Add your first device</button>
+          </div>
         } @else {
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto rounded-xl border border-base-200">
             <table class="table table-zebra">
               <thead>
-                <tr>
-                  <th>EUI</th>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Last seen</th>
-                  <th></th>
+                <tr class="bg-base-200/60">
+                  <th class="font-semibold">EUI</th>
+                  <th class="font-semibold">Name</th>
+                  <th class="font-semibold hidden sm:table-cell">Type</th>
+                  <th class="font-semibold">Last seen</th>
+                  <th class="w-24 text-right font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
                 @for (d of devices(); track d.device_eui) {
-                  <tr>
-                    <td class="font-mono">{{ d.device_eui }}</td>
-                    <td>{{ d.device_name || '—' }}</td>
-                    <td>{{ d.device_type || '—' }}</td>
-                    <td>{{ d.last_seen ? (d.last_seen | date:'short') : '—' }}</td>
-                    <td><a [routerLink]="['/device', d.device_eui]" class="btn btn-sm btn-primary">Open</a></td>
-                  </tr>
-                } @empty {
-                  <tr>
-                    <td colspan="5" class="text-center text-base-content/60">
-                      No devices yet. <button type="button" class="link link-primary" (click)="openAddModal()">Add a device</button> to get an App Key for firmware, or wait for uplinks to create them.
+                  <tr class="hover">
+                    <td class="font-mono text-sm">{{ d.device_eui }}</td>
+                    <td class="font-medium">{{ d.device_name || '—' }}</td>
+                    <td class="hidden sm:table-cell text-base-content/70">{{ d.device_type || '—' }}</td>
+                    <td class="text-base-content/70 whitespace-nowrap">
+                      {{ d.last_seen ? (d.last_seen | date:'short') : '—' }}
+                    </td>
+                    <td class="text-right">
+                      <a [routerLink]="['/device', d.device_eui]" class="btn btn-sm btn-primary btn-outline">
+                        Open
+                      </a>
                     </td>
                   </tr>
                 }
@@ -53,6 +82,7 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
         }
       </div>
     </div>
+
     <app-add-device-modal #addModal (deviceAdded)="loadDevices()" />
   `,
 })
@@ -76,11 +106,11 @@ export class DeviceListComponent implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     this.api.getDevices().subscribe({
-      next: res => {
+      next: (res) => {
         this.devices.set(res?.items ?? []);
         this.loading.set(false);
       },
-      error: err => {
+      error: (err) => {
         this.error.set(err?.message ?? 'Failed to load devices');
         this.loading.set(false);
       },

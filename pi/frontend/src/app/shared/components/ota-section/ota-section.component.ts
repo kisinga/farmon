@@ -7,42 +7,46 @@ import { ApiService, FirmwareHistoryRecord } from '../../../core/services/api.se
   standalone: true,
   imports: [DatePipe],
   template: `
-    <div class="space-y-2">
-      <h3 class="text-lg font-semibold">OTA / Firmware</h3>
-      <div class="flex gap-2">
-        <button type="button" class="btn btn-sm btn-primary" (click)="startOta()" [disabled]="loading()">Start OTA</button>
-        <button type="button" class="btn btn-sm btn-ghost" (click)="cancelOta()" [disabled]="loading()">Cancel OTA</button>
+    <div class="space-y-4">
+      <h2 class="section-title">OTA / Firmware</h2>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" class="btn btn-primary btn-sm" (click)="startOta()" [disabled]="loading()">Start OTA</button>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="cancelOta()" [disabled]="loading()">Cancel OTA</button>
       </div>
       @if (message()) {
-        <p class="text-sm" [class.text-error]="isError()" [class.text-success]="!isError()">{{ message() }}</p>
-      }
-      <h4 class="text-sm font-medium">History</h4>
-      @if (history().length === 0 && !loadingHistory()) {
-        <p class="text-sm text-base-content/60">No firmware history yet.</p>
-      } @else {
-        <div class="overflow-x-auto">
-          <table class="table table-xs">
-            <thead>
-              <tr>
-                <th>Started</th>
-                <th>Outcome</th>
-                <th>Version</th>
-                <th>Chunks</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (r of history(); track r.id) {
-                <tr>
-                  <td>{{ r.started_at ? (r.started_at | date:'short') : '—' }}</td>
-                  <td>{{ r.outcome }}</td>
-                  <td>{{ r.firmware_version ?? '—' }}</td>
-                  <td>{{ r.chunks_received ?? '—' }}/{{ r.total_chunks ?? '—' }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
+        <div class="alert text-sm rounded-xl" [class.alert-error]="isError()" [class.alert-success]="!isError()">
+          <span>{{ message() }}</span>
         </div>
       }
+      <div>
+        <h3 class="text-sm font-semibold text-base-content mb-2">History</h3>
+        @if (history().length === 0 && !loadingHistory()) {
+          <p class="text-sm text-base-content/60">No firmware history yet.</p>
+        } @else {
+          <div class="overflow-x-auto rounded-xl border border-base-200">
+            <table class="table table-sm">
+              <thead>
+                <tr class="bg-base-200/60">
+                  <th class="font-semibold">Started</th>
+                  <th class="font-semibold">Outcome</th>
+                  <th class="font-semibold">Version</th>
+                  <th class="font-semibold">Chunks</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (r of history(); track r.id) {
+                  <tr>
+                    <td class="text-base-content/80">{{ r.started_at ? (r.started_at | date:'short') : '—' }}</td>
+                    <td><span class="badge badge-sm" [class.badge-success]="r.outcome === 'done'" [class.badge-error]="r.outcome === 'failed'" [class.badge-ghost]="r.outcome !== 'done' && r.outcome !== 'failed'">{{ r.outcome }}</span></td>
+                    <td>{{ r.firmware_version ?? '—' }}</td>
+                    <td>{{ r.chunks_received ?? '—' }}/{{ r.total_chunks ?? '—' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
     </div>
   `,
 })

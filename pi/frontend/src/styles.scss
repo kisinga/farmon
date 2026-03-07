@@ -1,3 +1,33 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+  body {
+    @apply antialiased text-base-content bg-base-200 min-h-screen;
+  }
+}
+
+@layer components {
+  .page-header {
+    @apply mb-6;
+  }
+  .page-title {
+    @apply text-2xl md:text-3xl font-bold text-base-content tracking-tight;
+  }
+  .page-description {
+    @apply mt-1 text-base-content/70 text-sm md:text-base max-w-2xl;
+  }
+  .section-title {
+    @apply text-lg font-semibold text-base-content mb-3 flex items-center gap-2;
+  }
+  .card-elevated {
+    @apply bg-base-100 shadow-xl border border-base-200 rounded-2xl overflow-hidden;
+  }
+  .card-body-spaced {
+    @apply card-body gap-4 p-5 md:p-6;
+  }
+}

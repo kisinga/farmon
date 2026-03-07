@@ -160,6 +160,55 @@ export class ApiService {
       .get<PocketBaseList<FirmwareHistoryRecord>>(`${API}/collections/firmware_history/records?filter=${filter}&sort=-started_at&perPage=20`)
       .pipe(map((res) => res?.items ?? []));
   }
+
+  /** Pipeline status (concentratord env). */
+  getPipelineDebug(): Observable<PipelineDebug> {
+    return this.http.get<PipelineDebug>(`${API}/debug/pipeline`);
+  }
+
+  /** Recent raw LoRaWAN frames (uplinks + downlinks). */
+  getLorawanFrames(limit = 100): Observable<{ frames: RawLorawanFrame[] }> {
+    return this.http.get<{ frames: RawLorawanFrame[] }>(`${API}/lorawan/frames?limit=${limit}`);
+  }
+
+  /** Frame buffer stats and concentratord configured flag. */
+  getLorawanStats(): Observable<LorawanStats> {
+    return this.http.get<LorawanStats>(`${API}/lorawan/stats`);
+  }
+
+  /** Clear in-memory frame buffer. */
+  clearLorawanFrames(): Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(`${API}/lorawan/frames/clear`, {});
+  }
+}
+
+export interface PipelineDebug {
+  concentratord_configured: boolean;
+  gateway_id_set: boolean;
+  gateway_id: string;
+  event_url?: string;
+  command_url?: string;
+}
+
+export interface RawLorawanFrame {
+  time: string;
+  direction: 'up' | 'down';
+  dev_eui: string;
+  f_port: number;
+  kind: string;
+  payload_hex: string;
+  phy_len: number;
+  rssi?: number;
+  snr?: number;
+  gateway_id?: string;
+  error?: string;
+}
+
+export interface LorawanStats {
+  buffer_size: number;
+  total_uplinks: number;
+  total_downlinks: number;
+  concentratord_configured: boolean;
 }
 
 export interface ProvisionResponse {

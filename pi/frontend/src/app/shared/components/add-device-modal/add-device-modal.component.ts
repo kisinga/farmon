@@ -8,38 +8,41 @@ import { ApiService, ProvisionResponse } from '../../../core/services/api.servic
   imports: [FormsModule],
   template: `
     <dialog class="modal" [class.modal-open]="open()" (click)="onBackdropClick($event)">
-      <div class="modal-box max-w-md" (click)="$event.stopPropagation()">
+      <div class="modal-box max-w-md rounded-2xl shadow-2xl" (click)="$event.stopPropagation()">
         <h3 class="font-bold text-lg">Register device</h3>
-        <p class="text-sm text-base-content/70 py-1">Create a device and get an App Key for LoRaWAN (OTAA). Use the EUI from the device label or serial.</p>
+        <p class="text-sm text-base-content/70 mt-1">
+          Create a device and get an App Key for LoRaWAN (OTAA). Use the EUI from the device label or serial.
+        </p>
 
         @if (!result()) {
-          <form class="form-control gap-2 mt-4" (ngSubmit)="onSubmit()">
-            <label class="label">
-              <span class="label-text">Device EUI <span class="text-error">*</span></span>
+          <form class="mt-6 space-y-4" (ngSubmit)="onSubmit()">
+            <label class="form-control w-full">
+              <span class="label"><span class="label-text font-medium">Device EUI</span><span class="text-error">*</span></span>
+              <input
+                type="text"
+                class="input input-bordered w-full font-mono input-sm"
+                placeholder="e.g. 0102030405060708"
+                maxlength="16"
+                [(ngModel)]="eui"
+                name="eui"
+                required
+              />
+              <span class="label-text-alt text-base-content/50">16 hex characters</span>
             </label>
-            <input
-              type="text"
-              class="input input-bordered w-full font-mono"
-              placeholder="e.g. 0102030405060708"
-              maxlength="16"
-              [(ngModel)]="eui"
-              name="eui"
-              required
-            />
-            <label class="label">
-              <span class="label-text">Device name (optional)</span>
+            <label class="form-control w-full">
+              <span class="label"><span class="label-text font-medium">Device name</span><span class="label-text-alt">optional</span></span>
+              <input
+                type="text"
+                class="input input-bordered w-full input-sm"
+                placeholder="e.g. pump-1"
+                [(ngModel)]="name"
+                name="name"
+              />
             </label>
-            <input
-              type="text"
-              class="input input-bordered w-full"
-              placeholder="e.g. pump-1"
-              [(ngModel)]="name"
-              name="name"
-            />
             @if (error()) {
-              <div class="alert alert-error text-sm">{{ error() }}</div>
+              <div class="alert alert-error text-sm rounded-xl">{{ error() }}</div>
             }
-            <div class="modal-action mt-4">
+            <div class="modal-action mt-6 p-0 justify-end gap-2">
               <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
               <button type="submit" class="btn btn-primary" [disabled]="submitting()">
                 {{ submitting() ? 'Registering…' : 'Register' }}
@@ -47,31 +50,38 @@ import { ApiService, ProvisionResponse } from '../../../core/services/api.servic
             </div>
           </form>
         } @else {
-          <div class="mt-4 space-y-3">
-            <div class="alert alert-success text-sm">Device registered. Use the App Key in firmware (e.g. secrets.h).</div>
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text font-mono text-sm">Device EUI</span></label>
-              <div class="flex gap-2">
-                <input type="text" class="input input-bordered input-sm flex-1 font-mono" [value]="result()!.device_eui" readonly />
-                <button type="button" class="btn btn-sm btn-ghost" (click)="copy(result()!.device_eui)">Copy</button>
-              </div>
+          <div class="mt-6 space-y-4">
+            <div class="alert alert-success text-sm rounded-xl">
+              Device registered. Copy the App Key into your firmware (e.g. <code class="bg-success/20 px-1 rounded">secrets.h</code>).
             </div>
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text font-mono text-sm">App Key</span></label>
+            <label class="form-control w-full">
+              <span class="label"><span class="label-text font-mono text-xs">Device EUI</span></span>
               <div class="flex gap-2">
-                <input [type]="showKey() ? 'text' : 'password'" class="input input-bordered input-sm flex-1 font-mono" [value]="result()!.app_key" readonly />
-                <button type="button" class="btn btn-sm btn-ghost" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
-                <button type="button" class="btn btn-sm btn-primary" (click)="copy(result()!.app_key)">Copy</button>
+                <input type="text" class="input input-bordered input-sm flex-1 font-mono text-xs" [value]="result()!.device_eui" readonly />
+                <button type="button" class="btn btn-ghost btn-sm btn-square" (click)="copy(result()!.device_eui)" title="Copy">📋</button>
               </div>
-            </div>
-            <div class="modal-action mt-4">
+            </label>
+            <label class="form-control w-full">
+              <span class="label"><span class="label-text font-mono text-xs">App Key</span></span>
+              <div class="flex gap-2 flex-wrap">
+                <input
+                  [type]="showKey() ? 'text' : 'password'"
+                  class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
+                  [value]="result()!.app_key"
+                  readonly
+                />
+                <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
+                <button type="button" class="btn btn-primary btn-sm" (click)="copy(result()!.app_key)">Copy</button>
+              </div>
+            </label>
+            <div class="modal-action mt-6 p-0 justify-end gap-2">
               <button type="button" class="btn btn-ghost" (click)="addAnother()">Add another</button>
               <button type="button" class="btn btn-primary" (click)="close()">Done</button>
             </div>
           </div>
         }
       </div>
-      <form method="dialog" class="modal-backdrop">
+      <form method="dialog" class="modal-backdrop bg-black/50">
         <button type="button" (click)="close()">close</button>
       </form>
     </dialog>

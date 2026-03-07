@@ -1,49 +1,157 @@
-<div class="card bg-base-100 shadow-xl">
-  <div class="card-body">
-    <div class="flex items-center gap-2">
-      <a routerLink="/" class="btn btn-ghost btn-sm">← Back</a>
-      <h2 class="card-title">{{ deviceContext.eui() || 'Device' }}</h2>
-    </div>
-    @if (routeError()) {
-      <div class="alert alert-error">{{ routeError() }}</div>
-    } @else if (deviceContext.loading()) {
-      <span class="loading loading-spinner loading-md"></span>
-    } @else if (deviceContext.device()) {
-      <div class="grid gap-4">
-        <p><strong>Name:</strong> {{ deviceContext.device()!.device_name || '—' }}</p>
-        <p><strong>Type:</strong> {{ deviceContext.device()!.device_type || '—' }}</p>
-        <p><strong>Last seen:</strong> {{ deviceContext.device()!.last_seen ? (deviceContext.device()!.last_seen | date:'medium') : '—' }}</p>
-      </div>
-      <div class="divider"></div>
-      <app-device-credentials-card [eui]="deviceContext.eui()!" />
-      <div class="divider"></div>
-      <app-controls-panel [eui]="deviceContext.eui()" />
-      @if (deviceContext.fieldConfigs().length > 0) {
-        <div class="divider"></div>
-        <h3 class="text-lg font-semibold">Current values</h3>
-        <app-current-values [fields]="deviceContext.fieldConfigs()" [data]="deviceContext.latestTelemetry() || {}" />
-      }
-      <div class="divider"></div>
-      <app-error-bar [errorObject]="errorObjectFromTelemetry()" />
-      <div class="divider"></div>
-      <h3 class="text-lg font-semibold">History</h3>
-      <div class="flex gap-2 mb-2">
-        <select class="select select-bordered select-sm" (change)="onTimeRangeChange($event)">
-          <option value="1h" [selected]="timeRange() === '1h'">Last 1 hour</option>
-          <option value="24h" [selected]="timeRange() === '24h'">Last 24 hours</option>
-          <option value="7d" [selected]="timeRange() === '7d'">Last 7 days</option>
-        </select>
-      </div>
-      <div class="grid gap-4">
-        <app-history-chart [eui]="deviceContext.eui()" field="rssi" [from]="historyFrom()" [to]="historyTo()" />
-        <app-history-chart [eui]="deviceContext.eui()" field="snr" [from]="historyFrom()" [to]="historyTo()" />
-      </div>
-      <div class="divider"></div>
-      <app-ota-section [eui]="deviceContext.eui()" />
-      <div class="divider"></div>
-      <app-edge-rules-section [eui]="deviceContext.eui()" />
-    } @else if (deviceContext.error()) {
-      <div class="alert alert-error">{{ deviceContext.error() }}</div>
-    }
+@if (routeError()) {
+  <div class="alert alert-error rounded-xl">
+    <span>{{ routeError() }}</span>
+    <a routerLink="/" class="link link-hover font-medium">Back to devices</a>
   </div>
-</div>
+} @else if (deviceContext.loading()) {
+  <div class="flex flex-col items-center justify-center py-16 gap-4">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60">Loading device…</p>
+  </div>
+} @else if (deviceContext.error()) {
+  <div class="alert alert-error rounded-xl">
+    <span>{{ deviceContext.error() }}</span>
+    <a routerLink="/" class="link link-hover font-medium">Back to devices</a>
+  </div>
+} @else if (deviceContext.device()) {
+  <!-- Breadcrumb -->
+  <nav class="text-sm breadcrumbs px-0 mb-4">
+    <ul>
+      <li><a routerLink="/">Devices</a></li>
+      <li class="font-mono text-base-content/80">{{ deviceContext.eui() }}</li>
+    </ul>
+  </nav>
+
+  <header class="page-header flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="page-title font-mono text-xl md:text-2xl">{{ deviceContext.device()!.device_name || deviceContext.eui() }}</h1>
+      <p class="page-description mt-0.5">
+        {{ deviceContext.device()!.device_type || 'Device' }} · Last seen {{ deviceContext.device()!.last_seen ? (deviceContext.device()!.last_seen | date:'medium') : 'never' }}
+      </p>
+    </div>
+    <a routerLink="/" class="btn btn-ghost btn-sm gap-1 shrink-0" aria-label="Back to devices">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+      </svg>
+      Back to list
+    </a>
+  </header>
+
+  <!-- Tabs -->
+  <div class="tabs tabs-boxed bg-base-200/50 p-1 rounded-xl mb-6 overflow-x-auto flex-nowrap md:flex-wrap">
+    <a
+      class="tab rounded-lg"
+      [class.tab-active]="activeTab() === 'overview'"
+      (click)="activeTab.set('overview')"
+    >
+      Overview
+    </a>
+    <a
+      class="tab rounded-lg"
+      [class.tab-active]="activeTab() === 'controls'"
+      (click)="activeTab.set('controls')"
+    >
+      Controls
+    </a>
+    <a
+      class="tab rounded-lg"
+      [class.tab-active]="activeTab() === 'telemetry'"
+      (click)="activeTab.set('telemetry')"
+    >
+      Telemetry
+    </a>
+    <a
+      class="tab rounded-lg"
+      [class.tab-active]="activeTab() === 'ota'"
+      (click)="activeTab.set('ota')"
+    >
+      OTA
+    </a>
+    <a
+      class="tab rounded-lg"
+      [class.tab-active]="activeTab() === 'rules'"
+      (click)="activeTab.set('rules')"
+    >
+      Edge rules
+    </a>
+  </div>
+
+  @switch (activeTab()) {
+    @case ('overview') {
+      <div class="space-y-6">
+        <div class="card-elevated">
+          <div class="card-body-spaced">
+            <h2 class="section-title">Details</h2>
+            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Name</dt>
+                <dd class="font-medium mt-0.5">{{ deviceContext.device()!.device_name || '—' }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Type</dt>
+                <dd class="font-medium mt-0.5">{{ deviceContext.device()!.device_type || '—' }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">EUI</dt>
+                <dd class="font-mono text-sm mt-0.5">{{ deviceContext.eui() }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Last seen</dt>
+                <dd class="font-medium mt-0.5">{{ deviceContext.device()!.last_seen ? (deviceContext.device()!.last_seen | date:'medium') : '—' }}</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+        <app-device-credentials-card [eui]="deviceContext.eui()!" />
+        @if (deviceContext.fieldConfigs().length > 0) {
+          <div class="card-elevated">
+            <div class="card-body-spaced">
+              <h2 class="section-title">Current values</h2>
+              <app-current-values [fields]="deviceContext.fieldConfigs()" [data]="deviceContext.latestTelemetry() || {}" />
+            </div>
+          </div>
+        }
+        <app-error-bar [errorObject]="errorObjectFromTelemetry()" />
+      </div>
+    }
+    @case ('controls') {
+      <div class="card-elevated">
+        <div class="card-body-spaced">
+          <app-controls-panel [eui]="deviceContext.eui()" />
+        </div>
+      </div>
+    }
+    @case ('telemetry') {
+      <div class="card-elevated">
+        <div class="card-body-spaced">
+          <h2 class="section-title">History</h2>
+          <div class="flex flex-wrap gap-2 mb-4">
+            <select class="select select-bordered select-sm w-auto" (change)="onTimeRangeChange($event)">
+              <option value="1h" [selected]="timeRange() === '1h'">Last 1 hour</option>
+              <option value="24h" [selected]="timeRange() === '24h'">Last 24 hours</option>
+              <option value="7d" [selected]="timeRange() === '7d'">Last 7 days</option>
+            </select>
+          </div>
+          <div class="grid gap-6">
+            <app-history-chart [eui]="deviceContext.eui()" field="rssi" [from]="historyFrom()" [to]="historyTo()" />
+            <app-history-chart [eui]="deviceContext.eui()" field="snr" [from]="historyFrom()" [to]="historyTo()" />
+          </div>
+        </div>
+      </div>
+    }
+    @case ('ota') {
+      <div class="card-elevated">
+        <div class="card-body-spaced">
+          <app-ota-section [eui]="deviceContext.eui()" />
+        </div>
+      </div>
+    }
+    @case ('rules') {
+      <div class="card-elevated">
+        <div class="card-body-spaced">
+          <app-edge-rules-section [eui]="deviceContext.eui()" />
+        </div>
+      </div>
+    }
+  }
+}
