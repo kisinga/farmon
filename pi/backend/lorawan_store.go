@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -30,7 +29,7 @@ func (s *pocketbaseLorawanStore) AppKey(devEUI string) ([16]byte, error) {
 		return out, err
 	}
 	keyHex, _ := rec.Get("app_key").(string)
-	keyHex = strings.TrimSpace(strings.TrimPrefix(keyHex, "0x"))
+	keyHex = appKey32(keyHex)
 	if len(keyHex) != 32 {
 		return out, fmt.Errorf("device %s has no valid app_key (got %d hex chars); provision via POST /api/devices with device_eui=%s", devEUI, len(keyHex), devEUI)
 	}

@@ -57,7 +57,7 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
                   <th class="font-semibold">Name</th>
                   <th class="font-semibold hidden sm:table-cell">Type</th>
                   <th class="font-semibold">Last seen</th>
-                  <th class="w-24 text-right font-semibold">Action</th>
+                  <th class="text-right font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -70,9 +70,17 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
                       {{ d.last_seen ? (d.last_seen | date:'short') : '—' }}
                     </td>
                     <td class="text-right">
-                      <a [routerLink]="['/device', d.device_eui]" class="btn btn-sm btn-primary btn-outline">
-                        Open
-                      </a>
+                      <div class="flex gap-1 justify-end">
+                      <a [routerLink]="['/device', d.device_eui]" class="btn btn-sm btn-primary btn-outline">Open</a>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-ghost text-error hover:bg-error/10"
+                        title="Delete device"
+                        (click)="confirmDelete(d.device_eui, d.device_name || d.device_eui)"
+                      >
+                        Delete
+                      </button>
+                      </div>
                     </td>
                   </tr>
                 }
@@ -114,6 +122,16 @@ export class DeviceListComponent implements OnInit {
         this.error.set(err?.message ?? 'Failed to load devices');
         this.loading.set(false);
       },
+    });
+  }
+
+  confirmDelete(eui: string, label: string): void {
+    if (!confirm(`Delete device "${label}" (${eui})? This cannot be undone. The device can be re-registered later.`)) {
+      return;
+    }
+    this.api.deleteDevice(eui).subscribe({
+      next: () => this.loadDevices(),
+      error: (err) => this.error.set(err?.error?.error ?? err?.message ?? 'Failed to delete device'),
     });
   }
 }

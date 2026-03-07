@@ -11,6 +11,23 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
+// appKey32 returns exactly 32 hex chars from s (LoRaWAN AppKey is 16 bytes).
+func appKey32(s string) string {
+	s = strings.TrimSpace(strings.TrimPrefix(s, "0x"))
+	var out []byte
+	for _, c := range s {
+		if c >= '0' && c <= '9' || c >= 'a' && c <= 'f' {
+			out = append(out, byte(c))
+		} else if c >= 'A' && c <= 'F' {
+			out = append(out, byte(c-'A'+'a'))
+		}
+		if len(out) == 32 {
+			return string(out)
+		}
+	}
+	return string(out)
+}
+
 // POST /api/devices — create device with generated AppKey (LoRaWAN OTAA provisioning).
 // Body: { "device_eui": "0102030405060708", "device_name": "optional name" }
 // Returns: { "device_eui": "...", "app_key": "hex32" }
@@ -39,11 +56,11 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 		}
 		existing, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": devEui})
 		if err == nil {
-			// Update existing: set app_key if not set, optionally name
 			if existing.Get("app_key") == nil || existing.Get("app_key") == "" {
 				existing.Set("app_key", appKeyHex)
 			} else {
-				appKeyHex, _ = existing.Get("app_key").(string)
+				appKeyHex = appKey32(existing.Get("app_key").(string))
+				existing.Set("app_key", appKeyHex)
 			}
 			if body.DeviceName != "" {
 				existing.Set("device_name", strings.TrimSpace(body.DeviceName))
@@ -72,6 +89,28 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
+// DELETE /api/devices?eui=... — delete a device and its LoRaWAN session so it can be re-provisioned.
+func deleteDeviceHandler(app core.App) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		eui := normalizeEui(strings.TrimSpace(e.Request.URL.Query().Get("eui")))
+		if eui == "" || len(eui) != 16 {
+			return e.String(http.StatusBadRequest, "eui query param required (16 hex chars)")
+		}
+		rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": eui})
+		if err != nil {
+			return e.JSON(http.StatusNotFound, map[string]any{"error": "device not found"})
+		}
+		if err := app.Delete(rec); err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		}
+		// Remove LoRaWAN session so the device can join again with a new AppKey.
+		if sess, err := app.FindFirstRecordByFilter("lorawan_sessions", "device_eui = {:eui}", dbx.Params{"eui": eui}); err == nil {
+			_ = app.Delete(sess)
+		}
+		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "device deleted"})
+	}
+}
+
 // GET /api/devices/credentials?eui=... — return credentials for firmware (e.g. secrets.h).
 // Returns: { "device_eui": "...", "app_key": "hex32" }
 func deviceCredentialsHandler(app core.App) func(*core.RequestEvent) error {
@@ -84,8 +123,9 @@ func deviceCredentialsHandler(app core.App) func(*core.RequestEvent) error {
 		if err != nil {
 			return e.JSON(http.StatusNotFound, map[string]any{"error": "device not found"})
 		}
-		appKey, _ := rec.Get("app_key").(string)
-		if appKey == "" {
+		appKeyRaw, _ := rec.Get("app_key").(string)
+		appKey := appKey32(appKeyRaw)
+		if len(appKey) != 32 {
 			return e.JSON(http.StatusNotFound, map[string]any{"error": "device has no app_key; provision first via POST /api/devices"})
 		}
 		return e.JSON(http.StatusOK, map[string]any{

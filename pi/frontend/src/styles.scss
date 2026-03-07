@@ -11,7 +11,17 @@
   }
 }
 
+/* FarMon theme brand colors (from logo card) */
+:root {
+  --farmon-far: #1b4a1e;
+  --farmon-mon: #2e8b30;
+  --farmon-muted: #7aaa7c;
+}
+
 @layer components {
+  .brand-far { color: var(--farmon-far); }
+  .brand-mon { color: var(--farmon-mon); }
+  .brand-muted { color: var(--farmon-muted); }
   .page-header {
     @apply mb-6;
   }

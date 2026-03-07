@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/chirpstack/chirpstack/api/go/v4/gw"
 	"github.com/pocketbase/dbx"
@@ -14,6 +17,33 @@ import (
 	"github.com/kisinga/farmon/pi/internal/concentratord"
 	"github.com/kisinga/farmon/pi/internal/lorawan"
 )
+
+// rate-limit "no app_key" log spam (same device every 5 min)
+var (
+	appKeyErrLastLog   = map[string]time.Time{}
+	appKeyErrLastLogMu sync.Mutex
+)
+
+func shouldLogAppKeyErr(errMsg string) bool {
+	if !strings.Contains(errMsg, "has no valid app_key") {
+		return true
+	}
+	// Extract "device X" for rate-limit key (EUI is in the message)
+	key := errMsg
+	if i := strings.Index(key, "device "); i >= 0 {
+		if j := strings.Index(key[i+7:], " "); j >= 0 {
+			key = key[i : i+7+j]
+		}
+	}
+	appKeyErrLastLogMu.Lock()
+	defer appKeyErrLastLogMu.Unlock()
+	now := time.Now()
+	if last, ok := appKeyErrLastLog[key]; ok && now.Sub(last) < 5*time.Minute {
+		return false
+	}
+	appKeyErrLastLog[key] = now
+	return true
+}
 
 // startConcentratordPipeline starts the concentratord subscriber and runs the uplink pipeline
 // (LoRaWAN → codec → store). If Concentratord is not configured, it returns without starting.
@@ -58,7 +88,10 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 	}
 	result, err := lorawan.ProcessUplink(phyRaw, store, store)
 	if err != nil {
-		log.Printf("uplink: lorawan error: %v", err)
+		errMsg := err.Error()
+		if shouldLogAppKeyErr(errMsg) {
+			log.Printf("uplink: lorawan error: %v", err)
+		}
 		return
 	}
 	var gwID string

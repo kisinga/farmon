@@ -1,6 +1,7 @@
 import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ApiService } from '../../core/services/api.service';
 import { DeviceContextService } from '../../core/services/device-context.service';
 import { ControlsPanelComponent } from '../../shared/components/controls-panel/controls-panel.component';
 import { HistoryChartComponent } from '../../shared/components/history-chart/history-chart.component';
@@ -19,8 +20,11 @@ import { ERROR_OBJECT_KEYS } from '../../core/constants/error-fields';
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private api = inject(ApiService);
   deviceContext = inject(DeviceContextService);
   routeError = signal<string | null>(null);
+  deleting = signal(false);
   activeTab = signal<'overview' | 'controls' | 'telemetry' | 'ota' | 'rules'>('overview');
   timeRange = signal<'1h' | '24h' | '7d'>('24h');
   rangeEnd = signal<string>(new Date().toISOString());
@@ -69,5 +73,18 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.deviceContext.clear();
+  }
+
+  confirmDeleteDevice(): void {
+    const eui = this.deviceContext.eui();
+    const name = this.deviceContext.device()?.device_name || eui;
+    if (!eui || !confirm(`Delete device "${name}" (${eui})? This cannot be undone. You can re-register it later.`)) {
+      return;
+    }
+    this.deleting.set(true);
+    this.api.deleteDevice(eui).subscribe({
+      next: () => this.router.navigate(['/']),
+      error: () => this.deleting.set(false),
+    });
   }
 }

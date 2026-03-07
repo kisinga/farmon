@@ -126,6 +126,11 @@ export class ApiService {
     return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name });
   }
 
+  /** Delete a device by EUI (and its LoRaWAN session). */
+  deleteDevice(eui: string): Observable<{ ok: boolean; message?: string }> {
+    return this.http.delete<{ ok: boolean; message?: string }>(`${API}/devices?eui=${encodeURIComponent(eui)}`);
+  }
+
   /** Get credentials for a device (for firmware / secrets.h). */
   getDeviceCredentials(eui: string): Observable<CredentialsResponse> {
     return this.http.get<CredentialsResponse>(`${API}/devices/credentials?eui=${encodeURIComponent(eui)}`);

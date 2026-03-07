@@ -20,6 +20,7 @@ func main() {
 		startConcentratordPipeline(context.Background(), app)
 		// Device provisioning (LoRaWAN OTAA): create device + AppKey, get credentials
 		se.Router.POST("/api/devices", provisionDeviceHandler(app))
+		se.Router.DELETE("/api/devices", deleteDeviceHandler(app))
 		se.Router.GET("/api/devices/credentials", deviceCredentialsHandler(app))
 		// Custom app API (downlink / gateway)
 		se.Router.POST("/api/setControl", setControlHandler(app))

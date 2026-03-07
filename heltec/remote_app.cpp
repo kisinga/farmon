@@ -234,7 +234,7 @@ void RemoteApplicationImpl::initialize() {
     uint8_t devEui[8];
     getDevEuiFromChipId(devEui);
     
-    LOGI("Remote", "DevEUI derived from chip ID: %02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
+    LOGI("Remote", "DevEUI derived from chip ID: %02X%02X%02X%02X%02X%02X%02X%02X",
          devEui[0], devEui[1], devEui[2], devEui[3],
          devEui[4], devEui[5], devEui[6], devEui[7]);
 

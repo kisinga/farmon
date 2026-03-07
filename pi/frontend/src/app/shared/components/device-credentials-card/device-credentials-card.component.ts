@@ -21,7 +21,15 @@ import { ApiService, CredentialsResponse } from '../../../core/services/api.serv
             <span>{{ error() }}</span>
           </div>
           @if (error()?.includes('app_key') || error()?.includes('provision')) {
-            <p class="text-sm text-base-content/70">Register this device from the <a routerLink="/" class="link link-primary">device list</a> (Add device) to get an App Key.</p>
+            <p class="text-sm text-base-content/70 mb-2">This device has no App Key yet (e.g. it was created before provisioning). Generate one now — the existing device will be updated.</p>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              [disabled]="provisioning()"
+              (click)="generateAppKey()"
+            >
+              {{ provisioning() ? 'Generating…' : 'Generate App Key' }}
+            </button>
           }
         } @else if (creds()) {
           <label class="form-control w-full">
@@ -50,6 +58,7 @@ export class DeviceCredentialsCardComponent implements OnInit {
   error = signal<string | null>(null);
   creds = signal<CredentialsResponse | null>(null);
   showKey = signal(false);
+  provisioning = signal(false);
 
   ngOnInit() {
     const e = this.eui();
@@ -68,5 +77,24 @@ export class DeviceCredentialsCardComponent implements OnInit {
 
   copy(text: string): void {
     navigator.clipboard.writeText(text).catch(() => {});
+  }
+
+  /** Provision this device (same EUI) to set or regenerate App Key. Updates existing record. */
+  generateAppKey(): void {
+    const e = this.eui();
+    if (!e) return;
+    this.provisioning.set(true);
+    this.error.set(null);
+    this.api.provisionDevice(e).subscribe({
+      next: (res) => {
+        this.creds.set({ device_eui: res.device_eui, app_key: res.app_key });
+        this.error.set(null);
+        this.provisioning.set(false);
+      },
+      error: (err) => {
+        this.error.set(err?.error?.error ?? err?.message ?? 'Failed to generate App Key');
+        this.provisioning.set(false);
+      },
+    });
   }
 }
