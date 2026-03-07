@@ -1,5 +1,4 @@
-# Pre-built path: run `make dist-pi` (or `make dist`) from pi/ on your machine, commit dist/,
-# then on Pi: git pull && docker compose up -d. No build in container.
+# Pre-built path: run `make dist` from pi/ (builds for current arch). Then: docker compose up -d
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
