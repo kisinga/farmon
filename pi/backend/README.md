@@ -64,3 +64,28 @@ sudo bash pi/setup_gateway.sh
 ```
 
 Then run the backend with `CONCENTRATORD_EVENT_URL` and `CONCENTRATORD_COMMAND_URL` set to the IPC paths (see script output).
+
+## Troubleshooting: no uplinks / join requests
+
+The UI shows "Gateway" as connected when the backend has the concentratord env vars set. That does **not** mean the backend is actually connected to concentratord. If you see no frames and logs like:
+
+```text
+concentratord SUB dial: ... connect: no such file or directory (retry in 5s)
+```
+
+then **concentratord is not running** (or not creating the IPC sockets the backend expects).
+
+**On the Pi (host):**
+
+1. **Check concentratord is running**  
+   `sudo systemctl status chirpstack-concentratord`  
+   If it is not active, start it:  
+   `sudo systemctl start chirpstack-concentratord`
+
+2. **Check the IPC sockets exist**  
+   `ls -la /tmp/concentratord_event /tmp/concentratord_command`  
+   You should see socket files. If not, concentratord did not start correctly (check `sudo journalctl -u chirpstack-concentratord -n 50`).
+
+3. **If the backend runs in Docker** on the same Pi, ensure the compose file mounts the host `/tmp` (e.g. `volumes: - /tmp:/tmp`) so the container can reach those sockets.
+
+The backend **retries** connecting to concentratord every 5 seconds. Once concentratord is running, the backend will connect and you should see `concentratord SUB connected to ipc:///tmp/concentratord_event` in the logs; join requests and uplinks will then appear.

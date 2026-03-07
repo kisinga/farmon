@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/chirpstack/chirpstack/api/go/v4/gw"
 	"github.com/go-zeromq/zmq4"
@@ -15,7 +16,10 @@ import (
 	"github.com/kisinga/farmon/pi/internal/gateway"
 )
 
-const eventTypeUp = "up"
+const (
+	eventTypeUp     = "up"
+	dialRetryEvery  = 5 * time.Second
+)
 
 // Client implements gateway.UplinkSource and gateway.DownlinkSender using
 // Concentratord ZMQ (SUB for events, REQ for commands).
@@ -55,24 +59,11 @@ func (c *Client) Enabled() bool {
 }
 
 // Run implements gateway.UplinkSource. It subscribes to "up" events and calls onUplink for each.
+// If the concentratord socket is not available (e.g. concentratord not running), it retries dial
+// every dialRetryEvery until context is cancelled.
 func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error {
 	if !c.Enabled() {
 		return fmt.Errorf("concentratord: event or command URL not set")
-	}
-	c.subOnce.Do(func() {
-		c.sub = zmq4.NewSub(ctx)
-		if err := c.sub.Dial(c.eventURL); err != nil {
-			c.subErr = fmt.Errorf("concentratord SUB dial: %w", err)
-			return
-		}
-		if err := c.sub.SetOption(zmq4.OptionSubscribe, eventTypeUp); err != nil {
-			c.subErr = fmt.Errorf("concentratord SUB subscribe: %w", err)
-			_ = c.sub.Close()
-			return
-		}
-	})
-	if c.subErr != nil {
-		return c.subErr
 	}
 	for {
 		select {
@@ -80,28 +71,55 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error 
 			return ctx.Err()
 		default:
 		}
-		msg, err := c.sub.Recv()
-		if err != nil {
-			if ctx.Err() != nil {
+		sub := zmq4.NewSub(ctx)
+		if err := sub.Dial(c.eventURL); err != nil {
+			log.Printf("concentratord SUB dial: %v (retry in %v)", err, dialRetryEvery)
+			_ = sub.Close()
+			select {
+			case <-ctx.Done():
 				return ctx.Err()
+			case <-time.After(dialRetryEvery):
 			}
-			log.Printf("concentratord SUB recv: %v", err)
 			continue
 		}
-		if len(msg.Frames) < 2 {
+		if err := sub.SetOption(zmq4.OptionSubscribe, eventTypeUp); err != nil {
+			log.Printf("concentratord SUB subscribe: %v", err)
+			_ = sub.Close()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(dialRetryEvery):
+			}
 			continue
 		}
-		eventType := string(msg.Frames[0])
-		if eventType != eventTypeUp {
-			continue
+		log.Printf("concentratord SUB connected to %s", c.eventURL)
+		// Recv loop; if connection breaks we'll retry from the top
+		for {
+			msg, err := sub.Recv()
+			if err != nil {
+				if ctx.Err() != nil {
+					_ = sub.Close()
+					return ctx.Err()
+				}
+				log.Printf("concentratord SUB recv: %v (reconnecting)", err)
+				_ = sub.Close()
+				break
+			}
+			if len(msg.Frames) < 2 {
+				continue
+			}
+			eventType := string(msg.Frames[0])
+			if eventType != eventTypeUp {
+				continue
+			}
+			body := msg.Frames[1]
+			var ev gw.UplinkFrame
+			if err := proto.Unmarshal(body, &ev); err != nil {
+				log.Printf("concentratord uplink unmarshal: %v", err)
+				continue
+			}
+			onUplink(&ev)
 		}
-		body := msg.Frames[1]
-		var ev gw.UplinkFrame
-		if err := proto.Unmarshal(body, &ev); err != nil {
-			log.Printf("concentratord uplink unmarshal: %v", err)
-			continue
-		}
-		onUplink(&ev)
 	}
 }
 
@@ -116,6 +134,7 @@ func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw
 			c.reqErr = fmt.Errorf("concentratord REQ dial: %w", err)
 			return
 		}
+		log.Printf("concentratord REQ connected to %s", c.commandURL)
 	})
 	if c.reqErr != nil {
 		return nil, c.reqErr
