@@ -1,5 +1,5 @@
-# pi: ChirpStack (HTTP integration) + PocketBase backend + Angular frontend
-# No MQTT/Mosquitto. ChirpStack sends decoded events to backend via HTTP.
+# pi: ChirpStack + PocketBase backend + Angular frontend
+# ChirpStack gateway backend uses MQTT (region_*.toml); integrations use HTTP (per-application in UI).
 # Backend lives in ./backend; frontend build can be in backend/pb_public or embedded.
 
 services:
@@ -38,6 +38,18 @@ services:
       timeout: 5s
       retries: 5
 
+  mosquitto:
+    image: eclipse-mosquitto:2-alpine
+    container_name: pi-mosquitto
+    restart: unless-stopped
+    # ChirpStack gateway backend (region_*.toml) connects here; Gateway Bridge can publish from gateways.
+    ports:
+      - "1883:1883"
+    environment:
+      - TZ=Africa/Nairobi
+    networks:
+      - pi_network
+
   chirpstack:
     image: chirpstack/chirpstack:4
     container_name: pi-chirpstack
@@ -48,6 +60,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mosquitto:
+        condition: service_started
     ports:
       - "8080:8080"
     volumes:
