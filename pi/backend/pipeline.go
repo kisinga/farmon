@@ -113,7 +113,11 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 			if s := gateway.DownlinkAckSummary(ack); s != "" {
 				ackStatus = s
 			}
-			log.Printf("uplink: join → JoinAccept sent (RX1 %ds) → gateway ack: %s", cfg.RX1DelaySec, ackStatus)
+			freqHz := uint32(0)
+		if len(df.GetItems()) > 0 && df.GetItems()[0].GetTxInfo() != nil {
+			freqHz = df.GetItems()[0].GetTxInfo().GetFrequency()
+		}
+		log.Printf("uplink: join → JoinAccept sent (RX1 %ds, freq=%d Hz) → gateway ack: %s", cfg.RX1DelaySec, freqHz, ackStatus)
 		}
 		RecordDownlink("", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), ackStatus)
 		return
