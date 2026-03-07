@@ -1,15 +1,19 @@
 # pi stack: PocketBase backend + Angular frontend. Run from pi/ directory.
 # Builds for current architecture only. Run 'make dist' then 'docker compose up -d'.
 
-.PHONY: build frontend backend dist check-go
+.PHONY: build frontend backend dist check-go frontend-deps
 
 # Default: build backend for host (dev). Run after 'make frontend' if you need pb_public.
 build: backend
 	@echo "Backend binary: backend/pocketbase"
 
-# Build frontend only
+# Install frontend deps (run once after clone or when package.json/package-lock.json change)
+frontend-deps:
+	cd frontend && npm ci
+
+# Build frontend only (run 'make frontend-deps' first if node_modules missing)
 frontend:
-	cd frontend && npm ci && npm run build
+	cd frontend && npm run build
 
 # Verify go binary matches current machine (avoid "Exec format error" from wrong-arch go)
 check-go:
