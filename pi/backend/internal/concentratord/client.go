@@ -17,12 +17,18 @@ import (
 )
 
 const (
-	eventTypeUp    = "up"
-	dialRetryEvery = 5 * time.Second
+	eventTypeUp       = "up"
+	dialRetryEvery    = 5 * time.Second
+	unmarshalLogEvery = 5 * time.Minute
+)
+
+var (
+	lastUnmarshalLog   time.Time
+	unmarshalLogMu     sync.Mutex
 )
 
 // parseUplinkEvent returns the UplinkFrame from a ZMQ message (topic+body or body only).
-// Concentratord sends gw.Event{ event: UplinkFrame }; we must decode Event then extract the frame.
+// Supports both gw.Event (concentratord) and raw gw.UplinkFrame (e.g. gateway bridge).
 func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
 	frames := msg.Frames
 	if len(frames) == 0 {
@@ -32,12 +38,30 @@ func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
 	if len(frames) >= 2 && string(frames[0]) == eventTypeUp {
 		payload = frames[1]
 	}
+	// Try Event first (concentratord sends Event{ event: UplinkFrame }).
 	var ev gw.Event
-	if err := proto.Unmarshal(payload, &ev); err != nil {
-		log.Printf("concentratord event unmarshal: %v", err)
-		return nil
+	if err := proto.Unmarshal(payload, &ev); err == nil {
+		if uf := ev.GetUplinkFrame(); uf != nil {
+			return uf
+		}
 	}
-	return ev.GetUplinkFrame()
+	// Fallback: raw UplinkFrame (e.g. gateway bridge or proxy).
+	var uf gw.UplinkFrame
+	if err := proto.Unmarshal(payload, &uf); err == nil && len(uf.GetPhyPayload()) > 0 {
+		return &uf
+	}
+	// Rate-limit unmarshal failure logs.
+	unmarshalLogMu.Lock()
+	now := time.Now()
+	shouldLog := now.Sub(lastUnmarshalLog) >= unmarshalLogEvery
+	if shouldLog {
+		lastUnmarshalLog = now
+	}
+	unmarshalLogMu.Unlock()
+	if shouldLog {
+		log.Printf("concentratord event: payload is neither Event nor UplinkFrame (len=%d)", len(payload))
+	}
+	return nil
 }
 
 // Client implements gateway.UplinkSource and gateway.DownlinkSender using
@@ -130,7 +154,8 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error 
 	}
 }
 
-// SendDownlink implements gateway.DownlinkSender. Sends "down" command with the frame and returns the ack.
+// SendDownlink implements gateway.DownlinkSender. Sends gw.Command (single frame) and returns the ack.
+// Concentratord expects one frame: serialized gw.Command with SendDownlinkFrame set.
 func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw.DownlinkTxAck, error) {
 	if !c.Enabled() {
 		return nil, fmt.Errorf("concentratord: not configured")
@@ -146,14 +171,16 @@ func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw
 	if c.reqErr != nil {
 		return nil, c.reqErr
 	}
-	body, err := proto.Marshal(frame)
+	cmd := &gw.Command{
+		Command: &gw.Command_SendDownlinkFrame{SendDownlinkFrame: frame},
+	}
+	body, err := proto.Marshal(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("marshal DownlinkFrame: %w", err)
+		return nil, fmt.Errorf("marshal Command: %w", err)
 	}
 	c.reqMu.Lock()
 	defer c.reqMu.Unlock()
-	reqMsg := zmq4.NewMsgFrom([]byte("down"), body)
-	if err := c.req.SendMulti(reqMsg); err != nil {
+	if err := c.req.Send(zmq4.NewMsgFrom(body)); err != nil {
 		return nil, fmt.Errorf("concentratord REQ send: %w", err)
 	}
 	rep, err := c.req.Recv()
