@@ -101,21 +101,21 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		snr = &s
 	}
 	if len(result.JoinAcceptPHY) > 0 {
-		log.Printf("uplink: join → sending JoinAccept (RX1 delay %ds)", cfg.RX1DelaySec)
 		RecordUplink("", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
 		df := gateway.BuildClassADownlink(cfg, result.JoinAcceptPHY, frame)
 		ack, err := downlinkSender.SendDownlink(context.Background(), df)
+		ackStatus := "OK"
 		if err != nil {
-			log.Printf("send JoinAccept: %v", err)
-			RecordDownlink("", 0, "join_accept", nil, len(result.JoinAcceptPHY), err.Error())
+			ackStatus = err.Error()
+			log.Printf("uplink: join → JoinAccept send failed: %v", err)
 		} else {
 			gateway.LogDownlinkAck(ack, "JoinAccept")
-			summary := gateway.DownlinkAckSummary(ack)
-			if summary != "" {
-				log.Printf("JoinAccept downlink ack: %s", summary)
+			if s := gateway.DownlinkAckSummary(ack); s != "" {
+				ackStatus = s
 			}
-			RecordDownlink("", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), summary)
+			log.Printf("uplink: join → JoinAccept sent (RX1 %ds) → gateway ack: %s", cfg.RX1DelaySec, ackStatus)
 		}
+		RecordDownlink("", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), ackStatus)
 		return
 	}
 	// Data uplink: decode and persist.
