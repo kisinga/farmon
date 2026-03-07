@@ -53,6 +53,17 @@ func BuildClassADownlink(cfg *Config, phyPayload []byte, uplink *gw.UplinkFrame)
 		if item.TxInfo.Frequency == 0 {
 			log.Printf("downlink: uplink has no frequency; set CONCENTRATORD_RX1_FREQUENCY_HZ or fix concentratord event parsing")
 		}
+		// US915 RX1: device listens at DR8 (SF12, 500 kHz). Set modulation so gateway TX matches.
+		if isUS915DownlinkFreq(item.TxInfo.Frequency) {
+			item.TxInfo.Modulation = &gw.Modulation{
+				Parameters: &gw.Modulation_Lora{
+					Lora: &gw.LoraModulationInfo{
+						Bandwidth:       500000,
+						SpreadingFactor: 12,
+					},
+				},
+			}
+		}
 	} else {
 		item.TxInfo.Timing = &gw.Timing{
 			Parameters: &gw.Timing_Immediately{Immediately: &gw.ImmediatelyTimingInfo{}},
@@ -85,6 +96,11 @@ func rx1FrequencyHz(cfg *Config, uplink *gw.UplinkFrame) uint32 {
 	}
 	// EU868 etc.: RX1 uses same frequency as uplink.
 	return uplinkFreqHz
+}
+
+// isUS915DownlinkFreq returns true if freq is in the US915 RX1 downlink band (923.3–927.5 MHz).
+func isUS915DownlinkFreq(freqHz uint32) bool {
+	return freqHz >= us915DownlinkBaseHz && freqHz <= us915DownlinkBaseHz+7*us915DownlinkStepHz
 }
 
 // BuildImmediateDownlink builds a downlink with Timing_Immediately (e.g. for EnqueueDownlink data).

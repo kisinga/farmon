@@ -154,8 +154,8 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error 
 	}
 }
 
-// SendDownlink implements gateway.DownlinkSender. Sends gw.Command (single frame) and returns the ack.
-// Concentratord expects one frame: serialized gw.Command with SendDownlinkFrame set.
+// SendDownlink implements gateway.DownlinkSender. Sends the downlink in the format concentratord expects:
+// two frames — (1) command type "down", (2) serialized DownlinkFrame. Response is one frame (DownlinkTxAck).
 func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw.DownlinkTxAck, error) {
 	if !c.Enabled() {
 		return nil, fmt.Errorf("concentratord: not configured")
@@ -171,16 +171,14 @@ func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw
 	if c.reqErr != nil {
 		return nil, c.reqErr
 	}
-	cmd := &gw.Command{
-		Command: &gw.Command_SendDownlinkFrame{SendDownlinkFrame: frame},
-	}
-	body, err := proto.Marshal(cmd)
+	body, err := proto.Marshal(frame)
 	if err != nil {
-		return nil, fmt.Errorf("marshal Command: %w", err)
+		return nil, fmt.Errorf("marshal DownlinkFrame: %w", err)
 	}
 	c.reqMu.Lock()
 	defer c.reqMu.Unlock()
-	if err := c.req.Send(zmq4.NewMsgFrom(body)); err != nil {
+	// Concentratord command API: frame 0 = command type "down", frame 1 = DownlinkFrame payload.
+	if err := c.req.Send(zmq4.NewMsgFrom([]byte("down"), body)); err != nil {
 		return nil, fmt.Errorf("concentratord REQ send: %w", err)
 	}
 	rep, err := c.req.Recv()
