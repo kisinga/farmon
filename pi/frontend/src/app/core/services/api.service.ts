@@ -121,6 +121,16 @@ export class ApiService {
     return this.http.get<{ gateways: unknown[] }>(`${API}/gateway-status`);
   }
 
+  /** Provision a device (create or update) and get AppKey for LoRaWAN OTAA. */
+  provisionDevice(device_eui: string, device_name?: string): Observable<ProvisionResponse> {
+    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name });
+  }
+
+  /** Get credentials for a device (for firmware / secrets.h). */
+  getDeviceCredentials(eui: string): Observable<CredentialsResponse> {
+    return this.http.get<CredentialsResponse>(`${API}/devices/credentials?eui=${encodeURIComponent(eui)}`);
+  }
+
   otaStart(eui: string, firmware?: string): Observable<{ ok: boolean; message?: string }> {
     return this.http.post<{ ok: boolean; message?: string }>(`${API}/otaStart`, { eui, firmware });
   }
@@ -150,6 +160,16 @@ export class ApiService {
       .get<PocketBaseList<FirmwareHistoryRecord>>(`${API}/collections/firmware_history/records?filter=${filter}&sort=-started_at&perPage=20`)
       .pipe(map((res) => res?.items ?? []));
   }
+}
+
+export interface ProvisionResponse {
+  device_eui: string;
+  app_key: string;
+}
+
+export interface CredentialsResponse {
+  device_eui: string;
+  app_key: string;
 }
 
 export interface EdgeRuleRecord {

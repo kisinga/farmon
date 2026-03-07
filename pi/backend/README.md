@@ -1,109 +1,66 @@
-# piv2 — ChirpStack + PocketBase + Angular
+# pi — PocketBase backend (LoRaWAN + codec + Concentratord)
 
-Farm monitor stack: ChirpStack (HTTP integration, no MQTT) → PocketBase (Go extension) + Angular (DaisyUI). Single binary goal; data in PocketBase SQLite.
+Farm monitor backend: **Concentratord (ZMQ)** → backend (LoRaWAN join/decrypt, codec, SQLite) → HTTP API. Single stack: no ChirpStack, MQTT, Postgres or Redis.
 
-## Phase 1 — Infra and uplink pipeline
-
-### Prerequisites
-
-- Docker and Docker Compose
-- Go 1.23+ (for local build)
-- For gateway uplinks: add an MQTT broker (e.g. `mosquitto`) to the compose and point ChirpStack region config to it, or use ChirpStack UDP gateway bridge.
-
-### Build PocketBase binary (local)
-
-```bash
-cd pi/backend
-go mod tidy   # or go get ./... — requires network
-go build -o pocketbase .
-./pocketbase serve --http=0.0.0.0:8090
-```
-
-First run creates `pb_data` and prompts for a superuser. ChirpStack webhook: `POST /api/chirpstack?event=up` (and other events).
-
-### Build for Raspberry Pi
-
-From your dev machine, cross-compile for Linux ARM so the binary runs on a Pi (e.g. Pi 4/5, 64-bit):
+## Quick start
 
 ```bash
 cd pi/backend
 go mod tidy
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o pocketbase-linux-arm64 .
-```
-
-For 32-bit Pi (e.g. Pi Zero 2 W): `GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -o pocketbase-linux-arm .`
-
-Copy the binary and `pb_public/` (or the embedded build, see below) to the Pi. Run: `./pocketbase-linux-arm64 serve --http=0.0.0.0:8090`.
-
-From the **pi/** directory you can use the Makefile:
-
-```bash
-cd pi
-make build-pi
-```
-
-This builds the Angular frontend, copies it to `backend/pb_public/`, and compiles the Go binary for `linux/arm64`. Copy `backend/pocketbase-pi` and `backend/pb_public/` to the Pi and run `./pocketbase-pi serve --http=0.0.0.0:8090`.
-
-### Run with Docker Compose
-
-```bash
-cd pi
-docker compose up -d --build
-```
-
-- ChirpStack API: http://localhost:8080  
-- PocketBase (API + admin): http://localhost:8090  
-
-ChirpStack is configured to POST integration events to `http://pocketbase:8090/api/chirpstack`. On first start, PocketBase creates `devices` and `telemetry` collections if missing (bootstrap).
-
-### Persistence
-
-- `pi_pb_data` volume holds PocketBase SQLite and uploads. Preserved across container restarts and redeploys.
-
-### ChirpStack HTTP config
-
-Edit `chirpstack/server/chirpstack.toml`: `[integration]` → `enabled = ["http"]`, `[integration.http]` → `event_endpoint`, `json = true`. No MQTT.
-
-### Build Angular and embed in PocketBase (single binary)
-
-```bash
-cd pi/frontend
-npm install
-npm run build
-cd ../backend
-# Copy frontend output into backend/public (or path used by embed), then:
-go build -tags embed -o pocketbase .
+go build -o pocketbase .
 ./pocketbase serve --http=0.0.0.0:8090
 ```
 
-The Angular app is then served at `/`. Without `-tags embed`, serve the frontend from `pb_public` (e.g. copy `frontend/dist/browser/*` to `backend/pb_public/`) or use `ng serve` for dev.
+First run creates `pb_data` and prompts for a superuser. Collections (devices, telemetry, lorawan_sessions, etc.) are created on first request (bootstrap).
 
-### PocketBase collection rules
+## Device provisioning (LoRaWAN OTAA)
 
-Bootstrap sets **List** and **View** rules to empty (public) for all app collections. Edge rules also have public **Create** and **Update** for the UI.
+1. **Create device and get AppKey**  
+   `POST /api/devices` with body `{ "device_eui": "0102030405060708", "device_name": "pump-1" }`  
+   Returns `{ "device_eui": "...", "app_key": "32 hex chars" }`.
 
-### ChirpStack API (downlink and gateway status)
+2. **Get credentials for firmware**  
+   `GET /api/devices/credentials?eui=0102030405060708`  
+   Returns `{ "device_eui": "...", "app_key": "..." }` for use in Heltec `secrets.h` or build tooling.
 
-For `POST /api/setControl` and `GET /api/gateway-status` to call ChirpStack over gRPC:
+Use the same `device_eui` (16 hex chars, from device label/serial) and put `app_key` in firmware; device joins via OTAA and the backend creates the session automatically.
 
-- Set **CHIRPSTACK_GRPC_ADDR** (e.g. `chirpstack:8080` in Docker, or `localhost:8080` when ChirpStack runs locally).
-- Set **CHIRPSTACK_API_KEY** (create in ChirpStack UI: API Keys).
+## Concentratord (gateway)
 
-The backend talks to ChirpStack directly via gRPC; no separate REST proxy container is required. If either env is unset, setControl still accepts requests and returns success (no downlink enqueued), and gateway-status returns an empty list.
+Uplinks and downlinks go through Concentratord. Set:
 
-### Custom API
+- **CONCENTRATORD_EVENT_URL** and **CONCENTRATORD_COMMAND_URL** (ZMQ), e.g.  
+  `ipc:///tmp/concentratord_event` and `ipc:///tmp/concentratord_command`.
+- **CONCENTRATORD_GATEWAY_ID** (optional) for downlink targeting and gateway-status in the UI.
 
-- `GET /api/history?eui=...&field=...&from=...&to=...&limit=500` — telemetry time-series for one field (or `rssi`/`snr`).
-- `POST /api/otaStart` — body `{ eui, firmware? }`.
-- `POST /api/otaCancel` — body `{ eui }`.
+Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (codec), and stored. Join requests are answered with JoinAccept; data uplinks are decoded and written to devices/telemetry/state_changes. Downlink (e.g. setControl) is sent via Concentratord. If these env vars are unset, provisioning and data APIs still work but no radio traffic is handled and setControl returns an error.
 
----
+## Codec
 
-## Backup and restore
+- **CODEC_PATH** — path to `codec.js` (default `codec.js`; in Docker `/app/codec.js`).  
+  Farm Monitor codec: decodeUplink / encodeDownlink for all fPorts.
 
-- **Backup**: Copy the `pb_data` volume (or bind mount) that holds PocketBase SQLite and uploads.
-- **Restore**: Replace `pb_data` with the backup and restart the PocketBase container.
+## Build and run
 
-## Optional: migrate data from pi/ (Postgres)
+- **Local**: `go build -o pocketbase . && ./pocketbase serve --http=0.0.0.0:8090`
+- **Docker** (from `pi/`): `docker compose up -d --build`
+- **Raspberry Pi**: `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o pocketbase .`; copy binary, `pb_public/`, and codec.js.
 
-To import existing devices/telemetry from the current `pi/` farmmon Postgres database into PocketBase, export from Postgres (e.g. `pg_dump` or custom script) and insert into PocketBase via the Admin API or by seeding the SQLite `pb_data` database. No script is included; document the schema mapping (see plan) and run a one-off migration if needed.
+## API summary
+
+- `POST /api/devices` — provision device (body: `device_eui`, `device_name`); returns `app_key`.
+- `GET /api/devices/credentials?eui=...` — get credentials for firmware.
+- `POST /api/setControl` — enqueue downlink (body: `eui`, `control`, `state`, `duration?`). Requires Concentratord configured.
+- `GET /api/gateway-status` — list gateways (CONCENTRATORD_GATEWAY_ID when set).
+- `GET /api/history?eui=...&field=...&from=...&to=...&limit=500` — telemetry history.
+- `POST /api/otaStart`, `POST /api/otaCancel` — OTA (eui in body).
+
+## Gateway setup (Concentratord only)
+
+On the Pi with the SX1302 HAT:
+
+```bash
+sudo bash pi/setup_gateway.sh
+```
+
+Then run the backend with `CONCENTRATORD_EVENT_URL` and `CONCENTRATORD_COMMAND_URL` set to the IPC paths (see script output).

@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -30,9 +31,21 @@ func stateToIndex(state string) int {
 	}
 }
 
+// BuildDirectControlPayload returns 7 bytes for fPort 20: [control_idx, state_idx, is_manual, timeout_sec LE].
+func BuildDirectControlPayload(controlIdx, stateIdx int, timeoutSec uint32) []byte {
+	return []byte{
+		byte(controlIdx),
+		byte(stateIdx),
+		1, // is_manual
+		byte(timeoutSec),
+		byte(timeoutSec >> 8),
+		byte(timeoutSec >> 16),
+		byte(timeoutSec >> 24),
+	}
+}
+
 // setControlHandler enqueues a downlink to set device control (e.g. pump on/off).
 func setControlHandler(app core.App) func(*core.RequestEvent) error {
-	client := NewChirpStackClient()
 	return func(e *core.RequestEvent) error {
 		var body struct {
 			Eui      string `json:"eui"`
@@ -55,31 +68,23 @@ func setControlHandler(app core.App) func(*core.RequestEvent) error {
 			stateToIndex(body.State),
 			timeoutSec,
 		)
-		if err := client.EnqueueDownlink(body.Eui, payload); err != nil {
+		if err := EnqueueDownlink(app, body.Eui, 20, payload); err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		}
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "queued"})
 	}
 }
 
-// gatewayStatusHandler returns gateway online/offline status for the UI.
+// gatewayStatusHandler returns gateway status for the UI (CONCENTRATORD_GATEWAY_ID when set).
 func gatewayStatusHandler(app core.App) func(*core.RequestEvent) error {
-	client := NewChirpStackClient()
 	return func(e *core.RequestEvent) error {
-		list, err := client.ListGateways()
-		if err != nil {
-			return e.JSON(http.StatusOK, map[string]any{"gateways": []any{}})
-		}
-		out := make([]any, 0, len(list))
-		for _, g := range list {
-			out = append(out, map[string]any{
-				"id":       g.ID,
-				"name":     g.Name,
-				"online":   g.Online,
-				"lastSeen": g.LastSeen,
+		gwID := os.Getenv("CONCENTRATORD_GATEWAY_ID")
+		if gwID != "" {
+			return e.JSON(http.StatusOK, map[string]any{
+				"gateways": []any{map[string]any{"id": gwID, "name": gwID, "online": true, "lastSeen": nil}},
 			})
 		}
-		return e.JSON(http.StatusOK, map[string]any{"gateways": out})
+		return e.JSON(http.StatusOK, map[string]any{"gateways": []any{}})
 	}
 }
 
@@ -111,7 +116,7 @@ func historyHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// otaStartHandler accepts OTA start request (eui, optional firmware). Progress is stored via ChirpStack webhook fPort 8.
+// otaStartHandler accepts OTA start request (eui, optional firmware). Progress stored via uplink fPort 8.
 func otaStartHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var body struct {
@@ -124,7 +129,7 @@ func otaStartHandler(app core.App) func(*core.RequestEvent) error {
 		if body.Eui == "" {
 			return e.String(http.StatusBadRequest, "eui required")
 		}
-		// TODO: enqueue OTA start command via ChirpStack if device protocol defines it
+		// TODO: enqueue OTA start downlink when device protocol supports it
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "OTA start requested"})
 	}
 }
@@ -141,7 +146,7 @@ func otaCancelHandler(app core.App) func(*core.RequestEvent) error {
 		if body.Eui == "" {
 			return e.String(http.StatusBadRequest, "eui required")
 		}
-		// TODO: enqueue OTA cancel command via ChirpStack if device protocol defines it
+		// TODO: enqueue OTA cancel downlink when device protocol supports it
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "OTA cancel requested"})
 	}
 }

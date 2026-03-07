@@ -19,6 +19,7 @@ func bootstrapCollections(app core.App) {
 		coll := core.NewBaseCollection("devices")
 		coll.Fields.Add(&core.TextField{Name: "device_eui", Required: true})
 		coll.Fields.Add(&core.TextField{Name: "device_name"})
+		coll.Fields.Add(&core.TextField{Name: "app_key"}) // LoRaWAN OTAA AppKey (hex, 32 chars)
 		coll.Fields.Add(&core.TextField{Name: "device_type"})
 		coll.Fields.Add(&core.TextField{Name: "firmware_version"})
 		coll.Fields.Add(&core.JSONField{Name: "registration"})
@@ -32,6 +33,8 @@ func bootstrapCollections(app core.App) {
 		}
 		log.Println("bootstrap: created collection devices")
 	}
+	// Note: Existing "devices" collections created before app_key was added need the field
+	// added via PocketBase Admin UI (Settings → devices → New field "app_key", type Text).
 
 	// telemetry
 	if _, err := app.FindCollectionByNameOrId("telemetry"); err != nil {
@@ -166,6 +169,23 @@ func bootstrapCollections(app core.App) {
 		}
 	}
 
+	// lorawan_sessions: LoRaWAN 1.0 session keys and FCnt (by device_eui)
+	if _, err := app.FindCollectionByNameOrId("lorawan_sessions"); err != nil {
+		coll := core.NewBaseCollection("lorawan_sessions")
+		coll.Fields.Add(&core.TextField{Name: "device_eui", Required: true})
+		coll.Fields.Add(&core.TextField{Name: "dev_addr_hex", Required: true})
+		coll.Fields.Add(&core.TextField{Name: "nwk_skey_hex", Required: true})
+		coll.Fields.Add(&core.TextField{Name: "app_skey_hex", Required: true})
+		coll.Fields.Add(&core.NumberField{Name: "f_cnt_up", Required: true})
+		coll.Fields.Add(&core.NumberField{Name: "f_cnt_down", Required: true})
+		setPublicListAndViewRules(coll)
+		if err := app.Save(coll); err != nil {
+			log.Printf("bootstrap: create lorawan_sessions: %v", err)
+		} else {
+			log.Println("bootstrap: created collection lorawan_sessions")
+		}
+	}
+
 	// device_schemas
 	if _, err := app.FindCollectionByNameOrId("device_schemas"); err != nil {
 		coll := core.NewBaseCollection("device_schemas")
@@ -183,7 +203,7 @@ func bootstrapCollections(app core.App) {
 
 	// Ensure app collections allow public list/view (no auth for now).
 	// edge_rules also needs public create/update for the UI "Add rule" form.
-	collectionNames := []string{"devices", "telemetry", "device_controls", "state_changes", "commands", "firmware_history", "edge_rules", "device_fields", "device_schemas"}
+	collectionNames := []string{"devices", "telemetry", "device_controls", "state_changes", "commands", "firmware_history", "edge_rules", "device_fields", "device_schemas", "lorawan_sessions"}
 	empty := ""
 	for _, name := range collectionNames {
 		coll, err := app.FindCollectionByNameOrId(name)

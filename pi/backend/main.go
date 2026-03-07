@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
@@ -15,9 +16,12 @@ func main() {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Ensure collections exist (run after DB is ready; OnBootstrap is too early)
 		bootstrapCollections(app)
-		// ChirpStack HTTP integration webhook (must be before catch-all static)
-		se.Router.POST("/api/chirpstack", chirpstackHandler(app))
-		// Custom app API (downlink / gateway stubs; Phase 2.3 will call ChirpStack API)
+		// Start concentratord pipeline when CONCENTRATORD_EVENT_URL and CONCENTRATORD_COMMAND_URL are set
+		startConcentratordPipeline(context.Background(), app)
+		// Device provisioning (LoRaWAN OTAA): create device + AppKey, get credentials
+		se.Router.POST("/api/devices", provisionDeviceHandler(app))
+		se.Router.GET("/api/devices/credentials", deviceCredentialsHandler(app))
+		// Custom app API (downlink / gateway)
 		se.Router.POST("/api/setControl", setControlHandler(app))
 		se.Router.GET("/api/gateway-status", gatewayStatusHandler(app))
 		se.Router.GET("/api/history", historyHandler(app))

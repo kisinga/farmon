@@ -1,16 +1,20 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ApiService, Device } from '../../core/services/api.service';
 import { DatePipe } from '@angular/common';
+import { AddDeviceModalComponent } from '../../shared/components/add-device-modal/add-device-modal.component';
 
 @Component({
   selector: 'app-device-list',
   standalone: true,
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, DatePipe, AddDeviceModalComponent],
   template: `
     <div class="card bg-base-100 shadow-xl">
       <div class="card-body">
-        <h2 class="card-title">Devices</h2>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="card-title">Devices</h2>
+          <button type="button" class="btn btn-primary btn-sm" (click)="openAddModal()">Add device</button>
+        </div>
         @if (loading()) {
           <span class="loading loading-spinner loading-md"></span>
         } @else if (error()) {
@@ -37,7 +41,11 @@ import { DatePipe } from '@angular/common';
                     <td><a [routerLink]="['/device', d.device_eui]" class="btn btn-sm btn-primary">Open</a></td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="5" class="text-center text-base-content/60">No devices yet. ChirpStack uplinks will create them.</td></tr>
+                  <tr>
+                    <td colspan="5" class="text-center text-base-content/60">
+                      No devices yet. <button type="button" class="link link-primary" (click)="openAddModal()">Add a device</button> to get an App Key for firmware, or wait for uplinks to create them.
+                    </td>
+                  </tr>
                 }
               </tbody>
             </table>
@@ -45,15 +53,28 @@ import { DatePipe } from '@angular/common';
         }
       </div>
     </div>
+    <app-add-device-modal #addModal (deviceAdded)="loadDevices()" />
   `,
 })
 export class DeviceListComponent implements OnInit {
   private api = inject(ApiService);
+  private addModalRef = viewChild<AddDeviceModalComponent>('addModal');
+
   devices = signal<Device[]>([]);
   loading = signal(true);
   error = signal<string | null>(null);
 
   ngOnInit() {
+    this.loadDevices();
+  }
+
+  openAddModal(): void {
+    this.addModalRef()?.openModal();
+  }
+
+  loadDevices() {
+    this.loading.set(true);
+    this.error.set(null);
     this.api.getDevices().subscribe({
       next: res => {
         this.devices.set(res?.items ?? []);

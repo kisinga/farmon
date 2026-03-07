@@ -8,12 +8,13 @@ import { CurrentValuesComponent } from '../../shared/components/current-values/c
 import { ErrorBarComponent } from '../../shared/components/error-bar/error-bar.component';
 import { OtaSectionComponent } from '../../shared/components/ota-section/ota-section.component';
 import { EdgeRulesSectionComponent } from '../../shared/components/edge-rules-section/edge-rules-section.component';
+import { DeviceCredentialsCardComponent } from '../../shared/components/device-credentials-card/device-credentials-card.component';
 import { ERROR_OBJECT_KEYS } from '../../core/constants/error-fields';
 
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, OtaSectionComponent, EdgeRulesSectionComponent],
+  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, OtaSectionComponent, EdgeRulesSectionComponent, DeviceCredentialsCardComponent],
   templateUrl: './device-detail.component.html',
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
