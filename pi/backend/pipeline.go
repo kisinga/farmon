@@ -61,16 +61,30 @@ func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.
 	if cfg.GatewayID == "" {
 		log.Printf("concentratord: CONCENTRATORD_GATEWAY_ID unset — gateway-status and UI will show 'no gateway online'")
 	}
-	// Push gateway channel config for US915 so concentratord can TX in 923 MHz band (matches device RX1).
-	if cfg.Region == "US915" && cfg.GatewayID != "" {
-		gwConfig := gateway.BuildUS915GatewayConfig(cfg.GatewayID)
-		configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		if err := client.SendConfig(configCtx, gwConfig); err != nil {
-			log.Printf("concentratord: push US915 config: %v (ensure concentratord is running and region=US915)", err)
-		} else {
-			log.Printf("concentratord: pushed US915 channel config (uplink + 923 MHz downlink)")
+	// US915: push gateway channel config so concentratord can TX on all 8 RX1 frequencies (923.3–927.5 MHz). Required for join/downlink.
+	if cfg.Region == "US915" {
+		gwID := cfg.GatewayID
+		if gwID == "" {
+			configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			var err error
+			gwID, err = client.GetGatewayID(configCtx)
+			cancel()
+			if err != nil {
+				log.Printf("concentratord: get gateway ID for US915 config: %v", err)
+			} else {
+				log.Printf("concentratord: got gateway_id from daemon: %s", gwID)
+			}
 		}
-		cancel()
+		if gwID != "" {
+			gwConfig := gateway.BuildUS915GatewayConfig(gwID)
+			configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			if err := client.SendConfig(configCtx, gwConfig); err != nil {
+				log.Printf("concentratord: push US915 config: %v (downlink will fail until concentratord accepts config)", err)
+			} else {
+				log.Printf("concentratord: pushed US915 channel config (uplink + 8×923 MHz downlink)")
+			}
+			cancel()
+		}
 	}
 	go func() {
 		err := client.Run(ctx, func(frame *gw.UplinkFrame) {

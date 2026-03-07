@@ -154,7 +154,32 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error 
 	}
 }
 
-const commandTypeConfig = "config"
+const (
+	commandTypeConfig   = "config"
+	commandTypeGatewayID = "gateway_id"
+)
+
+// GetGatewayID returns the concentratord gateway ID (8 bytes as hex string). Used to push config when CONCENTRATORD_GATEWAY_ID is unset.
+func (c *Client) GetGatewayID(ctx context.Context) (string, error) {
+	if err := c.ensureCommandConn(ctx); err != nil {
+		return "", err
+	}
+	c.reqMu.Lock()
+	defer c.reqMu.Unlock()
+	// Concentratord API: frame 0 = "gateway_id", frame 1 = empty; response = 8-byte ID.
+	if err := c.req.Send(zmq4.NewMsgFrom([]byte(commandTypeGatewayID), []byte{})); err != nil {
+		return "", fmt.Errorf("concentratord REQ send gateway_id: %w", err)
+	}
+	rep, err := c.req.Recv()
+	if err != nil {
+		return "", fmt.Errorf("concentratord REQ recv gateway_id: %w", err)
+	}
+	if len(rep.Frames) == 0 || len(rep.Frames[0]) != 8 {
+		return "", fmt.Errorf("concentratord gateway_id: invalid response (want 8 bytes)")
+	}
+	id := rep.Frames[0]
+	return fmt.Sprintf("%02x%02x%02x%02x%02x%02x%02x%02x", id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7]), nil
+}
 
 // ensureCommandConn ensures the REQ socket is connected (shared by SendConfig and SendDownlink).
 func (c *Client) ensureCommandConn(ctx context.Context) error {
