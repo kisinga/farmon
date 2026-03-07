@@ -77,11 +77,14 @@ multi_sf_channels = [
   904700000, 904900000, 905100000, 905300000,
 ]
 
-# US915: Class A downlink (RX1) is in 923–927.5 MHz band, not uplink. Must match device RX1.
+# lora_std must lie within the two radios' bandwidth (904.3 + 905.3 MHz). Concentratord panics with
+# "channels do not fit within the bandwidth of the two radios" if set to 923 MHz (US915 RX1 band).
+# So we use 904.6 here; gateway can only TX in uplink band. For US915 join the device expects RX1
+# at 923 MHz — this HAT cannot do that; join will only work with gateways that support 923 MHz.
 [gateway.concentrator.lora_std]
-frequency = 923300000
+frequency = 904600000
 bandwidth = 500000
-spreading_factor = 12
+spreading_factor = 8
 
 [gateway.concentrator.fsk]
 frequency = 0
