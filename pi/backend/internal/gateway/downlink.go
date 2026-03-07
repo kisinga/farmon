@@ -60,6 +60,7 @@ func BuildClassADownlink(cfg *Config, phyPayload []byte, uplink *gw.UplinkFrame)
 					Lora: &gw.LoraModulationInfo{
 						Bandwidth:       500000,
 						SpreadingFactor: 12,
+						CodeRate:        gw.CodeRate_CR_4_5, // LoRaWAN default; required by SX1302 HAL for TX
 					},
 				},
 			}
@@ -101,6 +102,11 @@ func rx1FrequencyHz(cfg *Config, uplink *gw.UplinkFrame) uint32 {
 // isUS915DownlinkFreq returns true if freq is in the US915 RX1 downlink band (923.3–927.5 MHz).
 func isUS915DownlinkFreq(freqHz uint32) bool {
 	return freqHz >= us915DownlinkBaseHz && freqHz <= us915DownlinkBaseHz+7*us915DownlinkStepHz
+}
+
+// IsUS915UplinkFrequency returns true if freq is in the US915 uplink band (902.3–914.9 MHz).
+func IsUS915UplinkFrequency(freqHz uint32) bool {
+	return freqHz >= us915UplinkBaseHz && freqHz <= us915UplinkMaxHz
 }
 
 // BuildImmediateDownlink builds a downlink with Timing_Immediately (e.g. for EnqueueDownlink data).
