@@ -33,18 +33,13 @@ Uplinks and downlinks go through Concentratord. Set:
   `ipc:///tmp/concentratord_event` and `ipc:///tmp/concentratord_command`.
 - **CONCENTRATORD_GATEWAY_ID** (optional) for downlink targeting and gateway-status in the UI.
 
-Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (codec), and stored. Join requests are answered with JoinAccept; data uplinks are decoded and written to devices/telemetry/state_changes. Downlink (e.g. setControl) is sent via Concentratord. If these env vars are unset, provisioning and data APIs still work but no radio traffic is handled and setControl returns an error.
-
-## Codec
-
-- **CODEC_PATH** — path to `codec.js` (default `codec.js`; in Docker `/app/codec.js`).  
-  Farm Monitor codec: decodeUplink / encodeDownlink for all fPorts.
+Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), and stored. Join requests are answered with JoinAccept; data uplinks are decoded and written to devices/telemetry/state_changes. Downlink (e.g. setControl) is sent via Concentratord. If these env vars are unset, provisioning and data APIs still work but no radio traffic is handled and setControl returns an error.
 
 ## Build and run
 
 - **Local**: `go build -o pocketbase . && ./pocketbase serve --http=0.0.0.0:8090`
 - **Docker** (from `pi/`): `docker compose up -d --build`
-- **Raspberry Pi**: `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o pocketbase .`; copy binary, `pb_public/`, and codec.js.
+- **Raspberry Pi**: `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o pocketbase .`; copy binary and `pb_public/`.
 
 ## API summary
 

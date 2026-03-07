@@ -58,11 +58,6 @@ func startConcentratordPipeline(ctx context.Context, app core.App) {
 		return
 	}
 	store := newPocketbaseLorawanStore(app)
-	codecRunner, err := codec.NewRunner(os.Getenv("CODEC_PATH"))
-	if err != nil {
-		log.Printf("pipeline: codec init: %v (uplink from concentratord will not decode)", err)
-		codecRunner = nil
-	}
 	client := concentratord.NewClient(eventURL, commandURL)
 	if !client.Enabled() {
 		return
@@ -72,7 +67,7 @@ func startConcentratordPipeline(ctx context.Context, app core.App) {
 	}
 	go func() {
 		err := client.Run(ctx, func(frame *gw.UplinkFrame) {
-			handleConcentratordUplink(app, frame, store, codecRunner, client)
+			handleConcentratordUplink(app, frame, store, client)
 		})
 		if err != nil && ctx.Err() == nil {
 			log.Printf("concentratord Run: %v", err)
@@ -81,7 +76,7 @@ func startConcentratordPipeline(ctx context.Context, app core.App) {
 	log.Printf("concentratord pipeline started (event=%s command=%s gateway_id=%t)", eventURL, commandURL, gatewayID != "")
 }
 
-func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocketbaseLorawanStore, codecRunner *codec.Runner, downlinkSender *concentratord.Client) {
+func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocketbaseLorawanStore, downlinkSender *concentratord.Client) {
 	phyRaw := frame.GetPhyPayload()
 	if len(phyRaw) == 0 {
 		log.Printf("uplink: ignored (empty phy payload)")
@@ -118,11 +113,8 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		}
 		return
 	}
-	// Data uplink: decode with codec and persist.
-	var obj map[string]any
-	if codecRunner != nil {
-		obj, _ = codecRunner.DecodeUplink(result.FPort, result.Payload)
-	}
+	// Data uplink: decode and persist.
+	obj := codec.DecodeUplink(result.FPort, result.Payload)
 	deviceName := result.DevEUI
 	if rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": result.DevEUI}); err == nil {
 		if n, _ := rec.Get("device_name").(string); n != "" {

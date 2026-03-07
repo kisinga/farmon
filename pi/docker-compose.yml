@@ -23,8 +23,6 @@ services:
       - /tmp:/tmp
     environment:
       - TZ=Africa/Nairobi
-      # Codec (default /app/codec.js in image)
-      - CODEC_PATH=/app/codec.js
       # Concentratord ZMQ (required for uplink/downlink; leave unset for provisioning-only)
       - CONCENTRATORD_EVENT_URL=${CONCENTRATORD_EVENT_URL:-}
       - CONCENTRATORD_COMMAND_URL=${CONCENTRATORD_COMMAND_URL:-}
