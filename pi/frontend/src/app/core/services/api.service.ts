@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, map } from 'rxjs';
+import { Observable, from, map } from 'rxjs';
+import { PocketBaseService } from './pocketbase.service';
 
 const API = '/api';
 
@@ -48,43 +49,36 @@ export interface HistoryResponse {
   data: HistoryPoint[];
 }
 
-interface PocketBaseList<T> {
-  items: T[];
-}
-
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
+  private pb = inject(PocketBaseService).pb;
 
   getDevices(): Observable<{ items: Device[] }> {
-    return this.http.get<PocketBaseList<Device>>(`${API}/collections/devices/records?perPage=100`) as Observable<{ items: Device[] }>;
+    return from(
+      this.pb.collection<Device>('devices').getList(1, 100)
+    ).pipe(map((res) => ({ items: res.items })));
   }
 
   getDeviceConfig(eui: string): Observable<Device> {
-    const filter = encodeURIComponent(`device_eui = "${eui}"`);
-    return this.http
-      .get<PocketBaseList<Device>>(`${API}/collections/devices/records?filter=${filter}&perPage=1`)
-      .pipe(
-        map(res => {
-          const one = res?.items?.[0];
-          if (one) return one;
-          throw new Error('Device not found');
-        })
-      );
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb.collection<Device>('devices').getFirstListItem(filter)
+    );
   }
 
   getDeviceControls(eui: string): Observable<DeviceControl[]> {
-    const filter = encodeURIComponent(`device_eui = "${eui}"`);
-    return this.http
-      .get<PocketBaseList<DeviceControl>>(`${API}/collections/device_controls/records?filter=${filter}&perPage=50`)
-      .pipe(map(res => res?.items ?? []));
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb.collection<DeviceControl>('device_controls').getList(1, 50, { filter })
+    ).pipe(map((res) => res.items));
   }
 
   getDeviceFields(eui: string): Observable<DeviceField[]> {
-    const filter = encodeURIComponent(`device_eui = "${eui}"`);
-    return this.http
-      .get<PocketBaseList<DeviceField>>(`${API}/collections/device_fields/records?filter=${filter}&perPage=100`)
-      .pipe(map(res => res?.items ?? []));
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb.collection<DeviceField>('device_fields').getList(1, 100, { filter })
+    ).pipe(map((res) => res.items));
   }
 
   getHistory(eui: string, field: string, from?: string, to?: string, limit = 500): Observable<HistoryResponse> {
@@ -95,22 +89,24 @@ export class ApiService {
   }
 
   getLatestTelemetry(eui: string): Observable<{ data: Record<string, unknown>; rssi?: number; snr?: number } | null> {
-    const filter = encodeURIComponent(`device_eui = "${eui}"`);
-    return this.http
-      .get<PocketBaseList<{ data: string; rssi?: number; snr?: number }>>(`${API}/collections/telemetry/records?filter=${filter}&sort=-ts&perPage=1`)
-      .pipe(
-        map((res) => {
-          const one = res?.items?.[0];
-          if (!one) return null;
-          let data: Record<string, unknown> = {};
-          try {
-            if (one.data) data = typeof one.data === 'string' ? JSON.parse(one.data) : one.data;
-          } catch {
-            // ignore
-          }
-          return { data, rssi: one.rssi, snr: one.snr };
-        })
-      );
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb
+        .collection<{ data: string; rssi?: number; snr?: number }>('telemetry')
+        .getList(1, 1, { filter, sort: '-ts' })
+    ).pipe(
+      map((res) => {
+        const one = res.items?.[0];
+        if (!one) return null;
+        let data: Record<string, unknown> = {};
+        try {
+          if (one.data) data = typeof one.data === 'string' ? JSON.parse(one.data) : (one.data as unknown as Record<string, unknown>);
+        } catch {
+          // ignore
+        }
+        return { data, rssi: one.rssi, snr: one.snr };
+      })
+    );
   }
 
   setControl(eui: string, control: string, state: string, duration?: number): Observable<{ ok: boolean; error?: string }> {
@@ -145,25 +141,31 @@ export class ApiService {
   }
 
   getEdgeRules(eui: string): Observable<EdgeRuleRecord[]> {
-    const filter = encodeURIComponent(`device_eui = "${eui}"`);
-    return this.http
-      .get<PocketBaseList<EdgeRuleRecord>>(`${API}/collections/edge_rules/records?filter=${filter}&perPage=50`)
-      .pipe(map((res) => res?.items ?? []));
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb.collection<EdgeRuleRecord>('edge_rules').getList(1, 50, { filter })
+    ).pipe(map((res) => res.items));
   }
 
   createEdgeRule(record: Partial<EdgeRuleRecord>): Observable<EdgeRuleRecord> {
-    return this.http.post<EdgeRuleRecord>(`${API}/collections/edge_rules/records`, record);
+    return from(
+      this.pb.collection<EdgeRuleRecord>('edge_rules').create(record as Record<string, unknown>)
+    );
   }
 
   updateEdgeRule(id: string, record: Partial<EdgeRuleRecord>): Observable<EdgeRuleRecord> {
-    return this.http.patch<EdgeRuleRecord>(`${API}/collections/edge_rules/records/${id}`, record);
+    return from(
+      this.pb.collection<EdgeRuleRecord>('edge_rules').update(id, record as Record<string, unknown>)
+    );
   }
 
   getFirmwareHistory(eui: string): Observable<FirmwareHistoryRecord[]> {
-    const filter = encodeURIComponent(`device_eui = "${eui}"`);
-    return this.http
-      .get<PocketBaseList<FirmwareHistoryRecord>>(`${API}/collections/firmware_history/records?filter=${filter}&sort=-started_at&perPage=20`)
-      .pipe(map((res) => res?.items ?? []));
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb
+        .collection<FirmwareHistoryRecord>('firmware_history')
+        .getList(1, 20, { filter, sort: '-started_at' })
+    ).pipe(map((res) => res.items));
   }
 
   /** Pipeline status (concentratord env). */
