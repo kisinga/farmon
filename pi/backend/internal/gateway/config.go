@@ -1,14 +1,14 @@
 package gateway
 
 // Config holds concentratord/gateway settings. Load from DB only; see DefaultGatewayConfig for first-time defaults.
+// Concentratord is always external; we only connect via ZMQ (event_url, command_url).
 type Config struct {
-	EventURL             string
-	CommandURL           string
-	GatewayID            string
-	Region               string // e.g. "EU868", "US915"; selects RegionProfile for RX1 frequency and modulation
-	RX1DelaySec          int    // 1–15; delay in seconds for Class A RX1
-	RX1FrequencyHz      uint32 // optional; 0 = use region profile default
-	ManageConcentratord  bool   // if true, backend writes TOML and runs concentratord subprocess
+	EventURL        string
+	CommandURL      string
+	GatewayID       string
+	Region          string  // e.g. "EU868", "US915"; selects RegionProfile for RX1 frequency and modulation
+	RX1DelaySec     int     // 1–15; delay in seconds for Class A RX1
+	RX1FrequencyHz  uint32  // optional; 0 = use region profile default
 }
 
 const (
@@ -30,13 +30,12 @@ const (
 
 func DefaultGatewayConfig() Config {
 	return Config{
-		EventURL:            DefaultEventURL,
-		CommandURL:          DefaultCommandURL,
-		GatewayID:           "",
-		Region:              DefaultRegion,
-		RX1DelaySec:         defaultRX1DelaySec,
-		RX1FrequencyHz:      0,
-		ManageConcentratord: false,
+		EventURL:       DefaultEventURL,
+		CommandURL:     DefaultCommandURL,
+		GatewayID:      "",
+		Region:         DefaultRegion,
+		RX1DelaySec:    defaultRX1DelaySec,
+		RX1FrequencyHz: 0,
 	}
 }
 

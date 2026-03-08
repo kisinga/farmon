@@ -27,11 +27,12 @@ Use the same `device_eui` (16 hex chars, from device label/serial) and put `app_
 
 ## Concentratord (gateway)
 
-Gateway configuration is **stored in the database only** and set from the **Gateway** settings page in the UI (`/settings`). There are no `CONCENTRATORD_*` environment variables.
+The backend **does not start or manage** the concentratord process. Concentratord must be running separately (e.g. on the host after `setup_gateway.sh`, or in another container), with its config binding `api.event_bind` and `api.command_bind` to the same URLs you set in the app (e.g. `ipc:///tmp/concentratord_event` and `ipc:///tmp/concentratord_command`). The backend only connects via ZMQ and can push channel config (region) at runtime via the `config` command.
 
-1. **First run**: Open the app → **Gateway** (or `/settings`). The form is pre-filled with defaults (e.g. event_url `ipc:///tmp/concentratord_event`, command_url `ipc:///tmp/concentratord_command`, region US915). Edit if needed and click **Save**.
+Gateway configuration is **stored in the database only** and set from the **LoRaWAN** page in the UI: open **LoRaWAN**, expand the **Gateway configuration** collapsible, fill event_url, command_url, region, and click **Save**. There are no `CONCENTRATORD_*` environment variables.
+
+1. **First run**: Open the app → **LoRaWAN** → expand **Gateway configuration**. The form is pre-filled with defaults (event_url `ipc:///tmp/concentratord_event`, command_url `ipc:///tmp/concentratord_command`, region US915). Edit if needed and click **Save**.
 2. **Save = enable**: Once valid settings (event_url, command_url, region) are saved, the backend starts the concentratord pipeline (ZMQ connect, uplink/downlink). Until then, no concentratord traffic is handled.
-3. **Optional — manage concentratord**: If you enable "Manage concentratord process", the backend writes `pb_data/concentratord.toml` and starts the concentratord binary (default `/usr/local/bin/chirpstack-concentratord-sx1302`). Otherwise, concentratord must be running already (e.g. via `pi/setup_gateway.sh` or systemd).
 
 Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), and stored. Join requests are answered with JoinAccept; data uplinks are decoded and written to devices/telemetry/state_changes. Downlink (e.g. setControl) is sent via Concentratord.
 
@@ -56,13 +57,14 @@ Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), a
 On the Pi with the SX1302 HAT:
 
 1. **Install the concentratord binary** (once): `sudo bash pi/setup_gateway.sh`. This installs `chirpstack-concentratord-sx1302` to `/usr/local/bin/`.
-2. In the UI open **Gateway** settings, enable **Manage concentratord process**, set region (EU868 or US915), and Save. The backend writes TOML and starts the process.
+2. **Run concentratord** on the host (or in a container) with a TOML that binds `api.event_bind` and `api.command_bind` to the same paths the app uses (e.g. `ipc:///tmp/concentratord_event`, `ipc:///tmp/concentratord_command`). Use a systemd unit or run manually; see ChirpStack concentratord docs for TOML format.
+3. In the app open **LoRaWAN** → **Gateway configuration**, set region (EU868 or US915), and **Save**. The backend connects via ZMQ and optionally pushes channel config at runtime.
 
 See `docs/concentratord-api.md` for the ZMQ API.
 
 ## Troubleshooting: no uplinks / join requests
 
-The UI shows "Gateway" as connected when valid gateway settings are saved and the backend has connected to concentratord. If you see no frames and logs like:
+The UI shows gateway status as connected when valid gateway settings are saved and the backend has connected to concentratord. If you see no frames and logs like:
 
 ```text
 concentratord SUB dial: ... connect: no such file or directory (retry in 5s)
@@ -83,6 +85,42 @@ then **concentratord is not running** (or not creating the IPC sockets the backe
 
 3. **If the backend runs in Docker** on the same Pi, ensure the compose file mounts the host `/tmp` so the container can reach IPC sockets.
 
-4. **Ensure gateway settings are saved** in the UI (**Gateway** → fill event_url, command_url, region → Save). The pipeline does not start until valid settings exist in the DB.
+4. **Ensure gateway settings are saved** in the UI (**LoRaWAN** → Gateway configuration → fill event_url, command_url, region → Save). The pipeline does not start until valid settings exist in the DB.
 
 The backend retries connecting to concentratord every 5 seconds. Once concentratord is running and settings are saved, join requests and uplinks will appear.
+
+
+# ChirpStack Concentratord ZMQ API
+
+This document describes the communication contract between the backend and ChirpStack Concentratord. Source: [ChirpStack concentratord documentation](https://www.chirpstack.io/docs/chirpstack-concentratord/).
+
+Protobuf definitions: `api/proto/gw/gw.proto` in [chirpstack/chirpstack](https://github.com/chirpstack/chirpstack). Go package: `github.com/chirpstack/chirpstack/api/go/v4/gw`.
+
+## Commands (ZMQ REQ)
+
+The backend sends commands to Concentratord over a **REQ** socket. Each request is a multipart message:
+
+- **Frame 0:** Command type (string).
+- **Frame 1:** Command payload (Protobuf-encoded, or empty where noted).
+
+| Command       | Frame 0      | Frame 1                     | Response              |
+|---------------|--------------|-----------------------------|-----------------------|
+| `gateway_id`  | `"gateway_id"` | empty                       | 8-byte gateway ID     |
+| `down`        | `"down"`     | `DownlinkFrame` (Protobuf)   | `DownlinkTxAck` (Protobuf) |
+| `config`      | `"config"`   | `GatewayConfiguration` (Protobuf) | empty             |
+
+Channel/region configuration is **file-based** (TOML). The backend does **not** push config by default; Concentratord is configured once per HAT/region via the setup script. The `config` command is optional and model-specific (pushing a channel set that does not fit the hardware can cause the daemon to panic).
+
+## Events (ZMQ SUB)
+
+Concentratord publishes events on a **PUB** socket. The backend subscribes with a **SUB** socket. Each message:
+
+- **Frame 0:** Event type (string).
+- **Frame 1:** Event payload (Protobuf).
+
+| Event   | Frame 0   | Frame 1 (payload)                                      |
+|---------|-----------|--------------------------------------------------------|
+| uplink  | `"up"`    | Protobuf (`Event` with `uplink_frame` or raw `UplinkFrame`) |
+| stats   | `"stats"` | `GatewayStats` (Protobuf)                              |
+
+Subscribe to `"up"` (and optionally `"stats"`) by setting the SUB socket option before receiving.

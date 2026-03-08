@@ -1,13 +1,14 @@
 import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
 import { forkJoin } from 'rxjs';
-import { ApiService, PipelineDebug, RawLorawanFrame, LorawanStats } from '../../core/services/api.service';
+import { ApiService, PipelineDebug, RawLorawanFrame, LorawanStats, GatewaySettings } from '../../core/services/api.service';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { GatewaySettingsComponent } from '../gateway-settings/gateway-settings.component';
 
 @Component({
   selector: 'app-lorawan-monitor',
   standalone: true,
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, RouterLink, GatewaySettingsComponent],
   template: `
     <header class="page-header">
       <h1 class="page-title">LoRaWAN</h1>
@@ -132,6 +133,27 @@ import { RouterLink } from '@angular/router';
         }
       </div>
     </div>
+
+    <!-- Gateway configuration (collapsible; default open when no saved config) -->
+    <div class="collapse collapse-arrow bg-base-100 border border-base-200 rounded-2xl mt-6">
+      <input type="checkbox" [checked]="configPanelOpen()" (change)="configPanelOpen.set($any($event.target).checked)" />
+      <div class="collapse-title font-semibold text-lg">
+        Gateway configuration
+      </div>
+      <div class="collapse-content">
+        @if (gatewaySettings()) {
+          <app-gateway-settings
+            [embedded]="true"
+            [initialSettings]="gatewaySettings()!"
+            (gatewaySaved)="onGatewaySaved($event)"
+          />
+        } @else {
+          <div class="flex justify-center py-6">
+            <span class="loading loading-spinner loading-md text-primary"></span>
+          </div>
+        }
+      </div>
+    </div>
   `,
 })
 export class LorawanMonitorComponent implements OnInit, OnDestroy {
@@ -149,11 +171,28 @@ export class LorawanMonitorComponent implements OnInit, OnDestroy {
   loading = signal(false);
   paused = signal(false);
 
+  gatewaySettings = signal<GatewaySettings | null>(null);
+  configPanelOpen = signal(true);
+
   ngOnInit(): void {
     this.refresh();
+    this.api.getGatewaySettings().subscribe({
+      next: (res) => {
+        this.gatewaySettings.set(res);
+        this.configPanelOpen.set(!res.saved);
+      },
+      error: () => {
+        this.gatewaySettings.set(null);
+      },
+    });
     this.intervalId = setInterval(() => {
       if (!this.paused()) this.refresh();
     }, this.refreshIntervalSec * 1000);
+  }
+
+  onGatewaySaved(settings: GatewaySettings): void {
+    this.gatewaySettings.set(settings);
+    this.configPanelOpen.set(false);
   }
 
   ngOnDestroy(): void {

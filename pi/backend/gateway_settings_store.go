@@ -87,11 +87,6 @@ func recordToGatewayConfig(rec *core.Record) gateway.Config {
 	if n := numberFromRecord(rec, "rx1_frequency_hz"); n > 0 {
 		cfg.RX1FrequencyHz = uint32(n)
 	}
-	if v := rec.Get("manage_concentratord"); v != nil {
-		if b, ok := v.(bool); ok {
-			cfg.ManageConcentratord = b
-		}
-	}
 	return cfg
 }
 
@@ -102,5 +97,4 @@ func configToRecord(rec *core.Record, cfg gateway.Config) {
 	rec.Set("gateway_id", cfg.GatewayID)
 	rec.Set("rx1_delay", cfg.RX1DelaySec)
 	rec.Set("rx1_frequency_hz", cfg.RX1FrequencyHz)
-	rec.Set("manage_concentratord", cfg.ManageConcentratord)
 }

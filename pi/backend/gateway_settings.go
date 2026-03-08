@@ -12,12 +12,11 @@ import (
 	"github.com/kisinga/farmon/pi/internal/gateway"
 )
 
-// GatewayState holds mutable gateway config, pipeline cancel, and optional concentratord process.
+// GatewayState holds mutable gateway config and pipeline cancel. Concentratord is always external; we only connect via ZMQ.
 type GatewayState struct {
-	cfg      *gateway.Config
-	cancel   context.CancelFunc
-	concProc *concentratordProcess
-	mu       sync.Mutex
+	cfg    *gateway.Config
+	cancel context.CancelFunc
+	mu     sync.Mutex
 }
 
 // SetConfig updates the in-memory config (e.g. after loading from DB or PATCH).
@@ -30,7 +29,6 @@ func (s *GatewayState) SetConfig(cfg gateway.Config) {
 }
 
 // RestartPipeline cancels the current pipeline (if any) and starts it again if config is valid.
-// If ManageConcentratord is true, writes TOML and starts/stops the concentratord subprocess.
 func (s *GatewayState) RestartPipeline(app core.App) {
 	s.mu.Lock()
 	if s.cancel != nil {
@@ -44,24 +42,6 @@ func (s *GatewayState) RestartPipeline(app core.App) {
 	if !s.cfg.Valid() {
 		return
 	}
-	cfg := *s.cfg
-	if cfg.ManageConcentratord {
-		if s.concProc == nil {
-			s.concProc = &concentratordProcess{}
-		}
-		_ = s.concProc.stop()
-		configPath := DefaultConcentratordConfigPath
-		if err := writeConcentratordTOML(cfg, configPath); err != nil {
-			log.Printf("concentratord: write TOML: %v", err)
-			return
-		}
-		binPath := DefaultConcentratordBinPath
-		if err := s.concProc.start(binPath, configPath); err != nil {
-			log.Printf("concentratord: start process: %v", err)
-			return
-		}
-		log.Printf("concentratord: started subprocess (manage_concentratord=true)")
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
 	s.cancel = cancel
@@ -71,26 +51,24 @@ func (s *GatewayState) RestartPipeline(app core.App) {
 
 // gatewaySettingsResponse is the JSON shape for GET/PATCH /api/gateway-settings.
 type gatewaySettingsResponse struct {
-	Region               string `json:"region"`
-	EventURL             string `json:"event_url"`
-	CommandURL           string `json:"command_url"`
-	GatewayID            string `json:"gateway_id"`
-	RX1Delay             int    `json:"rx1_delay"`
-	RX1FrequencyHz       uint32 `json:"rx1_frequency_hz"`
-	ManageConcentratord  bool   `json:"manage_concentratord"`
-	Saved                bool   `json:"saved"` // true if a record exists in DB
+	Region         string `json:"region"`
+	EventURL       string `json:"event_url"`
+	CommandURL     string `json:"command_url"`
+	GatewayID      string `json:"gateway_id"`
+	RX1Delay       int    `json:"rx1_delay"`
+	RX1FrequencyHz uint32 `json:"rx1_frequency_hz"`
+	Saved          bool   `json:"saved"` // true if a record exists in DB
 }
 
 func configToResponse(c gateway.Config, saved bool) gatewaySettingsResponse {
 	return gatewaySettingsResponse{
-		Region:              c.Region,
-		EventURL:            c.EventURL,
-		CommandURL:          c.CommandURL,
-		GatewayID:           c.GatewayID,
-		RX1Delay:            c.RX1DelaySec,
-		RX1FrequencyHz:      c.RX1FrequencyHz,
-		ManageConcentratord: c.ManageConcentratord,
-		Saved:               saved,
+		Region:         c.Region,
+		EventURL:       c.EventURL,
+		CommandURL:     c.CommandURL,
+		GatewayID:      c.GatewayID,
+		RX1Delay:       c.RX1DelaySec,
+		RX1FrequencyHz: c.RX1FrequencyHz,
+		Saved:          saved,
 	}
 }
 
@@ -111,13 +89,12 @@ func getGatewaySettingsHandler(app core.App, inMemoryCfg *gateway.Config) func(*
 
 // patchGatewaySettingsBody is the PATCH request body.
 type patchGatewaySettingsBody struct {
-	Region              *string `json:"region,omitempty"`
-	EventURL            *string `json:"event_url,omitempty"`
-	CommandURL         *string `json:"command_url,omitempty"`
-	GatewayID          *string `json:"gateway_id,omitempty"`
-	RX1Delay            *int    `json:"rx1_delay,omitempty"`
-	RX1FrequencyHz      *uint32 `json:"rx1_frequency_hz,omitempty"`
-	ManageConcentratord *bool   `json:"manage_concentratord,omitempty"`
+	Region         *string `json:"region,omitempty"`
+	EventURL       *string `json:"event_url,omitempty"`
+	CommandURL     *string `json:"command_url,omitempty"`
+	GatewayID      *string `json:"gateway_id,omitempty"`
+	RX1Delay       *int    `json:"rx1_delay,omitempty"`
+	RX1FrequencyHz *uint32 `json:"rx1_frequency_hz,omitempty"`
 }
 
 func patchGatewaySettingsHandler(app core.App, state *GatewayState) func(*core.RequestEvent) error {
@@ -151,9 +128,6 @@ func patchGatewaySettingsHandler(app core.App, state *GatewayState) func(*core.R
 		}
 		if body.RX1FrequencyHz != nil {
 			cfg.RX1FrequencyHz = *body.RX1FrequencyHz
-		}
-		if body.ManageConcentratord != nil {
-			cfg.ManageConcentratord = *body.ManageConcentratord
 		}
 		if !cfg.Valid() {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "event_url, command_url, and region are required"})

@@ -1,8 +1,9 @@
 #!/bin/bash
 #
 # Install chirpstack-concentratord-sx1302 binary for SX1302 HAT (e.g. Waveshare).
-# Config and process are managed from the app: Gateway settings in the UI, enable
-# "Manage concentratord process" and Save. This script only installs the binary.
+# The app does not start concentratord; you must run it separately (e.g. systemd or
+# manually) with a config that binds event/command to the same IPC paths the app
+# uses (e.g. ipc:///tmp/concentratord_event, ipc:///tmp/concentratord_command).
 #
 # Usage: sudo bash setup_gateway.sh
 #
@@ -56,5 +57,5 @@ rm -f /tmp/concentratord.tar.gz /tmp/chirpstack-concentratord-sx1302
 ok "Concentratord installed to /usr/local/bin/chirpstack-concentratord-sx1302"
 
 echo ""
-echo -e "${GREEN}Done.${NC} Open the app → Gateway settings → enable \"Manage concentratord process\" and Save. The backend will write config and start concentratord."
+echo -e "${GREEN}Done.${NC} Run concentratord with a config that binds event_bind and command_bind to the same IPC paths the app expects (e.g. ipc:///tmp/concentratord_event, ipc:///tmp/concentratord_command). Then open the app → LoRaWAN → Gateway configuration → Save."
 echo ""

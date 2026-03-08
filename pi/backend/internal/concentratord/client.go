@@ -69,16 +69,15 @@ func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
 
 // Client implements gateway.UplinkSource and gateway.DownlinkSender using
 // Concentratord ZMQ (SUB for events, REQ for commands).
+// Concentratord can be restarted; the REQ socket is recreated on connection errors (see isConnError).
 type Client struct {
-	eventURL    string
-	commandURL  string
-	sub         zmq4.Socket
-	req         zmq4.Socket
-	subOnce     sync.Once
-	reqOnce     sync.Once
-	subErr      error
-	reqErr      error
-	reqMu       sync.Mutex
+	eventURL   string
+	commandURL string
+	sub        zmq4.Socket
+	req        zmq4.Socket
+	reqReady   bool   // true when req is connected and usable
+	reqErr     error  // last dial error when reqReady is false
+	reqMu      sync.Mutex
 }
 
 // NewClient creates a client. eventURL and commandURL are ZMQ endpoints
@@ -150,24 +149,79 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error 
 }
 
 const (
-	commandTypeConfig   = "config"
+	commandTypeConfig    = "config"
 	commandTypeGatewayID = "gateway_id"
 )
 
+// isConnError reports whether err indicates the REQ connection is dead (reconnect and retry).
+func isConnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "connection closed") ||
+		strings.Contains(s, "no connections available") ||
+		strings.Contains(s, "read/write on closed")
+}
+
+// closeReq closes the REQ socket so the next ensureCommandConn will reconnect.
+func (c *Client) closeReq() {
+	c.reqMu.Lock()
+	defer c.reqMu.Unlock()
+	if c.reqReady {
+		_ = c.req.Close()
+		c.reqReady = false
+	}
+}
+
+// ensureCommandConn ensures the REQ socket is connected (shared by GetGatewayID, SendConfig, SendDownlink).
+func (c *Client) ensureCommandConn(ctx context.Context) error {
+	if !c.Enabled() {
+		return fmt.Errorf("concentratord: not configured")
+	}
+	c.reqMu.Lock()
+	if c.reqReady {
+		c.reqMu.Unlock()
+		return nil
+	}
+	c.req = zmq4.NewReq(ctx)
+	if err := c.req.Dial(c.commandURL); err != nil {
+		c.reqErr = fmt.Errorf("concentratord REQ dial: %w", err)
+		c.reqMu.Unlock()
+		return c.reqErr
+	}
+	c.reqReady = true
+	c.reqErr = nil
+	log.Printf("concentratord REQ connected to %s", c.commandURL)
+	c.reqMu.Unlock()
+	return nil
+}
+
 // GetGatewayID returns the concentratord gateway ID (8 bytes as hex string). Used when gateway_id is not set in gateway settings.
 func (c *Client) GetGatewayID(ctx context.Context) (string, error) {
+	id, err := c.getGatewayIDOnce(ctx)
+	if err != nil && isConnError(err) {
+		c.closeReq()
+		id, err = c.getGatewayIDOnce(ctx)
+	}
+	return id, err
+}
+
+func (c *Client) getGatewayIDOnce(ctx context.Context) (string, error) {
 	if err := c.ensureCommandConn(ctx); err != nil {
 		return "", err
 	}
 	c.reqMu.Lock()
-	defer c.reqMu.Unlock()
-	// Concentratord API: frame 0 = "gateway_id", frame 1 = empty; response = 8-byte ID.
-	if err := c.req.Send(zmq4.NewMsgFrom([]byte(commandTypeGatewayID), []byte{})); err != nil {
-		return "", fmt.Errorf("concentratord REQ send gateway_id: %w", err)
+	err := c.req.Send(zmq4.NewMsgFrom([]byte(commandTypeGatewayID), []byte{}))
+	if err != nil {
+		c.reqMu.Unlock()
+		return "", err
 	}
 	rep, err := c.req.Recv()
+	c.reqMu.Unlock()
 	if err != nil {
-		return "", fmt.Errorf("concentratord REQ recv gateway_id: %w", err)
+		return "", err
 	}
 	if len(rep.Frames) == 0 || len(rep.Frames[0]) != 8 {
 		return "", fmt.Errorf("concentratord gateway_id: invalid response (want 8 bytes)")
@@ -176,25 +230,18 @@ func (c *Client) GetGatewayID(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%02x%02x%02x%02x%02x%02x%02x%02x", id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7]), nil
 }
 
-// ensureCommandConn ensures the REQ socket is connected (shared by SendConfig and SendDownlink).
-func (c *Client) ensureCommandConn(ctx context.Context) error {
-	if !c.Enabled() {
-		return fmt.Errorf("concentratord: not configured")
+// SendConfig sends the "config" command (frame0="config", frame1=GatewayConfiguration).
+// Channel configuration is normally file-based; this is for optional in-memory push.
+func (c *Client) SendConfig(ctx context.Context, cfg *gw.GatewayConfiguration) error {
+	err := c.sendConfigOnce(ctx, cfg)
+	if err != nil && isConnError(err) {
+		c.closeReq()
+		err = c.sendConfigOnce(ctx, cfg)
 	}
-	c.reqOnce.Do(func() {
-		c.req = zmq4.NewReq(ctx)
-		if err := c.req.Dial(c.commandURL); err != nil {
-			c.reqErr = fmt.Errorf("concentratord REQ dial: %w", err)
-			return
-		}
-		log.Printf("concentratord REQ connected to %s", c.commandURL)
-	})
-	return c.reqErr
+	return err
 }
 
-// SendConfig sends the "config" command (frame0="config", frame1=GatewayConfiguration).
-// Channel configuration is normally file-based; this is for optional push. Not called from pipeline.
-func (c *Client) SendConfig(ctx context.Context, cfg *gw.GatewayConfiguration) error {
+func (c *Client) sendConfigOnce(ctx context.Context, cfg *gw.GatewayConfiguration) error {
 	if err := c.ensureCommandConn(ctx); err != nil {
 		return err
 	}
@@ -203,11 +250,13 @@ func (c *Client) SendConfig(ctx context.Context, cfg *gw.GatewayConfiguration) e
 		return fmt.Errorf("marshal GatewayConfiguration: %w", err)
 	}
 	c.reqMu.Lock()
-	defer c.reqMu.Unlock()
-	if err := c.req.Send(zmq4.NewMsgFrom([]byte(commandTypeConfig), body)); err != nil {
+	err = c.req.Send(zmq4.NewMsgFrom([]byte(commandTypeConfig), body))
+	if err != nil {
+		c.reqMu.Unlock()
 		return fmt.Errorf("concentratord REQ send config: %w", err)
 	}
 	_, err = c.req.Recv()
+	c.reqMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("concentratord REQ recv config: %w", err)
 	}
@@ -216,6 +265,15 @@ func (c *Client) SendConfig(ctx context.Context, cfg *gw.GatewayConfiguration) e
 
 // SendDownlink implements gateway.DownlinkSender. Sends frame0="down", frame1=DownlinkFrame (Protobuf); response is DownlinkTxAck.
 func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw.DownlinkTxAck, error) {
+	ack, err := c.sendDownlinkOnce(ctx, frame)
+	if err != nil && isConnError(err) {
+		c.closeReq()
+		ack, err = c.sendDownlinkOnce(ctx, frame)
+	}
+	return ack, err
+}
+
+func (c *Client) sendDownlinkOnce(ctx context.Context, frame *gw.DownlinkFrame) (*gw.DownlinkTxAck, error) {
 	if err := c.ensureCommandConn(ctx); err != nil {
 		return nil, err
 	}
@@ -224,11 +282,13 @@ func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw
 		return nil, fmt.Errorf("marshal DownlinkFrame: %w", err)
 	}
 	c.reqMu.Lock()
-	defer c.reqMu.Unlock()
-	if err := c.req.Send(zmq4.NewMsgFrom([]byte("down"), body)); err != nil {
+	err = c.req.Send(zmq4.NewMsgFrom([]byte("down"), body))
+	if err != nil {
+		c.reqMu.Unlock()
 		return nil, fmt.Errorf("concentratord REQ send: %w", err)
 	}
 	rep, err := c.req.Recv()
+	c.reqMu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("concentratord REQ recv: %w", err)
 	}

@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, Input, Output, EventEmitter } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService, GatewaySettings } from '../../core/services/api.service';
@@ -13,15 +13,17 @@ const REGIONS = [
   standalone: true,
   imports: [RouterLink, FormsModule],
   template: `
-    <header class="page-header">
-      <div>
-        <h1 class="page-title">Gateway settings</h1>
-        <p class="page-description">
-          Configure the LoRaWAN gateway. Save valid settings to enable the concentratord pipeline and start receiving uplinks.
-        </p>
-      </div>
-      <a routerLink="/" class="btn btn-ghost btn-sm">← Back</a>
-    </header>
+    @if (!embedded) {
+      <header class="page-header">
+        <div>
+          <h1 class="page-title">Gateway settings</h1>
+          <p class="page-description">
+            Configure the LoRaWAN gateway. Save valid settings to enable the concentratord pipeline and start receiving uplinks.
+          </p>
+        </div>
+        <a routerLink="/" class="btn btn-ghost btn-sm">← Back</a>
+      </header>
+    }
 
     @if (loading()) {
       <div class="flex justify-center py-12">
@@ -134,19 +136,6 @@ const REGIONS = [
               />
             </div>
 
-            <div class="form-control">
-              <label class="label cursor-pointer justify-start gap-3">
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary"
-                  [(ngModel)]="form.manage_concentratord"
-                  name="manage_concentratord"
-                />
-                <span class="label-text font-semibold">Manage concentratord process</span>
-              </label>
-              <p class="text-sm text-base-content/60 mt-1 ml-8">If enabled, backend writes TOML and starts the concentratord subprocess.</p>
-            </div>
-
             @if (saveError()) {
               <div class="alert alert-error rounded-xl">
                 <span>{{ saveError() }}</span>
@@ -213,6 +202,16 @@ const REGIONS = [
 export class GatewaySettingsComponent implements OnInit {
   private api = inject(ApiService);
 
+  @Input() embedded = false;
+  @Input() set initialSettings(v: GatewaySettings | null) {
+    if (v) {
+      this.form = { ...v };
+      this.saved.set(v.saved);
+      this.loading.set(false);
+    }
+  }
+  @Output() gatewaySaved = new EventEmitter<GatewaySettings>();
+
   regions = REGIONS;
   loading = signal(true);
   refreshing = signal(false);
@@ -228,12 +227,13 @@ export class GatewaySettingsComponent implements OnInit {
     gateway_id: '',
     rx1_delay: 1,
     rx1_frequency_hz: 0,
-    manage_concentratord: false,
     saved: false,
   };
 
   ngOnInit() {
-    this.loadSettings();
+    if (!this.embedded) {
+      this.loadSettings();
+    }
   }
 
   refresh() {
@@ -283,7 +283,6 @@ export class GatewaySettingsComponent implements OnInit {
       gateway_id: this.form.gateway_id?.trim() ?? '',
       rx1_delay: Math.max(1, Math.min(15, this.form.rx1_delay ?? 1)),
       rx1_frequency_hz: this.form.rx1_frequency_hz ?? 0,
-      manage_concentratord: this.form.manage_concentratord ?? false,
     };
     this.api.patchGatewaySettings(payload).subscribe({
       next: (res) => {
@@ -291,6 +290,7 @@ export class GatewaySettingsComponent implements OnInit {
         this.saved.set(true);
         this.saveSuccess.set(true);
         this.saving.set(false);
+        this.gatewaySaved.emit(res);
         setTimeout(() => this.saveSuccess.set(false), 4000);
       },
       error: (err) => {

@@ -206,7 +206,6 @@ export interface GatewaySettings {
   gateway_id: string;
   rx1_delay: number;
   rx1_frequency_hz: number;
-  manage_concentratord: boolean;
   saved: boolean;
 }
 

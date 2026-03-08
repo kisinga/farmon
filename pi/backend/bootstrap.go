@@ -236,7 +236,6 @@ func bootstrapCollections(app core.App) {
 		coll.Fields.Add(&core.TextField{Name: "gateway_id"})
 		coll.Fields.Add(&core.NumberField{Name: "rx1_delay"})
 		coll.Fields.Add(&core.NumberField{Name: "rx1_frequency_hz"})
-		coll.Fields.Add(&core.BoolField{Name: "manage_concentratord"})
 		setPublicListAndViewRules(coll)
 		if err := app.Save(coll); err != nil {
 			log.Printf("bootstrap: create gateway_settings: %v", err)
