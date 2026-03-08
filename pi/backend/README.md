@@ -27,16 +27,13 @@ Use the same `device_eui` (16 hex chars, from device label/serial) and put `app_
 
 ## Concentratord (gateway)
 
-Uplinks and downlinks go through Concentratord. Set:
+Gateway configuration is **stored in the database only** and set from the **Gateway** settings page in the UI (`/settings`). There are no `CONCENTRATORD_*` environment variables.
 
-- **CONCENTRATORD_EVENT_URL** and **CONCENTRATORD_COMMAND_URL** (ZMQ), e.g.  
-  `ipc:///tmp/concentratord_event` and `ipc:///tmp/concentratord_command`.
-- **CONCENTRATORD_GATEWAY_ID** (optional) for downlink targeting and gateway-status in the UI.
-- **CONCENTRATORD_REGION** — Set to `EU868` or `US915` to select the region profile used for RX1 frequency and modulation (downlink logic). Should match the concentratord TOML region (see `pi/setup_gateway.sh [eu868|us915]`). Channel configuration is file-based; the backend does not push gateway config.
-- **CONCENTRATORD_RX1_DELAY** (optional, default `1`) — Class A RX1 delay in seconds (1–15). Must match the device’s first receive window; use `5` if the device or region expects 5s.
-- **CONCENTRATORD_RX1_FREQUENCY_HZ** (optional) — Downlink frequency in Hz for RX1. If unset, the backend may use the uplink frequency (e.g. EU868). Set if the gateway reports TX_FREQ in the downlink ack.
+1. **First run**: Open the app → **Gateway** (or `/settings`). The form is pre-filled with defaults (e.g. event_url `ipc:///tmp/concentratord_event`, command_url `ipc:///tmp/concentratord_command`, region US915). Edit if needed and click **Save**.
+2. **Save = enable**: Once valid settings (event_url, command_url, region) are saved, the backend starts the concentratord pipeline (ZMQ connect, uplink/downlink). Until then, no concentratord traffic is handled.
+3. **Optional — manage concentratord**: If you enable "Manage concentratord process", the backend writes `pb_data/concentratord.toml` and starts the concentratord binary (default `/usr/local/bin/chirpstack-concentratord-sx1302`). Otherwise, concentratord must be running already (e.g. via `pi/setup_gateway.sh` or systemd).
 
-Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), and stored. Join requests are answered with JoinAccept; data uplinks are decoded and written to devices/telemetry/state_changes. Downlink (e.g. setControl) is sent via Concentratord. If these env vars are unset, provisioning and data APIs still work but no radio traffic is handled and setControl returns an error.
+Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), and stored. Join requests are answered with JoinAccept; data uplinks are decoded and written to devices/telemetry/state_changes. Downlink (e.g. setControl) is sent via Concentratord.
 
 ## Build and run
 
@@ -49,7 +46,8 @@ Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), a
 - `POST /api/devices` — provision device (body: `device_eui`, `device_name`); returns `app_key`.
 - `GET /api/devices/credentials?eui=...` — get credentials for firmware.
 - `POST /api/setControl` — enqueue downlink (body: `eui`, `control`, `state`, `duration?`). Requires Concentratord configured.
-- `GET /api/gateway-status` — list gateways (CONCENTRATORD_GATEWAY_ID when set).
+- `GET /api/gateway-settings` — get gateway settings (or defaults when none saved). `PATCH /api/gateway-settings` — save settings and start/restart pipeline.
+- `GET /api/gateway-status` — list gateways (gateway_id from settings when set).
 - `GET /api/history?eui=...&field=...&from=...&to=...&limit=500` — telemetry history.
 - `POST /api/otaStart`, `POST /api/otaCancel` — OTA (eui in body).
 
@@ -57,15 +55,14 @@ Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), a
 
 On the Pi with the SX1302 HAT:
 
-```bash
-sudo bash pi/setup_gateway.sh eu868   # or us915
-```
+1. **Install the concentratord binary** (once): `sudo bash pi/setup_gateway.sh`. This installs `chirpstack-concentratord-sx1302` to `/usr/local/bin/`.
+2. In the UI open **Gateway** settings, enable **Manage concentratord process**, set region (EU868 or US915), and Save. The backend writes TOML and starts the process.
 
-Set **CONCENTRATORD_REGION** to match (e.g. `EU868` or `US915`). Then run the backend with `CONCENTRATORD_EVENT_URL` and `CONCENTRATORD_COMMAND_URL` set to the IPC paths (see script output). See `docs/concentratord-api.md` for the ZMQ API.
+See `docs/concentratord-api.md` for the ZMQ API.
 
 ## Troubleshooting: no uplinks / join requests
 
-The UI shows "Gateway" as connected when the backend has the concentratord env vars set. That does **not** mean the backend is actually connected to concentratord. If you see no frames and logs like:
+The UI shows "Gateway" as connected when valid gateway settings are saved and the backend has connected to concentratord. If you see no frames and logs like:
 
 ```text
 concentratord SUB dial: ... connect: no such file or directory (retry in 5s)
@@ -84,6 +81,8 @@ then **concentratord is not running** (or not creating the IPC sockets the backe
    `ls -la /tmp/concentratord_event /tmp/concentratord_command`  
    You should see socket files. If not, concentratord did not start correctly (check `sudo journalctl -u chirpstack-concentratord -n 50`).
 
-3. **If the backend runs in Docker** on the same Pi, ensure the compose file mounts the host `/tmp` (e.g. `volumes: - /tmp:/tmp`) so the container can reach those sockets.
+3. **If the backend runs in Docker** on the same Pi, ensure the compose file mounts the host `/tmp` so the container can reach IPC sockets.
 
-The backend **retries** connecting to concentratord every 5 seconds. Once concentratord is running, the backend will connect and you should see `concentratord SUB connected to ipc:///tmp/concentratord_event` in the logs; join requests and uplinks will then appear.
+4. **Ensure gateway settings are saved** in the UI (**Gateway** → fill event_url, command_url, region → Save). The pipeline does not start until valid settings exist in the DB.
+
+The backend retries connecting to concentratord every 5 seconds. Once concentratord is running and settings are saved, join requests and uplinks will appear.

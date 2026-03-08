@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -92,14 +91,6 @@ func NewClient(eventURL, commandURL string) *Client {
 	}
 }
 
-// NewClientFromEnv creates a client from CONCENTRATORD_EVENT_URL and CONCENTRATORD_COMMAND_URL.
-func NewClientFromEnv() *Client {
-	return NewClient(
-		os.Getenv("CONCENTRATORD_EVENT_URL"),
-		os.Getenv("CONCENTRATORD_COMMAND_URL"),
-	)
-}
-
 // Enabled returns true if both event and command URLs are set.
 func (c *Client) Enabled() bool {
 	return c.eventURL != "" && c.commandURL != ""
@@ -163,7 +154,7 @@ const (
 	commandTypeGatewayID = "gateway_id"
 )
 
-// GetGatewayID returns the concentratord gateway ID (8 bytes as hex string). Used to push config when CONCENTRATORD_GATEWAY_ID is unset.
+// GetGatewayID returns the concentratord gateway ID (8 bytes as hex string). Used when gateway_id is not set in gateway settings.
 func (c *Client) GetGatewayID(ctx context.Context) (string, error) {
 	if err := c.ensureCommandConn(ctx); err != nil {
 		return "", err

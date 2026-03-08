@@ -227,9 +227,27 @@ func bootstrapCollections(app core.App) {
 		}
 	}
 
+	// gateway_settings: single-record gateway config (region, ZMQ URLs, etc.). DB only; no env fallback.
+	if _, err := app.FindCollectionByNameOrId("gateway_settings"); err != nil {
+		coll := core.NewBaseCollection("gateway_settings")
+		coll.Fields.Add(&core.TextField{Name: "region"})
+		coll.Fields.Add(&core.TextField{Name: "event_url"})
+		coll.Fields.Add(&core.TextField{Name: "command_url"})
+		coll.Fields.Add(&core.TextField{Name: "gateway_id"})
+		coll.Fields.Add(&core.NumberField{Name: "rx1_delay"})
+		coll.Fields.Add(&core.NumberField{Name: "rx1_frequency_hz"})
+		coll.Fields.Add(&core.BoolField{Name: "manage_concentratord"})
+		setPublicListAndViewRules(coll)
+		if err := app.Save(coll); err != nil {
+			log.Printf("bootstrap: create gateway_settings: %v", err)
+		} else {
+			log.Println("bootstrap: created collection gateway_settings")
+		}
+	}
+
 	// Ensure app collections allow public list/view (no auth for now).
 	// edge_rules also needs public create/update for the UI "Add rule" form.
-	collectionNames := []string{"devices", "telemetry", "device_controls", "state_changes", "commands", "firmware_history", "edge_rules", "device_fields", "device_schemas", "lorawan_sessions"}
+	collectionNames := []string{"devices", "telemetry", "device_controls", "state_changes", "commands", "firmware_history", "edge_rules", "device_fields", "device_schemas", "lorawan_sessions", "gateway_settings"}
 	empty := ""
 	for _, name := range collectionNames {
 		coll, err := app.FindCollectionByNameOrId(name)

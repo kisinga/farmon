@@ -1,19 +1,14 @@
 package gateway
 
-import (
-	"os"
-	"strconv"
-	"strings"
-)
-
-// Config holds concentratord/gateway settings. Load once from env and pass to pipeline and handlers.
+// Config holds concentratord/gateway settings. Load from DB only; see DefaultGatewayConfig for first-time defaults.
 type Config struct {
-	EventURL        string
-	CommandURL      string
-	GatewayID       string
-	Region          string // e.g. "EU868", "US915"; selects RegionProfile for RX1 frequency and modulation (downlink logic)
-	RX1DelaySec     int    // 1–15; delay in seconds for Class A RX1 (join-accept and data downlinks)
-	RX1FrequencyHz  uint32 // optional; 0 means not set
+	EventURL             string
+	CommandURL           string
+	GatewayID            string
+	Region               string // e.g. "EU868", "US915"; selects RegionProfile for RX1 frequency and modulation
+	RX1DelaySec          int    // 1–15; delay in seconds for Class A RX1
+	RX1FrequencyHz      uint32 // optional; 0 = use region profile default
+	ManageConcentratord  bool   // if true, backend writes TOML and runs concentratord subprocess
 }
 
 const (
@@ -22,32 +17,30 @@ const (
 	maxRX1DelaySec     = 15
 )
 
-// LoadFromEnv returns config from environment variables.
-// CONCENTRATORD_EVENT_URL, CONCENTRATORD_COMMAND_URL, CONCENTRATORD_GATEWAY_ID,
-// CONCENTRATORD_RX1_DELAY (optional, default 1, clamped 1–15),
-// CONCENTRATORD_RX1_FREQUENCY_HZ (optional).
-func LoadFromEnv() Config {
-	cfg := Config{
-		EventURL:   strings.TrimSpace(os.Getenv("CONCENTRATORD_EVENT_URL")),
-		CommandURL: strings.TrimSpace(os.Getenv("CONCENTRATORD_COMMAND_URL")),
-		GatewayID:  strings.TrimSpace(os.Getenv("CONCENTRATORD_GATEWAY_ID")),
-		Region:     strings.TrimSpace(strings.ToUpper(os.Getenv("CONCENTRATORD_REGION"))),
+// MinRX1DelaySec and MaxRX1DelaySec are the allowed range for RX1 delay (Class A).
+func MinRX1DelaySec() int { return minRX1DelaySec }
+func MaxRX1DelaySec() int { return maxRX1DelaySec }
+
+// DefaultGatewayConfig returns defaults matching setup_gateway.sh so one "Save" gives a working config.
+const (
+	DefaultEventURL   = "ipc:///tmp/concentratord_event"
+	DefaultCommandURL = "ipc:///tmp/concentratord_command"
+	DefaultRegion     = "US915"
+)
+
+func DefaultGatewayConfig() Config {
+	return Config{
+		EventURL:            DefaultEventURL,
+		CommandURL:          DefaultCommandURL,
+		GatewayID:           "",
+		Region:              DefaultRegion,
+		RX1DelaySec:         defaultRX1DelaySec,
+		RX1FrequencyHz:      0,
+		ManageConcentratord: false,
 	}
-	cfg.RX1DelaySec = defaultRX1DelaySec
-	if s := strings.TrimSpace(os.Getenv("CONCENTRATORD_RX1_DELAY")); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n >= minRX1DelaySec && n <= maxRX1DelaySec {
-			cfg.RX1DelaySec = n
-		}
-	}
-	if s := strings.TrimSpace(os.Getenv("CONCENTRATORD_RX1_FREQUENCY_HZ")); s != "" {
-		if n, err := strconv.ParseUint(s, 10, 32); err == nil && n > 0 {
-			cfg.RX1FrequencyHz = uint32(n)
-		}
-	}
-	return cfg
 }
 
-// Enabled returns true if both event and command URLs are set.
-func (c *Config) Enabled() bool {
-	return c.EventURL != "" && c.CommandURL != ""
+// Valid returns true if event_url, command_url, and region are all set (pipeline may start, downlink allowed).
+func (c *Config) Valid() bool {
+	return c.EventURL != "" && c.CommandURL != "" && c.Region != ""
 }

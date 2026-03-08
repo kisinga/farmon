@@ -46,11 +46,11 @@ func shouldLogAppKeyErr(errMsg string) bool {
 }
 
 // startConcentratordPipeline starts the concentratord subscriber and runs the uplink pipeline
-// (LoRaWAN → codec → store). If Concentratord is not configured, it returns without starting.
+// (LoRaWAN → codec → store). If settings are not valid (event_url, command_url, region), it returns without starting.
 func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.Config) {
 	log.Printf("concentratord: event_url=%v command_url=%v gateway_id=%v region=%s rx1_delay=%ds", cfg.EventURL != "", cfg.CommandURL != "", cfg.GatewayID != "", cfg.Region, cfg.RX1DelaySec)
-	if !cfg.Enabled() {
-		log.Printf("concentratord: not configured (set CONCENTRATORD_EVENT_URL and CONCENTRATORD_COMMAND_URL); no uplinks will be received")
+	if !cfg.Valid() {
+		log.Printf("concentratord: not configured (save gateway settings in UI with event_url, command_url, region); no uplinks will be received")
 		return
 	}
 	store := newPocketbaseLorawanStore(app)
@@ -59,7 +59,13 @@ func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.
 		return
 	}
 	if cfg.GatewayID == "" {
-		log.Printf("concentratord: CONCENTRATORD_GATEWAY_ID unset — gateway-status and UI will show 'no gateway online'")
+		log.Printf("concentratord: gateway_id unset — gateway-status and UI will show 'no gateway online'")
+	}
+	// Push channel config for region (optional; concentratord normally uses file-based config).
+	if gwc := gateway.GatewayConfigForRegion(cfg.Region, cfg.GatewayID); gwc != nil {
+		if err := client.SendConfig(ctx, gwc); err != nil {
+			log.Printf("concentratord: SendConfig: %v (continuing)", err)
+		}
 	}
 	go func() {
 		err := client.Run(ctx, func(frame *gw.UplinkFrame) {
@@ -143,8 +149,8 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 // Returns an error if gateway config is not enabled.
 func EnqueueDownlink(cfg *gateway.Config, app core.App, devEUI string, fPort uint8, payload []byte) error {
 	devEUI = normalizeEui(devEUI)
-	if !cfg.Enabled() {
-		return fmt.Errorf("gateway not configured: set CONCENTRATORD_EVENT_URL and CONCENTRATORD_COMMAND_URL")
+	if !cfg.Valid() {
+		return fmt.Errorf("gateway not configured: save gateway settings in UI (event_url, command_url, region)")
 	}
 	store := newPocketbaseLorawanStore(app)
 	phyRaw, err := lorawan.BuildDataDownlink(devEUI, fPort, payload, store)

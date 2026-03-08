@@ -76,12 +76,11 @@ func setControlHandler(app core.App, cfg *gateway.Config) func(*core.RequestEven
 	}
 }
 
-// gatewayStatusHandler returns gateway status for the UI. When concentratord is configured
-// (event + command URLs set), one gateway is reported online so the banner matches reality.
+// gatewayStatusHandler returns gateway status for the UI. When gateway settings are valid, one gateway is reported online.
 func gatewayStatusHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		gwID := cfg.GatewayID
-		if gwID == "" && cfg.Enabled() {
+		if gwID == "" && cfg.Valid() {
 			gwID = "local"
 		}
 		if gwID != "" {
@@ -98,7 +97,7 @@ func gatewayStatusHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 func pipelineDebugHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		return e.JSON(http.StatusOK, map[string]any{
-			"concentratord_configured": cfg.Enabled(),
+			"concentratord_configured": cfg.Valid(),
 			"gateway_id_set":          cfg.GatewayID != "",
 			"gateway_id":              cfg.GatewayID,
 			"event_url":               cfg.EventURL,
@@ -132,7 +131,7 @@ func lorawanStatsHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 			"buffer_size":             stats.BufferSize,
 			"total_uplinks":           stats.TotalUplinks,
 			"total_downlinks":         stats.TotalDownlinks,
-			"concentratord_configured": cfg.Enabled(),
+			"concentratord_configured": cfg.Valid(),
 		})
 	}
 }

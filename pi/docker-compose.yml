@@ -1,13 +1,8 @@
 # pi: PocketBase backend (LoRaWAN + codec + store) + Angular frontend
 # No ChirpStack/MQTT/Postgres/Redis. Backend talks to Concentratord via ZMQ when configured.
-# Device provisioning: POST /api/devices, GET /api/devices/credentials?eui=...
-#
-# On Pi with concentratord (after setup_gateway.sh): create .env in this directory with:
-#   CONCENTRATORD_EVENT_URL=ipc:///tmp/concentratord_event
-#   CONCENTRATORD_COMMAND_URL=ipc:///tmp/concentratord_command
-#   CONCENTRATORD_GATEWAY_ID=local
-#   CONCENTRATORD_REGION=US915   # required for US915 so backend pushes 923 MHz downlink channels
-# Then: docker compose up -d (backend will mount /tmp to reach concentratord IPC).
+# Gateway config is set only from the UI (stored in DB). No CONCENTRATORD_* env vars.
+# After first deploy: open /settings, fill gateway settings (region, event_url, command_url), Save to enable the pipeline.
+# If concentratord runs on the host, mount /tmp so the backend can use IPC: - /tmp:/tmp
 
 services:
   backend:
@@ -20,15 +15,9 @@ services:
       - "8090:8090"
     volumes:
       - pi_pb_data:/app/pb_data
-      # Mount host /tmp so backend can use concentratord IPC (ipc:///tmp/...) when CONCENTRATORD_* are set
       - /tmp:/tmp
     environment:
       - TZ=Africa/Nairobi
-      # Concentratord ZMQ (required for uplink/downlink; leave unset for provisioning-only)
-      - CONCENTRATORD_EVENT_URL=${CONCENTRATORD_EVENT_URL:-}
-      - CONCENTRATORD_COMMAND_URL=${CONCENTRATORD_COMMAND_URL:-}
-      - CONCENTRATORD_GATEWAY_ID=${CONCENTRATORD_GATEWAY_ID:-}
-      - CONCENTRATORD_REGION=${CONCENTRATORD_REGION:-}
     networks:
       - pi_network
 

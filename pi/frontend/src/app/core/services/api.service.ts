@@ -185,6 +185,27 @@ export class ApiService {
   clearLorawanFrames(): Observable<{ ok: boolean }> {
     return this.http.post<{ ok: boolean }>(`${API}/lorawan/frames/clear`, {});
   }
+
+  /** Get gateway settings (or defaults when no record saved). */
+  getGatewaySettings(): Observable<GatewaySettings> {
+    return this.http.get<GatewaySettings>(`${API}/gateway-settings`);
+  }
+
+  /** Save gateway settings; starts pipeline when valid. */
+  patchGatewaySettings(settings: Partial<GatewaySettings>): Observable<GatewaySettings> {
+    return this.http.patch<GatewaySettings>(`${API}/gateway-settings`, settings);
+  }
+}
+
+export interface GatewaySettings {
+  region: string;
+  event_url: string;
+  command_url: string;
+  gateway_id: string;
+  rx1_delay: number;
+  rx1_frequency_hz: number;
+  manage_concentratord: boolean;
+  saved: boolean;
 }
 
 export interface PipelineDebug {

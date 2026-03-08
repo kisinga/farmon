@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log"
 	"os"
 
@@ -14,17 +13,31 @@ import (
 
 func main() {
 	app := pocketbase.New()
-	gwCfg := gateway.LoadFromEnv()
+	gwCfg := gateway.DefaultGatewayConfig()
+	gwState := &GatewayState{cfg: &gwCfg}
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Ensure collections exist (run after DB is ready; OnBootstrap is too early)
 		bootstrapCollections(app)
-		// Start concentratord pipeline when CONCENTRATORD_EVENT_URL and CONCENTRATORD_COMMAND_URL are set
-		startConcentratordPipeline(context.Background(), app, &gwCfg)
+		// Load gateway config from DB; start pipeline only if a valid record exists (event_url, command_url, region set)
+		if cfg, valid := LoadGatewaySettings(app); valid {
+			gwState.SetConfig(cfg)
+		} else {
+			// No record or incomplete: keep in-memory config invalid so pipeline does not start
+			invalid := gateway.DefaultGatewayConfig()
+			invalid.EventURL = ""
+			invalid.CommandURL = ""
+			gwState.SetConfig(invalid)
+		}
+		gwState.RestartPipeline(app)
+
 		// Device provisioning (LoRaWAN OTAA): create device + AppKey, get credentials
 		se.Router.POST("/api/devices", provisionDeviceHandler(app))
 		se.Router.DELETE("/api/devices", deleteDeviceHandler(app))
 		se.Router.GET("/api/devices/credentials", deviceCredentialsHandler(app))
+		// Gateway settings (DB only; gate on valid settings)
+		se.Router.GET("/api/gateway-settings", getGatewaySettingsHandler(app))
+		se.Router.PATCH("/api/gateway-settings", patchGatewaySettingsHandler(app, gwState))
 		// Custom app API (downlink / gateway)
 		se.Router.POST("/api/setControl", setControlHandler(app, &gwCfg))
 		se.Router.GET("/api/gateway-status", gatewayStatusHandler(&gwCfg))

@@ -7,7 +7,7 @@ import (
 // RegionProfile provides region-specific RX1 frequency and modulation for Class A downlinks.
 // Config.Region selects the profile (e.g. EU868, US915).
 type RegionProfile interface {
-	// RX1FrequencyHz returns the downlink frequency for RX1. overrideHz from config (CONCENTRATORD_RX1_FREQUENCY_HZ) takes precedence when non-zero.
+	// RX1FrequencyHz returns the downlink frequency for RX1. overrideHz from gateway settings (rx1_frequency_hz) takes precedence when non-zero.
 	RX1FrequencyHz(uplinkFreqHz, overrideHz uint32) uint32
 	// RX1Modulation returns bandwidth (Hz), spreading factor, and code rate for the RX1 downlink.
 	RX1Modulation() (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate)
