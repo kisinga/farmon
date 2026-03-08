@@ -32,7 +32,7 @@ Uplinks and downlinks go through Concentratord. Set:
 - **CONCENTRATORD_EVENT_URL** and **CONCENTRATORD_COMMAND_URL** (ZMQ), e.g.  
   `ipc:///tmp/concentratord_event` and `ipc:///tmp/concentratord_command`.
 - **CONCENTRATORD_GATEWAY_ID** (optional) for downlink targeting and gateway-status in the UI.
-- **CONCENTRATORD_REGION** — **Required for US915.** Set to `US915` for a US915 gateway. The backend pushes the full 8-channel downlink config (923.3–927.5 MHz) at startup so the concentratord can TX on the frequency the device listens for RX1. Without this, the gateway has only one downlink channel and `lgw_send` fails. If CONCENTRATORD_GATEWAY_ID is unset, the backend fetches the gateway ID from the concentratord for the config push.
+- **CONCENTRATORD_REGION** — Set to `EU868` or `US915` to select the region profile used for RX1 frequency and modulation (downlink logic). Should match the concentratord TOML region (see `pi/setup_gateway.sh [eu868|us915]`). Channel configuration is file-based; the backend does not push gateway config.
 - **CONCENTRATORD_RX1_DELAY** (optional, default `1`) — Class A RX1 delay in seconds (1–15). Must match the device’s first receive window; use `5` if the device or region expects 5s.
 - **CONCENTRATORD_RX1_FREQUENCY_HZ** (optional) — Downlink frequency in Hz for RX1. If unset, the backend may use the uplink frequency (e.g. EU868). Set if the gateway reports TX_FREQ in the downlink ack.
 
@@ -58,10 +58,10 @@ Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), a
 On the Pi with the SX1302 HAT:
 
 ```bash
-sudo bash pi/setup_gateway.sh
+sudo bash pi/setup_gateway.sh eu868   # or us915
 ```
 
-Then run the backend with `CONCENTRATORD_EVENT_URL` and `CONCENTRATORD_COMMAND_URL` set to the IPC paths (see script output).
+Set **CONCENTRATORD_REGION** to match (e.g. `EU868` or `US915`). Then run the backend with `CONCENTRATORD_EVENT_URL` and `CONCENTRATORD_COMMAND_URL` set to the IPC paths (see script output). See `docs/concentratord-api.md` for the ZMQ API.
 
 ## Troubleshooting: no uplinks / join requests
 

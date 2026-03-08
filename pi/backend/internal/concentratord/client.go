@@ -1,3 +1,7 @@
+// Package concentratord implements the ChirpStack Concentratord ZMQ API.
+// Commands (REQ): frame0 = command string, frame1 = Protobuf payload.
+// Events (SUB): frame0 = event type ("up" | "stats"), frame1 = Protobuf payload.
+// See https://www.chirpstack.io/docs/chirpstack-concentratord/api/commands.html and docs/concentratord-api.md.
 package concentratord
 
 import (
@@ -197,8 +201,8 @@ func (c *Client) ensureCommandConn(ctx context.Context) error {
 	return c.reqErr
 }
 
-// SendConfig sends the config command with the given GatewayConfiguration so the concentratord
-// uses the correct channels (e.g. US915 downlink 923 MHz). Call at startup when region is US915.
+// SendConfig sends the "config" command (frame0="config", frame1=GatewayConfiguration).
+// Channel configuration is normally file-based; this is for optional push. Not called from pipeline.
 func (c *Client) SendConfig(ctx context.Context, cfg *gw.GatewayConfiguration) error {
 	if err := c.ensureCommandConn(ctx); err != nil {
 		return err
@@ -219,8 +223,7 @@ func (c *Client) SendConfig(ctx context.Context, cfg *gw.GatewayConfiguration) e
 	return nil
 }
 
-// SendDownlink implements gateway.DownlinkSender. Sends the downlink in the format concentratord expects:
-// two frames — (1) command type "down", (2) serialized DownlinkFrame. Response is one frame (DownlinkTxAck).
+// SendDownlink implements gateway.DownlinkSender. Sends frame0="down", frame1=DownlinkFrame (Protobuf); response is DownlinkTxAck.
 func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw.DownlinkTxAck, error) {
 	if err := c.ensureCommandConn(ctx); err != nil {
 		return nil, err

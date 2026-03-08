@@ -9,9 +9,10 @@ import (
 var us915UplinkChannels = []uint32{903900000, 904100000, 904300000, 904500000, 904700000, 904900000, 905100000, 905300000}
 
 // BuildUS915GatewayConfig returns a GatewayConfiguration with only the 8 uplink channels.
-// Do not add the 8 downlink (923 MHz) channels: the SX1302 has two radios in the uplink band,
-// so "the channels do not fit within the bandwidth of the two radios" and the daemon panics.
-// Downlink uses the static lora_std at 923.3 MHz only; backend uses 923.3 for all US915 RX1.
+// For optional config push via concentratord "config" command only. Do not add the 8 downlink (923 MHz)
+// channels: on Waveshare SX1302 HAT the two radios are in the uplink band, so adding 923 MHz channels
+// causes "the channels do not fit within the bandwidth of the two radios" and the daemon panics.
+// Channel/region configuration is normally file-based (TOML); the pipeline does not call SendConfig.
 func BuildUS915GatewayConfig(gatewayID string) *gw.GatewayConfiguration {
 	channels := make([]*gw.ChannelConfiguration, 0, 8)
 	for _, freq := range us915UplinkChannels {

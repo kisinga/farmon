@@ -61,7 +61,6 @@ func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.
 	if cfg.GatewayID == "" {
 		log.Printf("concentratord: CONCENTRATORD_GATEWAY_ID unset — gateway-status and UI will show 'no gateway online'")
 	}
-	// US915: do not push config. SX1302 has two radios in uplink band; pushing 8 downlink (923 MHz) channels panics "channels do not fit within the bandwidth of the two radios". Static config has single lora_std at 923.3; we use 923.3 for all RX1.
 	go func() {
 		err := client.Run(ctx, func(frame *gw.UplinkFrame) {
 			handleConcentratordUplink(app, frame, store, client, cfg)
@@ -103,7 +102,8 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 	}
 	if len(result.JoinAcceptPHY) > 0 {
 		RecordUplink("", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
-		df := gateway.BuildClassADownlink(cfg, result.JoinAcceptPHY, frame)
+		profile := gateway.ProfileForRegion(cfg.Region)
+		df := gateway.BuildClassADownlink(cfg, profile, result.JoinAcceptPHY, frame)
 		ack, err := downlinkSender.SendDownlink(context.Background(), df)
 		ackStatus := "OK"
 		if err != nil {

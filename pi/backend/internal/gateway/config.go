@@ -11,7 +11,7 @@ type Config struct {
 	EventURL        string
 	CommandURL      string
 	GatewayID       string
-	Region          string // e.g. "US915"; used to push gateway channel config so TX matches RX band
+	Region          string // e.g. "EU868", "US915"; selects RegionProfile for RX1 frequency and modulation (downlink logic)
 	RX1DelaySec     int    // 1–15; delay in seconds for Class A RX1 (join-accept and data downlinks)
 	RX1FrequencyHz  uint32 // optional; 0 means not set
 }
