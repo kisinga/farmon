@@ -49,8 +49,8 @@ func main() {
 		se.Router.POST("/api/otaStart", otaStartHandler(app))
 		se.Router.POST("/api/otaCancel", otaCancelHandler(app))
 
-		// Serve static files (Angular SPA): embedded build (go build -tags embed) or pb_public
-		se.Router.GET("/{path...}", apis.Static(os.DirFS("./pb_public"), false))
+		// Serve static files (Angular SPA): index fallback so client-side routes (e.g. /devices, /settings) work
+		se.Router.GET("/{path...}", apis.Static(os.DirFS("./pb_public"), true))
 
 		return se.Next()
 	})

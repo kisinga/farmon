@@ -100,7 +100,7 @@ const REGIONS = [
                 placeholder="Autofilled when discovered"
                 [(ngModel)]="form.gateway_id"
               />
-              <p class="text-sm text-base-content/60 mt-1">Optional. Filled automatically from concentratord when the pipeline is running (display only until you save).</p>
+              <p class="text-sm text-base-content/60 mt-1">Optional. Filled from concentratord when the pipeline is running (display only until you save). Use Refresh to fetch the latest.</p>
             </div>
 
             <div class="form-control w-full max-w-xs">
@@ -158,7 +158,7 @@ const REGIONS = [
               </div>
             }
 
-            <div class="flex gap-3 pt-2">
+            <div class="flex flex-wrap gap-3 pt-2">
               <button
                 type="submit"
                 class="btn btn-primary"
@@ -169,6 +169,19 @@ const REGIONS = [
                   Saving…
                 } @else {
                   Save
+                }
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost"
+                [disabled]="refreshing()"
+                (click)="refresh()"
+              >
+                @if (refreshing()) {
+                  <span class="loading loading-spinner loading-sm"></span>
+                  Refreshing…
+                } @else {
+                  Refresh
                 }
               </button>
             </div>
@@ -202,6 +215,7 @@ export class GatewaySettingsComponent implements OnInit {
 
   regions = REGIONS;
   loading = signal(true);
+  refreshing = signal(false);
   saving = signal(false);
   saveError = signal<string | null>(null);
   saveSuccess = signal(false);
@@ -219,6 +233,24 @@ export class GatewaySettingsComponent implements OnInit {
   };
 
   ngOnInit() {
+    this.loadSettings();
+  }
+
+  refresh() {
+    this.refreshing.set(true);
+    this.api.getGatewaySettings().subscribe({
+      next: (res) => {
+        this.form = { ...res };
+        this.saved.set(res.saved);
+        this.refreshing.set(false);
+      },
+      error: () => {
+        this.refreshing.set(false);
+      },
+    });
+  }
+
+  private loadSettings() {
     this.api.getGatewaySettings().subscribe({
       next: (res) => {
         this.form = { ...res };
