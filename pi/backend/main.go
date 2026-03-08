@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/pocketbase/pocketbase"
@@ -31,7 +32,7 @@ func main() {
 		}
 		gwState.RestartPipeline(app)
 
-		// Device provisioning (LoRaWAN OTAA): create device + AppKey, get credentials
+		// Device provisioning (LoRaWAN OTAA): create device + AppKey, get credentials. List devices via SDK → /api/collections/devices/records.
 		se.Router.POST("/api/devices", provisionDeviceHandler(app))
 		se.Router.DELETE("/api/devices", deleteDeviceHandler(app))
 		se.Router.GET("/api/devices/credentials", deviceCredentialsHandler(app))
@@ -49,8 +50,11 @@ func main() {
 		se.Router.POST("/api/otaStart", otaStartHandler(app))
 		se.Router.POST("/api/otaCancel", otaCancelHandler(app))
 
-		// Serve static files (Angular SPA): index fallback so client-side routes (e.g. /devices, /settings) work
-		se.Router.GET("/{path...}", apis.Static(os.DirFS("./pb_public"), true))
+		// SPA under /app/ so /api is never matched by static; SDK collection requests reach PocketBase API.
+		se.Router.GET("/", func(e *core.RequestEvent) error {
+			return e.Redirect(http.StatusFound, "/app/")
+		})
+		se.Router.GET("/app/{path...}", apis.Static(os.DirFS("./pb_public"), true))
 
 		return se.Next()
 	})

@@ -139,6 +139,7 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error 
 				}
 				log.Printf("concentratord SUB recv: %v (reconnecting)", err)
 				_ = sub.Close()
+				c.closeReq() // align REQ lifecycle: next command will use a fresh socket
 				break
 			}
 			if frame := parseUplinkEvent(msg); frame != nil {
