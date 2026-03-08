@@ -18,6 +18,8 @@ import (
 	"github.com/kisinga/farmon/pi/internal/lorawan"
 )
 
+const gatewayIDDiscoverTimeout = 5 * time.Second
+
 // rate-limit "no app_key" log spam (same device every 5 min)
 var (
 	appKeyErrLastLog   = map[string]time.Time{}
@@ -57,6 +59,17 @@ func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.
 	client := concentratord.NewClient(cfg.EventURL, cfg.CommandURL)
 	if !client.Enabled() {
 		return
+	}
+	if cfg.GatewayID == "" {
+		discoverCtx, cancel := context.WithTimeout(ctx, gatewayIDDiscoverTimeout)
+		id, err := client.GetGatewayID(discoverCtx)
+		cancel()
+		if err != nil {
+			log.Printf("concentratord: gateway_id discovery: %v (continuing without)", err)
+		} else if id != "" {
+			cfg.GatewayID = id
+			log.Printf("concentratord: gateway_id discovered: %s", id)
+		}
 	}
 	if cfg.GatewayID == "" {
 		log.Printf("concentratord: gateway_id unset — gateway-status and UI will show 'no gateway online'")

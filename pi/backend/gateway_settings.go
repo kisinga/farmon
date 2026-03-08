@@ -94,13 +94,18 @@ func configToResponse(c gateway.Config, saved bool) gatewaySettingsResponse {
 	}
 }
 
-func getGatewaySettingsHandler(app core.App) func(*core.RequestEvent) error {
+func getGatewaySettingsHandler(app core.App, inMemoryCfg *gateway.Config) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		cfg, saved := LoadGatewaySettings(app)
 		if !saved {
 			cfg = gateway.DefaultGatewayConfig()
 		}
-		return e.JSON(http.StatusOK, configToResponse(cfg, saved))
+		resp := configToResponse(cfg, saved)
+		// Autofill gateway_id in UI from discovered value when not persisted (DB empty, in-memory set).
+		if resp.GatewayID == "" && inMemoryCfg != nil && inMemoryCfg.GatewayID != "" {
+			resp.GatewayID = inMemoryCfg.GatewayID
+		}
+		return e.JSON(http.StatusOK, resp)
 	}
 }
 

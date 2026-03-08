@@ -47,7 +47,7 @@ Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), a
 - `GET /api/devices/credentials?eui=...` — get credentials for firmware.
 - `POST /api/setControl` — enqueue downlink (body: `eui`, `control`, `state`, `duration?`). Requires Concentratord configured.
 - `GET /api/gateway-settings` — get gateway settings (or defaults when none saved). `PATCH /api/gateway-settings` — save settings and start/restart pipeline.
-- `GET /api/gateway-status` — list gateways (gateway_id from settings when set).
+- `GET /api/gateway-status` — list gateways (gateway_id from settings or auto-discovered from concentratord).
 - `GET /api/history?eui=...&field=...&from=...&to=...&limit=500` — telemetry history.
 - `POST /api/otaStart`, `POST /api/otaCancel` — OTA (eui in body).
 

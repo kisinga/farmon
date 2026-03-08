@@ -36,7 +36,7 @@ func main() {
 		se.Router.DELETE("/api/devices", deleteDeviceHandler(app))
 		se.Router.GET("/api/devices/credentials", deviceCredentialsHandler(app))
 		// Gateway settings (DB only; gate on valid settings)
-		se.Router.GET("/api/gateway-settings", getGatewaySettingsHandler(app))
+		se.Router.GET("/api/gateway-settings", getGatewaySettingsHandler(app, &gwCfg))
 		se.Router.PATCH("/api/gateway-settings", patchGatewaySettingsHandler(app, gwState))
 		// Custom app API (downlink / gateway)
 		se.Router.POST("/api/setControl", setControlHandler(app, &gwCfg))

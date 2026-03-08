@@ -97,9 +97,10 @@ const REGIONS = [
                 name="gateway_id"
                 type="text"
                 class="input input-bordered w-full font-mono text-sm"
-                placeholder="Optional"
+                placeholder="Autofilled when discovered"
                 [(ngModel)]="form.gateway_id"
               />
+              <p class="text-sm text-base-content/60 mt-1">Optional. Filled automatically from concentratord when the pipeline is running (display only until you save).</p>
             </div>
 
             <div class="form-control w-full max-w-xs">
