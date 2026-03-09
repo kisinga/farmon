@@ -25,14 +25,23 @@ func main() {
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Load gateway config from DB; start pipeline only if a valid record exists (event_url, command_url, region set)
-		if cfg, valid := loadGatewaySettings(app); valid {
+		cfg, valid := loadGatewaySettings(app)
+		if valid {
 			gwState.SetConfig(cfg)
 		} else {
-			// No record or incomplete: keep in-memory config invalid so pipeline does not start
+			// No valid config from DB: assume invalid so pipeline does not start unless we bootstrap
 			invalid := gateway.DefaultGatewayConfig()
 			invalid.EventURL = ""
 			invalid.CommandURL = ""
 			gwState.SetConfig(invalid)
+			// If no record at all, bootstrap default so pipeline starts on first deploy without user opening UI
+			rec, recErr := getGatewaySettingsRecord(app)
+			if recErr != nil || rec == nil {
+				_ = saveGatewaySettings(app, gateway.DefaultGatewayConfig())
+				if cfg2, valid2 := loadGatewaySettings(app); valid2 {
+					gwState.SetConfig(cfg2)
+				}
+			}
 		}
 		gwState.RestartPipeline(app)
 

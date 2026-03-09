@@ -35,6 +35,12 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
       </p>
     </header>
 
+    @if (pipelineError() || statsError()) {
+      <div class="alert alert-warning rounded-xl mb-6">
+        {{ pipelineError() || statsError() }}
+      </div>
+    }
+
     <!-- Stats: DaisyUI stats -->
     <div class="stats stats-vertical md:stats-horizontal w-full shadow-sm bg-base-100 rounded-2xl border border-base-200 mb-6">
       @if (pipeline(); as p) {
@@ -47,6 +53,9 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
               <span class="text-base-content/60">Not configured</span>
             }
           </div>
+          @if (!p.concentratord_configured) {
+            <div class="stat-desc text-base-content/60 text-sm">Save gateway settings below (event URL, command URL, region) to connect.</div>
+          }
           @if (p.gateway_id) {
             <div class="stat-desc font-mono text-xs">{{ p.gateway_id }}</div>
           }
@@ -203,7 +212,12 @@ export class LorawanMonitorComponent implements OnInit, OnDestroy {
         this.loading.set(false);
       },
       (err) => {
-        this.framesError.set(err?.message ?? 'Failed to load frames');
+        const msg = err?.message ?? 'Failed to load frames';
+        const actionable =
+          /Missing collection|404|Something went wrong/i.test(msg)
+            ? 'LoRaWAN frames collection is missing. Restart the backend so migrations run (pb_migrations), or check the server logs.'
+            : msg;
+        this.framesError.set(actionable);
         this.loading.set(false);
       }
     );

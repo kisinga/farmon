@@ -31,6 +31,11 @@ var (
 	unmarshalLogMu     sync.Mutex
 )
 
+// topicString normalizes the first ZMQ frame (event type) for comparison; trim trailing nulls and whitespace so we match "up"/"stats" even if concentratord sends "up\x00" or "up ".
+func topicString(frame []byte) string {
+	return strings.TrimSpace(strings.TrimRight(string(frame), "\x00"))
+}
+
 // parseUplinkEvent returns the UplinkFrame from a ZMQ message (topic+body or body only).
 // Supports both gw.Event (concentratord) and raw gw.UplinkFrame (e.g. gateway bridge).
 func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
@@ -39,7 +44,7 @@ func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
 		return nil
 	}
 	payload := frames[0]
-	if len(frames) >= 2 && string(frames[0]) == eventTypeUp {
+	if len(frames) >= 2 && topicString(frames[0]) == eventTypeUp {
 		payload = frames[1]
 	}
 	// Try Event first (concentratord sends Event{ event: UplinkFrame }).
@@ -72,7 +77,7 @@ func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
 // Supports Event{ event: GatewayStats } or raw gw.GatewayStats.
 func parseStatsEvent(msg zmq4.Msg) *gw.GatewayStats {
 	frames := msg.Frames
-	if len(frames) < 2 || string(frames[0]) != eventTypeStats {
+	if len(frames) < 2 || topicString(frames[0]) != eventTypeStats {
 		return nil
 	}
 	payload := frames[1]
@@ -176,7 +181,7 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame), onStat
 				break
 			}
 			if len(msg.Frames) >= 1 {
-				topic := string(msg.Frames[0])
+				topic := topicString(msg.Frames[0])
 				if topic == eventTypeUp {
 					if frame := parseUplinkEvent(msg); frame != nil {
 						onUplink(frame)
