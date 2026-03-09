@@ -6,8 +6,6 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-
-	"github.com/kisinga/farmon/pi/internal/gateway"
 )
 
 // controlNameToIndex maps control key to codec control_idx (fPort 20).
@@ -46,8 +44,12 @@ func BuildDirectControlPayload(controlIdx, stateIdx int, timeoutSec uint32) []by
 }
 
 // setControlHandler enqueues a downlink to set device control (e.g. pump on/off).
-func setControlHandler(app core.App, cfg *gateway.Config) func(*core.RequestEvent) error {
+func setControlHandler(app core.App, state *GatewayState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
+		cfg := state.Config()
+		if cfg == nil {
+			return e.JSON(http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "gateway not configured"})
+		}
 		var body struct {
 			Eui      string `json:"eui"`
 			Control  string `json:"control"`
@@ -76,37 +78,83 @@ func setControlHandler(app core.App, cfg *gateway.Config) func(*core.RequestEven
 	}
 }
 
-// gatewayStatusHandler returns gateway status for the UI. When gateway settings are valid, one gateway is reported online.
+// gatewayStatusHandler returns gateway status for the UI. Online is derived from runtime (last event from concentratord within threshold).
 // Includes discovered_gateway_id (in-memory gateway_id) so the settings page can prefill when not yet saved to DB.
-func gatewayStatusHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
+func gatewayStatusHandler(state *GatewayState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		gwID := cfg.GatewayID
-		if gwID == "" && cfg.Valid() {
-			gwID = "local"
+		cfg := state.Config()
+		runtime := state.Runtime()
+		online := false
+		var lastSeen interface{}
+		gwID := ""
+		discoveredID := ""
+		if cfg != nil {
+			gwID = cfg.GatewayID
+			discoveredID = cfg.GatewayID
+			if gwID == "" && cfg.Valid() {
+				gwID = "local"
+			}
+		}
+		if runtime != nil {
+			online = runtime.IsOnline()
+			lastEventAt, runtimeGwID, _ := runtime.Get()
+			if runtimeGwID != "" {
+				gwID = runtimeGwID
+				discoveredID = runtimeGwID
+			}
+			if !lastEventAt.IsZero() {
+				lastSeen = lastEventAt.Format("2006-01-02T15:04:05.000Z07:00")
+			}
 		}
 		resp := map[string]any{"gateways": []any{}}
-		if gwID != "" {
-			resp["gateways"] = []any{map[string]any{"id": gwID, "name": gwID, "online": true, "lastSeen": nil}}
+		if gwID != "" || online {
+			resp["gateways"] = []any{map[string]any{"id": gwID, "name": gwID, "online": online, "lastSeen": lastSeen}}
 		}
-		if cfg.GatewayID != "" {
-			resp["discovered_gateway_id"] = cfg.GatewayID
+		if discoveredID != "" {
+			resp["discovered_gateway_id"] = discoveredID
 		}
 		return e.JSON(http.StatusOK, resp)
 	}
 }
 
-// pipelineDebugHandler returns whether concentratord is configured (for debugging "no gateway online").
+// pipelineDebugHandler returns concentratord config and runtime state (for debugging "no gateway online").
 // GET /api/farmon/debug/pipeline — no auth required for local diagnostics.
-func pipelineDebugHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
+func pipelineDebugHandler(state *GatewayState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		return e.JSON(http.StatusOK, map[string]any{
-			"concentratord_configured": cfg.Valid(),
-			"gateway_id_set":          cfg.GatewayID != "",
-			"gateway_id":              cfg.GatewayID,
-			"event_url":               cfg.EventURL,
-			"command_url":             cfg.CommandURL,
-			"rx1_delay_sec":           cfg.RX1DelaySec,
-		})
+		cfg := state.Config()
+		runtime := state.Runtime()
+		resp := map[string]any{
+			"concentratord_configured": false,
+			"gateway_id_set":          false,
+			"gateway_id":              "",
+			"event_url":               "",
+			"command_url":             "",
+			"rx1_delay_sec":            0,
+			"online":                   false,
+			"last_event_at":            nil,
+			"sub_connected":            false,
+		}
+		if cfg != nil {
+			resp["concentratord_configured"] = cfg.Valid()
+			resp["gateway_id_set"] = cfg.GatewayID != ""
+			resp["gateway_id"] = cfg.GatewayID
+			resp["event_url"] = cfg.EventURL
+			resp["command_url"] = cfg.CommandURL
+			resp["rx1_delay_sec"] = cfg.RX1DelaySec
+		}
+		if runtime != nil {
+			resp["online"] = runtime.IsOnline()
+			lastEventAt, gatewayID, subConnected := runtime.Get()
+			if !lastEventAt.IsZero() {
+				resp["last_event_at"] = lastEventAt.Format("2006-01-02T15:04:05.000Z07:00")
+			}
+			resp["sub_connected"] = subConnected
+			if gatewayID != "" {
+				resp["gateway_id"] = gatewayID
+				resp["gateway_id_set"] = true
+			}
+		}
+		return e.JSON(http.StatusOK, resp)
 	}
 }
 
@@ -127,14 +175,19 @@ func lorawanFramesHandler() func(*core.RequestEvent) error {
 
 // lorawanStatsHandler returns frame buffer stats and pipeline status.
 // GET /api/farmon/lorawan/stats
-func lorawanStatsHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
+func lorawanStatsHandler(state *GatewayState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
+		cfg := state.Config()
 		stats := GetFrameStats()
+		configured := false
+		if cfg != nil {
+			configured = cfg.Valid()
+		}
 		return e.JSON(http.StatusOK, map[string]any{
 			"buffer_size":             stats.BufferSize,
 			"total_uplinks":           stats.TotalUplinks,
 			"total_downlinks":         stats.TotalDownlinks,
-			"concentratord_configured": cfg.Valid(),
+			"concentratord_configured": configured,
 		})
 	}
 }

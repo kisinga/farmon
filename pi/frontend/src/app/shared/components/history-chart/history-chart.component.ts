@@ -1,6 +1,7 @@
 import { Component, input, signal, effect, inject } from '@angular/core';
-import { ApiService } from '../../../core/services/api.service';
+import type { Subscription } from 'rxjs';
 import { ChartContainerComponent } from '../chart-container/chart-container.component';
+import { TelemetryHistoryService } from '../../../core/services/telemetry-history.service';
 
 @Component({
   selector: 'app-history-chart',
@@ -21,7 +22,7 @@ import { ChartContainerComponent } from '../chart-container/chart-container.comp
   `,
 })
 export class HistoryChartComponent {
-  private api = inject(ApiService);
+  private readonly telemetryHistory = inject(TelemetryHistoryService);
 
   eui = input.required<string>();
   field = input.required<string>();
@@ -33,7 +34,7 @@ export class HistoryChartComponent {
   error = signal<string | null>(null);
 
   constructor() {
-    effect(() => {
+    effect((onCleanup) => {
       const eui = this.eui();
       const fieldName = this.field();
       const from = this.from();
@@ -41,21 +42,25 @@ export class HistoryChartComponent {
       if (!eui || !fieldName) {
         this.series.set([]);
         this.loading.set(false);
+        this.error.set(null);
         return;
       }
       this.loading.set(true);
       this.error.set(null);
-      this.api.getHistory(eui, fieldName, from || undefined, to || undefined).subscribe({
-        next: (res) => {
-          this.series.set([{ name: fieldName, data: res?.data ?? [] }]);
-          this.loading.set(false);
-        },
-        error: (err) => {
-          this.error.set(err?.message ?? 'Failed to load history');
-          this.series.set([]);
-          this.loading.set(false);
-        },
-      });
+      const sub: Subscription = this.telemetryHistory
+        .getHistorySeriesLive(eui, fieldName, from, to)
+        .subscribe({
+          next: (nextSeries) => {
+            this.series.set(nextSeries);
+            this.loading.set(false);
+          },
+          error: (err) => {
+            this.error.set(err?.message ?? 'Failed to load history');
+            this.series.set([]);
+            this.loading.set(false);
+          },
+        });
+      onCleanup(() => sub.unsubscribe());
     });
   }
 }

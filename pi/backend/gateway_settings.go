@@ -102,11 +102,26 @@ func configToRecord(rec *core.Record, cfg gateway.Config) {
 	rec.Set("rx1_frequency_hz", cfg.RX1FrequencyHz)
 }
 
-// GatewayState holds mutable gateway config and pipeline cancel. Concentratord is always external; we only connect via ZMQ.
+// GatewayState holds mutable gateway config, runtime state, and pipeline cancel. Concentratord is always external; we only connect via ZMQ.
 type GatewayState struct {
-	cfg    *gateway.Config
-	cancel context.CancelFunc
-	mu     sync.Mutex
+	cfg     *gateway.Config
+	runtime *GatewayRuntimeState
+	cancel  context.CancelFunc
+	mu      sync.RWMutex
+}
+
+// Config returns the current gateway config (for handlers). May be nil.
+func (s *GatewayState) Config() *gateway.Config {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg
+}
+
+// Runtime returns the gateway runtime state (for handlers). May be nil.
+func (s *GatewayState) Runtime() *GatewayRuntimeState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.runtime
 }
 
 // SetConfig updates the in-memory config (e.g. after loading from DB or PATCH).
@@ -136,7 +151,7 @@ func (s *GatewayState) RestartPipeline(app core.App) {
 	s.mu.Lock()
 	s.cancel = cancel
 	s.mu.Unlock()
-	startConcentratordPipeline(ctx, app, s.cfg)
+	startConcentratordPipeline(ctx, app, s.cfg, s.runtime)
 }
 
 // pipelineRestartHandler loads gateway_settings from DB, applies to runtime, and restarts the pipeline.

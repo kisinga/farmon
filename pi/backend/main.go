@@ -15,7 +15,8 @@ import (
 func main() {
 	app := pocketbase.New()
 	gwCfg := gateway.DefaultGatewayConfig()
-	gwState := &GatewayState{cfg: &gwCfg}
+	gwRuntime := &GatewayRuntimeState{}
+	gwState := &GatewayState{cfg: &gwCfg, runtime: gwRuntime}
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Load gateway config from DB; start pipeline only if a valid record exists (event_url, command_url, region set)
@@ -35,12 +36,12 @@ func main() {
 		se.Router.POST("/api/farmon/devices", provisionDeviceHandler(app))
 		se.Router.DELETE("/api/farmon/devices", deleteDeviceHandler(app))
 		se.Router.POST("/api/farmon/pipeline/restart", pipelineRestartHandler(app, gwState))
-		se.Router.POST("/api/farmon/setControl", setControlHandler(app, &gwCfg))
-		se.Router.GET("/api/farmon/gateway-status", gatewayStatusHandler(&gwCfg))
-		se.Router.GET("/api/farmon/debug/pipeline", pipelineDebugHandler(&gwCfg))
+		se.Router.POST("/api/farmon/setControl", setControlHandler(app, gwState))
+		se.Router.GET("/api/farmon/gateway-status", gatewayStatusHandler(gwState))
+		se.Router.GET("/api/farmon/debug/pipeline", pipelineDebugHandler(gwState))
 		se.Router.GET("/api/farmon/lorawan/frames", lorawanFramesHandler())
 		se.Router.POST("/api/farmon/lorawan/frames/clear", lorawanClearFramesHandler())
-		se.Router.GET("/api/farmon/lorawan/stats", lorawanStatsHandler(&gwCfg))
+		se.Router.GET("/api/farmon/lorawan/stats", lorawanStatsHandler(gwState))
 		se.Router.POST("/api/farmon/ota/start", otaStartHandler(app))
 		se.Router.POST("/api/farmon/ota/cancel", otaCancelHandler(app))
 

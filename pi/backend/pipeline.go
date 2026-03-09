@@ -49,11 +49,15 @@ func shouldLogAppKeyErr(errMsg string) bool {
 
 // startConcentratordPipeline starts the concentratord subscriber and runs the uplink pipeline
 // (LoRaWAN → codec → store). If settings are not valid (event_url, command_url, region), it returns without starting.
-func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.Config) {
+// runtime is updated on every up/stats (UpdateLastSeen) and on gateway_id discovery (SetGatewayID).
+func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.Config, runtime *GatewayRuntimeState) {
 	log.Printf("concentratord: event_url=%v command_url=%v gateway_id=%v region=%s rx1_delay=%ds", cfg.EventURL != "", cfg.CommandURL != "", cfg.GatewayID != "", cfg.Region, cfg.RX1DelaySec)
 	if !cfg.Valid() {
 		log.Printf("concentratord: not configured (save gateway settings in UI with event_url, command_url, region); no uplinks will be received")
 		return
+	}
+	if runtime == nil {
+		runtime = &GatewayRuntimeState{}
 	}
 	store := newPocketbaseLorawanStore(app)
 	client := concentratord.NewClient(cfg.EventURL, cfg.CommandURL)
@@ -68,11 +72,15 @@ func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.
 			log.Printf("concentratord: gateway_id discovery: %v (continuing without)", err)
 		} else if id != "" {
 			cfg.GatewayID = id
+			runtime.SetGatewayID(id)
 			log.Printf("concentratord: gateway_id discovered: %s", id)
 		}
 	}
+	if cfg.GatewayID != "" {
+		runtime.SetGatewayID(cfg.GatewayID)
+	}
 	if cfg.GatewayID == "" {
-		log.Printf("concentratord: gateway_id unset — gateway-status and UI will show 'no gateway online'")
+		log.Printf("concentratord: gateway_id unset — gateway-status and UI will show 'no gateway online' until uplinks or stats are received")
 	}
 	// Push channel config for region (optional; concentratord normally uses file-based config).
 	if gwc := gateway.GatewayConfigForRegion(cfg.Region, cfg.GatewayID); gwc != nil {
@@ -82,7 +90,11 @@ func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.
 	}
 	go func() {
 		err := client.Run(ctx, func(frame *gw.UplinkFrame) {
+			runtime.UpdateLastSeen()
 			handleConcentratordUplink(app, frame, store, client, cfg)
+		}, func(stats *gw.GatewayStats) {
+			_ = stats // unused for now; last_seen is enough for online status
+			runtime.UpdateLastSeen()
 		})
 		if err != nil && ctx.Err() == nil {
 			log.Printf("concentratord Run: %v", err)

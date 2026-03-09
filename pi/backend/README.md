@@ -49,8 +49,8 @@ Custom routes live under **`/api/farmon/`** (PocketBase SDK handles collections:
 - `DELETE /api/farmon/devices?eui=...` — delete device and its LoRaWAN session.
 - `POST /api/farmon/pipeline/restart` — reload gateway_settings from DB and restart concentratord pipeline (call after saving gateway_settings via SDK).
 - `POST /api/farmon/setControl` — enqueue downlink (body: `eui`, `control`, `state`, `duration?`). Requires Concentratord configured.
-- `GET /api/farmon/gateway-status` — list gateways and optional `discovered_gateway_id` for the settings form.
-- `GET /api/farmon/debug/pipeline` — concentratord debug info.
+- `GET /api/farmon/gateway-status` — list gateways with `online` (from last concentratord event within 2 min), `lastSeen`, and optional `discovered_gateway_id` for the settings form.
+- `GET /api/farmon/debug/pipeline` — concentratord config and runtime state (online, last_event_at, sub_connected).
 - `GET /api/farmon/lorawan/frames?limit=...`, `POST /api/farmon/lorawan/frames/clear`, `GET /api/farmon/lorawan/stats` — frame buffer.
 - `POST /api/farmon/ota/start`, `POST /api/farmon/ota/cancel` — OTA (eui in body).
 
@@ -66,9 +66,13 @@ On the Pi with the SX1302 HAT:
 
 See `docs/concentratord-api.md` for the ZMQ API.
 
+## Gateway online status
+
+The UI shows the gateway as **online** when the backend has received at least one event (uplink or stats) from concentratord within the last 2 minutes. The backend subscribes to both `up` (uplinks) and `stats` (periodic gateway stats) on the concentratord ZMQ PUB socket; either type of event updates the "last seen" time. Until the first event is received after connecting, the gateway is shown as offline even if the pipeline is running.
+
 ## Troubleshooting: no uplinks / join requests
 
-The UI shows gateway status as connected when valid gateway settings are saved and the backend has connected to concentratord. If you see no frames and logs like:
+The UI shows gateway status as **online** only when events are being received (see above). If you see "Gateway offline" or no frames and logs like:
 
 ```text
 concentratord SUB dial: ... connect: no such file or directory (retry in 5s)
@@ -127,4 +131,4 @@ Concentratord publishes events on a **PUB** socket. The backend subscribes with 
 | uplink  | `"up"`    | Protobuf (`Event` with `uplink_frame` or raw `UplinkFrame`) |
 | stats   | `"stats"` | `GatewayStats` (Protobuf)                              |
 
-Subscribe to `"up"` (and optionally `"stats"`) by setting the SUB socket option before receiving.
+The backend subscribes to both `"up"` and `"stats"`; receiving either type updates the gateway "last seen" time used for online status.

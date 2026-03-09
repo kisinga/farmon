@@ -21,6 +21,7 @@ import (
 
 const (
 	eventTypeUp       = "up"
+	eventTypeStats    = "stats"
 	dialRetryEvery    = 5 * time.Second
 	unmarshalLogEvery = 5 * time.Minute
 )
@@ -67,6 +68,27 @@ func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
 	return nil
 }
 
+// parseStatsEvent returns the GatewayStats from a ZMQ message (topic "stats", frame1 = Protobuf).
+// Supports Event{ event: GatewayStats } or raw gw.GatewayStats.
+func parseStatsEvent(msg zmq4.Msg) *gw.GatewayStats {
+	frames := msg.Frames
+	if len(frames) < 2 || string(frames[0]) != eventTypeStats {
+		return nil
+	}
+	payload := frames[1]
+	var stats gw.GatewayStats
+	if err := proto.Unmarshal(payload, &stats); err == nil {
+		return &stats
+	}
+	var ev gw.Event
+	if err := proto.Unmarshal(payload, &ev); err == nil {
+		if gs := ev.GetGatewayStats(); gs != nil {
+			return gs
+		}
+	}
+	return nil
+}
+
 // Client implements gateway.UplinkSource and gateway.DownlinkSender using
 // Concentratord ZMQ (SUB for events, REQ for commands).
 // Concentratord can be restarted; the REQ socket is recreated on connection errors (see isConnError).
@@ -95,10 +117,11 @@ func (c *Client) Enabled() bool {
 	return c.eventURL != "" && c.commandURL != ""
 }
 
-// Run implements gateway.UplinkSource. It subscribes to "up" events and calls onUplink for each.
+// Run implements gateway.UplinkSource. It subscribes to "up" and "stats" events.
+// onUplink is called for each uplink; onStats is called for each stats event (may be nil).
 // If the concentratord socket is not available (e.g. concentratord not running), it retries dial
 // every dialRetryEvery until context is cancelled.
-func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error {
+func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame), onStats func(*gw.GatewayStats)) error {
 	if !c.Enabled() {
 		return fmt.Errorf("concentratord: event or command URL not set")
 	}
@@ -120,7 +143,17 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error 
 			continue
 		}
 		if err := sub.SetOption(zmq4.OptionSubscribe, eventTypeUp); err != nil {
-			log.Printf("concentratord SUB subscribe: %v", err)
+			log.Printf("concentratord SUB subscribe up: %v", err)
+			_ = sub.Close()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(dialRetryEvery):
+			}
+			continue
+		}
+		if err := sub.SetOption(zmq4.OptionSubscribe, eventTypeStats); err != nil {
+			log.Printf("concentratord SUB subscribe stats: %v", err)
 			_ = sub.Close()
 			select {
 			case <-ctx.Done():
@@ -142,8 +175,17 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame)) error 
 				c.closeReq() // align REQ lifecycle: next command will use a fresh socket
 				break
 			}
-			if frame := parseUplinkEvent(msg); frame != nil {
-				onUplink(frame)
+			if len(msg.Frames) >= 1 {
+				topic := string(msg.Frames[0])
+				if topic == eventTypeUp {
+					if frame := parseUplinkEvent(msg); frame != nil {
+						onUplink(frame)
+					}
+				} else if topic == eventTypeStats && onStats != nil {
+					if stats := parseStatsEvent(msg); stats != nil {
+						onStats(stats)
+					}
+				}
 			}
 		}
 	}
