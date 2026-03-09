@@ -14,7 +14,7 @@ import (
 
 // --- Gateway settings DB load/save (single-record gateway_settings collection) ---
 // Frontend reads/writes gateway_settings via SDK; backend loads at serve and on POST /api/farmon/pipeline/restart (reload + restart).
-// We always use sort "-created" and limit 1 so "latest" is unambiguous (single logical record = newest by created).
+// We use sort "-@rowid" and limit 1 so we get one record (gateway_settings has no "created" field in schema).
 
 // ConfigStatus describes why the pipeline is or isn't configured; used by the debug API and logging.
 const (
@@ -48,7 +48,7 @@ func loadGatewaySettings(app core.App) (gateway.Config, bool) {
 
 // loadGatewaySettingsWithStatus returns config, valid, and a status string for the debug API.
 func loadGatewaySettingsWithStatus(app core.App) (gateway.Config, bool, string) {
-	records, err := app.FindRecordsByFilter("gateway_settings", "", "-created", 1, 0, nil)
+	records, err := app.FindRecordsByFilter("gateway_settings", "", "-@rowid", 1, 0, nil)
 	recordFound := err == nil && len(records) > 0
 	var cfg gateway.Config
 	if !recordFound {
@@ -89,8 +89,8 @@ func saveGatewaySettings(app core.App, cfg gateway.Config) error {
 }
 
 func getGatewaySettingsRecord(app core.App) (*core.Record, error) {
-	// Use -created so we get the newest record
-	records, err := app.FindRecordsByFilter("gateway_settings", "", "-created", 1, 0, nil)
+	// Use -@rowid so we get one record (schema has no "created" field)
+	records, err := app.FindRecordsByFilter("gateway_settings", "", "-@rowid", 1, 0, nil)
 	if err != nil || len(records) == 0 {
 		return nil, err
 	}

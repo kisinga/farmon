@@ -197,7 +197,7 @@ func lorawanFramesHandler(app core.App) func(*core.RequestEvent) error {
 			log.Printf("lorawan/frames: collection missing: %v", err)
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": "lorawan_frames collection not found; ensure backend migrations have run"})
 		}
-		records, err := app.FindRecordsByFilter(lorawanFramesCollectionName, "", "-created", limit, 0, nil)
+		records, err := app.FindRecordsByFilter(lorawanFramesCollectionName, "", "-time", limit, 0, nil)
 		if err != nil {
 			log.Printf("lorawan/frames: list error: %v", err)
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to list frames: " + err.Error()})

@@ -94,9 +94,9 @@ func WriteFrame(app core.App, f RawFrame) error {
 }
 
 // trimLorawanFramesIfNeeded deletes oldest records when count exceeds maxFrames. Lazy, no transaction.
-// Fetches oldest first (sort "created" asc); if more than maxFrames, deletes the excess.
+// Fetches oldest first (sort "time" asc); if more than maxFrames, deletes the excess.
 func trimLorawanFramesIfNeeded(app core.App) {
-	records, err := app.FindRecordsByFilter("lorawan_frames", "", "created", maxFrames+200, 0, nil)
+	records, err := app.FindRecordsByFilter("lorawan_frames", "", "time", maxFrames+200, 0, nil)
 	if err != nil || len(records) <= maxFrames {
 		return
 	}
@@ -171,7 +171,7 @@ func GetFrameStatsFromDB(app core.App) FrameStats {
 	if app == nil {
 		return FrameStats{}
 	}
-	records, err := app.FindRecordsByFilter("lorawan_frames", "", "-created", maxFrames*2, 0, nil)
+	records, err := app.FindRecordsByFilter("lorawan_frames", "", "-time", maxFrames*2, 0, nil)
 	if err != nil {
 		return FrameStats{}
 	}
