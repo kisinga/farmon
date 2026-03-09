@@ -8,12 +8,17 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/plugins/jsvm"
+	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
 	"github.com/kisinga/farmon/pi/internal/gateway"
 )
 
 func main() {
 	app := pocketbase.New()
+	// JSVM + migratecmd with TemplateLangJS: pb_migrations/*.js run automatically on serve (see https://pocketbase.io/docs/js-migrations/).
+	jsvm.MustRegister(app, jsvm.Config{})
+	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{TemplateLang: migratecmd.TemplateLangJS})
 	gwCfg := gateway.DefaultGatewayConfig()
 	gwRuntime := &GatewayRuntimeState{}
 	gwState := &GatewayState{cfg: &gwCfg, runtime: gwRuntime}

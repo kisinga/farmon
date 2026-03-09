@@ -6,6 +6,11 @@
 
 migrate((app) => {
   const empty = ""
+  // Idempotent: if schema already exists (e.g. from prebuilt binary or Admin UI), skip.
+  try {
+    app.findCollectionByNameOrId("devices")
+    return
+  } catch (_) {}
 
   // 1. devices — unique index on device_eui (same idea as gateway_id)
   const devicesColl = new Collection({
