@@ -126,6 +126,24 @@ func RecordUplink(app core.App, devEUI string, fPort uint8, kind string, payload
 	_ = WriteFrame(app, f)
 }
 
+// RecordUplinkDecodeFailed persists a raw uplink when ProcessUplink fails (unknown device, MIC error, etc.) so frames appear in the monitor.
+func RecordUplinkDecodeFailed(app core.App, phyRaw []byte, rssi *int, snr *float64, gatewayID, decodeError string) {
+	f := RawFrame{
+		Time:       time.Now().UTC().Format(time.RFC3339),
+		Direction:  "up",
+		DevEUI:     "",
+		FPort:      0,
+		Kind:       "decode_failed",
+		PayloadHex: hex.EncodeToString(phyRaw),
+		PhyLen:     len(phyRaw),
+		RSSI:       rssi,
+		SNR:        snr,
+		GatewayID:  gatewayID,
+		Error:      decodeError,
+	}
+	_ = WriteFrame(app, f)
+}
+
 // RecordDownlink adds a downlink to the lorawan_frames collection (call from EnqueueDownlink / pipeline). Pass app.
 func RecordDownlink(app core.App, devEUI string, fPort uint8, kind string, payload []byte, phyLen int, errMsg string) {
 	f := RawFrame{

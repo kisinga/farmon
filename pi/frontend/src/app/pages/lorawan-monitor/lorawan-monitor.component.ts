@@ -54,7 +54,7 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
             }
           </div>
           @if (!p.concentratord_configured) {
-            <div class="stat-desc text-base-content/60 text-sm">Save gateway settings below (event URL, command URL, region) to connect.</div>
+            <div class="stat-desc text-base-content/60 text-sm">{{ configStatusMessage(p.config_status) }}</div>
           }
           @if (p.gateway_id) {
             <div class="stat-desc font-mono text-xs">{{ p.gateway_id }}</div>
@@ -205,22 +205,18 @@ export class LorawanMonitorComponent implements OnInit, OnDestroy {
       },
     });
 
-    this.pb.collection('lorawan_frames').getList(1, 200, { sort: '-created' }).then(
-      (res) => {
-        const list = (res.items ?? []).map((r: Record<string, unknown>) => recordToFrame(r as Parameters<typeof recordToFrame>[0]));
+    this.api.getLorawanFrames(200).subscribe({
+      next: (list) => {
         this.frames.set(list);
+        this.framesError.set(null);
         this.loading.set(false);
       },
-      (err) => {
-        const msg = err?.message ?? 'Failed to load frames';
-        // Only show "collection missing" when the error clearly indicates that; otherwise show the real error
-        const actionable = /Missing collection context|collection context/i.test(msg)
-          ? 'LoRaWAN frames collection is missing. Restart the backend so migrations run (pb_migrations), or check the server logs.'
-          : msg;
-        this.framesError.set(actionable);
+      error: (err) => {
+        const msg = err?.error?.error ?? err?.message ?? 'Failed to load frames';
+        this.framesError.set(msg);
         this.loading.set(false);
-      }
-    );
+      },
+    });
 
     this.unsubscribeFramesPromise = this.pb.collection('lorawan_frames').subscribe('*', (e) => {
       if (e.action === 'create' && e.record) {
@@ -251,6 +247,22 @@ export class LorawanMonitorComponent implements OnInit, OnDestroy {
         this.gatewaySettings.set(null);
       },
     });
+  }
+
+  /** Human-readable message for pipeline config_status when not configured. */
+  configStatusMessage(status?: string): string {
+    switch (status) {
+      case 'missing_record':
+        return 'No gateway settings saved. Save event URL, command URL, and region below to connect.';
+      case 'empty_event_url':
+        return 'Save event URL (and command URL, region) below to connect.';
+      case 'empty_command_url':
+        return 'Save command URL (and event URL, region) below to connect.';
+      case 'empty_region':
+        return 'Set region (and event URL, command URL) below to connect.';
+      default:
+        return 'Save gateway settings below (event URL, command URL, region) to connect.';
+    }
   }
 
   onGatewaySaved(settings: GatewaySettings): void {

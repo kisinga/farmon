@@ -1,7 +1,9 @@
 package main
 
 import (
+	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -121,10 +123,11 @@ func gatewayStatusHandler(state *GatewayState) func(*core.RequestEvent) error {
 // Config is loaded from DB so the UI shows saved settings even if pipeline/restart failed; when DB has valid config but in-memory did not, we sync and restart the pipeline.
 func pipelineDebugHandler(app core.App, state *GatewayState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		cfg, valid := loadGatewaySettings(app)
+		cfg, valid, configStatus := loadGatewaySettingsWithStatus(app)
 		runtime := state.Runtime()
 		resp := map[string]any{
 			"concentratord_configured": false,
+			"config_status":           configStatus,
 			"gateway_id_set":          false,
 			"gateway_id":              cfg.GatewayID,
 			"event_url":               cfg.EventURL,
@@ -157,6 +160,102 @@ func pipelineDebugHandler(app core.App, state *GatewayState) func(*core.RequestE
 			}
 		}
 		return e.JSON(http.StatusOK, resp)
+	}
+}
+
+// gatewaySettingsEffectiveHandler returns the in-memory config the pipeline uses (for comparing DB vs runtime).
+// GET /api/farmon/gateway-settings/effective
+func gatewaySettingsEffectiveHandler(state *GatewayState) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		cfg := state.Config()
+		if cfg == nil {
+			return e.JSON(http.StatusOK, map[string]any{"configured": false, "event_url": "", "command_url": "", "region": "", "gateway_id": ""})
+		}
+		return e.JSON(http.StatusOK, map[string]any{
+			"configured":   cfg.Valid(),
+			"event_url":    cfg.EventURL,
+			"command_url":  cfg.CommandURL,
+			"region":       cfg.Region,
+			"gateway_id":   cfg.GatewayID,
+			"rx1_delay":    cfg.RX1DelaySec,
+			"rx1_freq_hz":  cfg.RX1FrequencyHz,
+		})
+	}
+}
+
+// lorawanFramesHandler returns the most recent LoRaWAN frames from the DB for the monitor UI.
+// GET /api/farmon/lorawan/frames?limit=200
+func lorawanFramesHandler(app core.App) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		limit := 200
+		if s := e.Request.URL.Query().Get("limit"); s != "" {
+			if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 500 {
+				limit = n
+			}
+		}
+		if _, err := app.FindCollectionByNameOrId(lorawanFramesCollectionName); err != nil {
+			log.Printf("lorawan/frames: collection missing: %v", err)
+			return e.JSON(http.StatusInternalServerError, map[string]any{"error": "lorawan_frames collection not found; ensure backend migrations have run"})
+		}
+		records, err := app.FindRecordsByFilter(lorawanFramesCollectionName, "", "-created", limit, 0, nil)
+		if err != nil {
+			log.Printf("lorawan/frames: list error: %v", err)
+			return e.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to list frames: " + err.Error()})
+		}
+		items := make([]map[string]any, 0, len(records))
+		for _, rec := range records {
+			items = append(items, recordToFrameMap(rec))
+		}
+		return e.JSON(http.StatusOK, items)
+	}
+}
+
+func recordToFrameMap(rec *core.Record) map[string]any {
+	getStr := func(k string) string { v := rec.Get(k); s, _ := v.(string); return s }
+	getInt := func(k string) int {
+		v := rec.Get(k)
+		if v == nil {
+			return 0
+		}
+		switch n := v.(type) {
+		case float64:
+			return int(n)
+		case int:
+			return n
+		case int64:
+			return int(n)
+		default:
+			return 0
+		}
+	}
+	getFloat := func(k string) float64 {
+		v := rec.Get(k)
+		if v == nil {
+			return 0
+		}
+		switch n := v.(type) {
+		case float64:
+			return n
+		case int:
+			return float64(n)
+		case int64:
+			return float64(n)
+		default:
+			return 0
+		}
+	}
+	return map[string]any{
+		"time":        getStr("time"),
+		"direction":   getStr("direction"),
+		"dev_eui":     getStr("dev_eui"),
+		"f_port":      getInt("f_port"),
+		"kind":        getStr("kind"),
+		"payload_hex": getStr("payload_hex"),
+		"phy_len":     getInt("phy_len"),
+		"rssi":        getInt("rssi"),
+		"snr":         getFloat("snr"),
+		"gateway_id":  getStr("gateway_id"),
+		"error":       getStr("error"),
 	}
 }
 

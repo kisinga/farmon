@@ -51,11 +51,12 @@ func shouldLogAppKeyErr(errMsg string) bool {
 // (LoRaWAN → codec → store). If settings are not valid (event_url, command_url, region), it returns without starting.
 // runtime is updated on every up/stats (UpdateLastSeen) and on gateway_id discovery (SetGatewayID).
 func startConcentratordPipeline(ctx context.Context, app core.App, cfg *gateway.Config, runtime *GatewayRuntimeState) {
-	log.Printf("concentratord: event_url=%v command_url=%v gateway_id=%v region=%s rx1_delay=%ds", cfg.EventURL != "", cfg.CommandURL != "", cfg.GatewayID != "", cfg.Region, cfg.RX1DelaySec)
 	if !cfg.Valid() {
-		log.Printf("concentratord: not configured (save gateway settings in UI with event_url, command_url, region); no uplinks will be received")
+		status := configStatus(*cfg, true)
+		log.Printf("concentratord: pipeline skipped (config invalid, status=%s); save gateway settings in UI to connect", status)
 		return
 	}
+	log.Printf("concentratord: pipeline starting event_url=%v command_url=%v region=%s", cfg.EventURL != "", cfg.CommandURL != "", cfg.Region)
 	if runtime == nil {
 		runtime = &GatewayRuntimeState{}
 	}
@@ -109,18 +110,6 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		log.Printf("uplink: ignored (empty phy payload)")
 		return
 	}
-	opts := &lorawan.ProcessUplinkOptions{RXDelay: uint8(cfg.RX1DelaySec)}
-	if opts.RXDelay < 1 || opts.RXDelay > 15 {
-		opts.RXDelay = 1
-	}
-	result, err := lorawan.ProcessUplink(phyRaw, store, store, opts)
-	if err != nil {
-		errMsg := err.Error()
-		if shouldLogAppKeyErr(errMsg) {
-			log.Printf("uplink: lorawan error: %v", err)
-		}
-		return
-	}
 	var gwID string
 	var rssi *int
 	var snr *float64
@@ -130,6 +119,20 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		rssi = &r
 		s := float64(rx.GetSnr())
 		snr = &s
+	}
+	log.Printf("uplink: received phy_len=%d rssi=%v snr=%v", len(phyRaw), rssi, snr)
+	opts := &lorawan.ProcessUplinkOptions{RXDelay: uint8(cfg.RX1DelaySec)}
+	if opts.RXDelay < 1 || opts.RXDelay > 15 {
+		opts.RXDelay = 1
+	}
+	result, err := lorawan.ProcessUplink(phyRaw, store, store, opts)
+	if err != nil {
+		errMsg := err.Error()
+		if shouldLogAppKeyErr(errMsg) {
+			log.Printf("uplink: lorawan error: %v (persisting raw frame)", err)
+		}
+		RecordUplinkDecodeFailed(app, phyRaw, rssi, snr, gwID, errMsg)
+		return
 	}
 	if len(result.JoinAcceptPHY) > 0 {
 		RecordUplink(app, "", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
@@ -146,10 +149,10 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 				ackStatus = s
 			}
 			freqHz := uint32(0)
-		if len(df.GetItems()) > 0 && df.GetItems()[0].GetTxInfo() != nil {
-			freqHz = df.GetItems()[0].GetTxInfo().GetFrequency()
-		}
-		log.Printf("uplink: join → JoinAccept sent (RX1 %ds, freq=%d Hz) → gateway ack: %s", cfg.RX1DelaySec, freqHz, ackStatus)
+			if len(df.GetItems()) > 0 && df.GetItems()[0].GetTxInfo() != nil {
+				freqHz = df.GetItems()[0].GetTxInfo().GetFrequency()
+			}
+			log.Printf("uplink: join → JoinAccept sent (RX1 %ds, freq=%d Hz) → gateway ack: %s", cfg.RX1DelaySec, freqHz, ackStatus)
 		}
 		RecordDownlink(app, "", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), ackStatus)
 		return

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -13,15 +14,62 @@ import (
 
 // --- Gateway settings DB load/save (single-record gateway_settings collection) ---
 // Frontend reads/writes gateway_settings via SDK; backend loads at serve and on POST /api/farmon/pipeline/restart (reload + restart).
+// We always use sort "-created" and limit 1 so "latest" is unambiguous (single logical record = newest by created).
+
+// ConfigStatus describes why the pipeline is or isn't configured; used by the debug API and logging.
+const (
+	ConfigStatusValid            = "valid"
+	ConfigStatusMissingRecord    = "missing_record"
+	ConfigStatusEmptyEventURL     = "empty_event_url"
+	ConfigStatusEmptyCommandURL  = "empty_command_url"
+	ConfigStatusEmptyRegion      = "empty_region"
+)
+
+func configStatus(cfg gateway.Config, recordFound bool) string {
+	if !recordFound {
+		return ConfigStatusMissingRecord
+	}
+	if strings.TrimSpace(cfg.EventURL) == "" {
+		return ConfigStatusEmptyEventURL
+	}
+	if strings.TrimSpace(cfg.CommandURL) == "" {
+		return ConfigStatusEmptyCommandURL
+	}
+	if strings.TrimSpace(cfg.Region) == "" {
+		return ConfigStatusEmptyRegion
+	}
+	return ConfigStatusValid
+}
 
 func loadGatewaySettings(app core.App) (gateway.Config, bool) {
-	// Use -created so we get the newest record (the one the user just saved), not the oldest
+	cfg, valid, _ := loadGatewaySettingsWithStatus(app)
+	return cfg, valid
+}
+
+// loadGatewaySettingsWithStatus returns config, valid, and a status string for the debug API.
+func loadGatewaySettingsWithStatus(app core.App) (gateway.Config, bool, string) {
 	records, err := app.FindRecordsByFilter("gateway_settings", "", "-created", 1, 0, nil)
-	if err != nil || len(records) == 0 {
-		return gateway.DefaultGatewayConfig(), false
+	recordFound := err == nil && len(records) > 0
+	var cfg gateway.Config
+	if !recordFound {
+		cfg = gateway.DefaultGatewayConfig()
+		status := configStatus(cfg, false)
+		log.Printf("gateway_settings: no record found, status=%s", status)
+		return cfg, false, status
 	}
-	cfg := recordToGatewayConfig(records[0])
-	return cfg, cfg.Valid()
+	cfg = recordToGatewayConfig(records[0])
+	valid := cfg.Valid()
+	status := configStatus(cfg, true)
+	eventSet := "empty"
+	if strings.TrimSpace(cfg.EventURL) != "" {
+		eventSet = "set"
+	}
+	cmdSet := "empty"
+	if strings.TrimSpace(cfg.CommandURL) != "" {
+		cmdSet = "set"
+	}
+	log.Printf("gateway_settings: valid=%t status=%s event_url=%s command_url=%s region=%s", valid, status, eventSet, cmdSet, cfg.Region)
+	return cfg, valid, status
 }
 
 func saveGatewaySettings(app core.App, cfg gateway.Config) error {
@@ -144,11 +192,15 @@ func (s *GatewayState) RestartPipeline(app core.App) {
 	}
 	s.mu.Unlock()
 	if s.cfg == nil {
+		log.Printf("RestartPipeline: skipping (no config)")
 		return
 	}
 	if !s.cfg.Valid() {
+		status := configStatus(*s.cfg, true)
+		log.Printf("RestartPipeline: skipping (config invalid, status=%s)", status)
 		return
 	}
+	log.Printf("RestartPipeline: config valid=true, starting pipeline")
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
 	s.cancel = cancel
@@ -160,7 +212,7 @@ func (s *GatewayState) RestartPipeline(app core.App) {
 // POST /api/farmon/pipeline/restart — no body. Called by frontend after saving gateway_settings via SDK.
 func pipelineRestartHandler(app core.App, state *GatewayState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		cfg, valid := loadGatewaySettings(app)
+		cfg, valid, _ := loadGatewaySettingsWithStatus(app)
 		if !valid {
 			invalid := gateway.DefaultGatewayConfig()
 			invalid.EventURL = ""

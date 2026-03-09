@@ -68,7 +68,11 @@ func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
 	}
 	unmarshalLogMu.Unlock()
 	if shouldLog {
-		log.Printf("concentratord event: payload is neither Event nor UplinkFrame (len=%d)", len(payload))
+		topic := ""
+		if len(frames) >= 1 {
+			topic = topicString(frames[0])
+		}
+		log.Printf("concentratord event: topic=%q payload_len=%d — payload is neither Event nor UplinkFrame", topic, len(payload))
 	}
 	return nil
 }
@@ -167,7 +171,12 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame), onStat
 			}
 			continue
 		}
-		log.Printf("concentratord SUB connected to %s", c.eventURL)
+		eventURL := c.eventURL
+		if len(eventURL) > 60 {
+			eventURL = eventURL[:57] + "..."
+		}
+		log.Printf("concentratord SUB connected to %s", eventURL)
+		uplinkCount := 0
 		for {
 			msg, err := sub.Recv()
 			if err != nil {
@@ -184,6 +193,10 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame), onStat
 				topic := topicString(msg.Frames[0])
 				if topic == eventTypeUp {
 					if frame := parseUplinkEvent(msg); frame != nil {
+						uplinkCount++
+						if uplinkCount%50 == 0 {
+							log.Printf("concentratord: received %d uplinks so far", uplinkCount)
+						}
 						onUplink(frame)
 					}
 				} else if topic == eventTypeStats && onStats != nil {

@@ -211,10 +211,15 @@ export class ApiService {
     return this.http.get<LorawanStats>(`${API}/lorawan/stats`);
   }
 
+  /** Raw LoRaWAN frames (newest first). Uses backend API so errors are explicit. */
+  getLorawanFrames(limit = 200): Observable<RawLorawanFrame[]> {
+    return this.http.get<RawLorawanFrame[]>(`${API}/lorawan/frames`, { params: { limit: String(limit) } });
+  }
+
   /** Get gateway settings via SDK; merges discovered_gateway_id from gateway-status when no record. */
   getGatewaySettings(): Observable<GatewaySettings> {
     const fromDb = from(
-      this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1)
+      this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-created' })
     ).pipe(
       map((res) => {
         const r = res.items[0];
@@ -252,7 +257,7 @@ export class ApiService {
 
   /** Save gateway settings via SDK (config only; gateway_id is autodiscovered). Pipeline restart is handled server-side on save. */
   patchGatewaySettings(settings: Partial<GatewaySettings>): Observable<GatewaySettings> {
-    return from(this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1)).pipe(
+    return from(this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-created' })).pipe(
       switchMap((res) => {
         const existing = res.items[0];
         const body: Record<string, unknown> = {
@@ -307,6 +312,7 @@ interface TelemetryRecord {
 
 export interface PipelineDebug {
   concentratord_configured: boolean;
+  config_status: 'valid' | 'missing_record' | 'empty_event_url' | 'empty_command_url' | 'empty_region';
   gateway_id_set: boolean;
   gateway_id: string;
   event_url?: string;
