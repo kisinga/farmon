@@ -71,11 +71,11 @@ func (US915Profile) RX1Modulation() (bandwidth, spreadingFactor uint32, codeRate
 
 // ProfileForRegion returns the RegionProfile for the given region string (e.g. "EU868", "US915").
 // Unknown or empty region returns EU868Profile.
-// US915: SingleDownlinkChannel=true; gateway uses single uplink 903.9 MHz so device RX1 is always 923.3 MHz.
+// US915: SingleDownlinkChannel=false so we send RX1 freq 923.3 + (ch%8)*0.6 MHz per uplink; concentratord TXes at that freq.
 func ProfileForRegion(region string) RegionProfile {
 	switch region {
 	case "US915":
-		return US915Profile{SingleDownlinkChannel: true}
+		return US915Profile{SingleDownlinkChannel: false}
 	case "EU868":
 		return EU868Profile{}
 	default:
