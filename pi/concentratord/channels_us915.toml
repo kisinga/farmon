@@ -2,9 +2,10 @@
 # Install to /etc/chirpstack-concentratord/ and run:
 #   chirpstack-concentratord-sx1302 -c /etc/chirpstack-concentratord/concentratord.toml -c /etc/chirpstack-concentratord/channels_us915.toml
 #
-# CRITICAL: lora_std must be 923.3 MHz so Class A downlink (JoinAccept) is transmitted
-# where the device listens for RX1. If lora_std is in the uplink band (902–915 MHz),
-# the device never receives the JoinAccept.
+# lora_std is set to 904.6 MHz (uplink band) so all 9 channels fit in the two radios at startup;
+# otherwise concentratord fails with "the channels do not fit within the bandwidth of the two radios".
+# The actual Class A downlink frequency (923.3 MHz or 923.3 + offset) is taken from the downlink
+# frame (TxInfo.Frequency) sent by the backend; the gateway TXes at that frequency at runtime.
 
 [gateway.concentrator]
 # 8 uplink channels (required by concentratord for US915). Backend sends per-uplink RX1 freq so JoinAccept matches device.
@@ -19,8 +20,8 @@ multi_sf_channels = [
   905300000,
 ]
 
-# Single downlink channel for Class A RX1. Must be 923–927.5 MHz for US915.
+# LoRa std channel: frequency in uplink band so daemon starts; actual TX freq comes from DownlinkFrame.
 [gateway.concentrator.lora_std]
-frequency = 923300000
+frequency = 904600000
 bandwidth = 500000
-spreading_factor = 12
+spreading_factor = 8
