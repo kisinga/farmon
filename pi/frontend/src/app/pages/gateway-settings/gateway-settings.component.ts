@@ -36,6 +36,10 @@ const REGIONS = [
         </div>
       }
 
+      <div class="alert alert-info rounded-xl mb-6">
+        <span>Set event URL, command URL, and region only. <strong>Gateway ID is autodiscovered</strong> when the pipeline connects to concentratord and cannot be edited.</span>
+      </div>
+
       <div class="card-elevated max-w-2xl">
         <div class="card-body-spaced">
           <form (ngSubmit)="save()" class="space-y-6">
@@ -91,18 +95,13 @@ const REGIONS = [
             </div>
 
             <div class="form-control w-full">
-              <label class="label" for="gateway_id">
+              <label class="label">
                 <span class="label-text font-semibold">Gateway ID</span>
               </label>
-              <input
-                id="gateway_id"
-                name="gateway_id"
-                type="text"
-                class="input input-bordered w-full font-mono text-sm"
-                placeholder="Autofilled when discovered"
-                [(ngModel)]="form.gateway_id"
-              />
-              <p class="text-sm text-base-content/60 mt-1">Optional. Filled from concentratord when the pipeline is running (display only until you save). Use Refresh to fetch the latest.</p>
+              <div class="rounded-lg bg-base-200 px-3 py-2 font-mono text-sm">
+                {{ form.gateway_id || '—' }}
+              </div>
+              <p class="text-sm text-base-content/60 mt-1">Autodiscovered from concentratord when the pipeline is connected. You cannot set this; it appears after the gateway is running.</p>
             </div>
 
             <div class="form-control w-full max-w-xs">
@@ -280,7 +279,6 @@ export class GatewaySettingsComponent implements OnInit {
       region: this.form.region.trim(),
       event_url: this.form.event_url.trim(),
       command_url: this.form.command_url.trim(),
-      gateway_id: this.form.gateway_id?.trim() ?? '',
       rx1_delay: Math.max(1, Math.min(15, this.form.rx1_delay ?? 1)),
       rx1_frequency_hz: this.form.rx1_frequency_hz ?? 0,
     };

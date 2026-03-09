@@ -252,7 +252,7 @@ export class ApiService {
     );
     return combineLatest([fromDb, this.getGatewayStatus().pipe(catchError(() => of({ gateways: [], discovered_gateway_id: undefined })))]).pipe(
       map(([gw, status]) => {
-        if (!gw.saved && status.discovered_gateway_id) {
+        if (status.discovered_gateway_id && !gw.gateway_id) {
           gw = { ...gw, gateway_id: status.discovered_gateway_id };
         }
         return gw;
@@ -260,16 +260,15 @@ export class ApiService {
     );
   }
 
-  /** Save gateway settings via SDK, then POST pipeline/restart. */
+  /** Save gateway settings via SDK (config only; gateway_id is autodiscovered and not sent), then POST pipeline/restart. */
   patchGatewaySettings(settings: Partial<GatewaySettings>): Observable<GatewaySettings> {
     return from(this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1)).pipe(
       switchMap((res) => {
         const existing = res.items[0];
-        const body = {
+        const body: Record<string, unknown> = {
           region: settings.region ?? existing?.region ?? 'EU868',
           event_url: settings.event_url ?? existing?.event_url ?? '',
           command_url: settings.command_url ?? existing?.command_url ?? '',
-          gateway_id: settings.gateway_id ?? existing?.gateway_id ?? '',
           rx1_delay: settings.rx1_delay ?? existing?.rx1_delay ?? 1,
           rx1_frequency_hz: settings.rx1_frequency_hz ?? existing?.rx1_frequency_hz ?? 0,
         };
