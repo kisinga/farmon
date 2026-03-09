@@ -120,7 +120,14 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		s := float64(rx.GetSnr())
 		snr = &s
 	}
-	log.Printf("uplink: received phy_len=%d rssi=%v snr=%v", len(phyRaw), rssi, snr)
+	rssiVal, snrVal := interface{}("—"), interface{}("—")
+	if rssi != nil {
+		rssiVal = *rssi
+	}
+	if snr != nil {
+		snrVal = *snr
+	}
+	log.Printf("uplink: received phy_len=%d rssi=%v snr=%v", len(phyRaw), rssiVal, snrVal)
 	opts := &lorawan.ProcessUplinkOptions{RXDelay: uint8(cfg.RX1DelaySec)}
 	if opts.RXDelay < 1 || opts.RXDelay > 15 {
 		opts.RXDelay = 1

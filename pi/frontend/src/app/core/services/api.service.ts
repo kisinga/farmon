@@ -219,7 +219,7 @@ export class ApiService {
   /** Get gateway settings via SDK; merges discovered_gateway_id from gateway-status when no record. */
   getGatewaySettings(): Observable<GatewaySettings> {
     const fromDb = from(
-      this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-created' })
+      this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-@rowid' })
     ).pipe(
       map((res) => {
         const r = res.items[0];
@@ -257,7 +257,7 @@ export class ApiService {
 
   /** Save gateway settings via SDK (config only; gateway_id is autodiscovered). Pipeline restart is handled server-side on save. */
   patchGatewaySettings(settings: Partial<GatewaySettings>): Observable<GatewaySettings> {
-    return from(this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-created' })).pipe(
+    return from(this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-@rowid' })).pipe(
       switchMap((res) => {
         const existing = res.items[0];
         const body: Record<string, unknown> = {

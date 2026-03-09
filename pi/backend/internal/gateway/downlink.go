@@ -53,6 +53,9 @@ func BuildClassADownlink(cfg *Config, profile RegionProfile, phyPayload []byte, 
 			},
 		}
 	} else {
+		// No Context in uplink: concentratord needs Context to schedule Class A RX1. We fall back to Immediately;
+		// the gateway may still emit but timing can be wrong. Ensure concentratord sends RxInfo.Context in uplinks.
+		log.Printf("downlink: uplink has no Context; using Immediately timing (Class A RX1 may miss window)")
 		item.TxInfo.Timing = &gw.Timing{
 			Parameters: &gw.Timing_Immediately{Immediately: &gw.ImmediatelyTimingInfo{}},
 		}
