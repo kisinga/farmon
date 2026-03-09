@@ -27,4 +27,9 @@ migrate((app) => {
     indexes: [],
   })
   app.save(coll)
+}, (app) => {
+  try {
+    const coll = app.findCollectionByNameOrId("lorawan_frames")
+    app.delete(coll)
+  } catch (_) {}
 })
