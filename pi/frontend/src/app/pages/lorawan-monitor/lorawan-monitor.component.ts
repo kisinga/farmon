@@ -213,10 +213,10 @@ export class LorawanMonitorComponent implements OnInit, OnDestroy {
       },
       (err) => {
         const msg = err?.message ?? 'Failed to load frames';
-        const actionable =
-          /Missing collection|404|Something went wrong/i.test(msg)
-            ? 'LoRaWAN frames collection is missing. Restart the backend so migrations run (pb_migrations), or check the server logs.'
-            : msg;
+        // Only show "collection missing" when the error clearly indicates that; otherwise show the real error
+        const actionable = /Missing collection context|collection context/i.test(msg)
+          ? 'LoRaWAN frames collection is missing. Restart the backend so migrations run (pb_migrations), or check the server logs.'
+          : msg;
         this.framesError.set(actionable);
         this.loading.set(false);
       }

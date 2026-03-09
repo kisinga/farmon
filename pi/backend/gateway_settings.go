@@ -15,7 +15,8 @@ import (
 // Frontend reads/writes gateway_settings via SDK; backend loads at serve and on POST /api/farmon/pipeline/restart (reload + restart).
 
 func loadGatewaySettings(app core.App) (gateway.Config, bool) {
-	records, err := app.FindRecordsByFilter("gateway_settings", "", "created", 1, 0, nil)
+	// Use -created so we get the newest record (the one the user just saved), not the oldest
+	records, err := app.FindRecordsByFilter("gateway_settings", "", "-created", 1, 0, nil)
 	if err != nil || len(records) == 0 {
 		return gateway.DefaultGatewayConfig(), false
 	}
@@ -40,7 +41,8 @@ func saveGatewaySettings(app core.App, cfg gateway.Config) error {
 }
 
 func getGatewaySettingsRecord(app core.App) (*core.Record, error) {
-	records, err := app.FindRecordsByFilter("gateway_settings", "", "created", 1, 0, nil)
+	// Use -created so we get the newest record
+	records, err := app.FindRecordsByFilter("gateway_settings", "", "-created", 1, 0, nil)
 	if err != nil || len(records) == 0 {
 		return nil, err
 	}

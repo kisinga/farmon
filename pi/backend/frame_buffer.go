@@ -10,6 +10,41 @@ import (
 
 const maxFrames = 500
 
+const lorawanFramesCollectionName = "lorawan_frames"
+
+// ensureLorawanFramesCollection creates the lorawan_frames collection if it does not exist.
+// Called on serve so the collection exists even when JS migrations have not run (e.g. deploy without pb_migrations).
+func ensureLorawanFramesCollection(app core.App) {
+	_, err := app.FindCollectionByNameOrId(lorawanFramesCollectionName)
+	if err == nil {
+		return
+	}
+	col := core.NewBaseCollection(lorawanFramesCollectionName)
+	col.ListRule = nil
+	col.ViewRule = nil
+	col.CreateRule = nil
+	col.UpdateRule = nil
+	col.DeleteRule = nil
+	col.Fields.Add(
+		&core.TextField{Name: "time"},
+		&core.TextField{Name: "direction"},
+		&core.TextField{Name: "dev_eui"},
+		&core.NumberField{Name: "f_port"},
+		&core.TextField{Name: "kind"},
+		&core.TextField{Name: "payload_hex"},
+		&core.NumberField{Name: "phy_len"},
+		&core.NumberField{Name: "rssi"},
+		&core.NumberField{Name: "snr"},
+		&core.TextField{Name: "gateway_id"},
+		&core.TextField{Name: "error"},
+	)
+	if err := app.Save(col); err != nil {
+		log.Printf("ensure lorawan_frames collection: %v", err)
+		return
+	}
+	log.Printf("created %s collection (JS migration may not have run)", lorawanFramesCollectionName)
+}
+
 // RawFrame is a single LoRaWAN frame record for the monitoring UI.
 type RawFrame struct {
 	Time       string   `json:"time"`        // RFC3339

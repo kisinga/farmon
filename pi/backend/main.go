@@ -24,6 +24,8 @@ func main() {
 	gwState := &GatewayState{cfg: &gwCfg, runtime: gwRuntime}
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+		// Ensure lorawan_frames collection exists (creates from Go if JS migration did not run)
+		ensureLorawanFramesCollection(app)
 		// Load gateway config from DB; start pipeline only if a valid record exists (event_url, command_url, region set)
 		cfg, valid := loadGatewaySettings(app)
 		if valid {
