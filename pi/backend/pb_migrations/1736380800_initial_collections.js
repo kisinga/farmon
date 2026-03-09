@@ -192,6 +192,8 @@ migrate((app) => {
       name: "gateway_settings",
       listRule: empty,
       viewRule: empty,
+      createRule: empty,
+      updateRule: empty,
       fields: [
         { name: "region", type: "text" },
         { name: "event_url", type: "text" },

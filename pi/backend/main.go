@@ -30,23 +30,20 @@ func main() {
 		}
 		gwState.RestartPipeline(app)
 
-		// Device provisioning (LoRaWAN OTAA): create device + AppKey, get credentials. List devices via SDK → /api/collections/devices/records.
-		se.Router.POST("/api/devices", provisionDeviceHandler(app))
-		se.Router.DELETE("/api/devices", deleteDeviceHandler(app))
-		se.Router.GET("/api/devices/credentials", deviceCredentialsHandler(app))
-		// Gateway settings (DB only; gate on valid settings)
-		se.Router.GET("/api/gateway-settings", getGatewaySettingsHandler(app, &gwCfg))
-		se.Router.PATCH("/api/gateway-settings", patchGatewaySettingsHandler(app, gwState))
-		// Custom app API (downlink / gateway)
-		se.Router.POST("/api/setControl", setControlHandler(app, &gwCfg))
-		se.Router.GET("/api/gateway-status", gatewayStatusHandler(&gwCfg))
-		se.Router.GET("/api/debug/pipeline", pipelineDebugHandler(&gwCfg))
-		se.Router.GET("/api/lorawan/frames", lorawanFramesHandler())
-		se.Router.GET("/api/lorawan/stats", lorawanStatsHandler(&gwCfg))
-		se.Router.POST("/api/lorawan/frames/clear", lorawanClearFramesHandler())
-		se.Router.GET("/api/history", historyHandler(app))
-		se.Router.POST("/api/otaStart", otaStartHandler(app))
-		se.Router.POST("/api/otaCancel", otaCancelHandler(app))
+		// Custom app API under /api/farmon (SDK handles collections: devices list, gateway_settings, telemetry, etc.)
+		farmon := se.Router.Group("/api/farmon")
+		farmon.POST("/devices", provisionDeviceHandler(app))
+		farmon.DELETE("/devices", deleteDeviceHandler(app))
+		farmon.POST("/pipeline/restart", pipelineRestartHandler(app, gwState))
+		farmon.POST("/setControl", setControlHandler(app, &gwCfg))
+		farmon.GET("/gateway-status", gatewayStatusHandler(&gwCfg))
+		farmon.GET("/debug/pipeline", pipelineDebugHandler(&gwCfg))
+		lorawan := farmon.Group("/lorawan")
+		lorawan.GET("/frames", lorawanFramesHandler())
+		lorawan.POST("/frames/clear", lorawanClearFramesHandler())
+		lorawan.GET("/stats", lorawanStatsHandler(&gwCfg))
+		farmon.POST("/ota/start", otaStartHandler(app))
+		farmon.POST("/ota/cancel", otaCancelHandler(app))
 
 		// SPA under /app/ so /api is never matched by static; SDK collection requests reach PocketBase API.
 		se.Router.GET("/", func(e *core.RequestEvent) error {

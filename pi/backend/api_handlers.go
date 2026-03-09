@@ -77,23 +77,26 @@ func setControlHandler(app core.App, cfg *gateway.Config) func(*core.RequestEven
 }
 
 // gatewayStatusHandler returns gateway status for the UI. When gateway settings are valid, one gateway is reported online.
+// Includes discovered_gateway_id (in-memory gateway_id) so the settings page can prefill when not yet saved to DB.
 func gatewayStatusHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		gwID := cfg.GatewayID
 		if gwID == "" && cfg.Valid() {
 			gwID = "local"
 		}
+		resp := map[string]any{"gateways": []any{}}
 		if gwID != "" {
-			return e.JSON(http.StatusOK, map[string]any{
-				"gateways": []any{map[string]any{"id": gwID, "name": gwID, "online": true, "lastSeen": nil}},
-			})
+			resp["gateways"] = []any{map[string]any{"id": gwID, "name": gwID, "online": true, "lastSeen": nil}}
 		}
-		return e.JSON(http.StatusOK, map[string]any{"gateways": []any{}})
+		if cfg.GatewayID != "" {
+			resp["discovered_gateway_id"] = cfg.GatewayID
+		}
+		return e.JSON(http.StatusOK, resp)
 	}
 }
 
 // pipelineDebugHandler returns whether concentratord is configured (for debugging "no gateway online").
-// GET /api/debug/pipeline — no auth required for local diagnostics.
+// GET /api/farmon/debug/pipeline — no auth required for local diagnostics.
 func pipelineDebugHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		return e.JSON(http.StatusOK, map[string]any{
@@ -108,7 +111,7 @@ func pipelineDebugHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 }
 
 // lorawanFramesHandler returns recent raw LoRaWAN frames (uplinks + downlinks) for the monitor UI.
-// GET /api/lorawan/frames?limit=100
+// GET /api/farmon/lorawan/frames?limit=100
 func lorawanFramesHandler() func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		limit := 100
@@ -123,7 +126,7 @@ func lorawanFramesHandler() func(*core.RequestEvent) error {
 }
 
 // lorawanStatsHandler returns frame buffer stats and pipeline status.
-// GET /api/lorawan/stats
+// GET /api/farmon/lorawan/stats
 func lorawanStatsHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		stats := GetFrameStats()
@@ -136,39 +139,11 @@ func lorawanStatsHandler(cfg *gateway.Config) func(*core.RequestEvent) error {
 	}
 }
 
-// lorawanClearFramesHandler clears the in-memory frame buffer. POST /api/lorawan/frames/clear
+// lorawanClearFramesHandler clears the in-memory frame buffer. POST /api/farmon/lorawan/frames/clear
 func lorawanClearFramesHandler() func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ClearFrames()
 		return e.JSON(http.StatusOK, map[string]any{"ok": true})
-	}
-}
-
-// historyHandler returns telemetry history for a device field: GET /api/history?eui=...&field=...&from=...&to=...&limit=500
-func historyHandler(app core.App) func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		eui := e.Request.URL.Query().Get("eui")
-		field := e.Request.URL.Query().Get("field")
-		if eui == "" || field == "" {
-			return e.String(http.StatusBadRequest, "eui and field required")
-		}
-		from := e.Request.URL.Query().Get("from")
-		to := e.Request.URL.Query().Get("to")
-		limit := 500
-		if l := e.Request.URL.Query().Get("limit"); l != "" {
-			if n, err := strconv.Atoi(l); err == nil && n > 0 {
-				limit = n
-			}
-		}
-		data, err := GetTelemetryHistory(app, eui, field, from, to, limit)
-		if err != nil {
-			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		}
-		return e.JSON(http.StatusOK, map[string]any{
-			"eui":   eui,
-			"field": field,
-			"data":  data,
-		})
 	}
 }
 

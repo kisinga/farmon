@@ -31,7 +31,7 @@ func (s *pocketbaseLorawanStore) AppKey(devEUI string) ([16]byte, error) {
 	keyHex, _ := rec.Get("app_key").(string)
 	keyHex = appKey32(keyHex)
 	if len(keyHex) != 32 {
-		return out, fmt.Errorf("device %s has no valid app_key (got %d hex chars); provision via POST /api/devices with device_eui=%s", devEUI, len(keyHex), devEUI)
+		return out, fmt.Errorf("device %s has no valid app_key (got %d hex chars); provision via POST /api/farmon/devices with device_eui=%s", devEUI, len(keyHex), devEUI)
 	}
 	b, err := hex.DecodeString(keyHex)
 	if err != nil {

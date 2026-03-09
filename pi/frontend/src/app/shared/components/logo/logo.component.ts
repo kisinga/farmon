@@ -17,7 +17,7 @@ import { Component, input } from '@angular/core';
 })
 export class LogoComponent {
   /** Logo URL (default: FarMon plant + arcs SVG). */
-  src = input('/logo.svg');
+  src = input('logo.svg');
   alt = input('FarMon');
   /** Tailwind classes for size/layout (e.g. h-8 w-auto). */
   class = input('h-8 w-auto shrink-0');

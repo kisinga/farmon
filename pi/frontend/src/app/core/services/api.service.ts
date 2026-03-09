@@ -1,9 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, from, map } from 'rxjs';
+import { Observable, from, map, combineLatest, catchError, of, switchMap } from 'rxjs';
 import { PocketBaseService } from './pocketbase.service';
 
-const API = '/api';
+const API = '/api/farmon';
 
 export interface Device {
   id: string;
@@ -81,11 +81,41 @@ export class ApiService {
     ).pipe(map((res) => res.items));
   }
 
-  getHistory(eui: string, field: string, from?: string, to?: string, limit = 500): Observable<HistoryResponse> {
-    let url = `${API}/history?eui=${encodeURIComponent(eui)}&field=${encodeURIComponent(field)}&limit=${limit}`;
-    if (from) url += `&from=${encodeURIComponent(from)}`;
-    if (to) url += `&to=${encodeURIComponent(to)}`;
-    return this.http.get<HistoryResponse>(url);
+  getHistory(eui: string, field: string, fromDate?: string, toDate?: string, limit = 500): Observable<HistoryResponse> {
+    const perPage = Math.min(Math.max(limit, 1), 1000);
+    let filter: string;
+    if (fromDate && toDate) {
+      filter = this.pb.filter('device_eui = {:eui} && ts >= {:from} && ts <= {:to}', { eui, from: fromDate, to: toDate });
+    } else if (fromDate) {
+      filter = this.pb.filter('device_eui = {:eui} && ts >= {:from}', { eui, from: fromDate });
+    } else if (toDate) {
+      filter = this.pb.filter('device_eui = {:eui} && ts <= {:to}', { eui, to: toDate });
+    } else {
+      filter = this.pb.filter('device_eui = {:eui}', { eui });
+    }
+    return from(
+      this.pb.collection<TelemetryRecord>('telemetry').getList(1, perPage, { filter, sort: 'ts' })
+    ).pipe(
+      map((res: { items: TelemetryRecord[] }) => {
+        const data = res.items.map((rec: TelemetryRecord) => {
+          const ts = rec.ts ?? rec.created ?? '';
+          let value = 0;
+          if (field === 'rssi') {
+            value = typeof rec.rssi === 'number' ? rec.rssi : 0;
+          } else if (field === 'snr') {
+            value = typeof rec.snr === 'number' ? rec.snr : 0;
+          } else {
+            const raw = rec.data;
+            const obj = typeof raw === 'string' ? (() => { try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; } })() : (raw ?? {});
+            const v = obj[field];
+            if (typeof v === 'number') value = v;
+            else if (typeof v === 'object' && v !== null && typeof (v as { value?: number }).value === 'number') value = (v as { value: number }).value;
+          }
+          return { ts, value };
+        });
+        return { eui, field, data };
+      })
+    );
   }
 
   getLatestTelemetry(eui: string): Observable<{ data: Record<string, unknown>; rssi?: number; snr?: number } | null> {
@@ -113,8 +143,8 @@ export class ApiService {
     return this.http.post<{ ok: boolean; error?: string }>(`${API}/setControl`, { eui, control, state, duration });
   }
 
-  getGatewayStatus(): Observable<{ gateways: unknown[] }> {
-    return this.http.get<{ gateways: unknown[] }>(`${API}/gateway-status`);
+  getGatewayStatus(): Observable<GatewayStatusResponse> {
+    return this.http.get<GatewayStatusResponse>(`${API}/gateway-status`);
   }
 
   /** Provision a device (create or update) and get AppKey for LoRaWAN OTAA. */
@@ -127,17 +157,20 @@ export class ApiService {
     return this.http.delete<{ ok: boolean; message?: string }>(`${API}/devices?eui=${encodeURIComponent(eui)}`);
   }
 
-  /** Get credentials for a device (for firmware / secrets.h). */
+  /** Get credentials for a device (for firmware / secrets.h). Via SDK. */
   getDeviceCredentials(eui: string): Observable<CredentialsResponse> {
-    return this.http.get<CredentialsResponse>(`${API}/devices/credentials?eui=${encodeURIComponent(eui)}`);
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb.collection<{ device_eui: string; app_key?: string }>('devices').getFirstListItem(filter)
+    ).pipe(map((r) => ({ device_eui: r.device_eui, app_key: r.app_key ?? '' })));
   }
 
   otaStart(eui: string, firmware?: string): Observable<{ ok: boolean; message?: string }> {
-    return this.http.post<{ ok: boolean; message?: string }>(`${API}/otaStart`, { eui, firmware });
+    return this.http.post<{ ok: boolean; message?: string }>(`${API}/ota/start`, { eui, firmware });
   }
 
   otaCancel(eui: string): Observable<{ ok: boolean; message?: string }> {
-    return this.http.post<{ ok: boolean; message?: string }>(`${API}/otaCancel`, { eui });
+    return this.http.post<{ ok: boolean; message?: string }>(`${API}/ota/cancel`, { eui });
   }
 
   getEdgeRules(eui: string): Observable<EdgeRuleRecord[]> {
@@ -188,14 +221,66 @@ export class ApiService {
     return this.http.post<{ ok: boolean }>(`${API}/lorawan/frames/clear`, {});
   }
 
-  /** Get gateway settings (or defaults when no record saved). */
+  /** Get gateway settings via SDK; merges discovered_gateway_id from gateway-status when no record. */
   getGatewaySettings(): Observable<GatewaySettings> {
-    return this.http.get<GatewaySettings>(`${API}/gateway-settings`);
+    const fromDb = from(
+      this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1)
+    ).pipe(
+      map((res) => {
+        const r = res.items[0];
+        if (!r) {
+          return {
+            region: 'EU868',
+            event_url: '',
+            command_url: '',
+            gateway_id: '',
+            rx1_delay: 1,
+            rx1_frequency_hz: 0,
+            saved: false,
+          } as GatewaySettings;
+        }
+        return {
+          region: (r.region ?? '').trim() || 'EU868',
+          event_url: (r.event_url ?? '').trim(),
+          command_url: (r.command_url ?? '').trim(),
+          gateway_id: (r.gateway_id ?? '').trim(),
+          rx1_delay: typeof r.rx1_delay === 'number' ? r.rx1_delay : 1,
+          rx1_frequency_hz: typeof r.rx1_frequency_hz === 'number' ? r.rx1_frequency_hz : 0,
+          saved: true,
+        } as GatewaySettings;
+      })
+    );
+    return combineLatest([fromDb, this.getGatewayStatus().pipe(catchError(() => of({ gateways: [], discovered_gateway_id: undefined })))]).pipe(
+      map(([gw, status]) => {
+        if (!gw.saved && status.discovered_gateway_id) {
+          gw = { ...gw, gateway_id: status.discovered_gateway_id };
+        }
+        return gw;
+      })
+    );
   }
 
-  /** Save gateway settings; starts pipeline when valid. */
+  /** Save gateway settings via SDK, then POST pipeline/restart. */
   patchGatewaySettings(settings: Partial<GatewaySettings>): Observable<GatewaySettings> {
-    return this.http.patch<GatewaySettings>(`${API}/gateway-settings`, settings);
+    return from(this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1)).pipe(
+      switchMap((res) => {
+        const existing = res.items[0];
+        const body = {
+          region: settings.region ?? existing?.region ?? 'EU868',
+          event_url: settings.event_url ?? existing?.event_url ?? '',
+          command_url: settings.command_url ?? existing?.command_url ?? '',
+          gateway_id: settings.gateway_id ?? existing?.gateway_id ?? '',
+          rx1_delay: settings.rx1_delay ?? existing?.rx1_delay ?? 1,
+          rx1_frequency_hz: settings.rx1_frequency_hz ?? existing?.rx1_frequency_hz ?? 0,
+        };
+        const op = existing
+          ? this.pb.collection<GatewaySettingsRecord>('gateway_settings').update(existing.id, body)
+          : this.pb.collection<GatewaySettingsRecord>('gateway_settings').create(body);
+        return from(Promise.resolve(op));
+      }),
+      switchMap(() => this.http.post<{ ok: boolean }>(`${API}/pipeline/restart`, {})),
+      switchMap(() => this.getGatewaySettings())
+    );
   }
 }
 
@@ -207,6 +292,29 @@ export interface GatewaySettings {
   rx1_delay: number;
   rx1_frequency_hz: number;
   saved: boolean;
+}
+
+export interface GatewayStatusResponse {
+  gateways: unknown[];
+  discovered_gateway_id?: string;
+}
+
+interface GatewaySettingsRecord {
+  id: string;
+  region?: string;
+  event_url?: string;
+  command_url?: string;
+  gateway_id?: string;
+  rx1_delay?: number;
+  rx1_frequency_hz?: number;
+}
+
+interface TelemetryRecord {
+  ts?: string;
+  created?: string;
+  data?: string | Record<string, unknown>;
+  rssi?: number;
+  snr?: number;
 }
 
 export interface PipelineDebug {

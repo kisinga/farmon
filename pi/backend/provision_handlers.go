@@ -28,7 +28,7 @@ func appKey32(s string) string {
 	return string(out)
 }
 
-// POST /api/devices — create device with generated AppKey (LoRaWAN OTAA provisioning).
+// POST /api/farmon/devices — create device with generated AppKey (LoRaWAN OTAA provisioning).
 // Body: { "device_eui": "0102030405060708", "device_name": "optional name" }
 // Returns: { "device_eui": "...", "app_key": "hex32" }
 func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
@@ -89,7 +89,7 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// DELETE /api/devices?eui=... — delete a device and its LoRaWAN session so it can be re-provisioned.
+// DELETE /api/farmon/devices?eui=... — delete a device and its LoRaWAN session so it can be re-provisioned.
 func deleteDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		eui := normalizeEui(strings.TrimSpace(e.Request.URL.Query().Get("eui")))
@@ -111,26 +111,4 @@ func deleteDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// GET /api/devices/credentials?eui=... — return credentials for firmware (e.g. secrets.h).
-// Returns: { "device_eui": "...", "app_key": "hex32" }
-func deviceCredentialsHandler(app core.App) func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		eui := normalizeEui(strings.TrimSpace(e.Request.URL.Query().Get("eui")))
-		if eui == "" || len(eui) != 16 {
-			return e.String(http.StatusBadRequest, "eui query param required (16 hex chars)")
-		}
-		rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": eui})
-		if err != nil {
-			return e.JSON(http.StatusNotFound, map[string]any{"error": "device not found"})
-		}
-		appKeyRaw, _ := rec.Get("app_key").(string)
-		appKey := appKey32(appKeyRaw)
-		if len(appKey) != 32 {
-			return e.JSON(http.StatusNotFound, map[string]any{"error": "device has no app_key; provision first via POST /api/devices"})
-		}
-		return e.JSON(http.StatusOK, map[string]any{
-			"device_eui": eui,
-			"app_key":    appKey,
-		})
-	}
-}
+// Credentials are read via SDK: devices.getFirstListItem(filter by device_eui), map to { device_eui, app_key }.

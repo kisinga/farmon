@@ -16,12 +16,11 @@ First run creates `pb_data` and prompts for a superuser. Collections (devices, t
 ## Device provisioning (LoRaWAN OTAA)
 
 1. **Create device and get AppKey**  
-   `POST /api/devices` with body `{ "device_eui": "0102030405060708", "device_name": "pump-1" }`  
+   `POST /api/farmon/devices` with body `{ "device_eui": "0102030405060708", "device_name": "pump-1" }`  
    Returns `{ "device_eui": "...", "app_key": "32 hex chars" }`.
 
 2. **Get credentials for firmware**  
-   `GET /api/devices/credentials?eui=0102030405060708`  
-   Returns `{ "device_eui": "...", "app_key": "..." }` for use in Heltec `secrets.h` or build tooling.
+   Use the PocketBase SDK: list/get the `devices` collection by `device_eui`, then read `app_key` from the record. Or call the same collection API directly. Returns `{ "device_eui": "...", "app_key": "..." }` for use in Heltec `secrets.h` or build tooling.
 
 Use the same `device_eui` (16 hex chars, from device label/serial) and put `app_key` in firmware; device joins via OTAA and the backend creates the session automatically.
 
@@ -44,13 +43,18 @@ Uplinks are received over ZMQ, decrypted (LoRaWAN), decoded (native Go codec), a
 
 ## API summary
 
-- `POST /api/devices` — provision device (body: `device_eui`, `device_name`); returns `app_key`.
-- `GET /api/devices/credentials?eui=...` — get credentials for firmware.
-- `POST /api/setControl` — enqueue downlink (body: `eui`, `control`, `state`, `duration?`). Requires Concentratord configured.
-- `GET /api/gateway-settings` — get gateway settings (or defaults when none saved). `PATCH /api/gateway-settings` — save settings and start/restart pipeline.
-- `GET /api/gateway-status` — list gateways (gateway_id from settings or auto-discovered from concentratord).
-- `GET /api/history?eui=...&field=...&from=...&to=...&limit=500` — telemetry history.
-- `POST /api/otaStart`, `POST /api/otaCancel` — OTA (eui in body).
+Custom routes live under **`/api/farmon/`** (PocketBase SDK handles collections: devices, gateway_settings, telemetry, etc.).
+
+- `POST /api/farmon/devices` — provision device (body: `device_eui`, `device_name`); returns `app_key`.
+- `DELETE /api/farmon/devices?eui=...` — delete device and its LoRaWAN session.
+- `POST /api/farmon/pipeline/restart` — reload gateway_settings from DB and restart concentratord pipeline (call after saving gateway_settings via SDK).
+- `POST /api/farmon/setControl` — enqueue downlink (body: `eui`, `control`, `state`, `duration?`). Requires Concentratord configured.
+- `GET /api/farmon/gateway-status` — list gateways and optional `discovered_gateway_id` for the settings form.
+- `GET /api/farmon/debug/pipeline` — concentratord debug info.
+- `GET /api/farmon/lorawan/frames?limit=...`, `POST /api/farmon/lorawan/frames/clear`, `GET /api/farmon/lorawan/stats` — frame buffer.
+- `POST /api/farmon/ota/start`, `POST /api/farmon/ota/cancel` — OTA (eui in body).
+
+Gateway settings and telemetry history are read/written via the **PocketBase SDK** (collections `gateway_settings`, `telemetry`). After saving gateway_settings via SDK, the frontend calls `POST /api/farmon/pipeline/restart` to apply and restart the pipeline.
 
 ## Gateway setup (Concentratord only)
 
