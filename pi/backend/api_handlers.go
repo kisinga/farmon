@@ -2,7 +2,6 @@ package main
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -161,27 +160,12 @@ func pipelineDebugHandler(app core.App, state *GatewayState) func(*core.RequestE
 	}
 }
 
-// lorawanFramesHandler returns recent raw LoRaWAN frames (uplinks + downlinks) for the monitor UI.
-// GET /api/farmon/lorawan/frames?limit=100
-func lorawanFramesHandler() func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		limit := 100
-		if s := e.Request.URL.Query().Get("limit"); s != "" {
-			if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 500 {
-				limit = n
-			}
-		}
-		frames := GetFrames(limit)
-		return e.JSON(http.StatusOK, map[string]any{"frames": frames})
-	}
-}
-
-// lorawanStatsHandler returns frame buffer stats and pipeline status.
+// lorawanStatsHandler returns frame buffer stats (from DB) and pipeline status.
 // GET /api/farmon/lorawan/stats
-func lorawanStatsHandler(state *GatewayState) func(*core.RequestEvent) error {
+func lorawanStatsHandler(app core.App, state *GatewayState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		cfg := state.Config()
-		stats := GetFrameStats()
+		stats := GetFrameStatsFromDB(app)
 		configured := false
 		if cfg != nil {
 			configured = cfg.Valid()
@@ -192,14 +176,6 @@ func lorawanStatsHandler(state *GatewayState) func(*core.RequestEvent) error {
 			"total_downlinks":         stats.TotalDownlinks,
 			"concentratord_configured": configured,
 		})
-	}
-}
-
-// lorawanClearFramesHandler clears the in-memory frame buffer. POST /api/farmon/lorawan/frames/clear
-func lorawanClearFramesHandler() func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		ClearFrames()
-		return e.JSON(http.StatusOK, map[string]any{"ok": true})
 	}
 }
 

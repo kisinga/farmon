@@ -206,19 +206,9 @@ export class ApiService {
     return this.http.get<PipelineDebug>(`${API}/debug/pipeline`);
   }
 
-  /** Recent raw LoRaWAN frames (uplinks + downlinks). */
-  getLorawanFrames(limit = 100): Observable<{ frames: RawLorawanFrame[] }> {
-    return this.http.get<{ frames: RawLorawanFrame[] }>(`${API}/lorawan/frames?limit=${limit}`);
-  }
-
   /** Frame buffer stats and concentratord configured flag. */
   getLorawanStats(): Observable<LorawanStats> {
     return this.http.get<LorawanStats>(`${API}/lorawan/stats`);
-  }
-
-  /** Clear in-memory frame buffer. */
-  clearLorawanFrames(): Observable<{ ok: boolean }> {
-    return this.http.post<{ ok: boolean }>(`${API}/lorawan/frames/clear`, {});
   }
 
   /** Get gateway settings via SDK; merges discovered_gateway_id from gateway-status when no record. */
@@ -260,7 +250,7 @@ export class ApiService {
     );
   }
 
-  /** Save gateway settings via SDK (config only; gateway_id is autodiscovered and not sent), then POST pipeline/restart. */
+  /** Save gateway settings via SDK (config only; gateway_id is autodiscovered). Pipeline restart is handled server-side on save. */
   patchGatewaySettings(settings: Partial<GatewaySettings>): Observable<GatewaySettings> {
     return from(this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1)).pipe(
       switchMap((res) => {
@@ -277,7 +267,6 @@ export class ApiService {
           : this.pb.collection<GatewaySettingsRecord>('gateway_settings').create(body);
         return from(Promise.resolve(op));
       }),
-      switchMap(() => this.http.post<{ ok: boolean }>(`${API}/pipeline/restart`, {})),
       switchMap(() => this.getGatewaySettings())
     );
   }

@@ -1,9 +1,27 @@
 import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
 import { forkJoin } from 'rxjs';
 import { ApiService, PipelineDebug, RawLorawanFrame, LorawanStats, GatewaySettings } from '../../core/services/api.service';
+import { PocketBaseService } from '../../core/services/pocketbase.service';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { GatewaySettingsComponent } from '../gateway-settings/gateway-settings.component';
+
+/** Map a PocketBase lorawan_frames record to RawLorawanFrame for the table. */
+function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string; f_port?: number; kind?: string; payload_hex?: string; phy_len?: number; rssi?: number; snr?: number; gateway_id?: string; error?: string }): RawLorawanFrame {
+  return {
+    time: r?.time ?? '',
+    direction: (r?.direction === 'down' ? 'down' : 'up') as 'up' | 'down',
+    dev_eui: r?.dev_eui ?? '',
+    f_port: typeof r?.f_port === 'number' ? r.f_port : 0,
+    kind: r?.kind ?? '',
+    payload_hex: r?.payload_hex ?? '',
+    phy_len: typeof r?.phy_len === 'number' ? r.phy_len : 0,
+    rssi: typeof r?.rssi === 'number' ? r.rssi : undefined,
+    snr: typeof r?.snr === 'number' ? r.snr : undefined,
+    gateway_id: r?.gateway_id ?? '',
+    error: r?.error ?? '',
+  };
+}
 
 @Component({
   selector: 'app-lorawan-monitor',
@@ -13,7 +31,7 @@ import { GatewaySettingsComponent } from '../gateway-settings/gateway-settings.c
     <header class="page-header">
       <h1 class="page-title">LoRaWAN</h1>
       <p class="page-description">
-        Raw frames and concentratord connection status. Frames are kept in a ring buffer (max 500). Use this page to verify uplinks and downlinks.
+        Raw frames and concentratord connection status. Frames are persisted (max 500). Use this page to verify uplinks and downlinks.
       </p>
     </header>
 
@@ -52,22 +70,6 @@ import { GatewaySettingsComponent } from '../gateway-settings/gateway-settings.c
           }
         }
       </div>
-    </div>
-
-    <!-- Toolbar -->
-    <div class="flex flex-wrap items-center gap-2 mb-4">
-      <button
-        type="button"
-        class="btn btn-sm"
-        [class.btn-primary]="!paused()"
-        [class.btn-ghost]="paused()"
-        (click)="togglePause()"
-      >
-        {{ paused() ? 'Resume' : 'Pause' }} auto-refresh
-      </button>
-      <button type="button" class="btn btn-sm btn-outline" (click)="refresh()">Refresh now</button>
-      <button type="button" class="btn btn-sm btn-outline btn-error" (click)="clearFrames()">Clear buffer</button>
-      <span class="text-sm text-base-content/50 ml-1">Every {{ refreshIntervalSec }}s when not paused</span>
     </div>
 
     <!-- Frames table -->
@@ -158,9 +160,7 @@ import { GatewaySettingsComponent } from '../gateway-settings/gateway-settings.c
 })
 export class LorawanMonitorComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
-  private intervalId: ReturnType<typeof setInterval> | null = null;
-
-  readonly refreshIntervalSec = 3;
+  private pb = inject(PocketBaseService).pb;
 
   pipeline = signal<PipelineDebug | null>(null);
   pipelineError = signal<string | null>(null);
@@ -169,13 +169,65 @@ export class LorawanMonitorComponent implements OnInit, OnDestroy {
   frames = signal<RawLorawanFrame[]>([]);
   framesError = signal<string | null>(null);
   loading = signal(false);
-  paused = signal(false);
 
   gatewaySettings = signal<GatewaySettings | null>(null);
   configPanelOpen = signal(true);
 
+  private unsubscribeFrames: (() => void) | null = null;
+  private unsubscribeFramesPromise: Promise<unknown> | null = null;
+
   ngOnInit(): void {
-    this.refresh();
+    this.loading.set(true);
+    this.pipelineError.set(null);
+    this.statsError.set(null);
+    this.framesError.set(null);
+
+    forkJoin({
+      pipeline: this.api.getPipelineDebug(),
+      stats: this.api.getLorawanStats(),
+    }).subscribe({
+      next: ({ pipeline, stats }) => {
+        this.pipeline.set(pipeline);
+        this.stats.set(stats);
+      },
+      error: (err) => {
+        this.pipelineError.set(err?.message ?? 'Failed to load');
+        this.statsError.set(err?.message ?? 'Failed to load');
+      },
+    });
+
+    this.pb.collection('lorawan_frames').getList(1, 200, { sort: '-created' }).then(
+      (res) => {
+        const list = (res.items ?? []).map((r: Record<string, unknown>) => recordToFrame(r as Parameters<typeof recordToFrame>[0]));
+        this.frames.set(list);
+        this.loading.set(false);
+      },
+      (err) => {
+        this.framesError.set(err?.message ?? 'Failed to load frames');
+        this.loading.set(false);
+      }
+    );
+
+    this.unsubscribeFramesPromise = this.pb.collection('lorawan_frames').subscribe('*', (e) => {
+      if (e.action === 'create' && e.record) {
+        const f = recordToFrame(e.record as Parameters<typeof recordToFrame>[0]);
+        this.frames.update((prev) => [f, ...prev]);
+        this.stats.update((s) =>
+          s
+            ? {
+                ...s,
+                buffer_size: s.buffer_size + 1,
+                total_uplinks: f.direction === 'up' ? s.total_uplinks + 1 : s.total_uplinks,
+                total_downlinks: f.direction === 'down' ? s.total_downlinks + 1 : s.total_downlinks,
+              }
+            : s
+        );
+      }
+    });
+    this.unsubscribeFramesPromise?.then((unsub) => {
+      this.unsubscribeFrames = unsub as () => void;
+    });
+
     this.api.getGatewaySettings().subscribe({
       next: (res) => {
         this.gatewaySettings.set(res);
@@ -185,9 +237,6 @@ export class LorawanMonitorComponent implements OnInit, OnDestroy {
         this.gatewaySettings.set(null);
       },
     });
-    this.intervalId = setInterval(() => {
-      if (!this.paused()) this.refresh();
-    }, this.refreshIntervalSec * 1000);
   }
 
   onGatewaySaved(settings: GatewaySettings): void {
@@ -196,42 +245,11 @@ export class LorawanMonitorComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    if (this.intervalId != null) clearInterval(this.intervalId);
-  }
-
-  togglePause(): void {
-    this.paused.update((v) => !v);
-  }
-
-  refresh(): void {
-    this.loading.set(true);
-    this.pipelineError.set(null);
-    this.statsError.set(null);
-    this.framesError.set(null);
-    forkJoin({
-      pipeline: this.api.getPipelineDebug(),
-      stats: this.api.getLorawanStats(),
-      frames: this.api.getLorawanFrames(200),
-    }).subscribe({
-      next: ({ pipeline, stats, frames }) => {
-        this.pipeline.set(pipeline);
-        this.stats.set(stats);
-        this.frames.set(frames?.frames ?? []);
-        this.loading.set(false);
-      },
-      error: (err) => {
-        this.pipelineError.set(err?.message ?? 'Failed to load pipeline');
-        this.statsError.set(err?.message ?? 'Failed to load stats');
-        this.framesError.set(err?.message ?? 'Failed to load frames');
-        this.loading.set(false);
-      },
-    });
-  }
-
-  clearFrames(): void {
-    this.api.clearLorawanFrames().subscribe({
-      next: () => this.refresh(),
-      error: (err) => this.framesError.set(err?.message ?? 'Failed to clear'),
-    });
+    if (this.unsubscribeFrames) {
+      this.unsubscribeFrames();
+      this.unsubscribeFrames = null;
+    } else if (this.unsubscribeFramesPromise) {
+      this.unsubscribeFramesPromise.then((unsub) => (unsub as () => void)());
+    }
   }
 }

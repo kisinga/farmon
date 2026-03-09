@@ -31,6 +31,23 @@ func main() {
 		}
 		gwState.RestartPipeline(app)
 
+		// When gateway_settings are saved (create or update), reload config and restart pipeline so we don't rely on frontend calling pipeline/restart.
+		restartPipelineOnGatewaySettingsSave := func(e *core.RecordEvent) error {
+			if err := e.Next(); err != nil {
+				return err
+			}
+			go func() {
+				cfg, valid := loadGatewaySettings(e.App)
+				if valid {
+					gwState.SetConfig(cfg)
+					gwState.RestartPipeline(e.App)
+				}
+			}()
+			return nil
+		}
+		app.OnRecordAfterCreateSuccess("gateway_settings").BindFunc(restartPipelineOnGatewaySettingsSave)
+		app.OnRecordAfterUpdateSuccess("gateway_settings").BindFunc(restartPipelineOnGatewaySettingsSave)
+
 		// Custom app API under /api/farmon only. Do NOT register routes under /api/ without the /farmon/ prefix,
 		// so PocketBase's built-in /api/collections/* and /api/records/* (used by the SDK) remain reachable.
 		se.Router.POST("/api/farmon/devices", provisionDeviceHandler(app))
@@ -39,9 +56,7 @@ func main() {
 		se.Router.POST("/api/farmon/setControl", setControlHandler(app, gwState))
 		se.Router.GET("/api/farmon/gateway-status", gatewayStatusHandler(gwState))
 		se.Router.GET("/api/farmon/debug/pipeline", pipelineDebugHandler(app, gwState))
-		se.Router.GET("/api/farmon/lorawan/frames", lorawanFramesHandler())
-		se.Router.POST("/api/farmon/lorawan/frames/clear", lorawanClearFramesHandler())
-		se.Router.GET("/api/farmon/lorawan/stats", lorawanStatsHandler(gwState))
+		se.Router.GET("/api/farmon/lorawan/stats", lorawanStatsHandler(app, gwState))
 		se.Router.POST("/api/farmon/ota/start", otaStartHandler(app))
 		se.Router.POST("/api/farmon/ota/cancel", otaCancelHandler(app))
 

@@ -132,7 +132,7 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		snr = &s
 	}
 	if len(result.JoinAcceptPHY) > 0 {
-		RecordUplink("", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
+		RecordUplink(app, "", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
 		profile := gateway.ProfileForRegion(cfg.Region)
 		df := gateway.BuildClassADownlink(cfg, profile, result.JoinAcceptPHY, frame)
 		ack, err := downlinkSender.SendDownlink(context.Background(), df)
@@ -151,7 +151,7 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		}
 		log.Printf("uplink: join → JoinAccept sent (RX1 %ds, freq=%d Hz) → gateway ack: %s", cfg.RX1DelaySec, freqHz, ackStatus)
 		}
-		RecordDownlink("", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), ackStatus)
+		RecordDownlink(app, "", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), ackStatus)
 		return
 	}
 	// Data uplink: decode and persist.
@@ -162,7 +162,7 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 			deviceName = n
 		}
 	}
-	RecordUplink(result.DevEUI, result.FPort, "data", result.Payload, len(phyRaw), rssi, snr, gwID)
+	RecordUplink(app, result.DevEUI, result.FPort, "data", result.Payload, len(phyRaw), rssi, snr, gwID)
 	if err := handleUplinkFromPipeline(app, result.DevEUI, deviceName, result.FPort, obj, rssi, snr); err != nil {
 		log.Printf("uplink: persist error dev_eui=%s f_port=%d: %v", result.DevEUI, result.FPort, err)
 		return
@@ -189,6 +189,6 @@ func EnqueueDownlink(cfg *gateway.Config, app core.App, devEUI string, fPort uin
 	if err != nil {
 		errMsg = err.Error()
 	}
-	RecordDownlink(devEUI, fPort, "data", payload, len(phyRaw), errMsg)
+	RecordDownlink(app, devEUI, fPort, "data", payload, len(phyRaw), errMsg)
 	return err
 }

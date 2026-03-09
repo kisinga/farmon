@@ -2,41 +2,80 @@ package main
 
 import (
 	"encoding/hex"
-	"sync"
+	"log"
 	"time"
+
+	"github.com/pocketbase/pocketbase/core"
 )
 
 const maxFrames = 500
 
 // RawFrame is a single LoRaWAN frame record for the monitoring UI.
 type RawFrame struct {
-	Time       string  `json:"time"`        // RFC3339
-	Direction  string  `json:"direction"`   // "up" | "down"
-	DevEUI     string  `json:"dev_eui"`      // empty for join request before decode
-	FPort      uint8   `json:"f_port"`
-	Kind       string  `json:"kind"`        // "join" | "data" | "join_accept"
-	PayloadHex string  `json:"payload_hex"`
-	PhyLen     int     `json:"phy_len"`
-	RSSI       *int    `json:"rssi,omitempty"`
+	Time       string   `json:"time"`        // RFC3339
+	Direction  string   `json:"direction"`  // "up" | "down"
+	DevEUI     string   `json:"dev_eui"`     // empty for join request before decode
+	FPort      uint8    `json:"f_port"`
+	Kind       string   `json:"kind"`        // "join" | "data" | "join_accept"
+	PayloadHex string   `json:"payload_hex"`
+	PhyLen     int      `json:"phy_len"`
+	RSSI       *int     `json:"rssi,omitempty"`
 	SNR        *float64 `json:"snr,omitempty"`
-	GatewayID  string  `json:"gateway_id,omitempty"`
-	Error      string  `json:"error,omitempty"` // downlink send error
+	GatewayID  string   `json:"gateway_id,omitempty"`
+	Error      string   `json:"error,omitempty"` // downlink send error
 }
 
-var (
-	frameBuf  [maxFrames]RawFrame
-	frameNext int // next write index (ring)
-	frameBufMu sync.RWMutex
-)
-
-func init() {
-	// frameBuf is zero-valued
+// WriteFrame inserts a frame into the lorawan_frames collection and triggers lazy trim.
+// If app is nil, the call is a no-op (for tests or before DB is ready).
+func WriteFrame(app core.App, f RawFrame) error {
+	if app == nil {
+		return nil
+	}
+	coll, err := app.FindCollectionByNameOrId("lorawan_frames")
+	if err != nil || coll == nil {
+		return err
+	}
+	rec := core.NewRecord(coll)
+	rec.Set("time", f.Time)
+	rec.Set("direction", f.Direction)
+	rec.Set("dev_eui", f.DevEUI)
+	rec.Set("f_port", int(f.FPort))
+	rec.Set("kind", f.Kind)
+	rec.Set("payload_hex", f.PayloadHex)
+	rec.Set("phy_len", f.PhyLen)
+	if f.RSSI != nil {
+		rec.Set("rssi", *f.RSSI)
+	}
+	if f.SNR != nil {
+		rec.Set("snr", *f.SNR)
+	}
+	rec.Set("gateway_id", f.GatewayID)
+	rec.Set("error", f.Error)
+	if err := app.Save(rec); err != nil {
+		return err
+	}
+	go trimLorawanFramesIfNeeded(app)
+	return nil
 }
 
-// RecordUplink adds an uplink to the ring buffer (call from pipeline).
-func RecordUplink(devEUI string, fPort uint8, kind string, payload []byte, phyLen int, rssi *int, snr *float64, gatewayID string) {
-	frameBufMu.Lock()
-	defer frameBufMu.Unlock()
+// trimLorawanFramesIfNeeded deletes oldest records when count exceeds maxFrames. Lazy, no transaction.
+// Fetches oldest first (sort "created" asc); if more than maxFrames, deletes the excess.
+func trimLorawanFramesIfNeeded(app core.App) {
+	records, err := app.FindRecordsByFilter("lorawan_frames", "", "created", maxFrames+200, 0, nil)
+	if err != nil || len(records) <= maxFrames {
+		return
+	}
+	toDelete := len(records) - maxFrames
+	for i := 0; i < toDelete; i++ {
+		if err := app.Delete(records[i]); err != nil {
+			log.Printf("lorawan_frames trim delete: %v", err)
+			return
+		}
+	}
+}
+
+// RecordUplink adds an uplink to the lorawan_frames collection (call from pipeline). Pass app from pipeline.
+func RecordUplink(app core.App, devEUI string, fPort uint8, kind string, payload []byte, phyLen int, rssi *int, snr *float64, gatewayID string) {
 	f := RawFrame{
 		Time:       time.Now().UTC().Format(time.RFC3339),
 		Direction:  "up",
@@ -49,13 +88,11 @@ func RecordUplink(devEUI string, fPort uint8, kind string, payload []byte, phyLe
 		SNR:        snr,
 		GatewayID:  gatewayID,
 	}
-	appendFrameLocked(f)
+	_ = WriteFrame(app, f)
 }
 
-// RecordDownlink adds a downlink to the ring buffer (call from EnqueueDownlink / pipeline).
-func RecordDownlink(devEUI string, fPort uint8, kind string, payload []byte, phyLen int, errMsg string) {
-	frameBufMu.Lock()
-	defer frameBufMu.Unlock()
+// RecordDownlink adds a downlink to the lorawan_frames collection (call from EnqueueDownlink / pipeline). Pass app.
+func RecordDownlink(app core.App, devEUI string, fPort uint8, kind string, payload []byte, phyLen int, errMsg string) {
 	f := RawFrame{
 		Time:       time.Now().UTC().Format(time.RFC3339),
 		Direction:  "down",
@@ -66,45 +103,7 @@ func RecordDownlink(devEUI string, fPort uint8, kind string, payload []byte, phy
 		PhyLen:     phyLen,
 		Error:      errMsg,
 	}
-	appendFrameLocked(f)
-}
-
-func appendFrameLocked(f RawFrame) {
-	frameBuf[frameNext%maxFrames] = f
-	frameNext++
-}
-
-// GetFrames returns the most recent frames (newest first). limit caps the count.
-func GetFrames(limit int) []RawFrame {
-	frameBufMu.RLock()
-	defer frameBufMu.RUnlock()
-	n := frameNext
-	if n == 0 {
-		return nil
-	}
-	if n > maxFrames {
-		n = maxFrames
-	}
-	if limit <= 0 || limit > maxFrames {
-		limit = maxFrames
-	}
-	if n < limit {
-		limit = n
-	}
-	out := make([]RawFrame, limit)
-	// Newest at (frameNext-1)%maxFrames, then going backwards.
-	for i := 0; i < limit; i++ {
-		idx := (frameNext - 1 - i + maxFrames*2) % maxFrames
-		out[i] = frameBuf[idx]
-	}
-	return out
-}
-
-// ClearFrames removes all stored frames (for UI "clear" action).
-func ClearFrames() {
-	frameBufMu.Lock()
-	defer frameBufMu.Unlock()
-	frameNext = 0
+	_ = WriteFrame(app, f)
 }
 
 // FrameStats holds aggregate counts for the monitor.
@@ -114,18 +113,19 @@ type FrameStats struct {
 	BufferSize     int `json:"buffer_size"`
 }
 
-// GetFrameStats returns current buffer size and counts.
-func GetFrameStats() FrameStats {
-	frameBufMu.RLock()
-	defer frameBufMu.RUnlock()
-	n := frameNext
-	if n > maxFrames {
-		n = maxFrames
+// GetFrameStatsFromDB returns frame counts from the lorawan_frames collection. Used by lorawanStatsHandler.
+func GetFrameStatsFromDB(app core.App) FrameStats {
+	if app == nil {
+		return FrameStats{}
+	}
+	records, err := app.FindRecordsByFilter("lorawan_frames", "", "-created", maxFrames*2, 0, nil)
+	if err != nil {
+		return FrameStats{}
 	}
 	var up, down int
-	for i := 0; i < n; i++ {
-		idx := (frameNext - 1 - i + maxFrames*2) % maxFrames
-		if frameBuf[idx].Direction == "up" {
+	for _, rec := range records {
+		d, _ := rec.Get("direction").(string)
+		if d == "up" {
 			up++
 		} else {
 			down++
@@ -134,6 +134,6 @@ func GetFrameStats() FrameStats {
 	return FrameStats{
 		TotalUplinks:   up,
 		TotalDownlinks: down,
-		BufferSize:     n,
+		BufferSize:     len(records),
 	}
 }
