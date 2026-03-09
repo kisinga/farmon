@@ -18,8 +18,6 @@ func main() {
 	gwState := &GatewayState{cfg: &gwCfg}
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
-		// Ensure collections exist (run after DB is ready; OnBootstrap is too early)
-		bootstrapCollections(app)
 		// Load gateway config from DB; start pipeline only if a valid record exists (event_url, command_url, region set)
 		if cfg, valid := LoadGatewaySettings(app); valid {
 			gwState.SetConfig(cfg)

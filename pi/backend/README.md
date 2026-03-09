@@ -11,7 +11,7 @@ go build -o pocketbase .
 ./pocketbase serve --http=0.0.0.0:8090
 ```
 
-First run creates `pb_data` and prompts for a superuser. Collections (devices, telemetry, lorawan_sessions, etc.) are created on first request (bootstrap).
+First run creates `pb_data` and prompts for a superuser. Collections (devices, telemetry, lorawan_sessions, etc.) are created automatically from JS migrations in `pb_migrations/` on `serve` (or `migrate up`).
 
 ## Device provisioning (LoRaWAN OTAA)
 

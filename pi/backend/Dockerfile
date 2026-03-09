@@ -20,5 +20,6 @@ WORKDIR /app
 ENV POCKETBASE_DATA_DIR=/app/pb_data
 EXPOSE 8090
 COPY --from=backend /build/pocketbase .
+COPY --from=backend /build/pb_migrations ./pb_migrations
 COPY --from=frontend /out ./pb_public
 ENTRYPOINT ["./pocketbase", "serve", "--http=0.0.0.0:8090"]
