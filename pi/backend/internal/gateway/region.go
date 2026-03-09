@@ -71,10 +71,12 @@ func (US915Profile) RX1Modulation() (bandwidth, spreadingFactor uint32, codeRate
 
 // ProfileForRegion returns the RegionProfile for the given region string (e.g. "EU868", "US915").
 // Unknown or empty region returns EU868Profile.
+// US915: SingleDownlinkChannel=false so backend sends per-uplink RX1 frequency (923.3 + (ch%8)*0.6 MHz);
+// concentratord uses the requested frequency for the single lora_std TX so JoinAccept reaches the device.
 func ProfileForRegion(region string) RegionProfile {
 	switch region {
 	case "US915":
-		return US915Profile{SingleDownlinkChannel: true} // Waveshare SX1302 HAT has one lora_std
+		return US915Profile{SingleDownlinkChannel: false}
 	case "EU868":
 		return EU868Profile{}
 	default:

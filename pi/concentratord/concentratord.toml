@@ -11,7 +11,8 @@ event_bind = "ipc:///tmp/concentratord_event"
 command_bind = "ipc:///tmp/concentratord_command"
 
 [gateway]
-antenna_gain = 0
+# Minimum 2 dBi recommended to avoid duty-cycle downlink rejection (ChirpStack concentratord #157).
+antenna_gain = 2
 lorawan_public = true
 region = "US915"
 model = "waveshare_sx1302_lorawan_gateway_hat"
