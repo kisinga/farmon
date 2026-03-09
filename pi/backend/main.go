@@ -38,7 +38,7 @@ func main() {
 		se.Router.POST("/api/farmon/pipeline/restart", pipelineRestartHandler(app, gwState))
 		se.Router.POST("/api/farmon/setControl", setControlHandler(app, gwState))
 		se.Router.GET("/api/farmon/gateway-status", gatewayStatusHandler(gwState))
-		se.Router.GET("/api/farmon/debug/pipeline", pipelineDebugHandler(gwState))
+		se.Router.GET("/api/farmon/debug/pipeline", pipelineDebugHandler(app, gwState))
 		se.Router.GET("/api/farmon/lorawan/frames", lorawanFramesHandler())
 		se.Router.POST("/api/farmon/lorawan/frames/clear", lorawanClearFramesHandler())
 		se.Router.GET("/api/farmon/lorawan/stats", lorawanStatsHandler(gwState))

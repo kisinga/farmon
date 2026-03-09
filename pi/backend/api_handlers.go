@@ -119,29 +119,24 @@ func gatewayStatusHandler(state *GatewayState) func(*core.RequestEvent) error {
 
 // pipelineDebugHandler returns concentratord config and runtime state (for debugging "no gateway online").
 // GET /api/farmon/debug/pipeline — no auth required for local diagnostics.
-func pipelineDebugHandler(state *GatewayState) func(*core.RequestEvent) error {
+// Config is loaded from DB so the UI shows saved settings even if pipeline/restart failed; when DB has valid config but in-memory did not, we sync and restart the pipeline.
+func pipelineDebugHandler(app core.App, state *GatewayState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		cfg := state.Config()
+		cfg, valid := loadGatewaySettings(app)
 		runtime := state.Runtime()
 		resp := map[string]any{
 			"concentratord_configured": false,
 			"gateway_id_set":          false,
-			"gateway_id":              "",
-			"event_url":               "",
-			"command_url":             "",
-			"rx1_delay_sec":            0,
-			"online":                   false,
-			"last_event_at":            nil,
-			"sub_connected":            false,
+			"gateway_id":              cfg.GatewayID,
+			"event_url":               cfg.EventURL,
+			"command_url":             cfg.CommandURL,
+			"rx1_delay_sec":           cfg.RX1DelaySec,
+			"online":                  false,
+			"last_event_at":           nil,
+			"sub_connected":           false,
 		}
-		if cfg != nil {
-			resp["concentratord_configured"] = cfg.Valid()
-			resp["gateway_id_set"] = cfg.GatewayID != ""
-			resp["gateway_id"] = cfg.GatewayID
-			resp["event_url"] = cfg.EventURL
-			resp["command_url"] = cfg.CommandURL
-			resp["rx1_delay_sec"] = cfg.RX1DelaySec
-		}
+		resp["concentratord_configured"] = valid
+		resp["gateway_id_set"] = cfg.GatewayID != ""
 		if runtime != nil {
 			resp["online"] = runtime.IsOnline()
 			lastEventAt, gatewayID, subConnected := runtime.Get()
@@ -152,6 +147,14 @@ func pipelineDebugHandler(state *GatewayState) func(*core.RequestEvent) error {
 			if gatewayID != "" {
 				resp["gateway_id"] = gatewayID
 				resp["gateway_id_set"] = true
+			}
+		}
+		// If DB has valid config but in-memory state was not configured, sync and start pipeline (e.g. pipeline/restart failed after save).
+		if valid {
+			inMem := state.Config()
+			if inMem == nil || !inMem.Valid() {
+				state.SetConfig(cfg)
+				state.RestartPipeline(app)
 			}
 		}
 		return e.JSON(http.StatusOK, resp)
