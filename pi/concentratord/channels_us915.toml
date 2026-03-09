@@ -7,16 +7,10 @@
 # the device never receives the JoinAccept.
 
 [gateway.concentrator]
-# 8 uplink channels (multi_sf); same as backend region_config.go us915UplinkChannels.
+# Single uplink channel (903.9 MHz = US915 ch 8) so device RX1 is always 923.3 MHz, matching lora_std.
+# Trade-off: we only receive joins on 903.9 MHz; ensure devices use sub-band 2 and prefer ch 8 for join.
 multi_sf_channels = [
   903900000,
-  904100000,
-  904300000,
-  904500000,
-  904700000,
-  904900000,
-  905100000,
-  905300000,
 ]
 
 # Single downlink channel for Class A RX1. Must be 923–927.5 MHz for US915.
