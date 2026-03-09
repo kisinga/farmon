@@ -1,0 +1,20 @@
+# ChirpStack concentratord main config for US915 (915 MHz HAT). Use with channels_us915.toml.
+# Run: chirpstack-concentratord-sx1302 -c /etc/chirpstack-concentratord/concentratord.toml -c /etc/chirpstack-concentratord/channels_us915.toml
+
+[concentratord]
+log_level = "INFO"
+log_to_syslog = false
+stats_interval = "30s"
+
+[concentratord.api]
+event_bind = "ipc:///tmp/concentratord_event"
+command_bind = "ipc:///tmp/concentratord_command"
+
+[gateway]
+antenna_gain = 0
+lorawan_public = true
+region = "US915"
+model = "waveshare_sx1302_lorawan_gateway_hat"
+model_flags = []
+gateway_id = ""
+time_fallback_enabled = true

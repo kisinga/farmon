@@ -47,6 +47,10 @@ func (p US915Profile) RX1FrequencyHz(uplinkFreqHz, overrideHz uint32) uint32 {
 	if overrideHz != 0 {
 		return overrideHz
 	}
+	// When concentratord omits uplink TxInfo we get 0; use region default so we never send downlink freq 0.
+	if uplinkFreqHz == 0 {
+		return us915DownlinkBase
+	}
 	if uplinkFreqHz < us915UplinkMinHz || uplinkFreqHz > us915UplinkMaxHz {
 		return uplinkFreqHz
 	}

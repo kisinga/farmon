@@ -5,12 +5,14 @@
 # manually) with a config that binds event/command to the same IPC paths the app
 # uses (e.g. ipc:///tmp/concentratord_event, ipc:///tmp/concentratord_command).
 #
-# Usage: sudo bash setup_gateway.sh
+# Usage: sudo REGION=US915 bash setup_gateway.sh
+#   REGION=EU868 or REGION=US915 (default: US915). Enables and starts concentratord with that config.
 #
 
 set -e
 
 CONCENTRATORD_VERSION="4.4.1"
+REGION="${REGION:-US915}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -56,6 +58,50 @@ install -m 755 /tmp/chirpstack-concentratord-sx1302 /usr/local/bin/
 rm -f /tmp/concentratord.tar.gz /tmp/chirpstack-concentratord-sx1302
 ok "Concentratord installed to /usr/local/bin/chirpstack-concentratord-sx1302"
 
+# Install concentratord configs (EU868 and US915) with correct lora_std so JoinAccept downlink works.
+CONF_DIR="/etc/chirpstack-concentratord"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "$SCRIPT_DIR/concentratord" && -f "$SCRIPT_DIR/concentratord/channels_us915.toml" ]]; then
+  log "Installing concentratord configs (EU868 + US915)..."
+  mkdir -p "$CONF_DIR"
+  install -m 644 "$SCRIPT_DIR/concentratord/concentratord.toml" "$CONF_DIR/"
+  install -m 644 "$SCRIPT_DIR/concentratord/concentratord_eu868.toml" "$CONF_DIR/"
+  install -m 644 "$SCRIPT_DIR/concentratord/channels_us915.toml" "$CONF_DIR/"
+  install -m 644 "$SCRIPT_DIR/concentratord/channels_eu868.toml" "$CONF_DIR/"
+  ok "Config installed to $CONF_DIR"
+else
+  log "Skipping config install (concentratord/ not found); copy pi/concentratord/*.toml to $CONF_DIR manually."
+fi
+
+# Autostart concentratord with REGION (EU868 or US915)
+case "$REGION" in
+  EU868) MAIN_CONF="concentratord_eu868.toml"; CHAN_CONF="channels_eu868.toml" ;;
+  US915) MAIN_CONF="concentratord.toml"; CHAN_CONF="channels_us915.toml" ;;
+  *)     err "REGION must be EU868 or US915 (got: $REGION)"; exit 1 ;;
+esac
+if [[ -f "$CONF_DIR/$MAIN_CONF" && -f "$CONF_DIR/$CHAN_CONF" ]]; then
+  log "Enabling concentratord service (REGION=$REGION)..."
+  cat > /etc/systemd/system/concentratord.service << EOF
+[Unit]
+Description=ChirpStack Concentratord (SX1302)
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/chirpstack-concentratord-sx1302 -c $CONF_DIR/$MAIN_CONF -c $CONF_DIR/$CHAN_CONF
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable concentratord
+  systemctl start concentratord
+  ok "concentratord started (region=$REGION)"
+else
+  log "Skipping systemd (config files not found); start concentratord manually with -c for your region."
+fi
+
 echo ""
-echo -e "${GREEN}Done.${NC} Run concentratord with a config that binds event_bind and command_bind to the same IPC paths the app expects (e.g. ipc:///tmp/concentratord_event, ipc:///tmp/concentratord_command). Then open the app → LoRaWAN → Gateway configuration → Save."
+echo -e "${GREEN}Done.${NC} Concentratord is running with region=$REGION. In the app set Gateway → Region to $REGION and Save."
 echo ""

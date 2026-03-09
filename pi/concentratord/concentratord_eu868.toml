@@ -1,0 +1,20 @@
+# ChirpStack concentratord main config for EU868. Use with channels_eu868.toml.
+# Run: chirpstack-concentratord-sx1302 -c /etc/chirpstack-concentratord/concentratord_eu868.toml -c /etc/chirpstack-concentratord/channels_eu868.toml
+
+[concentratord]
+log_level = "INFO"
+log_to_syslog = false
+stats_interval = "30s"
+
+[concentratord.api]
+event_bind = "ipc:///tmp/concentratord_event"
+command_bind = "ipc:///tmp/concentratord_command"
+
+[gateway]
+antenna_gain = 0
+lorawan_public = true
+region = "EU868"
+model = "waveshare_sx1302_lorawan_gateway_hat"
+model_flags = []
+gateway_id = ""
+time_fallback_enabled = true

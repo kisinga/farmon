@@ -1,0 +1,26 @@
+# ChirpStack concentratord channel config for US915 (Waveshare SX1302 HAT).
+# Install to /etc/chirpstack-concentratord/ and run:
+#   chirpstack-concentratord-sx1302 -c /etc/chirpstack-concentratord/concentratord.toml -c /etc/chirpstack-concentratord/channels_us915.toml
+#
+# CRITICAL: lora_std must be 923.3 MHz so Class A downlink (JoinAccept) is transmitted
+# where the device listens for RX1. If lora_std is in the uplink band (902–915 MHz),
+# the device never receives the JoinAccept.
+
+[gateway.concentrator]
+# 8 uplink channels (multi_sf); same as backend region_config.go us915UplinkChannels.
+multi_sf_channels = [
+  903900000,
+  904100000,
+  904300000,
+  904500000,
+  904700000,
+  904900000,
+  905100000,
+  905300000,
+]
+
+# Single downlink channel for Class A RX1. Must be 923–927.5 MHz for US915.
+[gateway.concentrator.lora_std]
+frequency = 923300000
+bandwidth = 500000
+spreading_factor = 12

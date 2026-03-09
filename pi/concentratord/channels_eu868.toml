@@ -1,0 +1,24 @@
+# ChirpStack concentratord channel config for EU868 (e.g. Waveshare SX1302 868 MHz HAT).
+# Install to /etc/chirpstack-concentratord/ and run:
+#   chirpstack-concentratord-sx1302 -c /etc/chirpstack-concentratord/concentratord_eu868.toml -c /etc/chirpstack-concentratord/channels_eu868.toml
+#
+# In EU868, RX1 uses the same band as uplink; lora_std is typically 868.1 MHz for Class A downlink (JoinAccept).
+
+[gateway.concentrator]
+# 8 channels (multi_sf); same as backend region_config.go eu868Channels.
+multi_sf_channels = [
+  868100000,
+  868300000,
+  868500000,
+  867100000,
+  867300000,
+  867500000,
+  867700000,
+  867900000,
+]
+
+# Single downlink channel for Class A RX1 (EU868 same band as uplink).
+[gateway.concentrator.lora_std]
+frequency = 868100000
+bandwidth = 125000
+spreading_factor = 7

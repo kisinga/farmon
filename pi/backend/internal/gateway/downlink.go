@@ -40,7 +40,9 @@ func BuildClassADownlink(cfg *Config, profile RegionProfile, phyPayload []byte, 
 		uplinkFreqHz := uplinkFrequency(uplink)
 		item.TxInfo.Frequency = profile.RX1FrequencyHz(uplinkFreqHz, cfg.RX1FrequencyHz)
 		if item.TxInfo.Frequency == 0 {
-			log.Printf("downlink: uplink has no frequency; set rx1_frequency_hz in gateway settings or fix concentratord event parsing")
+			log.Printf("downlink: WARNING Class A downlink freq_hz=0; set rx1_frequency_hz in gateway settings or fix concentratord event parsing")
+		} else {
+			log.Printf("Class A downlink: context=yes delay=%ds freq_hz=%d", delaySec, item.TxInfo.Frequency)
 		}
 		bw, sf, cr := profile.RX1Modulation()
 		item.TxInfo.Modulation = &gw.Modulation{
