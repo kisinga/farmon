@@ -324,9 +324,7 @@ func (c *Client) sendConfigOnce(ctx context.Context, cfg *gw.GatewayConfiguratio
 	return nil
 }
 
-// SendDownlink implements gateway.DownlinkSender. Sends a single frame with gw.Command{ SendDownlinkFrame }
-// so concentratord (which decodes one frame as Command) receives the frame and uses TxInfo.Frequency for TX.
-// Response is DownlinkTxAck.
+// SendDownlink implements gateway.DownlinkSender. Sends frame0="down", frame1=DownlinkFrame (Protobuf); response is DownlinkTxAck.
 func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw.DownlinkTxAck, error) {
 	ack, err := c.sendDownlinkOnce(ctx, frame)
 	if err != nil && isConnError(err) {
@@ -340,15 +338,12 @@ func (c *Client) sendDownlinkOnce(ctx context.Context, frame *gw.DownlinkFrame) 
 	if err := c.ensureCommandConn(ctx); err != nil {
 		return nil, err
 	}
-	cmd := &gw.Command{
-		Command: &gw.Command_SendDownlinkFrame{SendDownlinkFrame: frame},
-	}
-	body, err := proto.Marshal(cmd)
+	body, err := proto.Marshal(frame)
 	if err != nil {
-		return nil, fmt.Errorf("marshal Command: %w", err)
+		return nil, fmt.Errorf("marshal DownlinkFrame: %w", err)
 	}
 	c.reqMu.Lock()
-	err = c.req.Send(zmq4.NewMsgFrom(body))
+	err = c.req.Send(zmq4.NewMsgFrom([]byte("down"), body))
 	if err != nil {
 		c.reqMu.Unlock()
 		return nil, fmt.Errorf("concentratord REQ send: %w", err)
