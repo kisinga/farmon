@@ -104,4 +104,5 @@ fi
 
 echo ""
 echo -e "${GREEN}Done.${NC} Concentratord is running with region=$REGION. In the app set Gateway → Region to $REGION and Save."
+echo -e "If concentratord fails with ${YELLOW}EBUSY: Device or resource busy${NC} on reset pin, stop the service, reboot the Pi, then start again (see pi/concentratord/README.md)."
 echo ""
