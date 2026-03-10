@@ -19,7 +19,8 @@ model = "waveshare_sx1302_lorawan_gateway_hat"
 model_flags = []
 gateway_id = ""
 time_fallback_enabled = true
-# If concentratord fails with EBUSY on reset pin, reboot the Pi (see concentratord/README.md).
-# Uncomment and set only if your HAT uses a different reset pin (Waveshare uses 23).
-# sx1302_reset_chip = "/dev/gpiochip0"
-# sx1302_reset_pin = 23
+# Reset pin override (root cause of EBUSY): ChirpStack model default is GPIO 23. On Raspberry Pi,
+# GPIO 23 is SD0 CMD (sdhost) and is often claimed by the kernel → EBUSY. Waveshare SX1302 HAT
+# uses GPIO 17 for SX1302 reset per schematic/custom HAL. Using 17 avoids the conflict.
+sx1302_reset_chip = "/dev/gpiochip0"
+sx1302_reset_pin = 17

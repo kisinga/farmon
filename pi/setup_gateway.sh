@@ -104,5 +104,5 @@ fi
 
 echo ""
 echo -e "${GREEN}Done.${NC} Concentratord is running with region=$REGION. In the app set Gateway → Region to $REGION and Save."
-echo -e "If concentratord fails with ${YELLOW}EBUSY: Device or resource busy${NC} on reset pin, stop the service, reboot the Pi, then start again (see pi/concentratord/README.md)."
+echo -e "Config uses ${CYAN}sx1302_reset_pin=17${NC} (Waveshare HAT) to avoid EBUSY on GPIO 23 (Pi SD0 CMD). See pi/concentratord/README.md."
 echo ""

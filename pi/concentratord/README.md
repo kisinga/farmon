@@ -34,34 +34,10 @@ After changing config, restart concentratord so it reloads the files.
 
 ---
 
-## Troubleshooting: `EBUSY: Device or resource busy` on reset pin
+## Root cause of `EBUSY: Device or resource busy` on reset pin
 
-If concentratord fails at startup with:
+ChirpStack concentratord’s **waveshare_sx1302_lorawan_gateway_hat** model uses the Lora-net HAL default **GPIO 23** for the SX1302 reset pin. On Raspberry Pi, **GPIO 23 is SD0 CMD** (part of the sdhost/secondary SD interface). On many Pi OS/kernel setups the kernel or a driver **claims this line**, so when concentratord requests it via libgpiod, the ioctl returns **EBUSY** and the daemon exits. Systemd then restarts it in a loop.
 
-```text
-setup reset pins error: Ioctl to get line handle failed: EBUSY: Device or resource busy
-```
-(and `pin: 23` for Waveshare SX1302 HAT), **GPIO 23 (reset) is already in use**. The daemon then exits and systemd restarts it in a loop, so the gateway never stays up even if the backend logs "gateway ack: OK".
+The **Waveshare SX1302 LoRaWAN Gateway HAT** uses **GPIO 17** for SX1302 reset (schematic and Waveshare’s custom HAL). GPIO 17 is not reserved for SD on the Pi, so using it avoids the conflict.
 
-**What to do:**
-
-1. **Stop concentratord** so it stops retrying and releasing the pin on each crash:
-   ```bash
-   sudo systemctl stop chirpstack-concentratord
-   ```
-   (Use your actual service name if different, e.g. `concentratord`.)
-
-2. **Reboot the Pi** so the kernel releases any stuck GPIO handle:
-   ```bash
-   sudo reboot
-   ```
-
-3. After boot, **start concentratord again**:
-   ```bash
-   sudo systemctl start chirpstack-concentratord
-   ```
-   Check: `sudo systemctl status chirpstack-concentratord` and `journalctl -u chirpstack-concentratord -n 30`.
-
-If EBUSY persists after a reboot, another process is using GPIO 23 (e.g. another LoRa stack or script). Stop that process or disable its service.
-
-**Optional:** Some boards use a different reset pin. You can override in the main TOML (see commented `sx1302_reset_chip` / `sx1302_reset_pin` in `concentratord.toml`) and set the pin your HAT uses, then restart concentratord.
+**Fix (already applied in this repo):** The concentratord TOML files set `sx1302_reset_chip = "/dev/gpiochip0"` and `sx1302_reset_pin = 17`. After copying the updated config to the Pi (e.g. re-run `setup_gateway.sh` or copy `pi/concentratord/*.toml` to `/etc/chirpstack-concentratord/`), restart concentratord. If your HAT actually uses a different reset pin (e.g. 23 on a different board), change `sx1302_reset_pin` in the TOML to match your hardware.
