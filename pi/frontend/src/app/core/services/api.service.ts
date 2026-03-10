@@ -229,7 +229,7 @@ export class ApiService {
             event_url: '',
             command_url: '',
             gateway_id: '',
-            rx1_delay: 1,
+            rx1_delay: 5,
             rx1_frequency_hz: 0,
             saved: false,
           } as GatewaySettings;
@@ -239,7 +239,7 @@ export class ApiService {
           event_url: (r.event_url ?? '').trim(),
           command_url: (r.command_url ?? '').trim(),
           gateway_id: (r.gateway_id ?? '').trim(),
-          rx1_delay: typeof r.rx1_delay === 'number' ? r.rx1_delay : 1,
+          rx1_delay: typeof r.rx1_delay === 'number' ? r.rx1_delay : 5,
           rx1_frequency_hz: typeof r.rx1_frequency_hz === 'number' ? r.rx1_frequency_hz : 0,
           saved: true,
         } as GatewaySettings;
@@ -264,7 +264,7 @@ export class ApiService {
           region: settings.region ?? existing?.region ?? 'EU868',
           event_url: settings.event_url ?? existing?.event_url ?? '',
           command_url: settings.command_url ?? existing?.command_url ?? '',
-          rx1_delay: settings.rx1_delay ?? existing?.rx1_delay ?? 1,
+          rx1_delay: settings.rx1_delay ?? existing?.rx1_delay ?? 5,
           rx1_frequency_hz: settings.rx1_frequency_hz ?? existing?.rx1_frequency_hz ?? 0,
         };
         const op = existing

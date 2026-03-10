@@ -224,7 +224,7 @@ export class GatewaySettingsComponent implements OnInit {
     event_url: 'ipc:///tmp/concentratord_event',
     command_url: 'ipc:///tmp/concentratord_command',
     gateway_id: '',
-    rx1_delay: 1,
+    rx1_delay: 5,
     rx1_frequency_hz: 0,
     saved: false,
   };
@@ -279,7 +279,7 @@ export class GatewaySettingsComponent implements OnInit {
       region: this.form.region.trim(),
       event_url: this.form.event_url.trim(),
       command_url: this.form.command_url.trim(),
-      rx1_delay: Math.max(1, Math.min(15, this.form.rx1_delay ?? 1)),
+      rx1_delay: Math.max(1, Math.min(15, this.form.rx1_delay ?? 5)),
       rx1_frequency_hz: this.form.rx1_frequency_hz ?? 0,
     };
     this.api.patchGatewaySettings(payload).subscribe({

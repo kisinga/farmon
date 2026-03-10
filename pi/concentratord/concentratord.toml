@@ -2,7 +2,7 @@
 # Run: chirpstack-concentratord-sx1302 -c /etc/chirpstack-concentratord/concentratord.toml -c /etc/chirpstack-concentratord/channels_us915.toml
 
 [concentratord]
-log_level = "INFO"
+log_level = "DEBUG"
 log_to_syslog = false
 stats_interval = "30s"
 
