@@ -18,7 +18,11 @@ model = "waveshare_sx1302_lorawan_gateway_hat"
 model_flags = []
 gateway_id = ""
 time_fallback_enabled = true
-# Reset pin 17 (same as US915): avoids GPIO 23 EBUSY on Pi. Power-en 18 unchanged.
+# GPIO 17: SX1302 reset (Waveshare HAT B). GPIO 23 is Pi SD0 CMD → EBUSY on many Pi OS.
+# GPIO 18: PWREN (Waveshare HAT B — drives RF chain power; must be free at boot).
+# If lgw_start fails with "Failed to set SX1250_0 in STANDBY_RC mode":
+#   1. Run: gpioinfo | grep -E '"17"|"18"' — both must show "unused" before concentratord starts.
+#   2. Check: grep -E "pwm|i2s|uart" /boot/firmware/config.txt — remove conflicting overlays.
 sx1302_reset_chip = "/dev/gpiochip0"
 sx1302_reset_pin = 17
 sx1302_power_en_chip = "/dev/gpiochip0"

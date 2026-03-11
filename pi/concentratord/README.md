@@ -34,6 +34,28 @@ After changing config, restart concentratord so it reloads the files.
 
 ---
 
+## Root cause of `Failed to set SX1250_0 in STANDBY_RC mode`
+
+This error means the SX1302 chip was detected (SPI works, chip version printed) but the
+SX1250 RF frontend couldn't be initialized. Almost always a power issue on GPIO 18 (PWREN):
+
+1. **GPIO 18 held by a crashed previous instance** — the most common cause after a restart loop.
+   Fixed by the `ExecStartPre` GPIO release in the systemd service. Re-run `setup_gateway.sh`
+   (or `systemctl daemon-reload && systemctl restart chirpstack-concentratord`) to pick up the new service.
+
+2. **GPIO 18 claimed by a kernel driver at boot** — check:
+   ```bash
+   gpioinfo | grep -E '"17"|"18"'   # both must show "unused" before concentratord starts
+   grep -E "pwm|i2s|uart" /boot/firmware/config.txt
+   ```
+   Remove any overlay that claims GPIO 18 (e.g. `dtoverlay=pwm`), then reboot.
+
+3. **Restart loop masking the error** — with hundreds of restarts, EBUSY appears on every
+   attempt after the first, hiding the original failure. Fix the EBUSY cascade first (see below),
+   then check whether `lgw_start` still fails in a clean restart.
+
+---
+
 ## Root cause of `EBUSY: Device or resource busy` on reset pin
 
 The **reference config** (matching the working ChirpStack setup) uses **GPIO 23** for SX1302 reset and **GPIO 18** for power-enable. On Raspberry Pi, **GPIO 23 is SD0 CMD** (part of the sdhost/secondary SD interface). On many Pi OS/kernel setups the kernel or a driver **claims this line**, so when concentratord requests it via libgpiod, the ioctl returns **EBUSY** and the daemon exits. Systemd then restarts it in a loop.

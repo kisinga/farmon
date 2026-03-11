@@ -87,9 +87,15 @@ Description=ChirpStack Concentratord (SX1302)
 After=network.target
 
 [Service]
+# Release GPIO 17 (reset) and GPIO 18 (PWREN) via sysfs if held from a previous crash.
+ExecStartPre=-/bin/sh -c "echo 17 > /sys/class/gpio/export 2>/dev/null; echo out > /sys/class/gpio/gpio17/direction 2>/dev/null; echo 17 > /sys/class/gpio/unexport 2>/dev/null"
+ExecStartPre=-/bin/sh -c "echo 18 > /sys/class/gpio/export 2>/dev/null; echo out > /sys/class/gpio/gpio18/direction 2>/dev/null; echo 18 > /sys/class/gpio/unexport 2>/dev/null"
 ExecStart=/usr/local/bin/chirpstack-concentratord-sx1302 -c $CONF_DIR/$MAIN_CONF -c $CONF_DIR/$CHAN_CONF
+Environment=RUST_BACKTRACE=1
 Restart=on-failure
-RestartSec=5
+RestartSec=10
+KillMode=control-group
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -104,5 +110,5 @@ fi
 
 echo ""
 echo -e "${GREEN}Done.${NC} Concentratord is running with region=$REGION. In the app set Gateway → Region to $REGION and Save."
-echo -e "Config uses reset pin 23 and power_en 18 (ChirpStack reference). If you see EBUSY on Pi, set sx1302_reset_pin=17 in the TOML. See pi/concentratord/README.md."
+echo -e "Config uses reset pin 17 and power_en 18 (Waveshare HAT B). If lgw_start fails, run 'gpioinfo' on the Pi to check GPIO 17/18 conflicts. See pi/concentratord/README.md."
 echo ""
