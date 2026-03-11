@@ -19,9 +19,9 @@ model = "waveshare_sx1302_lorawan_gateway_hat"
 model_flags = []
 gateway_id = ""
 time_fallback_enabled = true
-# Reset / power-enable: values from working ChirpStack setup (23, 18). On Pi, GPIO 23 may be EBUSY (sdhost); try sx1302_reset_pin = 17 if needed. See README.
+# Reset pin 17: Waveshare HAT uses GPIO 17 for SX1302 reset. GPIO 23 is Pi SD0 CMD → EBUSY on many Pi OS.
 sx1302_reset_chip = "/dev/gpiochip0"
-sx1302_reset_pin = 23
+sx1302_reset_pin = 17
 sx1302_power_en_chip = "/dev/gpiochip0"
 sx1302_power_en_pin = 18
 
@@ -32,18 +32,6 @@ device = "/dev/spidev0.0"
 device = "/dev/i2c-1"
 temp_sensor_addr = 0x39
 
-[[gateway.concentrator.radios]]
-enabled = true
-type = "SX1250"
-freq = 904300000
-rssi_offset = -215.4
-tx_enable = true
-tx_freq_min = 902000000
-tx_freq_max = 928000000
-
-[[gateway.concentrator.radios]]
-enabled = true
-type = "SX1250"
-freq = 905300000
-rssi_offset = -215.4
-tx_enable = false
+# [gateway.concentrator] (multi_sf_channels, lora_std, fsk) is in channels_us915.toml.
+# Do not add [[gateway.concentrator.radios]] here or the daemon can end up with a concentrator
+# section missing multi_sf_channels and fail with "missing field multi_sf_channels".

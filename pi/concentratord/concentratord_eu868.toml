@@ -18,9 +18,9 @@ model = "waveshare_sx1302_lorawan_gateway_hat"
 model_flags = []
 gateway_id = ""
 time_fallback_enabled = true
-# Reset / power-enable: same reference values as US915 (23, 18). If EBUSY on Pi, try sx1302_reset_pin = 17. See README.
+# Reset pin 17 (same as US915): avoids GPIO 23 EBUSY on Pi. Power-en 18 unchanged.
 sx1302_reset_chip = "/dev/gpiochip0"
-sx1302_reset_pin = 23
+sx1302_reset_pin = 17
 sx1302_power_en_chip = "/dev/gpiochip0"
 sx1302_power_en_pin = 18
 
@@ -31,18 +31,4 @@ device = "/dev/spidev0.0"
 device = "/dev/i2c-1"
 temp_sensor_addr = 0x39
 
-[[gateway.concentrator.radios]]
-enabled = true
-type = "SX1250"
-freq = 868300000
-rssi_offset = -215.4
-tx_enable = true
-tx_freq_min = 863000000
-tx_freq_max = 870000000
-
-[[gateway.concentrator.radios]]
-enabled = true
-type = "SX1250"
-freq = 867900000
-rssi_offset = -215.4
-tx_enable = false
+# [gateway.concentrator] is in channels_eu868.toml (multi_sf_channels, lora_std, fsk).
