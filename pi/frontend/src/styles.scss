@@ -11,16 +11,33 @@
   }
 }
 
-/* FarMon theme brand colors (from logo card) */
-:root {
-  --farmon-far: #1b4a1e;
-  --farmon-mon: #2e8b30;
-  --farmon-muted: #7aaa7c;
+/* FarMon brand wordmark colours — adapt to active theme.
+   DaisyUI v4 uses 'farmon' as the default (no data-theme attr),
+   so we cover both the default :root case and explicit data-theme. */
+:root,
+[data-theme="farmon"] {
+  --farmon-far:   #1b5e20;
+  --farmon-mon:   #388e3c;
+  --farmon-muted: #81c784;
+}
+
+/* Explicit dark, or system dark preference with no data-theme set */
+[data-theme="farmon-dark"] {
+  --farmon-far:   #e8f5e9;
+  --farmon-mon:   #81c784;
+  --farmon-muted: #4a6a4c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --farmon-far:   #e8f5e9;
+    --farmon-mon:   #81c784;
+    --farmon-muted: #4a6a4c;
+  }
 }
 
 @layer components {
-  .brand-far { color: var(--farmon-far); }
-  .brand-mon { color: var(--farmon-mon); }
+  .brand-far   { color: var(--farmon-far); }
+  .brand-mon   { color: var(--farmon-mon); }
   .brand-muted { color: var(--farmon-muted); }
   .page-header {
     @apply mb-6;

@@ -21,6 +21,6 @@ export class LogoComponent {
   alt = input('FarMon');
   /** Tailwind classes for size/layout (e.g. h-8 w-auto). */
   class = input('h-8 w-auto shrink-0');
-  width = input(27);
+  width = input(32);
   height = input(32);
 }

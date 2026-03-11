@@ -87,9 +87,10 @@ Description=ChirpStack Concentratord (SX1302)
 After=network.target
 
 [Service]
-# Release GPIO 17 (reset) and GPIO 18 (PWREN) via sysfs if held from a previous crash.
-ExecStartPre=-/bin/sh -c "echo 17 > /sys/class/gpio/export 2>/dev/null; echo out > /sys/class/gpio/gpio17/direction 2>/dev/null; echo 17 > /sys/class/gpio/unexport 2>/dev/null"
-ExecStartPre=-/bin/sh -c "echo 18 > /sys/class/gpio/export 2>/dev/null; echo out > /sys/class/gpio/gpio18/direction 2>/dev/null; echo 18 > /sys/class/gpio/unexport 2>/dev/null"
+# Release GPIO 17 (reset) and GPIO 18 (PWREN) via gpioset if held from a previous crash.
+# Uses libgpiod (modern Pi OS); --mode=exit releases the line immediately after setting it.
+ExecStartPre=-/usr/bin/gpioset --mode=exit /dev/gpiochip0 17=0
+ExecStartPre=-/usr/bin/gpioset --mode=exit /dev/gpiochip0 18=0
 ExecStart=/usr/local/bin/chirpstack-concentratord-sx1302 -c $CONF_DIR/$MAIN_CONF -c $CONF_DIR/$CHAN_CONF
 Environment=RUST_BACKTRACE=1
 Restart=on-failure
