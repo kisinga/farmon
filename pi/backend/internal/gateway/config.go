@@ -12,7 +12,7 @@ type Config struct {
 }
 
 const (
-	defaultRX1DelaySec = 5
+	defaultRX1DelaySec = 1
 	minRX1DelaySec     = 1
 	maxRX1DelaySec     = 15
 )

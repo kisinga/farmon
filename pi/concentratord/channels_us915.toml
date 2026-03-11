@@ -25,3 +25,8 @@ multi_sf_channels = [
 frequency = 904600000
 bandwidth = 500000
 spreading_factor = 8
+
+[gateway.concentrator.fsk]
+frequency = 0
+bandwidth = 0
+datarate = 0

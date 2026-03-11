@@ -36,8 +36,8 @@ After changing config, restart concentratord so it reloads the files.
 
 ## Root cause of `EBUSY: Device or resource busy` on reset pin
 
-ChirpStack concentratord’s **waveshare_sx1302_lorawan_gateway_hat** model uses the Lora-net HAL default **GPIO 23** for the SX1302 reset pin. On Raspberry Pi, **GPIO 23 is SD0 CMD** (part of the sdhost/secondary SD interface). On many Pi OS/kernel setups the kernel or a driver **claims this line**, so when concentratord requests it via libgpiod, the ioctl returns **EBUSY** and the daemon exits. Systemd then restarts it in a loop.
+The **reference config** (matching the working ChirpStack setup) uses **GPIO 23** for SX1302 reset and **GPIO 18** for power-enable. On Raspberry Pi, **GPIO 23 is SD0 CMD** (part of the sdhost/secondary SD interface). On many Pi OS/kernel setups the kernel or a driver **claims this line**, so when concentratord requests it via libgpiod, the ioctl returns **EBUSY** and the daemon exits. Systemd then restarts it in a loop.
 
-The **Waveshare SX1302 LoRaWAN Gateway HAT** uses **GPIO 17** for SX1302 reset (schematic and Waveshare’s custom HAL). GPIO 17 is not reserved for SD on the Pi, so using it avoids the conflict.
+**Mitigation:** If you get EBUSY with pin 23, set `sx1302_reset_pin = 17` in the TOML (and ensure no other process uses GPIO 17). The Waveshare SX1302 LoRaWAN Gateway HAT schematic uses GPIO 17 for reset on some boards. If both 23 and 17 are busy, run `gpioinfo` or check `/boot/config.txt` / device tree to see what is claiming the pins; free the chosen pin or use another per your HAT schematic.
 
-**Fix (already applied in this repo):** The concentratord TOML files set `sx1302_reset_chip = "/dev/gpiochip0"` and `sx1302_reset_pin = 17`. After copying the updated config to the Pi (e.g. re-run `setup_gateway.sh` or copy `pi/concentratord/*.toml` to `/etc/chirpstack-concentratord/`), restart concentratord. If your HAT actually uses a different reset pin (e.g. 23 on a different board), change `sx1302_reset_pin` in the TOML to match your hardware.
+After copying the updated config to the Pi (e.g. re-run `setup_gateway.sh` or copy `pi/concentratord/*.toml` to `/etc/chirpstack-concentratord/`), restart concentratord.

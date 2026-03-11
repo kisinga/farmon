@@ -98,7 +98,7 @@ func processJoinRequest(phy *lorawan.PHYPayload, keys DeviceKeysProvider, sessio
 			JoinNonce:  joinNonce,
 			HomeNetID:  DefaultNetID,
 			DevAddr:    devAddr,
-			DLSettings: lorawan.DLSettings{RX2DataRate: 0, RX1DROffset: 0},
+			DLSettings: lorawan.DLSettings{RX2DataRate: 8, RX1DROffset: 0}, // US915 RX2 DR8 (matches ChirpStack rx2_dr = 8)
 			RXDelay:    rxDelay,
 		},
 	}
