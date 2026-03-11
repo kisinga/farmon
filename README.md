@@ -4,7 +4,7 @@
 
 **Monitor your farm. From far. Farm on!**
 
-LoRaWAN-based farm monitoring with long-range sensors and local data processing.
+LoRaWAN-based farm monitoring and automation with long-range sensors and local data processing.
 
 ## Architecture
 
