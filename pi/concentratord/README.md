@@ -37,22 +37,27 @@ After changing config, restart concentratord so it reloads the files.
 ## Root cause of `Failed to set SX1250_0 in STANDBY_RC mode`
 
 This error means the SX1302 chip was detected (SPI works, chip version printed) but the
-SX1250 RF frontend couldn't be initialized. Almost always a power issue on GPIO 18 (PWREN):
+SX1250 RF frontend couldn't be initialized. The SX1250 is the RF sub-chip on the internal
+SX1302 sub-SPI — distinct from the Pi↔SX1302 SPI that's working.
 
-1. **GPIO 18 held by a crashed previous instance** — the most common cause after a restart loop.
-   Fixed by the `ExecStartPre` GPIO release in the systemd service. Re-run `setup_gateway.sh`
-   (or `systemctl daemon-reload && systemctl restart chirpstack-concentratord`) to pick up the new service.
+1. **`sx1302_power_en_pin = 18` set when the board doesn't need it** — confirmed cause on
+   Waveshare HAT variants where GPIO 18 is NOT a PWREN line. Asserting it interferes with the
+   SX1250 sub-SPI init. The config has this **disabled** (commented out). Do not re-enable unless
+   you verify your specific board has a PWREN line wired to GPIO 18.
 
-2. **GPIO 18 claimed by a kernel driver at boot** — check:
+2. **GPIO 18 held by a crashed previous instance** — fixed by the `ExecStartPre` GPIO release in
+   the systemd service. Re-run `setup_gateway.sh` to pick up the new service, then restart.
+
+3. **GPIO 18 claimed by a kernel driver at boot** — if you re-enable power_en_pin, check:
    ```bash
    gpioinfo | grep -E '"17"|"18"'   # both must show "unused" before concentratord starts
    grep -E "pwm|i2s|uart" /boot/firmware/config.txt
    ```
-   Remove any overlay that claims GPIO 18 (e.g. `dtoverlay=pwm`), then reboot.
+   Remove any overlay claiming GPIO 18 (e.g. `dtoverlay=pwm`), then reboot.
 
-3. **Restart loop masking the error** — with hundreds of restarts, EBUSY appears on every
-   attempt after the first, hiding the original failure. Fix the EBUSY cascade first (see below),
-   then check whether `lgw_start` still fails in a clean restart.
+4. **Restart loop masking the error** — with hundreds of restarts, EBUSY appears on every
+   attempt after the first, hiding the original failure. Fix EBUSY first (see below), then check
+   whether `lgw_start` still fails in a clean restart.
 
 ---
 
