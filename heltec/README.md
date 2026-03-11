@@ -10,7 +10,7 @@ Before flashing, create the device in the FarMon backend to get an AppKey.
 
 If you don't have the DevEUI yet, flash first with placeholder secrets, then check serial output for `DevEUI: XX:XX:...`.
 
-→ See [pi/backend/README.md#device-provisioning-lorawan-otaa](../pi/backend/README.md#device-provisioning-lorawan-otaa): `POST /api/devices` or `GET /api/devices/credentials?eui=...` to get the AppKey.
+→ See [pi/backend/README.md#device-provisioning-lorawan-otaa](../pi/backend/README.md#device-provisioning-lorawan-otaa): `POST /api/farmon/devices` (body: `device_eui`, `device_name`) returns `app_key`.
 
 ### 2. Configure Secrets
 
