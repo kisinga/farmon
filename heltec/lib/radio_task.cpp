@@ -142,9 +142,9 @@ void radioTaskRun(void* param) {
         if (joinState == RADIOLIB_LORAWAN_NEW_SESSION || joinState == RADIOLIB_LORAWAN_SESSION_RESTORED) {
             state->joined = true;
             
-            // Configure Class C
-            node->setClass(2);  // Class C: receiver always on
-            
+            // Class A (default): device listens on RX1+RX2 windows after each uplink.
+            // sendReceive() handles both windows internally — no separate poll needed.
+
             // Apply data rate, TX power, ADR from config (or defaults)
             uint8_t dr = 3;  // default: DR3 for 222-byte max payload
             uint8_t txPwr = 22;  // default dBm
@@ -187,36 +187,8 @@ void radioTaskRun(void* param) {
     
     for (;;) {
         // ---------------------------------------------------------------------
-        // 1. Poll Class C downlinks FIRST so we see the next OTA chunk immediately
-        //    (no 1s delay from previous send's RX window)
-        // ---------------------------------------------------------------------
-        if (state->joined) {
-            uint8_t rxBuf[256];
-            size_t rxLen = sizeof(rxBuf);
-            LoRaWANEvent_t event;
-            int16_t result = node->getDownlinkClassC(rxBuf, &rxLen, &event);
-            if (result > 0 && rxLen > 0 && rxLen <= 222) {
-                LOGD("Radio", "Class C downlink: port=%d len=%zu", event.fPort, rxLen);
-                LoRaWANRxMsg rxMsg;
-                rxMsg.port = event.fPort;
-                rxMsg.len = rxLen;
-                rxMsg.rssi = radio.getRSSI();
-                rxMsg.snr = radio.getSNR();
-                memcpy(rxMsg.payload, rxBuf, rxLen);
-                state->lastRssi = rxMsg.rssi;
-                state->lastSnr = rxMsg.snr;
-                state->downlinkCount++;
-                if (xQueueSend(state->rxQueue, &rxMsg, 0) != pdTRUE) {
-                    LOGW("Radio", "RX queue full, dropping Class C downlink");
-                    if (state->errorReporter) {
-                        state->errorReporter->reportError(ErrorReporter::Category::Sys, ErrorReporter::Sys::QueueFull);
-                    }
-                }
-            }
-        }
-
-        // ---------------------------------------------------------------------
-        // 2. Check for TX requests (unconfirmed OTA ACK returns immediately after patch)
+        // Check for TX requests. sendReceive() handles RX1+RX2 windows internally
+        // and returns any downlink received during those windows.
         // ---------------------------------------------------------------------
         LoRaWANTxMsg txMsg;
         if (xQueueReceive(state->txQueue, &txMsg, pdMS_TO_TICKS(1)) == pdTRUE) {
@@ -310,6 +282,6 @@ void radioTaskRun(void* param) {
             }
         }
         
-        // Loop: Class C poll then TX (1ms timeout so OTA ACK is sent promptly)
+        // Loop: wait for next TX request (1ms timeout keeps OTA ACK responsive)
     }
 }

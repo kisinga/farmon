@@ -173,9 +173,9 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		}(df)
 		return
 	}
-	// === TIME-CRITICAL: Send any pending downlink IMMEDIATELY, before DB work ===
-	// Class A RX1 window is only 1 second after the uplink. DB operations on a Pi can
-	// easily exceed that. We must get the downlink command to concentratord ASAP.
+	// === DOWNLINK: Schedule in device's Class A RX1 window ===
+	// Class A: device opens RX1 at +1s after uplink, RX2 at +2s. We schedule both windows
+	// so concentratord falls back to RX2 if RX1 is missed (TOO_LATE).
 	downlinkSent := false
 	if pending := dlQueue.Drain(result.DevEUI); pending != nil {
 		profile := gateway.ProfileForRegion(cfg.Region)
@@ -215,7 +215,7 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 			}(df)
 		}
 	}
-	// === END TIME-CRITICAL ===
+	// === END DOWNLINK ===
 
 	// Now do the heavy DB work (safe to take time here, RX1 is already scheduled above).
 	obj := codec.DecodeUplink(result.FPort, result.Payload)
