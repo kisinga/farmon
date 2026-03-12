@@ -201,12 +201,17 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame), onStat
 	}
 }
 
+// commandTimeout is the per-command deadline. Concentratord should ack within a few ms;
+// 10s gives ample room for a slow system while preventing goroutine leaks if concentratord
+// crashes between receiving the REQ and sending the REP.
+const commandTimeout = 10 * time.Second
+
 // doCommand opens a fresh REQ socket, sends one command, reads one reply, then closes the socket.
-// The socket uses context.Background() so its lifetime is independent of any caller context.
-// This avoids the bug where GetGatewayID's short-lived timeout context kills the shared socket
-// before a later SendDownlink can use it.
+// Each call is independent: no shared state, no stuck-send-state, no reconnect races.
 func (c *Client) doCommand(command string, body []byte) ([]byte, error) {
-	req := zmq4.NewReq(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	req := zmq4.NewReq(ctx)
 	defer req.Close()
 	if err := req.Dial(c.commandURL); err != nil {
 		return nil, fmt.Errorf("concentratord REQ dial %s: %w", c.commandURL, err)

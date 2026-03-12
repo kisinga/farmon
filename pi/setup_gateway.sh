@@ -111,5 +111,5 @@ fi
 
 echo ""
 echo -e "${GREEN}Done.${NC} Concentratord is running with region=$REGION. In the app set Gateway → Region to $REGION and Save."
-echo -e "Config uses reset pin 17 and power_en 18 (Waveshare HAT B). If lgw_start fails, run 'gpioinfo' on the Pi to check GPIO 17/18 conflicts. See pi/concentratord/README.md."
+echo -e "Config: reset=GPIO17, power_en disabled (Waveshare HAT B uses onboard regulator). If lgw_start fails, see pi/concentratord/README.md."
 echo ""

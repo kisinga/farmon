@@ -25,8 +25,11 @@ time_fallback_enabled = true
 # Re-enable if your board variant has a dedicated PWREN line on GPIO 18.
 sx1302_reset_chip = "/dev/gpiochip0"
 sx1302_reset_pin = 17
-# sx1302_power_en_chip = "/dev/gpiochip0"
-# sx1302_power_en_pin = 18
+# The Waveshare SX1302 915M HAT B uses an onboard regulator — no GPIO power enable needed.
+# Explicitly disable power_en to override the model's default of pin 18, which causes
+# "Failed to set SX1250_0 in STANDBY_RC mode" on this board variant.
+sx1302_power_en_chip = ""
+sx1302_power_en_pin = 0
 
 [gateway.com_dev]
 device = "/dev/spidev0.0"
