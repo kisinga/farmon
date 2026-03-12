@@ -49,6 +49,7 @@ func BuildClassADownlink(cfg *Config, profile RegionProfile, phyPayload []byte, 
 			}
 		}
 		bw, sf, cr := profile.RX1Modulation(uplinkSF)
+		log.Printf("Class A downlink: uplink_sf=%d → rx1 sf=%d bw=%d cr=%s", uplinkSF, sf, bw, cr)
 		item.TxInfo.Modulation = &gw.Modulation{
 			Parameters: &gw.Modulation_Lora{
 				Lora: &gw.LoraModulationInfo{
