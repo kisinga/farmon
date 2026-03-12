@@ -21,6 +21,8 @@ type UplinkResult struct {
 	Payload []byte
 	// JoinAcceptPHY is set when the uplink was a valid JoinRequest; caller must send this as downlink.
 	JoinAcceptPHY []byte
+	// NeedsACK is true for ConfirmedDataUp; caller must send a downlink ACK in RX1.
+	NeedsACK bool
 }
 
 // ProcessUplinkOptions are optional options for ProcessUplink (e.g. JoinAccept RXDelay).
@@ -42,7 +44,11 @@ func ProcessUplink(phyRaw []byte, keys DeviceKeysProvider, sessions SessionStore
 	case lorawan.JoinRequest:
 		return processJoinRequest(&phy, keys, sessions, opts)
 	case lorawan.UnconfirmedDataUp, lorawan.ConfirmedDataUp:
-		return processDataUp(&phy, sessions)
+		res, err := processDataUp(&phy, sessions)
+		if err == nil && phy.MHDR.MType == lorawan.ConfirmedDataUp {
+			res.NeedsACK = true
+		}
+		return res, err
 	default:
 		return nil, fmt.Errorf("unsupported mtype: %s", phy.MHDR.MType)
 	}
@@ -176,6 +182,32 @@ func BuildDataDownlink(devEUI string, fPort uint8, payload []byte, sessions Sess
 	}
 	if err := phy.EncryptFRMPayload(s.AppSKey); err != nil {
 		return nil, err
+	}
+	if err := phy.SetDownlinkDataMIC(lorawan.LoRaWAN1_0, 0, s.NwkSKey); err != nil {
+		return nil, err
+	}
+	if err := sessions.Save(s); err != nil {
+		return nil, err
+	}
+	return phy.MarshalBinary()
+}
+
+// BuildAck builds an empty UnconfirmedDataDown with ACK=true for replying to a ConfirmedDataUp.
+func BuildAck(devEUI string, sessions SessionStore) (phyRaw []byte, err error) {
+	s, err := sessions.GetByDevEUI(devEUI)
+	if err != nil {
+		return nil, fmt.Errorf("session: %w", err)
+	}
+	s.FCntDown++
+	phy := &lorawan.PHYPayload{
+		MHDR: lorawan.MHDR{MType: lorawan.UnconfirmedDataDown, Major: lorawan.LoRaWANR1},
+		MACPayload: &lorawan.MACPayload{
+			FHDR: lorawan.FHDR{
+				DevAddr: s.DevAddr,
+				FCnt:    s.FCntDown,
+				FCtrl:   lorawan.FCtrl{ACK: true},
+			},
+		},
 	}
 	if err := phy.SetDownlinkDataMIC(lorawan.LoRaWAN1_0, 0, s.NwkSKey); err != nil {
 		return nil, err

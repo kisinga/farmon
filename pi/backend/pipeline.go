@@ -180,7 +180,24 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		log.Printf("uplink: persist error dev_eui=%s f_port=%d: %v", result.DevEUI, result.FPort, err)
 		return
 	}
-	log.Printf("uplink: dev_eui=%s f_port=%d (rssi=%v snr=%v)", result.DevEUI, result.FPort, rssi, snr)
+	log.Printf("uplink: dev_eui=%s f_port=%d (rssi=%v snr=%v)", result.DevEUI, result.FPort, rssiVal, snrVal)
+	if result.NeedsACK {
+		profile := gateway.ProfileForRegion(cfg.Region)
+		ackPHY, err := lorawan.BuildAck(result.DevEUI, store)
+		if err != nil {
+			log.Printf("uplink: build ack error dev_eui=%s: %v", result.DevEUI, err)
+			return
+		}
+		df := gateway.BuildClassADownlink(cfg, profile, ackPHY, frame, gateway.DataDownlinkRX1DelaySec)
+		go func(df *gw.DownlinkFrame) {
+			ack, err := downlinkSender.SendDownlink(context.Background(), df)
+			if err != nil {
+				log.Printf("uplink: ack send error dev_eui=%s: %v", result.DevEUI, err)
+			} else {
+				gateway.LogDownlinkAck(ack, "DataACK:"+result.DevEUI)
+			}
+		}(df)
+	}
 }
 
 // EnqueueDownlink sends a downlink to the device via concentratord.
