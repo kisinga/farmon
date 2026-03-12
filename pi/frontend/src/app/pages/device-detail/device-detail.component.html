@@ -84,6 +84,13 @@
     >
       Edge rules
     </a>
+    <a
+      class="tab rounded-lg"
+      [class.tab-active]="activeTab() === 'automations'"
+      (click)="activeTab.set('automations')"
+    >
+      Automations
+    </a>
   </div>
 
   @switch (activeTab()) {
@@ -115,12 +122,12 @@
                   <dd class="font-mono text-sm mt-0.5">{{ reg['firmware_version'] || '—' }}</dd>
                 </div>
                 <div>
-                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Registered</dt>
+                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Registration</dt>
                   <dd class="font-medium mt-0.5">
                     @if (reg['registeredAt']) {
                       <span class="badge badge-success badge-xs mr-1">ok</span>{{ $any(reg['registeredAt']) | date:'medium' }}
                     } @else {
-                      <span class="badge badge-warning badge-xs mr-1">pending</span>Not registered — send forcereg command
+                      <span class="text-base-content/50 text-sm">Awaiting device registration</span>
                     }
                   </dd>
                 </div>
@@ -175,6 +182,11 @@
           </div>
         }
         <app-error-bar [errorObject]="errorObjectFromTelemetry()" />
+        <div class="card-elevated">
+          <div class="card-body-spaced">
+            <app-device-frames [eui]="deviceContext.eui()!" />
+          </div>
+        </div>
       </div>
     }
     @case ('controls') {
@@ -228,6 +240,13 @@
       <div class="card-elevated">
         <div class="card-body-spaced">
           <app-edge-rules-section [eui]="deviceContext.eui()" />
+        </div>
+      </div>
+    }
+    @case ('automations') {
+      <div class="card-elevated">
+        <div class="card-body-spaced">
+          <app-automations-section [eui]="deviceContext.eui()" />
         </div>
       </div>
     }

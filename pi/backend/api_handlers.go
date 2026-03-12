@@ -104,20 +104,16 @@ func setControlHandler(app core.App, state *GatewayState) func(*core.RequestEven
 		if body.Eui == "" || body.Control == "" {
 			return e.String(http.StatusBadRequest, "eui and control required")
 		}
-		timeoutSec := uint32(0)
-		if body.Duration != nil && *body.Duration > 0 {
-			timeoutSec = uint32(*body.Duration)
+		dur := 0
+		if body.Duration != nil {
+			dur = *body.Duration
 		}
-		payload := BuildDirectControlPayload(
-			lookupControlIndex(app, body.Eui, body.Control),
-			stateToIndex(app, body.Eui, body.Control, body.State),
-			timeoutSec,
-		)
-		if err := EnqueueDownlink(cfg, app, body.Eui, 20, payload); err != nil {
-			insertCommand(app, body.Eui, "ctrl:"+body.Control+"="+body.State, "api", "error", map[string]any{"control": body.Control, "state": body.State, "error": err.Error()})
+		if err := ExecuteSetControl(app, cfg, SetControlParams{
+			DeviceEUI: body.Eui, Control: body.Control, State: body.State,
+			Duration: dur, InitiatedBy: "api",
+		}); err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		}
-		insertCommand(app, body.Eui, "ctrl:"+body.Control+"="+body.State, "api", "sent", map[string]any{"control": body.Control, "state": body.State, "duration": timeoutSec})
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "queued"})
 	}
 }
@@ -225,7 +221,7 @@ func gatewaySettingsEffectiveHandler(state *GatewayState) func(*core.RequestEven
 }
 
 // lorawanFramesHandler returns the most recent LoRaWAN frames from the DB for the monitor UI.
-// GET /api/farmon/lorawan/frames?limit=200
+// GET /api/farmon/lorawan/frames?limit=200&device_eui=xxx
 func lorawanFramesHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		limit := 200
@@ -238,7 +234,13 @@ func lorawanFramesHandler(app core.App) func(*core.RequestEvent) error {
 			log.Printf("lorawan/frames: collection missing: %v", err)
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": "lorawan_frames collection not found; ensure backend migrations have run"})
 		}
-		records, err := app.FindRecordsByFilter(lorawanFramesCollectionName, "", "-time", limit, 0, nil)
+		filter := ""
+		var params dbx.Params
+		if devEUI := e.Request.URL.Query().Get("device_eui"); devEUI != "" {
+			filter = "dev_eui = {:eui}"
+			params = dbx.Params{"eui": devEUI}
+		}
+		records, err := app.FindRecordsByFilter(lorawanFramesCollectionName, filter, "-time", limit, 0, params)
 		if err != nil {
 			log.Printf("lorawan/frames: list error: %v", err)
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to list frames: " + err.Error()})
@@ -338,63 +340,17 @@ func sendCommandHandler(app core.App, state *GatewayState) func(*core.RequestEve
 		if body.Eui == "" || body.Command == "" {
 			return e.String(http.StatusBadRequest, "eui and command required")
 		}
-
-		// Well-known command→fPort fallbacks (match firmware protocol_constants.h).
-		// Used when device hasn't registered yet (no commands_json) — critical for bootstrapping.
-		var wellKnownCmds = map[string]int{
-			"reset": 10, "interval": 11, "reboot": 12, "clearerr": 13,
-			"forcereg": 14, "status": 15, "displaytimeout": 16, "ctrl": 20,
-		}
-
-		// Look up fPort from device's commands_json, fall back to well-known
-		var fPort uint8
-		devRec, err := app.FindFirstRecordByFilter("devices",
-			"device_eui = {:eui}", dbx.Params{"eui": body.Eui})
-		if err != nil {
-			return e.JSON(http.StatusNotFound, map[string]any{"ok": false, "error": "device not found"})
-		}
-		cmdsRaw := devRec.Get("commands_json")
-		var cmds map[string]any
-		switch v := cmdsRaw.(type) {
-		case string:
-			_ = json.Unmarshal([]byte(v), &cmds)
-		case map[string]any:
-			cmds = v
-		}
-		if cmds != nil {
-			if portVal, ok := cmds[body.Command]; ok {
-				fPort = uint8(getFloat64(portVal))
+		if err := ExecuteSendCommand(app, cfg, SendCommandParams{
+			DeviceEUI: body.Eui, Command: body.Command, Value: body.Value, InitiatedBy: "api",
+		}); err != nil {
+			status := http.StatusInternalServerError
+			if strings.Contains(err.Error(), "not found") {
+				status = http.StatusNotFound
+			} else if strings.Contains(err.Error(), "unknown command") {
+				status = http.StatusBadRequest
 			}
+			return e.JSON(status, map[string]any{"ok": false, "error": err.Error()})
 		}
-		if fPort == 0 {
-			if p, ok := wellKnownCmds[body.Command]; ok {
-				fPort = uint8(p)
-			} else {
-				return e.JSON(http.StatusBadRequest, map[string]any{"ok": false, "error": "unknown command: " + body.Command})
-			}
-		}
-
-		// Build payload based on command type
-		var payload []byte
-		if body.Value != nil {
-			// For interval command (fPort 11): 4 bytes big-endian milliseconds
-			ms := *body.Value * 1000
-			payload = []byte{
-				byte(ms >> 24), byte(ms >> 16), byte(ms >> 8), byte(ms),
-			}
-		}
-		// Commands without value (reset, reboot, etc.) send empty payload
-
-		cmdPayload := map[string]any{"fPort": fPort}
-		if body.Value != nil {
-			cmdPayload["value"] = *body.Value
-		}
-		if err := EnqueueDownlink(cfg, app, body.Eui, fPort, payload); err != nil {
-			cmdPayload["error"] = err.Error()
-			insertCommand(app, body.Eui, body.Command, "api", "error", cmdPayload)
-			return e.JSON(http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
-		}
-		insertCommand(app, body.Eui, body.Command, "api", "sent", cmdPayload)
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "command queued"})
 	}
 }

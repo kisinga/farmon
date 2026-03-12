@@ -233,6 +233,53 @@ export class ApiService {
     return this.http.get<RawLorawanFrame[]>(`${API}/lorawan/frames`, { params: { limit: String(limit) } });
   }
 
+  /** Raw LoRaWAN frames filtered by device EUI. */
+  getDeviceFrames(eui: string, limit = 50): Observable<RawLorawanFrame[]> {
+    return this.http.get<RawLorawanFrame[]>(`${API}/lorawan/frames`, { params: { device_eui: eui, limit: String(limit) } });
+  }
+
+  // --- Automations ---
+
+  getAutomations(deviceEui?: string): Observable<AutomationRecord[]> {
+    const options: Record<string, unknown> = { requestKey: `automations-${deviceEui || 'all'}` };
+    if (deviceEui) {
+      options['filter'] = this.pb.filter('trigger_device = {:eui} || action_config ~ {:eui}', { eui: deviceEui });
+    }
+    return from(
+      this.pb.collection<AutomationRecord>('automations').getList(1, 100, options)
+    ).pipe(map((res) => res.items));
+  }
+
+  createAutomation(record: Partial<AutomationRecord>): Observable<AutomationRecord> {
+    return from(
+      this.pb.collection<AutomationRecord>('automations').create(record as Record<string, unknown>)
+    );
+  }
+
+  updateAutomation(id: string, record: Partial<AutomationRecord>): Observable<AutomationRecord> {
+    return from(
+      this.pb.collection<AutomationRecord>('automations').update(id, record as Record<string, unknown>)
+    );
+  }
+
+  deleteAutomation(id: string): Observable<boolean> {
+    return from(this.pb.collection('automations').delete(id)).pipe(map(() => true));
+  }
+
+  testAutomation(id: string, mockData: Record<string, unknown>): Observable<{ condition_result: boolean; would_fire: boolean; env: Record<string, unknown> }> {
+    return this.http.post<{ condition_result: boolean; would_fire: boolean; env: Record<string, unknown> }>(`${API}/automations/${id}/test`, mockData);
+  }
+
+  getAutomationLog(automationId?: string, limit = 50): Observable<AutomationLogRecord[]> {
+    const options: Record<string, unknown> = { sort: '-ts', requestKey: `auto-log-${automationId || 'all'}` };
+    if (automationId) {
+      options['filter'] = this.pb.filter('automation_id = {:id}', { id: automationId });
+    }
+    return from(
+      this.pb.collection<AutomationLogRecord>('automation_log').getList(1, limit, options)
+    ).pipe(map((res) => res.items));
+  }
+
   /** Get gateway settings via SDK; merges discovered_gateway_id from gateway-status when no record. */
   getGatewaySettings(): Observable<GatewaySettings> {
     const fromDb = from(
@@ -400,4 +447,30 @@ export interface FirmwareHistoryRecord {
   chunks_received?: number;
   error_message?: string;
   error_chunk_index?: number;
+}
+
+export interface AutomationRecord {
+  id: string;
+  name: string;
+  enabled: boolean;
+  trigger_type: 'telemetry' | 'state_change';
+  trigger_device?: string;
+  condition_expr: string;
+  action_type: 'setControl' | 'sendCommand';
+  action_config: Record<string, unknown>;
+  cooldown_seconds?: number;
+  priority?: number;
+  description?: string;
+}
+
+export interface AutomationLogRecord {
+  id: string;
+  automation_id: string;
+  automation_name?: string;
+  trigger_device?: string;
+  trigger_type?: string;
+  condition_result: boolean;
+  status: string;
+  error_message?: string;
+  ts: string;
 }

@@ -12,13 +12,15 @@ import { EdgeRulesSectionComponent } from '../../shared/components/edge-rules-se
 import { DeviceCredentialsCardComponent } from '../../shared/components/device-credentials-card/device-credentials-card.component';
 import { DeviceConfigPanelComponent } from '../../shared/components/device-config-panel/device-config-panel.component';
 import { CommandHistoryComponent } from '../../shared/components/command-history/command-history.component';
+import { DeviceFramesComponent } from '../../shared/components/device-frames/device-frames.component';
+import { AutomationsSectionComponent } from '../../shared/components/automations-section/automations-section.component';
 import { ERROR_OBJECT_KEYS } from '../../core/constants/error-fields';
 import { getVisibleFieldsByVizType } from '../../core/utils/field-view-model';
 
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, OtaSectionComponent, EdgeRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent],
+  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, OtaSectionComponent, EdgeRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent, AutomationsSectionComponent],
   templateUrl: './device-detail.component.html',
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
@@ -28,7 +30,7 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   deviceContext = inject(DeviceContextService);
   routeError = signal<string | null>(null);
   deleting = signal(false);
-  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'ota' | 'rules'>('overview');
+  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'ota' | 'rules' | 'automations'>('overview');
   timeRange = signal<'1h' | '24h' | '7d'>('24h');
   rangeEnd = signal<string>(new Date().toISOString());
 

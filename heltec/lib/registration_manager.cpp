@@ -31,6 +31,8 @@ void RegistrationManager::onRegAck() {
 void RegistrationManager::forceReregister() {
     _state = State::Pending;
     _lastSendMs = 0;
+    LOGI("Reg", "Force re-register requested, sending immediately");
+    send();  // Send immediately instead of waiting for next tick()
 }
 
 void RegistrationManager::restoreFromPersistence() {
@@ -60,6 +62,18 @@ void RegistrationManager::tick(uint32_t nowMs) {
 
 void RegistrationManager::send() {
     if (_state != State::Pending || !_txQueue) return;
+
+    // Flush any pending messages so registration frames have queue space.
+    // Registration is rare and takes priority over a queued telemetry/ack frame.
+    UBaseType_t pending = uxQueueMessagesWaiting(_txQueue);
+    if (pending > 3) {
+        LoRaWANTxMsg discard;
+        while (uxQueueMessagesWaiting(_txQueue) > 0) {
+            xQueueReceive(_txQueue, &discard, 0);
+        }
+        LOGI("Reg", "Flushed %d queued msgs to make room for registration", (int)pending);
+    }
+
     _state = State::Sent;
     _lastSendMs = millis();
 
@@ -135,5 +149,7 @@ void RegistrationManager::sendFrame(const char* key, const char* format, ...) {
     msg.confirmed = false;
     memcpy(msg.payload, buffer, totalLen);
     
-    xQueueSend(_txQueue, &msg, 0);  // Fire and forget
+    if (xQueueSend(_txQueue, &msg, 0) != pdPASS) {
+        LOGW("Reg", "sendFrame '%s' dropped (queue full)", key);
+    }
 }

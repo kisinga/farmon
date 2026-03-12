@@ -22,6 +22,7 @@ func main() {
 	gwCfg := gateway.DefaultGatewayConfig()
 	gwRuntime := &GatewayRuntimeState{}
 	gwState := &GatewayState{cfg: &gwCfg, runtime: gwRuntime}
+	autoEngine = NewAutomationEngine(app, gwState)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Ensure lorawan_frames collection exists (creates from Go if JS migration did not run)
@@ -78,6 +79,28 @@ func main() {
 		se.Router.POST("/api/farmon/ota/start", otaStartHandler(app))
 		se.Router.POST("/api/farmon/ota/cancel", otaCancelHandler(app))
 		se.Router.POST("/api/farmon/sendCommand", sendCommandHandler(app, gwState))
+
+		// Automation engine: load rules and register routes
+		if err := autoEngine.LoadRules(); err != nil {
+			log.Printf("automation: initial load error: %v", err)
+		}
+		reloadAutomations := func(e *core.RecordEvent) error {
+			if err := e.Next(); err != nil {
+				return err
+			}
+			go autoEngine.LoadRules()
+			return nil
+		}
+		app.OnRecordAfterCreateSuccess("automations").BindFunc(reloadAutomations)
+		app.OnRecordAfterUpdateSuccess("automations").BindFunc(reloadAutomations)
+		app.OnRecordAfterDeleteSuccess("automations").BindFunc(reloadAutomations)
+
+		se.Router.GET("/api/farmon/automations", listAutomationsHandler(app))
+		se.Router.POST("/api/farmon/automations", createAutomationHandler(app, autoEngine))
+		se.Router.PATCH("/api/farmon/automations/{id}", updateAutomationHandler(app, autoEngine))
+		se.Router.DELETE("/api/farmon/automations/{id}", deleteAutomationHandler(app, autoEngine))
+		se.Router.POST("/api/farmon/automations/{id}/test", testAutomationHandler(app, autoEngine))
+		se.Router.GET("/api/farmon/automation-log", listAutomationLogHandler(app))
 
 		// SPA under /app/ so /api is never matched by static; SDK collection requests go to /api/collections/*.
 		se.Router.GET("/", func(e *core.RequestEvent) error {
