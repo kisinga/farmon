@@ -41,8 +41,13 @@ func BuildClassADownlink(cfg *Config, profile RegionProfile, phyPayload []byte, 
 			}
 		}
 
+		// TX power: US915 max EIRP=30 dBm, antenna_gain=2 dBi → TX power = 27 dBm.
+		// Leaving power=0 (protobuf default) may cause concentratord to use minimal TX power.
+		txPower := int32(27)
+
 		// --- RX1 item (primary) ---
 		rx1Item.TxInfo.Context = uplinkCtx
+		rx1Item.TxInfo.Power = txPower
 		rx1Item.TxInfo.Timing = &gw.Timing{
 			Parameters: &gw.Timing_Delay{
 				Delay: &gw.DelayTimingInfo{Delay: durationpb.New(time.Duration(delaySec) * time.Second)},
@@ -67,6 +72,7 @@ func BuildClassADownlink(cfg *Config, profile RegionProfile, phyPayload []byte, 
 			PhyPayload: phyPayload,
 			TxInfo: &gw.DownlinkTxInfo{
 				Context:   uplinkCtx,
+				Power:     txPower,
 				Frequency: profile.RX2FrequencyHz(),
 				Timing: &gw.Timing{
 					Parameters: &gw.Timing_Delay{
@@ -87,8 +93,9 @@ func BuildClassADownlink(cfg *Config, profile RegionProfile, phyPayload []byte, 
 		}
 		df.Items = append(df.Items, rx2Item)
 
-		log.Printf("Class A downlink: delay=%ds rx1_freq=%d rx1_sf=%d rx1_bw=%d | rx2_freq=%d rx2_sf=%d rx2_bw=%d",
-			delaySec, rx1Item.TxInfo.Frequency, rx1Sf, rx1Bw, rx2Item.TxInfo.Frequency, rx2Sf, rx2Bw)
+		log.Printf("Class A downlink: delay=%ds power=%d uplink_freq=%d uplink_sf=%d | rx1_freq=%d rx1_sf=%d rx1_bw=%d | rx2_freq=%d rx2_sf=%d rx2_bw=%d",
+			delaySec, txPower, uplinkFreqHz, uplinkSF,
+			rx1Item.TxInfo.Frequency, rx1Sf, rx1Bw, rx2Item.TxInfo.Frequency, rx2Sf, rx2Bw)
 	} else {
 		// No Context in uplink: concentratord needs Context to schedule Class A RX1. We fall back to Immediately;
 		// the gateway may still emit but timing can be wrong. Ensure concentratord sends RxInfo.Context in uplinks.

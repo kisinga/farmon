@@ -190,22 +190,22 @@ export class ApiService {
     return this.http.post<{ ok: boolean; message?: string }>(`${API}/ota/cancel`, { eui });
   }
 
-  getEdgeRules(eui: string): Observable<EdgeRuleRecord[]> {
+  getDeviceRules(eui: string): Observable<DeviceRuleRecord[]> {
     const filter = this.pb.filter('device_eui = {:eui}', { eui });
     return from(
-      this.pb.collection<EdgeRuleRecord>('edge_rules').getList(1, 50, { filter, requestKey: `rules-${eui}` })
+      this.pb.collection<DeviceRuleRecord>('device_rules').getList(1, 50, { filter, requestKey: `rules-${eui}` })
     ).pipe(map((res) => res.items));
   }
 
-  createEdgeRule(record: Partial<EdgeRuleRecord>): Observable<EdgeRuleRecord> {
+  createDeviceRule(record: Partial<DeviceRuleRecord>): Observable<DeviceRuleRecord> {
     return from(
-      this.pb.collection<EdgeRuleRecord>('edge_rules').create(record as Record<string, unknown>)
+      this.pb.collection<DeviceRuleRecord>('device_rules').create(record as Record<string, unknown>)
     );
   }
 
-  updateEdgeRule(id: string, record: Partial<EdgeRuleRecord>): Observable<EdgeRuleRecord> {
+  updateDeviceRule(id: string, record: Partial<DeviceRuleRecord>): Observable<DeviceRuleRecord> {
     return from(
-      this.pb.collection<EdgeRuleRecord>('edge_rules').update(id, record as Record<string, unknown>)
+      this.pb.collection<DeviceRuleRecord>('device_rules').update(id, record as Record<string, unknown>)
     );
   }
 
@@ -238,45 +238,45 @@ export class ApiService {
     return this.http.get<RawLorawanFrame[]>(`${API}/lorawan/frames`, { params: { device_eui: eui, limit: String(limit) } });
   }
 
-  // --- Automations ---
+  // --- Workflows ---
 
-  getAutomations(deviceEui?: string): Observable<AutomationRecord[]> {
-    const options: Record<string, unknown> = { requestKey: `automations-${deviceEui || 'all'}` };
+  getWorkflows(deviceEui?: string): Observable<WorkflowRecord[]> {
+    const options: Record<string, unknown> = { requestKey: `workflows-${deviceEui || 'all'}` };
     if (deviceEui) {
-      options['filter'] = this.pb.filter('trigger_device = {:eui} || action_config ~ {:eui}', { eui: deviceEui });
+      options['filter'] = this.pb.filter('triggers ~ {:eui} || actions ~ {:eui}', { eui: deviceEui });
     }
     return from(
-      this.pb.collection<AutomationRecord>('automations').getList(1, 100, options)
+      this.pb.collection<WorkflowRecord>('workflows').getList(1, 100, options)
     ).pipe(map((res) => res.items));
   }
 
-  createAutomation(record: Partial<AutomationRecord>): Observable<AutomationRecord> {
+  createWorkflow(record: Partial<WorkflowRecord>): Observable<WorkflowRecord> {
     return from(
-      this.pb.collection<AutomationRecord>('automations').create(record as Record<string, unknown>)
+      this.pb.collection<WorkflowRecord>('workflows').create(record as Record<string, unknown>)
     );
   }
 
-  updateAutomation(id: string, record: Partial<AutomationRecord>): Observable<AutomationRecord> {
+  updateWorkflow(id: string, record: Partial<WorkflowRecord>): Observable<WorkflowRecord> {
     return from(
-      this.pb.collection<AutomationRecord>('automations').update(id, record as Record<string, unknown>)
+      this.pb.collection<WorkflowRecord>('workflows').update(id, record as Record<string, unknown>)
     );
   }
 
-  deleteAutomation(id: string): Observable<boolean> {
-    return from(this.pb.collection('automations').delete(id)).pipe(map(() => true));
+  deleteWorkflow(id: string): Observable<boolean> {
+    return from(this.pb.collection('workflows').delete(id)).pipe(map(() => true));
   }
 
-  testAutomation(id: string, mockData: Record<string, unknown>): Observable<{ condition_result: boolean; would_fire: boolean; env: Record<string, unknown> }> {
-    return this.http.post<{ condition_result: boolean; would_fire: boolean; env: Record<string, unknown> }>(`${API}/automations/${id}/test`, mockData);
+  testWorkflow(id: string, mockData: Record<string, unknown>): Observable<{ condition_result: boolean; would_fire: boolean; trigger_index: number; env: Record<string, unknown> }> {
+    return this.http.post<{ condition_result: boolean; would_fire: boolean; trigger_index: number; env: Record<string, unknown> }>(`${API}/workflows/${id}/test`, mockData);
   }
 
-  getAutomationLog(automationId?: string, limit = 50): Observable<AutomationLogRecord[]> {
-    const options: Record<string, unknown> = { sort: '-ts', requestKey: `auto-log-${automationId || 'all'}` };
-    if (automationId) {
-      options['filter'] = this.pb.filter('automation_id = {:id}', { id: automationId });
+  getWorkflowLog(workflowId?: string, limit = 50): Observable<WorkflowLogRecord[]> {
+    const options: Record<string, unknown> = { sort: '-ts', requestKey: `wf-log-${workflowId || 'all'}` };
+    if (workflowId) {
+      options['filter'] = this.pb.filter('workflow_id = {:id}', { id: workflowId });
     }
     return from(
-      this.pb.collection<AutomationLogRecord>('automation_log').getList(1, limit, options)
+      this.pb.collection<WorkflowLogRecord>('workflow_log').getList(1, limit, options)
     ).pipe(map((res) => res.items));
   }
 
@@ -409,7 +409,7 @@ export interface CredentialsResponse {
   app_key: string;
 }
 
-export interface EdgeRuleRecord {
+export interface DeviceRuleRecord {
   id: string;
   device_eui: string;
   rule_id: number;
@@ -449,27 +449,42 @@ export interface FirmwareHistoryRecord {
   error_chunk_index?: number;
 }
 
-export interface AutomationRecord {
-  id: string;
-  name: string;
-  enabled: boolean;
-  trigger_type: 'telemetry' | 'state_change';
-  trigger_device?: string;
-  condition_expr: string;
-  action_type: 'setControl' | 'sendCommand';
-  action_config: Record<string, unknown>;
-  cooldown_seconds?: number;
-  priority?: number;
-  description?: string;
+export interface WorkflowTrigger {
+  type: 'telemetry' | 'state_change';
+  filter?: { device_eui?: string; field?: string; control_key?: string };
 }
 
-export interface AutomationLogRecord {
+export interface WorkflowAction {
+  type: 'set_control' | 'send_command';
+  target_eui: string;
+  control?: string;
+  state?: string;
+  duration?: number;
+  command?: string;
+  value?: number;
+}
+
+export interface WorkflowRecord {
   id: string;
-  automation_id: string;
-  automation_name?: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  priority?: number;
+  cooldown_seconds?: number;
+  triggers: WorkflowTrigger[];
+  condition_expr: string;
+  actions: WorkflowAction[];
+}
+
+export interface WorkflowLogRecord {
+  id: string;
+  workflow_id: string;
+  workflow_name?: string;
   trigger_device?: string;
   trigger_type?: string;
+  trigger_index?: number;
   condition_result: boolean;
+  actions_completed?: number;
   status: string;
   error_message?: string;
   ts: string;

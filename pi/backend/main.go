@@ -22,7 +22,7 @@ func main() {
 	gwCfg := gateway.DefaultGatewayConfig()
 	gwRuntime := &GatewayRuntimeState{}
 	gwState := &GatewayState{cfg: &gwCfg, runtime: gwRuntime}
-	autoEngine = NewAutomationEngine(app, gwState)
+	workflowEngine = NewWorkflowEngine(app, gwState)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Ensure lorawan_frames collection exists (creates from Go if JS migration did not run)
@@ -80,27 +80,27 @@ func main() {
 		se.Router.POST("/api/farmon/ota/cancel", otaCancelHandler(app))
 		se.Router.POST("/api/farmon/sendCommand", sendCommandHandler(app, gwState))
 
-		// Automation engine: load rules and register routes
-		if err := autoEngine.LoadRules(); err != nil {
-			log.Printf("automation: initial load error: %v", err)
+		// Workflow engine: load workflows and register routes
+		if err := workflowEngine.LoadWorkflows(); err != nil {
+			log.Printf("workflow: initial load error: %v", err)
 		}
-		reloadAutomations := func(e *core.RecordEvent) error {
+		reloadWorkflows := func(e *core.RecordEvent) error {
 			if err := e.Next(); err != nil {
 				return err
 			}
-			go autoEngine.LoadRules()
+			go workflowEngine.LoadWorkflows()
 			return nil
 		}
-		app.OnRecordAfterCreateSuccess("automations").BindFunc(reloadAutomations)
-		app.OnRecordAfterUpdateSuccess("automations").BindFunc(reloadAutomations)
-		app.OnRecordAfterDeleteSuccess("automations").BindFunc(reloadAutomations)
+		app.OnRecordAfterCreateSuccess("workflows").BindFunc(reloadWorkflows)
+		app.OnRecordAfterUpdateSuccess("workflows").BindFunc(reloadWorkflows)
+		app.OnRecordAfterDeleteSuccess("workflows").BindFunc(reloadWorkflows)
 
-		se.Router.GET("/api/farmon/automations", listAutomationsHandler(app))
-		se.Router.POST("/api/farmon/automations", createAutomationHandler(app, autoEngine))
-		se.Router.PATCH("/api/farmon/automations/{id}", updateAutomationHandler(app, autoEngine))
-		se.Router.DELETE("/api/farmon/automations/{id}", deleteAutomationHandler(app, autoEngine))
-		se.Router.POST("/api/farmon/automations/{id}/test", testAutomationHandler(app, autoEngine))
-		se.Router.GET("/api/farmon/automation-log", listAutomationLogHandler(app))
+		se.Router.GET("/api/farmon/workflows", listWorkflowsHandler(app))
+		se.Router.POST("/api/farmon/workflows", createWorkflowHandler(app, workflowEngine))
+		se.Router.PATCH("/api/farmon/workflows/{id}", updateWorkflowHandler(app, workflowEngine))
+		se.Router.DELETE("/api/farmon/workflows/{id}", deleteWorkflowHandler(app, workflowEngine))
+		se.Router.POST("/api/farmon/workflows/{id}/test", testWorkflowHandler(app, workflowEngine))
+		se.Router.GET("/api/farmon/workflow-log", listWorkflowLogHandler(app))
 
 		// SPA under /app/ so /api is never matched by static; SDK collection requests go to /api/collections/*.
 		se.Router.GET("/", func(e *core.RequestEvent) error {

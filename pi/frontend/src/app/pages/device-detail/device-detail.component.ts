@@ -1,26 +1,25 @@
 import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ApiService, DeviceField } from '../../core/services/api.service';
+import { ApiService, DeviceField, type WorkflowRecord } from '../../core/services/api.service';
 import { DeviceContextService } from '../../core/services/device-context.service';
 import { ControlsPanelComponent } from '../../shared/components/controls-panel/controls-panel.component';
 import { HistoryChartComponent } from '../../shared/components/history-chart/history-chart.component';
 import { CurrentValuesComponent } from '../../shared/components/current-values/current-values.component';
 import { ErrorBarComponent } from '../../shared/components/error-bar/error-bar.component';
 import { OtaSectionComponent } from '../../shared/components/ota-section/ota-section.component';
-import { EdgeRulesSectionComponent } from '../../shared/components/edge-rules-section/edge-rules-section.component';
+import { DeviceRulesSectionComponent } from '../../shared/components/device-rules-section/device-rules-section.component';
 import { DeviceCredentialsCardComponent } from '../../shared/components/device-credentials-card/device-credentials-card.component';
 import { DeviceConfigPanelComponent } from '../../shared/components/device-config-panel/device-config-panel.component';
 import { CommandHistoryComponent } from '../../shared/components/command-history/command-history.component';
 import { DeviceFramesComponent } from '../../shared/components/device-frames/device-frames.component';
-import { AutomationsSectionComponent } from '../../shared/components/automations-section/automations-section.component';
 import { ERROR_OBJECT_KEYS } from '../../core/constants/error-fields';
 import { getVisibleFieldsByVizType } from '../../core/utils/field-view-model';
 
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, OtaSectionComponent, EdgeRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent, AutomationsSectionComponent],
+  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, OtaSectionComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent],
   templateUrl: './device-detail.component.html',
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
@@ -30,7 +29,8 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   deviceContext = inject(DeviceContextService);
   routeError = signal<string | null>(null);
   deleting = signal(false);
-  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'ota' | 'rules' | 'automations'>('overview');
+  relatedWorkflows = signal<WorkflowRecord[]>([]);
+  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'ota' | 'rules'>('overview');
   timeRange = signal<'1h' | '24h' | '7d'>('24h');
   rangeEnd = signal<string>(new Date().toISOString());
 
@@ -103,6 +103,10 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
     }
     this.routeError.set(null);
     this.deviceContext.load(eui);
+    this.api.getWorkflows(eui).subscribe({
+      next: (list) => this.relatedWorkflows.set(list),
+      error: () => this.relatedWorkflows.set([]),
+    });
   }
 
   ngOnDestroy(): void {

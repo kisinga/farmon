@@ -82,14 +82,7 @@
       [class.tab-active]="activeTab() === 'rules'"
       (click)="activeTab.set('rules')"
     >
-      Edge rules
-    </a>
-    <a
-      class="tab rounded-lg"
-      [class.tab-active]="activeTab() === 'automations'"
-      (click)="activeTab.set('automations')"
-    >
-      Automations
+      Rules
     </a>
   </div>
 
@@ -237,16 +230,51 @@
       </div>
     }
     @case ('rules') {
-      <div class="card-elevated">
-        <div class="card-body-spaced">
-          <app-edge-rules-section [eui]="deviceContext.eui()" />
+      <div class="space-y-6">
+        <!-- Device rules (on-device, instant) -->
+        <div class="card-elevated">
+          <div class="card-body-spaced">
+            <h2 class="section-title">Device rules</h2>
+            <p class="text-xs text-base-content/50 -mt-2 mb-2">Run on the device itself for instant, offline-capable threshold-based control.</p>
+            <app-device-rules-section [eui]="deviceContext.eui()" />
+          </div>
         </div>
-      </div>
-    }
-    @case ('automations') {
-      <div class="card-elevated">
-        <div class="card-body-spaced">
-          <app-automations-section [eui]="deviceContext.eui()" />
+
+        <!-- Related workflows (cross-reference) -->
+        <div class="card-elevated">
+          <div class="card-body-spaced">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="section-title">Related workflows</h2>
+                <p class="text-xs text-base-content/50 mt-0.5">Server-side workflows that reference this device.</p>
+              </div>
+              <a routerLink="/workflows" class="btn btn-ghost btn-sm">View all workflows</a>
+            </div>
+            @if (relatedWorkflows().length === 0) {
+              <p class="text-sm text-base-content/40 mt-2">No workflows reference this device.</p>
+            } @else {
+              <div class="space-y-2 mt-3">
+                @for (w of relatedWorkflows(); track w.id) {
+                  <div class="flex items-center gap-3 rounded-lg border border-base-200 bg-base-200/20 px-4 py-2.5">
+                    <span class="w-2 h-2 rounded-full shrink-0" [class.bg-success]="w.enabled" [class.bg-base-300]="!w.enabled"></span>
+                    <div class="flex-1 min-w-0">
+                      <span class="font-medium text-sm">{{ w.name }}</span>
+                      @if (w.description) {
+                        <span class="text-xs text-base-content/50 ml-2">{{ w.description }}</span>
+                      }
+                    </div>
+                    <div class="flex items-center gap-2 text-xs flex-wrap justify-end">
+                      @for (a of w.actions; track $index) {
+                        <span class="badge badge-xs" [class.badge-primary]="a.type === 'set_control'" [class.badge-secondary]="a.type === 'send_command'">
+                          {{ a.type === 'set_control' ? a.control + '=' + a.state : a.command }}
+                        </span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </div>
         </div>
       </div>
     }

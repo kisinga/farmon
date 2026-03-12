@@ -15,6 +15,11 @@
           </a>
         </li>
         <li>
+          <a routerLink="/workflows" routerLinkActive="active" class="rounded-lg">
+            Workflows
+          </a>
+        </li>
+        <li>
           <a routerLink="/lorawan" routerLinkActive="active" class="rounded-lg">
             LoRaWAN
           </a>
@@ -32,6 +37,7 @@
         </label>
         <ul tabindex="0" class="menu dropdown-content bg-base-100 rounded-box z-40 mt-3 w-52 border border-base-200 p-2 shadow-xl">
           <li><a routerLink="/" (click)="closeDropdown($event)">Devices</a></li>
+          <li><a routerLink="/workflows" (click)="closeDropdown($event)">Workflows</a></li>
           <li><a routerLink="/lorawan" (click)="closeDropdown($event)">LoRaWAN</a></li>
         </ul>
       </div>

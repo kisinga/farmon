@@ -59,8 +59,8 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 		if err := insertTelemetry(app, devEui, obj, rssi, snr); err != nil {
 			return err
 		}
-		if autoEngine != nil {
-			go autoEngine.Evaluate(TriggerContext{Type: TriggerTelemetry, DeviceEUI: devEui, DeviceName: deviceName, Telemetry: obj})
+		if workflowEngine != nil {
+			go workflowEngine.Evaluate(TriggerContext{Type: TriggerTelemetry, DeviceEUI: devEui, DeviceName: deviceName, Telemetry: obj})
 		}
 	case 3:
 		if sc, ok := obj["stateChanges"].([]any); ok {
@@ -83,8 +83,8 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 				}
 				_ = insertStateChange(app, devEui, controlKey, oldS, newS, source, deviceTs)
 				_ = upsertDeviceControl(app, devEui, controlKey, newS, source)
-				if autoEngine != nil {
-					go autoEngine.Evaluate(TriggerContext{Type: TriggerStateChange, DeviceEUI: devEui, DeviceName: deviceName, ControlKey: controlKey, OldState: oldS, NewState: newS, Source: source})
+				if workflowEngine != nil {
+					go workflowEngine.Evaluate(TriggerContext{Type: TriggerStateChange, DeviceEUI: devEui, DeviceName: deviceName, ControlKey: controlKey, OldState: oldS, NewState: newS, Source: source})
 				}
 			}
 		}
