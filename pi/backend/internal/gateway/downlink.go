@@ -53,9 +53,10 @@ func BuildClassADownlink(cfg *Config, profile RegionProfile, phyPayload []byte, 
 		item.TxInfo.Modulation = &gw.Modulation{
 			Parameters: &gw.Modulation_Lora{
 				Lora: &gw.LoraModulationInfo{
-					Bandwidth:       bw,
-					SpreadingFactor: sf,
-					CodeRate:        cr,
+					Bandwidth:            bw,
+					SpreadingFactor:      sf,
+					CodeRate:             cr,
+					PolarizationInversion: true, // LoRaWAN downlinks require inverted IQ
 				},
 			},
 		}
