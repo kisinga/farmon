@@ -19,11 +19,12 @@ model = "waveshare_sx1302_lorawan_gateway_hat"
 model_flags = []
 gateway_id = ""
 time_fallback_enabled = true
-# GPIO 17: SX1302 reset. GPIO 23 is Pi SD0 CMD → EBUSY on many Pi OS.
-# sx1302_power_en_pin disabled: asserting GPIO 18 during startup causes SX1250_0 STANDBY_RC
-# failure on this board. The HAT's onboard regulator powers the RF chain; no GPIO PWREN needed.
-# Re-enable if your board variant has a dedicated PWREN line on GPIO 18.
-sx1302_reset_chip = "/dev/gpiochip0"
+# Reset pin: GPIO17 on the Waveshare SX1302 HAT.
+# Pi 4 and earlier: gpiochip0 is the 40-pin header.
+# Pi 5: gpiochip4 is the 40-pin header (gpiochip0 is an internal RP1 bank).
+# setup_gateway.sh detects the correct chip at install time and writes the installed TOML.
+# If installing manually, run: ls /dev/gpiochip* → use gpiochip4 on Pi 5, gpiochip0 on Pi 4.
+sx1302_reset_chip = "/dev/gpiochip4"
 sx1302_reset_pin = 17
 # The Waveshare SX1302 915M HAT B uses an onboard regulator — no GPIO power enable needed.
 # Explicitly disable power_en to override the model's default of pin 18, which causes

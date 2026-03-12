@@ -58,6 +58,17 @@ install -m 755 /tmp/chirpstack-concentratord-sx1302 /usr/local/bin/
 rm -f /tmp/concentratord.tar.gz /tmp/chirpstack-concentratord-sx1302
 ok "Concentratord installed to /usr/local/bin/chirpstack-concentratord-sx1302"
 
+# Detect correct GPIO chip for the 40-pin header.
+# Pi 5 (RP1): gpiochip4 is the 40-pin header; gpiochip0 is an internal RP1 GPIO bank.
+# Pi 4 and earlier: gpiochip0 is the 40-pin header.
+if [[ -e /dev/gpiochip4 ]]; then
+  GPIO_CHIP="/dev/gpiochip4"
+  log "Detected Pi 5 (gpiochip4 present) → GPIO chip: $GPIO_CHIP"
+else
+  GPIO_CHIP="/dev/gpiochip0"
+  log "Using GPIO chip: $GPIO_CHIP (Pi 4 or earlier)"
+fi
+
 # Install concentratord configs (EU868 and US915) with correct lora_std so JoinAccept downlink works.
 CONF_DIR="/etc/chirpstack-concentratord"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -68,7 +79,9 @@ if [[ -d "$SCRIPT_DIR/concentratord" && -f "$SCRIPT_DIR/concentratord/channels_u
   install -m 644 "$SCRIPT_DIR/concentratord/concentratord_eu868.toml" "$CONF_DIR/"
   install -m 644 "$SCRIPT_DIR/concentratord/channels_us915.toml" "$CONF_DIR/"
   install -m 644 "$SCRIPT_DIR/concentratord/channels_eu868.toml" "$CONF_DIR/"
-  ok "Config installed to $CONF_DIR"
+  # Patch the installed concentratord.toml with the detected GPIO chip path.
+  sed -i "s|sx1302_reset_chip = \"/dev/gpiochip[0-9]*\"|sx1302_reset_chip = \"$GPIO_CHIP\"|" "$CONF_DIR/concentratord.toml"
+  ok "Config installed to $CONF_DIR (GPIO chip: $GPIO_CHIP)"
 else
   log "Skipping config install (concentratord/ not found); copy pi/concentratord/*.toml to $CONF_DIR manually."
 fi
@@ -87,10 +100,10 @@ Description=ChirpStack Concentratord (SX1302)
 After=network.target
 
 [Service]
-# Release GPIO 17 (reset) and GPIO 18 (PWREN) via gpioset if held from a previous crash.
+# Release GPIO 17 (reset) via gpioset if held from a previous crash.
 # Uses libgpiod (modern Pi OS); --mode=exit releases the line immediately after setting it.
-ExecStartPre=-/usr/bin/gpioset --mode=exit /dev/gpiochip0 17=0
-ExecStartPre=-/usr/bin/gpioset --mode=exit /dev/gpiochip0 18=0
+# power_en (GPIO18) is disabled in config — Waveshare HAT B uses onboard regulator.
+ExecStartPre=-/usr/bin/gpioset --mode=exit $GPIO_CHIP 17=0
 ExecStart=/usr/local/bin/chirpstack-concentratord-sx1302 -c $CONF_DIR/$MAIN_CONF -c $CONF_DIR/$CHAN_CONF
 Environment=RUST_BACKTRACE=1
 Restart=on-failure
