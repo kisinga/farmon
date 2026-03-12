@@ -86,15 +86,28 @@ func IsUS915UplinkFrequency(freqHz uint32) bool {
 	return freqHz >= us915UplinkMinHz && freqHz <= us915UplinkMaxHz
 }
 
-// BuildImmediateDownlink builds a downlink with Timing_Immediately (e.g. for EnqueueDownlink data).
-func BuildImmediateDownlink(cfg *Config, phyPayload []byte) *gw.DownlinkFrame {
+// BuildImmediateDownlink builds a Class C downlink with Timing_Immediately on the RX2 channel.
+// Used for EnqueueDownlink (API-triggered commands) to Class C devices.
+func BuildImmediateDownlink(cfg *Config, profile RegionProfile, phyPayload []byte) *gw.DownlinkFrame {
+	bw, sf, cr := profile.RX2Modulation()
 	return &gw.DownlinkFrame{
 		GatewayId: cfg.GatewayID,
 		Items: []*gw.DownlinkFrameItem{{
 			PhyPayload: phyPayload,
 			TxInfo: &gw.DownlinkTxInfo{
+				Frequency: profile.RX2FrequencyHz(),
 				Timing: &gw.Timing{
 					Parameters: &gw.Timing_Immediately{Immediately: &gw.ImmediatelyTimingInfo{}},
+				},
+				Modulation: &gw.Modulation{
+					Parameters: &gw.Modulation_Lora{
+						Lora: &gw.LoraModulationInfo{
+							Bandwidth:            bw,
+							SpreadingFactor:      sf,
+							CodeRate:             cr,
+							PolarizationInversion: true,
+						},
+					},
 				},
 			},
 		}},

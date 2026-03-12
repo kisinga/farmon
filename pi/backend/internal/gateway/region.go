@@ -4,7 +4,7 @@ import (
 	"github.com/chirpstack/chirpstack/api/go/v4/gw"
 )
 
-// RegionProfile provides region-specific RX1 frequency and modulation for Class A downlinks.
+// RegionProfile provides region-specific RX1/RX2 frequency and modulation for Class A/C downlinks.
 // Config.Region selects the profile (e.g. EU868, US915).
 type RegionProfile interface {
 	// RX1FrequencyHz returns the downlink frequency for RX1. overrideHz from gateway settings (rx1_frequency_hz) takes precedence when non-zero.
@@ -12,6 +12,10 @@ type RegionProfile interface {
 	// RX1Modulation returns bandwidth (Hz), spreading factor, and code rate for the RX1 downlink.
 	// uplinkSF is the spreading factor of the uplink (0 = unknown, use region default).
 	RX1Modulation(uplinkSF uint32) (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate)
+	// RX2FrequencyHz returns the fixed RX2 / Class C downlink frequency.
+	RX2FrequencyHz() uint32
+	// RX2Modulation returns bandwidth (Hz), spreading factor, and code rate for RX2 / Class C downlinks.
+	RX2Modulation() (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate)
 }
 
 // EU868Profile implements RegionProfile for EU868. RX1 uses same frequency as uplink; SF7/125 kHz.
@@ -30,6 +34,14 @@ func (EU868Profile) RX1Modulation(uplinkSF uint32) (bandwidth, spreadingFactor u
 		sf = 7 // default DR5 (SF7 BW125)
 	}
 	return 125000, sf, gw.CodeRate_CR_4_5
+}
+
+func (EU868Profile) RX2FrequencyHz() uint32 {
+	return 869525000 // EU868 RX2: 869.525 MHz
+}
+
+func (EU868Profile) RX2Modulation() (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate) {
+	return 125000, 12, gw.CodeRate_CR_4_5 // DR0 (SF12 BW125)
 }
 
 // US915 profile constants (LoRaWAN regional parameters).
@@ -77,6 +89,14 @@ func (US915Profile) RX1Modulation(uplinkSF uint32) (bandwidth, spreadingFactor u
 	}
 	// RX1: same SF as uplink, BW500 (US915 DR offset 0: DR0→DR10, DR1→DR11, etc.)
 	return 500000, sf, gw.CodeRate_CR_4_5
+}
+
+func (US915Profile) RX2FrequencyHz() uint32 {
+	return 923300000 // US915 RX2: 923.3 MHz
+}
+
+func (US915Profile) RX2Modulation() (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate) {
+	return 500000, 12, gw.CodeRate_CR_4_5 // DR8 (SF12 BW500)
 }
 
 // ProfileForRegion returns the RegionProfile for the given region string (e.g. "EU868", "US915").

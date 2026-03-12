@@ -213,7 +213,8 @@ func EnqueueDownlink(cfg *gateway.Config, app core.App, devEUI string, fPort uin
 		return err
 	}
 	client := concentratord.NewClient(cfg.EventURL, cfg.CommandURL)
-	df := gateway.BuildImmediateDownlink(cfg, phyRaw)
+	profile := gateway.ProfileForRegion(cfg.Region)
+	df := gateway.BuildImmediateDownlink(cfg, profile, phyRaw)
 	_, err = client.SendDownlink(context.Background(), df)
 	errMsg := ""
 	if err != nil {
