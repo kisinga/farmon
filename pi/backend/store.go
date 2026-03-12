@@ -119,6 +119,25 @@ func insertFirmwareProgress(app core.App, deviceEui string, status int, chunkInd
 	return app.Save(rec)
 }
 
+// insertCommand logs a user-initiated downlink command to the persistent commands collection.
+func insertCommand(app core.App, deviceEui, commandKey, initiatedBy, status string, payload map[string]any) {
+	coll, err := app.FindCollectionByNameOrId("commands")
+	if err != nil {
+		return
+	}
+	rec := core.NewRecord(coll)
+	rec.Set("device_eui", deviceEui)
+	rec.Set("command_key", commandKey)
+	rec.Set("initiated_by", initiatedBy)
+	rec.Set("status", status)
+	rec.Set("sent_at", time.Now().Format(time.RFC3339))
+	if payload != nil {
+		b, _ := json.Marshal(payload)
+		rec.Set("payload", string(b))
+	}
+	_ = app.Save(rec)
+}
+
 // HistoryPoint is one (ts, value) for getTelemetryHistory response.
 type HistoryPoint struct {
 	Ts    string  `json:"ts"`

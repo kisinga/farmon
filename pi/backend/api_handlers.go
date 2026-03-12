@@ -114,8 +114,10 @@ func setControlHandler(app core.App, state *GatewayState) func(*core.RequestEven
 			timeoutSec,
 		)
 		if err := EnqueueDownlink(cfg, app, body.Eui, 20, payload); err != nil {
+			insertCommand(app, body.Eui, "ctrl:"+body.Control+"="+body.State, "api", "error", map[string]any{"control": body.Control, "state": body.State, "error": err.Error()})
 			return e.JSON(http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		}
+		insertCommand(app, body.Eui, "ctrl:"+body.Control+"="+body.State, "api", "sent", map[string]any{"control": body.Control, "state": body.State, "duration": timeoutSec})
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "queued"})
 	}
 }
@@ -383,9 +385,16 @@ func sendCommandHandler(app core.App, state *GatewayState) func(*core.RequestEve
 		}
 		// Commands without value (reset, reboot, etc.) send empty payload
 
+		cmdPayload := map[string]any{"fPort": fPort}
+		if body.Value != nil {
+			cmdPayload["value"] = *body.Value
+		}
 		if err := EnqueueDownlink(cfg, app, body.Eui, fPort, payload); err != nil {
+			cmdPayload["error"] = err.Error()
+			insertCommand(app, body.Eui, body.Command, "api", "error", cmdPayload)
 			return e.JSON(http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		}
+		insertCommand(app, body.Eui, body.Command, "api", "sent", cmdPayload)
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "command queued"})
 	}
 }

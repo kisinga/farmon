@@ -32,12 +32,17 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 		frameData, _ := obj["frameData"].(string)
 		log.Printf("registration: frame dev_eui=%s frameKey=%q frameData_len=%d", devEui, frameKey, len(frameData))
 		if frameKey != "" {
+			// Log each registration frame to commands collection
+			insertCommand(app, devEui, "reg:"+frameKey, "device", "received", map[string]any{"frameData": frameData})
+
 			if complete := regAssembler.Accumulate(devEui, frameKey, frameData); complete {
 				frames := regAssembler.Consume(devEui)
 				if err := processRegistration(app, devEui, frames); err != nil {
 					log.Printf("registration: processRegistration error dev_eui=%s: %v", devEui, err)
+					insertCommand(app, devEui, "reg:complete", "device", "error", map[string]any{"error": err.Error()})
 				} else {
-					// Send registration ACK on fPort 5 (empty payload)
+					insertCommand(app, devEui, "reg:complete", "device", "ok", nil)
+					// Send registration ACK on fPort 5
 					if cfg != nil && cfg.Valid() {
 						go func() {
 							if err := EnqueueDownlink(cfg, app, devEui, 5, []byte{0x01}); err != nil {
@@ -77,6 +82,16 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 				_ = upsertDeviceControl(app, devEui, controlKey, newS, source)
 			}
 		}
+	case 4:
+		// Command ACK from device — log to commands collection
+		port, _ := obj["port"].(float64)
+		ackStatus, _ := obj["status"].(string)
+		success, _ := obj["success"].(bool)
+		status := "acked"
+		if !success {
+			status = "ack_error"
+		}
+		insertCommand(app, devEui, "ack:fPort"+strconv.Itoa(int(port)), "device", status, map[string]any{"port": port, "status": ackStatus})
 	case 8:
 		if status, ok := obj["status"]; ok {
 			chunkIdx, _ := obj["chunkIndex"].(float64)

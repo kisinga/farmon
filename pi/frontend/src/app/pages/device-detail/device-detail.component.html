@@ -109,6 +109,28 @@
                 <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Last seen</dt>
                 <dd class="font-medium mt-0.5">{{ deviceContext.device()!.last_seen ? (deviceContext.device()!.last_seen | date:'medium') : '—' }}</dd>
               </div>
+              @if (registrationInfo(); as reg) {
+                <div>
+                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Firmware</dt>
+                  <dd class="font-mono text-sm mt-0.5">{{ reg['firmware_version'] || '—' }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Registered</dt>
+                  <dd class="font-medium mt-0.5">
+                    @if (reg['registeredAt']) {
+                      <span class="badge badge-success badge-xs mr-1">ok</span>{{ $any(reg['registeredAt']) | date:'medium' }}
+                    } @else {
+                      <span class="badge badge-warning badge-xs mr-1">pending</span>Not registered — send forcereg command
+                    }
+                  </dd>
+                </div>
+                @if (reg['registeredAt']) {
+                  <div>
+                    <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Schema</dt>
+                    <dd class="text-sm mt-0.5">v{{ reg['schemaVersion'] || '?' }} · {{ reg['telemetry_fields'] || 0 }} fields · {{ reg['controls'] || 0 }} controls · {{ reg['commands'] || 0 }} commands</dd>
+                  </div>
+                }
+              }
             </dl>
           </div>
         </div>
@@ -165,6 +187,11 @@
         <div class="card-elevated">
           <div class="card-body-spaced">
             <app-device-config-panel />
+          </div>
+        </div>
+        <div class="card-elevated">
+          <div class="card-body-spaced">
+            <app-command-history [eui]="deviceContext.eui()!" />
           </div>
         </div>
       </div>

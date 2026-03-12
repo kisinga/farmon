@@ -1,8 +1,35 @@
 # FarMon Phase B Roadmap: Protocol Evolution & Scalable Architecture
 
-## 1. Where We Are (Phase A — Complete)
+## 1. Where We Are (Phase A — In Progress)
 
-Phase A delivered end-to-end device registration, dynamic UI composition, and reactive state management using the existing firmware protocol. The system works but carries protocol-level constraints that limit scalability.
+Phase A delivers end-to-end device registration, dynamic UI composition, and reactive state management using the existing firmware protocol. The backend and frontend code is written and compiles; integration testing with live hardware is pending.
+
+### 1.0 Phase A Remaining Work
+
+**Blocking: Device has stale NVS registration state.** The device previously registered (before the backend had processing code), so NVS has `registered=1` and it skips fPort 1 registration frames on boot. To unblock:
+
+1. Deploy updated backend + frontend (code is ready, `make dist` then `docker compose up -d`)
+2. Send `forcereg` command from UI (Controls tab → Configuration → forcereg button) — sends fPort 14
+3. Device clears NVS, re-registers on next join — watch logs for `registration: frame dev_eui=... frameKey="header"` through all 5 frames
+4. After all 5 frames, backend logs `registration: complete` and sends ACK on fPort 5
+5. DB populates: `device_fields` (10 fields), `device_controls` (2 controls), `devices.commands_json` (8 commands)
+6. UI updates reactively via PocketBase realtime subscriptions — controls panel shows pump/valve with dynamic state buttons
+
+**Phase A bugs fixed (this session):**
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| `stateToIndex()` hardcoded "on"→1 | Valve "open" mapped to 0 (wrong) | DB lookup of `states_json`, fallback to legacy |
+| `formatState()` hardcoded "off"/"on" | Valve state 1 showed "on" not "open" | `resolveStateName()` uses registered state names |
+| `onClearOverride` hardcoded `'off'` | Valve reset to "off" not "closed" | Uses first registered state (index 0) |
+| `sendCommand` fails without `commands_json` | Bootstrap deadlock: need forcereg to register, but forcereg needs commands_json | Well-known command→fPort fallbacks |
+| Config panel empty pre-registration | `actionCommands` showed nothing | Well-known commands as fallback |
+| No fPort 1 diagnostic logging | Couldn't tell if frames arrived | Added log on every fPort 1 frame |
+| `commands` collection never written | Existed in schema but no code populated it | `insertCommand()` called from setControl, sendCommand, registration frames, and cmd ACKs |
+| No registration status tracking | `devices.registration` JSON field never populated | `registered_at`, `schema_version` fields + structured registration summary |
+| No command ACK handling | fPort 4 uplinks were ignored (fell to default) | New case 4 in uplink_handler logs ACK to commands collection |
+| No command history in UI | No component existed | `CommandHistoryComponent` with realtime subscription on commands collection |
+| No registration status in UI | Details card lacked registration info | Overview shows firmware version, registered_at, schema summary |
 
 ### 1.1 Current Protocol Summary
 
@@ -23,24 +50,26 @@ Phase A delivered end-to-end device registration, dynamic UI composition, and re
 
 ### 1.2 Current Architecture State
 
-**Backend (Go + PocketBase)**
-- Registration assembler processes 5 text frames → persists to `device_fields`, `device_controls`, `devices.commands_json`
-- Dynamic control mapping via DB lookup (replaces hardcoded pump/valve)
-- `sendCommand` endpoint for writable fields using commands_json fPort mapping
-- 11 PocketBase collections, 13 API endpoints under `/api/farmon/`
+**Backend (Go + PocketBase)** — code complete, compiles clean
+- `registration.go`: Multi-frame assembler (5 frames, 60s expiry, mutex-protected) + parsers + DB persistence
+- `uplink_handler.go`: fPort dispatch — fPort 1→registration assembler (with per-frame logging), fPort 2→telemetry, fPort 3→state changes (dynamic state name resolution via `resolveStateName()`), fPort 4→command ACK logging, fPort 8→OTA
+- `api_handlers.go`: `setControl` uses dynamic `stateToIndex()` (DB lookup) + logs to commands collection; `sendCommand` with well-known fallbacks for bootstrap + logs to commands collection
+- `store.go`: `insertCommand()` writes to `commands` collection for persistent audit trail
+- `codec.go`: Decodes all uplink fPorts (1=registration text, 2=telemetry text, 3=state change binary, 4=cmd ACK, 6=diagnostics, 8=OTA progress)
+- Migration `1736381000_registration_fields.js`: Adds `state_class`, `access`, `field_idx` to `device_fields`; `display_name`, `states_json`, `control_idx` to `device_controls`; `commands_json`, `registered_at`, `schema_version` to `devices`
 - Pipeline: ZMQ SUB to concentratord → LoRaWAN decrypt → codec decode → fPort dispatch → store
 
-**Frontend (Angular 19)**
-- Signal-based reactive architecture with `DeviceContextService` as state hub
-- PocketBase realtime subscriptions for controls, fields, and telemetry
-- Dynamic charts from registered fields via `getVisibleFieldsByVizType`
-- Config panel for writable fields + action commands
-- Overview with category-grouped values (telemetry vs system)
+**Frontend (Angular 19)** — code complete, builds clean
+- `DeviceContextService`: Signal-based state hub with PocketBase realtime subscriptions for controls, fields, and telemetry
+- `ControlsPanelComponent` → `ControlRowComponent`: Dynamic state buttons from `states_json`, display names from registration
+- `DeviceConfigPanelComponent`: Writable fields (access=w) with value input + action commands (with well-known fallbacks pre-registration)
+- `CommandHistoryComponent`: Realtime command log with status badges (sent/acked/error), sourced from `commands` collection
+- `DeviceDetailComponent`: Dynamic charts, overview with registration status (firmware, registered_at, schema summary), telemetry/system split, command history on Controls tab
 - `requestKey` on all SDK calls to prevent auto-cancellation
 
-**Firmware (Heltec ESP32)**
+**Firmware (Heltec ESP32)** — unchanged, proven working
 - Schema defined in C++ structs: `FieldDescriptor`, `ControlDescriptor`, `Schema`
-- Registration sends 5 text frames via `RegistrationManager`
+- Registration sends 5 text frames via `RegistrationManager` (with NVS persistence — skips if already registered)
 - Telemetry encoded as comma-separated `key:value` text
 - State changes already binary (11B per event, efficient)
 - Commands dispatched by fPort via `CommandTranslator`

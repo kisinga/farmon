@@ -16,9 +16,11 @@ migrate((app) => {
   dcColl.fields.add(new Field({ name: "control_idx", type: "number" }))
   app.save(dcColl)
 
-  // devices: add commands_json for storing command→fPort mapping from registration
+  // devices: add commands_json and registered_at for registration tracking
   const devColl = app.findCollectionByNameOrId("devices")
   devColl.fields.add(new Field({ name: "commands_json", type: "json" }))
+  devColl.fields.add(new Field({ name: "registered_at", type: "date" }))
+  devColl.fields.add(new Field({ name: "schema_version", type: "number" }))
   app.save(devColl)
 }, (app) => {
   // Rollback: remove added fields
@@ -36,5 +38,7 @@ migrate((app) => {
 
   const devColl = app.findCollectionByNameOrId("devices")
   devColl.fields.removeByName("commands_json")
+  devColl.fields.removeByName("registered_at")
+  devColl.fields.removeByName("schema_version")
   app.save(devColl)
 })

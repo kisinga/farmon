@@ -436,7 +436,36 @@ func processRegistration(app core.App, devEUI string, frames map[string]string) 
 		}
 	}
 
+	// Update registration status on the device record
+	regSummary := map[string]any{
+		"schema_version":  schemaVersion,
+		"device_type":     deviceType,
+		"firmware_version": fwVersion,
+		"telemetry_fields": len(telemetryFields),
+		"system_fields":   len(systemFields),
+		"controls":        len(controls),
+		"commands":        len(cmds),
+	}
+	if err := updateDeviceRegistrationStatus(app, devEUI, schemaVersion, regSummary); err != nil {
+		log.Printf("registration: updateDeviceRegistrationStatus error: %v", err)
+	}
+
 	log.Printf("registration: complete dev_eui=%s fields=%d sys=%d controls=%d cmds=%d",
 		devEUI, len(telemetryFields), len(systemFields), len(controls), len(cmds))
 	return nil
+}
+
+// updateDeviceRegistrationStatus sets registered_at, schema_version, and registration summary.
+func updateDeviceRegistrationStatus(app core.App, devEUI string, schemaVersion int, summary map[string]any) error {
+	existing, err := app.FindFirstRecordByFilter("devices",
+		"device_eui = {:eui}",
+		dbx.Params{"eui": devEUI})
+	if err != nil {
+		return err
+	}
+	existing.Set("registered_at", time.Now().Format(time.RFC3339))
+	existing.Set("schema_version", schemaVersion)
+	summaryJSON, _ := json.Marshal(summary)
+	existing.Set("registration", string(summaryJSON))
+	return app.Save(existing)
 }

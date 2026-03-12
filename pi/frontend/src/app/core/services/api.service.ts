@@ -153,6 +153,13 @@ export class ApiService {
     return this.http.post<{ ok: boolean; error?: string }>(`${API}/sendCommand`, { eui, command, value });
   }
 
+  getCommandHistory(eui: string, limit = 50): Observable<CommandRecord[]> {
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb.collection<CommandRecord>('commands').getList(1, limit, { filter, sort: '-created', requestKey: `commands-${eui}` })
+    ).pipe(map((res) => res.items));
+  }
+
   getGatewayStatus(): Observable<GatewayStatusResponse> {
     return this.http.get<GatewayStatusResponse>(`${API}/gateway-status`);
   }
@@ -368,6 +375,18 @@ export interface EdgeRuleRecord {
   cooldown_seconds?: number;
   enabled?: boolean;
   synced_at?: string;
+}
+
+export interface CommandRecord {
+  id: string;
+  device_eui: string;
+  command_key: string;
+  payload?: Record<string, unknown>;
+  initiated_by: string;
+  status: string;
+  sent_at?: string;
+  acked_at?: string;
+  created: string;
 }
 
 export interface FirmwareHistoryRecord {

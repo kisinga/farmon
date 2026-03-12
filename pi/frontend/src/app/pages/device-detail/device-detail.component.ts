@@ -11,13 +11,14 @@ import { OtaSectionComponent } from '../../shared/components/ota-section/ota-sec
 import { EdgeRulesSectionComponent } from '../../shared/components/edge-rules-section/edge-rules-section.component';
 import { DeviceCredentialsCardComponent } from '../../shared/components/device-credentials-card/device-credentials-card.component';
 import { DeviceConfigPanelComponent } from '../../shared/components/device-config-panel/device-config-panel.component';
+import { CommandHistoryComponent } from '../../shared/components/command-history/command-history.component';
 import { ERROR_OBJECT_KEYS } from '../../core/constants/error-fields';
 import { getVisibleFieldsByVizType } from '../../core/utils/field-view-model';
 
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, OtaSectionComponent, EdgeRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent],
+  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, OtaSectionComponent, EdgeRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent],
   templateUrl: './device-detail.component.html',
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
@@ -63,6 +64,22 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   systemFields = computed(() =>
     this.deviceContext.fieldConfigs().filter((f: DeviceField) => f.category === 'system')
   );
+
+  registrationInfo = computed((): Record<string, unknown> | null => {
+    const device = this.deviceContext.device();
+    if (!device) return null;
+    const raw = (device as unknown as Record<string, unknown>);
+    const registeredAt = raw['registered_at'] as string | undefined;
+    const schemaVersion = raw['schema_version'] as number | undefined;
+    let reg: Record<string, unknown> = {};
+    const regRaw = raw['registration'];
+    if (typeof regRaw === 'string') {
+      try { reg = JSON.parse(regRaw); } catch { /* ignore */ }
+    } else if (typeof regRaw === 'object' && regRaw !== null) {
+      reg = regRaw as Record<string, unknown>;
+    }
+    return { registeredAt, schemaVersion, ...reg };
+  });
 
   errorObjectFromTelemetry = computed(() => {
     const data = this.deviceContext.latestTelemetry();
