@@ -1,17 +1,33 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// controlNameToIndex maps control key to codec control_idx (fPort 20).
-func controlNameToIndex(control string) int {
-	switch strings.ToLower(strings.TrimSpace(control)) {
+// lookupControlIndex finds the control_idx for a given control_key from the DB.
+// Falls back to legacy hardcoded mapping if no registration data exists.
+func lookupControlIndex(app core.App, devEUI, control string) int {
+	control = strings.ToLower(strings.TrimSpace(control))
+	rec, err := app.FindFirstRecordByFilter("device_controls",
+		"device_eui = {:eui} && control_key = {:key}",
+		dbx.Params{"eui": devEUI, "key": control})
+	if err == nil {
+		if idx, ok := rec.Get("control_idx").(float64); ok {
+			return int(idx)
+		}
+		if idx, ok := rec.Get("control_idx").(int); ok {
+			return idx
+		}
+	}
+	// Fallback for devices that haven't registered yet
+	switch control {
 	case "pump":
 		return 0
 	case "valve":
@@ -68,7 +84,7 @@ func setControlHandler(app core.App, state *GatewayState) func(*core.RequestEven
 			timeoutSec = uint32(*body.Duration)
 		}
 		payload := BuildDirectControlPayload(
-			controlNameToIndex(body.Control),
+			lookupControlIndex(app, body.Eui, body.Control),
 			stateToIndex(body.State),
 			timeoutSec,
 		)
@@ -273,6 +289,68 @@ func lorawanStatsHandler(app core.App, state *GatewayState) func(*core.RequestEv
 			"total_downlinks":         stats.TotalDownlinks,
 			"concentratord_configured": configured,
 		})
+	}
+}
+
+// sendCommandHandler sends a generic downlink command using the device's registered command→fPort mapping.
+// POST /api/farmon/sendCommand — { eui, command, value? }
+func sendCommandHandler(app core.App, state *GatewayState) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		cfg := state.Config()
+		if cfg == nil {
+			return e.JSON(http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "gateway not configured"})
+		}
+		var body struct {
+			Eui     string  `json:"eui"`
+			Command string  `json:"command"`
+			Value   *uint32 `json:"value,omitempty"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.String(http.StatusBadRequest, "invalid body")
+		}
+		if body.Eui == "" || body.Command == "" {
+			return e.String(http.StatusBadRequest, "eui and command required")
+		}
+
+		// Look up fPort from device's commands_json
+		devRec, err := app.FindFirstRecordByFilter("devices",
+			"device_eui = {:eui}", dbx.Params{"eui": body.Eui})
+		if err != nil {
+			return e.JSON(http.StatusNotFound, map[string]any{"ok": false, "error": "device not found"})
+		}
+		cmdsRaw := devRec.Get("commands_json")
+		var cmds map[string]any
+		switch v := cmdsRaw.(type) {
+		case string:
+			if err := json.Unmarshal([]byte(v), &cmds); err != nil {
+				return e.JSON(http.StatusBadRequest, map[string]any{"ok": false, "error": "device has no commands registered"})
+			}
+		case map[string]any:
+			cmds = v
+		default:
+			return e.JSON(http.StatusBadRequest, map[string]any{"ok": false, "error": "device has no commands registered"})
+		}
+		portVal, ok := cmds[body.Command]
+		if !ok {
+			return e.JSON(http.StatusBadRequest, map[string]any{"ok": false, "error": "unknown command: " + body.Command})
+		}
+		fPort := uint8(getFloat64(portVal))
+
+		// Build payload based on command type
+		var payload []byte
+		if body.Value != nil {
+			// For interval command (fPort 11): 4 bytes big-endian milliseconds
+			ms := *body.Value * 1000
+			payload = []byte{
+				byte(ms >> 24), byte(ms >> 16), byte(ms >> 8), byte(ms),
+			}
+		}
+		// Commands without value (reset, reboot, etc.) send empty payload
+
+		if err := EnqueueDownlink(cfg, app, body.Eui, fPort, payload); err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
+		}
+		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "command queued"})
 	}
 }
 

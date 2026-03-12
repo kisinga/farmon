@@ -20,6 +20,8 @@ import { ControlRowComponent } from '../control-row/control-row.component';
         <app-control-row
           [controlKey]="ctrl.control_key"
           [currentState]="ctrl.current_state"
+          [displayName]="ctrl.display_name || ctrl.control_key"
+          [stateNames]="ctrl.states_json || []"
           [showClear]="true"
           [withDuration]="true"
           (setState)="onSetState(ctrl.control_key, $event)"
@@ -52,7 +54,6 @@ export class ControlsPanelComponent {
       next: () => {
         this.isError.set(false);
         this.message.set('Command queued.');
-        this.deviceContext.load(eui);
       },
       error: (err) => {
         this.isError.set(true);
@@ -69,7 +70,6 @@ export class ControlsPanelComponent {
       next: () => {
         this.isError.set(false);
         this.message.set('Override cleared.');
-        this.deviceContext.load(eui);
       },
       error: (err) => {
         this.isError.set(true);

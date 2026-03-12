@@ -1,14 +1,20 @@
 package main
 
 import (
+	"log"
 	"strconv"
 	"time"
 
+	"github.com/kisinga/farmon/pi/internal/gateway"
 	"github.com/pocketbase/pocketbase/core"
 )
 
+// Package-level registration assembler (singleton, thread-safe).
+var regAssembler = NewRegistrationAssembler()
+
 // handleUplinkFromPipeline persists decoded uplink: device upsert, telemetry, state changes, OTA progress.
-func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uint8, obj map[string]any, rssi *int, snr *float64) error {
+// cfg and downlinkSender are used for sending registration ACK downlinks.
+func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uint8, obj map[string]any, rssi *int, snr *float64, cfg *gateway.Config) error {
 	if deviceName == "" {
 		deviceName = devEui
 	}
@@ -20,7 +26,27 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 	}
 	switch fPort {
 	case 1:
-		// Registration
+		frameKey, _ := obj["frameKey"].(string)
+		frameData, _ := obj["frameData"].(string)
+		if frameKey != "" {
+			if complete := regAssembler.Accumulate(devEui, frameKey, frameData); complete {
+				frames := regAssembler.Consume(devEui)
+				if err := processRegistration(app, devEui, frames); err != nil {
+					log.Printf("registration: processRegistration error dev_eui=%s: %v", devEui, err)
+				} else {
+					// Send registration ACK on fPort 5 (empty payload)
+					if cfg != nil && cfg.Valid() {
+						go func() {
+							if err := EnqueueDownlink(cfg, app, devEui, 5, []byte{0x01}); err != nil {
+								log.Printf("registration: ACK downlink error dev_eui=%s: %v", devEui, err)
+							} else {
+								log.Printf("registration: ACK sent dev_eui=%s", devEui)
+							}
+						}()
+					}
+				}
+			}
+		}
 	case 2:
 		if err := insertTelemetry(app, devEui, obj, rssi, snr); err != nil {
 			return err
@@ -37,7 +63,7 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 				oldState, _ := m["old_state"].(float64)
 				source, _ := m["source"].(string)
 				deviceMs, _ := m["device_ms"].(float64)
-				controlKey := formatControlKey(int(ctrlIdx))
+				controlKey := lookupControlKey(app, devEui, int(ctrlIdx))
 				newS := formatState(int(newState))
 				oldS := formatState(int(oldState))
 				var deviceTs time.Time

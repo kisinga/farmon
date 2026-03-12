@@ -23,6 +23,9 @@ export interface DeviceControl {
   manual_until?: string;
   last_change_at?: string;
   last_change_by?: string;
+  display_name?: string;
+  states_json?: string[];
+  control_idx?: number;
 }
 
 export interface DeviceField {
@@ -36,6 +39,9 @@ export interface DeviceField {
   min_value?: number;
   max_value?: number;
   enum_values?: unknown;
+  state_class?: string;
+  access?: string;
+  field_idx?: number;
 }
 
 export interface HistoryPoint {
@@ -56,28 +62,28 @@ export class ApiService {
 
   getDevices(): Observable<{ items: Device[] }> {
     return from(
-      this.pb.collection<Device>('devices').getList(1, 100)
+      this.pb.collection<Device>('devices').getList(1, 100, { requestKey: 'devices-list' })
     ).pipe(map((res) => ({ items: res.items })));
   }
 
   getDeviceConfig(eui: string): Observable<Device> {
     const filter = this.pb.filter('device_eui = {:eui}', { eui });
     return from(
-      this.pb.collection<Device>('devices').getFirstListItem(filter)
+      this.pb.collection<Device>('devices').getFirstListItem(filter, { requestKey: `device-${eui}` })
     );
   }
 
   getDeviceControls(eui: string): Observable<DeviceControl[]> {
     const filter = this.pb.filter('device_eui = {:eui}', { eui });
     return from(
-      this.pb.collection<DeviceControl>('device_controls').getList(1, 50, { filter })
+      this.pb.collection<DeviceControl>('device_controls').getList(1, 50, { filter, requestKey: `controls-${eui}` })
     ).pipe(map((res) => res.items));
   }
 
   getDeviceFields(eui: string): Observable<DeviceField[]> {
     const filter = this.pb.filter('device_eui = {:eui}', { eui });
     return from(
-      this.pb.collection<DeviceField>('device_fields').getList(1, 100, { filter })
+      this.pb.collection<DeviceField>('device_fields').getList(1, 100, { filter, requestKey: `fields-${eui}` })
     ).pipe(map((res) => res.items));
   }
 
@@ -94,7 +100,7 @@ export class ApiService {
       filter = this.pb.filter('device_eui = {:eui}', { eui });
     }
     return from(
-      this.pb.collection<TelemetryRecord>('telemetry').getList(1, perPage, { filter, sort: 'ts' })
+      this.pb.collection<TelemetryRecord>('telemetry').getList(1, perPage, { filter, sort: 'ts', requestKey: `history-${eui}-${field}` })
     ).pipe(
       map((res: { items: TelemetryRecord[] }) => {
         const data = res.items.map((rec: TelemetryRecord) => {
@@ -123,7 +129,7 @@ export class ApiService {
     return from(
       this.pb
         .collection<{ data: string; rssi?: number; snr?: number }>('telemetry')
-        .getList(1, 1, { filter, sort: '-ts' })
+        .getList(1, 1, { filter, sort: '-ts', requestKey: `latest-${eui}` })
     ).pipe(
       map((res) => {
         const one = res.items?.[0];
@@ -141,6 +147,10 @@ export class ApiService {
 
   setControl(eui: string, control: string, state: string, duration?: number): Observable<{ ok: boolean; error?: string }> {
     return this.http.post<{ ok: boolean; error?: string }>(`${API}/setControl`, { eui, control, state, duration });
+  }
+
+  sendCommand(eui: string, command: string, value?: number): Observable<{ ok: boolean; error?: string }> {
+    return this.http.post<{ ok: boolean; error?: string }>(`${API}/sendCommand`, { eui, command, value });
   }
 
   getGatewayStatus(): Observable<GatewayStatusResponse> {
@@ -161,7 +171,7 @@ export class ApiService {
   getDeviceCredentials(eui: string): Observable<CredentialsResponse> {
     const filter = this.pb.filter('device_eui = {:eui}', { eui });
     return from(
-      this.pb.collection<{ device_eui: string; app_key?: string }>('devices').getFirstListItem(filter)
+      this.pb.collection<{ device_eui: string; app_key?: string }>('devices').getFirstListItem(filter, { requestKey: `creds-${eui}` })
     ).pipe(map((r) => ({ device_eui: r.device_eui, app_key: r.app_key ?? '' })));
   }
 
@@ -176,7 +186,7 @@ export class ApiService {
   getEdgeRules(eui: string): Observable<EdgeRuleRecord[]> {
     const filter = this.pb.filter('device_eui = {:eui}', { eui });
     return from(
-      this.pb.collection<EdgeRuleRecord>('edge_rules').getList(1, 50, { filter })
+      this.pb.collection<EdgeRuleRecord>('edge_rules').getList(1, 50, { filter, requestKey: `rules-${eui}` })
     ).pipe(map((res) => res.items));
   }
 
@@ -197,7 +207,7 @@ export class ApiService {
     return from(
       this.pb
         .collection<FirmwareHistoryRecord>('firmware_history')
-        .getList(1, 20, { filter, sort: '-started_at' })
+        .getList(1, 20, { filter, sort: '-started_at', requestKey: `firmware-${eui}` })
     ).pipe(map((res) => res.items));
   }
 
@@ -219,7 +229,7 @@ export class ApiService {
   /** Get gateway settings via SDK; merges discovered_gateway_id from gateway-status when no record. */
   getGatewaySettings(): Observable<GatewaySettings> {
     const fromDb = from(
-      this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-@rowid' })
+      this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-@rowid', requestKey: 'gw-settings' })
     ).pipe(
       map((res) => {
         const r = res.items[0];
@@ -255,7 +265,7 @@ export class ApiService {
 
   /** Save gateway settings via SDK (config only; gateway_id is autodiscovered). Pipeline restart is handled server-side on save. */
   patchGatewaySettings(settings: Partial<GatewaySettings>): Observable<GatewaySettings> {
-    return from(this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-@rowid' })).pipe(
+    return from(this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-@rowid', requestKey: 'gw-settings-patch' })).pipe(
       switchMap((res) => {
         const existing = res.items[0];
         const body: Record<string, unknown> = {

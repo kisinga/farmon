@@ -10,7 +10,7 @@ import { TelemetryHistoryService } from '../../../core/services/telemetry-histor
   template: `
     <app-chart-container
       [series]="series()"
-      [title]="field()"
+      [title]="label() || field()"
       [height]="280"
     />
     @if (loading()) {
@@ -26,6 +26,7 @@ export class HistoryChartComponent {
 
   eui = input.required<string>();
   field = input.required<string>();
+  label = input<string>('');
   from = input<string>('');
   to = input<string>('');
 

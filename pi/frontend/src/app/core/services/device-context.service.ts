@@ -3,11 +3,13 @@ import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
 import { ApiService, Device, DeviceControl, DeviceField } from './api.service';
+import { PocketBaseService } from './pocketbase.service';
 import { TelemetrySubscriptionService } from './telemetry-subscription.service';
 
 @Injectable({ providedIn: 'root' })
 export class DeviceContextService {
   private api = inject(ApiService);
+  private pbService = inject(PocketBaseService);
   private telemetrySubscription = inject(TelemetrySubscriptionService);
 
   private _device = signal<Device | null>(null);
@@ -19,6 +21,8 @@ export class DeviceContextService {
   private _eui = signal<string>('');
 
   private telemetrySub: Subscription | null = null;
+  private controlsUnsub: (() => Promise<void>) | null = null;
+  private fieldsUnsub: (() => Promise<void>) | null = null;
 
   device = this._device.asReadonly();
   controls = this._controls.asReadonly();
@@ -42,7 +46,7 @@ export class DeviceContextService {
       this.clear();
       return;
     }
-    this.unsubscribeTelemetry();
+    this.unsubscribeAll();
     this._eui.set(eui);
     this._loading.set(true);
     this._error.set(null);
@@ -59,8 +63,48 @@ export class DeviceContextService {
         this._fieldConfigs.set(fields);
         this._latestTelemetry.set(latest?.data ?? null);
         this._loading.set(false);
+
+        // Realtime telemetry subscription
         this.telemetrySub = this.telemetrySubscription.stream(eui).subscribe((payload) => {
           this._latestTelemetry.set(payload.data ?? null);
+        });
+
+        // Realtime controls subscription
+        const controlFilter = this.pbService.pb.filter('device_eui = {:eui}', { eui });
+        this.pbService.pb.collection('device_controls').subscribe('*', (event) => {
+          if (event.action === 'create' || event.action === 'update') {
+            const updated = event.record as unknown as DeviceControl;
+            this._controls.update(list => {
+              const idx = list.findIndex(c => c.control_key === updated.control_key);
+              if (idx >= 0) {
+                const copy = [...list];
+                copy[idx] = updated;
+                return copy;
+              }
+              return [...list, updated];
+            });
+          }
+        }, { filter: controlFilter }).then(unsub => {
+          this.controlsUnsub = unsub;
+        });
+
+        // Realtime fields subscription
+        const fieldFilter = this.pbService.pb.filter('device_eui = {:eui}', { eui });
+        this.pbService.pb.collection('device_fields').subscribe('*', (event) => {
+          if (event.action === 'create' || event.action === 'update') {
+            const updated = event.record as unknown as DeviceField;
+            this._fieldConfigs.update(list => {
+              const idx = list.findIndex(f => f.field_key === updated.field_key);
+              if (idx >= 0) {
+                const copy = [...list];
+                copy[idx] = updated;
+                return copy;
+              }
+              return [...list, updated];
+            });
+          }
+        }, { filter: fieldFilter }).then(unsub => {
+          this.fieldsUnsub = unsub;
         });
       },
       error: (err) => {
@@ -70,13 +114,17 @@ export class DeviceContextService {
     });
   }
 
-  private unsubscribeTelemetry(): void {
+  private unsubscribeAll(): void {
     this.telemetrySub?.unsubscribe();
     this.telemetrySub = null;
+    this.controlsUnsub?.();
+    this.controlsUnsub = null;
+    this.fieldsUnsub?.();
+    this.fieldsUnsub = null;
   }
 
   clear(): void {
-    this.unsubscribeTelemetry();
+    this.unsubscribeAll();
     this._eui.set('');
     this._device.set(null);
     this._controls.set([]);

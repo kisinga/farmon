@@ -6,12 +6,24 @@ import { Component, input, output, signal } from '@angular/core';
   template: `
     <div class="flex flex-wrap items-center gap-3 rounded-xl border border-base-200 bg-base-200/30 p-4">
       <div class="flex items-center gap-2 min-w-0">
-        <span class="font-semibold capitalize">{{ controlKey() }}</span>
+        <span class="font-semibold capitalize">{{ displayName() || controlKey() }}</span>
         <span class="badge badge-ghost badge-sm">{{ currentState() }}</span>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <button type="button" class="btn btn-sm btn-primary" (click)="emitSetState('on')">On</button>
-        <button type="button" class="btn btn-sm btn-outline" (click)="emitSetState('off')">Off</button>
+        @if (stateNames().length > 0) {
+          @for (s of stateNames(); track s) {
+            <button
+              type="button"
+              class="btn btn-sm"
+              [class.btn-primary]="currentState() === s"
+              [class.btn-outline]="currentState() !== s"
+              (click)="emitSetState(s)"
+            >{{ s }}</button>
+          }
+        } @else {
+          <button type="button" class="btn btn-sm btn-primary" (click)="emitSetState('on')">On</button>
+          <button type="button" class="btn btn-sm btn-outline" (click)="emitSetState('off')">Off</button>
+        }
         @if (showClear()) {
           <button type="button" class="btn btn-sm btn-ghost" (click)="clearOverride.emit()">Clear override</button>
         }
@@ -28,6 +40,8 @@ import { Component, input, output, signal } from '@angular/core';
 export class ControlRowComponent {
   controlKey = input.required<string>();
   currentState = input<string>('off');
+  displayName = input<string>('');
+  stateNames = input<string[]>([]);
   showClear = input<boolean>(true);
   withDuration = input<boolean>(false);
 

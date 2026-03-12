@@ -77,6 +77,7 @@ func main() {
 		se.Router.GET("/api/farmon/lorawan/stats", lorawanStatsHandler(app, gwState))
 		se.Router.POST("/api/farmon/ota/start", otaStartHandler(app))
 		se.Router.POST("/api/farmon/ota/cancel", otaCancelHandler(app))
+		se.Router.POST("/api/farmon/sendCommand", sendCommandHandler(app, gwState))
 
 		// SPA under /app/ so /api is never matched by static; SDK collection requests go to /api/collections/*.
 		se.Router.GET("/", func(e *core.RequestEvent) error {
