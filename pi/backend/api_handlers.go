@@ -37,9 +37,34 @@ func lookupControlIndex(app core.App, devEUI, control string) int {
 	}
 }
 
-// stateToIndex maps state string to codec state_idx (0=off, 1=on).
-func stateToIndex(state string) int {
-	switch strings.ToLower(strings.TrimSpace(state)) {
+// stateToIndex resolves state string to its index in the control's registered states.
+// Falls back to legacy mapping if no registration data is found.
+func stateToIndex(app core.App, devEUI, controlKey, state string) int {
+	state = strings.ToLower(strings.TrimSpace(state))
+	rec, err := app.FindFirstRecordByFilter("device_controls",
+		"device_eui = {:eui} && control_key = {:key}",
+		dbx.Params{"eui": devEUI, "key": controlKey})
+	if err == nil {
+		statesRaw := rec.Get("states_json")
+		var states []string
+		switch v := statesRaw.(type) {
+		case string:
+			_ = json.Unmarshal([]byte(v), &states)
+		case []any:
+			for _, s := range v {
+				if str, ok := s.(string); ok {
+					states = append(states, str)
+				}
+			}
+		}
+		for i, s := range states {
+			if strings.ToLower(s) == state {
+				return i
+			}
+		}
+	}
+	// Fallback for unregistered devices
+	switch state {
 	case "on", "open", "1", "true":
 		return 1
 	default:
@@ -85,7 +110,7 @@ func setControlHandler(app core.App, state *GatewayState) func(*core.RequestEven
 		}
 		payload := BuildDirectControlPayload(
 			lookupControlIndex(app, body.Eui, body.Control),
-			stateToIndex(body.State),
+			stateToIndex(app, body.Eui, body.Control, body.State),
 			timeoutSec,
 		)
 		if err := EnqueueDownlink(cfg, app, body.Eui, 20, payload); err != nil {
@@ -312,7 +337,15 @@ func sendCommandHandler(app core.App, state *GatewayState) func(*core.RequestEve
 			return e.String(http.StatusBadRequest, "eui and command required")
 		}
 
-		// Look up fPort from device's commands_json
+		// Well-known command→fPort fallbacks (match firmware protocol_constants.h).
+		// Used when device hasn't registered yet (no commands_json) — critical for bootstrapping.
+		var wellKnownCmds = map[string]int{
+			"reset": 10, "interval": 11, "reboot": 12, "clearerr": 13,
+			"forcereg": 14, "status": 15, "displaytimeout": 16, "ctrl": 20,
+		}
+
+		// Look up fPort from device's commands_json, fall back to well-known
+		var fPort uint8
 		devRec, err := app.FindFirstRecordByFilter("devices",
 			"device_eui = {:eui}", dbx.Params{"eui": body.Eui})
 		if err != nil {
@@ -322,19 +355,22 @@ func sendCommandHandler(app core.App, state *GatewayState) func(*core.RequestEve
 		var cmds map[string]any
 		switch v := cmdsRaw.(type) {
 		case string:
-			if err := json.Unmarshal([]byte(v), &cmds); err != nil {
-				return e.JSON(http.StatusBadRequest, map[string]any{"ok": false, "error": "device has no commands registered"})
-			}
+			_ = json.Unmarshal([]byte(v), &cmds)
 		case map[string]any:
 			cmds = v
-		default:
-			return e.JSON(http.StatusBadRequest, map[string]any{"ok": false, "error": "device has no commands registered"})
 		}
-		portVal, ok := cmds[body.Command]
-		if !ok {
-			return e.JSON(http.StatusBadRequest, map[string]any{"ok": false, "error": "unknown command: " + body.Command})
+		if cmds != nil {
+			if portVal, ok := cmds[body.Command]; ok {
+				fPort = uint8(getFloat64(portVal))
+			}
 		}
-		fPort := uint8(getFloat64(portVal))
+		if fPort == 0 {
+			if p, ok := wellKnownCmds[body.Command]; ok {
+				fPort = uint8(p)
+			} else {
+				return e.JSON(http.StatusBadRequest, map[string]any{"ok": false, "error": "unknown command: " + body.Command})
+			}
+		}
 
 		// Build payload based on command type
 		var payload []byte

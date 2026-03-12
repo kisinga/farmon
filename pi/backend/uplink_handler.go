@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"strconv"
 	"time"
 
 	"github.com/kisinga/farmon/pi/internal/gateway"
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -28,6 +30,7 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 	case 1:
 		frameKey, _ := obj["frameKey"].(string)
 		frameData, _ := obj["frameData"].(string)
+		log.Printf("registration: frame dev_eui=%s frameKey=%q frameData_len=%d", devEui, frameKey, len(frameData))
 		if frameKey != "" {
 			if complete := regAssembler.Accumulate(devEui, frameKey, frameData); complete {
 				frames := regAssembler.Consume(devEui)
@@ -64,8 +67,8 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 				source, _ := m["source"].(string)
 				deviceMs, _ := m["device_ms"].(float64)
 				controlKey := lookupControlKey(app, devEui, int(ctrlIdx))
-				newS := formatState(int(newState))
-				oldS := formatState(int(oldState))
+				newS := resolveStateName(app, devEui, controlKey, int(newState))
+				oldS := resolveStateName(app, devEui, controlKey, int(oldState))
 				var deviceTs time.Time
 				if deviceMs > 0 {
 					deviceTs = time.Unix(0, int64(deviceMs)*int64(time.Millisecond))
@@ -111,8 +114,30 @@ func formatControlKey(idx int) string {
 	return "control_" + strconv.Itoa(idx)
 }
 
-func formatState(idx int) string {
-	if idx == 0 {
+// resolveStateName looks up the state name for a given state index from the control's registered states.
+// Falls back to "off"/"on" if no registration data is found.
+func resolveStateName(app core.App, devEui, controlKey string, stateIdx int) string {
+	rec, err := app.FindFirstRecordByFilter("device_controls",
+		"device_eui = {:eui} && control_key = {:key}",
+		dbx.Params{"eui": devEui, "key": controlKey})
+	if err == nil {
+		statesRaw := rec.Get("states_json")
+		var states []string
+		switch v := statesRaw.(type) {
+		case string:
+			_ = json.Unmarshal([]byte(v), &states)
+		case []any:
+			for _, s := range v {
+				if str, ok := s.(string); ok {
+					states = append(states, str)
+				}
+			}
+		}
+		if stateIdx >= 0 && stateIdx < len(states) {
+			return states[stateIdx]
+		}
+	}
+	if stateIdx == 0 {
 		return "off"
 	}
 	return "on"

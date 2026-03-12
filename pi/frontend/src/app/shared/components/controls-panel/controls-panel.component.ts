@@ -66,7 +66,10 @@ export class ControlsPanelComponent {
     const eui = this.eui();
     if (!eui) return;
     this.message.set(null);
-    this.api.setControl(eui, controlKey, 'off').subscribe({
+    // Use first registered state (index 0) as default/off state
+    const ctrl = this.deviceContext.controlsMap().get(controlKey);
+    const defaultState = ctrl?.states_json?.[0] ?? 'off';
+    this.api.setControl(eui, controlKey, defaultState).subscribe({
       next: () => {
         this.isError.set(false);
         this.message.set('Override cleared.');

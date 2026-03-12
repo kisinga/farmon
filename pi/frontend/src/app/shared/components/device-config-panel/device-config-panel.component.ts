@@ -89,6 +89,11 @@ export class DeviceConfigPanelComponent {
     this.deviceContext.fieldConfigs().filter(f => f.access === 'w')
   );
 
+  /** Well-known commands available even before registration (match firmware protocol_constants.h). */
+  private static readonly WELL_KNOWN_CMDS: Record<string, number> = {
+    reset: 10, interval: 11, reboot: 12, clearerr: 13, forcereg: 14, status: 15,
+  };
+
   /** Commands that don't map to a writable field — shown as action buttons. */
   actionCommands = computed(() => {
     const device = this.deviceContext.device();
@@ -99,6 +104,10 @@ export class DeviceConfigPanelComponent {
       try { cmds = JSON.parse(raw); } catch { /* ignore */ }
     } else if (typeof raw === 'object' && raw !== null) {
       cmds = raw as Record<string, number>;
+    }
+    // Merge well-known commands as fallback
+    if (Object.keys(cmds).length === 0) {
+      cmds = { ...DeviceConfigPanelComponent.WELL_KNOWN_CMDS };
     }
     const fieldCommands = new Set(Object.keys(DeviceConfigPanelComponent.COMMAND_FIELD_MAP));
     return Object.keys(cmds).filter(c => !fieldCommands.has(c));
