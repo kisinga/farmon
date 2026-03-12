@@ -173,39 +173,14 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		}(df)
 		return
 	}
-	// Data uplink: decode and persist.
-	obj := codec.DecodeUplink(result.FPort, result.Payload)
-	deviceName := result.DevEUI
-	if rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": result.DevEUI}); err == nil {
-		if n, _ := rec.Get("device_name").(string); n != "" {
-			deviceName = n
-		}
-	}
-	RecordUplink(app, result.DevEUI, result.FPort, "data", result.Payload, len(phyRaw), rssi, snr, gwID)
-	if err := handleUplinkFromPipeline(app, result.DevEUI, deviceName, result.FPort, obj, rssi, snr, cfg); err != nil {
-		log.Printf("uplink: persist error dev_eui=%s f_port=%d: %v", result.DevEUI, result.FPort, err)
-		return
-	}
-	log.Printf("uplink: dev_eui=%s f_port=%d (rssi=%v snr=%v)", result.DevEUI, result.FPort, rssiVal, snrVal)
-
-	// Auto-queue forcereg for unregistered devices: if the device is sending telemetry (fPort 2)
-	// but has never completed registration with this backend, queue a forcereg command so it
-	// arrives in this uplink's RX1 window. The device will clear NVS and re-register on next boot cycle.
-	if result.FPort == 2 && dlQueue.Pending() == 0 {
-		if rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": result.DevEUI}); err == nil {
-			regAt, _ := rec.Get("registered_at").(string)
-			if regAt == "" {
-				log.Printf("downlink_queue: auto-queuing forcereg for unregistered dev_eui=%s", result.DevEUI)
-				_ = EnqueueDownlink(cfg, app, result.DevEUI, 14, nil)
-			}
-		}
-	}
-
-	// Drain pending downlink queue for this device — send in Class A RX1 window.
-	// Queued downlinks take priority over ACKs (device will retransmit confirmed uplinks).
+	// === TIME-CRITICAL: Send any pending downlink IMMEDIATELY, before DB work ===
+	// Class A RX1 window is only 1 second after the uplink. DB operations on a Pi can
+	// easily exceed that. We must get the downlink command to concentratord ASAP.
+	downlinkSent := false
 	if pending := dlQueue.Drain(result.DevEUI); pending != nil {
 		profile := gateway.ProfileForRegion(cfg.Region)
 		df := gateway.BuildClassADownlink(cfg, profile, pending.PHY, frame, gateway.DataDownlinkRX1DelaySec)
+		downlinkSent = true
 		go func(df *gw.DownlinkFrame, dl *pendingDownlink) {
 			ack, err := downlinkSender.SendDownlink(context.Background(), df)
 			ackStatus := ""
@@ -223,22 +198,50 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 			RecordDownlink(app, dl.DevEUI, dl.FPort, "data", dl.Payload, len(dl.PHY), ackStatus)
 		}(df, pending)
 	} else if result.NeedsACK {
-		// Only send ACK if no queued downlink was sent (can only use one RX window per uplink)
 		profile := gateway.ProfileForRegion(cfg.Region)
 		ackPHY, err := lorawan.BuildAck(result.DevEUI, store)
 		if err != nil {
 			log.Printf("uplink: build ack error dev_eui=%s: %v", result.DevEUI, err)
-			return
+		} else {
+			downlinkSent = true
+			df := gateway.BuildClassADownlink(cfg, profile, ackPHY, frame, gateway.DataDownlinkRX1DelaySec)
+			go func(df *gw.DownlinkFrame) {
+				ack, err := downlinkSender.SendDownlink(context.Background(), df)
+				if err != nil {
+					log.Printf("uplink: ack send error dev_eui=%s: %v", result.DevEUI, err)
+				} else {
+					gateway.LogDownlinkAck(ack, "DataACK:"+result.DevEUI)
+				}
+			}(df)
 		}
-		df := gateway.BuildClassADownlink(cfg, profile, ackPHY, frame, gateway.DataDownlinkRX1DelaySec)
-		go func(df *gw.DownlinkFrame) {
-			ack, err := downlinkSender.SendDownlink(context.Background(), df)
-			if err != nil {
-				log.Printf("uplink: ack send error dev_eui=%s: %v", result.DevEUI, err)
-			} else {
-				gateway.LogDownlinkAck(ack, "DataACK:"+result.DevEUI)
+	}
+	// === END TIME-CRITICAL ===
+
+	// Now do the heavy DB work (safe to take time here, RX1 is already scheduled above).
+	obj := codec.DecodeUplink(result.FPort, result.Payload)
+	deviceName := result.DevEUI
+	if rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": result.DevEUI}); err == nil {
+		if n, _ := rec.Get("device_name").(string); n != "" {
+			deviceName = n
+		}
+	}
+	RecordUplink(app, result.DevEUI, result.FPort, "data", result.Payload, len(phyRaw), rssi, snr, gwID)
+	if err := handleUplinkFromPipeline(app, result.DevEUI, deviceName, result.FPort, obj, rssi, snr, cfg); err != nil {
+		log.Printf("uplink: persist error dev_eui=%s f_port=%d: %v", result.DevEUI, result.FPort, err)
+		return
+	}
+	log.Printf("uplink: dev_eui=%s f_port=%d (rssi=%v snr=%v)", result.DevEUI, result.FPort, rssiVal, snrVal)
+
+	// Auto-queue forcereg for unregistered devices. This won't be sent until the NEXT uplink
+	// (we already used this uplink's RX1 window above), but that's fine — next telemetry cycle.
+	if !downlinkSent && result.FPort == 2 {
+		if rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": result.DevEUI}); err == nil {
+			regAt, _ := rec.Get("registered_at").(string)
+			if regAt == "" {
+				log.Printf("downlink_queue: auto-queuing forcereg for unregistered dev_eui=%s (will send on next uplink)", result.DevEUI)
+				_ = EnqueueDownlink(cfg, app, result.DevEUI, 14, nil)
 			}
-		}(df)
+		}
 	}
 }
 
