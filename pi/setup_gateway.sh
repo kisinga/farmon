@@ -79,8 +79,9 @@ if [[ -d "$SCRIPT_DIR/concentratord" && -f "$SCRIPT_DIR/concentratord/channels_u
   install -m 644 "$SCRIPT_DIR/concentratord/concentratord_eu868.toml" "$CONF_DIR/"
   install -m 644 "$SCRIPT_DIR/concentratord/channels_us915.toml" "$CONF_DIR/"
   install -m 644 "$SCRIPT_DIR/concentratord/channels_eu868.toml" "$CONF_DIR/"
-  # Patch the installed concentratord.toml with the detected GPIO chip path.
-  sed -i "s|sx1302_reset_chip = \"/dev/gpiochip[0-9]*\"|sx1302_reset_chip = \"$GPIO_CHIP\"|" "$CONF_DIR/concentratord.toml"
+  # Patch the installed concentratord.toml with the detected GPIO chip path (both reset and power_en).
+  sed -i "s|sx1302_reset_chip = \"/dev/gpiochip[0-9]*\"|sx1302_reset_chip = \"$GPIO_CHIP\"|g" "$CONF_DIR/concentratord.toml"
+  sed -i "s|sx1302_power_en_chip = \"/dev/gpiochip[0-9]*\"|sx1302_power_en_chip = \"$GPIO_CHIP\"|g" "$CONF_DIR/concentratord.toml"
   ok "Config installed to $CONF_DIR (GPIO chip: $GPIO_CHIP)"
 else
   log "Skipping config install (concentratord/ not found); copy pi/concentratord/*.toml to $CONF_DIR manually."
@@ -93,6 +94,14 @@ case "$REGION" in
   *)     err "REGION must be EU868 or US915 (got: $REGION)"; exit 1 ;;
 esac
 if [[ -f "$CONF_DIR/$MAIN_CONF" && -f "$CONF_DIR/$CHAN_CONF" ]]; then
+  # Stop and disable any conflicting concentratord services that may hold GPIO lines.
+  for svc in chirpstack-concentratord chirpstack-mqtt-forwarder; do
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+      log "Stopping conflicting service: $svc"
+      systemctl stop "$svc" || true
+    fi
+  done
+
   log "Enabling concentratord service (REGION=$REGION)..."
   cat > /etc/systemd/system/concentratord.service << EOF
 [Unit]
@@ -100,10 +109,12 @@ Description=ChirpStack Concentratord (SX1302)
 After=network.target
 
 [Service]
-# Release GPIO 17 (reset) via gpioset if held from a previous crash.
+# Release GPIO 23 (reset) and GPIO 18 (power_en) via gpioset if held from a previous crash.
 # Uses libgpiod (modern Pi OS); --mode=exit releases the line immediately after setting it.
-# power_en (GPIO18) is disabled in config — Waveshare HAT B uses onboard regulator.
-ExecStartPre=-/usr/bin/gpioset --mode=exit $GPIO_CHIP 17=0
+# GPIO 23 = SX1302 reset on Waveshare SX1302 LoRaWAN Gateway HAT.
+# GPIO 18 = power_en; requires dtparam=audio=off in /boot/firmware/config.txt.
+ExecStartPre=-/usr/bin/gpioset --mode=exit $GPIO_CHIP 23=0
+ExecStartPre=-/usr/bin/gpioset --mode=exit $GPIO_CHIP 18=0
 ExecStart=/usr/local/bin/chirpstack-concentratord-sx1302 -c $CONF_DIR/$MAIN_CONF -c $CONF_DIR/$CHAN_CONF
 Environment=RUST_BACKTRACE=1
 Restart=on-failure
@@ -124,5 +135,5 @@ fi
 
 echo ""
 echo -e "${GREEN}Done.${NC} Concentratord is running with region=$REGION. In the app set Gateway → Region to $REGION and Save."
-echo -e "Config: reset=GPIO17, power_en disabled (Waveshare HAT B uses onboard regulator). If lgw_start fails, see pi/concentratord/README.md."
+echo -e "Config: reset=GPIO23, power_en=GPIO18. Requires dtparam=audio=off in /boot/firmware/config.txt. If lgw_start fails, check pi/concentratord/README.md."
 echo ""

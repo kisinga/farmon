@@ -134,9 +134,6 @@ func recordToGatewayConfig(rec *core.Record) gateway.Config {
 	if r := getRecordString(rec, "region"); r != "" {
 		cfg.Region = strings.ToUpper(r)
 	}
-	if n := numberFromRecord(rec, "rx1_delay"); n >= gateway.MinRX1DelaySec() && n <= gateway.MaxRX1DelaySec() {
-		cfg.RX1DelaySec = n
-	}
 	if n := numberFromRecord(rec, "rx1_frequency_hz"); n > 0 {
 		cfg.RX1FrequencyHz = uint32(n)
 	}
@@ -148,7 +145,6 @@ func configToRecord(rec *core.Record, cfg gateway.Config) {
 	rec.Set("event_url", cfg.EventURL)
 	rec.Set("command_url", cfg.CommandURL)
 	rec.Set("gateway_id", cfg.GatewayID)
-	rec.Set("rx1_delay", cfg.RX1DelaySec)
 	rec.Set("rx1_frequency_hz", cfg.RX1FrequencyHz)
 }
 

@@ -10,7 +10,8 @@ type RegionProfile interface {
 	// RX1FrequencyHz returns the downlink frequency for RX1. overrideHz from gateway settings (rx1_frequency_hz) takes precedence when non-zero.
 	RX1FrequencyHz(uplinkFreqHz, overrideHz uint32) uint32
 	// RX1Modulation returns bandwidth (Hz), spreading factor, and code rate for the RX1 downlink.
-	RX1Modulation() (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate)
+	// uplinkSF is the spreading factor of the uplink (0 = unknown, use region default).
+	RX1Modulation(uplinkSF uint32) (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate)
 }
 
 // EU868Profile implements RegionProfile for EU868. RX1 uses same frequency as uplink; SF7/125 kHz.
@@ -23,8 +24,12 @@ func (EU868Profile) RX1FrequencyHz(uplinkFreqHz, overrideHz uint32) uint32 {
 	return uplinkFreqHz
 }
 
-func (EU868Profile) RX1Modulation() (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate) {
-	return 125000, 7, gw.CodeRate_CR_4_5
+func (EU868Profile) RX1Modulation(uplinkSF uint32) (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate) {
+	sf := uplinkSF
+	if sf < 7 || sf > 12 {
+		sf = 7 // default DR5 (SF7 BW125)
+	}
+	return 125000, sf, gw.CodeRate_CR_4_5
 }
 
 // US915 profile constants (LoRaWAN regional parameters).
@@ -65,8 +70,13 @@ func (p US915Profile) RX1FrequencyHz(uplinkFreqHz, overrideHz uint32) uint32 {
 	return us915DownlinkBase + rx1Ch*us915DownlinkStep
 }
 
-func (US915Profile) RX1Modulation() (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate) {
-	return 500000, 12, gw.CodeRate_CR_4_5 // DR8 for US915 RX1
+func (US915Profile) RX1Modulation(uplinkSF uint32) (bandwidth, spreadingFactor uint32, codeRate gw.CodeRate) {
+	sf := uplinkSF
+	if sf < 7 || sf > 12 {
+		sf = 10 // default DR0 (SF10 BW500) for US915
+	}
+	// RX1: same SF as uplink, BW500 (US915 DR offset 0: DR0→DR10, DR1→DR11, etc.)
+	return 500000, sf, gw.CodeRate_CR_4_5
 }
 
 // ProfileForRegion returns the RegionProfile for the given region string (e.g. "EU868", "US915").

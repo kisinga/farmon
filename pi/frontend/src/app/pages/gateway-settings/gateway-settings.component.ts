@@ -105,22 +105,6 @@ const REGIONS = [
             </div>
 
             <div class="form-control w-full max-w-xs">
-              <label class="label" for="rx1_delay">
-                <span class="label-text font-semibold">RX1 delay (seconds)</span>
-              </label>
-              <input
-                id="rx1_delay"
-                name="rx1_delay"
-                type="number"
-                min="1"
-                max="15"
-                class="input input-bordered w-full"
-                [(ngModel)]="form.rx1_delay"
-              />
-              <p class="text-sm text-base-content/60 mt-1">Class A RX1 delay (1–15).</p>
-            </div>
-
-            <div class="form-control w-full max-w-xs">
               <label class="label" for="rx1_frequency_hz">
                 <span class="label-text font-semibold">RX1 frequency override (Hz)</span>
               </label>
@@ -224,7 +208,6 @@ export class GatewaySettingsComponent implements OnInit {
     event_url: 'ipc:///tmp/concentratord_event',
     command_url: 'ipc:///tmp/concentratord_command',
     gateway_id: '',
-    rx1_delay: 1,
     rx1_frequency_hz: 0,
     saved: false,
   };
@@ -266,8 +249,7 @@ export class GatewaySettingsComponent implements OnInit {
     const r = this.form.region?.trim();
     const e = this.form.event_url?.trim();
     const c = this.form.command_url?.trim();
-    const d = this.form.rx1_delay;
-    return !!(r && e && c && d >= 1 && d <= 15);
+    return !!(r && e && c);
   }
 
   save() {
@@ -279,7 +261,6 @@ export class GatewaySettingsComponent implements OnInit {
       region: this.form.region.trim(),
       event_url: this.form.event_url.trim(),
       command_url: this.form.command_url.trim(),
-      rx1_delay: Math.max(1, Math.min(15, this.form.rx1_delay ?? 1)),
       rx1_frequency_hz: this.form.rx1_frequency_hz ?? 0,
     };
     this.api.patchGatewaySettings(payload).subscribe({

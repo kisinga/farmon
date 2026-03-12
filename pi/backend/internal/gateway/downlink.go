@@ -10,13 +10,11 @@ import (
 
 // JoinAcceptDelaySec is the fixed RX1 delay for JoinAccept downlinks (LoRaWAN JOIN_ACCEPT_DELAY1).
 // The device opens its JoinAccept receive window exactly this many seconds after the JoinRequest TX.
-// This is separate from RX1DelaySec (which controls data downlink windows after joining).
 const JoinAcceptDelaySec = 5
 
 // BuildClassADownlink builds a DownlinkFrame for a Class A downlink (JoinAccept or data reply).
-// delaySec is the RX1 window delay in seconds:
-//   - For JoinAccept use JoinAcceptDelaySec (5s, per LoRaWAN spec JOIN_ACCEPT_DELAY1).
-//   - For data downlinks use cfg.RX1DelaySec.
+// delaySec is the RX1 window delay in seconds — use JoinAcceptDelaySec for JoinAccept,
+// DataDownlinkRX1DelaySec for data downlinks.
 func BuildClassADownlink(cfg *Config, profile RegionProfile, phyPayload []byte, uplink *gw.UplinkFrame, delaySec int) *gw.DownlinkFrame {
 	item := &gw.DownlinkFrameItem{PhyPayload: phyPayload, TxInfo: &gw.DownlinkTxInfo{}}
 	df := &gw.DownlinkFrame{Items: []*gw.DownlinkFrameItem{item}}
@@ -31,12 +29,6 @@ func BuildClassADownlink(cfg *Config, profile RegionProfile, phyPayload []byte, 
 	}
 
 	if hasContext {
-		if delaySec < minRX1DelaySec {
-			delaySec = minRX1DelaySec
-		}
-		if delaySec > maxRX1DelaySec {
-			delaySec = maxRX1DelaySec
-		}
 		item.TxInfo.Context = rx.GetContext()
 		item.TxInfo.Timing = &gw.Timing{
 			Parameters: &gw.Timing_Delay{
@@ -50,7 +42,13 @@ func BuildClassADownlink(cfg *Config, profile RegionProfile, phyPayload []byte, 
 		} else {
 			log.Printf("Class A downlink: context=yes delay=%ds freq_hz=%d", delaySec, item.TxInfo.Frequency)
 		}
-		bw, sf, cr := profile.RX1Modulation()
+		uplinkSF := uint32(0)
+		if tx := uplink.GetTxInfo(); tx != nil {
+			if lora := tx.GetModulation().GetLora(); lora != nil {
+				uplinkSF = lora.GetSpreadingFactor()
+			}
+		}
+		bw, sf, cr := profile.RX1Modulation(uplinkSF)
 		item.TxInfo.Modulation = &gw.Modulation{
 			Parameters: &gw.Modulation_Lora{
 				Lora: &gw.LoraModulationInfo{

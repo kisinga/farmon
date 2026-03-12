@@ -132,7 +132,6 @@ func pipelineDebugHandler(app core.App, state *GatewayState) func(*core.RequestE
 			"gateway_id":              cfg.GatewayID,
 			"event_url":               cfg.EventURL,
 			"command_url":             cfg.CommandURL,
-			"rx1_delay_sec":           cfg.RX1DelaySec,
 			"online":                  false,
 			"last_event_at":           nil,
 			"sub_connected":           false,
@@ -177,7 +176,6 @@ func gatewaySettingsEffectiveHandler(state *GatewayState) func(*core.RequestEven
 			"command_url":  cfg.CommandURL,
 			"region":       cfg.Region,
 			"gateway_id":   cfg.GatewayID,
-			"rx1_delay":    cfg.RX1DelaySec,
 			"rx1_freq_hz":  cfg.RX1FrequencyHz,
 		})
 	}

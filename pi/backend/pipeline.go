@@ -128,10 +128,7 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		snrVal = *snr
 	}
 	log.Printf("uplink: received phy_len=%d rssi=%v snr=%v", len(phyRaw), rssiVal, snrVal)
-	opts := &lorawan.ProcessUplinkOptions{RXDelay: uint8(cfg.RX1DelaySec)}
-	if opts.RXDelay < 1 || opts.RXDelay > 15 {
-		opts.RXDelay = 1
-	}
+	opts := &lorawan.ProcessUplinkOptions{RXDelay: gateway.DataDownlinkRX1DelaySec}
 	result, err := lorawan.ProcessUplink(phyRaw, store, store, opts)
 	if err != nil {
 		errMsg := err.Error()
@@ -145,8 +142,7 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		RecordUplink(app, "", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
 		profile := gateway.ProfileForRegion(cfg.Region)
 		// JoinAccept must be transmitted at JOIN_ACCEPT_DELAY1 = 5s after the JoinRequest.
-		// The device (RadioLib/LoRaWAN spec) opens its JoinAccept RX1 window at exactly +5s.
-		// Using cfg.RX1DelaySec (1s) here would TX 4 seconds before the device is listening.
+		// The device opens its JoinAccept RX1 window at exactly +5s (LoRaWAN spec JOIN_ACCEPT_DELAY1).
 		df := gateway.BuildClassADownlink(cfg, profile, result.JoinAcceptPHY, frame, gateway.JoinAcceptDelaySec)
 		// Send in a goroutine so the SUB receive loop is not blocked waiting for the TX ack.
 		// This allows back-to-back join retransmits to be processed immediately.
@@ -165,7 +161,7 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 				if len(df.GetItems()) > 0 && df.GetItems()[0].GetTxInfo() != nil {
 					freqHz = df.GetItems()[0].GetTxInfo().GetFrequency()
 				}
-				log.Printf("uplink: join → JoinAccept sent (RX1 %ds, freq=%d Hz) → gateway ack: %s", cfg.RX1DelaySec, freqHz, ackStatus)
+				log.Printf("uplink: join → JoinAccept sent (RX1 %ds, freq=%d Hz) → gateway ack: %s", gateway.JoinAcceptDelaySec, freqHz, ackStatus)
 			}
 			RecordDownlink(app, "", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), ackStatus)
 		}(df)
