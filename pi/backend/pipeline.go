@@ -139,7 +139,13 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		return
 	}
 	if len(result.JoinAcceptPHY) > 0 {
-		RecordUplink(app, "", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
+		// Flush any pending downlinks for this device — the old session keys are now invalid.
+		if result.DevEUI != "" {
+			if stale := dlQueue.Drain(result.DevEUI); stale != nil {
+				log.Printf("downlink_queue: flushed stale entry for dev_eui=%s (device re-joined)", result.DevEUI)
+			}
+		}
+		RecordUplink(app, result.DevEUI, 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
 		profile := gateway.ProfileForRegion(cfg.Region)
 		// JoinAccept must be transmitted at JOIN_ACCEPT_DELAY1 = 5s after the JoinRequest.
 		// The device opens its JoinAccept RX1 window at exactly +5s (LoRaWAN spec JOIN_ACCEPT_DELAY1).
@@ -181,6 +187,19 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		return
 	}
 	log.Printf("uplink: dev_eui=%s f_port=%d (rssi=%v snr=%v)", result.DevEUI, result.FPort, rssiVal, snrVal)
+
+	// Auto-queue forcereg for unregistered devices: if the device is sending telemetry (fPort 2)
+	// but has never completed registration with this backend, queue a forcereg command so it
+	// arrives in this uplink's RX1 window. The device will clear NVS and re-register on next boot cycle.
+	if result.FPort == 2 && dlQueue.Pending() == 0 {
+		if rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": result.DevEUI}); err == nil {
+			regAt, _ := rec.Get("registered_at").(string)
+			if regAt == "" {
+				log.Printf("downlink_queue: auto-queuing forcereg for unregistered dev_eui=%s", result.DevEUI)
+				_ = EnqueueDownlink(cfg, app, result.DevEUI, 14, nil)
+			}
+		}
+	}
 
 	// Drain pending downlink queue for this device — send in Class A RX1 window.
 	// Queued downlinks take priority over ACKs (device will retransmit confirmed uplinks).

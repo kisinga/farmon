@@ -118,7 +118,7 @@ func processJoinRequest(phy *lorawan.PHYPayload, keys DeviceKeysProvider, sessio
 	if err != nil {
 		return nil, err
 	}
-	return &UplinkResult{JoinAcceptPHY: jaBytes}, nil
+	return &UplinkResult{DevEUI: devEUI, JoinAcceptPHY: jaBytes}, nil
 }
 
 func processDataUp(phy *lorawan.PHYPayload, sessions SessionStore) (*UplinkResult, error) {

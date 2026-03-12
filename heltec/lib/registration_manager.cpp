@@ -10,9 +10,9 @@ void RegistrationManager::setDeviceInfo(const char* deviceType, const char* fwVe
 }
 
 void RegistrationManager::onJoin() {
-    if (_state == State::NotStarted) {
-        _state = State::Pending;
-    }
+    // Always re-register after join — firmware or server may have changed.
+    // Cheap (5 frames) and provides consistency.
+    _state = State::Pending;
 }
 
 void RegistrationManager::onRegAck() {
