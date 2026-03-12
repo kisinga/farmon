@@ -181,7 +181,30 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		return
 	}
 	log.Printf("uplink: dev_eui=%s f_port=%d (rssi=%v snr=%v)", result.DevEUI, result.FPort, rssiVal, snrVal)
-	if result.NeedsACK {
+
+	// Drain pending downlink queue for this device — send in Class A RX1 window.
+	// Queued downlinks take priority over ACKs (device will retransmit confirmed uplinks).
+	if pending := dlQueue.Drain(result.DevEUI); pending != nil {
+		profile := gateway.ProfileForRegion(cfg.Region)
+		df := gateway.BuildClassADownlink(cfg, profile, pending.PHY, frame, gateway.DataDownlinkRX1DelaySec)
+		go func(df *gw.DownlinkFrame, dl *pendingDownlink) {
+			ack, err := downlinkSender.SendDownlink(context.Background(), df)
+			ackStatus := ""
+			if err != nil {
+				ackStatus = err.Error()
+				log.Printf("downlink_queue: send failed dev_eui=%s fPort=%d: %v", dl.DevEUI, dl.FPort, err)
+			} else {
+				gateway.LogDownlinkAck(ack, "queued:"+dl.DevEUI)
+				if s := gateway.DownlinkAckSummary(ack); s != "" {
+					ackStatus = s
+				}
+				log.Printf("downlink_queue: sent dev_eui=%s fPort=%d (queued %v ago) → gateway ack: %s",
+					dl.DevEUI, dl.FPort, time.Since(dl.Queued).Round(time.Second), ackStatus)
+			}
+			RecordDownlink(app, dl.DevEUI, dl.FPort, "data", dl.Payload, len(dl.PHY), ackStatus)
+		}(df, pending)
+	} else if result.NeedsACK {
+		// Only send ACK if no queued downlink was sent (can only use one RX window per uplink)
 		profile := gateway.ProfileForRegion(cfg.Region)
 		ackPHY, err := lorawan.BuildAck(result.DevEUI, store)
 		if err != nil {
@@ -200,8 +223,14 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 	}
 }
 
-// EnqueueDownlink sends a downlink to the device via concentratord.
-// Returns an error if gateway config is not enabled.
+// dlQueue is the package-level downlink queue. API/automation-triggered downlinks are queued here
+// and sent in the device's next Class A RX1 window (after the next uplink).
+var dlQueue = NewDownlinkQueue()
+
+// EnqueueDownlink queues a downlink for the device. The frame is pre-built (encrypted, MIC'd) and
+// will be transmitted in the device's next Class A RX1 window when the next uplink arrives.
+// Class A devices only listen for downlinks briefly after sending an uplink, so immediate sends
+// (without an uplink context) will never be received.
 func EnqueueDownlink(cfg *gateway.Config, app core.App, devEUI string, fPort uint8, payload []byte) error {
 	devEUI = normalizeEui(devEUI)
 	if !cfg.Valid() {
@@ -212,14 +241,7 @@ func EnqueueDownlink(cfg *gateway.Config, app core.App, devEUI string, fPort uin
 	if err != nil {
 		return err
 	}
-	client := concentratord.NewClient(cfg.EventURL, cfg.CommandURL)
-	profile := gateway.ProfileForRegion(cfg.Region)
-	df := gateway.BuildImmediateDownlink(cfg, profile, phyRaw)
-	_, err = client.SendDownlink(context.Background(), df)
-	errMsg := ""
-	if err != nil {
-		errMsg = err.Error()
-	}
-	RecordDownlink(app, devEUI, fPort, "data", payload, len(phyRaw), errMsg)
-	return err
+	dlQueue.Enqueue(devEUI, fPort, phyRaw, payload)
+	RecordDownlink(app, devEUI, fPort, "data_queued", payload, len(phyRaw), "")
+	return nil
 }
