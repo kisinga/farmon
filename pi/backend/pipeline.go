@@ -145,23 +145,27 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		RecordUplink(app, "", 0, "join", result.Payload, len(phyRaw), rssi, snr, gwID)
 		profile := gateway.ProfileForRegion(cfg.Region)
 		df := gateway.BuildClassADownlink(cfg, profile, result.JoinAcceptPHY, frame)
-		ack, err := downlinkSender.SendDownlink(context.Background(), df)
-		ackStatus := "OK"
-		if err != nil {
-			ackStatus = err.Error()
-			log.Printf("uplink: join → JoinAccept send failed: %v", err)
-		} else {
-			gateway.LogDownlinkAck(ack, "JoinAccept")
-			if s := gateway.DownlinkAckSummary(ack); s != "" {
-				ackStatus = s
+		// Send in a goroutine so the SUB receive loop is not blocked waiting for the TX ack.
+		// This allows back-to-back join retransmits to be processed immediately.
+		go func(df *gw.DownlinkFrame) {
+			ack, err := downlinkSender.SendDownlink(context.Background(), df)
+			ackStatus := "OK"
+			if err != nil {
+				ackStatus = err.Error()
+				log.Printf("uplink: join → JoinAccept send failed: %v", err)
+			} else {
+				gateway.LogDownlinkAck(ack, "JoinAccept")
+				if s := gateway.DownlinkAckSummary(ack); s != "" {
+					ackStatus = s
+				}
+				freqHz := uint32(0)
+				if len(df.GetItems()) > 0 && df.GetItems()[0].GetTxInfo() != nil {
+					freqHz = df.GetItems()[0].GetTxInfo().GetFrequency()
+				}
+				log.Printf("uplink: join → JoinAccept sent (RX1 %ds, freq=%d Hz) → gateway ack: %s", cfg.RX1DelaySec, freqHz, ackStatus)
 			}
-			freqHz := uint32(0)
-			if len(df.GetItems()) > 0 && df.GetItems()[0].GetTxInfo() != nil {
-				freqHz = df.GetItems()[0].GetTxInfo().GetFrequency()
-			}
-			log.Printf("uplink: join → JoinAccept sent (RX1 %ds, freq=%d Hz) → gateway ack: %s", cfg.RX1DelaySec, freqHz, ackStatus)
-		}
-		RecordDownlink(app, "", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), ackStatus)
+			RecordDownlink(app, "", 0, "join_accept", result.JoinAcceptPHY, len(result.JoinAcceptPHY), ackStatus)
+		}(df)
 		return
 	}
 	// Data uplink: decode and persist.

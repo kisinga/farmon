@@ -30,3 +30,22 @@ spreading_factor = 8
 frequency = 0
 bandwidth = 0
 datarate = 0
+
+# Radio 0: primary TX radio. tx_enable=true with 902–928 MHz covers the 923.3 MHz RX1 downlink band.
+# Explicit radios are required — model defaults may not set tx_freq_max high enough to reach 923 MHz,
+# causing TX_FREQ_INVALID or TIMED_OUT on every JoinAccept downlink.
+[[gateway.concentrator.radios]]
+enabled = true
+type = "SX1250"
+freq = 904300000
+rssi_offset = -215.4
+tx_enable = true
+tx_freq_min = 902000000
+tx_freq_max = 928000000
+
+[[gateway.concentrator.radios]]
+enabled = true
+type = "SX1250"
+freq = 905300000
+rssi_offset = -215.4
+tx_enable = false

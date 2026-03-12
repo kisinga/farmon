@@ -1,7 +1,7 @@
 // Package concentratord implements the ChirpStack Concentratord ZMQ API.
 // Commands (REQ): frame0 = command string, frame1 = Protobuf payload.
 // Events (SUB): frame0 = event type ("up" | "stats"), frame1 = Protobuf payload.
-// See https://www.chirpstack.io/docs/chirpstack-concentratord/api/commands.html and docs/concentratord-api.md.
+// See https://www.chirpstack.io/docs/chirpstack-concentratord/api/commands.html
 package concentratord
 
 import (
@@ -31,13 +31,14 @@ var (
 	unmarshalLogMu     sync.Mutex
 )
 
-// topicString normalizes the first ZMQ frame (event type) for comparison; trim trailing nulls and whitespace so we match "up"/"stats" even if concentratord sends "up\x00" or "up ".
+// topicString normalizes the first ZMQ frame (event type); trims trailing nulls/whitespace so we
+// match "up"/"stats" even if concentratord sends "up\x00" or "up ".
 func topicString(frame []byte) string {
 	return strings.TrimSpace(strings.TrimRight(string(frame), "\x00"))
 }
 
-// parseUplinkEvent returns the UplinkFrame from a ZMQ message (topic+body or body only).
-// Supports both gw.Event (concentratord) and raw gw.UplinkFrame (e.g. gateway bridge).
+// parseUplinkEvent returns the UplinkFrame from a ZMQ message.
+// Supports both gw.Event (concentratord) and raw gw.UplinkFrame (gateway bridge).
 func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
 	frames := msg.Frames
 	if len(frames) == 0 {
@@ -54,12 +55,11 @@ func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
 			return uf
 		}
 	}
-	// Fallback: raw UplinkFrame (e.g. gateway bridge or proxy).
+	// Fallback: raw UplinkFrame.
 	var uf gw.UplinkFrame
 	if err := proto.Unmarshal(payload, &uf); err == nil && len(uf.GetPhyPayload()) > 0 {
 		return &uf
 	}
-	// Rate-limit unmarshal failure logs.
 	unmarshalLogMu.Lock()
 	now := time.Now()
 	shouldLog := now.Sub(lastUnmarshalLog) >= unmarshalLogEvery
@@ -77,8 +77,7 @@ func parseUplinkEvent(msg zmq4.Msg) *gw.UplinkFrame {
 	return nil
 }
 
-// parseStatsEvent returns the GatewayStats from a ZMQ message (topic "stats", frame1 = Protobuf).
-// Supports Event{ event: GatewayStats } or raw gw.GatewayStats.
+// parseStatsEvent returns the GatewayStats from a ZMQ message.
 func parseStatsEvent(msg zmq4.Msg) *gw.GatewayStats {
 	frames := msg.Frames
 	if len(frames) < 2 || topicString(frames[0]) != eventTypeStats {
@@ -100,19 +99,15 @@ func parseStatsEvent(msg zmq4.Msg) *gw.GatewayStats {
 
 // Client implements gateway.UplinkSource and gateway.DownlinkSender using
 // Concentratord ZMQ (SUB for events, REQ for commands).
-// Concentratord can be restarted; the REQ socket is recreated on connection errors (see isConnError).
+// Each command opens a fresh REQ socket, sends one request, reads one reply, then closes.
+// This avoids all socket state bugs: context lifetime issues, stuck-send-state, reconnect races.
 type Client struct {
 	eventURL   string
 	commandURL string
-	sub        zmq4.Socket
-	req        zmq4.Socket
-	reqReady   bool   // true when req is connected and usable
-	reqErr     error  // last dial error when reqReady is false
-	reqMu      sync.Mutex
 }
 
 // NewClient creates a client. eventURL and commandURL are ZMQ endpoints
-// (e.g. "ipc:///var/run/concentratord/event_bind").
+// (e.g. "ipc:///tmp/concentratord_event").
 // If either is empty, the client is disabled.
 func NewClient(eventURL, commandURL string) *Client {
 	return &Client{
@@ -126,10 +121,8 @@ func (c *Client) Enabled() bool {
 	return c.eventURL != "" && c.commandURL != ""
 }
 
-// Run implements gateway.UplinkSource. It subscribes to "up" and "stats" events.
-// onUplink is called for each uplink; onStats is called for each stats event (may be nil).
-// If the concentratord socket is not available (e.g. concentratord not running), it retries dial
-// every dialRetryEvery until context is cancelled.
+// Run implements gateway.UplinkSource. Subscribes to "up" and "stats" topics.
+// Retries dial every dialRetryEvery on failure. Blocks until ctx is done.
 func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame), onStats func(*gw.GatewayStats)) error {
 	if !c.Enabled() {
 		return fmt.Errorf("concentratord: event or command URL not set")
@@ -186,7 +179,6 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame), onStat
 				}
 				log.Printf("concentratord SUB recv: %v (reconnecting)", err)
 				_ = sub.Close()
-				c.closeReq() // align REQ lifecycle: next command will use a fresh socket
 				break
 			}
 			if len(msg.Frames) >= 1 {
@@ -209,155 +201,65 @@ func (c *Client) Run(ctx context.Context, onUplink func(*gw.UplinkFrame), onStat
 	}
 }
 
-const (
-	commandTypeConfig    = "config"
-	commandTypeGatewayID = "gateway_id"
-)
-
-// isConnError reports whether err indicates the REQ connection is dead (reconnect and retry).
-func isConnError(err error) bool {
-	if err == nil {
-		return false
+// doCommand opens a fresh REQ socket, sends one command, reads one reply, then closes the socket.
+// The socket uses context.Background() so its lifetime is independent of any caller context.
+// This avoids the bug where GetGatewayID's short-lived timeout context kills the shared socket
+// before a later SendDownlink can use it.
+func (c *Client) doCommand(command string, body []byte) ([]byte, error) {
+	req := zmq4.NewReq(context.Background())
+	defer req.Close()
+	if err := req.Dial(c.commandURL); err != nil {
+		return nil, fmt.Errorf("concentratord REQ dial %s: %w", c.commandURL, err)
 	}
-	s := err.Error()
-	return strings.Contains(s, "broken pipe") ||
-		strings.Contains(s, "connection closed") ||
-		strings.Contains(s, "no connections available") ||
-		strings.Contains(s, "read/write on closed")
-}
-
-// closeReq closes the REQ socket so the next ensureCommandConn will reconnect.
-func (c *Client) closeReq() {
-	c.reqMu.Lock()
-	defer c.reqMu.Unlock()
-	if c.reqReady {
-		_ = c.req.Close()
-		c.reqReady = false
+	if err := req.Send(zmq4.NewMsgFrom([]byte(command), body)); err != nil {
+		return nil, fmt.Errorf("concentratord REQ send %q: %w", command, err)
 	}
-}
-
-// ensureCommandConn ensures the REQ socket is connected (shared by GetGatewayID, SendConfig, SendDownlink).
-func (c *Client) ensureCommandConn(ctx context.Context) error {
-	if !c.Enabled() {
-		return fmt.Errorf("concentratord: not configured")
-	}
-	c.reqMu.Lock()
-	if c.reqReady {
-		c.reqMu.Unlock()
-		return nil
-	}
-	c.req = zmq4.NewReq(ctx)
-	if err := c.req.Dial(c.commandURL); err != nil {
-		c.reqErr = fmt.Errorf("concentratord REQ dial: %w", err)
-		c.reqMu.Unlock()
-		return c.reqErr
-	}
-	c.reqReady = true
-	c.reqErr = nil
-	log.Printf("concentratord REQ connected to %s", c.commandURL)
-	c.reqMu.Unlock()
-	return nil
-}
-
-// GetGatewayID returns the concentratord gateway ID (8 bytes as hex string). Used when gateway_id is not set in gateway settings.
-func (c *Client) GetGatewayID(ctx context.Context) (string, error) {
-	id, err := c.getGatewayIDOnce(ctx)
-	if err != nil && isConnError(err) {
-		c.closeReq()
-		id, err = c.getGatewayIDOnce(ctx)
-	}
-	return id, err
-}
-
-func (c *Client) getGatewayIDOnce(ctx context.Context) (string, error) {
-	if err := c.ensureCommandConn(ctx); err != nil {
-		return "", err
-	}
-	c.reqMu.Lock()
-	err := c.req.Send(zmq4.NewMsgFrom([]byte(commandTypeGatewayID), []byte{}))
+	rep, err := req.Recv()
 	if err != nil {
-		c.reqMu.Unlock()
-		return "", err
+		return nil, fmt.Errorf("concentratord REQ recv %q: %w", command, err)
 	}
-	rep, err := c.req.Recv()
-	c.reqMu.Unlock()
+	if len(rep.Frames) == 0 {
+		return nil, fmt.Errorf("concentratord %q: empty response", command)
+	}
+	return rep.Frames[0], nil
+}
+
+// GetGatewayID returns the concentratord gateway ID (8 bytes as hex string).
+func (c *Client) GetGatewayID(_ context.Context) (string, error) {
+	resp, err := c.doCommand("gateway_id", []byte{})
 	if err != nil {
 		return "", err
 	}
-	if len(rep.Frames) == 0 || len(rep.Frames[0]) != 8 {
-		return "", fmt.Errorf("concentratord gateway_id: invalid response (want 8 bytes)")
+	if len(resp) != 8 {
+		return "", fmt.Errorf("concentratord gateway_id: invalid response (want 8 bytes, got %d)", len(resp))
 	}
-	id := rep.Frames[0]
-	return fmt.Sprintf("%02x%02x%02x%02x%02x%02x%02x%02x", id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7]), nil
+	return fmt.Sprintf("%02x%02x%02x%02x%02x%02x%02x%02x",
+		resp[0], resp[1], resp[2], resp[3], resp[4], resp[5], resp[6], resp[7]), nil
 }
 
-// SendConfig sends the "config" command (frame0="config", frame1=GatewayConfiguration).
-// Channel configuration is normally file-based; this is for optional in-memory push.
-func (c *Client) SendConfig(ctx context.Context, cfg *gw.GatewayConfiguration) error {
-	err := c.sendConfigOnce(ctx, cfg)
-	if err != nil && isConnError(err) {
-		c.closeReq()
-		err = c.sendConfigOnce(ctx, cfg)
-	}
-	return err
-}
-
-func (c *Client) sendConfigOnce(ctx context.Context, cfg *gw.GatewayConfiguration) error {
-	if err := c.ensureCommandConn(ctx); err != nil {
-		return err
-	}
+// SendConfig sends the "config" command with a GatewayConfiguration payload.
+func (c *Client) SendConfig(_ context.Context, cfg *gw.GatewayConfiguration) error {
 	body, err := proto.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal GatewayConfiguration: %w", err)
 	}
-	c.reqMu.Lock()
-	err = c.req.Send(zmq4.NewMsgFrom([]byte(commandTypeConfig), body))
-	if err != nil {
-		c.reqMu.Unlock()
-		return fmt.Errorf("concentratord REQ send config: %w", err)
-	}
-	_, err = c.req.Recv()
-	c.reqMu.Unlock()
-	if err != nil {
-		return fmt.Errorf("concentratord REQ recv config: %w", err)
-	}
-	return nil
+	_, err = c.doCommand("config", body)
+	return err
 }
 
-// SendDownlink implements gateway.DownlinkSender. Sends frame0="down", frame1=DownlinkFrame (Protobuf); response is DownlinkTxAck.
-func (c *Client) SendDownlink(ctx context.Context, frame *gw.DownlinkFrame) (*gw.DownlinkTxAck, error) {
-	ack, err := c.sendDownlinkOnce(ctx, frame)
-	if err != nil && isConnError(err) {
-		c.closeReq()
-		ack, err = c.sendDownlinkOnce(ctx, frame)
-	}
-	return ack, err
-}
-
-func (c *Client) sendDownlinkOnce(ctx context.Context, frame *gw.DownlinkFrame) (*gw.DownlinkTxAck, error) {
-	if err := c.ensureCommandConn(ctx); err != nil {
-		return nil, err
-	}
+// SendDownlink implements gateway.DownlinkSender. Sends frame0="down", frame1=DownlinkFrame;
+// response is DownlinkTxAck.
+func (c *Client) SendDownlink(_ context.Context, frame *gw.DownlinkFrame) (*gw.DownlinkTxAck, error) {
 	body, err := proto.Marshal(frame)
 	if err != nil {
 		return nil, fmt.Errorf("marshal DownlinkFrame: %w", err)
 	}
-	c.reqMu.Lock()
-	err = c.req.Send(zmq4.NewMsgFrom([]byte("down"), body))
+	resp, err := c.doCommand("down", body)
 	if err != nil {
-		c.reqMu.Unlock()
-		return nil, fmt.Errorf("concentratord REQ send: %w", err)
-	}
-	rep, err := c.req.Recv()
-	c.reqMu.Unlock()
-	if err != nil {
-		return nil, fmt.Errorf("concentratord REQ recv: %w", err)
-	}
-	if len(rep.Frames) == 0 {
-		return nil, fmt.Errorf("concentratord ack: empty response")
+		return nil, err
 	}
 	var ack gw.DownlinkTxAck
-	if err := proto.Unmarshal(rep.Frames[0], &ack); err != nil {
+	if err := proto.Unmarshal(resp, &ack); err != nil {
 		return nil, fmt.Errorf("concentratord ack unmarshal: %w", err)
 	}
 	return &ack, nil
