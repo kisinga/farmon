@@ -1,12 +1,11 @@
-import { Component, inject, input, signal, OnInit } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, inject, input, OnInit, signal } from '@angular/core';
 import { ApiService, CredentialsResponse } from '../../../core/services/api.service';
 import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-credentials';
 
 @Component({
   selector: 'app-device-credentials-card',
   standalone: true,
-  imports: [RouterLink],
+  imports: [],
   template: `
     <div class="card-elevated">
       <div class="card-body-spaced">

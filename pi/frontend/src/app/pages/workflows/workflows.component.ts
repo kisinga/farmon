@@ -1,8 +1,9 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, WorkflowRecord, WorkflowLogRecord, WorkflowTrigger, WorkflowAction } from '../../core/services/api.service';
+import { RouterLink } from '@angular/router';
+import { ApiService, DeviceField, WorkflowAction, WorkflowLogRecord, WorkflowRecord, WorkflowTrigger } from '../../core/services/api.service';
+import { DeviceManagerService } from '../../core/services/device-manager.service';
 
 @Component({
   selector: 'app-workflows',
@@ -185,33 +186,45 @@ import { ApiService, WorkflowRecord, WorkflowLogRecord, WorkflowTrigger, Workflo
               <button type="button" class="btn btn-ghost btn-xs" (click)="addTrigger()">+ Add trigger</button>
             </div>
             @for (t of form.triggers; track $index; let i = $index) {
-              <div class="flex flex-wrap gap-2 items-end rounded-lg border border-base-300 bg-base-200/30 p-3">
-                <div class="form-control">
-                  <label class="label text-xs">Type</label>
-                  <select class="select select-bordered select-sm" [(ngModel)]="t.type">
-                    <option value="telemetry">Sensor reading</option>
-                    <option value="state_change">State change</option>
-                  </select>
-                </div>
-                <div class="form-control">
-                  <label class="label text-xs">Device EUI (optional)</label>
-                  <input type="text" class="input input-bordered input-sm font-mono w-44" [(ngModel)]="t.device_eui" placeholder="any device" />
-                </div>
-                @if (t.type === 'telemetry') {
+              <div class="space-y-2 rounded-lg border border-base-300 bg-base-200/30 p-3">
+                <div class="flex flex-wrap gap-2 items-end">
                   <div class="form-control">
-                    <label class="label text-xs">Field (optional)</label>
-                    <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="t.field" placeholder="any" />
+                    <label class="label text-xs">Type</label>
+                    <select class="select select-bordered select-sm" [(ngModel)]="t.type">
+                      <option value="telemetry">Sensor reading</option>
+                      <option value="state_change">State change</option>
+                    </select>
                   </div>
-                }
-                @if (t.type === 'state_change') {
                   <div class="form-control">
-                    <label class="label text-xs">Control key (optional)</label>
-                    <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="t.control_key" placeholder="any" />
+                    <label class="label text-xs">Device (optional)</label>
+                    <select class="select select-bordered select-sm w-44" [(ngModel)]="t.device_eui" (change)="onTriggerDeviceSelected(i)">
+                      <option value="">Any device</option>
+                      @for (dev of devices(); track dev.device_eui) {
+                        <option [value]="dev.device_eui">{{ dev.device_name || dev.device_eui.slice(0, 8) }}</option>
+                      }
+                    </select>
                   </div>
-                }
-                @if (form.triggers.length > 1) {
-                  <button type="button" class="btn btn-ghost btn-xs text-error self-end" (click)="removeTrigger(i)">Remove</button>
-                }
+                  @if (t.type === 'telemetry') {
+                    <div class="form-control">
+                      <label class="label text-xs">Field (optional)</label>
+                      <select class="select select-bordered select-sm w-32" [(ngModel)]="t.field">
+                        <option value="">Any field</option>
+                        @for (field of (triggerDeviceFields().get(i) || []); track field.field_key) {
+                          <option [value]="field.field_key">{{ field.display_name || field.field_key }}</option>
+                        }
+                      </select>
+                    </div>
+                  }
+                  @if (t.type === 'state_change') {
+                    <div class="form-control">
+                      <label class="label text-xs">Control (optional)</label>
+                      <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="t.control_key" placeholder="pump" />
+                    </div>
+                  }
+                  @if (form.triggers.length > 1) {
+                    <button type="button" class="btn btn-ghost btn-xs text-error self-end" (click)="removeTrigger(i)">Remove</button>
+                  }
+                </div>
               </div>
             }
           </div>
@@ -230,45 +243,52 @@ import { ApiService, WorkflowRecord, WorkflowLogRecord, WorkflowTrigger, Workflo
               <button type="button" class="btn btn-ghost btn-xs" (click)="addAction()">+ Add action</button>
             </div>
             @for (a of form.actions; track $index; let i = $index) {
-              <div class="flex flex-wrap gap-2 items-end rounded-lg border border-base-300 bg-base-200/30 p-3">
-                <div class="form-control">
-                  <label class="label text-xs">Type</label>
-                  <select class="select select-bordered select-sm" [(ngModel)]="a.type">
-                    <option value="set_control">Set control</option>
-                    <option value="send_command">Send command</option>
-                  </select>
+              <div class="space-y-2 rounded-lg border border-base-300 bg-base-200/30 p-3">
+                <div class="flex flex-wrap gap-2 items-end">
+                  <div class="form-control">
+                    <label class="label text-xs">Type</label>
+                    <select class="select select-bordered select-sm" [(ngModel)]="a.type">
+                      <option value="set_control">Set control</option>
+                      <option value="send_command">Send command</option>
+                    </select>
+                  </div>
+                  <div class="form-control">
+                    <label class="label text-xs">Target device</label>
+                    <select class="select select-bordered select-sm w-44" [(ngModel)]="a.target_eui" (change)="onActionDeviceSelected(i)">
+                      <option value="">Select device...</option>
+                      @for (dev of devices(); track dev.device_eui) {
+                        <option [value]="dev.device_eui">{{ dev.device_name || dev.device_eui.slice(0, 8) }}</option>
+                      }
+                    </select>
+                  </div>
+                  @if (a.type === 'set_control') {
+                    <div class="form-control">
+                      <label class="label text-xs">Control</label>
+                      <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="a.control" placeholder="pump" />
+                    </div>
+                    <div class="form-control">
+                      <label class="label text-xs">State</label>
+                      <input type="text" class="input input-bordered input-sm w-24" [(ngModel)]="a.state" placeholder="on" />
+                    </div>
+                    <div class="form-control">
+                      <label class="label text-xs">Duration (s)</label>
+                      <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="a.duration" min="0" />
+                    </div>
+                  }
+                  @if (a.type === 'send_command') {
+                    <div class="form-control">
+                      <label class="label text-xs">Command</label>
+                      <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="a.command" placeholder="interval" />
+                    </div>
+                    <div class="form-control">
+                      <label class="label text-xs">Value</label>
+                      <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="a.value" />
+                    </div>
+                  }
+                  @if (form.actions.length > 1) {
+                    <button type="button" class="btn btn-ghost btn-xs text-error self-end" (click)="removeAction(i)">Remove</button>
+                  }
                 </div>
-                <div class="form-control">
-                  <label class="label text-xs">Target device EUI</label>
-                  <input type="text" class="input input-bordered input-sm font-mono w-44" [(ngModel)]="a.target_eui" />
-                </div>
-                @if (a.type === 'set_control') {
-                  <div class="form-control">
-                    <label class="label text-xs">Control</label>
-                    <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="a.control" placeholder="pump" />
-                  </div>
-                  <div class="form-control">
-                    <label class="label text-xs">State</label>
-                    <input type="text" class="input input-bordered input-sm w-24" [(ngModel)]="a.state" placeholder="on" />
-                  </div>
-                  <div class="form-control">
-                    <label class="label text-xs">Duration (s)</label>
-                    <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="a.duration" min="0" />
-                  </div>
-                }
-                @if (a.type === 'send_command') {
-                  <div class="form-control">
-                    <label class="label text-xs">Command</label>
-                    <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="a.command" placeholder="interval" />
-                  </div>
-                  <div class="form-control">
-                    <label class="label text-xs">Value</label>
-                    <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="a.value" />
-                  </div>
-                }
-                @if (form.actions.length > 1) {
-                  <button type="button" class="btn btn-ghost btn-xs text-error self-end" (click)="removeAction(i)">Remove</button>
-                }
               </div>
             }
           </div>
@@ -292,6 +312,7 @@ import { ApiService, WorkflowRecord, WorkflowLogRecord, WorkflowTrigger, Workflo
 })
 export class WorkflowsComponent implements OnInit {
   private api = inject(ApiService);
+  private deviceManager = inject(DeviceManagerService);
 
   workflows = signal<WorkflowRecord[]>([]);
   logEntries = signal<WorkflowLogRecord[]>([]);
@@ -301,6 +322,16 @@ export class WorkflowsComponent implements OnInit {
   message = signal<string | null>(null);
   isError = signal(false);
   testResult = signal<{ workflowId: string; conditionResult: boolean; wouldFire: boolean; cooldownActive: boolean; error?: string } | null>(null);
+
+  // Device management
+  devices = computed(() => this.deviceManager.devices());
+
+  // Track available fields for each trigger/action based on device selection
+  triggerDeviceFields = signal<Map<number, DeviceField[]>>(new Map());
+  actionDeviceFields = signal<Map<number, DeviceField[]>>(new Map());
+
+  // Comparison operators for conditions
+  comparisonOperators = ['=', '!=', '>', '>=', '<', '<=', 'in', 'not in'];
 
   form = {
     name: '',
@@ -322,6 +353,10 @@ export class WorkflowsComponent implements OnInit {
 
   removeTrigger(i: number): void {
     this.form.triggers = this.form.triggers.filter((_, idx) => idx !== i);
+    this.triggerDeviceFields.update(m => {
+      m.delete(i);
+      return m;
+    });
   }
 
   addAction(): void {
@@ -330,6 +365,61 @@ export class WorkflowsComponent implements OnInit {
 
   removeAction(i: number): void {
     this.form.actions = this.form.actions.filter((_, idx) => idx !== i);
+    this.actionDeviceFields.update(m => {
+      m.delete(i);
+      return m;
+    });
+  }
+
+  /**
+   * Handle trigger device selection - load available fields
+   */
+  async onTriggerDeviceSelected(triggerIndex: number): Promise<void> {
+    const trigger = this.form.triggers[triggerIndex];
+    if (!trigger.device_eui) {
+      this.triggerDeviceFields.update(m => {
+        m.delete(triggerIndex);
+        return m;
+      });
+      trigger.field = '';
+      trigger.control_key = '';
+      return;
+    }
+
+    try {
+      const fields = await this.deviceManager.getDeviceFields(trigger.device_eui);
+      this.triggerDeviceFields.update(m => {
+        m.set(triggerIndex, fields);
+        return m;
+      });
+    } catch (err) {
+      console.error('Failed to load fields for device:', err);
+    }
+  }
+
+  /**
+   * Handle action device selection - load available controls and fields
+   */
+  async onActionDeviceSelected(actionIndex: number): Promise<void> {
+    const action = this.form.actions[actionIndex];
+    if (!action.target_eui) {
+      this.actionDeviceFields.update(m => {
+        m.delete(actionIndex);
+        return m;
+      });
+      action.control = '';
+      return;
+    }
+
+    try {
+      const fields = await this.deviceManager.getDeviceFields(action.target_eui);
+      this.actionDeviceFields.update(m => {
+        m.set(actionIndex, fields);
+        return m;
+      });
+    } catch (err) {
+      console.error('Failed to load fields for device:', err);
+    }
   }
 
   toggleEnabled(w: WorkflowRecord): void {

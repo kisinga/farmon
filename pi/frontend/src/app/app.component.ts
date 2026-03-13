@@ -1,8 +1,9 @@
-import { Component, inject, computed, OnInit } from '@angular/core';
+import { Component, computed, inject, OnInit } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { DeviceManagerService } from './core/services/device-manager.service';
+import { GatewayStatusService } from './core/services/gateway-status.service';
 import { GatewayStatusIndicatorComponent } from './shared/components/gateway-status-indicator/gateway-status-indicator.component';
 import { LogoComponent } from './shared/components/logo/logo.component';
-import { GatewayStatusService } from './core/services/gateway-status.service';
 
 @Component({
   selector: 'app-root',
@@ -12,11 +13,13 @@ import { GatewayStatusService } from './core/services/gateway-status.service';
 })
 export class AppComponent implements OnInit {
   private gateway = inject(GatewayStatusService);
+  private deviceManager = inject(DeviceManagerService);
 
   showGatewayWarning = computed(() => !this.gateway.online());
 
   ngOnInit(): void {
     this.gateway.refresh();
+    this.deviceManager.loadDevices();
   }
 
   closeDropdown(_e: Event): void {
