@@ -29,9 +29,9 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
   imports: [DatePipe, RouterLink, GatewaySettingsComponent],
   template: `
     <header class="page-header">
-      <h1 class="page-title">LoRaWAN</h1>
+      <h1 class="page-title">Connection</h1>
       <p class="page-description">
-        Raw frames and concentratord connection status. Frames are persisted (max 500). Use this page to verify uplinks and downlinks.
+        LoRaWAN gateway, raw frames, and concentratord status. Frames are persisted (max 500). Use this page to verify uplinks and downlinks.
       </p>
     </header>
 
@@ -42,7 +42,7 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
     }
 
     <!-- Stats: DaisyUI stats -->
-    <div class="stats stats-vertical md:stats-horizontal w-full shadow-sm bg-base-100 rounded-2xl border border-base-200 mb-6">
+    <div class="stats stats-vertical md:stats-horizontal w-full shadow-sm bg-base-100 rounded-2xl border border-base-300 mb-6">
       @if (pipeline(); as p) {
         <div class="stat place-items-center md:place-items-start">
           <div class="stat-title">Pipeline</div>
@@ -94,7 +94,7 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
             <a routerLink="/" class="link link-primary mt-2">View devices</a>
           </div>
         } @else {
-          <div class="overflow-x-auto max-h-[55vh] overflow-y-auto rounded-xl border border-base-200">
+          <div class="overflow-x-auto max-h-[55vh] overflow-y-auto rounded-xl border border-base-300">
             <table class="table table-zebra table-pin-rows">
               <thead>
                 <tr class="bg-base-200/60 sticky top-0 z-10">
@@ -146,7 +146,7 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
     </div>
 
     <!-- Gateway configuration (collapsible; default open when no saved config) -->
-    <div class="collapse collapse-arrow bg-base-100 border border-base-200 rounded-2xl mt-6">
+    <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-2xl mt-6">
       <input type="checkbox" [checked]="configPanelOpen()" (change)="configPanelOpen.set($any($event.target).checked)" />
       <div class="collapse-title font-semibold text-lg">
         Gateway configuration

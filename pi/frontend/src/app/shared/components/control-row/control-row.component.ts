@@ -4,7 +4,7 @@ import { Component, input, output, signal } from '@angular/core';
   selector: 'app-control-row',
   standalone: true,
   template: `
-    <div class="flex flex-wrap items-center gap-3 rounded-xl border border-base-200 bg-base-200/30 p-4">
+    <div class="flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/30 p-4">
       <div class="flex items-center gap-2 min-w-0">
         <span class="font-semibold capitalize">{{ displayName() || controlKey() }}</span>
         <span class="badge badge-ghost badge-sm">{{ currentState() }}</span>

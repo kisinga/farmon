@@ -1,6 +1,6 @@
 <div class="min-h-screen flex flex-col bg-base-200">
   <!-- Navbar -->
-  <header class="navbar bg-base-100 border-b border-base-200 px-4 md:px-6 sticky top-0 z-30 shadow-sm">
+  <header class="navbar bg-base-100 border-b border-base-300 px-4 md:px-6 sticky top-0 z-30 shadow-sm">
     <div class="navbar-start">
       <a routerLink="/" class="btn btn-ghost gap-2 px-2 text-lg font-semibold" aria-label="FarMon home">
         <app-logo />
@@ -10,18 +10,18 @@
     <div class="navbar-center hidden md:flex">
       <ul class="menu menu-horizontal menu-lg gap-1 p-0">
         <li>
-          <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }" class="rounded-lg">
-            Devices
-          </a>
-        </li>
-        <li>
           <a routerLink="/workflows" routerLinkActive="active" class="rounded-lg">
             Workflows
           </a>
         </li>
         <li>
+          <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }" class="rounded-lg">
+            Devices
+          </a>
+        </li>
+        <li>
           <a routerLink="/lorawan" routerLinkActive="active" class="rounded-lg">
-            LoRaWAN
+            Connection
           </a>
         </li>
       </ul>
@@ -35,10 +35,10 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </label>
-        <ul tabindex="0" class="menu dropdown-content bg-base-100 rounded-box z-40 mt-3 w-52 border border-base-200 p-2 shadow-xl">
-          <li><a routerLink="/" (click)="closeDropdown($event)">Devices</a></li>
+        <ul tabindex="0" class="menu dropdown-content bg-base-100 rounded-box z-40 mt-3 w-52 border border-base-300 p-2 shadow-xl">
           <li><a routerLink="/workflows" (click)="closeDropdown($event)">Workflows</a></li>
-          <li><a routerLink="/lorawan" (click)="closeDropdown($event)">LoRaWAN</a></li>
+          <li><a routerLink="/" (click)="closeDropdown($event)">Devices</a></li>
+          <li><a routerLink="/lorawan" (click)="closeDropdown($event)">Connection</a></li>
         </ul>
       </div>
     </div>
@@ -48,7 +48,7 @@
   @if (showGatewayWarning()) {
     <div class="bg-warning/15 text-warning-content border-b border-warning/30 px-4 py-2 flex items-center justify-center gap-2 text-sm">
       <span>Gateway offline — device uplinks may not be received.</span>
-      <a routerLink="/lorawan" class="link link-hover font-medium underline">Check LoRaWAN</a>
+      <a routerLink="/lorawan" class="link link-hover font-medium underline">Check connection</a>
     </div>
   }
 

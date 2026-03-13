@@ -4,7 +4,7 @@ import { Component, input } from '@angular/core';
   selector: 'app-metric-gauge',
   standalone: true,
   template: `
-    <div class="rounded-xl border border-base-200 bg-base-100 p-4 text-center shadow-sm">
+    <div class="rounded-xl border border-base-300 bg-base-100 p-4 text-center shadow-sm">
       <p class="text-2xl font-bold text-base-content">{{ value() }}{{ unit() ? ' ' + unit() : '' }}</p>
       <p class="text-sm text-base-content/60 mt-0.5">{{ label() }}</p>
       @if (min() !== undefined && max() !== undefined) {

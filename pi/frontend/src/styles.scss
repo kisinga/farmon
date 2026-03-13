@@ -52,7 +52,7 @@
     @apply text-lg font-semibold text-base-content mb-3 flex items-center gap-2;
   }
   .card-elevated {
-    @apply bg-base-100 shadow-xl border border-base-200 rounded-2xl overflow-hidden;
+    @apply bg-base-100 shadow-md border border-base-300 rounded-2xl overflow-hidden;
   }
   .card-body-spaced {
     @apply card-body gap-4 p-5 md:p-6;

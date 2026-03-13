@@ -7,7 +7,7 @@ import { ValuePillComponent } from '../value-pill/value-pill.component';
   standalone: true,
   imports: [ValuePillComponent],
   template: `
-    <div class="rounded-xl border border-base-200 bg-base-100 p-4">
+    <div class="rounded-xl border border-base-300 bg-base-100 p-4">
       <h2 class="section-title">Diagnostics</h2>
       @if (totalCount() === 0) {
         <p class="text-sm text-base-content/60">No errors reported.</p>

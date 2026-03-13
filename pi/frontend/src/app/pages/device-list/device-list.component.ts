@@ -49,7 +49,7 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
             <button type="button" class="btn btn-primary" (click)="openAddModal()">Add your first device</button>
           </div>
         } @else {
-          <div class="overflow-x-auto rounded-xl border border-base-200">
+          <div class="overflow-x-auto rounded-xl border border-base-300">
             <table class="table table-zebra">
               <thead>
                 <tr class="bg-base-200/60">

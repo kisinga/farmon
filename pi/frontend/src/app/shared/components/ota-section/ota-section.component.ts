@@ -23,7 +23,7 @@ import { ApiService, FirmwareHistoryRecord } from '../../../core/services/api.se
         @if (history().length === 0 && !loadingHistory()) {
           <p class="text-sm text-base-content/60">No firmware history yet.</p>
         } @else {
-          <div class="overflow-x-auto rounded-xl border border-base-200">
+          <div class="overflow-x-auto rounded-xl border border-base-300">
             <table class="table table-sm">
               <thead>
                 <tr class="bg-base-200/60">

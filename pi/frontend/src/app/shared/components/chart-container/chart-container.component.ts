@@ -12,7 +12,7 @@ export interface ChartSeriesInput {
   standalone: true,
   imports: [NgxEchartsDirective],
   template: `
-    <div class="rounded-xl border border-base-200 bg-base-100 p-4 shadow-sm" [style.height.px]="height()">
+    <div class="rounded-xl border border-base-300 bg-base-100 p-4 shadow-sm" [style.height.px]="height()">
       @if (title()) {
         <p class="text-sm font-medium mb-1">{{ title() }}</p>
       }

@@ -17,7 +17,7 @@ import { DeviceContextService } from '../../../core/services/device-context.serv
       @if (writableFields().length > 0) {
         <div class="space-y-3">
           @for (f of writableFields(); track f.field_key) {
-            <div class="flex flex-wrap items-center gap-3 rounded-xl border border-base-200 bg-base-200/30 p-4">
+            <div class="flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/30 p-4">
               <div class="flex items-center gap-2 min-w-0">
                 <span class="font-semibold">{{ f.display_name || f.field_key }}</span>
                 @if (f.unit) {

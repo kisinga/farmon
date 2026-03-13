@@ -15,7 +15,7 @@ import { ApiService, DeviceRuleRecord } from '../../../core/services/api.service
       @if (rules().length === 0 && !loading()) {
         <p class="text-sm text-base-content/60">No device rules. These run directly on the device for instant, offline-capable control.</p>
       } @else {
-        <div class="overflow-x-auto rounded-xl border border-base-200">
+        <div class="overflow-x-auto rounded-xl border border-base-300">
           <table class="table table-sm">
             <thead>
               <tr class="bg-base-200/60">
@@ -44,7 +44,7 @@ import { ApiService, DeviceRuleRecord } from '../../../core/services/api.service
           </table>
         </div>
       }
-      <details class="collapse collapse-arrow border border-base-200 rounded-xl bg-base-200/30">
+      <details class="collapse collapse-arrow border border-base-300 rounded-xl bg-base-200/30">
         <summary class="collapse-title text-sm font-semibold py-2 min-h-0">Add device rule</summary>
         <div class="collapse-content px-0">
           <div class="flex flex-wrap gap-2 items-end p-4">
