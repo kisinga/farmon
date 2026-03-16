@@ -1,4 +1,4 @@
-module github.com/kisinga/farmon/pi
+module github.com/kisinga/farmon
 
 go 1.25.5
 

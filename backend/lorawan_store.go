@@ -8,7 +8,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/kisinga/farmon/pi/internal/lorawan"
+	"github.com/kisinga/farmon/internal/lorawan"
 )
 
 // pocketbaseLorawanStore implements lorawan.DeviceKeysProvider and lorawan.SessionStore using PocketBase.

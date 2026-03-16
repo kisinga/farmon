@@ -1,3 +1,0 @@
-# Build output (run 'make dist' then docker compose; do not commit)
-dist/
-backend/pocketbase

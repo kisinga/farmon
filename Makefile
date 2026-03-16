@@ -1,5 +1,5 @@
 # FarMon: PocketBase backend + Angular frontend.
-# Run from pi/ directory. No Docker required.
+# Run from project root. No Docker required.
 #
 # Quick start:
 #   make frontend-deps   (once, after clone)

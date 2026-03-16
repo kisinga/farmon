@@ -16,7 +16,7 @@ import (
 	"github.com/go-zeromq/zmq4"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/kisinga/farmon/pi/internal/gateway"
+	"github.com/kisinga/farmon/internal/gateway"
 )
 
 const (

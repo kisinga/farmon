@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/kisinga/farmon/pi/internal/gateway"
+	"github.com/kisinga/farmon/internal/gateway"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )

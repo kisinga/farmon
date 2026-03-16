@@ -11,7 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/plugins/jsvm"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
-	"github.com/kisinga/farmon/pi/internal/gateway"
+	"github.com/kisinga/farmon/internal/gateway"
 )
 
 func main() {

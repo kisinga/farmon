@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"net/http"
 
-	"github.com/kisinga/farmon/pi/internal/gateway"
+	"github.com/kisinga/farmon/internal/gateway"
 	"github.com/pocketbase/pocketbase/core"
 )
 

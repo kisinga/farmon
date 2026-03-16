@@ -12,9 +12,9 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/kisinga/farmon/pi/internal/concentratord"
-	"github.com/kisinga/farmon/pi/internal/gateway"
-	"github.com/kisinga/farmon/pi/internal/lorawan"
+	"github.com/kisinga/farmon/internal/concentratord"
+	"github.com/kisinga/farmon/internal/gateway"
+	"github.com/kisinga/farmon/internal/lorawan"
 )
 
 const gatewayIDDiscoverTimeout = 5 * time.Second

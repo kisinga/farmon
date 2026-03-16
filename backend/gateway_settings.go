@@ -9,7 +9,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/kisinga/farmon/pi/internal/gateway"
+	"github.com/kisinga/farmon/internal/gateway"
 )
 
 // --- Gateway settings DB load/save (single-record gateway_settings collection) ---
