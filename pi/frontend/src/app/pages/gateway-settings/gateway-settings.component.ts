@@ -36,13 +36,31 @@ const REGIONS = [
         </div>
       }
 
-      <div class="alert alert-info rounded-xl mb-6">
-        <span>Set event URL, command URL, and region only. <strong>Gateway ID is autodiscovered</strong> when the pipeline connects to concentratord and cannot be edited.</span>
-      </div>
+      @if (!form.test_mode) {
+        <div class="alert alert-info rounded-xl mb-6">
+          <span>Set event URL, command URL, and region only. <strong>Gateway ID is autodiscovered</strong> when the pipeline connects to concentratord and cannot be edited.</span>
+        </div>
+      }
 
       <div class="card-elevated max-w-2xl">
         <div class="card-body-spaced">
           <form (ngSubmit)="save()" class="space-y-6">
+            <!-- Test mode toggle -->
+            <div class="form-control">
+              <label class="label cursor-pointer justify-start gap-3">
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  name="test_mode"
+                  [(ngModel)]="form.test_mode"
+                />
+                <div>
+                  <span class="label-text font-semibold">Test mode</span>
+                  <p class="text-sm text-base-content/60">Skip concentratord — uplinks via inject endpoint only, downlinks logged but not sent.</p>
+                </div>
+              </label>
+            </div>
+
             <!-- Region (frequency band) first -->
             <div class="form-control w-full">
               <label class="label" for="region">
@@ -209,6 +227,7 @@ export class GatewaySettingsComponent implements OnInit {
     command_url: 'ipc:///tmp/concentratord_command',
     gateway_id: '',
     rx1_frequency_hz: 0,
+    test_mode: false,
     saved: false,
   };
 
@@ -246,6 +265,7 @@ export class GatewaySettingsComponent implements OnInit {
   }
 
   canSave(): boolean {
+    if (this.form.test_mode) return true;
     const r = this.form.region?.trim();
     const e = this.form.event_url?.trim();
     const c = this.form.command_url?.trim();
@@ -262,6 +282,7 @@ export class GatewaySettingsComponent implements OnInit {
       event_url: this.form.event_url.trim(),
       command_url: this.form.command_url.trim(),
       rx1_frequency_hz: this.form.rx1_frequency_hz ?? 0,
+      test_mode: this.form.test_mode,
     };
     this.api.patchGatewaySettings(payload).subscribe({
       next: (res) => {

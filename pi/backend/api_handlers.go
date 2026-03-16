@@ -355,37 +355,3 @@ func sendCommandHandler(app core.App, state *GatewayState) func(*core.RequestEve
 	}
 }
 
-// otaStartHandler accepts OTA start request (eui, optional firmware). Progress stored via uplink fPort 8.
-func otaStartHandler(app core.App) func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		var body struct {
-			Eui      string `json:"eui"`
-			Firmware string `json:"firmware,omitempty"`
-		}
-		if err := e.BindBody(&body); err != nil {
-			return e.String(http.StatusBadRequest, "invalid body")
-		}
-		if body.Eui == "" {
-			return e.String(http.StatusBadRequest, "eui required")
-		}
-		// TODO: enqueue OTA start downlink when device protocol supports it
-		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "OTA start requested"})
-	}
-}
-
-// otaCancelHandler accepts OTA cancel request (eui).
-func otaCancelHandler(app core.App) func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		var body struct {
-			Eui string `json:"eui"`
-		}
-		if err := e.BindBody(&body); err != nil {
-			return e.String(http.StatusBadRequest, "invalid body")
-		}
-		if body.Eui == "" {
-			return e.String(http.StatusBadRequest, "eui required")
-		}
-		// TODO: enqueue OTA cancel downlink when device protocol supports it
-		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "OTA cancel requested"})
-	}
-}

@@ -1,5 +1,5 @@
 import { Component, inject, computed, signal } from '@angular/core';
-import { ApiService, DeviceField } from '../../../core/services/api.service';
+import { ApiService, DeviceField, ProfileCommand } from '../../../core/services/api.service';
 import { DeviceContextService } from '../../../core/services/device-context.service';
 
 @Component({
@@ -53,20 +53,20 @@ import { DeviceContextService } from '../../../core/services/device-context.serv
         <div class="space-y-3">
           <h3 class="text-sm font-medium text-base-content/70">Commands</h3>
           <div class="flex flex-wrap gap-2">
-            @for (cmd of actionCommands(); track cmd) {
+            @for (cmd of actionCommands(); track cmd.name) {
               <button
                 type="button"
                 class="btn btn-sm btn-outline capitalize"
                 [disabled]="sending()"
-                (click)="sendAction(cmd)"
-              >{{ cmd }}</button>
+                (click)="sendAction(cmd.name)"
+              >{{ cmd.name }}</button>
             }
           </div>
         </div>
       }
 
       @if (writableFields().length === 0 && actionCommands().length === 0) {
-        <p class="text-base-content/60 text-sm">No configurable fields or commands. They appear after device registration.</p>
+        <p class="text-base-content/60 text-sm">No configurable fields or commands available for this profile.</p>
       }
     </div>
   `,
@@ -89,28 +89,11 @@ export class DeviceConfigPanelComponent {
     this.deviceContext.fieldConfigs().filter(f => f.access === 'w')
   );
 
-  /** Well-known commands available even before registration (match firmware protocol_constants.h). */
-  private static readonly WELL_KNOWN_CMDS: Record<string, number> = {
-    reset: 10, interval: 11, reboot: 12, clearerr: 13, forcereg: 14, status: 15,
-  };
-
-  /** Commands that don't map to a writable field — shown as action buttons. */
-  actionCommands = computed(() => {
-    const device = this.deviceContext.device();
-    if (!device) return [];
-    let cmds: Record<string, number> = {};
-    const raw = (device as unknown as Record<string, unknown>)['commands_json'];
-    if (typeof raw === 'string') {
-      try { cmds = JSON.parse(raw); } catch { /* ignore */ }
-    } else if (typeof raw === 'object' && raw !== null) {
-      cmds = raw as Record<string, number>;
-    }
-    // Merge well-known commands as fallback
-    if (Object.keys(cmds).length === 0) {
-      cmds = { ...DeviceConfigPanelComponent.WELL_KNOWN_CMDS };
-    }
+  /** Commands from the device's profile (not hardcoded). Action commands = those that don't map to a writable field. */
+  actionCommands = computed<ProfileCommand[]>(() => {
+    const commands = this.deviceContext.profileCommands();
     const fieldCommands = new Set(Object.keys(DeviceConfigPanelComponent.COMMAND_FIELD_MAP));
-    return Object.keys(cmds).filter(c => !fieldCommands.has(c));
+    return commands.filter(c => !fieldCommands.has(c.name));
   });
 
   currentValue(fieldKey: string): number | null {

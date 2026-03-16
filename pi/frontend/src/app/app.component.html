@@ -10,18 +10,23 @@
     <div class="navbar-center hidden md:flex">
       <ul class="menu menu-horizontal menu-lg gap-1 p-0">
         <li>
-          <a routerLink="/workflows" routerLinkActive="active" class="rounded-lg">
-            Workflows
-          </a>
-        </li>
-        <li>
           <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }" class="rounded-lg">
             Devices
           </a>
         </li>
         <li>
-          <a routerLink="/lorawan" routerLinkActive="active" class="rounded-lg">
-            Connection
+          <a routerLink="/profiles" routerLinkActive="active" class="rounded-lg">
+            Profiles
+          </a>
+        </li>
+        <li>
+          <a routerLink="/workflows" routerLinkActive="active" class="rounded-lg">
+            Workflows
+          </a>
+        </li>
+        <li>
+          <a routerLink="/network" routerLinkActive="active" class="rounded-lg">
+            Network
           </a>
         </li>
       </ul>
@@ -36,9 +41,10 @@
           </svg>
         </label>
         <ul tabindex="0" class="menu dropdown-content bg-base-100 rounded-box z-40 mt-3 w-52 border border-base-300 p-2 shadow-xl">
-          <li><a routerLink="/workflows" (click)="closeDropdown($event)">Workflows</a></li>
           <li><a routerLink="/" (click)="closeDropdown($event)">Devices</a></li>
-          <li><a routerLink="/lorawan" (click)="closeDropdown($event)">Connection</a></li>
+          <li><a routerLink="/profiles" (click)="closeDropdown($event)">Profiles</a></li>
+          <li><a routerLink="/workflows" (click)="closeDropdown($event)">Workflows</a></li>
+          <li><a routerLink="/network" (click)="closeDropdown($event)">Network</a></li>
         </ul>
       </div>
     </div>
@@ -48,7 +54,7 @@
   @if (showGatewayWarning()) {
     <div class="bg-warning/15 text-warning-content border-b border-warning/30 px-4 py-2 flex items-center justify-center gap-2 text-sm">
       <span>Gateway offline — device uplinks may not be received.</span>
-      <a routerLink="/lorawan" class="link link-hover font-medium underline">Check connection</a>
+      <a routerLink="/network" class="link link-hover font-medium underline">Check connection</a>
     </div>
   }
 

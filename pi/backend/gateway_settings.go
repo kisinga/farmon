@@ -137,6 +137,11 @@ func recordToGatewayConfig(rec *core.Record) gateway.Config {
 	if n := numberFromRecord(rec, "rx1_frequency_hz"); n > 0 {
 		cfg.RX1FrequencyHz = uint32(n)
 	}
+	if v := rec.Get("test_mode"); v != nil {
+		if b, ok := v.(bool); ok {
+			cfg.TestMode = b
+		}
+	}
 	return cfg
 }
 
@@ -146,6 +151,7 @@ func configToRecord(rec *core.Record, cfg gateway.Config) {
 	rec.Set("command_url", cfg.CommandURL)
 	rec.Set("gateway_id", cfg.GatewayID)
 	rec.Set("rx1_frequency_hz", cfg.RX1FrequencyHz)
+	rec.Set("test_mode", cfg.TestMode)
 }
 
 // GatewayState holds mutable gateway config, runtime state, and pipeline cancel. Concentratord is always external; we only connect via ZMQ.
@@ -189,6 +195,10 @@ func (s *GatewayState) RestartPipeline(app core.App) {
 	s.mu.Unlock()
 	if s.cfg == nil {
 		log.Printf("RestartPipeline: skipping (no config)")
+		return
+	}
+	if s.cfg.TestMode {
+		log.Printf("RestartPipeline: test mode enabled — skipping concentratord pipeline (uplinks via inject only)")
 		return
 	}
 	if !s.cfg.Valid() {

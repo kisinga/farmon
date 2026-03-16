@@ -1,0 +1,21 @@
+{
+  "name": "farmon-test-sim",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "step:profiles": "tsx 01-create-profiles.ts",
+    "step:devices": "tsx 02-provision-devices.ts",
+    "step:telemetry": "tsx 03-generate-telemetry.ts",
+    "step:states": "tsx 04-generate-state-changes.ts",
+    "step:all": "tsx 01-create-profiles.ts && tsx 02-provision-devices.ts && tsx 03-generate-telemetry.ts && tsx 04-generate-state-changes.ts",
+    "clean": "tsx 99-cleanup.ts"
+  },
+  "dependencies": {
+    "pocketbase": "^0.26.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}

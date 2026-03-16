@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -28,14 +29,16 @@ func appKey32(s string) string {
 	return string(out)
 }
 
-// POST /api/farmon/devices — create device with generated AppKey (LoRaWAN OTAA provisioning).
-// Body: { "device_eui": "0102030405060708", "device_name": "optional name" }
-// Returns: { "device_eui": "...", "app_key": "hex32" }
+// POST /api/farmon/devices — provision device with profile.
+// Body: { "device_eui": "0102030405060708", "device_name": "optional name", "profile_id": "required" }
+// Returns: { "device_eui": "...", "app_key": "hex32", "profile_name": "..." }
 func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var body struct {
-			DeviceEui   string `json:"device_eui"`
-			DeviceName  string `json:"device_name"`
+			DeviceEui       string         `json:"device_eui"`
+			DeviceName      string         `json:"device_name"`
+			ProfileID       string         `json:"profile_id"`
+			ConfigOverrides map[string]any `json:"config_overrides,omitempty"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.String(http.StatusBadRequest, "invalid body")
@@ -44,18 +47,37 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 		if len(devEui) != 16 {
 			return e.String(http.StatusBadRequest, "device_eui must be 16 hex characters")
 		}
+		if body.ProfileID == "" {
+			return e.String(http.StatusBadRequest, "profile_id required")
+		}
+
+		// Validate profile exists
+		profile, err := loadProfileWithComponents(app, body.ProfileID)
+		if err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]any{"error": "profile not found: " + body.ProfileID})
+		}
+
 		// Generate AppKey (16 bytes = 32 hex chars)
 		key := make([]byte, 16)
 		if _, err := rand.Read(key); err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to generate key"})
 		}
 		appKeyHex := hex.EncodeToString(key)
+
 		coll, err := app.FindCollectionByNameOrId("devices")
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
+
+		// Determine config_status
+		configStatus := "n/a"
+		if profile.ProfileType == "airconfig" {
+			configStatus = "pending"
+		}
+
 		existing, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": devEui})
 		if err == nil {
+			// Device already exists — update profile and re-materialize
 			if existing.Get("app_key") == nil || existing.Get("app_key") == "" {
 				existing.Set("app_key", appKeyHex)
 			} else {
@@ -65,31 +87,46 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			if body.DeviceName != "" {
 				existing.Set("device_name", strings.TrimSpace(body.DeviceName))
 			}
+			existing.Set("profile", body.ProfileID)
+			existing.Set("config_status", configStatus)
+			if body.ConfigOverrides != nil {
+				existing.Set("config_overrides", body.ConfigOverrides)
+			}
 			existing.Set("last_seen", time.Now().Format(time.RFC3339))
 			if err := app.Save(existing); err != nil {
 				return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			}
-			return e.JSON(http.StatusOK, map[string]any{
-				"device_eui": devEui,
-				"app_key":    appKeyHex,
-			})
+		} else {
+			// Create new device
+			rec := core.NewRecord(coll)
+			rec.Set("device_eui", devEui)
+			rec.Set("device_name", strings.TrimSpace(body.DeviceName))
+			rec.Set("app_key", appKeyHex)
+			rec.Set("profile", body.ProfileID)
+			rec.Set("config_status", configStatus)
+			if body.ConfigOverrides != nil {
+				rec.Set("config_overrides", body.ConfigOverrides)
+			}
+			rec.Set("last_seen", time.Now().Format(time.RFC3339))
+			if err := app.Save(rec); err != nil {
+				return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			}
 		}
-		rec := core.NewRecord(coll)
-		rec.Set("device_eui", devEui)
-		rec.Set("device_name", strings.TrimSpace(body.DeviceName))
-		rec.Set("app_key", appKeyHex)
-		rec.Set("last_seen", time.Now().Format(time.RFC3339))
-		if err := app.Save(rec); err != nil {
-			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+
+		// Materialize profile fields/controls to device-level collections
+		if err := materializeProfileToDevice(app, devEui, profile); err != nil {
+			log.Printf("[provision] materialize error for %s: %v", devEui, err)
 		}
+
 		return e.JSON(http.StatusOK, map[string]any{
-			"device_eui": devEui,
-			"app_key":    appKeyHex,
+			"device_eui":   devEui,
+			"app_key":      appKeyHex,
+			"profile_name": profile.Name,
 		})
 	}
 }
 
-// DELETE /api/farmon/devices?eui=... — delete a device and its LoRaWAN session so it can be re-provisioned.
+// DELETE /api/farmon/devices?eui=... — delete a device, its LoRaWAN session, fields, controls, and commands.
 func deleteDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		eui := normalizeEui(strings.TrimSpace(e.Request.URL.Query().Get("eui")))
@@ -103,12 +140,23 @@ func deleteDeviceHandler(app core.App) func(*core.RequestEvent) error {
 		if err := app.Delete(rec); err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
-		// Remove LoRaWAN session so the device can join again with a new AppKey.
-		if sess, err := app.FindFirstRecordByFilter("lorawan_sessions", "device_eui = {:eui}", dbx.Params{"eui": eui}); err == nil {
-			_ = app.Delete(sess)
-		}
+
+		// Cleanup related records
+		deleteRelatedRecords(app, "lorawan_sessions", eui)
+		deleteRelatedRecords(app, "device_fields", eui)
+		deleteRelatedRecords(app, "device_controls", eui)
+		deleteRelatedRecords(app, "commands", eui)
+
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "device deleted"})
 	}
 }
 
-// Credentials are read via SDK: devices.getFirstListItem(filter by device_eui), map to { device_eui, app_key }.
+func deleteRelatedRecords(app core.App, collection, devEUI string) {
+	records, err := app.FindRecordsByFilter(collection, "device_eui = {:eui}", "", 0, 0, dbx.Params{"eui": devEUI})
+	if err != nil {
+		return
+	}
+	for _, r := range records {
+		_ = app.Delete(r)
+	}
+}

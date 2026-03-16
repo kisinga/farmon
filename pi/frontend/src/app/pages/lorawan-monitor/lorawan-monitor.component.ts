@@ -47,13 +47,17 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
         <div class="stat place-items-center md:place-items-start">
           <div class="stat-title">Pipeline</div>
           <div class="stat-value text-2xl">
-            @if (p.concentratord_configured) {
+            @if (gatewaySettings()?.test_mode) {
+              <span class="text-warning">Test mode</span>
+            } @else if (p.concentratord_configured) {
               <span class="text-success">Connected</span>
             } @else {
               <span class="text-base-content/60">Not configured</span>
             }
           </div>
-          @if (!p.concentratord_configured) {
+          @if (gatewaySettings()?.test_mode) {
+            <div class="stat-desc text-warning text-sm">Uplinks via inject only — no gateway connection</div>
+          } @else if (!p.concentratord_configured) {
             <div class="stat-desc text-base-content/60 text-sm">{{ configStatusMessage(p.config_status) }}</div>
           }
           @if (p.gateway_id) {

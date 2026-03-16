@@ -27,6 +27,8 @@ func main() {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Ensure lorawan_frames collection exists (creates from Go if JS migration did not run)
 		ensureLorawanFramesCollection(app)
+		// Seed default device profiles (FarMon Water Monitor, SenseCAP S2105)
+		seedDefaultProfiles(app)
 		// Load gateway config from DB; start pipeline only if a valid record exists (event_url, command_url, region set)
 		cfg, valid := loadGatewaySettings(app)
 		if valid {
@@ -67,8 +69,26 @@ func main() {
 
 		// Custom app API under /api/farmon only. Do NOT register routes under /api/ without the /farmon/ prefix,
 		// so PocketBase's built-in /api/collections/* and /api/records/* (used by the SDK) remain reachable.
+		// Device provisioning
 		se.Router.POST("/api/farmon/devices", provisionDeviceHandler(app))
 		se.Router.DELETE("/api/farmon/devices", deleteDeviceHandler(app))
+
+		// Device profiles
+		se.Router.GET("/api/farmon/profiles", listProfilesHandler(app))
+		se.Router.GET("/api/farmon/profiles/{id}", getProfileHandler(app))
+		se.Router.POST("/api/farmon/profiles", createProfileHandler(app))
+		se.Router.PATCH("/api/farmon/profiles/{id}", updateProfileHandler(app))
+		se.Router.DELETE("/api/farmon/profiles/{id}", deleteProfileHandler(app))
+		se.Router.POST("/api/farmon/profiles/{id}/test-decode", testDecodeHandler(app))
+
+		// Device config
+		se.Router.POST("/api/farmon/devices/{eui}/push-config", pushConfigHandler(app, gwState))
+		se.Router.PATCH("/api/farmon/devices/{eui}/overrides", updateDeviceOverridesHandler(app))
+
+		// Test: inject uplink bypassing ZMQ/LoRaWAN (exercises decode engine + DB writes)
+		se.Router.POST("/api/farmon/test/inject-uplink", injectUplinkHandler(app, gwState))
+
+		// Gateway & pipeline
 		se.Router.POST("/api/farmon/pipeline/restart", pipelineRestartHandler(app, gwState))
 		se.Router.POST("/api/farmon/setControl", setControlHandler(app, gwState))
 		se.Router.GET("/api/farmon/gateway-status", gatewayStatusHandler(gwState))
@@ -76,8 +96,6 @@ func main() {
 		se.Router.GET("/api/farmon/debug/pipeline", pipelineDebugHandler(app, gwState))
 		se.Router.GET("/api/farmon/lorawan/frames", lorawanFramesHandler(app))
 		se.Router.GET("/api/farmon/lorawan/stats", lorawanStatsHandler(app, gwState))
-		se.Router.POST("/api/farmon/ota/start", otaStartHandler(app))
-		se.Router.POST("/api/farmon/ota/cancel", otaCancelHandler(app))
 		se.Router.POST("/api/farmon/sendCommand", sendCommandHandler(app, gwState))
 
 		// Workflow engine: load workflows and register routes

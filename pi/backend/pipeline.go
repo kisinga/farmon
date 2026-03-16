@@ -12,7 +12,6 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/kisinga/farmon/pi/internal/codec"
 	"github.com/kisinga/farmon/pi/internal/concentratord"
 	"github.com/kisinga/farmon/pi/internal/gateway"
 	"github.com/kisinga/farmon/pi/internal/lorawan"
@@ -176,11 +175,9 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 	// === DOWNLINK: Schedule in device's Class A RX1 window ===
 	// Class A: device opens RX1 at +1s after uplink, RX2 at +2s. We schedule both windows
 	// so concentratord falls back to RX2 if RX1 is missed (TOO_LATE).
-	downlinkSent := false
 	if pending := dlQueue.Drain(result.DevEUI); pending != nil {
 		profile := gateway.ProfileForRegion(cfg.Region)
 		df := gateway.BuildClassADownlink(cfg, profile, pending.PHY, frame, gateway.DataDownlinkRX1DelaySec)
-		downlinkSent = true
 		go func(df *gw.DownlinkFrame, dl *pendingDownlink) {
 			ack, err := downlinkSender.SendDownlink(context.Background(), df)
 			ackStatus := ""
@@ -203,8 +200,7 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		if err != nil {
 			log.Printf("uplink: build ack error dev_eui=%s: %v", result.DevEUI, err)
 		} else {
-			downlinkSent = true
-			df := gateway.BuildClassADownlink(cfg, profile, ackPHY, frame, gateway.DataDownlinkRX1DelaySec)
+				df := gateway.BuildClassADownlink(cfg, profile, ackPHY, frame, gateway.DataDownlinkRX1DelaySec)
 			go func(df *gw.DownlinkFrame) {
 				ack, err := downlinkSender.SendDownlink(context.Background(), df)
 				if err != nil {
@@ -218,7 +214,7 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 	// === END DOWNLINK ===
 
 	// Now do the heavy DB work (safe to take time here, RX1 is already scheduled above).
-	obj := codec.DecodeUplink(result.FPort, result.Payload)
+	// Decoding moved into handleUplinkFromPipeline (profile-based decode dispatch).
 	deviceName := result.DevEUI
 	if rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": result.DevEUI}); err == nil {
 		if n, _ := rec.Get("device_name").(string); n != "" {
@@ -226,23 +222,11 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 		}
 	}
 	RecordUplink(app, result.DevEUI, result.FPort, "data", result.Payload, len(phyRaw), rssi, snr, gwID)
-	if err := handleUplinkFromPipeline(app, result.DevEUI, deviceName, result.FPort, obj, rssi, snr, cfg); err != nil {
+	if err := handleUplinkFromPipeline(app, result.DevEUI, deviceName, result.FPort, result.Payload, rssi, snr, cfg); err != nil {
 		log.Printf("uplink: persist error dev_eui=%s f_port=%d: %v", result.DevEUI, result.FPort, err)
 		return
 	}
 	log.Printf("uplink: dev_eui=%s f_port=%d (rssi=%v snr=%v)", result.DevEUI, result.FPort, rssiVal, snrVal)
-
-	// Auto-queue forcereg for unregistered devices. This won't be sent until the NEXT uplink
-	// (we already used this uplink's RX1 window above), but that's fine — next telemetry cycle.
-	if !downlinkSent && result.FPort == 2 {
-		if rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": result.DevEUI}); err == nil {
-			regAt, _ := rec.Get("registered_at").(string)
-			if regAt == "" {
-				log.Printf("downlink_queue: auto-queuing forcereg for unregistered dev_eui=%s (will send on next uplink)", result.DevEUI)
-				_ = EnqueueDownlink(cfg, app, result.DevEUI, 14, nil)
-			}
-		}
-	}
 }
 
 // dlQueue is the package-level downlink queue. API/automation-triggered downlinks are queued here
@@ -255,6 +239,12 @@ var dlQueue = NewDownlinkQueue()
 // (without an uplink context) will never be received.
 func EnqueueDownlink(cfg *gateway.Config, app core.App, devEUI string, fPort uint8, payload []byte) error {
 	devEUI = normalizeEui(devEUI)
+	if cfg.TestMode {
+		// In test mode, record the downlink for visibility but don't build LoRaWAN frames or enqueue for TX.
+		log.Printf("downlink_queue: test mode — recording downlink dev_eui=%s fPort=%d (%d bytes) without TX", devEUI, fPort, len(payload))
+		RecordDownlink(app, devEUI, fPort, "test_queued", payload, len(payload), "test_mode")
+		return nil
+	}
 	if !cfg.Valid() {
 		return fmt.Errorf("gateway not configured: save gateway settings in UI (event_url, command_url, region)")
 	}

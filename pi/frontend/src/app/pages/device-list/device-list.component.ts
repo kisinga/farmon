@@ -13,7 +13,7 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
       <div>
         <h1 class="page-title">Devices</h1>
         <p class="page-description">
-          Manage LoRaWAN devices. Register a device to get an App Key for firmware, or open a device to view telemetry and controls.
+          Manage LoRaWAN devices. Provision a device with a profile to get an App Key, or open a device to view telemetry and controls.
         </p>
       </div>
       <button type="button" class="btn btn-primary gap-2 shrink-0" (click)="openAddModal()">
@@ -44,7 +44,7 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
             </div>
             <h2 class="text-lg font-semibold text-base-content mb-1">No devices yet</h2>
             <p class="text-base-content/70 text-sm max-w-md mb-6">
-              Register a device to get an App Key for your firmware (e.g. <code class="bg-base-200 px-1.5 py-0.5 rounded text-xs">secrets.h</code>), or wait for uplinks to create devices automatically.
+              Provision a device with a profile to get started, or wait for uplinks to create devices automatically.
             </p>
             <button type="button" class="btn btn-primary" (click)="openAddModal()">Add your first device</button>
           </div>
@@ -56,6 +56,7 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
                   <th class="font-semibold">EUI</th>
                   <th class="font-semibold">Name</th>
                   <th class="font-semibold hidden sm:table-cell">Type</th>
+                  <th class="font-semibold hidden md:table-cell">Config</th>
                   <th class="font-semibold">Last seen</th>
                   <th class="text-right font-semibold">Action</th>
                 </tr>
@@ -66,6 +67,15 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
                     <td class="font-mono text-sm">{{ d.device_eui }}</td>
                     <td class="font-medium">{{ d.device_name || '—' }}</td>
                     <td class="hidden sm:table-cell text-base-content/70">{{ d.device_type || '—' }}</td>
+                    <td class="hidden md:table-cell">
+                      @if (d.config_status === 'synced') {
+                        <span class="badge badge-success badge-sm">synced</span>
+                      } @else if (d.config_status === 'pending') {
+                        <span class="badge badge-warning badge-sm">pending</span>
+                      } @else {
+                        <span class="badge badge-ghost badge-sm">n/a</span>
+                      }
+                    </td>
                     <td class="text-base-content/70 whitespace-nowrap">
                       {{ d.last_seen ? (d.last_seen | date:'short') : '—' }}
                     </td>

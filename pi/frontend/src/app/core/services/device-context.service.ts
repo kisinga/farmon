@@ -1,8 +1,8 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { forkJoin, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, switchMap } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
-import { ApiService, Device, DeviceControl, DeviceField } from './api.service';
+import { ApiService, Device, DeviceControl, DeviceField, DeviceProfile, ProfileCommand } from './api.service';
 import { PocketBaseService } from './pocketbase.service';
 import { TelemetrySubscriptionService } from './telemetry-subscription.service';
 
@@ -16,6 +16,7 @@ export class DeviceContextService {
   private _controls = signal<DeviceControl[]>([]);
   private _fieldConfigs = signal<DeviceField[]>([]);
   private _latestTelemetry = signal<Record<string, unknown> | null>(null);
+  private _profile = signal<DeviceProfile | null>(null);
   private _loading = signal(false);
   private _error = signal<string | null>(null);
   private _eui = signal<string>('');
@@ -28,6 +29,7 @@ export class DeviceContextService {
   controls = this._controls.asReadonly();
   fieldConfigs = this._fieldConfigs.asReadonly();
   latestTelemetry = this._latestTelemetry.asReadonly();
+  profile = this._profile.asReadonly();
   loading = this._loading.asReadonly();
   error = this._error.asReadonly();
   eui = this._eui.asReadonly();
@@ -40,6 +42,12 @@ export class DeviceContextService {
     }
     return map;
   });
+
+  /** Profile commands for this device (from profile, not device). */
+  profileCommands = computed<ProfileCommand[]>(() => this._profile()?.commands ?? []);
+
+  /** Whether the device's profile is airconfig type. */
+  isAirConfig = computed(() => this._profile()?.profile_type === 'airconfig');
 
   load(eui: string): void {
     if (!eui) {
@@ -56,14 +64,27 @@ export class DeviceContextService {
       controls: this.api.getDeviceControls(eui),
       fields: this.api.getDeviceFields(eui),
       latest: this.api.getLatestTelemetry(eui).pipe(catchError(() => of(null))),
-    }).subscribe({
-      next: ({ device, controls, fields, latest }) => {
+    }).pipe(
+      switchMap(({ device, controls, fields, latest }) => {
         this._device.set(device);
         this._controls.set(controls);
         this._fieldConfigs.set(fields);
         this._latestTelemetry.set(latest?.data ?? null);
+
+        // Load profile if device has one
+        if (device.profile) {
+          return this.api.getProfile(device.profile).pipe(
+            catchError(() => of(null))
+          );
+        }
+        return of(null);
+      })
+    ).subscribe({
+      next: (profile) => {
+        this._profile.set(profile);
         this._loading.set(false);
 
+        const eui = this._eui();
         // Realtime telemetry subscription
         this.telemetrySub = this.telemetrySubscription.stream(eui).subscribe((payload) => {
           this._latestTelemetry.set(payload.data ?? null);
@@ -130,6 +151,7 @@ export class DeviceContextService {
     this._controls.set([]);
     this._fieldConfigs.set([]);
     this._latestTelemetry.set(null);
+    this._profile.set(null);
     this._loading.set(false);
     this._error.set(null);
   }

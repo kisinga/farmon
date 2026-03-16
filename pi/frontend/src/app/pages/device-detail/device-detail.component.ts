@@ -7,7 +7,6 @@ import { ControlsPanelComponent } from '../../shared/components/controls-panel/c
 import { HistoryChartComponent } from '../../shared/components/history-chart/history-chart.component';
 import { CurrentValuesComponent } from '../../shared/components/current-values/current-values.component';
 import { ErrorBarComponent } from '../../shared/components/error-bar/error-bar.component';
-import { OtaSectionComponent } from '../../shared/components/ota-section/ota-section.component';
 import { DeviceRulesSectionComponent } from '../../shared/components/device-rules-section/device-rules-section.component';
 import { DeviceCredentialsCardComponent } from '../../shared/components/device-credentials-card/device-credentials-card.component';
 import { DeviceConfigPanelComponent } from '../../shared/components/device-config-panel/device-config-panel.component';
@@ -19,7 +18,7 @@ import { getVisibleFieldsByVizType } from '../../core/utils/field-view-model';
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, OtaSectionComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent],
+  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent],
   templateUrl: './device-detail.component.html',
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
@@ -30,7 +29,7 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   routeError = signal<string | null>(null);
   deleting = signal(false);
   relatedWorkflows = signal<WorkflowRecord[]>([]);
-  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'ota' | 'rules'>('overview');
+  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'rules'>('overview');
   timeRange = signal<'1h' | '24h' | '7d'>('24h');
   rangeEnd = signal<string>(new Date().toISOString());
 
@@ -67,20 +66,18 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
     this.deviceContext.fieldConfigs().filter((f: DeviceField) => f.category === 'system')
   );
 
-  registrationInfo = computed((): Record<string, unknown> | null => {
+  profileInfo = computed(() => {
+    const profile = this.deviceContext.profile();
     const device = this.deviceContext.device();
-    if (!device) return null;
-    const raw = (device as unknown as Record<string, unknown>);
-    const registeredAt = raw['registered_at'] as string | undefined;
-    const schemaVersion = raw['schema_version'] as number | undefined;
-    let reg: Record<string, unknown> = {};
-    const regRaw = raw['registration'];
-    if (typeof regRaw === 'string') {
-      try { reg = JSON.parse(regRaw); } catch { /* ignore */ }
-    } else if (typeof regRaw === 'object' && regRaw !== null) {
-      reg = regRaw as Record<string, unknown>;
-    }
-    return { registeredAt, schemaVersion, ...reg };
+    if (!profile) return null;
+    return {
+      name: profile.name,
+      type: profile.profile_type,
+      fieldCount: profile.fields?.length ?? 0,
+      controlCount: profile.controls?.length ?? 0,
+      commandCount: profile.commands?.length ?? 0,
+      configStatus: device?.config_status ?? 'n/a',
+    };
   });
 
   errorObjectFromTelemetry = computed(() => {

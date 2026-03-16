@@ -1,171 +1,136 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/hex"
+	"fmt"
 	"log"
 	"strconv"
 	"time"
 
 	"github.com/kisinga/farmon/pi/internal/gateway"
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// Package-level registration assembler (singleton, thread-safe).
-var regAssembler = NewRegistrationAssembler()
-
-// handleUplinkFromPipeline persists decoded uplink: device upsert, telemetry, state changes, OTA progress.
-// cfg and downlinkSender are used for sending registration ACK downlinks.
-func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uint8, obj map[string]any, rssi *int, snr *float64, cfg *gateway.Config) error {
+// handleUplinkFromPipeline persists decoded uplink using profile-based decode dispatch.
+// rawPayload is the undecoded FRMPayload bytes from the LoRaWAN frame.
+func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uint8, rawPayload []byte, rssi *int, snr *float64, cfg *gateway.Config) error {
 	if deviceName == "" {
 		deviceName = devEui
 	}
-	if err := upsertDevice(app, devEui, deviceName, obj); err != nil {
+	if err := upsertDevice(app, devEui, deviceName); err != nil {
 		return err
 	}
-	if obj == nil {
-		obj = make(map[string]any)
-	}
-	switch fPort {
-	case 1:
-		frameKey, _ := obj["frameKey"].(string)
-		frameData, _ := obj["frameData"].(string)
-		log.Printf("registration: frame dev_eui=%s frameKey=%q frameData_len=%d", devEui, frameKey, len(frameData))
-		if frameKey != "" {
-			// Log each registration frame to commands collection
-			insertCommand(app, devEui, "reg:"+frameKey, "device", "received", map[string]any{"frameData": frameData})
 
-			if complete := regAssembler.Accumulate(devEui, frameKey, frameData); complete {
-				frames := regAssembler.Consume(devEui)
-				if err := processRegistration(app, devEui, frames); err != nil {
-					log.Printf("registration: processRegistration error dev_eui=%s: %v", devEui, err)
-					insertCommand(app, devEui, "reg:complete", "device", "error", map[string]any{"error": err.Error()})
-				} else {
-					insertCommand(app, devEui, "reg:complete", "device", "ok", nil)
-					// Send registration ACK on fPort 5
-					if cfg != nil && cfg.Valid() {
-						go func() {
-							if err := EnqueueDownlink(cfg, app, devEui, 5, []byte{0x01}); err != nil {
-								log.Printf("registration: ACK downlink error dev_eui=%s: %v", devEui, err)
-							} else {
-								log.Printf("registration: ACK sent dev_eui=%s", devEui)
-							}
-						}()
-					}
-				}
-			}
-		}
-	case 2:
-		if err := insertTelemetry(app, devEui, obj, rssi, snr); err != nil {
+	// fPort 1: device checkin (always binary, no decode rule needed)
+	if fPort == 1 {
+		return handleDeviceCheckin(app, cfg, devEui, rawPayload)
+	}
+
+	// Load device's profile for decode dispatch
+	profile, err := loadProfileForDevice(app, devEui)
+	if err != nil {
+		// No profile assigned — store as raw hex
+		log.Printf("[uplink] no profile for %s, storing raw (fPort=%d)", devEui, fPort)
+		return insertTelemetry(app, devEui, map[string]any{"raw": hex.EncodeToString(rawPayload)}, rssi, snr)
+	}
+
+	// Look up decode rule for this fPort
+	rule := getDecodeRuleForFPort(profile, int(fPort))
+	if rule == nil {
+		// No decode rule — store raw
+		return insertTelemetry(app, devEui, map[string]any{"raw": hex.EncodeToString(rawPayload)}, rssi, snr)
+	}
+
+	// Decode payload using JSON decode engine
+	result, err := DecodeWithRules(rule.Format, rule.Config, profile.Fields, rawPayload)
+	if err != nil {
+		log.Printf("[uplink] decode error dev_eui=%s fPort=%d: %v", devEui, fPort, err)
+		return insertTelemetry(app, devEui, map[string]any{"raw": hex.EncodeToString(rawPayload), "decode_error": err.Error()}, rssi, snr)
+	}
+
+	// Post-decode routing based on fPort
+	switch fPort {
+	case 3:
+		// State changes — resolve control/state names from profile
+		handleStateChanges(app, devEui, deviceName, profile, result)
+	case 4:
+		// Command ACK
+		handleCommandAck(app, devEui, result)
+	default:
+		// Telemetry (fPort 2 and any other decoded fPort)
+		if err := insertTelemetry(app, devEui, result.Fields, rssi, snr); err != nil {
 			return err
 		}
 		if workflowEngine != nil {
-			go workflowEngine.Evaluate(TriggerContext{Type: TriggerTelemetry, DeviceEUI: devEui, DeviceName: deviceName, Telemetry: obj})
+			go workflowEngine.Evaluate(TriggerContext{Type: TriggerTelemetry, DeviceEUI: devEui, DeviceName: deviceName, Telemetry: result.Fields})
 		}
-	case 3:
-		if sc, ok := obj["stateChanges"].([]any); ok {
-			for _, v := range sc {
-				m, _ := v.(map[string]any)
-				if m == nil {
-					continue
-				}
-				ctrlIdx, _ := m["control_idx"].(float64)
-				newState, _ := m["new_state"].(float64)
-				oldState, _ := m["old_state"].(float64)
-				source, _ := m["source"].(string)
-				deviceMs, _ := m["device_ms"].(float64)
-				controlKey := lookupControlKey(app, devEui, int(ctrlIdx))
-				newS := resolveStateName(app, devEui, controlKey, int(newState))
-				oldS := resolveStateName(app, devEui, controlKey, int(oldState))
-				var deviceTs time.Time
-				if deviceMs > 0 {
-					deviceTs = time.Unix(0, int64(deviceMs)*int64(time.Millisecond))
-				}
-				_ = insertStateChange(app, devEui, controlKey, oldS, newS, source, deviceTs)
-				_ = upsertDeviceControl(app, devEui, controlKey, newS, source)
-				if workflowEngine != nil {
-					go workflowEngine.Evaluate(TriggerContext{Type: TriggerStateChange, DeviceEUI: devEui, DeviceName: deviceName, ControlKey: controlKey, OldState: oldS, NewState: newS, Source: source})
-				}
-			}
-		}
-	case 4:
-		// Command ACK from device — log to commands collection
-		port, _ := obj["port"].(float64)
-		ackStatus, _ := obj["status"].(string)
-		success, _ := obj["success"].(bool)
-		status := "acked"
-		if !success {
-			status = "ack_error"
-		}
-		insertCommand(app, devEui, "ack:fPort"+strconv.Itoa(int(port)), "device", status, map[string]any{"port": port, "status": ackStatus})
-	case 8:
-		if status, ok := obj["status"]; ok {
-			chunkIdx, _ := obj["chunkIndex"].(float64)
-			outcome := "started"
-			if s, _ := status.(float64); s == 2 {
-				outcome = "done"
-			} else if s, _ := status.(float64); s == 3 {
-				outcome = "failed"
-			}
-			_ = insertFirmwareProgress(app, devEui, int(getFloat64(status)), int(chunkIdx), outcome)
-		}
-	default:
-		_ = insertTelemetry(app, devEui, obj, rssi, snr)
 	}
+
 	return nil
 }
 
+// handleStateChanges processes decoded state change records.
+func handleStateChanges(app core.App, devEui, deviceName string, profile *ProfileWithComponents, result *DecodeResult) {
+	sc, ok := result.Fields["stateChanges"].([]any)
+	if !ok {
+		return
+	}
+	for _, v := range sc {
+		m, _ := v.(map[string]any)
+		if m == nil {
+			continue
+		}
+		ctrlIdx := int(toFloat64(m["control_idx"]))
+		newStateIdx := int(toFloat64(m["new_state"]))
+		oldStateIdx := int(toFloat64(m["old_state"]))
+		source, _ := m["source"].(string)
+		deviceMs := toFloat64(m["device_ms"])
+
+		// Resolve control key and state names from profile
+		ctrl := getControlByIndex(profile, ctrlIdx)
+		controlKey := fmt.Sprintf("control_%d", ctrlIdx)
+		if ctrl != nil {
+			controlKey = ctrl.Key
+		}
+		newS := resolveStateNameFromProfile(ctrl, newStateIdx)
+		oldS := resolveStateNameFromProfile(ctrl, oldStateIdx)
+
+		var deviceTs time.Time
+		if deviceMs > 0 {
+			deviceTs = time.Unix(0, int64(deviceMs)*int64(time.Millisecond))
+		}
+
+		_ = insertStateChange(app, devEui, controlKey, oldS, newS, source, deviceTs)
+		_ = upsertDeviceControl(app, devEui, controlKey, newS, source)
+
+		if workflowEngine != nil {
+			go workflowEngine.Evaluate(TriggerContext{
+				Type: TriggerStateChange, DeviceEUI: devEui, DeviceName: deviceName,
+				ControlKey: controlKey, OldState: oldS, NewState: newS, Source: source,
+			})
+		}
+	}
+}
+
+// handleCommandAck processes decoded command ACK.
+func handleCommandAck(app core.App, devEui string, result *DecodeResult) {
+	port := toFloat64(result.Fields["port"])
+	ackStatus, _ := result.Fields["status"].(string)
+	success, _ := result.Fields["success"].(bool)
+	status := "acked"
+	if !success {
+		status = "ack_error"
+	}
+	insertCommand(app, devEui, "ack:fPort"+strconv.Itoa(int(port)), "device", status, map[string]any{"port": port, "status": ackStatus})
+}
+
+// getFloat64 extracts a float64 from an interface{} (kept for backward compat with actions.go/workflow_engine.go).
 func getFloat64(v interface{}) float64 {
-	if f, ok := v.(float64); ok {
-		return f
-	}
-	if i, ok := v.(int); ok {
-		return float64(i)
-	}
-	return 0
+	return toFloat64(v)
 }
 
-func formatControlKey(idx int) string {
-	if idx == 0 {
-		return "pump"
-	}
-	if idx == 1 {
-		return "valve"
-	}
-	return "control_" + strconv.Itoa(idx)
-}
-
-// resolveStateName looks up the state name for a given state index from the control's registered states.
-// Falls back to "off"/"on" if no registration data is found.
-func resolveStateName(app core.App, devEui, controlKey string, stateIdx int) string {
-	rec, err := app.FindFirstRecordByFilter("device_controls",
-		"device_eui = {:eui} && control_key = {:key}",
-		dbx.Params{"eui": devEui, "key": controlKey})
-	if err == nil {
-		statesRaw := rec.Get("states_json")
-		var states []string
-		switch v := statesRaw.(type) {
-		case string:
-			_ = json.Unmarshal([]byte(v), &states)
-		case []any:
-			for _, s := range v {
-				if str, ok := s.(string); ok {
-					states = append(states, str)
-				}
-			}
-		}
-		if stateIdx >= 0 && stateIdx < len(states) {
-			return states[stateIdx]
-		}
-	}
-	if stateIdx == 0 {
-		return "off"
-	}
-	return "on"
-}
-
+// normalizeEui strips non-hex characters and lowercases.
 func normalizeEui(eui string) string {
-	const hex = "0123456789abcdef"
 	out := make([]byte, 0, 16)
 	for _, c := range eui {
 		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') {

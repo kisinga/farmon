@@ -49,41 +49,10 @@
 
   <!-- Tabs -->
   <div class="tabs tabs-boxed bg-base-200/50 p-1 rounded-xl mb-6 overflow-x-auto flex-nowrap md:flex-wrap">
-    <a
-      class="tab rounded-lg"
-      [class.tab-active]="activeTab() === 'overview'"
-      (click)="activeTab.set('overview')"
-    >
-      Overview
-    </a>
-    <a
-      class="tab rounded-lg"
-      [class.tab-active]="activeTab() === 'controls'"
-      (click)="activeTab.set('controls')"
-    >
-      Controls
-    </a>
-    <a
-      class="tab rounded-lg"
-      [class.tab-active]="activeTab() === 'telemetry'"
-      (click)="activeTab.set('telemetry')"
-    >
-      Telemetry
-    </a>
-    <a
-      class="tab rounded-lg"
-      [class.tab-active]="activeTab() === 'ota'"
-      (click)="activeTab.set('ota')"
-    >
-      OTA
-    </a>
-    <a
-      class="tab rounded-lg"
-      [class.tab-active]="activeTab() === 'rules'"
-      (click)="activeTab.set('rules')"
-    >
-      Rules
-    </a>
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'overview'" (click)="activeTab.set('overview')">Overview</a>
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'controls'" (click)="activeTab.set('controls')">Controls</a>
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'telemetry'" (click)="activeTab.set('telemetry')">Telemetry</a>
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'rules'" (click)="activeTab.set('rules')">Rules</a>
   </div>
 
   @switch (activeTab()) {
@@ -109,27 +78,32 @@
                 <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Last seen</dt>
                 <dd class="font-medium mt-0.5">{{ deviceContext.device()!.last_seen ? (deviceContext.device()!.last_seen | date:'medium') : '—' }}</dd>
               </div>
-              @if (registrationInfo(); as reg) {
+              @if (profileInfo(); as pi) {
                 <div>
-                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Firmware</dt>
-                  <dd class="font-mono text-sm mt-0.5">{{ reg['firmware_version'] || '—' }}</dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Registration</dt>
+                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Profile</dt>
                   <dd class="font-medium mt-0.5">
-                    @if (reg['registeredAt']) {
-                      <span class="badge badge-success badge-xs mr-1">ok</span>{{ $any(reg['registeredAt']) | date:'medium' }}
-                    } @else {
-                      <span class="text-base-content/50 text-sm">Awaiting device registration</span>
-                    }
+                    {{ pi.name }}
+                    <span class="badge badge-sm ml-1" [class.badge-primary]="pi.type === 'airconfig'" [class.badge-secondary]="pi.type === 'codec'">{{ pi.type }}</span>
                   </dd>
                 </div>
-                @if (reg['registeredAt']) {
+                <div>
+                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Schema</dt>
+                  <dd class="text-sm mt-0.5">{{ pi.fieldCount }} fields · {{ pi.controlCount }} controls · {{ pi.commandCount }} commands</dd>
+                </div>
+                @if (pi.type === 'airconfig') {
                   <div>
-                    <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Schema</dt>
-                    <dd class="text-sm mt-0.5">v{{ reg['schemaVersion'] || '?' }} · {{ reg['telemetry_fields'] || 0 }} fields · {{ reg['controls'] || 0 }} controls · {{ reg['commands'] || 0 }} commands</dd>
+                    <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Config Status</dt>
+                    <dd class="mt-0.5">
+                      <span class="badge badge-sm" [class.badge-success]="pi.configStatus === 'synced'" [class.badge-warning]="pi.configStatus === 'pending'" [class.badge-ghost]="pi.configStatus === 'n/a'">{{ pi.configStatus }}</span>
+                    </dd>
                   </div>
                 }
+              }
+              @if (deviceContext.device()!.firmware_version) {
+                <div>
+                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Firmware</dt>
+                  <dd class="font-mono text-sm mt-0.5">{{ deviceContext.device()!.firmware_version }}</dd>
+                </div>
               }
             </dl>
           </div>
@@ -222,16 +196,8 @@
         </div>
       </div>
     }
-    @case ('ota') {
-      <div class="card-elevated">
-        <div class="card-body-spaced">
-          <app-ota-section [eui]="deviceContext.eui()" />
-        </div>
-      </div>
-    }
     @case ('rules') {
       <div class="space-y-6">
-        <!-- Device rules (on-device, instant) -->
         <div class="card-elevated">
           <div class="card-body-spaced">
             <h2 class="section-title">Device rules</h2>
@@ -239,8 +205,6 @@
             <app-device-rules-section [eui]="deviceContext.eui()" />
           </div>
         </div>
-
-        <!-- Related workflows (cross-reference) -->
         <div class="card-elevated">
           <div class="card-body-spaced">
             <div class="flex items-center justify-between">

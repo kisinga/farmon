@@ -8,16 +8,10 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func upsertDevice(app core.App, deviceEui, deviceName string, obj map[string]any) error {
+func upsertDevice(app core.App, deviceEui, deviceName string) error {
 	coll, err := app.FindCollectionByNameOrId("devices")
 	if err != nil {
 		return err
-	}
-
-	regJSON := "{}"
-	if obj != nil {
-		b, _ := json.Marshal(obj)
-		regJSON = string(b)
 	}
 
 	existing, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": deviceEui})
@@ -26,16 +20,12 @@ func upsertDevice(app core.App, deviceEui, deviceName string, obj map[string]any
 		rec := core.NewRecord(coll)
 		rec.Set("device_eui", deviceEui)
 		rec.Set("device_name", deviceName)
-		rec.Set("registration", regJSON)
 		rec.Set("last_seen", time.Now().Format(time.RFC3339))
 		return app.Save(rec)
 	}
 
 	existing.Set("device_name", deviceName)
 	existing.Set("last_seen", time.Now().Format(time.RFC3339))
-	if obj != nil {
-		existing.Set("registration", regJSON)
-	}
 	return app.Save(existing)
 }
 
@@ -102,21 +92,6 @@ func upsertDeviceControl(app core.App, deviceEui, controlKey, currentState, chan
 	existing.Set("last_change_at", now)
 	existing.Set("last_change_by", changedBy)
 	return app.Save(existing)
-}
-
-func insertFirmwareProgress(app core.App, deviceEui string, status int, chunkIndex int, outcome string) error {
-	coll, err := app.FindCollectionByNameOrId("firmware_history")
-	if err != nil {
-		return err
-	}
-	rec := core.NewRecord(coll)
-	rec.Set("device_eui", deviceEui)
-	rec.Set("started_at", time.Now().Format(time.RFC3339))
-	rec.Set("outcome", outcome)
-	if chunkIndex >= 0 {
-		rec.Set("chunks_received", chunkIndex)
-	}
-	return app.Save(rec)
 }
 
 // insertCommand logs a user-initiated downlink command to the persistent commands collection.

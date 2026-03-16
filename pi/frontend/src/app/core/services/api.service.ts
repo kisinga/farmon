@@ -10,8 +10,13 @@ export interface Device {
   device_eui: string;
   device_name: string;
   device_type?: string;
+  firmware_version?: string;
   last_seen?: string;
-  registration?: string;
+  is_active?: boolean;
+  profile?: string;          // profile ID (relation)
+  config_overrides?: unknown;
+  config_hash?: string;
+  config_status?: string;    // "pending" | "synced" | "n/a"
 }
 
 export interface DeviceControl {
@@ -55,10 +60,90 @@ export interface HistoryResponse {
   data: HistoryPoint[];
 }
 
+// ─── Profile types ──────────────────────────────────────────
+
+export interface ProfileField {
+  id: string;
+  key: string;
+  display_name: string;
+  unit?: string;
+  data_type?: string;
+  category?: string;
+  access?: string;
+  state_class?: string;
+  min_value?: number;
+  max_value?: number;
+  enum_values?: unknown;
+  sort_order: number;
+}
+
+export interface ProfileControl {
+  id: string;
+  key: string;
+  display_name: string;
+  states: string[];
+  sort_order: number;
+}
+
+export interface ProfileCommand {
+  id: string;
+  name: string;
+  fport: number;
+  payload_type?: string;
+}
+
+export interface DecodeRule {
+  id: string;
+  fport: number;
+  format: string;
+  config: Record<string, unknown>;
+}
+
+export interface ProfileVisualization {
+  id: string;
+  name: string;
+  viz_type: 'time_series' | 'gauge' | 'stat';
+  config: Record<string, unknown>;
+  sort_order: number;
+}
+
+export interface ProfileAirConfig {
+  id: string;
+  pin_map: number[];
+  sensors: unknown[];
+  controls: unknown[];
+  lorawan: Record<string, unknown>;
+  config_hash?: string;
+}
+
+export interface DeviceProfile {
+  id: string;
+  name: string;
+  description?: string;
+  profile_type: 'airconfig' | 'codec';
+  is_template: boolean;
+  fields: ProfileField[];
+  controls: ProfileControl[];
+  commands: ProfileCommand[];
+  decode_rules: DecodeRule[];
+  visualizations: ProfileVisualization[];
+  airconfig?: ProfileAirConfig;
+}
+
+export interface ProfileSummary {
+  id: string;
+  name: string;
+  description?: string;
+  profile_type: string;
+  is_template: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
   private pb = inject(PocketBaseService).pb;
+
+  // ─── Devices ────────────────────────────────────────────
 
   getDevices(): Observable<{ items: Device[] }> {
     return from(
@@ -145,6 +230,8 @@ export class ApiService {
     );
   }
 
+  // ─── Controls & Commands ────────────────────────────────
+
   setControl(eui: string, control: string, state: string, duration?: number): Observable<{ ok: boolean; error?: string }> {
     return this.http.post<{ ok: boolean; error?: string }>(`${API}/setControl`, { eui, control, state, duration });
   }
@@ -160,21 +247,16 @@ export class ApiService {
     ).pipe(map((res) => res.items));
   }
 
-  getGatewayStatus(): Observable<GatewayStatusResponse> {
-    return this.http.get<GatewayStatusResponse>(`${API}/gateway-status`);
+  // ─── Provisioning ───────────────────────────────────────
+
+  provisionDevice(device_eui: string, device_name?: string, profile_id?: string): Observable<ProvisionResponse> {
+    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name, profile_id });
   }
 
-  /** Provision a device (create or update) and get AppKey for LoRaWAN OTAA. */
-  provisionDevice(device_eui: string, device_name?: string): Observable<ProvisionResponse> {
-    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name });
-  }
-
-  /** Delete a device by EUI (and its LoRaWAN session). */
   deleteDevice(eui: string): Observable<{ ok: boolean; message?: string }> {
     return this.http.delete<{ ok: boolean; message?: string }>(`${API}/devices?eui=${encodeURIComponent(eui)}`);
   }
 
-  /** Get credentials for a device (for firmware / secrets.h). Via SDK. */
   getDeviceCredentials(eui: string): Observable<CredentialsResponse> {
     const filter = this.pb.filter('device_eui = {:eui}', { eui });
     return from(
@@ -182,13 +264,121 @@ export class ApiService {
     ).pipe(map((r) => ({ device_eui: r.device_eui, app_key: r.app_key ?? '' })));
   }
 
-  otaStart(eui: string, firmware?: string): Observable<{ ok: boolean; message?: string }> {
-    return this.http.post<{ ok: boolean; message?: string }>(`${API}/ota/start`, { eui, firmware });
+  // ─── Profiles ───────────────────────────────────────────
+
+  getProfiles(templatesOnly = true): Observable<ProfileSummary[]> {
+    return this.http.get<ProfileSummary[]>(`${API}/profiles`, { params: templatesOnly ? {} : { all: 'true' } });
   }
 
-  otaCancel(eui: string): Observable<{ ok: boolean; message?: string }> {
-    return this.http.post<{ ok: boolean; message?: string }>(`${API}/ota/cancel`, { eui });
+  getProfile(id: string): Observable<DeviceProfile> {
+    return this.http.get<DeviceProfile>(`${API}/profiles/${id}`);
   }
+
+  createProfile(body: { name: string; description?: string; profile_type: string; is_template?: boolean }): Observable<{ id: string; name: string }> {
+    return this.http.post<{ id: string; name: string }>(`${API}/profiles`, body);
+  }
+
+  updateProfile(id: string, body: Partial<{ name: string; description: string; is_template: boolean }>): Observable<{ id: string }> {
+    return this.http.patch<{ id: string }>(`${API}/profiles/${id}`, body);
+  }
+
+  deleteProfile(id: string): Observable<{ ok: boolean }> {
+    return this.http.delete<{ ok: boolean }>(`${API}/profiles/${id}`);
+  }
+
+  testDecode(profileId: string, fport: number, payloadHex: string): Observable<{ format: string; fport: number; result: Record<string, unknown> }> {
+    return this.http.post<{ format: string; fport: number; result: Record<string, unknown> }>(`${API}/profiles/${profileId}/test-decode`, { fport, payload_hex: payloadHex });
+  }
+
+  /** Push AirConfig to device. */
+  pushConfig(eui: string): Observable<{ ok: boolean; config_hash?: string }> {
+    return this.http.post<{ ok: boolean; config_hash?: string }>(`${API}/devices/${eui}/push-config`, {});
+  }
+
+  /** Update per-device config overrides. */
+  updateDeviceOverrides(eui: string, overrides: unknown): Observable<{ ok: boolean }> {
+    return this.http.patch<{ ok: boolean }>(`${API}/devices/${eui}/overrides`, { overrides });
+  }
+
+  // ─── Profile sub-component CRUD (PocketBase SDK direct) ─
+
+  getProfileFields(profileId: string): Observable<ProfileField[]> {
+    const filter = this.pb.filter('profile = {:pid}', { pid: profileId });
+    return from(
+      this.pb.collection<ProfileField>('profile_fields').getList(1, 100, { filter, sort: 'sort_order', requestKey: `pf-${profileId}` })
+    ).pipe(map(r => r.items));
+  }
+
+  createProfileField(data: Record<string, unknown>): Observable<ProfileField> {
+    return from(this.pb.collection<ProfileField>('profile_fields').create(data));
+  }
+
+  updateProfileField(id: string, data: Record<string, unknown>): Observable<ProfileField> {
+    return from(this.pb.collection<ProfileField>('profile_fields').update(id, data));
+  }
+
+  deleteProfileField(id: string): Observable<boolean> {
+    return from(this.pb.collection('profile_fields').delete(id)).pipe(map(() => true));
+  }
+
+  getProfileControls(profileId: string): Observable<ProfileControl[]> {
+    const filter = this.pb.filter('profile = {:pid}', { pid: profileId });
+    return from(
+      this.pb.collection<ProfileControl>('profile_controls').getList(1, 100, { filter, sort: 'sort_order', requestKey: `pc-${profileId}` })
+    ).pipe(map(r => r.items));
+  }
+
+  createProfileControl(data: Record<string, unknown>): Observable<ProfileControl> {
+    return from(this.pb.collection<ProfileControl>('profile_controls').create(data));
+  }
+
+  updateProfileControl(id: string, data: Record<string, unknown>): Observable<ProfileControl> {
+    return from(this.pb.collection<ProfileControl>('profile_controls').update(id, data));
+  }
+
+  deleteProfileControl(id: string): Observable<boolean> {
+    return from(this.pb.collection('profile_controls').delete(id)).pipe(map(() => true));
+  }
+
+  getProfileCommands(profileId: string): Observable<ProfileCommand[]> {
+    const filter = this.pb.filter('profile = {:pid}', { pid: profileId });
+    return from(
+      this.pb.collection<ProfileCommand>('profile_commands').getList(1, 100, { filter, requestKey: `pcmd-${profileId}` })
+    ).pipe(map(r => r.items));
+  }
+
+  createProfileCommand(data: Record<string, unknown>): Observable<ProfileCommand> {
+    return from(this.pb.collection<ProfileCommand>('profile_commands').create(data));
+  }
+
+  updateProfileCommand(id: string, data: Record<string, unknown>): Observable<ProfileCommand> {
+    return from(this.pb.collection<ProfileCommand>('profile_commands').update(id, data));
+  }
+
+  deleteProfileCommand(id: string): Observable<boolean> {
+    return from(this.pb.collection('profile_commands').delete(id)).pipe(map(() => true));
+  }
+
+  getDecodeRules(profileId: string): Observable<DecodeRule[]> {
+    const filter = this.pb.filter('profile = {:pid}', { pid: profileId });
+    return from(
+      this.pb.collection<DecodeRule>('decode_rules').getList(1, 50, { filter, sort: 'fport', requestKey: `dr-${profileId}` })
+    ).pipe(map(r => r.items));
+  }
+
+  createDecodeRule(data: Record<string, unknown>): Observable<DecodeRule> {
+    return from(this.pb.collection<DecodeRule>('decode_rules').create(data));
+  }
+
+  updateDecodeRule(id: string, data: Record<string, unknown>): Observable<DecodeRule> {
+    return from(this.pb.collection<DecodeRule>('decode_rules').update(id, data));
+  }
+
+  deleteDecodeRule(id: string): Observable<boolean> {
+    return from(this.pb.collection('decode_rules').delete(id)).pipe(map(() => true));
+  }
+
+  // ─── Device Rules ───────────────────────────────────────
 
   getDeviceRules(eui: string): Observable<DeviceRuleRecord[]> {
     const filter = this.pb.filter('device_eui = {:eui}', { eui });
@@ -209,36 +399,29 @@ export class ApiService {
     );
   }
 
-  getFirmwareHistory(eui: string): Observable<FirmwareHistoryRecord[]> {
-    const filter = this.pb.filter('device_eui = {:eui}', { eui });
-    return from(
-      this.pb
-        .collection<FirmwareHistoryRecord>('firmware_history')
-        .getList(1, 20, { filter, sort: '-started_at', requestKey: `firmware-${eui}` })
-    ).pipe(map((res) => res.items));
+  // ─── Gateway & Pipeline ─────────────────────────────────
+
+  getGatewayStatus(): Observable<GatewayStatusResponse> {
+    return this.http.get<GatewayStatusResponse>(`${API}/gateway-status`);
   }
 
-  /** Pipeline status (concentratord env). */
   getPipelineDebug(): Observable<PipelineDebug> {
     return this.http.get<PipelineDebug>(`${API}/debug/pipeline`);
   }
 
-  /** Frame buffer stats and concentratord configured flag. */
   getLorawanStats(): Observable<LorawanStats> {
     return this.http.get<LorawanStats>(`${API}/lorawan/stats`);
   }
 
-  /** Raw LoRaWAN frames (newest first). Uses backend API so errors are explicit. */
   getLorawanFrames(limit = 200): Observable<RawLorawanFrame[]> {
     return this.http.get<RawLorawanFrame[]>(`${API}/lorawan/frames`, { params: { limit: String(limit) } });
   }
 
-  /** Raw LoRaWAN frames filtered by device EUI. */
   getDeviceFrames(eui: string, limit = 50): Observable<RawLorawanFrame[]> {
     return this.http.get<RawLorawanFrame[]>(`${API}/lorawan/frames`, { params: { device_eui: eui, limit: String(limit) } });
   }
 
-  // --- Workflows ---
+  // ─── Workflows ──────────────────────────────────────────
 
   getWorkflows(deviceEui?: string): Observable<WorkflowRecord[]> {
     const options: Record<string, unknown> = { requestKey: `workflows-${deviceEui || 'all'}` };
@@ -280,7 +463,8 @@ export class ApiService {
     ).pipe(map((res) => res.items));
   }
 
-  /** Get gateway settings via SDK; merges discovered_gateway_id from gateway-status when no record. */
+  // ─── Gateway Settings ───────────────────────────────────
+
   getGatewaySettings(): Observable<GatewaySettings> {
     const fromDb = from(
       this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-@rowid', requestKey: 'gw-settings' })
@@ -294,6 +478,7 @@ export class ApiService {
             command_url: '',
             gateway_id: '',
             rx1_frequency_hz: 0,
+            test_mode: false,
             saved: false,
           } as GatewaySettings;
         }
@@ -303,6 +488,7 @@ export class ApiService {
           command_url: (r.command_url ?? '').trim(),
           gateway_id: (r.gateway_id ?? '').trim(),
           rx1_frequency_hz: typeof r.rx1_frequency_hz === 'number' ? r.rx1_frequency_hz : 0,
+          test_mode: !!r.test_mode,
           saved: true,
         } as GatewaySettings;
       })
@@ -317,7 +503,6 @@ export class ApiService {
     );
   }
 
-  /** Save gateway settings via SDK (config only; gateway_id is autodiscovered). Pipeline restart is handled server-side on save. */
   patchGatewaySettings(settings: Partial<GatewaySettings>): Observable<GatewaySettings> {
     return from(this.pb.collection<GatewaySettingsRecord>('gateway_settings').getList(1, 1, { sort: '-@rowid', requestKey: 'gw-settings-patch' })).pipe(
       switchMap((res) => {
@@ -327,6 +512,7 @@ export class ApiService {
           event_url: settings.event_url ?? existing?.event_url ?? '',
           command_url: settings.command_url ?? existing?.command_url ?? '',
           rx1_frequency_hz: settings.rx1_frequency_hz ?? existing?.rx1_frequency_hz ?? 0,
+          test_mode: settings.test_mode ?? existing?.test_mode ?? false,
         };
         const op = existing
           ? this.pb.collection<GatewaySettingsRecord>('gateway_settings').update(existing.id, body)
@@ -338,12 +524,15 @@ export class ApiService {
   }
 }
 
+// ─── Supporting interfaces ────────────────────────────────
+
 export interface GatewaySettings {
   region: string;
   event_url: string;
   command_url: string;
   gateway_id: string;
   rx1_frequency_hz: number;
+  test_mode: boolean;
   saved: boolean;
 }
 
@@ -359,6 +548,7 @@ interface GatewaySettingsRecord {
   command_url?: string;
   gateway_id?: string;
   rx1_frequency_hz?: number;
+  test_mode?: boolean;
 }
 
 interface TelemetryRecord {
@@ -402,6 +592,7 @@ export interface LorawanStats {
 export interface ProvisionResponse {
   device_eui: string;
   app_key: string;
+  profile_name?: string;
 }
 
 export interface CredentialsResponse {
@@ -434,19 +625,6 @@ export interface CommandRecord {
   sent_at?: string;
   acked_at?: string;
   created: string;
-}
-
-export interface FirmwareHistoryRecord {
-  id: string;
-  device_eui: string;
-  started_at?: string;
-  finished_at?: string;
-  outcome: string;
-  firmware_version?: string;
-  total_chunks?: number;
-  chunks_received?: number;
-  error_message?: string;
-  error_chunk_index?: number;
 }
 
 export interface WorkflowTrigger {
