@@ -1,6 +1,6 @@
-import { Component, inject, signal, output, OnInit } from '@angular/core';
+import { Component, inject, signal, output, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, ProfileSummary, ProvisionResponse } from '../../../core/services/api.service';
+import { ApiService, ProfileSummary, ProvisionResponse, DeviceTarget, TransportType } from '../../../core/services/api.service';
 import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-credentials';
 
 @Component({
@@ -12,18 +12,75 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
       <div class="modal-box max-w-lg rounded-2xl shadow-2xl" (click)="$event.stopPropagation()">
         @if (!result()) {
           @if (step() === 1) {
-            <!-- Step 1: Select Profile -->
-            <h3 class="font-bold text-lg">Select a profile</h3>
-            <p class="text-sm text-base-content/70 mt-1">Choose a device profile that matches your hardware.</p>
+            <!-- Step 1: Select Target Device -->
+            <h3 class="font-bold text-lg">Select device type</h3>
+            <p class="text-sm text-base-content/70 mt-1">Choose the hardware you're connecting.</p>
 
-            @if (loadingProfiles()) {
+            @if (loadingTargets()) {
               <div class="flex justify-center py-8">
                 <span class="loading loading-spinner loading-md text-primary"></span>
               </div>
-            } @else if (profiles().length === 0) {
-              <div class="py-8 text-center text-base-content/50 text-sm">No profiles available. Create one in Profiles first.</div>
             } @else {
-              <div class="mt-4 space-y-2 max-h-72 overflow-y-auto">
+              <div class="mt-4 space-y-2">
+                @for (t of targets(); track t.id) {
+                  <button
+                    type="button"
+                    class="w-full text-left rounded-xl border p-3 transition-colors"
+                    [class.border-primary]="selectedTarget() === t.id"
+                    [class.bg-primary]="selectedTarget() === t.id"
+                    [style.--tw-bg-opacity]="selectedTarget() === t.id ? '0.05' : '0'"
+                    [class.border-base-300]="selectedTarget() !== t.id"
+                    (click)="selectTarget(t)"
+                  >
+                    <div class="flex items-center justify-between">
+                      <span class="font-medium">{{ t.name }}</span>
+                      @if (t.transport) {
+                        <span class="badge badge-sm" [class.badge-primary]="t.transport === 'lorawan'" [class.badge-secondary]="t.transport === 'wifi'">{{ t.transport }}</span>
+                      } @else {
+                        <span class="badge badge-sm badge-ghost">manual</span>
+                      }
+                    </div>
+                    <p class="text-xs text-base-content/60 mt-1">{{ t.description }}</p>
+                  </button>
+                }
+              </div>
+            }
+
+            <div class="modal-action mt-6 p-0 justify-end gap-2">
+              <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
+              <button type="button" class="btn btn-primary" [disabled]="!selectedTarget()" (click)="step.set(2)">Next</button>
+            </div>
+
+          } @else if (step() === 2) {
+            <!-- Step 2: Select Profile + Transport Override -->
+            <h3 class="font-bold text-lg">Configure device</h3>
+            <p class="text-sm text-base-content/70 mt-1">
+              Target: <span class="font-medium">{{ selectedTargetName() }}</span>
+            </p>
+
+            <!-- Transport override -->
+            <div class="mt-4">
+              <label class="form-control w-full">
+                <span class="label"><span class="label-text font-medium">Transport</span></span>
+                <select class="select select-bordered select-sm w-full" [(ngModel)]="transport" name="transport">
+                  <option value="lorawan">LoRaWAN</option>
+                  <option value="wifi">WiFi</option>
+                </select>
+                @if (inferredTransport()) {
+                  <span class="label-text-alt text-base-content/50">Default from target: {{ inferredTransport() }}</span>
+                }
+              </label>
+            </div>
+
+            <!-- Profile selection -->
+            @if (loadingProfiles()) {
+              <div class="flex justify-center py-4">
+                <span class="loading loading-spinner loading-sm text-primary"></span>
+              </div>
+            } @else if (profiles().length === 0) {
+              <div class="py-4 text-center text-base-content/50 text-sm">No profiles available. Create one in Profiles first.</div>
+            } @else {
+              <div class="mt-3 space-y-2 max-h-52 overflow-y-auto">
                 @for (p of profiles(); track p.id) {
                   <button
                     type="button"
@@ -47,24 +104,25 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
             }
 
             <div class="modal-action mt-6 p-0 justify-end gap-2">
-              <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
-              <button type="button" class="btn btn-primary" [disabled]="!selectedProfile()" (click)="step.set(2)">Next</button>
+              <button type="button" class="btn btn-ghost" (click)="step.set(1)">Back</button>
+              <button type="button" class="btn btn-primary" [disabled]="!selectedProfile()" (click)="step.set(3)">Next</button>
             </div>
 
           } @else {
-            <!-- Step 2: Device Details -->
+            <!-- Step 3: Device ID + Name -->
             <h3 class="font-bold text-lg">Device details</h3>
             <p class="text-sm text-base-content/70 mt-1">
-              Enter the Device EUI from the device label or serial. Profile: <span class="font-medium">{{ selectedProfileName() }}</span>
+              {{ transport === 'lorawan' ? 'Enter the Device EUI from the device label.' : 'Enter a unique device identifier (e.g. MAC address).' }}
+              Profile: <span class="font-medium">{{ selectedProfileName() }}</span>
             </p>
 
             <form class="mt-4 space-y-4" (ngSubmit)="onSubmit()">
               <label class="form-control w-full">
-                <span class="label"><span class="label-text font-medium">Device EUI</span><span class="text-error">*</span></span>
+                <span class="label"><span class="label-text font-medium">{{ transport === 'lorawan' ? 'Device EUI' : 'Device ID' }}</span><span class="text-error">*</span></span>
                 <input
                   type="text"
                   class="input input-bordered w-full font-mono input-sm"
-                  placeholder="e.g. 0102030405060708"
+                  [placeholder]="transport === 'lorawan' ? 'e.g. 0102030405060708' : 'e.g. aabbccddeeff0011'"
                   maxlength="16"
                   [(ngModel)]="eui"
                   name="eui"
@@ -86,7 +144,7 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
                 <div class="alert alert-error text-sm rounded-xl">{{ error() }}</div>
               }
               <div class="modal-action mt-6 p-0 justify-end gap-2">
-                <button type="button" class="btn btn-ghost" (click)="step.set(1)">Back</button>
+                <button type="button" class="btn btn-ghost" (click)="step.set(2)">Back</button>
                 <button type="submit" class="btn btn-primary" [disabled]="submitting()">
                   {{ submitting() ? 'Provisioning…' : 'Provision' }}
                 </button>
@@ -99,11 +157,16 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
           <div class="mt-4 space-y-4">
             <div class="alert alert-success text-sm rounded-xl">
               @if (result()!.profile_name) {
-                Device provisioned with profile <strong>{{ result()!.profile_name }}</strong>.
+                Device provisioned with profile <strong>{{ result()!.profile_name }}</strong>
+                via <span class="badge badge-sm">{{ result()!.transport }}</span>.
               } @else {
-                Device provisioned.
+                Device provisioned via <span class="badge badge-sm">{{ result()!.transport }}</span>.
               }
-              Copy the App Key into your firmware.
+              @if (result()!.transport === 'lorawan') {
+                Copy the App Key into your firmware.
+              } @else {
+                Copy the Device Token for your firmware's HTTP auth.
+              }
             </div>
             <label class="form-control w-full">
               <span class="label"><span class="label-text font-mono text-xs">Device EUI</span></span>
@@ -114,21 +177,50 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
                 </button>
               </div>
             </label>
-            <label class="form-control w-full">
-              <span class="label"><span class="label-text font-mono text-xs">App Key</span></span>
-              <div class="flex gap-2 flex-wrap">
-                <input
-                  #appKeyInput
-                  [type]="showKey() ? 'text' : 'password'"
-                  class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
-                  [value]="result()!.app_key"
-                  readonly
-                />
-                <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
-                <button type="button" class="btn btn-ghost btn-sm" (click)="copy(appKeyInput, result()!.app_key)">Copy hex</button>
-                <button type="button" class="btn btn-primary btn-sm" (click)="copyCpp(result()!.app_key)">Copy as C++</button>
+
+            @if (result()!.transport === 'lorawan' && result()!.app_key) {
+              <label class="form-control w-full">
+                <span class="label"><span class="label-text font-mono text-xs">App Key</span></span>
+                <div class="flex gap-2 flex-wrap">
+                  <input
+                    #appKeyInput
+                    [type]="showKey() ? 'text' : 'password'"
+                    class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
+                    [value]="result()!.app_key"
+                    readonly
+                  />
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="copy(appKeyInput, result()!.app_key)">Copy hex</button>
+                  <button type="button" class="btn btn-primary btn-sm" (click)="copyCpp(result()!.app_key)">Copy as C++</button>
+                </div>
+              </label>
+            }
+
+            @if (result()!.transport === 'wifi' && result()!.device_token) {
+              <label class="form-control w-full">
+                <span class="label"><span class="label-text font-mono text-xs">Device Token</span></span>
+                <div class="flex gap-2 flex-wrap">
+                  <input
+                    #tokenInput
+                    [type]="showKey() ? 'text' : 'password'"
+                    class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
+                    [value]="result()!.device_token"
+                    readonly
+                  />
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="copy(tokenInput, result()!.device_token)">Copy</button>
+                </div>
+              </label>
+              <div class="bg-base-200 rounded-xl p-3 text-xs font-mono">
+                <p class="text-base-content/60 mb-1">Example ingest call:</p>
+                <code>curl -X POST {{ingestUrl()}}/api/farmon/ingest \\<br/>
+                  &nbsp;&nbsp;-H "Authorization: Bearer {{result()!.device_token}}" \\<br/>
+                  &nbsp;&nbsp;-H "Content-Type: application/json" \\<br/>
+                  &nbsp;&nbsp;-d '{{"{"}}&#34;fport&#34;:2,&#34;payload_hex&#34;:&#34;...&#34;{{"}"}}'
+                </code>
               </div>
-            </label>
+            }
+
             <div class="modal-action mt-6 p-0 justify-end gap-2">
               <button type="button" class="btn btn-ghost" (click)="addAnother()">Add another</button>
               <button type="button" class="btn btn-primary" (click)="close()">Done</button>
@@ -146,23 +238,54 @@ export class AddDeviceModalComponent {
   private api = inject(ApiService);
 
   open = signal(false);
-  step = signal<1 | 2>(1);
+  step = signal<1 | 2 | 3>(1);
   submitting = signal(false);
   error = signal<string | null>(null);
   result = signal<ProvisionResponse | null>(null);
   showKey = signal(false);
+
+  targets = signal<DeviceTarget[]>([]);
+  loadingTargets = signal(false);
+  selectedTarget = signal<string | null>(null);
+  inferredTransport = signal<string>('');
+
   profiles = signal<ProfileSummary[]>([]);
   loadingProfiles = signal(false);
   selectedProfile = signal<string | null>(null);
 
+  transport: TransportType = 'lorawan';
   eui = '';
   name = '';
 
   deviceAdded = output<void>();
 
+  selectedTargetName(): string {
+    const id = this.selectedTarget();
+    return this.targets().find(t => t.id === id)?.name ?? '';
+  }
+
   selectedProfileName(): string {
     const id = this.selectedProfile();
     return this.profiles().find(p => p.id === id)?.name ?? '';
+  }
+
+  ingestUrl(): string {
+    return window.location.origin;
+  }
+
+  selectTarget(t: DeviceTarget): void {
+    this.selectedTarget.set(t.id);
+    if (t.transport) {
+      this.transport = t.transport;
+      this.inferredTransport.set(t.transport);
+    } else {
+      this.inferredTransport.set('');
+    }
+    // Pre-select default profile if available
+    if (t.default_profile_id) {
+      this.selectedProfile.set(t.default_profile_id);
+    }
+    this.loadProfiles();
   }
 
   openModal(): void {
@@ -170,11 +293,14 @@ export class AddDeviceModalComponent {
     this.step.set(1);
     this.result.set(null);
     this.error.set(null);
+    this.selectedTarget.set(null);
     this.selectedProfile.set(null);
+    this.inferredTransport.set('');
+    this.transport = 'lorawan';
     this.eui = '';
     this.name = '';
     this.showKey.set(false);
-    this.loadProfiles();
+    this.loadTargets();
   }
 
   close(): void {
@@ -190,10 +316,13 @@ export class AddDeviceModalComponent {
     this.step.set(1);
     this.result.set(null);
     this.error.set(null);
+    this.selectedTarget.set(null);
     this.selectedProfile.set(null);
+    this.inferredTransport.set('');
+    this.transport = 'lorawan';
     this.eui = '';
     this.name = '';
-    this.loadProfiles();
+    this.loadTargets();
   }
 
   async copy(inputEl: HTMLInputElement, text: string): Promise<void> {
@@ -218,6 +347,20 @@ export class AddDeviceModalComponent {
     }
   }
 
+  private loadTargets(): void {
+    this.loadingTargets.set(true);
+    this.api.getDeviceTargets().subscribe({
+      next: (list) => {
+        this.targets.set(list);
+        this.loadingTargets.set(false);
+      },
+      error: () => {
+        this.targets.set([]);
+        this.loadingTargets.set(false);
+      },
+    });
+  }
+
   private loadProfiles(): void {
     this.loadingProfiles.set(true);
     this.api.getProfiles(true).subscribe({
@@ -235,7 +378,7 @@ export class AddDeviceModalComponent {
   onSubmit(): void {
     const devEui = this.eui.replace(/\s/g, '').toLowerCase();
     if (!/^[0-9a-f]{16}$/.test(devEui)) {
-      this.error.set('Device EUI must be exactly 16 hex characters (0-9, a-f).');
+      this.error.set('Device ID must be exactly 16 hex characters (0-9, a-f).');
       return;
     }
     const profileId = this.selectedProfile();
@@ -245,7 +388,8 @@ export class AddDeviceModalComponent {
     }
     this.error.set(null);
     this.submitting.set(true);
-    this.api.provisionDevice(devEui, this.name.trim() || undefined, profileId).subscribe({
+    const targetId = this.selectedTarget() ?? undefined;
+    this.api.provisionDevice(devEui, this.name.trim() || undefined, profileId, this.transport, targetId).subscribe({
       next: (res) => {
         this.result.set(res);
         this.submitting.set(false);

@@ -69,9 +69,10 @@ func main() {
 
 		// Custom app API under /api/farmon only. Do NOT register routes under /api/ without the /farmon/ prefix,
 		// so PocketBase's built-in /api/collections/* and /api/records/* (used by the SDK) remain reachable.
-		// Device provisioning
+		// Device provisioning & targets
 		se.Router.POST("/api/farmon/devices", provisionDeviceHandler(app))
 		se.Router.DELETE("/api/farmon/devices", deleteDeviceHandler(app))
+		se.Router.GET("/api/farmon/device-targets", deviceTargetsHandler(app))
 
 		// Device profiles
 		se.Router.GET("/api/farmon/profiles", listProfilesHandler(app))
@@ -84,6 +85,9 @@ func main() {
 		// Device config
 		se.Router.POST("/api/farmon/devices/{eui}/push-config", pushConfigHandler(app, gwState))
 		se.Router.PATCH("/api/farmon/devices/{eui}/overrides", updateDeviceOverridesHandler(app))
+
+		// WiFi device ingest (transport-agnostic uplink via HTTP POST)
+		se.Router.POST("/api/farmon/ingest", ingestHandler(app, gwState))
 
 		// Test: inject uplink bypassing ZMQ/LoRaWAN (exercises decode engine + DB writes)
 		se.Router.POST("/api/farmon/test/inject-uplink", injectUplinkHandler(app, gwState))

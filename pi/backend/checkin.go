@@ -99,7 +99,7 @@ func handleDeviceCheckin(app core.App, cfg *gateway.Config, devEUI string, paylo
 		dev.Set("config_status", "pending")
 		log.Printf("[checkin] dev_eui=%s config mismatch: device=%s expected=%s — queuing push", devEUI, deviceHash, expectedHash)
 		// Queue AirConfig push (non-blocking)
-		if cfg != nil && cfg.Valid() {
+		if cfg != nil {
 			go func() {
 				if pushErr := pushAirConfig(app, cfg, devEUI, effective); pushErr != nil {
 					log.Printf("[checkin] pushAirConfig error dev_eui=%s: %v", devEUI, pushErr)

@@ -5,6 +5,8 @@ import { PocketBaseService } from './pocketbase.service';
 
 const API = '/api/farmon';
 
+export type TransportType = 'lorawan' | 'wifi';
+
 export interface Device {
   id: string;
   device_eui: string;
@@ -17,6 +19,20 @@ export interface Device {
   config_overrides?: unknown;
   config_hash?: string;
   config_status?: string;    // "pending" | "synced" | "n/a"
+  transport?: TransportType;
+  device_token?: string;
+  target_id?: string;
+}
+
+export interface DeviceTarget {
+  id: string;
+  name: string;
+  description: string;
+  transport: TransportType | '';
+  default_profile: string;
+  default_profile_id: string;
+  credential_type: 'app_key' | 'device_token' | '';
+  device_id_format: 'eui64' | 'mac' | 'custom';
 }
 
 export interface DeviceControl {
@@ -249,8 +265,12 @@ export class ApiService {
 
   // ─── Provisioning ───────────────────────────────────────
 
-  provisionDevice(device_eui: string, device_name?: string, profile_id?: string): Observable<ProvisionResponse> {
-    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name, profile_id });
+  provisionDevice(device_eui: string, device_name?: string, profile_id?: string, transport?: TransportType, target_id?: string): Observable<ProvisionResponse> {
+    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name, profile_id, transport, target_id });
+  }
+
+  getDeviceTargets(): Observable<DeviceTarget[]> {
+    return this.http.get<DeviceTarget[]>(`${API}/device-targets`);
   }
 
   deleteDevice(eui: string): Observable<{ ok: boolean; message?: string }> {
@@ -260,8 +280,8 @@ export class ApiService {
   getDeviceCredentials(eui: string): Observable<CredentialsResponse> {
     const filter = this.pb.filter('device_eui = {:eui}', { eui });
     return from(
-      this.pb.collection<{ device_eui: string; app_key?: string }>('devices').getFirstListItem(filter, { requestKey: `creds-${eui}` })
-    ).pipe(map((r) => ({ device_eui: r.device_eui, app_key: r.app_key ?? '' })));
+      this.pb.collection<{ device_eui: string; app_key?: string; device_token?: string; transport?: string }>('devices').getFirstListItem(filter, { requestKey: `creds-${eui}` })
+    ).pipe(map((r) => ({ device_eui: r.device_eui, app_key: r.app_key ?? '', device_token: r.device_token ?? '', transport: (r.transport as TransportType) || 'lorawan' })));
   }
 
   // ─── Profiles ───────────────────────────────────────────
@@ -591,13 +611,17 @@ export interface LorawanStats {
 
 export interface ProvisionResponse {
   device_eui: string;
+  transport: TransportType;
   app_key: string;
+  device_token: string;
   profile_name?: string;
 }
 
 export interface CredentialsResponse {
   device_eui: string;
   app_key: string;
+  device_token: string;
+  transport: TransportType;
 }
 
 export interface DeviceRuleRecord {

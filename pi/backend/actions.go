@@ -20,7 +20,7 @@ type SetControlParams struct {
 
 // ExecuteSetControl resolves indices, builds fPort 20 payload, enqueues downlink, and logs to commands.
 func ExecuteSetControl(app core.App, cfg *gateway.Config, params SetControlParams) error {
-	if cfg == nil || !cfg.Valid() {
+	if cfg == nil {
 		return fmt.Errorf("gateway not configured")
 	}
 	timeoutSec := uint32(0)
@@ -33,7 +33,7 @@ func ExecuteSetControl(app core.App, cfg *gateway.Config, params SetControlParam
 		timeoutSec,
 	)
 	cmdKey := "ctrl:" + params.Control + "=" + params.State
-	if err := EnqueueDownlink(cfg, app, params.DeviceEUI, 20, payload); err != nil {
+	if err := EnqueueDownlinkForDevice(app, cfg, params.DeviceEUI, 20, payload); err != nil {
 		insertCommand(app, params.DeviceEUI, cmdKey, params.InitiatedBy, "error", map[string]any{"control": params.Control, "state": params.State, "error": err.Error()})
 		return err
 	}
@@ -57,7 +57,7 @@ var wellKnownCmds = map[string]int{
 
 // ExecuteSendCommand resolves fPort, encodes payload, enqueues downlink, and logs to commands.
 func ExecuteSendCommand(app core.App, cfg *gateway.Config, params SendCommandParams) error {
-	if cfg == nil || !cfg.Valid() {
+	if cfg == nil {
 		return fmt.Errorf("gateway not configured")
 	}
 
@@ -103,7 +103,7 @@ func ExecuteSendCommand(app core.App, cfg *gateway.Config, params SendCommandPar
 	if params.Value != nil {
 		cmdPayload["value"] = *params.Value
 	}
-	if err := EnqueueDownlink(cfg, app, params.DeviceEUI, fPort, payload); err != nil {
+	if err := EnqueueDownlinkForDevice(app, cfg, params.DeviceEUI, fPort, payload); err != nil {
 		cmdPayload["error"] = err.Error()
 		insertCommand(app, params.DeviceEUI, params.Command, params.InitiatedBy, "error", cmdPayload)
 		return err

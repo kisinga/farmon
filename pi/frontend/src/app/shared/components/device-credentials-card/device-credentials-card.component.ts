@@ -9,8 +9,20 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
   template: `
     <div class="card-elevated">
       <div class="card-body-spaced">
-        <h2 class="section-title">LoRaWAN credentials</h2>
-        <p class="text-sm text-base-content/70 -mt-1">App Key for OTAA. Use in firmware (e.g. <code class="bg-base-200 px-1.5 py-0.5 rounded text-xs">secrets.h</code>).</p>
+        <h2 class="section-title">
+          @if (creds()?.transport === 'wifi') {
+            WiFi credentials
+          } @else {
+            LoRaWAN credentials
+          }
+        </h2>
+        <p class="text-sm text-base-content/70 -mt-1">
+          @if (creds()?.transport === 'wifi') {
+            Device Token for HTTP bearer auth. Use in firmware for ingest calls.
+          } @else {
+            App Key for OTAA. Use in firmware (e.g. <code class="bg-base-200 px-1.5 py-0.5 rounded text-xs">secrets.h</code>).
+          }
+        </p>
         @if (loading()) {
           <div class="flex items-center gap-2 py-2">
             <span class="loading loading-spinner loading-sm"></span>
@@ -32,21 +44,40 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
             </button>
           }
         } @else if (creds()) {
-          <label class="form-control w-full">
-            <span class="label"><span class="label-text font-mono text-xs">App Key</span></span>
-            <div class="flex flex-wrap gap-2 items-center">
-              <input
-                #keyInput
-                [type]="showKey() ? 'text' : 'password'"
-                class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
-                [value]="creds()!.app_key"
-                readonly
-              />
-              <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
-              <button type="button" class="btn btn-ghost btn-sm" (click)="copy(keyInput, creds()!.app_key)">Copy hex</button>
-              <button type="button" class="btn btn-primary btn-sm" (click)="copyCpp(creds()!.app_key)">Copy as C++</button>
-            </div>
-          </label>
+          @if (creds()!.transport === 'wifi' && creds()!.device_token) {
+            <!-- WiFi: show device token -->
+            <label class="form-control w-full">
+              <span class="label"><span class="label-text font-mono text-xs">Device Token</span></span>
+              <div class="flex flex-wrap gap-2 items-center">
+                <input
+                  #tokenInput
+                  [type]="showKey() ? 'text' : 'password'"
+                  class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
+                  [value]="creds()!.device_token"
+                  readonly
+                />
+                <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
+                <button type="button" class="btn btn-ghost btn-sm" (click)="copy(tokenInput, creds()!.device_token)">Copy</button>
+              </div>
+            </label>
+          } @else {
+            <!-- LoRaWAN: show app key -->
+            <label class="form-control w-full">
+              <span class="label"><span class="label-text font-mono text-xs">App Key</span></span>
+              <div class="flex flex-wrap gap-2 items-center">
+                <input
+                  #keyInput
+                  [type]="showKey() ? 'text' : 'password'"
+                  class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
+                  [value]="creds()!.app_key"
+                  readonly
+                />
+                <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
+                <button type="button" class="btn btn-ghost btn-sm" (click)="copy(keyInput, creds()!.app_key)">Copy hex</button>
+                <button type="button" class="btn btn-primary btn-sm" (click)="copyCpp(creds()!.app_key)">Copy as C++</button>
+              </div>
+            </label>
+          }
         }
       </div>
     </div>
@@ -107,7 +138,7 @@ export class DeviceCredentialsCardComponent implements OnInit {
     this.error.set(null);
     this.api.provisionDevice(e).subscribe({
       next: (res) => {
-        this.creds.set({ device_eui: res.device_eui, app_key: res.app_key });
+        this.creds.set({ device_eui: res.device_eui, app_key: res.app_key, device_token: res.device_token, transport: res.transport });
         this.error.set(null);
         this.provisioning.set(false);
       },

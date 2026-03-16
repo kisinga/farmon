@@ -30,8 +30,9 @@ func appKey32(s string) string {
 }
 
 // POST /api/farmon/devices — provision device with profile.
-// Body: { "device_eui": "0102030405060708", "device_name": "optional name", "profile_id": "required" }
-// Returns: { "device_eui": "...", "app_key": "hex32", "profile_name": "..." }
+// Body: { "device_eui": "...", "device_name": "...", "profile_id": "required", "transport": "lorawan|wifi", "target_id": "lora_e5|xiao_esp32c6|custom" }
+// transport and target_id are optional. If target_id is provided, transport is inferred from the catalog unless explicitly set.
+// Returns: { "device_eui": "...", "transport": "...", "app_key": "...", "device_token": "...", "profile_name": "..." }
 func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var body struct {
@@ -39,6 +40,8 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			DeviceName      string         `json:"device_name"`
 			ProfileID       string         `json:"profile_id"`
 			ConfigOverrides map[string]any `json:"config_overrides,omitempty"`
+			Transport       string         `json:"transport"`
+			TargetID        string         `json:"target_id"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.String(http.StatusBadRequest, "invalid body")
@@ -51,18 +54,43 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			return e.String(http.StatusBadRequest, "profile_id required")
 		}
 
+		// Resolve transport from target catalog if not explicitly set
+		transport := strings.TrimSpace(body.Transport)
+		targetID := strings.TrimSpace(body.TargetID)
+		if transport == "" && targetID != "" {
+			if t := findDeviceTarget(targetID); t != nil && t.Transport != "" {
+				transport = t.Transport
+			}
+		}
+		if transport == "" {
+			transport = "lorawan" // backward compat default
+		}
+		if transport != "lorawan" && transport != "wifi" {
+			return e.String(http.StatusBadRequest, "transport must be 'lorawan' or 'wifi'")
+		}
+
 		// Validate profile exists
 		profile, err := loadProfileWithComponents(app, body.ProfileID)
 		if err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]any{"error": "profile not found: " + body.ProfileID})
 		}
 
-		// Generate AppKey (16 bytes = 32 hex chars)
-		key := make([]byte, 16)
-		if _, err := rand.Read(key); err != nil {
-			return e.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to generate key"})
+		// Generate credentials based on transport
+		var appKeyHex, deviceToken string
+		switch transport {
+		case "lorawan":
+			key := make([]byte, 16)
+			if _, err := rand.Read(key); err != nil {
+				return e.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to generate key"})
+			}
+			appKeyHex = hex.EncodeToString(key)
+		case "wifi":
+			token := make([]byte, 32)
+			if _, err := rand.Read(token); err != nil {
+				return e.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to generate token"})
+			}
+			deviceToken = hex.EncodeToString(token)
 		}
-		appKeyHex := hex.EncodeToString(key)
 
 		coll, err := app.FindCollectionByNameOrId("devices")
 		if err != nil {
@@ -78,17 +106,25 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 		existing, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": devEui})
 		if err == nil {
 			// Device already exists — update profile and re-materialize
-			if existing.Get("app_key") == nil || existing.Get("app_key") == "" {
-				existing.Set("app_key", appKeyHex)
+			if transport == "lorawan" {
+				if existing.Get("app_key") == nil || existing.Get("app_key") == "" {
+					existing.Set("app_key", appKeyHex)
+				} else {
+					appKeyHex = appKey32(existing.Get("app_key").(string))
+					existing.Set("app_key", appKeyHex)
+				}
+				existing.Set("device_token", "")
 			} else {
-				appKeyHex = appKey32(existing.Get("app_key").(string))
-				existing.Set("app_key", appKeyHex)
+				existing.Set("device_token", deviceToken)
+				existing.Set("app_key", "")
 			}
 			if body.DeviceName != "" {
 				existing.Set("device_name", strings.TrimSpace(body.DeviceName))
 			}
 			existing.Set("profile", body.ProfileID)
 			existing.Set("config_status", configStatus)
+			existing.Set("transport", transport)
+			existing.Set("target_id", targetID)
 			if body.ConfigOverrides != nil {
 				existing.Set("config_overrides", body.ConfigOverrides)
 			}
@@ -101,9 +137,15 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			rec := core.NewRecord(coll)
 			rec.Set("device_eui", devEui)
 			rec.Set("device_name", strings.TrimSpace(body.DeviceName))
-			rec.Set("app_key", appKeyHex)
 			rec.Set("profile", body.ProfileID)
 			rec.Set("config_status", configStatus)
+			rec.Set("transport", transport)
+			rec.Set("target_id", targetID)
+			if transport == "lorawan" {
+				rec.Set("app_key", appKeyHex)
+			} else {
+				rec.Set("device_token", deviceToken)
+			}
 			if body.ConfigOverrides != nil {
 				rec.Set("config_overrides", body.ConfigOverrides)
 			}
@@ -120,7 +162,9 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 
 		return e.JSON(http.StatusOK, map[string]any{
 			"device_eui":   devEui,
+			"transport":    transport,
 			"app_key":      appKeyHex,
+			"device_token": deviceToken,
 			"profile_name": profile.Name,
 		})
 	}

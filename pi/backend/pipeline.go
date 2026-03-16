@@ -233,7 +233,33 @@ func handleConcentratordUplink(app core.App, frame *gw.UplinkFrame, store *pocke
 // and sent in the device's next Class A RX1 window (after the next uplink).
 var dlQueue = NewDownlinkQueue()
 
-// EnqueueDownlink queues a downlink for the device. The frame is pre-built (encrypted, MIC'd) and
+// lookupDeviceTransport returns the transport type for a device ("lorawan" or "wifi"), defaulting to "lorawan".
+func lookupDeviceTransport(app core.App, devEUI string) string {
+	rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": normalizeEui(devEUI)})
+	if err != nil {
+		return "lorawan"
+	}
+	t := rec.GetString("transport")
+	if t == "" {
+		return "lorawan"
+	}
+	return t
+}
+
+// EnqueueDownlinkForDevice routes a downlink to the correct transport.
+// For LoRaWAN: builds encrypted frame and queues for Class A RX1 window.
+// For WiFi: inserts into pending_commands for next ingest poll.
+func EnqueueDownlinkForDevice(app core.App, cfg *gateway.Config, devEUI string, fPort uint8, payload []byte) error {
+	transport := lookupDeviceTransport(app, devEUI)
+	switch transport {
+	case "wifi":
+		return enqueueWiFiCommand(app, devEUI, fPort, payload)
+	default:
+		return EnqueueDownlink(cfg, app, devEUI, fPort, payload)
+	}
+}
+
+// EnqueueDownlink queues a LoRaWAN downlink for the device. The frame is pre-built (encrypted, MIC'd) and
 // will be transmitted in the device's next Class A RX1 window when the next uplink arrives.
 // Class A devices only listen for downlinks briefly after sending an uplink, so immediate sends
 // (without an uplink context) will never be received.
