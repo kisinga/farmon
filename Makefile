@@ -10,7 +10,7 @@
 #   make all
 #   make install DESTDIR=/opt/farmon
 
-.PHONY: build all frontend backend check-go frontend-deps install clean
+.PHONY: build all dev frontend backend check-go frontend-deps install clean
 
 # Default: build backend only (dev workflow — frontend served separately or pre-built).
 build: backend
@@ -21,6 +21,10 @@ all: frontend backend
 	@mkdir -p backend/pb_public
 	@cp -r frontend/dist/browser/. backend/pb_public/
 	@echo "Built. Run: ./backend/pocketbase serve --http=0.0.0.0:8090"
+
+# Build and serve backend (dev workflow). Rebuilds on each invocation.
+dev: frontend backend
+	cd backend && ./pocketbase serve --http=0.0.0.0:8090
 
 # Install frontend deps (run once after clone or when package.json/package-lock.json change)
 frontend-deps:
