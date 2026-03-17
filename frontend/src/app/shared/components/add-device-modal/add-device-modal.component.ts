@@ -1,6 +1,6 @@
 import { Component, inject, signal, output, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, ProfileSummary, ProvisionResponse, DeviceTarget, TransportType, getTransportMeta } from '../../../core/services/api.service';
+import { ApiService, ProfileSummary, ProvisionResponse, DeviceTarget, TransportType, getTransportMeta, getDeviceIDFormat } from '../../../core/services/api.service';
 import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-credentials';
 
 @Component({
@@ -77,25 +77,35 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
               <div class="flex justify-center py-4">
                 <span class="loading loading-spinner loading-sm text-primary"></span>
               </div>
-            } @else if (compatibleProfiles().length === 0) {
+            } @else if (annotatedProfiles().length === 0) {
               <div class="py-4 text-center text-base-content/50 text-sm">No profiles available. Create one in Profiles first.</div>
             } @else {
-              <div class="mt-3 space-y-2 max-h-52 overflow-y-auto">
-                @for (p of compatibleProfiles(); track p.id) {
+              <p class="text-xs text-base-content/50 mt-3">Showing profiles compatible with <strong>{{ transportMeta().label }}</strong>. Incompatible profiles are greyed out.</p>
+              <div class="mt-2 space-y-2 max-h-52 overflow-y-auto">
+                @for (p of annotatedProfiles(); track p.id) {
                   <button
                     type="button"
                     class="w-full text-left rounded-xl border p-3 transition-colors"
-                    [class.border-primary]="selectedProfile() === p.id"
-                    [class.bg-primary]="selectedProfile() === p.id"
+                    [class.border-primary]="selectedProfile() === p.id && p.compatible"
+                    [class.bg-primary]="selectedProfile() === p.id && p.compatible"
                     [style.--tw-bg-opacity]="selectedProfile() === p.id ? '0.05' : '0'"
                     [class.border-base-300]="selectedProfile() !== p.id"
-                    (click)="selectedProfile.set(p.id)"
+                    [class.opacity-40]="!p.compatible"
+                    [disabled]="!p.compatible"
+                    (click)="p.compatible && selectedProfile.set(p.id)"
                   >
                     <div class="flex items-center justify-between">
                       <span class="font-medium">{{ p.name }}</span>
-                      <span class="badge badge-sm" [class.badge-primary]="p.profile_type === 'airconfig'" [class.badge-secondary]="p.profile_type === 'codec'">{{ p.profile_type }}</span>
+                      <div class="flex gap-1">
+                        @if (p.transport) {
+                          <span class="badge badge-xs badge-ghost">{{ p.transport }}</span>
+                        }
+                        <span class="badge badge-sm" [class.badge-primary]="p.profile_type === 'airconfig'" [class.badge-secondary]="p.profile_type === 'codec'">{{ p.profile_type }}</span>
+                      </div>
                     </div>
-                    @if (p.description) {
+                    @if (p.reason) {
+                      <p class="text-xs text-warning mt-1">{{ p.reason }}</p>
+                    } @else if (p.description) {
                       <p class="text-xs text-base-content/60 mt-1">{{ p.description }}</p>
                     }
                   </button>
@@ -112,23 +122,23 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
             <!-- Step 3: Device ID + Name -->
             <h3 class="font-bold text-lg">Device details</h3>
             <p class="text-sm text-base-content/70 mt-1">
-              Enter the {{ meta().idLabel }} for your device.
+              Enter the {{ idFormat().label }} for your device.
               Profile: <span class="font-medium">{{ selectedProfileName() }}</span>
             </p>
 
             <form class="mt-4 space-y-4" (ngSubmit)="onSubmit()">
               <label class="form-control w-full">
-                <span class="label"><span class="label-text font-medium">{{ meta().idLabel }}</span><span class="text-error">*</span></span>
+                <span class="label"><span class="label-text font-medium">{{ idFormat().label }}</span><span class="text-error">*</span></span>
                 <input
                   type="text"
                   class="input input-bordered w-full font-mono input-sm"
-                  [placeholder]="meta().idPlaceholder"
-                  [maxlength]="meta().idMaxLength"
+                  [placeholder]="idFormat().placeholder"
+                  [maxlength]="idFormat().maxLength"
                   [(ngModel)]="eui"
                   name="eui"
                   required
                 />
-                <span class="label-text-alt text-base-content/50">{{ meta().idMinLength === meta().idMaxLength ? meta().idMinLength + ' hex characters' : meta().idMinLength + '\u2013' + meta().idMaxLength + ' hex characters' }}</span>
+                <span class="label-text-alt text-base-content/50">{{ idFormat().hint }}</span>
               </label>
               <label class="form-control w-full">
                 <span class="label"><span class="label-text font-medium">Device name</span><span class="label-text-alt">optional</span></span>
@@ -168,7 +178,7 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
               Copy the {{ resultMeta().credentialLabel }} into your firmware.
             </div>
             <label class="form-control w-full">
-              <span class="label"><span class="label-text font-mono text-xs">{{ resultMeta().idLabel }}</span></span>
+              <span class="label"><span class="label-text font-mono text-xs">{{ idFormat().label }}</span></span>
               <div class="flex gap-2">
                 <input #euiInput type="text" class="input input-bordered input-sm flex-1 font-mono text-xs" [value]="result()!.device_eui" readonly />
                 <button type="button" class="btn btn-ghost btn-sm btn-square" (click)="copy(euiInput, result()!.device_eui)" title="Copy">
@@ -259,16 +269,27 @@ export class AddDeviceModalComponent {
 
   deviceAdded = output<void>();
 
-  /** Reactive transport metadata — drives labels, validation, and badges without hardcoded transport checks. */
-  meta = computed(() => getTransportMeta(this.transport()));
-  /** Transport metadata for the provisioning result (uses the result's transport, not the current selection). */
+  /** Transport display metadata (label, badge, credential name). */
+  transportMeta = computed(() => getTransportMeta(this.transport()));
+  /** Transport metadata for the provisioning result. */
   resultMeta = computed(() => getTransportMeta(this.result()?.transport));
+  /** Device ID format metadata — driven by the selected target, not transport. */
+  idFormat = computed(() => {
+    const targetId = this.selectedTarget();
+    const target = this.targets().find(t => t.id === targetId);
+    return getDeviceIDFormat(target?.device_id_format);
+  });
 
-  compatibleProfiles = computed(() => {
+  /** All profiles, each annotated with whether it's compatible with the selected transport. */
+  annotatedProfiles = computed(() => {
     const t = this.transport();
-    return this.profiles().filter(p =>
-      !p.transport || p.transport === 'any' || p.transport === t
-    );
+    return this.profiles().map(p => ({
+      ...p,
+      compatible: !p.transport || p.transport === 'any' || p.transport === t,
+      reason: p.transport && p.transport !== 'any' && p.transport !== t
+        ? `This profile requires ${p.transport}`
+        : '',
+    }));
   });
 
   selectedTargetName(): string {
@@ -389,11 +410,10 @@ export class AddDeviceModalComponent {
 
   onSubmit(): void {
     const devEui = this.eui.replace(/\s/g, '').toLowerCase();
-    const m = this.meta();
-    const idPattern = new RegExp(`^[0-9a-f]{${m.idMinLength},${m.idMaxLength}}$`);
-    const idHint = m.idMinLength === m.idMaxLength ? `${m.idMinLength} hex characters` : `${m.idMinLength}\u2013${m.idMaxLength} hex characters`;
+    const fmt = this.idFormat();
+    const idPattern = new RegExp(`^[0-9a-f]{${fmt.minLength},${fmt.maxLength}}$`);
     if (!idPattern.test(devEui)) {
-      this.error.set(`Device ID must be ${idHint} (0-9, a-f).`);
+      this.error.set(`${fmt.label} must be ${fmt.hint}.`);
       return;
     }
     const profileId = this.selectedProfile();

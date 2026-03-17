@@ -7,41 +7,40 @@ const API = '/api/farmon';
 
 export type TransportType = 'lorawan' | 'wifi';
 
-/** Per-transport display and validation metadata. Add an entry here when adding a new transport. */
+/** Per-transport display metadata. Add an entry here when adding a new transport. */
 export interface TransportMeta {
   label: string;
   badge: string;           // DaisyUI badge class
-  idLabel: string;         // "Device EUI" vs "Device ID"
-  idPlaceholder: string;
-  idMinLength: number;
-  idMaxLength: number;
   credentialLabel: string; // "App Key" vs "Device Token"
 }
 
 export const TRANSPORT_META: Record<string, TransportMeta> = {
-  lorawan: {
-    label: 'LoRaWAN',
-    badge: 'badge-primary',
-    idLabel: 'Device EUI',
-    idPlaceholder: 'e.g. 0102030405060708',
-    idMinLength: 16,
-    idMaxLength: 16,
-    credentialLabel: 'App Key',
-  },
-  wifi: {
-    label: 'WiFi',
-    badge: 'badge-secondary',
-    idLabel: 'Device ID',
-    idPlaceholder: 'e.g. aabbccddeeff',
-    idMinLength: 12,
-    idMaxLength: 16,
-    credentialLabel: 'Device Token',
-  },
+  lorawan: { label: 'LoRaWAN', badge: 'badge-primary', credentialLabel: 'App Key' },
+  wifi:    { label: 'WiFi',    badge: 'badge-secondary', credentialLabel: 'Device Token' },
 };
 
 /** Get transport metadata, falling back to lorawan for unknown values. */
 export function getTransportMeta(transport?: string): TransportMeta {
   return TRANSPORT_META[transport || 'lorawan'] ?? TRANSPORT_META['lorawan'];
+}
+
+/** Per-device-id-format metadata. Driven by DeviceTarget.device_id_format, not transport. */
+export interface DeviceIDFormatMeta {
+  label: string;        // "Device EUI" vs "MAC Address" vs "Device ID"
+  placeholder: string;
+  minLength: number;
+  maxLength: number;
+  hint: string;
+}
+
+export const DEVICE_ID_FORMATS: Record<string, DeviceIDFormatMeta> = {
+  eui64:  { label: 'Device EUI',  placeholder: 'e.g. 0102030405060708', minLength: 16, maxLength: 16, hint: '16 hex characters (EUI-64)' },
+  mac:    { label: 'MAC Address', placeholder: 'e.g. aabbccddeeff',     minLength: 12, maxLength: 12, hint: '12 hex characters (MAC-48)' },
+  custom: { label: 'Device ID',   placeholder: 'e.g. 0102030405060708', minLength: 8,  maxLength: 16, hint: '8–16 hex characters' },
+};
+
+export function getDeviceIDFormat(format?: string): DeviceIDFormatMeta {
+  return DEVICE_ID_FORMATS[format || 'custom'] ?? DEVICE_ID_FORMATS['custom'];
 }
 
 export interface Device {
