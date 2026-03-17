@@ -18,8 +18,8 @@ var operatorToFirmware = map[string]uint8{
 	"!=": 5, // OpNEQ
 }
 
-// buildRuleBinaryV2 encodes a device_rules record into the 16-byte v2 wire format.
-func buildRuleBinaryV2(r map[string]any) ([ruleBinarySize]byte, error) {
+// buildRuleBinary encodes a device_rules record into the 16-byte wire format.
+func buildRuleBinary(r map[string]any) ([ruleBinarySize]byte, error) {
 	var buf [ruleBinarySize]byte
 
 	ruleID := toUint8(r["rule_id"])
@@ -35,7 +35,7 @@ func buildRuleBinaryV2(r map[string]any) ([ruleBinarySize]byte, error) {
 	cooldownSec := toUint16(r["cooldown_seconds"])
 	priority := toUint8(r["priority"])
 
-	// v2 compound condition
+	// compound condition
 	secondFieldIdx := uint8(0xFF) // disabled by default
 	var secondOp uint8
 	var secondIsControl bool
@@ -64,7 +64,6 @@ func buildRuleBinaryV2(r map[string]any) ([ruleBinarySize]byte, error) {
 		timeEnd = uint8(float64(te) / 1.5)
 	}
 
-	// Encode bytes 0-11 (v1 compatible)
 	buf[0] = ruleID
 	buf[1] = (op & 0x07) << 4
 	if enabled {
@@ -83,7 +82,6 @@ func buildRuleBinaryV2(r map[string]any) ([ruleBinarySize]byte, error) {
 	binary.LittleEndian.PutUint16(buf[9:11], cooldownSec)
 	buf[11] = priority
 
-	// Encode bytes 12-15 (v2 extension)
 	buf[12] = secondFieldIdx
 	buf[13] = (secondOp & 0x07) << 4
 	if secondIsControl {
@@ -103,7 +101,7 @@ func buildRuleBatchPayload(rules []map[string]any) ([]byte, error) {
 	}
 	payload := make([]byte, 0, len(rules)*ruleBinarySize)
 	for i, r := range rules {
-		bin, err := buildRuleBinaryV2(r)
+		bin, err := buildRuleBinary(r)
 		if err != nil {
 			return nil, fmt.Errorf("rule %d: %w", i, err)
 		}
