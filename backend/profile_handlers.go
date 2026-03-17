@@ -223,6 +223,60 @@ func pushConfigHandler(app core.App, gwState *GatewayState) func(*core.RequestEv
 	}
 }
 
+// POST /api/farmon/devices/{eui}/push-rules — build v2 binary rules and enqueue as downlink (fPort 30).
+func pushRulesHandler(app core.App, gwState *GatewayState) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		eui := normalizeEui(e.Request.PathValue("eui"))
+		if eui == "" {
+			return e.String(http.StatusBadRequest, "eui required")
+		}
+
+		records, err := app.FindRecordsByFilter("device_rules", "device_eui = {:eui} && enabled = true", "rule_id", 0, 0, map[string]any{"eui": eui})
+		if err != nil || len(records) == 0 {
+			return e.JSON(http.StatusOK, map[string]any{"ok": true, "rules_pushed": 0, "message": "no enabled rules"})
+		}
+
+		var ruleMaps []map[string]any
+		for _, rec := range records {
+			ruleMaps = append(ruleMaps, map[string]any{
+				"rule_id":           rec.GetFloat("rule_id"),
+				"enabled":           rec.GetBool("enabled"),
+				"operator":          rec.GetString("operator"),
+				"field_idx":         rec.GetFloat("field_idx"),
+				"threshold":         rec.GetFloat("threshold"),
+				"control_idx":       rec.GetFloat("control_idx"),
+				"action_state":      rec.GetFloat("action_state"),
+				"cooldown_seconds":  rec.GetFloat("cooldown_seconds"),
+				"priority":          rec.GetFloat("priority"),
+				"second_field_idx":  rec.GetFloat("second_field_idx"),
+				"second_operator":   rec.GetString("second_operator"),
+				"second_threshold":  rec.GetFloat("second_threshold"),
+				"second_is_control": rec.GetBool("second_is_control"),
+				"logic":             rec.GetString("logic"),
+				"time_start":        rec.GetFloat("time_start"),
+				"time_end":          rec.GetFloat("time_end"),
+			})
+		}
+
+		payload, err := buildRuleBatchPayload(ruleMaps)
+		if err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
+		}
+
+		cfg := gwState.Config()
+		if err := EnqueueDownlinkForDevice(app, cfg, eui, 30, payload); err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		}
+
+		for _, rec := range records {
+			rec.Set("synced_at", "synced")
+			_ = app.Save(rec)
+		}
+
+		return e.JSON(http.StatusOK, map[string]any{"ok": true, "rules_pushed": len(records)})
+	}
+}
+
 // PATCH /api/farmon/devices/{eui}/overrides — update per-device config_overrides.
 func updateDeviceOverridesHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {

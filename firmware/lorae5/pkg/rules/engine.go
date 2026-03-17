@@ -77,8 +77,10 @@ func (e *Engine) LoadRules(rules []settings.Rule) {
 	e.rules = rules
 }
 
-// Evaluate checks all rules against current sensor values.
-func (e *Engine) Evaluate(values []float32, nowMs uint32) {
+// Evaluate checks all rules against current sensor values and control states.
+// controlStates contains the current state index of each control (len = MaxControls).
+// hourOfDay is 0-23 for time window checks (-1 to skip time checks).
+func (e *Engine) Evaluate(values []float32, controlStates []uint8, hourOfDay int, nowMs uint32) {
 	if len(e.rules) == 0 {
 		return
 	}
@@ -99,6 +101,10 @@ func (e *Engine) Evaluate(values []float32, nowMs uint32) {
 		if int(r.FieldIdx) >= len(values) {
 			continue
 		}
+		// Time window check
+		if hourOfDay >= 0 && !e.inTimeWindow(r, hourOfDay) {
+			continue
+		}
 		// Skip manual override
 		cs := &e.controls[r.ControlIdx]
 		if cs.IsManual {
@@ -108,7 +114,19 @@ func (e *Engine) Evaluate(values []float32, nowMs uint32) {
 			cs.IsManual = false
 		}
 
-		if evaluateCondition(r.Op, values[r.FieldIdx], r.Threshold) {
+		primaryResult := evaluateCondition(r.Op, values[r.FieldIdx], r.Threshold)
+
+		// Compound condition
+		if r.HasSecond && r.SecondFieldIdx != 0xFF {
+			secondResult := e.evaluateSecondCondition(r, values, controlStates)
+			if r.LogicOR {
+				primaryResult = primaryResult || secondResult
+			} else {
+				primaryResult = primaryResult && secondResult
+			}
+		}
+
+		if primaryResult {
 			b := &best[r.ControlIdx]
 			if !b.valid || r.Priority < b.priority {
 				b.ruleIdx = i
@@ -214,6 +232,37 @@ func (e *Engine) recordChange(ctrlIdx, newState uint8, source TriggerSource, rul
 	writeIdx := (e.head + e.count) % len(e.changes)
 	e.changes[writeIdx] = sc
 	e.count++
+}
+
+// inTimeWindow checks if hourOfDay falls within the rule's time window.
+// TimeStart/TimeEnd are 0-15, mapping to hours via *1.5 (0=0:00, 4=6:00, 12=18:00, 15=22:30).
+// 0x00 (both zero) means always active.
+func (e *Engine) inTimeWindow(r *settings.Rule, hourOfDay int) bool {
+	if r.TimeStart == 0 && r.TimeEnd == 0 {
+		return true
+	}
+	startHour := int(float32(r.TimeStart) * 1.5)
+	endHour := int(float32(r.TimeEnd) * 1.5)
+	if startHour <= endHour {
+		return hourOfDay >= startHour && hourOfDay < endHour
+	}
+	// Wraps midnight (e.g., 22:00–06:00)
+	return hourOfDay >= startHour || hourOfDay < endHour
+}
+
+// evaluateSecondCondition evaluates the compound (second) condition of a v2 rule.
+func (e *Engine) evaluateSecondCondition(r *settings.Rule, values []float32, controlStates []uint8) bool {
+	threshold := float32(r.SecondThreshold)
+	if r.SecondIsControl {
+		if int(r.SecondFieldIdx) >= len(controlStates) {
+			return false
+		}
+		return evaluateCondition(r.SecondOp, float32(controlStates[r.SecondFieldIdx]), threshold)
+	}
+	if int(r.SecondFieldIdx) >= len(values) {
+		return false
+	}
+	return evaluateCondition(r.SecondOp, values[r.SecondFieldIdx], threshold)
 }
 
 func evaluateCondition(op settings.RuleOperator, value, threshold float32) bool {

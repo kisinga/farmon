@@ -100,6 +100,9 @@ const (
 	OpNEQ RuleOperator = 5
 )
 
+// RuleSize is the v2 binary wire size (16 bytes). v1 was 12 bytes.
+const RuleSize = 16
+
 type Rule struct {
 	ID          uint8
 	FieldIdx    uint8
@@ -110,6 +113,32 @@ type Rule struct {
 	CooldownSec uint16
 	Threshold   float32
 	Enabled     bool
+	// v2: compound condition
+	HasSecond      bool
+	LogicOR        bool         // false=AND, true=OR
+	SecondFieldIdx uint8        // 0xFF = no second condition
+	SecondOp       RuleOperator
+	SecondIsControl bool        // true: compare control state, false: compare sensor field
+	SecondThreshold uint8       // 0-255 integer threshold
+	// v2: time window (1.5h granularity, 0=no restriction)
+	TimeStart uint8 // 0-15, maps to hour via *1.5
+	TimeEnd   uint8 // 0-15, maps to hour via *1.5
+}
+
+// TimeStartHour returns the decoded start hour (0.0-22.5), or -1 if no time window.
+func (r *Rule) TimeStartHour() float32 {
+	if r.TimeStart == 0 && r.TimeEnd == 0 {
+		return -1
+	}
+	return float32(r.TimeStart) * 1.5
+}
+
+// TimeEndHour returns the decoded end hour (0.0-22.5), or -1 if no time window.
+func (r *Rule) TimeEndHour() float32 {
+	if r.TimeStart == 0 && r.TimeEnd == 0 {
+		return -1
+	}
+	return float32(r.TimeEnd) * 1.5
 }
 
 func (r *Rule) FromBinary(data []byte) bool {
@@ -125,11 +154,24 @@ func (r *Rule) FromBinary(data []byte) bool {
 	r.ActionState = data[8]
 	r.CooldownSec = binary.LittleEndian.Uint16(data[9:11])
 	r.Priority = data[11]
+
+	// v2 extension (bytes 12-15)
+	r.SecondFieldIdx = 0xFF // default: no second condition
+	if len(data) >= RuleSize {
+		r.HasSecond = data[1]&0x08 != 0
+		r.LogicOR = data[1]&0x04 != 0
+		r.SecondFieldIdx = data[12]
+		r.SecondOp = RuleOperator((data[13] >> 4) & 0x07)
+		r.SecondIsControl = data[13]&0x08 != 0
+		r.SecondThreshold = data[14]
+		r.TimeStart = (data[15] >> 4) & 0x0F
+		r.TimeEnd = data[15] & 0x0F
+	}
 	return true
 }
 
 func (r *Rule) ToBinary(buf []byte) int {
-	if len(buf) < 12 {
+	if len(buf) < RuleSize {
 		return 0
 	}
 	buf[0] = r.ID
@@ -137,13 +179,27 @@ func (r *Rule) ToBinary(buf []byte) int {
 	if r.Enabled {
 		buf[1] |= 0x80
 	}
+	if r.HasSecond {
+		buf[1] |= 0x08
+	}
+	if r.LogicOR {
+		buf[1] |= 0x04
+	}
 	buf[2] = r.FieldIdx
 	binary.LittleEndian.PutUint32(buf[3:7], math.Float32bits(r.Threshold))
 	buf[7] = r.ControlIdx
 	buf[8] = r.ActionState
 	binary.LittleEndian.PutUint16(buf[9:11], r.CooldownSec)
 	buf[11] = r.Priority
-	return 12
+	// v2 extension
+	buf[12] = r.SecondFieldIdx
+	buf[13] = (uint8(r.SecondOp) & 0x07) << 4
+	if r.SecondIsControl {
+		buf[13] |= 0x08
+	}
+	buf[14] = r.SecondThreshold
+	buf[15] = (r.TimeStart&0x0F)<<4 | (r.TimeEnd & 0x0F)
+	return RuleSize
 }
 
 // --- LoRaWAN ---

@@ -462,6 +462,14 @@ export class ApiService {
     );
   }
 
+  deleteDeviceRule(id: string): Observable<boolean> {
+    return from(this.pb.collection('device_rules').delete(id)).pipe(map(() => true));
+  }
+
+  pushDeviceRules(eui: string): Observable<{ ok: boolean; rules_pushed: number }> {
+    return this.http.post<{ ok: boolean; rules_pushed: number }>(`${API}/devices/${eui}/push-rules`, {});
+  }
+
   // ─── Gateway & Pipeline ─────────────────────────────────
 
   getGatewayStatus(): Observable<GatewayStatusResponse> {
@@ -681,6 +689,15 @@ export interface DeviceRuleRecord {
   cooldown_seconds?: number;
   enabled?: boolean;
   synced_at?: string;
+  // v2: compound condition
+  second_field_idx?: number;
+  second_operator?: string;
+  second_threshold?: number;
+  second_is_control?: boolean;
+  logic?: 'and' | 'or';
+  // v2: time window
+  time_start?: number;
+  time_end?: number;
 }
 
 export interface CommandRecord {
