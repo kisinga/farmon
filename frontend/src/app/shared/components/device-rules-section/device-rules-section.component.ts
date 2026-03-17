@@ -333,6 +333,7 @@ export class DeviceRulesSectionComponent {
   eui = input.required<string>();
   fields = input<DeviceField[]>([]);
   controls = input<DeviceControl[]>([]);
+  prefillForm = input<Partial<DeviceRuleRecord> | null>(null);
 
   rules = signal<DeviceRuleRecord[]>([]);
   loading = signal(false);
@@ -370,6 +371,21 @@ export class DeviceRulesSectionComponent {
         next: (list) => { this.rules.set(list); this.loading.set(false); },
         error: () => { this.rules.set([]); this.loading.set(false); },
       });
+    });
+    effect(() => {
+      const p = this.prefillForm();
+      if (!p) return;
+      this.editingId.set(null);
+      this.form = {
+        ...defaultForm(),
+        field_idx:        p.field_idx        ?? defaultForm().field_idx,
+        operator:         (p.operator as Op) ?? defaultForm().operator,
+        threshold:        p.threshold        ?? defaultForm().threshold,
+        control_idx:      p.control_idx      ?? defaultForm().control_idx,
+        action_state:     p.action_state     ?? defaultForm().action_state,
+        enabled:          p.enabled          ?? true,
+      };
+      this.message.set(null);
     });
   }
 

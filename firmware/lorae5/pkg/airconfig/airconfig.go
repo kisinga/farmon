@@ -61,16 +61,22 @@ func Handle(cfg *settings.DeviceSettings, data []byte) Result {
 		return ResultNone
 
 	case protocol.AirCfgSensor:
-		// [0x04, slot, type, pin_idx, field_idx, flags, param1_lo, param1_hi]
+		// [0x04, slot, type, pin_idx, field_idx, flags, param1_lo, param1_hi, param2_lo, param2_hi]
+		// Bytes 8-9 (param2) are optional for backward compatibility with V1 firmware senders.
 		if len(data) >= 8 {
 			slot := data[1]
 			if int(slot) < settings.MaxSensors {
+				p2 := uint16(0)
+				if len(data) >= 10 {
+					p2 = binary.LittleEndian.Uint16(data[8:10])
+				}
 				cfg.Sensors[slot] = settings.SensorSlot{
 					Type:       settings.SensorType(data[2]),
 					PinIndex:   data[3],
 					FieldIndex: data[4],
 					Flags:      data[5],
 					Param1:     binary.LittleEndian.Uint16(data[6:8]),
+					Param2:     p2,
 				}
 				if slot >= cfg.SensorCount {
 					cfg.SensorCount = slot + 1

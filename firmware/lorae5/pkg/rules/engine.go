@@ -181,6 +181,16 @@ func (e *Engine) ClearManualOverride(ctrlIdx uint8) {
 	e.controls[ctrlIdx].ManualUntilMs = 0
 }
 
+// GetControlStates returns a snapshot of the current state index for each control slot.
+// Used to pass control state into Evaluate() for compound rule conditions.
+func (e *Engine) GetControlStates() []uint8 {
+	out := make([]uint8, settings.MaxControls)
+	for i := range out {
+		out[i] = e.controls[i].CurrentState
+	}
+	return out
+}
+
 // HasPending returns true if there are state changes to transmit.
 func (e *Engine) HasPending() bool { return e.count > 0 }
 

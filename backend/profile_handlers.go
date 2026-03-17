@@ -260,7 +260,14 @@ func pushRulesHandler(app core.App, gwState *GatewayState) func(*core.RequestEve
 
 		payload, err := buildRuleBatchPayload(ruleMaps)
 		if err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
+			// Return a structured 422 so the frontend can detect too_many_rules
+			// and show a specific inline warning rather than a generic error.
+			return e.JSON(http.StatusUnprocessableEntity, map[string]any{
+				"error":   "too_many_rules",
+				"count":   len(ruleMaps),
+				"max":     13,
+				"message": "LoRaWAN payload fits max 13 rules (222 bytes / 16 bytes per rule). Disable extra rules or use Server Workflows for additional logic.",
+			})
 		}
 
 		cfg := gwState.Config()
@@ -274,6 +281,78 @@ func pushRulesHandler(app core.App, gwState *GatewayState) func(*core.RequestEve
 		}
 
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "rules_pushed": len(records)})
+	}
+}
+
+// POST /api/farmon/devices/{eui}/push-sensor-slot — configure a single sensor slot via AirConfig downlink.
+// Body: { slot, type, pin_index, field_index, flags, calib_offset, calib_span }
+// calib_offset/calib_span are physical-unit floats; handler encodes to int16×10 / uint16×10 for Param1/Param2.
+// For non-ADC sensor types, pass raw param1 and param2 integers instead (fields ignored for those types).
+func pushSensorSlotHandler(app core.App, gwState *GatewayState) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		eui := normalizeEui(e.Request.PathValue("eui"))
+		if eui == "" {
+			return e.String(http.StatusBadRequest, "eui required")
+		}
+
+		var body struct {
+			Slot        uint8   `json:"slot"`
+			Type        uint8   `json:"type"`
+			PinIndex    uint8   `json:"pin_index"`
+			FieldIndex  uint8   `json:"field_index"`
+			Flags       uint8   `json:"flags"`
+			CalibOffset float64 `json:"calib_offset"` // physical value at zero input → Param1 as int16×10
+			CalibSpan   float64 `json:"calib_span"`   // physical range (max-min) → Param2 as uint16×10
+			Param1Raw   *uint16 `json:"param1_raw"`   // override: use raw uint16 instead of CalibOffset encoding
+			Param2Raw   *uint16 `json:"param2_raw"`   // override: use raw uint16 instead of CalibSpan encoding
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.String(http.StatusBadRequest, "invalid body")
+		}
+		if body.Slot >= 8 {
+			return e.String(http.StatusBadRequest, "slot must be 0-7")
+		}
+
+		// Encode Param1/Param2 from calibration floats (int16×10 / uint16×10) unless raw override provided.
+		var param1, param2 uint16
+		if body.Param1Raw != nil {
+			param1 = *body.Param1Raw
+		} else {
+			p1 := int16(body.CalibOffset * 10)
+			param1 = uint16(p1)
+		}
+		if body.Param2Raw != nil {
+			param2 = *body.Param2Raw
+		} else {
+			p2 := body.CalibSpan * 10
+			if p2 < 0 {
+				p2 = 0
+			}
+			param2 = uint16(p2)
+		}
+
+		// AirCfgSensor (0x04) payload: [cmd, slot, type, pin_idx, field_idx, flags, p1lo, p1hi, p2lo, p2hi]
+		payload := []byte{
+			0x04,
+			body.Slot,
+			body.Type,
+			body.PinIndex,
+			body.FieldIndex,
+			body.Flags,
+			byte(param1),
+			byte(param1 >> 8),
+			byte(param2),
+			byte(param2 >> 8),
+		}
+
+		cfg := gwState.Config()
+		if cfg == nil || !cfg.Valid() {
+			return e.JSON(http.StatusServiceUnavailable, map[string]any{"error": "gateway not configured"})
+		}
+		if err := EnqueueDownlinkForDevice(app, cfg, eui, 35, payload); err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		}
+		return e.JSON(http.StatusOK, map[string]any{"ok": true, "param1": param1, "param2": param2})
 	}
 }
 

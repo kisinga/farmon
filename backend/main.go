@@ -85,6 +85,7 @@ func main() {
 		// Device config
 		se.Router.POST("/api/farmon/devices/{eui}/push-config", pushConfigHandler(app, gwState))
 		se.Router.POST("/api/farmon/devices/{eui}/push-rules", pushRulesHandler(app, gwState))
+		se.Router.POST("/api/farmon/devices/{eui}/push-sensor-slot", pushSensorSlotHandler(app, gwState))
 		se.Router.PATCH("/api/farmon/devices/{eui}/overrides", updateDeviceOverridesHandler(app))
 
 		// WiFi device ingest (transport-agnostic uplink via HTTP POST)

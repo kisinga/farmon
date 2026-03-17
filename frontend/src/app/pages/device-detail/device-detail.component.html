@@ -53,6 +53,7 @@
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'controls'" (click)="activeTab.set('controls')">Controls</a>
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'telemetry'" (click)="activeTab.set('telemetry')">Telemetry</a>
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'rules'" (click)="activeTab.set('rules')">Rules</a>
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'sensors'" (click)="activeTab.set('sensors')">Sensors</a>
   </div>
 
   @switch (activeTab()) {
@@ -205,7 +206,8 @@
             <app-device-rules-section
               [eui]="deviceContext.eui()"
               [fields]="deviceContext.fieldConfigs()"
-              [controls]="deviceContext.controls()" />
+              [controls]="deviceContext.controls()"
+              [prefillForm]="prefillRuleForm()" />
           </div>
         </div>
         <div class="card-elevated">
@@ -242,6 +244,19 @@
               </div>
             }
           </div>
+        </div>
+      </div>
+    }
+
+    @case ('sensors') {
+      <div class="card-elevated">
+        <div class="card-body-spaced">
+          <h2 class="section-title">Sensor Configuration</h2>
+          <p class="text-xs text-base-content/50 -mt-2 mb-4">Add or reconfigure sensors via over-the-air AirConfig downlink. Changes take effect after the next device uplink.</p>
+          <app-device-sensor-config
+            [eui]="deviceContext.eui()"
+            [fieldConfigs]="deviceContext.fieldConfigs()"
+            (prefillRule)="onPrefillRule($event)" />
         </div>
       </div>
     }

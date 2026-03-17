@@ -10,7 +10,7 @@ import (
 
 const (
 	Magic        = 0xFA12
-	Version      = 1
+	Version      = 2 // bumped: SensorSlot grew from 6→8 bytes (added Param2)
 	MaxPins      = 20
 	MaxSensors   = 8
 	MaxControls  = 8
@@ -32,18 +32,19 @@ const (
 	PinI2CSDA     PinFunction = 5
 	PinI2CSCL     PinFunction = 6
 	PinOneWire    PinFunction = 7  // DS18B20
-	PinUARTTX     PinFunction = 8  // RS485/Modbus
-	PinUARTRX     PinFunction = 9
+	PinUARTTX     PinFunction = 8  // RS485/Modbus TX
+	PinUARTRX     PinFunction = 9  // RS485/Modbus RX
 	PinLED        PinFunction = 10
 	PinCounter    PinFunction = 11 // generic pulse counter
-	PinMax        PinFunction = 12 // validation sentinel
+	PinRS485DE    PinFunction = 12 // RS485 direction-enable (DE/RE) for Modbus transceivers
+	PinMax        PinFunction = 13 // validation sentinel
 )
 
 func PinFunctionName(fn PinFunction) string {
 	names := [...]string{
 		"None", "Flow", "Relay", "Button", "ADC",
 		"I2C_SDA", "I2C_SCL", "1Wire", "UART_TX", "UART_RX",
-		"LED", "Counter",
+		"LED", "Counter", "RS485_DE",
 	}
 	if int(fn) < len(names) {
 		return names[fn]
@@ -57,22 +58,31 @@ type SensorType uint8
 
 const (
 	SensorNone       SensorType = 0
-	SensorFlowYFS201 SensorType = 1
-	SensorBatteryADC SensorType = 2
-	SensorDS18B20    SensorType = 3
-	SensorSoilADC    SensorType = 4
-	SensorBME280     SensorType = 5
-	SensorINA219     SensorType = 6
+	SensorFlowYFS201 SensorType = 1 // YF-S201 pulse flow; Param1=pulses/liter
+	SensorBatteryADC SensorType = 2 // LiPo battery ADC; hardcoded 3.0-4.2V curve
+	SensorDS18B20    SensorType = 3 // 1-Wire temp; PinIndex=GPIO, Param1=sensor idx on bus
+	SensorSoilADC    SensorType = 4 // Capacitive soil; Param1=dryRaw, Param2=wetRaw → output 0-100%
+	SensorBME280     SensorType = 5 // I2C BME280; PinIndex=bus idx, Param1 lo=I2C addr; 3 fields
+	SensorINA219     SensorType = 6 // I2C INA219; PinIndex=bus idx, Param1 lo=I2C addr; 3 fields
+	// Interface-level generic drivers (configurable via Param1+Param2 calibration)
+	SensorADCLinear    SensorType = 7  // Any linear 0-VREF ADC; Param1=offset×10, Param2=span×10
+	SensorADC4_20mA    SensorType = 8  // 4-20mA current loop (250Ω shunt); Param1=offset×10, Param2=span×10
+	SensorPulseGeneric SensorType = 9  // Generic pulse counter; Param1=pulses/unit
+	SensorModbusRTU    SensorType = 10 // Modbus RTU over RS485; PinIndex=UART bus idx, Param1=devAddr|funcCode, Param2=regAddr
+	SensorTypeMax      SensorType = 11 // Sentinel for registry array sizing
 )
 
 // --- Slots ---
 
+// SensorSlot occupies 8 bytes in flash (codec V2).
+// Param1 and Param2 semantics are sensor-type-specific — see SensorType constants.
 type SensorSlot struct {
 	Type       SensorType
-	PinIndex   uint8
-	FieldIndex uint8
+	PinIndex   uint8  // GPIO pin index (GPIO sensors) or bus instance index (I2C/UART sensors)
+	FieldIndex uint8  // first telemetry field index; multi-field sensors use FieldIndex+1, +2, etc.
 	Flags      uint8  // bit 0: enabled, bit 1: inverted
-	Param1     uint16 // sensor-specific (e.g. pulses_per_liter)
+	Param1     uint16 // type-specific: pulses/liter, I2C addr, calib offset×10, Modbus devAddr|funcCode
+	Param2     uint16 // type-specific: wetRaw, calib span×10, Modbus register address
 }
 
 func (s *SensorSlot) Enabled() bool  { return s.Flags&0x01 != 0 }
@@ -277,8 +287,8 @@ func ApplyPreset(p Preset) DeviceSettings {
 		s.PinMap[15] = PinI2CSCL    // PB15 -> OLED
 
 		s.SensorCount = 2
-		s.Sensors[0] = SensorSlot{SensorFlowYFS201, 3, 0, 0x01, 450}
-		s.Sensors[1] = SensorSlot{SensorBatteryADC, 8, 2, 0x01, 0}
+		s.Sensors[0] = SensorSlot{SensorFlowYFS201, 3, 0, 0x01, 450, 0}
+		s.Sensors[1] = SensorSlot{SensorBatteryADC, 8, 2, 0x01, 0, 0}
 
 		s.ControlCount = 2
 		s.Controls[0] = ControlSlot{PinIndex: 6, StateCount: 2, Flags: 0x01}
@@ -293,8 +303,9 @@ func ApplyPreset(p Preset) DeviceSettings {
 		s.PinMap[15] = PinI2CSCL    // PB15 -> OLED
 
 		s.SensorCount = 2
-		s.Sensors[0] = SensorSlot{SensorSoilADC, 3, 0, 0x01, 0}
-		s.Sensors[1] = SensorSlot{SensorBatteryADC, 8, 2, 0x01, 0}
+		// SoilADC: Param1=dryRaw(~55000), Param2=wetRaw(~18000) — calibrate per sensor
+		s.Sensors[0] = SensorSlot{SensorSoilADC, 3, 0, 0x01, 55000, 18000}
+		s.Sensors[1] = SensorSlot{SensorBatteryADC, 8, 2, 0x01, 0, 0}
 
 		s.ControlCount = 1
 		s.Controls[0] = ControlSlot{PinIndex: 6, StateCount: 2, Flags: 0x01}

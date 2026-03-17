@@ -12,13 +12,15 @@ import { DeviceCredentialsCardComponent } from '../../shared/components/device-c
 import { DeviceConfigPanelComponent } from '../../shared/components/device-config-panel/device-config-panel.component';
 import { CommandHistoryComponent } from '../../shared/components/command-history/command-history.component';
 import { DeviceFramesComponent } from '../../shared/components/device-frames/device-frames.component';
+import { DeviceSensorConfigComponent } from '../../shared/components/device-sensor-config/device-sensor-config.component';
 import { ERROR_OBJECT_KEYS } from '../../core/constants/error-fields';
 import { getVisibleFieldsByVizType } from '../../core/utils/field-view-model';
+import type { DeviceRuleRecord } from '../../core/services/api.service';
 
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent],
+  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent, DeviceSensorConfigComponent],
   templateUrl: './device-detail.component.html',
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
@@ -29,7 +31,8 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   routeError = signal<string | null>(null);
   deleting = signal(false);
   relatedWorkflows = signal<WorkflowRecord[]>([]);
-  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'rules'>('overview');
+  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'rules' | 'sensors'>('overview');
+  prefillRuleForm = signal<Partial<DeviceRuleRecord> | null>(null);
   timeRange = signal<'1h' | '24h' | '7d'>('24h');
   rangeEnd = signal<string>(new Date().toISOString());
 
@@ -51,6 +54,11 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
       this.timeRange.set(v);
       this.rangeEnd.set(new Date().toISOString());
     }
+  }
+
+  onPrefillRule(r: Partial<DeviceRuleRecord>): void {
+    this.prefillRuleForm.set(r);
+    this.activeTab.set('rules');
   }
 
   chartFields = computed(() => {
