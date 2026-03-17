@@ -21,6 +21,11 @@
           [class.badge-primary]="profile()?.profile_type === 'airconfig'"
           [class.badge-secondary]="profile()?.profile_type === 'codec'"
         >{{ profile()?.profile_type }}</span>
+        @if (profile()?.transport) {
+          <span class="badge badge-sm" [class.badge-primary]="profile()?.transport === 'lorawan'" [class.badge-secondary]="profile()?.transport === 'wifi'">{{ profile()?.transport }}</span>
+        } @else {
+          <span class="badge badge-sm badge-ghost">any</span>
+        }
       </div>
       @if (profile()?.description) {
         <p class="text-base-content/70 text-sm mt-1 ml-12">{{ profile()?.description }}</p>
@@ -363,7 +368,7 @@
                 <input type="text" class="input input-bordered input-sm w-full font-mono" [ngModel]="ecc.name" (ngModelChange)="updateCommand('name', $event)" placeholder="e.g. reset" />
               </div>
               <div class="form-control">
-                <label class="label py-1"><span class="label-text text-xs font-medium">fPort *</span></label>
+                <label class="label py-1"><span class="label-text text-xs font-medium" title="Maps to fPort for LoRaWAN, message identifier for WiFi">Message type *</span></label>
                 <input type="number" min="1" max="223" class="input input-bordered input-sm w-full" [ngModel]="ecc.fport" (ngModelChange)="updateCommand('fport', $event)" />
               </div>
               <div class="form-control">
@@ -398,7 +403,7 @@
               <thead>
                 <tr class="bg-base-200/60">
                   <th>Name</th>
-                  <th>fPort</th>
+                  <th title="Maps to fPort for LoRaWAN, message identifier for WiFi">Message type</th>
                   <th>Payload type</th>
                   <th class="w-24">Actions</th>
                 </tr>
@@ -449,7 +454,7 @@
               <h3 class="font-semibold mb-3">{{ er._isNew ? 'New decode rule' : 'Edit decode rule' }}</h3>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div class="form-control">
-                  <label class="label py-1"><span class="label-text text-xs font-medium">fPort *</span></label>
+                  <label class="label py-1"><span class="label-text text-xs font-medium" title="Maps to fPort for LoRaWAN, message identifier for WiFi">Message type *</span></label>
                   <input type="number" min="1" max="223" class="input input-bordered input-sm w-full" [ngModel]="er.fport" (ngModelChange)="updateRule('fport', $event)" />
                 </div>
                 <div class="form-control">
@@ -500,7 +505,7 @@
               <table class="table table-sm">
                 <thead>
                   <tr class="bg-base-200/60">
-                    <th>fPort</th>
+                    <th title="Maps to fPort for LoRaWAN, message identifier for WiFi">Message type</th>
                     <th>Format</th>
                     <th class="hidden sm:table-cell">Config preview</th>
                     <th class="w-24">Actions</th>
@@ -534,7 +539,7 @@
           <p class="text-sm text-base-content/60 mb-4">Test a hex payload against this profile's decode rules.</p>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs font-medium">fPort</span></label>
+              <label class="label py-1"><span class="label-text text-xs font-medium" title="Maps to fPort for LoRaWAN, message identifier for WiFi">Message type</span></label>
               <input type="number" min="1" max="223" class="input input-bordered input-sm w-full" [(ngModel)]="testFPort" />
             </div>
             <div class="form-control sm:col-span-2">

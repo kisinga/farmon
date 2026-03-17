@@ -100,9 +100,10 @@ func ingestHandler(app core.App, gwState *GatewayState) func(*core.RequestEvent)
 
 // pendingCommandResponse is the shape of a command returned to the device in the ingest response.
 type pendingCommandResponse struct {
-	CommandKey string `json:"command_key"`
-	FPort      int    `json:"fport"`
-	PayloadHex string `json:"payload_hex"`
+	CommandKey  string         `json:"command_key"`
+	FPort       int            `json:"fport"`
+	PayloadHex  string         `json:"payload_hex,omitempty"`
+	PayloadJSON map[string]any `json:"payload,omitempty"`
 }
 
 // drainPendingCommands finds all pending (non-expired) commands for a device,
@@ -122,11 +123,18 @@ func drainPendingCommands(app core.App, devEUI string) []pendingCommandResponse 
 
 	result := make([]pendingCommandResponse, 0, len(records))
 	for _, rec := range records {
-		result = append(result, pendingCommandResponse{
+		resp := pendingCommandResponse{
 			CommandKey: rec.GetString("command_key"),
 			FPort:      int(rec.GetFloat("fport")),
 			PayloadHex: rec.GetString("payload_hex"),
-		})
+		}
+		// Include JSON payload if present
+		if pj := rec.Get("payload_json"); pj != nil {
+			if m, ok := pj.(map[string]any); ok && len(m) > 0 {
+				resp.PayloadJSON = m
+			}
+		}
+		result = append(result, resp)
 		rec.Set("status", "delivered")
 		_ = app.Save(rec)
 	}
@@ -135,7 +143,9 @@ func drainPendingCommands(app core.App, devEUI string) []pendingCommandResponse 
 
 // enqueueWiFiCommand inserts a pending command for a WiFi device. The command
 // will be delivered in the response to the device's next ingest POST.
-func enqueueWiFiCommand(app core.App, devEUI string, fPort uint8, payload []byte) error {
+// If jsonPayload is non-nil, it's stored as payload_json (for structured WiFi commands).
+// If payload is non-nil, it's stored as payload_hex (for binary commands).
+func enqueueWiFiCommand(app core.App, devEUI string, fPort uint8, payload []byte, jsonPayload ...map[string]any) error {
 	coll, err := app.FindCollectionByNameOrId("pending_commands")
 	if err != nil {
 		return fmt.Errorf("pending_commands collection not found: %w", err)
@@ -144,7 +154,12 @@ func enqueueWiFiCommand(app core.App, devEUI string, fPort uint8, payload []byte
 	rec.Set("device_eui", devEUI)
 	rec.Set("command_key", fmt.Sprintf("fport_%d", fPort))
 	rec.Set("fport", fPort)
-	rec.Set("payload_hex", hex.EncodeToString(payload))
+	if len(payload) > 0 {
+		rec.Set("payload_hex", hex.EncodeToString(payload))
+	}
+	if len(jsonPayload) > 0 && jsonPayload[0] != nil {
+		rec.Set("payload_json", jsonPayload[0])
+	}
 	rec.Set("status", "pending")
 	rec.Set("expires_at", time.Now().Add(1*time.Hour).Format(time.RFC3339))
 	return app.Save(rec)

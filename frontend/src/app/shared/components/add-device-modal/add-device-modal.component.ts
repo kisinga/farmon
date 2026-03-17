@@ -1,6 +1,6 @@
 import { Component, inject, signal, output, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, ProfileSummary, ProvisionResponse, DeviceTarget, TransportType } from '../../../core/services/api.service';
+import { ApiService, ProfileSummary, ProvisionResponse, DeviceTarget, TransportType, getTransportMeta } from '../../../core/services/api.service';
 import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-credentials';
 
 @Component({
@@ -62,7 +62,7 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
             <div class="mt-4">
               <label class="form-control w-full">
                 <span class="label"><span class="label-text font-medium">Transport</span></span>
-                <select class="select select-bordered select-sm w-full" [(ngModel)]="transport" name="transport">
+                <select class="select select-bordered select-sm w-full" [ngModel]="transport()" (ngModelChange)="transport.set($event)" name="transport">
                   <option value="lorawan">LoRaWAN</option>
                   <option value="wifi">WiFi</option>
                 </select>
@@ -77,11 +77,11 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
               <div class="flex justify-center py-4">
                 <span class="loading loading-spinner loading-sm text-primary"></span>
               </div>
-            } @else if (profiles().length === 0) {
+            } @else if (compatibleProfiles().length === 0) {
               <div class="py-4 text-center text-base-content/50 text-sm">No profiles available. Create one in Profiles first.</div>
             } @else {
               <div class="mt-3 space-y-2 max-h-52 overflow-y-auto">
-                @for (p of profiles(); track p.id) {
+                @for (p of compatibleProfiles(); track p.id) {
                   <button
                     type="button"
                     class="w-full text-left rounded-xl border p-3 transition-colors"
@@ -112,23 +112,23 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
             <!-- Step 3: Device ID + Name -->
             <h3 class="font-bold text-lg">Device details</h3>
             <p class="text-sm text-base-content/70 mt-1">
-              {{ transport === 'lorawan' ? 'Enter the Device EUI from the device label.' : 'Enter a unique device identifier (e.g. MAC address).' }}
+              Enter the {{ meta().idLabel }} for your device.
               Profile: <span class="font-medium">{{ selectedProfileName() }}</span>
             </p>
 
             <form class="mt-4 space-y-4" (ngSubmit)="onSubmit()">
               <label class="form-control w-full">
-                <span class="label"><span class="label-text font-medium">{{ transport === 'lorawan' ? 'Device EUI' : 'Device ID' }}</span><span class="text-error">*</span></span>
+                <span class="label"><span class="label-text font-medium">{{ meta().idLabel }}</span><span class="text-error">*</span></span>
                 <input
                   type="text"
                   class="input input-bordered w-full font-mono input-sm"
-                  [placeholder]="transport === 'lorawan' ? 'e.g. 0102030405060708' : 'e.g. aabbccddeeff0011'"
-                  maxlength="16"
+                  [placeholder]="meta().idPlaceholder"
+                  [maxlength]="meta().idMaxLength"
                   [(ngModel)]="eui"
                   name="eui"
                   required
                 />
-                <span class="label-text-alt text-base-content/50">16 hex characters</span>
+                <span class="label-text-alt text-base-content/50">{{ meta().idMinLength === meta().idMaxLength ? meta().idMinLength + ' hex characters' : meta().idMinLength + '\u2013' + meta().idMaxLength + ' hex characters' }}</span>
               </label>
               <label class="form-control w-full">
                 <span class="label"><span class="label-text font-medium">Device name</span><span class="label-text-alt">optional</span></span>
@@ -155,6 +155,9 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
           <!-- Result: Credentials -->
           <h3 class="font-bold text-lg">Device provisioned</h3>
           <div class="mt-4 space-y-4">
+            @if (result()!.warning) {
+              <div class="alert alert-warning text-sm rounded-xl">{{ result()!.warning }}</div>
+            }
             <div class="alert alert-success text-sm rounded-xl">
               @if (result()!.profile_name) {
                 Device provisioned with profile <strong>{{ result()!.profile_name }}</strong>
@@ -162,59 +165,56 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
               } @else {
                 Device provisioned via <span class="badge badge-sm">{{ result()!.transport }}</span>.
               }
-              @if (result()!.transport === 'lorawan') {
-                Copy the App Key into your firmware.
-              } @else {
-                Copy the Device Token for your firmware's HTTP auth.
-              }
+              Copy the {{ resultMeta().credentialLabel }} into your firmware.
             </div>
             <label class="form-control w-full">
-              <span class="label"><span class="label-text font-mono text-xs">Device EUI</span></span>
+              <span class="label"><span class="label-text font-mono text-xs">{{ resultMeta().idLabel }}</span></span>
               <div class="flex gap-2">
                 <input #euiInput type="text" class="input input-bordered input-sm flex-1 font-mono text-xs" [value]="result()!.device_eui" readonly />
-                <button type="button" class="btn btn-ghost btn-sm btn-square" (click)="copy(euiInput, result()!.device_eui)" title="Copy EUI">
+                <button type="button" class="btn btn-ghost btn-sm btn-square" (click)="copy(euiInput, result()!.device_eui)" title="Copy">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                 </button>
               </div>
             </label>
 
-            @if (result()!.transport === 'lorawan' && result()!.app_key) {
+            <!-- Show whichever credential the backend returned -->
+            @if (result()!.app_key) {
               <label class="form-control w-full">
-                <span class="label"><span class="label-text font-mono text-xs">App Key</span></span>
+                <span class="label"><span class="label-text font-mono text-xs">{{ resultMeta().credentialLabel }}</span></span>
                 <div class="flex gap-2 flex-wrap">
                   <input
                     #appKeyInput
                     [type]="showKey() ? 'text' : 'password'"
                     class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
-                    [value]="result()!.app_key"
+                    [value]="result()!.app_key!"
                     readonly
                   />
                   <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
-                  <button type="button" class="btn btn-ghost btn-sm" (click)="copy(appKeyInput, result()!.app_key)">Copy hex</button>
-                  <button type="button" class="btn btn-primary btn-sm" (click)="copyCpp(result()!.app_key)">Copy as C++</button>
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="copy(appKeyInput, result()!.app_key!)">Copy hex</button>
+                  <button type="button" class="btn btn-primary btn-sm" (click)="copyCpp(result()!.app_key!)">Copy as C++</button>
                 </div>
               </label>
             }
 
-            @if (result()!.transport === 'wifi' && result()!.device_token) {
+            @if (result()!.device_token) {
               <label class="form-control w-full">
-                <span class="label"><span class="label-text font-mono text-xs">Device Token</span></span>
+                <span class="label"><span class="label-text font-mono text-xs">{{ resultMeta().credentialLabel }}</span></span>
                 <div class="flex gap-2 flex-wrap">
                   <input
                     #tokenInput
                     [type]="showKey() ? 'text' : 'password'"
                     class="input input-bordered input-sm flex-1 min-w-0 font-mono text-xs"
-                    [value]="result()!.device_token"
+                    [value]="result()!.device_token!"
                     readonly
                   />
                   <button type="button" class="btn btn-ghost btn-sm" (click)="showKey.set(!showKey())">{{ showKey() ? 'Hide' : 'Show' }}</button>
-                  <button type="button" class="btn btn-ghost btn-sm" (click)="copy(tokenInput, result()!.device_token)">Copy</button>
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="copy(tokenInput, result()!.device_token!)">Copy</button>
                 </div>
               </label>
               <div class="bg-base-200 rounded-xl p-3 text-xs font-mono">
                 <p class="text-base-content/60 mb-1">Example ingest call:</p>
                 <code>curl -X POST {{ingestUrl()}}/api/farmon/ingest \\<br/>
-                  &nbsp;&nbsp;-H "Authorization: Bearer {{result()!.device_token}}" \\<br/>
+                  &nbsp;&nbsp;-H "Authorization: Bearer {{result()!.device_token!}}" \\<br/>
                   &nbsp;&nbsp;-H "Content-Type: application/json" \\<br/>
                   &nbsp;&nbsp;-d '{{"{"}}&#34;fport&#34;:2,&#34;payload_hex&#34;:&#34;...&#34;{{"}"}}'
                 </code>
@@ -253,11 +253,23 @@ export class AddDeviceModalComponent {
   loadingProfiles = signal(false);
   selectedProfile = signal<string | null>(null);
 
-  transport: TransportType = 'lorawan';
+  transport = signal<TransportType>('lorawan');
   eui = '';
   name = '';
 
   deviceAdded = output<void>();
+
+  /** Reactive transport metadata — drives labels, validation, and badges without hardcoded transport checks. */
+  meta = computed(() => getTransportMeta(this.transport()));
+  /** Transport metadata for the provisioning result (uses the result's transport, not the current selection). */
+  resultMeta = computed(() => getTransportMeta(this.result()?.transport));
+
+  compatibleProfiles = computed(() => {
+    const t = this.transport();
+    return this.profiles().filter(p =>
+      !p.transport || p.transport === 'any' || p.transport === t
+    );
+  });
 
   selectedTargetName(): string {
     const id = this.selectedTarget();
@@ -276,7 +288,7 @@ export class AddDeviceModalComponent {
   selectTarget(t: DeviceTarget): void {
     this.selectedTarget.set(t.id);
     if (t.transport) {
-      this.transport = t.transport;
+      this.transport.set(t.transport);
       this.inferredTransport.set(t.transport);
     } else {
       this.inferredTransport.set('');
@@ -296,7 +308,7 @@ export class AddDeviceModalComponent {
     this.selectedTarget.set(null);
     this.selectedProfile.set(null);
     this.inferredTransport.set('');
-    this.transport = 'lorawan';
+    this.transport.set('lorawan');
     this.eui = '';
     this.name = '';
     this.showKey.set(false);
@@ -319,7 +331,7 @@ export class AddDeviceModalComponent {
     this.selectedTarget.set(null);
     this.selectedProfile.set(null);
     this.inferredTransport.set('');
-    this.transport = 'lorawan';
+    this.transport.set('lorawan');
     this.eui = '';
     this.name = '';
     this.loadTargets();
@@ -377,8 +389,11 @@ export class AddDeviceModalComponent {
 
   onSubmit(): void {
     const devEui = this.eui.replace(/\s/g, '').toLowerCase();
-    if (!/^[0-9a-f]{16}$/.test(devEui)) {
-      this.error.set('Device ID must be exactly 16 hex characters (0-9, a-f).');
+    const m = this.meta();
+    const idPattern = new RegExp(`^[0-9a-f]{${m.idMinLength},${m.idMaxLength}}$`);
+    const idHint = m.idMinLength === m.idMaxLength ? `${m.idMinLength} hex characters` : `${m.idMinLength}\u2013${m.idMaxLength} hex characters`;
+    if (!idPattern.test(devEui)) {
+      this.error.set(`Device ID must be ${idHint} (0-9, a-f).`);
       return;
     }
     const profileId = this.selectedProfile();
@@ -389,7 +404,7 @@ export class AddDeviceModalComponent {
     this.error.set(null);
     this.submitting.set(true);
     const targetId = this.selectedTarget() ?? undefined;
-    this.api.provisionDevice(devEui, this.name.trim() || undefined, profileId, this.transport, targetId).subscribe({
+    this.api.provisionDevice(devEui, this.name.trim() || undefined, profileId, this.transport(), targetId).subscribe({
       next: (res) => {
         this.result.set(res);
         this.submitting.set(false);

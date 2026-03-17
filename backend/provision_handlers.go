@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -47,15 +48,24 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			return e.String(http.StatusBadRequest, "invalid body")
 		}
 		devEui := normalizeEui(strings.TrimSpace(body.DeviceEui))
-		if len(devEui) != 16 {
-			return e.String(http.StatusBadRequest, "device_eui must be 16 hex characters")
+		// Transport-aware ID validation: LoRaWAN requires exactly 16 hex (EUI-64),
+		// WiFi allows 12-16 hex (MAC or padded). Zero-pad short IDs to 16 for uniformity.
+		transport := strings.TrimSpace(body.Transport)
+		minLen := 16
+		if transport == "wifi" {
+			minLen = 12
+		}
+		if len(devEui) < minLen || len(devEui) > 16 {
+			return e.String(http.StatusBadRequest, fmt.Sprintf("device_eui must be %d–16 hex characters", minLen))
+		}
+		for len(devEui) < 16 {
+			devEui = "0" + devEui // zero-pad WiFi MACs to 16 chars
 		}
 		if body.ProfileID == "" {
 			return e.String(http.StatusBadRequest, "profile_id required")
 		}
 
 		// Resolve transport from target catalog if not explicitly set
-		transport := strings.TrimSpace(body.Transport)
 		targetID := strings.TrimSpace(body.TargetID)
 		if transport == "" && targetID != "" {
 			if t := findDeviceTarget(targetID); t != nil && t.Transport != "" {
@@ -73,6 +83,13 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 		profile, err := loadProfileWithComponents(app, body.ProfileID)
 		if err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]any{"error": "profile not found: " + body.ProfileID})
+		}
+
+		// Check profile-transport compatibility (warn, don't block)
+		var warning string
+		if !isProfileCompatible(profile.Transport, transport) {
+			warning = fmt.Sprintf("profile %q is %s-only but device transport is %s", profile.Name, profile.Transport, transport)
+			log.Printf("[provision] warning: %s", warning)
 		}
 
 		// Generate credentials based on transport
@@ -160,13 +177,20 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			log.Printf("[provision] materialize error for %s: %v", devEui, err)
 		}
 
-		return e.JSON(http.StatusOK, map[string]any{
+		resp := map[string]any{
 			"device_eui":   devEui,
 			"transport":    transport,
-			"app_key":      appKeyHex,
-			"device_token": deviceToken,
 			"profile_name": profile.Name,
-		})
+		}
+		if transport == "lorawan" {
+			resp["app_key"] = appKeyHex
+		} else if transport == "wifi" {
+			resp["device_token"] = deviceToken
+		}
+		if warning != "" {
+			resp["warning"] = warning
+		}
+		return e.JSON(http.StatusOK, resp)
 	}
 }
 
@@ -174,8 +198,11 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 func deleteDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		eui := normalizeEui(strings.TrimSpace(e.Request.URL.Query().Get("eui")))
-		if eui == "" || len(eui) != 16 {
-			return e.String(http.StatusBadRequest, "eui query param required (16 hex chars)")
+		if eui == "" || len(eui) < 12 || len(eui) > 16 {
+			return e.String(http.StatusBadRequest, "eui query param required (12–16 hex chars)")
+		}
+		for len(eui) < 16 {
+			eui = "0" + eui
 		}
 		rec, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": eui})
 		if err != nil {

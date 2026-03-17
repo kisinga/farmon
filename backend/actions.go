@@ -27,12 +27,29 @@ func ExecuteSetControl(app core.App, cfg *gateway.Config, params SetControlParam
 	if params.Duration > 0 {
 		timeoutSec = uint32(params.Duration)
 	}
+	cmdKey := "ctrl:" + params.Control + "=" + params.State
+
+	// WiFi devices get structured JSON commands instead of binary fPort payloads
+	if lookupDeviceTransport(app, params.DeviceEUI) == "wifi" {
+		jsonCmd := map[string]any{
+			"command":  "set_control",
+			"control":  params.Control,
+			"state":    params.State,
+			"duration": timeoutSec,
+		}
+		if err := enqueueWiFiCommand(app, params.DeviceEUI, 20, nil, jsonCmd); err != nil {
+			insertCommand(app, params.DeviceEUI, cmdKey, params.InitiatedBy, "error", map[string]any{"control": params.Control, "state": params.State, "error": err.Error()})
+			return err
+		}
+		insertCommand(app, params.DeviceEUI, cmdKey, params.InitiatedBy, "sent", map[string]any{"control": params.Control, "state": params.State, "duration": timeoutSec})
+		return nil
+	}
+
 	payload := BuildDirectControlPayload(
 		lookupControlIndex(app, params.DeviceEUI, params.Control),
 		stateToIndex(app, params.DeviceEUI, params.Control, params.State),
 		timeoutSec,
 	)
-	cmdKey := "ctrl:" + params.Control + "=" + params.State
 	if err := EnqueueDownlinkForDevice(app, cfg, params.DeviceEUI, 20, payload); err != nil {
 		insertCommand(app, params.DeviceEUI, cmdKey, params.InitiatedBy, "error", map[string]any{"control": params.Control, "state": params.State, "error": err.Error()})
 		return err
@@ -103,6 +120,25 @@ func ExecuteSendCommand(app core.App, cfg *gateway.Config, params SendCommandPar
 	if params.Value != nil {
 		cmdPayload["value"] = *params.Value
 	}
+
+	// WiFi devices get structured JSON commands
+	if lookupDeviceTransport(app, params.DeviceEUI) == "wifi" {
+		jsonCmd := map[string]any{
+			"command": params.Command,
+			"fport":   fPort,
+		}
+		if params.Value != nil {
+			jsonCmd["value"] = *params.Value
+		}
+		if err := enqueueWiFiCommand(app, params.DeviceEUI, fPort, nil, jsonCmd); err != nil {
+			cmdPayload["error"] = err.Error()
+			insertCommand(app, params.DeviceEUI, params.Command, params.InitiatedBy, "error", cmdPayload)
+			return err
+		}
+		insertCommand(app, params.DeviceEUI, params.Command, params.InitiatedBy, "sent", cmdPayload)
+		return nil
+	}
+
 	if err := EnqueueDownlinkForDevice(app, cfg, params.DeviceEUI, fPort, payload); err != nil {
 		cmdPayload["error"] = err.Error()
 		insertCommand(app, params.DeviceEUI, params.Command, params.InitiatedBy, "error", cmdPayload)

@@ -7,6 +7,43 @@ const API = '/api/farmon';
 
 export type TransportType = 'lorawan' | 'wifi';
 
+/** Per-transport display and validation metadata. Add an entry here when adding a new transport. */
+export interface TransportMeta {
+  label: string;
+  badge: string;           // DaisyUI badge class
+  idLabel: string;         // "Device EUI" vs "Device ID"
+  idPlaceholder: string;
+  idMinLength: number;
+  idMaxLength: number;
+  credentialLabel: string; // "App Key" vs "Device Token"
+}
+
+export const TRANSPORT_META: Record<string, TransportMeta> = {
+  lorawan: {
+    label: 'LoRaWAN',
+    badge: 'badge-primary',
+    idLabel: 'Device EUI',
+    idPlaceholder: 'e.g. 0102030405060708',
+    idMinLength: 16,
+    idMaxLength: 16,
+    credentialLabel: 'App Key',
+  },
+  wifi: {
+    label: 'WiFi',
+    badge: 'badge-secondary',
+    idLabel: 'Device ID',
+    idPlaceholder: 'e.g. aabbccddeeff',
+    idMinLength: 12,
+    idMaxLength: 16,
+    credentialLabel: 'Device Token',
+  },
+};
+
+/** Get transport metadata, falling back to lorawan for unknown values. */
+export function getTransportMeta(transport?: string): TransportMeta {
+  return TRANSPORT_META[transport || 'lorawan'] ?? TRANSPORT_META['lorawan'];
+}
+
 export interface Device {
   id: string;
   device_eui: string;
@@ -106,6 +143,8 @@ export interface ProfileCommand {
   name: string;
   fport: number;
   payload_type?: string;
+  delivery?: string;
+  command_key?: string;
 }
 
 export interface DecodeRule {
@@ -137,6 +176,7 @@ export interface DeviceProfile {
   name: string;
   description?: string;
   profile_type: 'airconfig' | 'codec';
+  transport?: '' | 'lorawan' | 'wifi' | 'any';
   is_template: boolean;
   fields: ProfileField[];
   controls: ProfileControl[];
@@ -151,6 +191,7 @@ export interface ProfileSummary {
   name: string;
   description?: string;
   profile_type: string;
+  transport?: '' | 'lorawan' | 'wifi' | 'any';
   is_template: boolean;
 }
 
@@ -286,15 +327,18 @@ export class ApiService {
 
   // ─── Profiles ───────────────────────────────────────────
 
-  getProfiles(templatesOnly = true): Observable<ProfileSummary[]> {
-    return this.http.get<ProfileSummary[]>(`${API}/profiles`, { params: templatesOnly ? {} : { all: 'true' } });
+  getProfiles(templatesOnly = true, transport?: string): Observable<ProfileSummary[]> {
+    const params: Record<string,string> = {};
+    if (!templatesOnly) params['all'] = 'true';
+    if (transport) params['transport'] = transport;
+    return this.http.get<ProfileSummary[]>(`${API}/profiles`, { params });
   }
 
   getProfile(id: string): Observable<DeviceProfile> {
     return this.http.get<DeviceProfile>(`${API}/profiles/${id}`);
   }
 
-  createProfile(body: { name: string; description?: string; profile_type: string; is_template?: boolean }): Observable<{ id: string; name: string }> {
+  createProfile(body: { name: string; description?: string; profile_type: string; transport?: string; is_template?: boolean }): Observable<{ id: string; name: string }> {
     return this.http.post<{ id: string; name: string }>(`${API}/profiles`, body);
   }
 
@@ -612,9 +656,10 @@ export interface LorawanStats {
 export interface ProvisionResponse {
   device_eui: string;
   transport: TransportType;
-  app_key: string;
-  device_token: string;
+  app_key?: string;
+  device_token?: string;
   profile_name?: string;
+  warning?: string;
 }
 
 export interface CredentialsResponse {

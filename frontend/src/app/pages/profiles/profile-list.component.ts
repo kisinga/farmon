@@ -44,6 +44,7 @@ import { ApiService, ProfileSummary } from '../../core/services/api.service';
                 <tr class="bg-base-200/60">
                   <th class="font-semibold">Name</th>
                   <th class="font-semibold">Type</th>
+                  <th class="font-semibold hidden sm:table-cell">Transport</th>
                   <th class="font-semibold hidden sm:table-cell">Template</th>
                   <th class="font-semibold hidden md:table-cell">Description</th>
                   <th class="font-semibold w-28">Actions</th>
@@ -55,6 +56,13 @@ import { ApiService, ProfileSummary } from '../../core/services/api.service';
                     <td class="font-medium">{{ p.name }}</td>
                     <td>
                       <span class="badge badge-sm" [class.badge-primary]="p.profile_type === 'airconfig'" [class.badge-secondary]="p.profile_type === 'codec'">{{ p.profile_type }}</span>
+                    </td>
+                    <td class="hidden sm:table-cell">
+                      @if (p.transport) {
+                        <span class="badge badge-sm" [class.badge-primary]="p.transport === 'lorawan'" [class.badge-secondary]="p.transport === 'wifi'">{{ p.transport }}</span>
+                      } @else {
+                        <span class="badge badge-sm badge-ghost">any</span>
+                      }
                     </td>
                     <td class="hidden sm:table-cell">
                       @if (p.is_template) {
@@ -93,9 +101,18 @@ import { ApiService, ProfileSummary } from '../../core/services/api.service';
           <div class="form-control w-full mt-3">
             <label class="label"><span class="label-text font-semibold">Type *</span></label>
             <select class="select select-bordered w-full" [(ngModel)]="newType">
-              <option value="airconfig">airconfig — configurable hardware via downlinks</option>
-              <option value="codec">codec — decode-only (third-party sensors)</option>
+              <option value="airconfig">airconfig — OTA-configurable (controls, commands, config push)</option>
+              <option value="codec">codec — decode-only (telemetry fields + decode rules)</option>
             </select>
+          </div>
+          <div class="form-control w-full mt-3">
+            <label class="label"><span class="label-text font-semibold">Transport compatibility</span></label>
+            <select class="select select-bordered select-sm w-full" [(ngModel)]="newTransport" name="newTransport">
+              <option value="">Any transport</option>
+              <option value="lorawan">LoRaWAN only</option>
+              <option value="wifi">WiFi only</option>
+            </select>
+            <span class="label-text-alt text-base-content/50">Restricts which devices can use this profile</span>
           </div>
           @if (createError()) {
             <div class="alert alert-error rounded-xl mt-3">
@@ -131,6 +148,7 @@ export class ProfileListComponent implements OnInit {
   newName = '';
   newDescription = '';
   newType = 'airconfig';
+  newTransport = 'lorawan';
   creating = signal(false);
   createError = signal<string | null>(null);
 
@@ -170,6 +188,7 @@ export class ProfileListComponent implements OnInit {
     this.newName = '';
     this.newDescription = '';
     this.newType = 'airconfig';
+    this.newTransport = 'lorawan';
     this.createError.set(null);
   }
 
@@ -181,6 +200,7 @@ export class ProfileListComponent implements OnInit {
       name: this.newName.trim(),
       description: this.newDescription.trim(),
       profile_type: this.newType,
+      transport: this.newTransport,
       is_template: true,
     }).subscribe({
       next: (created) => {

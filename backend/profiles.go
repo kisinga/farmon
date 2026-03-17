@@ -41,6 +41,8 @@ type ProfileCommand struct {
 	Name        string `json:"name"`
 	FPort       int    `json:"fport"`
 	PayloadType string `json:"payload_type,omitempty"`
+	Delivery    string `json:"delivery,omitempty"`    // "", "downlink" (LoRaWAN), "http" (WiFi)
+	CommandKey  string `json:"command_key,omitempty"` // identifier for WiFi JSON commands; falls back to Name
 }
 
 // DecodeRule mirrors a decode_rules record.
@@ -76,6 +78,7 @@ type ProfileWithComponents struct {
 	Name           string                 `json:"name"`
 	Description    string                 `json:"description,omitempty"`
 	ProfileType    string                 `json:"profile_type"`
+	Transport      string                 `json:"transport,omitempty"` // "", "lorawan", "wifi", "any"
 	IsTemplate     bool                   `json:"is_template"`
 	Fields         []ProfileField         `json:"fields"`
 	Controls       []ProfileControl       `json:"controls"`
@@ -83,6 +86,15 @@ type ProfileWithComponents struct {
 	DecodeRules    []DecodeRule           `json:"decode_rules"`
 	AirConfig      *ProfileAirConfig      `json:"airconfig,omitempty"`
 	Visualizations []ProfileVisualization  `json:"visualizations"`
+}
+
+// isProfileCompatible returns true if the profile's transport is compatible with the device transport.
+// Empty or "any" profile transport is compatible with everything.
+func isProfileCompatible(profileTransport, deviceTransport string) bool {
+	if profileTransport == "" || profileTransport == "any" {
+		return true
+	}
+	return profileTransport == deviceTransport
 }
 
 // loadProfileWithComponents loads a profile and all its sub-component records.
@@ -96,6 +108,7 @@ func loadProfileWithComponents(app core.App, profileID string) (*ProfileWithComp
 		Name:        rec.GetString("name"),
 		Description: rec.GetString("description"),
 		ProfileType: rec.GetString("profile_type"),
+		Transport:   rec.GetString("transport"),
 		IsTemplate:  rec.GetBool("is_template"),
 	}
 
@@ -151,6 +164,8 @@ func loadProfileWithComponents(app core.App, profileID string) (*ProfileWithComp
 				Name:        r.GetString("name"),
 				FPort:       getRecordInt(r, "fport"),
 				PayloadType: r.GetString("payload_type"),
+				Delivery:    r.GetString("delivery"),
+				CommandKey:  r.GetString("command_key"),
 			})
 		}
 	}
@@ -418,7 +433,7 @@ func seedDefaultProfiles(app core.App) {
 }
 
 func seedFarMonWaterMonitor(app core.App) {
-	profileID := createProfile(app, "FarMon Water Monitor v1", "LoRa-E5 based water flow monitor with pump/valve control", "airconfig", true)
+	profileID := createProfile(app, "FarMon Water Monitor v1", "LoRa-E5 based water flow monitor with pump/valve control", "airconfig", true, "lorawan")
 	if profileID == "" {
 		return
 	}
@@ -510,7 +525,7 @@ func seedFarMonWaterMonitor(app core.App) {
 }
 
 func seedSenseCapS2105(app core.App) {
-	profileID := createProfile(app, "SenseCAP S2105", "Seeed SenseCAP S2105 soil moisture & temperature sensor", "codec", true)
+	profileID := createProfile(app, "SenseCAP S2105", "Seeed SenseCAP S2105 soil moisture & temperature sensor", "codec", true, "lorawan")
 	if profileID == "" {
 		return
 	}
@@ -553,7 +568,7 @@ func seedSenseCapS2105(app core.App) {
 
 // --- Seed helpers ---
 
-func createProfile(app core.App, name, description, profileType string, isTemplate bool) string {
+func createProfile(app core.App, name, description, profileType string, isTemplate bool, transport ...string) string {
 	coll, err := app.FindCollectionByNameOrId("device_profiles")
 	if err != nil {
 		log.Printf("[profiles] seed: collection not found: %v", err)
@@ -564,6 +579,9 @@ func createProfile(app core.App, name, description, profileType string, isTempla
 	rec.Set("description", description)
 	rec.Set("profile_type", profileType)
 	rec.Set("is_template", isTemplate)
+	if len(transport) > 0 && transport[0] != "" {
+		rec.Set("transport", transport[0])
+	}
 	if err := app.Save(rec); err != nil {
 		log.Printf("[profiles] seed create %s: %v", name, err)
 		return ""

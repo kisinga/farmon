@@ -1,4 +1,5 @@
-import { Component, inject, signal, OnInit, viewChild } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, Device } from '../../core/services/api.service';
 import { DatePipe } from '@angular/common';
@@ -7,13 +8,13 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
 @Component({
   selector: 'app-device-list',
   standalone: true,
-  imports: [RouterLink, DatePipe, AddDeviceModalComponent],
+  imports: [RouterLink, DatePipe, AddDeviceModalComponent, FormsModule],
   template: `
     <header class="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
         <h1 class="page-title">Devices</h1>
         <p class="page-description">
-          Manage LoRaWAN devices. Provision a device with a profile to get an App Key, or open a device to view telemetry and controls.
+          Manage IoT devices. Provision a device to get started, or open a device to view telemetry and controls.
         </p>
       </div>
       <button type="button" class="btn btn-primary gap-2 shrink-0" (click)="openAddModal()">
@@ -49,12 +50,20 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
             <button type="button" class="btn btn-primary" (click)="openAddModal()">Add your first device</button>
           </div>
         } @else {
+          <div class="flex justify-end mb-3">
+            <select class="select select-bordered select-sm" [(ngModel)]="transportFilter" name="transportFilter">
+              <option value="">All transports</option>
+              <option value="lorawan">LoRaWAN</option>
+              <option value="wifi">WiFi</option>
+            </select>
+          </div>
           <div class="overflow-x-auto rounded-xl border border-base-300">
             <table class="table table-zebra">
               <thead>
                 <tr class="bg-base-200/60">
                   <th class="font-semibold">EUI</th>
                   <th class="font-semibold">Name</th>
+                  <th class="font-semibold hidden sm:table-cell">Transport</th>
                   <th class="font-semibold hidden sm:table-cell">Type</th>
                   <th class="font-semibold hidden md:table-cell">Config</th>
                   <th class="font-semibold">Last seen</th>
@@ -62,10 +71,17 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
                 </tr>
               </thead>
               <tbody>
-                @for (d of devices(); track d.device_eui) {
+                @for (d of filteredDevices(); track d.device_eui) {
                   <tr class="hover">
                     <td class="font-mono text-sm">{{ d.device_eui }}</td>
                     <td class="font-medium">{{ d.device_name || '—' }}</td>
+                    <td class="hidden sm:table-cell">
+                      <span class="badge badge-sm"
+                        [class.badge-primary]="d.transport === 'lorawan' || !d.transport"
+                        [class.badge-secondary]="d.transport === 'wifi'">
+                        {{ d.transport || 'lorawan' }}
+                      </span>
+                    </td>
                     <td class="hidden sm:table-cell text-base-content/70">{{ d.device_type || '—' }}</td>
                     <td class="hidden md:table-cell">
                       @if (d.config_status === 'synced') {
@@ -111,6 +127,12 @@ export class DeviceListComponent implements OnInit {
   devices = signal<Device[]>([]);
   loading = signal(true);
   error = signal<string | null>(null);
+  transportFilter = signal('');
+  filteredDevices = computed(() => {
+    const f = this.transportFilter();
+    const d = this.devices();
+    return f ? d.filter(dev => (dev.transport || 'lorawan') === f) : d;
+  });
 
   ngOnInit() {
     this.loadDevices();

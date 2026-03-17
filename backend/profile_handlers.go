@@ -8,6 +8,7 @@ import (
 )
 
 // GET /api/farmon/profiles — list all profiles (templates only by default, or all).
+// Optional ?transport=lorawan|wifi — filter to profiles compatible with the given transport.
 func listProfilesHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		filter := "is_template = true"
@@ -18,13 +19,19 @@ func listProfilesHandler(app core.App) func(*core.RequestEvent) error {
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
+		transportFilter := e.Request.URL.Query().Get("transport")
 		var profiles []map[string]any
 		for _, r := range records {
+			pt := r.GetString("transport")
+			if transportFilter != "" && !isProfileCompatible(pt, transportFilter) {
+				continue
+			}
 			profiles = append(profiles, map[string]any{
 				"id":           r.Id,
 				"name":         r.GetString("name"),
 				"description":  r.GetString("description"),
 				"profile_type": r.GetString("profile_type"),
+				"transport":    pt,
 				"is_template":  r.GetBool("is_template"),
 				"created":      r.GetString("created"),
 				"updated":      r.GetString("updated"),
@@ -59,6 +66,7 @@ func createProfileHandler(app core.App) func(*core.RequestEvent) error {
 			Name        string `json:"name"`
 			Description string `json:"description"`
 			ProfileType string `json:"profile_type"`
+			Transport   string `json:"transport"`
 			IsTemplate  bool   `json:"is_template"`
 		}
 		if err := e.BindBody(&body); err != nil {
@@ -70,11 +78,11 @@ func createProfileHandler(app core.App) func(*core.RequestEvent) error {
 		if body.ProfileType != "airconfig" && body.ProfileType != "codec" {
 			return e.String(http.StatusBadRequest, "profile_type must be 'airconfig' or 'codec'")
 		}
-		id := createProfile(app, body.Name, body.Description, body.ProfileType, body.IsTemplate)
+		id := createProfile(app, body.Name, body.Description, body.ProfileType, body.IsTemplate, body.Transport)
 		if id == "" {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to create profile"})
 		}
-		return e.JSON(http.StatusCreated, map[string]any{"id": id, "name": body.Name})
+		return e.JSON(http.StatusCreated, map[string]any{"id": id, "name": body.Name, "transport": body.Transport})
 	}
 }
 
@@ -99,6 +107,9 @@ func updateProfileHandler(app core.App) func(*core.RequestEvent) error {
 		if v, ok := body["is_template"].(bool); ok {
 			rec.Set("is_template", v)
 		}
+		if v, ok := body["transport"].(string); ok {
+			rec.Set("transport", v)
+		}
 		if err := app.Save(rec); err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
@@ -122,7 +133,7 @@ func deleteProfileHandler(app core.App) func(*core.RequestEvent) error {
 }
 
 // POST /api/farmon/profiles/{id}/test-decode — test decode rules with sample payload.
-// Body: { "fport": 2, "payload_hex": "70643a34322c74763a313532332e37" }
+// Body: { "fport": 2, "payload_hex": "..." } or { "message_type": 2, "payload_hex": "..." }
 func testDecodeHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		id := e.Request.PathValue("id")
@@ -132,14 +143,20 @@ func testDecodeHandler(app core.App) func(*core.RequestEvent) error {
 		}
 
 		var body struct {
-			FPort      int    `json:"fport"`
-			PayloadHex string `json:"payload_hex"`
+			FPort       int    `json:"fport"`
+			MessageType int    `json:"message_type"`
+			PayloadHex  string `json:"payload_hex"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.String(http.StatusBadRequest, "invalid body")
 		}
 
-		rule := getDecodeRuleForFPort(profile, body.FPort)
+		// Allow message_type as alias for fport
+		fport := body.FPort
+		if fport == 0 && body.MessageType > 0 {
+			fport = body.MessageType
+		}
+		rule := getDecodeRuleForFPort(profile, fport)
 		if rule == nil {
 			return e.JSON(http.StatusBadRequest, map[string]any{"error": "no decode rule for fport " + string(rune(body.FPort+'0'))})
 		}

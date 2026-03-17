@@ -310,7 +310,7 @@ export class ProfileDetailComponent implements OnInit {
   saveCommand(): void {
     const ec = this.editingCommand();
     if (!ec || !ec.name?.trim() || !ec.fport) {
-      this.commandMsg.set({ text: 'Name and fPort are required', error: true });
+      this.commandMsg.set({ text: 'Name and message type are required', error: true });
       return;
     }
     this.savingCommand.set(true);
@@ -375,7 +375,7 @@ export class ProfileDetailComponent implements OnInit {
   saveRule(): void {
     const er = this.editingRule();
     if (!er || !er.fport || !er.format) {
-      this.ruleMsg.set({ text: 'fPort and format are required', error: true });
+      this.ruleMsg.set({ text: 'Message type and format are required', error: true });
       return;
     }
     let config: Record<string, unknown>;
@@ -412,7 +412,7 @@ export class ProfileDetailComponent implements OnInit {
   }
 
   deleteRule(r: DecodeRule): void {
-    if (!confirm(`Delete decode rule for fPort ${r.fport}?`)) return;
+    if (!confirm(`Delete decode rule for message type ${r.fport}?`)) return;
     this.api.deleteDecodeRule(r.id).subscribe({
       next: () => this.api.getDecodeRules(this.profileId()).subscribe(rs => this.decodeRules.set(rs)),
       error: (err) => this.ruleMsg.set({ text: err?.message ?? 'Failed to delete', error: true }),

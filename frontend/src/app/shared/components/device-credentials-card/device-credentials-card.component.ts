@@ -138,7 +138,7 @@ export class DeviceCredentialsCardComponent implements OnInit {
     this.error.set(null);
     this.api.provisionDevice(e).subscribe({
       next: (res) => {
-        this.creds.set({ device_eui: res.device_eui, app_key: res.app_key, device_token: res.device_token, transport: res.transport });
+        this.creds.set({ device_eui: res.device_eui, app_key: res.app_key ?? '', device_token: res.device_token ?? '', transport: res.transport });
         this.error.set(null);
         this.provisioning.set(false);
       },
