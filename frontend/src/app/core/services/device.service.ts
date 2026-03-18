@@ -9,6 +9,7 @@ import {
   DeviceField,
   DeviceTarget,
   FirmwareCommand,
+  SensorCatalog,
   HistoryResponse,
   TelemetryRecord,
   CommandRecord,
@@ -167,6 +168,10 @@ export class DeviceService {
 
   getFirmwareCommands(): Observable<FirmwareCommand[]> {
     return this.http.get<FirmwareCommand[]>(`${API}/firmware-commands`);
+  }
+
+  getSensorCatalog(): Observable<SensorCatalog> {
+    return this.http.get<SensorCatalog>(`${API}/sensor-catalog`);
   }
 
   getBackendInfo(): Observable<BackendInfo> {

@@ -1,7 +1,8 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService, ProfileSummary } from '../../core/services/api.service';
+import { DeviceManagerService } from '../../core/services/device-manager.service';
 
 @Component({
   selector: 'app-profile-list',
@@ -46,6 +47,7 @@ import { ApiService, ProfileSummary } from '../../core/services/api.service';
                   <th class="font-semibold">Type</th>
                   <th class="font-semibold hidden sm:table-cell">Transport</th>
                   <th class="font-semibold hidden sm:table-cell">Template</th>
+                  <th class="font-semibold hidden sm:table-cell">Devices</th>
                   <th class="font-semibold hidden md:table-cell">Description</th>
                   <th class="font-semibold w-28">Actions</th>
                 </tr>
@@ -68,6 +70,9 @@ import { ApiService, ProfileSummary } from '../../core/services/api.service';
                       @if (p.is_template) {
                         <span class="badge badge-ghost badge-sm">template</span>
                       }
+                    </td>
+                    <td class="hidden sm:table-cell">
+                      <span class="badge badge-ghost badge-sm">{{ deviceCountByProfile().get(p.id) ?? 0 }}</span>
                     </td>
                     <td class="hidden md:table-cell text-base-content/70 text-sm">{{ p.description || '—' }}</td>
                     <td>
@@ -138,6 +143,15 @@ import { ApiService, ProfileSummary } from '../../core/services/api.service';
 export class ProfileListComponent implements OnInit {
   private api = inject(ApiService);
   private router = inject(Router);
+  private deviceManager = inject(DeviceManagerService);
+
+  deviceCountByProfile = computed(() => {
+    const counts = new Map<string, number>();
+    for (const d of this.deviceManager.devices()) {
+      if (d.profile) counts.set(d.profile, (counts.get(d.profile) ?? 0) + 1);
+    }
+    return counts;
+  });
 
   profiles = signal<ProfileSummary[]>([]);
   loading = signal(true);

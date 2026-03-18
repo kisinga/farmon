@@ -1,13 +1,12 @@
 import { Component, computed, inject, OnInit } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { RouterLink, RouterOutlet } from '@angular/router';
 import { DeviceManagerService } from './core/services/device-manager.service';
 import { GatewayStatusService } from './core/services/gateway-status.service';
-import { GatewayStatusIndicatorComponent } from './shared/components/gateway-status-indicator/gateway-status-indicator.component';
-import { LogoComponent } from './shared/components/logo/logo.component';
+import { NavbarComponent } from './shared/components/navbar/navbar.component';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, GatewayStatusIndicatorComponent, LogoComponent],
+  imports: [RouterOutlet, RouterLink, NavbarComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
@@ -20,9 +19,5 @@ export class AppComponent implements OnInit {
   ngOnInit(): void {
     this.gateway.refresh();
     this.deviceManager.loadDevices();
-  }
-
-  closeDropdown(_e: Event): void {
-    (document.activeElement as HTMLElement)?.blur();
   }
 }

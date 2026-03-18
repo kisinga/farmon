@@ -1,197 +1,30 @@
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { ApiService, DeviceField, WorkflowAction, WorkflowLogRecord, WorkflowRecord, WorkflowTrigger } from '../../core/services/api.service';
+import { ApiService, WorkflowLogRecord, WorkflowRecord } from '../../core/services/api.service';
 import { DeviceManagerService } from '../../core/services/device-manager.service';
 
 @Component({
   selector: 'app-workflows',
   standalone: true,
-  imports: [RouterLink, DatePipe, FormsModule],
+  imports: [RouterLink, DatePipe],
   template: `
     <header class="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
         <h1 class="page-title">Workflows</h1>
         <p class="page-description">Automation pipelines that react to device events and trigger actions.</p>
       </div>
-      <button type="button" class="btn btn-primary gap-2 shrink-0" (click)="showForm = !showForm">
+      <a routerLink="/workflows/new" class="btn btn-primary gap-2 shrink-0">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
         New workflow
-      </button>
+      </a>
     </header>
 
     @if (message()) {
       <div class="alert text-sm rounded-xl mb-4" [class.alert-error]="isError()" [class.alert-success]="!isError()">
         <span>{{ message() }}</span>
-      </div>
-    }
-
-    <!-- Create workflow form (collapsible) -->
-    @if (showForm) {
-      <div class="card-elevated mb-6">
-        <div class="card-body-spaced">
-          <div class="flex items-center justify-between mb-1">
-            <h2 class="section-title mb-0">New workflow</h2>
-            <button type="button" class="btn btn-ghost btn-sm btn-square" (click)="showForm = false">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          </div>
-          <div class="space-y-5">
-            <!-- Name & description -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div class="form-control">
-                <label class="label text-xs font-medium">Name</label>
-                <input type="text" class="input input-bordered input-sm" [(ngModel)]="form.name" placeholder="e.g. High temp → pump on" />
-              </div>
-              <div class="form-control">
-                <label class="label text-xs font-medium">Description</label>
-                <input type="text" class="input input-bordered input-sm" [(ngModel)]="form.description" placeholder="Optional" />
-              </div>
-            </div>
-
-            <!-- Triggers -->
-            <div class="space-y-2">
-              <div class="flex items-center justify-between">
-                <label class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Triggers (any one fires the workflow)</label>
-                <button type="button" class="btn btn-ghost btn-xs" (click)="addTrigger()">+ Add</button>
-              </div>
-              @for (t of form.triggers; track $index; let i = $index) {
-                <div class="rounded-lg border border-base-300 bg-base-200/40 p-3">
-                  <div class="flex flex-wrap gap-2 items-end">
-                    <div class="form-control">
-                      <label class="label text-xs">Type</label>
-                      <select class="select select-bordered select-sm" [(ngModel)]="t.type">
-                        <option value="telemetry">Sensor reading</option>
-                        <option value="state_change">State change</option>
-                        <option value="checkin">Device checkin</option>
-                        <option value="schedule">Schedule (cron)</option>
-                      </select>
-                    </div>
-                    <div class="form-control">
-                      <label class="label text-xs">Device</label>
-                      <select class="select select-bordered select-sm w-44" [(ngModel)]="t.device_eui" (change)="onTriggerDeviceSelected(i)">
-                        <option value="">Any device</option>
-                        @for (dev of devices(); track dev.device_eui) {
-                          <option [value]="dev.device_eui">{{ dev.device_name || dev.device_eui.slice(0, 8) }}</option>
-                        }
-                      </select>
-                    </div>
-                    @if (t.type === 'telemetry') {
-                      <div class="form-control">
-                        <label class="label text-xs">Field</label>
-                        <select class="select select-bordered select-sm w-36" [(ngModel)]="t.field">
-                          <option value="">Any field</option>
-                          @for (field of (triggerDeviceFields().get(i) || []); track field.field_key) {
-                            <option [value]="field.field_key">{{ field.display_name || field.field_key }}</option>
-                          }
-                        </select>
-                      </div>
-                    }
-                    @if (t.type === 'state_change') {
-                      <div class="form-control">
-                        <label class="label text-xs">Control</label>
-                        <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="t.control_key" placeholder="pump" />
-                      </div>
-                    }
-                    @if (t.type === 'schedule') {
-                      <div class="form-control">
-                        <label class="label text-xs">Cron expression</label>
-                        <input type="text" class="input input-bordered input-sm w-36 font-mono" [(ngModel)]="t.cron" placeholder="0 6 * * *" />
-                        <span class="label-text-alt text-xs text-base-content/50 mt-0.5">5-field cron expression (min hour day month weekday)</span>
-                      </div>
-                    }
-                    @if (form.triggers.length > 1) {
-                      <button type="button" class="btn btn-ghost btn-xs text-error self-end" (click)="removeTrigger(i)">Remove</button>
-                    }
-                  </div>
-                </div>
-              }
-            </div>
-
-            <!-- Condition -->
-            <div class="form-control">
-              <label class="text-xs font-semibold uppercase tracking-wide text-base-content/60 mb-1">Condition (optional)</label>
-              <textarea class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="2" [(ngModel)]="form.condition_expr"
-                placeholder="e.g. temperature > 35 && hour >= 6"></textarea>
-            </div>
-
-            <!-- Actions -->
-            <div class="space-y-2">
-              <div class="flex items-center justify-between">
-                <label class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Actions (executed in order)</label>
-                <button type="button" class="btn btn-ghost btn-xs" (click)="addAction()">+ Add</button>
-              </div>
-              @for (a of form.actions; track $index; let i = $index) {
-                <div class="rounded-lg border border-base-300 bg-base-200/40 p-3">
-                  <div class="flex flex-wrap gap-2 items-end">
-                    <div class="form-control">
-                      <label class="label text-xs">Type</label>
-                      <select class="select select-bordered select-sm" [(ngModel)]="a.type">
-                        <option value="set_control">Set control</option>
-                        <option value="send_command">Send command</option>
-                      </select>
-                    </div>
-                    <div class="form-control">
-                      <label class="label text-xs">Target device</label>
-                      <select class="select select-bordered select-sm w-44" [(ngModel)]="a.target_eui" (change)="onActionDeviceSelected(i)">
-                        <option value="">Select device...</option>
-                        @for (dev of devices(); track dev.device_eui) {
-                          <option [value]="dev.device_eui">{{ dev.device_name || dev.device_eui.slice(0, 8) }}</option>
-                        }
-                      </select>
-                    </div>
-                    @if (a.type === 'set_control') {
-                      <div class="form-control">
-                        <label class="label text-xs">Control</label>
-                        <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="a.control" placeholder="pump" />
-                      </div>
-                      <div class="form-control">
-                        <label class="label text-xs">State</label>
-                        <input type="text" class="input input-bordered input-sm w-24" [(ngModel)]="a.state" placeholder="on" />
-                      </div>
-                      <div class="form-control">
-                        <label class="label text-xs">Duration (s)</label>
-                        <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="a.duration" min="0" />
-                      </div>
-                    }
-                    @if (a.type === 'send_command') {
-                      <div class="form-control">
-                        <label class="label text-xs">Command</label>
-                        <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="a.command" placeholder="interval" />
-                      </div>
-                      <div class="form-control">
-                        <label class="label text-xs">Value</label>
-                        <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="a.value" />
-                      </div>
-                    }
-                    @if (form.actions.length > 1) {
-                      <button type="button" class="btn btn-ghost btn-xs text-error self-end" (click)="removeAction(i)">Remove</button>
-                    }
-                  </div>
-                </div>
-              }
-            </div>
-
-            <!-- Settings & submit -->
-            <div class="flex flex-wrap gap-3 items-end border-t border-base-300 pt-4">
-              <div class="form-control">
-                <label class="label text-xs">Cooldown (s)</label>
-                <input type="number" class="input input-bordered input-sm w-28" [(ngModel)]="form.cooldown_seconds" min="0" />
-              </div>
-              <div class="form-control">
-                <label class="label text-xs">Priority</label>
-                <input type="number" class="input input-bordered input-sm w-28" [(ngModel)]="form.priority" />
-              </div>
-              <div class="flex-1"></div>
-              <button type="button" class="btn btn-primary" (click)="createWorkflow()" [disabled]="saving()">
-                {{ saving() ? 'Creating…' : 'Create workflow' }}
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     }
 
@@ -208,7 +41,7 @@ import { DeviceManagerService } from '../../core/services/device-manager.service
           <p class="text-base-content/60 text-sm max-w-md mb-4">
             Workflows automate actions when device events occur. Create your first one to get started.
           </p>
-          <button type="button" class="btn btn-primary" (click)="showForm = true">Create your first workflow</button>
+          <a routerLink="/workflows/new" class="btn btn-primary">Create your first workflow</a>
         </div>
       </div>
     } @else {
@@ -231,6 +64,7 @@ import { DeviceManagerService } from '../../core/services/device-manager.service
                 @if (w.priority) {
                   <span class="badge badge-xs badge-ghost">p{{ w.priority }}</span>
                 }
+                <a [routerLink]="['/workflows', w.id, 'edit']" class="btn btn-ghost btn-xs">Edit</a>
                 <button class="btn btn-ghost btn-xs" (click)="testWorkflow(w)" [disabled]="testing()">Test</button>
                 <button class="btn btn-ghost btn-xs text-error" (click)="deleteWorkflow(w)">Delete</button>
               </div>
@@ -241,9 +75,9 @@ import { DeviceManagerService } from '../../core/services/device-manager.service
               <div class="flex items-center gap-2 flex-wrap text-xs">
                 @for (t of w.triggers; track $index) {
                   <span class="badge badge-sm badge-outline badge-info gap-1">
-                    {{ t.type === 'telemetry' ? 'Sensor' : 'State change' }}
+                    {{ triggerLabel(t.type) }}
                     @if (t.filter?.device_eui) {
-                      <a [routerLink]="['/device', t.filter!.device_eui!]" class="font-mono link link-hover">{{ t.filter!.device_eui!.slice(0, 8) }}</a>
+                      <a [routerLink]="['/device', t.filter!.device_eui!]" class="font-mono link link-hover">{{ deviceName(t.filter!.device_eui!) }}</a>
                     }
                     @if (t.filter?.field) { <span>· {{ t.filter!.field }}</span> }
                     @if (t.filter?.control_key) { <span>· {{ t.filter!.control_key }}</span> }
@@ -264,7 +98,7 @@ import { DeviceManagerService } from '../../core/services/device-manager.service
                   <span class="badge badge-sm gap-1" [class.badge-primary]="a.type === 'set_control'" [class.badge-secondary]="a.type === 'send_command'">
                     {{ a.type === 'set_control' ? a.control + '=' + a.state : a.command }}
                     @if (a.target_eui) {
-                      <a [routerLink]="['/device', a.target_eui]" class="font-mono link link-hover opacity-70">{{ a.target_eui.slice(0, 8) }}</a>
+                      <a [routerLink]="['/device', a.target_eui]" class="font-mono link link-hover opacity-70">{{ deviceName(a.target_eui) }}</a>
                     }
                   </span>
                   @if ($index < w.actions.length - 1) {
@@ -327,7 +161,7 @@ import { DeviceManagerService } from '../../core/services/device-manager.service
                       <td class="text-xs">{{ l.workflow_name || l.workflow_id.slice(0, 8) }}</td>
                       <td class="font-mono text-xs">
                         @if (l.trigger_device) {
-                          <a [routerLink]="['/device', l.trigger_device]" class="link link-hover">{{ l.trigger_device.slice(0, 8) }}</a>
+                          <a [routerLink]="['/device', l.trigger_device]" class="link link-hover">{{ deviceName(l.trigger_device) }}</a>
                         }
                       </td>
                       <td>
@@ -358,110 +192,27 @@ export class WorkflowsComponent implements OnInit {
   workflows = signal<WorkflowRecord[]>([]);
   logEntries = signal<WorkflowLogRecord[]>([]);
   loading = signal(false);
-  saving = signal(false);
   testing = signal(false);
   message = signal<string | null>(null);
   isError = signal(false);
   testResult = signal<{ workflowId: string; conditionResult: boolean; wouldFire: boolean; cooldownActive: boolean; error?: string } | null>(null);
 
-  showForm = false;
-
-  // Device management
-  devices = computed(() => this.deviceManager.devices());
-
-  // Track available fields for each trigger/action based on device selection
-  triggerDeviceFields = signal<Map<number, DeviceField[]>>(new Map());
-  actionDeviceFields = signal<Map<number, DeviceField[]>>(new Map());
-
-  // Comparison operators for conditions
-  comparisonOperators = ['=', '!=', '>', '>=', '<', '<=', 'in', 'not in'];
-
-  form = {
-    name: '',
-    description: '',
-    condition_expr: '',
-    cooldown_seconds: 300,
-    priority: 100,
-    triggers: [{ type: 'telemetry' as 'telemetry' | 'state_change' | 'checkin' | 'schedule', device_eui: '', field: '', control_key: '', cron: '' }],
-    actions: [{ type: 'set_control' as 'set_control' | 'send_command', target_eui: '', control: '', state: '', duration: 0, command: '', value: null as number | null }],
-  };
-
   ngOnInit(): void {
     this.refreshList();
   }
 
-  addTrigger(): void {
-    this.form.triggers = [...this.form.triggers, { type: 'telemetry', device_eui: '', field: '', control_key: '', cron: '' }];
+  deviceName(eui: string): string {
+    const dev = this.deviceManager.getDevice(eui);
+    return dev?.device_name || eui.slice(0, 8);
   }
 
-  removeTrigger(i: number): void {
-    this.form.triggers = this.form.triggers.filter((_, idx) => idx !== i);
-    this.triggerDeviceFields.update(m => {
-      m.delete(i);
-      return m;
-    });
-  }
-
-  addAction(): void {
-    this.form.actions = [...this.form.actions, { type: 'set_control', target_eui: '', control: '', state: '', duration: 0, command: '', value: null }];
-  }
-
-  removeAction(i: number): void {
-    this.form.actions = this.form.actions.filter((_, idx) => idx !== i);
-    this.actionDeviceFields.update(m => {
-      m.delete(i);
-      return m;
-    });
-  }
-
-  /**
-   * Handle trigger device selection - load available fields
-   */
-  async onTriggerDeviceSelected(triggerIndex: number): Promise<void> {
-    const trigger = this.form.triggers[triggerIndex];
-    if (!trigger.device_eui) {
-      this.triggerDeviceFields.update(m => {
-        m.delete(triggerIndex);
-        return m;
-      });
-      trigger.field = '';
-      trigger.control_key = '';
-      return;
-    }
-
-    try {
-      const fields = await this.deviceManager.getDeviceFields(trigger.device_eui);
-      this.triggerDeviceFields.update(m => {
-        m.set(triggerIndex, fields);
-        return m;
-      });
-    } catch (err) {
-      console.error('Failed to load fields for device:', err);
-    }
-  }
-
-  /**
-   * Handle action device selection - load available controls and fields
-   */
-  async onActionDeviceSelected(actionIndex: number): Promise<void> {
-    const action = this.form.actions[actionIndex];
-    if (!action.target_eui) {
-      this.actionDeviceFields.update(m => {
-        m.delete(actionIndex);
-        return m;
-      });
-      action.control = '';
-      return;
-    }
-
-    try {
-      const fields = await this.deviceManager.getDeviceFields(action.target_eui);
-      this.actionDeviceFields.update(m => {
-        m.set(actionIndex, fields);
-        return m;
-      });
-    } catch (err) {
-      console.error('Failed to load fields for device:', err);
+  triggerLabel(type: string): string {
+    switch (type) {
+      case 'telemetry': return 'Sensor';
+      case 'state_change': return 'State change';
+      case 'checkin': return 'Checkin';
+      case 'schedule': return 'Schedule';
+      default: return type;
     }
   }
 
@@ -508,56 +259,6 @@ export class WorkflowsComponent implements OnInit {
       error: (err) => {
         this.testResult.set({ workflowId: w.id, conditionResult: false, wouldFire: false, cooldownActive: false, error: err?.error?.message ?? 'Test failed' });
         this.testing.set(false);
-      },
-    });
-  }
-
-  createWorkflow(): void {
-    this.saving.set(true);
-    this.message.set(null);
-
-    const triggers: WorkflowTrigger[] = this.form.triggers.map((t) => {
-      const filter: Record<string, string> = {};
-      if (t.device_eui) filter['device_eui'] = t.device_eui;
-      if (t.type === 'telemetry' && t.field) filter['field'] = t.field;
-      if (t.type === 'state_change' && t.control_key) filter['control_key'] = t.control_key;
-      const trigger: WorkflowTrigger = { type: t.type, filter: Object.keys(filter).length > 0 ? filter : undefined };
-      if (t.type === 'schedule' && t.cron) trigger.cron = t.cron;
-      return trigger;
-    });
-
-    const actions: WorkflowAction[] = this.form.actions.map((a) => {
-      if (a.type === 'set_control') {
-        return { type: 'set_control', target_eui: a.target_eui, control: a.control, state: a.state, duration: a.duration || undefined } as WorkflowAction;
-      }
-      return { type: 'send_command', target_eui: a.target_eui, command: a.command, value: a.value ?? undefined } as WorkflowAction;
-    });
-
-    const record: Partial<WorkflowRecord> = {
-      name: this.form.name,
-      description: this.form.description || undefined,
-      enabled: true,
-      triggers,
-      condition_expr: this.form.condition_expr,
-      actions,
-      cooldown_seconds: this.form.cooldown_seconds,
-      priority: this.form.priority,
-    };
-
-    this.api.createWorkflow(record).subscribe({
-      next: () => {
-        this.isError.set(false);
-        this.message.set('Workflow created.');
-        this.saving.set(false);
-        this.form.name = '';
-        this.form.description = '';
-        this.form.condition_expr = '';
-        this.refreshList();
-      },
-      error: (err) => {
-        this.isError.set(true);
-        this.message.set(err?.error?.message ?? err?.error?.error ?? err?.message ?? 'Failed to create');
-        this.saving.set(false);
       },
     });
   }

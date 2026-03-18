@@ -125,6 +125,14 @@ export interface CredentialsResponse {
   transport: TransportType;
 }
 
+export interface ExtraCondition {
+  field_idx: number;
+  operator: string;
+  threshold: number;
+  is_control: boolean;
+  logic: 'and' | 'or';
+}
+
 export interface DeviceRuleRecord {
   id: string;
   device_eui: string;
@@ -138,15 +146,13 @@ export interface DeviceRuleRecord {
   cooldown_seconds?: number;
   enabled?: boolean;
   synced_at?: string;
-  // compound condition
-  second_field_idx?: number;
-  second_operator?: string;
-  second_threshold?: number;
-  second_is_control?: boolean;
-  logic?: 'and' | 'or';
-  // time window
+  action_dur_x10s?: number;
+  // extra conditions (C2, C3, C4)
+  extra_conditions?: ExtraCondition[];
+  // time window (server-managed)
   time_start?: number;
   time_end?: number;
+  window_active?: boolean;
 }
 
 export interface CommandRecord {
@@ -373,6 +379,46 @@ export interface FirmwareCommand {
 
 export interface BackendInfo {
   supported_firmware_versions: string[];
+}
+
+// ─── Sensor Catalog (sourced from firmware/pkg/catalog) ─────────────────────
+
+export interface SensorInterfaceInfo {
+  id: string;
+  label: string;
+  sensor_type: number;
+  needs_calib: boolean;
+  bus_addressed: boolean;
+}
+
+export interface MeasurementInfo {
+  id: string;
+  label: string;
+  unit: string;
+  default_min: number;
+  default_max: number;
+}
+
+export interface SensorPresetInfo {
+  id: string;
+  label: string;
+  description?: string;
+  interface: string;
+  measurement: string;
+  field_count: number;
+  calib_min: number;
+  calib_max: number;
+  pulses_per_unit?: number;
+  i2c_addr?: number;
+  modbus_dev_addr?: number;
+  modbus_func_code?: number;
+}
+
+export interface SensorCatalog {
+  interfaces: SensorInterfaceInfo[];
+  measurements: MeasurementInfo[];
+  presets: SensorPresetInfo[];
+  field_counts: Record<string, number>;
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────

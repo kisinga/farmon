@@ -13,7 +13,7 @@ const (
 	MaxPins     = 20
 	MaxSensors  = 32
 	MaxControls = 16
-	MaxRules    = 32
+	MaxRules    = 16
 	MaxStates   = 4
 
 	// SensorSlotSize is the binary wire size of a SensorSlot in flash.
@@ -21,6 +21,9 @@ const (
 
 	// SettingsSize is the flash page data size for codec purposes.
 	SettingsSize = 1280
+
+	// MaxExtraConditions is the number of compact condition slots per rule (C2-C4).
+	MaxExtraConditions = 3
 )
 
 // --- Pin functions ---
@@ -142,9 +145,36 @@ const (
 	OpNEQ RuleOperator = 5
 )
 
-// RuleSize is the binary wire size of a Rule in bytes.
-const RuleSize = 16
+// RuleSize is the binary wire size of a Rule in bytes (v4: 24 bytes).
+const RuleSize = 24
 
+// ExtraCondition is a compact condition slot (C2, C3, C4).
+// Each occupies 3 bytes in the binary format.
+type ExtraCondition struct {
+	FieldIdx  uint8        // 0xFF = disabled
+	Op        RuleOperator
+	IsControl bool         // true: compare control state, false: compare sensor field
+	Threshold uint8        // 0-255 integer threshold
+}
+
+// Rule represents an edge automation rule (v4: 4 conditions, 24 bytes).
+//
+// Binary layout:
+//
+//	[0]    ID
+//	[1]    Flags: bit7=Enabled, bits6-4=Op(3), bit3=HasC2, bit2=HasC3, bit1=HasC4
+//	[2]    FieldIdx (primary)
+//	[3-6]  Threshold float32 LE (primary)
+//	[7]    ControlIdx
+//	[8]    ActionState
+//	[9-10] CooldownSec uint16 LE
+//	[11]   Priority
+//	[12]   ActionDurX10s
+//	[13]   LogicOps: bits5-4=Logic12(2), bits3-2=Logic23(2), bits1-0=Logic34(2)
+//	[14-16] C2: FieldIdx, OpFlags, Threshold
+//	[17-19] C3: FieldIdx, OpFlags, Threshold
+//	[20-22] C4: FieldIdx, OpFlags, Threshold
+//	[23]   Reserved
 type Rule struct {
 	ID          uint8
 	FieldIdx    uint8
@@ -155,16 +185,12 @@ type Rule struct {
 	CooldownSec uint16
 	Threshold   float32
 	Enabled     bool
-	// compound condition
-	HasSecond       bool
-	LogicOR         bool        // false=AND, true=OR
-	SecondFieldIdx  uint8       // 0xFF = no second condition
-	SecondOp        RuleOperator
-	SecondIsControl bool        // true: compare control state, false: compare sensor field
-	SecondThreshold uint8 // 0-255 integer threshold
 	// action duration (0=hold indefinitely, 1-255 = ×10s, max ~42min).
-	// On expiry the control reverts to state 0.
 	ActionDurX10s uint8
+	// extra conditions (C2, C3, C4)
+	HasC2, HasC3, HasC4 bool
+	Logic12, Logic23, Logic34 uint8 // 0=AND, 1=OR
+	Extra [MaxExtraConditions]ExtraCondition
 }
 
 // ActionDurationMs returns the action duration in milliseconds, or 0 for hold-indefinitely.
@@ -177,21 +203,31 @@ func (r *Rule) FromBinary(data []byte) bool {
 		return false
 	}
 	r.ID = data[0]
-	r.Enabled = data[1]&0x80 != 0
-	r.HasSecond = data[1]&0x08 != 0
-	r.LogicOR = data[1]&0x04 != 0
-	r.Op = RuleOperator((data[1] >> 4) & 0x07)
+	flags := data[1]
+	r.Enabled = flags&0x80 != 0
+	r.Op = RuleOperator((flags >> 4) & 0x07)
+	r.HasC2 = flags&0x08 != 0
+	r.HasC3 = flags&0x04 != 0
+	r.HasC4 = flags&0x02 != 0
 	r.FieldIdx = data[2]
 	r.Threshold = math.Float32frombits(binary.LittleEndian.Uint32(data[3:7]))
 	r.ControlIdx = data[7]
 	r.ActionState = data[8]
 	r.CooldownSec = binary.LittleEndian.Uint16(data[9:11])
 	r.Priority = data[11]
-	r.SecondFieldIdx = data[12]
-	r.SecondOp = RuleOperator((data[13] >> 4) & 0x07)
-	r.SecondIsControl = data[13]&0x08 != 0
-	r.SecondThreshold = data[14]
-	r.ActionDurX10s = data[15]
+	r.ActionDurX10s = data[12]
+	logicOps := data[13]
+	r.Logic12 = (logicOps >> 4) & 0x03
+	r.Logic23 = (logicOps >> 2) & 0x03
+	r.Logic34 = logicOps & 0x03
+	// C2, C3, C4 — each 3 bytes starting at offset 14
+	for i := 0; i < MaxExtraConditions; i++ {
+		off := 14 + i*3
+		r.Extra[i].FieldIdx = data[off]
+		r.Extra[i].Op = RuleOperator((data[off+1] >> 5) & 0x07)
+		r.Extra[i].IsControl = data[off+1]&0x10 != 0
+		r.Extra[i].Threshold = data[off+2]
+	}
 	return true
 }
 
@@ -204,11 +240,14 @@ func (r *Rule) ToBinary(buf []byte) int {
 	if r.Enabled {
 		buf[1] |= 0x80
 	}
-	if r.HasSecond {
+	if r.HasC2 {
 		buf[1] |= 0x08
 	}
-	if r.LogicOR {
+	if r.HasC3 {
 		buf[1] |= 0x04
+	}
+	if r.HasC4 {
+		buf[1] |= 0x02
 	}
 	buf[2] = r.FieldIdx
 	binary.LittleEndian.PutUint32(buf[3:7], math.Float32bits(r.Threshold))
@@ -216,13 +255,19 @@ func (r *Rule) ToBinary(buf []byte) int {
 	buf[8] = r.ActionState
 	binary.LittleEndian.PutUint16(buf[9:11], r.CooldownSec)
 	buf[11] = r.Priority
-	buf[12] = r.SecondFieldIdx
-	buf[13] = (uint8(r.SecondOp) & 0x07) << 4
-	if r.SecondIsControl {
-		buf[13] |= 0x08
+	buf[12] = r.ActionDurX10s
+	buf[13] = (r.Logic12&0x03)<<4 | (r.Logic23&0x03)<<2 | (r.Logic34 & 0x03)
+	// C2, C3, C4
+	for i := 0; i < MaxExtraConditions; i++ {
+		off := 14 + i*3
+		buf[off] = r.Extra[i].FieldIdx
+		buf[off+1] = (uint8(r.Extra[i].Op) & 0x07) << 5
+		if r.Extra[i].IsControl {
+			buf[off+1] |= 0x10
+		}
+		buf[off+2] = r.Extra[i].Threshold
 	}
-	buf[14] = r.SecondThreshold
-	buf[15] = r.ActionDurX10s
+	buf[23] = 0 // reserved
 	return RuleSize
 }
 
@@ -310,7 +355,8 @@ type CoreSettings struct {
 	RuleCount uint8
 	Rules     [MaxRules]Rule
 
-	TxIntervalSec uint16
+	TxIntervalSec   uint16
+	EvalIntervalSec uint16 // rule evaluation interval; 0 = same as TxIntervalSec
 
 	Transfer TransferConfig // v2+; zero value = disabled
 

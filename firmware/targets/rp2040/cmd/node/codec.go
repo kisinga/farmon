@@ -7,23 +7,24 @@ import (
 	rp2040transport "github.com/farmon/firmware/targets/rp2040/pkg/transport"
 )
 
-// Binary codec for RP2040 flash storage (v3).
+// Binary codec for RP2040 flash storage (v4).
 //
-// Flash layout (v3):
-//   [0-1]      Magic (0xFB12)
-//   [2]        Version (3)
-//   [3-4]      CRC16
-//   [5-24]     PinMap (20 bytes)
-//   [25]       SensorCount
-//   [26-281]   Sensors[32] × 8 bytes  = 256 bytes
-//   [282]      ControlCount
-//   [283-410]  Controls[16] × 8 bytes = 128 bytes
-//   [411]      RuleCount
-//   [412-923]  Rules[32] × 16 bytes   = 512 bytes
-//   [924-925]  TxIntervalSec
-//   [926-941]  TransferConfig         = 16 bytes
-//   [942-1229] WiFiSettings           = 288 bytes
-//   [1230-1233] ConfigHash            = 4 bytes
+// Flash layout (v4):
+//   [0-1]       Magic (0xFB12)
+//   [2]         Version (4)
+//   [3-4]       CRC16
+//   [5-24]      PinMap (20 bytes)
+//   [25]        SensorCount
+//   [26-281]    Sensors[32] × 8 bytes  = 256 bytes
+//   [282]       ControlCount
+//   [283-410]   Controls[16] × 8 bytes = 128 bytes
+//   [411]       RuleCount
+//   [412-795]   Rules[16] × 24 bytes   = 384 bytes
+//   [796-797]   TxIntervalSec
+//   [798-799]   EvalIntervalSec
+//   [800-815]   TransferConfig         = 16 bytes
+//   [816-1103]  WiFiSettings           = 288 bytes
+//   [1104-1107] ConfigHash             = 4 bytes
 
 type rp2040Config struct {
 	Core settings.CoreSettings
@@ -32,18 +33,19 @@ type rp2040Config struct {
 
 const (
 	rp2040Magic   = uint16(0xFB12)
-	rp2040Version = uint8(3)
+	rp2040Version = uint8(4)
 )
 
 const (
-	offPinMap     = 5
-	offSensors    = offPinMap + settings.MaxPins                                      // 25
-	offControls   = offSensors + 1 + settings.MaxSensors*settings.SensorSlotSize      // 282
-	offRules      = offControls + 1 + settings.MaxControls*settings.ControlSlotSize   // 411
-	offInterval   = offRules + 1 + settings.MaxRules*settings.RuleSize                // 924
-	offTransfer   = offInterval + 2                                                   // 926
-	offWiFi       = offTransfer + settings.TransferConfigSize                         // 942
-	offConfigHash = offWiFi + rp2040transport.WiFiSettingsSize                        // 1230
+	offPinMap       = 5
+	offSensors      = offPinMap + settings.MaxPins                                    // 25
+	offControls     = offSensors + 1 + settings.MaxSensors*settings.SensorSlotSize    // 282
+	offRules        = offControls + 1 + settings.MaxControls*settings.ControlSlotSize // 411
+	offInterval     = offRules + 1 + settings.MaxRules*settings.RuleSize              // 796
+	offEvalInterval = offInterval + 2                                                 // 798
+	offTransfer     = offEvalInterval + 2                                             // 800
+	offWiFi         = offTransfer + settings.TransferConfigSize                       // 816
+	offConfigHash   = offWiFi + rp2040transport.WiFiSettingsSize                      // 1104
 )
 
 func encodeSettings(s rp2040Config) []byte {
@@ -89,6 +91,7 @@ func encodeSettings(s rp2040Config) []byte {
 	}
 
 	binary.LittleEndian.PutUint16(buf[offInterval:], s.Core.TxIntervalSec)
+	binary.LittleEndian.PutUint16(buf[offEvalInterval:], s.Core.EvalIntervalSec)
 	writeTransfer(buf, offTransfer, &s.Core.Transfer)
 	wifiBytes := rp2040transport.EncodeWiFiSettings(s.WiFi)
 	copy(buf[offWiFi:], wifiBytes)
@@ -147,6 +150,7 @@ func decodeSettings(buf []byte) rp2040Config {
 	}
 
 	c.Core.TxIntervalSec = binary.LittleEndian.Uint16(buf[offInterval:])
+	c.Core.EvalIntervalSec = binary.LittleEndian.Uint16(buf[offEvalInterval:])
 	readTransfer(buf, offTransfer, &c.Core.Transfer)
 	c.WiFi = rp2040transport.DecodeWiFiSettings(buf[offWiFi:])
 	if len(buf) >= offConfigHash+4 {

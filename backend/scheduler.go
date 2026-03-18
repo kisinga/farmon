@@ -16,7 +16,7 @@ import (
 //
 // On startup, any overdue pending scheduled_actions are drained immediately before the
 // ticker loops begin, so actions survive process restarts.
-func RunScheduler(app core.App, engine *WorkflowEngine) {
+func RunScheduler(app core.App, engine *WorkflowEngine, gwState *GatewayState) {
 	// Drain overdue scheduled actions left from a previous run.
 	drainScheduledActions(app, engine)
 
@@ -29,6 +29,7 @@ func RunScheduler(app core.App, engine *WorkflowEngine) {
 		select {
 		case t := <-cronTicker.C:
 			engine.FireScheduled(t)
+			checkTimeWindows(app, gwState, t)
 		case <-actionTicker.C:
 			drainScheduledActions(app, engine)
 		}

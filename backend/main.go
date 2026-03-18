@@ -111,6 +111,9 @@ func main() {
 		// Firmware commands (read-only, sourced from protocol package)
 		se.Router.GET("/api/farmon/firmware-commands", listFirmwareCommandsHandler(app))
 
+		// Sensor catalog (read-only, sourced from sensors package)
+		se.Router.GET("/api/farmon/sensor-catalog", sensorCatalogHandler())
+
 		// Backend compatibility declaration
 		se.Router.GET("/api/farmon/backend-info", getBackendInfoHandler(app))
 		se.Router.PATCH("/api/farmon/backend-info", patchBackendInfoHandler(app))
@@ -119,7 +122,7 @@ func main() {
 		if err := workflowEngine.LoadWorkflows(); err != nil {
 			log.Printf("workflow: initial load error: %v", err)
 		}
-		go RunScheduler(app, workflowEngine)
+		go RunScheduler(app, workflowEngine, gwState)
 		reloadWorkflows := func(e *core.RecordEvent) error {
 			if err := e.Next(); err != nil {
 				return err

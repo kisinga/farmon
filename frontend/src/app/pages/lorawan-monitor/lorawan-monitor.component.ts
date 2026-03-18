@@ -4,7 +4,6 @@ import { ApiService, PipelineDebug, RawLorawanFrame, LorawanStats, GatewaySettin
 import { PocketBaseService } from '../../core/services/pocketbase.service';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { GatewaySettingsComponent } from '../gateway-settings/gateway-settings.component';
 
 /** Map a PocketBase lorawan_frames record to RawLorawanFrame for the table. */
 function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string; f_port?: number; kind?: string; payload_hex?: string; phy_len?: number; rssi?: number; snr?: number; gateway_id?: string; error?: string }): RawLorawanFrame {
@@ -26,13 +25,18 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
 @Component({
   selector: 'app-lorawan-monitor',
   standalone: true,
-  imports: [DatePipe, RouterLink, GatewaySettingsComponent],
+  imports: [DatePipe, RouterLink],
   template: `
-    <header class="page-header">
-      <h1 class="page-title">Connection</h1>
-      <p class="page-description">
-        LoRaWAN gateway, raw frames, and concentratord status. Frames are persisted (max 500). Use this page to verify uplinks and downlinks.
-      </p>
+    <header class="page-header flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <div>
+        <h1 class="page-title">Network Frames</h1>
+        <p class="page-description">
+          Raw LoRaWAN frames (max 500, newest first). Use this page to verify uplinks and downlinks.
+        </p>
+      </div>
+      <a routerLink="/settings" class="btn btn-ghost btn-sm gap-1">
+        Transport settings →
+      </a>
     </header>
 
     @if (pipelineError() || statsError()) {
@@ -41,7 +45,7 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
       </div>
     }
 
-    <!-- Stats: DaisyUI stats -->
+    <!-- Stats -->
     <div class="stats stats-vertical md:stats-horizontal w-full shadow-sm bg-base-100 rounded-2xl border border-base-300 mb-6">
       @if (pipeline(); as p) {
         <div class="stat place-items-center md:place-items-start">
@@ -58,7 +62,9 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
           @if (gatewaySettings()?.test_mode) {
             <div class="stat-desc text-warning text-sm">Uplinks via inject only — no gateway connection</div>
           } @else if (!p.concentratord_configured) {
-            <div class="stat-desc text-base-content/60 text-sm">{{ configStatusMessage(p.config_status) }}</div>
+            <div class="stat-desc text-base-content/60 text-sm">
+              Not configured — <a routerLink="/settings" class="link link-hover">configure transport</a>
+            </div>
           }
           @if (p.gateway_id) {
             <div class="stat-desc font-mono text-xs">{{ p.gateway_id }}</div>
@@ -88,7 +94,6 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
     <!-- Frames table -->
     <div class="card-elevated">
       <div class="card-body-spaced">
-        <h2 class="section-title">Raw frames (newest first)</h2>
         @if (framesError()) {
           <div class="alert alert-error rounded-xl">{{ framesError() }}</div>
         } @else if (frames().length === 0 && !loading()) {
@@ -127,7 +132,13 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
                         {{ f.direction }}
                       </span>
                     </td>
-                    <td class="font-mono text-xs">{{ f.dev_eui || '—' }}</td>
+                    <td class="font-mono text-xs">
+                      @if (f.dev_eui) {
+                        <a [routerLink]="['/device', f.dev_eui]" class="link link-hover">{{ f.dev_eui }}</a>
+                      } @else {
+                        —
+                      }
+                    </td>
                     <td>{{ f.f_port }}</td>
                     <td><span class="badge badge-ghost badge-sm">{{ f.kind }}</span></td>
                     <td class="font-mono text-xs max-w-[10rem] truncate" [title]="f.payload_hex">{{ f.payload_hex || '—' }}</td>
@@ -148,27 +159,6 @@ function recordToFrame(r: { time?: string; direction?: string; dev_eui?: string;
         }
       </div>
     </div>
-
-    <!-- Gateway configuration (collapsible; default open when no saved config) -->
-    <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-2xl mt-6">
-      <input type="checkbox" [checked]="configPanelOpen()" (change)="configPanelOpen.set($any($event.target).checked)" />
-      <div class="collapse-title font-semibold text-lg">
-        Gateway configuration
-      </div>
-      <div class="collapse-content">
-        @if (gatewaySettings()) {
-          <app-gateway-settings
-            [embedded]="true"
-            [initialSettings]="gatewaySettings()!"
-            (gatewaySaved)="onGatewaySaved($event)"
-          />
-        } @else {
-          <div class="flex justify-center py-6">
-            <span class="loading loading-spinner loading-md text-primary"></span>
-          </div>
-        }
-      </div>
-    </div>
   `,
 })
 export class LorawanMonitorComponent implements OnInit, OnDestroy {
@@ -182,9 +172,7 @@ export class LorawanMonitorComponent implements OnInit, OnDestroy {
   frames = signal<RawLorawanFrame[]>([]);
   framesError = signal<string | null>(null);
   loading = signal(false);
-
   gatewaySettings = signal<GatewaySettings | null>(null);
-  configPanelOpen = signal(true);
 
   private unsubscribeFrames: (() => void) | null = null;
   private unsubscribeFramesPromise: Promise<unknown> | null = null;
@@ -243,35 +231,9 @@ export class LorawanMonitorComponent implements OnInit, OnDestroy {
     });
 
     this.api.getGatewaySettings().subscribe({
-      next: (res) => {
-        this.gatewaySettings.set(res);
-        this.configPanelOpen.set(!res.saved);
-      },
-      error: () => {
-        this.gatewaySettings.set(null);
-      },
+      next: (res) => this.gatewaySettings.set(res),
+      error: () => this.gatewaySettings.set(null),
     });
-  }
-
-  /** Human-readable message for pipeline config_status when not configured. */
-  configStatusMessage(status?: string): string {
-    switch (status) {
-      case 'missing_record':
-        return 'No gateway settings saved. Save event URL, command URL, and region below to connect.';
-      case 'empty_event_url':
-        return 'Save event URL (and command URL, region) below to connect.';
-      case 'empty_command_url':
-        return 'Save command URL (and event URL, region) below to connect.';
-      case 'empty_region':
-        return 'Set region (and event URL, command URL) below to connect.';
-      default:
-        return 'Save gateway settings below (event URL, command URL, region) to connect.';
-    }
-  }
-
-  onGatewaySaved(settings: GatewaySettings): void {
-    this.gatewaySettings.set(settings);
-    this.configPanelOpen.set(false);
   }
 
   ngOnDestroy(): void {

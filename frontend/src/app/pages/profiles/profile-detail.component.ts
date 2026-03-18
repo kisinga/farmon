@@ -10,6 +10,7 @@ import {
   ProfileCommand,
   DecodeRule,
 } from '../../core/services/api.service';
+import { DeviceManagerService } from '../../core/services/device-manager.service';
 
 type Tab = 'general' | 'fields' | 'controls' | 'commands' | 'decode';
 
@@ -23,6 +24,11 @@ export class ProfileDetailComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private api = inject(ApiService);
+  private deviceManager = inject(DeviceManagerService);
+
+  linkedDevices = computed(() =>
+    this.deviceManager.devices().filter(d => d.profile === this.profileId())
+  );
 
   profileId = signal<string>('');
   profile = signal<DeviceProfile | null>(null);

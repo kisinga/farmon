@@ -6,7 +6,7 @@ import (
 	"math"
 )
 
-const ruleBinarySize = 16
+const ruleBinarySize = 24
 
 // operatorToFirmware maps operator strings to the firmware RuleOperator enum.
 var operatorToFirmware = map[string]uint8{
@@ -18,12 +18,38 @@ var operatorToFirmware = map[string]uint8{
 	"!=": 5, // OpNEQ
 }
 
-// buildRuleBinary encodes a device_rules record into the 16-byte wire format.
-func buildRuleBinary(r map[string]any) ([ruleBinarySize]byte, error) {
+// ExtraConditionMap represents a single extra condition from the DB JSON array.
+type ExtraConditionMap struct {
+	FieldIdx  int
+	Operator  string
+	Threshold uint8
+	IsControl bool
+	Logic     string // "and" or "or"
+}
+
+// buildRuleBinary encodes a device_rules record into the 24-byte v4 wire format.
+//
+// Binary layout (24 bytes):
+//
+//	[0]     ID
+//	[1]     Flags: bit7=Enabled, bits6-4=Op(3), bit3=HasC2, bit2=HasC3, bit1=HasC4
+//	[2]     FieldIdx (primary)
+//	[3-6]   Threshold float32 LE (primary)
+//	[7]     ControlIdx
+//	[8]     ActionState
+//	[9-10]  CooldownSec uint16 LE
+//	[11]    Priority
+//	[12]    ActionDurX10s
+//	[13]    LogicOps: bits5-4=Logic12, bits3-2=Logic23, bits1-0=Logic34
+//	[14-16] C2: FieldIdx, OpFlags, Threshold
+//	[17-19] C3: FieldIdx, OpFlags, Threshold
+//	[20-22] C4: FieldIdx, OpFlags, Threshold
+//	[23]    Reserved
+func buildRuleBinary(r map[string]any, extras []ExtraConditionMap, windowActive bool) ([ruleBinarySize]byte, error) {
 	var buf [ruleBinarySize]byte
 
 	ruleID := toUint8(r["rule_id"])
-	enabled := toBool(r["enabled"])
+	enabled := toBool(r["enabled"]) && windowActive
 	op, ok := operatorToFirmware[toString(r["operator"])]
 	if !ok {
 		return buf, fmt.Errorf("unknown operator: %v", r["operator"])
@@ -34,46 +60,12 @@ func buildRuleBinary(r map[string]any) ([ruleBinarySize]byte, error) {
 	actionState := toUint8(r["action_state"])
 	cooldownSec := toUint16(r["cooldown_seconds"])
 	priority := toUint8(r["priority"])
-
-	// compound condition
-	secondFieldIdx := uint8(0xFF) // disabled by default
-	var secondOp uint8
-	var secondIsControl bool
-	var secondThreshold uint8
-	var hasSecond bool
-	var logicOR bool
-	var timeStart, timeEnd uint8
-
-	if sfIdx := toInt(r["second_field_idx"]); sfIdx >= 0 {
-		hasSecond = true
-		secondFieldIdx = uint8(sfIdx)
-		sop, _ := operatorToFirmware[toString(r["second_operator"])]
-		secondOp = sop
-		secondIsControl = toBool(r["second_is_control"])
-		secondThreshold = toUint8(r["second_threshold"])
-	}
-
-	if toString(r["logic"]) == "or" {
-		logicOR = true
-	}
-
-	if ts := toInt(r["time_start"]); ts >= 0 {
-		timeStart = uint8(float64(ts) / 1.5)
-	}
-	if te := toInt(r["time_end"]); te >= 0 {
-		timeEnd = uint8(float64(te) / 1.5)
-	}
+	actionDur := toUint8(r["action_dur_x10s"])
 
 	buf[0] = ruleID
 	buf[1] = (op & 0x07) << 4
 	if enabled {
 		buf[1] |= 0x80
-	}
-	if hasSecond {
-		buf[1] |= 0x08
-	}
-	if logicOR {
-		buf[1] |= 0x04
 	}
 	buf[2] = fieldIdx
 	binary.LittleEndian.PutUint32(buf[3:7], math.Float32bits(threshold))
@@ -81,27 +73,59 @@ func buildRuleBinary(r map[string]any) ([ruleBinarySize]byte, error) {
 	buf[8] = actionState
 	binary.LittleEndian.PutUint16(buf[9:11], cooldownSec)
 	buf[11] = priority
+	buf[12] = actionDur
 
-	buf[12] = secondFieldIdx
-	buf[13] = (secondOp & 0x07) << 4
-	if secondIsControl {
-		buf[13] |= 0x08
+	// Encode extra conditions (C2, C3, C4)
+	var logicOps uint8
+	for i := 0; i < 3 && i < len(extras); i++ {
+		c := &extras[i]
+		cop, ok := operatorToFirmware[c.Operator]
+		if !ok {
+			return buf, fmt.Errorf("extra condition %d: unknown operator: %s", i+2, c.Operator)
+		}
+		// Set HasCx flag in byte 1
+		buf[1] |= 1 << uint(3-i) // bit3=HasC2, bit2=HasC3, bit1=HasC4
+		// Logic ops: 2 bits per junction
+		if c.Logic == "or" {
+			logicOps |= 1 << uint((2-i)*2) // bits5-4=Logic12, bits3-2=Logic23, bits1-0=Logic34
+		}
+		// Condition bytes
+		off := 14 + i*3
+		buf[off] = uint8(c.FieldIdx)
+		buf[off+1] = (cop & 0x07) << 5
+		if c.IsControl {
+			buf[off+1] |= 0x10
+		}
+		buf[off+2] = c.Threshold
 	}
-	buf[14] = secondThreshold
-	buf[15] = (timeStart&0x0F)<<4 | (timeEnd & 0x0F)
+	buf[13] = logicOps
 
+	// Fill unused condition slots with 0xFF sentinel
+	for i := len(extras); i < 3; i++ {
+		buf[14+i*3] = 0xFF
+	}
+
+	buf[23] = 0 // reserved
 	return buf, nil
 }
 
 // buildRuleBatchPayload encodes multiple rules into a single downlink payload (fPort 30).
-// Max 13 rules per payload (222 / 16 = 13).
-func buildRuleBatchPayload(rules []map[string]any) ([]byte, error) {
-	if len(rules) > 13 {
-		return nil, fmt.Errorf("too many rules for single payload: %d (max 13)", len(rules))
+// Max 9 rules per payload (222 / 24 = 9).
+func buildRuleBatchPayload(rules []map[string]any, extras [][]ExtraConditionMap, windowActive []bool) ([]byte, error) {
+	if len(rules) > 9 {
+		return nil, fmt.Errorf("too many rules for single payload: %d (max 9)", len(rules))
 	}
 	payload := make([]byte, 0, len(rules)*ruleBinarySize)
 	for i, r := range rules {
-		bin, err := buildRuleBinary(r)
+		var ec []ExtraConditionMap
+		if i < len(extras) {
+			ec = extras[i]
+		}
+		wa := true
+		if i < len(windowActive) {
+			wa = windowActive[i]
+		}
+		bin, err := buildRuleBinary(r, ec, wa)
 		if err != nil {
 			return nil, fmt.Errorf("rule %d: %w", i, err)
 		}

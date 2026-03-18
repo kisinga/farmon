@@ -6,11 +6,11 @@ import (
 	"github.com/farmon/firmware/pkg/settings"
 )
 
-// Binary codec for LoRa-E5 flash storage (v3).
+// Binary codec for LoRa-E5 flash storage (v4).
 //
-// Flash layout (v3):
+// Flash layout (v4):
 //   [0-1]     Magic (0xFA12)
-//   [2]       Version (3)
+//   [2]       Version (4)
 //   [3-4]     CRC16
 //   [5-24]    PinMap (20 bytes)
 //   [25]      SensorCount
@@ -18,11 +18,12 @@ import (
 //   [282]     ControlCount
 //   [283-410] Controls[16] × 8 bytes = 128 bytes
 //   [411]     RuleCount
-//   [412-923] Rules[32] × 16 bytes   = 512 bytes
-//   [924-925] TxIntervalSec
-//   [926-941] TransferConfig         = 16 bytes
-//   [942-971] LoRaWAN block          = 30 bytes
-//   [972-975] ConfigHash             = 4 bytes
+//   [412-795] Rules[16] × 24 bytes   = 384 bytes
+//   [796-797] TxIntervalSec
+//   [798-799] EvalIntervalSec
+//   [800-815] TransferConfig         = 16 bytes
+//   [816-845] LoRaWAN block          = 30 bytes
+//   [846-849] ConfigHash             = 4 bytes
 
 type nodeConfig struct {
 	Core    settings.CoreSettings
@@ -30,18 +31,19 @@ type nodeConfig struct {
 }
 
 const (
-	offPinMap     = 5
-	offSensors    = offPinMap + settings.MaxPins                                      // 25
-	offControls   = offSensors + 1 + settings.MaxSensors*settings.SensorSlotSize      // 282
-	offRules      = offControls + 1 + settings.MaxControls*settings.ControlSlotSize   // 411
-	offInterval   = offRules + 1 + settings.MaxRules*settings.RuleSize                // 924
-	offTransfer   = offInterval + 2                                                   // 926
-	offLoRaWAN    = offTransfer + settings.TransferConfigSize                         // 942
-	offConfigHash = offLoRaWAN + 30                                                   // 972
+	offPinMap       = 5
+	offSensors      = offPinMap + settings.MaxPins                                    // 25
+	offControls     = offSensors + 1 + settings.MaxSensors*settings.SensorSlotSize    // 282
+	offRules        = offControls + 1 + settings.MaxControls*settings.ControlSlotSize // 411
+	offInterval     = offRules + 1 + settings.MaxRules*settings.RuleSize              // 796
+	offEvalInterval = offInterval + 2                                                 // 798
+	offTransfer     = offEvalInterval + 2                                             // 800
+	offLoRaWAN      = offTransfer + settings.TransferConfigSize                       // 816
+	offConfigHash   = offLoRaWAN + 30                                                 // 846
 )
 
 const loraeMagic   = uint16(0xFA12)
-const loraeVersion = uint8(3)
+const loraeVersion = uint8(4)
 
 func encodeSettings(s nodeConfig) []byte {
 	buf := make([]byte, settings.SettingsSize)
@@ -86,6 +88,7 @@ func encodeSettings(s nodeConfig) []byte {
 	}
 
 	binary.LittleEndian.PutUint16(buf[offInterval:], s.Core.TxIntervalSec)
+	binary.LittleEndian.PutUint16(buf[offEvalInterval:], s.Core.EvalIntervalSec)
 	writeTransfer(buf, offTransfer, &s.Core.Transfer)
 	writeLoRaWAN(buf, offLoRaWAN, &s.LoRaWAN)
 	binary.LittleEndian.PutUint32(buf[offConfigHash:], s.Core.ConfigHash)
@@ -143,6 +146,7 @@ func decodeSettings(buf []byte) nodeConfig {
 	}
 
 	nc.Core.TxIntervalSec = binary.LittleEndian.Uint16(buf[offInterval:])
+	nc.Core.EvalIntervalSec = binary.LittleEndian.Uint16(buf[offEvalInterval:])
 	readTransfer(buf, offTransfer, &nc.Core.Transfer)
 	readLoRaWAN(buf, offLoRaWAN, &nc.LoRaWAN)
 	if len(buf) >= offConfigHash+4 {

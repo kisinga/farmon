@@ -31,7 +31,7 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   routeError = signal<string | null>(null);
   deleting = signal(false);
   relatedWorkflows = signal<WorkflowRecord[]>([]);
-  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'rules' | 'sensors' | 'activity'>('overview');
+  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'automation'>('overview');
   stateChanges = signal<StateChangeRecord[]>([]);
   workflowEvents = signal<WorkflowLogRecord[]>([]);
   prefillRuleForm = signal<Partial<DeviceRuleRecord> | null>(null);
@@ -60,7 +60,7 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
 
   onPrefillRule(r: Partial<DeviceRuleRecord>): void {
     this.prefillRuleForm.set(r);
-    this.activeTab.set('rules');
+    this.activeTab.set('automation');
   }
 
   chartFields = computed(() => {

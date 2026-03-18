@@ -10,7 +10,7 @@ import { GatewayStatusService } from '../../../core/services/gateway-status.serv
     <div class="flex items-center gap-2">
       @if (gateway.online()) {
         <a
-          routerLink="/lorawan"
+          routerLink="/network"
           class="btn btn-ghost btn-sm gap-1.5 text-success hover:bg-success/10"
           title="Gateway connected"
         >
@@ -19,7 +19,7 @@ import { GatewayStatusService } from '../../../core/services/gateway-status.serv
         </a>
       } @else {
         <a
-          routerLink="/lorawan"
+          routerLink="/network"
           class="btn btn-ghost btn-sm gap-1.5 text-warning hover:bg-warning/10"
           title="No gateway — uplinks may not be received"
         >

@@ -236,37 +236,15 @@ func pushRulesHandler(app core.App, gwState *GatewayState) func(*core.RequestEve
 			return e.JSON(http.StatusOK, map[string]any{"ok": true, "rules_pushed": 0, "message": "no enabled rules"})
 		}
 
-		var ruleMaps []map[string]any
-		for _, rec := range records {
-			ruleMaps = append(ruleMaps, map[string]any{
-				"rule_id":           rec.GetFloat("rule_id"),
-				"enabled":           rec.GetBool("enabled"),
-				"operator":          rec.GetString("operator"),
-				"field_idx":         rec.GetFloat("field_idx"),
-				"threshold":         rec.GetFloat("threshold"),
-				"control_idx":       rec.GetFloat("control_idx"),
-				"action_state":      rec.GetFloat("action_state"),
-				"cooldown_seconds":  rec.GetFloat("cooldown_seconds"),
-				"priority":          rec.GetFloat("priority"),
-				"second_field_idx":  rec.GetFloat("second_field_idx"),
-				"second_operator":   rec.GetString("second_operator"),
-				"second_threshold":  rec.GetFloat("second_threshold"),
-				"second_is_control": rec.GetBool("second_is_control"),
-				"logic":             rec.GetString("logic"),
-				"time_start":        rec.GetFloat("time_start"),
-				"time_end":          rec.GetFloat("time_end"),
-			})
-		}
+		ruleMaps, extras, windowActive := extractRuleData(records)
 
-		payload, err := buildRuleBatchPayload(ruleMaps)
+		payload, err := buildRuleBatchPayload(ruleMaps, extras, windowActive)
 		if err != nil {
-			// Return a structured 422 so the frontend can detect too_many_rules
-			// and show a specific inline warning rather than a generic error.
 			return e.JSON(http.StatusUnprocessableEntity, map[string]any{
 				"error":   "too_many_rules",
 				"count":   len(ruleMaps),
-				"max":     13,
-				"message": "LoRaWAN payload fits max 13 rules (222 bytes / 16 bytes per rule). Disable extra rules or use Server Workflows for additional logic.",
+				"max":     9,
+				"message": "LoRaWAN payload fits max 9 rules (222 bytes / 24 bytes per rule). Disable extra rules or use Server Workflows for additional logic.",
 			})
 		}
 
@@ -282,6 +260,55 @@ func pushRulesHandler(app core.App, gwState *GatewayState) func(*core.RequestEve
 
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "rules_pushed": len(records)})
 	}
+}
+
+// extractRuleData reads rule records from DB and returns the data needed for binary encoding.
+func extractRuleData(records []*core.Record) ([]map[string]any, [][]ExtraConditionMap, []bool) {
+	ruleMaps := make([]map[string]any, 0, len(records))
+	extras := make([][]ExtraConditionMap, 0, len(records))
+	windowActive := make([]bool, 0, len(records))
+
+	for _, rec := range records {
+		ruleMaps = append(ruleMaps, map[string]any{
+			"rule_id":          rec.GetFloat("rule_id"),
+			"enabled":          rec.GetBool("enabled"),
+			"operator":         rec.GetString("operator"),
+			"field_idx":        rec.GetFloat("field_idx"),
+			"threshold":        rec.GetFloat("threshold"),
+			"control_idx":      rec.GetFloat("control_idx"),
+			"action_state":     rec.GetFloat("action_state"),
+			"cooldown_seconds": rec.GetFloat("cooldown_seconds"),
+			"priority":         rec.GetFloat("priority"),
+			"action_dur_x10s":  rec.GetFloat("action_dur_x10s"),
+		})
+
+		// Parse extra_conditions JSON array
+		var ec []ExtraConditionMap
+		raw := rec.Get("extra_conditions")
+		if arr, ok := raw.([]any); ok {
+			for _, item := range arr {
+				if m, ok := item.(map[string]any); ok {
+					ec = append(ec, ExtraConditionMap{
+						FieldIdx:  toInt(m["field_idx"]),
+						Operator:  toString(m["operator"]),
+						Threshold: toUint8(m["threshold"]),
+						IsControl: toBool(m["is_control"]),
+						Logic:     toString(m["logic"]),
+					})
+				}
+			}
+		}
+		extras = append(extras, ec)
+
+		// window_active defaults to true if not set
+		wa := rec.GetBool("window_active")
+		if rec.Get("window_active") == nil {
+			wa = true
+		}
+		windowActive = append(windowActive, wa)
+	}
+
+	return ruleMaps, extras, windowActive
 }
 
 // POST /api/farmon/devices/{eui}/push-sensor-slot — configure a single sensor slot via AirConfig downlink.

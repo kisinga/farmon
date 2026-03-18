@@ -30,6 +30,16 @@
       @if (profile()?.description) {
         <p class="text-base-content/70 text-sm mt-1 ml-12">{{ profile()?.description }}</p>
       }
+      @if (linkedDevices().length > 0) {
+        <div class="flex flex-wrap gap-2 mt-2 ml-12">
+          <span class="text-xs text-base-content/60 self-center">Used by:</span>
+          @for (d of linkedDevices(); track d.device_eui) {
+            <a [routerLink]="['/device', d.device_eui]" class="badge badge-sm badge-outline gap-1 hover:badge-primary cursor-pointer">
+              {{ d.device_name || d.device_eui }}
+            </a>
+          }
+        </div>
+      }
     </div>
     <button class="btn btn-error btn-sm btn-outline" (click)="deleteProfile()">Delete profile</button>
   </header>

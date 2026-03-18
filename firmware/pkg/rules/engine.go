@@ -67,7 +67,7 @@ type SetControlFn func(controlIdx, stateIdx uint8) bool
 type Engine struct {
 	rules        []settings.Rule
 	controls     [settings.MaxControls]ControlState
-	lastFiredMs  [settings.MaxRules]uint32 // per-rule cooldown tracker
+	lastFiredMs  [settings.MaxRules]uint32  // per-rule cooldown tracker
 	changes      [20]StateChange           // ring buffer
 	head         int
 	count        int
@@ -126,19 +126,24 @@ func (e *Engine) Evaluate(values []float32, controlStates []uint8, nowMs uint32)
 			cs.IsManual = false
 		}
 
-		primaryResult := evaluateCondition(r.Op, values[r.FieldIdx], r.Threshold)
+		result := evaluateCondition(r.Op, values[r.FieldIdx], r.Threshold)
 
-		// Compound condition.
-		if r.HasSecond && r.SecondFieldIdx != 0xFF {
-			secondResult := e.evaluateSecondCondition(r, values, controlStates)
-			if r.LogicOR {
-				primaryResult = primaryResult || secondResult
+		// Extra conditions (C2, C3, C4).
+		hasFlags := [3]bool{r.HasC2, r.HasC3, r.HasC4}
+		logicOps := [3]uint8{r.Logic12, r.Logic23, r.Logic34}
+		for ci := 0; ci < settings.MaxExtraConditions; ci++ {
+			if !hasFlags[ci] {
+				continue
+			}
+			cr := evaluateExtra(&r.Extra[ci], values, controlStates)
+			if logicOps[ci] == 1 {
+				result = result || cr
 			} else {
-				primaryResult = primaryResult && secondResult
+				result = result && cr
 			}
 		}
 
-		if primaryResult {
+		if result {
 			b := &best[r.ControlIdx]
 			if !b.valid || r.Priority < b.priority {
 				b.ruleIdx = i
@@ -288,19 +293,22 @@ func (e *Engine) recordChange(ctrlIdx, newState uint8, source TriggerSource, rul
 	e.count++
 }
 
-// evaluateSecondCondition evaluates the compound (second) condition of a rule.
-func (e *Engine) evaluateSecondCondition(r *settings.Rule, values []float32, controlStates []uint8) bool {
-	threshold := float32(r.SecondThreshold)
-	if r.SecondIsControl {
-		if int(r.SecondFieldIdx) >= len(controlStates) {
-			return false
-		}
-		return evaluateCondition(r.SecondOp, float32(controlStates[r.SecondFieldIdx]), threshold)
-	}
-	if int(r.SecondFieldIdx) >= len(values) {
+// evaluateExtra evaluates a compact extra condition (C2, C3, or C4).
+func evaluateExtra(c *settings.ExtraCondition, values []float32, controlStates []uint8) bool {
+	if c.FieldIdx == 0xFF {
 		return false
 	}
-	return evaluateCondition(r.SecondOp, values[r.SecondFieldIdx], threshold)
+	threshold := float32(c.Threshold)
+	if c.IsControl {
+		if int(c.FieldIdx) >= len(controlStates) {
+			return false
+		}
+		return evaluateCondition(c.Op, float32(controlStates[c.FieldIdx]), threshold)
+	}
+	if int(c.FieldIdx) >= len(values) {
+		return false
+	}
+	return evaluateCondition(c.Op, values[c.FieldIdx], threshold)
 }
 
 func evaluateCondition(op settings.RuleOperator, value, threshold float32) bool {

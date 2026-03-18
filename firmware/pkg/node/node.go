@@ -213,12 +213,14 @@ func (n *Node) downlinkLoop() {
 			if rx.Len == 1 && data[0] == 0xFF {
 				n.cfg.Core.RuleCount = 0
 				n.eng.LoadRules(nil)
-			} else if rx.Len >= settings.RuleSize {
-				var r settings.Rule
-				if r.FromBinary(data) {
-					n.upsertRule(&r)
-					n.eng.LoadRules(n.cfg.Core.Rules[:n.cfg.Core.RuleCount])
+			} else {
+				for off := 0; off+settings.RuleSize <= int(rx.Len); off += settings.RuleSize {
+					var r settings.Rule
+					if r.FromBinary(data[off:]) {
+						n.upsertRule(&r)
+					}
 				}
+				n.eng.LoadRules(n.cfg.Core.Rules[:n.cfg.Core.RuleCount])
 			}
 			n.cfg.SaveFn()
 			n.sendAck(rx.Port)

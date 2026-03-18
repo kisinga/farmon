@@ -1,13 +1,12 @@
-import { Component, input, output, signal, computed, inject } from '@angular/core';
+import { Component, input, output, signal, computed, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService, DeviceField, DeviceRuleRecord } from '../../../core/services/api.service';
 import {
-  SENSOR_INTERFACES, MEASUREMENT_TYPES, SENSOR_PRESETS,
-  SUGGESTED_RULES, SENSOR_TYPE,
-  encodeCalibOffset, encodeCalibSpan, applyTrim,
-  sensorFieldCount,
-  type SensorPreset, type MeasurementType, type RuleSuggestion,
+  SUGGESTED_RULES,
+  applyTrim,
+  type MeasurementType, type RuleSuggestion,
 } from '../../../core/constants/sensor-config';
+import { SensorInterfaceInfo, SensorPresetInfo, MeasurementInfo } from '../../../core/services/api.types';
 
 interface CalibForm {
   mode: 'datasheet' | 'trim';
@@ -77,7 +76,7 @@ function defaultForm(): SensorForm {
         <div class="card-body py-4">
           <h3 class="card-title text-sm">Quick Start — Choose a sensor preset</h3>
           <div class="flex flex-wrap gap-2 mt-2">
-            @for (p of presets; track p.id) {
+            @for (p of presets(); track p.id) {
               <button class="btn btn-sm" [class.btn-primary]="form().presetId === p.id"
                 (click)="applyPreset(p)">{{ p.label }}</button>
             }
@@ -97,7 +96,7 @@ function defaultForm(): SensorForm {
             <select class="select select-bordered select-sm" [(ngModel)]="form().interfaceId"
               (ngModelChange)="onInterfaceChange($event)">
               <option value="">— select —</option>
-              @for (iface of interfaces; track iface.id) {
+              @for (iface of interfaces(); track iface.id) {
                 <option [value]="iface.id">{{ iface.label }}</option>
               }
             </select>
@@ -109,7 +108,7 @@ function defaultForm(): SensorForm {
             <select class="select select-bordered select-sm" [(ngModel)]="form().measurement"
               (ngModelChange)="onMeasurementChange($event)">
               <option value="">— select —</option>
-              @for (m of measurements; track m.id) {
+              @for (m of measurements(); track m.id) {
                 <option [value]="m.id">{{ m.label }} ({{ m.unit }})</option>
               }
             </select>
@@ -132,7 +131,7 @@ function defaultForm(): SensorForm {
           </div>
 
           <!-- GPIO pin (non-bus sensors) -->
-          @if (selectedInterface() && !selectedInterface()!.busAddressed) {
+          @if (selectedInterface() && !selectedInterface()!.bus_addressed) {
             <label class="form-control w-32">
               <div class="label py-1"><span class="label-text text-xs">GPIO Pin Index</span></div>
               <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().pinIndex" min="0" max="19" />
@@ -153,7 +152,7 @@ function defaultForm(): SensorForm {
           }
 
           <!-- Bus index (I2C/UART sensors) -->
-          @if (selectedInterface()?.busAddressed) {
+          @if (selectedInterface()?.bus_addressed) {
             <label class="form-control w-32">
               <div class="label py-1"><span class="label-text text-xs">Bus Index (0 or 1)</span></div>
               <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().busIndex" min="0" max="1" />
@@ -200,7 +199,7 @@ function defaultForm(): SensorForm {
           }
 
           <!-- Calibration panel (ADC-based sensors only) -->
-          @if (selectedInterface()?.needsCalib) {
+          @if (selectedInterface()?.needs_calib) {
             <div class="divider text-xs">Calibration</div>
             <div class="tabs tabs-boxed mb-2">
               <a class="tab tab-sm" [class.tab-active]="form().calib.mode === 'datasheet'"
@@ -274,16 +273,17 @@ function defaultForm(): SensorForm {
     </div>
   `,
 })
-export class DeviceSensorConfigComponent {
+export class DeviceSensorConfigComponent implements OnInit {
   eui = input.required<string>();
   fieldConfigs = input<DeviceField[]>([]);
   prefillRule = output<Partial<DeviceRuleRecord>>();
 
   private api = inject(ApiService);
 
-  readonly presets = SENSOR_PRESETS;
-  readonly interfaces = SENSOR_INTERFACES;
-  readonly measurements = MEASUREMENT_TYPES;
+  readonly presets = signal<SensorPresetInfo[]>([]);
+  readonly interfaces = signal<SensorInterfaceInfo[]>([]);
+  readonly measurements = signal<MeasurementInfo[]>([]);
+  private fieldCounts = signal<Record<string, number>>({});
 
   form = signal<SensorForm>(defaultForm());
   saving = signal(false);
@@ -295,8 +295,17 @@ export class DeviceSensorConfigComponent {
   private lastFieldIndex = signal(0);
 
   selectedInterface = computed(() =>
-    SENSOR_INTERFACES.find(i => i.id === this.form().interfaceId) ?? null
+    this.interfaces().find(i => i.id === this.form().interfaceId) ?? null
   );
+
+  ngOnInit(): void {
+    this.api.getSensorCatalog().subscribe(catalog => {
+      this.interfaces.set(catalog.interfaces);
+      this.measurements.set(catalog.measurements);
+      this.presets.set(catalog.presets);
+      this.fieldCounts.set(catalog.field_counts);
+    });
+  }
 
   calibPreview = computed(() => {
     const c = this.form().calib;
@@ -313,28 +322,26 @@ export class DeviceSensorConfigComponent {
     return f.interfaceId !== '' && f.fieldKey.trim() !== '' && f.displayName.trim() !== '';
   });
 
-  applyPreset(p: SensorPreset): void {
-    const iface = SENSOR_INTERFACES.find(i => i.id === p.interface);
-    const meas = MEASUREMENT_TYPES.find(m => m.id === p.measurement);
+  applyPreset(p: SensorPresetInfo): void {
+    const meas = this.measurements().find(m => m.id === p.measurement);
     this.form.set({
       ...defaultForm(),
       presetId: p.id,
       interfaceId: p.interface,
-      measurement: p.measurement,
+      measurement: p.measurement as MeasurementType,
       unit: meas?.unit ?? '',
       displayName: p.label,
       fieldKey: p.measurement + '_' + (this.fieldConfigs().length + 1),
-      i2cAddr: p.i2cAddr ?? 0x76,
-      pulsesPerUnit: p.pulsesPerUnit ?? 1,
+      i2cAddr: p.i2c_addr ?? 0x76,
+      pulsesPerUnit: p.pulses_per_unit ?? 1,
       calib: {
         mode: 'datasheet',
-        physMin: p.calibMin,
-        physMax: p.calibMax,
-        currentReading: p.calibMin,
-        expectedValue: p.calibMin,
+        physMin: p.calib_min,
+        physMax: p.calib_max,
+        currentReading: p.calib_min,
+        expectedValue: p.calib_min,
       },
     });
-    void iface; // used via template
   }
 
   clearPreset(): void {
@@ -346,7 +353,7 @@ export class DeviceSensorConfigComponent {
   }
 
   onMeasurementChange(id: string): void {
-    const meas = MEASUREMENT_TYPES.find(m => m.id === id);
+    const meas = this.measurements().find(m => m.id === id);
     this.form.update(f => ({ ...f, measurement: id as MeasurementType, unit: meas?.unit ?? f.unit }));
   }
 
@@ -371,10 +378,11 @@ export class DeviceSensorConfigComponent {
   /** Compute the next unused field index based on existing fieldConfigs. */
   private nextFieldIndex(): number {
     const used = new Set<number>();
-    for (const fc of this.fieldConfigs()) {
-      const idx = fc.field_idx ?? 0;
-      const iface = SENSOR_INTERFACES.find(i => i.sensorType === parseInt(fc.field_key?.split('_')[0] ?? '', 10));
-      const count = sensorFieldCount(iface?.sensorType ?? 0);
+    const fc = this.fieldCounts();
+    for (const cfg of this.fieldConfigs()) {
+      const idx = cfg.field_idx ?? 0;
+      const iface = this.interfaces().find(i => i.sensor_type === parseInt(cfg.field_key?.split('_')[0] ?? '', 10));
+      const count = fc[String(iface?.sensor_type ?? 0)] ?? 1;
       for (let i = 0; i < count; i++) used.add(idx + i);
     }
     let next = 0;
@@ -390,7 +398,7 @@ export class DeviceSensorConfigComponent {
   save(): void {
     if (!this.canSave() || this.saving()) return;
     const f = this.form();
-    const iface = SENSOR_INTERFACES.find(i => i.id === f.interfaceId)!;
+    const iface = this.interfaces().find(i => i.id === f.interfaceId)!;
     const fieldIndex = this.nextFieldIndex();
     const slot = this.nextSlot();
     this.lastFieldIndex.set(fieldIndex);
@@ -402,7 +410,7 @@ export class DeviceSensorConfigComponent {
     let calibSpan: number | undefined;
     let flags = 0x01; // enabled
 
-    if (iface.needsCalib) {
+    if (iface.needs_calib) {
       if (f.calib.mode === 'datasheet') {
         calibOffset = f.calib.physMin;
         calibSpan = f.calib.physMax - f.calib.physMin;
@@ -425,14 +433,14 @@ export class DeviceSensorConfigComponent {
       param1Raw = f.digitalPullMode;
     }
 
-    const pinOrBus = iface.busAddressed ? f.busIndex : f.pinIndex;
+    const pinOrBus = iface.bus_addressed ? f.busIndex : f.pinIndex;
 
     this.saving.set(true);
     this.statusMsg.set('');
 
     this.api.pushSensorSlot(this.eui(), {
       slot,
-      type: iface.sensorType,
+      type: iface.sensor_type,
       pin_index: pinOrBus,
       field_index: fieldIndex,
       flags,

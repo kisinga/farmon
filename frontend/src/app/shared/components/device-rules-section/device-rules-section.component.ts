@@ -1,9 +1,19 @@
 import { Component, input, signal, computed, effect, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, DeviceControl, DeviceField, DeviceRuleRecord } from '../../../core/services/api.service';
+import { ApiService, DeviceControl, DeviceField, DeviceRuleRecord, ExtraCondition } from '../../../core/services/api.service';
 
 const OPS = ['<', '>', '<=', '>=', '==', '!='] as const;
 type Op = typeof OPS[number];
+
+interface ConditionForm {
+  type: 'sensor' | 'control_state';
+  field_idx: number;
+  operator: Op;
+  threshold: number;
+  control_idx: number;
+  control_state: number;
+  logic: 'and' | 'or';
+}
 
 interface RuleForm {
   field_idx: number;
@@ -14,19 +24,17 @@ interface RuleForm {
   priority: number;
   cooldown_seconds: number;
   enabled: boolean;
-  // compound
-  has_second: boolean;
-  logic: 'and' | 'or';
-  second_type: 'sensor' | 'control_state';
-  second_field_idx: number;
-  second_operator: Op;
-  second_threshold: number;
-  second_control_idx: number;
-  second_action_state: number;
-  // time window
+  extra_conditions: ConditionForm[];
   has_time: boolean;
   time_start: number;
   time_end: number;
+}
+
+function defaultCondition(): ConditionForm {
+  return {
+    type: 'sensor', field_idx: 0, operator: '<', threshold: 0,
+    control_idx: 0, control_state: 0, logic: 'and',
+  };
 }
 
 function defaultForm(): RuleForm {
@@ -34,9 +42,7 @@ function defaultForm(): RuleForm {
     field_idx: 0, operator: '<', threshold: 0,
     control_idx: 0, action_state: 0,
     priority: 128, cooldown_seconds: 300, enabled: true,
-    has_second: false, logic: 'and', second_type: 'sensor',
-    second_field_idx: 0, second_operator: '<', second_threshold: 0,
-    second_control_idx: 0, second_action_state: 0,
+    extra_conditions: [],
     has_time: false, time_start: 6, time_end: 18,
   };
 }
@@ -86,16 +92,16 @@ function defaultForm(): RuleForm {
               <span class="font-medium">{{ fieldName(r.field_idx) }}</span>
               <span class="mx-1 font-mono text-primary">{{ r.operator }}</span>
               <span class="font-medium">{{ r.threshold }}</span>
-              @if (r.second_field_idx !== undefined && r.second_field_idx >= 0 && (r.second_operator || r.second_is_control)) {
-                <span class="mx-1 text-base-content/50 uppercase text-xs font-semibold">{{ r.logic ?? 'and' }}</span>
-                @if (r.second_is_control) {
-                  <span class="font-medium">{{ controlName(r.second_field_idx) }}</span>
+              @for (ec of r.extra_conditions ?? []; track $index) {
+                <span class="mx-1 text-base-content/50 uppercase text-xs font-semibold">{{ ec.logic }}</span>
+                @if (ec.is_control) {
+                  <span class="font-medium">{{ controlName(ec.field_idx) }}</span>
                   <span class="mx-1 font-mono text-primary">=</span>
-                  <span class="font-medium">{{ stateName(r.second_field_idx, r.second_threshold ?? 0) }}</span>
+                  <span class="font-medium">{{ stateName(ec.field_idx, ec.threshold) }}</span>
                 } @else {
-                  <span class="font-medium">{{ fieldName(r.second_field_idx) }}</span>
-                  <span class="mx-1 font-mono text-primary">{{ r.second_operator }}</span>
-                  <span class="font-medium">{{ r.second_threshold }}</span>
+                  <span class="font-medium">{{ fieldName(ec.field_idx) }}</span>
+                  <span class="mx-1 font-mono text-primary">{{ ec.operator }}</span>
+                  <span class="font-medium">{{ ec.threshold }}</span>
                 }
               }
             </div>
@@ -105,8 +111,15 @@ function defaultForm(): RuleForm {
               → <span class="font-medium">{{ stateName(r.control_idx, r.action_state) }}</span>
             </div>
             @if ((r.time_start ?? -1) >= 0 && (r.time_end ?? -1) >= 0) {
-              <div class="text-xs text-base-content/50">
-                Active {{ padHour(r.time_start!) }}:00 – {{ padHour(r.time_end!) }}:00
+              <div class="flex items-center gap-1.5 text-xs text-base-content/50">
+                <span class="inline-block w-2 h-2 rounded-full"
+                  [class]="'inline-block w-2 h-2 rounded-full ' + (r.window_active !== false ? 'bg-success' : 'bg-base-300')"></span>
+                Schedule: {{ padHour(r.time_start!) }}:00–{{ padHour(r.time_end!) }}:00
+                @if (r.window_active !== false) {
+                  <span class="text-success">(active now)</span>
+                } @else {
+                  <span>(inactive)</span>
+                }
               </div>
             }
             @if ((r.cooldown_seconds ?? 0) > 0) {
@@ -160,83 +173,85 @@ function defaultForm(): RuleForm {
               </div>
             </div>
 
-            <!-- 2. Second condition (optional) -->
-            <div class="space-y-2">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" class="checkbox checkbox-sm" [(ngModel)]="form.has_second" />
-                <span class="text-xs font-semibold text-base-content/60 uppercase">Add second condition</span>
-              </label>
-              @if (form.has_second) {
-                <div class="pl-4 border-l-2 border-base-300 space-y-3">
+            <!-- 2. Extra conditions (C2, C3, C4) -->
+            @for (ec of form.extra_conditions; track $index) {
+              <div class="space-y-2 pl-4 border-l-2 border-base-300">
+                <div class="flex items-center justify-between">
                   <div class="flex gap-4 items-center">
                     <span class="text-xs text-base-content/50">Logic</span>
                     <label class="flex items-center gap-1 cursor-pointer">
-                      <input type="radio" class="radio radio-xs" name="logic" value="and" [(ngModel)]="form.logic" />
+                      <input type="radio" class="radio radio-xs" [name]="'logic_' + $index" value="and" [(ngModel)]="ec.logic" />
                       <span class="text-sm">AND</span>
                     </label>
                     <label class="flex items-center gap-1 cursor-pointer">
-                      <input type="radio" class="radio radio-xs" name="logic" value="or" [(ngModel)]="form.logic" />
+                      <input type="radio" class="radio radio-xs" [name]="'logic_' + $index" value="or" [(ngModel)]="ec.logic" />
                       <span class="text-sm">OR</span>
                     </label>
                   </div>
-                  <div class="flex gap-4 items-center">
-                    <span class="text-xs text-base-content/50">Type</span>
-                    <label class="flex items-center gap-1 cursor-pointer">
-                      <input type="radio" class="radio radio-xs" name="second_type" value="sensor" [(ngModel)]="form.second_type" />
-                      <span class="text-sm">Sensor field</span>
-                    </label>
-                    <label class="flex items-center gap-1 cursor-pointer">
-                      <input type="radio" class="radio radio-xs" name="second_type" value="control_state" [(ngModel)]="form.second_type" />
-                      <span class="text-sm">Control state</span>
-                    </label>
-                  </div>
-                  @if (form.second_type === 'sensor') {
-                    <div class="flex flex-wrap gap-2 items-end">
-                      <div class="form-control">
-                        <label class="label text-xs py-0.5">Field</label>
-                        <select class="select select-bordered select-sm" [(ngModel)]="form.second_field_idx">
-                          @for (f of fieldOptions(); track f.value) {
-                            <option [value]="f.value">{{ f.label }}</option>
-                          }
-                        </select>
-                      </div>
-                      <div class="form-control">
-                        <label class="label text-xs py-0.5">Operator</label>
-                        <select class="select select-bordered select-sm w-20" [(ngModel)]="form.second_operator">
-                          @for (op of ops; track op) { <option [value]="op">{{ op }}</option> }
-                        </select>
-                      </div>
-                      <div class="form-control">
-                        <label class="label text-xs py-0.5">Threshold <span class="text-base-content/40">(0–255)</span></label>
-                        <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="form.second_threshold" min="0" max="255" step="1" />
-                      </div>
-                    </div>
-                    <p class="text-xs text-base-content/40">Second condition threshold is integer-only (0–255). For fractional values use a backend workflow instead.</p>
-                  } @else {
-                    <div class="flex flex-wrap gap-2 items-end">
-                      <div class="form-control">
-                        <label class="label text-xs py-0.5">Control</label>
-                        <select class="select select-bordered select-sm" [(ngModel)]="form.second_control_idx"
-                          (ngModelChange)="form.second_action_state = 0">
-                          @for (c of controlOptions(); track c.value) {
-                            <option [value]="c.value">{{ c.label }}</option>
-                          }
-                        </select>
-                      </div>
-                      <span class="self-end mb-2 text-sm text-base-content/50">equals</span>
-                      <div class="form-control">
-                        <label class="label text-xs py-0.5">State</label>
-                        <select class="select select-bordered select-sm" [(ngModel)]="form.second_action_state">
-                          @for (s of stateOptionsFor(form.second_control_idx); track s.value) {
-                            <option [value]="s.value">{{ s.label }}</option>
-                          }
-                        </select>
-                      </div>
-                    </div>
-                  }
+                  <button class="btn btn-xs btn-ghost text-error" (click)="removeCondition($index)">×</button>
                 </div>
-              }
-            </div>
+                <div class="flex gap-4 items-center">
+                  <span class="text-xs text-base-content/50">Type</span>
+                  <label class="flex items-center gap-1 cursor-pointer">
+                    <input type="radio" class="radio radio-xs" [name]="'ctype_' + $index" value="sensor" [(ngModel)]="ec.type" />
+                    <span class="text-sm">Sensor field</span>
+                  </label>
+                  <label class="flex items-center gap-1 cursor-pointer">
+                    <input type="radio" class="radio radio-xs" [name]="'ctype_' + $index" value="control_state" [(ngModel)]="ec.type" />
+                    <span class="text-sm">Control state</span>
+                  </label>
+                </div>
+                @if (ec.type === 'sensor') {
+                  <div class="flex flex-wrap gap-2 items-end">
+                    <div class="form-control">
+                      <label class="label text-xs py-0.5">Field</label>
+                      <select class="select select-bordered select-sm" [(ngModel)]="ec.field_idx">
+                        @for (f of fieldOptions(); track f.value) {
+                          <option [value]="f.value">{{ f.label }}</option>
+                        }
+                      </select>
+                    </div>
+                    <div class="form-control">
+                      <label class="label text-xs py-0.5">Operator</label>
+                      <select class="select select-bordered select-sm w-20" [(ngModel)]="ec.operator">
+                        @for (op of ops; track op) { <option [value]="op">{{ op }}</option> }
+                      </select>
+                    </div>
+                    <div class="form-control">
+                      <label class="label text-xs py-0.5">Threshold <span class="text-base-content/40">(0–255)</span></label>
+                      <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="ec.threshold" min="0" max="255" step="1" />
+                    </div>
+                  </div>
+                } @else {
+                  <div class="flex flex-wrap gap-2 items-end">
+                    <div class="form-control">
+                      <label class="label text-xs py-0.5">Control</label>
+                      <select class="select select-bordered select-sm" [(ngModel)]="ec.control_idx"
+                        (ngModelChange)="ec.control_state = 0">
+                        @for (c of controlOptions(); track c.value) {
+                          <option [value]="c.value">{{ c.label }}</option>
+                        }
+                      </select>
+                    </div>
+                    <span class="self-end mb-2 text-sm text-base-content/50">equals</span>
+                    <div class="form-control">
+                      <label class="label text-xs py-0.5">State</label>
+                      <select class="select select-bordered select-sm" [(ngModel)]="ec.control_state">
+                        @for (s of stateOptionsFor(ec.control_idx); track s.value) {
+                          <option [value]="s.value">{{ s.label }}</option>
+                        }
+                      </select>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+            @if (form.extra_conditions.length < 3) {
+              <button class="btn btn-xs btn-ghost text-primary" (click)="addCondition()">+ Add condition</button>
+            }
+            @if (form.extra_conditions.length > 0) {
+              <p class="text-xs text-base-content/40">Extra condition thresholds are integer-only (0–255). For fractional values use a server workflow.</p>
+            }
 
             <!-- 3. Action -->
             <div class="space-y-2">
@@ -271,6 +286,7 @@ function defaultForm(): RuleForm {
               <label class="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" class="checkbox checkbox-sm" [(ngModel)]="form.has_time" />
                 <span class="text-xs font-semibold text-base-content/60 uppercase">Time window</span>
+                <span class="text-xs text-base-content/40">(server-managed)</span>
               </label>
               @if (form.has_time) {
                 <div class="pl-4 border-l-2 border-base-300 flex flex-wrap gap-2 items-end">
@@ -427,6 +443,18 @@ export class DeviceRulesSectionComponent {
     return `${(sec / 3600).toFixed(1)}h`;
   }
 
+  // ── Condition management ────────────────────────────────────────────────
+
+  addCondition(): void {
+    if (this.form.extra_conditions.length < 3) {
+      this.form.extra_conditions = [...this.form.extra_conditions, defaultCondition()];
+    }
+  }
+
+  removeCondition(index: number): void {
+    this.form.extra_conditions = this.form.extra_conditions.filter((_, i) => i !== index);
+  }
+
   // ── CRUD ─────────────────────────────────────────────────────────────────
 
   startEdit(r: DeviceRuleRecord): void {
@@ -440,14 +468,15 @@ export class DeviceRulesSectionComponent {
       priority: r.priority ?? 128,
       cooldown_seconds: r.cooldown_seconds ?? 300,
       enabled: r.enabled !== false,
-      has_second: (r.second_field_idx !== undefined && r.second_field_idx >= 0),
-      logic: r.logic ?? 'and',
-      second_type: r.second_is_control ? 'control_state' : 'sensor',
-      second_field_idx: r.second_is_control ? 0 : (r.second_field_idx ?? 0),
-      second_operator: (r.second_operator as Op) ?? '<',
-      second_threshold: r.second_threshold ?? 0,
-      second_control_idx: r.second_is_control ? (r.second_field_idx ?? 0) : 0,
-      second_action_state: r.second_is_control ? (r.second_threshold ?? 0) : 0,
+      extra_conditions: (r.extra_conditions ?? []).map(ec => ({
+        type: ec.is_control ? 'control_state' as const : 'sensor' as const,
+        field_idx: ec.field_idx,
+        operator: (ec.operator as Op) ?? '<',
+        threshold: ec.threshold,
+        control_idx: ec.is_control ? ec.field_idx : 0,
+        control_state: ec.is_control ? ec.threshold : 0,
+        logic: ec.logic ?? 'and',
+      })),
       has_time: ((r.time_start ?? -1) >= 0 && (r.time_end ?? -1) >= 0),
       time_start: r.time_start ?? 6,
       time_end: r.time_end ?? 18,
@@ -467,7 +496,17 @@ export class DeviceRulesSectionComponent {
     this.saving.set(true);
     this.message.set(null);
 
-    const isControl = this.form.second_type === 'control_state';
+    const extra_conditions: ExtraCondition[] = this.form.extra_conditions.map(ec => {
+      const isControl = ec.type === 'control_state';
+      return {
+        field_idx: isControl ? ec.control_idx : ec.field_idx,
+        operator: isControl ? '==' : ec.operator,
+        threshold: isControl ? ec.control_state : ec.threshold,
+        is_control: isControl,
+        logic: ec.logic,
+      };
+    });
+
     const record: Partial<DeviceRuleRecord> = {
       device_eui: eui,
       rule_id: this.editingId() ? undefined : this.rules().length,
@@ -479,17 +518,7 @@ export class DeviceRulesSectionComponent {
       priority: this.form.priority,
       cooldown_seconds: this.form.cooldown_seconds,
       enabled: this.form.enabled,
-      // compound
-      second_field_idx: this.form.has_second
-        ? (isControl ? this.form.second_control_idx : this.form.second_field_idx)
-        : -1,
-      second_operator: this.form.has_second && !isControl ? this.form.second_operator : '',
-      second_threshold: this.form.has_second
-        ? (isControl ? this.form.second_action_state : this.form.second_threshold)
-        : 0,
-      second_is_control: this.form.has_second && isControl,
-      logic: this.form.has_second ? this.form.logic : 'and',
-      // time window
+      extra_conditions,
       time_start: this.form.has_time ? this.form.time_start : -1,
       time_end: this.form.has_time ? this.form.time_end : -1,
       synced_at: '',

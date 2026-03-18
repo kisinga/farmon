@@ -22,6 +22,7 @@ export type {
   HistoryResponse,
   ProvisionResponse,
   CredentialsResponse,
+  ExtraCondition,
   DeviceRuleRecord,
   CommandRecord,
   ProfileField,
@@ -93,6 +94,7 @@ export class ApiService {
   // ─── Firmware Commands ───────────────────────────────────────────────────
 
   getFirmwareCommands() { return this.deviceService.getFirmwareCommands(); }
+  getSensorCatalog() { return this.deviceService.getSensorCatalog(); }
   getBackendInfo() { return this.deviceService.getBackendInfo(); }
   patchBackendInfo(body: import('./api.types').BackendInfo) { return this.deviceService.patchBackendInfo(body); }
 
