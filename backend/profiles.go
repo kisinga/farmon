@@ -55,12 +55,13 @@ type DecodeRule struct {
 
 // ProfileAirConfig mirrors a profile_airconfig record.
 type ProfileAirConfig struct {
-	ID         string         `json:"id,omitempty"`
+	ID         string          `json:"id,omitempty"`
 	PinMap     json.RawMessage `json:"pin_map"`
 	Sensors    json.RawMessage `json:"sensors"`
 	Controls   json.RawMessage `json:"controls"`
 	LoRaWAN    json.RawMessage `json:"lorawan"`
-	ConfigHash string         `json:"config_hash,omitempty"`
+	Transfer   json.RawMessage `json:"transfer,omitempty"`
+	ConfigHash string          `json:"config_hash,omitempty"`
 }
 
 // ProfileVisualization mirrors a profile_visualizations record.
@@ -198,6 +199,7 @@ func loadProfileWithComponents(app core.App, profileID string) (*ProfileWithComp
 			Sensors:    getRawJSON(ac, "sensors"),
 			Controls:   getRawJSON(ac, "controls"),
 			LoRaWAN:    getRawJSON(ac, "lorawan"),
+			Transfer:   getRawJSON(ac, "transfer"),
 			ConfigHash: ac.GetString("config_hash"),
 		}
 	}
@@ -363,6 +365,7 @@ func computeConfigHash(ac *ProfileAirConfig) string {
 	h.Write(ac.Sensors)
 	h.Write(ac.Controls)
 	h.Write(ac.LoRaWAN)
+	h.Write(ac.Transfer)
 	return fmt.Sprintf("%08x", h.Sum32())
 }
 
@@ -386,6 +389,7 @@ func getEffectiveAirConfig(profile *ProfileWithComponents, overridesJSON string)
 		Sensors:  profile.AirConfig.Sensors,
 		Controls: profile.AirConfig.Controls,
 		LoRaWAN:  profile.AirConfig.LoRaWAN,
+		Transfer: profile.AirConfig.Transfer,
 	}
 
 	if v, ok := overrides["pin_map"]; ok {
@@ -396,6 +400,9 @@ func getEffectiveAirConfig(profile *ProfileWithComponents, overridesJSON string)
 	}
 	if v, ok := overrides["controls"]; ok {
 		effective.Controls = v
+	}
+	if v, ok := overrides["transfer"]; ok {
+		effective.Transfer = v
 	}
 	if v, ok := overrides["lorawan"]; ok {
 		// Merge lorawan fields instead of full replace
@@ -425,10 +432,8 @@ func seedDefaultProfiles(app core.App) {
 
 	log.Println("[profiles] seeding default profiles...")
 
-	// Seed FarMon Water Monitor v1
 	seedFarMonWaterMonitor(app)
-
-	// Seed SenseCAP S2105
+	seedFarMonWaterManager(app)
 	seedSenseCapS2105(app)
 }
 
@@ -498,8 +503,9 @@ func seedFarMonWaterMonitor(app core.App) {
 	createProfileAirConfig(app, profileID,
 		`[0,0,0,0,7,0,0,0,9,9,0,0,0,0,0,0,0,0,0,0]`,
 		`[{"type":1,"pin_index":4,"field_index":0,"flags":1,"param1":450}]`,
-		`[{"pin_index":8,"state_count":2,"flags":1},{"pin_index":9,"state_count":2,"flags":1}]`,
+		`[{"pin_index":8,"state_count":2,"flags":1,"actuator_type":0,"pin2_index":255,"pulse_x100ms":0},{"pin_index":9,"state_count":2,"flags":1,"actuator_type":0,"pin2_index":255,"pulse_x100ms":0}]`,
 		`{"region":0,"sub_band":1,"data_rate":0,"tx_power":0,"adr":true,"confirmed":false}`,
+		``,
 	)
 
 	// Visualizations
@@ -659,7 +665,7 @@ func createDecodeRule(app core.App, profileID string, fport int, format string, 
 	}
 }
 
-func createProfileAirConfig(app core.App, profileID, pinMap, sensors, controls, lorawan string) {
+func createProfileAirConfig(app core.App, profileID, pinMap, sensors, controls, lorawan, transfer string) {
 	coll, err := app.FindCollectionByNameOrId("profile_airconfig")
 	if err != nil {
 		return
@@ -670,19 +676,122 @@ func createProfileAirConfig(app core.App, profileID, pinMap, sensors, controls, 
 	rec.Set("sensors", sensors)
 	rec.Set("controls", controls)
 	rec.Set("lorawan", lorawan)
+	if transfer != "" {
+		rec.Set("transfer", transfer)
+	}
 
-	// Compute config hash
 	ac := &ProfileAirConfig{
 		PinMap:   json.RawMessage(pinMap),
 		Sensors:  json.RawMessage(sensors),
 		Controls: json.RawMessage(controls),
 		LoRaWAN:  json.RawMessage(lorawan),
+		Transfer: json.RawMessage(transfer),
 	}
 	rec.Set("config_hash", computeConfigHash(ac))
 
 	if err := app.Save(rec); err != nil {
 		log.Printf("[profiles] seed airconfig: %v", err)
 	}
+}
+
+func seedFarMonWaterManager(app core.App) {
+	profileID := createProfile(app, "FarMon Water Manager v1", "Autonomous 2-tank water transfer: pressure sensor, motorized valves, solenoid, pump", "airconfig", true, "any")
+	if profileID == "" {
+		return
+	}
+
+	// Fields: level (shared sensor switched by valve), flow T1, flow T2, battery, transfer state
+	fieldsData := []ProfileField{
+		{Key: "level_pct", DisplayName: "Tank Level", Unit: "%", Category: "telemetry", Access: "r", StateClass: "m", MaxValue: 100, SortOrder: 0},
+		{Key: "flow_t1", DisplayName: "Flow T1", Unit: "L", Category: "telemetry", Access: "r", StateClass: "i", MaxValue: 999999, SortOrder: 1},
+		{Key: "flow_t2", DisplayName: "Flow T2", Unit: "L", Category: "telemetry", Access: "r", StateClass: "i", MaxValue: 999999, SortOrder: 2},
+		{Key: "battery", DisplayName: "Battery", Unit: "%", Category: "system", Access: "r", StateClass: "m", MaxValue: 100, SortOrder: 3},
+	}
+	for _, f := range fieldsData {
+		createProfileField(app, profileID, f)
+	}
+
+	// Controls: pump, valve_t1, valve_t2, flow_valve_t1, flow_valve_t2, solenoid
+	controlsData := []ProfileControl{
+		{Key: "pump", DisplayName: "Transfer Pump", States: []string{"off", "on"}, SortOrder: 0},
+		{Key: "valve_t1", DisplayName: "Tank 1 Valve", States: []string{"closed", "open"}, SortOrder: 1},
+		{Key: "valve_t2", DisplayName: "Tank 2 Valve", States: []string{"closed", "open"}, SortOrder: 2},
+		{Key: "flow_valve_t1", DisplayName: "Flow Valve T1", States: []string{"closed", "open"}, SortOrder: 3},
+		{Key: "flow_valve_t2", DisplayName: "Flow Valve T2", States: []string{"closed", "open"}, SortOrder: 4},
+		{Key: "solenoid", DisplayName: "Solenoid SV", States: []string{"off", "pulse"}, SortOrder: 5},
+	}
+	for _, c := range controlsData {
+		createProfileControl(app, profileID, c)
+	}
+
+	// Commands
+	commandsData := []ProfileCommand{
+		{Name: "reset", FPort: 10, PayloadType: "empty"},
+		{Name: "interval", FPort: 11, PayloadType: "uint16_le_seconds"},
+		{Name: "reboot", FPort: 12, PayloadType: "empty"},
+		{Name: "ctrl", FPort: 20, PayloadType: "control_binary"},
+		{Name: "rule", FPort: 30, PayloadType: "rule_binary"},
+	}
+	for _, cmd := range commandsData {
+		createProfileCommand(app, profileID, cmd)
+	}
+
+	// Decode rules
+	createDecodeRule(app, profileID, 2, "binary_indexed_float32", map[string]any{
+		"count_offset": 0, "entries_offset": 1,
+		"entry_size": 5, "index_offset": 0, "value_offset": 1,
+	})
+	createDecodeRule(app, profileID, 3, "binary_state_change", map[string]any{
+		"record_size": 11,
+		"layout": []map[string]any{
+			{"offset": 0, "name": "control_idx", "type": "uint8"},
+			{"offset": 1, "name": "new_state", "type": "uint8"},
+			{"offset": 2, "name": "old_state", "type": "uint8"},
+			{"offset": 3, "name": "source_id", "type": "uint8"},
+			{"offset": 4, "name": "rule_id", "type": "uint8"},
+			{"offset": 5, "name": "device_ms", "type": "uint32_le"},
+			{"offset": 9, "name": "seq", "type": "uint16_le"},
+		},
+		"source_map": map[string]string{"0": "BOOT", "1": "RULE", "2": "MANUAL", "3": "DOWNLINK"},
+	})
+
+	// AirConfig: controls use 8-byte v2 format with actuator types
+	// Controls JSON fields: pin_index, state_count, flags, actuator_type, pin2_index, pulse_x100ms
+	// actuator_type: 0=relay, 1=motorizedValve, 2=solenoidMomentary
+	createProfileAirConfig(app, profileID,
+		`[0,0,0,4,7,7,2,2,2,2,2,2,4,0,0,0,0,0,0,0]`,
+		`[{"type":8,"pin_index":3,"field_index":0,"flags":1,"param1":0,"param2":1000},`+
+			`{"type":1,"pin_index":4,"field_index":1,"flags":1,"param1":450,"param2":0},`+
+			`{"type":1,"pin_index":5,"field_index":2,"flags":1,"param1":450,"param2":0},`+
+			`{"type":2,"pin_index":14,"field_index":3,"flags":1,"param1":0,"param2":0}]`,
+		`[{"pin_index":6,"state_count":2,"flags":1,"actuator_type":0,"pin2_index":255,"pulse_x100ms":0},`+
+			`{"pin_index":7,"state_count":2,"flags":5,"actuator_type":1,"pin2_index":8,"pulse_x100ms":50},`+
+			`{"pin_index":9,"state_count":2,"flags":5,"actuator_type":1,"pin2_index":10,"pulse_x100ms":50},`+
+			`{"pin_index":11,"state_count":2,"flags":1,"actuator_type":0,"pin2_index":255,"pulse_x100ms":0},`+
+			`{"pin_index":12,"state_count":2,"flags":1,"actuator_type":0,"pin2_index":255,"pulse_x100ms":0},`+
+			`{"pin_index":13,"state_count":2,"flags":9,"actuator_type":2,"pin2_index":255,"pulse_x100ms":20}]`,
+		`{"region":0,"sub_band":2,"data_rate":3,"tx_power":22,"adr":true,"confirmed":true}`,
+		`{"enabled":1,"pump_ctrl":0,"valve_t1_ctrl":1,"valve_t2_ctrl":2,"sv_ctrl":5,`+
+			`"level_t1_field":0,"level_t2_field":0,"start_delta_pct":20,"stop_t1_min_pct":15,"measure_pulse_sec":2}`,
+	)
+
+	// Visualizations
+	createProfileVisualization(app, profileID, "Tank Levels", "time_series", map[string]any{
+		"fields": []string{"level_pct"}, "y_label": "Level", "y_unit": "%",
+	}, 0)
+	createProfileVisualization(app, profileID, "Flow Totals", "time_series", map[string]any{
+		"fields": []string{"flow_t1", "flow_t2"}, "y_label": "Volume", "y_unit": "L",
+	}, 1)
+	createProfileVisualization(app, profileID, "Battery", "gauge", map[string]any{
+		"field": "battery",
+		"color_ranges": []map[string]any{
+			{"max": 20, "color": "error"},
+			{"max": 50, "color": "warning"},
+			{"max": 100, "color": "success"},
+		},
+	}, 2)
+
+	log.Printf("[profiles] seeded FarMon Water Manager v1 (id=%s)", profileID)
 }
 
 func createProfileVisualization(app core.App, profileID, name, vizType string, config map[string]any, sortOrder int) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kisinga/farmon/internal/gateway"
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -113,6 +114,7 @@ func handleStateChanges(app core.App, devEui, deviceName string, profile *Profil
 }
 
 // handleCommandAck processes decoded command ACK.
+// Updates the most recent "sent" command record for this device to "acked" or "ack_error".
 func handleCommandAck(app core.App, devEui string, result *DecodeResult) {
 	port := toFloat64(result.Fields["port"])
 	ackStatus, _ := result.Fields["status"].(string)
@@ -121,6 +123,19 @@ func handleCommandAck(app core.App, devEui string, result *DecodeResult) {
 	if !success {
 		status = "ack_error"
 	}
+
+	// Find the most recent "sent" command for this device and update it.
+	recs, err := app.FindRecordsByFilter("commands",
+		"device_eui = {:eui} && status = 'sent'",
+		"-sent_at", 1, 0,
+		dbx.Params{"eui": devEui})
+	if err == nil && len(recs) > 0 {
+		recs[0].Set("status", status)
+		_ = app.Save(recs[0])
+		return
+	}
+
+	// No matching sent command — insert a standalone ack record for visibility.
 	insertCommand(app, devEui, "ack:fPort"+strconv.Itoa(int(port)), "device", status, map[string]any{"port": port, "status": ackStatus})
 }
 

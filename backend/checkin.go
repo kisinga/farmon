@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -42,7 +43,7 @@ func parseCheckin(data []byte) (*CheckinPayload, error) {
 }
 
 // handleDeviceCheckin processes a fPort 1 checkin: updates device metadata,
-// compares config_hash, and queues AirConfig push on mismatch.
+// compares config_hash, queues AirConfig push on mismatch, and fires checkin workflows.
 func handleDeviceCheckin(app core.App, cfg *gateway.Config, devEUI string, payload []byte) error {
 	checkin, err := parseCheckin(payload)
 	if err != nil {
@@ -65,56 +66,198 @@ func handleDeviceCheckin(app core.App, cfg *gateway.Config, devEUI string, paylo
 	dev.Set("last_seen", time.Now().Format(time.RFC3339))
 
 	profileID := dev.GetString("profile")
-	if profileID == "" {
-		dev.Set("config_status", "n/a")
-		return app.Save(dev)
-	}
+	configStatus := "n/a"
 
-	// Load profile and compare config hash
-	profile, err := loadProfileWithComponents(app, profileID)
-	if err != nil {
-		log.Printf("[checkin] load profile error: %v", err)
-		return app.Save(dev)
-	}
-
-	if profile.ProfileType != "airconfig" || profile.AirConfig == nil {
-		dev.Set("config_status", "n/a")
-		return app.Save(dev)
-	}
-
-	// Get effective config (profile + device overrides)
-	overridesJSON := dev.GetString("config_overrides")
-	effective, err := getEffectiveAirConfig(profile, overridesJSON)
-	if err != nil {
-		dev.Set("config_status", "n/a")
-		return app.Save(dev)
-	}
-
-	expectedHash := computeConfigHash(effective)
-	if deviceHash == expectedHash {
-		dev.Set("config_hash", deviceHash)
-		dev.Set("config_status", "synced")
-		log.Printf("[checkin] dev_eui=%s config synced (hash=%s)", devEUI, deviceHash)
-	} else {
-		dev.Set("config_status", "pending")
-		log.Printf("[checkin] dev_eui=%s config mismatch: device=%s expected=%s — queuing push", devEUI, deviceHash, expectedHash)
-		// Queue AirConfig push (non-blocking)
-		if cfg != nil {
-			go func() {
-				if pushErr := pushAirConfig(app, cfg, devEUI, effective); pushErr != nil {
-					log.Printf("[checkin] pushAirConfig error dev_eui=%s: %v", devEUI, pushErr)
+	if profileID != "" {
+		// Load profile and compare config hash
+		profile, err := loadProfileWithComponents(app, profileID)
+		if err != nil {
+			log.Printf("[checkin] load profile error: %v", err)
+		} else if profile.ProfileType == "airconfig" && profile.AirConfig != nil {
+			// Get effective config (profile + device overrides)
+			overridesJSON := dev.GetString("config_overrides")
+			effective, err := getEffectiveAirConfig(profile, overridesJSON)
+			if err != nil {
+				log.Printf("[checkin] getEffectiveAirConfig error: %v", err)
+			} else {
+				expectedHash := computeConfigHash(effective)
+				if deviceHash == expectedHash {
+					dev.Set("config_hash", deviceHash)
+					configStatus = "synced"
+					log.Printf("[checkin] dev_eui=%s config synced (hash=%s)", devEUI, deviceHash)
+				} else {
+					configStatus = "pending"
+					log.Printf("[checkin] dev_eui=%s config mismatch: device=%s expected=%s — queuing push",
+						devEUI, deviceHash, expectedHash)
+					if cfg != nil {
+						go func() {
+							if pushErr := pushAirConfig(app, cfg, devEUI, effective); pushErr != nil {
+								log.Printf("[checkin] pushAirConfig error dev_eui=%s: %v", devEUI, pushErr)
+							}
+						}()
+					}
 				}
-			}()
+			}
 		}
 	}
 
-	return app.Save(dev)
+	dev.Set("config_status", configStatus)
+	if err := app.Save(dev); err != nil {
+		return err
+	}
+
+	// Fire checkin workflows (non-blocking).
+	if workflowEngine != nil {
+		go workflowEngine.Evaluate(TriggerContext{
+			Type:            TriggerCheckin,
+			DeviceEUI:       devEUI,
+			DeviceName:      dev.GetString("device_name"),
+			UptimeSec:       checkin.UptimeSec,
+			FirmwareVersion: fwVersion,
+			IsBoot:          checkin.UptimeSec < 60,
+			ConfigStatus:    configStatus,
+		})
+	}
+
+	return nil
 }
 
-// pushAirConfig builds and enqueues AirConfig frames for a device.
-// This is a placeholder — full implementation in airconfig_push.go (Step 5).
+// pushAirConfig builds AirConfig subcommand payloads from the effective profile config
+// and enqueues each as a fPort 35 downlink. Payloads are delivered over successive
+// uplinks (one per Class A RX window) in priority order:
+// pin_map → sensors (per slot) → controls (per slot) → lorawan.
 func pushAirConfig(app core.App, cfg *gateway.Config, devEUI string, effective *ProfileAirConfig) error {
-	log.Printf("[airconfig] push queued for dev_eui=%s hash=%s", devEUI, computeConfigHash(effective))
-	// TODO: Step 5 — build AirConfig frames from effective config and enqueue via DownlinkQueue
+	log.Printf("[airconfig] building push for dev_eui=%s hash=%s", devEUI, computeConfigHash(effective))
+
+	// 1. PinMap: [0x01, idx0, fn0, idx1, fn1, ...]
+	if len(effective.PinMap) > 0 {
+		var pins []float64
+		if err := json.Unmarshal(effective.PinMap, &pins); err == nil && len(pins) > 0 {
+			payload := make([]byte, 0, 1+len(pins)*2)
+			payload = append(payload, 0x01)
+			for idx, fn := range pins {
+				payload = append(payload, byte(idx), byte(fn))
+			}
+			if err := EnqueueDownlinkForDevice(app, cfg, devEUI, 35, payload); err != nil {
+				return fmt.Errorf("pushAirConfig pin_map: %w", err)
+			}
+		}
+	}
+
+	// 2. Sensors: [0x04, slot, type, pin_idx, field_idx, flags, p1lo, p1hi, p2lo, p2hi]
+	if len(effective.Sensors) > 0 {
+		var sensors []map[string]any
+		if err := json.Unmarshal(effective.Sensors, &sensors); err == nil {
+			for slot, s := range sensors {
+				p1 := uint16(toAnyFloat64(s["param1"]))
+				p2 := uint16(toAnyFloat64(s["param2"]))
+				payload := []byte{
+					0x04,
+					byte(slot),
+					byte(toAnyFloat64(s["type"])),
+					byte(toAnyFloat64(s["pin_index"])),
+					byte(toAnyFloat64(s["field_index"])),
+					byte(toAnyFloat64(s["flags"])),
+					byte(p1 & 0xFF), byte(p1 >> 8),
+					byte(p2 & 0xFF), byte(p2 >> 8),
+				}
+				if err := EnqueueDownlinkForDevice(app, cfg, devEUI, 35, payload); err != nil {
+					return fmt.Errorf("pushAirConfig sensor slot %d: %w", slot, err)
+				}
+			}
+		}
+	}
+
+	// 3. Controls: [0x05, slot, pin_idx, state_count, flags, actuator_type, pin2_idx, pulse_x100ms]
+	if len(effective.Controls) > 0 {
+		var controls []map[string]any
+		if err := json.Unmarshal(effective.Controls, &controls); err == nil {
+			for slot, c := range controls {
+				pin2 := byte(toAnyFloat64(c["pin2_index"]))
+				if pin2 == 0 {
+					pin2 = 0xFF // unused
+				}
+				payload := []byte{
+					0x05,
+					byte(slot),
+					byte(toAnyFloat64(c["pin_index"])),
+					byte(toAnyFloat64(c["state_count"])),
+					byte(toAnyFloat64(c["flags"])),
+					byte(toAnyFloat64(c["actuator_type"])),
+					pin2,
+					byte(toAnyFloat64(c["pulse_x100ms"])),
+				}
+				if err := EnqueueDownlinkForDevice(app, cfg, devEUI, 35, payload); err != nil {
+					return fmt.Errorf("pushAirConfig control slot %d: %w", slot, err)
+				}
+			}
+		}
+	}
+
+	// 4. Transfer FSM config: [0x08, enabled, pump_ctrl, valve_t1, valve_t2, sv_ctrl,
+	//                          level_t1_field, level_t2_field, start_delta_pct, stop_t1_min_pct, measure_pulse_sec]
+	if len(effective.Transfer) > 0 {
+		var t map[string]any
+		if err := json.Unmarshal(effective.Transfer, &t); err == nil {
+			payload := []byte{
+				0x08,
+				byte(toAnyFloat64(t["enabled"])),
+				byte(toAnyFloat64(t["pump_ctrl"])),
+				byte(toAnyFloat64(t["valve_t1_ctrl"])),
+				byte(toAnyFloat64(t["valve_t2_ctrl"])),
+				byte(toAnyFloat64(t["sv_ctrl"])),
+				byte(toAnyFloat64(t["level_t1_field"])),
+				byte(toAnyFloat64(t["level_t2_field"])),
+				byte(toAnyFloat64(t["start_delta_pct"])),
+				byte(toAnyFloat64(t["stop_t1_min_pct"])),
+				byte(toAnyFloat64(t["measure_pulse_sec"])),
+			}
+			if err := EnqueueDownlinkForDevice(app, cfg, devEUI, 35, payload); err != nil {
+				return fmt.Errorf("pushAirConfig transfer: %w", err)
+			}
+		}
+	}
+
+	// 5. LoRaWAN: [0x06, region, subband, dr, txpwr, adr, confirmed]
+	if len(effective.LoRaWAN) > 0 {
+		var lora map[string]any
+		if err := json.Unmarshal(effective.LoRaWAN, &lora); err == nil {
+			adrByte := byte(0)
+			if adr, ok := lora["adr"].(bool); ok && adr {
+				adrByte = 1
+			}
+			confirmedByte := byte(0)
+			if confirmed, ok := lora["confirmed"].(bool); ok && confirmed {
+				confirmedByte = 1
+			}
+			payload := []byte{
+				0x06,
+				byte(toAnyFloat64(lora["region"])),
+				byte(toAnyFloat64(lora["sub_band"])),
+				byte(toAnyFloat64(lora["data_rate"])),
+				byte(toAnyFloat64(lora["tx_power"])),
+				adrByte,
+				confirmedByte,
+			}
+			if err := EnqueueDownlinkForDevice(app, cfg, devEUI, 35, payload); err != nil {
+				return fmt.Errorf("pushAirConfig lorawan: %w", err)
+			}
+		}
+	}
+
+	log.Printf("[airconfig] queued push for dev_eui=%s", devEUI)
 	return nil
+}
+
+// toAnyFloat64 extracts a float64 from an any value (JSON numbers decode as float64).
+func toAnyFloat64(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	}
+	return 0
 }

@@ -6,23 +6,23 @@ import (
 	"github.com/farm/firmware/pkg/settings"
 )
 
-// Binary codec for LoRa-E5 flash storage.
+// Binary codec for LoRa-E5 flash storage (v2).
 //
-// Flash layout:
-//   [0-1]   Magic (0xFA12)
-//   [2]     Version (1)
-//   [3-4]   CRC16
-//   [5-24]  PinMap (20 bytes)
-//   [25]    SensorCount
-//   [26-89] Sensors[8] × 8 bytes
-//   [90]    ControlCount
-//   [91-122] Controls[8] × 4 bytes
-//   [123]   RuleCount
-//   [124-635] Rules[32] × 16 bytes
-//   [636-637] TxIntervalSec
-//   [638-667] LoRaWAN block (30 bytes)
+// Flash layout (v2):
+//   [0-1]     Magic (0xFA12)
+//   [2]       Version (2)
+//   [3-4]     CRC16
+//   [5-24]    PinMap (20 bytes)
+//   [25]      SensorCount
+//   [26-89]   Sensors[8] × 8 bytes   = 64 bytes
+//   [90]      ControlCount
+//   [91-154]  Controls[8] × 8 bytes  = 64 bytes  (was 32)
+//   [155]     RuleCount
+//   [156-667] Rules[32] × 16 bytes   = 512 bytes (was offset 123)
+//   [668-669] TxIntervalSec
+//   [670-685] TransferConfig         = 16 bytes  (new)
+//   [686-715] LoRaWAN block          = 30 bytes
 
-// nodeConfig is the composite settings struct for the LoRa-E5 target.
 type nodeConfig struct {
 	Core    settings.CoreSettings
 	LoRaWAN settings.LoRaWANSettings
@@ -30,15 +30,16 @@ type nodeConfig struct {
 
 const (
 	offPinMap   = 5
-	offSensors  = offPinMap + settings.MaxPins               // 25
-	offControls = offSensors + 1 + settings.MaxSensors*8     // 90
-	offRules    = offControls + 1 + settings.MaxControls*4   // 123
-	offInterval = offRules + 1 + settings.MaxRules*16        // 636
-	offLoRaWAN  = offInterval + 2                            // 638
+	offSensors  = offPinMap + settings.MaxPins                              // 25
+	offControls = offSensors + 1 + settings.MaxSensors*8                   // 90
+	offRules    = offControls + 1 + settings.MaxControls*settings.ControlSlotSize // 155
+	offInterval = offRules + 1 + settings.MaxRules*settings.RuleSize       // 668
+	offTransfer = offInterval + 2                                           // 670
+	offLoRaWAN  = offTransfer + settings.TransferConfigSize                 // 686
 )
 
 const loraeMagic   = uint16(0xFA12)
-const loraeVersion = uint8(1)
+const loraeVersion = uint8(2)
 
 func encodeSettings(s nodeConfig) []byte {
 	buf := make([]byte, settings.SettingsSize)
@@ -68,7 +69,11 @@ func encodeSettings(s nodeConfig) []byte {
 		buf[off] = s.Core.Controls[i].PinIndex
 		buf[off+1] = s.Core.Controls[i].StateCount
 		buf[off+2] = s.Core.Controls[i].Flags
-		off += 4
+		buf[off+3] = uint8(s.Core.Controls[i].ActuatorType)
+		buf[off+4] = s.Core.Controls[i].Pin2Index
+		buf[off+5] = s.Core.Controls[i].PulseDurX100ms
+		// [6] and [7] are reserved, left zero
+		off += settings.ControlSlotSize
 	}
 
 	buf[off] = s.Core.RuleCount
@@ -79,6 +84,7 @@ func encodeSettings(s nodeConfig) []byte {
 	}
 
 	binary.LittleEndian.PutUint16(buf[offInterval:], s.Core.TxIntervalSec)
+	writeTransfer(buf, offTransfer, &s.Core.Transfer)
 	writeLoRaWAN(buf, offLoRaWAN, &s.LoRaWAN)
 
 	return buf
@@ -119,7 +125,10 @@ func decodeSettings(buf []byte) nodeConfig {
 		nc.Core.Controls[i].PinIndex = buf[off]
 		nc.Core.Controls[i].StateCount = buf[off+1]
 		nc.Core.Controls[i].Flags = buf[off+2]
-		off += 4
+		nc.Core.Controls[i].ActuatorType = settings.ActuatorType(buf[off+3])
+		nc.Core.Controls[i].Pin2Index = buf[off+4]
+		nc.Core.Controls[i].PulseDurX100ms = buf[off+5]
+		off += settings.ControlSlotSize
 	}
 
 	off = offRules
@@ -131,6 +140,7 @@ func decodeSettings(buf []byte) nodeConfig {
 	}
 
 	nc.Core.TxIntervalSec = binary.LittleEndian.Uint16(buf[offInterval:])
+	readTransfer(buf, offTransfer, &nc.Core.Transfer)
 	readLoRaWAN(buf, offLoRaWAN, &nc.LoRaWAN)
 	return nc
 }
@@ -140,6 +150,35 @@ func defaultNodeConfig() nodeConfig {
 		Core:    settings.Defaults(),
 		LoRaWAN: settings.LoRaWANDefaults(),
 	}
+}
+
+func readTransfer(buf []byte, off int, t *settings.TransferConfig) {
+	t.Enabled = buf[off]
+	t.PumpCtrlIdx = buf[off+1]
+	t.ValveT1CtrlIdx = buf[off+2]
+	t.ValveT2CtrlIdx = buf[off+3]
+	t.SVCtrlIdx = buf[off+4]
+	t.LevelT1FieldIdx = buf[off+5]
+	t.LevelT2FieldIdx = buf[off+6]
+	t.StartDeltaPct = buf[off+7]
+	t.StopT1MinPct = buf[off+8]
+	t.MeasurePulseSec = buf[off+9]
+	t.Flags = buf[off+10]
+}
+
+func writeTransfer(buf []byte, off int, t *settings.TransferConfig) {
+	buf[off] = t.Enabled
+	buf[off+1] = t.PumpCtrlIdx
+	buf[off+2] = t.ValveT1CtrlIdx
+	buf[off+3] = t.ValveT2CtrlIdx
+	buf[off+4] = t.SVCtrlIdx
+	buf[off+5] = t.LevelT1FieldIdx
+	buf[off+6] = t.LevelT2FieldIdx
+	buf[off+7] = t.StartDeltaPct
+	buf[off+8] = t.StopT1MinPct
+	buf[off+9] = t.MeasurePulseSec
+	buf[off+10] = t.Flags
+	// [11-15] reserved, left zero
 }
 
 func readLoRaWAN(buf []byte, off int, lora *settings.LoRaWANSettings) {

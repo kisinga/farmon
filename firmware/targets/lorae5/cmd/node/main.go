@@ -1,23 +1,20 @@
+//go:build stm32wlx
+
 // LoRa-E5 sensor node firmware.
 // Flash once, configure everything via AirConfig (fPort 35) downlinks.
-// No OTA firmware updates — pin maps, sensors, controls, rules, and
-// LoRaWAN params are all runtime-configurable and persisted to flash.
 package main
 
 import (
-	"encoding/binary"
-	"math"
 	"machine"
 	"time"
 
 	"github.com/farm/firmware/pkg/airconfig"
 	sharedflash "github.com/farm/firmware/pkg/flash"
-	"github.com/farm/firmware/pkg/rules"
+	node "github.com/farm/firmware/pkg/node"
 	"github.com/farm/firmware/pkg/sensors"
 	"github.com/farm/firmware/pkg/settings"
-	"github.com/farm/firmware/pkg/transport"
+	"github.com/farm/firmware/pkg/transfer"
 	lorae5flash "github.com/farm/firmware/targets/lorae5/pkg/flash"
-	"github.com/farm/firmware/targets/lorae5/pkg/protocol"
 	"github.com/farm/firmware/targets/lorae5/pkg/radio"
 	loratransport "github.com/farm/firmware/targets/lorae5/pkg/transport"
 )
@@ -38,15 +35,8 @@ var busHW = sensors.BusHardware{
 }
 
 var (
-	store     *sharedflash.Store
-	cfg       nodeConfig
-	eng       *rules.Engine
-	tport     transport.Transport
-	buses     *sensors.BusRegistry
-	active    []sensors.Driver
-	txCount   uint32
-	rxCount   uint32
-	uptimeSec uint32
+	store *sharedflash.Store
+	cfg   nodeConfig
 )
 
 func main() {
@@ -61,22 +51,10 @@ func main() {
 		cfg.Core = settings.ApplyPreset(settings.PresetWaterMonitor)
 	}
 
-	buses = sensors.InitBuses(cfg.Core, boardPins, busHW)
+	buses := sensors.InitBuses(cfg.Core, boardPins, busHW)
 	registerDrivers()
-	active = initSensors()
-	relays := initRelays()
-
-	eng = rules.New(func(ctrlIdx, stateIdx uint8) bool {
-		if int(ctrlIdx) >= len(relays) || relays[ctrlIdx] == nil {
-			return true
-		}
-		relays[ctrlIdx].Set(stateIdx != 0)
-		return true
-	})
-	if cfg.Core.RuleCount > 0 {
-		eng.LoadRules(cfg.Core.Rules[:cfg.Core.RuleCount])
-		println("[main] loaded", cfg.Core.RuleCount, "rules")
-	}
+	active := initSensors(buses)
+	acts := initActuators()
 
 	rad := radio.New(radio.Config{
 		AppEUI:     cfg.LoRaWAN.AppEUI,
@@ -87,158 +65,37 @@ func main() {
 		TxPower:    cfg.LoRaWAN.TxPower,
 		ADREnabled: cfg.LoRaWAN.ADREnabled,
 	})
-
 	go rad.Run(machine.SPI3, newRadioControl())
-	tport = loratransport.New(rad, cfg.LoRaWAN.Confirmed)
+	tport := loratransport.New(rad, cfg.LoRaWAN.Confirmed)
 
-	go sensorLoop()
-	downlinkLoop()
-}
-
-// --- Sensor loop (goroutine) ---
-
-func sensorLoop() {
-	for {
-		time.Sleep(time.Duration(cfg.Core.TxIntervalSec) * time.Second)
-		uptimeSec += uint32(cfg.Core.TxIntervalSec)
-
-		values := readAllSensors()
-		nowMs := uint32(time.Now().UnixNano() / 1e6)
-		eng.Evaluate(values, eng.GetControlStates(), -1, nowMs)
-
-		sendTelemetry(values)
-		sendStateChanges()
-	}
-}
-
-func readAllSensors() []float32 {
-	var values []float32
-	for _, s := range active {
-		for _, r := range s.Read() {
-			if !r.Valid {
-				continue
-			}
-			for len(values) <= int(r.FieldIndex) {
-				values = append(values, 0)
-			}
-			values[r.FieldIndex] = r.Value
-		}
-	}
-	return values
-}
-
-func sendTelemetry(values []float32) {
-	if len(values) == 0 {
-		return
-	}
-	buf := make([]byte, 1+len(values)*5)
-	buf[0] = uint8(len(values))
-	for i, v := range values {
-		off := 1 + i*5
-		buf[off] = uint8(i)
-		binary.LittleEndian.PutUint32(buf[off+1:], math.Float32bits(v))
-	}
-	var p transport.Packet
-	p.Port = protocol.FPortTelemetry
-	p.Len = uint8(len(buf))
-	copy(p.Payload[:], buf)
-	if tport.Send(p) {
-		txCount++
-	}
-}
-
-func sendStateChanges() {
-	if !eng.HasPending() {
-		return
-	}
-	var p transport.Packet
-	p.Port = protocol.FPortStateChange
-	n, count := eng.FormatBatch(p.Payload[:])
-	if n > 0 {
-		p.Len = uint8(n)
-		if tport.Send(p) {
-			eng.ClearBatch(count)
-		}
-	}
-}
-
-// --- Downlink loop (main goroutine) ---
-
-func downlinkLoop() {
-	for rx := range tport.RecvChan() {
-		rxCount++
-		data := rx.Payload[:rx.Len]
-
-		switch rx.Port {
-
-		case protocol.FPortCmdReset:
-			txCount = 0
-			rxCount = 0
-			for _, s := range active {
-				if fs, ok := s.(*sensors.FlowSensor); ok {
-					fs.SetTotalPulses(0)
+	// Build ReadLevel callback for the transfer FSM using the pressure sensor field.
+	readLevel := func() float32 {
+		for _, s := range active {
+			for _, r := range s.Read() {
+				if r.Valid && r.FieldIndex == cfg.Core.Transfer.LevelT1FieldIdx {
+					return r.Value
 				}
-			}
-			sendAck(rx.Port)
-
-		case protocol.FPortCmdInterval:
-			if rx.Len >= 2 {
-				v := binary.LittleEndian.Uint16(data[:2])
-				if v >= 10 && v <= 3600 {
-					cfg.Core.TxIntervalSec = v
-					saveSettings()
-				}
-			}
-			sendAck(rx.Port)
-
-		case protocol.FPortCmdReboot:
-			sendAck(rx.Port)
-			reboot()
-
-		case protocol.FPortDirectCtrl:
-			if rx.Len >= 2 {
-				nowMs := uint32(time.Now().UnixNano() / 1e6)
-				eng.SetState(data[0], data[1], rules.TriggerDownlink, 0, nowMs)
-				if rx.Len >= 6 {
-					eng.SetManualOverride(data[0], binary.LittleEndian.Uint32(data[2:6]), nowMs)
-				}
-			}
-			sendAck(rx.Port)
-
-		case protocol.FPortRuleUpdate:
-			if rx.Len == 1 && data[0] == 0xFF {
-				cfg.Core.RuleCount = 0
-				eng.LoadRules(nil)
-			} else if rx.Len >= 12 {
-				var r settings.Rule
-				if r.FromBinary(data) {
-					upsertRule(&r)
-					eng.LoadRules(cfg.Core.Rules[:cfg.Core.RuleCount])
-				}
-			}
-			saveSettings()
-			sendAck(rx.Port)
-
-		// AirConfig: all device configuration on a single fPort
-		case protocol.FPortAirConfig:
-			result := airconfig.Handle(&cfg.Core, data, handleLoRaWANAirConfig)
-			// Factory reset also resets LoRaWAN defaults
-			if len(data) >= 1 && data[0] == airconfig.AirCfgReset {
-				cfg.LoRaWAN = settings.LoRaWANDefaults()
-			}
-			if result == airconfig.ResultSaved || result == airconfig.ResultReboot {
-				saveSettings()
-			}
-			sendAck(rx.Port)
-			if result == airconfig.ResultReboot {
-				reboot()
 			}
 		}
+		return 0
 	}
+
+	fsm := transfer.NewFromSettings(&cfg.Core.Transfer, acts, readLevel)
+
+	n := node.New(node.Config{
+		Core:      &cfg.Core,
+		Transport: tport,
+		Actuators: acts,
+		Sensors:   active,
+		Transfer:  fsm,
+		Extension: handleLoRaWANAirConfig,
+		SaveFn:    saveSettings,
+		RebootFn:  reboot,
+	})
+	n.Run()
 }
 
 // handleLoRaWANAirConfig is the ExtensionHandler for the LoRa-E5 target.
-// It handles the AirCfgLoRaWAN (0x06) sub-command.
 func handleLoRaWANAirConfig(data []byte) airconfig.Result {
 	if len(data) < 1 {
 		return airconfig.ResultNone
@@ -256,23 +113,12 @@ func handleLoRaWANAirConfig(data []byte) airconfig.Result {
 			println("[airconfig] LoRaWAN config updated")
 			return airconfig.ResultReboot
 		}
+	case airconfig.AirCfgReset:
+		cfg.LoRaWAN = settings.LoRaWANDefaults()
 	}
 	return airconfig.ResultNone
 }
 
-// --- Hardware init from pin map ---
-
-type relayPin struct{ pin machine.Pin }
-
-func (r *relayPin) Set(on bool) {
-	if on {
-		r.pin.High()
-	} else {
-		r.pin.Low()
-	}
-}
-
-// registerDrivers populates the sensor factory registry. Called once at boot.
 func registerDrivers() {
 	sensors.Register(settings.SensorFlowYFS201, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
 		ppl := slot.Param1
@@ -344,7 +190,7 @@ func registerDrivers() {
 		devAddr := uint8(slot.Param1 & 0xFF)
 		funcCode := uint8(slot.Param1 >> 8)
 		if funcCode == 0 {
-			funcCode = 0x03 // Read Holding Registers
+			funcCode = 0x03
 		}
 		dePin, hasDEPin := b.RS485DEPin(busIdx)
 		signed := slot.Flags&0x04 != 0
@@ -353,7 +199,7 @@ func registerDrivers() {
 	})
 }
 
-func initSensors() []sensors.Driver {
+func initSensors(buses *sensors.BusRegistry) []sensors.Driver {
 	var drivers []sensors.Driver
 	var usedFields [64]bool
 	for i := uint8(0); i < cfg.Core.SensorCount; i++ {
@@ -389,48 +235,10 @@ func initSensors() []sensors.Driver {
 	return drivers
 }
 
-func initRelays() []*relayPin {
-	relays := make([]*relayPin, settings.MaxControls)
-	for i := uint8(0); i < cfg.Core.ControlCount; i++ {
-		ctrl := cfg.Core.Controls[i]
-		if !ctrl.Enabled() {
-			continue
-		}
-		pin := boardPins[ctrl.PinIndex]
-		pin.Configure(machine.PinConfig{Mode: machine.PinOutput})
-		pin.Low()
-		relays[i] = &relayPin{pin: pin}
-	}
-	return relays
-}
-
-// --- Helpers ---
-
-func upsertRule(r *settings.Rule) {
-	for i := uint8(0); i < cfg.Core.RuleCount; i++ {
-		if cfg.Core.Rules[i].ID == r.ID {
-			cfg.Core.Rules[i] = *r
-			return
-		}
-	}
-	if cfg.Core.RuleCount < settings.MaxRules {
-		cfg.Core.Rules[cfg.Core.RuleCount] = *r
-		cfg.Core.RuleCount++
-	}
-}
-
 func saveSettings() {
 	if err := store.Save(encodeSettings(cfg)); err != nil {
 		println("[flash] save failed:", err.Error())
 	}
-}
-
-func sendAck(port uint8) {
-	var p transport.Packet
-	p.Port = protocol.FPortCommandAck
-	p.Payload[0] = port
-	p.Len = 1
-	tport.Send(p)
 }
 
 func reboot() {

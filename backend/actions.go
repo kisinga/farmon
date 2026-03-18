@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/kisinga/farmon/internal/gateway"
 	"github.com/pocketbase/dbx"
@@ -146,4 +148,86 @@ func ExecuteSendCommand(app core.App, cfg *gateway.Config, params SendCommandPar
 	}
 	insertCommand(app, params.DeviceEUI, params.Command, params.InitiatedBy, "sent", cmdPayload)
 	return nil
+}
+
+// --- Global workflow variables ---
+
+// getWorkflowVar returns the float64 value of a workflow_vars key, or 0 if not found / expired.
+func getWorkflowVar(app core.App, key string) float64 {
+	rec, err := app.FindFirstRecordByFilter("workflow_vars",
+		"key = {:key}", dbx.Params{"key": key})
+	if err != nil {
+		return 0
+	}
+	expiresAt := rec.GetString("expires_at")
+	if expiresAt != "" {
+		t, err := time.Parse(time.RFC3339, expiresAt)
+		if err == nil && time.Now().After(t) {
+			return 0 // expired
+		}
+	}
+	v, _ := strconv.ParseFloat(rec.GetString("value"), 64)
+	return v
+}
+
+// executeSetVar creates or replaces a workflow_vars entry with the given string value and optional TTL.
+func executeSetVar(app core.App, key, value string, expiresInSec int) error {
+	if key == "" {
+		return fmt.Errorf("set_var: key is required")
+	}
+	coll, err := app.FindCollectionByNameOrId("workflow_vars")
+	if err != nil {
+		return fmt.Errorf("workflow_vars collection not found: %w", err)
+	}
+	rec, err := app.FindFirstRecordByFilter("workflow_vars", "key = {:key}", dbx.Params{"key": key})
+	if err != nil {
+		rec = core.NewRecord(coll)
+		rec.Set("key", key)
+	}
+	rec.Set("value", value)
+	if expiresInSec > 0 {
+		rec.Set("expires_at", time.Now().Add(time.Duration(expiresInSec)*time.Second).Format(time.RFC3339))
+	} else {
+		rec.Set("expires_at", "")
+	}
+	return app.Save(rec)
+}
+
+// executeIncrementVar increments a workflow_vars counter by amount.
+// If the key does not exist or has expired, it is created with value = amount and the given TTL.
+// TTL is only applied when creating a new entry; existing live entries keep their current expiry.
+func executeIncrementVar(app core.App, key string, amount float64, expiresInSec int) error {
+	if key == "" {
+		return fmt.Errorf("increment_var: key is required")
+	}
+	coll, err := app.FindCollectionByNameOrId("workflow_vars")
+	if err != nil {
+		return fmt.Errorf("workflow_vars collection not found: %w", err)
+	}
+	rec, err := app.FindFirstRecordByFilter("workflow_vars", "key = {:key}", dbx.Params{"key": key})
+
+	isNew := err != nil
+	if !isNew {
+		// Check expiry
+		expiresAt := rec.GetString("expires_at")
+		if expiresAt != "" {
+			t, parseErr := time.Parse(time.RFC3339, expiresAt)
+			if parseErr == nil && time.Now().After(t) {
+				isNew = true // treat expired as new
+			}
+		}
+	}
+
+	if isNew {
+		rec = core.NewRecord(coll)
+		rec.Set("key", key)
+		rec.Set("value", strconv.FormatFloat(amount, 'f', -1, 64))
+		if expiresInSec > 0 {
+			rec.Set("expires_at", time.Now().Add(time.Duration(expiresInSec)*time.Second).Format(time.RFC3339))
+		}
+	} else {
+		current, _ := strconv.ParseFloat(rec.GetString("value"), 64)
+		rec.Set("value", strconv.FormatFloat(current+amount, 'f', -1, 64))
+	}
+	return app.Save(rec)
 }

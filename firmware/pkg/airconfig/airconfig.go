@@ -1,13 +1,27 @@
 // Package airconfig handles over-the-air device configuration.
-// All core device personality (pins, sensors, controls, presets) is changeable
-// without reflashing. Transport-specific config (LoRaWAN, WiFi) is handled
-// via the ExtensionHandler hook so this package stays transport-agnostic.
+// All core device personality (pins, sensors, controls, presets, transfer) is
+// changeable without reflashing. Transport-specific config (LoRaWAN, WiFi) is
+// handled via the ExtensionHandler hook so this package stays transport-agnostic.
 package airconfig
 
 import (
 	"encoding/binary"
 
+	"github.com/farm/firmware/pkg/protocol"
 	"github.com/farm/firmware/pkg/settings"
+)
+
+// Re-export subcommand constants from protocol for callers that only import airconfig.
+const (
+	AirCfgPinMap   = protocol.AirCfgPinMap
+	AirCfgPreset   = protocol.AirCfgPreset
+	AirCfgDump     = protocol.AirCfgDump
+	AirCfgSensor   = protocol.AirCfgSensor
+	AirCfgControl  = protocol.AirCfgControl
+	AirCfgLoRaWAN  = protocol.AirCfgLoRaWAN
+	AirCfgWiFi     = protocol.AirCfgWiFi
+	AirCfgTransfer = protocol.AirCfgTransfer
+	AirCfgReset    = protocol.AirCfgReset
 )
 
 // Result tells the caller what to do after handling a command.
@@ -66,6 +80,7 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 			}
 		}
 		println("[airconfig] sensors:", cfg.SensorCount, "controls:", cfg.ControlCount, "rules:", cfg.RuleCount)
+		println("[airconfig] transfer enabled:", cfg.Transfer.Enabled)
 		return ResultNone
 
 	case AirCfgSensor:
@@ -73,14 +88,13 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 		if len(data) >= 10 {
 			slot := data[1]
 			if int(slot) < settings.MaxSensors {
-				p2 := binary.LittleEndian.Uint16(data[8:10])
 				cfg.Sensors[slot] = settings.SensorSlot{
 					Type:       settings.SensorType(data[2]),
 					PinIndex:   data[3],
 					FieldIndex: data[4],
 					Flags:      data[5],
 					Param1:     binary.LittleEndian.Uint16(data[6:8]),
-					Param2:     p2,
+					Param2:     binary.LittleEndian.Uint16(data[8:10]),
 				}
 				if slot >= cfg.SensorCount {
 					cfg.SensorCount = slot + 1
@@ -91,14 +105,17 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 		}
 
 	case AirCfgControl:
-		// [0x05, slot, pin_idx, state_count, flags]
-		if len(data) >= 5 {
+		// [0x05, slot, pin_idx, state_count, flags, actuator_type, pin2_idx, pulse_x100ms]
+		if len(data) >= 8 {
 			slot := data[1]
 			if int(slot) < settings.MaxControls {
 				cfg.Controls[slot] = settings.ControlSlot{
-					PinIndex:   data[2],
-					StateCount: data[3],
-					Flags:      data[4],
+					PinIndex:       data[2],
+					StateCount:     data[3],
+					Flags:          data[4],
+					ActuatorType:   settings.ActuatorType(data[5]),
+					Pin2Index:      data[6],
+					PulseDurX100ms: data[7],
 				}
 				if slot >= cfg.ControlCount {
 					cfg.ControlCount = slot + 1
@@ -106,6 +123,24 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 				println("[airconfig] control slot", slot, "configured")
 				return ResultReboot
 			}
+		}
+
+	case AirCfgTransfer:
+		// [0x08, enabled, pump_ctrl, valve_t1, valve_t2, sv_ctrl,
+		//        level_t1_field, level_t2_field, start_delta_pct, stop_t1_min_pct, measure_pulse_sec]
+		if len(data) >= 11 {
+			cfg.Transfer.Enabled = data[1]
+			cfg.Transfer.PumpCtrlIdx = data[2]
+			cfg.Transfer.ValveT1CtrlIdx = data[3]
+			cfg.Transfer.ValveT2CtrlIdx = data[4]
+			cfg.Transfer.SVCtrlIdx = data[5]
+			cfg.Transfer.LevelT1FieldIdx = data[6]
+			cfg.Transfer.LevelT2FieldIdx = data[7]
+			cfg.Transfer.StartDeltaPct = data[8]
+			cfg.Transfer.StopT1MinPct = data[9]
+			cfg.Transfer.MeasurePulseSec = data[10]
+			println("[airconfig] transfer config updated, enabled:", data[1])
+			return ResultSaved
 		}
 
 	case AirCfgReset:
@@ -121,17 +156,3 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 	}
 	return ResultNone
 }
-
-// AirConfig sub-command bytes (first byte of fPort 35 payload).
-// These match the protocol constants so any package can use them without
-// importing the protocol package.
-const (
-	AirCfgPinMap  = 0x01 // [0x01, idx, fn, idx, fn, ...]     set pin functions
-	AirCfgPreset  = 0x02 // [0x02, preset_id]                  apply preset
-	AirCfgDump    = 0x03 // [0x03]                              dump config to serial
-	AirCfgSensor  = 0x04 // [0x04, slot, type, pin, field, flags, p1lo, p1hi, p2lo, p2hi]
-	AirCfgControl = 0x05 // [0x05, slot, pin, state_count, flags]
-	AirCfgLoRaWAN = 0x06 // [0x06, region, subband, dr, txpwr, adr, confirmed]  (LoRa-E5 only)
-	AirCfgWiFi    = 0x07 // [0x07, ...]                         (RP2040 only, future)
-	AirCfgReset   = 0xFF // [0xFF]                              factory reset settings
-)

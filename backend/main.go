@@ -104,10 +104,11 @@ func main() {
 		se.Router.GET("/api/farmon/lorawan/stats", lorawanStatsHandler(app, gwState))
 		se.Router.POST("/api/farmon/sendCommand", sendCommandHandler(app, gwState))
 
-		// Workflow engine: load workflows and register routes
+		// Workflow engine: load workflows, start background scheduler, and register routes
 		if err := workflowEngine.LoadWorkflows(); err != nil {
 			log.Printf("workflow: initial load error: %v", err)
 		}
+		go RunScheduler(app, workflowEngine)
 		reloadWorkflows := func(e *core.RecordEvent) error {
 			if err := e.Next(); err != nil {
 				return err

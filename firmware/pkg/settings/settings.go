@@ -1,4 +1,4 @@
-// Package settings provides Tasmota-inspired runtime device configuration.
+// Package settings provides runtime device configuration.
 // The core device personality (pins, sensors, controls, rules, tx interval)
 // lives in CoreSettings. Transport-specific config (LoRaWAN, WiFi) is defined
 // here as separate structs and owned by each device target's codec.
@@ -20,7 +20,7 @@ const (
 	SettingsSize = 1024
 )
 
-// --- Pin functions (Tasmota-style GPIO role assignment) ---
+// --- Pin functions ---
 
 type PinFunction uint8
 
@@ -53,7 +53,7 @@ func PinFunctionName(fn PinFunction) string {
 	return "?"
 }
 
-// --- Sensor types (compiled-in drivers, activated by config) ---
+// --- Sensor types ---
 
 type SensorType uint8
 
@@ -65,7 +65,6 @@ const (
 	SensorSoilADC    SensorType = 4 // Capacitive soil; Param1=dryRaw, Param2=wetRaw → output 0-100%
 	SensorBME280     SensorType = 5 // I2C BME280; PinIndex=bus idx, Param1 lo=I2C addr; 3 fields
 	SensorINA219     SensorType = 6 // I2C INA219; PinIndex=bus idx, Param1 lo=I2C addr; 3 fields
-	// Interface-level generic drivers (configurable via Param1+Param2 calibration)
 	SensorADCLinear    SensorType = 7  // Any linear 0-VREF ADC; Param1=offset×10, Param2=span×10
 	SensorADC4_20mA    SensorType = 8  // 4-20mA current loop (250Ω shunt); Param1=offset×10, Param2=span×10
 	SensorPulseGeneric SensorType = 9  // Generic pulse counter; Param1=pulses/unit
@@ -76,27 +75,55 @@ const (
 // --- Slots ---
 
 // SensorSlot occupies 8 bytes in flash.
-// Param1 and Param2 semantics are sensor-type-specific — see SensorType constants.
 type SensorSlot struct {
 	Type       SensorType
-	PinIndex   uint8  // GPIO pin index (GPIO sensors) or bus instance index (I2C/UART sensors)
-	FieldIndex uint8  // first telemetry field index; multi-field sensors use FieldIndex+1, +2, etc.
+	PinIndex   uint8  // GPIO pin index or bus instance index
+	FieldIndex uint8  // first telemetry field index
 	Flags      uint8  // bit 0: enabled, bit 1: inverted
-	Param1     uint16 // type-specific: pulses/liter, I2C addr, calib offset×10, Modbus devAddr|funcCode
-	Param2     uint16 // type-specific: wetRaw, calib span×10, Modbus register address
+	Param1     uint16 // type-specific
+	Param2     uint16 // type-specific
 }
 
 func (s *SensorSlot) Enabled() bool  { return s.Flags&0x01 != 0 }
 func (s *SensorSlot) Inverted() bool { return s.Flags&0x02 != 0 }
 
+// ActuatorType describes how a control output is driven.
+type ActuatorType uint8
+
+const (
+	ActuatorRelay             ActuatorType = 0 // single pin, hold high/low
+	ActuatorMotorizedValve    ActuatorType = 1 // dual-pin, timed pulse open/close
+	ActuatorSolenoidMomentary ActuatorType = 2 // single pin, pulse then self-off
+)
+
+// ControlSlot occupies 8 bytes in flash (v2+).
+//
+// Flash layout:
+//   [0] PinIndex        — primary pin (open-coil for motorized valve)
+//   [1] StateCount      — number of states (typically 2: off/on)
+//   [2] Flags           — bit0=enabled, bit1=active-low, bit2=dual-pin, bit3=momentary
+//   [3] ActuatorType    — 0=relay, 1=motorizedValve, 2=solenoidMomentary
+//   [4] Pin2Index       — close-coil pin for motorized valve (0xFF = unused)
+//   [5] PulseDurX100ms  — pulse duration × 100ms (0=hold, 20=2000ms)
+//   [6] Reserved
+//   [7] Reserved
 type ControlSlot struct {
-	PinIndex   uint8
-	StateCount uint8
-	Flags      uint8 // bit 0: enabled, bit 1: active-low
+	PinIndex       uint8
+	StateCount     uint8
+	Flags          uint8
+	ActuatorType   ActuatorType
+	Pin2Index      uint8
+	PulseDurX100ms uint8
+	Reserved       [2]uint8
 }
 
 func (c *ControlSlot) Enabled() bool   { return c.Flags&0x01 != 0 }
 func (c *ControlSlot) ActiveLow() bool { return c.Flags&0x02 != 0 }
+func (c *ControlSlot) DualPin() bool   { return c.Flags&0x04 != 0 }
+func (c *ControlSlot) Momentary() bool { return c.Flags&0x08 != 0 }
+
+// ControlSlotSize is the binary wire size of a ControlSlot in flash.
+const ControlSlotSize = 8
 
 // --- Rules ---
 
@@ -207,10 +234,8 @@ func (r *Rule) ToBinary(buf []byte) int {
 	return RuleSize
 }
 
-// --- LoRaWAN settings (used by LoRa-E5 target codec; not in CoreSettings) ---
+// --- LoRaWAN settings ---
 
-// LoRaWANSettings holds LoRaWAN transport configuration. It is stored in flash
-// immediately after the CoreSettings block in the LoRa-E5 codec.
 type LoRaWANSettings struct {
 	Region     uint8 // 0=US915, 1=EU868, 2=AU915, 3=AS923
 	SubBand    uint8
@@ -222,7 +247,6 @@ type LoRaWANSettings struct {
 	AppKey     [16]byte
 }
 
-// LoRaWANDefaults returns the default LoRaWAN configuration.
 func LoRaWANDefaults() LoRaWANSettings {
 	return LoRaWANSettings{
 		Region:     0, // US915
@@ -234,9 +258,52 @@ func LoRaWANDefaults() LoRaWANSettings {
 	}
 }
 
-// --- CoreSettings (the whole device config, transport-agnostic) ---
+// --- TransferConfig: autonomous water transfer FSM parameters ---
 
-// CoreSettings holds all device configuration that is independent of transport.
+// TransferConfig occupies 16 bytes in flash (v2+).
+//
+// Flash layout:
+//   [0]    Enabled           — 0=disabled
+//   [1]    PumpCtrlIdx       — control slot index for the pump
+//   [2]    ValveT1CtrlIdx    — motorized valve: Tank1 → shared pipe
+//   [3]    ValveT2CtrlIdx    — motorized valve: Tank2 → shared pipe
+//   [4]    SVCtrlIdx         — solenoid valve (pressure equalization)
+//   [5]    LevelT1FieldIdx   — sensor field index for Tank1 level
+//   [6]    LevelT2FieldIdx   — sensor field index for Tank2 level
+//   [7]    StartDeltaPct     — start transfer when T1-T2 > N% (default 20)
+//   [8]    StopT1MinPct      — stop when T1 < N% (default 15)
+//   [9]    MeasurePulseSec   — solenoid pulse duration in seconds (default 2)
+//   [10]   Flags
+//   [11-15] Reserved
+type TransferConfig struct {
+	Enabled         uint8
+	PumpCtrlIdx     uint8
+	ValveT1CtrlIdx  uint8
+	ValveT2CtrlIdx  uint8
+	SVCtrlIdx       uint8
+	LevelT1FieldIdx uint8
+	LevelT2FieldIdx uint8
+	StartDeltaPct   uint8
+	StopT1MinPct    uint8
+	MeasurePulseSec uint8
+	Flags           uint8
+	Reserved        [5]uint8
+}
+
+// TransferConfigSize is the binary size of TransferConfig in flash.
+const TransferConfigSize = 16
+
+func TransferDefaults() TransferConfig {
+	return TransferConfig{
+		StartDeltaPct:   20,
+		StopT1MinPct:    15,
+		MeasurePulseSec: 2,
+	}
+}
+
+// --- CoreSettings ---
+
+// CoreSettings holds all device configuration independent of transport.
 // Magic word, version byte, and CRC16 are flash header fields managed by each
 // target's codec — they are NOT stored in this struct.
 type CoreSettings struct {
@@ -252,9 +319,11 @@ type CoreSettings struct {
 	Rules     [MaxRules]Rule
 
 	TxIntervalSec uint16
+
+	Transfer TransferConfig // v2+; zero value = disabled
 }
 
-// --- Presets (like Tasmota modules — const, selectable at runtime) ---
+// --- Presets ---
 
 type Preset uint8
 
@@ -262,13 +331,13 @@ const (
 	PresetGeneric      Preset = 0
 	PresetWaterMonitor Preset = 1
 	PresetSoilStation  Preset = 2
+	PresetWaterManager Preset = 3 // 2-tank autonomous transfer system
 )
 
-// Defaults returns a CoreSettings with safe default values.
-// LoRaWAN defaults are separate — see LoRaWANDefaults().
 func Defaults() CoreSettings {
 	return CoreSettings{
 		TxIntervalSec: 60,
+		Transfer:      TransferDefaults(),
 	}
 }
 
@@ -301,12 +370,79 @@ func ApplyPreset(p Preset) CoreSettings {
 		s.PinMap[15] = PinI2CSCL // PB15 -> OLED
 
 		s.SensorCount = 2
-		// SoilADC: Param1=dryRaw(~55000), Param2=wetRaw(~18000) — calibrate per sensor
 		s.Sensors[0] = SensorSlot{SensorSoilADC, 3, 0, 0x01, 55000, 18000}
 		s.Sensors[1] = SensorSlot{SensorBatteryADC, 8, 2, 0x01, 0, 0}
 
 		s.ControlCount = 1
 		s.Controls[0] = ControlSlot{PinIndex: 6, StateCount: 2, Flags: 0x01}
+
+	case PresetWaterManager:
+		// 2-tank autonomous water transfer system.
+		// Controls:
+		//   0 = Pump          (relay, GP6)
+		//   1 = Valve T1      (motorized, open=GP7 close=GP8, 5s pulse)
+		//   2 = Valve T2      (motorized, open=GP9 close=GP10, 5s pulse)
+		//   3 = Flow Valve T1 (relay, GP11 — outlet from Tank1 side)
+		//   4 = Flow Valve T2 (relay, GP12 — outlet from Tank2 side)
+		//   5 = Solenoid SV   (momentary, GP13, 2s pulse)
+		// Sensors:
+		//   0 = Pressure/Level (4-20mA, field 0)
+		//   1 = Flow T1        (YF-S201, field 1)
+		//   2 = Flow T2        (YF-S201, field 2)
+		//   3 = Battery ADC    (field 3)
+		s.SensorCount = 4
+		s.Sensors[0] = SensorSlot{SensorADC4_20mA, 3, 0, 0x01, 0, 1000}     // 4-20mA level
+		s.Sensors[1] = SensorSlot{SensorFlowYFS201, 4, 1, 0x01, 450, 0}      // flow T1
+		s.Sensors[2] = SensorSlot{SensorFlowYFS201, 5, 2, 0x01, 450, 0}      // flow T2
+		s.Sensors[3] = SensorSlot{SensorBatteryADC, 8, 3, 0x01, 0, 0}        // battery
+
+		s.ControlCount = 6
+		// Pump: simple relay
+		s.Controls[0] = ControlSlot{PinIndex: 6, StateCount: 2, Flags: 0x01,
+			ActuatorType: ActuatorRelay}
+		// Valve T1: motorized, dual-pin, 5s pulse (50 × 100ms)
+		s.Controls[1] = ControlSlot{PinIndex: 7, StateCount: 2, Flags: 0x05,
+			ActuatorType: ActuatorMotorizedValve, Pin2Index: 8, PulseDurX100ms: 50}
+		// Valve T2: motorized, dual-pin, 5s pulse
+		s.Controls[2] = ControlSlot{PinIndex: 9, StateCount: 2, Flags: 0x05,
+			ActuatorType: ActuatorMotorizedValve, Pin2Index: 10, PulseDurX100ms: 50}
+		// Flow Valve T1: simple relay
+		s.Controls[3] = ControlSlot{PinIndex: 11, StateCount: 2, Flags: 0x01,
+			ActuatorType: ActuatorRelay}
+		// Flow Valve T2: simple relay
+		s.Controls[4] = ControlSlot{PinIndex: 12, StateCount: 2, Flags: 0x01,
+			ActuatorType: ActuatorRelay}
+		// Solenoid SV: momentary, 2s pulse (20 × 100ms)
+		s.Controls[5] = ControlSlot{PinIndex: 13, StateCount: 2, Flags: 0x09,
+			ActuatorType: ActuatorSolenoidMomentary, PulseDurX100ms: 20}
+
+		// Pin map for WaterManager preset
+		s.PinMap[3] = PinADC        // 4-20mA level sensor
+		s.PinMap[4] = PinFlowSensor // flow T1
+		s.PinMap[5] = PinFlowSensor // flow T2
+		s.PinMap[6] = PinRelay      // pump
+		s.PinMap[7] = PinRelay      // valve T1 open
+		s.PinMap[8] = PinRelay      // valve T1 close
+		s.PinMap[9] = PinRelay      // valve T2 open
+		s.PinMap[10] = PinRelay     // valve T2 close
+		s.PinMap[11] = PinRelay     // flow valve T1
+		s.PinMap[12] = PinRelay     // flow valve T2
+		s.PinMap[13] = PinRelay     // solenoid SV
+		s.PinMap[14] = PinADC       // battery
+
+		// Transfer FSM defaults (enabled)
+		s.Transfer = TransferConfig{
+			Enabled:         1,
+			PumpCtrlIdx:     0,
+			ValveT1CtrlIdx:  1,
+			ValveT2CtrlIdx:  2,
+			SVCtrlIdx:       5,
+			LevelT1FieldIdx: 0,
+			LevelT2FieldIdx: 0, // same sensor, valve switches which tank is measured
+			StartDeltaPct:   20,
+			StopT1MinPct:    15,
+			MeasurePulseSec: 2,
+		}
 
 	case PresetGeneric:
 		// all pins None, user configures everything via AirConfig

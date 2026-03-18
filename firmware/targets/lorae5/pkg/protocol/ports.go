@@ -1,34 +1,28 @@
-// Package protocol defines the fPort constants and message formats.
-// The same fPort namespace is used on both LoRaWAN and WiFi transports,
-// keeping the backend decoder identical for all device types.
-// Must stay in sync with the backend and the original C++ protocol_constants.h.
+// Package protocol re-exports from firmware/pkg/protocol for backward compatibility.
+// Import firmware/pkg/protocol directly in new code.
 package protocol
 
-// Uplink ports (device -> server)
+import shared "github.com/farm/firmware/pkg/protocol"
+
 const (
-	FPortRegistration = 1
-	FPortTelemetry    = 2
-	FPortStateChange  = 3
-	FPortCommandAck   = 4
-	FPortDiagnostics  = 6
-	FPortReconnection = 7
+	FPortRegistration = shared.FPortRegistration
+	FPortTelemetry    = shared.FPortTelemetry
+	FPortStateChange  = shared.FPortStateChange
+	FPortCommandAck   = shared.FPortCommandAck
+	FPortDiagnostics  = shared.FPortDiagnostics
+	FPortReconnection = shared.FPortReconnection
+
+	FPortRegAck         = shared.FPortRegAck
+	FPortCmdReset       = shared.FPortCmdReset
+	FPortCmdInterval    = shared.FPortCmdInterval
+	FPortCmdReboot      = shared.FPortCmdReboot
+	FPortCmdClearErr    = shared.FPortCmdClearErr
+	FPortCmdForceReg    = shared.FPortCmdForceReg
+	FPortCmdStatus      = shared.FPortCmdStatus
+	FPortCmdDispTimeout = shared.FPortCmdDispTimeout
+	FPortDirectCtrl     = shared.FPortDirectCtrl
+	FPortRuleUpdate     = shared.FPortRuleUpdate
+	FPortAirConfig      = shared.FPortAirConfig
+
+	MaxPayload = shared.MaxPayload
 )
-
-// Downlink ports (server -> device)
-const (
-	FPortRegAck         = 5
-	FPortCmdReset       = 10
-	FPortCmdInterval    = 11
-	FPortCmdReboot      = 12
-	FPortCmdClearErr    = 13
-	FPortCmdForceReg    = 14
-	FPortCmdStatus      = 15
-	FPortCmdDispTimeout = 16
-	FPortDirectCtrl     = 20
-	FPortRuleUpdate     = 30
-
-	// AirConfig: over-the-air device configuration (pin map, sensors, controls, presets)
-	FPortAirConfig = 35
-)
-
-const MaxPayload = 222 // DR3 US915

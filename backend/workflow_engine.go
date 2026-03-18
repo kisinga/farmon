@@ -23,6 +23,12 @@ type TriggerType string
 const (
 	TriggerTelemetry   TriggerType = "telemetry"
 	TriggerStateChange TriggerType = "state_change"
+	// TriggerCheckin fires when a device sends a fPort 1 checkin.
+	// Expr env: uptime_sec, firmware_version, is_boot (uptime < 60s), config_status.
+	TriggerCheckin TriggerType = "checkin"
+	// TriggerSchedule fires on a cron schedule, independent of device events.
+	// Trigger config must include "cron" (5-field cron string, e.g. "0 6 * * *").
+	TriggerSchedule TriggerType = "schedule"
 )
 
 // TriggerContext carries all data from the triggering event to the engine.
@@ -31,27 +37,60 @@ type TriggerContext struct {
 	DeviceEUI  string
 	DeviceName string
 	Telemetry  map[string]any // fPort 2: decoded field values
-	ControlKey string         // fPort 3
+
+	// State change (fPort 3)
+	ControlKey string
 	OldState   string
 	NewState   string
 	Source     string // "RULE", "MANUAL", "DOWNLINK", "BOOT"
+
+	// Checkin (fPort 1)
+	UptimeSec       uint32
+	FirmwareVersion string
+	IsBoot          bool   // uptime < 60s
+	ConfigStatus    string // "synced" | "pending" | "n/a"
+}
+
+// TriggerFilter restricts which events a trigger matches.
+// Triggers filter on structural identity only — value/threshold checks go in condition_expr.
+type TriggerFilter struct {
+	// DeviceEUI limits the trigger to a single device. Empty = any device.
+	DeviceEUI string `json:"device_eui,omitempty"`
+	// ControlKey limits state_change triggers to a specific control. Empty = any control.
+	ControlKey string `json:"control_key,omitempty"`
 }
 
 // WorkflowTrigger is a single trigger definition within a workflow.
 type WorkflowTrigger struct {
-	Type   TriggerType            `json:"type"`
-	Filter map[string]string      `json:"filter,omitempty"` // device_eui, field, control_key
+	Type           TriggerType `json:"type"`
+	Filter         TriggerFilter `json:"filter,omitempty"`
+	// CronExpr is the 5-field cron string for TriggerSchedule (e.g. "0 6 * * *").
+	CronExpr       string      `json:"cron,omitempty"`
+	// DebounceSeconds requires the condition to be continuously true for this many
+	// seconds before the workflow fires. Restarts reset debounce timers (acceptable —
+	// debounce is a noise filter, not persistent state).
+	DebounceSeconds int `json:"debounce_seconds,omitempty"`
 }
 
 // WorkflowAction is a single action in the workflow pipeline.
 type WorkflowAction struct {
-	Type      string `json:"type"`       // "set_control" | "send_command"
-	TargetEUI string `json:"target_eui"`
-	Control   string `json:"control,omitempty"`
-	State     string `json:"state,omitempty"`
-	Duration  int    `json:"duration,omitempty"`
-	Command   string `json:"command,omitempty"`
+	Type      string  `json:"type"`       // "set_control" | "send_command" | "set_var" | "increment_var"
+	TargetEUI string  `json:"target_eui,omitempty"`
+	Control   string  `json:"control,omitempty"`
+	State     string  `json:"state,omitempty"`
+	Duration  int     `json:"duration,omitempty"`
+	Command   string  `json:"command,omitempty"`
 	Value     *uint32 `json:"value,omitempty"`
+	// DelaySeconds: execute this action N seconds after the workflow fires.
+	// All delays are absolute offsets from the trigger moment (not relative to prior actions).
+	// Actions with delay_seconds > 0 are persisted to scheduled_actions and executed
+	// by the background scheduler goroutine, surviving process restarts.
+	DelaySeconds int `json:"delay_seconds,omitempty"`
+	// For set_var / increment_var
+	Key       string  `json:"key,omitempty"`
+	VarValue  string  `json:"var_value,omitempty"` // for set_var: literal string value
+	Amount    float64 `json:"amount,omitempty"`    // for increment_var: amount to add
+	ExpiresIn int     `json:"expires_in,omitempty"` // seconds until var expires, 0 = never
 }
 
 // compiledWorkflow is a cached, compiled workflow.
@@ -59,6 +98,7 @@ type compiledWorkflow struct {
 	ID            string
 	Name          string
 	Triggers      []WorkflowTrigger
+	compiledCrons []*CronExpr // parallel to Triggers; non-nil for TriggerSchedule entries
 	Program       *vm.Program
 	ConditionExpr string
 	Actions       []WorkflowAction
@@ -68,19 +108,21 @@ type compiledWorkflow struct {
 
 // WorkflowEngine evaluates server workflows on uplink events.
 type WorkflowEngine struct {
-	mu        sync.RWMutex
-	workflows []compiledWorkflow
-	cooldowns map[string]time.Time // workflow ID → last fired
-	app       core.App
-	gwState   *GatewayState
+	mu            sync.RWMutex
+	workflows     []compiledWorkflow
+	cooldowns     map[string]time.Time // workflowID → last fired
+	debounceFirst map[string]time.Time // "workflowID:deviceEUI" → when condition first became true
+	app           core.App
+	gwState       *GatewayState
 }
 
 // NewWorkflowEngine creates a new engine.
 func NewWorkflowEngine(app core.App, gwState *GatewayState) *WorkflowEngine {
 	return &WorkflowEngine{
-		app:       app,
-		gwState:   gwState,
-		cooldowns: make(map[string]time.Time),
+		app:           app,
+		gwState:       gwState,
+		cooldowns:     make(map[string]time.Time),
+		debounceFirst: make(map[string]time.Time),
 	}
 }
 
@@ -104,40 +146,65 @@ func (e *WorkflowEngine) LoadWorkflows() error {
 			continue
 		}
 
-		// Parse condition expression (optional — empty means always pass)
-		condExpr, _ := rec.Get("condition_expr").(string)
-		var program *vm.Program
-		if condExpr != "" {
-			program, err = expr.Compile(condExpr, expr.AsBool(), expr.AllowUndefinedVariables())
-			if err != nil {
-				log.Printf("workflow: compile error id=%s expr=%q: %v", rec.Id, condExpr, err)
-				continue
+		// Validate trigger filters — warn on unknown keys (legacy map-based filters).
+		for _, t := range triggers {
+			if t.Type == TriggerSchedule && t.CronExpr == "" {
+				log.Printf("workflow: skip id=%s: schedule trigger missing cron expression", rec.Id)
+				goto nextRecord
 			}
 		}
 
-		// Parse actions
-		actions, err := parseActions(rec.Get("actions"))
-		if err != nil || len(actions) == 0 {
-			log.Printf("workflow: skip id=%s: invalid actions: %v", rec.Id, err)
-			continue
-		}
+		{
+			// Parse condition expression (optional — empty means always pass)
+			condExpr, _ := rec.Get("condition_expr").(string)
+			var program *vm.Program
+			if condExpr != "" {
+				program, err = expr.Compile(condExpr, expr.AsBool(), expr.AllowUndefinedVariables())
+				if err != nil {
+					log.Printf("workflow: compile error id=%s expr=%q: %v", rec.Id, condExpr, err)
+					continue
+				}
+			}
 
-		// Validate: max one action per target_eui
-		if err := validateUniqueTargets(actions); err != nil {
-			log.Printf("workflow: skip id=%s: %v", rec.Id, err)
-			continue
-		}
+			// Parse actions
+			actions, err := parseActions(rec.Get("actions"))
+			if err != nil || len(actions) == 0 {
+				log.Printf("workflow: skip id=%s: invalid actions: %v", rec.Id, err)
+				continue
+			}
 
-		workflows = append(workflows, compiledWorkflow{
-			ID:            rec.Id,
-			Name:          strOrDefault(rec.Get("name"), ""),
-			Triggers:      triggers,
-			Program:       program,
-			ConditionExpr: condExpr,
-			Actions:       actions,
-			CooldownSec:   intFromRecord(rec, "cooldown_seconds"),
-			Priority:      intFromRecord(rec, "priority"),
-		})
+			// Validate: max one downlink action per target_eui
+			if err := validateUniqueTargets(actions); err != nil {
+				log.Printf("workflow: skip id=%s: %v", rec.Id, err)
+				continue
+			}
+
+			// Compile cron expressions for schedule triggers
+			compiledCrons := make([]*CronExpr, len(triggers))
+			for i, t := range triggers {
+				if t.Type == TriggerSchedule && t.CronExpr != "" {
+					ce, err := ParseCron(t.CronExpr)
+					if err != nil {
+						log.Printf("workflow: skip id=%s: invalid cron %q: %v", rec.Id, t.CronExpr, err)
+						goto nextRecord
+					}
+					compiledCrons[i] = ce
+				}
+			}
+
+			workflows = append(workflows, compiledWorkflow{
+				ID:            rec.Id,
+				Name:          strOrDefault(rec.Get("name"), ""),
+				Triggers:      triggers,
+				compiledCrons: compiledCrons,
+				Program:       program,
+				ConditionExpr: condExpr,
+				Actions:       actions,
+				CooldownSec:   intFromRecord(rec, "cooldown_seconds"),
+				Priority:      intFromRecord(rec, "priority"),
+			})
+		}
+	nextRecord:
 	}
 
 	sort.Slice(workflows, func(i, j int) bool {
@@ -151,7 +218,7 @@ func (e *WorkflowEngine) LoadWorkflows() error {
 	return nil
 }
 
-// Evaluate is called from the pipeline on each trigger event.
+// Evaluate is called from the pipeline on each trigger event (telemetry, state_change, checkin).
 func (e *WorkflowEngine) Evaluate(ctx TriggerContext) {
 	e.mu.RLock()
 	workflows := e.workflows
@@ -172,9 +239,9 @@ func (e *WorkflowEngine) Evaluate(ctx TriggerContext) {
 		// Evaluate condition (nil program = always pass)
 		condResult := true
 		if wf.Program != nil {
-			result, err := expr.Run(wf.Program, env)
-			if err != nil {
-				e.logWorkflow(wf, ctx, triggerIdx, false, 0, "error", err.Error(), env)
+			result, runErr := expr.Run(wf.Program, env)
+			if runErr != nil {
+				e.logWorkflow(wf, ctx, triggerIdx, false, 0, "error", runErr.Error(), env)
 				continue
 			}
 			ok, isOk := result.(bool)
@@ -185,7 +252,35 @@ func (e *WorkflowEngine) Evaluate(ctx TriggerContext) {
 			condResult = ok
 		}
 
-		if !condResult {
+		// Debounce: require condition to be continuously true for debounce_seconds.
+		trigger := wf.Triggers[triggerIdx]
+		if trigger.DebounceSeconds > 0 {
+			debounceKey := wf.ID + ":" + ctx.DeviceEUI
+			if !condResult {
+				// Condition false — reset debounce timer.
+				e.mu.Lock()
+				delete(e.debounceFirst, debounceKey)
+				e.mu.Unlock()
+				continue
+			}
+			// Condition true — check if it has been true long enough.
+			e.mu.Lock()
+			first, exists := e.debounceFirst[debounceKey]
+			if !exists {
+				e.debounceFirst[debounceKey] = time.Now()
+				e.mu.Unlock()
+				continue // debounce period just started
+			}
+			elapsed := time.Since(first)
+			e.mu.Unlock()
+			if elapsed < time.Duration(trigger.DebounceSeconds)*time.Second {
+				continue // still within debounce window
+			}
+			// Debounce elapsed — fire, then reset so next occurrence re-debounces.
+			e.mu.Lock()
+			delete(e.debounceFirst, debounceKey)
+			e.mu.Unlock()
+		} else if !condResult {
 			continue
 		}
 
@@ -194,10 +289,21 @@ func (e *WorkflowEngine) Evaluate(ctx TriggerContext) {
 			continue
 		}
 
-		// Execute actions sequentially
+		// Execute actions: immediate actions run now; delayed actions are scheduled.
 		actionsCompleted := 0
 		var actionErr error
+		triggerTime := time.Now()
 		for _, action := range wf.Actions {
+			if action.DelaySeconds > 0 {
+				executeAt := triggerTime.Add(time.Duration(action.DelaySeconds) * time.Second)
+				if err := scheduleAction(e.app, wf.ID, action, ctx, executeAt); err != nil {
+					log.Printf("workflow: schedule action error wf=%s: %v", wf.Name, err)
+					actionErr = err
+					break
+				}
+				actionsCompleted++
+				continue
+			}
 			if err := e.executeAction(action); err != nil {
 				actionErr = err
 				break
@@ -216,22 +322,45 @@ func (e *WorkflowEngine) Evaluate(ctx TriggerContext) {
 	}
 }
 
+// FireScheduled evaluates schedule-type workflow triggers against the given time.
+// Called by the scheduler goroutine every minute.
+func (e *WorkflowEngine) FireScheduled(now time.Time) {
+	e.mu.RLock()
+	workflows := e.workflows
+	e.mu.RUnlock()
+
+	for _, wf := range workflows {
+		for i, trigger := range wf.Triggers {
+			if trigger.Type != TriggerSchedule {
+				continue
+			}
+			if i >= len(wf.compiledCrons) || wf.compiledCrons[i] == nil {
+				continue
+			}
+			if !wf.compiledCrons[i].Matches(now) {
+				continue
+			}
+			ctx := TriggerContext{
+				Type:      TriggerSchedule,
+				DeviceEUI: trigger.Filter.DeviceEUI,
+			}
+			go e.Evaluate(ctx)
+		}
+	}
+}
+
 // matchTrigger returns the index of the first matching trigger, or -1.
 func matchTrigger(triggers []WorkflowTrigger, ctx TriggerContext) int {
 	for i, t := range triggers {
 		if t.Type != ctx.Type {
 			continue
 		}
-		// Check filter constraints
-		if euiFilter, ok := t.Filter["device_eui"]; ok && euiFilter != "" && euiFilter != ctx.DeviceEUI {
+		// Device EUI filter (empty = match any device)
+		if t.Filter.DeviceEUI != "" && t.Filter.DeviceEUI != ctx.DeviceEUI {
 			continue
 		}
-		if fieldFilter, ok := t.Filter["field"]; ok && fieldFilter != "" {
-			if _, exists := ctx.Telemetry[fieldFilter]; !exists && ctx.Type == TriggerTelemetry {
-				continue
-			}
-		}
-		if ctrlFilter, ok := t.Filter["control_key"]; ok && ctrlFilter != "" && ctrlFilter != ctx.ControlKey {
+		// Control key filter for state_change triggers (empty = match any control)
+		if t.Type == TriggerStateChange && t.Filter.ControlKey != "" && t.Filter.ControlKey != ctx.ControlKey {
 			continue
 		}
 		return i
@@ -290,11 +419,10 @@ func (e *WorkflowEngine) EvaluateDryRun(workflowID string, triggerIdx int, ctx T
 
 	// Use specified trigger index to build context
 	if triggerIdx >= 0 && triggerIdx < len(wf.Triggers) {
-		// Apply trigger's filter to the context if needed
 		t := wf.Triggers[triggerIdx]
 		ctx.Type = t.Type
-		if euiFilter, ok := t.Filter["device_eui"]; ok && euiFilter != "" && ctx.DeviceEUI == "" {
-			ctx.DeviceEUI = euiFilter
+		if t.Filter.DeviceEUI != "" && ctx.DeviceEUI == "" {
+			ctx.DeviceEUI = t.Filter.DeviceEUI
 		}
 	}
 
@@ -322,11 +450,14 @@ func (e *WorkflowEngine) EvaluateDryRun(workflowID string, triggerIdx int, ctx T
 }
 
 func (e *WorkflowEngine) buildExprEnv(ctx TriggerContext) map[string]any {
+	now := time.Now()
 	env := map[string]any{
 		"device_eui":  ctx.DeviceEUI,
 		"device_name": ctx.DeviceName,
-		"now":         time.Now(),
-		"hour":        time.Now().Hour(),
+		"now":         now,
+		"hour":        now.Hour(),
+		"minute":      now.Minute(),
+		"day_of_week": int(now.Weekday()),
 	}
 	for k, v := range ctx.Telemetry {
 		env[k] = v
@@ -336,6 +467,16 @@ func (e *WorkflowEngine) buildExprEnv(ctx TriggerContext) map[string]any {
 		env["old_state"] = ctx.OldState
 		env["new_state"] = ctx.NewState
 		env["source"] = ctx.Source
+	}
+	if ctx.Type == TriggerCheckin {
+		env["uptime_sec"] = ctx.UptimeSec
+		env["firmware_version"] = ctx.FirmwareVersion
+		env["is_boot"] = ctx.IsBoot
+		env["config_status"] = ctx.ConfigStatus
+	}
+	env["has_field"] = func(key string) bool {
+		_, exists := ctx.Telemetry[key]
+		return exists
 	}
 	env["device_state"] = func(eui, controlKey string) string {
 		rec, err := e.app.FindFirstRecordByFilter("device_controls",
@@ -365,6 +506,9 @@ func (e *WorkflowEngine) buildExprEnv(ctx TriggerContext) map[string]any {
 		}
 		return getFloat64(data[fieldKey])
 	}
+	env["var"] = func(key string) float64 {
+		return getWorkflowVar(e.app, key)
+	}
 	return env
 }
 
@@ -390,6 +534,13 @@ func (e *WorkflowEngine) recordCooldown(workflowID string) {
 func (e *WorkflowEngine) executeAction(action WorkflowAction) error {
 	cfg := e.gwState.Config()
 	if cfg == nil || !cfg.Valid() {
+		// For var actions, gateway config is not needed.
+		switch action.Type {
+		case "set_var":
+			return executeSetVar(e.app, action.Key, action.VarValue, action.ExpiresIn)
+		case "increment_var":
+			return executeIncrementVar(e.app, action.Key, action.Amount, action.ExpiresIn)
+		}
 		return nil
 	}
 
@@ -409,6 +560,10 @@ func (e *WorkflowEngine) executeAction(action WorkflowAction) error {
 		return ExecuteSendCommand(e.app, cfg, SendCommandParams{
 			DeviceEUI: action.TargetEUI, Command: action.Command, Value: action.Value, InitiatedBy: "workflow",
 		})
+	case "set_var":
+		return executeSetVar(e.app, action.Key, action.VarValue, action.ExpiresIn)
+	case "increment_var":
+		return executeIncrementVar(e.app, action.Key, action.Amount, action.ExpiresIn)
 	default:
 		return nil
 	}
@@ -444,7 +599,10 @@ func sanitizeEnv(env map[string]any) map[string]any {
 	out := make(map[string]any, len(env))
 	for k, v := range env {
 		switch v.(type) {
-		case func(string, string) string, func(string, string) float64:
+		case func(string, string) string,
+			func(string, string) float64,
+			func(string) bool,
+			func(string) float64:
 			continue
 		default:
 			out[k] = v
@@ -455,18 +613,9 @@ func sanitizeEnv(env map[string]any) map[string]any {
 
 // parseTriggers parses the triggers JSON field into a slice.
 func parseTriggers(v any) ([]WorkflowTrigger, error) {
-	var raw []byte
-	switch val := v.(type) {
-	case string:
-		raw = []byte(val)
-	case []byte:
-		raw = val
-	default:
-		b, err := json.Marshal(v)
-		if err != nil {
-			return nil, err
-		}
-		raw = b
+	raw, err := toJSONBytes(v)
+	if err != nil {
+		return nil, err
 	}
 	var triggers []WorkflowTrigger
 	if err := json.Unmarshal(raw, &triggers); err != nil {
@@ -477,24 +626,27 @@ func parseTriggers(v any) ([]WorkflowTrigger, error) {
 
 // parseActions parses the actions JSON field into a slice.
 func parseActions(v any) ([]WorkflowAction, error) {
-	var raw []byte
-	switch val := v.(type) {
-	case string:
-		raw = []byte(val)
-	case []byte:
-		raw = val
-	default:
-		b, err := json.Marshal(v)
-		if err != nil {
-			return nil, err
-		}
-		raw = b
+	raw, err := toJSONBytes(v)
+	if err != nil {
+		return nil, err
 	}
 	var actions []WorkflowAction
 	if err := json.Unmarshal(raw, &actions); err != nil {
 		return nil, err
 	}
 	return actions, nil
+}
+
+// toJSONBytes normalizes any JSON-like value into a []byte.
+func toJSONBytes(v any) ([]byte, error) {
+	switch val := v.(type) {
+	case string:
+		return []byte(val), nil
+	case []byte:
+		return val, nil
+	default:
+		return json.Marshal(v)
+	}
 }
 
 // validateUniqueTargets ensures no two downlink actions target the same device.
@@ -510,6 +662,29 @@ func validateUniqueTargets(actions []WorkflowAction) error {
 		seen[a.TargetEUI] = true
 	}
 	return nil
+}
+
+// scheduleAction persists a delayed workflow action to the scheduled_actions collection.
+func scheduleAction(app core.App, workflowID string, action WorkflowAction, ctx TriggerContext, executeAt time.Time) error {
+	coll, err := app.FindCollectionByNameOrId("scheduled_actions")
+	if err != nil {
+		return fmt.Errorf("scheduled_actions collection not found: %w", err)
+	}
+	actionJSON, err := json.Marshal(action)
+	if err != nil {
+		return err
+	}
+	ctxJSON, _ := json.Marshal(map[string]any{
+		"type":       ctx.Type,
+		"device_eui": ctx.DeviceEUI,
+	})
+	rec := core.NewRecord(coll)
+	rec.Set("workflow_id", workflowID)
+	rec.Set("action_json", string(actionJSON))
+	rec.Set("trigger_ctx", string(ctxJSON))
+	rec.Set("execute_at", executeAt.Format(time.RFC3339))
+	rec.Set("status", "pending")
+	return app.Save(rec)
 }
 
 // Helpers
