@@ -85,6 +85,7 @@ func main() {
 		se.Router.PATCH("/api/farmon/profiles/{id}", updateProfileHandler(app))
 		se.Router.DELETE("/api/farmon/profiles/{id}", deleteProfileHandler(app))
 		se.Router.POST("/api/farmon/profiles/{id}/test-decode", testDecodeHandler(app))
+		se.Router.POST("/api/farmon/validate-airconfig", validateAirConfigHandler())
 
 		// Device config
 		se.Router.POST("/api/farmon/devices/{eui}/push-config", pushConfigHandler(app, gwState))
@@ -133,6 +134,23 @@ func main() {
 		app.OnRecordAfterCreateSuccess("workflows").BindFunc(reloadWorkflows)
 		app.OnRecordAfterUpdateSuccess("workflows").BindFunc(reloadWorkflows)
 		app.OnRecordAfterDeleteSuccess("workflows").BindFunc(reloadWorkflows)
+
+		// Profile-to-device sync: when profile sub-components change, propagate to all linked devices.
+		syncProfileHook := func(e *core.RecordEvent) error {
+			if err := e.Next(); err != nil {
+				return err
+			}
+			profileID := e.Record.GetString("profile")
+			if profileID != "" {
+				syncProfileToDevices(app, profileID)
+			}
+			return nil
+		}
+		for _, collection := range []string{"profile_fields", "profile_controls", "profile_commands", "profile_airconfig"} {
+			app.OnRecordAfterCreateSuccess(collection).BindFunc(syncProfileHook)
+			app.OnRecordAfterUpdateSuccess(collection).BindFunc(syncProfileHook)
+			app.OnRecordAfterDeleteSuccess(collection).BindFunc(syncProfileHook)
+		}
 
 		se.Router.GET("/api/farmon/workflows", listWorkflowsHandler(app))
 		se.Router.POST("/api/farmon/workflows", createWorkflowHandler(app, workflowEngine))

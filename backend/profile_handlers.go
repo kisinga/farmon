@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -410,5 +411,53 @@ func updateDeviceOverridesHandler(app core.App) func(*core.RequestEvent) error {
 		}
 
 		return e.JSON(http.StatusOK, map[string]any{"ok": true})
+	}
+}
+
+// POST /api/farmon/validate-airconfig — validate an airconfig for pin conflicts, field overlaps, etc.
+// Accepts raw airconfig JSON body: { "pin_map": [...], "sensors": [...], "controls": [...] }
+// Returns { "errors": [...], "warnings": [...] }
+func validateAirConfigHandler() func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		var body struct {
+			PinMap   json.RawMessage `json:"pin_map"`
+			Sensors  json.RawMessage `json:"sensors"`
+			Controls json.RawMessage `json:"controls"`
+			LoRaWAN  json.RawMessage `json:"lorawan"`
+			Transfer json.RawMessage `json:"transfer"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.String(http.StatusBadRequest, "invalid body")
+		}
+
+		ac := &ProfileAirConfig{
+			PinMap:   body.PinMap,
+			Sensors:  body.Sensors,
+			Controls: body.Controls,
+			LoRaWAN:  body.LoRaWAN,
+			Transfer: body.Transfer,
+		}
+
+		results := ValidateAirConfig(ac)
+
+		var errors, warnings []ValidationError
+		for _, r := range results {
+			if r.Severity == "error" {
+				errors = append(errors, r)
+			} else {
+				warnings = append(warnings, r)
+			}
+		}
+		if errors == nil {
+			errors = []ValidationError{}
+		}
+		if warnings == nil {
+			warnings = []ValidationError{}
+		}
+
+		return e.JSON(http.StatusOK, map[string]any{
+			"errors":   errors,
+			"warnings": warnings,
+		})
 	}
 }

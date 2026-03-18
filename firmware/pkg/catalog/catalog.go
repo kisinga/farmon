@@ -12,23 +12,25 @@ import "github.com/farmon/firmware/pkg/settings"
 
 // InterfaceInfo describes a sensor interface category for the UI.
 type InterfaceInfo struct {
-	ID           string `json:"id"`
-	Label        string `json:"label"`
-	SensorType   uint8  `json:"sensor_type"`
-	NeedsCalib   bool   `json:"needs_calib"`
-	BusAddressed bool   `json:"bus_addressed"`
+	ID              string  `json:"id"`
+	Label           string  `json:"label"`
+	SensorType      uint8   `json:"sensor_type"`
+	NeedsCalib      bool    `json:"needs_calib"`
+	BusAddressed    bool    `json:"bus_addressed"`
+	PinFunction     uint8   `json:"pin_function"`      // required pin function for direct-pin sensors (0 = N/A)
+	BusPinFunctions []uint8 `json:"bus_pin_functions"`  // required bus pin functions (e.g., [SDA, SCL] for I2C)
 }
 
 // Interfaces is the authoritative list of sensor interface types.
 var Interfaces = []InterfaceInfo{
-	{ID: "adc_linear", Label: "Analog (0-VREF Linear)", SensorType: uint8(settings.SensorADCLinear), NeedsCalib: true, BusAddressed: false},
-	{ID: "adc_4_20ma", Label: "Analog (4-20mA Loop)", SensorType: uint8(settings.SensorADC4_20mA), NeedsCalib: true, BusAddressed: false},
-	{ID: "onewire", Label: "1-Wire (DS18B20)", SensorType: uint8(settings.SensorDS18B20), NeedsCalib: false, BusAddressed: false},
-	{ID: "i2c_bme280", Label: "I2C — BME280 (T/H/P)", SensorType: uint8(settings.SensorBME280), NeedsCalib: false, BusAddressed: true},
-	{ID: "i2c_ina219", Label: "I2C — INA219 (V/I/W)", SensorType: uint8(settings.SensorINA219), NeedsCalib: false, BusAddressed: true},
-	{ID: "pulse", Label: "Pulse Counter", SensorType: uint8(settings.SensorPulseGeneric), NeedsCalib: false, BusAddressed: false},
-	{ID: "modbus_rtu", Label: "Modbus RTU (RS-485)", SensorType: uint8(settings.SensorModbusRTU), NeedsCalib: false, BusAddressed: true},
-	{ID: "digital_in", Label: "Digital Input (GPIO)", SensorType: uint8(settings.SensorDigitalIn), NeedsCalib: false, BusAddressed: false},
+	{ID: "adc_linear", Label: "Analog (0-VREF Linear)", SensorType: uint8(settings.SensorADCLinear), NeedsCalib: true, BusAddressed: false, PinFunction: uint8(settings.PinADC)},
+	{ID: "adc_4_20ma", Label: "Analog (4-20mA Loop)", SensorType: uint8(settings.SensorADC4_20mA), NeedsCalib: true, BusAddressed: false, PinFunction: uint8(settings.PinADC)},
+	{ID: "onewire", Label: "1-Wire (DS18B20)", SensorType: uint8(settings.SensorDS18B20), NeedsCalib: false, BusAddressed: false, PinFunction: uint8(settings.PinOneWire)},
+	{ID: "i2c_bme280", Label: "I2C — BME280 (T/H/P)", SensorType: uint8(settings.SensorBME280), NeedsCalib: false, BusAddressed: true, BusPinFunctions: []uint8{uint8(settings.PinI2CSDA), uint8(settings.PinI2CSCL)}},
+	{ID: "i2c_ina219", Label: "I2C — INA219 (V/I/W)", SensorType: uint8(settings.SensorINA219), NeedsCalib: false, BusAddressed: true, BusPinFunctions: []uint8{uint8(settings.PinI2CSDA), uint8(settings.PinI2CSCL)}},
+	{ID: "pulse", Label: "Pulse Counter", SensorType: uint8(settings.SensorPulseGeneric), NeedsCalib: false, BusAddressed: false, PinFunction: uint8(settings.PinCounter)},
+	{ID: "modbus_rtu", Label: "Modbus RTU (RS-485)", SensorType: uint8(settings.SensorModbusRTU), NeedsCalib: false, BusAddressed: true, BusPinFunctions: []uint8{uint8(settings.PinUARTTX), uint8(settings.PinUARTRX)}},
+	{ID: "digital_in", Label: "Digital Input (GPIO)", SensorType: uint8(settings.SensorDigitalIn), NeedsCalib: false, BusAddressed: false, PinFunction: uint8(settings.PinButton)},
 }
 
 // ─── Measurement types ──────────────────────────────────────────────────────
@@ -95,9 +97,10 @@ var Presets = []SensorPreset{
 
 // ─── Field counts ───────────────────────────────────────────────────────────
 
-// fieldCount mirrors sensors.FieldCount() without importing the sensors package
+// FieldCountForType returns the number of telemetry fields a sensor type produces.
+// It mirrors sensors.FieldCount() without importing the sensors package
 // (which depends on "machine"). Keep in sync with firmware/pkg/sensors/registry.go.
-func fieldCount(t settings.SensorType) int {
+func FieldCountForType(t settings.SensorType) int {
 	switch t {
 	case settings.SensorBME280:
 		return 3
@@ -126,7 +129,7 @@ type SensorCatalog struct {
 func GetCatalog() SensorCatalog {
 	fc := make(map[uint8]int, int(settings.SensorTypeMax))
 	for i := settings.SensorType(0); i < settings.SensorTypeMax; i++ {
-		fc[uint8(i)] = fieldCount(i)
+		fc[uint8(i)] = FieldCountForType(i)
 	}
 	return SensorCatalog{
 		Interfaces:   Interfaces,

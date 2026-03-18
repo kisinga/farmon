@@ -6,7 +6,8 @@ import {
   applyTrim,
   type MeasurementType, type RuleSuggestion,
 } from '../../../core/constants/sensor-config';
-import { SensorInterfaceInfo, SensorPresetInfo, MeasurementInfo } from '../../../core/services/api.types';
+import { SensorInterfaceInfo, SensorPresetInfo, MeasurementInfo, AirConfigValidationError } from '../../../core/services/api.types';
+import { SensorService } from '../../../core/services/sensor.service';
 
 interface CalibForm {
   mode: 'datasheet' | 'trim';
@@ -242,6 +243,22 @@ function defaultForm(): SensorForm {
         </div>
       </div>
 
+      <!-- Validation results -->
+      @if (validationErrors().length > 0) {
+        <div class="space-y-1">
+          @for (err of validationErrors(); track err.message) {
+            <div class="alert alert-error py-1 text-xs">{{ err.message }}</div>
+          }
+        </div>
+      }
+      @if (validationWarnings().length > 0) {
+        <div class="space-y-1">
+          @for (warn of validationWarnings(); track warn.message) {
+            <div class="alert alert-warning py-1 text-xs">{{ warn.message }}</div>
+          }
+        </div>
+      }
+
       <!-- Action -->
       <button class="btn btn-primary w-full" [disabled]="!canSave() || saving()"
         (click)="save()">
@@ -279,6 +296,7 @@ export class DeviceSensorConfigComponent implements OnInit {
   prefillRule = output<Partial<DeviceRuleRecord>>();
 
   private api = inject(ApiService);
+  private sensorService = inject(SensorService);
 
   readonly presets = signal<SensorPresetInfo[]>([]);
   readonly interfaces = signal<SensorInterfaceInfo[]>([]);
@@ -290,6 +308,8 @@ export class DeviceSensorConfigComponent implements OnInit {
   statusMsg = signal('');
   statusOk = signal(true);
   suggestions = signal<RuleSuggestion[]>([]);
+  validationErrors = signal<AirConfigValidationError[]>([]);
+  validationWarnings = signal<AirConfigValidationError[]>([]);
 
   // Track field index + slot assigned after save (for rule prefill)
   private lastFieldIndex = signal(0);
@@ -350,6 +370,8 @@ export class DeviceSensorConfigComponent implements OnInit {
 
   onInterfaceChange(id: string): void {
     this.form.update(f => ({ ...f, interfaceId: id }));
+    this.validationErrors.set([]);
+    this.validationWarnings.set([]);
   }
 
   onMeasurementChange(id: string): void {
@@ -393,6 +415,40 @@ export class DeviceSensorConfigComponent implements OnInit {
   /** Compute the next unused sensor slot index. */
   private nextSlot(): number {
     return Math.min(this.fieldConfigs().length, 7);
+  }
+
+  /** Run validation before save, displaying results inline. */
+  validate(): void {
+    const f = this.form();
+    const iface = this.interfaces().find(i => i.id === f.interfaceId);
+    if (!iface) return;
+
+    const fieldIndex = this.nextFieldIndex();
+    const pinOrBus = iface.bus_addressed ? f.busIndex : f.pinIndex;
+
+    // Build a minimal airconfig for validation
+    const sensor = {
+      type: iface.sensor_type,
+      pin_index: pinOrBus,
+      field_index: fieldIndex,
+      flags: 0x01,
+      param1: 0,
+      param2: 0,
+    };
+
+    this.sensorService.validateAirConfig({
+      sensors: [sensor],
+      controls: [],
+    }).subscribe({
+      next: (result) => {
+        this.validationErrors.set(result.errors);
+        this.validationWarnings.set(result.warnings);
+      },
+      error: () => {
+        this.validationErrors.set([]);
+        this.validationWarnings.set([]);
+      },
+    });
   }
 
   save(): void {

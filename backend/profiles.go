@@ -7,6 +7,8 @@ import (
 	"log"
 	"sort"
 
+	"github.com/farmon/firmware/pkg/catalog"
+	"github.com/farmon/firmware/pkg/settings"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -570,6 +572,142 @@ func seedSenseCapS2105(app core.App) {
 	}, 1)
 
 	log.Printf("[profiles] seeded SenseCAP S2105 (id=%s)", profileID)
+}
+
+// derivePinMap computes a pin map from sensor and control configurations.
+// It uses catalog metadata to determine the required pin function for each sensor type.
+// Existing pin map entries are preserved unless they conflict with derived entries.
+func derivePinMap(ac *ProfileAirConfig) ([]int, error) {
+	if ac == nil {
+		return nil, fmt.Errorf("no airconfig")
+	}
+
+	// Start with existing pin map or zeros
+	pinMap := make([]int, settings.MaxPins)
+	if len(ac.PinMap) > 0 {
+		var existing []int
+		if err := json.Unmarshal(ac.PinMap, &existing); err == nil {
+			copy(pinMap, existing)
+		}
+	}
+
+	// Build sensor type → required pin function lookup from catalog
+	catInterfaces := catalog.Interfaces
+	sensorTypeToPinFn := make(map[uint8]uint8)
+	for _, iface := range catInterfaces {
+		if iface.PinFunction > 0 {
+			sensorTypeToPinFn[iface.SensorType] = iface.PinFunction
+		}
+	}
+
+	// Parse sensors and derive pin functions
+	var sensors []struct {
+		Type     int `json:"type"`
+		PinIndex int `json:"pin_index"`
+	}
+	if len(ac.Sensors) > 0 {
+		_ = json.Unmarshal(ac.Sensors, &sensors)
+	}
+	for _, s := range sensors {
+		st := settings.SensorType(s.Type)
+		// Skip bus-addressed sensors — they use bus index, not GPIO pin
+		if st == settings.SensorBME280 || st == settings.SensorINA219 || st == settings.SensorModbusRTU {
+			continue
+		}
+		if reqFn, ok := sensorTypeToPinFn[uint8(s.Type)]; ok && s.PinIndex < len(pinMap) {
+			pinMap[s.PinIndex] = int(reqFn)
+		}
+	}
+
+	// Parse controls and set PinRelay
+	var controls []struct {
+		PinIndex  int `json:"pin_index"`
+		Pin2Index int `json:"pin2_index"`
+		Flags     int `json:"flags"`
+	}
+	if len(ac.Controls) > 0 {
+		_ = json.Unmarshal(ac.Controls, &controls)
+	}
+	for _, c := range controls {
+		if c.PinIndex < len(pinMap) {
+			pinMap[c.PinIndex] = int(settings.PinRelay)
+		}
+		if c.Flags&0x04 != 0 && c.Pin2Index != 0xFF && c.Pin2Index != 255 && c.Pin2Index < len(pinMap) {
+			pinMap[c.Pin2Index] = int(settings.PinRelay)
+		}
+	}
+
+	return pinMap, nil
+}
+
+// syncProfileToDevices re-materializes profile fields/controls to all devices using this profile.
+// It also removes device_fields/device_controls whose keys no longer exist in the profile,
+// and marks airconfig devices as config_status="pending" so firmware gets the update on next checkin.
+func syncProfileToDevices(app core.App, profileID string) {
+	profile, err := loadProfileWithComponents(app, profileID)
+	if err != nil {
+		log.Printf("[sync] failed to load profile %s: %v", profileID, err)
+		return
+	}
+
+	devices, err := app.FindRecordsByFilter("devices", "profile = {:pid}", "", 0, 0, dbx.Params{"pid": profileID})
+	if err != nil || len(devices) == 0 {
+		return
+	}
+
+	// Collect current profile keys for cleanup
+	profileFieldKeys := make(map[string]bool, len(profile.Fields))
+	for _, f := range profile.Fields {
+		profileFieldKeys[f.Key] = true
+	}
+	profileControlKeys := make(map[string]bool, len(profile.Controls))
+	for _, c := range profile.Controls {
+		profileControlKeys[c.Key] = true
+	}
+
+	for _, dev := range devices {
+		devEUI := dev.GetString("device_eui")
+
+		// Upsert fields and controls from profile
+		if err := materializeProfileToDevice(app, devEUI, profile); err != nil {
+			log.Printf("[sync] materialize %s: %v", devEUI, err)
+			continue
+		}
+
+		// Delete orphaned device_fields (keys removed from profile)
+		if deviceFields, err := app.FindRecordsByFilter("device_fields",
+			"device_eui = {:eui}", "", 0, 0, dbx.Params{"eui": devEUI}); err == nil {
+			for _, df := range deviceFields {
+				if !profileFieldKeys[df.GetString("field_key")] {
+					if err := app.Delete(df); err != nil {
+						log.Printf("[sync] delete orphan field %s/%s: %v", devEUI, df.GetString("field_key"), err)
+					}
+				}
+			}
+		}
+
+		// Delete orphaned device_controls (keys removed from profile)
+		if deviceControls, err := app.FindRecordsByFilter("device_controls",
+			"device_eui = {:eui}", "", 0, 0, dbx.Params{"eui": devEUI}); err == nil {
+			for _, dc := range deviceControls {
+				if !profileControlKeys[dc.GetString("control_key")] {
+					if err := app.Delete(dc); err != nil {
+						log.Printf("[sync] delete orphan control %s/%s: %v", devEUI, dc.GetString("control_key"), err)
+					}
+				}
+			}
+		}
+
+		// Mark airconfig devices as pending so firmware picks up changes on next checkin
+		if profile.ProfileType == "airconfig" {
+			dev.Set("config_status", "pending")
+			if err := app.Save(dev); err != nil {
+				log.Printf("[sync] set pending %s: %v", devEUI, err)
+			}
+		}
+	}
+
+	log.Printf("[sync] synced profile %s (%s) to %d device(s)", profile.Name, profileID, len(devices))
 }
 
 // --- Seed helpers ---

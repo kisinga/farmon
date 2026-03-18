@@ -390,6 +390,8 @@ export interface SensorInterfaceInfo {
   sensor_type: number;
   needs_calib: boolean;
   bus_addressed: boolean;
+  pin_function: number;
+  bus_pin_functions: number[] | null;
 }
 
 export interface MeasurementInfo {
@@ -420,6 +422,20 @@ export interface SensorCatalog {
   measurements: MeasurementInfo[];
   presets: SensorPresetInfo[];
   field_counts: Record<string, number>;
+}
+
+// ─── AirConfig Validation ────────────────────────────────────────────────────
+
+export interface AirConfigValidationError {
+  severity: 'error' | 'warning';
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface AirConfigValidationResult {
+  errors: AirConfigValidationError[];
+  warnings: AirConfigValidationError[];
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, from } from 'rxjs';
 import { PocketBaseService } from './pocketbase.service';
-import { DeviceField } from './api.types';
+import { DeviceField, AirConfigValidationResult } from './api.types';
 
 const API = '/api/farmon';
 
@@ -42,5 +42,16 @@ export class SensorService {
     return from(
       this.pb.collection<DeviceField>('device_fields').update(id, data as Record<string, unknown>)
     );
+  }
+
+  /** Validate an airconfig for pin conflicts, field overlaps, etc. */
+  validateAirConfig(airconfig: {
+    pin_map?: number[];
+    sensors?: unknown[];
+    controls?: unknown[];
+    lorawan?: unknown;
+    transfer?: unknown;
+  }): Observable<AirConfigValidationResult> {
+    return this.http.post<AirConfigValidationResult>(`${API}/validate-airconfig`, airconfig);
   }
 }
