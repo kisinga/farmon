@@ -28,17 +28,17 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 		return handleDeviceCheckin(app, cfg, devEui, rawPayload)
 	}
 
-	// Load device's profile for decode dispatch
-	profile, err := loadProfileForDevice(app, devEui)
+	// Load device-level config for decode dispatch
+	deviceCfg, err := loadDeviceConfig(app, devEui)
 	if err != nil {
-		// No profile assigned — store as raw hex
-		log.Printf("[uplink] no profile for %s, storing raw (fPort=%d)", devEui, fPort)
+		// No device config — store as raw hex
+		log.Printf("[uplink] no device config for %s, storing raw (fPort=%d)", devEui, fPort)
 		return insertTelemetry(app, devEui, map[string]any{"raw": hex.EncodeToString(rawPayload)}, rssi, snr)
 	}
 
-	// Look up decode rule for this fPort; airconfig profiles get synthetic fallbacks
-	rule := getDecodeRuleForFPort(profile, int(fPort))
-	if rule == nil && profile.ProfileType == "airconfig" {
+	// Look up decode rule from device-level rules; airconfig devices get synthetic fallbacks
+	rule := getDeviceDecodeRuleForFPort(deviceCfg, int(fPort))
+	if rule == nil && deviceCfg.DeviceType == "airconfig" {
 		rule = airconfigSyntheticRule(int(fPort))
 	}
 	if rule == nil {
@@ -46,8 +46,8 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 		return insertTelemetry(app, devEui, map[string]any{"raw": hex.EncodeToString(rawPayload)}, rssi, snr)
 	}
 
-	// Decode payload using JSON decode engine
-	result, err := DecodeWithRules(rule.Format, rule.Config, profile.Fields, rawPayload)
+	// Decode payload using device-level field mappings
+	result, err := DecodeWithRules(rule.Format, rule.Config, deviceCfg.Fields, rawPayload)
 	if err != nil {
 		log.Printf("[uplink] decode error dev_eui=%s fPort=%d: %v", devEui, fPort, err)
 		return insertTelemetry(app, devEui, map[string]any{"raw": hex.EncodeToString(rawPayload), "decode_error": err.Error()}, rssi, snr)
@@ -63,8 +63,8 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 	// Post-decode routing based on fPort
 	switch fPort {
 	case 3:
-		// State changes — resolve control/state names from profile
-		handleStateChanges(app, devEui, deviceName, profile, result)
+		// State changes — resolve control/state names from device config
+		handleStateChanges(app, devEui, deviceName, deviceCfg, result)
 	case 4:
 		// Command ACK
 		handleCommandAck(app, devEui, result)
@@ -82,7 +82,7 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 }
 
 // handleStateChanges processes decoded state change records.
-func handleStateChanges(app core.App, devEui, deviceName string, profile *ProfileWithComponents, result *DecodeResult) {
+func handleStateChanges(app core.App, devEui, deviceName string, deviceCfg *DeviceConfig, result *DecodeResult) {
 	sc, ok := result.Fields["stateChanges"].([]any)
 	if !ok {
 		return
@@ -98,14 +98,14 @@ func handleStateChanges(app core.App, devEui, deviceName string, profile *Profil
 		source, _ := m["source"].(string)
 		deviceMs := toFloat64(m["device_ms"])
 
-		// Resolve control key and state names from profile
-		ctrl := getControlByIndex(profile, ctrlIdx)
+		// Resolve control key and state names from device config
+		ctrl := getDeviceControlByIndex(deviceCfg, ctrlIdx)
 		controlKey := fmt.Sprintf("control_%d", ctrlIdx)
 		if ctrl != nil {
-			controlKey = ctrl.Key
+			controlKey = ctrl.ControlKey
 		}
-		newS := resolveStateNameFromProfile(ctrl, newStateIdx)
-		oldS := resolveStateNameFromProfile(ctrl, oldStateIdx)
+		newS := resolveStateNameFromDevice(ctrl, newStateIdx)
+		oldS := resolveStateNameFromDevice(ctrl, oldStateIdx)
 
 		var deviceTs time.Time
 		if deviceMs > 0 {

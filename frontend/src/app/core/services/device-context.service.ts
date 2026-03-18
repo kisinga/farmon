@@ -1,8 +1,8 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import { forkJoin, of } from 'rxjs';
-import { catchError, switchMap } from 'rxjs/operators';
+import { forkJoin, from, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
-import { ApiService, Device, DeviceControl, DeviceField, DeviceProfile, ProfileCommand } from './api.service';
+import { ApiService, Device, DeviceCommand, DeviceControl, DeviceField, DeviceVisualization } from './api.service';
 import { PocketBaseService } from './pocketbase.service';
 import { TelemetrySubscriptionService } from './telemetry-subscription.service';
 
@@ -16,7 +16,8 @@ export class DeviceContextService {
   private _controls = signal<DeviceControl[]>([]);
   private _fieldConfigs = signal<DeviceField[]>([]);
   private _latestTelemetry = signal<Record<string, unknown> | null>(null);
-  private _profile = signal<DeviceProfile | null>(null);
+  private _commands = signal<DeviceCommand[]>([]);
+  private _visualizations = signal<DeviceVisualization[]>([]);
   private _loading = signal(false);
   private _error = signal<string | null>(null);
   private _eui = signal<string>('');
@@ -29,7 +30,6 @@ export class DeviceContextService {
   controls = this._controls.asReadonly();
   fieldConfigs = this._fieldConfigs.asReadonly();
   latestTelemetry = this._latestTelemetry.asReadonly();
-  profile = this._profile.asReadonly();
   loading = this._loading.asReadonly();
   error = this._error.asReadonly();
   eui = this._eui.asReadonly();
@@ -43,11 +43,14 @@ export class DeviceContextService {
     return map;
   });
 
-  /** Profile commands for this device (from profile, not device). */
-  profileCommands = computed<ProfileCommand[]>(() => this._profile()?.commands ?? []);
+  /** Device-level commands (from device_commands collection). */
+  deviceCommands = computed<DeviceCommand[]>(() => this._commands());
 
-  /** Whether the device's profile is airconfig type. */
-  isAirConfig = computed(() => this._profile()?.profile_type === 'airconfig');
+  /** Device-level visualizations (from device_visualizations collection). */
+  deviceVisualizations = computed<DeviceVisualization[]>(() => this._visualizations());
+
+  /** Whether the device is airconfig type (read from device.device_type). */
+  isAirConfig = computed(() => this._device()?.device_type === 'airconfig');
 
   load(eui: string): void {
     if (!eui) {
@@ -64,24 +67,21 @@ export class DeviceContextService {
       controls: this.api.getDeviceControls(eui),
       fields: this.api.getDeviceFields(eui),
       latest: this.api.getLatestTelemetry(eui).pipe(catchError(() => of(null))),
-    }).pipe(
-      switchMap(({ device, controls, fields, latest }) => {
+      commands: from(this.pbService.pb.collection('device_commands').getFullList({
+        filter: this.pbService.pb.filter('device_eui = {:eui}', { eui }),
+      })).pipe(catchError(() => of([]))),
+      visualizations: from(this.pbService.pb.collection('device_visualizations').getFullList({
+        filter: this.pbService.pb.filter('device_eui = {:eui}', { eui }),
+        sort: 'sort_order',
+      })).pipe(catchError(() => of([]))),
+    }).subscribe({
+      next: ({ device, controls, fields, latest, commands, visualizations }) => {
         this._device.set(device);
         this._controls.set(controls);
         this._fieldConfigs.set(fields);
         this._latestTelemetry.set(latest?.data ?? null);
-
-        // Load profile if device has one
-        if (device.profile) {
-          return this.api.getProfile(device.profile).pipe(
-            catchError(() => of(null))
-          );
-        }
-        return of(null);
-      })
-    ).subscribe({
-      next: (profile) => {
-        this._profile.set(profile);
+        this._commands.set(commands as unknown as DeviceCommand[]);
+        this._visualizations.set(visualizations as unknown as DeviceVisualization[]);
         this._loading.set(false);
 
         const eui = this._eui();
@@ -151,7 +151,8 @@ export class DeviceContextService {
     this._controls.set([]);
     this._fieldConfigs.set([]);
     this._latestTelemetry.set(null);
-    this._profile.set(null);
+    this._commands.set([]);
+    this._visualizations.set([]);
     this._loading.set(false);
     this._error.set(null);
   }

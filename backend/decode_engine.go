@@ -14,14 +14,15 @@ type DecodeResult struct {
 }
 
 // DecodeWithRules interprets a decode_rules record against raw payload.
-func DecodeWithRules(format string, config map[string]any, profileFields []ProfileField, payload []byte) (*DecodeResult, error) {
+// fields provides index→key mapping for binary indexed formats.
+func DecodeWithRules(format string, config map[string]any, fields []FieldMapping, payload []byte) (*DecodeResult, error) {
 	switch format {
 	case "text_kv":
 		return decodeTextKV(config, payload)
 	case "binary_indexed":
-		return decodeBinaryIndexed(config, profileFields, payload)
+		return decodeBinaryIndexed(config, fields, payload)
 	case "binary_indexed_float32":
-		return decodeBinaryIndexedFloat32(config, profileFields, payload)
+		return decodeBinaryIndexedFloat32(config, fields, payload)
 	case "binary_frames":
 		return decodeBinaryFrames(config, payload)
 	case "binary_state_change":
@@ -30,6 +31,8 @@ func DecodeWithRules(format string, config map[string]any, profileFields []Profi
 		return nil, fmt.Errorf("unknown decode format: %s", format)
 	}
 }
+
+// specFieldsToMapping is defined in spec.go — converts SpecField slice to FieldMapping for the decode engine.
 
 // decodeTextKV parses text payloads like "pd:42,tv:1523.7".
 func decodeTextKV(config map[string]any, payload []byte) (*DecodeResult, error) {
@@ -59,8 +62,7 @@ func decodeTextKV(config map[string]any, payload []byte) (*DecodeResult, error) 
 }
 
 // decodeBinaryIndexed parses payloads with header + repeated (field_idx, value) entries.
-// Maps field_idx to profileFields[sort_order].key.
-func decodeBinaryIndexed(config map[string]any, profileFields []ProfileField, payload []byte) (*DecodeResult, error) {
+func decodeBinaryIndexed(config map[string]any, fields []FieldMapping, payload []byte) (*DecodeResult, error) {
 	headerBytes := getConfigInt(config, "header_bytes", 1)
 	entrySize := getConfigInt(config, "entry_size", 5)
 
@@ -74,10 +76,10 @@ func decodeBinaryIndexed(config map[string]any, profileFields []ProfileField, pa
 	indexKey := getConfigString(config, "index_key", "_field_idx")
 	valueKey := getConfigString(config, "value_key", "_value")
 
-	// Build field_idx → key map from profile fields
+	// Build field_idx → key map
 	idxToKey := make(map[int]string)
-	for _, f := range profileFields {
-		idxToKey[f.SortOrder] = f.Key
+	for _, f := range fields {
+		idxToKey[f.Index] = f.Key
 	}
 
 	out := make(map[string]any)
@@ -101,8 +103,7 @@ func decodeBinaryIndexed(config map[string]any, profileFields []ProfileField, pa
 
 // decodeBinaryIndexedFloat32 parses the compact telemetry format produced by pkg/node sendTelemetry().
 // Wire format: [count:1][field_idx:1][float32_le:4] × count
-// Maps field_idx → profile field key via sort_order (sort_order == field_index by convention).
-func decodeBinaryIndexedFloat32(_ map[string]any, profileFields []ProfileField, payload []byte) (*DecodeResult, error) {
+func decodeBinaryIndexedFloat32(_ map[string]any, fields []FieldMapping, payload []byte) (*DecodeResult, error) {
 	if len(payload) < 1 {
 		return nil, fmt.Errorf("binary_indexed_float32: empty payload")
 	}
@@ -112,9 +113,9 @@ func decodeBinaryIndexedFloat32(_ map[string]any, profileFields []ProfileField, 
 		return nil, fmt.Errorf("binary_indexed_float32: payload too short: have %d, need %d for count=%d", len(payload), 1+count*entrySize, count)
 	}
 
-	idxToKey := make(map[int]string, len(profileFields))
-	for _, f := range profileFields {
-		idxToKey[f.SortOrder] = f.Key
+	idxToKey := make(map[int]string, len(fields))
+	for _, f := range fields {
+		idxToKey[f.Index] = f.Key
 	}
 
 	out := make(map[string]any, count)

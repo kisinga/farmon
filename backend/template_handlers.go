@@ -8,15 +8,15 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// GET /api/farmon/profiles — list all profiles (templates only by default, or all).
+// GET /api/farmon/templates — list all templates (templates only by default, or all).
 // Optional ?transport=lorawan|wifi — filter to profiles compatible with the given transport.
-func listProfilesHandler(app core.App) func(*core.RequestEvent) error {
+func listTemplatesHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		filter := "is_template = true"
 		if e.Request.URL.Query().Get("all") == "true" {
 			filter = ""
 		}
-		records, err := app.FindRecordsByFilter("device_profiles", filter, "name", 0, 0)
+		records, err := app.FindRecordsByFilter("device_templates", filter, "name", 0, 0)
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
@@ -24,7 +24,7 @@ func listProfilesHandler(app core.App) func(*core.RequestEvent) error {
 		var profiles []map[string]any
 		for _, r := range records {
 			pt := r.GetString("transport")
-			if transportFilter != "" && !isProfileCompatible(pt, transportFilter) {
+			if transportFilter != "" && !isTemplateCompatible(pt, transportFilter) {
 				continue
 			}
 			profiles = append(profiles, map[string]any{
@@ -45,14 +45,14 @@ func listProfilesHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// GET /api/farmon/profiles/{id} — get profile with all sub-components.
-func getProfileHandler(app core.App) func(*core.RequestEvent) error {
+// GET /api/farmon/templates/{id} — get template with all sub-components.
+func getTemplateHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		id := e.Request.PathValue("id")
 		if id == "" {
 			return e.String(http.StatusBadRequest, "profile id required")
 		}
-		profile, err := loadProfileWithComponents(app, id)
+		profile, err := loadTemplateWithComponents(app, id)
 		if err != nil {
 			return e.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
 		}
@@ -60,8 +60,8 @@ func getProfileHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// POST /api/farmon/profiles — create a new profile (metadata only, sub-components added separately via SDK).
-func createProfileHandler(app core.App) func(*core.RequestEvent) error {
+// POST /api/farmon/templates — create a new template (metadata only, sub-components added separately via SDK).
+func createTemplateHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var body struct {
 			Name        string `json:"name"`
@@ -79,7 +79,7 @@ func createProfileHandler(app core.App) func(*core.RequestEvent) error {
 		if body.ProfileType != "airconfig" && body.ProfileType != "codec" {
 			return e.String(http.StatusBadRequest, "profile_type must be 'airconfig' or 'codec'")
 		}
-		id := createProfile(app, body.Name, body.Description, body.ProfileType, body.IsTemplate, body.Transport)
+		id := createTemplate(app, body.Name, body.Description, body.ProfileType, body.IsTemplate, body.Transport)
 		if id == "" {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to create profile"})
 		}
@@ -87,11 +87,11 @@ func createProfileHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// PATCH /api/farmon/profiles/{id} — update profile metadata.
-func updateProfileHandler(app core.App) func(*core.RequestEvent) error {
+// PATCH /api/farmon/templates/{id} — update template metadata.
+func updateTemplateHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		id := e.Request.PathValue("id")
-		rec, err := app.FindRecordById("device_profiles", id)
+		rec, err := app.FindRecordById("device_templates", id)
 		if err != nil {
 			return e.JSON(http.StatusNotFound, map[string]any{"error": "profile not found"})
 		}
@@ -118,11 +118,11 @@ func updateProfileHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// DELETE /api/farmon/profiles/{id} — delete profile (cascade deletes sub-components).
-func deleteProfileHandler(app core.App) func(*core.RequestEvent) error {
+// DELETE /api/farmon/templates/{id} — delete template (cascade deletes sub-components).
+func deleteTemplateHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		id := e.Request.PathValue("id")
-		rec, err := app.FindRecordById("device_profiles", id)
+		rec, err := app.FindRecordById("device_templates", id)
 		if err != nil {
 			return e.JSON(http.StatusNotFound, map[string]any{"error": "profile not found"})
 		}
@@ -133,12 +133,12 @@ func deleteProfileHandler(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// POST /api/farmon/profiles/{id}/test-decode — test decode rules with sample payload.
+// POST /api/farmon/templates/{id}/test-decode — test decode rules with sample payload.
 // Body: { "fport": 2, "payload_hex": "..." } or { "message_type": 2, "payload_hex": "..." }
 func testDecodeHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		id := e.Request.PathValue("id")
-		profile, err := loadProfileWithComponents(app, id)
+		profile, err := loadTemplateWithComponents(app, id)
 		if err != nil {
 			return e.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
 		}
@@ -167,7 +167,7 @@ func testDecodeHandler(app core.App) func(*core.RequestEvent) error {
 			return e.JSON(http.StatusBadRequest, map[string]any{"error": "invalid hex: " + err.Error()})
 		}
 
-		result, err := DecodeWithRules(rule.Format, rule.Config, profile.Fields, payload)
+		result, err := DecodeWithRules(rule.Format, rule.Config, templateFieldsToMapping(profile.Fields), payload)
 		if err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
 		}
@@ -189,23 +189,10 @@ func pushConfigHandler(app core.App, gwState *GatewayState) func(*core.RequestEv
 		}
 		eui = normalizeEui(eui)
 
-		profile, err := loadProfileForDevice(app, eui)
+		// Load device-level airconfig directly (no profile lookup)
+		deviceAC, err := loadDeviceAirConfig(app, eui)
 		if err != nil {
-			return e.JSON(http.StatusNotFound, map[string]any{"error": err.Error()})
-		}
-		if profile.ProfileType != "airconfig" || profile.AirConfig == nil {
-			return e.JSON(http.StatusBadRequest, map[string]any{"error": "device profile is not airconfig type"})
-		}
-
-		dev, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", nil)
-		if err != nil {
-			return e.JSON(http.StatusNotFound, map[string]any{"error": "device not found"})
-		}
-
-		overridesJSON := dev.GetString("config_overrides")
-		effective, err := getEffectiveAirConfig(profile, overridesJSON)
-		if err != nil {
-			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return e.JSON(http.StatusBadRequest, map[string]any{"error": "device has no airconfig"})
 		}
 
 		cfg := gwState.Config()
@@ -213,14 +200,17 @@ func pushConfigHandler(app core.App, gwState *GatewayState) func(*core.RequestEv
 			return e.JSON(http.StatusServiceUnavailable, map[string]any{"error": "gateway not configured"})
 		}
 
-		if pushErr := pushAirConfig(app, cfg, eui, effective); pushErr != nil {
+		if pushErr := pushAirConfig(app, cfg, eui, deviceAC); pushErr != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": pushErr.Error()})
 		}
 
-		dev.Set("config_status", "pending")
-		_ = app.Save(dev)
+		dev, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", nil)
+		if err == nil {
+			dev.Set("config_status", "pending")
+			_ = app.Save(dev)
+		}
 
-		return e.JSON(http.StatusOK, map[string]any{"ok": true, "config_hash": computeConfigHash(effective)})
+		return e.JSON(http.StatusOK, map[string]any{"ok": true, "config_hash": computeConfigHash(deviceAC)})
 	}
 }
 
@@ -430,7 +420,7 @@ func validateAirConfigHandler() func(*core.RequestEvent) error {
 			return e.String(http.StatusBadRequest, "invalid body")
 		}
 
-		ac := &ProfileAirConfig{
+		ac := &TemplateAirConfig{
 			PinMap:   body.PinMap,
 			Sensors:  body.Sensors,
 			Controls: body.Controls,

@@ -86,7 +86,7 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
                     <td class="hidden sm:table-cell text-base-content/70">{{ d.device_type || '—' }}</td>
                     <td class="hidden md:table-cell">
                       @if (d.profile && profileMap().get(d.profile); as prof) {
-                        <a [routerLink]="['/profiles', d.profile]" class="link link-hover text-sm">{{ prof.name }}</a>
+                        <a [routerLink]="['/templates', d.profile]" class="link link-hover text-sm">{{ prof.name }}</a>
                       } @else {
                         <span class="text-base-content/40">—</span>
                       }

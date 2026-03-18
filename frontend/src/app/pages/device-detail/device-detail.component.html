@@ -83,23 +83,24 @@
                 <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Last seen</dt>
                 <dd class="font-medium mt-0.5">{{ deviceContext.device()!.last_seen ? (deviceContext.device()!.last_seen | date:'medium') : '—' }}</dd>
               </div>
-              @if (profileInfo(); as pi) {
-                <div>
-                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Profile</dt>
-                  <dd class="font-medium mt-0.5">
-                    <a [routerLink]="['/profiles', deviceContext.device()!.profile]" class="link link-hover">{{ pi.name }}</a>
-                    <span class="badge badge-sm ml-1" [class.badge-primary]="pi.type === 'airconfig'" [class.badge-secondary]="pi.type === 'codec'">{{ pi.type }}</span>
-                  </dd>
-                </div>
+              @if (deviceInfo(); as di) {
                 <div>
                   <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Schema</dt>
-                  <dd class="text-sm mt-0.5">{{ pi.fieldCount }} fields · {{ pi.controlCount }} controls · {{ pi.commandCount }} commands</dd>
+                  <dd class="text-sm mt-0.5">{{ di.fieldCount }} fields · {{ di.controlCount }} controls · {{ di.commandCount }} commands</dd>
                 </div>
-                @if (pi.type === 'airconfig') {
+                @if (di.provisionedFrom) {
+                  <div>
+                    <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Template</dt>
+                    <dd class="font-medium mt-0.5">
+                      <a [routerLink]="['/templates', di.provisionedFrom]" class="link link-hover">{{ di.provisionedFrom }}</a>
+                    </dd>
+                  </div>
+                }
+                @if (deviceContext.isAirConfig()) {
                   <div>
                     <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Config Status</dt>
                     <dd class="mt-0.5">
-                      <span class="badge badge-sm" [class.badge-success]="pi.configStatus === 'synced'" [class.badge-warning]="pi.configStatus === 'pending'" [class.badge-ghost]="pi.configStatus === 'n/a'">{{ pi.configStatus }}</span>
+                      <span class="badge badge-sm" [class.badge-success]="di.configStatus === 'synced'" [class.badge-warning]="di.configStatus === 'pending'" [class.badge-ghost]="di.configStatus === 'n/a'">{{ di.configStatus }}</span>
                     </dd>
                   </div>
                 }

@@ -63,7 +63,7 @@ func resolveDefaultProfileID(app core.App, profileName string) string {
 	if profileName == "" {
 		return ""
 	}
-	rec, err := app.FindFirstRecordByFilter("device_profiles", "name = {:name}", map[string]any{"name": profileName})
+	rec, err := app.FindFirstRecordByFilter("device_templates", "name = {:name}", map[string]any{"name": profileName})
 	if err != nil || rec == nil {
 		return ""
 	}

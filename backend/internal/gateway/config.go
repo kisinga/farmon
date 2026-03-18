@@ -9,6 +9,7 @@ type Config struct {
 	Region         string // e.g. "EU868", "US915"; selects RegionProfile for RX1 frequency and modulation
 	RX1FrequencyHz uint32 // optional; 0 = use region profile default
 	TestMode       bool   // when true, skip concentratord connections; uplinks via inject only, downlinks logged but not sent
+	Enabled        bool   // when false, pipeline does not start
 }
 
 // DataDownlinkRX1DelaySec is the Class A RX1 window delay for data downlinks (LoRaWAN default, 1s).
@@ -30,6 +31,7 @@ func DefaultGatewayConfig() Config {
 		GatewayID:      "",
 		Region:         DefaultRegion,
 		RX1FrequencyHz: 0,
+		Enabled:        true,
 	}
 }
 

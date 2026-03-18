@@ -30,19 +30,19 @@ func appKey32(s string) string {
 	return string(out)
 }
 
-// POST /api/farmon/devices — provision device with profile.
-// Body: { "device_eui": "...", "device_name": "...", "profile_id": "required", "transport": "lorawan|wifi", "target_id": "lora_e5|xiao_esp32c6|custom" }
-// transport and target_id are optional. If target_id is provided, transport is inferred from the catalog unless explicitly set.
-// Returns: { "device_eui": "...", "transport": "...", "app_key": "...", "device_token": "...", "profile_name": "..." }
+// POST /api/farmon/devices — provision a device, optionally from a template.
+// Body: { "device_eui": "...", "device_name": "...", "template_id": "optional", "profile_id": "optional (alias for template_id)", "transport": "lorawan|wifi", "target_id": "..." }
+// If template_id/profile_id is provided, the device is materialized from that template.
+// If omitted, a bare device is created with no fields, controls, or airconfig.
 func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var body struct {
-			DeviceEui       string         `json:"device_eui"`
-			DeviceName      string         `json:"device_name"`
-			ProfileID       string         `json:"profile_id"`
-			ConfigOverrides map[string]any `json:"config_overrides,omitempty"`
-			Transport       string         `json:"transport"`
-			TargetID        string         `json:"target_id"`
+			DeviceEui  string `json:"device_eui"`
+			DeviceName string `json:"device_name"`
+			TemplateID string `json:"template_id"`
+			ProfileID  string `json:"profile_id"` // backward compat alias for template_id
+			Transport  string `json:"transport"`
+			TargetID   string `json:"target_id"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.String(http.StatusBadRequest, "invalid body")
@@ -61,8 +61,11 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 		for len(devEui) < 16 {
 			devEui = "0" + devEui // zero-pad WiFi MACs to 16 chars
 		}
-		if body.ProfileID == "" {
-			return e.String(http.StatusBadRequest, "profile_id required")
+
+		// Resolve template_id (accept both template_id and profile_id for backward compat)
+		templateID := body.TemplateID
+		if templateID == "" {
+			templateID = body.ProfileID
 		}
 
 		// Resolve transport from target catalog if not explicitly set
@@ -79,17 +82,20 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			return e.String(http.StatusBadRequest, "transport must be 'lorawan' or 'wifi'")
 		}
 
-		// Validate profile exists
-		profile, err := loadProfileWithComponents(app, body.ProfileID)
-		if err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]any{"error": "profile not found: " + body.ProfileID})
-		}
-
-		// Check profile-transport compatibility (warn, don't block)
+		// Load template if provided
+		var tmpl *TemplateWithComponents
 		var warning string
-		if !isProfileCompatible(profile.Transport, transport) {
-			warning = fmt.Sprintf("profile %q is %s-only but device transport is %s", profile.Name, profile.Transport, transport)
-			log.Printf("[provision] warning: %s", warning)
+		if templateID != "" {
+			var err error
+			tmpl, err = loadTemplateWithComponents(app, templateID)
+			if err != nil {
+				return e.JSON(http.StatusBadRequest, map[string]any{"error": "template not found: " + templateID})
+			}
+			// Check template-transport compatibility (warn, don't block)
+			if !isTemplateCompatible(tmpl.Transport, transport) {
+				warning = fmt.Sprintf("template %q is %s-only but device transport is %s", tmpl.Name, tmpl.Transport, transport)
+				log.Printf("[provision] warning: %s", warning)
+			}
 		}
 
 		// Generate credentials based on transport
@@ -114,15 +120,19 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
 
-		// Determine config_status
+		// Determine config_status and device_type
 		configStatus := "n/a"
-		if profile.ProfileType == "airconfig" {
-			configStatus = "pending"
+		deviceType := ""
+		if tmpl != nil {
+			deviceType = tmpl.ProfileType
+			if deviceType == "airconfig" {
+				configStatus = "pending"
+			}
 		}
 
 		existing, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": devEui})
 		if err == nil {
-			// Device already exists — update profile and re-materialize
+			// Device already exists — update
 			if transport == "lorawan" {
 				if existing.Get("app_key") == nil || existing.Get("app_key") == "" {
 					existing.Set("app_key", appKeyHex)
@@ -138,13 +148,13 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			if body.DeviceName != "" {
 				existing.Set("device_name", strings.TrimSpace(body.DeviceName))
 			}
-			existing.Set("profile", body.ProfileID)
+			if templateID != "" {
+				existing.Set("provisioned_from", templateID)
+				existing.Set("device_type", deviceType)
+			}
 			existing.Set("config_status", configStatus)
 			existing.Set("transport", transport)
 			existing.Set("target_id", targetID)
-			if body.ConfigOverrides != nil {
-				existing.Set("config_overrides", body.ConfigOverrides)
-			}
 			existing.Set("last_seen", time.Now().Format(time.RFC3339))
 			if err := app.Save(existing); err != nil {
 				return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
@@ -154,7 +164,8 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			rec := core.NewRecord(coll)
 			rec.Set("device_eui", devEui)
 			rec.Set("device_name", strings.TrimSpace(body.DeviceName))
-			rec.Set("profile", body.ProfileID)
+			rec.Set("provisioned_from", templateID)
+			rec.Set("device_type", deviceType)
 			rec.Set("config_status", configStatus)
 			rec.Set("transport", transport)
 			rec.Set("target_id", targetID)
@@ -163,24 +174,25 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			} else {
 				rec.Set("device_token", deviceToken)
 			}
-			if body.ConfigOverrides != nil {
-				rec.Set("config_overrides", body.ConfigOverrides)
-			}
 			rec.Set("last_seen", time.Now().Format(time.RFC3339))
 			if err := app.Save(rec); err != nil {
 				return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			}
 		}
 
-		// Materialize profile fields/controls to device-level collections
-		if err := materializeProfileToDevice(app, devEui, profile); err != nil {
-			log.Printf("[provision] materialize error for %s: %v", devEui, err)
+		// Materialize template to device-level collections (only if template provided)
+		if tmpl != nil {
+			if err := materializeTemplateToDevice(app, devEui, tmpl); err != nil {
+				log.Printf("[provision] materialize error for %s: %v", devEui, err)
+			}
 		}
 
 		resp := map[string]any{
-			"device_eui":   devEui,
-			"transport":    transport,
-			"profile_name": profile.Name,
+			"device_eui": devEui,
+			"transport":  transport,
+		}
+		if tmpl != nil {
+			resp["template_name"] = tmpl.Name
 		}
 		if transport == "lorawan" {
 			resp["app_key"] = appKeyHex
@@ -216,9 +228,63 @@ func deleteDeviceHandler(app core.App) func(*core.RequestEvent) error {
 		deleteRelatedRecords(app, "lorawan_sessions", eui)
 		deleteRelatedRecords(app, "device_fields", eui)
 		deleteRelatedRecords(app, "device_controls", eui)
+		deleteRelatedRecords(app, "device_airconfig", eui)
+		deleteRelatedRecords(app, "device_decode_rules", eui)
+		deleteRelatedRecords(app, "device_commands", eui)
+		deleteRelatedRecords(app, "device_visualizations", eui)
 		deleteRelatedRecords(app, "commands", eui)
 
 		return e.JSON(http.StatusOK, map[string]any{"ok": true, "message": "device deleted"})
+	}
+}
+
+// POST /api/farmon/devices/{eui}/apply-template — re-apply a template, resetting all device-level data.
+func applyTemplateHandler(app core.App) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		eui := normalizeEui(e.Request.PathValue("eui"))
+		if eui == "" {
+			return e.String(http.StatusBadRequest, "eui required")
+		}
+
+		var body struct {
+			TemplateID string `json:"template_id"`
+		}
+		if err := e.BindBody(&body); err != nil || body.TemplateID == "" {
+			return e.String(http.StatusBadRequest, "template_id required")
+		}
+
+		dev, err := app.FindFirstRecordByFilter("devices", "device_eui = {:eui}", dbx.Params{"eui": eui})
+		if err != nil {
+			return e.JSON(http.StatusNotFound, map[string]any{"error": "device not found"})
+		}
+
+		tmpl, err := loadTemplateWithComponents(app, body.TemplateID)
+		if err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]any{"error": "template not found: " + body.TemplateID})
+		}
+
+		// Full reset materialization
+		if err := materializeTemplateToDevice(app, eui, tmpl); err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		}
+
+		// Update device metadata
+		dev.Set("provisioned_from", body.TemplateID)
+		dev.Set("device_type", tmpl.ProfileType)
+		configStatus := "n/a"
+		if tmpl.ProfileType == "airconfig" {
+			configStatus = "pending"
+		}
+		dev.Set("config_status", configStatus)
+		if err := app.Save(dev); err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		}
+
+		return e.JSON(http.StatusOK, map[string]any{
+			"ok":            true,
+			"template_name": tmpl.Name,
+			"config_status": configStatus,
+		})
 	}
 }
 

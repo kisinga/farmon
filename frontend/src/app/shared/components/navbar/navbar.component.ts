@@ -48,7 +48,7 @@ import { LogoComponent } from '../logo/logo.component';
 export class NavbarComponent {
   readonly navLinks = [
     { path: '/', label: 'Devices', exact: true },
-    { path: '/profiles', label: 'Profiles' },
+    { path: '/templates', label: 'Templates' },
     { path: '/workflows', label: 'Workflows' },
     { path: '/network', label: 'Network' },
     { path: '/settings', label: 'Settings' },

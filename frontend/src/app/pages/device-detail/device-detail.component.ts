@@ -133,17 +133,17 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
     });
   }
 
-  profileInfo = computed(() => {
-    const profile = this.deviceContext.profile();
+  /** Device-level info (replaces profile-based info). */
+  deviceInfo = computed(() => {
     const device = this.deviceContext.device();
-    if (!profile) return null;
+    if (!device) return null;
     return {
-      name: profile.name,
-      type: profile.profile_type,
-      fieldCount: profile.fields?.length ?? 0,
-      controlCount: profile.controls?.length ?? 0,
-      commandCount: profile.commands?.length ?? 0,
-      configStatus: device?.config_status ?? 'n/a',
+      deviceType: device.device_type ?? '—',
+      fieldCount: this.deviceContext.fieldConfigs().length,
+      controlCount: this.deviceContext.controls().length,
+      commandCount: this.deviceContext.deviceCommands().length,
+      configStatus: device.config_status ?? 'n/a',
+      provisionedFrom: device.provisioned_from,
     };
   });
 

@@ -141,7 +141,7 @@ export class ProfileDetailComponent implements OnInit {
     const p = this.profile();
     if (!p || !confirm(`Delete profile "${p.name}"? This will also delete all its fields, controls, commands, and decode rules.`)) return;
     this.api.deleteProfile(p.id).subscribe({
-      next: () => this.router.navigate(['/profiles']),
+      next: () => this.router.navigate(['/templates']),
       error: (err) => this.generalMsg.set({ text: err?.message ?? 'Failed to delete', error: true }),
     });
   }

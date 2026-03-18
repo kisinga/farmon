@@ -49,7 +49,7 @@ func (c *ControlConfigParsed) Enabled() bool { return c.Flags&0x01 != 0 }
 func (c *ControlConfigParsed) DualPin() bool { return c.Flags&0x04 != 0 }
 
 // parseAirConfigForValidation parses raw airconfig JSON into a validation-friendly struct.
-func parseAirConfigForValidation(ac *ProfileAirConfig) (*AirConfigForValidation, error) {
+func parseAirConfigForValidation(ac *AirConfig) (*AirConfigForValidation, error) {
 	if ac == nil {
 		return nil, fmt.Errorf("no airconfig")
 	}
@@ -73,7 +73,7 @@ func parseAirConfigForValidation(ac *ProfileAirConfig) (*AirConfigForValidation,
 }
 
 // ValidateAirConfig runs all validation rules on a parsed airconfig and returns any issues found.
-func ValidateAirConfig(ac *ProfileAirConfig) []ValidationError {
+func ValidateAirConfig(ac *AirConfig) []ValidationError {
 	parsed, err := parseAirConfigForValidation(ac)
 	if err != nil {
 		return []ValidationError{{Severity: "error", Code: "parse_error", Message: err.Error()}}

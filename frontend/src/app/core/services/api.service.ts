@@ -16,8 +16,10 @@ export type {
   DeviceIDFormatMeta,
   Device,
   DeviceTarget,
+  DeviceCommand,
   DeviceControl,
   DeviceField,
+  DeviceVisualization,
   HistoryPoint,
   HistoryResponse,
   ProvisionResponse,
@@ -36,6 +38,8 @@ export type {
   GatewaySettings,
   GatewayStatusResponse,
   GatewaySettingsRecord,
+  WifiSettings,
+  WifiSettingsRecord,
   PipelineDebug,
   RawLorawanFrame,
   LorawanStats,
@@ -163,6 +167,8 @@ export class ApiService {
   getDeviceFrames(eui: string, limit = 50) { return this.gatewayService.getDeviceFrames(eui, limit); }
   getGatewaySettings() { return this.gatewayService.getGatewaySettings(); }
   patchGatewaySettings(settings: Partial<import('./api.types').GatewaySettings>) { return this.gatewayService.patchGatewaySettings(settings); }
+  getWifiSettings() { return this.gatewayService.getWifiSettings(); }
+  patchWifiSettings(settings: Partial<import('./api.types').WifiSettings>) { return this.gatewayService.patchWifiSettings(settings); }
 
   // ─── Workflows ──────────────────────────────────────────
 

@@ -22,6 +22,7 @@ func main() {
 	gwCfg := gateway.DefaultGatewayConfig()
 	gwRuntime := &GatewayRuntimeState{}
 	gwState := &GatewayState{cfg: &gwCfg, runtime: gwRuntime}
+	wifiState := &WifiState{}
 	workflowEngine = NewWorkflowEngine(app, gwState)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
@@ -30,7 +31,7 @@ func main() {
 		// Ensure firmware collections exist (firmware_commands + backend_info)
 		ensureFirmwareCollections(app)
 		// Seed default device profiles (FarMon Water Monitor, SenseCAP S2105)
-		seedDefaultProfiles(app)
+		seedDefaultTemplates(app)
 		// Seed firmware commands + backend_info
 		seedFirmwareData(app)
 		// Load gateway config from DB; start pipeline only if a valid record exists (event_url, command_url, region set)
@@ -71,6 +72,27 @@ func main() {
 		app.OnRecordAfterCreateSuccess("gateway_settings").BindFunc(restartPipelineOnGatewaySettingsSave)
 		app.OnRecordAfterUpdateSuccess("gateway_settings").BindFunc(restartPipelineOnGatewaySettingsSave)
 
+		// Load WiFi settings; bootstrap defaults if no record exists
+		wifiCfg, wifiFound := loadWifiSettings(app)
+		if !wifiFound {
+			_ = saveWifiSettings(app, WifiConfig{Enabled: true, TestMode: false})
+			wifiCfg = WifiConfig{Enabled: true, TestMode: false}
+		}
+		wifiState.SetConfig(wifiCfg)
+
+		reloadWifiSettings := func(e *core.RecordEvent) error {
+			if err := e.Next(); err != nil {
+				return err
+			}
+			go func() {
+				cfg, _ := loadWifiSettings(e.App)
+				wifiState.SetConfig(cfg)
+			}()
+			return nil
+		}
+		app.OnRecordAfterCreateSuccess("wifi_settings").BindFunc(reloadWifiSettings)
+		app.OnRecordAfterUpdateSuccess("wifi_settings").BindFunc(reloadWifiSettings)
+
 		// Custom app API under /api/farmon only. Do NOT register routes under /api/ without the /farmon/ prefix,
 		// so PocketBase's built-in /api/collections/* and /api/records/* (used by the SDK) remain reachable.
 		// Device provisioning & targets
@@ -78,23 +100,22 @@ func main() {
 		se.Router.DELETE("/api/farmon/devices", deleteDeviceHandler(app))
 		se.Router.GET("/api/farmon/device-targets", deviceTargetsHandler(app))
 
-		// Device profiles
-		se.Router.GET("/api/farmon/profiles", listProfilesHandler(app))
-		se.Router.GET("/api/farmon/profiles/{id}", getProfileHandler(app))
-		se.Router.POST("/api/farmon/profiles", createProfileHandler(app))
-		se.Router.PATCH("/api/farmon/profiles/{id}", updateProfileHandler(app))
-		se.Router.DELETE("/api/farmon/profiles/{id}", deleteProfileHandler(app))
-		se.Router.POST("/api/farmon/profiles/{id}/test-decode", testDecodeHandler(app))
+		// Device templates
+		se.Router.GET("/api/farmon/templates", listTemplatesHandler(app))
+		se.Router.GET("/api/farmon/templates/{id}", getTemplateHandler(app))
+		se.Router.POST("/api/farmon/templates", createTemplateHandler(app))
+		se.Router.PATCH("/api/farmon/templates/{id}", updateTemplateHandler(app))
+		se.Router.DELETE("/api/farmon/templates/{id}", deleteTemplateHandler(app))
+		se.Router.POST("/api/farmon/templates/{id}/test-decode", testDecodeHandler(app))
 		se.Router.POST("/api/farmon/validate-airconfig", validateAirConfigHandler())
 
 		// Device config
+		se.Router.POST("/api/farmon/devices/{eui}/apply-template", applyTemplateHandler(app))
 		se.Router.POST("/api/farmon/devices/{eui}/push-config", pushConfigHandler(app, gwState))
 		se.Router.POST("/api/farmon/devices/{eui}/push-rules", pushRulesHandler(app, gwState))
 		se.Router.POST("/api/farmon/devices/{eui}/push-sensor-slot", pushSensorSlotHandler(app, gwState))
-		se.Router.PATCH("/api/farmon/devices/{eui}/overrides", updateDeviceOverridesHandler(app))
-
 		// WiFi device ingest (transport-agnostic uplink via HTTP POST)
-		se.Router.POST("/api/farmon/ingest", ingestHandler(app, gwState))
+		se.Router.POST("/api/farmon/ingest", ingestHandler(app, gwState, wifiState))
 
 		// Test: inject uplink bypassing ZMQ/LoRaWAN (exercises decode engine + DB writes)
 		se.Router.POST("/api/farmon/test/inject-uplink", injectUplinkHandler(app, gwState))
@@ -134,23 +155,6 @@ func main() {
 		app.OnRecordAfterCreateSuccess("workflows").BindFunc(reloadWorkflows)
 		app.OnRecordAfterUpdateSuccess("workflows").BindFunc(reloadWorkflows)
 		app.OnRecordAfterDeleteSuccess("workflows").BindFunc(reloadWorkflows)
-
-		// Profile-to-device sync: when profile sub-components change, propagate to all linked devices.
-		syncProfileHook := func(e *core.RecordEvent) error {
-			if err := e.Next(); err != nil {
-				return err
-			}
-			profileID := e.Record.GetString("profile")
-			if profileID != "" {
-				syncProfileToDevices(app, profileID)
-			}
-			return nil
-		}
-		for _, collection := range []string{"profile_fields", "profile_controls", "profile_commands", "profile_airconfig"} {
-			app.OnRecordAfterCreateSuccess(collection).BindFunc(syncProfileHook)
-			app.OnRecordAfterUpdateSuccess(collection).BindFunc(syncProfileHook)
-			app.OnRecordAfterDeleteSuccess(collection).BindFunc(syncProfileHook)
-		}
 
 		se.Router.GET("/api/farmon/workflows", listWorkflowsHandler(app))
 		se.Router.POST("/api/farmon/workflows", createWorkflowHandler(app, workflowEngine))

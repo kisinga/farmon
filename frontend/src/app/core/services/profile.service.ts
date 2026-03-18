@@ -22,27 +22,27 @@ export class ProfileService {
     const params: Record<string,string> = {};
     if (!templatesOnly) params['all'] = 'true';
     if (transport) params['transport'] = transport;
-    return this.http.get<ProfileSummary[]>(`${API}/profiles`, { params });
+    return this.http.get<ProfileSummary[]>(`${API}/templates`, { params });
   }
 
   getProfile(id: string): Observable<DeviceProfile> {
-    return this.http.get<DeviceProfile>(`${API}/profiles/${id}`);
+    return this.http.get<DeviceProfile>(`${API}/templates/${id}`);
   }
 
   createProfile(body: { name: string; description?: string; profile_type: string; transport?: string; is_template?: boolean }): Observable<{ id: string; name: string }> {
-    return this.http.post<{ id: string; name: string }>(`${API}/profiles`, body);
+    return this.http.post<{ id: string; name: string }>(`${API}/templates`, body);
   }
 
   updateProfile(id: string, body: Partial<{ name: string; description: string; is_template: boolean }>): Observable<{ id: string }> {
-    return this.http.patch<{ id: string }>(`${API}/profiles/${id}`, body);
+    return this.http.patch<{ id: string }>(`${API}/templates/${id}`, body);
   }
 
   deleteProfile(id: string): Observable<{ ok: boolean }> {
-    return this.http.delete<{ ok: boolean }>(`${API}/profiles/${id}`);
+    return this.http.delete<{ ok: boolean }>(`${API}/templates/${id}`);
   }
 
   testDecode(profileId: string, fport: number, payloadHex: string): Observable<{ format: string; fport: number; result: Record<string, unknown> }> {
-    return this.http.post<{ format: string; fport: number; result: Record<string, unknown> }>(`${API}/profiles/${profileId}/test-decode`, { fport, payload_hex: payloadHex });
+    return this.http.post<{ format: string; fport: number; result: Record<string, unknown> }>(`${API}/templates/${profileId}/test-decode`, { fport, payload_hex: payloadHex });
   }
 
   getProfileFields(profileId: string): Observable<ProfileField[]> {

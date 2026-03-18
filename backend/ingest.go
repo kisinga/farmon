@@ -19,8 +19,14 @@ import (
 // Response includes any pending commands for the device.
 //
 // POST /api/farmon/ingest
-func ingestHandler(app core.App, gwState *GatewayState) func(*core.RequestEvent) error {
+func ingestHandler(app core.App, gwState *GatewayState, wifiState *WifiState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
+		// Check WiFi transport enabled
+		wifiCfg := wifiState.Config()
+		if !wifiCfg.Enabled {
+			return e.JSON(http.StatusServiceUnavailable, map[string]any{"error": "WiFi transport is disabled"})
+		}
+
 		// Extract bearer token
 		auth := e.Request.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
@@ -89,7 +95,11 @@ func ingestHandler(app core.App, gwState *GatewayState) func(*core.RequestEvent)
 		// Drain pending commands for this device
 		commands := drainPendingCommands(app, devEUI)
 
-		log.Printf("[ingest] dev_eui=%s fPort=%d payload_len=%d pending_cmds=%d", devEUI, body.FPort, len(payload), len(commands))
+		testPrefix := ""
+		if wifiCfg.TestMode {
+			testPrefix = "TEST MODE "
+		}
+		log.Printf("[ingest] %sdev_eui=%s fPort=%d payload_len=%d pending_cmds=%d", testPrefix, devEUI, body.FPort, len(payload), len(commands))
 
 		return e.JSON(http.StatusOK, map[string]any{
 			"ok":       true,

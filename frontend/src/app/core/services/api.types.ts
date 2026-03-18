@@ -52,9 +52,29 @@ export interface Device {
   config_overrides?: unknown;
   config_hash?: string;
   config_status?: string;    // "pending" | "synced" | "n/a"
+  provisioned_from?: string;  // informational template ID reference
   transport?: TransportType;
   device_token?: string;
   target_id?: string;
+}
+
+export interface DeviceCommand {
+  id: string;
+  device_eui: string;
+  name: string;
+  fport: number;
+  payload_type?: string;
+  delivery?: string;
+  command_key?: string;
+}
+
+export interface DeviceVisualization {
+  id: string;
+  device_eui: string;
+  name: string;
+  viz_type: string;
+  config: Record<string, unknown>;
+  sort_order: number;
 }
 
 export interface DeviceTarget {
@@ -259,6 +279,7 @@ export interface GatewaySettings {
   gateway_id: string;
   rx1_frequency_hz: number;
   test_mode: boolean;
+  enabled: boolean;
   saved: boolean;
 }
 
@@ -274,6 +295,21 @@ export interface GatewaySettingsRecord {
   command_url?: string;
   gateway_id?: string;
   rx1_frequency_hz?: number;
+  test_mode?: boolean;
+  enabled?: boolean;
+}
+
+// ─── WiFi types ─────────────────────────────────────────────────────────────
+
+export interface WifiSettings {
+  enabled: boolean;
+  test_mode: boolean;
+  saved: boolean;
+}
+
+export interface WifiSettingsRecord {
+  id: string;
+  enabled?: boolean;
   test_mode?: boolean;
 }
 

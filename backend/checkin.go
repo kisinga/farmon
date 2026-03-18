@@ -66,38 +66,26 @@ func handleDeviceCheckin(app core.App, cfg *gateway.Config, devEUI string, paylo
 	dev.Set("firmware_version", fwVersion)
 	dev.Set("last_seen", time.Now().Format(time.RFC3339))
 
-	profileID := dev.GetString("profile")
 	configStatus := "n/a"
 
-	if profileID != "" {
-		// Load profile and compare config hash
-		profile, err := loadProfileWithComponents(app, profileID)
-		if err != nil {
-			log.Printf("[checkin] load profile error: %v", err)
-		} else if profile.ProfileType == "airconfig" && profile.AirConfig != nil {
-			// Get effective config (profile + device overrides)
-			overridesJSON := dev.GetString("config_overrides")
-			effective, err := getEffectiveAirConfig(profile, overridesJSON)
-			if err != nil {
-				log.Printf("[checkin] getEffectiveAirConfig error: %v", err)
-			} else {
-				expectedHash := computeConfigHash(effective)
-				if deviceHash == expectedHash {
-					dev.Set("config_hash", deviceHash)
-					configStatus = "synced"
-					log.Printf("[checkin] dev_eui=%s config synced (hash=%s)", devEUI, deviceHash)
-				} else {
-					configStatus = "pending"
-					log.Printf("[checkin] dev_eui=%s config mismatch: device=%s expected=%s — queuing push",
-						devEUI, deviceHash, expectedHash)
-					if cfg != nil {
-						go func() {
-							if pushErr := pushAirConfig(app, cfg, devEUI, effective); pushErr != nil {
-								log.Printf("[checkin] pushAirConfig error dev_eui=%s: %v", devEUI, pushErr)
-							}
-						}()
+	// Load device-level airconfig for hash comparison
+	deviceAC, acErr := loadDeviceAirConfig(app, devEUI)
+	if acErr == nil && deviceAC != nil {
+		expectedHash := computeConfigHash(deviceAC)
+		if deviceHash == expectedHash {
+			dev.Set("config_hash", deviceHash)
+			configStatus = "synced"
+			log.Printf("[checkin] dev_eui=%s config synced (hash=%s)", devEUI, deviceHash)
+		} else {
+			configStatus = "pending"
+			log.Printf("[checkin] dev_eui=%s config mismatch: device=%s expected=%s — queuing push",
+				devEUI, deviceHash, expectedHash)
+			if cfg != nil {
+				go func() {
+					if pushErr := pushAirConfig(app, cfg, devEUI, deviceAC); pushErr != nil {
+						log.Printf("[checkin] pushAirConfig error dev_eui=%s: %v", devEUI, pushErr)
 					}
-				}
+				}()
 			}
 		}
 	}
@@ -127,7 +115,7 @@ func handleDeviceCheckin(app core.App, cfg *gateway.Config, devEUI string, paylo
 // and enqueues each as a fPort 35 downlink. Payloads are delivered over successive
 // uplinks (one per Class A RX window) in priority order:
 // pin_map → sensors (per slot) → controls (per slot) → lorawan.
-func pushAirConfig(app core.App, cfg *gateway.Config, devEUI string, effective *ProfileAirConfig) error {
+func pushAirConfig(app core.App, cfg *gateway.Config, devEUI string, effective *AirConfig) error {
 	log.Printf("[airconfig] building push for dev_eui=%s hash=%s", devEUI, computeConfigHash(effective))
 
 	// 1. PinMap: [0x01, idx0, fn0, idx1, fn1, ...]

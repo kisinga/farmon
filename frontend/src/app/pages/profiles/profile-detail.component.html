@@ -7,14 +7,14 @@
     <div class="alert alert-error rounded-xl">
       <span>{{ error() }}</span>
     </div>
-    <a routerLink="/profiles" class="btn btn-ghost btn-sm mt-4">← Back to profiles</a>
+    <a routerLink="/templates" class="btn btn-ghost btn-sm mt-4">← Back to profiles</a>
   </div>
 } @else {
   <!-- Header -->
   <header class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
     <div>
       <div class="flex items-center gap-3">
-        <a routerLink="/profiles" class="btn btn-ghost btn-sm btn-square">←</a>
+        <a routerLink="/templates" class="btn btn-ghost btn-sm btn-square">←</a>
         <h1 class="text-2xl font-bold">{{ profileTitle() }}</h1>
         <span
           class="badge badge-sm"

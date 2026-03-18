@@ -142,6 +142,11 @@ func recordToGatewayConfig(rec *core.Record) gateway.Config {
 			cfg.TestMode = b
 		}
 	}
+	if v := rec.Get("enabled"); v != nil {
+		if b, ok := v.(bool); ok {
+			cfg.Enabled = b
+		}
+	}
 	return cfg
 }
 
@@ -152,6 +157,7 @@ func configToRecord(rec *core.Record, cfg gateway.Config) {
 	rec.Set("gateway_id", cfg.GatewayID)
 	rec.Set("rx1_frequency_hz", cfg.RX1FrequencyHz)
 	rec.Set("test_mode", cfg.TestMode)
+	rec.Set("enabled", cfg.Enabled)
 }
 
 // GatewayState holds mutable gateway config, runtime state, and pipeline cancel. Concentratord is always external; we only connect via ZMQ.
@@ -195,6 +201,10 @@ func (s *GatewayState) RestartPipeline(app core.App) {
 	s.mu.Unlock()
 	if s.cfg == nil {
 		log.Printf("RestartPipeline: skipping (no config)")
+		return
+	}
+	if !s.cfg.Enabled {
+		log.Printf("RestartPipeline: LoRaWAN transport disabled — skipping pipeline")
 		return
 	}
 	if s.cfg.TestMode {

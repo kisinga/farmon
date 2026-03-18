@@ -9,6 +9,8 @@ import {
   PipelineDebug,
   RawLorawanFrame,
   LorawanStats,
+  WifiSettings,
+  WifiSettingsRecord,
 } from './api.types';
 
 const API = '/api/farmon';
@@ -52,6 +54,7 @@ export class GatewayApiService {
             gateway_id: '',
             rx1_frequency_hz: 0,
             test_mode: false,
+            enabled: true,
             saved: false,
           } as GatewaySettings;
         }
@@ -62,6 +65,7 @@ export class GatewayApiService {
           gateway_id: (r.gateway_id ?? '').trim(),
           rx1_frequency_hz: typeof r.rx1_frequency_hz === 'number' ? r.rx1_frequency_hz : 0,
           test_mode: !!r.test_mode,
+          enabled: r.enabled !== false,
           saved: true,
         } as GatewaySettings;
       })
@@ -86,6 +90,7 @@ export class GatewayApiService {
           command_url: settings.command_url ?? existing?.command_url ?? '',
           rx1_frequency_hz: settings.rx1_frequency_hz ?? existing?.rx1_frequency_hz ?? 0,
           test_mode: settings.test_mode ?? existing?.test_mode ?? false,
+          enabled: settings.enabled ?? existing?.enabled ?? true,
         };
         const op = existing
           ? this.pb.collection<GatewaySettingsRecord>('gateway_settings').update(existing.id, body)
@@ -93,6 +98,45 @@ export class GatewayApiService {
         return from(Promise.resolve(op));
       }),
       switchMap(() => this.getGatewaySettings())
+    );
+  }
+
+  // ─── WiFi Settings ──────────────────────────────────────
+
+  getWifiSettings(): Observable<WifiSettings> {
+    return from(
+      this.pb.collection<WifiSettingsRecord>('wifi_settings').getList(1, 1, { sort: '-@rowid', requestKey: 'wifi-settings' })
+    ).pipe(
+      map((res) => {
+        const r = res.items[0];
+        if (!r) {
+          return { enabled: true, test_mode: false, saved: false } as WifiSettings;
+        }
+        return {
+          enabled: r.enabled !== false,
+          test_mode: !!r.test_mode,
+          saved: true,
+        } as WifiSettings;
+      })
+    );
+  }
+
+  patchWifiSettings(settings: Partial<WifiSettings>): Observable<WifiSettings> {
+    return from(
+      this.pb.collection<WifiSettingsRecord>('wifi_settings').getList(1, 1, { sort: '-@rowid', requestKey: 'wifi-settings-patch' })
+    ).pipe(
+      switchMap((res) => {
+        const existing = res.items[0];
+        const body: Record<string, unknown> = {
+          enabled: settings.enabled ?? existing?.enabled ?? true,
+          test_mode: settings.test_mode ?? existing?.test_mode ?? false,
+        };
+        const op = existing
+          ? this.pb.collection<WifiSettingsRecord>('wifi_settings').update(existing.id, body)
+          : this.pb.collection<WifiSettingsRecord>('wifi_settings').create(body);
+        return from(Promise.resolve(op));
+      }),
+      switchMap(() => this.getWifiSettings())
     );
   }
 }

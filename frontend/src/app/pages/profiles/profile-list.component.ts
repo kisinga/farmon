@@ -77,7 +77,7 @@ import { DeviceManagerService } from '../../core/services/device-manager.service
                     <td class="hidden md:table-cell text-base-content/70 text-sm">{{ p.description || '—' }}</td>
                     <td>
                       <div class="flex gap-1" (click)="$event.stopPropagation()">
-                        <a [routerLink]="['/profiles', p.id]" class="btn btn-ghost btn-xs">Edit</a>
+                        <a [routerLink]="['/templates', p.id]" class="btn btn-ghost btn-xs">Edit</a>
                         <button class="btn btn-ghost btn-xs text-error" (click)="deleteProfile(p)">Del</button>
                       </div>
                     </td>
@@ -186,7 +186,7 @@ export class ProfileListComponent implements OnInit {
   }
 
   openProfile(id: string): void {
-    this.router.navigate(['/profiles', id]);
+    this.router.navigate(['/templates', id]);
   }
 
   deleteProfile(p: ProfileSummary): void {
@@ -220,7 +220,7 @@ export class ProfileListComponent implements OnInit {
       next: (created) => {
         this.creating.set(false);
         this.showCreateModal.set(false);
-        this.router.navigate(['/profiles', created.id]);
+        this.router.navigate(['/templates', created.id]);
       },
       error: (err) => {
         this.creating.set(false);

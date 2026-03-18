@@ -1,5 +1,5 @@
 import { Component, inject, computed, signal } from '@angular/core';
-import { ApiService, DeviceField, ProfileCommand } from '../../../core/services/api.service';
+import { ApiService, DeviceCommand, DeviceField } from '../../../core/services/api.service';
 import { DeviceContextService } from '../../../core/services/device-context.service';
 
 @Component({
@@ -89,9 +89,9 @@ export class DeviceConfigPanelComponent {
     this.deviceContext.fieldConfigs().filter(f => f.access === 'w')
   );
 
-  /** Commands from the device's profile (not hardcoded). Action commands = those that don't map to a writable field. */
-  actionCommands = computed<ProfileCommand[]>(() => {
-    const commands = this.deviceContext.profileCommands();
+  /** Commands from the device (device_commands collection). Action commands = those that don't map to a writable field. */
+  actionCommands = computed<DeviceCommand[]>(() => {
+    const commands = this.deviceContext.deviceCommands();
     const fieldCommands = new Set(Object.keys(DeviceConfigPanelComponent.COMMAND_FIELD_MAP));
     return commands.filter(c => !fieldCommands.has(c.name));
   });

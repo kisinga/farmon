@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-func makeAC(pinMap []int, sensors string, controls string) *ProfileAirConfig {
+func makeAC(pinMap []int, sensors string, controls string) *AirConfig {
 	pm, _ := json.Marshal(pinMap)
-	ac := &ProfileAirConfig{
+	ac := &AirConfig{
 		PinMap:   pm,
 		Sensors:  json.RawMessage(sensors),
 		Controls: json.RawMessage(controls),
