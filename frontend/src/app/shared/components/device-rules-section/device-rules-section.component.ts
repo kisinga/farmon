@@ -23,6 +23,7 @@ interface RuleForm {
   action_state: number;
   priority: number;
   cooldown_seconds: number;
+  action_dur_x10s: number;
   enabled: boolean;
   extra_conditions: ConditionForm[];
   has_time: boolean;
@@ -41,7 +42,7 @@ function defaultForm(): RuleForm {
   return {
     field_idx: 0, operator: '<', threshold: 0,
     control_idx: 0, action_state: 0,
-    priority: 128, cooldown_seconds: 300, enabled: true,
+    priority: 128, cooldown_seconds: 300, action_dur_x10s: 0, enabled: true,
     extra_conditions: [],
     has_time: false, time_start: 6, time_end: 18,
   };
@@ -81,7 +82,7 @@ function defaultForm(): RuleForm {
                 [checked]="r.enabled !== false"
                 (change)="toggleEnabled(r)" />
               <button class="btn btn-xs btn-ghost" (click)="startEdit(r)">Edit</button>
-              <button class="btn btn-xs btn-ghost text-error" (click)="deleteRule(r.id)">Delete</button>
+              <button class="btn btn-xs btn-ghost text-error" (click)="deleteRule(r)">Delete</button>
             </div>
           </div>
 
@@ -122,8 +123,12 @@ function defaultForm(): RuleForm {
                 }
               </div>
             }
-            @if ((r.cooldown_seconds ?? 0) > 0) {
-              <div class="text-xs text-base-content/50">Cooldown {{ formatDuration(r.cooldown_seconds!) }}</div>
+            @if ((r.cooldown_seconds ?? 0) > 0 || (r.action_dur_x10s ?? 0) > 0) {
+              <div class="text-xs text-base-content/50">
+                @if ((r.cooldown_seconds ?? 0) > 0) { Cooldown {{ formatDuration(r.cooldown_seconds!) }} }
+                @if ((r.cooldown_seconds ?? 0) > 0 && (r.action_dur_x10s ?? 0) > 0) { · }
+                @if ((r.action_dur_x10s ?? 0) > 0) { Hold {{ formatDuration(r.action_dur_x10s! * 10) }} }
+              </div>
             }
           </div>
         </div>
@@ -318,6 +323,10 @@ function defaultForm(): RuleForm {
                   <label class="label text-xs py-0.5">Cooldown (s)</label>
                   <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="form.cooldown_seconds" min="0" />
                 </div>
+                <div class="form-control">
+                  <label class="label text-xs py-0.5">Duration <span class="text-base-content/40">(x10s, 0=hold)</span></label>
+                  <input type="number" class="input input-bordered input-sm w-24" [(ngModel)]="form.action_dur_x10s" min="0" max="255" />
+                </div>
                 <div class="form-control self-end">
                   <label class="label cursor-pointer gap-2 pb-2">
                     <span class="text-xs">Enabled</span>
@@ -358,6 +367,7 @@ export class DeviceRulesSectionComponent {
   message = signal<string | null>(null);
   isError = signal(false);
   editingId = signal<string | null>(null);
+  private msgTimer: ReturnType<typeof setTimeout> | null = null;
 
   form: RuleForm = defaultForm();
 
@@ -467,6 +477,7 @@ export class DeviceRulesSectionComponent {
       action_state: r.action_state,
       priority: r.priority ?? 128,
       cooldown_seconds: r.cooldown_seconds ?? 300,
+      action_dur_x10s: r.action_dur_x10s ?? 0,
       enabled: r.enabled !== false,
       extra_conditions: (r.extra_conditions ?? []).map(ec => ({
         type: ec.is_control ? 'control_state' as const : 'sensor' as const,
@@ -517,6 +528,7 @@ export class DeviceRulesSectionComponent {
       action_state: this.form.action_state,
       priority: this.form.priority,
       cooldown_seconds: this.form.cooldown_seconds,
+      action_dur_x10s: this.form.action_dur_x10s,
       enabled: this.form.enabled,
       extra_conditions,
       time_start: this.form.has_time ? this.form.time_start : -1,
@@ -531,16 +543,14 @@ export class DeviceRulesSectionComponent {
 
     op$.subscribe({
       next: () => {
-        this.isError.set(false);
-        this.message.set(id ? 'Rule updated.' : 'Rule added.');
+        this.showMsg(id ? 'Rule updated.' : 'Rule added.');
         this.saving.set(false);
         this.editingId.set(null);
         this.form = defaultForm();
         this.api.getDeviceRules(eui).subscribe((list) => this.rules.set(list));
       },
       error: (err) => {
-        this.isError.set(true);
-        this.message.set(err?.error?.message ?? err?.message ?? 'Failed to save rule');
+        this.showMsg(err?.error?.message ?? err?.message ?? 'Failed to save rule', true);
         this.saving.set(false);
       },
     });
@@ -552,13 +562,21 @@ export class DeviceRulesSectionComponent {
     });
   }
 
-  deleteRule(id: string): void {
-    this.api.deleteDeviceRule(id).subscribe({
+  deleteRule(r: DeviceRuleRecord): void {
+    if (!confirm(`Delete rule #${r.rule_id}?`)) return;
+    this.api.deleteDeviceRule(r.id).subscribe({
       next: () => {
-        this.rules.update((list) => list.filter((r) => r.id !== id));
+        this.rules.update((list) => list.filter((x) => x.id !== r.id));
         this.message.set(null);
       },
     });
+  }
+
+  private showMsg(msg: string, error = false): void {
+    if (this.msgTimer) clearTimeout(this.msgTimer);
+    this.isError.set(error);
+    this.message.set(msg);
+    if (!error) this.msgTimer = setTimeout(() => this.message.set(null), 4000);
   }
 
   pushRules(): void {
@@ -568,14 +586,12 @@ export class DeviceRulesSectionComponent {
     this.message.set(null);
     this.api.pushDeviceRules(eui).subscribe({
       next: (res) => {
-        this.isError.set(false);
-        this.message.set(`Pushed ${res.rules_pushed} rule${res.rules_pushed !== 1 ? 's' : ''} to device.`);
+        this.showMsg(`Pushed ${res.rules_pushed} rule${res.rules_pushed !== 1 ? 's' : ''} to device.`);
         this.pushing.set(false);
         this.api.getDeviceRules(eui).subscribe((list) => this.rules.set(list));
       },
       error: (err) => {
-        this.isError.set(true);
-        this.message.set(err?.error?.error ?? 'Push failed');
+        this.showMsg(err?.error?.error ?? 'Push failed', true);
         this.pushing.set(false);
       },
     });

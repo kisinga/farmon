@@ -17,7 +17,6 @@
     "@angular/platform-browser": "^19.2.0",
     "@angular/platform-browser-dynamic": "^19.2.0",
     "@angular/router": "^19.2.0",
-    "drawflow": "^0.0.60",
     "echarts": "^6.0.0",
     "ngx-echarts": "^18.0.0",
     "pocketbase": "^0.26.0",
