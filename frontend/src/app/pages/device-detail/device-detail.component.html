@@ -54,6 +54,12 @@
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'telemetry'" (click)="activeTab.set('telemetry')">Telemetry</a>
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'rules'" (click)="activeTab.set('rules')">Rules</a>
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'sensors'" (click)="activeTab.set('sensors')">Sensors</a>
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'activity'" (click)="activeTab.set('activity')">
+      Activity
+      @if (stateChanges().length > 0) {
+        <span class="badge badge-xs badge-neutral ml-1">{{ stateChanges().length }}</span>
+      }
+    </a>
   </div>
 
   @switch (activeTab()) {
@@ -284,6 +290,58 @@
             [eui]="deviceContext.eui()"
             [fieldConfigs]="deviceContext.fieldConfigs()"
             (prefillRule)="onPrefillRule($event)" />
+        </div>
+      </div>
+    }
+
+    @case ('activity') {
+      <div class="card-elevated">
+        <div class="card-body-spaced">
+          <h2 class="section-title">State Change History</h2>
+          <p class="text-xs text-base-content/50 -mt-2 mb-4">
+            Actuator transitions reported by the device — driven by on-device rules, the transfer FSM, or manual downlinks.
+          </p>
+          @if (stateChanges().length === 0) {
+            <p class="text-sm text-base-content/40 py-4 text-center">No state changes recorded yet.</p>
+          } @else {
+            <div class="overflow-x-auto rounded-xl border border-base-300">
+              <table class="table table-sm">
+                <thead>
+                  <tr class="bg-base-200/60">
+                    <th class="font-semibold">Time</th>
+                    <th class="font-semibold">Control</th>
+                    <th class="font-semibold">Transition</th>
+                    <th class="font-semibold">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (sc of stateChanges(); track sc.id) {
+                    <tr class="hover">
+                      <td class="text-xs text-base-content/60 whitespace-nowrap">{{ sc.ts | date:'short' }}</td>
+                      <td class="font-medium capitalize">{{ sc.control_key.replace('_', ' ') }}</td>
+                      <td>
+                        <span class="font-mono text-xs text-base-content/60">{{ sc.old_state }}</span>
+                        <span class="mx-1 text-base-content/30">→</span>
+                        <span class="font-mono text-xs font-semibold"
+                          [class.text-success]="sc.new_state === 'on' || sc.new_state === 'open'"
+                          [class.text-base-content]="sc.new_state !== 'on' && sc.new_state !== 'open'">
+                          {{ sc.new_state }}
+                        </span>
+                      </td>
+                      <td>
+                        <span class="badge badge-xs"
+                          [class.badge-warning]="sc.reason === 'RULE'"
+                          [class.badge-primary]="sc.reason === 'DOWNLINK'"
+                          [class.badge-ghost]="sc.reason !== 'RULE' && sc.reason !== 'DOWNLINK'">
+                          {{ sc.reason || '—' }}
+                        </span>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
         </div>
       </div>
     }

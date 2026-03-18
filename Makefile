@@ -24,6 +24,8 @@ all: frontend backend
 
 # Build and serve backend (dev workflow). Rebuilds on each invocation.
 dev: frontend backend
+	@mkdir -p backend/pb_public
+	@cp -r frontend/dist/browser/. backend/pb_public/
 	cd backend && ./pocketbase serve --http=0.0.0.0:8090
 
 # Install frontend deps (run once after clone or when package.json/package-lock.json change)

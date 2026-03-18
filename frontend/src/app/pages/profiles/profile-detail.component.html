@@ -188,7 +188,7 @@
                 <input type="number" class="input input-bordered input-sm w-full" [ngModel]="ef.max_value" (ngModelChange)="updateField('max_value', $event)" />
               </div>
               <div class="form-control">
-                <label class="label py-1"><span class="label-text text-xs font-medium">Sort order</span></label>
+                <label class="label py-1"><span class="label-text text-xs font-medium" title="This number is the firmware binary field index. It must match the field_index set in the AirConfig sensor slot for this field's readings to be decoded correctly.">Field index (firmware)</span></label>
                 <input type="number" class="input input-bordered input-sm w-full" [ngModel]="ef.sort_order" (ngModelChange)="updateField('sort_order', $event)" />
               </div>
             </div>
@@ -213,7 +213,7 @@
             <table class="table table-sm">
               <thead>
                 <tr class="bg-base-200/60">
-                  <th class="w-10">#</th>
+                  <th class="w-10" title="Firmware field index — must match sort_order in the profile and field_index in the AirConfig sensor slot">Field idx</th>
                   <th>Key</th>
                   <th>Display name</th>
                   <th class="hidden sm:table-cell">Unit</th>
@@ -284,7 +284,7 @@
                 <p class="text-xs text-base-content/50 mt-1">e.g. "off, on" or "closed, open, partial"</p>
               </div>
               <div class="form-control">
-                <label class="label py-1"><span class="label-text text-xs font-medium">Sort order</span></label>
+                <label class="label py-1"><span class="label-text text-xs font-medium" title="This number is the firmware control index. Slot 0 in the AirConfig controls array maps to control_idx 0 in rules. The order here determines which actuator the firmware operates.">Control index (firmware)</span></label>
                 <input type="number" class="input input-bordered input-sm w-full" [ngModel]="ec.sort_order" (ngModelChange)="updateControl('sort_order', $event)" />
               </div>
             </div>
@@ -308,7 +308,7 @@
             <table class="table table-sm">
               <thead>
                 <tr class="bg-base-200/60">
-                  <th class="w-10">#</th>
+                  <th class="w-10" title="Firmware control index — must match the control_idx in rules and the slot order in the AirConfig control slots">Ctrl idx</th>
                   <th>Key</th>
                   <th>Display name</th>
                   <th>States</th>
@@ -460,6 +460,7 @@
                 <div class="form-control">
                   <label class="label py-1"><span class="label-text text-xs font-medium">Format *</span></label>
                   <select class="select select-bordered select-sm w-full" [ngModel]="er.format" (ngModelChange)="updateRule('format', $event)">
+                    <option value="binary_indexed_float32">binary_indexed_float32</option>
                     <option value="text_kv">text_kv</option>
                     <option value="binary_indexed">binary_indexed</option>
                     <option value="binary_frames">binary_frames</option>
@@ -477,6 +478,7 @@
                   ></textarea>
                   <p class="text-xs text-base-content/50 mt-1">
                     @switch (er.format) {
+                      @case ('binary_indexed_float32') { No config needed — self-describing. Use: <code>&#123;&#125;</code> }
                       @case ('text_kv') { Keys: separator, kv_separator }
                       @case ('binary_indexed') { Keys: header_bytes, entry_size, entry_layout[], index_key, value_key }
                       @case ('binary_frames') { Keys: frame_size, layout[], dispatch_key, value_key, mappings }

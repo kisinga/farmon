@@ -122,6 +122,13 @@ export class DeviceService {
     ).pipe(map((res) => res.items));
   }
 
+  getStateChanges(eui: string, limit = 100): Observable<import('./api.types').StateChangeRecord[]> {
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb.collection<import('./api.types').StateChangeRecord>('state_changes').getList(1, limit, { filter, sort: '-ts', requestKey: `state-changes-${eui}` })
+    ).pipe(map((res) => res.items));
+  }
+
   provisionDevice(device_eui: string, device_name?: string, profile_id?: string, transport?: TransportType, target_id?: string): Observable<ProvisionResponse> {
     return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name, profile_id, transport, target_id });
   }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/kisinga/farmon/internal/gateway"
@@ -242,6 +243,19 @@ func pushAirConfig(app core.App, cfg *gateway.Config, devEUI string, effective *
 			if err := EnqueueDownlinkForDevice(app, cfg, devEUI, 35, payload); err != nil {
 				return fmt.Errorf("pushAirConfig lorawan: %w", err)
 			}
+		}
+	}
+
+	// 6. SetHash: commits the expected config hash to the device so it can report it in checkin.
+	// The device stores this and sends it in fPort 1 so the backend detects drift.
+	hashStr := computeConfigHash(effective)
+	hashVal, err := strconv.ParseUint(hashStr, 16, 32)
+	if err == nil {
+		hashPayload := make([]byte, 5)
+		hashPayload[0] = 0x09
+		binary.LittleEndian.PutUint32(hashPayload[1:], uint32(hashVal))
+		if pushErr := EnqueueDownlinkForDevice(app, cfg, devEUI, 35, hashPayload); pushErr != nil {
+			log.Printf("[airconfig] set_hash enqueue error dev_eui=%s: %v", devEUI, pushErr)
 		}
 	}
 

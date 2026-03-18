@@ -1,7 +1,7 @@
 import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { DatePipe, NgClass } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ApiService, DeviceField, type WorkflowRecord } from '../../core/services/api.service';
+import { ApiService, DeviceField, type WorkflowRecord, type StateChangeRecord } from '../../core/services/api.service';
 import { DeviceContextService } from '../../core/services/device-context.service';
 import { ControlsPanelComponent } from '../../shared/components/controls-panel/controls-panel.component';
 import { HistoryChartComponent } from '../../shared/components/history-chart/history-chart.component';
@@ -31,7 +31,8 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   routeError = signal<string | null>(null);
   deleting = signal(false);
   relatedWorkflows = signal<WorkflowRecord[]>([]);
-  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'rules' | 'sensors'>('overview');
+  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'rules' | 'sensors' | 'activity'>('overview');
+  stateChanges = signal<StateChangeRecord[]>([]);
   prefillRuleForm = signal<Partial<DeviceRuleRecord> | null>(null);
   timeRange = signal<'1h' | '24h' | '7d'>('24h');
   rangeEnd = signal<string>(new Date().toISOString());
@@ -150,6 +151,10 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
     this.api.getWorkflows(eui).subscribe({
       next: (list) => this.relatedWorkflows.set(list),
       error: () => this.relatedWorkflows.set([]),
+    });
+    this.api.getStateChanges(eui).subscribe({
+      next: (list) => this.stateChanges.set(list),
+      error: () => this.stateChanges.set([]),
     });
   }
 

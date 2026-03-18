@@ -35,13 +35,14 @@ const (
 )
 
 const (
-	offPinMap   = 5
-	offSensors  = offPinMap + settings.MaxPins                                    // 25
-	offControls = offSensors + 1 + settings.MaxSensors*8                         // 90
-	offRules    = offControls + 1 + settings.MaxControls*settings.ControlSlotSize // 155
-	offInterval = offRules + 1 + settings.MaxRules*settings.RuleSize             // 668
-	offTransfer = offInterval + 2                                                 // 670
-	offWiFi     = offTransfer + settings.TransferConfigSize                       // 686
+	offPinMap     = 5
+	offSensors    = offPinMap + settings.MaxPins                                    // 25
+	offControls   = offSensors + 1 + settings.MaxSensors*8                         // 90
+	offRules      = offControls + 1 + settings.MaxControls*settings.ControlSlotSize // 155
+	offInterval   = offRules + 1 + settings.MaxRules*settings.RuleSize             // 668
+	offTransfer   = offInterval + 2                                                 // 670
+	offWiFi       = offTransfer + settings.TransferConfigSize                      // 686
+	offConfigHash = offWiFi + rp2040transport.WiFiSettingsSize                     // 974 (4 bytes)
 )
 
 func encodeSettings(s rp2040Config) []byte {
@@ -90,6 +91,7 @@ func encodeSettings(s rp2040Config) []byte {
 	writeTransfer(buf, offTransfer, &s.Core.Transfer)
 	wifiBytes := rp2040transport.EncodeWiFiSettings(s.WiFi)
 	copy(buf[offWiFi:], wifiBytes)
+	binary.LittleEndian.PutUint32(buf[offConfigHash:], s.Core.ConfigHash)
 
 	return buf
 }
@@ -146,6 +148,9 @@ func decodeSettings(buf []byte) rp2040Config {
 	c.Core.TxIntervalSec = binary.LittleEndian.Uint16(buf[offInterval:])
 	readTransfer(buf, offTransfer, &c.Core.Transfer)
 	c.WiFi = rp2040transport.DecodeWiFiSettings(buf[offWiFi:])
+	if len(buf) >= offConfigHash+4 {
+		c.Core.ConfigHash = binary.LittleEndian.Uint32(buf[offConfigHash:])
+	}
 	return c
 }
 

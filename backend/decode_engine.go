@@ -20,6 +20,8 @@ func DecodeWithRules(format string, config map[string]any, profileFields []Profi
 		return decodeTextKV(config, payload)
 	case "binary_indexed":
 		return decodeBinaryIndexed(config, profileFields, payload)
+	case "binary_indexed_float32":
+		return decodeBinaryIndexedFloat32(config, profileFields, payload)
 	case "binary_frames":
 		return decodeBinaryFrames(config, payload)
 	case "binary_state_change":
@@ -91,6 +93,39 @@ func decodeBinaryIndexed(config map[string]any, profileFields []ProfileField, pa
 		key, ok := idxToKey[fieldIdx]
 		if !ok {
 			key = fmt.Sprintf("field_%d", fieldIdx)
+		}
+		out[key] = value
+	}
+	return &DecodeResult{Fields: out}, nil
+}
+
+// decodeBinaryIndexedFloat32 parses the compact telemetry format produced by pkg/node sendTelemetry().
+// Wire format: [count:1][field_idx:1][float32_le:4] × count
+// Maps field_idx → profile field key via sort_order (sort_order == field_index by convention).
+func decodeBinaryIndexedFloat32(_ map[string]any, profileFields []ProfileField, payload []byte) (*DecodeResult, error) {
+	if len(payload) < 1 {
+		return nil, fmt.Errorf("binary_indexed_float32: empty payload")
+	}
+	count := int(payload[0])
+	entrySize := 5 // 1-byte index + 4-byte float32
+	if len(payload) < 1+count*entrySize {
+		return nil, fmt.Errorf("binary_indexed_float32: payload too short: have %d, need %d for count=%d", len(payload), 1+count*entrySize, count)
+	}
+
+	idxToKey := make(map[int]string, len(profileFields))
+	for _, f := range profileFields {
+		idxToKey[f.SortOrder] = f.Key
+	}
+
+	out := make(map[string]any, count)
+	for i := 0; i < count; i++ {
+		off := 1 + i*entrySize
+		idx := int(payload[off])
+		bits := binary.LittleEndian.Uint32(payload[off+1:])
+		value := float64(math.Float32frombits(bits))
+		key, ok := idxToKey[idx]
+		if !ok {
+			key = fmt.Sprintf("field_%d", idx)
 		}
 		out[key] = value
 	}

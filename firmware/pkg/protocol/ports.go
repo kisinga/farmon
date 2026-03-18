@@ -43,5 +43,6 @@ const (
 	AirCfgLoRaWAN  = 0x06 // [0x06, region, subband, dr, txpwr, adr, confirmed]
 	AirCfgWiFi     = 0x07 // [0x07, ...] (RP2040 only, future)
 	AirCfgTransfer = 0x08 // [0x08, enabled, pump, valve_t1, valve_t2, sv, lvl_t1, lvl_t2, delta, t1min, pulse_sec]
+	AirCfgSetHash  = 0x09 // [0x09, hash_b0, hash_b1, hash_b2, hash_b3] LE uint32 — commits config hash to flash
 	AirCfgReset    = 0xFF // [0xFF]
 )

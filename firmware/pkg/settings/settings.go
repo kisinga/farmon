@@ -321,6 +321,11 @@ type CoreSettings struct {
 	TxIntervalSec uint16
 
 	Transfer TransferConfig // v2+; zero value = disabled
+
+	// ConfigHash is the last AirConfig hash committed to flash via AirCfgSetHash (0x09).
+	// Reported in checkin (fPort 1) so the backend can detect config drift.
+	// Zero means "unknown" — backend will always push config on first checkin.
+	ConfigHash uint32
 }
 
 // --- Presets ---

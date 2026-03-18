@@ -21,6 +21,7 @@ const (
 	AirCfgLoRaWAN  = protocol.AirCfgLoRaWAN
 	AirCfgWiFi     = protocol.AirCfgWiFi
 	AirCfgTransfer = protocol.AirCfgTransfer
+	AirCfgSetHash  = protocol.AirCfgSetHash
 	AirCfgReset    = protocol.AirCfgReset
 )
 
@@ -140,6 +141,15 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 			cfg.Transfer.StopT1MinPct = data[9]
 			cfg.Transfer.MeasurePulseSec = data[10]
 			println("[airconfig] transfer config updated, enabled:", data[1])
+			return ResultSaved
+		}
+
+	case AirCfgSetHash:
+		// [0x09, b0, b1, b2, b3] — backend commits the expected config hash after a full push.
+		// Firmware stores it and reports it in checkin (fPort 1) so the backend can detect drift.
+		if len(data) >= 5 {
+			cfg.ConfigHash = binary.LittleEndian.Uint32(data[1:5])
+			println("[airconfig] config hash committed")
 			return ResultSaved
 		}
 

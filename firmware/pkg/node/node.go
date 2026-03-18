@@ -24,24 +24,28 @@ type Config struct {
 	Transport transport.Transport
 	Actuators [settings.MaxControls]actuator.Actuator
 	Sensors   []sensors.Driver
-	Transfer  *transfer.FSM          // nil = disabled
+	Transfer  *transfer.FSM             // nil = disabled
 	Extension airconfig.ExtensionHandler // nil for RP2040
 	SaveFn    func()
 	RebootFn  func()
+
+	// Firmware version reported in checkin (fPort 1). Set by each target's main().
+	FWMajor, FWMinor, FWPatch uint8
 }
 
 // Node is the shared device runtime.
 type Node struct {
-	cfg       Config
-	eng       *rules.Engine
-	uptimeSec uint32
-	txCount   uint32
-	rxCount   uint32
+	cfg        Config
+	eng        *rules.Engine
+	uptimeSec  uint32
+	txCount    uint32
+	rxCount    uint32
+	checkinEvery uint32 // send checkin every N TX intervals (set at init)
 }
 
 // New creates a Node and loads the current rule set.
 func New(cfg Config) *Node {
-	n := &Node{cfg: cfg}
+	n := &Node{cfg: cfg, checkinEvery: 10}
 	n.eng = rules.New(func(ctrlIdx, stateIdx uint8) bool {
 		if int(ctrlIdx) >= len(cfg.Actuators) || cfg.Actuators[ctrlIdx] == nil {
 			return true
@@ -74,13 +78,19 @@ func (n *Node) sensorLoop() {
 
 		if n.cfg.Transfer != nil {
 			tState := n.cfg.Transfer.Tick(values, nowMs)
-			// Append transfer FSM state as a synthetic field at index 0xFE (254).
-			// Backend profile maps sort_order=254 to display "transfer_state".
-			const transferFieldIdx = 254
+			// Append transfer FSM state as a synthetic field at index 6.
+			// Must match the profile field sort_order=6 ("transfer_state") in the Water Manager profile.
+			const transferFieldIdx = 6
 			for len(values) <= transferFieldIdx {
 				values = append(values, 0)
 			}
 			values[transferFieldIdx] = float32(tState)
+		}
+
+		n.txCount++
+		if n.txCount%n.checkinEvery == 1 {
+			// Send checkin on first TX and every Nth after.
+			n.sendCheckin()
 		}
 
 		n.sendTelemetry(values)
@@ -235,6 +245,22 @@ func (n *Node) sendAck(port uint8) {
 	p.Port = protocol.FPortCommandAck
 	p.Payload[0] = port
 	p.Len = 1
+	n.cfg.Transport.Send(p)
+}
+
+// sendCheckin sends a 14-byte fPort 1 registration/checkin packet.
+// The backend uses this to verify config hash and push AirConfig if drifted.
+func (n *Node) sendCheckin() {
+	var p transport.Packet
+	p.Port = protocol.FPortRegistration
+	p.Payload[0] = n.cfg.FWMajor
+	p.Payload[1] = n.cfg.FWMinor
+	p.Payload[2] = n.cfg.FWPatch
+	binary.LittleEndian.PutUint32(p.Payload[3:7], n.cfg.Core.ConfigHash)
+	p.Payload[7] = 0 // preset_id (unused for now)
+	binary.LittleEndian.PutUint32(p.Payload[8:12], n.uptimeSec)
+	binary.LittleEndian.PutUint16(p.Payload[12:14], 0) // flags
+	p.Len = 14
 	n.cfg.Transport.Send(p)
 }
 

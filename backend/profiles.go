@@ -700,14 +700,24 @@ func seedFarMonWaterManager(app core.App) {
 		return
 	}
 
-	// Fields: level (shared sensor switched by valve), flow T1, flow T2, battery, transfer state
-	// transfer_state is at sort_order=254 matching the firmware's synthetic field index 0xFE (254).
+	// Field index (sort_order) == the binary field index the firmware embeds in telemetry packets.
+	// The YF-S201 flow sensor outputs TWO consecutive readings: [fieldIdx]=delta, [fieldIdx+1]=total.
+	// So each flow sensor occupies two field indices. Layout:
+	//   0 = level_pct         (pressure sensor, 1 field)
+	//   1 = flow_t1_rate      (YFS201 T1, field 0 of 2: pulse delta this interval)
+	//   2 = flow_t1_total     (YFS201 T1, field 1 of 2: cumulative liters)
+	//   3 = flow_t2_rate      (YFS201 T2, field 0 of 2)
+	//   4 = flow_t2_total     (YFS201 T2, field 1 of 2)
+	//   5 = battery           (ADC, 1 field)
+	//   6 = transfer_state    (synthetic FSM state appended by node.go)
 	fieldsData := []ProfileField{
 		{Key: "level_pct", DisplayName: "Tank Level", Unit: "%", Category: "telemetry", Access: "r", StateClass: "m", MaxValue: 100, SortOrder: 0},
-		{Key: "flow_t1", DisplayName: "Flow T1", Unit: "L", Category: "telemetry", Access: "r", StateClass: "i", MaxValue: 999999, SortOrder: 1},
-		{Key: "flow_t2", DisplayName: "Flow T2", Unit: "L", Category: "telemetry", Access: "r", StateClass: "i", MaxValue: 999999, SortOrder: 2},
-		{Key: "battery", DisplayName: "Battery", Unit: "%", Category: "system", Access: "r", StateClass: "m", MaxValue: 100, SortOrder: 3},
-		{Key: "transfer_state", DisplayName: "Transfer State", Unit: "", Category: "system", Access: "r", StateClass: "m", MaxValue: 2, SortOrder: 254},
+		{Key: "flow_t1_rate", DisplayName: "Flow T1 Rate", Unit: "L/interval", Category: "telemetry", Access: "r", StateClass: "m", MaxValue: 9999, SortOrder: 1},
+		{Key: "flow_t1_total", DisplayName: "Flow T1 Total", Unit: "L", Category: "telemetry", Access: "r", StateClass: "i", MaxValue: 999999, SortOrder: 2},
+		{Key: "flow_t2_rate", DisplayName: "Flow T2 Rate", Unit: "L/interval", Category: "telemetry", Access: "r", StateClass: "m", MaxValue: 9999, SortOrder: 3},
+		{Key: "flow_t2_total", DisplayName: "Flow T2 Total", Unit: "L", Category: "telemetry", Access: "r", StateClass: "i", MaxValue: 999999, SortOrder: 4},
+		{Key: "battery", DisplayName: "Battery", Unit: "%", Category: "system", Access: "r", StateClass: "m", MaxValue: 100, SortOrder: 5},
+		{Key: "transfer_state", DisplayName: "Transfer State", Unit: "", Category: "system", Access: "r", StateClass: "m", MaxValue: 2, SortOrder: 6},
 	}
 	for _, f := range fieldsData {
 		createProfileField(app, profileID, f)
@@ -762,10 +772,13 @@ func seedFarMonWaterManager(app core.App) {
 	// actuator_type: 0=relay, 1=motorizedValve, 2=solenoidMomentary
 	createProfileAirConfig(app, profileID,
 		`[0,0,0,4,7,7,2,2,2,2,2,2,4,0,0,0,0,0,0,0]`,
+		// Sensor field_index values must match the profile field sort_order above.
+		// YFS201 outputs 2 consecutive fields (rate @ fieldIdx, total @ fieldIdx+1).
+		// flow_t1 → field_index=1 (uses 1 and 2), flow_t2 → field_index=3 (uses 3 and 4), battery → field_index=5.
 		`[{"type":8,"pin_index":3,"field_index":0,"flags":1,"param1":0,"param2":1000},`+
 			`{"type":1,"pin_index":4,"field_index":1,"flags":1,"param1":450,"param2":0},`+
-			`{"type":1,"pin_index":5,"field_index":2,"flags":1,"param1":450,"param2":0},`+
-			`{"type":2,"pin_index":14,"field_index":3,"flags":1,"param1":0,"param2":0}]`,
+			`{"type":1,"pin_index":5,"field_index":3,"flags":1,"param1":450,"param2":0},`+
+			`{"type":2,"pin_index":14,"field_index":5,"flags":1,"param1":0,"param2":0}]`,
 		`[{"pin_index":6,"state_count":2,"flags":1,"actuator_type":0,"pin2_index":255,"pulse_x100ms":0},`+
 			`{"pin_index":7,"state_count":2,"flags":5,"actuator_type":1,"pin2_index":8,"pulse_x100ms":50},`+
 			`{"pin_index":9,"state_count":2,"flags":5,"actuator_type":1,"pin2_index":10,"pulse_x100ms":50},`+

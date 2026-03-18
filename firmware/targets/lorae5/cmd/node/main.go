@@ -91,6 +91,7 @@ func main() {
 		Extension: handleLoRaWANAirConfig,
 		SaveFn:    saveSettings,
 		RebootFn:  reboot,
+		FWMajor:   1, FWMinor: 0, FWPatch: 0,
 	})
 	n.Run()
 }

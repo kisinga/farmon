@@ -346,6 +346,19 @@ export interface WorkflowLogRecord {
   ts: string;
 }
 
+// ─── State change event log ──────────────────────────────────────────────────
+
+export interface StateChangeRecord {
+  id: string;
+  device_eui: string;
+  control_key: string;
+  old_state: string;
+  new_state: string;
+  reason: string;   // "RULE" | "MANUAL" | "DOWNLINK" | "BOOT"
+  device_ts?: string;
+  ts: string;
+}
+
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
 export interface TelemetryRecord {
