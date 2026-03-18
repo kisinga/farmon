@@ -66,6 +66,8 @@ import { DeviceManagerService } from '../../core/services/device-manager.service
                       <select class="select select-bordered select-sm" [(ngModel)]="t.type">
                         <option value="telemetry">Sensor reading</option>
                         <option value="state_change">State change</option>
+                        <option value="checkin">Device checkin</option>
+                        <option value="schedule">Schedule (cron)</option>
                       </select>
                     </div>
                     <div class="form-control">
@@ -92,6 +94,13 @@ import { DeviceManagerService } from '../../core/services/device-manager.service
                       <div class="form-control">
                         <label class="label text-xs">Control</label>
                         <input type="text" class="input input-bordered input-sm w-28" [(ngModel)]="t.control_key" placeholder="pump" />
+                      </div>
+                    }
+                    @if (t.type === 'schedule') {
+                      <div class="form-control">
+                        <label class="label text-xs">Cron expression</label>
+                        <input type="text" class="input input-bordered input-sm w-36 font-mono" [(ngModel)]="t.cron" placeholder="0 6 * * *" />
+                        <span class="label-text-alt text-xs text-base-content/50 mt-0.5">5-field cron expression (min hour day month weekday)</span>
                       </div>
                     }
                     @if (form.triggers.length > 1) {
@@ -373,7 +382,7 @@ export class WorkflowsComponent implements OnInit {
     condition_expr: '',
     cooldown_seconds: 300,
     priority: 100,
-    triggers: [{ type: 'telemetry' as 'telemetry' | 'state_change', device_eui: '', field: '', control_key: '' }],
+    triggers: [{ type: 'telemetry' as 'telemetry' | 'state_change' | 'checkin' | 'schedule', device_eui: '', field: '', control_key: '', cron: '' }],
     actions: [{ type: 'set_control' as 'set_control' | 'send_command', target_eui: '', control: '', state: '', duration: 0, command: '', value: null as number | null }],
   };
 
@@ -382,7 +391,7 @@ export class WorkflowsComponent implements OnInit {
   }
 
   addTrigger(): void {
-    this.form.triggers = [...this.form.triggers, { type: 'telemetry', device_eui: '', field: '', control_key: '' }];
+    this.form.triggers = [...this.form.triggers, { type: 'telemetry', device_eui: '', field: '', control_key: '', cron: '' }];
   }
 
   removeTrigger(i: number): void {
@@ -512,7 +521,9 @@ export class WorkflowsComponent implements OnInit {
       if (t.device_eui) filter['device_eui'] = t.device_eui;
       if (t.type === 'telemetry' && t.field) filter['field'] = t.field;
       if (t.type === 'state_change' && t.control_key) filter['control_key'] = t.control_key;
-      return { type: t.type, filter: Object.keys(filter).length > 0 ? filter : undefined } as WorkflowTrigger;
+      const trigger: WorkflowTrigger = { type: t.type, filter: Object.keys(filter).length > 0 ? filter : undefined };
+      if (t.type === 'schedule' && t.cron) trigger.cron = t.cron;
+      return trigger;
     });
 
     const actions: WorkflowAction[] = this.form.actions.map((a) => {

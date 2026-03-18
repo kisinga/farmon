@@ -73,7 +73,14 @@ func (n *Node) sensorLoop() {
 		n.eng.Evaluate(values, n.eng.GetControlStates(), -1, nowMs)
 
 		if n.cfg.Transfer != nil {
-			n.cfg.Transfer.Tick(values, nowMs)
+			tState := n.cfg.Transfer.Tick(values, nowMs)
+			// Append transfer FSM state as a synthetic field at index 0xFE (254).
+			// Backend profile maps sort_order=254 to display "transfer_state".
+			const transferFieldIdx = 254
+			for len(values) <= transferFieldIdx {
+				values = append(values, 0)
+			}
+			values[transferFieldIdx] = float32(tState)
 		}
 
 		n.sendTelemetry(values)

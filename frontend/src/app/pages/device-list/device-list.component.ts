@@ -2,13 +2,12 @@ import { Component, inject, signal, computed, OnInit, viewChild } from '@angular
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, Device } from '../../core/services/api.service';
-import { DatePipe } from '@angular/common';
 import { AddDeviceModalComponent } from '../../shared/components/add-device-modal/add-device-modal.component';
 
 @Component({
   selector: 'app-device-list',
   standalone: true,
-  imports: [RouterLink, DatePipe, AddDeviceModalComponent, FormsModule],
+  imports: [RouterLink, AddDeviceModalComponent, FormsModule],
   template: `
     <header class="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
@@ -50,8 +49,9 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
             <button type="button" class="btn btn-primary" (click)="openAddModal()">Add your first device</button>
           </div>
         } @else {
-          <div class="flex justify-end mb-3">
-            <select class="select select-bordered select-sm" [(ngModel)]="transportFilter" name="transportFilter">
+          <div class="flex flex-wrap items-center justify-end gap-2 mb-3">
+            <input type="text" class="input input-bordered input-sm w-48" placeholder="Search name or EUI…" [ngModel]="searchQuery()" (ngModelChange)="searchQuery.set($event)" />
+            <select class="select select-bordered select-sm" [ngModel]="transportFilter()" (ngModelChange)="transportFilter.set($event)" name="transportFilter">
               <option value="">All transports</option>
               <option value="lorawan">LoRaWAN</option>
               <option value="wifi">WiFi</option>
@@ -93,7 +93,7 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
                       }
                     </td>
                     <td class="text-base-content/70 whitespace-nowrap">
-                      {{ d.last_seen ? (d.last_seen | date:'short') : '—' }}
+                      {{ d.last_seen ? relativeTime(d.last_seen) : '—' }}
                     </td>
                     <td class="text-right">
                       <div class="flex gap-1 justify-end">
@@ -128,11 +128,27 @@ export class DeviceListComponent implements OnInit {
   loading = signal(true);
   error = signal<string | null>(null);
   transportFilter = signal('');
+  searchQuery = signal('');
   filteredDevices = computed(() => {
     const f = this.transportFilter();
-    const d = this.devices();
-    return f ? d.filter(dev => (dev.transport || 'lorawan') === f) : d;
+    const q = this.searchQuery().toLowerCase();
+    return this.devices().filter(dev => {
+      if (f && (dev.transport || 'lorawan') !== f) return false;
+      if (q && !dev.device_name?.toLowerCase().includes(q) && !dev.device_eui.toLowerCase().includes(q)) return false;
+      return true;
+    });
   });
+
+  relativeTime(dateStr: string): string {
+    const now = new Date();
+    const d = new Date(dateStr);
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 60) return diffMin <= 1 ? 'just now' : `${diffMin} min ago`;
+    const isToday = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    if (isToday) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
 
   ngOnInit() {
     this.loadDevices();

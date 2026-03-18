@@ -216,6 +216,7 @@ export interface ProfileAirConfig {
   sensors: unknown[];
   controls: unknown[];
   lorawan: Record<string, unknown>;
+  transfer?: Record<string, unknown>;  // Water Manager transfer FSM config
   config_hash?: string;
 }
 
@@ -303,8 +304,10 @@ export interface LorawanStats {
 // ─── Workflow types ──────────────────────────────────────────────────────────
 
 export interface WorkflowTrigger {
-  type: 'telemetry' | 'state_change';
+  type: 'telemetry' | 'state_change' | 'checkin' | 'schedule';
   filter?: { device_eui?: string; field?: string; control_key?: string };
+  cron?: string;              // for 'schedule' type
+  debounce_seconds?: number;
 }
 
 export interface WorkflowAction {

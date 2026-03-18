@@ -159,6 +159,31 @@
     }
     @case ('controls') {
       <div class="space-y-6">
+        @if (transferStateLabel() !== null) {
+          <div class="card-elevated">
+            <div class="card-body-spaced">
+              <div class="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <h2 class="section-title mb-0.5">Transfer FSM</h2>
+                  <p class="text-xs text-base-content/50">Autonomous 2-tank water transfer — managed by device firmware.</p>
+                </div>
+                <div class="flex items-center gap-3">
+                  <span class="badge badge-md" [ngClass]="transferStateBadge()">{{ transferStateLabel() }}</span>
+                  @if (transferState() !== 0) {
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-error btn-outline"
+                      [disabled]="stoppingTransfer()"
+                      (click)="stopTransfer()"
+                    >
+                      {{ stoppingTransfer() ? 'Stopping…' : 'Stop transfer' }}
+                    </button>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        }
         <div class="card-elevated">
           <div class="card-body-spaced">
             <app-controls-panel [eui]="deviceContext.eui()" />
@@ -191,8 +216,10 @@
             @for (f of chartFields(); track f.field_key) {
               <app-history-chart [eui]="deviceContext.eui()" [field]="f.field_key" [label]="f.display_name + (f.unit ? ' (' + f.unit + ')' : '')" [from]="historyFrom()" [to]="historyTo()" />
             }
-            <app-history-chart [eui]="deviceContext.eui()" field="rssi" label="RSSI (dBm)" [from]="historyFrom()" [to]="historyTo()" />
-            <app-history-chart [eui]="deviceContext.eui()" field="snr" label="SNR (dB)" [from]="historyFrom()" [to]="historyTo()" />
+            @if (deviceContext.device()!.transport !== 'wifi') {
+              <app-history-chart [eui]="deviceContext.eui()" field="rssi" label="RSSI (dBm)" [from]="historyFrom()" [to]="historyTo()" />
+              <app-history-chart [eui]="deviceContext.eui()" field="snr" label="SNR (dB)" [from]="historyFrom()" [to]="historyTo()" />
+            }
           </div>
         </div>
       </div>

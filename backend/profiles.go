@@ -701,11 +701,13 @@ func seedFarMonWaterManager(app core.App) {
 	}
 
 	// Fields: level (shared sensor switched by valve), flow T1, flow T2, battery, transfer state
+	// transfer_state is at sort_order=254 matching the firmware's synthetic field index 0xFE (254).
 	fieldsData := []ProfileField{
 		{Key: "level_pct", DisplayName: "Tank Level", Unit: "%", Category: "telemetry", Access: "r", StateClass: "m", MaxValue: 100, SortOrder: 0},
 		{Key: "flow_t1", DisplayName: "Flow T1", Unit: "L", Category: "telemetry", Access: "r", StateClass: "i", MaxValue: 999999, SortOrder: 1},
 		{Key: "flow_t2", DisplayName: "Flow T2", Unit: "L", Category: "telemetry", Access: "r", StateClass: "i", MaxValue: 999999, SortOrder: 2},
 		{Key: "battery", DisplayName: "Battery", Unit: "%", Category: "system", Access: "r", StateClass: "m", MaxValue: 100, SortOrder: 3},
+		{Key: "transfer_state", DisplayName: "Transfer State", Unit: "", Category: "system", Access: "r", StateClass: "m", MaxValue: 2, SortOrder: 254},
 	}
 	for _, f := range fieldsData {
 		createProfileField(app, profileID, f)

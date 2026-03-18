@@ -1,5 +1,5 @@
 import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { DatePipe, NgClass } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService, DeviceField, type WorkflowRecord } from '../../core/services/api.service';
 import { DeviceContextService } from '../../core/services/device-context.service';
@@ -20,7 +20,7 @@ import type { DeviceRuleRecord } from '../../core/services/api.service';
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent, DeviceSensorConfigComponent],
+  imports: [RouterLink, DatePipe, NgClass, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent, DeviceSensorConfigComponent],
   templateUrl: './device-detail.component.html',
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
@@ -73,6 +73,45 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   systemFields = computed(() =>
     this.deviceContext.fieldConfigs().filter((f: DeviceField) => f.category === 'system')
   );
+
+  /** Transfer FSM state from latest telemetry (0=idle, 1=measuring, 2=pumping). */
+  transferState = computed(() => {
+    const t = this.deviceContext.latestTelemetry();
+    const fields = this.deviceContext.fieldConfigs();
+    if (!t || !fields.some(f => f.field_key === 'transfer_state')) return null;
+    const v = (t as Record<string, unknown>)['transfer_state'];
+    return typeof v === 'number' ? v : null;
+  });
+
+  transferStateLabel = computed(() => {
+    switch (this.transferState()) {
+      case 0: return 'Idle';
+      case 1: return 'Measuring';
+      case 2: return 'Pumping';
+      default: return null;
+    }
+  });
+
+  transferStateBadge = computed(() => {
+    switch (this.transferState()) {
+      case 0: return 'badge-ghost';
+      case 1: return 'badge-warning';
+      case 2: return 'badge-success';
+      default: return 'badge-ghost';
+    }
+  });
+
+  stoppingTransfer = signal(false);
+
+  stopTransfer(): void {
+    const eui = this.deviceContext.eui();
+    if (!eui) return;
+    this.stoppingTransfer.set(true);
+    this.api.setControl(eui, 'pump', 'off', 3600).subscribe({
+      next: () => this.stoppingTransfer.set(false),
+      error: () => this.stoppingTransfer.set(false),
+    });
+  }
 
   profileInfo = computed(() => {
     const profile = this.deviceContext.profile();
