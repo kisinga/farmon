@@ -8,7 +8,8 @@ export type SensorInterface =
   | 'i2c_bme280'
   | 'i2c_ina219'
   | 'pulse'
-  | 'modbus_rtu';
+  | 'modbus_rtu'
+  | 'digital_in';
 
 export type MeasurementType =
   | 'temperature'
@@ -24,6 +25,7 @@ export type MeasurementType =
   | 'power'
   | 'battery'
   | 'soil_moisture'
+  | 'state'
   | 'custom';
 
 // Firmware SensorType numeric values (must match settings.go)
@@ -39,6 +41,7 @@ export const SENSOR_TYPE = {
   ADC4_20mA:     8,
   PulseGeneric:  9,
   ModbusRTU:    10,
+  DigitalIn:    11,
 } as const;
 
 export interface SensorInterfaceConfig {
@@ -57,6 +60,7 @@ export const SENSOR_INTERFACES: SensorInterfaceConfig[] = [
   { id: 'i2c_ina219',  label: 'I2C — INA219 (V/I/W)',     sensorType: SENSOR_TYPE.INA219,       needsCalib: false, busAddressed: true  },
   { id: 'pulse',       label: 'Pulse Counter',             sensorType: SENSOR_TYPE.PulseGeneric, needsCalib: false, busAddressed: false },
   { id: 'modbus_rtu',  label: 'Modbus RTU (RS-485)',       sensorType: SENSOR_TYPE.ModbusRTU,    needsCalib: false, busAddressed: true  },
+  { id: 'digital_in', label: 'Digital Input (GPIO)',       sensorType: SENSOR_TYPE.DigitalIn,    needsCalib: false, busAddressed: false },
 ];
 
 export interface MeasurementTypeConfig {
@@ -81,6 +85,7 @@ export const MEASUREMENT_TYPES: MeasurementTypeConfig[] = [
   { id: 'power',        label: 'Power',          unit: 'W',   defaultMin: 0,    defaultMax: 500  },
   { id: 'battery',      label: 'Battery',        unit: '%',   defaultMin: 0,    defaultMax: 100  },
   { id: 'soil_moisture',label: 'Soil Moisture',  unit: '%',   defaultMin: 0,    defaultMax: 100  },
+  { id: 'state',        label: 'State (0/1)',    unit: '',    defaultMin: 0,    defaultMax: 1    },
   { id: 'custom',       label: 'Custom',         unit: '',    defaultMin: 0,    defaultMax: 100  },
 ];
 
@@ -173,6 +178,24 @@ export const SENSOR_PRESETS: SensorPreset[] = [
     measurement: 'level',
     calibMin: 0,
     calibMax: 500,
+  },
+  {
+    id: 'float_switch',
+    label: 'Float Switch (Digital)',
+    description: 'Normally-open or normally-closed float switch on a GPIO pin',
+    interface: 'digital_in',
+    measurement: 'state',
+    calibMin: 0,
+    calibMax: 1,
+  },
+  {
+    id: 'door_sensor',
+    label: 'Door / Reed Switch (Digital)',
+    description: 'Magnetic reed switch: 0 = closed, 1 = open',
+    interface: 'digital_in',
+    measurement: 'state',
+    calibMin: 0,
+    calibMax: 1,
   },
 ];
 

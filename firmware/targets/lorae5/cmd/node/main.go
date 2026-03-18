@@ -8,15 +8,15 @@ import (
 	"machine"
 	"time"
 
-	"github.com/farm/firmware/pkg/airconfig"
-	sharedflash "github.com/farm/firmware/pkg/flash"
-	node "github.com/farm/firmware/pkg/node"
-	"github.com/farm/firmware/pkg/sensors"
-	"github.com/farm/firmware/pkg/settings"
-	"github.com/farm/firmware/pkg/transfer"
-	lorae5flash "github.com/farm/firmware/targets/lorae5/pkg/flash"
-	"github.com/farm/firmware/targets/lorae5/pkg/radio"
-	loratransport "github.com/farm/firmware/targets/lorae5/pkg/transport"
+	"github.com/farmon/firmware/pkg/airconfig"
+	sharedflash "github.com/farmon/firmware/pkg/flash"
+	node "github.com/farmon/firmware/pkg/node"
+	"github.com/farmon/firmware/pkg/sensors"
+	"github.com/farmon/firmware/pkg/settings"
+	"github.com/farmon/firmware/pkg/transfer"
+	lorae5flash "github.com/farmon/firmware/targets/lorae5/pkg/flash"
+	"github.com/farmon/firmware/targets/lorae5/pkg/radio"
+	loratransport "github.com/farmon/firmware/targets/lorae5/pkg/transport"
 )
 
 // Board pin table: PinMap index → physical machine.Pin on LoRa-E5 dev kit.
@@ -53,7 +53,7 @@ func main() {
 
 	buses := sensors.InitBuses(cfg.Core, boardPins, busHW)
 	registerDrivers()
-	active := initSensors(buses)
+	active, activeFields := initSensors(buses)
 	acts := initActuators()
 
 	rad := radio.New(radio.Config{
@@ -81,17 +81,21 @@ func main() {
 	}
 
 	fsm := transfer.NewFromSettings(&cfg.Core.Transfer, acts, readLevel)
+	if cfg.Core.Transfer.Enabled != 0 {
+		activeFields = append(activeFields, 6) // transfer_state synthetic field
+	}
 
 	n := node.New(node.Config{
-		Core:      &cfg.Core,
-		Transport: tport,
-		Actuators: acts,
-		Sensors:   active,
-		Transfer:  fsm,
-		Extension: handleLoRaWANAirConfig,
-		SaveFn:    saveSettings,
-		RebootFn:  reboot,
-		FWMajor:   1, FWMinor: 0, FWPatch: 0,
+		Core:         &cfg.Core,
+		Transport:    tport,
+		Actuators:    acts,
+		Sensors:      active,
+		ActiveFields: activeFields,
+		Transfer:     fsm,
+		Extension:    handleLoRaWANAirConfig,
+		SaveFn:       saveSettings,
+		RebootFn:     reboot,
+		FWMajor:      1, FWMinor: 0, FWPatch: 0,
 	})
 	n.Run()
 }
@@ -198,11 +202,15 @@ func registerDrivers() {
 		return sensors.NewModbusRTUDriver(b.UART[busIdx], dePin, hasDEPin,
 			devAddr, funcCode, slot.Param2, signed, slot.FieldIndex)
 	})
+	sensors.Register(settings.SensorDigitalIn, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
+		return sensors.NewDigitalInSensor(boardPins[slot.PinIndex], slot.FieldIndex, slot.Param1)
+	})
 }
 
-func initSensors(buses *sensors.BusRegistry) []sensors.Driver {
+func initSensors(buses *sensors.BusRegistry) ([]sensors.Driver, []uint8) {
 	var drivers []sensors.Driver
-	var usedFields [64]bool
+	var activeFields []uint8
+	var usedFields [256]bool
 	for i := uint8(0); i < cfg.Core.SensorCount; i++ {
 		slot := cfg.Core.Sensors[i]
 		if !slot.Enabled() {
@@ -212,7 +220,7 @@ func initSensors(buses *sensors.BusRegistry) []sensors.Driver {
 		collision := false
 		for f := 0; f < fc; f++ {
 			idx := int(slot.FieldIndex) + f
-			if idx >= len(usedFields) || usedFields[idx] {
+			if usedFields[idx] {
 				println("[init] field index collision at", idx, "for sensor slot", i)
 				collision = true
 				break
@@ -222,7 +230,9 @@ func initSensors(buses *sensors.BusRegistry) []sensors.Driver {
 			continue
 		}
 		for f := 0; f < fc; f++ {
-			usedFields[int(slot.FieldIndex)+f] = true
+			idx := int(slot.FieldIndex) + f
+			usedFields[idx] = true
+			activeFields = append(activeFields, uint8(idx))
 		}
 		d := sensors.Create(slot, buses)
 		if d == nil {
@@ -232,8 +242,8 @@ func initSensors(buses *sensors.BusRegistry) []sensors.Driver {
 		d.Begin()
 		drivers = append(drivers, d)
 	}
-	println("[init]", len(drivers), "sensors active")
-	return drivers
+	println("[init]", len(drivers), "sensors active,", len(activeFields), "fields")
+	return drivers, activeFields
 }
 
 func saveSettings() {

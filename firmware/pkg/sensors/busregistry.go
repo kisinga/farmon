@@ -3,7 +3,7 @@ package sensors
 import (
 	"machine"
 
-	"github.com/farm/firmware/pkg/settings"
+	"github.com/farmon/firmware/pkg/settings"
 )
 
 // BusRegistry owns initialized shared bus handles.

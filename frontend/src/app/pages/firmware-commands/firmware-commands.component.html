@@ -1,0 +1,91 @@
+<div class="p-6 max-w-4xl mx-auto space-y-6">
+
+  <div>
+    <h1 class="text-2xl font-bold">Firmware</h1>
+    <p class="text-base-content/60 text-sm mt-1">Manage which firmware versions this backend supports. Commands are defined in the firmware source and are read-only.</p>
+  </div>
+
+  @if (msg()) {
+    <div class="alert rounded-xl" [class.alert-success]="!msg()!.error" [class.alert-error]="msg()!.error">
+      <span>{{ msg()!.text }}</span>
+    </div>
+  }
+
+  <!-- Backend Compatibility -->
+  <div class="card-elevated">
+    <div class="card-body-spaced">
+      <h2 class="text-lg font-semibold mb-1">Backend compatibility</h2>
+      <p class="text-sm text-base-content/60 mb-4">
+        The firmware versions this backend supports. A device whose reported firmware version is not in this list will show a compatibility warning on its detail page.
+        Update this list when you deploy a new firmware version — no code change needed.
+      </p>
+      <div class="flex items-end gap-3">
+        <div class="form-control flex-1">
+          <label class="label py-1">
+            <span class="label-text text-xs font-medium">Supported firmware versions (comma-separated)</span>
+          </label>
+          <input type="text" class="input input-bordered input-sm w-full font-mono"
+            [ngModel]="editingVersionsStr()" (ngModelChange)="editingVersionsStr.set($event)"
+            placeholder="1.0.0, 1.1.0" />
+        </div>
+        <button class="btn btn-primary btn-sm" [disabled]="savingInfo()" (click)="saveBackendInfo()">
+          @if (savingInfo()) { <span class="loading loading-spinner loading-xs"></span> }
+          Save
+        </button>
+      </div>
+      @if (backendInfo(); as info) {
+        <div class="flex flex-wrap gap-1 mt-3">
+          @if (info.supported_firmware_versions.length === 0) {
+            <span class="text-base-content/40 text-xs">No versions declared — all devices assumed compatible.</span>
+          } @else {
+            @for (v of info.supported_firmware_versions; track v) {
+              <span class="badge badge-primary badge-sm">{{ v }}</span>
+            }
+          }
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- Commands (read-only) -->
+  <div class="card-elevated">
+    <div class="card-body-spaced">
+      <div class="mb-4">
+        <h2 class="text-lg font-semibold">Commands</h2>
+        <p class="text-sm text-base-content/60 mt-0.5">
+          Downlink commands available to all compatible devices. Defined in firmware source — read-only.
+        </p>
+      </div>
+
+      @if (commands().length === 0) {
+        <p class="text-base-content/60 text-sm py-6 text-center">No commands found.</p>
+      } @else {
+        <div class="overflow-x-auto rounded-xl border border-base-300">
+          <table class="table table-sm">
+            <thead>
+              <tr class="bg-base-200/60">
+                <th>Key</th>
+                <th>Name</th>
+                <th class="w-16">fPort</th>
+                <th>Payload</th>
+                <th class="hidden md:table-cell">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (cmd of commands(); track cmd.command_key) {
+                <tr class="hover">
+                  <td class="font-mono text-sm">{{ cmd.command_key }}</td>
+                  <td>{{ cmd.name }}</td>
+                  <td class="text-base-content/60">{{ cmd.fport }}</td>
+                  <td><span class="badge badge-ghost badge-xs">{{ cmd.payload_type }}</span></td>
+                  <td class="hidden md:table-cell text-base-content/60 text-xs max-w-xs truncate">{{ cmd.description || '—' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  </div>
+
+</div>

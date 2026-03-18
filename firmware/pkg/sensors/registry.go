@@ -1,6 +1,6 @@
 package sensors
 
-import "github.com/farm/firmware/pkg/settings"
+import "github.com/farmon/firmware/pkg/settings"
 
 // DriverFactory creates a Driver from a SensorSlot and a BusRegistry.
 // Returns nil if the slot configuration is invalid for this driver type.

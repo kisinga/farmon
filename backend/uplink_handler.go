@@ -35,8 +35,11 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 		return insertTelemetry(app, devEui, map[string]any{"raw": hex.EncodeToString(rawPayload)}, rssi, snr)
 	}
 
-	// Look up decode rule for this fPort
+	// Look up decode rule for this fPort; airconfig profiles get synthetic fallbacks
 	rule := getDecodeRuleForFPort(profile, int(fPort))
+	if rule == nil && profile.ProfileType == "airconfig" {
+		rule = airconfigSyntheticRule(int(fPort))
+	}
 	if rule == nil {
 		// No decode rule — store raw
 		return insertTelemetry(app, devEui, map[string]any{"raw": hex.EncodeToString(rawPayload)}, rssi, snr)
@@ -137,6 +140,37 @@ func handleCommandAck(app core.App, devEui string, result *DecodeResult) {
 
 	// No matching sent command — insert a standalone ack record for visibility.
 	insertCommand(app, devEui, "ack:fPort"+strconv.Itoa(int(port)), "device", status, map[string]any{"port": port, "status": ackStatus})
+}
+
+// airconfigSyntheticRule returns a hardcoded decode rule for well-known airconfig fPorts.
+// All airconfig devices run the same firmware, so their binary formats are fixed.
+// fPort 2: compact telemetry (binary_indexed_float32, self-describing)
+// fPort 3: state change records (binary_state_change, 11-byte records)
+// fPort 4: command ACK (text_kv)
+func airconfigSyntheticRule(fPort int) *DecodeRule {
+	switch fPort {
+	case 2:
+		return &DecodeRule{FPort: 2, Format: "binary_indexed_float32", Config: map[string]any{}}
+	case 3:
+		return &DecodeRule{FPort: 3, Format: "binary_state_change", Config: map[string]any{
+			"record_size": 11,
+			"layout": []map[string]any{
+				{"offset": 0, "name": "control_idx", "type": "uint8"},
+				{"offset": 1, "name": "new_state", "type": "uint8"},
+				{"offset": 2, "name": "old_state", "type": "uint8"},
+				{"offset": 3, "name": "source_id", "type": "uint8"},
+				{"offset": 4, "name": "rule_id", "type": "uint8"},
+				{"offset": 5, "name": "device_ms", "type": "uint32_le"},
+				{"offset": 9, "name": "seq", "type": "uint16_le"},
+			},
+			"source_map": map[string]string{"0": "BOOT", "1": "RULE", "2": "MANUAL", "3": "DOWNLINK"},
+		}}
+	case 4:
+		return &DecodeRule{FPort: 4, Format: "text_kv", Config: map[string]any{
+			"separator": ":", "kv_separator": ":",
+		}}
+	}
+	return nil
 }
 
 // getFloat64 extracts a float64 from an interface{} (kept for backward compat with actions.go/workflow_engine.go).

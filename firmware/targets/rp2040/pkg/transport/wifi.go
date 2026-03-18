@@ -14,7 +14,7 @@ import (
 	"machine"
 	"time"
 
-	"github.com/farm/firmware/pkg/transport"
+	"github.com/farmon/firmware/pkg/transport"
 	"tinygo.org/x/drivers/net/http"
 	"tinygo.org/x/drivers/wifinina"
 )

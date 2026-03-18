@@ -29,6 +29,11 @@
             Network
           </a>
         </li>
+        <li>
+          <a routerLink="/firmware-commands" routerLinkActive="active" class="rounded-lg">
+            Firmware
+          </a>
+        </li>
       </ul>
     </div>
     <div class="navbar-end gap-2">
@@ -45,6 +50,7 @@
           <li><a routerLink="/profiles" (click)="closeDropdown($event)">Profiles</a></li>
           <li><a routerLink="/workflows" (click)="closeDropdown($event)">Workflows</a></li>
           <li><a routerLink="/network" (click)="closeDropdown($event)">Network</a></li>
+          <li><a routerLink="/firmware-commands" (click)="closeDropdown($event)">Firmware</a></li>
         </ul>
       </div>
     </div>

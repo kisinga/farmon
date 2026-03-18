@@ -11,13 +11,16 @@ import (
 
 const (
 	MaxPins     = 20
-	MaxSensors  = 8
-	MaxControls = 8
+	MaxSensors  = 32
+	MaxControls = 16
 	MaxRules    = 32
 	MaxStates   = 4
 
+	// SensorSlotSize is the binary wire size of a SensorSlot in flash.
+	SensorSlotSize = 8
+
 	// SettingsSize is the flash page data size for codec purposes.
-	SettingsSize = 1024
+	SettingsSize = 1280
 )
 
 // --- Pin functions ---
@@ -69,7 +72,8 @@ const (
 	SensorADC4_20mA    SensorType = 8  // 4-20mA current loop (250Ω shunt); Param1=offset×10, Param2=span×10
 	SensorPulseGeneric SensorType = 9  // Generic pulse counter; Param1=pulses/unit
 	SensorModbusRTU    SensorType = 10 // Modbus RTU over RS485; PinIndex=UART bus idx, Param1=devAddr|funcCode, Param2=regAddr
-	SensorTypeMax      SensorType = 11 // Sentinel for registry array sizing
+	SensorDigitalIn    SensorType = 11 // Digital GPIO input; PinIndex=GPIO, Param1: 0=pullup 1=pulldown 2=float; output 0.0 or 1.0
+	SensorTypeMax      SensorType = 12 // Sentinel for registry array sizing
 )
 
 // --- Slots ---
@@ -157,26 +161,15 @@ type Rule struct {
 	SecondFieldIdx  uint8       // 0xFF = no second condition
 	SecondOp        RuleOperator
 	SecondIsControl bool        // true: compare control state, false: compare sensor field
-	SecondThreshold uint8       // 0-255 integer threshold
-	// time window (1.5h granularity, 0=no restriction)
-	TimeStart uint8 // 0-15, maps to hour via *1.5
-	TimeEnd   uint8 // 0-15, maps to hour via *1.5
+	SecondThreshold uint8 // 0-255 integer threshold
+	// action duration (0=hold indefinitely, 1-255 = ×10s, max ~42min).
+	// On expiry the control reverts to state 0.
+	ActionDurX10s uint8
 }
 
-// TimeStartHour returns the decoded start hour (0.0-22.5), or -1 if no time window.
-func (r *Rule) TimeStartHour() float32 {
-	if r.TimeStart == 0 && r.TimeEnd == 0 {
-		return -1
-	}
-	return float32(r.TimeStart) * 1.5
-}
-
-// TimeEndHour returns the decoded end hour (0.0-22.5), or -1 if no time window.
-func (r *Rule) TimeEndHour() float32 {
-	if r.TimeStart == 0 && r.TimeEnd == 0 {
-		return -1
-	}
-	return float32(r.TimeEnd) * 1.5
+// ActionDurationMs returns the action duration in milliseconds, or 0 for hold-indefinitely.
+func (r *Rule) ActionDurationMs() uint32 {
+	return uint32(r.ActionDurX10s) * 10_000
 }
 
 func (r *Rule) FromBinary(data []byte) bool {
@@ -198,8 +191,7 @@ func (r *Rule) FromBinary(data []byte) bool {
 	r.SecondOp = RuleOperator((data[13] >> 4) & 0x07)
 	r.SecondIsControl = data[13]&0x08 != 0
 	r.SecondThreshold = data[14]
-	r.TimeStart = (data[15] >> 4) & 0x0F
-	r.TimeEnd = data[15] & 0x0F
+	r.ActionDurX10s = data[15]
 	return true
 }
 
@@ -230,7 +222,7 @@ func (r *Rule) ToBinary(buf []byte) int {
 		buf[13] |= 0x08
 	}
 	buf[14] = r.SecondThreshold
-	buf[15] = (r.TimeStart&0x0F)<<4 | (r.TimeEnd & 0x0F)
+	buf[15] = r.ActionDurX10s
 	return RuleSize
 }
 

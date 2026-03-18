@@ -8,5 +8,6 @@ export const routes: Routes = [
   { path: 'workflows', loadComponent: () => import('./pages/workflows/workflows.component').then(m => m.WorkflowsComponent) },
   { path: 'network', loadComponent: () => import('./pages/lorawan-monitor/lorawan-monitor.component').then(m => m.LorawanMonitorComponent) },
   { path: 'lorawan', redirectTo: 'network' },
+  { path: 'firmware-commands', loadComponent: () => import('./pages/firmware-commands/firmware-commands.component').then(m => m.FirmwareCommandsComponent) },
   { path: '**', redirectTo: '' },
 ];

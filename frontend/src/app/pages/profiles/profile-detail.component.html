@@ -45,14 +45,16 @@
       Controls
       <span class="badge badge-ghost badge-xs ml-1">{{ controls().length }}</span>
     </button>
-    <button role="tab" class="tab" [class.tab-active]="activeTab() === 'commands'" (click)="activeTab.set('commands')">
-      Commands
-      <span class="badge badge-ghost badge-xs ml-1">{{ commands().length }}</span>
-    </button>
-    <button role="tab" class="tab" [class.tab-active]="activeTab() === 'decode'" (click)="activeTab.set('decode')">
-      Decode Rules
-      <span class="badge badge-ghost badge-xs ml-1">{{ decodeRules().length }}</span>
-    </button>
+    @if (!isAirConfig()) {
+      <button role="tab" class="tab" [class.tab-active]="activeTab() === 'commands'" (click)="activeTab.set('commands')">
+        Commands
+        <span class="badge badge-ghost badge-xs ml-1">{{ commands().length }}</span>
+      </button>
+      <button role="tab" class="tab" [class.tab-active]="activeTab() === 'decode'" (click)="activeTab.set('decode')">
+        Decode Rules
+        <span class="badge badge-ghost badge-xs ml-1">{{ decodeRules().length }}</span>
+      </button>
+    }
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
@@ -92,6 +94,13 @@
             <span class="text-base-content/60 ml-2">Cannot be changed after creation</span>
           </div>
         </div>
+
+        @if (isAirConfig()) {
+          <div class="alert alert-info mt-4 rounded-xl text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>Airconfig profiles decode telemetry automatically (fPort 2 → binary_indexed_float32, fPort 3 → state changes). No manual decode rules needed. Commands are managed globally under <a routerLink="/firmware-commands" class="link">Firmware Commands</a>.</span>
+          </div>
+        }
 
         @if (generalMsg()) {
           <div class="alert mt-4 rounded-xl" [class.alert-success]="!generalMsg()!.error" [class.alert-error]="generalMsg()!.error">

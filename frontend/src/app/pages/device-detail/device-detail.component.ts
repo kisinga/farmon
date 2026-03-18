@@ -1,7 +1,7 @@
 import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { DatePipe, NgClass } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ApiService, DeviceField, type WorkflowRecord, type StateChangeRecord } from '../../core/services/api.service';
+import { ApiService, DeviceField, type WorkflowRecord, type StateChangeRecord, type WorkflowLogRecord, type BackendInfo } from '../../core/services/api.service';
 import { DeviceContextService } from '../../core/services/device-context.service';
 import { ControlsPanelComponent } from '../../shared/components/controls-panel/controls-panel.component';
 import { HistoryChartComponent } from '../../shared/components/history-chart/history-chart.component';
@@ -33,6 +33,7 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   relatedWorkflows = signal<WorkflowRecord[]>([]);
   activeTab = signal<'overview' | 'controls' | 'telemetry' | 'rules' | 'sensors' | 'activity'>('overview');
   stateChanges = signal<StateChangeRecord[]>([]);
+  workflowEvents = signal<WorkflowLogRecord[]>([]);
   prefillRuleForm = signal<Partial<DeviceRuleRecord> | null>(null);
   timeRange = signal<'1h' | '24h' | '7d'>('24h');
   rangeEnd = signal<string>(new Date().toISOString());
@@ -102,6 +103,24 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
     }
   });
 
+  /** Unified activity timeline: state changes + workflow events, sorted newest first. */
+  activityTimeline = computed(() => {
+    const sc = this.stateChanges().map(s => ({ kind: 'state_change' as const, ts: s.ts, data: s }));
+    const wf = this.workflowEvents().map(w => ({ kind: 'workflow' as const, ts: w.ts, data: w }));
+    return [...sc, ...wf].sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  });
+
+  activityCount = computed(() => this.stateChanges().length + this.workflowEvents().length);
+
+  backendInfo = signal<BackendInfo | null>(null);
+
+  firmwareCompatible = computed(() => {
+    const info = this.backendInfo();
+    const version = this.deviceContext.device()?.firmware_version;
+    if (!info || info.supported_firmware_versions.length === 0 || !version) return true;
+    return info.supported_firmware_versions.includes(version);
+  });
+
   stoppingTransfer = signal(false);
 
   stopTransfer(): void {
@@ -155,6 +174,14 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
     this.api.getStateChanges(eui).subscribe({
       next: (list) => this.stateChanges.set(list),
       error: () => this.stateChanges.set([]),
+    });
+    this.api.getDeviceWorkflowEvents(eui).subscribe({
+      next: (list) => this.workflowEvents.set(list),
+      error: () => this.workflowEvents.set([]),
+    });
+    this.api.getBackendInfo().subscribe({
+      next: (info) => this.backendInfo.set(info),
+      error: () => {},
     });
   }
 

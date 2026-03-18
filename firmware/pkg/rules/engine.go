@@ -1,9 +1,10 @@
 // Package rules implements the edge rules engine.
-// Direct port of C++ EdgeRulesEngine with identical binary wire format.
+// Evaluates sensor-threshold rules with priority resolution, cooldown,
+// and auto-revert duration timers. All timing uses monotonic nowMs (ms since boot).
 package rules
 
 import (
-	"github.com/farm/firmware/pkg/settings"
+	"github.com/farmon/firmware/pkg/settings"
 )
 
 const StateChangeSize = 11 // bytes per state change event
@@ -15,6 +16,7 @@ const (
 	TriggerRule     TriggerSource = 1
 	TriggerManual   TriggerSource = 2
 	TriggerDownlink TriggerSource = 3
+	TriggerRevert   TriggerSource = 4 // auto-revert after action duration expires
 )
 
 // ControlState tracks the current state of a control output.
@@ -22,6 +24,10 @@ type ControlState struct {
 	CurrentState  uint8
 	IsManual      bool
 	ManualUntilMs uint32
+	// Duration timer: when a rule fires with ActionDurX10s > 0, the control
+	// reverts to state 0 after the timer expires.
+	RevertAtMs  uint32
+	HasDuration bool
 }
 
 // StateChange is queued for uplink when a control changes state.
@@ -59,33 +65,37 @@ type SetControlFn func(controlIdx, stateIdx uint8) bool
 
 // Engine evaluates rules against sensor readings and triggers control actions.
 type Engine struct {
-	rules      []settings.Rule
-	controls   [settings.MaxControls]ControlState
-	changes    [20]StateChange // ring buffer
-	head       int
-	count      int
-	sequenceID uint16
-	setControl SetControlFn
+	rules        []settings.Rule
+	controls     [settings.MaxControls]ControlState
+	lastFiredMs  [settings.MaxRules]uint32 // per-rule cooldown tracker
+	changes      [20]StateChange           // ring buffer
+	head         int
+	count        int
+	sequenceID   uint16
+	setControl   SetControlFn
 }
 
 func New(setControl SetControlFn) *Engine {
 	return &Engine{setControl: setControl}
 }
 
-// LoadRules replaces the current rule set.
+// LoadRules replaces the current rule set and resets cooldown timers.
 func (e *Engine) LoadRules(rules []settings.Rule) {
 	e.rules = rules
+	e.lastFiredMs = [settings.MaxRules]uint32{}
 }
 
 // Evaluate checks all rules against current sensor values and control states.
-// controlStates contains the current state index of each control (len = MaxControls).
-// hourOfDay is 0-23 for time window checks (-1 to skip time checks).
-func (e *Engine) Evaluate(values []float32, controlStates []uint8, hourOfDay int, nowMs uint32) {
+// nowMs is monotonic milliseconds since boot.
+func (e *Engine) Evaluate(values []float32, controlStates []uint8, nowMs uint32) {
+	// Phase 1: revert any expired duration timers.
+	e.revertExpired(nowMs)
+
 	if len(e.rules) == 0 {
 		return
 	}
 
-	// Find the highest-priority triggered rule per control
+	// Phase 2: find the highest-priority triggered rule per control.
 	type winner struct {
 		ruleIdx  int
 		priority uint8
@@ -101,11 +111,13 @@ func (e *Engine) Evaluate(values []float32, controlStates []uint8, hourOfDay int
 		if int(r.FieldIdx) >= len(values) {
 			continue
 		}
-		// Time window check
-		if hourOfDay >= 0 && !e.inTimeWindow(r, hourOfDay) {
-			continue
+		// Cooldown: skip if fired too recently.
+		if r.CooldownSec > 0 && e.lastFiredMs[i] > 0 {
+			if elapsed := nowMs - e.lastFiredMs[i]; elapsed < uint32(r.CooldownSec)*1000 {
+				continue
+			}
 		}
-		// Skip manual override
+		// Skip manual override.
 		cs := &e.controls[r.ControlIdx]
 		if cs.IsManual {
 			if cs.ManualUntilMs == 0 || nowMs < cs.ManualUntilMs {
@@ -116,7 +128,7 @@ func (e *Engine) Evaluate(values []float32, controlStates []uint8, hourOfDay int
 
 		primaryResult := evaluateCondition(r.Op, values[r.FieldIdx], r.Threshold)
 
-		// Compound condition
+		// Compound condition.
 		if r.HasSecond && r.SecondFieldIdx != 0xFF {
 			secondResult := e.evaluateSecondCondition(r, values, controlStates)
 			if r.LogicOR {
@@ -136,7 +148,7 @@ func (e *Engine) Evaluate(values []float32, controlStates []uint8, hourOfDay int
 		}
 	}
 
-	// Execute winning rules where state actually changes
+	// Phase 3: execute winning rules where state actually changes.
 	for ctrlIdx := uint8(0); ctrlIdx < settings.MaxControls; ctrlIdx++ {
 		b := &best[ctrlIdx]
 		if !b.valid {
@@ -153,7 +165,37 @@ func (e *Engine) Evaluate(values []float32, controlStates []uint8, hourOfDay int
 			}
 		}
 
+		e.lastFiredMs[b.ruleIdx] = nowMs
 		e.recordChange(ctrlIdx, r.ActionState, TriggerRule, r.ID, nowMs)
+
+		// Start duration timer if configured.
+		durMs := r.ActionDurationMs()
+		if durMs > 0 {
+			cs := &e.controls[ctrlIdx]
+			cs.HasDuration = true
+			cs.RevertAtMs = nowMs + durMs
+		}
+	}
+}
+
+// revertExpired reverts controls whose duration timer has elapsed.
+func (e *Engine) revertExpired(nowMs uint32) {
+	for i := uint8(0); i < settings.MaxControls; i++ {
+		cs := &e.controls[i]
+		if !cs.HasDuration {
+			continue
+		}
+		if nowMs < cs.RevertAtMs {
+			continue
+		}
+		cs.HasDuration = false
+		if cs.CurrentState == 0 {
+			continue // already off
+		}
+		if e.setControl != nil {
+			e.setControl(i, 0)
+		}
+		e.recordChange(i, 0, TriggerRevert, 0, nowMs)
 	}
 }
 
@@ -162,6 +204,8 @@ func (e *Engine) SetState(ctrlIdx, stateIdx uint8, source TriggerSource, ruleID 
 	if e.setControl != nil {
 		e.setControl(ctrlIdx, stateIdx)
 	}
+	// External state change cancels any running duration timer.
+	e.controls[ctrlIdx].HasDuration = false
 	e.recordChange(ctrlIdx, stateIdx, source, ruleID, nowMs)
 }
 
@@ -169,6 +213,7 @@ func (e *Engine) SetState(ctrlIdx, stateIdx uint8, source TriggerSource, ruleID 
 func (e *Engine) SetManualOverride(ctrlIdx uint8, durationMs, nowMs uint32) {
 	cs := &e.controls[ctrlIdx]
 	cs.IsManual = true
+	cs.HasDuration = false // manual override cancels duration timer
 	if durationMs > 0 {
 		cs.ManualUntilMs = nowMs + durationMs
 	} else {
@@ -241,22 +286,6 @@ func (e *Engine) recordChange(ctrlIdx, newState uint8, source TriggerSource, rul
 	writeIdx := (e.head + e.count) % len(e.changes)
 	e.changes[writeIdx] = sc
 	e.count++
-}
-
-// inTimeWindow checks if hourOfDay falls within the rule's time window.
-// TimeStart/TimeEnd are 0-15, mapping to hours via *1.5 (0=0:00, 4=6:00, 12=18:00, 15=22:30).
-// 0x00 (both zero) means always active.
-func (e *Engine) inTimeWindow(r *settings.Rule, hourOfDay int) bool {
-	if r.TimeStart == 0 && r.TimeEnd == 0 {
-		return true
-	}
-	startHour := int(float32(r.TimeStart) * 1.5)
-	endHour := int(float32(r.TimeEnd) * 1.5)
-	if startHour <= endHour {
-		return hourOfDay >= startHour && hourOfDay < endHour
-	}
-	// Wraps midnight (e.g., 22:00–06:00)
-	return hourOfDay >= startHour || hourOfDay < endHour
 }
 
 // evaluateSecondCondition evaluates the compound (second) condition of a rule.

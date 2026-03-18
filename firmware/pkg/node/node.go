@@ -8,26 +8,27 @@ import (
 	"math"
 	"time"
 
-	"github.com/farm/firmware/pkg/actuator"
-	"github.com/farm/firmware/pkg/airconfig"
-	"github.com/farm/firmware/pkg/protocol"
-	"github.com/farm/firmware/pkg/rules"
-	"github.com/farm/firmware/pkg/sensors"
-	"github.com/farm/firmware/pkg/settings"
-	"github.com/farm/firmware/pkg/transfer"
-	"github.com/farm/firmware/pkg/transport"
+	"github.com/farmon/firmware/pkg/actuator"
+	"github.com/farmon/firmware/pkg/airconfig"
+	"github.com/farmon/firmware/pkg/rules"
+	"github.com/farmon/firmware/pkg/sensors"
+	"github.com/farmon/firmware/pkg/settings"
+	"github.com/farmon/firmware/pkg/transfer"
+	"github.com/farmon/firmware/pkg/transport"
+	"github.com/kisinga/farmon/firmware/pkg/protocol"
 )
 
 // Config is provided by each target's main() to wire up the shared runtime.
 type Config struct {
-	Core      *settings.CoreSettings
-	Transport transport.Transport
-	Actuators [settings.MaxControls]actuator.Actuator
-	Sensors   []sensors.Driver
-	Transfer  *transfer.FSM             // nil = disabled
-	Extension airconfig.ExtensionHandler // nil for RP2040
-	SaveFn    func()
-	RebootFn  func()
+	Core         *settings.CoreSettings
+	Transport    transport.Transport
+	Actuators    [settings.MaxControls]actuator.Actuator
+	Sensors      []sensors.Driver
+	ActiveFields []uint8                    // field indices to include in telemetry
+	Transfer     *transfer.FSM              // nil = disabled
+	Extension    airconfig.ExtensionHandler // nil for RP2040
+	SaveFn       func()
+	RebootFn     func()
 
 	// Firmware version reported in checkin (fPort 1). Set by each target's main().
 	FWMajor, FWMinor, FWPatch uint8
@@ -35,11 +36,11 @@ type Config struct {
 
 // Node is the shared device runtime.
 type Node struct {
-	cfg        Config
-	eng        *rules.Engine
-	uptimeSec  uint32
-	txCount    uint32
-	rxCount    uint32
+	cfg          Config
+	eng          *rules.Engine
+	uptimeSec    uint32
+	txCount      uint32
+	rxCount      uint32
 	checkinEvery uint32 // send checkin every N TX intervals (set at init)
 }
 
@@ -74,7 +75,7 @@ func (n *Node) sensorLoop() {
 
 		values := n.readAllSensors()
 		nowMs := uint32(time.Now().UnixNano() / 1e6)
-		n.eng.Evaluate(values, n.eng.GetControlStates(), -1, nowMs)
+		n.eng.Evaluate(values, n.eng.GetControlStates(), nowMs)
 
 		if n.cfg.Transfer != nil {
 			tState := n.cfg.Transfer.Tick(values, nowMs)
@@ -114,23 +115,35 @@ func (n *Node) readAllSensors() []float32 {
 	return values
 }
 
+// maxFieldsPerPacket is the max telemetry fields that fit in one packet.
+// Each field is 5 bytes (1B index + 4B float32), plus 1B count header.
+const maxFieldsPerPacket = (transport.MaxPayload - 1) / 5 // 44
+
 func (n *Node) sendTelemetry(values []float32) {
-	if len(values) == 0 {
+	fields := n.cfg.ActiveFields
+	if len(fields) == 0 {
 		return
 	}
-	buf := make([]byte, 1+len(values)*5)
-	buf[0] = uint8(len(values))
-	for i, v := range values {
-		off := 1 + i*5
-		buf[off] = uint8(i)
-		binary.LittleEndian.PutUint32(buf[off+1:], math.Float32bits(v))
-	}
-	var p transport.Packet
-	p.Port = protocol.FPortTelemetry
-	p.Len = uint8(len(buf))
-	copy(p.Payload[:], buf)
-	if n.cfg.Transport.Send(p) {
-		n.txCount++
+	for start := 0; start < len(fields); start += maxFieldsPerPacket {
+		end := start + maxFieldsPerPacket
+		if end > len(fields) {
+			end = len(fields)
+		}
+		chunk := fields[start:end]
+
+		var p transport.Packet
+		p.Port = protocol.FPortTelemetry
+		p.Payload[0] = uint8(len(chunk))
+		off := 1
+		for _, fi := range chunk {
+			p.Payload[off] = fi
+			if int(fi) < len(values) {
+				binary.LittleEndian.PutUint32(p.Payload[off+1:], math.Float32bits(values[fi]))
+			}
+			off += 5
+		}
+		p.Len = uint8(off)
+		n.cfg.Transport.Send(p)
 	}
 }
 
@@ -263,4 +276,3 @@ func (n *Node) sendCheckin() {
 	p.Len = 14
 	n.cfg.Transport.Send(p)
 }
-

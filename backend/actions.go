@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/farmon/firmware/pkg/protocol"
 	"github.com/kisinga/farmon/internal/gateway"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -68,10 +69,16 @@ type SendCommandParams struct {
 	InitiatedBy string
 }
 
-// Well-known command→fPort fallbacks (match firmware protocol_constants.h).
-var wellKnownCmds = map[string]int{
-	"reset": 10, "interval": 11, "reboot": 12, "clearerr": 13,
-	"forcereg": 14, "status": 15, "displaytimeout": 16, "ctrl": 20,
+// fPortForCommand resolves a command key to its fPort using the firmware's
+// authoritative protocol.Commands definition. Falls back to device-level
+// commands_json overrides for codec devices with custom fPort mappings.
+func fPortForCommand(key string) (uint8, bool) {
+	for _, cmd := range protocol.Commands {
+		if cmd.Key == key {
+			return uint8(cmd.FPort), true
+		}
+	}
+	return 0, false
 }
 
 // ExecuteSendCommand resolves fPort, encodes payload, enqueues downlink, and logs to commands.
@@ -101,8 +108,8 @@ func ExecuteSendCommand(app core.App, cfg *gateway.Config, params SendCommandPar
 		}
 	}
 	if fPort == 0 {
-		if p, ok := wellKnownCmds[params.Command]; ok {
-			fPort = uint8(p)
+		if p, ok := fPortForCommand(params.Command); ok {
+			fPort = p
 		} else {
 			return fmt.Errorf("unknown command: %s", params.Command)
 		}

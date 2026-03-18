@@ -4,8 +4,8 @@
 package transport
 
 import (
-	"github.com/farm/firmware/pkg/transport"
-	"github.com/farm/firmware/targets/lorae5/pkg/radio"
+	"github.com/farmon/firmware/pkg/transport"
+	"github.com/farmon/firmware/targets/lorae5/pkg/radio"
 )
 
 // LoRaWANTransport adapts radio.Radio to the transport.Transport interface.

@@ -590,8 +590,34 @@ func (e *WorkflowEngine) logWorkflow(wf compiledWorkflow, ctx TriggerContext, tr
 	if b, err := json.Marshal(snapshot); err == nil {
 		rec.Set("context_snapshot", string(b))
 	}
+
+	// Collect all unique device EUIs affected by this workflow execution:
+	// the trigger device plus all action target devices.
+	affected := collectAffectedDevices(ctx.DeviceEUI, wf.Actions)
+	if b, err := json.Marshal(affected); err == nil {
+		rec.Set("affected_devices", string(b))
+	}
+
 	rec.Set("ts", time.Now().Format(time.RFC3339))
 	_ = e.app.Save(rec)
+}
+
+// collectAffectedDevices returns a deduplicated list of device EUIs involved in
+// a workflow execution: the trigger device plus all action target devices.
+func collectAffectedDevices(triggerEUI string, actions []WorkflowAction) []string {
+	seen := make(map[string]bool)
+	var out []string
+	add := func(eui string) {
+		if eui != "" && !seen[eui] {
+			seen[eui] = true
+			out = append(out, eui)
+		}
+	}
+	add(triggerEUI)
+	for _, a := range actions {
+		add(a.TargetEUI)
+	}
+	return out
 }
 
 // sanitizeEnv removes non-serializable values (functions) from the env map.

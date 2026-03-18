@@ -2,7 +2,7 @@
 // Import firmware/pkg/protocol directly in new code.
 package protocol
 
-import shared "github.com/farm/firmware/pkg/protocol"
+import shared "github.com/kisinga/farmon/firmware/pkg/protocol"
 
 const (
 	FPortRegistration = shared.FPortRegistration

@@ -56,8 +56,8 @@
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'sensors'" (click)="activeTab.set('sensors')">Sensors</a>
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'activity'" (click)="activeTab.set('activity')">
       Activity
-      @if (stateChanges().length > 0) {
-        <span class="badge badge-xs badge-neutral ml-1">{{ stateChanges().length }}</span>
+      @if (activityCount() > 0) {
+        <span class="badge badge-xs badge-neutral ml-1">{{ activityCount() }}</span>
       }
     </a>
   </div>
@@ -109,7 +109,12 @@
               @if (deviceContext.device()!.firmware_version) {
                 <div>
                   <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Firmware</dt>
-                  <dd class="font-mono text-sm mt-0.5">{{ deviceContext.device()!.firmware_version }}</dd>
+                  <dd class="font-mono text-sm mt-0.5 flex items-center gap-2">
+                    {{ deviceContext.device()!.firmware_version }}
+                    @if (!firmwareCompatible()) {
+                      <span class="badge badge-warning badge-xs" title="This firmware version is not listed as compatible with the current backend. Check Firmware settings.">incompatible</span>
+                    }
+                  </dd>
                 </div>
               }
             </dl>
@@ -297,46 +302,75 @@
     @case ('activity') {
       <div class="card-elevated">
         <div class="card-body-spaced">
-          <h2 class="section-title">State Change History</h2>
+          <h2 class="section-title">Device Activity</h2>
           <p class="text-xs text-base-content/50 -mt-2 mb-4">
-            Actuator transitions reported by the device — driven by on-device rules, the transfer FSM, or manual downlinks.
+            Unified timeline of state changes and workflow events affecting this device.
           </p>
-          @if (stateChanges().length === 0) {
-            <p class="text-sm text-base-content/40 py-4 text-center">No state changes recorded yet.</p>
+          @if (activityTimeline().length === 0) {
+            <p class="text-sm text-base-content/40 py-4 text-center">No activity recorded yet.</p>
           } @else {
             <div class="overflow-x-auto rounded-xl border border-base-300">
               <table class="table table-sm">
                 <thead>
                   <tr class="bg-base-200/60">
                     <th class="font-semibold">Time</th>
-                    <th class="font-semibold">Control</th>
-                    <th class="font-semibold">Transition</th>
+                    <th class="font-semibold">Type</th>
+                    <th class="font-semibold">Details</th>
                     <th class="font-semibold">Source</th>
                   </tr>
                 </thead>
                 <tbody>
-                  @for (sc of stateChanges(); track sc.id) {
-                    <tr class="hover">
-                      <td class="text-xs text-base-content/60 whitespace-nowrap">{{ sc.ts | date:'short' }}</td>
-                      <td class="font-medium capitalize">{{ sc.control_key.replace('_', ' ') }}</td>
-                      <td>
-                        <span class="font-mono text-xs text-base-content/60">{{ sc.old_state }}</span>
-                        <span class="mx-1 text-base-content/30">→</span>
-                        <span class="font-mono text-xs font-semibold"
-                          [class.text-success]="sc.new_state === 'on' || sc.new_state === 'open'"
-                          [class.text-base-content]="sc.new_state !== 'on' && sc.new_state !== 'open'">
-                          {{ sc.new_state }}
-                        </span>
-                      </td>
-                      <td>
-                        <span class="badge badge-xs"
-                          [class.badge-warning]="sc.reason === 'RULE'"
-                          [class.badge-primary]="sc.reason === 'DOWNLINK'"
-                          [class.badge-ghost]="sc.reason !== 'RULE' && sc.reason !== 'DOWNLINK'">
-                          {{ sc.reason || '—' }}
-                        </span>
-                      </td>
-                    </tr>
+                  @for (evt of activityTimeline(); track evt.ts + evt.kind + (evt.kind === 'state_change' ? evt.data.id : evt.data.id)) {
+                    @if (evt.kind === 'state_change') {
+                      <tr class="hover">
+                        <td class="text-xs text-base-content/60 whitespace-nowrap">{{ evt.data.ts | date:'short' }}</td>
+                        <td><span class="badge badge-xs badge-outline">State change</span></td>
+                        <td>
+                          <span class="font-medium capitalize">{{ evt.data.control_key.replace('_', ' ') }}</span>
+                          <span class="font-mono text-xs text-base-content/60 ml-1">{{ evt.data.old_state }}</span>
+                          <span class="mx-1 text-base-content/30">→</span>
+                          <span class="font-mono text-xs font-semibold"
+                            [class.text-success]="evt.data.new_state === 'on' || evt.data.new_state === 'open'"
+                            [class.text-base-content]="evt.data.new_state !== 'on' && evt.data.new_state !== 'open'">
+                            {{ evt.data.new_state }}
+                          </span>
+                        </td>
+                        <td>
+                          <span class="badge badge-xs"
+                            [class.badge-warning]="evt.data.reason === 'RULE'"
+                            [class.badge-primary]="evt.data.reason === 'DOWNLINK'"
+                            [class.badge-ghost]="evt.data.reason !== 'RULE' && evt.data.reason !== 'DOWNLINK'">
+                            {{ evt.data.reason || '—' }}
+                          </span>
+                        </td>
+                      </tr>
+                    } @else {
+                      <tr class="hover bg-base-200/20">
+                        <td class="text-xs text-base-content/60 whitespace-nowrap">{{ evt.data.ts | date:'short' }}</td>
+                        <td><span class="badge badge-xs badge-secondary badge-outline">Workflow</span></td>
+                        <td>
+                          <span class="font-medium">{{ evt.data.workflow_name || 'Workflow' }}</span>
+                          @if (evt.data.actions_completed) {
+                            <span class="text-xs text-base-content/50 ml-1">· {{ evt.data.actions_completed }} action{{ evt.data.actions_completed === 1 ? '' : 's' }}</span>
+                          }
+                          @if (evt.data.trigger_device && evt.data.trigger_device !== deviceContext.eui()) {
+                            <span class="text-xs text-base-content/40 ml-1">triggered by {{ evt.data.trigger_device }}</span>
+                          }
+                          @if (evt.data.error_message) {
+                            <span class="text-xs text-error ml-1">{{ evt.data.error_message }}</span>
+                          }
+                        </td>
+                        <td>
+                          <span class="badge badge-xs"
+                            [class.badge-success]="evt.data.status === 'fired'"
+                            [class.badge-warning]="evt.data.status === 'skipped_cooldown'"
+                            [class.badge-error]="evt.data.status === 'error'"
+                            [class.badge-ghost]="evt.data.status !== 'fired' && evt.data.status !== 'skipped_cooldown' && evt.data.status !== 'error'">
+                            {{ evt.data.status }}
+                          </span>
+                        </td>
+                      </tr>
+                    }
                   }
                 </tbody>
               </table>

@@ -27,8 +27,12 @@ func main() {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Ensure lorawan_frames collection exists (creates from Go if JS migration did not run)
 		ensureLorawanFramesCollection(app)
+		// Ensure firmware collections exist (firmware_commands + backend_info)
+		ensureFirmwareCollections(app)
 		// Seed default device profiles (FarMon Water Monitor, SenseCAP S2105)
 		seedDefaultProfiles(app)
+		// Seed firmware commands + backend_info
+		seedFirmwareData(app)
 		// Load gateway config from DB; start pipeline only if a valid record exists (event_url, command_url, region set)
 		cfg, valid := loadGatewaySettings(app)
 		if valid {
@@ -104,6 +108,13 @@ func main() {
 		se.Router.GET("/api/farmon/lorawan/stats", lorawanStatsHandler(app, gwState))
 		se.Router.POST("/api/farmon/sendCommand", sendCommandHandler(app, gwState))
 
+		// Firmware commands (read-only, sourced from protocol package)
+		se.Router.GET("/api/farmon/firmware-commands", listFirmwareCommandsHandler(app))
+
+		// Backend compatibility declaration
+		se.Router.GET("/api/farmon/backend-info", getBackendInfoHandler(app))
+		se.Router.PATCH("/api/farmon/backend-info", patchBackendInfoHandler(app))
+
 		// Workflow engine: load workflows, start background scheduler, and register routes
 		if err := workflowEngine.LoadWorkflows(); err != nil {
 			log.Printf("workflow: initial load error: %v", err)
@@ -126,6 +137,7 @@ func main() {
 		se.Router.DELETE("/api/farmon/workflows/{id}", deleteWorkflowHandler(app, workflowEngine))
 		se.Router.POST("/api/farmon/workflows/{id}/test", testWorkflowHandler(app, workflowEngine))
 		se.Router.GET("/api/farmon/workflow-log", listWorkflowLogHandler(app))
+		se.Router.GET("/api/farmon/device-workflow-events", deviceWorkflowEventsHandler(app))
 
 		// SPA under /app/ so /api is never matched by static; SDK collection requests go to /api/collections/*.
 		se.Router.GET("/", func(e *core.RequestEvent) error {

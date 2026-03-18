@@ -7,8 +7,8 @@ package airconfig
 import (
 	"encoding/binary"
 
-	"github.com/farm/firmware/pkg/protocol"
-	"github.com/farm/firmware/pkg/settings"
+	"github.com/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/protocol"
 )
 
 // Re-export subcommand constants from protocol for callers that only import airconfig.

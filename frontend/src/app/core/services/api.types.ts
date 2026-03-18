@@ -343,6 +343,8 @@ export interface WorkflowLogRecord {
   actions_completed?: number;
   status: string;
   error_message?: string;
+  affected_devices?: string[];
+  context_snapshot?: Record<string, unknown>;
   ts: string;
 }
 
@@ -357,6 +359,20 @@ export interface StateChangeRecord {
   reason: string;   // "RULE" | "MANUAL" | "DOWNLINK" | "BOOT"
   device_ts?: string;
   ts: string;
+}
+
+// ─── Firmware Commands ───────────────────────────────────────────────────────
+
+export interface FirmwareCommand {
+  command_key: string;
+  name: string;
+  fport: number;
+  payload_type: 'empty' | 'uint32';
+  description?: string;
+}
+
+export interface BackendInfo {
+  supported_firmware_versions: string[];
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────

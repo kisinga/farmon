@@ -199,21 +199,56 @@ func listWorkflowLogHandler(app core.App) func(*core.RequestEvent) error {
 		}
 		items := make([]map[string]any, 0, len(records))
 		for _, rec := range records {
-			items = append(items, map[string]any{
-				"id":                rec.Id,
-				"workflow_id":       strOrDefault(rec.Get("workflow_id"), ""),
-				"workflow_name":     strOrDefault(rec.Get("workflow_name"), ""),
-				"trigger_device":    strOrDefault(rec.Get("trigger_device"), ""),
-				"trigger_type":      strOrDefault(rec.Get("trigger_type"), ""),
-				"trigger_index":     intFromRecord(rec, "trigger_index"),
-				"condition_result":  rec.GetBool("condition_result"),
-				"actions_completed": intFromRecord(rec, "actions_completed"),
-				"status":            strOrDefault(rec.Get("status"), ""),
-				"error_message":     strOrDefault(rec.Get("error_message"), ""),
-				"ts":                strOrDefault(rec.Get("ts"), ""),
-			})
+			items = append(items, workflowLogRecordToMap(rec))
 		}
 		return e.JSON(http.StatusOK, items)
+	}
+}
+
+// deviceWorkflowEventsHandler returns workflow_log entries where the given device
+// appears in trigger_device or affected_devices. This powers the device Activity tab.
+func deviceWorkflowEventsHandler(app core.App) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		eui := e.Request.URL.Query().Get("eui")
+		if eui == "" {
+			return e.JSON(http.StatusBadRequest, map[string]any{"error": "eui required"})
+		}
+		limit := 50
+		if s := e.Request.URL.Query().Get("limit"); s != "" {
+			if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 200 {
+				limit = n
+			}
+		}
+		// Match rows where the device is the trigger OR appears in the affected_devices JSON array.
+		filter := "trigger_device = {:eui} || affected_devices ~ {:eui}"
+		params := dbx.Params{"eui": eui}
+		records, err := app.FindRecordsByFilter("workflow_log", filter, "-ts", limit, 0, params)
+		if err != nil {
+			return e.JSON(http.StatusOK, []any{})
+		}
+		items := make([]map[string]any, 0, len(records))
+		for _, rec := range records {
+			items = append(items, workflowLogRecordToMap(rec))
+		}
+		return e.JSON(http.StatusOK, items)
+	}
+}
+
+func workflowLogRecordToMap(rec *core.Record) map[string]any {
+	return map[string]any{
+		"id":                rec.Id,
+		"workflow_id":       strOrDefault(rec.Get("workflow_id"), ""),
+		"workflow_name":     strOrDefault(rec.Get("workflow_name"), ""),
+		"trigger_device":    strOrDefault(rec.Get("trigger_device"), ""),
+		"trigger_type":      strOrDefault(rec.Get("trigger_type"), ""),
+		"trigger_index":     intFromRecord(rec, "trigger_index"),
+		"condition_result":  rec.GetBool("condition_result"),
+		"actions_completed": intFromRecord(rec, "actions_completed"),
+		"status":            strOrDefault(rec.Get("status"), ""),
+		"error_message":     strOrDefault(rec.Get("error_message"), ""),
+		"affected_devices":  parseJSONArray(rec.Get("affected_devices")),
+		"context_snapshot":  parseJSONField(rec.Get("context_snapshot")),
+		"ts":                strOrDefault(rec.Get("ts"), ""),
 	}
 }
 

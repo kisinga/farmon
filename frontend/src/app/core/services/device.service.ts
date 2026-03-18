@@ -3,16 +3,19 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, from, map } from 'rxjs';
 import { PocketBaseService } from './pocketbase.service';
 import {
+  BackendInfo,
   Device,
   DeviceControl,
   DeviceField,
   DeviceTarget,
+  FirmwareCommand,
   HistoryResponse,
   TelemetryRecord,
   CommandRecord,
   ProvisionResponse,
   CredentialsResponse,
   TransportType,
+  WorkflowLogRecord,
 } from './api.types';
 
 const API = '/api/farmon';
@@ -122,6 +125,12 @@ export class DeviceService {
     ).pipe(map((res) => res.items));
   }
 
+  getDeviceWorkflowEvents(eui: string, limit = 50): Observable<WorkflowLogRecord[]> {
+    return this.http.get<WorkflowLogRecord[]>(`${API}/device-workflow-events`, {
+      params: { eui, limit: limit.toString() },
+    });
+  }
+
   getStateChanges(eui: string, limit = 100): Observable<import('./api.types').StateChangeRecord[]> {
     const filter = this.pb.filter('device_eui = {:eui}', { eui });
     return from(
@@ -154,5 +163,17 @@ export class DeviceService {
 
   pushConfig(eui: string): Observable<{ ok: boolean; config_hash?: string }> {
     return this.http.post<{ ok: boolean; config_hash?: string }>(`${API}/devices/${eui}/push-config`, {});
+  }
+
+  getFirmwareCommands(): Observable<FirmwareCommand[]> {
+    return this.http.get<FirmwareCommand[]>(`${API}/firmware-commands`);
+  }
+
+  getBackendInfo(): Observable<BackendInfo> {
+    return this.http.get<BackendInfo>(`${API}/backend-info`);
+  }
+
+  patchBackendInfo(body: BackendInfo): Observable<BackendInfo> {
+    return this.http.patch<BackendInfo>(`${API}/backend-info`, body);
   }
 }

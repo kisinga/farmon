@@ -33,6 +33,7 @@ interface SensorForm {
   modbusFuncCode: number;
   modbusRegAddr: number;
   modbusRegSigned: boolean;
+  digitalPullMode: 0 | 1 | 2;  // 0=pullup, 1=pulldown, 2=float
   calib: CalibForm;
 }
 
@@ -52,6 +53,7 @@ function defaultForm(): SensorForm {
     modbusFuncCode: 3,
     modbusRegAddr: 0,
     modbusRegSigned: false,
+    digitalPullMode: 0,
     calib: { mode: 'datasheet', physMin: 0, physMax: 100, currentReading: 0, expectedValue: 0 },
   };
 }
@@ -134,6 +136,19 @@ function defaultForm(): SensorForm {
             <label class="form-control w-32">
               <div class="label py-1"><span class="label-text text-xs">GPIO Pin Index</span></div>
               <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().pinIndex" min="0" max="19" />
+            </label>
+          }
+
+          <!-- Pull mode (digital input only) -->
+          @if (selectedInterface()?.id === 'digital_in') {
+            <label class="form-control w-48">
+              <div class="label py-1"><span class="label-text text-xs">Pull mode</span></div>
+              <select class="select select-bordered select-sm" [(ngModel)]="form().digitalPullMode"
+                (ngModelChange)="setDigitalPullMode($event)">
+                <option [value]="0">Pull-up (default)</option>
+                <option [value]="1">Pull-down</option>
+                <option [value]="2">Floating (no pull)</option>
+              </select>
             </label>
           }
 
@@ -335,6 +350,12 @@ export class DeviceSensorConfigComponent {
     this.form.update(f => ({ ...f, measurement: id as MeasurementType, unit: meas?.unit ?? f.unit }));
   }
 
+  setDigitalPullMode(v: unknown): void {
+    const n = +( v as number);
+    const mode = (n === 1 ? 1 : n === 2 ? 2 : 0) as 0 | 1 | 2;
+    this.form.update(f => ({ ...f, digitalPullMode: mode }));
+  }
+
   onI2CAddrChange(event: Event): void {
     const val = (event.target as HTMLInputElement).value;
     const parsed = parseInt(val, 16);
@@ -400,6 +421,8 @@ export class DeviceSensorConfigComponent {
       param1Raw = (f.modbusDevAddr & 0xFF) | ((f.modbusFuncCode & 0xFF) << 8);
       param2Raw = f.modbusRegAddr & 0xFFFF;
       if (f.modbusRegSigned) flags |= 0x04;
+    } else if (f.interfaceId === 'digital_in') {
+      param1Raw = f.digitalPullMode;
     }
 
     const pinOrBus = iface.busAddressed ? f.busIndex : f.pinIndex;

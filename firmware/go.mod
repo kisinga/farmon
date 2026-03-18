@@ -1,4 +1,4 @@
-module github.com/farm/firmware
+module github.com/farmon/firmware
 
 go 1.22
 

@@ -9,6 +9,8 @@ import { WorkflowService } from './workflow.service';
 
 // Re-export all types so existing consumers that import from 'api.service.ts' keep working.
 export type {
+  BackendInfo,
+  FirmwareCommand,
   TransportType,
   TransportMeta,
   DeviceIDFormatMeta,
@@ -75,6 +77,7 @@ export class ApiService {
   sendCommand(eui: string, command: string, value?: number) { return this.deviceService.sendCommand(eui, command, value); }
   getCommandHistory(eui: string, limit = 50) { return this.deviceService.getCommandHistory(eui, limit); }
   getStateChanges(eui: string, limit = 100) { return this.deviceService.getStateChanges(eui, limit); }
+  getDeviceWorkflowEvents(eui: string, limit = 50) { return this.deviceService.getDeviceWorkflowEvents(eui, limit); }
 
   // ─── Provisioning ───────────────────────────────────────
 
@@ -86,6 +89,12 @@ export class ApiService {
   getDeviceCredentials(eui: string) { return this.deviceService.getDeviceCredentials(eui); }
   updateDeviceOverrides(eui: string, overrides: unknown) { return this.deviceService.updateDeviceOverrides(eui, overrides); }
   pushConfig(eui: string) { return this.deviceService.pushConfig(eui); }
+
+  // ─── Firmware Commands ───────────────────────────────────────────────────
+
+  getFirmwareCommands() { return this.deviceService.getFirmwareCommands(); }
+  getBackendInfo() { return this.deviceService.getBackendInfo(); }
+  patchBackendInfo(body: import('./api.types').BackendInfo) { return this.deviceService.patchBackendInfo(body); }
 
   // ─── Profiles ───────────────────────────────────────────
 

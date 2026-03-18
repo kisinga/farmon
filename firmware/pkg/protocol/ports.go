@@ -33,6 +33,27 @@ const (
 
 const MaxPayload = 222 // DR3 US915
 
+// Command describes a downlink command the firmware accepts.
+// This is the single source of truth for both the firmware and the backend.
+// The backend imports this package directly — no manual sync needed.
+type Command struct {
+	Key         string // used in API calls, e.g. "reboot"
+	FPort       int
+	PayloadType string // "empty" | "uint32"
+	Description string
+}
+
+// Commands is the authoritative list of downlink commands supported by this firmware version.
+// Add an entry here when adding a new command to the firmware; the backend picks it up automatically.
+var Commands = []Command{
+	{Key: "reset", FPort: FPortCmdReset, PayloadType: "empty", Description: "Reset device error counters and state"},
+	{Key: "interval", FPort: FPortCmdInterval, PayloadType: "uint32", Description: "Set telemetry transmission interval in seconds"},
+	{Key: "reboot", FPort: FPortCmdReboot, PayloadType: "empty", Description: "Reboot the device"},
+	{Key: "clearerr", FPort: FPortCmdClearErr, PayloadType: "empty", Description: "Clear all error flags"},
+	{Key: "forcereg", FPort: FPortCmdForceReg, PayloadType: "empty", Description: "Force re-registration with the network"},
+	{Key: "status", FPort: FPortCmdStatus, PayloadType: "empty", Description: "Request an immediate status uplink"},
+}
+
 // AirConfig sub-command bytes (first byte of fPort 35 payload).
 const (
 	AirCfgPinMap   = 0x01 // [0x01, idx, fn, idx, fn, ...]

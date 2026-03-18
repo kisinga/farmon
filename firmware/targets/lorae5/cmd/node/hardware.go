@@ -6,8 +6,8 @@ import (
 	"machine"
 	"time"
 
-	"github.com/farm/firmware/pkg/actuator"
-	"github.com/farm/firmware/pkg/settings"
+	"github.com/farmon/firmware/pkg/actuator"
+	"github.com/farmon/firmware/pkg/settings"
 )
 
 // --- simpleRelay: single pin, hold high/low ---
