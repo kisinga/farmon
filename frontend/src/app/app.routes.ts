@@ -12,6 +12,5 @@ export const routes: Routes = [
   { path: 'settings', loadComponent: () => import('./pages/settings/settings.component').then(m => m.SettingsComponent) },
   { path: 'lorawan', redirectTo: 'network' },
   { path: 'firmware-commands', redirectTo: 'settings' },
-  { path: 'visual-rules', loadComponent: () => import('./pages/visual-rules/visual-rules.component').then(m => m.VisualRulesComponent) },
   { path: '**', redirectTo: '' },
 ];

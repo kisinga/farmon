@@ -287,7 +287,7 @@ func recordToFrameMap(rec *core.Record) map[string]any {
 			return 0
 		}
 	}
-	return map[string]any{
+	m := map[string]any{
 		"time":        getStr("time"),
 		"direction":   getStr("direction"),
 		"dev_eui":     getStr("dev_eui"),
@@ -300,6 +300,13 @@ func recordToFrameMap(rec *core.Record) map[string]any {
 		"gateway_id":  getStr("gateway_id"),
 		"error":       getStr("error"),
 	}
+	if dj := getStr("decoded_json"); dj != "" {
+		var parsed map[string]any
+		if json.Unmarshal([]byte(dj), &parsed) == nil {
+			m["decoded_json"] = parsed
+		}
+	}
+	return m
 }
 
 // lorawanStatsHandler returns frame buffer stats (from DB) and pipeline status.

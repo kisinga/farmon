@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -37,6 +38,7 @@ func ensureLorawanFramesCollection(app core.App) {
 		&core.NumberField{Name: "snr"},
 		&core.TextField{Name: "gateway_id"},
 		&core.TextField{Name: "error"},
+		&core.TextField{Name: "decoded_json"},
 	)
 	if err := app.Save(col); err != nil {
 		log.Printf("ensure lorawan_frames collection: %v", err)
@@ -47,17 +49,18 @@ func ensureLorawanFramesCollection(app core.App) {
 
 // RawFrame is a single LoRaWAN frame record for the monitoring UI.
 type RawFrame struct {
-	Time       string   `json:"time"`        // RFC3339
-	Direction  string   `json:"direction"`  // "up" | "down"
-	DevEUI     string   `json:"dev_eui"`     // empty for join request before decode
-	FPort      uint8    `json:"f_port"`
-	Kind       string   `json:"kind"`        // "join" | "data" | "join_accept"
-	PayloadHex string   `json:"payload_hex"`
-	PhyLen     int      `json:"phy_len"`
-	RSSI       *int     `json:"rssi,omitempty"`
-	SNR        *float64 `json:"snr,omitempty"`
-	GatewayID  string   `json:"gateway_id,omitempty"`
-	Error      string   `json:"error,omitempty"` // downlink send error
+	Time        string   `json:"time"`                  // RFC3339
+	Direction   string   `json:"direction"`             // "up" | "down"
+	DevEUI      string   `json:"dev_eui"`               // empty for join request before decode
+	FPort       uint8    `json:"f_port"`
+	Kind        string   `json:"kind"`                  // "join" | "data" | "join_accept" | "wifi"
+	PayloadHex  string   `json:"payload_hex"`
+	PhyLen      int      `json:"phy_len"`
+	RSSI        *int     `json:"rssi,omitempty"`
+	SNR         *float64 `json:"snr,omitempty"`
+	GatewayID   string   `json:"gateway_id,omitempty"`
+	Error       string   `json:"error,omitempty"`       // downlink send error
+	DecodedJSON string   `json:"decoded_json,omitempty"` // JSON-encoded decoded payload fields
 }
 
 // WriteFrame inserts a frame into the lorawan_frames collection and triggers lazy trim.
@@ -86,6 +89,7 @@ func WriteFrame(app core.App, f RawFrame) error {
 	}
 	rec.Set("gateway_id", f.GatewayID)
 	rec.Set("error", f.Error)
+	rec.Set("decoded_json", f.DecodedJSON)
 	if err := app.Save(rec); err != nil {
 		return err
 	}
@@ -157,6 +161,25 @@ func RecordDownlink(app core.App, devEUI string, fPort uint8, kind string, paylo
 		Error:      errMsg,
 	}
 	_ = WriteFrame(app, f)
+}
+
+// PatchFrameDecoded updates the most recent frame for a device with decoded payload JSON.
+// Called from handleUplinkFromPipeline after a successful decode.
+func PatchFrameDecoded(app core.App, devEUI, decodedJSON string) {
+	if app == nil || devEUI == "" || decodedJSON == "" {
+		return
+	}
+	recs, err := app.FindRecordsByFilter("lorawan_frames",
+		"dev_eui = {:eui} && direction = 'up'",
+		"-time", 1, 0,
+		dbx.Params{"eui": devEUI})
+	if err != nil || len(recs) == 0 {
+		return
+	}
+	recs[0].Set("decoded_json", decodedJSON)
+	if err := app.Save(recs[0]); err != nil {
+		log.Printf("PatchFrameDecoded: %v", err)
+	}
 }
 
 // FrameStats holds aggregate counts for the monitor.

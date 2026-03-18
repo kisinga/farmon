@@ -50,8 +50,8 @@ export class NavbarComponent {
     { path: '/', label: 'Devices', exact: true },
     { path: '/profiles', label: 'Profiles' },
     { path: '/workflows', label: 'Workflows' },
+    { path: '/network', label: 'Network' },
     { path: '/settings', label: 'Settings' },
-    { path: '/visual-rules', label: 'Rules Lab' },
   ];
 
   closeDropdown(_e: Event): void {

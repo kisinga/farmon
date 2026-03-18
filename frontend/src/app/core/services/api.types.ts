@@ -298,6 +298,7 @@ export interface RawLorawanFrame {
   snr?: number;
   gateway_id?: string;
   error?: string;
+  decoded_json?: Record<string, unknown>;
 }
 
 export interface LorawanStats {

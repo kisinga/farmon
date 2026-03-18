@@ -13,6 +13,7 @@ import { DeviceConfigPanelComponent } from '../../shared/components/device-confi
 import { CommandHistoryComponent } from '../../shared/components/command-history/command-history.component';
 import { DeviceFramesComponent } from '../../shared/components/device-frames/device-frames.component';
 import { DeviceSensorConfigComponent } from '../../shared/components/device-sensor-config/device-sensor-config.component';
+import { VisualRulesSectionComponent } from '../../shared/components/visual-rules-section/visual-rules-section.component';
 import { ERROR_OBJECT_KEYS } from '../../core/constants/error-fields';
 import { getVisibleFieldsByVizType } from '../../core/utils/field-view-model';
 import type { DeviceRuleRecord } from '../../core/services/api.service';
@@ -20,7 +21,7 @@ import type { DeviceRuleRecord } from '../../core/services/api.service';
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, NgClass, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent, DeviceSensorConfigComponent],
+  imports: [RouterLink, DatePipe, NgClass, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent, DeviceSensorConfigComponent, VisualRulesSectionComponent],
   templateUrl: './device-detail.component.html',
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
@@ -31,7 +32,7 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   routeError = signal<string | null>(null);
   deleting = signal(false);
   relatedWorkflows = signal<WorkflowRecord[]>([]);
-  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'automation'>('overview');
+  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'automation' | 'visual-rules'>('overview');
   stateChanges = signal<StateChangeRecord[]>([]);
   workflowEvents = signal<WorkflowLogRecord[]>([]);
   prefillRuleForm = signal<Partial<DeviceRuleRecord> | null>(null);

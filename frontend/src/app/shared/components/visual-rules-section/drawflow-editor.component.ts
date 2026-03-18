@@ -1,6 +1,6 @@
 import {
   Component, AfterViewInit, OnDestroy, ViewChild, ElementRef,
-  input, output, signal, effect,
+  input, output, effect, HostListener,
 } from '@angular/core';
 import Drawflow from 'drawflow';
 import { DeviceField, DeviceControl, DeviceRuleRecord } from '../../../core/services/api.types';
@@ -12,64 +12,92 @@ import { deserializeRules, serializeRules, DrawflowData } from './graph-serializ
   selector: 'app-drawflow-editor',
   standalone: true,
   template: `
-    <div class="relative w-full" style="height: calc(100vh - 260px); min-height: 400px;">
-      <!-- Toolbar -->
+    <div class="relative w-full" style="height: calc(100vh - 340px); min-height: 350px;">
       <div class="absolute top-3 left-3 z-10 flex flex-wrap gap-1">
-        <button class="btn btn-xs btn-soft btn-info" (click)="addSensorNode()">+ Sensor</button>
-        <button class="btn btn-xs btn-soft btn-warning" (click)="addCompareNode()">+ Compare</button>
-        <button class="btn btn-xs btn-soft btn-secondary" (click)="addLogicNode()">+ Logic</button>
-        <button class="btn btn-xs btn-soft btn-success" (click)="addActionNode()">+ Action</button>
-        <button class="btn btn-xs btn-soft btn-accent" (click)="addTimeWindowNode()">+ Time Window</button>
+        <button class="btn btn-xs btn-outline btn-info" (click)="addSensorNode()">+ Sensor</button>
+        <button class="btn btn-xs btn-outline btn-warning" (click)="addCompareNode()">+ Compare</button>
+        <button class="btn btn-xs btn-outline btn-secondary" (click)="addLogicNode()">+ Logic</button>
+        <button class="btn btn-xs btn-outline btn-success" (click)="addActionNode()">+ Action</button>
+        <button class="btn btn-xs btn-outline btn-accent" (click)="addTimeWindowNode()">+ Time</button>
       </div>
       <div class="absolute top-3 right-3 z-10 flex gap-1">
         <button class="btn btn-xs btn-ghost" (click)="zoomIn()">+</button>
         <button class="btn btn-xs btn-ghost" (click)="zoomOut()">&minus;</button>
-        <button class="btn btn-xs btn-ghost" (click)="zoomReset()">Reset</button>
+        <button class="btn btn-xs btn-ghost" (click)="zoomReset()">Fit</button>
       </div>
-      <!-- Canvas -->
-      <div #drawflowContainer class="w-full h-full rounded-xl border border-base-300 overflow-hidden bg-base-200/30"></div>
+      <div #drawflowContainer class="drawflow-host w-full h-full rounded-xl border border-base-300 overflow-hidden"></div>
     </div>
   `,
   styles: [`
     :host ::ng-deep {
-      /* ── Base drawflow overrides ── */
-      .drawflow { background: transparent; }
+      /* ── Reset drawflow defaults that break dark mode ── */
+      .drawflow-host .drawflow {
+        background-color: var(--fallback-b2, oklch(var(--b2)));
+        background-image:
+          radial-gradient(circle, var(--fallback-bc, oklch(var(--bc) / 0.07)) 1px, transparent 1px);
+        background-size: 20px 20px;
+      }
+
+      /* Nodes */
       .drawflow .drawflow-node {
         border-radius: 0.75rem;
-        border: 1px solid oklch(var(--bc) / 0.15);
-        background: oklch(var(--b1));
+        border: 1px solid var(--fallback-bc, oklch(var(--bc) / 0.15));
+        background: var(--fallback-b1, oklch(var(--b1)));
+        color: var(--fallback-bc, oklch(var(--bc)));
         min-width: 140px;
         padding: 0;
-        box-shadow: 0 1px 3px oklch(var(--bc) / 0.08);
+        box-shadow: 0 1px 4px var(--fallback-bc, oklch(var(--bc) / 0.1));
       }
       .drawflow .drawflow-node.selected {
-        border-color: oklch(var(--p));
-        box-shadow: 0 0 0 2px oklch(var(--p) / 0.25);
+        border-color: var(--fallback-p, oklch(var(--p)));
+        box-shadow: 0 0 0 2px var(--fallback-p, oklch(var(--p) / 0.3));
       }
+      .drawflow .drawflow-node:hover {
+        box-shadow: 0 2px 8px var(--fallback-bc, oklch(var(--bc) / 0.15));
+      }
+
+      /* Ports */
       .drawflow .drawflow-node .input,
       .drawflow .drawflow-node .output {
         width: 12px; height: 12px;
-        border: 2px solid oklch(var(--bc) / 0.3);
-        background: oklch(var(--b1));
+        border: 2px solid var(--fallback-p, oklch(var(--p) / 0.5));
+        background: var(--fallback-b1, oklch(var(--b1)));
       }
-      .drawflow .connection .main-path {
-        stroke: oklch(var(--p));
-        stroke-width: 2px;
+      .drawflow .drawflow-node .input:hover,
+      .drawflow .drawflow-node .output:hover {
+        background: var(--fallback-p, oklch(var(--p)));
       }
 
-      /* ── Custom node styling ── */
+      /* Connections */
+      .drawflow .connection .main-path {
+        stroke: var(--fallback-p, oklch(var(--p)));
+        stroke-width: 2px;
+      }
+      .drawflow .connection .main-path:hover {
+        stroke-width: 3px;
+      }
+
+      /* Delete button on connections */
+      .drawflow .drawflow-delete {
+        background: var(--fallback-er, oklch(var(--er)));
+        color: var(--fallback-erc, oklch(var(--erc)));
+        border: none;
+      }
+
+      /* ── Node body styling ── */
       .node-body {
         padding: 0.5rem 0.75rem;
         font-size: 0.8rem;
         line-height: 1.3;
+        color: var(--fallback-bc, oklch(var(--bc)));
       }
       .node-title {
         font-weight: 600;
-        font-size: 0.7rem;
+        font-size: 0.65rem;
         text-transform: uppercase;
-        letter-spacing: 0.03em;
+        letter-spacing: 0.04em;
         margin-bottom: 2px;
-        opacity: 0.6;
+        color: var(--fallback-bc, oklch(var(--bc) / 0.5));
       }
       .node-label {
         font-weight: 500;
@@ -77,14 +105,14 @@ import { deserializeRules, serializeRules, DrawflowData } from './graph-serializ
       }
       .node-meta {
         font-size: 0.7rem;
-        opacity: 0.5;
+        color: var(--fallback-bc, oklch(var(--bc) / 0.45));
         margin-top: 2px;
       }
       .node-tag {
         font-size: 0.6rem;
         padding: 0 4px;
         border-radius: 4px;
-        background: oklch(var(--bc) / 0.08);
+        background: var(--fallback-bc, oklch(var(--bc) / 0.08));
         vertical-align: middle;
       }
       .node-gate-label {
@@ -92,11 +120,11 @@ import { deserializeRules, serializeRules, DrawflowData } from './graph-serializ
         font-weight: 700;
         text-align: center;
       }
-      .node-sensor  { border-left: 3px solid oklch(var(--in)); }
-      .node-compare { border-left: 3px solid oklch(var(--wa)); }
-      .node-logic   { border-left: 3px solid oklch(var(--s)); }
-      .node-action  { border-left: 3px solid oklch(var(--su)); }
-      .node-time    { border-left: 3px solid oklch(var(--a)); }
+      .node-sensor  { border-left: 3px solid var(--fallback-in, oklch(var(--in))); }
+      .node-compare { border-left: 3px solid var(--fallback-wa, oklch(var(--wa))); }
+      .node-logic   { border-left: 3px solid var(--fallback-s, oklch(var(--s))); }
+      .node-action  { border-left: 3px solid var(--fallback-su, oklch(var(--su))); }
+      .node-time    { border-left: 3px solid var(--fallback-a, oklch(var(--a))); }
     }
   `],
 })
@@ -112,9 +140,34 @@ export class DrawflowEditorComponent implements AfterViewInit, OnDestroy {
 
   private editor!: Drawflow;
   private nodeDataMap = new Map<number, VisualNodeData>();
+  private selectedId: number | null = null;
   private nextX = 50;
   private nextY = 80;
   private initialized = false;
+
+  @HostListener('document:keydown', ['$event'])
+  onKeydown(e: KeyboardEvent): void {
+    // Don't intercept when typing in form controls
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+    switch (e.key) {
+      case 'Delete':
+      case 'Backspace':
+        if (this.selectedId != null) {
+          e.preventDefault();
+          this.removeNodeById(this.selectedId);
+        }
+        break;
+      case 'Escape':
+        if (this.selectedId != null) {
+          e.preventDefault();
+          this.selectedId = null;
+          this.nodeSelected.emit(null);
+        }
+        break;
+    }
+  }
 
   constructor() {
     effect(() => {
@@ -132,7 +185,6 @@ export class DrawflowEditorComponent implements AfterViewInit, OnDestroy {
     this.editor.start();
     this.initialized = true;
 
-    // Connection validation
     this.editor.on('connectionCreated', (conn: unknown) => {
       const c = conn as { output_id: string; input_id: string; output_class: string; input_class: string };
       if (!this.validateConnection(c)) {
@@ -144,18 +196,31 @@ export class DrawflowEditorComponent implements AfterViewInit, OnDestroy {
 
     this.editor.on('connectionRemoved', () => this.graphChanged.emit());
     this.editor.on('nodeRemoved', (id: unknown) => {
-      this.nodeDataMap.delete(id as number);
+      const nid = Number(id);
+      this.nodeDataMap.delete(nid);
+      if (this.selectedId === nid) this.selectedId = null;
       this.graphChanged.emit();
       this.nodeSelected.emit(null);
     });
     this.editor.on('nodeSelected', (id: unknown) => {
-      const data = this.nodeDataMap.get(id as number);
-      if (data) this.nodeSelected.emit({ id: id as number, data });
+      const nid = Number(id);
+      this.selectedId = nid;
+      const data = this.nodeDataMap.get(nid);
+      if (data) this.nodeSelected.emit({ id: nid, data });
     });
-    this.editor.on('nodeUnselected', () => this.nodeSelected.emit(null));
+    // Don't forward Drawflow's nodeUnselected — it fires when clicking the
+    // properties panel, destroying it mid-interaction. Instead, deselect only
+    // when clicking the canvas background directly.
+    this.container.nativeElement.addEventListener('mousedown', (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Only deselect if clicking the canvas background itself, not a node
+      if (this.selectedId != null && target.classList.contains('drawflow')) {
+        this.selectedId = null;
+        this.nodeSelected.emit(null);
+      }
+    });
     this.editor.on('nodeMoved', () => this.graphChanged.emit());
 
-    // Load initial rules
     const rules = this.initialRules();
     if (rules.length) this.importRules(rules);
   }
@@ -178,18 +243,13 @@ export class DrawflowEditorComponent implements AfterViewInit, OnDestroy {
 
   addCompareNode(): void {
     const data: CompareNodeData = {
-      type: 'compare',
-      operator: '>',
-      threshold: 0,
-      is_primary: true,
-      is_control: false,
+      type: 'compare', operator: '>', threshold: 0, is_primary: true, is_control: false,
     };
     this.addNode(data, 1, 1);
   }
 
   addLogicNode(): void {
-    const data: LogicGateNodeData = { type: 'logic_gate', logic: 'and' };
-    this.addNode(data, 4, 1);
+    this.addNode({ type: 'logic_gate', logic: 'and' } as LogicGateNodeData, 4, 1);
   }
 
   addActionNode(): void {
@@ -197,37 +257,28 @@ export class DrawflowEditorComponent implements AfterViewInit, OnDestroy {
     const data: ActionNodeData = {
       type: 'action',
       control_idx: c.length ? (c[0].control_idx ?? 0) : 0,
-      action_state: 1,
-      priority: 128,
-      cooldown_seconds: 300,
-      enabled: true,
-      action_dur_x10s: 0,
+      action_state: 1, priority: 128, cooldown_seconds: 300,
+      enabled: true, action_dur_x10s: 0,
       label: c.length ? (c[0].display_name || c[0].control_key) : 'Control',
     };
     this.addNode(data, 1, 0);
   }
 
   addTimeWindowNode(): void {
-    const data: TimeWindowNodeData = { type: 'time_window', time_start: 6, time_end: 18 };
-    this.addNode(data, 0, 1);
+    this.addNode({ type: 'time_window', time_start: 6, time_end: 18 } as TimeWindowNodeData, 0, 1);
   }
 
   updateNodeData(id: number, data: VisualNodeData): void {
     this.nodeDataMap.set(id, data);
-    // Re-render node HTML
     const nodeEl = this.container.nativeElement.querySelector(`#node-${id} .drawflow_content_node`);
     if (nodeEl) nodeEl.innerHTML = nodeHtmlFor(data);
-    // Also update drawflow's internal data
     const nodeStore = this.editor.drawflow.drawflow.Home.data as Record<string, Record<string, unknown>>;
-    if (nodeStore[id]) {
-      nodeStore[id]['data'] = { ...data };
-    }
+    if (nodeStore[id]) nodeStore[id]['data'] = { ...data };
     this.graphChanged.emit();
   }
 
   exportRules(deviceEui: string): { rules: Partial<DeviceRuleRecord>[]; errors: string[] } {
-    const graphData = this.editor.export() as DrawflowData;
-    return serializeRules(graphData, deviceEui, this.nodeDataMap);
+    return serializeRules(this.editor.export() as DrawflowData, deviceEui, this.nodeDataMap);
   }
 
   importRules(rules: DeviceRuleRecord[]): void {
@@ -235,24 +286,22 @@ export class DrawflowEditorComponent implements AfterViewInit, OnDestroy {
     this.nodeDataMap.clear();
     this.nextX = 50;
     this.nextY = 80;
-
     if (!rules.length) return;
 
-    const fields = this.fields();
-    const controls = this.controls();
-    const { graphData, dataMap } = deserializeRules(rules, fields, controls);
-
+    const { graphData, dataMap } = deserializeRules(rules, this.fields(), this.controls());
     this.editor.import(graphData);
-    for (const [id, data] of dataMap.entries()) {
-      this.nodeDataMap.set(id, data);
-    }
+    for (const [id, data] of dataMap.entries()) this.nodeDataMap.set(id, data);
+  }
+
+  removeNodeById(id: number): void {
+    this.editor.removeNodeId(`node-${id}`);
   }
 
   zoomIn(): void { this.editor.zoom_in(); }
   zoomOut(): void { this.editor.zoom_out(); }
   zoomReset(): void { this.editor.zoom_reset(); }
 
-  // ── Private helpers ──
+  // ── Private ──
 
   private addNode(data: VisualNodeData, inputs: number, outputs: number): number {
     const pos = this.nextPosition();
@@ -267,27 +316,18 @@ export class DrawflowEditorComponent implements AfterViewInit, OnDestroy {
   private nextPosition(): { x: number; y: number } {
     const pos = { x: this.nextX, y: this.nextY };
     this.nextY += 120;
-    if (this.nextY > 600) {
-      this.nextY = 80;
-      this.nextX += 220;
-    }
+    if (this.nextY > 600) { this.nextY = 80; this.nextX += 220; }
     return pos;
   }
 
   private validateConnection(conn: { output_id: string; input_id: string }): boolean {
-    const srcData = this.nodeDataMap.get(Number(conn.output_id));
-    const tgtData = this.nodeDataMap.get(Number(conn.input_id));
-    if (!srcData || !tgtData) return false;
-
-    // Allowed connections: sensor→compare, compare→logic_gate, compare→action, logic_gate→action, time_window→action
-    const src = srcData.type;
-    const tgt = tgtData.type;
-
+    const src = this.nodeDataMap.get(Number(conn.output_id))?.type;
+    const tgt = this.nodeDataMap.get(Number(conn.input_id))?.type;
+    if (!src || !tgt) return false;
     if (src === 'sensor' && tgt === 'compare') return true;
     if (src === 'compare' && (tgt === 'logic_gate' || tgt === 'action')) return true;
     if (src === 'logic_gate' && tgt === 'action') return true;
     if (src === 'time_window' && tgt === 'action') return true;
-
     return false;
   }
 }

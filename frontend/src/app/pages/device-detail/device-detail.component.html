@@ -58,6 +58,10 @@
         <span class="badge badge-xs badge-neutral ml-1">{{ activityCount() }}</span>
       }
     </a>
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'visual-rules'" (click)="activeTab.set('visual-rules')">
+      Visual Rules
+      <span class="badge badge-xs badge-warning ml-1">Lab</span>
+    </a>
   </div>
 
   @switch (activeTab()) {
@@ -380,6 +384,22 @@
               </div>
             }
           </div>
+        </div>
+      </div>
+    }
+
+    @case ('visual-rules') {
+      <div class="card-elevated">
+        <div class="card-body-spaced">
+          <div class="flex items-center gap-2 mb-1">
+            <h2 class="section-title mb-0">Visual Rules</h2>
+            <span class="badge badge-sm badge-warning">Experimental</span>
+          </div>
+          <p class="text-xs text-base-content/50 mb-2">Drag and connect nodes to build device rules visually. Output is identical to the Automation tab form.</p>
+          <app-visual-rules-section
+            [eui]="deviceContext.eui()"
+            [fields]="deviceContext.fieldConfigs()"
+            [controls]="deviceContext.controls()" />
         </div>
       </div>
     }

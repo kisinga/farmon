@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -50,6 +51,13 @@ func handleUplinkFromPipeline(app core.App, devEui, deviceName string, fPort uin
 	if err != nil {
 		log.Printf("[uplink] decode error dev_eui=%s fPort=%d: %v", devEui, fPort, err)
 		return insertTelemetry(app, devEui, map[string]any{"raw": hex.EncodeToString(rawPayload), "decode_error": err.Error()}, rssi, snr)
+	}
+
+	// Patch the most recent frame record with decoded payload for the network monitor
+	if result.Fields != nil {
+		if djBytes, err := json.Marshal(result.Fields); err == nil {
+			PatchFrameDecoded(app, devEui, string(djBytes))
+		}
 	}
 
 	// Post-decode routing based on fPort
