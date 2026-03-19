@@ -321,6 +321,32 @@ export class ConfigContextService {
     this._pinPickerMode.set(null);
   }
 
+  // ─── Optimistic sensor spec update ──────────────────────────────────────────
+
+  /**
+   * Optimistically update a sensor slot in the local spec signal so that
+   * allUsedPins reflects the change immediately after a pushSensorSlot call,
+   * before the async reloadDeviceSpec() response arrives.
+   */
+  updateSensorInSpec(slot: number, sensor: import('./api.types').AirConfigSensor): void {
+    const spec = this._deviceSpec();
+    if (!spec?.airconfig) return;
+    const sensors = [...(spec.airconfig.sensors ?? [])];
+    sensors[slot] = sensor;
+    this._deviceSpec.set({ ...spec, airconfig: { ...spec.airconfig, sensors } });
+  }
+
+  /**
+   * Clear a sensor slot optimistically (type=0 signals deletion to firmware).
+   */
+  clearSensorInSpec(slot: number): void {
+    const spec = this._deviceSpec();
+    if (!spec?.airconfig) return;
+    const sensors = [...(spec.airconfig.sensors ?? [])];
+    sensors[slot] = { type: 0, pin_index: 255, field_index: 0, flags: 0 };
+    this._deviceSpec.set({ ...spec, airconfig: { ...spec.airconfig, sensors } });
+  }
+
   // ─── Clear ───────────────────────────────────────────────────────────────────
 
   clear(): void {

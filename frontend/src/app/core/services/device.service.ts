@@ -150,8 +150,8 @@ export class DeviceService {
     ).pipe(map((res) => res.items));
   }
 
-  provisionDevice(device_eui: string, device_name?: string, transport?: TransportType, spec?: DeviceSpec): Observable<ProvisionResponse> {
-    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name, transport, spec });
+  provisionDevice(device_eui: string, device_name?: string, transport?: TransportType, spec?: DeviceSpec, hardware_model?: string): Observable<ProvisionResponse> {
+    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name, transport, spec, hardware_model });
   }
 
   deleteDevice(eui: string): Observable<{ ok: boolean; message?: string }> {

@@ -37,10 +37,11 @@ func appKey32(s string) string {
 func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var body struct {
-			DeviceEui  string      `json:"device_eui"`
-			DeviceName string      `json:"device_name"`
-			Transport  string      `json:"transport"`
-			Spec       *DeviceSpec `json:"spec"`
+			DeviceEui     string      `json:"device_eui"`
+			DeviceName    string      `json:"device_name"`
+			Transport     string      `json:"transport"`
+			HardwareModel string      `json:"hardware_model"`
+			Spec          *DeviceSpec `json:"spec"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.String(http.StatusBadRequest, "invalid body")
@@ -119,6 +120,9 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			if body.Spec != nil {
 				existing.Set("device_type", deviceType)
 			}
+			if body.HardwareModel != "" {
+				existing.Set("hardware_model", body.HardwareModel)
+			}
 			existing.Set("config_status", configStatus)
 			existing.Set("transport", transport)
 			existing.Set("last_seen", time.Now().Format(time.RFC3339))
@@ -133,6 +137,9 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			rec.Set("device_type", deviceType)
 			rec.Set("config_status", configStatus)
 			rec.Set("transport", transport)
+			if body.HardwareModel != "" {
+				rec.Set("hardware_model", body.HardwareModel)
+			}
 			if transport == "lorawan" {
 				rec.Set("app_key", appKeyHex)
 			} else {

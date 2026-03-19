@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 import { ConfigContextService } from '../../../core/services/config-context.service';
@@ -6,6 +6,8 @@ import { ApiService } from '../../../core/services/api.service';
 import { DeviceSensorConfigComponent } from '../device-sensor-config/device-sensor-config.component';
 import { FieldBudgetIndicatorComponent } from '../field-budget-indicator/field-budget-indicator.component';
 import { SyncStatusBadgeComponent } from '../sync-status-badge/sync-status-badge.component';
+import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.component';
+import { AirConfigSensor, DeviceField } from '../../../core/services/api.types';
 
 /**
  * InputsTabComponent — config page Inputs tab.
@@ -23,6 +25,7 @@ import { SyncStatusBadgeComponent } from '../sync-status-badge/sync-status-badge
     DeviceSensorConfigComponent,
     FieldBudgetIndicatorComponent,
     SyncStatusBadgeComponent,
+    ConfirmDialogComponent,
   ],
   template: `
     <div class="space-y-6">
@@ -40,22 +43,28 @@ import { SyncStatusBadgeComponent } from '../sync-status-badge/sync-status-badge
         </div>
         <button
           class="btn btn-sm btn-primary"
-          (click)="showWizard.set(!showWizard())"
+          (click)="openAddWizard()"
           [disabled]="!ctx.eui()"
         >
-          {{ showWizard() ? 'Cancel' : '+ Add Input' }}
+          {{ showWizard() && !editingSlot() ? 'Cancel' : '+ Add Input' }}
         </button>
       </div>
 
-      <!-- Add sensor wizard -->
+      <!-- Add / Edit sensor wizard -->
       @if (showWizard()) {
         <div class="border border-base-300 rounded-xl bg-base-200/30 p-4">
-          <h3 class="text-sm font-semibold mb-4">Add Input Sensor</h3>
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold">{{ editingSlot() !== null ? 'Edit Input Sensor' : 'Add Input Sensor' }}</h3>
+            <button class="btn btn-xs btn-ghost" (click)="closeWizard()">✕</button>
+          </div>
           <app-device-sensor-config
             [eui]="ctx.eui()"
             [fieldConfigs]="ctx.inputVariables()"
             [pinMap]="ctx.pinMapArray()"
-            [usedPins]="ctx.allUsedPins()"
+            [usedPins]="usedPinsForForm()"
+            [existingSlot]="editingSlot()"
+            [existingSensor]="editingSensor()"
+            [existingField]="editingField()"
             (saved)="onSensorSaved()"
           />
         </div>
@@ -89,15 +98,26 @@ import { SyncStatusBadgeComponent } from '../sync-status-badge/sync-status-badge
                 @if (v.unit) {
                   <span class="badge badge-ghost badge-sm">{{ v.unit }}</span>
                 }
-                <select
-                  class="select select-bordered select-xs"
-                  [value]="v.report_mode ?? 'reported'"
-                  (change)="onReportModeChange(v.id, $any($event.target).value)"
-                  [disabled]="savingFieldId() === v.id"
-                >
-                  <option value="reported">Reported</option>
-                  <option value="disabled">Disabled</option>
-                </select>
+                <div class="tooltip tooltip-left" data-tip="Reported: sent every interval · On Change: sent only when the value changes · Disabled: never transmitted">
+                  <select
+                    class="select select-bordered select-xs"
+                    [value]="v.report_mode ?? 'reported'"
+                    (change)="onReportModeChange(v.id, $any($event.target).value)"
+                    [disabled]="savingFieldId() === v.id"
+                  >
+                    <option value="reported">Reported</option>
+                    <option value="on_change">On Change</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </div>
+                @if (ctx.isAirConfig()) {
+                  <button class="btn btn-xs btn-ghost" (click)="startEdit(v)" title="Edit sensor">
+                    ✎
+                  </button>
+                  <button class="btn btn-xs btn-ghost text-error" (click)="confirmDelete(v)" title="Delete sensor">
+                    ✕
+                  </button>
+                }
               </div>
             </div>
           }
@@ -105,6 +125,17 @@ import { SyncStatusBadgeComponent } from '../sync-status-badge/sync-status-badge
       </div>
 
     </div>
+
+    <!-- Delete confirmation -->
+    <app-confirm-dialog
+      [open]="showDeleteConfirm()"
+      title="Delete input sensor?"
+      [message]="'Remove ' + (deletingField()?.display_name || deletingField()?.field_key || 'this sensor') + ' and clear its slot on the device?'"
+      confirmLabel="Delete"
+      [dangerMode]="true"
+      (confirmed)="executeDelete()"
+      (cancelled)="showDeleteConfirm.set(false)"
+    />
   `,
 })
 export class InputsTabComponent {
@@ -114,15 +145,120 @@ export class InputsTabComponent {
   showWizard = signal(false);
   savingFieldId = signal<string | null>(null);
 
-  onSensorSaved(): void {
+  // ─── Edit state ─────────────────────────────────────────────────────────────
+
+  editingSlot = signal<number | null>(null);
+  editingSensor = signal<AirConfigSensor | null>(null);
+  editingField = signal<DeviceField | null>(null);
+
+  /** Pins used by all sensors/controls, minus the currently-editing sensor's pin. */
+  usedPinsForForm = computed<Set<number>>(() => {
+    const all = this.ctx.allUsedPins();
+    const s = this.editingSensor();
+    if (!s || s.pin_index === 255) return all;
+    const without = new Set(all);
+    without.delete(s.pin_index);
+    return without;
+  });
+
+  // ─── Delete state ────────────────────────────────────────────────────────────
+
+  showDeleteConfirm = signal(false);
+  deletingField = signal<DeviceField | null>(null);
+  private deletingSlot = signal<number | null>(null);
+
+  // ─── Wizard helpers ──────────────────────────────────────────────────────────
+
+  openAddWizard(): void {
+    if (this.showWizard() && this.editingSlot() === null) {
+      this.closeWizard();
+      return;
+    }
+    this.editingSlot.set(null);
+    this.editingSensor.set(null);
+    this.editingField.set(null);
+    this.showWizard.set(true);
+  }
+
+  closeWizard(): void {
     this.showWizard.set(false);
+    this.editingSlot.set(null);
+    this.editingSensor.set(null);
+    this.editingField.set(null);
+  }
+
+  startEdit(v: DeviceField): void {
+    const sensors = this.ctx.deviceSpec()?.airconfig?.sensors ?? [];
+    const slot = sensors.findIndex(s => s.field_index === v.field_idx);
+    if (slot === -1) return;
+    this.editingSlot.set(slot);
+    this.editingSensor.set(sensors[slot]);
+    this.editingField.set(v);
+    this.showWizard.set(true);
+  }
+
+  onSensorSaved(): void {
+    const slot = this.editingSlot();
+    const sensor = this.editingSensor();
+    if (slot !== null && sensor) {
+      this.ctx.updateSensorInSpec(slot, sensor);
+    }
+    this.closeWizard();
     this.ctx.reloadFields();
     this.ctx.reloadDeviceSpec();
   }
 
+  // ─── Delete helpers ──────────────────────────────────────────────────────────
+
+  confirmDelete(v: DeviceField): void {
+    const sensors = this.ctx.deviceSpec()?.airconfig?.sensors ?? [];
+    const slot = sensors.findIndex(s => s.field_index === v.field_idx);
+    if (slot === -1) return;
+    this.deletingField.set(v);
+    this.deletingSlot.set(slot);
+    this.showDeleteConfirm.set(true);
+  }
+
+  executeDelete(): void {
+    const slot = this.deletingSlot();
+    const field = this.deletingField();
+    if (slot === null || !field) return;
+    this.showDeleteConfirm.set(false);
+
+    this.api.pushSensorSlot(this.ctx.eui(), {
+      slot,
+      type: 0,
+      pin_index: 255,
+      field_index: 0,
+      flags: 0,
+    }).subscribe({
+      next: () => {
+        this.ctx.clearSensorInSpec(slot);
+        this.api.deleteDeviceField(field.id).subscribe({
+          next: () => {
+            this.ctx.reloadFields();
+            this.ctx.reloadDeviceSpec();
+          },
+          error: () => {
+            this.ctx.reloadFields();
+            this.ctx.reloadDeviceSpec();
+          },
+        });
+      },
+      error: (err: { message?: string }) => {
+        this.ctx.flash(err?.message ?? 'Failed to delete sensor', true);
+      },
+    });
+
+    this.deletingField.set(null);
+    this.deletingSlot.set(null);
+  }
+
+  // ─── Report mode ─────────────────────────────────────────────────────────────
+
   onReportModeChange(fieldId: string, mode: string): void {
     this.savingFieldId.set(fieldId);
-    this.api.updateDeviceField(fieldId, { report_mode: mode as 'reported' | 'disabled' }).subscribe({
+    this.api.updateDeviceField(fieldId, { report_mode: mode as 'reported' | 'on_change' | 'disabled' }).subscribe({
       next: () => {
         this.savingFieldId.set(null);
         this.ctx.reloadFields();

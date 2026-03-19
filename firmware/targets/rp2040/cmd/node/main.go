@@ -53,7 +53,7 @@ func main() {
 
 	buses := sensors.InitBuses(cfg.Core, boardPins, busHW)
 	registerDrivers()
-	active, activeFields := initSensors(buses)
+	active, activeFields, onChangeFields := initSensors(buses)
 	acts := initActuators()
 
 	wifi := wifinina.New(machine.SPI0,
@@ -83,16 +83,17 @@ func main() {
 	}
 
 	n := node.New(node.Config{
-		Core:         &cfg.Core,
-		Transport:    tport,
-		Actuators:    acts,
-		Sensors:      active,
-		ActiveFields: activeFields,
-		Transfer:     fsm,
-		Extension:    handleWiFiAirConfig,
-		SaveFn:       saveSettings,
-		RebootFn:     reboot,
-		FWMajor:      1, FWMinor: 0, FWPatch: 0,
+		Core:           &cfg.Core,
+		Transport:      tport,
+		Actuators:      acts,
+		Sensors:        active,
+		ActiveFields:   activeFields,
+		OnChangeFields: onChangeFields,
+		Transfer:       fsm,
+		Extension:      handleWiFiAirConfig,
+		SaveFn:         saveSettings,
+		RebootFn:       reboot,
+		FWMajor:        1, FWMinor: 0, FWPatch: 0,
 	})
 	n.Run()
 }
@@ -185,9 +186,10 @@ func registerDrivers() {
 	})
 }
 
-func initSensors(buses *sensors.BusRegistry) ([]sensors.Driver, []uint8) {
+func initSensors(buses *sensors.BusRegistry) ([]sensors.Driver, []uint8, []uint8) {
 	var drivers []sensors.Driver
 	var activeFields []uint8
+	var onChangeFields []uint8
 	var usedFields [256]bool
 	for i := uint8(0); i < cfg.Core.SensorCount; i++ {
 		slot := cfg.Core.Sensors[i]
@@ -209,7 +211,13 @@ func initSensors(buses *sensors.BusRegistry) ([]sensors.Driver, []uint8) {
 		for f := 0; f < fc; f++ {
 			idx := int(slot.FieldIndex) + f
 			usedFields[idx] = true
-			activeFields = append(activeFields, uint8(idx))
+			if slot.TelemetryDisabled() {
+				// field is read for rules engine but never transmitted
+			} else if slot.ReportOnChange() {
+				onChangeFields = append(onChangeFields, uint8(idx))
+			} else {
+				activeFields = append(activeFields, uint8(idx))
+			}
 		}
 		d := sensors.Create(slot, buses)
 		if d == nil {
@@ -218,8 +226,8 @@ func initSensors(buses *sensors.BusRegistry) ([]sensors.Driver, []uint8) {
 		d.Begin()
 		drivers = append(drivers, d)
 	}
-	println("[init]", len(drivers), "sensors active,", len(activeFields), "fields")
-	return drivers, activeFields
+	println("[init]", len(drivers), "sensors active,", len(activeFields), "reported,", len(onChangeFields), "on_change")
+	return drivers, activeFields, onChangeFields
 }
 
 func saveSettings() {

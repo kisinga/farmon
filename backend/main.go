@@ -132,6 +132,9 @@ func main() {
 		// Sensor catalog (read-only, sourced from sensors package)
 		se.Router.GET("/api/farmon/sensor-catalog", sensorCatalogHandler())
 
+		// Pin capability table (read-only, sourced from firmware pincaps package)
+		se.Router.GET("/api/farmon/pin-capabilities", pinCapsHandler(app))
+
 		// Backend compatibility declaration
 		se.Router.GET("/api/farmon/backend-info", getBackendInfoHandler(app))
 		se.Router.PATCH("/api/farmon/backend-info", patchBackendInfoHandler(app))

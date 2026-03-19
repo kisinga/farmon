@@ -1,7 +1,17 @@
 import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ConfigContextService } from '../../../core/services/config-context.service';
-import { PIN_FUNCTION, PinFunctionName, pinFunctionName } from '../../../core/utils/firmware-constraints';
+import { PinFunctionName, pinFunctionName } from '../../../core/utils/firmware-constraints';
+
+interface LegendItem { fns: PinFunctionName[]; label: string; hex: string; }
+
+const FUNCTION_LEGEND: LegendItem[] = [
+  { fns: ['relay', 'button'], label: 'Relay/GPIO', hex: '#16a34a' },
+  { fns: ['adc'],             label: 'ADC',        hex: '#3b82f6' },
+  { fns: ['i2c', 'onewire', 'uart'], label: 'I2C/UART', hex: '#a855f7' },
+  { fns: ['pwm', 'dac'],      label: 'PWM/DAC',   hex: '#eab308' },
+  { fns: ['counter'],         label: 'Counter',    hex: '#fb923c' },
+];
 
 /**
  * DeviceBoardSvgComponent — persistent ESP32-style board diagram shown above all config tabs.
@@ -64,9 +74,9 @@ import { PIN_FUNCTION, PinFunctionName, pinFunctionName } from '../../../core/ut
             fill="#0f172a" stroke="#1e3a5f" stroke-width="0.8"/>
           <!-- Chip label -->
           <text x="160" y="132" text-anchor="middle" font-size="11"
-            fill="#60a5fa" font-family="monospace" font-weight="bold">ESP32</text>
+            fill="#60a5fa" font-family="monospace" font-weight="bold">{{ chipLabel() }}</text>
           <text x="160" y="147" text-anchor="middle" font-size="7"
-            fill="#374151" font-family="monospace">DevKit</text>
+            fill="#374151" font-family="monospace">{{ chipSubLabel() }}</text>
 
           <!-- Antenna notch top right -->
           <rect x="188" y="10" width="44" height="28" rx="3"
@@ -160,11 +170,12 @@ import { PIN_FUNCTION, PinFunctionName, pinFunctionName } from '../../../core/ut
       <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-base-content/60">
         <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-teal-500/80"></span> Sensor</span>
         <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-500/80"></span> Output</span>
-        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-green-600/70"></span> Relay/GPIO</span>
-        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-blue-500/70"></span> ADC</span>
-        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-purple-500/70"></span> I2C/UART</span>
-        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-yellow-500/70"></span> PWM/DAC</span>
-        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-orange-400/70"></span> Counter</span>
+        @for (item of legendItems(); track item.label) {
+          <span class="flex items-center gap-1">
+            <span class="inline-block w-2.5 h-2.5 rounded-full" [style.backgroundColor]="item.hex" style="opacity:0.8"></span>
+            {{ item.label }}
+          </span>
+        }
         <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500/70"></span> Unused</span>
       </div>
     </div>
@@ -175,6 +186,35 @@ export class DeviceBoardSvgComponent {
 
   readonly leftPins  = Array.from({ length: 10 }, (_, i) => i);       // 0-9
   readonly rightPins = Array.from({ length: 10 }, (_, i) => i + 10);  // 10-19
+
+  chipLabel = computed(() => {
+    const mcu = this.ctx.pinCaps()?.mcu;
+    if (mcu === 'rp2040') return 'RP2040';
+    if (mcu === 'lorae5' || mcu === 'stm32wl') return 'STM32WL';
+    return this.ctx.device()?.hardware_model?.toUpperCase() ?? 'MCU';
+  });
+
+  chipSubLabel = computed(() => {
+    const mcu = this.ctx.pinCaps()?.mcu;
+    if (mcu === 'rp2040') return 'Pico W';
+    if (mcu === 'lorae5' || mcu === 'stm32wl') return 'LoRa-E5';
+    return '';
+  });
+
+  legendItems = computed(() => {
+    const fnSet = new Set<PinFunctionName>();
+    const caps = this.ctx.pinCaps();
+    if (caps) {
+      for (const p of caps.pins) {
+        for (const fn of p.functions) fnSet.add(pinFunctionName(fn));
+      }
+    } else {
+      for (const code of this.ctx.pinMapArray()) {
+        if (code !== 0) fnSet.add(pinFunctionName(code));
+      }
+    }
+    return FUNCTION_LEGEND.filter(item => item.fns.some(fn => fnSet.has(fn)));
+  });
 
   /**
    * Y coordinate for pin i.
@@ -205,6 +245,17 @@ export class DeviceBoardSvgComponent {
     }
   }
 
+  /** True if the hardware supports the given capability on this pin. Falls back to pinMapArray. */
+  private pinSupportsCapability(pin: number, capability: PinFunctionName): boolean {
+    const caps = this.ctx.pinCaps();
+    if (caps) {
+      const pinInfo = caps.pins.find(p => p.pin === pin);
+      if (!pinInfo) return false;
+      return pinInfo.functions.some(fn => pinFunctionName(fn) === capability);
+    }
+    return pinFunctionName(this.ctx.pinMapArray()[pin] ?? 0) === capability;
+  }
+
   pinFill(pin: number): string {
     // 1. used by sensor
     if (this.ctx.usedSensorPins().has(pin)) return '#14b8a6';   // teal-500
@@ -213,9 +264,8 @@ export class DeviceBoardSvgComponent {
 
     const mode = this.ctx.pinPickerMode();
     if (mode) {
-      const cap = pinFunctionName(this.ctx.pinMapArray()[pin] ?? 0);
-      const compatible = cap === mode.capability;
-      const excluded   = mode.excludedPins.has(pin);
+      const excluded = mode.excludedPins.has(pin);
+      const compatible = this.pinSupportsCapability(pin, mode.capability);
       if (compatible && !excluded) return '#2563eb';  // blue-600 (selectable)
       return '#1f2937';  // almost-black (incompatible/excluded in picker mode)
     }
@@ -226,9 +276,9 @@ export class DeviceBoardSvgComponent {
   isPinSelectable(pin: number): boolean {
     const mode = this.ctx.pinPickerMode();
     if (!mode) return false;
-    const cap = pinFunctionName(this.ctx.pinMapArray()[pin] ?? 0);
-    return cap === mode.capability && !mode.excludedPins.has(pin)
-      && !this.ctx.usedSensorPins().has(pin) && !this.ctx.usedControlPins().has(pin);
+    if (mode.excludedPins.has(pin)) return false;
+    if (this.ctx.usedSensorPins().has(pin) || this.ctx.usedControlPins().has(pin)) return false;
+    return this.pinSupportsCapability(pin, mode.capability);
   }
 
   pinStroke(pin: number): string {

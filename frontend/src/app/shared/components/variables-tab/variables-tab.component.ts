@@ -81,14 +81,16 @@ import { ComputeVariableEditorComponent } from './compute-variable-editor.compon
                 </div>
                 <div class="flex items-center gap-3 flex-shrink-0">
                   @if (v.unit) { <span class="badge badge-ghost badge-sm">{{ v.unit }}</span> }
-                  <select class="select select-bordered select-xs"
-                    [value]="v.report_mode ?? 'reported'"
-                    (change)="onReportModeChange(v.id, $any($event.target).value)"
-                    [disabled]="savingFieldId() === v.id">
-                    <option value="reported">Reported</option>
-                    <option value="on_change">On Change</option>
-                    <option value="disabled">Disabled</option>
-                  </select>
+                  <div class="tooltip tooltip-left" data-tip="Reported: sent every interval · On Change: sent only when the value changes · Disabled: never transmitted">
+                    <select class="select select-bordered select-xs"
+                      [value]="v.report_mode ?? 'reported'"
+                      (change)="onReportModeChange(v.id, $any($event.target).value)"
+                      [disabled]="savingFieldId() === v.id">
+                      <option value="reported">Reported</option>
+                      <option value="on_change">On Change</option>
+                      <option value="disabled">Disabled</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             }
@@ -114,14 +116,16 @@ import { ComputeVariableEditorComponent } from './compute-variable-editor.compon
                 </div>
                 <div class="flex items-center gap-3 flex-shrink-0">
                   @if (v.unit) { <span class="badge badge-ghost badge-sm">{{ v.unit }}</span> }
-                  <select class="select select-bordered select-xs"
-                    [value]="v.report_mode ?? 'reported'"
-                    (change)="onReportModeChange(v.id, $any($event.target).value)"
-                    [disabled]="savingFieldId() === v.id">
-                    <option value="reported">Reported</option>
-                    <option value="on_change">On Change</option>
-                    <option value="disabled">Disabled</option>
-                  </select>
+                  <div class="tooltip tooltip-left" data-tip="Reported: sent every interval · On Change: sent only when the value changes · Disabled: never transmitted">
+                    <select class="select select-bordered select-xs"
+                      [value]="v.report_mode ?? 'reported'"
+                      (change)="onReportModeChange(v.id, $any($event.target).value)"
+                      [disabled]="savingFieldId() === v.id">
+                      <option value="reported">Reported</option>
+                      <option value="on_change">On Change</option>
+                      <option value="disabled">Disabled</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             }

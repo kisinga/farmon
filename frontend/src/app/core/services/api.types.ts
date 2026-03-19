@@ -19,6 +19,24 @@ export function getTransportMeta(transport?: string): TransportMeta {
   return TRANSPORT_META[transport || 'lorawan'] ?? TRANSPORT_META['lorawan'];
 }
 
+// ─── Hardware model ───────────────────────────────────────────────────────────
+
+/** Physical hardware target identifier — matches firmware/pkg/pincaps ForMCU() keys. */
+export type HardwareModelId = 'rp2040' | 'lorae5';
+
+/** Display info for a hardware model shown in the device provisioning UI. */
+export interface HardwareModelInfo {
+  id: HardwareModelId;
+  label: string;
+  subLabel: string;
+  transport: TransportType;
+}
+
+export const HARDWARE_MODELS: HardwareModelInfo[] = [
+  { id: 'rp2040',  label: 'RP2040',      subLabel: 'Raspberry Pi Pico W',  transport: 'wifi' },
+  { id: 'lorae5',  label: 'STM32WL',     subLabel: 'Seeed LoRa-E5',        transport: 'lorawan' },
+];
+
 // ─── Device types ────────────────────────────────────────────────────────────
 
 export interface Device {
@@ -26,6 +44,7 @@ export interface Device {
   device_eui: string;
   device_name: string;
   device_type?: string;
+  hardware_model?: HardwareModelId;
   firmware_version?: string;
   last_seen?: string;
   is_active?: boolean;

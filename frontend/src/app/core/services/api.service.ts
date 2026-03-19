@@ -12,6 +12,8 @@ export type {
   FirmwareCommand,
   TransportType,
   TransportMeta,
+  HardwareModelId,
+  HardwareModelInfo,
   Device,
   DeviceCommand,
   DeviceControl,
@@ -57,6 +59,7 @@ export type {
 export {
   TRANSPORT_META,
   getTransportMeta,
+  HARDWARE_MODELS,
   ACTUATOR_TYPES,
   isAnalogActuator,
   isDualPinActuator,
@@ -93,8 +96,8 @@ export class ApiService {
 
   // ─── Provisioning ───────────────────────────────────────
 
-  provisionDevice(device_eui: string, device_name?: string, transport?: import('./api.types').TransportType, spec?: import('./api.types').DeviceSpec) {
-    return this.deviceService.provisionDevice(device_eui, device_name, transport, spec);
+  provisionDevice(device_eui: string, device_name?: string, transport?: import('./api.types').TransportType, spec?: import('./api.types').DeviceSpec, hardware_model?: string) {
+    return this.deviceService.provisionDevice(device_eui, device_name, transport, spec, hardware_model);
   }
   deleteDevice(eui: string) { return this.deviceService.deleteDevice(eui); }
   getDeviceCredentials(eui: string) { return this.deviceService.getDeviceCredentials(eui); }

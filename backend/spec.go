@@ -31,7 +31,7 @@ type SpecField struct {
 	SortOrder   int     `json:"sort_order"`
 	LinkedType  string  `json:"linked_type,omitempty"`  // "input" | "output" | "compute"
 	LinkedKey   string  `json:"linked_key,omitempty"`   // control_key, sensor ref, or compute id
-	ReportMode  string  `json:"report_mode,omitempty"`  // "active" | "event" | "internal"
+	ReportMode  string  `json:"report_mode,omitempty"`  // "reported" | "on_change" | "disabled"
 }
 
 // SpecControl defines a physical output (actuator).

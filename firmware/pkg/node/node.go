@@ -24,8 +24,9 @@ type Config struct {
 	Transport    transport.Transport
 	Actuators    [settings.MaxControls]actuator.Actuator
 	Sensors      []sensors.Driver
-	ActiveFields []uint8                    // field indices to include in telemetry
-	Transfer     *transfer.FSM              // nil = disabled
+	ActiveFields   []uint8                  // field indices to include in every periodic telemetry packet
+	OnChangeFields []uint8                  // field indices sent only when the value changes
+	Transfer       *transfer.FSM            // nil = disabled
 	Extension    airconfig.ExtensionHandler // nil for RP2040
 	SaveFn       func()
 	RebootFn     func()
@@ -36,12 +37,14 @@ type Config struct {
 
 // Node is the shared device runtime.
 type Node struct {
-	cfg          Config
-	eng          *rules.Engine
-	uptimeSec    uint32
-	txCount      uint32
-	rxCount      uint32
-	checkinEvery uint32 // send checkin every N TX intervals (set at init)
+	cfg              Config
+	eng              *rules.Engine
+	uptimeSec        uint32
+	txCount          uint32
+	rxCount          uint32
+	checkinEvery     uint32    // send checkin every N TX intervals (set at init)
+	prevOnChange     []float32 // last-sent values for OnChangeFields (indexed by position in OnChangeFields)
+	prevOnChangeSet  bool      // whether prevOnChange has been initialised
 }
 
 // New creates a Node and loads the current rule set.
@@ -95,6 +98,7 @@ func (n *Node) sensorLoop() {
 		}
 
 		n.sendTelemetry(values)
+		n.sendOnChangeFields(values)
 		n.sendStateChanges()
 	}
 }
@@ -124,6 +128,66 @@ func (n *Node) sendTelemetry(values []float32) {
 	if len(fields) == 0 {
 		return
 	}
+	for start := 0; start < len(fields); start += maxFieldsPerPacket {
+		end := start + maxFieldsPerPacket
+		if end > len(fields) {
+			end = len(fields)
+		}
+		chunk := fields[start:end]
+
+		var p transport.Packet
+		p.Port = protocol.FPortTelemetry
+		p.Payload[0] = uint8(len(chunk))
+		off := 1
+		for _, fi := range chunk {
+			p.Payload[off] = fi
+			if int(fi) < len(values) {
+				binary.LittleEndian.PutUint32(p.Payload[off+1:], math.Float32bits(values[fi]))
+			}
+			off += 5
+		}
+		p.Len = uint8(off)
+		n.cfg.Transport.Send(p)
+	}
+}
+
+// sendOnChangeFields sends a telemetry packet containing only the on_change fields
+// whose value has changed since the last transmission.
+func (n *Node) sendOnChangeFields(values []float32) {
+	fields := n.cfg.OnChangeFields
+	if len(fields) == 0 {
+		return
+	}
+	if !n.prevOnChangeSet {
+		n.prevOnChange = make([]float32, len(fields))
+		for i, fi := range fields {
+			if int(fi) < len(values) {
+				n.prevOnChange[i] = values[fi]
+			}
+		}
+		n.prevOnChangeSet = true
+		return // first reading: record baseline, do not transmit
+	}
+	// Collect only changed fields
+	var changedIdx []uint8
+	for i, fi := range fields {
+		var cur float32
+		if int(fi) < len(values) {
+			cur = values[fi]
+		}
+		if cur != n.prevOnChange[i] {
+			changedIdx = append(changedIdx, fi)
+			n.prevOnChange[i] = cur
+		}
+	}
+	if len(changedIdx) == 0 {
+		return
+	}
+	n.sendTelemetry2(values, changedIdx)
+}
+
+// sendTelemetry2 sends a telemetry packet for an explicit list of field indices.
+func (n *Node) sendTelemetry2(values []float32, fields []uint8) {
 	for start := 0; start < len(fields); start += maxFieldsPerPacket {
 		end := start + maxFieldsPerPacket
 		if end > len(fields) {

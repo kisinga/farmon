@@ -93,13 +93,15 @@ type SensorSlot struct {
 	Type       SensorType
 	PinIndex   uint8  // GPIO pin index or bus instance index
 	FieldIndex uint8  // first telemetry field index
-	Flags      uint8  // bit 0: enabled, bit 1: inverted
+	Flags      uint8  // bit 0: enabled, bit 1: inverted, bits 2-3: type-specific, bit 4: telemetry disabled, bit 5: on_change
 	Param1     uint16 // type-specific
 	Param2     uint16 // type-specific
 }
 
-func (s *SensorSlot) Enabled() bool  { return s.Flags&0x01 != 0 }
-func (s *SensorSlot) Inverted() bool { return s.Flags&0x02 != 0 }
+func (s *SensorSlot) Enabled() bool             { return s.Flags&0x01 != 0 }
+func (s *SensorSlot) Inverted() bool            { return s.Flags&0x02 != 0 }
+func (s *SensorSlot) TelemetryDisabled() bool   { return s.Flags&0x10 != 0 }
+func (s *SensorSlot) ReportOnChange() bool      { return s.Flags&0x20 != 0 }
 
 // ActuatorType describes how a control output is driven.
 type ActuatorType uint8

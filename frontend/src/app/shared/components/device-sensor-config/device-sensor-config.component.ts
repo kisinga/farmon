@@ -2,7 +2,7 @@ import { Component, input, output, signal, computed, inject, OnInit, OnDestroy, 
 import { FormsModule } from '@angular/forms';
 import { ApiService, DeviceField } from '../../../core/services/api.service';
 import { applyTrim } from '../../../core/constants/sensor-config';
-import { SensorInterfaceInfo, SensorPresetInfo, MeasurementInfo, AirConfigValidationError } from '../../../core/services/api.types';
+import { SensorInterfaceInfo, SensorPresetInfo, MeasurementInfo, AirConfigValidationError, AirConfigSensor } from '../../../core/services/api.types';
 import { SensorService } from '../../../core/services/sensor.service';
 import { MAX_SENSOR_SLOTS, pinFunctionName, type PinFunctionName } from '../../../core/utils/firmware-constraints';
 import { ConfigContextService } from '../../../core/services/config-context.service';
@@ -31,7 +31,7 @@ interface SensorForm {
   modbusRegSigned: boolean;
   digitalPullMode: 0 | 1 | 2;
   calib: CalibForm;
-  reportInTelemetry: boolean;
+  reportMode: 'reported' | 'on_change' | 'disabled';
 }
 
 function defaultForm(): SensorForm {
@@ -51,7 +51,7 @@ function defaultForm(): SensorForm {
     modbusRegSigned: false,
     digitalPullMode: 0,
     calib: { mode: 'datasheet', physMin: 0, physMax: 100, currentReading: 0, expectedValue: 0 },
-    reportInTelemetry: true,
+    reportMode: 'reported',
   };
 }
 
@@ -130,11 +130,22 @@ function defaultForm(): SensorForm {
                   <div class="label py-1"><span class="label-text text-xs">Unit</span></div>
                   <input class="input input-bordered input-sm" [(ngModel)]="form().unit" placeholder="e.g. %" />
                 </label>
-                <label class="form-control justify-end">
-                  <div class="label py-1"><span class="label-text text-xs">Report in telemetry</span></div>
-                  <input type="checkbox" class="checkbox checkbox-sm"
-                    [checked]="form().reportInTelemetry"
-                    (change)="setReportInTelemetry($any($event.target).checked)" />
+                <label class="form-control w-36">
+                  <div class="label py-1"><span class="label-text text-xs">Telemetry</span></div>
+                  <select class="select select-bordered select-sm"
+                    [value]="form().reportMode"
+                    (change)="setReportMode($any($event.target).value)">
+                    <option value="reported">Reported</option>
+                    <option value="on_change">On Change</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                  <div class="label py-0.5">
+                    <span class="label-text-alt text-base-content/40">
+                      @if (form().reportMode === 'reported') { Every interval }
+                      @else if (form().reportMode === 'on_change') { Only when value changes }
+                      @else { Never transmitted }
+                    </span>
+                  </div>
                 </label>
               </div>
             } @else if (fieldSelection() && fieldSelection() !== '__new__') {
@@ -312,7 +323,7 @@ function defaultForm(): SensorForm {
       <!-- Action -->
       <button class="btn btn-primary w-full" [disabled]="!canSave() || saving()"
         (click)="save()">
-        {{ saving() ? 'Sending…' : 'Configure & Push to Device' }}
+        {{ saving() ? 'Sending…' : isEditMode() ? 'Update & Push' : 'Configure & Push to Device' }}
       </button>
 
     </div>
@@ -325,6 +336,11 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   pinMap = input<number[]>([]);
   /** Pins already used by other sensors and outputs. */
   usedPins = input<Set<number>>(new Set());
+
+  /** Edit mode — pre-populate from existing sensor slot. */
+  existingSlot = input<number | null>(null);
+  existingSensor = input<AirConfigSensor | null>(null);
+  existingField = input<DeviceField | null>(null);
 
   /** Emitted after a successful save so the parent can reload and hide the wizard. */
   saved = output<void>();
@@ -352,6 +368,8 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   creatingNewField = signal(false);
   fieldSelection = signal<string>('');
 
+  isEditMode = computed(() => this.existingSlot() !== null);
+
   selectedInterface = computed(() =>
     this.interfaces().find(i => i.id === this.form().interfaceId) ?? null
   );
@@ -378,7 +396,44 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
       this.measurements.set(catalog.measurements);
       this.presets.set(catalog.presets);
       this.fieldCounts.set(catalog.field_counts);
+      if (this.existingSensor()) {
+        this.populateFromExisting();
+      }
     });
+  }
+
+  private populateFromExisting(): void {
+    const sensor = this.existingSensor();
+    const field = this.existingField();
+    if (!sensor) return;
+
+    const iface = this.interfaces().find(i => i.sensor_type === sensor.type);
+    if (!iface) return;
+
+    const flags = sensor.flags ?? 0x01;
+    let reportMode: 'reported' | 'on_change' | 'disabled' = 'reported';
+    if (flags & 0x10) reportMode = 'disabled';
+    else if (flags & 0x20) reportMode = 'on_change';
+
+    this.form.update(f => ({
+      ...f,
+      interfaceId: iface.id,
+      fieldKey: field?.field_key ?? '',
+      displayName: field?.display_name ?? '',
+      unit: field?.unit ?? '',
+      pinIndex: iface.bus_addressed ? f.pinIndex : sensor.pin_index,
+      busIndex: iface.bus_addressed ? sensor.pin_index : f.busIndex,
+      reportMode,
+    }));
+
+    if (!iface.bus_addressed && sensor.pin_index !== 255) {
+      this.pinExplicitlySelected.set(true);
+    }
+
+    if (field) {
+      this.fieldSelection.set(field.field_key);
+      this.creatingNewField.set(false);
+    }
   }
 
   ngOnDestroy(): void {
@@ -504,8 +559,8 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     }
   }
 
-  setReportInTelemetry(value: boolean): void {
-    this.form.update(f => ({ ...f, reportInTelemetry: value }));
+  setReportMode(value: 'reported' | 'on_change' | 'disabled'): void {
+    this.form.update(f => ({ ...f, reportMode: value }));
   }
 
   setCalibMode(mode: 'datasheet' | 'trim'): void {
@@ -582,14 +637,17 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     const iface = this.interfaces().find(i => i.id === f.interfaceId)!;
     const isNewField = this.creatingNewField();
     const fieldIndex = isNewField ? this.nextFieldIndex() : this.getExistingFieldIndex(f.fieldKey);
-    const slot = this.nextSlot();
+    const slot = this.existingSlot() ?? this.nextSlot();
 
     // Build push-sensor-slot body
     let param1Raw: number | undefined;
     let param2Raw: number | undefined;
     let calibOffset: number | undefined;
     let calibSpan: number | undefined;
+    // bit 0 = enabled, bit 4 = telemetry disabled, bit 5 = on_change
     let flags = 0x01; // enabled
+    if (f.reportMode === 'disabled') flags |= 0x10;
+    else if (f.reportMode === 'on_change') flags |= 0x20;
 
     if (iface.needs_calib) {
       if (f.calib.mode === 'datasheet') {
@@ -643,7 +701,7 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
             field_idx: fieldIndex,
             linked_type: 'input',
             linked_key: f.interfaceId,
-            report_mode: f.reportInTelemetry ? 'reported' : 'disabled',
+            report_mode: f.reportMode,
           }).subscribe({
             next: () => {
               this.saving.set(false);
@@ -659,12 +717,37 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
             },
           });
         } else {
-          // Existing field — just report success
-          this.saving.set(false);
-          this.form.set(defaultForm());
-          this.fieldSelection.set('');
-          this.creatingNewField.set(false);
-          this.saved.emit();
+          // Existing field — update metadata if display name / unit changed
+          const existingF = this.existingField();
+          const nameChanged = existingF && (existingF.display_name !== f.displayName.trim() || existingF.unit !== f.unit);
+          if (existingF && nameChanged) {
+            this.api.updateDeviceField(existingF.id, {
+              display_name: f.displayName.trim(),
+              unit: f.unit,
+            }).subscribe({
+              next: () => {
+                this.saving.set(false);
+                this.form.set(defaultForm());
+                this.fieldSelection.set('');
+                this.creatingNewField.set(false);
+                this.saved.emit();
+              },
+              error: () => {
+                // Metadata update failed but slot was saved — still emit saved
+                this.saving.set(false);
+                this.form.set(defaultForm());
+                this.fieldSelection.set('');
+                this.creatingNewField.set(false);
+                this.saved.emit();
+              },
+            });
+          } else {
+            this.saving.set(false);
+            this.form.set(defaultForm());
+            this.fieldSelection.set('');
+            this.creatingNewField.set(false);
+            this.saved.emit();
+          }
         }
       },
       error: (err: { message?: string }) => {

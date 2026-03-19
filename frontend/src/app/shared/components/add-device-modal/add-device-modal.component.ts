@@ -1,12 +1,13 @@
 import { Component, inject, signal, computed, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, ProvisionResponse, TransportType, getTransportMeta, DeviceSpec } from '../../../core/services/api.service';
+import { NgClass } from '@angular/common';
+import { ApiService, ProvisionResponse, TransportType, getTransportMeta, DeviceSpec, HardwareModelId, HARDWARE_MODELS } from '../../../core/services/api.service';
 import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-credentials';
 
 @Component({
   selector: 'app-add-device-modal',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, NgClass],
   template: `
     <dialog class="modal" [class.modal-open]="open()" (click)="onBackdropClick($event)">
       <div class="modal-box max-w-lg rounded-2xl shadow-2xl" (click)="$event.stopPropagation()">
@@ -15,14 +16,26 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
           <p class="text-sm text-base-content/70 mt-1">Provision a new device. Optionally import a spec JSON.</p>
 
           <form class="mt-4 space-y-4" (ngSubmit)="onSubmit()">
-            <!-- Transport -->
-            <label class="form-control w-full">
-              <span class="label"><span class="label-text font-medium">Transport</span></span>
-              <select class="select select-bordered select-sm w-full" [(ngModel)]="transport" name="transport">
-                <option value="lorawan">LoRaWAN</option>
-                <option value="wifi">WiFi</option>
-              </select>
-            </label>
+            <!-- Hardware model selection -->
+            <div class="form-control w-full">
+              <span class="label pb-1"><span class="label-text font-medium">Hardware</span></span>
+              <div class="grid grid-cols-2 gap-2">
+                @for (hw of hardwareModels; track hw.id) {
+                  <button
+                    type="button"
+                    class="flex flex-col items-start gap-0.5 rounded-xl border-2 px-3 py-2.5 text-left transition-colors"
+                    [ngClass]="hardwareModel === hw.id ? 'border-primary bg-primary/5' : 'border-base-300'"
+                    (click)="selectHardware(hw.id)"
+                  >
+                    <span class="font-semibold text-sm">{{ hw.label }}</span>
+                    <span class="text-xs text-base-content/60">{{ hw.subLabel }}</span>
+                    <span class="badge badge-xs mt-1" [class.badge-primary]="hw.transport === 'lorawan'" [class.badge-secondary]="hw.transport === 'wifi'">
+                      {{ hw.transport === 'lorawan' ? 'LoRaWAN' : 'WiFi' }}
+                    </span>
+                  </button>
+                }
+              </div>
+            </div>
 
             <!-- Device ID -->
             <label class="form-control w-full">
@@ -31,7 +44,7 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
                 type="text"
                 class="input input-bordered w-full font-mono input-sm"
                 [placeholder]="transport === 'wifi' ? 'e.g. aabbccddeeff' : 'e.g. 0102030405060708'"
-                [maxlength]="16"
+                [maxlength]="transport === 'wifi' ? 12 : 16"
                 [(ngModel)]="eui"
                 name="eui"
                 required
@@ -168,7 +181,9 @@ export class AddDeviceModalComponent {
   result = signal<ProvisionResponse | null>(null);
   showKey = signal(false);
 
-  transport: TransportType = 'lorawan';
+  readonly hardwareModels = HARDWARE_MODELS;
+  hardwareModel: HardwareModelId = 'rp2040';
+  transport: TransportType = 'wifi';
   eui = '';
   name = '';
   specJson = '';
@@ -177,6 +192,12 @@ export class AddDeviceModalComponent {
   deviceAdded = output<void>();
 
   resultMeta = computed(() => getTransportMeta(this.result()?.transport));
+
+  selectHardware(id: HardwareModelId): void {
+    this.hardwareModel = id;
+    const hw = this.hardwareModels.find(h => h.id === id);
+    if (hw) this.transport = hw.transport;
+  }
 
   ingestUrl(): string {
     return window.location.origin;
@@ -187,7 +208,8 @@ export class AddDeviceModalComponent {
     this.result.set(null);
     this.error.set(null);
     this.specError.set(null);
-    this.transport = 'lorawan';
+    this.hardwareModel = 'rp2040';
+    this.transport = 'wifi';
     this.eui = '';
     this.name = '';
     this.specJson = '';
@@ -208,6 +230,8 @@ export class AddDeviceModalComponent {
     this.result.set(null);
     this.error.set(null);
     this.specError.set(null);
+    this.hardwareModel = 'rp2040';
+    this.transport = 'wifi';
     this.eui = '';
     this.name = '';
     this.specJson = '';
@@ -259,7 +283,7 @@ export class AddDeviceModalComponent {
 
     this.error.set(null);
     this.submitting.set(true);
-    this.api.provisionDevice(devEui, this.name.trim() || undefined, this.transport, spec).subscribe({
+    this.api.provisionDevice(devEui, this.name.trim() || undefined, this.transport, spec, this.hardwareModel).subscribe({
       next: (res) => {
         this.result.set(res);
         this.submitting.set(false);

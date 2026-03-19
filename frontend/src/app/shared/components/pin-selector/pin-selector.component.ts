@@ -1,6 +1,7 @@
 import { Component, computed, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { PIN_FUNCTION, PinFunctionName, pinFunctionName } from '../../../core/utils/firmware-constraints';
+import { PinFunctionName, pinFunctionName } from '../../../core/utils/firmware-constraints';
+import { PinInfo } from '../../../core/services/api.types';
 
 /**
  * PinSelectorComponent — pin picker that respects pin_map capability constraints.
@@ -35,6 +36,9 @@ import { PIN_FUNCTION, PinFunctionName, pinFunctionName } from '../../../core/ut
 export class PinSelectorComponent {
   /** The device's pin_map array (index = pin number, value = function code). */
   pinMap = input<number[]>([]);
+  /** Per-pin hardware capability table from the backend pincaps endpoint. When provided,
+   *  capability checks use hardware data rather than the current config pinMap. */
+  pinCaps = input<PinInfo[]>([]);
   /** Set of pins currently occupied by OTHER inputs/outputs (excluding the current item). */
   usedPins = input<Set<number>>(new Set());
   /** The capability this pin must support. */
@@ -47,9 +51,16 @@ export class PinSelectorComponent {
   pins = computed(() => Array.from({ length: this.pinMap().length }, (_, i) => i));
 
   supportsCapability(pin: number): boolean {
-    const code = this.pinMap()[pin] ?? 0;
     const cap = this.requiredCapability();
-    if (cap === 'unused') return code === PIN_FUNCTION.NONE;
+    const caps = this.pinCaps();
+    if (caps.length > 0) {
+      const pinInfo = caps.find(p => p.pin === pin);
+      if (!pinInfo) return false;
+      return pinInfo.functions.some(fn => pinFunctionName(fn) === cap);
+    }
+    // Fallback: use pinMap (current config assignment)
+    const code = this.pinMap()[pin] ?? 0;
+    if (cap === 'unused') return code === 0;
     return pinFunctionName(code) === cap;
   }
 
