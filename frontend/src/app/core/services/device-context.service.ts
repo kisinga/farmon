@@ -2,7 +2,7 @@ import { Injectable, inject, signal, computed } from '@angular/core';
 import { forkJoin, from, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
-import { ApiService, Device, DeviceCommand, DeviceControl, DeviceField, DeviceVisualization } from './api.service';
+import { ApiService, Device, DeviceCommand, DeviceControl, DeviceField, DeviceRuleRecord, DeviceVisualization } from './api.service';
 import { PocketBaseService } from './pocketbase.service';
 import { TelemetrySubscriptionService } from './telemetry-subscription.service';
 
@@ -15,6 +15,7 @@ export class DeviceContextService {
   private _device = signal<Device | null>(null);
   private _controls = signal<DeviceControl[]>([]);
   private _fieldConfigs = signal<DeviceField[]>([]);
+  private _rules = signal<DeviceRuleRecord[]>([]);
   private _latestTelemetry = signal<Record<string, unknown> | null>(null);
   private _commands = signal<DeviceCommand[]>([]);
   private _visualizations = signal<DeviceVisualization[]>([]);
@@ -29,6 +30,7 @@ export class DeviceContextService {
   device = this._device.asReadonly();
   controls = this._controls.asReadonly();
   fieldConfigs = this._fieldConfigs.asReadonly();
+  rules = this._rules.asReadonly();
   latestTelemetry = this._latestTelemetry.asReadonly();
   loading = this._loading.asReadonly();
   error = this._error.asReadonly();
@@ -66,6 +68,7 @@ export class DeviceContextService {
       device: this.api.getDeviceConfig(eui),
       controls: this.api.getDeviceControls(eui),
       fields: this.api.getDeviceFields(eui),
+      rules: this.api.getDeviceRules(eui).pipe(catchError(() => of<DeviceRuleRecord[]>([]))),
       latest: this.api.getLatestTelemetry(eui).pipe(catchError(() => of(null))),
       commands: from(this.pbService.pb.collection('device_commands').getFullList({
         filter: this.pbService.pb.filter('device_eui = {:eui}', { eui }),
@@ -75,10 +78,11 @@ export class DeviceContextService {
         sort: 'sort_order',
       })).pipe(catchError(() => of([]))),
     }).subscribe({
-      next: ({ device, controls, fields, latest, commands, visualizations }) => {
+      next: ({ device, controls, fields, rules, latest, commands, visualizations }) => {
         this._device.set(device);
         this._controls.set(controls);
         this._fieldConfigs.set(fields);
+        this._rules.set(rules);
         this._latestTelemetry.set(latest?.data ?? null);
         this._commands.set(commands as unknown as DeviceCommand[]);
         this._visualizations.set(visualizations as unknown as DeviceVisualization[]);
@@ -144,12 +148,23 @@ export class DeviceContextService {
     this.fieldsUnsub = null;
   }
 
+  /** Reload on-device rules for the current EUI (call after a rule is created/updated/deleted). */
+  reloadRules(): void {
+    const eui = this._eui();
+    if (!eui) return;
+    this.api.getDeviceRules(eui).subscribe({
+      next: rules => this._rules.set(rules),
+      error: () => { /* non-fatal — rules may be unavailable */ },
+    });
+  }
+
   clear(): void {
     this.unsubscribeAll();
     this._eui.set('');
     this._device.set(null);
     this._controls.set([]);
     this._fieldConfigs.set([]);
+    this._rules.set([]);
     this._latestTelemetry.set(null);
     this._commands.set([]);
     this._visualizations.set([]);

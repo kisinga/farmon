@@ -15,8 +15,11 @@ export type {
   Device,
   DeviceCommand,
   DeviceControl,
+  DeviceDecodeRule,
   DeviceField,
+  DeviceVariable,
   DeviceVisualization,
+  VariableVizConfig,
   DeviceSpec,
   SpecField,
   SpecControl,
@@ -45,11 +48,20 @@ export type {
   WorkflowLogRecord,
   TelemetryRecord,
   StateChangeRecord,
+  PinInfo,
+  PinCapabilitiesResponse,
+  ActuatorTypeId,
+  ValidationError,
 } from './api.types';
 
 export {
   TRANSPORT_META,
   getTransportMeta,
+  ACTUATOR_TYPES,
+  isAnalogActuator,
+  isDualPinActuator,
+  isBusActuator,
+  hasPulseParam,
 } from './api.types';
 
 @Injectable({ providedIn: 'root' })
@@ -71,7 +83,9 @@ export class ApiService {
 
   // ─── Controls & Commands ────────────────────────────────
 
-  setControl(eui: string, control: string, state: string, duration?: number) { return this.deviceService.setControl(eui, control, state, duration); }
+  setControl(eui: string, control: string, state: string, duration?: number, value?: number) { return this.deviceService.setControl(eui, control, state, duration, value); }
+  getPinCapabilities(eui: string) { return this.deviceService.getPinCapabilities(eui); }
+  probeField(eui: string, fieldKey: string) { return this.deviceService.probeField(eui, fieldKey); }
   sendCommand(eui: string, command: string, value?: number) { return this.deviceService.sendCommand(eui, command, value); }
   getCommandHistory(eui: string, limit = 50) { return this.deviceService.getCommandHistory(eui, limit); }
   getStateChanges(eui: string, limit = 100) { return this.deviceService.getStateChanges(eui, limit); }
@@ -91,6 +105,17 @@ export class ApiService {
   getDeviceSpec(eui: string) { return this.deviceService.getDeviceSpec(eui); }
   applyDeviceSpec(eui: string, spec: import('./api.types').DeviceSpec) { return this.deviceService.applyDeviceSpec(eui, spec); }
   testDecode(spec: import('./api.types').DeviceSpec, fport: number, payloadHex: string) { return this.deviceService.testDecode(spec, fport, payloadHex); }
+
+  // ─── Decode Rules ────────────────────────────────────────
+
+  getDeviceDecodeRules(eui: string) { return this.deviceService.getDeviceDecodeRules(eui); }
+  createDeviceDecodeRule(data: Partial<import('./api.types').DeviceDecodeRule>) { return this.deviceService.createDeviceDecodeRule(data); }
+  updateDeviceDecodeRule(id: string, data: Partial<import('./api.types').DeviceDecodeRule>) { return this.deviceService.updateDeviceDecodeRule(id, data); }
+  deleteDeviceDecodeRule(id: string) { return this.deviceService.deleteDeviceDecodeRule(id); }
+
+  // ─── Visualizations ─────────────────────────────────────
+
+  getDeviceVisualizations(eui: string) { return this.deviceService.getDeviceVisualizations(eui); }
 
   // ─── Firmware Commands ───────────────────────────────────────────────────
 
@@ -123,6 +148,11 @@ export class ApiService {
 
   createDeviceField(data: Partial<import('./api.types').DeviceField>) { return this.sensorService.createDeviceField(data); }
   updateDeviceField(id: string, data: Partial<import('./api.types').DeviceField>) { return this.sensorService.updateDeviceField(id, data); }
+  deleteDeviceField(id: string) { return this.deviceService.deleteDeviceField(id); }
+
+  createDeviceControl(data: Partial<import('./api.types').DeviceControl>) { return this.deviceService.createDeviceControl(data); }
+  updateDeviceControl(id: string, data: Partial<import('./api.types').DeviceControl>) { return this.deviceService.updateDeviceControl(id, data); }
+  deleteDeviceControl(id: string) { return this.deviceService.deleteDeviceControl(id); }
 
   // ─── Gateway & Pipeline ─────────────────────────────────
 

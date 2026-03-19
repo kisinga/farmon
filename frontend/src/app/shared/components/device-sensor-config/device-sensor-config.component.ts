@@ -1,14 +1,11 @@
-import { Component, input, signal, computed, inject, OnInit } from '@angular/core';
+import { Component, input, output, signal, computed, inject, OnInit, OnDestroy, effect } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { ApiService, DeviceField, DeviceRuleRecord } from '../../../core/services/api.service';
-import {
-  SUGGESTED_RULES,
-  applyTrim,
-  type MeasurementType, type RuleSuggestion,
-} from '../../../core/constants/sensor-config';
+import { ApiService, DeviceField } from '../../../core/services/api.service';
+import { applyTrim } from '../../../core/constants/sensor-config';
 import { SensorInterfaceInfo, SensorPresetInfo, MeasurementInfo, AirConfigValidationError } from '../../../core/services/api.types';
 import { SensorService } from '../../../core/services/sensor.service';
+import { MAX_SENSOR_SLOTS, pinFunctionName, type PinFunctionName } from '../../../core/utils/firmware-constraints';
+import { ConfigContextService } from '../../../core/services/config-context.service';
 
 interface CalibForm {
   mode: 'datasheet' | 'trim';
@@ -21,7 +18,6 @@ interface CalibForm {
 interface SensorForm {
   presetId: string;
   interfaceId: string;
-  measurement: MeasurementType | '';
   unit: string;
   displayName: string;
   fieldKey: string;
@@ -35,13 +31,13 @@ interface SensorForm {
   modbusRegSigned: boolean;
   digitalPullMode: 0 | 1 | 2;
   calib: CalibForm;
+  reportInTelemetry: boolean;
 }
 
 function defaultForm(): SensorForm {
   return {
     presetId: '',
     interfaceId: '',
-    measurement: '',
     unit: '',
     displayName: '',
     fieldKey: '',
@@ -55,6 +51,7 @@ function defaultForm(): SensorForm {
     modbusRegSigned: false,
     digitalPullMode: 0,
     calib: { mode: 'datasheet', physMin: 0, physMax: 100, currentReading: 0, expectedValue: 0 },
+    reportInTelemetry: true,
   };
 }
 
@@ -75,7 +72,7 @@ function defaultForm(): SensorForm {
       <!-- Preset picker -->
       <div class="card bg-base-200">
         <div class="card-body py-4">
-          <h3 class="card-title text-sm">Quick Start — Choose a sensor preset</h3>
+          <h3 class="card-title text-sm">Quick Start — Choose an input preset</h3>
           <div class="flex flex-wrap gap-2 mt-2">
             @for (p of presets(); track p.id) {
               <button class="btn btn-sm" [class.btn-primary]="form().presetId === p.id"
@@ -89,7 +86,7 @@ function defaultForm(): SensorForm {
       <!-- Main config form -->
       <div class="card bg-base-200">
         <div class="card-body py-4 space-y-3">
-          <h3 class="card-title text-sm">Sensor Configuration</h3>
+          <h3 class="card-title text-sm">Input Configuration</h3>
 
           <!-- Interface -->
           <label class="form-control w-full max-w-xs">
@@ -99,18 +96,6 @@ function defaultForm(): SensorForm {
               <option value="">— select —</option>
               @for (iface of interfaces(); track iface.id) {
                 <option [value]="iface.id">{{ iface.label }}</option>
-              }
-            </select>
-          </label>
-
-          <!-- Measurement type -->
-          <label class="form-control w-full max-w-xs">
-            <div class="label py-1"><span class="label-text text-xs">Measurement</span></div>
-            <select class="select select-bordered select-sm" [(ngModel)]="form().measurement"
-              (ngModelChange)="onMeasurementChange($event)">
-              <option value="">— select —</option>
-              @for (m of measurements(); track m.id) {
-                <option [value]="m.id">{{ m.label }} ({{ m.unit }})</option>
               }
             </select>
           </label>
@@ -130,6 +115,7 @@ function defaultForm(): SensorForm {
               </select>
             </label>
 
+            <!-- Always show display name + unit so user can review/edit without guessing -->
             @if (creatingNewField()) {
               <div class="flex gap-2 flex-wrap pl-1 border-l-2 border-primary/30 ml-1">
                 <label class="form-control w-36">
@@ -144,16 +130,63 @@ function defaultForm(): SensorForm {
                   <div class="label py-1"><span class="label-text text-xs">Unit</span></div>
                   <input class="input input-bordered input-sm" [(ngModel)]="form().unit" placeholder="e.g. %" />
                 </label>
+                <label class="form-control justify-end">
+                  <div class="label py-1"><span class="label-text text-xs">Report in telemetry</span></div>
+                  <input type="checkbox" class="checkbox checkbox-sm"
+                    [checked]="form().reportInTelemetry"
+                    (change)="setReportInTelemetry($any($event.target).checked)" />
+                </label>
+              </div>
+            } @else if (fieldSelection() && fieldSelection() !== '__new__') {
+              <!-- Existing field selected — show its metadata as editable in case user wants to correct it -->
+              <div class="flex gap-2 flex-wrap pl-1 border-l-2 border-base-300 ml-1">
+                <label class="form-control w-48">
+                  <div class="label py-1"><span class="label-text text-xs">Display Name</span></div>
+                  <input class="input input-bordered input-sm" [(ngModel)]="form().displayName" placeholder="Display Name" />
+                </label>
+                <label class="form-control w-24">
+                  <div class="label py-1"><span class="label-text text-xs">Unit</span></div>
+                  <input class="input input-bordered input-sm" [(ngModel)]="form().unit" placeholder="e.g. %" />
+                </label>
               </div>
             }
           </div>
 
           <!-- GPIO pin (non-bus sensors) -->
           @if (selectedInterface() && !selectedInterface()!.bus_addressed) {
-            <label class="form-control w-32">
-              <div class="label py-1"><span class="label-text text-xs">GPIO Pin Index</span></div>
-              <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().pinIndex" min="0" max="19" />
-            </label>
+            <div class="form-control">
+              <div class="label py-1"><span class="label-text text-xs">GPIO Pin</span></div>
+
+              @if (pinMap().length > 0) {
+                <!-- Board-picker mode: badge + button -->
+                <div class="flex items-center gap-3 flex-wrap">
+                  @if (pinExplicitlySelected()) {
+                    <div class="flex items-center gap-2 bg-primary/10 border border-primary/30 rounded-lg px-3 py-1.5">
+                      <span class="w-2 h-2 rounded-full bg-primary"></span>
+                      <span class="text-sm font-mono font-semibold">Pin {{ form().pinIndex }}</span>
+                      <span class="text-xs text-base-content/50">— {{ pinCapName(form().pinIndex) }}</span>
+                      <span class="text-success text-xs">✓</span>
+                    </div>
+                    <button type="button" class="btn btn-xs btn-ghost"
+                      (click)="openPinPicker()">Change</button>
+                  } @else if (ctx.isPinPickerActive()) {
+                    <div class="flex items-center gap-2 text-blue-400 text-sm animate-pulse">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                      Click a highlighted pin on the board above
+                    </div>
+                  } @else {
+                    <button type="button" class="btn btn-sm btn-outline"
+                      (click)="openPinPicker()">Select Pin</button>
+                  }
+                </div>
+              } @else {
+                <!-- Fallback: plain number input for non-AirConfig devices -->
+                <input type="number" class="input input-bordered input-sm w-24"
+                  [(ngModel)]="form().pinIndex" min="0" max="19" />
+              }
+            </div>
           }
 
           <!-- Pull mode (digital input only) -->
@@ -282,38 +315,26 @@ function defaultForm(): SensorForm {
         {{ saving() ? 'Sending…' : 'Configure & Push to Device' }}
       </button>
 
-      <!-- Post-save rule suggestions -->
-      @if (suggestions().length > 0) {
-        <div class="card bg-base-200 mt-4">
-          <div class="card-body py-4">
-            <h3 class="card-title text-sm">Suggested Rules</h3>
-            <p class="text-xs text-base-content/60">Based on this sensor, you may want to add these rules:</p>
-            <div class="space-y-2 mt-2">
-              @for (s of suggestions(); track s.label) {
-                <div class="flex items-center justify-between bg-base-100 rounded p-2">
-                  <div>
-                    <div class="text-sm font-medium">{{ s.label }}</div>
-                    <div class="text-xs text-base-content/50">{{ s.note }}</div>
-                  </div>
-                  <button class="btn btn-xs btn-outline btn-primary"
-                    (click)="addRule(s)">Add rule →</button>
-                </div>
-              }
-            </div>
-          </div>
-        </div>
-      }
-
     </div>
   `,
 })
-export class DeviceSensorConfigComponent implements OnInit {
+export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   eui = input.required<string>();
   fieldConfigs = input<DeviceField[]>([]);
+  /** pin_map from ConfigContextService — drives board picker. */
+  pinMap = input<number[]>([]);
+  /** Pins already used by other sensors and outputs. */
+  usedPins = input<Set<number>>(new Set());
+
+  /** Emitted after a successful save so the parent can reload and hide the wizard. */
+  saved = output<void>();
 
   private api = inject(ApiService);
   private sensorService = inject(SensorService);
-  private router = inject(Router);
+  protected ctx = inject(ConfigContextService);
+
+  /** True once the user has explicitly clicked a pin on the board. */
+  pinExplicitlySelected = signal(false);
 
   readonly presets = signal<SensorPresetInfo[]>([]);
   readonly interfaces = signal<SensorInterfaceInfo[]>([]);
@@ -324,7 +345,6 @@ export class DeviceSensorConfigComponent implements OnInit {
   saving = signal(false);
   statusMsg = signal('');
   statusOk = signal(true);
-  suggestions = signal<RuleSuggestion[]>([]);
   validationErrors = signal<AirConfigValidationError[]>([]);
   validationWarnings = signal<AirConfigValidationError[]>([]);
 
@@ -332,12 +352,25 @@ export class DeviceSensorConfigComponent implements OnInit {
   creatingNewField = signal(false);
   fieldSelection = signal<string>('');
 
-  // Track field index + slot assigned after save (for rule prefill)
-  private lastFieldIndex = signal(0);
-
   selectedInterface = computed(() =>
     this.interfaces().find(i => i.id === this.form().interfaceId) ?? null
   );
+
+  /** Maps the selected interface's pin_function code to a PinFunctionName for PinSelectorComponent. */
+  requiredPinCapability = computed<PinFunctionName>(() => {
+    const fn = this.selectedInterface()?.pin_function ?? 0;
+    return pinFunctionName(fn);
+  });
+
+  constructor() {
+    // React to board pin selections (only handle 'primary' target)
+    effect(() => {
+      const pick = this.ctx.lastPinPick();
+      if (!pick || pick.target !== 'primary') return;
+      this.form.update(f => ({ ...f, pinIndex: pick.pin }));
+      this.pinExplicitlySelected.set(true);
+    });
+  }
 
   ngOnInit(): void {
     this.api.getSensorCatalog().subscribe(catalog => {
@@ -346,6 +379,21 @@ export class DeviceSensorConfigComponent implements OnInit {
       this.presets.set(catalog.presets);
       this.fieldCounts.set(catalog.field_counts);
     });
+  }
+
+  ngOnDestroy(): void {
+    this.ctx.closePinPicker();
+  }
+
+  openPinPicker(): void {
+    const excluded = new Set(this.usedPins());
+    // Allow re-selecting the current pin
+    if (this.pinExplicitlySelected()) excluded.delete(this.form().pinIndex);
+    this.ctx.openPinPicker(this.requiredPinCapability(), 'primary', excluded);
+  }
+
+  pinCapName(pin: number): string {
+    return pinFunctionName(this.pinMap()[pin] ?? 0);
   }
 
   calibPreview = computed(() => {
@@ -374,17 +422,13 @@ export class DeviceSensorConfigComponent implements OnInit {
     this.fieldSelection.set(value);
     if (value === '__new__') {
       this.creatingNewField.set(true);
-      // Pre-fill from measurement if available
-      const meas = this.measurements().find(m => m.id === this.form().measurement);
       this.form.update(f => ({
         ...f,
-        fieldKey: f.measurement ? f.measurement + '_' + (this.fieldConfigs().length + 1) : '',
-        displayName: meas?.label ?? f.displayName,
-        unit: meas?.unit ?? f.unit,
+        fieldKey: f.interfaceId ? f.interfaceId + '_' + (this.fieldConfigs().length + 1) : '',
       }));
     } else if (value) {
       this.creatingNewField.set(false);
-      // Auto-fill display name and unit from the selected field
+      // Pre-fill display name and unit from the selected field so user can review/edit
       const field = this.fieldConfigs().find(fc => fc.field_key === value);
       if (field) {
         this.form.update(f => ({
@@ -396,22 +440,22 @@ export class DeviceSensorConfigComponent implements OnInit {
       }
     } else {
       this.creatingNewField.set(false);
-      this.form.update(f => ({ ...f, fieldKey: '', displayName: '' }));
+      this.form.update(f => ({ ...f, fieldKey: '', displayName: '', unit: '' }));
     }
   }
 
   // ─── Presets ─────────────────────────────────────────────
 
   applyPreset(p: SensorPresetInfo): void {
-    const meas = this.measurements().find(m => m.id === p.measurement);
+    // Look up unit from measurements catalog (internal only — not shown as a dropdown)
+    const unit = this.measurements().find(m => m.id === p.measurement)?.unit ?? '';
     this.form.set({
       ...defaultForm(),
       presetId: p.id,
       interfaceId: p.interface,
-      measurement: p.measurement as MeasurementType,
-      unit: meas?.unit ?? '',
+      unit,
       displayName: p.label,
-      fieldKey: '',
+      fieldKey: p.id + '_' + (this.fieldConfigs().length + 1),
       i2cAddr: p.i2c_addr ?? 0x76,
       pulsesPerUnit: p.pulses_per_unit ?? 1,
       calib: {
@@ -422,15 +466,8 @@ export class DeviceSensorConfigComponent implements OnInit {
         expectedValue: p.calib_min,
       },
     });
-    // Default to creating a new field for presets
     this.fieldSelection.set('__new__');
     this.creatingNewField.set(true);
-    this.form.update(f => ({
-      ...f,
-      fieldKey: p.measurement + '_' + (this.fieldConfigs().length + 1),
-      displayName: p.label,
-      unit: meas?.unit ?? '',
-    }));
   }
 
   clearPreset(): void {
@@ -441,15 +478,16 @@ export class DeviceSensorConfigComponent implements OnInit {
 
   // ─── Form handlers ──────────────────────────────────────
 
-  onInterfaceChange(id: string): void {
-    this.form.update(f => ({ ...f, interfaceId: id }));
-    this.validationErrors.set([]);
-    this.validationWarnings.set([]);
+  onPinSelected(pin: number): void {
+    this.form.update(f => ({ ...f, pinIndex: pin }));
   }
 
-  onMeasurementChange(id: string): void {
-    const meas = this.measurements().find(m => m.id === id);
-    this.form.update(f => ({ ...f, measurement: id as MeasurementType, unit: meas?.unit ?? f.unit }));
+  onInterfaceChange(id: string): void {
+    this.form.update(f => ({ ...f, interfaceId: id }));
+    this.pinExplicitlySelected.set(false);
+    this.ctx.closePinPicker();
+    this.validationErrors.set([]);
+    this.validationWarnings.set([]);
   }
 
   setDigitalPullMode(v: unknown): void {
@@ -464,6 +502,10 @@ export class DeviceSensorConfigComponent implements OnInit {
     if (!isNaN(parsed)) {
       this.form.update(f => ({ ...f, i2cAddr: parsed }));
     }
+  }
+
+  setReportInTelemetry(value: boolean): void {
+    this.form.update(f => ({ ...f, reportInTelemetry: value }));
   }
 
   setCalibMode(mode: 'datasheet' | 'trim'): void {
@@ -487,9 +529,9 @@ export class DeviceSensorConfigComponent implements OnInit {
     return next;
   }
 
-  /** Compute the next unused sensor slot index. */
+  /** Compute the next unused sensor slot index. MAX_SENSOR_SLOTS = 8 (slots 0–7). */
   private nextSlot(): number {
-    return Math.min(this.fieldConfigs().length, 7);
+    return Math.min(this.fieldConfigs().length, MAX_SENSOR_SLOTS - 1);
   }
 
   /** Get field_idx for an existing field by key. */
@@ -541,7 +583,6 @@ export class DeviceSensorConfigComponent implements OnInit {
     const isNewField = this.creatingNewField();
     const fieldIndex = isNewField ? this.nextFieldIndex() : this.getExistingFieldIndex(f.fieldKey);
     const slot = this.nextSlot();
-    this.lastFieldIndex.set(fieldIndex);
 
     // Build push-sensor-slot body
     let param1Raw: number | undefined;
@@ -598,28 +639,32 @@ export class DeviceSensorConfigComponent implements OnInit {
             display_name: f.displayName.trim(),
             unit: f.unit,
             data_type: 'float',
-            category: f.measurement || 'custom',
+            category: f.interfaceId,
             field_idx: fieldIndex,
+            linked_type: 'input',
+            linked_key: f.interfaceId,
+            report_mode: f.reportInTelemetry ? 'reported' : 'disabled',
           }).subscribe({
             next: () => {
               this.saving.set(false);
-              this.statusOk.set(true);
-              this.statusMsg.set('Sensor slot configured and downlink queued. Device will apply after next uplink.');
-              this.loadSuggestions(f.measurement as MeasurementType);
+              this.form.set(defaultForm());
+              this.fieldSelection.set('');
+              this.creatingNewField.set(false);
+              this.saved.emit();
             },
             error: (err: { message?: string }) => {
               this.saving.set(false);
               this.statusOk.set(false);
               this.statusMsg.set('Downlink sent but field metadata failed: ' + (err?.message ?? 'unknown error'));
-              this.loadSuggestions(f.measurement as MeasurementType);
             },
           });
         } else {
-          // Existing field — no need to create, just report success
+          // Existing field — just report success
           this.saving.set(false);
-          this.statusOk.set(true);
-          this.statusMsg.set('Sensor slot configured and bound to field "' + f.fieldKey + '". Downlink queued.');
-          this.loadSuggestions(f.measurement as MeasurementType);
+          this.form.set(defaultForm());
+          this.fieldSelection.set('');
+          this.creatingNewField.set(false);
+          this.saved.emit();
         }
       },
       error: (err: { message?: string }) => {
@@ -630,24 +675,4 @@ export class DeviceSensorConfigComponent implements OnInit {
     });
   }
 
-  // ─── Rule suggestions ───────────────────────────────────
-
-  private loadSuggestions(meas: MeasurementType): void {
-    const s = SUGGESTED_RULES[meas];
-    this.suggestions.set(s ?? []);
-  }
-
-  addRule(s: RuleSuggestion): void {
-    const opMap: Record<string, string> = { '>': 'gt', '<': 'lt', '>=': 'gte', '<=': 'lte', '==': 'eq', '!=': 'neq' };
-    const prefill: Partial<DeviceRuleRecord> = {
-      field_idx: this.lastFieldIndex(),
-      operator: opMap[s.operator] ?? 'lt',
-      threshold: s.threshold,
-      enabled: true,
-    };
-    // Navigate to device detail automation tab with prefill data
-    this.router.navigate(['/device', this.eui()], {
-      queryParams: { tab: 'automation', prefill: JSON.stringify(prefill) },
-    });
-  }
 }

@@ -1,14 +1,16 @@
 {
   "type": "airconfig",
   "fields": [
-    { "key": "pd", "display_name": "Pulse Delta", "unit": "", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "d", "min_value": 0, "max_value": 65535, "sort_order": 0 },
-    { "key": "tv", "display_name": "Total Volume", "unit": "L", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "i", "min_value": 0, "max_value": 999999, "sort_order": 1 },
-    { "key": "bp", "display_name": "Battery", "unit": "%", "data_type": "number", "category": "system", "access": "r", "state_class": "m", "min_value": 0, "max_value": 100, "sort_order": 2 },
-    { "key": "tx", "display_name": "TX Interval", "unit": "s", "data_type": "number", "category": "system", "access": "w", "state_class": "m", "min_value": 0, "max_value": 3600, "sort_order": 3 }
+    { "key": "pd", "display_name": "Pulse Delta", "unit": "", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "d", "min_value": 0, "max_value": 65535, "report_mode": "reported", "sort_order": 0 },
+    { "key": "tv", "display_name": "Total Volume", "unit": "L", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "i", "min_value": 0, "max_value": 999999, "report_mode": "reported", "sort_order": 1 },
+    { "key": "bp", "display_name": "Battery", "unit": "%", "data_type": "number", "category": "system", "access": "r", "state_class": "m", "min_value": 0, "max_value": 100, "report_mode": "reported", "sort_order": 2 },
+    { "key": "tx", "display_name": "TX Interval", "unit": "s", "data_type": "number", "category": "system", "access": "w", "state_class": "m", "min_value": 0, "max_value": 3600, "report_mode": "reported", "sort_order": 3 },
+    { "key": "pump_output", "display_name": "Pump State", "data_type": "number", "category": "telemetry", "access": "r", "linked_type": "output", "linked_key": "pump", "report_mode": "on_change", "sort_order": 10 },
+    { "key": "valve_output", "display_name": "Valve State", "data_type": "number", "category": "telemetry", "access": "r", "linked_type": "output", "linked_key": "valve", "report_mode": "on_change", "sort_order": 11 }
   ],
   "controls": [
-    { "key": "pump", "display_name": "Water Pump", "states": ["off", "on"], "sort_order": 0 },
-    { "key": "valve", "display_name": "Valve", "states": ["closed", "open"], "sort_order": 1 }
+    { "key": "pump", "display_name": "Water Pump", "states": ["off", "on"], "control_type": "binary", "field_key": "pump_output", "pin_index": 8, "actuator_type": 0, "flags": 1, "pin2_index": 255, "pulse_x100ms": 0, "sort_order": 0 },
+    { "key": "valve", "display_name": "Valve", "states": ["closed", "open"], "control_type": "binary", "field_key": "valve_output", "pin_index": 9, "actuator_type": 0, "flags": 1, "pin2_index": 255, "pulse_x100ms": 0, "sort_order": 1 }
   ],
   "commands": [
     { "name": "reset", "fport": 10, "payload_type": "empty" },

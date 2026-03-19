@@ -130,7 +130,7 @@ func materializeSpecToDevice(app core.App, devEUI string, spec *DeviceSpec) erro
 			rec.Set("max_value", f.MaxValue)
 			rec.Set("linked_type", orDefault(f.LinkedType, "input"))
 			rec.Set("linked_key", f.LinkedKey)
-			rec.Set("report_mode", orDefault(f.ReportMode, "active"))
+			rec.Set("report_mode", orDefault(f.ReportMode, "reported"))
 			if err := app.Save(rec); err != nil {
 				log.Printf("[materialize] field %s for %s: %v", f.Key, devEUI, err)
 			}
@@ -185,7 +185,7 @@ func materializeSpecToDevice(app core.App, devEUI string, spec *DeviceSpec) erro
 				fr.Set("max_value", maxVal)
 				fr.Set("linked_type", "output")
 				fr.Set("linked_key", c.Key)
-				fr.Set("report_mode", "event")
+				fr.Set("report_mode", "on_change")
 				if err := app.Save(fr); err != nil {
 					log.Printf("[materialize] output field %s for %s: %v", fieldKey, devEUI, err)
 				}

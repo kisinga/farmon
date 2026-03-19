@@ -3,22 +3,21 @@ import { DatePipe, NgClass } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService, DeviceField, type WorkflowRecord, type StateChangeRecord, type WorkflowLogRecord, type BackendInfo } from '../../core/services/api.service';
 import { DeviceContextService } from '../../core/services/device-context.service';
-import { ControlsPanelComponent } from '../../shared/components/controls-panel/controls-panel.component';
+import { OutputOverridePanelComponent } from '../../shared/components/output-override-panel/output-override-panel.component';
 import { HistoryChartComponent } from '../../shared/components/history-chart/history-chart.component';
 import { CurrentValuesComponent } from '../../shared/components/current-values/current-values.component';
 import { ErrorBarComponent } from '../../shared/components/error-bar/error-bar.component';
-import { DeviceRulesSectionComponent } from '../../shared/components/device-rules-section/device-rules-section.component';
+import { AutomationsSummaryComponent } from '../../shared/components/automations-summary/automations-summary.component';
 import { DeviceCredentialsCardComponent } from '../../shared/components/device-credentials-card/device-credentials-card.component';
 import { CommandHistoryComponent } from '../../shared/components/command-history/command-history.component';
 import { DeviceFramesComponent } from '../../shared/components/device-frames/device-frames.component';
 import { ERROR_OBJECT_KEYS } from '../../core/constants/error-fields';
 import { getVisibleFieldsByVizType } from '../../core/utils/field-view-model';
-import type { DeviceRuleRecord } from '../../core/services/api.service';
 
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, NgClass, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, CommandHistoryComponent, DeviceFramesComponent],
+  imports: [RouterLink, DatePipe, NgClass, OutputOverridePanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, AutomationsSummaryComponent, DeviceCredentialsCardComponent, CommandHistoryComponent, DeviceFramesComponent],
   templateUrl: './device-detail.component.html',
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
@@ -29,10 +28,9 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   routeError = signal<string | null>(null);
   deleting = signal(false);
   relatedWorkflows = signal<WorkflowRecord[]>([]);
-  activeTab = signal<'overview' | 'history' | 'control' | 'automation'>('overview');
+  activeTab = signal<'overview' | 'history' | 'override' | 'automations'>('overview');
   stateChanges = signal<StateChangeRecord[]>([]);
   workflowEvents = signal<WorkflowLogRecord[]>([]);
-  prefillRuleForm = signal<Partial<DeviceRuleRecord> | null>(null);
   timeRange = signal<'1h' | '24h' | '7d'>('24h');
   rangeEnd = signal<string>(new Date().toISOString());
 
@@ -161,15 +159,13 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
 
     // Check for query params (from sensor config rule suggestions)
     const tabParam = this.route.snapshot.queryParamMap.get('tab');
-    if (tabParam === 'automation' || tabParam === 'control' || tabParam === 'history') {
-      this.activeTab.set(tabParam);
-    }
-    const prefillParam = this.route.snapshot.queryParamMap.get('prefill');
-    if (prefillParam) {
-      try {
-        this.prefillRuleForm.set(JSON.parse(prefillParam));
-        this.activeTab.set('automation');
-      } catch { /* ignore invalid JSON */ }
+    // Support both old ('control', 'automation') and new ('override', 'automations') tab names
+    if (tabParam === 'override' || tabParam === 'control') {
+      this.activeTab.set('override');
+    } else if (tabParam === 'automations' || tabParam === 'automation') {
+      this.activeTab.set('automations');
+    } else if (tabParam === 'history') {
+      this.activeTab.set('history');
     }
 
     this.api.getWorkflows(eui).subscribe({

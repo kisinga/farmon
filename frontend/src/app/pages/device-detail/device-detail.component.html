@@ -73,9 +73,9 @@
   <div class="tabs tabs-boxed bg-base-200/50 p-1 rounded-xl mb-6 overflow-x-auto flex-nowrap md:flex-wrap">
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'overview'" (click)="activeTab.set('overview')">Overview</a>
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'history'" (click)="activeTab.set('history')">History</a>
-    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'control'" (click)="activeTab.set('control')">Control</a>
-    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'automation'" (click)="activeTab.set('automation')">
-      Automation
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'override'" (click)="activeTab.set('override')">Override</a>
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'automations'" (click)="activeTab.set('automations')">
+      Automations
       @if (activityCount() > 0) {
         <span class="badge badge-xs badge-neutral ml-1">{{ activityCount() }}</span>
       }
@@ -147,8 +147,8 @@
       </div>
     }
 
-    <!-- ═══════════ Control ═══════════ -->
-    @case ('control') {
+    <!-- ═══════════ Override ═══════════ -->
+    @case ('override') {
       <div class="space-y-6">
         @if (transferStateLabel() !== null) {
           <div class="card-elevated">
@@ -177,7 +177,7 @@
         }
         <div class="card-elevated">
           <div class="card-body-spaced">
-            <app-controls-panel [eui]="deviceContext.eui()" />
+            <app-output-override-panel [eui]="deviceContext.eui()" />
           </div>
         </div>
         <div class="card-elevated">
@@ -188,18 +188,17 @@
       </div>
     }
 
-    <!-- ═══════════ Automation ═══════════ -->
-    @case ('automation') {
+    <!-- ═══════════ Automations ═══════════ -->
+    @case ('automations') {
       <div class="space-y-6">
         <div class="card-elevated">
           <div class="card-body-spaced">
-            <h2 class="section-title">Device rules</h2>
-            <p class="text-xs text-base-content/50 -mt-2 mb-2">Threshold-based rules running on the device for instant, offline-capable control.</p>
-            <app-device-rules-section
+            <app-automations-summary
               [eui]="deviceContext.eui()"
+              [rules]="deviceContext.rules()"
               [fields]="deviceContext.fieldConfigs()"
               [controls]="deviceContext.controls()"
-              [prefillForm]="prefillRuleForm()" />
+            />
           </div>
         </div>
 

@@ -1,21 +1,27 @@
 {
   "type": "airconfig",
   "fields": [
-    { "key": "level_pct", "display_name": "Tank Level", "unit": "%", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "m", "min_value": 0, "max_value": 100, "sort_order": 0 },
-    { "key": "flow_t1_rate", "display_name": "Flow T1 Rate", "unit": "L/interval", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "m", "min_value": 0, "max_value": 9999, "sort_order": 1 },
-    { "key": "flow_t1_total", "display_name": "Flow T1 Total", "unit": "L", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "i", "min_value": 0, "max_value": 999999, "sort_order": 2 },
-    { "key": "flow_t2_rate", "display_name": "Flow T2 Rate", "unit": "L/interval", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "m", "min_value": 0, "max_value": 9999, "sort_order": 3 },
-    { "key": "flow_t2_total", "display_name": "Flow T2 Total", "unit": "L", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "i", "min_value": 0, "max_value": 999999, "sort_order": 4 },
-    { "key": "battery", "display_name": "Battery", "unit": "%", "data_type": "number", "category": "system", "access": "r", "state_class": "m", "min_value": 0, "max_value": 100, "sort_order": 5 },
-    { "key": "transfer_state", "display_name": "Transfer State", "unit": "", "data_type": "number", "category": "system", "access": "r", "state_class": "m", "min_value": 0, "max_value": 2, "sort_order": 6 }
+    { "key": "level_pct", "display_name": "Tank Level", "unit": "%", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "m", "min_value": 0, "max_value": 100, "report_mode": "reported", "sort_order": 0 },
+    { "key": "flow_t1_rate", "display_name": "Flow T1 Rate", "unit": "L/interval", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "m", "min_value": 0, "max_value": 9999, "report_mode": "reported", "sort_order": 1 },
+    { "key": "flow_t1_total", "display_name": "Flow T1 Total", "unit": "L", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "i", "min_value": 0, "max_value": 999999, "report_mode": "reported", "sort_order": 2 },
+    { "key": "flow_t2_rate", "display_name": "Flow T2 Rate", "unit": "L/interval", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "m", "min_value": 0, "max_value": 9999, "report_mode": "reported", "sort_order": 3 },
+    { "key": "flow_t2_total", "display_name": "Flow T2 Total", "unit": "L", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "i", "min_value": 0, "max_value": 999999, "report_mode": "reported", "sort_order": 4 },
+    { "key": "battery", "display_name": "Battery", "unit": "%", "data_type": "number", "category": "system", "access": "r", "state_class": "m", "min_value": 0, "max_value": 100, "report_mode": "reported", "sort_order": 5 },
+    { "key": "transfer_state", "display_name": "Transfer State", "unit": "", "data_type": "number", "category": "system", "access": "r", "state_class": "m", "min_value": 0, "max_value": 2, "report_mode": "reported", "sort_order": 6 },
+    { "key": "pump_output", "display_name": "Pump State", "data_type": "number", "category": "telemetry", "access": "r", "linked_type": "output", "linked_key": "pump", "report_mode": "on_change", "sort_order": 10 },
+    { "key": "valve_t1_output", "display_name": "Tank 1 Valve State", "data_type": "number", "category": "telemetry", "access": "r", "linked_type": "output", "linked_key": "valve_t1", "report_mode": "on_change", "sort_order": 11 },
+    { "key": "valve_t2_output", "display_name": "Tank 2 Valve State", "data_type": "number", "category": "telemetry", "access": "r", "linked_type": "output", "linked_key": "valve_t2", "report_mode": "on_change", "sort_order": 12 },
+    { "key": "flow_valve_t1_output", "display_name": "Flow Valve T1 State", "data_type": "number", "category": "telemetry", "access": "r", "linked_type": "output", "linked_key": "flow_valve_t1", "report_mode": "on_change", "sort_order": 13 },
+    { "key": "flow_valve_t2_output", "display_name": "Flow Valve T2 State", "data_type": "number", "category": "telemetry", "access": "r", "linked_type": "output", "linked_key": "flow_valve_t2", "report_mode": "on_change", "sort_order": 14 },
+    { "key": "solenoid_output", "display_name": "Solenoid State", "data_type": "number", "category": "telemetry", "access": "r", "linked_type": "output", "linked_key": "solenoid", "report_mode": "on_change", "sort_order": 15 }
   ],
   "controls": [
-    { "key": "pump", "display_name": "Transfer Pump", "states": ["off", "on"], "sort_order": 0 },
-    { "key": "valve_t1", "display_name": "Tank 1 Valve", "states": ["closed", "open"], "sort_order": 1 },
-    { "key": "valve_t2", "display_name": "Tank 2 Valve", "states": ["closed", "open"], "sort_order": 2 },
-    { "key": "flow_valve_t1", "display_name": "Flow Valve T1", "states": ["closed", "open"], "sort_order": 3 },
-    { "key": "flow_valve_t2", "display_name": "Flow Valve T2", "states": ["closed", "open"], "sort_order": 4 },
-    { "key": "solenoid", "display_name": "Solenoid SV", "states": ["off", "pulse"], "sort_order": 5 }
+    { "key": "pump", "display_name": "Transfer Pump", "states": ["off", "on"], "control_type": "binary", "field_key": "pump_output", "pin_index": 6, "actuator_type": 0, "flags": 1, "pin2_index": 255, "pulse_x100ms": 0, "sort_order": 0 },
+    { "key": "valve_t1", "display_name": "Tank 1 Valve", "states": ["closed", "open"], "control_type": "binary", "field_key": "valve_t1_output", "pin_index": 7, "actuator_type": 1, "flags": 5, "pin2_index": 8, "pulse_x100ms": 50, "sort_order": 1 },
+    { "key": "valve_t2", "display_name": "Tank 2 Valve", "states": ["closed", "open"], "control_type": "binary", "field_key": "valve_t2_output", "pin_index": 9, "actuator_type": 1, "flags": 5, "pin2_index": 10, "pulse_x100ms": 50, "sort_order": 2 },
+    { "key": "flow_valve_t1", "display_name": "Flow Valve T1", "states": ["closed", "open"], "control_type": "binary", "field_key": "flow_valve_t1_output", "pin_index": 11, "actuator_type": 0, "flags": 1, "pin2_index": 255, "pulse_x100ms": 0, "sort_order": 3 },
+    { "key": "flow_valve_t2", "display_name": "Flow Valve T2", "states": ["closed", "open"], "control_type": "binary", "field_key": "flow_valve_t2_output", "pin_index": 12, "actuator_type": 0, "flags": 1, "pin2_index": 255, "pulse_x100ms": 0, "sort_order": 4 },
+    { "key": "solenoid", "display_name": "Solenoid SV", "states": ["off", "pulse"], "control_type": "binary", "field_key": "solenoid_output", "pin_index": 13, "actuator_type": 2, "flags": 9, "pin2_index": 255, "pulse_x100ms": 20, "sort_order": 5 }
   ],
   "commands": [
     { "name": "reset", "fport": 10, "payload_type": "empty" },

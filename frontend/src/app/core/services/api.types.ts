@@ -54,11 +54,19 @@ export interface DeviceVisualization {
   sort_order: number;
 }
 
+/** Typed config shape for device_visualizations records. */
+export interface VariableVizConfig {
+  variable_key: string;
+  chart_type: 'time_series' | 'gauge' | 'stat';
+  label?: string;
+  sort_order: number;
+}
+
 export interface DeviceControl {
   id: string;
   device_eui: string;
   control_key: string;
-  current_state: string;
+  current_state?: string;   // kept for backward compat; prefer telemetry via field_key
   mode?: string;
   manual_until?: string;
   last_change_at?: string;
@@ -66,6 +74,19 @@ export interface DeviceControl {
   display_name?: string;
   states_json?: string[];
   control_idx?: number;
+  // Unified field model additions
+  control_type?: 'binary' | 'multistate' | 'analog';
+  field_key?: string;        // linked field key → read live value from telemetry
+  pin_index?: number;
+  actuator_type?: number;    // 0=Relay 1=MotorizedValve 2=Solenoid 3=PWM 4=Servo 5=DAC 6=I2CPWM
+  flags?: number;
+  pin2_index?: number;       // motorized valve second pin
+  pulse_x100ms?: number;
+  min_value?: number;        // analog range
+  max_value?: number;
+  bus_index?: number;        // I2C PWM
+  bus_address?: number;
+  bus_channel?: number;
 }
 
 export interface DeviceField {
@@ -82,7 +103,18 @@ export interface DeviceField {
   state_class?: string;
   access?: string;
   field_idx?: number;
+  // Unified field model additions
+  linked_type?: 'input' | 'output' | 'compute';
+  linked_key?: string;       // control_key or sensor-slot key that owns this field
+  report_mode?: 'reported' | 'on_change' | 'disabled';
+  expression?: string;       // compute fields only
 }
+
+/**
+ * Alias for DeviceField. Use DeviceVariable in new code to match firmware terminology.
+ * Every field is a variable; each variable maps to exactly one entity (input/output/compute).
+ */
+export type DeviceVariable = DeviceField;
 
 export interface HistoryPoint {
   ts: string;
@@ -164,6 +196,10 @@ export interface SpecField {
   min_value?: number;
   max_value?: number;
   sort_order: number;
+  // Unified field model additions
+  linked_type?: string;
+  linked_key?: string;
+  report_mode?: string;
 }
 
 export interface SpecControl {
@@ -171,6 +207,19 @@ export interface SpecControl {
   display_name: string;
   states: string[];
   sort_order: number;
+  // Unified field model additions
+  control_type?: string;
+  field_key?: string;
+  pin_index?: number;
+  actuator_type?: number;
+  flags?: number;
+  pin2_index?: number;
+  pulse_x100ms?: number;
+  min_value?: number;
+  max_value?: number;
+  bus_index?: number;
+  bus_address?: number;
+  bus_channel?: number;
 }
 
 export interface SpecCommand {
@@ -187,6 +236,15 @@ export interface SpecDecodeRule {
   config: Record<string, unknown>;
 }
 
+/** A device-level decode rule record (stored in device_decode_rules PocketBase collection). */
+export interface DeviceDecodeRule {
+  id: string;
+  device_eui: string;
+  fport: number;
+  format: 'text_kv' | 'binary_indexed' | 'binary_indexed_float32' | 'binary_state_change' | 'binary_frames';
+  config: Record<string, unknown>;
+}
+
 export interface SpecVisualization {
   name: string;
   viz_type: 'time_series' | 'gauge' | 'stat';
@@ -194,9 +252,19 @@ export interface SpecVisualization {
   sort_order: number;
 }
 
+/** A single sensor slot in an AirConfig spec (pushed via fPort 35). */
+export interface AirConfigSensor {
+  type: number;         // sensor_type from catalog
+  pin_index: number;    // GPIO/ADC/I2C pin; 255 = bus-addressed (no physical pin)
+  field_index: number;  // field_idx of the linked variable
+  flags: number;
+  param1?: number;      // calib_offset_raw or pulses_per_unit depending on type
+  param2?: number;      // calib_span_raw
+}
+
 export interface SpecAirConfig {
   pin_map: number[];
-  sensors: unknown[];
+  sensors: AirConfigSensor[];
   controls: unknown[];
   lorawan: Record<string, unknown>;
   transfer?: Record<string, unknown>;
@@ -415,6 +483,51 @@ export interface AirConfigValidationError {
 export interface AirConfigValidationResult {
   errors: AirConfigValidationError[];
   warnings: AirConfigValidationError[];
+}
+
+// ─── Pin capabilities ────────────────────────────────────────────────────────
+
+export interface PinInfo {
+  pin: number;
+  functions: number[];
+  label: string;
+}
+
+export interface PinCapabilitiesResponse {
+  mcu: string;
+  pins: PinInfo[];
+}
+
+// ─── Actuator types ──────────────────────────────────────────────────────────
+
+export const ACTUATOR_TYPES = [
+  { id: 0, label: 'Relay' },           // binary, single pin
+  { id: 1, label: 'Motorized Valve' }, // binary, dual pin + pulse
+  { id: 2, label: 'Solenoid' },        // binary, single pin + pulse
+  { id: 3, label: 'PWM' },             // analog
+  { id: 4, label: 'Servo' },           // analog
+  { id: 5, label: 'DAC' },             // analog
+  { id: 6, label: 'I2C PWM' },         // analog, bus-addressed
+] as const;
+
+export type ActuatorTypeId = typeof ACTUATOR_TYPES[number]['id'];
+
+/** Returns true for analog actuator types (PWM, Servo, DAC, I2C PWM). */
+export function isAnalogActuator(type: number): boolean { return [3, 4, 5, 6].includes(type); }
+/** Returns true for dual-pin actuators (Motorized Valve). */
+export function isDualPinActuator(type: number): boolean { return type === 1; }
+/** Returns true for bus-addressed actuators (I2C PWM). */
+export function isBusActuator(type: number): boolean { return type === 6; }
+/** Returns true for actuators that use a pulse parameter (Solenoid, Motorized Valve). */
+export function hasPulseParam(type: number): boolean { return [1, 2].includes(type); }
+
+// ─── Shared validation ───────────────────────────────────────────────────────
+
+/** General-purpose validation error, used across forms and firmware constraint checks. */
+export interface ValidationError {
+  field?: string;
+  message: string;
+  severity: 'error' | 'warning';
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────

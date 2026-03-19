@@ -13,7 +13,7 @@ export function getVisibleFieldsByVizType(
   for (const f of visible) {
     const isNumeric = f.data_type === 'num' || f.data_type === 'number';
     if (opts.gauge !== false && isNumeric) gauge.push(f);
-    if (opts.chart !== false && isNumeric && f.category !== 'state') chart.push(f);
+    if (opts.chart !== false && isNumeric && f.category !== 'state' && f.report_mode !== 'disabled') chart.push(f);
     if (opts.badge !== false) badge.push(f);
   }
   return { gauge, chart, badge };

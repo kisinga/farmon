@@ -6,9 +6,12 @@ import {
   BackendInfo,
   Device,
   DeviceControl,
+  DeviceDecodeRule,
   DeviceField,
   DeviceSpec,
+  DeviceVisualization,
   FirmwareCommand,
+  PinCapabilitiesResponse,
   SensorCatalog,
   HistoryResponse,
   TelemetryRecord,
@@ -111,8 +114,16 @@ export class DeviceService {
     );
   }
 
-  setControl(eui: string, control: string, state: string, duration?: number): Observable<{ ok: boolean; error?: string }> {
-    return this.http.post<{ ok: boolean; error?: string }>(`${API}/setControl`, { eui, control, state, duration });
+  setControl(eui: string, control: string, state: string, duration?: number, value?: number): Observable<{ ok: boolean; error?: string }> {
+    return this.http.post<{ ok: boolean; error?: string }>(`${API}/setControl`, { eui, control, state, duration, value });
+  }
+
+  getPinCapabilities(eui: string): Observable<PinCapabilitiesResponse> {
+    return this.http.get<PinCapabilitiesResponse>(`${API}/pin-capabilities?eui=${eui}`);
+  }
+
+  probeField(eui: string, fieldKey: string): Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(`${API}/devices/${eui}/probe-field`, { field_key: fieldKey });
   }
 
   sendCommand(eui: string, command: string, value?: number): Observable<{ ok: boolean; error?: string }> {
@@ -184,5 +195,63 @@ export class DeviceService {
 
   patchBackendInfo(body: BackendInfo): Observable<BackendInfo> {
     return this.http.patch<BackendInfo>(`${API}/backend-info`, body);
+  }
+
+  // ─── Controls CRUD ────────────────────────────────────────────────────────
+
+  createDeviceControl(data: Partial<DeviceControl>): Observable<DeviceControl> {
+    return from(this.pb.collection<DeviceControl>('device_controls').create(data));
+  }
+
+  updateDeviceControl(id: string, data: Partial<DeviceControl>): Observable<DeviceControl> {
+    return from(this.pb.collection<DeviceControl>('device_controls').update(id, data));
+  }
+
+  deleteDeviceControl(id: string): Observable<boolean> {
+    return from(this.pb.collection('device_controls').delete(id));
+  }
+
+  // ─── Fields CRUD ──────────────────────────────────────────────────────────
+
+  deleteDeviceField(id: string): Observable<boolean> {
+    return from(this.pb.collection('device_fields').delete(id));
+  }
+
+  // ─── Decode Rules ─────────────────────────────────────────────────────────
+
+  getDeviceDecodeRules(eui: string): Observable<DeviceDecodeRule[]> {
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb.collection<DeviceDecodeRule>('device_decode_rules').getList(1, 50, {
+        filter,
+        sort: 'fport',
+        requestKey: `decode-rules-${eui}`,
+      })
+    ).pipe(map(res => res.items));
+  }
+
+  createDeviceDecodeRule(data: Partial<DeviceDecodeRule>): Observable<DeviceDecodeRule> {
+    return from(this.pb.collection<DeviceDecodeRule>('device_decode_rules').create(data));
+  }
+
+  updateDeviceDecodeRule(id: string, data: Partial<DeviceDecodeRule>): Observable<DeviceDecodeRule> {
+    return from(this.pb.collection<DeviceDecodeRule>('device_decode_rules').update(id, data));
+  }
+
+  deleteDeviceDecodeRule(id: string): Observable<boolean> {
+    return from(this.pb.collection('device_decode_rules').delete(id));
+  }
+
+  // ─── Visualizations ───────────────────────────────────────────────────────
+
+  getDeviceVisualizations(eui: string): Observable<DeviceVisualization[]> {
+    const filter = this.pb.filter('device_eui = {:eui}', { eui });
+    return from(
+      this.pb.collection<DeviceVisualization>('device_visualizations').getList(1, 100, {
+        filter,
+        sort: 'sort_order',
+        requestKey: `viz-${eui}`,
+      })
+    ).pipe(map(res => res.items));
   }
 }

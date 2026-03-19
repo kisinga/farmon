@@ -4,42 +4,55 @@ import { ApiService, DeviceField, DeviceControl, FirmwareCommand } from '../../.
 import { DeviceContextService } from '../../../core/services/device-context.service';
 import { ControlRowComponent } from '../control-row/control-row.component';
 
+/**
+ * OutputOverridePanelComponent — Override tab on the monitoring page.
+ *
+ * Replaces ControlsPanelComponent. Fixes the anti-pattern of calling
+ * `controlCurrentValue(ctrl)` as a method in the template, which triggers
+ * on every change detection cycle. Now uses a computed map keyed by control_key.
+ */
 @Component({
-  selector: 'app-controls-panel',
+  selector: 'app-output-override-panel',
   standalone: true,
   imports: [ControlRowComponent, FormsModule],
   template: `
     <div class="space-y-6">
-      <!-- Controls -->
+
+      <!-- Output Override -->
       <div class="space-y-4">
-        <h2 class="section-title">Controls</h2>
-        <p class="text-xs text-base-content/50 -mt-2">Stateful outputs that can be toggled via commands, rules, or workflows.</p>
+        <h2 class="section-title">Output Override</h2>
+        <p class="text-xs text-base-content/50 -mt-2">
+          Manually override output states. Overrides expire when the next automation rule fires.
+        </p>
         @if (message()) {
           <div class="alert text-sm rounded-xl" [class.alert-error]="isError()" [class.alert-success]="!isError()">
             <span>{{ message() }}</span>
           </div>
         }
         <div class="space-y-3">
-        @for (ctrl of controls(); track ctrl.id) {
-          <app-control-row
-            [controlKey]="ctrl.control_key"
-            [currentState]="ctrl.current_state ?? 'off'"
-            [displayName]="ctrl.display_name || ctrl.control_key"
-            [stateNames]="ctrl.states_json || []"
-            [showClear]="true"
-            [withDuration]="true"
-            [controlType]="ctrl.control_type ?? 'binary'"
-            [currentValue]="controlCurrentValue(ctrl)"
-            [minValue]="ctrl.min_value ?? 0"
-            [maxValue]="ctrl.max_value ?? 0"
-            (setState)="onSetState(ctrl.control_key, $event)"
-            (setValue)="onSetValue(ctrl.control_key, $event)"
-            (clearOverride)="onClearOverride(ctrl.control_key)"
-          />
-        }
-        @if (controls().length === 0 && !loading()) {
-          <p class="text-base-content/60 text-sm">No controls defined. They may appear after device registration or state updates.</p>
-        }
+          @for (ctrl of controls(); track ctrl.id) {
+            <app-control-row
+              [controlKey]="ctrl.control_key"
+              [currentState]="ctrl.current_state ?? 'off'"
+              [displayName]="ctrl.display_name || ctrl.control_key"
+              [stateNames]="ctrl.states_json || []"
+              [showClear]="true"
+              [withDuration]="true"
+              [controlType]="ctrl.control_type ?? 'binary'"
+              [currentValue]="currentValueMap()[ctrl.control_key] ?? null"
+              [minValue]="ctrl.min_value ?? 0"
+              [maxValue]="ctrl.max_value ?? 0"
+              (setState)="onSetState(ctrl.control_key, $event)"
+              (setValue)="onSetValue(ctrl.control_key, $event)"
+              (clearOverride)="onClearOverride(ctrl.control_key)"
+            />
+          }
+          @if (controls().length === 0 && !loading()) {
+            <p class="text-base-content/60 text-sm">
+              No outputs defined. Configure outputs on the
+              <a [href]="'/device/' + eui() + '/config?tab=outputs'" class="link link-primary">Config page</a>.
+            </p>
+          }
         </div>
       </div>
 
@@ -47,7 +60,7 @@ import { ControlRowComponent } from '../control-row/control-row.component';
       @if (writableFields().length > 0) {
         <div class="space-y-4">
           <h2 class="section-title">Settings</h2>
-          <p class="text-xs text-base-content/50 -mt-2">Writable fields that can be updated via downlink commands.</p>
+          <p class="text-xs text-base-content/50 -mt-2">Writable fields updatable via downlink commands.</p>
           @if (settingsMessage()) {
             <div class="alert text-sm rounded-xl" [class.alert-error]="settingsIsError()" [class.alert-success]="!settingsIsError()">
               <span>{{ settingsMessage() }}</span>
@@ -58,29 +71,20 @@ import { ControlRowComponent } from '../control-row/control-row.component';
               <div class="flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/30 p-4">
                 <div class="flex items-center gap-2 min-w-0">
                   <span class="font-semibold">{{ f.display_name || f.field_key }}</span>
-                  @if (f.unit) {
-                    <span class="badge badge-ghost badge-sm">{{ f.unit }}</span>
-                  }
-                  @if (currentValue(f.field_key) !== null) {
-                    <span class="text-sm text-base-content/60">Current: {{ currentValue(f.field_key) }}</span>
+                  @if (f.unit) { <span class="badge badge-ghost badge-sm">{{ f.unit }}</span> }
+                  @if (telemetryValue(f.field_key) !== null) {
+                    <span class="text-sm text-base-content/60">Current: {{ telemetryValue(f.field_key) }}</span>
                   }
                 </div>
                 <div class="flex items-center gap-2">
-                  <input
-                    type="number"
-                    class="input input-bordered input-sm w-28"
-                    [min]="f.min_value ?? 0"
-                    [max]="f.max_value ?? 999999"
+                  <input type="number" class="input input-bordered input-sm w-28"
+                    [min]="f.min_value ?? 0" [max]="f.max_value ?? 999999"
                     [placeholder]="f.display_name || f.field_key"
                     [value]="getFieldInput(f.field_key)"
-                    (input)="setFieldInput(f.field_key, $any($event.target).value)"
-                  />
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-primary"
+                    (input)="setFieldInput(f.field_key, $any($event.target).value)" />
+                  <button type="button" class="btn btn-sm btn-primary"
                     [disabled]="sendingSetting()"
-                    (click)="sendFieldValue(f)"
-                  >Set</button>
+                    (click)="sendFieldValue(f)">Set</button>
                 </div>
               </div>
             }
@@ -100,12 +104,10 @@ import { ControlRowComponent } from '../control-row/control-row.component';
           <div class="flex flex-wrap gap-2">
             @for (cmd of firmwareCommands(); track cmd.command_key) {
               <div class="flex items-center gap-1">
-                <button
-                  class="btn btn-sm btn-outline"
+                <button class="btn btn-sm btn-outline"
                   [title]="cmd.description || cmd.command_key"
                   [disabled]="sendingCmd() === cmd.command_key"
-                  (click)="cmd.payload_type === 'uint32' ? null : sendCommand(cmd.command_key)"
-                >
+                  (click)="cmd.payload_type === 'uint32' ? null : sendCommand(cmd.command_key)">
                   @if (sendingCmd() === cmd.command_key) {
                     <span class="loading loading-spinner loading-xs"></span>
                   }
@@ -116,19 +118,18 @@ import { ControlRowComponent } from '../control-row/control-row.component';
                     [(ngModel)]="cmdValues[cmd.command_key]" placeholder="value" />
                   <button class="btn btn-sm btn-outline"
                     [disabled]="sendingCmd() === cmd.command_key"
-                    (click)="sendCommand(cmd.command_key, cmdValues[cmd.command_key])">
-                    Send
-                  </button>
+                    (click)="sendCommand(cmd.command_key, cmdValues[cmd.command_key])">Send</button>
                 }
               </div>
             }
           </div>
         </div>
       }
+
     </div>
   `,
 })
-export class ControlsPanelComponent implements OnInit {
+export class OutputOverridePanelComponent implements OnInit {
   private api = inject(ApiService);
   private deviceContext = inject(DeviceContextService);
 
@@ -140,17 +141,12 @@ export class ControlsPanelComponent implements OnInit {
   sendingCmd = signal<string | null>(null);
   firmwareCommands = signal<FirmwareCommand[]>([]);
   cmdValues: Record<string, number> = {};
-
-  // Settings (writable fields)
   settingsMessage = signal<string | null>(null);
   settingsIsError = signal(false);
   sendingSetting = signal(false);
   private fieldInputs = signal<Record<string, string>>({});
 
-  /** Command name → writable field key mapping (convention-based). */
-  private static readonly COMMAND_FIELD_MAP: Record<string, string> = {
-    interval: 'tx',
-  };
+  private static readonly COMMAND_FIELD_MAP: Record<string, string> = { interval: 'tx' };
 
   controls = this.deviceContext.controls;
   loading = this.deviceContext.loading;
@@ -159,6 +155,24 @@ export class ControlsPanelComponent implements OnInit {
     this.deviceContext.fieldConfigs().filter((f: DeviceField) => f.access === 'w')
   );
 
+  /**
+   * Computed map of control_key → current telemetry value.
+   * Replaces the `controlCurrentValue(ctrl)` method call in template (anti-pattern).
+   */
+  currentValueMap = computed<Record<string, number | string | null>>(() => {
+    const t = this.deviceContext.latestTelemetry();
+    const result: Record<string, number | string | null> = {};
+    for (const ctrl of this.deviceContext.controls()) {
+      if (ctrl.field_key && t) {
+        const v = (t as Record<string, unknown>)[ctrl.field_key];
+        result[ctrl.control_key] = (typeof v === 'number' || typeof v === 'string') ? v : (ctrl.current_state ?? null);
+      } else {
+        result[ctrl.control_key] = ctrl.current_state ?? null;
+      }
+    }
+    return result;
+  });
+
   ngOnInit(): void {
     this.api.getFirmwareCommands().subscribe({
       next: (list) => this.firmwareCommands.set(list),
@@ -166,26 +180,20 @@ export class ControlsPanelComponent implements OnInit {
     });
   }
 
-  // ─── Settings (writable fields) ─────────────────────────
-
-  currentValue(fieldKey: string): number | null {
-    const data = this.deviceContext.latestTelemetry();
-    if (!data) return null;
-    const v = data[fieldKey];
+  telemetryValue(fieldKey: string): number | null {
+    const t = this.deviceContext.latestTelemetry();
+    if (!t) return null;
+    const v = (t as Record<string, unknown>)[fieldKey];
     return typeof v === 'number' ? v : null;
   }
 
-  getFieldInput(fieldKey: string): string {
-    return this.fieldInputs()[fieldKey] ?? '';
-  }
-
+  getFieldInput(fieldKey: string): string { return this.fieldInputs()[fieldKey] ?? ''; }
   setFieldInput(fieldKey: string, value: string): void {
     this.fieldInputs.update(m => ({ ...m, [fieldKey]: value }));
   }
 
-  /** Find the command name that controls a writable field. */
   private commandForField(fieldKey: string): string | null {
-    for (const [cmd, fk] of Object.entries(ControlsPanelComponent.COMMAND_FIELD_MAP)) {
+    for (const [cmd, fk] of Object.entries(OutputOverridePanelComponent.COMMAND_FIELD_MAP)) {
       if (fk === fieldKey) return cmd;
     }
     return null;
@@ -195,8 +203,7 @@ export class ControlsPanelComponent implements OnInit {
     const eui = this.eui();
     const command = this.commandForField(field.field_key);
     if (!eui || !command) return;
-    const raw = this.fieldInputs()[field.field_key];
-    const value = Number(raw);
+    const value = Number(this.fieldInputs()[field.field_key]);
     if (isNaN(value) || value <= 0) {
       this.settingsIsError.set(true);
       this.settingsMessage.set('Enter a valid value');
@@ -205,20 +212,10 @@ export class ControlsPanelComponent implements OnInit {
     this.sendingSetting.set(true);
     this.settingsMessage.set(null);
     this.api.sendCommand(eui, command, value).subscribe({
-      next: () => {
-        this.sendingSetting.set(false);
-        this.settingsIsError.set(false);
-        this.settingsMessage.set(`${command} command queued (${value})`);
-      },
-      error: (err) => {
-        this.sendingSetting.set(false);
-        this.settingsIsError.set(true);
-        this.settingsMessage.set(err?.error?.error ?? err?.message ?? 'Failed to send command');
-      },
+      next: () => { this.sendingSetting.set(false); this.settingsIsError.set(false); this.settingsMessage.set(`${command} command queued (${value})`); },
+      error: (err) => { this.sendingSetting.set(false); this.settingsIsError.set(true); this.settingsMessage.set(err?.error?.error ?? err?.message ?? 'Failed'); },
     });
   }
-
-  // ─── Commands ───────────────────────────────────────────
 
   sendCommand(key: string, value?: number): void {
     const eui = this.eui();
@@ -229,20 +226,6 @@ export class ControlsPanelComponent implements OnInit {
       next: () => { this.sendingCmd.set(null); this.cmdIsError.set(false); this.cmdMessage.set('Command queued.'); },
       error: (err) => { this.sendingCmd.set(null); this.cmdIsError.set(true); this.cmdMessage.set(err?.error?.error ?? 'Failed'); },
     });
-  }
-
-  // ─── Controls ───────────────────────────────────────────
-
-  /** Read current value from telemetry via linked field_key; fall back to current_state. */
-  controlCurrentValue(ctrl: DeviceControl): number | string | null {
-    if (ctrl.field_key) {
-      const t = this.deviceContext.latestTelemetry();
-      if (t) {
-        const v = t[ctrl.field_key];
-        if (typeof v === 'number' || typeof v === 'string') return v;
-      }
-    }
-    return ctrl.current_state ?? null;
   }
 
   onSetValue(controlKey: string, ev: { value: number; duration?: number }): void {
@@ -260,14 +243,8 @@ export class ControlsPanelComponent implements OnInit {
     if (!eui) return;
     this.message.set(null);
     this.api.setControl(eui, controlKey, ev.state, ev.duration).subscribe({
-      next: () => {
-        this.isError.set(false);
-        this.message.set('Command queued.');
-      },
-      error: (err) => {
-        this.isError.set(true);
-        this.message.set(err?.error?.error ?? err?.message ?? 'Failed to set control');
-      },
+      next: () => { this.isError.set(false); this.message.set('Command queued.'); },
+      error: (err) => { this.isError.set(true); this.message.set(err?.error?.error ?? err?.message ?? 'Failed to set control'); },
     });
   }
 
@@ -278,14 +255,8 @@ export class ControlsPanelComponent implements OnInit {
     const ctrl = this.deviceContext.controlsMap().get(controlKey);
     const defaultState = ctrl?.states_json?.[0] ?? 'off';
     this.api.setControl(eui, controlKey, defaultState).subscribe({
-      next: () => {
-        this.isError.set(false);
-        this.message.set('Override cleared.');
-      },
-      error: (err) => {
-        this.isError.set(true);
-        this.message.set(err?.error?.error ?? err?.message ?? 'Failed to clear override');
-      },
+      next: () => { this.isError.set(false); this.message.set('Override cleared.'); },
+      error: (err) => { this.isError.set(true); this.message.set(err?.error?.error ?? err?.message ?? 'Failed'); },
     });
   }
 }

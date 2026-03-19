@@ -1,4 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { ApiService, Device, DeviceControl, DeviceField } from './api.service';
 
 @Injectable({ providedIn: 'root' })
@@ -16,7 +17,7 @@ export class DeviceManagerService {
   error = this._error.asReadonly();
   initialized = this._initialized.asReadonly();
 
-  // Computed map for efficient device lookup by EUI
+  /** O(1) device lookup by EUI. */
   devicesMap = computed(() => {
     const map = new Map<string, Device>();
     for (const device of this._devices()) {
@@ -25,18 +26,9 @@ export class DeviceManagerService {
     return map;
   });
 
-  // Cache for device fields and controls to avoid repeated API calls
-  private fieldCache = new Map<string, DeviceField[]>();
-  private controlCache = new Map<string, DeviceControl[]>();
-
-  /**
-   * Load all devices from the backend.
-   * This is typically called once during app initialization.
-   */
+  /** Load all devices. Typically called once during app initialization. */
   loadDevices(): void {
-    if (this._initialized()) {
-      return; // Already loaded
-    }
+    if (this._initialized()) return;
 
     this._loading.set(true);
     this._error.set(null);
@@ -54,82 +46,27 @@ export class DeviceManagerService {
     });
   }
 
-  /**
-   * Get device by EUI
-   */
+  /** Get a single device by EUI (from the in-memory list). */
   getDevice(eui: string): Device | undefined {
     return this.devicesMap().get(eui);
   }
 
   /**
-   * Get device fields, with caching
+   * Fetch device fields directly from the API (no caching).
+   * Prefer DeviceContextService.fieldConfigs or ConfigContextService.fields for
+   * components that already have a device loaded — this is for isolated lookups
+   * (e.g. workflow editor selecting fields for a trigger device).
    */
   getDeviceFields(eui: string): Promise<DeviceField[]> {
-    return new Promise((resolve, reject) => {
-      // Check cache first
-      const cached = this.fieldCache.get(eui);
-      if (cached) {
-        resolve(cached);
-        return;
-      }
-
-      // Load from API and cache
-      this.api.getDeviceFields(eui).subscribe({
-        next: (fields) => {
-          this.fieldCache.set(eui, fields);
-          resolve(fields);
-        },
-        error: reject,
-      });
-    });
+    return firstValueFrom(this.api.getDeviceFields(eui));
   }
 
   /**
-   * Get device controls, with caching
+   * Fetch device controls directly from the API (no caching).
+   * Prefer DeviceContextService.controls or ConfigContextService.controls for
+   * components that already have a device loaded.
    */
   getDeviceControls(eui: string): Promise<DeviceControl[]> {
-    return new Promise((resolve, reject) => {
-      // Check cache first
-      const cached = this.controlCache.get(eui);
-      if (cached) {
-        resolve(cached);
-        return;
-      }
-
-      // Load from API and cache
-      this.api.getDeviceControls(eui).subscribe({
-        next: (controls) => {
-          this.controlCache.set(eui, controls);
-          resolve(controls);
-        },
-        error: reject,
-      });
-    });
-  }
-
-  /**
-   * Get categorized device fields grouped by category
-   */
-  async getFieldsByCategory(eui: string): Promise<Map<string, DeviceField[]>> {
-    const fields = await this.getDeviceFields(eui);
-    const grouped = new Map<string, DeviceField[]>();
-
-    for (const field of fields) {
-      const category = field.category || 'other';
-      if (!grouped.has(category)) {
-        grouped.set(category, []);
-      }
-      grouped.get(category)!.push(field);
-    }
-
-    return grouped;
-  }
-
-  /**
-   * Clear all caches
-   */
-  clearCache(): void {
-    this.fieldCache.clear();
-    this.controlCache.clear();
+    return firstValueFrom(this.api.getDeviceControls(eui));
   }
 }

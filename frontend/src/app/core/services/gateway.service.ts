@@ -134,9 +134,14 @@ export class GatewayApiService {
         const op = existing
           ? this.pb.collection<WifiSettingsRecord>('wifi_settings').update(existing.id, body)
           : this.pb.collection<WifiSettingsRecord>('wifi_settings').create(body);
-        return from(Promise.resolve(op));
+        return from(op).pipe(
+          map((r) => ({
+            enabled: r.enabled !== false,
+            test_mode: !!r.test_mode,
+            saved: true,
+          } as WifiSettings))
+        );
       }),
-      switchMap(() => this.getWifiSettings())
     );
   }
 }
