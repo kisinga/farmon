@@ -1,10 +1,15 @@
 package main
 
 import (
+	"crypto/rand"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -155,6 +160,10 @@ func main() {
 		se.Router.GET("/api/farmon/workflow-log", listWorkflowLogHandler(app))
 		se.Router.GET("/api/farmon/device-workflow-events", deviceWorkflowEventsHandler(app))
 
+		// Bootstrap the frontend service user and expose its credentials via a local endpoint.
+		seedFrontendUser(app)
+		se.Router.GET("/api/farmon/ui-config", uiConfigHandler(app))
+
 		// SPA under /app/ so /api is never matched by static; SDK collection requests go to /api/collections/*.
 		se.Router.GET("/", func(e *core.RequestEvent) error {
 			return e.Redirect(http.StatusFound, "/app/")
@@ -167,4 +176,77 @@ func main() {
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+const uiFrontendEmail = "ui@farmon.local"
+
+// seedFrontendUser ensures a PocketBase user exists for frontend authentication.
+// On first run the password is taken from FARMON_UI_PASSWORD env var (or auto-generated),
+// written to pb_data/ui_secret, and logged once. On subsequent runs the password is read
+// from the file and the user is recreated if the DB was wiped.
+func seedFrontendUser(app core.App) {
+	secretPath := filepath.Join(app.DataDir(), "ui_secret")
+
+	var password string
+	data, err := os.ReadFile(secretPath)
+	if err == nil {
+		password = strings.TrimSpace(string(data))
+	} else {
+		// First run: use env var or generate
+		password = os.Getenv("FARMON_UI_PASSWORD")
+		if password == "" {
+			password = generateRandomPassword(20)
+		}
+		if writeErr := os.WriteFile(secretPath, []byte(password), 0600); writeErr != nil {
+			log.Printf("[farmon] WARNING: could not write ui_secret: %v", writeErr)
+		}
+		log.Printf("[farmon] Frontend user created — email: %s  password: %s", uiFrontendEmail, password)
+	}
+
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		log.Printf("[farmon] WARNING: could not find users collection: %v", err)
+		return
+	}
+
+	existing, _ := app.FindFirstRecordByFilter(usersCol.Id, "email = {:email}", dbx.Params{"email": uiFrontendEmail})
+	if existing != nil {
+		return
+	}
+
+	record := core.NewRecord(usersCol)
+	record.Set("email", uiFrontendEmail)
+	record.SetPassword(password)
+	record.Set("emailVisibility", true)
+	record.Set("verified", true)
+	if saveErr := app.Save(record); saveErr != nil {
+		log.Printf("[farmon] WARNING: could not create frontend user: %v", saveErr)
+	}
+}
+
+// uiConfigHandler returns the frontend service user credentials so the Angular app
+// can authenticate with PocketBase on startup.
+func uiConfigHandler(app core.App) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		secretPath := filepath.Join(app.DataDir(), "ui_secret")
+		data, err := os.ReadFile(secretPath)
+		if err != nil {
+			return e.JSON(http.StatusServiceUnavailable, map[string]string{"error": "not configured"})
+		}
+		return e.JSON(http.StatusOK, map[string]string{
+			"email":    uiFrontendEmail,
+			"password": strings.TrimSpace(string(data)),
+		})
+	}
+}
+
+const passwordChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func generateRandomPassword(length int) string {
+	buf := make([]byte, length)
+	for i := range buf {
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(passwordChars))))
+		buf[i] = passwordChars[n.Int64()]
+	}
+	return string(buf)
 }
