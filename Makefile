@@ -10,7 +10,9 @@
 #   make all
 #   make install DESTDIR=/opt/farmon
 
-.PHONY: build all dev frontend backend check-go frontend-deps install clean
+DESTDIR ?= /opt/farmon
+
+.PHONY: build all dev frontend backend check-go frontend-deps board-assets install clean
 
 # Default: build backend only (dev workflow — frontend served separately or pre-built).
 build: backend
@@ -32,8 +34,19 @@ dev: frontend backend
 frontend-deps:
 	cd frontend && npm ci
 
+# Copy board breadboard SVGs from firmware targets into frontend public dir.
+# Naming convention: public/boards/{model}.svg  (one file per hardware model).
+board-assets:
+	@mkdir -p frontend/public/boards
+	@for target in firmware/targets/*/board; do \
+		model=$$(basename $$(dirname $$target)); \
+		svg=$$(ls $$target/svg.breadboard.*.svg 2>/dev/null | head -1); \
+		[ -n "$$svg" ] && cp "$$svg" "frontend/public/boards/$$model.svg" \
+			&& echo "  board-assets: $$model.svg"; \
+	done
+
 # Build frontend only (run 'make frontend-deps' first if node_modules missing)
-frontend:
+frontend: board-assets
 	cd frontend && npm run build
 
 # Verify go binary matches current machine (avoid "Exec format error" from wrong-arch go)

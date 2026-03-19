@@ -126,6 +126,10 @@ export class DeviceService {
     return this.http.post<{ ok: boolean }>(`${API}/devices/${eui}/probe-field`, { field_key: fieldKey });
   }
 
+  compileExpression(eui: string, expression: string): Observable<{ bytecode_hex: string; bytecode_size: number; errors: string[] }> {
+    return this.http.post<{ bytecode_hex: string; bytecode_size: number; errors: string[] }>(`${API}/devices/${eui}/compile-expression`, { expression });
+  }
+
   sendCommand(eui: string, command: string, value?: number): Observable<{ ok: boolean; error?: string }> {
     return this.http.post<{ ok: boolean; error?: string }>(`${API}/sendCommand`, { eui, command, value });
   }

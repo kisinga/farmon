@@ -1,6 +1,6 @@
 import {
   Component, input, output, signal, computed,
-  OnChanges, SimpleChanges, OnDestroy, inject, effect,
+  OnChanges, SimpleChanges, OnDestroy, inject,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -13,7 +13,8 @@ import {
   hasPulseParam,
 } from '../../../core/services/api.types';
 import { ConfigContextService } from '../../../core/services/config-context.service';
-import { PinFunctionName, pinFunctionName } from '../../../core/utils/firmware-constraints';
+import { PinFunctionName } from '../../../core/utils/firmware-constraints';
+import { PinDropdownComponent } from '../pin-dropdown/pin-dropdown.component';
 
 /** Slugify a display name into a valid control key. */
 function toControlKey(name: string): string {
@@ -23,7 +24,7 @@ function toControlKey(name: string): string {
 @Component({
   selector: 'app-output-form',
   standalone: true,
-  imports: [FormsModule, CommonModule],
+  imports: [FormsModule, CommonModule, PinDropdownComponent],
   template: `
     <form (ngSubmit)="onSubmit()" class="space-y-5 p-4">
 
@@ -53,37 +54,14 @@ function toControlKey(name: string): string {
       @if (!isBus()) {
         <div class="form-control">
           <label class="label text-xs py-0.5">Hardware Pin</label>
-
-          @if (hasPinMap()) {
-            <!-- Board-picker mode: badge + button -->
-            <div class="flex items-center gap-3 flex-wrap">
-              @if (draft.pin_index != null) {
-                <div class="flex items-center gap-2 bg-primary/10 border border-primary/30 rounded-lg px-3 py-1.5">
-                  <span class="w-2 h-2 rounded-full bg-primary"></span>
-                  <span class="text-sm font-mono font-semibold">Pin {{ draft.pin_index }}</span>
-                  <span class="text-xs text-base-content/50">— {{ pinCapName(draft.pin_index) }}</span>
-                  <span class="text-success text-xs">✓</span>
-                </div>
-                <button type="button" class="btn btn-xs btn-ghost"
-                  (click)="openPrimaryPicker()">Change</button>
-              } @else if (ctx.isPinPickerActive()) {
-                <div class="flex items-center gap-2 text-blue-400 text-sm animate-pulse">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M5 15l7-7 7 7"/>
-                  </svg>
-                  Click a highlighted pin on the board above
-                </div>
-              } @else {
-                <button type="button" class="btn btn-sm btn-outline"
-                  (click)="openPrimaryPicker()">Select Pin</button>
-              }
-            </div>
-          } @else {
-            <!-- Fallback: plain number input for non-AirConfig devices -->
-            <input type="number" class="input input-bordered input-sm w-24"
-              [(ngModel)]="draft.pin_index" name="pin_index" min="0" max="19" />
-          }
+          <app-pin-dropdown
+            [selectedPin]="draft.pin_index"
+            [capability]="requiredCapability()"
+            [usedPins]="usedPins()"
+            [excludePins]="secondaryPinExclude()"
+            [pinMap]="pinMap()"
+            (pinSelected)="onPrimaryPinChange($event)"
+          />
         </div>
 
         <!-- Second pin (motorized valve: open/close direction) -->
@@ -92,34 +70,14 @@ function toControlKey(name: string): string {
             <label class="label text-xs py-0.5">
               Direction Pin <span class="text-base-content/40">(close signal)</span>
             </label>
-
-            @if (hasPinMap()) {
-              <div class="flex items-center gap-3 flex-wrap">
-                @if (draft.pin2_index != null) {
-                  <div class="flex items-center gap-2 bg-secondary/10 border border-secondary/30 rounded-lg px-3 py-1.5">
-                    <span class="w-2 h-2 rounded-full bg-secondary"></span>
-                    <span class="text-sm font-mono font-semibold">Pin {{ draft.pin2_index }}</span>
-                    <span class="text-xs text-base-content/50">— {{ pinCapName(draft.pin2_index) }}</span>
-                    <span class="text-success text-xs">✓</span>
-                  </div>
-                  <button type="button" class="btn btn-xs btn-ghost"
-                    (click)="openSecondaryPicker()">Change</button>
-                } @else if (ctx.isPinPickerActive()) {
-                  <div class="flex items-center gap-2 text-blue-400 text-sm animate-pulse">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                    </svg>
-                    Click a highlighted pin on the board above (direction pin)
-                  </div>
-                } @else {
-                  <button type="button" class="btn btn-sm btn-outline"
-                    (click)="openSecondaryPicker()">Select Direction Pin</button>
-                }
-              </div>
-            } @else {
-              <input type="number" class="input input-bordered input-sm w-24"
-                [(ngModel)]="draft.pin2_index" name="pin2_index" min="0" max="19" />
-            }
+            <app-pin-dropdown
+              [selectedPin]="draft.pin2_index"
+              capability="relay"
+              [usedPins]="usedPins()"
+              [excludePins]="primaryPinExclude()"
+              [pinMap]="pinMap()"
+              (pinSelected)="onSecondaryPinChange($event)"
+            />
           </div>
         }
       }
@@ -173,19 +131,6 @@ function toControlKey(name: string): string {
         </div>
       }
 
-      <!-- State labels (binary outputs) -->
-      @if (!isAnalog()) {
-        <div class="form-control">
-          <label class="label text-xs py-0.5">
-            State labels
-            <span class="label-text-alt text-base-content/40">comma-separated, e.g. "off, on"</span>
-          </label>
-          <input type="text" class="input input-bordered input-sm"
-            [(ngModel)]="stateLabels" name="state_labels"
-            placeholder="off, on" />
-        </div>
-      }
-
       <!-- Validation error -->
       @if (validationError()) {
         <div class="alert alert-error text-xs py-2">{{ validationError() }}</div>
@@ -216,7 +161,6 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
   readonly actuatorTypes = ACTUATOR_TYPES;
 
   draft: Partial<DeviceControl> = this.emptyDraft();
-  stateLabels = 'off, on';
   validationError = signal<string | null>(null);
 
   isEdit = computed(() => !!this.existing()?.id);
@@ -225,7 +169,6 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
   isDual   = computed(() => isDualPinActuator(this.draft.actuator_type ?? 0));
   isBus    = computed(() => isBusActuator(this.draft.actuator_type ?? 0));
   hasPulse = computed(() => hasPulseParam(this.draft.actuator_type ?? 0));
-  hasPinMap = computed(() => this.pinMap().length > 0);
 
   requiredCapability = computed<PinFunctionName>(() => {
     switch (this.draft.actuator_type ?? 0) {
@@ -235,6 +178,16 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
       default: return 'relay';
     }
   });
+
+  /** Exclude the secondary pin from the primary dropdown. */
+  secondaryPinExclude = computed(() =>
+    this.draft.pin2_index != null ? [this.draft.pin2_index] : []
+  );
+
+  /** Exclude the primary pin from the secondary dropdown. */
+  primaryPinExclude = computed(() =>
+    this.draft.pin_index != null ? [this.draft.pin_index] : []
+  );
 
   typeHint = computed<string>(() => {
     switch (this.draft.actuator_type ?? 0) {
@@ -249,53 +202,28 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
     }
   });
 
-  constructor() {
-    // React to board pin selections
-    effect(() => {
-      const pick = this.ctx.lastPinPick();
-      if (!pick) return;
-      if (pick.target === 'primary') {
-        this.draft = { ...this.draft, pin_index: pick.pin };
-      } else {
-        this.draft = { ...this.draft, pin2_index: pick.pin };
-      }
-    });
-  }
-
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['existing']) {
       const ex = this.existing();
       this.draft = ex ? { ...ex } : this.emptyDraft();
-      this.stateLabels = ex?.states_json?.join(', ') ?? 'off, on';
       this.validationError.set(null);
-      this.ctx.closePinPicker();
+      if (ex?.pin_index != null) {
+        this.ctx.setActivePinSelection(ex.pin_index);
+      }
     }
   }
 
   ngOnDestroy(): void {
-    this.ctx.closePinPicker();
+    this.ctx.setActivePinSelection(null);
   }
 
-  pinCapName(pin: number): string {
-    return pinFunctionName(this.pinMap()[pin] ?? 0);
+  onPrimaryPinChange(pin: number): void {
+    this.draft = { ...this.draft, pin_index: pin };
+    this.ctx.setActivePinSelection(pin);
   }
 
-  openPrimaryPicker(): void {
-    const excluded = new Set(this.usedPins());
-    // Don't exclude the current primary pin (allow re-selection)
-    if (this.draft.pin_index != null) excluded.delete(this.draft.pin_index);
-    // Exclude the already-chosen secondary pin
-    if (this.draft.pin2_index != null) excluded.add(this.draft.pin2_index);
-    this.ctx.openPinPicker(this.requiredCapability(), 'primary', excluded);
-  }
-
-  openSecondaryPicker(): void {
-    const excluded = new Set(this.usedPins());
-    // Don't exclude the current secondary pin (allow re-selection)
-    if (this.draft.pin2_index != null) excluded.delete(this.draft.pin2_index);
-    // Always exclude the already-chosen primary pin
-    if (this.draft.pin_index != null) excluded.add(this.draft.pin_index);
-    this.ctx.openPinPicker('relay', 'secondary', excluded);
+  onSecondaryPinChange(pin: number): void {
+    this.draft = { ...this.draft, pin2_index: pin };
   }
 
   onNameChange(name: string): void {
@@ -307,14 +235,13 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
   onTypeChange(type: number): void {
     this.draft.actuator_type = type;
     this.draft.control_type = isAnalogActuator(type) ? 'analog' : 'binary';
-    // Clear pins when type changes — capability may no longer match
     this.draft.pin_index = undefined;
     this.draft.pin2_index = undefined;
-    this.ctx.closePinPicker();
+    this.ctx.setActivePinSelection(null);
   }
 
   onCancel(): void {
-    this.ctx.closePinPicker();
+    this.ctx.setActivePinSelection(null);
     this.cancel.emit();
   }
 
@@ -322,19 +249,18 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
     const err = this.validate();
     if (err) { this.validationError.set(err); return; }
     this.validationError.set(null);
-    this.ctx.closePinPicker();
+    this.ctx.setActivePinSelection(null);
 
-    const states = this.stateLabels.split(',').map(s => s.trim()).filter(Boolean);
     this.save.emit({
       ...this.draft,
-      states_json: this.isAnalog() ? undefined : states,
+      states_json: this.isAnalog() ? undefined : ['off', 'on'],
     });
   }
 
   private validate(): string | null {
     if (!this.draft.display_name?.trim()) return 'Name is required.';
-    if (!this.isBus() && this.draft.pin_index == null) return 'Select a hardware pin on the board above.';
-    if (this.isDual() && this.draft.pin2_index == null) return 'Select the direction pin on the board above.';
+    if (!this.isBus() && this.draft.pin_index == null) return 'Select a hardware pin.';
+    if (this.isDual() && this.draft.pin2_index == null) return 'Select the direction pin.';
     return null;
   }
 

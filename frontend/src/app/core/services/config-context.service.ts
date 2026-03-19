@@ -60,6 +60,9 @@ export class ConfigContextService {
    */
   private _lastPinPick = signal<{ pin: number; target: 'primary' | 'secondary' } | null>(null);
 
+  /** Pin currently selected in the active form. Board SVG highlights this pin. */
+  private _activePinSelection = signal<number | null>(null);
+
   // ─── Public readonly signals ────────────────────────────────────────────────
 
   eui = this._eui.asReadonly();
@@ -81,6 +84,8 @@ export class ConfigContextService {
   isPinPickerActive = computed(() => this._pinPickerMode() !== null);
   /** Emits the last pin picked from the board. Forms watch this with effect(). */
   lastPinPick = this._lastPinPick.asReadonly();
+  /** Pin currently selected in the active form — board SVG reads this to highlight. */
+  activePinSelection = this._activePinSelection.asReadonly();
 
   // ─── Computed slices ────────────────────────────────────────────────────────
 
@@ -135,6 +140,24 @@ export class ConfigContextService {
     for (const p of this.usedSensorPins()) pins.add(p);
     for (const p of this.usedControlPins()) pins.add(p);
     return pins;
+  });
+
+  /** Map of pin index → display label for assigned pins (sensors + controls). */
+  pinLabels = computed<Map<number, string>>(() => {
+    const labels = new Map<number, string>();
+    const sensors = this._deviceSpec()?.airconfig?.sensors ?? [];
+    const fields = this._fields();
+    for (const s of sensors) {
+      if (s.pin_index === 255) continue;
+      const field = fields.find(f => f.field_idx === s.field_index);
+      labels.set(s.pin_index, field?.display_name || field?.field_key || `sensor f${s.field_index}`);
+    }
+    for (const ctrl of this._controls()) {
+      const name = ctrl.display_name || ctrl.control_key || 'output';
+      if (ctrl.pin_index != null) labels.set(ctrl.pin_index, name);
+      if (ctrl.pin2_index != null && ctrl.pin2_index !== 255) labels.set(ctrl.pin2_index, name + ' (dir)');
+    }
+    return labels;
   });
 
   /** Count of variables with report_mode='reported' (counts toward LoRaWAN field budget). */
@@ -321,6 +344,11 @@ export class ConfigContextService {
     this._pinPickerMode.set(null);
   }
 
+  /** Set the pin currently selected in a form. Board SVG highlights it. */
+  setActivePinSelection(pin: number | null): void {
+    this._activePinSelection.set(pin);
+  }
+
   // ─── Optimistic sensor spec update ──────────────────────────────────────────
 
   /**
@@ -364,5 +392,6 @@ export class ConfigContextService {
     this._flashMessage.set(null);
     this._pinPickerMode.set(null);
     this._lastPinPick.set(null);
+    this._activePinSelection.set(null);
   }
 }

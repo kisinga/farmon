@@ -23,6 +23,12 @@ export const MAX_FIELD_INDEX = 255;
 /** Maximum sensor slots supported by firmware hardware layer. */
 export const MAX_SENSOR_SLOTS = 8;
 
+/** Maximum compute fields per device. */
+export const MAX_COMPUTE_FIELDS = 16;
+
+/** Maximum bytecode length per compute expression (bytes). */
+export const MAX_BYTECODE_LEN = 64;
+
 /**
  * Extra condition thresholds are encoded as uint8 in the rule binary (0–255).
  * Primary condition thresholds are float32 and have no integer restriction.

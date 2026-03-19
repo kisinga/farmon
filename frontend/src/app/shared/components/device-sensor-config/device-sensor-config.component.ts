@@ -1,4 +1,4 @@
-import { Component, input, output, signal, computed, inject, OnInit, OnDestroy, effect } from '@angular/core';
+import { Component, input, output, signal, computed, inject, OnInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService, DeviceField } from '../../../core/services/api.service';
 import { applyTrim } from '../../../core/constants/sensor-config';
@@ -6,6 +6,7 @@ import { SensorInterfaceInfo, SensorPresetInfo, MeasurementInfo, AirConfigValida
 import { SensorService } from '../../../core/services/sensor.service';
 import { MAX_SENSOR_SLOTS, pinFunctionName, type PinFunctionName } from '../../../core/utils/firmware-constraints';
 import { ConfigContextService } from '../../../core/services/config-context.service';
+import { PinDropdownComponent } from '../pin-dropdown/pin-dropdown.component';
 
 interface CalibForm {
   mode: 'datasheet' | 'trim';
@@ -58,7 +59,7 @@ function defaultForm(): SensorForm {
 @Component({
   selector: 'app-device-sensor-config',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, PinDropdownComponent],
   template: `
     <div class="space-y-6">
 
@@ -165,39 +166,16 @@ function defaultForm(): SensorForm {
 
           <!-- GPIO pin (non-bus sensors) -->
           @if (selectedInterface() && !selectedInterface()!.bus_addressed) {
-            <div class="form-control">
+            <label class="form-control w-full max-w-xs">
               <div class="label py-1"><span class="label-text text-xs">GPIO Pin</span></div>
-
-              @if (pinMap().length > 0) {
-                <!-- Board-picker mode: badge + button -->
-                <div class="flex items-center gap-3 flex-wrap">
-                  @if (pinExplicitlySelected()) {
-                    <div class="flex items-center gap-2 bg-primary/10 border border-primary/30 rounded-lg px-3 py-1.5">
-                      <span class="w-2 h-2 rounded-full bg-primary"></span>
-                      <span class="text-sm font-mono font-semibold">Pin {{ form().pinIndex }}</span>
-                      <span class="text-xs text-base-content/50">— {{ pinCapName(form().pinIndex) }}</span>
-                      <span class="text-success text-xs">✓</span>
-                    </div>
-                    <button type="button" class="btn btn-xs btn-ghost"
-                      (click)="openPinPicker()">Change</button>
-                  } @else if (ctx.isPinPickerActive()) {
-                    <div class="flex items-center gap-2 text-blue-400 text-sm animate-pulse">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                      Click a highlighted pin on the board above
-                    </div>
-                  } @else {
-                    <button type="button" class="btn btn-sm btn-outline"
-                      (click)="openPinPicker()">Select Pin</button>
-                  }
-                </div>
-              } @else {
-                <!-- Fallback: plain number input for non-AirConfig devices -->
-                <input type="number" class="input input-bordered input-sm w-24"
-                  [(ngModel)]="form().pinIndex" min="0" max="19" />
-              }
-            </div>
+              <app-pin-dropdown
+                [selectedPin]="form().pinIndex"
+                [capability]="requiredPinCapability()"
+                [usedPins]="usedPins()"
+                [pinMap]="pinMap()"
+                (pinSelected)="onPinSelected($event)"
+              />
+            </label>
           }
 
           <!-- Pull mode (digital input only) -->
@@ -349,9 +327,6 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   private sensorService = inject(SensorService);
   protected ctx = inject(ConfigContextService);
 
-  /** True once the user has explicitly clicked a pin on the board. */
-  pinExplicitlySelected = signal(false);
-
   readonly presets = signal<SensorPresetInfo[]>([]);
   readonly interfaces = signal<SensorInterfaceInfo[]>([]);
   readonly measurements = signal<MeasurementInfo[]>([]);
@@ -380,15 +355,6 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     return pinFunctionName(fn);
   });
 
-  constructor() {
-    // React to board pin selections (only handle 'primary' target)
-    effect(() => {
-      const pick = this.ctx.lastPinPick();
-      if (!pick || pick.target !== 'primary') return;
-      this.form.update(f => ({ ...f, pinIndex: pick.pin }));
-      this.pinExplicitlySelected.set(true);
-    });
-  }
 
   ngOnInit(): void {
     this.api.getSensorCatalog().subscribe(catalog => {
@@ -427,7 +393,7 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     }));
 
     if (!iface.bus_addressed && sensor.pin_index !== 255) {
-      this.pinExplicitlySelected.set(true);
+      this.ctx.setActivePinSelection(sensor.pin_index);
     }
 
     if (field) {
@@ -437,18 +403,7 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.ctx.closePinPicker();
-  }
-
-  openPinPicker(): void {
-    const excluded = new Set(this.usedPins());
-    // Allow re-selecting the current pin
-    if (this.pinExplicitlySelected()) excluded.delete(this.form().pinIndex);
-    this.ctx.openPinPicker(this.requiredPinCapability(), 'primary', excluded);
-  }
-
-  pinCapName(pin: number): string {
-    return pinFunctionName(this.pinMap()[pin] ?? 0);
+    this.ctx.setActivePinSelection(null);
   }
 
   calibPreview = computed(() => {
@@ -535,12 +490,12 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
 
   onPinSelected(pin: number): void {
     this.form.update(f => ({ ...f, pinIndex: pin }));
+    this.ctx.setActivePinSelection(pin);
   }
 
   onInterfaceChange(id: string): void {
     this.form.update(f => ({ ...f, interfaceId: id }));
-    this.pinExplicitlySelected.set(false);
-    this.ctx.closePinPicker();
+    this.ctx.setActivePinSelection(null);
     this.validationErrors.set([]);
     this.validationWarnings.set([]);
   }

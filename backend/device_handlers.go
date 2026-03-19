@@ -302,6 +302,33 @@ func pushSensorSlotHandler(app core.App, gwState *GatewayState) func(*core.Reque
 	}
 }
 
+// POST /api/farmon/devices/{eui}/compile-expression — compile a compute expression to bytecode.
+func compileExpressionHandler() func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		var body struct {
+			Expression string `json:"expression"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.String(http.StatusBadRequest, "invalid body")
+		}
+
+		bytecode, err := CompileExpression(body.Expression)
+		if err != nil {
+			return e.JSON(http.StatusOK, map[string]any{
+				"bytecode_hex":  "",
+				"bytecode_size": 0,
+				"errors":        []string{err.Error()},
+			})
+		}
+
+		return e.JSON(http.StatusOK, map[string]any{
+			"bytecode_hex":  hex.EncodeToString(bytecode),
+			"bytecode_size": len(bytecode),
+			"errors":        []string{},
+		})
+	}
+}
+
 // POST /api/farmon/validate-airconfig — validate an airconfig for pin conflicts, field overlaps, etc.
 func validateAirConfigHandler() func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {

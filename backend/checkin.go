@@ -207,7 +207,30 @@ func pushAirConfig(app core.App, cfg *gateway.Config, devEUI string, effective *
 		}
 	}
 
-	// 5. LoRaWAN: [0x06, region, subband, dr, txpwr, adr, confirmed]
+	// 5. Compute slots: [0x07, slot, field_idx, bytecode_len, bytecode...]
+	// Read compute fields from DB, compile expressions, and push bytecode.
+	computeFields, _ := app.FindRecordsByFilter("device_fields",
+		"device_eui = {:eui} && linked_type = 'compute' && expression != ''",
+		"field_idx", 0, 0, dbx.Params{"eui": devEUI})
+	for slot, rec := range computeFields {
+		if slot >= 16 {
+			break
+		}
+		expr := rec.GetString("expression")
+		bytecode, compileErr := CompileExpression(expr)
+		if compileErr != nil {
+			log.Printf("[airconfig] compute slot %d compile error dev_eui=%s expr=%q: %v", slot, devEUI, expr, compileErr)
+			continue
+		}
+		fieldIdx := byte(rec.GetFloat("field_idx"))
+		payload := []byte{0x07, byte(slot), fieldIdx, byte(len(bytecode))}
+		payload = append(payload, bytecode...)
+		if err := EnqueueDownlinkForDevice(app, cfg, devEUI, 35, payload); err != nil {
+			return fmt.Errorf("pushAirConfig compute slot %d: %w", slot, err)
+		}
+	}
+
+	// 6. LoRaWAN: [0x06, region, subband, dr, txpwr, adr, confirmed]
 	if len(effective.LoRaWAN) > 0 {
 		var lora map[string]any
 		if err := json.Unmarshal(effective.LoRaWAN, &lora); err == nil {
@@ -234,7 +257,7 @@ func pushAirConfig(app core.App, cfg *gateway.Config, devEUI string, effective *
 		}
 	}
 
-	// 6. SetHash: commits the expected config hash to the device so it can report it in checkin.
+	// 7. SetHash: commits the expected config hash to the device so it can report it in checkin.
 	// The device stores this and sends it in fPort 1 so the backend detects drift.
 	hashStr := computeConfigHash(effective)
 	hashVal, err := strconv.ParseUint(hashStr, 16, 32)

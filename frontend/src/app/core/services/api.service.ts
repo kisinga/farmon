@@ -89,6 +89,7 @@ export class ApiService {
   setControl(eui: string, control: string, state: string, duration?: number, value?: number) { return this.deviceService.setControl(eui, control, state, duration, value); }
   getPinCapabilities(eui: string) { return this.deviceService.getPinCapabilities(eui); }
   probeField(eui: string, fieldKey: string) { return this.deviceService.probeField(eui, fieldKey); }
+  compileExpression(eui: string, expression: string) { return this.deviceService.compileExpression(eui, expression); }
   sendCommand(eui: string, command: string, value?: number) { return this.deviceService.sendCommand(eui, command, value); }
   getCommandHistory(eui: string, limit = 50) { return this.deviceService.getCommandHistory(eui, limit); }
   getStateChanges(eui: string, limit = 100) { return this.deviceService.getStateChanges(eui, limit); }

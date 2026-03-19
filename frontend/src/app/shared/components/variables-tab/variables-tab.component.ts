@@ -5,6 +5,7 @@ import { ConfigContextService } from '../../../core/services/config-context.serv
 import { ApiService } from '../../../core/services/api.service';
 import { DeviceVariable } from '../../../core/services/api.types';
 import { getFieldBudget, nextAvailableFieldIndex } from '../../../core/utils/firmware-constraints';
+import { humanize } from '../../../core/utils/compute-expression';
 import { FieldBudgetIndicatorComponent } from '../field-budget-indicator/field-budget-indicator.component';
 import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.component';
 import { ComputeVariableEditorComponent } from './compute-variable-editor.component';
@@ -149,7 +150,8 @@ import { ComputeVariableEditorComponent } from './compute-variable-editor.compon
                     <span class="badge badge-ghost badge-xs">f{{ v.field_idx }}</span>
                   }
                 </div>
-                <div class="flex items-center gap-1">
+                <div class="flex items-center gap-2">
+                  @if (v.unit) { <span class="badge badge-ghost badge-xs">{{ v.unit }}</span> }
                   <button class="btn btn-xs btn-ghost"
                     (click)="editingId.set(editingId() === v.id ? null : v.id)">
                     {{ editingId() === v.id ? 'Cancel' : 'Edit' }}
@@ -158,7 +160,7 @@ import { ComputeVariableEditorComponent } from './compute-variable-editor.compon
                 </div>
               </div>
               @if (editingId() !== v.id && v.expression) {
-                <p class="font-mono text-xs text-base-content/50 truncate">= {{ v.expression }}</p>
+                <p class="font-mono text-xs text-base-content/50 truncate">= {{ humanizeExpr(v.expression) }}</p>
               }
               @if (editingId() === v.id) {
                 <app-compute-variable-editor
@@ -263,6 +265,10 @@ export class VariablesTabComponent {
       },
       error: (err) => this.ctx.flash(err?.message ?? 'Failed to create variable', true),
     });
+  }
+
+  humanizeExpr(expr: string): string {
+    return humanize(expr, this.ctx.fields());
   }
 
   onReportModeChange(fieldId: string, mode: string): void {

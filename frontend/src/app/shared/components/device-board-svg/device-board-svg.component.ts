@@ -1,302 +1,274 @@
-import { Component, computed, inject } from '@angular/core';
+import {
+  Component, computed, inject, signal, effect,
+  ElementRef, ViewChild,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ConfigContextService } from '../../../core/services/config-context.service';
-import { PinFunctionName, pinFunctionName } from '../../../core/utils/firmware-constraints';
+import { BOARD_DEFINITIONS, BoardPinDef } from '../../../core/constants/board-definitions';
+import { pinFunctionName, PinFunctionName } from '../../../core/utils/firmware-constraints';
 
-interface LegendItem { fns: PinFunctionName[]; label: string; hex: string; }
+const FN_COLORS: Record<PinFunctionName, string> = {
+  relay:   '#16a34a',
+  button:  '#16a34a',
+  adc:     '#3b82f6',
+  i2c:     '#a855f7',
+  onewire: '#a855f7',
+  uart:    '#a855f7',
+  counter: '#fb923c',
+  pwm:     '#eab308',
+  dac:     '#eab308',
+  unused:  '#4b5563',
+};
 
-const FUNCTION_LEGEND: LegendItem[] = [
-  { fns: ['relay', 'button'], label: 'Relay/GPIO', hex: '#16a34a' },
-  { fns: ['adc'],             label: 'ADC',        hex: '#3b82f6' },
-  { fns: ['i2c', 'onewire', 'uart'], label: 'I2C/UART', hex: '#a855f7' },
-  { fns: ['pwm', 'dac'],      label: 'PWM/DAC',   hex: '#eab308' },
-  { fns: ['counter'],         label: 'Counter',    hex: '#fb923c' },
-];
+const SENSOR_COLOR  = '#14b8a6'; // teal-500
+const CONTROL_COLOR = '#f59e0b'; // amber-500
+const ACTIVE_COLOR  = '#2563eb'; // blue-600
+const LABEL_NS = 'http://www.w3.org/2000/svg';
 
-/**
- * DeviceBoardSvgComponent — persistent ESP32-style board diagram shown above all config tabs.
- *
- * Renders 20 GPIO pins (0-9 left rail, 10-19 right rail) as an inline SVG that mirrors
- * the physical dual-row header layout of a DevKit board.
- *
- * Pin color priority (highest wins):
- *  1. Sensor used    → teal
- *  2. Control used   → amber
- *  3. Picker active + selectable → pulsing blue
- *  4. Picker active + excluded/incompatible → dark gray
- *  5. Free by function → green/blue/purple/orange/yellow/gray
- *
- * When isPinPickerActive(), compatible non-excluded pins are clickable and
- * animate with a pulse. Clicking calls ctx.onBoardPinClicked(pin).
- */
 @Component({
   selector: 'app-device-board-svg',
   standalone: true,
   imports: [CommonModule],
   styles: [`
-    @keyframes picker-pulse {
+    @keyframes active-pulse {
       0%, 100% { opacity: 1; }
-      50%       { opacity: 0.55; }
+      50%      { opacity: 0.4; }
     }
-    .pin-selectable { animation: picker-pulse 1.1s ease-in-out infinite; }
+    :host ::ng-deep .pin-active {
+      animation: active-pulse 1s ease-in-out infinite;
+    }
+    :host ::ng-deep .board-svg-wrap svg {
+      width: 100%;
+      height: auto;
+      max-height: 500px;
+    }
+    /* LoRa-E5 is a wide/short board — cap width so it doesn't stretch across the page */
+    :host ::ng-deep .board-svg-wrap.board-lorae5 svg {
+      max-width: 480px;
+    }
   `],
   template: `
     <div class="rounded-xl border border-base-300 bg-base-200/40 px-4 py-3">
       <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide mb-3">
-        Board — GPIO Map
-        @if (ctx.isPinPickerActive()) {
-          <span class="ml-2 text-blue-400 normal-case font-normal animate-pulse">
-            ↑ Click a highlighted pin to assign
-          </span>
-        }
+        Board — {{ boardDef()?.label ?? 'GPIO Map' }}
       </p>
 
-      <div class="flex justify-center overflow-x-auto">
-        <svg
-          viewBox="0 0 320 310"
-          class="w-full max-w-lg"
-          aria-label="ESP32 board pin map"
-        >
-          <!-- ── Board PCB outline ── -->
-          <rect x="88" y="10" width="144" height="280" rx="6"
-            fill="#1c2432" stroke="#374151" stroke-width="1.5"/>
-
-          <!-- Board mounting holes (decorative) -->
-          <circle cx="100" cy="22" r="4" fill="#111827"/>
-          <circle cx="220" cy="22" r="4" fill="#111827"/>
-          <circle cx="100" cy="278" r="4" fill="#111827"/>
-          <circle cx="220" cy="278" r="4" fill="#111827"/>
-
-          <!-- ESP32 module (inner chip block) -->
-          <rect x="111" y="70" width="98" height="130" rx="3"
-            fill="#111827" stroke="#4b5563" stroke-width="1"/>
-          <rect x="116" y="75" width="88" height="120" rx="2"
-            fill="#0f172a" stroke="#1e3a5f" stroke-width="0.8"/>
-          <!-- Chip label -->
-          <text x="160" y="132" text-anchor="middle" font-size="11"
-            fill="#60a5fa" font-family="monospace" font-weight="bold">{{ chipLabel() }}</text>
-          <text x="160" y="147" text-anchor="middle" font-size="7"
-            fill="#374151" font-family="monospace">{{ chipSubLabel() }}</text>
-
-          <!-- Antenna notch top right -->
-          <rect x="188" y="10" width="44" height="28" rx="3"
-            fill="#111827" stroke="#374151" stroke-width="1"/>
-          <text x="210" y="28" text-anchor="middle" font-size="7"
-            fill="#6b7280" font-family="monospace">ANT</text>
-
-          <!-- USB connector at bottom -->
-          <rect x="132" y="284" width="56" height="18" rx="3"
-            fill="#1f2937" stroke="#4b5563" stroke-width="1"/>
-          <text x="160" y="296" text-anchor="middle" font-size="7"
-            fill="#6b7280" font-family="monospace">USB</text>
-
-          <!-- ── Left rail pins 0-9 ── -->
-          @for (i of leftPins; track i) {
-            <g
-              [class.pin-selectable]="isPinSelectable(i)"
-              [style.cursor]="isPinSelectable(i) ? 'pointer' : 'default'"
-              (click)="onPinClick(i)"
-            >
-              <!-- stub line to board -->
-              <line [attr.x1]="51" [attr.x2]="88"
-                    [attr.y1]="pinY(i)" [attr.y2]="pinY(i)"
-                    stroke="#4b5563" stroke-width="1.5"/>
-              <!-- pin circle -->
-              <circle
-                [attr.cx]="40"
-                [attr.cy]="pinY(i)"
-                r="13"
-                [attr.fill]="pinFill(i)"
-                [attr.stroke]="pinStroke(i)"
-                [attr.stroke-width]="pinStrokeWidth(i)"
-              />
-              <!-- pin number -->
-              <text
-                [attr.x]="40"
-                [attr.y]="pinY(i) + 4"
-                text-anchor="middle"
-                font-size="8"
-                font-family="monospace"
-                font-weight="bold"
-                fill="white"
-              >{{ i }}</text>
-              <!-- connected dot -->
-              @if (isUsed(i)) {
-                <circle [attr.cx]="40" [attr.cy]="pinY(i) - 8" r="3" fill="white" opacity="0.9"/>
-              }
-            </g>
-          }
-
-          <!-- ── Right rail pins 10-19 ── -->
-          @for (i of rightPins; track i) {
-            <g
-              [class.pin-selectable]="isPinSelectable(i)"
-              [style.cursor]="isPinSelectable(i) ? 'pointer' : 'default'"
-              (click)="onPinClick(i)"
-            >
-              <!-- stub line to board -->
-              <line [attr.x1]="232" [attr.x2]="269"
-                    [attr.y1]="pinY(i)" [attr.y2]="pinY(i)"
-                    stroke="#4b5563" stroke-width="1.5"/>
-              <!-- pin circle -->
-              <circle
-                [attr.cx]="280"
-                [attr.cy]="pinY(i)"
-                r="13"
-                [attr.fill]="pinFill(i)"
-                [attr.stroke]="pinStroke(i)"
-                [attr.stroke-width]="pinStrokeWidth(i)"
-              />
-              <!-- pin number -->
-              <text
-                [attr.x]="280"
-                [attr.y]="pinY(i) + 4"
-                text-anchor="middle"
-                font-size="8"
-                font-family="monospace"
-                font-weight="bold"
-                fill="white"
-              >{{ i }}</text>
-              <!-- connected dot -->
-              @if (isUsed(i)) {
-                <circle [attr.cx]="280" [attr.cy]="pinY(i) - 8" r="3" fill="white" opacity="0.9"/>
-              }
-            </g>
-          }
-        </svg>
-      </div>
+      @if (svgContent()) {
+        <div class="board-svg-wrap flex justify-center overflow-x-auto"
+          [class]="'board-svg-wrap board-' + boardDef()?.model"
+          #svgContainer
+          [innerHTML]="svgContent()">
+        </div>
+      } @else if (!boardDef()) {
+        <p class="text-xs text-base-content/40 py-4 text-center">
+          No board diagram available for this device.
+        </p>
+      } @else {
+        <div class="flex justify-center py-8">
+          <span class="loading loading-spinner loading-sm"></span>
+        </div>
+      }
 
       <!-- Legend -->
-      <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-base-content/60">
-        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-teal-500/80"></span> Sensor</span>
-        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-500/80"></span> Output</span>
-        @for (item of legendItems(); track item.label) {
+      @if (boardDef()) {
+        <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-base-content/60">
           <span class="flex items-center gap-1">
-            <span class="inline-block w-2.5 h-2.5 rounded-full" [style.backgroundColor]="item.hex" style="opacity:0.8"></span>
-            {{ item.label }}
+            <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:#14b8a6"></span> Input
           </span>
-        }
-        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500/70"></span> Unused</span>
-      </div>
+          <span class="flex items-center gap-1">
+            <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:#f59e0b"></span> Output
+          </span>
+          <span class="flex items-center gap-1">
+            <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:#2563eb"></span> Selected
+          </span>
+          @for (item of legendItems(); track item.label) {
+            <span class="flex items-center gap-1">
+              <span class="inline-block w-2.5 h-2.5 rounded-full" [style.backgroundColor]="item.color"></span>
+              {{ item.label }}
+            </span>
+          }
+        </div>
+      }
     </div>
   `,
 })
 export class DeviceBoardSvgComponent {
   protected ctx = inject(ConfigContextService);
+  private http = inject(HttpClient);
+  private sanitizer = inject(DomSanitizer);
 
-  readonly leftPins  = Array.from({ length: 10 }, (_, i) => i);       // 0-9
-  readonly rightPins = Array.from({ length: 10 }, (_, i) => i + 10);  // 10-19
+  @ViewChild('svgContainer') svgContainer!: ElementRef<HTMLDivElement>;
 
-  chipLabel = computed(() => {
-    const mcu = this.ctx.pinCaps()?.mcu;
-    if (mcu === 'rp2040') return 'RP2040';
-    if (mcu === 'lorae5' || mcu === 'stm32wl') return 'STM32WL';
-    return this.ctx.device()?.hardware_model?.toUpperCase() ?? 'MCU';
+  private rawSvg = signal<string | null>(null);
+  private domReady = signal(0);
+
+  boardDef = computed(() => {
+    const model = this.ctx.device()?.hardware_model;
+    return model ? BOARD_DEFINITIONS[model] ?? null : null;
   });
 
-  chipSubLabel = computed(() => {
-    const mcu = this.ctx.pinCaps()?.mcu;
-    if (mcu === 'rp2040') return 'Pico W';
-    if (mcu === 'lorae5' || mcu === 'stm32wl') return 'LoRa-E5';
-    return '';
+  svgContent = computed<SafeHtml | null>(() => {
+    const raw = this.rawSvg();
+    return raw ? this.sanitizer.bypassSecurityTrustHtml(raw) : null;
   });
 
   legendItems = computed(() => {
+    const map = this.ctx.pinMapArray();
     const fnSet = new Set<PinFunctionName>();
-    const caps = this.ctx.pinCaps();
-    if (caps) {
-      for (const p of caps.pins) {
-        for (const fn of p.functions) fnSet.add(pinFunctionName(fn));
-      }
-    } else {
-      for (const code of this.ctx.pinMapArray()) {
-        if (code !== 0) fnSet.add(pinFunctionName(code));
-      }
+    for (const code of map) {
+      const fn = pinFunctionName(code);
+      if (fn !== 'unused') fnSet.add(fn);
     }
-    return FUNCTION_LEGEND.filter(item => item.fns.some(fn => fnSet.has(fn)));
+    const labels: Record<string, string> = {
+      relay: 'Relay/GPIO', button: 'GPIO', adc: 'ADC',
+      i2c: 'I2C', onewire: '1-Wire', uart: 'UART',
+      counter: 'Counter', pwm: 'PWM', dac: 'DAC',
+    };
+    return [...fnSet]
+      .filter(fn => fn !== 'relay' || !fnSet.has('button'))
+      .map(fn => ({ label: labels[fn] ?? fn, color: FN_COLORS[fn] }));
+  });
+
+  private svgLoadEffect = effect(() => {
+    const def = this.boardDef();
+    if (!def) { this.rawSvg.set(null); return; }
+    this.http.get(def.svgUrl, { responseType: 'text' }).subscribe({
+      next: svg => {
+        this.rawSvg.set(svg);
+        requestAnimationFrame(() => this.domReady.update(n => n + 1));
+      },
+      error: () => this.rawSvg.set(null),
+    });
+  });
+
+  private colorEffect = effect(() => {
+    const def = this.boardDef();
+    const _ready = this.domReady();
+    const sensorPins = this.ctx.usedSensorPins();
+    const controlPins = this.ctx.usedControlPins();
+    const activePin = this.ctx.activePinSelection();
+    const pinMap = this.ctx.pinMapArray();
+    const pinLabels = this.ctx.pinLabels();
+
+    if (!def || !_ready) return;
+
+    requestAnimationFrame(() =>
+      this.applyPinState(def.pins, sensorPins, controlPins, activePin, pinMap, pinLabels)
+    );
   });
 
   /**
-   * Y coordinate for pin i.
-   * Both rails use the same vertical spacing: index within the 0-9 or 10-19 group.
+   * Get the center of an SVG element in root SVG coordinate space.
+   * Uses getBoundingClientRect + inverse screen CTM as a robust fallback.
    */
-  pinY(pin: number): number {
-    const idx = pin < 10 ? pin : pin - 10;
-    return 28 + idx * 26;
-  }
-
-  isUsed(pin: number): boolean {
-    return this.ctx.usedSensorPins().has(pin) || this.ctx.usedControlPins().has(pin);
-  }
-
-  private fnColor(pin: number): string {
-    const fn: PinFunctionName = pinFunctionName(this.ctx.pinMapArray()[pin] ?? 0);
-    switch (fn) {
-      case 'relay':
-      case 'button':  return '#16a34a';  // green-600
-      case 'adc':     return '#3b82f6';  // blue-500
-      case 'i2c':
-      case 'onewire':
-      case 'uart':    return '#a855f7';  // purple-500
-      case 'counter': return '#fb923c';  // orange-400
-      case 'pwm':
-      case 'dac':     return '#eab308';  // yellow-500
-      default:        return '#4b5563';  // gray-600
+  private pinCenter(el: SVGGraphicsElement, svgEl: SVGSVGElement): { x: number; y: number } | null {
+    // Method 1: getBoundingClientRect → SVG coords (most reliable for nested transforms)
+    try {
+      const rect = el.getBoundingClientRect();
+      const svgRect = svgEl.getBoundingClientRect();
+      const vb = svgEl.viewBox.baseVal;
+      if (svgRect.width === 0 || svgRect.height === 0) return null;
+      // Map screen coords to viewBox coords
+      const scaleX = vb.width / svgRect.width;
+      const scaleY = vb.height / svgRect.height;
+      return {
+        x: vb.x + (rect.x + rect.width / 2 - svgRect.x) * scaleX,
+        y: vb.y + (rect.y + rect.height / 2 - svgRect.y) * scaleY,
+      };
+    } catch {
+      return null;
     }
   }
 
-  /** True if the hardware supports the given capability on this pin. Falls back to pinMapArray. */
-  private pinSupportsCapability(pin: number, capability: PinFunctionName): boolean {
-    const caps = this.ctx.pinCaps();
-    if (caps) {
-      const pinInfo = caps.pins.find(p => p.pin === pin);
-      if (!pinInfo) return false;
-      return pinInfo.functions.some(fn => pinFunctionName(fn) === capability);
-    }
-    return pinFunctionName(this.ctx.pinMapArray()[pin] ?? 0) === capability;
-  }
+  private applyPinState(
+    pins: BoardPinDef[],
+    sensorPins: Set<number>,
+    controlPins: Set<number>,
+    activePin: number | null,
+    pinMap: number[],
+    pinLabels: Map<number, string>,
+  ): void {
+    const container = this.svgContainer?.nativeElement;
+    if (!container) return;
+    const svgEl = container.querySelector('svg') as SVGSVGElement | null;
+    if (!svgEl) return;
 
-  pinFill(pin: number): string {
-    // 1. used by sensor
-    if (this.ctx.usedSensorPins().has(pin)) return '#14b8a6';   // teal-500
-    // 2. used by control
-    if (this.ctx.usedControlPins().has(pin)) return '#f59e0b';  // amber-500
+    // Remove previously injected overlays
+    svgEl.querySelectorAll('.farmon-overlay').forEach(el => el.remove());
 
-    const mode = this.ctx.pinPickerMode();
-    if (mode) {
-      const excluded = mode.excludedPins.has(pin);
-      const compatible = this.pinSupportsCapability(pin, mode.capability);
-      if (compatible && !excluded) return '#2563eb';  // blue-600 (selectable)
-      return '#1f2937';  // almost-black (incompatible/excluded in picker mode)
-    }
+    // Parse viewBox to determine label offset scale
+    const vb = svgEl.viewBox.baseVal;
+    const dotRadius = Math.max(vb.width, vb.height) * 0.012;
+    const fontSize = Math.max(vb.width, vb.height) * 0.018;
+    const labelOffset = dotRadius + fontSize * 0.3;
 
-    return this.fnColor(pin);
-  }
+    for (const pin of pins) {
+      const el = container.querySelector(`#${pin.connectorId}`) as SVGGraphicsElement | null;
+      if (!el) continue;
 
-  isPinSelectable(pin: number): boolean {
-    const mode = this.ctx.pinPickerMode();
-    if (!mode) return false;
-    if (mode.excludedPins.has(pin)) return false;
-    if (this.ctx.usedSensorPins().has(pin) || this.ctx.usedControlPins().has(pin)) return false;
-    return this.pinSupportsCapability(pin, mode.capability);
-  }
+      // Determine status color
+      const isActive = activePin === pin.firmwarePin;
+      const isSensor = sensorPins.has(pin.firmwarePin);
+      const isControl = controlPins.has(pin.firmwarePin);
+      const hasLabel = pinLabels.has(pin.firmwarePin);
+      const isAssigned = isSensor || isControl || isActive || hasLabel;
 
-  pinStroke(pin: number): string {
-    const mode = this.ctx.pinPickerMode();
-    if (mode && this.isPinSelectable(pin)) return '#93c5fd';   // blue-300 ring
-    if (this.isUsed(pin)) return 'rgba(255,255,255,0.25)';
-    return 'transparent';
-  }
+      let color: string;
+      if (isActive) {
+        color = ACTIVE_COLOR;
+      } else if (isSensor || (hasLabel && !isControl)) {
+        color = SENSOR_COLOR;
+      } else if (isControl) {
+        color = CONTROL_COLOR;
+      } else {
+        const fn = pinFunctionName(pinMap[pin.firmwarePin] ?? 0);
+        color = FN_COLORS[fn] ?? FN_COLORS.unused;
+      }
 
-  pinStrokeWidth(pin: number): number {
-    if (this.ctx.pinPickerMode() && this.isPinSelectable(pin)) return 2.5;
-    if (this.isUsed(pin)) return 1.5;
-    return 0;
-  }
+      // Color the original pin element
+      el.style.fill = color;
+      el.style.fillOpacity = '1';
+      el.classList.toggle('pin-active', isActive);
 
-  onPinClick(pin: number): void {
-    if (this.isPinSelectable(pin)) {
-      this.ctx.onBoardPinClicked(pin);
+      if (!isAssigned) continue;
+
+      // Get pin center in root SVG coords
+      try {
+        const center = this.pinCenter(el, svgEl);
+        if (!center) continue;
+
+        // Colored dot overlay
+        const dot = document.createElementNS(LABEL_NS, 'circle');
+        dot.classList.add('farmon-overlay');
+        if (isActive) dot.classList.add('pin-active');
+        dot.setAttribute('cx', String(center.x));
+        dot.setAttribute('cy', String(center.y));
+        dot.setAttribute('r', String(dotRadius));
+        dot.setAttribute('fill', color);
+        dot.setAttribute('stroke', 'white');
+        dot.setAttribute('stroke-width', String(dotRadius * 0.3));
+        svgEl.appendChild(dot);
+
+        // Text label
+        const label = pinLabels.get(pin.firmwarePin);
+        if (label) {
+          const text = document.createElementNS(LABEL_NS, 'text');
+          text.classList.add('farmon-overlay');
+          text.setAttribute('x', String(center.x + labelOffset));
+          text.setAttribute('y', String(center.y));
+          text.setAttribute('font-size', String(fontSize));
+          text.setAttribute('font-family', 'system-ui, sans-serif');
+          text.setAttribute('font-weight', '600');
+          text.setAttribute('fill', color);
+          text.setAttribute('dominant-baseline', 'central');
+          text.textContent = label;
+          svgEl.appendChild(text);
+        }
+      } catch {
+        // getBBox can throw if element is not rendered
+      }
     }
   }
 }
