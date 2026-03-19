@@ -1,0 +1,541 @@
+<!-- Breadcrumb -->
+<nav class="text-sm breadcrumbs px-0 mb-4">
+  <ul>
+    <li><a routerLink="/">Devices</a></li>
+    <li><a [routerLink]="['/device', eui()]" class="font-mono">{{ eui() }}</a></li>
+    <li>Config</li>
+  </ul>
+</nav>
+
+@if (error()) {
+  <div class="alert alert-error rounded-xl">
+    <span>{{ error() }}</span>
+    <a routerLink="/" class="link link-hover font-medium">Back to devices</a>
+  </div>
+} @else if (loading()) {
+  <div class="flex flex-col items-center justify-center py-16 gap-4">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60">Loading configuration...</p>
+  </div>
+} @else {
+
+  <!-- Header -->
+  <header class="page-header flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="page-title font-mono text-xl md:text-2xl">Device Config</h1>
+      <p class="page-description mt-0.5">{{ eui() }} · {{ deviceType() || 'unknown type' }}</p>
+    </div>
+    <div class="flex gap-2 shrink-0">
+      <button type="button" class="btn btn-outline btn-sm" (click)="openAdvanced()">Advanced JSON</button>
+      <a [routerLink]="['/device', eui()]" class="btn btn-ghost btn-sm gap-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+        Back to device
+      </a>
+    </div>
+  </header>
+
+  <!-- Flash message -->
+  @if (message()) {
+    <div class="alert text-sm rounded-xl mb-4" [class.alert-error]="isError()" [class.alert-success]="!isError()">
+      <span>{{ message() }}</span>
+    </div>
+  }
+
+  <!-- Tabs -->
+  <div class="tabs tabs-boxed bg-base-200/50 p-1 rounded-xl mb-6 overflow-x-auto flex-nowrap md:flex-wrap">
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'fields'" (click)="activeTab.set('fields')">
+      Fields
+      <span class="badge badge-xs badge-neutral ml-1">{{ fields().length }}</span>
+    </a>
+    @if (isAirConfig()) {
+      <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'sensors'" (click)="activeTab.set('sensors')">Sensors</a>
+    }
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'controls'" (click)="activeTab.set('controls')">
+      Controls
+      <span class="badge badge-xs badge-neutral ml-1">{{ controls().length }}</span>
+    </a>
+    @if (!isAirConfig()) {
+      <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'commands'" (click)="activeTab.set('commands')">
+        Commands
+        <span class="badge badge-xs badge-neutral ml-1">{{ commands().length }}</span>
+      </a>
+      <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'decode'" (click)="activeTab.set('decode')">
+        Decode Rules
+        <span class="badge badge-xs badge-neutral ml-1">{{ decodeRules().length }}</span>
+      </a>
+    }
+  </div>
+
+  <!-- ═══════════════════ Sensors Tab (AirConfig only) ═══════════════════ -->
+  @if (activeTab() === 'sensors' && isAirConfig()) {
+    <div class="card-elevated">
+      <div class="card-body-spaced">
+        <h2 class="section-title">Sensors</h2>
+        <p class="text-xs text-base-content/50 -mt-2 mb-4">Physical inputs that read from GPIO pins and write values to fields.</p>
+        <app-device-sensor-config
+          [eui]="eui()"
+          [fieldConfigs]="fields()" />
+      </div>
+    </div>
+  }
+
+  <!-- ═══════════════════ Fields Tab ═══════════════════ -->
+  @if (activeTab() === 'fields') {
+    <div class="card-elevated">
+      <div class="card-body-spaced">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="section-title mb-0">Fields</h2>
+          <button type="button" class="btn btn-primary btn-sm" (click)="startAddField()" [disabled]="addingField()">+ Add field</button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-4">Named variables that hold telemetry data. Sensors write to fields; rules read from them.</p>
+
+        <div class="overflow-x-auto rounded-xl border border-base-300">
+          <table class="table table-sm">
+            <thead>
+              <tr class="bg-base-200/60">
+                <th class="font-semibold">Idx</th>
+                <th class="font-semibold">Key</th>
+                <th class="font-semibold">Display Name</th>
+                <th class="font-semibold">Type</th>
+                <th class="font-semibold">Unit</th>
+                <th class="font-semibold">Category</th>
+                <th class="font-semibold">Access</th>
+                <th class="font-semibold">Min</th>
+                <th class="font-semibold">Max</th>
+                <th class="font-semibold w-28">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (f of fields(); track f.id) {
+                @if (editingFieldId() === f.id) {
+                  <!-- Editing row -->
+                  <tr class="bg-primary/5">
+                    <td><input type="number" class="input input-bordered input-xs w-14" [ngModel]="fieldDraft().field_idx" (ngModelChange)="updateFieldDraft('field_idx', $event)" /></td>
+                    <td><input type="text" class="input input-bordered input-xs w-24" [ngModel]="fieldDraft().field_key" (ngModelChange)="updateFieldDraft('field_key', $event)" /></td>
+                    <td><input type="text" class="input input-bordered input-xs w-28" [ngModel]="fieldDraft().display_name" (ngModelChange)="updateFieldDraft('display_name', $event)" /></td>
+                    <td>
+                      <select class="select select-bordered select-xs w-20" [ngModel]="fieldDraft().data_type" (ngModelChange)="updateFieldDraft('data_type', $event)">
+                        <option value="float">float</option>
+                        <option value="int">int</option>
+                        <option value="bool">bool</option>
+                        <option value="string">string</option>
+                        <option value="enum">enum</option>
+                      </select>
+                    </td>
+                    <td><input type="text" class="input input-bordered input-xs w-16" [ngModel]="fieldDraft().unit" (ngModelChange)="updateFieldDraft('unit', $event)" /></td>
+                    <td>
+                      <select class="select select-bordered select-xs w-24" [ngModel]="fieldDraft().category" (ngModelChange)="updateFieldDraft('category', $event)">
+                        <option value="telemetry">telemetry</option>
+                        <option value="system">system</option>
+                        <option value="config">config</option>
+                        <option value="diagnostic">diagnostic</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select class="select select-bordered select-xs w-16" [ngModel]="fieldDraft().access" (ngModelChange)="updateFieldDraft('access', $event)">
+                        <option value="">-</option>
+                        <option value="r">r</option>
+                        <option value="w">w</option>
+                        <option value="rw">rw</option>
+                      </select>
+                    </td>
+                    <td><input type="number" class="input input-bordered input-xs w-16" [ngModel]="fieldDraft().min_value" (ngModelChange)="updateFieldDraft('min_value', $event)" /></td>
+                    <td><input type="number" class="input input-bordered input-xs w-16" [ngModel]="fieldDraft().max_value" (ngModelChange)="updateFieldDraft('max_value', $event)" /></td>
+                    <td class="flex gap-1">
+                      <button type="button" class="btn btn-success btn-xs" [disabled]="saving()" (click)="saveEditField()">Save</button>
+                      <button type="button" class="btn btn-ghost btn-xs" (click)="cancelEditField()">Cancel</button>
+                    </td>
+                  </tr>
+                } @else {
+                  <!-- Display row -->
+                  <tr class="hover">
+                    <td class="text-base-content/60">{{ f.field_idx }}</td>
+                    <td class="font-mono text-xs">{{ f.field_key }}</td>
+                    <td>{{ f.display_name }}</td>
+                    <td class="text-xs">{{ f.data_type }}</td>
+                    <td class="text-xs">{{ f.unit || '-' }}</td>
+                    <td class="text-xs">{{ f.category }}</td>
+                    <td class="text-xs">{{ f.access || '-' }}</td>
+                    <td class="text-xs">{{ f.min_value ?? '-' }}</td>
+                    <td class="text-xs">{{ f.max_value ?? '-' }}</td>
+                    <td class="flex gap-1">
+                      <button type="button" class="btn btn-ghost btn-xs" (click)="editField(f)">Edit</button>
+                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteField(f)">Del</button>
+                    </td>
+                  </tr>
+                }
+              }
+              <!-- Add row -->
+              @if (addingField()) {
+                <tr class="bg-success/5">
+                  <td><input type="number" class="input input-bordered input-xs w-14" [ngModel]="fieldDraft().field_idx" (ngModelChange)="updateFieldDraft('field_idx', $event)" /></td>
+                  <td><input type="text" class="input input-bordered input-xs w-24" placeholder="field_key" [ngModel]="fieldDraft().field_key" (ngModelChange)="updateFieldDraft('field_key', $event)" /></td>
+                  <td><input type="text" class="input input-bordered input-xs w-28" placeholder="Display Name" [ngModel]="fieldDraft().display_name" (ngModelChange)="updateFieldDraft('display_name', $event)" /></td>
+                  <td>
+                    <select class="select select-bordered select-xs w-20" [ngModel]="fieldDraft().data_type" (ngModelChange)="updateFieldDraft('data_type', $event)">
+                      <option value="float">float</option>
+                      <option value="int">int</option>
+                      <option value="bool">bool</option>
+                      <option value="string">string</option>
+                      <option value="enum">enum</option>
+                    </select>
+                  </td>
+                  <td><input type="text" class="input input-bordered input-xs w-16" placeholder="unit" [ngModel]="fieldDraft().unit" (ngModelChange)="updateFieldDraft('unit', $event)" /></td>
+                  <td>
+                    <select class="select select-bordered select-xs w-24" [ngModel]="fieldDraft().category" (ngModelChange)="updateFieldDraft('category', $event)">
+                      <option value="telemetry">telemetry</option>
+                      <option value="system">system</option>
+                      <option value="config">config</option>
+                      <option value="diagnostic">diagnostic</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select class="select select-bordered select-xs w-16" [ngModel]="fieldDraft().access" (ngModelChange)="updateFieldDraft('access', $event)">
+                      <option value="">-</option>
+                      <option value="r">r</option>
+                      <option value="w">w</option>
+                      <option value="rw">rw</option>
+                    </select>
+                  </td>
+                  <td><input type="number" class="input input-bordered input-xs w-16" [ngModel]="fieldDraft().min_value" (ngModelChange)="updateFieldDraft('min_value', $event)" /></td>
+                  <td><input type="number" class="input input-bordered input-xs w-16" [ngModel]="fieldDraft().max_value" (ngModelChange)="updateFieldDraft('max_value', $event)" /></td>
+                  <td class="flex gap-1">
+                    <button type="button" class="btn btn-success btn-xs" [disabled]="saving()" (click)="saveNewField()">Add</button>
+                    <button type="button" class="btn btn-ghost btn-xs" (click)="cancelAddField()">Cancel</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (fields().length === 0 && !addingField()) {
+          <p class="text-sm text-base-content/40 py-4 text-center">No fields configured. Click "Add field" to begin.</p>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- ═══════════════════ Controls Tab ═══════════════════ -->
+  @if (activeTab() === 'controls') {
+    <div class="card-elevated">
+      <div class="card-body-spaced">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="section-title mb-0">Controls</h2>
+          <button type="button" class="btn btn-primary btn-sm" (click)="startAddControl()" [disabled]="addingControl()">+ Add control</button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-4">Named state machines (relays, valves, modes) toggled via commands, rules, or workflows.</p>
+
+        <div class="overflow-x-auto rounded-xl border border-base-300">
+          <table class="table table-sm">
+            <thead>
+              <tr class="bg-base-200/60">
+                <th class="font-semibold">Idx</th>
+                <th class="font-semibold">Key</th>
+                <th class="font-semibold">Display Name</th>
+                <th class="font-semibold">Current State</th>
+                <th class="font-semibold">States</th>
+                <th class="font-semibold w-28">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (c of controls(); track c.id) {
+                @if (editingControlId() === c.id) {
+                  <tr class="bg-primary/5">
+                    <td><input type="number" class="input input-bordered input-xs w-14" [ngModel]="controlDraft().control_idx" (ngModelChange)="updateControlDraft('control_idx', $event)" /></td>
+                    <td><input type="text" class="input input-bordered input-xs w-24" [ngModel]="controlDraft().control_key" (ngModelChange)="updateControlDraft('control_key', $event)" /></td>
+                    <td><input type="text" class="input input-bordered input-xs w-28" [ngModel]="controlDraft().display_name" (ngModelChange)="updateControlDraft('display_name', $event)" /></td>
+                    <td><input type="text" class="input input-bordered input-xs w-20" [ngModel]="controlDraft().current_state" (ngModelChange)="updateControlDraft('current_state', $event)" /></td>
+                    <td><input type="text" class="input input-bordered input-xs w-32" placeholder="on, off" [ngModel]="statesDisplay(controlDraft().states_json)" (ngModelChange)="updateControlDraft('states_json', $event)" /></td>
+                    <td class="flex gap-1">
+                      <button type="button" class="btn btn-success btn-xs" [disabled]="saving()" (click)="saveEditControl()">Save</button>
+                      <button type="button" class="btn btn-ghost btn-xs" (click)="cancelEditControl()">Cancel</button>
+                    </td>
+                  </tr>
+                } @else {
+                  <tr class="hover">
+                    <td class="text-base-content/60">{{ c.control_idx }}</td>
+                    <td class="font-mono text-xs">{{ c.control_key }}</td>
+                    <td>{{ c.display_name || '-' }}</td>
+                    <td>
+                      <span class="badge badge-sm" [class.badge-success]="c.current_state === 'on' || c.current_state === 'open'" [class.badge-ghost]="c.current_state !== 'on' && c.current_state !== 'open'">{{ c.current_state }}</span>
+                    </td>
+                    <td class="text-xs">{{ statesDisplay(c.states_json) || '-' }}</td>
+                    <td class="flex gap-1">
+                      <button type="button" class="btn btn-ghost btn-xs" (click)="editControl(c)">Edit</button>
+                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteControl(c)">Del</button>
+                    </td>
+                  </tr>
+                }
+              }
+              @if (addingControl()) {
+                <tr class="bg-success/5">
+                  <td><input type="number" class="input input-bordered input-xs w-14" [ngModel]="controlDraft().control_idx" (ngModelChange)="updateControlDraft('control_idx', $event)" /></td>
+                  <td><input type="text" class="input input-bordered input-xs w-24" placeholder="control_key" [ngModel]="controlDraft().control_key" (ngModelChange)="updateControlDraft('control_key', $event)" /></td>
+                  <td><input type="text" class="input input-bordered input-xs w-28" placeholder="Display Name" [ngModel]="controlDraft().display_name" (ngModelChange)="updateControlDraft('display_name', $event)" /></td>
+                  <td><input type="text" class="input input-bordered input-xs w-20" placeholder="off" [ngModel]="controlDraft().current_state" (ngModelChange)="updateControlDraft('current_state', $event)" /></td>
+                  <td><input type="text" class="input input-bordered input-xs w-32" placeholder="on, off" [ngModel]="statesDisplay(controlDraft().states_json)" (ngModelChange)="updateControlDraft('states_json', $event)" /></td>
+                  <td class="flex gap-1">
+                    <button type="button" class="btn btn-success btn-xs" [disabled]="saving()" (click)="saveNewControl()">Add</button>
+                    <button type="button" class="btn btn-ghost btn-xs" (click)="cancelAddControl()">Cancel</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (controls().length === 0 && !addingControl()) {
+          <p class="text-sm text-base-content/40 py-4 text-center">No controls configured.</p>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- ═══════════════════ Commands Tab ═══════════════════ -->
+  @if (activeTab() === 'commands' && !isAirConfig()) {
+    <div class="card-elevated">
+      <div class="card-body-spaced">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="section-title mb-0">Commands</h2>
+          <button type="button" class="btn btn-primary btn-sm" (click)="startAddCommand()" [disabled]="addingCommand()">+ Add command</button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-4">Remote actions sent as downlinks to the device.</p>
+
+        <div class="overflow-x-auto rounded-xl border border-base-300">
+          <table class="table table-sm">
+            <thead>
+              <tr class="bg-base-200/60">
+                <th class="font-semibold">Name</th>
+                <th class="font-semibold">FPort</th>
+                <th class="font-semibold">Payload Type</th>
+                <th class="font-semibold">Delivery</th>
+                <th class="font-semibold">Command Key</th>
+                <th class="font-semibold w-28">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (c of commands(); track c.id) {
+                @if (editingCommandId() === c.id) {
+                  <tr class="bg-primary/5">
+                    <td><input type="text" class="input input-bordered input-xs w-24" [ngModel]="commandDraft().name" (ngModelChange)="updateCommandDraft('name', $event)" /></td>
+                    <td><input type="number" class="input input-bordered input-xs w-16" [ngModel]="commandDraft().fport" (ngModelChange)="updateCommandDraft('fport', +$event)" /></td>
+                    <td>
+                      <select class="select select-bordered select-xs w-24" [ngModel]="commandDraft().payload_type" (ngModelChange)="updateCommandDraft('payload_type', $event)">
+                        <option value="empty">empty</option>
+                        <option value="uint32">uint32</option>
+                        <option value="json">json</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select class="select select-bordered select-xs w-20" [ngModel]="commandDraft().delivery" (ngModelChange)="updateCommandDraft('delivery', $event)">
+                        <option value="push">push</option>
+                        <option value="poll">poll</option>
+                      </select>
+                    </td>
+                    <td><input type="text" class="input input-bordered input-xs w-24" [ngModel]="commandDraft().command_key" (ngModelChange)="updateCommandDraft('command_key', $event)" /></td>
+                    <td class="flex gap-1">
+                      <button type="button" class="btn btn-success btn-xs" [disabled]="saving()" (click)="saveEditCommand()">Save</button>
+                      <button type="button" class="btn btn-ghost btn-xs" (click)="cancelEditCommand()">Cancel</button>
+                    </td>
+                  </tr>
+                } @else {
+                  <tr class="hover">
+                    <td class="font-mono text-xs">{{ c.name }}</td>
+                    <td>{{ c.fport }}</td>
+                    <td class="text-xs">{{ c.payload_type || '-' }}</td>
+                    <td class="text-xs">{{ c.delivery || '-' }}</td>
+                    <td class="font-mono text-xs">{{ c.command_key || '-' }}</td>
+                    <td class="flex gap-1">
+                      <button type="button" class="btn btn-ghost btn-xs" (click)="editCommand(c)">Edit</button>
+                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteCommand(c)">Del</button>
+                    </td>
+                  </tr>
+                }
+              }
+              @if (addingCommand()) {
+                <tr class="bg-success/5">
+                  <td><input type="text" class="input input-bordered input-xs w-24" placeholder="name" [ngModel]="commandDraft().name" (ngModelChange)="updateCommandDraft('name', $event)" /></td>
+                  <td><input type="number" class="input input-bordered input-xs w-16" [ngModel]="commandDraft().fport" (ngModelChange)="updateCommandDraft('fport', +$event)" /></td>
+                  <td>
+                    <select class="select select-bordered select-xs w-24" [ngModel]="commandDraft().payload_type" (ngModelChange)="updateCommandDraft('payload_type', $event)">
+                      <option value="empty">empty</option>
+                      <option value="uint32">uint32</option>
+                      <option value="json">json</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select class="select select-bordered select-xs w-20" [ngModel]="commandDraft().delivery" (ngModelChange)="updateCommandDraft('delivery', $event)">
+                      <option value="push">push</option>
+                      <option value="poll">poll</option>
+                    </select>
+                  </td>
+                  <td><input type="text" class="input input-bordered input-xs w-24" placeholder="command_key" [ngModel]="commandDraft().command_key" (ngModelChange)="updateCommandDraft('command_key', $event)" /></td>
+                  <td class="flex gap-1">
+                    <button type="button" class="btn btn-success btn-xs" [disabled]="saving()" (click)="saveNewCommand()">Add</button>
+                    <button type="button" class="btn btn-ghost btn-xs" (click)="cancelAddCommand()">Cancel</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (commands().length === 0 && !addingCommand()) {
+          <p class="text-sm text-base-content/40 py-4 text-center">No commands configured.</p>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- ═══════════════════ Decode Rules Tab ═══════════════════ -->
+  @if (activeTab() === 'decode' && !isAirConfig()) {
+    <div class="card-elevated">
+      <div class="card-body-spaced">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="section-title mb-0">Decode Rules</h2>
+          <button type="button" class="btn btn-primary btn-sm" (click)="startAddDecode()" [disabled]="addingDecode()">+ Add rule</button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-4">How raw bytes on each fport are decoded into field values.</p>
+
+        <div class="overflow-x-auto rounded-xl border border-base-300">
+          <table class="table table-sm">
+            <thead>
+              <tr class="bg-base-200/60">
+                <th class="font-semibold">FPort</th>
+                <th class="font-semibold">Format</th>
+                <th class="font-semibold">Config</th>
+                <th class="font-semibold w-28">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of decodeRules(); track r.id) {
+                @if (editingDecodeId() === r.id) {
+                  <tr class="bg-primary/5">
+                    <td><input type="number" class="input input-bordered input-xs w-16" [ngModel]="decodeDraft().fport" (ngModelChange)="updateDecodeDraft('fport', +$event)" /></td>
+                    <td>
+                      <select class="select select-bordered select-xs w-28" [ngModel]="decodeDraft().format" (ngModelChange)="updateDecodeDraft('format', $event)">
+                        <option value="cayenne">cayenne</option>
+                        <option value="packed_struct">packed_struct</option>
+                        <option value="json">json</option>
+                        <option value="raw">raw</option>
+                      </select>
+                    </td>
+                    <td><textarea class="textarea textarea-bordered textarea-xs w-full font-mono text-xs" rows="2" [ngModel]="decodeDraft().config" (ngModelChange)="updateDecodeDraft('config', $event)"></textarea></td>
+                    <td class="flex gap-1">
+                      <button type="button" class="btn btn-success btn-xs" [disabled]="saving()" (click)="saveEditDecode()">Save</button>
+                      <button type="button" class="btn btn-ghost btn-xs" (click)="cancelEditDecode()">Cancel</button>
+                    </td>
+                  </tr>
+                } @else {
+                  <tr class="hover">
+                    <td>{{ r.fport }}</td>
+                    <td class="font-mono text-xs">{{ r.format }}</td>
+                    <td class="font-mono text-xs max-w-xs truncate" [title]="formatConfig(r.config)">{{ formatConfig(r.config) }}</td>
+                    <td class="flex gap-1">
+                      <button type="button" class="btn btn-ghost btn-xs" (click)="editDecode(r)">Edit</button>
+                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteDecode(r)">Del</button>
+                    </td>
+                  </tr>
+                }
+              }
+              @if (addingDecode()) {
+                <tr class="bg-success/5">
+                  <td><input type="number" class="input input-bordered input-xs w-16" [ngModel]="decodeDraft().fport" (ngModelChange)="updateDecodeDraft('fport', +$event)" /></td>
+                  <td>
+                    <select class="select select-bordered select-xs w-28" [ngModel]="decodeDraft().format" (ngModelChange)="updateDecodeDraft('format', $event)">
+                      <option value="cayenne">cayenne</option>
+                      <option value="packed_struct">packed_struct</option>
+                      <option value="json">json</option>
+                      <option value="raw">raw</option>
+                    </select>
+                  </td>
+                  <td><textarea class="textarea textarea-bordered textarea-xs w-full font-mono text-xs" rows="2" placeholder="{}" [ngModel]="decodeDraft().config" (ngModelChange)="updateDecodeDraft('config', $event)"></textarea></td>
+                  <td class="flex gap-1">
+                    <button type="button" class="btn btn-success btn-xs" [disabled]="saving()" (click)="saveNewDecode()">Add</button>
+                    <button type="button" class="btn btn-ghost btn-xs" (click)="cancelAddDecode()">Cancel</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (decodeRules().length === 0 && !addingDecode()) {
+          <p class="text-sm text-base-content/40 py-4 text-center">No decode rules configured.</p>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- ═══════════════════ Test Decode Panel ═══════════════════ -->
+  <div class="card-elevated mt-6">
+    <div class="card-body-spaced">
+      <h2 class="section-title">Test Decode</h2>
+      <p class="text-xs text-base-content/50 -mt-2 mb-4">Test how a hex payload would be decoded using this device's current spec and decode rules.</p>
+      <div class="flex flex-wrap gap-3 items-end">
+        <div class="form-control">
+          <label class="label"><span class="label-text text-xs">FPort</span></label>
+          <input type="number" class="input input-bordered input-sm w-20" [ngModel]="testFport()" (ngModelChange)="testFport.set(+$event)" />
+        </div>
+        <div class="form-control flex-1 min-w-[200px]">
+          <label class="label"><span class="label-text text-xs">Payload (hex)</span></label>
+          <input type="text" class="input input-bordered input-sm font-mono" placeholder="e.g. 0167011402680f" [ngModel]="testPayloadHex()" (ngModelChange)="testPayloadHex.set($event)" />
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="testRunning() || !testPayloadHex()" (click)="runTestDecode()">
+          {{ testRunning() ? 'Decoding...' : 'Decode' }}
+        </button>
+      </div>
+      @if (testError()) {
+        <div class="alert alert-error text-sm rounded-xl mt-3">
+          <span>{{ testError() }}</span>
+        </div>
+      }
+      @if (testResult()) {
+        <div class="mt-3 space-y-2">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-sm badge-outline">{{ testFormat() }}</span>
+            <span class="text-xs text-base-content/50">fport {{ testFport() }}</span>
+          </div>
+          <pre class="bg-base-200 rounded-xl p-4 text-xs font-mono overflow-x-auto">{{ testResult() | json }}</pre>
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- ═══════════════════ Advanced JSON Modal ═══════════════════ -->
+  @if (showAdvanced()) {
+    <div class="modal modal-open">
+      <div class="modal-box max-w-3xl">
+        <h3 class="font-bold text-lg mb-2">Device Spec (JSON)</h3>
+        <p class="text-xs text-base-content/50 mb-4">Full device configuration as JSON. You can edit and apply to replace all device config, or copy for backup/transfer.</p>
+
+        @if (specMessage()) {
+          <div class="alert text-sm rounded-xl mb-3" [class.alert-error]="specIsError()" [class.alert-success]="!specIsError()">
+            <span>{{ specMessage() }}</span>
+          </div>
+        }
+
+        @if (specLoading()) {
+          <div class="flex justify-center py-8">
+            <span class="loading loading-spinner loading-md"></span>
+          </div>
+        } @else {
+          <textarea
+            class="textarea textarea-bordered w-full font-mono text-xs"
+            rows="20"
+            [ngModel]="specJson()"
+            (ngModelChange)="specJson.set($event)"
+          ></textarea>
+        }
+
+        <div class="modal-action">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="copySpec()" [disabled]="specLoading()">Copy</button>
+          <button type="button" class="btn btn-warning btn-sm" (click)="applySpec()" [disabled]="specLoading() || specApplying()">
+            {{ specApplying() ? 'Applying...' : 'Apply' }}
+          </button>
+          <button type="button" class="btn btn-sm" (click)="closeAdvanced()">Close</button>
+        </div>
+      </div>
+      <div class="modal-backdrop" (click)="closeAdvanced()"></div>
+    </div>
+  }
+}

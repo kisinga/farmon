@@ -8,7 +8,7 @@ import (
 	"encoding/binary"
 
 	"github.com/farmon/firmware/pkg/settings"
-	"github.com/kisinga/farmon/firmware/pkg/protocol"
+	"github.com/farmon/firmware/pkg/protocol"
 )
 
 // Re-export subcommand constants from protocol for callers that only import airconfig.
@@ -22,6 +22,8 @@ const (
 	AirCfgWiFi     = protocol.AirCfgWiFi
 	AirCfgTransfer = protocol.AirCfgTransfer
 	AirCfgSetHash  = protocol.AirCfgSetHash
+	AirCfgCompute  = protocol.AirCfgCompute
+	AirCfgProbe    = protocol.AirCfgProbe
 	AirCfgReset    = protocol.AirCfgReset
 )
 
@@ -106,11 +108,11 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 		}
 
 	case AirCfgControl:
-		// [0x05, slot, pin_idx, state_count, flags, actuator_type, pin2_idx, pulse_x100ms]
+		// [0x05, slot, pin_idx, state_count, flags, actuator_type, pin2_idx, pulse_x100ms, field_index, value_max]
 		if len(data) >= 8 {
 			slot := data[1]
 			if int(slot) < settings.MaxControls {
-				cfg.Controls[slot] = settings.ControlSlot{
+				cs := settings.ControlSlot{
 					PinIndex:       data[2],
 					StateCount:     data[3],
 					Flags:          data[4],
@@ -118,10 +120,15 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 					Pin2Index:      data[6],
 					PulseDurX100ms: data[7],
 				}
+				if len(data) >= 10 {
+					cs.FieldIndex = data[8]
+					cs.ValueMax = data[9]
+				}
+				cfg.Controls[slot] = cs
 				if slot >= cfg.ControlCount {
 					cfg.ControlCount = slot + 1
 				}
-				println("[airconfig] control slot", slot, "configured")
+				println("[airconfig] control slot", slot, "configured, field_idx=", cs.FieldIndex)
 				return ResultReboot
 			}
 		}
@@ -143,6 +150,31 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 			println("[airconfig] transfer config updated, enabled:", data[1])
 			return ResultSaved
 		}
+
+	case AirCfgCompute:
+		// [0x0A, field_idx, bytecode_len, ...bytecode]
+		if len(data) >= 3 {
+			fieldIdx := data[1]
+			bcLen := data[2]
+			if int(bcLen) > settings.MaxBytecodeLen {
+				bcLen = settings.MaxBytecodeLen
+			}
+			if len(data) >= 3+int(bcLen) && int(cfg.ComputeCount) < settings.MaxCompute {
+				slot := cfg.ComputeCount
+				cfg.Compute[slot].FieldIdx = fieldIdx
+				cfg.Compute[slot].BytecodeLen = bcLen
+				copy(cfg.Compute[slot].Bytecode[:bcLen], data[3:3+int(bcLen)])
+				cfg.ComputeCount++
+				println("[airconfig] compute field", fieldIdx, "bytecode len=", bcLen)
+				return ResultSaved
+			}
+		}
+
+	case AirCfgProbe:
+		// [0x0B, field_idx_1, field_idx_2, ...] — handled by node.go via ProbeHandler callback.
+		// The airconfig package sets a flag; the node loop sends the response.
+		// This is a no-op here — the node's ext handler should process this.
+		// Fall through to ext handler.
 
 	case AirCfgSetHash:
 		// [0x09, b0, b1, b2, b3] — backend commits the expected config hash after a full push.

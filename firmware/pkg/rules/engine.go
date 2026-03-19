@@ -1,6 +1,9 @@
 // Package rules implements the edge rules engine.
-// Evaluates sensor-threshold rules with priority resolution, cooldown,
+// Evaluates field-threshold rules with priority resolution, cooldown,
 // and auto-revert duration timers. All timing uses monotonic nowMs (ms since boot).
+//
+// Rules read from fields (conditions) and write to fields (actions).
+// When the target field is an output field, the associated actuator fires.
 package rules
 
 import (
@@ -24,10 +27,8 @@ type ControlState struct {
 	CurrentState  uint8
 	IsManual      bool
 	ManualUntilMs uint32
-	// Duration timer: when a rule fires with ActionDurX10s > 0, the control
-	// reverts to state 0 after the timer expires.
-	RevertAtMs  uint32
-	HasDuration bool
+	RevertAtMs    uint32
+	HasDuration   bool
 }
 
 // StateChange is queued for uplink when a control changes state.
@@ -60,23 +61,66 @@ func (sc *StateChange) ToBinary(buf []byte) int {
 	return StateChangeSize
 }
 
-// SetControlFn is called when a rule fires and a control needs to change.
-type SetControlFn func(controlIdx, stateIdx uint8) bool
+// SetControlFn is called when a rule writes to an output field and the actuator needs to fire.
+type SetControlFn func(controlIdx, value uint8) bool
 
-// Engine evaluates rules against sensor readings and triggers control actions.
+// Engine evaluates rules against field values and triggers actions.
 type Engine struct {
-	rules        []settings.Rule
-	controls     [settings.MaxControls]ControlState
-	lastFiredMs  [settings.MaxRules]uint32  // per-rule cooldown tracker
-	changes      [20]StateChange           // ring buffer
-	head         int
-	count        int
-	sequenceID   uint16
-	setControl   SetControlFn
+	rules       []settings.Rule
+	controls    [settings.MaxControls]ControlState
+	lastFiredMs [settings.MaxRules]uint32 // per-rule cooldown tracker
+	changes     [20]StateChange           // ring buffer
+	head        int
+	count       int
+	sequenceID  uint16
+	setControl  SetControlFn
+
+	// FieldToControl maps field indices to control slot indices.
+	// -1 means the field is not an output (not linked to a control).
+	FieldToControl [settings.MaxFields]int8
+
+	// FieldWritable marks which fields can be written by rules.
+	// True for output fields and compute fields.
+	FieldWritable [settings.MaxFields]bool
 }
 
 func New(setControl SetControlFn) *Engine {
-	return &Engine{setControl: setControl}
+	e := &Engine{setControl: setControl}
+	for i := range e.FieldToControl {
+		e.FieldToControl[i] = -1
+	}
+	return e
+}
+
+// ConfigureFieldMapping sets up the field→control dispatch table from control slots.
+func (e *Engine) ConfigureFieldMapping(controls []settings.ControlSlot, controlCount uint8) {
+	for i := range e.FieldToControl {
+		e.FieldToControl[i] = -1
+	}
+	for i := range e.FieldWritable {
+		e.FieldWritable[i] = false
+	}
+	for i := uint8(0); i < controlCount; i++ {
+		c := &controls[i]
+		if !c.Enabled() {
+			continue
+		}
+		fi := c.FieldIndex
+		if int(fi) < settings.MaxFields {
+			e.FieldToControl[fi] = int8(i)
+			e.FieldWritable[fi] = true
+		}
+	}
+}
+
+// MarkComputeWritable marks compute field indices as writable by rules.
+func (e *Engine) MarkComputeWritable(computes []settings.ComputeSlot, count uint8) {
+	for i := uint8(0); i < count; i++ {
+		fi := computes[i].FieldIdx
+		if int(fi) < settings.MaxFields {
+			e.FieldWritable[fi] = true
+		}
+	}
 }
 
 // LoadRules replaces the current rule set and resets cooldown timers.
@@ -85,23 +129,25 @@ func (e *Engine) LoadRules(rules []settings.Rule) {
 	e.lastFiredMs = [settings.MaxRules]uint32{}
 }
 
-// Evaluate checks all rules against current sensor values and control states.
+// Evaluate checks all rules against current field values.
+// values is the unified field array (inputs + outputs + computed).
 // nowMs is monotonic milliseconds since boot.
-func (e *Engine) Evaluate(values []float32, controlStates []uint8, nowMs uint32) {
+func (e *Engine) Evaluate(values []float32, nowMs uint32) {
 	// Phase 1: revert any expired duration timers.
-	e.revertExpired(nowMs)
+	e.revertExpired(values, nowMs)
 
 	if len(e.rules) == 0 {
 		return
 	}
 
-	// Phase 2: find the highest-priority triggered rule per control.
+	// Phase 2: find the highest-priority triggered rule per target field.
 	type winner struct {
 		ruleIdx  int
 		priority uint8
 		valid    bool
 	}
-	best := [settings.MaxControls]winner{}
+	// Use MaxFields for target indexing since rules now target fields.
+	best := [settings.MaxFields]winner{}
 
 	for i := range e.rules {
 		r := &e.rules[i]
@@ -111,19 +157,26 @@ func (e *Engine) Evaluate(values []float32, controlStates []uint8, nowMs uint32)
 		if int(r.FieldIdx) >= len(values) {
 			continue
 		}
+		if int(r.TargetFieldIdx) >= settings.MaxFields || !e.FieldWritable[r.TargetFieldIdx] {
+			continue
+		}
+
 		// Cooldown: skip if fired too recently.
 		if r.CooldownSec > 0 && e.lastFiredMs[i] > 0 {
 			if elapsed := nowMs - e.lastFiredMs[i]; elapsed < uint32(r.CooldownSec)*1000 {
 				continue
 			}
 		}
-		// Skip manual override.
-		cs := &e.controls[r.ControlIdx]
-		if cs.IsManual {
-			if cs.ManualUntilMs == 0 || nowMs < cs.ManualUntilMs {
-				continue
+
+		// Skip manual override for output fields.
+		if ctrlIdx := e.FieldToControl[r.TargetFieldIdx]; ctrlIdx >= 0 {
+			cs := &e.controls[ctrlIdx]
+			if cs.IsManual {
+				if cs.ManualUntilMs == 0 || nowMs < cs.ManualUntilMs {
+					continue
+				}
+				cs.IsManual = false
 			}
-			cs.IsManual = false
 		}
 
 		result := evaluateCondition(r.Op, values[r.FieldIdx], r.Threshold)
@@ -135,7 +188,7 @@ func (e *Engine) Evaluate(values []float32, controlStates []uint8, nowMs uint32)
 			if !hasFlags[ci] {
 				continue
 			}
-			cr := evaluateExtra(&r.Extra[ci], values, controlStates)
+			cr := evaluateExtra(&r.Extra[ci], values)
 			if logicOps[ci] == 1 {
 				result = result || cr
 			} else {
@@ -144,7 +197,7 @@ func (e *Engine) Evaluate(values []float32, controlStates []uint8, nowMs uint32)
 		}
 
 		if result {
-			b := &best[r.ControlIdx]
+			b := &best[r.TargetFieldIdx]
 			if !b.valid || r.Priority < b.priority {
 				b.ruleIdx = i
 				b.priority = r.Priority
@@ -153,38 +206,52 @@ func (e *Engine) Evaluate(values []float32, controlStates []uint8, nowMs uint32)
 		}
 	}
 
-	// Phase 3: execute winning rules where state actually changes.
-	for ctrlIdx := uint8(0); ctrlIdx < settings.MaxControls; ctrlIdx++ {
-		b := &best[ctrlIdx]
+	// Phase 3: execute winning rules.
+	for fi := uint8(0); fi < settings.MaxFields; fi++ {
+		b := &best[fi]
 		if !b.valid {
 			continue
 		}
 		r := &e.rules[b.ruleIdx]
-		if e.controls[ctrlIdx].CurrentState == r.ActionState {
-			continue
-		}
 
-		if e.setControl != nil {
-			if !e.setControl(ctrlIdx, r.ActionState) {
+		ctrlIdx := e.FieldToControl[fi]
+		if ctrlIdx >= 0 {
+			// Output field — fire actuator if state changes.
+			if e.controls[ctrlIdx].CurrentState == r.ActionValue {
 				continue
 			}
-		}
+			if e.setControl != nil {
+				if !e.setControl(uint8(ctrlIdx), r.ActionValue) {
+					continue
+				}
+			}
+			e.lastFiredMs[b.ruleIdx] = nowMs
+			e.recordChange(uint8(ctrlIdx), r.ActionValue, TriggerRule, r.ID, nowMs)
 
-		e.lastFiredMs[b.ruleIdx] = nowMs
-		e.recordChange(ctrlIdx, r.ActionState, TriggerRule, r.ID, nowMs)
+			// Write to unified values array.
+			if int(fi) < len(values) {
+				values[fi] = float32(r.ActionValue)
+			}
 
-		// Start duration timer if configured.
-		durMs := r.ActionDurationMs()
-		if durMs > 0 {
-			cs := &e.controls[ctrlIdx]
-			cs.HasDuration = true
-			cs.RevertAtMs = nowMs + durMs
+			// Start duration timer if configured.
+			durMs := r.ActionDurationMs()
+			if durMs > 0 {
+				cs := &e.controls[ctrlIdx]
+				cs.HasDuration = true
+				cs.RevertAtMs = nowMs + durMs
+			}
+		} else {
+			// Compute field — just write the value, no actuator.
+			if int(fi) < len(values) {
+				values[fi] = float32(r.ActionValue)
+			}
+			e.lastFiredMs[b.ruleIdx] = nowMs
 		}
 	}
 }
 
 // revertExpired reverts controls whose duration timer has elapsed.
-func (e *Engine) revertExpired(nowMs uint32) {
+func (e *Engine) revertExpired(values []float32, nowMs uint32) {
 	for i := uint8(0); i < settings.MaxControls; i++ {
 		cs := &e.controls[i]
 		if !cs.HasDuration {
@@ -205,20 +272,20 @@ func (e *Engine) revertExpired(nowMs uint32) {
 }
 
 // SetState allows external state changes (downlinks, manual).
-func (e *Engine) SetState(ctrlIdx, stateIdx uint8, source TriggerSource, ruleID uint8, nowMs uint32) {
+// ctrlIdx is the control slot index, value is the new state/value.
+func (e *Engine) SetState(ctrlIdx, value uint8, source TriggerSource, ruleID uint8, nowMs uint32) {
 	if e.setControl != nil {
-		e.setControl(ctrlIdx, stateIdx)
+		e.setControl(ctrlIdx, value)
 	}
-	// External state change cancels any running duration timer.
 	e.controls[ctrlIdx].HasDuration = false
-	e.recordChange(ctrlIdx, stateIdx, source, ruleID, nowMs)
+	e.recordChange(ctrlIdx, value, source, ruleID, nowMs)
 }
 
 // SetManualOverride locks a control in manual mode.
 func (e *Engine) SetManualOverride(ctrlIdx uint8, durationMs, nowMs uint32) {
 	cs := &e.controls[ctrlIdx]
 	cs.IsManual = true
-	cs.HasDuration = false // manual override cancels duration timer
+	cs.HasDuration = false
 	if durationMs > 0 {
 		cs.ManualUntilMs = nowMs + durationMs
 	} else {
@@ -283,7 +350,6 @@ func (e *Engine) recordChange(ctrlIdx, newState uint8, source TriggerSource, rul
 	}
 	e.sequenceID++
 
-	// Ring buffer: drop oldest if full
 	if e.count >= len(e.changes) {
 		e.head = (e.head + 1) % len(e.changes)
 		e.count--
@@ -294,17 +360,14 @@ func (e *Engine) recordChange(ctrlIdx, newState uint8, source TriggerSource, rul
 }
 
 // evaluateExtra evaluates a compact extra condition (C2, C3, or C4).
-func evaluateExtra(c *settings.ExtraCondition, values []float32, controlStates []uint8) bool {
+// In the unified field model, all values (input + output + compute) are in the same array.
+// The IsControl flag now means "compare against this field's value as uint8" (for backward compat
+// with existing rule format where extra conditions referenced control states).
+func evaluateExtra(c *settings.ExtraCondition, values []float32) bool {
 	if c.FieldIdx == 0xFF {
 		return false
 	}
 	threshold := float32(c.Threshold)
-	if c.IsControl {
-		if int(c.FieldIdx) >= len(controlStates) {
-			return false
-		}
-		return evaluateCondition(c.Op, float32(controlStates[c.FieldIdx]), threshold)
-	}
 	if int(c.FieldIdx) >= len(values) {
 		return false
 	}

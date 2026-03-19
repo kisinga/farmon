@@ -1,5 +1,6 @@
-import { Component, input, output, signal, computed, inject, OnInit } from '@angular/core';
+import { Component, input, signal, computed, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ApiService, DeviceField, DeviceRuleRecord } from '../../../core/services/api.service';
 import {
   SUGGESTED_RULES,
@@ -13,7 +14,6 @@ interface CalibForm {
   mode: 'datasheet' | 'trim';
   physMin: number;
   physMax: number;
-  // trim mode
   currentReading: number;
   expectedValue: number;
 }
@@ -26,14 +26,14 @@ interface SensorForm {
   displayName: string;
   fieldKey: string;
   pinIndex: number;
-  busIndex: number;     // for I2C/UART bus-addressed sensors
-  i2cAddr: number;      // for BME280/INA219
+  busIndex: number;
+  i2cAddr: number;
   pulsesPerUnit: number;
   modbusDevAddr: number;
   modbusFuncCode: number;
   modbusRegAddr: number;
   modbusRegSigned: boolean;
-  digitalPullMode: 0 | 1 | 2;  // 0=pullup, 1=pulldown, 2=float
+  digitalPullMode: 0 | 1 | 2;
   calib: CalibForm;
 }
 
@@ -115,20 +115,37 @@ function defaultForm(): SensorForm {
             </select>
           </label>
 
-          <!-- Display name + field key -->
-          <div class="flex gap-2 flex-wrap">
-            <label class="form-control w-48">
-              <div class="label py-1"><span class="label-text text-xs">Display Name</span></div>
-              <input class="input input-bordered input-sm" [(ngModel)]="form().displayName" placeholder="e.g. Soil Moisture" />
+          <!-- Target field (dropdown + inline create) -->
+          <div class="space-y-2">
+            <label class="form-control w-full max-w-xs">
+              <div class="label py-1"><span class="label-text text-xs">Target Field</span></div>
+              <select class="select select-bordered select-sm"
+                [ngModel]="fieldSelection()"
+                (ngModelChange)="onFieldSelect($event)">
+                <option value="">— select a field —</option>
+                @for (f of fieldConfigs(); track f.field_key) {
+                  <option [value]="f.field_key">{{ f.field_key }} — {{ f.display_name }}{{ f.unit ? ' (' + f.unit + ')' : '' }}</option>
+                }
+                <option value="__new__">+ Create new field</option>
+              </select>
             </label>
-            <label class="form-control w-36">
-              <div class="label py-1"><span class="label-text text-xs">Field Key</span></div>
-              <input class="input input-bordered input-sm" [(ngModel)]="form().fieldKey" placeholder="e.g. soil_1" />
-            </label>
-            <label class="form-control w-24">
-              <div class="label py-1"><span class="label-text text-xs">Unit</span></div>
-              <input class="input input-bordered input-sm" [(ngModel)]="form().unit" placeholder="e.g. %" />
-            </label>
+
+            @if (creatingNewField()) {
+              <div class="flex gap-2 flex-wrap pl-1 border-l-2 border-primary/30 ml-1">
+                <label class="form-control w-36">
+                  <div class="label py-1"><span class="label-text text-xs">Field Key</span></div>
+                  <input class="input input-bordered input-sm" [(ngModel)]="form().fieldKey" placeholder="e.g. soil_1" />
+                </label>
+                <label class="form-control w-48">
+                  <div class="label py-1"><span class="label-text text-xs">Display Name</span></div>
+                  <input class="input input-bordered input-sm" [(ngModel)]="form().displayName" placeholder="e.g. Soil Moisture" />
+                </label>
+                <label class="form-control w-24">
+                  <div class="label py-1"><span class="label-text text-xs">Unit</span></div>
+                  <input class="input input-bordered input-sm" [(ngModel)]="form().unit" placeholder="e.g. %" />
+                </label>
+              </div>
+            }
           </div>
 
           <!-- GPIO pin (non-bus sensors) -->
@@ -293,10 +310,10 @@ function defaultForm(): SensorForm {
 export class DeviceSensorConfigComponent implements OnInit {
   eui = input.required<string>();
   fieldConfigs = input<DeviceField[]>([]);
-  prefillRule = output<Partial<DeviceRuleRecord>>();
 
   private api = inject(ApiService);
   private sensorService = inject(SensorService);
+  private router = inject(Router);
 
   readonly presets = signal<SensorPresetInfo[]>([]);
   readonly interfaces = signal<SensorInterfaceInfo[]>([]);
@@ -310,6 +327,10 @@ export class DeviceSensorConfigComponent implements OnInit {
   suggestions = signal<RuleSuggestion[]>([]);
   validationErrors = signal<AirConfigValidationError[]>([]);
   validationWarnings = signal<AirConfigValidationError[]>([]);
+
+  // Field selection state
+  creatingNewField = signal(false);
+  fieldSelection = signal<string>('');
 
   // Track field index + slot assigned after save (for rule prefill)
   private lastFieldIndex = signal(0);
@@ -339,8 +360,47 @@ export class DeviceSensorConfigComponent implements OnInit {
 
   canSave = computed(() => {
     const f = this.form();
-    return f.interfaceId !== '' && f.fieldKey.trim() !== '' && f.displayName.trim() !== '';
+    if (f.interfaceId === '') return false;
+    if (this.creatingNewField()) {
+      return f.fieldKey.trim() !== '' && f.displayName.trim() !== '';
+    }
+    // Existing field selected
+    return this.fieldSelection() !== '' && this.fieldSelection() !== '__new__';
   });
+
+  // ─── Field selection ─────────────────────────────────────
+
+  onFieldSelect(value: string): void {
+    this.fieldSelection.set(value);
+    if (value === '__new__') {
+      this.creatingNewField.set(true);
+      // Pre-fill from measurement if available
+      const meas = this.measurements().find(m => m.id === this.form().measurement);
+      this.form.update(f => ({
+        ...f,
+        fieldKey: f.measurement ? f.measurement + '_' + (this.fieldConfigs().length + 1) : '',
+        displayName: meas?.label ?? f.displayName,
+        unit: meas?.unit ?? f.unit,
+      }));
+    } else if (value) {
+      this.creatingNewField.set(false);
+      // Auto-fill display name and unit from the selected field
+      const field = this.fieldConfigs().find(fc => fc.field_key === value);
+      if (field) {
+        this.form.update(f => ({
+          ...f,
+          fieldKey: field.field_key,
+          displayName: field.display_name,
+          unit: field.unit ?? f.unit,
+        }));
+      }
+    } else {
+      this.creatingNewField.set(false);
+      this.form.update(f => ({ ...f, fieldKey: '', displayName: '' }));
+    }
+  }
+
+  // ─── Presets ─────────────────────────────────────────────
 
   applyPreset(p: SensorPresetInfo): void {
     const meas = this.measurements().find(m => m.id === p.measurement);
@@ -351,7 +411,7 @@ export class DeviceSensorConfigComponent implements OnInit {
       measurement: p.measurement as MeasurementType,
       unit: meas?.unit ?? '',
       displayName: p.label,
-      fieldKey: p.measurement + '_' + (this.fieldConfigs().length + 1),
+      fieldKey: '',
       i2cAddr: p.i2c_addr ?? 0x76,
       pulsesPerUnit: p.pulses_per_unit ?? 1,
       calib: {
@@ -362,11 +422,24 @@ export class DeviceSensorConfigComponent implements OnInit {
         expectedValue: p.calib_min,
       },
     });
+    // Default to creating a new field for presets
+    this.fieldSelection.set('__new__');
+    this.creatingNewField.set(true);
+    this.form.update(f => ({
+      ...f,
+      fieldKey: p.measurement + '_' + (this.fieldConfigs().length + 1),
+      displayName: p.label,
+      unit: meas?.unit ?? '',
+    }));
   }
 
   clearPreset(): void {
     this.form.set(defaultForm());
+    this.fieldSelection.set('');
+    this.creatingNewField.set(false);
   }
+
+  // ─── Form handlers ──────────────────────────────────────
 
   onInterfaceChange(id: string): void {
     this.form.update(f => ({ ...f, interfaceId: id }));
@@ -380,7 +453,7 @@ export class DeviceSensorConfigComponent implements OnInit {
   }
 
   setDigitalPullMode(v: unknown): void {
-    const n = +( v as number);
+    const n = +(v as number);
     const mode = (n === 1 ? 1 : n === 2 ? 2 : 0) as 0 | 1 | 2;
     this.form.update(f => ({ ...f, digitalPullMode: mode }));
   }
@@ -396,6 +469,8 @@ export class DeviceSensorConfigComponent implements OnInit {
   setCalibMode(mode: 'datasheet' | 'trim'): void {
     this.form.update(f => ({ ...f, calib: { ...f.calib, mode } }));
   }
+
+  // ─── Field index helpers ────────────────────────────────
 
   /** Compute the next unused field index based on existing fieldConfigs. */
   private nextFieldIndex(): number {
@@ -417,16 +492,22 @@ export class DeviceSensorConfigComponent implements OnInit {
     return Math.min(this.fieldConfigs().length, 7);
   }
 
-  /** Run validation before save, displaying results inline. */
+  /** Get field_idx for an existing field by key. */
+  private getExistingFieldIndex(fieldKey: string): number {
+    const field = this.fieldConfigs().find(f => f.field_key === fieldKey);
+    return field?.field_idx ?? this.nextFieldIndex();
+  }
+
+  // ─── Validation ─────────────────────────────────────────
+
   validate(): void {
     const f = this.form();
     const iface = this.interfaces().find(i => i.id === f.interfaceId);
     if (!iface) return;
 
-    const fieldIndex = this.nextFieldIndex();
+    const fieldIndex = this.creatingNewField() ? this.nextFieldIndex() : this.getExistingFieldIndex(f.fieldKey);
     const pinOrBus = iface.bus_addressed ? f.busIndex : f.pinIndex;
 
-    // Build a minimal airconfig for validation
     const sensor = {
       type: iface.sensor_type,
       pin_index: pinOrBus,
@@ -451,11 +532,14 @@ export class DeviceSensorConfigComponent implements OnInit {
     });
   }
 
+  // ─── Save ───────────────────────────────────────────────
+
   save(): void {
     if (!this.canSave() || this.saving()) return;
     const f = this.form();
     const iface = this.interfaces().find(i => i.id === f.interfaceId)!;
-    const fieldIndex = this.nextFieldIndex();
+    const isNewField = this.creatingNewField();
+    const fieldIndex = isNewField ? this.nextFieldIndex() : this.getExistingFieldIndex(f.fieldKey);
     const slot = this.nextSlot();
     this.lastFieldIndex.set(fieldIndex);
 
@@ -506,29 +590,37 @@ export class DeviceSensorConfigComponent implements OnInit {
       param2_raw: param2Raw,
     }).subscribe({
       next: () => {
-        // Create device field metadata record
-        this.api.createDeviceField({
-          device_eui: this.eui(),
-          field_key: f.fieldKey.trim(),
-          display_name: f.displayName.trim(),
-          unit: f.unit,
-          data_type: 'float',
-          category: f.measurement || 'custom',
-          field_idx: fieldIndex,
-        }).subscribe({
-          next: () => {
-            this.saving.set(false);
-            this.statusOk.set(true);
-            this.statusMsg.set('Sensor slot configured and downlink queued. Device will apply after next uplink.');
-            this.loadSuggestions(f.measurement as MeasurementType);
-          },
-          error: (err: { message?: string }) => {
-            this.saving.set(false);
-            this.statusOk.set(false);
-            this.statusMsg.set('Downlink sent but field metadata failed: ' + (err?.message ?? 'unknown error'));
-            this.loadSuggestions(f.measurement as MeasurementType);
-          },
-        });
+        if (isNewField) {
+          // Create device field metadata record for new fields
+          this.api.createDeviceField({
+            device_eui: this.eui(),
+            field_key: f.fieldKey.trim(),
+            display_name: f.displayName.trim(),
+            unit: f.unit,
+            data_type: 'float',
+            category: f.measurement || 'custom',
+            field_idx: fieldIndex,
+          }).subscribe({
+            next: () => {
+              this.saving.set(false);
+              this.statusOk.set(true);
+              this.statusMsg.set('Sensor slot configured and downlink queued. Device will apply after next uplink.');
+              this.loadSuggestions(f.measurement as MeasurementType);
+            },
+            error: (err: { message?: string }) => {
+              this.saving.set(false);
+              this.statusOk.set(false);
+              this.statusMsg.set('Downlink sent but field metadata failed: ' + (err?.message ?? 'unknown error'));
+              this.loadSuggestions(f.measurement as MeasurementType);
+            },
+          });
+        } else {
+          // Existing field — no need to create, just report success
+          this.saving.set(false);
+          this.statusOk.set(true);
+          this.statusMsg.set('Sensor slot configured and bound to field "' + f.fieldKey + '". Downlink queued.');
+          this.loadSuggestions(f.measurement as MeasurementType);
+        }
       },
       error: (err: { message?: string }) => {
         this.saving.set(false);
@@ -538,6 +630,8 @@ export class DeviceSensorConfigComponent implements OnInit {
     });
   }
 
+  // ─── Rule suggestions ───────────────────────────────────
+
   private loadSuggestions(meas: MeasurementType): void {
     const s = SUGGESTED_RULES[meas];
     this.suggestions.set(s ?? []);
@@ -545,11 +639,15 @@ export class DeviceSensorConfigComponent implements OnInit {
 
   addRule(s: RuleSuggestion): void {
     const opMap: Record<string, string> = { '>': 'gt', '<': 'lt', '>=': 'gte', '<=': 'lte', '==': 'eq', '!=': 'neq' };
-    this.prefillRule.emit({
+    const prefill: Partial<DeviceRuleRecord> = {
       field_idx: this.lastFieldIndex(),
       operator: opMap[s.operator] ?? 'lt',
       threshold: s.threshold,
       enabled: true,
+    };
+    // Navigate to device detail automation tab with prefill data
+    this.router.navigate(['/device', this.eui()], {
+      queryParams: { tab: 'automation', prefill: JSON.stringify(prefill) },
     });
   }
 }

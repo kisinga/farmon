@@ -33,10 +33,10 @@ type ExtraConditionMap struct {
 //
 //	[0]     ID
 //	[1]     Flags: bit7=Enabled, bits6-4=Op(3), bit3=HasC2, bit2=HasC3, bit1=HasC4
-//	[2]     FieldIdx (primary)
-//	[3-6]   Threshold float32 LE (primary)
-//	[7]     ControlIdx
-//	[8]     ActionState
+//	[2]     FieldIdx (primary condition)
+//	[3-6]   Threshold float32 LE (primary condition)
+//	[7]     TargetFieldIdx — field to write to (output field → actuator fires)
+//	[8]     ActionValue — value to write (0/1 binary, 0-255 analog/PWM)
 //	[9-10]  CooldownSec uint16 LE
 //	[11]    Priority
 //	[12]    ActionDurX10s
@@ -56,8 +56,8 @@ func buildRuleBinary(r map[string]any, extras []ExtraConditionMap, windowActive 
 	}
 	fieldIdx := toUint8(r["field_idx"])
 	threshold := float32(toFloat64(r["threshold"]))
-	controlIdx := toUint8(r["control_idx"])
-	actionState := toUint8(r["action_state"])
+	targetFieldIdx := toUint8(r["target_field_idx"])
+	actionValue := toUint8(r["action_value"])
 	cooldownSec := toUint16(r["cooldown_seconds"])
 	priority := toUint8(r["priority"])
 	actionDur := toUint8(r["action_dur_x10s"])
@@ -69,8 +69,8 @@ func buildRuleBinary(r map[string]any, extras []ExtraConditionMap, windowActive 
 	}
 	buf[2] = fieldIdx
 	binary.LittleEndian.PutUint32(buf[3:7], math.Float32bits(threshold))
-	buf[7] = controlIdx
-	buf[8] = actionState
+	buf[7] = targetFieldIdx
+	buf[8] = actionValue
 	binary.LittleEndian.PutUint16(buf[9:11], cooldownSec)
 	buf[11] = priority
 	buf[12] = actionDur

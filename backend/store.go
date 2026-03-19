@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -72,26 +73,44 @@ func insertStateChange(app core.App, deviceEui, controlKey, oldState, newState, 
 	return app.Save(rec)
 }
 
-func upsertDeviceControl(app core.App, deviceEui, controlKey, currentState, changedBy string) error {
-	coll, err := app.FindCollectionByNameOrId("device_controls")
+// upsertDeviceControl updates control metadata (last_change_at/by) and writes
+// the new value to the control's linked field.
+func upsertDeviceControl(app core.App, deviceEui, controlKey string, value float64, changedBy string) error {
+	now := time.Now().Format(time.RFC3339)
+
+	// Update control metadata
+	existing, err := app.FindFirstRecordByFilter("device_controls", "device_eui = {:eui} && control_key = {:key}", dbx.Params{"eui": deviceEui, "key": controlKey})
+	if err != nil {
+		return fmt.Errorf("control %s not found for %s: %w", controlKey, deviceEui, err)
+	}
+	existing.Set("last_change_at", now)
+	existing.Set("last_change_by", changedBy)
+	if err := app.Save(existing); err != nil {
+		return err
+	}
+
+	// Write value to the linked field
+	fieldKey := existing.GetString("field_key")
+	if fieldKey != "" {
+		return upsertFieldValue(app, deviceEui, fieldKey, value)
+	}
+	return nil
+}
+
+// upsertFieldValue writes a value to a device field's latest telemetry.
+func upsertFieldValue(app core.App, deviceEui, fieldKey string, value float64) error {
+	// Insert as a telemetry data point so it appears in history/current values
+	coll, err := app.FindCollectionByNameOrId("telemetry")
 	if err != nil {
 		return err
 	}
-	now := time.Now().Format(time.RFC3339)
-	existing, err := app.FindFirstRecordByFilter("device_controls", "device_eui = {:eui} && control_key = {:key}", dbx.Params{"eui": deviceEui, "key": controlKey})
-	if err != nil {
-		rec := core.NewRecord(coll)
-		rec.Set("device_eui", deviceEui)
-		rec.Set("control_key", controlKey)
-		rec.Set("current_state", currentState)
-		rec.Set("last_change_at", now)
-		rec.Set("last_change_by", changedBy)
-		return app.Save(rec)
-	}
-	existing.Set("current_state", currentState)
-	existing.Set("last_change_at", now)
-	existing.Set("last_change_by", changedBy)
-	return app.Save(existing)
+	data := map[string]any{fieldKey: value}
+	dataJSON, _ := json.Marshal(data)
+	rec := core.NewRecord(coll)
+	rec.Set("device_eui", deviceEui)
+	rec.Set("data", string(dataJSON))
+	rec.Set("ts", time.Now().Format(time.RFC3339))
+	return app.Save(rec)
 }
 
 // insertCommand logs a user-initiated downlink command to the persistent commands collection.

@@ -1,0 +1,55 @@
+{
+  "type": "airconfig",
+  "fields": [
+    { "key": "pd", "display_name": "Pulse Delta", "unit": "", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "d", "min_value": 0, "max_value": 65535, "sort_order": 0 },
+    { "key": "tv", "display_name": "Total Volume", "unit": "L", "data_type": "number", "category": "telemetry", "access": "r", "state_class": "i", "min_value": 0, "max_value": 999999, "sort_order": 1 },
+    { "key": "bp", "display_name": "Battery", "unit": "%", "data_type": "number", "category": "system", "access": "r", "state_class": "m", "min_value": 0, "max_value": 100, "sort_order": 2 },
+    { "key": "tx", "display_name": "TX Interval", "unit": "s", "data_type": "number", "category": "system", "access": "w", "state_class": "m", "min_value": 0, "max_value": 3600, "sort_order": 3 }
+  ],
+  "controls": [
+    { "key": "pump", "display_name": "Water Pump", "states": ["off", "on"], "sort_order": 0 },
+    { "key": "valve", "display_name": "Valve", "states": ["closed", "open"], "sort_order": 1 }
+  ],
+  "commands": [
+    { "name": "reset", "fport": 10, "payload_type": "empty" },
+    { "name": "interval", "fport": 11, "payload_type": "uint16_le_seconds" },
+    { "name": "reboot", "fport": 12, "payload_type": "empty" },
+    { "name": "clearerr", "fport": 13, "payload_type": "empty" },
+    { "name": "forcereg", "fport": 14, "payload_type": "empty" },
+    { "name": "status", "fport": 15, "payload_type": "empty" },
+    { "name": "ctrl", "fport": 20, "payload_type": "control_binary" },
+    { "name": "rule", "fport": 30, "payload_type": "rule_binary" }
+  ],
+  "decode_rules": [
+    { "fport": 2, "format": "text_kv", "config": { "separator": ",", "kv_separator": ":" } },
+    { "fport": 3, "format": "binary_state_change", "config": {
+      "record_size": 11,
+      "layout": [
+        { "offset": 0, "name": "control_idx", "type": "uint8" },
+        { "offset": 1, "name": "new_state", "type": "uint8" },
+        { "offset": 2, "name": "old_state", "type": "uint8" },
+        { "offset": 3, "name": "source_id", "type": "uint8" },
+        { "offset": 4, "name": "rule_id", "type": "uint8" },
+        { "offset": 5, "name": "device_ms", "type": "uint32_le" },
+        { "offset": 9, "name": "seq", "type": "uint16_le" }
+      ],
+      "source_map": { "0": "BOOT", "1": "RULE", "2": "MANUAL", "3": "DOWNLINK" }
+    }},
+    { "fport": 4, "format": "text_kv", "config": { "separator": ":", "kv_separator": ":" } }
+  ],
+  "visualizations": [
+    { "name": "Water Flow", "viz_type": "time_series", "config": { "fields": ["pd"], "y_label": "Pulses", "y_unit": "" }, "sort_order": 0 },
+    { "name": "Total Volume", "viz_type": "time_series", "config": { "fields": ["tv"], "y_label": "Volume", "y_unit": "L" }, "sort_order": 1 },
+    { "name": "Battery", "viz_type": "gauge", "config": { "field": "bp", "color_ranges": [{ "max": 20, "color": "error" }, { "max": 50, "color": "warning" }, { "max": 100, "color": "success" }] }, "sort_order": 2 },
+    { "name": "TX Interval", "viz_type": "stat", "config": { "field": "tx", "suffix": "s" }, "sort_order": 3 }
+  ],
+  "airconfig": {
+    "pin_map": [0,0,0,0,7,0,0,0,9,9,0,0,0,0,0,0,0,0,0,0],
+    "sensors": [{ "type": 1, "pin_index": 4, "field_index": 0, "flags": 1, "param1": 450 }],
+    "controls": [
+      { "pin_index": 8, "state_count": 2, "flags": 1, "actuator_type": 0, "pin2_index": 255, "pulse_x100ms": 0 },
+      { "pin_index": 9, "state_count": 2, "flags": 1, "actuator_type": 0, "pin2_index": 255, "pulse_x100ms": 0 }
+    ],
+    "lorawan": { "region": 0, "sub_band": 1, "data_rate": 0, "tx_power": 0, "adr": true, "confirmed": false }
+  }
+}

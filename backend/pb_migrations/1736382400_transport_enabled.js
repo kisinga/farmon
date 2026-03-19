@@ -19,10 +19,14 @@ migrate(
       app.save(rec)
     }
 
-    // --- Create wifi_settings collection ---
+    // --- Create wifi_settings collection (public access, same as gateway_settings) ---
     const wifi = new Collection({
       name: "wifi_settings",
       type: "base",
+      listRule: "",
+      viewRule: "",
+      createRule: "",
+      updateRule: "",
       fields: [
         new Field({ type: "bool", name: "enabled" }),
         new Field({ type: "bool", name: "test_mode" }),

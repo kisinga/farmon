@@ -20,12 +20,12 @@ const REGIONS = [
             <span class="badge badge-primary">LoRaWAN</span>
           </h3>
           <label class="label cursor-pointer gap-2">
-            <span class="label-text text-sm">{{ enabled() ? 'Enabled' : 'Disabled' }}</span>
+            <span class="label-text text-sm">{{ form.enabled ? 'Enabled' : 'Disabled' }}</span>
             <input
               type="checkbox"
               class="toggle toggle-primary"
-              [checked]="enabled()"
-              (change)="toggleEnabled()"
+              name="enabled"
+              [(ngModel)]="form.enabled"
               [disabled]="loading()"
             />
           </label>
@@ -36,7 +36,7 @@ const REGIONS = [
             <span class="loading loading-spinner loading-lg text-primary"></span>
           </div>
         } @else {
-          <div [class.opacity-50]="!enabled()" [class.pointer-events-none]="!enabled()">
+          <div [class.opacity-50]="!form.enabled" [class.pointer-events-none]="!form.enabled">
             @if (!saved()) {
               <div class="alert alert-info rounded-xl mb-4">
                 <span>Save the form below to enable the LoRaWAN gateway and start receiving uplinks.</span>
@@ -200,7 +200,6 @@ export class LorawanSettingsComponent implements OnInit {
   saveError = signal<string | null>(null);
   saveSuccess = signal(false);
   saved = signal(false);
-  enabled = signal(true);
 
   regions = REGIONS;
 
@@ -220,17 +219,10 @@ export class LorawanSettingsComponent implements OnInit {
       next: (res) => {
         this.form = { ...res };
         this.saved.set(res.saved);
-        this.enabled.set(res.enabled);
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
     });
-  }
-
-  toggleEnabled(): void {
-    const newVal = !this.enabled();
-    this.enabled.set(newVal);
-    this.api.patchGatewaySettings({ enabled: newVal }).subscribe();
   }
 
   canSave(): boolean {
@@ -252,6 +244,7 @@ export class LorawanSettingsComponent implements OnInit {
       command_url: this.form.command_url.trim(),
       rx1_frequency_hz: this.form.rx1_frequency_hz ?? 0,
       test_mode: this.form.test_mode,
+      enabled: this.form.enabled,
     };
     this.api.patchGatewaySettings(payload).subscribe({
       next: (res) => {
@@ -274,7 +267,6 @@ export class LorawanSettingsComponent implements OnInit {
       next: (res) => {
         this.form = { ...res };
         this.saved.set(res.saved);
-        this.enabled.set(res.enabled);
         this.refreshing.set(false);
       },
       error: () => this.refreshing.set(false),

@@ -7,7 +7,7 @@ import {
   Device,
   DeviceControl,
   DeviceField,
-  DeviceTarget,
+  DeviceSpec,
   FirmwareCommand,
   SensorCatalog,
   HistoryResponse,
@@ -139,12 +139,8 @@ export class DeviceService {
     ).pipe(map((res) => res.items));
   }
 
-  provisionDevice(device_eui: string, device_name?: string, profile_id?: string, transport?: TransportType, target_id?: string): Observable<ProvisionResponse> {
-    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name, profile_id, transport, target_id });
-  }
-
-  getDeviceTargets(): Observable<DeviceTarget[]> {
-    return this.http.get<DeviceTarget[]>(`${API}/device-targets`);
+  provisionDevice(device_eui: string, device_name?: string, transport?: TransportType, spec?: DeviceSpec): Observable<ProvisionResponse> {
+    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name, transport, spec });
   }
 
   deleteDevice(eui: string): Observable<{ ok: boolean; message?: string }> {
@@ -158,8 +154,16 @@ export class DeviceService {
     ).pipe(map((r) => ({ device_eui: r.device_eui, app_key: r.app_key ?? '', device_token: r.device_token ?? '', transport: (r.transport as TransportType) || 'lorawan' })));
   }
 
-  updateDeviceOverrides(eui: string, overrides: unknown): Observable<{ ok: boolean }> {
-    return this.http.patch<{ ok: boolean }>(`${API}/devices/${eui}/overrides`, { overrides });
+  getDeviceSpec(eui: string): Observable<DeviceSpec> {
+    return this.http.get<DeviceSpec>(`${API}/devices/${eui}/spec`);
+  }
+
+  applyDeviceSpec(eui: string, spec: DeviceSpec): Observable<{ ok: boolean; device_type: string; config_status: string }> {
+    return this.http.post<{ ok: boolean; device_type: string; config_status: string }>(`${API}/devices/${eui}/apply-spec`, { spec });
+  }
+
+  testDecode(spec: DeviceSpec, fport: number, payloadHex: string): Observable<{ format: string; fport: number; result: Record<string, unknown> }> {
+    return this.http.post<{ format: string; fport: number; result: Record<string, unknown> }>(`${API}/test-decode`, { spec, fport, payload_hex: payloadHex });
   }
 
   pushConfig(eui: string): Observable<{ ok: boolean; config_hash?: string }> {

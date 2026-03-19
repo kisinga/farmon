@@ -7,7 +7,7 @@ import (
 
 func TestRuleBinaryRoundTrip_NoExtras(t *testing.T) {
 	r := Rule{
-		ID: 7, FieldIdx: 3, ControlIdx: 1, ActionState: 1,
+		ID: 7, FieldIdx: 3, TargetFieldIdx: 1, ActionValue: 1,
 		Op: OpGT, Priority: 10, CooldownSec: 300,
 		Threshold: 25.5, Enabled: true, ActionDurX10s: 6,
 	}
@@ -27,8 +27,8 @@ func TestRuleBinaryRoundTrip_NoExtras(t *testing.T) {
 		t.Fatal("FromBinary failed")
 	}
 
-	if r2.ID != 7 || r2.FieldIdx != 3 || r2.ControlIdx != 1 || r2.ActionState != 1 {
-		t.Errorf("basic fields mismatch: got ID=%d FieldIdx=%d ControlIdx=%d ActionState=%d", r2.ID, r2.FieldIdx, r2.ControlIdx, r2.ActionState)
+	if r2.ID != 7 || r2.FieldIdx != 3 || r2.TargetFieldIdx != 1 || r2.ActionValue != 1 {
+		t.Errorf("basic fields mismatch: got ID=%d FieldIdx=%d TargetFieldIdx=%d ActionValue=%d", r2.ID, r2.FieldIdx, r2.TargetFieldIdx, r2.ActionValue)
 	}
 	if r2.Op != OpGT {
 		t.Errorf("Op = %d, want %d", r2.Op, OpGT)
@@ -56,7 +56,7 @@ func TestRuleBinaryRoundTrip_NoExtras(t *testing.T) {
 func TestRuleBinaryRoundTrip_FourConditions(t *testing.T) {
 	r := Rule{
 		ID: 1, FieldIdx: 0, Op: OpLT, Threshold: 30.0,
-		ControlIdx: 2, ActionState: 1, CooldownSec: 60,
+		TargetFieldIdx: 2, ActionValue: 1, CooldownSec: 60,
 		Priority: 5, Enabled: true, ActionDurX10s: 12,
 		HasC2: true, HasC3: true, HasC4: true,
 		Logic12: 0, // AND

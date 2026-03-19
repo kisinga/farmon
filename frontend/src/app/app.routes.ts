@@ -3,10 +3,7 @@ import { Routes } from '@angular/router';
 export const routes: Routes = [
   { path: '', loadComponent: () => import('./pages/device-list/device-list.component').then(m => m.DeviceListComponent) },
   { path: 'device/:eui', loadComponent: () => import('./pages/device-detail/device-detail.component').then(m => m.DeviceDetailComponent) },
-  { path: 'templates', loadComponent: () => import('./pages/profiles/profile-list.component').then(m => m.ProfileListComponent) },
-  { path: 'templates/:id', loadComponent: () => import('./pages/profiles/profile-detail.component').then(m => m.ProfileDetailComponent) },
-  { path: 'profiles', redirectTo: 'templates' },
-  { path: 'profiles/:id', redirectTo: 'templates' },
+  { path: 'device/:eui/config', loadComponent: () => import('./pages/device-config/device-config.component').then(m => m.DeviceConfigComponent) },
   { path: 'workflows', loadComponent: () => import('./pages/workflows/workflows.component').then(m => m.WorkflowsComponent) },
   { path: 'workflows/new', loadComponent: () => import('./pages/workflows/workflow-editor.component').then(m => m.WorkflowEditorComponent) },
   { path: 'workflows/:id/edit', loadComponent: () => import('./pages/workflows/workflow-editor.component').then(m => m.WorkflowEditorComponent) },

@@ -1,7 +1,7 @@
 import { Component, inject, signal, computed, OnInit, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { ApiService, Device, ProfileSummary } from '../../core/services/api.service';
+import { ApiService, Device } from '../../core/services/api.service';
 import { AddDeviceModalComponent } from '../../shared/components/add-device-modal/add-device-modal.component';
 
 @Component({
@@ -65,7 +65,6 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
                   <th class="font-semibold">Name</th>
                   <th class="font-semibold hidden sm:table-cell">Transport</th>
                   <th class="font-semibold hidden sm:table-cell">Type</th>
-                  <th class="font-semibold hidden md:table-cell">Profile</th>
                   <th class="font-semibold hidden md:table-cell">Config</th>
                   <th class="font-semibold">Last seen</th>
                   <th class="text-right font-semibold">Action</th>
@@ -84,13 +83,6 @@ import { AddDeviceModalComponent } from '../../shared/components/add-device-moda
                       </span>
                     </td>
                     <td class="hidden sm:table-cell text-base-content/70">{{ d.device_type || '—' }}</td>
-                    <td class="hidden md:table-cell">
-                      @if (d.profile && profileMap().get(d.profile); as prof) {
-                        <a [routerLink]="['/templates', d.profile]" class="link link-hover text-sm">{{ prof.name }}</a>
-                      } @else {
-                        <span class="text-base-content/40">—</span>
-                      }
-                    </td>
                     <td class="hidden md:table-cell">
                       @if (d.config_status === 'synced') {
                         <span class="badge badge-success badge-sm">synced</span>
@@ -133,8 +125,6 @@ export class DeviceListComponent implements OnInit {
   private addModalRef = viewChild<AddDeviceModalComponent>('addModal');
 
   devices = signal<Device[]>([]);
-  profiles = signal<ProfileSummary[]>([]);
-  profileMap = computed(() => new Map(this.profiles().map(p => [p.id, p])));
   loading = signal(true);
   error = signal<string | null>(null);
   transportFilter = signal('');
@@ -162,10 +152,6 @@ export class DeviceListComponent implements OnInit {
 
   ngOnInit() {
     this.loadDevices();
-    this.api.getProfiles(false).subscribe({
-      next: (list) => this.profiles.set(list),
-      error: () => {},
-    });
   }
 
   openAddModal(): void {

@@ -1,6 +1,6 @@
-import { Component, inject, signal, output, computed } from '@angular/core';
+import { Component, inject, signal, computed, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, ProfileSummary, ProvisionResponse, DeviceTarget, TransportType, getTransportMeta, getDeviceIDFormat } from '../../../core/services/api.service';
+import { ApiService, ProvisionResponse, TransportType, getTransportMeta, DeviceSpec } from '../../../core/services/api.service';
 import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-credentials';
 
 @Component({
@@ -11,174 +11,89 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
     <dialog class="modal" [class.modal-open]="open()" (click)="onBackdropClick($event)">
       <div class="modal-box max-w-lg rounded-2xl shadow-2xl" (click)="$event.stopPropagation()">
         @if (!result()) {
-          @if (step() === 1) {
-            <!-- Step 1: Select Target Device -->
-            <h3 class="font-bold text-lg">Select device type</h3>
-            <p class="text-sm text-base-content/70 mt-1">Choose the hardware you're connecting.</p>
+          <h3 class="font-bold text-lg">Add device</h3>
+          <p class="text-sm text-base-content/70 mt-1">Provision a new device. Optionally import a spec JSON.</p>
 
-            @if (loadingTargets()) {
-              <div class="flex justify-center py-8">
-                <span class="loading loading-spinner loading-md text-primary"></span>
+          <form class="mt-4 space-y-4" (ngSubmit)="onSubmit()">
+            <!-- Transport -->
+            <label class="form-control w-full">
+              <span class="label"><span class="label-text font-medium">Transport</span></span>
+              <select class="select select-bordered select-sm w-full" [(ngModel)]="transport" name="transport">
+                <option value="lorawan">LoRaWAN</option>
+                <option value="wifi">WiFi</option>
+              </select>
+            </label>
+
+            <!-- Device ID -->
+            <label class="form-control w-full">
+              <span class="label"><span class="label-text font-medium">Device ID</span><span class="text-error">*</span></span>
+              <input
+                type="text"
+                class="input input-bordered w-full font-mono input-sm"
+                [placeholder]="transport === 'wifi' ? 'e.g. aabbccddeeff' : 'e.g. 0102030405060708'"
+                [maxlength]="16"
+                [(ngModel)]="eui"
+                name="eui"
+                required
+              />
+              <span class="label-text-alt text-base-content/50">
+                {{ transport === 'wifi' ? '12 hex characters (MAC)' : '16 hex characters (EUI-64)' }}
+              </span>
+            </label>
+
+            <!-- Device name -->
+            <label class="form-control w-full">
+              <span class="label"><span class="label-text font-medium">Device name</span><span class="label-text-alt">optional</span></span>
+              <input
+                type="text"
+                class="input input-bordered w-full input-sm"
+                placeholder="e.g. pump-1"
+                [(ngModel)]="name"
+                name="name"
+              />
+            </label>
+
+            <!-- Advanced: Spec JSON -->
+            <div class="collapse collapse-arrow bg-base-200/50 rounded-xl">
+              <input type="checkbox" [(ngModel)]="showAdvanced" name="showAdvanced" />
+              <div class="collapse-title text-sm font-medium py-2 min-h-0">
+                Import spec (Advanced)
               </div>
-            } @else {
-              <div class="mt-4 space-y-2">
-                @for (t of targets(); track t.id) {
-                  <button
-                    type="button"
-                    class="w-full text-left rounded-xl border p-3 transition-colors"
-                    [class.border-primary]="selectedTarget() === t.id"
-                    [class.bg-primary]="selectedTarget() === t.id"
-                    [style.--tw-bg-opacity]="selectedTarget() === t.id ? '0.05' : '0'"
-                    [class.border-base-300]="selectedTarget() !== t.id"
-                    (click)="selectTarget(t)"
-                  >
-                    <div class="flex items-center justify-between">
-                      <span class="font-medium">{{ t.name }}</span>
-                      @if (t.transport) {
-                        <span class="badge badge-sm" [class.badge-primary]="t.transport === 'lorawan'" [class.badge-secondary]="t.transport === 'wifi'">{{ t.transport }}</span>
-                      } @else {
-                        <span class="badge badge-sm badge-ghost">manual</span>
-                      }
-                    </div>
-                    <p class="text-xs text-base-content/60 mt-1">{{ t.description }}</p>
-                  </button>
+              <div class="collapse-content">
+                <p class="text-xs text-base-content/60 mb-2">Paste a device spec JSON to pre-configure fields, controls, and decode rules.</p>
+                <textarea
+                  class="textarea textarea-bordered font-mono text-xs w-full"
+                  rows="8"
+                  [(ngModel)]="specJson"
+                  name="specJson"
+                  placeholder='{ "type": "codec", "fields": [...], "decode_rules": [...] }'
+                ></textarea>
+                @if (specError()) {
+                  <p class="text-xs text-error mt-1">{{ specError() }}</p>
                 }
               </div>
-            }
+            </div>
 
+            @if (error()) {
+              <div class="alert alert-error text-sm rounded-xl">{{ error() }}</div>
+            }
             <div class="modal-action mt-6 p-0 justify-end gap-2">
               <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
-              <button type="button" class="btn btn-primary" [disabled]="!selectedTarget()" (click)="step.set(2)">Next</button>
+              <button type="submit" class="btn btn-primary" [disabled]="submitting()">
+                {{ submitting() ? 'Provisioning…' : 'Provision' }}
+              </button>
             </div>
-
-          } @else if (step() === 2) {
-            <!-- Step 2: Select Profile + Transport Override -->
-            <h3 class="font-bold text-lg">Configure device</h3>
-            <p class="text-sm text-base-content/70 mt-1">
-              Target: <span class="font-medium">{{ selectedTargetName() }}</span>
-            </p>
-
-            <!-- Transport override -->
-            <div class="mt-4">
-              <label class="form-control w-full">
-                <span class="label"><span class="label-text font-medium">Transport</span></span>
-                <select class="select select-bordered select-sm w-full" [ngModel]="transport()" (ngModelChange)="transport.set($event)" name="transport">
-                  <option value="lorawan">LoRaWAN</option>
-                  <option value="wifi">WiFi</option>
-                </select>
-                @if (inferredTransport()) {
-                  <span class="label-text-alt text-base-content/50">Default from target: {{ inferredTransport() }}</span>
-                }
-              </label>
-            </div>
-
-            <!-- Profile selection -->
-            @if (loadingProfiles()) {
-              <div class="flex justify-center py-4">
-                <span class="loading loading-spinner loading-sm text-primary"></span>
-              </div>
-            } @else if (annotatedProfiles().length === 0) {
-              <div class="py-4 text-center text-base-content/50 text-sm">No profiles available. Create one in Profiles first.</div>
-            } @else {
-              <p class="text-xs text-base-content/50 mt-3">Showing profiles compatible with <strong>{{ transportMeta().label }}</strong>. Incompatible profiles are greyed out.</p>
-              <div class="mt-2 space-y-2 max-h-52 overflow-y-auto">
-                @for (p of annotatedProfiles(); track p.id) {
-                  <button
-                    type="button"
-                    class="w-full text-left rounded-xl border p-3 transition-colors"
-                    [class.border-primary]="selectedProfile() === p.id && p.compatible"
-                    [class.bg-primary]="selectedProfile() === p.id && p.compatible"
-                    [style.--tw-bg-opacity]="selectedProfile() === p.id ? '0.05' : '0'"
-                    [class.border-base-300]="selectedProfile() !== p.id"
-                    [class.opacity-40]="!p.compatible"
-                    [disabled]="!p.compatible"
-                    (click)="p.compatible && selectedProfile.set(p.id)"
-                  >
-                    <div class="flex items-center justify-between">
-                      <span class="font-medium">{{ p.name }}</span>
-                      <div class="flex gap-1">
-                        @if (p.transport) {
-                          <span class="badge badge-xs badge-ghost">{{ p.transport }}</span>
-                        }
-                        <span class="badge badge-sm" [class.badge-primary]="p.profile_type === 'airconfig'" [class.badge-secondary]="p.profile_type === 'codec'">{{ p.profile_type }}</span>
-                      </div>
-                    </div>
-                    @if (p.reason) {
-                      <p class="text-xs text-warning mt-1">{{ p.reason }}</p>
-                    } @else if (p.description) {
-                      <p class="text-xs text-base-content/60 mt-1">{{ p.description }}</p>
-                    }
-                  </button>
-                }
-              </div>
-            }
-
-            <div class="modal-action mt-6 p-0 justify-end gap-2">
-              <button type="button" class="btn btn-ghost" (click)="step.set(1)">Back</button>
-              <button type="button" class="btn btn-primary" [disabled]="!selectedProfile()" (click)="step.set(3)">Next</button>
-            </div>
-
-          } @else {
-            <!-- Step 3: Device ID + Name -->
-            <h3 class="font-bold text-lg">Device details</h3>
-            <p class="text-sm text-base-content/70 mt-1">
-              Enter the {{ idFormat().label }} for your device.
-              Profile: <span class="font-medium">{{ selectedProfileName() }}</span>
-            </p>
-
-            <form class="mt-4 space-y-4" (ngSubmit)="onSubmit()">
-              <label class="form-control w-full">
-                <span class="label"><span class="label-text font-medium">{{ idFormat().label }}</span><span class="text-error">*</span></span>
-                <input
-                  type="text"
-                  class="input input-bordered w-full font-mono input-sm"
-                  [placeholder]="idFormat().placeholder"
-                  [maxlength]="idFormat().maxLength"
-                  [(ngModel)]="eui"
-                  name="eui"
-                  required
-                />
-                <span class="label-text-alt text-base-content/50">{{ idFormat().hint }}</span>
-              </label>
-              <label class="form-control w-full">
-                <span class="label"><span class="label-text font-medium">Device name</span><span class="label-text-alt">optional</span></span>
-                <input
-                  type="text"
-                  class="input input-bordered w-full input-sm"
-                  placeholder="e.g. pump-1"
-                  [(ngModel)]="name"
-                  name="name"
-                />
-              </label>
-              @if (error()) {
-                <div class="alert alert-error text-sm rounded-xl">{{ error() }}</div>
-              }
-              <div class="modal-action mt-6 p-0 justify-end gap-2">
-                <button type="button" class="btn btn-ghost" (click)="step.set(2)">Back</button>
-                <button type="submit" class="btn btn-primary" [disabled]="submitting()">
-                  {{ submitting() ? 'Provisioning…' : 'Provision' }}
-                </button>
-              </div>
-            </form>
-          }
+          </form>
         } @else {
           <!-- Result: Credentials -->
           <h3 class="font-bold text-lg">Device provisioned</h3>
           <div class="mt-4 space-y-4">
-            @if (result()!.warning) {
-              <div class="alert alert-warning text-sm rounded-xl">{{ result()!.warning }}</div>
-            }
             <div class="alert alert-success text-sm rounded-xl">
-              @if (result()!.profile_name) {
-                Device provisioned with profile <strong>{{ result()!.profile_name }}</strong>
-                via <span class="badge badge-sm">{{ result()!.transport }}</span>.
-              } @else {
-                Device provisioned via <span class="badge badge-sm">{{ result()!.transport }}</span>.
-              }
+              Device provisioned via <span class="badge badge-sm">{{ result()!.transport }}</span>.
               Copy the {{ resultMeta().credentialLabel }} into your firmware.
             </div>
             <label class="form-control w-full">
-              <span class="label"><span class="label-text font-mono text-xs">{{ idFormat().label }}</span></span>
+              <span class="label"><span class="label-text font-mono text-xs">Device ID</span></span>
               <div class="flex gap-2">
                 <input #euiInput type="text" class="input input-bordered input-sm flex-1 font-mono text-xs" [value]="result()!.device_eui" readonly />
                 <button type="button" class="btn btn-ghost btn-sm btn-square" (click)="copy(euiInput, result()!.device_eui)" title="Copy">
@@ -187,7 +102,6 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
               </div>
             </label>
 
-            <!-- Show whichever credential the backend returned -->
             @if (result()!.app_key) {
               <label class="form-control w-full">
                 <span class="label"><span class="label-text font-mono text-xs">{{ resultMeta().credentialLabel }}</span></span>
@@ -248,92 +162,37 @@ export class AddDeviceModalComponent {
   private api = inject(ApiService);
 
   open = signal(false);
-  step = signal<1 | 2 | 3>(1);
   submitting = signal(false);
   error = signal<string | null>(null);
+  specError = signal<string | null>(null);
   result = signal<ProvisionResponse | null>(null);
   showKey = signal(false);
 
-  targets = signal<DeviceTarget[]>([]);
-  loadingTargets = signal(false);
-  selectedTarget = signal<string | null>(null);
-  inferredTransport = signal<string>('');
-
-  profiles = signal<ProfileSummary[]>([]);
-  loadingProfiles = signal(false);
-  selectedProfile = signal<string | null>(null);
-
-  transport = signal<TransportType>('lorawan');
+  transport: TransportType = 'lorawan';
   eui = '';
   name = '';
+  specJson = '';
+  showAdvanced = false;
 
   deviceAdded = output<void>();
 
-  /** Transport display metadata (label, badge, credential name). */
-  transportMeta = computed(() => getTransportMeta(this.transport()));
-  /** Transport metadata for the provisioning result. */
   resultMeta = computed(() => getTransportMeta(this.result()?.transport));
-  /** Device ID format metadata — driven by the selected target, not transport. */
-  idFormat = computed(() => {
-    const targetId = this.selectedTarget();
-    const target = this.targets().find(t => t.id === targetId);
-    return getDeviceIDFormat(target?.device_id_format);
-  });
-
-  /** All profiles, each annotated with whether it's compatible with the selected transport. */
-  annotatedProfiles = computed(() => {
-    const t = this.transport();
-    return this.profiles().map(p => ({
-      ...p,
-      compatible: !p.transport || p.transport === 'any' || p.transport === t,
-      reason: p.transport && p.transport !== 'any' && p.transport !== t
-        ? `This profile requires ${p.transport}`
-        : '',
-    }));
-  });
-
-  selectedTargetName(): string {
-    const id = this.selectedTarget();
-    return this.targets().find(t => t.id === id)?.name ?? '';
-  }
-
-  selectedProfileName(): string {
-    const id = this.selectedProfile();
-    return this.profiles().find(p => p.id === id)?.name ?? '';
-  }
 
   ingestUrl(): string {
     return window.location.origin;
   }
 
-  selectTarget(t: DeviceTarget): void {
-    this.selectedTarget.set(t.id);
-    if (t.transport) {
-      this.transport.set(t.transport);
-      this.inferredTransport.set(t.transport);
-    } else {
-      this.inferredTransport.set('');
-    }
-    // Pre-select default profile if available
-    if (t.default_profile_id) {
-      this.selectedProfile.set(t.default_profile_id);
-    }
-    this.loadProfiles();
-  }
-
   openModal(): void {
     this.open.set(true);
-    this.step.set(1);
     this.result.set(null);
     this.error.set(null);
-    this.selectedTarget.set(null);
-    this.selectedProfile.set(null);
-    this.inferredTransport.set('');
-    this.transport.set('lorawan');
+    this.specError.set(null);
+    this.transport = 'lorawan';
     this.eui = '';
     this.name = '';
+    this.specJson = '';
+    this.showAdvanced = false;
     this.showKey.set(false);
-    this.loadTargets();
   }
 
   close(): void {
@@ -346,16 +205,13 @@ export class AddDeviceModalComponent {
   }
 
   addAnother(): void {
-    this.step.set(1);
     this.result.set(null);
     this.error.set(null);
-    this.selectedTarget.set(null);
-    this.selectedProfile.set(null);
-    this.inferredTransport.set('');
-    this.transport.set('lorawan');
+    this.specError.set(null);
     this.eui = '';
     this.name = '';
-    this.loadTargets();
+    this.specJson = '';
+    this.showAdvanced = false;
   }
 
   async copy(inputEl: HTMLInputElement, text: string): Promise<void> {
@@ -380,51 +236,30 @@ export class AddDeviceModalComponent {
     }
   }
 
-  private loadTargets(): void {
-    this.loadingTargets.set(true);
-    this.api.getDeviceTargets().subscribe({
-      next: (list) => {
-        this.targets.set(list);
-        this.loadingTargets.set(false);
-      },
-      error: () => {
-        this.targets.set([]);
-        this.loadingTargets.set(false);
-      },
-    });
-  }
-
-  private loadProfiles(): void {
-    this.loadingProfiles.set(true);
-    this.api.getProfiles(true).subscribe({
-      next: (list) => {
-        this.profiles.set(list);
-        this.loadingProfiles.set(false);
-      },
-      error: () => {
-        this.profiles.set([]);
-        this.loadingProfiles.set(false);
-      },
-    });
-  }
-
   onSubmit(): void {
     const devEui = this.eui.replace(/\s/g, '').toLowerCase();
-    const fmt = this.idFormat();
-    const idPattern = new RegExp(`^[0-9a-f]{${fmt.minLength},${fmt.maxLength}}$`);
+    const minLen = this.transport === 'wifi' ? 12 : 16;
+    const idPattern = new RegExp(`^[0-9a-f]{${minLen},16}$`);
     if (!idPattern.test(devEui)) {
-      this.error.set(`${fmt.label} must be ${fmt.hint}.`);
+      this.error.set(`Device ID must be ${minLen}–16 hex characters.`);
       return;
     }
-    const profileId = this.selectedProfile();
-    if (!profileId) {
-      this.error.set('Please select a profile first.');
-      return;
+
+    // Parse spec JSON if provided
+    let spec: DeviceSpec | undefined;
+    if (this.showAdvanced && this.specJson.trim()) {
+      try {
+        spec = JSON.parse(this.specJson.trim());
+        this.specError.set(null);
+      } catch {
+        this.specError.set('Invalid JSON');
+        return;
+      }
     }
+
     this.error.set(null);
     this.submitting.set(true);
-    const targetId = this.selectedTarget() ?? undefined;
-    this.api.provisionDevice(devEui, this.name.trim() || undefined, profileId, this.transport(), targetId).subscribe({
+    this.api.provisionDevice(devEui, this.name.trim() || undefined, this.transport, spec).subscribe({
       next: (res) => {
         this.result.set(res);
         this.submitting.set(false);

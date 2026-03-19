@@ -9,10 +9,8 @@ import { CurrentValuesComponent } from '../../shared/components/current-values/c
 import { ErrorBarComponent } from '../../shared/components/error-bar/error-bar.component';
 import { DeviceRulesSectionComponent } from '../../shared/components/device-rules-section/device-rules-section.component';
 import { DeviceCredentialsCardComponent } from '../../shared/components/device-credentials-card/device-credentials-card.component';
-import { DeviceConfigPanelComponent } from '../../shared/components/device-config-panel/device-config-panel.component';
 import { CommandHistoryComponent } from '../../shared/components/command-history/command-history.component';
 import { DeviceFramesComponent } from '../../shared/components/device-frames/device-frames.component';
-import { DeviceSensorConfigComponent } from '../../shared/components/device-sensor-config/device-sensor-config.component';
 import { ERROR_OBJECT_KEYS } from '../../core/constants/error-fields';
 import { getVisibleFieldsByVizType } from '../../core/utils/field-view-model';
 import type { DeviceRuleRecord } from '../../core/services/api.service';
@@ -20,7 +18,7 @@ import type { DeviceRuleRecord } from '../../core/services/api.service';
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, NgClass, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, DeviceConfigPanelComponent, CommandHistoryComponent, DeviceFramesComponent, DeviceSensorConfigComponent],
+  imports: [RouterLink, DatePipe, NgClass, ControlsPanelComponent, HistoryChartComponent, CurrentValuesComponent, ErrorBarComponent, DeviceRulesSectionComponent, DeviceCredentialsCardComponent, CommandHistoryComponent, DeviceFramesComponent],
   templateUrl: './device-detail.component.html',
 })
 export class DeviceDetailComponent implements OnInit, OnDestroy {
@@ -31,7 +29,7 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
   routeError = signal<string | null>(null);
   deleting = signal(false);
   relatedWorkflows = signal<WorkflowRecord[]>([]);
-  activeTab = signal<'overview' | 'controls' | 'telemetry' | 'automation'>('overview');
+  activeTab = signal<'overview' | 'history' | 'control' | 'automation'>('overview');
   stateChanges = signal<StateChangeRecord[]>([]);
   workflowEvents = signal<WorkflowLogRecord[]>([]);
   prefillRuleForm = signal<Partial<DeviceRuleRecord> | null>(null);
@@ -56,11 +54,6 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
       this.timeRange.set(v);
       this.rangeEnd.set(new Date().toISOString());
     }
-  }
-
-  onPrefillRule(r: Partial<DeviceRuleRecord>): void {
-    this.prefillRuleForm.set(r);
-    this.activeTab.set('automation');
   }
 
   chartFields = computed(() => {
@@ -133,7 +126,6 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Device-level info (replaces profile-based info). */
   deviceInfo = computed(() => {
     const device = this.deviceContext.device();
     if (!device) return null;
@@ -143,7 +135,6 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
       controlCount: this.deviceContext.controls().length,
       commandCount: this.deviceContext.deviceCommands().length,
       configStatus: device.config_status ?? 'n/a',
-      provisionedFrom: device.provisioned_from,
     };
   });
 
@@ -167,6 +158,20 @@ export class DeviceDetailComponent implements OnInit, OnDestroy {
     }
     this.routeError.set(null);
     this.deviceContext.load(eui);
+
+    // Check for query params (from sensor config rule suggestions)
+    const tabParam = this.route.snapshot.queryParamMap.get('tab');
+    if (tabParam === 'automation' || tabParam === 'control' || tabParam === 'history') {
+      this.activeTab.set(tabParam);
+    }
+    const prefillParam = this.route.snapshot.queryParamMap.get('prefill');
+    if (prefillParam) {
+      try {
+        this.prefillRuleForm.set(JSON.parse(prefillParam));
+        this.activeTab.set('automation');
+      } catch { /* ignore invalid JSON */ }
+    }
+
     this.api.getWorkflows(eui).subscribe({
       next: (list) => this.relatedWorkflows.set(list),
       error: () => this.relatedWorkflows.set([]),

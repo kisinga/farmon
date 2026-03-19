@@ -19,25 +19,6 @@ export function getTransportMeta(transport?: string): TransportMeta {
   return TRANSPORT_META[transport || 'lorawan'] ?? TRANSPORT_META['lorawan'];
 }
 
-/** Per-device-id-format metadata. Driven by DeviceTarget.device_id_format, not transport. */
-export interface DeviceIDFormatMeta {
-  label: string;        // "Device EUI" vs "MAC Address" vs "Device ID"
-  placeholder: string;
-  minLength: number;
-  maxLength: number;
-  hint: string;
-}
-
-export const DEVICE_ID_FORMATS: Record<string, DeviceIDFormatMeta> = {
-  eui64:  { label: 'Device EUI',  placeholder: 'e.g. 0102030405060708', minLength: 16, maxLength: 16, hint: '16 hex characters (EUI-64)' },
-  mac:    { label: 'MAC Address', placeholder: 'e.g. aabbccddeeff',     minLength: 12, maxLength: 12, hint: '12 hex characters (MAC-48)' },
-  custom: { label: 'Device ID',   placeholder: 'e.g. 0102030405060708', minLength: 8,  maxLength: 16, hint: '8–16 hex characters' },
-};
-
-export function getDeviceIDFormat(format?: string): DeviceIDFormatMeta {
-  return DEVICE_ID_FORMATS[format || 'custom'] ?? DEVICE_ID_FORMATS['custom'];
-}
-
 // ─── Device types ────────────────────────────────────────────────────────────
 
 export interface Device {
@@ -48,14 +29,10 @@ export interface Device {
   firmware_version?: string;
   last_seen?: string;
   is_active?: boolean;
-  profile?: string;          // profile ID (relation)
-  config_overrides?: unknown;
   config_hash?: string;
   config_status?: string;    // "pending" | "synced" | "n/a"
-  provisioned_from?: string;  // informational template ID reference
   transport?: TransportType;
   device_token?: string;
-  target_id?: string;
 }
 
 export interface DeviceCommand {
@@ -75,17 +52,6 @@ export interface DeviceVisualization {
   viz_type: string;
   config: Record<string, unknown>;
   sort_order: number;
-}
-
-export interface DeviceTarget {
-  id: string;
-  name: string;
-  description: string;
-  transport: TransportType | '';
-  default_profile: string;
-  default_profile_id: string;
-  credential_type: 'app_key' | 'device_token' | '';
-  device_id_format: 'eui64' | 'mac' | 'custom';
 }
 
 export interface DeviceControl {
@@ -134,8 +100,6 @@ export interface ProvisionResponse {
   transport: TransportType;
   app_key?: string;
   device_token?: string;
-  profile_name?: string;
-  warning?: string;
 }
 
 export interface CredentialsResponse {
@@ -187,10 +151,9 @@ export interface CommandRecord {
   created: string;
 }
 
-// ─── Profile types ───────────────────────────────────────────────────────────
+// ─── Device Spec types (for JSON import/export) ─────────────────────────────
 
-export interface ProfileField {
-  id: string;
+export interface SpecField {
   key: string;
   display_name: string;
   unit?: string;
@@ -200,20 +163,17 @@ export interface ProfileField {
   state_class?: string;
   min_value?: number;
   max_value?: number;
-  enum_values?: unknown;
   sort_order: number;
 }
 
-export interface ProfileControl {
-  id: string;
+export interface SpecControl {
   key: string;
   display_name: string;
   states: string[];
   sort_order: number;
 }
 
-export interface ProfileCommand {
-  id: string;
+export interface SpecCommand {
   name: string;
   fport: number;
   payload_type?: string;
@@ -221,53 +181,36 @@ export interface ProfileCommand {
   command_key?: string;
 }
 
-export interface DecodeRule {
-  id: string;
+export interface SpecDecodeRule {
   fport: number;
   format: string;
   config: Record<string, unknown>;
 }
 
-export interface ProfileVisualization {
-  id: string;
+export interface SpecVisualization {
   name: string;
   viz_type: 'time_series' | 'gauge' | 'stat';
   config: Record<string, unknown>;
   sort_order: number;
 }
 
-export interface ProfileAirConfig {
-  id: string;
+export interface SpecAirConfig {
   pin_map: number[];
   sensors: unknown[];
   controls: unknown[];
   lorawan: Record<string, unknown>;
-  transfer?: Record<string, unknown>;  // Water Manager transfer FSM config
+  transfer?: Record<string, unknown>;
   config_hash?: string;
 }
 
-export interface DeviceProfile {
-  id: string;
-  name: string;
-  description?: string;
-  profile_type: 'airconfig' | 'codec';
-  transport?: '' | 'lorawan' | 'wifi' | 'any';
-  is_template: boolean;
-  fields: ProfileField[];
-  controls: ProfileControl[];
-  commands: ProfileCommand[];
-  decode_rules: DecodeRule[];
-  visualizations: ProfileVisualization[];
-  airconfig?: ProfileAirConfig;
-}
-
-export interface ProfileSummary {
-  id: string;
-  name: string;
-  description?: string;
-  profile_type: string;
-  transport?: '' | 'lorawan' | 'wifi' | 'any';
-  is_template: boolean;
+export interface DeviceSpec {
+  type: 'airconfig' | 'codec';
+  fields: SpecField[];
+  controls: SpecControl[];
+  commands: SpecCommand[];
+  decode_rules: SpecDecodeRule[];
+  visualizations: SpecVisualization[];
+  airconfig?: SpecAirConfig;
 }
 
 // ─── Gateway types ───────────────────────────────────────────────────────────

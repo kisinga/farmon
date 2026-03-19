@@ -11,13 +11,18 @@ import (
 
 const (
 	MaxPins     = 20
+	MaxFields   = 64 // shared between inputs, outputs, and computed fields
 	MaxSensors  = 32
 	MaxControls = 16
 	MaxRules    = 16
 	MaxStates   = 4
+	MaxCompute  = 16 // max computed field expressions
 
 	// SensorSlotSize is the binary wire size of a SensorSlot in flash.
 	SensorSlotSize = 8
+
+	// ControlSlotSize is the binary wire size of a ControlSlot in flash.
+	ControlSlotSize = 8
 
 	// SettingsSize is the flash page data size for codec purposes.
 	SettingsSize = 1280
@@ -44,14 +49,16 @@ const (
 	PinLED        PinFunction = 10
 	PinCounter    PinFunction = 11 // generic pulse counter
 	PinRS485DE    PinFunction = 12 // RS485 direction-enable (DE/RE) for Modbus transceivers
-	PinMax        PinFunction = 13 // validation sentinel
+	PinPWM        PinFunction = 13 // PWM output (fan speed, LED dimmer)
+	PinDAC        PinFunction = 14 // DAC analog output (STM32 only)
+	PinMax        PinFunction = 15 // validation sentinel
 )
 
 func PinFunctionName(fn PinFunction) string {
 	names := [...]string{
 		"None", "Flow", "Relay", "Button", "ADC",
 		"I2C_SDA", "I2C_SCL", "1Wire", "UART_TX", "UART_RX",
-		"LED", "Counter", "RS485_DE",
+		"LED", "Counter", "RS485_DE", "PWM", "DAC",
 	}
 	if int(fn) < len(names) {
 		return names[fn]
@@ -101,19 +108,24 @@ const (
 	ActuatorRelay             ActuatorType = 0 // single pin, hold high/low
 	ActuatorMotorizedValve    ActuatorType = 1 // dual-pin, timed pulse open/close
 	ActuatorSolenoidMomentary ActuatorType = 2 // single pin, pulse then self-off
+	ActuatorPWM               ActuatorType = 3 // single pin, PWM duty cycle 0-255
+	ActuatorI2CPWM            ActuatorType = 4 // I2C bus-addressed PWM (e.g., PCA9685)
+	ActuatorServo             ActuatorType = 5 // single pin, servo pulse 500-2500µs
+	ActuatorDACLinear         ActuatorType = 6 // DAC analog output 0-255
 )
 
-// ControlSlot occupies 8 bytes in flash (v2+).
+// ControlSlot occupies 8 bytes in flash.
 //
 // Flash layout:
-//   [0] PinIndex        — primary pin (open-coil for motorized valve)
-//   [1] StateCount      — number of states (typically 2: off/on)
-//   [2] Flags           — bit0=enabled, bit1=active-low, bit2=dual-pin, bit3=momentary
-//   [3] ActuatorType    — 0=relay, 1=motorizedValve, 2=solenoidMomentary
-//   [4] Pin2Index       — close-coil pin for motorized valve (0xFF = unused)
-//   [5] PulseDurX100ms  — pulse duration × 100ms (0=hold, 20=2000ms)
-//   [6] Reserved
-//   [7] Reserved
+//
+//	[0] PinIndex        — primary GPIO pin (or bus ordinal for I2C-addressed actuators)
+//	[1] StateCount      — number of discrete states (0 = analog/continuous)
+//	[2] Flags           — bit0=enabled, bit1=active-low, bit2=dual-pin
+//	[3] ActuatorType    — 0=relay, 1=motorizedValve, 2=solenoid, 3=PWM, 4=I2CPWM, 5=servo, 6=DAC
+//	[4] Pin2Index       — close-coil pin for motorized valve (0xFF = unused)
+//	[5] PulseDurX100ms  — pulse duration × 100ms (0=hold, 20=2000ms)
+//	[6] FieldIndex      — field index this control writes its state/value to
+//	[7] ValueMax        — max output value (0=binary on/off, 255=8-bit PWM/DAC)
 type ControlSlot struct {
 	PinIndex       uint8
 	StateCount     uint8
@@ -121,16 +133,18 @@ type ControlSlot struct {
 	ActuatorType   ActuatorType
 	Pin2Index      uint8
 	PulseDurX100ms uint8
-	Reserved       [2]uint8
+	FieldIndex     uint8
+	ValueMax       uint8
 }
 
 func (c *ControlSlot) Enabled() bool   { return c.Flags&0x01 != 0 }
 func (c *ControlSlot) ActiveLow() bool { return c.Flags&0x02 != 0 }
 func (c *ControlSlot) DualPin() bool   { return c.Flags&0x04 != 0 }
-func (c *ControlSlot) Momentary() bool { return c.Flags&0x08 != 0 }
 
-// ControlSlotSize is the binary wire size of a ControlSlot in flash.
-const ControlSlotSize = 8
+// IsAnalog returns true for continuous-value output types (PWM, DAC, Servo, I2CPWM).
+func (c *ControlSlot) IsAnalog() bool {
+	return c.ActuatorType >= ActuatorPWM
+}
 
 // --- Rules ---
 
@@ -163,10 +177,10 @@ type ExtraCondition struct {
 //
 //	[0]    ID
 //	[1]    Flags: bit7=Enabled, bits6-4=Op(3), bit3=HasC2, bit2=HasC3, bit1=HasC4
-//	[2]    FieldIdx (primary)
-//	[3-6]  Threshold float32 LE (primary)
-//	[7]    ControlIdx
-//	[8]    ActionState
+//	[2]    FieldIdx (primary condition)
+//	[3-6]  Threshold float32 LE (primary condition)
+//	[7]    TargetFieldIdx — field to write to (output field → actuator fires)
+//	[8]    ActionValue — value to write (0/1 for binary, 0-255 for analog/PWM)
 //	[9-10] CooldownSec uint16 LE
 //	[11]   Priority
 //	[12]   ActionDurX10s
@@ -176,11 +190,11 @@ type ExtraCondition struct {
 //	[20-22] C4: FieldIdx, OpFlags, Threshold
 //	[23]   Reserved
 type Rule struct {
-	ID          uint8
-	FieldIdx    uint8
-	ControlIdx  uint8
-	ActionState uint8
-	Op          RuleOperator
+	ID             uint8
+	FieldIdx       uint8
+	TargetFieldIdx uint8
+	ActionValue    uint8
+	Op             RuleOperator
 	Priority    uint8
 	CooldownSec uint16
 	Threshold   float32
@@ -211,8 +225,8 @@ func (r *Rule) FromBinary(data []byte) bool {
 	r.HasC4 = flags&0x02 != 0
 	r.FieldIdx = data[2]
 	r.Threshold = math.Float32frombits(binary.LittleEndian.Uint32(data[3:7]))
-	r.ControlIdx = data[7]
-	r.ActionState = data[8]
+	r.TargetFieldIdx = data[7]
+	r.ActionValue = data[8]
 	r.CooldownSec = binary.LittleEndian.Uint16(data[9:11])
 	r.Priority = data[11]
 	r.ActionDurX10s = data[12]
@@ -251,8 +265,8 @@ func (r *Rule) ToBinary(buf []byte) int {
 	}
 	buf[2] = r.FieldIdx
 	binary.LittleEndian.PutUint32(buf[3:7], math.Float32bits(r.Threshold))
-	buf[7] = r.ControlIdx
-	buf[8] = r.ActionState
+	buf[7] = r.TargetFieldIdx
+	buf[8] = r.ActionValue
 	binary.LittleEndian.PutUint16(buf[9:11], r.CooldownSec)
 	buf[11] = r.Priority
 	buf[12] = r.ActionDurX10s
@@ -270,6 +284,41 @@ func (r *Rule) ToBinary(buf []byte) int {
 	buf[23] = 0 // reserved
 	return RuleSize
 }
+
+// --- Compute fields ---
+
+// MaxBytecodeLen is the maximum bytecode length per compute expression.
+const MaxBytecodeLen = 64
+
+// ComputeSlot defines a computed field expression evaluated every compute cycle.
+type ComputeSlot struct {
+	FieldIdx    uint8  // target field index in the values array
+	BytecodeLen uint8  // length of bytecode program
+	Bytecode    [MaxBytecodeLen]byte
+}
+
+// ComputeOpcode defines bytecode VM operations.
+type ComputeOpcode uint8
+
+const (
+	OpLoadField ComputeOpcode = 0x01 // push values[arg]
+	OpPushF32   ComputeOpcode = 0x02 // push float32 constant (4 bytes follow)
+	OpAdd       ComputeOpcode = 0x10
+	OpSub       ComputeOpcode = 0x11
+	OpMul       ComputeOpcode = 0x12
+	OpDiv       ComputeOpcode = 0x13
+	OpCmpGT     ComputeOpcode = 0x20 // a > b → 1.0 or 0.0
+	OpCmpLT     ComputeOpcode = 0x21
+	OpCmpGTE    ComputeOpcode = 0x22
+	OpCmpLTE    ComputeOpcode = 0x23
+	OpMin2      ComputeOpcode = 0x30
+	OpMax2      ComputeOpcode = 0x31
+	OpAbs       ComputeOpcode = 0x32
+	OpNeg       ComputeOpcode = 0x33
+	OpAccum     ComputeOpcode = 0x40 // running sum (persistent state)
+	OpWindowAvg ComputeOpcode = 0x41 // rolling average; next byte = window size N
+	OpClamp     ComputeOpcode = 0x42 // clamp; next 8 bytes = min(f32) max(f32)
+)
 
 // --- LoRaWAN settings ---
 
@@ -354,6 +403,9 @@ type CoreSettings struct {
 
 	RuleCount uint8
 	Rules     [MaxRules]Rule
+
+	ComputeCount uint8
+	Compute      [MaxCompute]ComputeSlot
 
 	TxIntervalSec   uint16
 	EvalIntervalSec uint16 // rule evaluation interval; 0 = same as TxIntervalSec

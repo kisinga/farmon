@@ -60,10 +60,12 @@ const (
 	AirCfgPreset   = 0x02 // [0x02, preset_id]
 	AirCfgDump     = 0x03 // [0x03]
 	AirCfgSensor   = 0x04 // [0x04, slot, type, pin, field, flags, p1lo, p1hi, p2lo, p2hi]
-	AirCfgControl  = 0x05 // [0x05, slot, pin, state_count, flags, actuator_type, pin2_idx, pulse_x100ms]
+	AirCfgControl  = 0x05 // [0x05, slot, pin, state_count, flags, actuator_type, pin2_idx, pulse_x100ms, field_idx, value_max]
 	AirCfgLoRaWAN  = 0x06 // [0x06, region, subband, dr, txpwr, adr, confirmed]
 	AirCfgWiFi     = 0x07 // [0x07, ...] (RP2040 only, future)
 	AirCfgTransfer = 0x08 // [0x08, enabled, pump, valve_t1, valve_t2, sv, lvl_t1, lvl_t2, delta, t1min, pulse_sec]
 	AirCfgSetHash  = 0x09 // [0x09, hash_b0, hash_b1, hash_b2, hash_b3] LE uint32 — commits config hash to flash
+	AirCfgCompute  = 0x0A // [0x0A, field_idx, bytecode_len, ...bytecode] — computed field expression
+	AirCfgProbe    = 0x0B // [0x0B, field_idx_1, field_idx_2, ...] — request one-shot field values
 	AirCfgReset    = 0xFF // [0xFF]
 )

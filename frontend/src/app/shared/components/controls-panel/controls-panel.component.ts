@@ -1,6 +1,6 @@
-import { Component, inject, input, signal, OnInit } from '@angular/core';
+import { Component, inject, input, signal, computed, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, FirmwareCommand } from '../../../core/services/api.service';
+import { ApiService, DeviceField, FirmwareCommand } from '../../../core/services/api.service';
 import { DeviceContextService } from '../../../core/services/device-context.service';
 import { ControlRowComponent } from '../control-row/control-row.component';
 
@@ -10,8 +10,10 @@ import { ControlRowComponent } from '../control-row/control-row.component';
   imports: [ControlRowComponent, FormsModule],
   template: `
     <div class="space-y-6">
+      <!-- Controls -->
       <div class="space-y-4">
         <h2 class="section-title">Controls</h2>
+        <p class="text-xs text-base-content/50 -mt-2">Stateful outputs that can be toggled via commands, rules, or workflows.</p>
         @if (message()) {
           <div class="alert text-sm rounded-xl" [class.alert-error]="isError()" [class.alert-success]="!isError()">
             <span>{{ message() }}</span>
@@ -36,6 +38,52 @@ import { ControlRowComponent } from '../control-row/control-row.component';
         </div>
       </div>
 
+      <!-- Settings (writable fields) -->
+      @if (writableFields().length > 0) {
+        <div class="space-y-4">
+          <h2 class="section-title">Settings</h2>
+          <p class="text-xs text-base-content/50 -mt-2">Writable fields that can be updated via downlink commands.</p>
+          @if (settingsMessage()) {
+            <div class="alert text-sm rounded-xl" [class.alert-error]="settingsIsError()" [class.alert-success]="!settingsIsError()">
+              <span>{{ settingsMessage() }}</span>
+            </div>
+          }
+          <div class="space-y-3">
+            @for (f of writableFields(); track f.field_key) {
+              <div class="flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/30 p-4">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="font-semibold">{{ f.display_name || f.field_key }}</span>
+                  @if (f.unit) {
+                    <span class="badge badge-ghost badge-sm">{{ f.unit }}</span>
+                  }
+                  @if (currentValue(f.field_key) !== null) {
+                    <span class="text-sm text-base-content/60">Current: {{ currentValue(f.field_key) }}</span>
+                  }
+                </div>
+                <div class="flex items-center gap-2">
+                  <input
+                    type="number"
+                    class="input input-bordered input-sm w-28"
+                    [min]="f.min_value ?? 0"
+                    [max]="f.max_value ?? 999999"
+                    [placeholder]="f.display_name || f.field_key"
+                    [value]="getFieldInput(f.field_key)"
+                    (input)="setFieldInput(f.field_key, $any($event.target).value)"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-primary"
+                    [disabled]="sendingSetting()"
+                    (click)="sendFieldValue(f)"
+                  >Set</button>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Commands -->
       @if (firmwareCommands().length > 0) {
         <div class="space-y-3">
           <h2 class="section-title">Commands</h2>
@@ -88,8 +136,23 @@ export class ControlsPanelComponent implements OnInit {
   firmwareCommands = signal<FirmwareCommand[]>([]);
   cmdValues: Record<string, number> = {};
 
+  // Settings (writable fields)
+  settingsMessage = signal<string | null>(null);
+  settingsIsError = signal(false);
+  sendingSetting = signal(false);
+  private fieldInputs = signal<Record<string, string>>({});
+
+  /** Command name → writable field key mapping (convention-based). */
+  private static readonly COMMAND_FIELD_MAP: Record<string, string> = {
+    interval: 'tx',
+  };
+
   controls = this.deviceContext.controls;
   loading = this.deviceContext.loading;
+
+  writableFields = computed(() =>
+    this.deviceContext.fieldConfigs().filter((f: DeviceField) => f.access === 'w')
+  );
 
   ngOnInit(): void {
     this.api.getFirmwareCommands().subscribe({
@@ -97,6 +160,60 @@ export class ControlsPanelComponent implements OnInit {
       error: () => this.firmwareCommands.set([]),
     });
   }
+
+  // ─── Settings (writable fields) ─────────────────────────
+
+  currentValue(fieldKey: string): number | null {
+    const data = this.deviceContext.latestTelemetry();
+    if (!data) return null;
+    const v = data[fieldKey];
+    return typeof v === 'number' ? v : null;
+  }
+
+  getFieldInput(fieldKey: string): string {
+    return this.fieldInputs()[fieldKey] ?? '';
+  }
+
+  setFieldInput(fieldKey: string, value: string): void {
+    this.fieldInputs.update(m => ({ ...m, [fieldKey]: value }));
+  }
+
+  /** Find the command name that controls a writable field. */
+  private commandForField(fieldKey: string): string | null {
+    for (const [cmd, fk] of Object.entries(ControlsPanelComponent.COMMAND_FIELD_MAP)) {
+      if (fk === fieldKey) return cmd;
+    }
+    return null;
+  }
+
+  sendFieldValue(field: DeviceField): void {
+    const eui = this.eui();
+    const command = this.commandForField(field.field_key);
+    if (!eui || !command) return;
+    const raw = this.fieldInputs()[field.field_key];
+    const value = Number(raw);
+    if (isNaN(value) || value <= 0) {
+      this.settingsIsError.set(true);
+      this.settingsMessage.set('Enter a valid value');
+      return;
+    }
+    this.sendingSetting.set(true);
+    this.settingsMessage.set(null);
+    this.api.sendCommand(eui, command, value).subscribe({
+      next: () => {
+        this.sendingSetting.set(false);
+        this.settingsIsError.set(false);
+        this.settingsMessage.set(`${command} command queued (${value})`);
+      },
+      error: (err) => {
+        this.sendingSetting.set(false);
+        this.settingsIsError.set(true);
+        this.settingsMessage.set(err?.error?.error ?? err?.message ?? 'Failed to send command');
+      },
+    });
+  }
+
+  // ─── Commands ───────────────────────────────────────────
 
   sendCommand(key: string, value?: number): void {
     const eui = this.eui();
@@ -108,6 +225,8 @@ export class ControlsPanelComponent implements OnInit {
       error: (err) => { this.sendingCmd.set(null); this.cmdIsError.set(true); this.cmdMessage.set(err?.error?.error ?? 'Failed'); },
     });
   }
+
+  // ─── Controls ───────────────────────────────────────────
 
   onSetState(controlKey: string, ev: { state: string; duration?: number }): void {
     const eui = this.eui();
@@ -129,7 +248,6 @@ export class ControlsPanelComponent implements OnInit {
     const eui = this.eui();
     if (!eui) return;
     this.message.set(null);
-    // Use first registered state (index 0) as default/off state
     const ctrl = this.deviceContext.controlsMap().get(controlKey);
     const defaultState = ctrl?.states_json?.[0] ?? 'off';
     this.api.setControl(eui, controlKey, defaultState).subscribe({

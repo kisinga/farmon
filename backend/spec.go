@@ -17,7 +17,7 @@ import (
 // These define the JSON document shape for device specs (templates).
 // No ID fields — specs are value objects, not DB entities.
 
-// SpecField defines a telemetry or system field.
+// SpecField defines a telemetry, control, or computed field.
 type SpecField struct {
 	Key         string  `json:"key"`
 	DisplayName string  `json:"display_name"`
@@ -29,14 +29,28 @@ type SpecField struct {
 	MinValue    float64 `json:"min_value,omitempty"`
 	MaxValue    float64 `json:"max_value,omitempty"`
 	SortOrder   int     `json:"sort_order"`
+	LinkedType  string  `json:"linked_type,omitempty"`  // "input" | "output" | "compute"
+	LinkedKey   string  `json:"linked_key,omitempty"`   // control_key, sensor ref, or compute id
+	ReportMode  string  `json:"report_mode,omitempty"`  // "active" | "event" | "internal"
 }
 
-// SpecControl defines an actuator/switch.
+// SpecControl defines a physical output (actuator).
 type SpecControl struct {
-	Key         string   `json:"key"`
-	DisplayName string   `json:"display_name"`
-	States      []string `json:"states"`
-	SortOrder   int      `json:"sort_order"`
+	Key           string   `json:"key"`
+	DisplayName   string   `json:"display_name"`
+	ControlType   string   `json:"control_type,omitempty"` // "binary" | "multistate" | "analog"
+	States        []string `json:"states"`
+	SortOrder     int      `json:"sort_order"`
+	PinIndex      int      `json:"pin_index,omitempty"`
+	Pin2Index     int      `json:"pin2_index,omitempty"`
+	ActuatorType  int      `json:"actuator_type,omitempty"`
+	Flags         int      `json:"flags,omitempty"`
+	PulseX100ms   int      `json:"pulse_x100ms,omitempty"`
+	MinValue      float64  `json:"min_value,omitempty"`
+	MaxValue      float64  `json:"max_value,omitempty"`
+	BusIndex      int      `json:"bus_index,omitempty"`
+	BusAddress    int      `json:"bus_address,omitempty"`
+	BusChannel    int      `json:"bus_channel,omitempty"`
 }
 
 // SpecCommand defines a remote command.
@@ -99,7 +113,8 @@ func materializeSpecToDevice(app core.App, devEUI string, spec *DeviceSpec) erro
 	deleteDeviceRecords(app, devEUI, "device_visualizations", "device_eui")
 
 	// Materialize fields
-	if fieldColl, err := app.FindCollectionByNameOrId("device_fields"); err == nil {
+	fieldColl, _ := app.FindCollectionByNameOrId("device_fields")
+	if fieldColl != nil {
 		for _, f := range spec.Fields {
 			rec := core.NewRecord(fieldColl)
 			rec.Set("device_eui", devEUI)
@@ -113,29 +128,68 @@ func materializeSpecToDevice(app core.App, devEUI string, spec *DeviceSpec) erro
 			rec.Set("field_idx", f.SortOrder)
 			rec.Set("min_value", f.MinValue)
 			rec.Set("max_value", f.MaxValue)
+			rec.Set("linked_type", orDefault(f.LinkedType, "input"))
+			rec.Set("linked_key", f.LinkedKey)
+			rec.Set("report_mode", orDefault(f.ReportMode, "active"))
 			if err := app.Save(rec); err != nil {
 				log.Printf("[materialize] field %s for %s: %v", f.Key, devEUI, err)
 			}
 		}
 	}
 
-	// Materialize controls
+	// Materialize controls + auto-create linked output fields
+	nextFieldIdx := len(spec.Fields) // start after input fields
 	if ctrlColl, err := app.FindCollectionByNameOrId("device_controls"); err == nil {
 		for _, c := range spec.Controls {
 			statesJSON, _ := json.Marshal(c.States)
-			initialState := "off"
-			if len(c.States) > 0 {
-				initialState = c.States[0]
-			}
+			fieldKey := c.Key + "_state"
+
 			rec := core.NewRecord(ctrlColl)
 			rec.Set("device_eui", devEUI)
 			rec.Set("control_key", c.Key)
 			rec.Set("display_name", c.DisplayName)
 			rec.Set("states_json", string(statesJSON))
 			rec.Set("control_idx", c.SortOrder)
-			rec.Set("current_state", initialState)
+			rec.Set("control_type", orDefault(c.ControlType, "binary"))
+			rec.Set("field_key", fieldKey)
+			rec.Set("pin_index", c.PinIndex)
+			rec.Set("pin2_index", orDefault255(c.Pin2Index))
+			rec.Set("actuator_type", c.ActuatorType)
+			rec.Set("flags", c.Flags)
+			rec.Set("pulse_x100ms", c.PulseX100ms)
+			rec.Set("min_value", c.MinValue)
+			rec.Set("max_value", c.MaxValue)
+			rec.Set("bus_index", orDefaultNeg1(c.BusIndex))
+			rec.Set("bus_address", c.BusAddress)
+			rec.Set("bus_channel", c.BusChannel)
 			if err := app.Save(rec); err != nil {
 				log.Printf("[materialize] control %s for %s: %v", c.Key, devEUI, err)
+			}
+
+			// Auto-create linked output field
+			if fieldColl != nil {
+				maxVal := c.MaxValue
+				if maxVal == 0 {
+					maxVal = 1 // binary default
+				}
+				fr := core.NewRecord(fieldColl)
+				fr.Set("device_eui", devEUI)
+				fr.Set("field_key", fieldKey)
+				fr.Set("display_name", c.DisplayName)
+				fr.Set("data_type", "number")
+				fr.Set("unit", "")
+				fr.Set("category", "control")
+				fr.Set("access", "rw")
+				fr.Set("field_idx", nextFieldIdx)
+				fr.Set("min_value", c.MinValue)
+				fr.Set("max_value", maxVal)
+				fr.Set("linked_type", "output")
+				fr.Set("linked_key", c.Key)
+				fr.Set("report_mode", "event")
+				if err := app.Save(fr); err != nil {
+					log.Printf("[materialize] output field %s for %s: %v", fieldKey, devEUI, err)
+				}
+				nextFieldIdx++
 			}
 		}
 	}
@@ -261,6 +315,9 @@ func loadDeviceSpec(app core.App, devEUI string) (*DeviceSpec, error) {
 				MinValue:    getRecordFloat(r, "min_value"),
 				MaxValue:    getRecordFloat(r, "max_value"),
 				SortOrder:   getRecordInt(r, "field_idx"),
+				LinkedType:  r.GetString("linked_type"),
+				LinkedKey:   r.GetString("linked_key"),
+				ReportMode:  r.GetString("report_mode"),
 			})
 		}
 	}
@@ -282,10 +339,21 @@ func loadDeviceSpec(app core.App, devEUI string) (*DeviceSpec, error) {
 				}
 			}
 			spec.Controls = append(spec.Controls, SpecControl{
-				Key:         r.GetString("control_key"),
-				DisplayName: r.GetString("display_name"),
-				States:      states,
-				SortOrder:   getRecordInt(r, "control_idx"),
+				Key:          r.GetString("control_key"),
+				DisplayName:  r.GetString("display_name"),
+				ControlType:  r.GetString("control_type"),
+				States:       states,
+				SortOrder:    getRecordInt(r, "control_idx"),
+				PinIndex:     getRecordInt(r, "pin_index"),
+				Pin2Index:    getRecordInt(r, "pin2_index"),
+				ActuatorType: getRecordInt(r, "actuator_type"),
+				Flags:        getRecordInt(r, "flags"),
+				PulseX100ms:  getRecordInt(r, "pulse_x100ms"),
+				MinValue:     getRecordFloat(r, "min_value"),
+				MaxValue:     getRecordFloat(r, "max_value"),
+				BusIndex:     getRecordInt(r, "bus_index"),
+				BusAddress:   getRecordInt(r, "bus_address"),
+				BusChannel:   getRecordInt(r, "bus_channel"),
 			})
 		}
 	}
@@ -493,6 +561,20 @@ func orDefault(s, def string) string {
 		return def
 	}
 	return s
+}
+
+func orDefault255(v int) int {
+	if v == 0 {
+		return 255
+	}
+	return v
+}
+
+func orDefaultNeg1(v int) int {
+	if v == 0 {
+		return -1
+	}
+	return v
 }
 
 func getRecordFloat(r *core.Record, key string) float64 {

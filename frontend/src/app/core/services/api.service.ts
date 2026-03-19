@@ -1,7 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 
 import { DeviceService } from './device.service';
-import { ProfileService } from './profile.service';
 import { RulesService } from './rules.service';
 import { SensorService } from './sensor.service';
 import { GatewayApiService } from './gateway.service';
@@ -13,13 +12,18 @@ export type {
   FirmwareCommand,
   TransportType,
   TransportMeta,
-  DeviceIDFormatMeta,
   Device,
-  DeviceTarget,
   DeviceCommand,
   DeviceControl,
   DeviceField,
   DeviceVisualization,
+  DeviceSpec,
+  SpecField,
+  SpecControl,
+  SpecCommand,
+  SpecDecodeRule,
+  SpecVisualization,
+  SpecAirConfig,
   HistoryPoint,
   HistoryResponse,
   ProvisionResponse,
@@ -27,14 +31,6 @@ export type {
   ExtraCondition,
   DeviceRuleRecord,
   CommandRecord,
-  ProfileField,
-  ProfileControl,
-  ProfileCommand,
-  DecodeRule,
-  ProfileVisualization,
-  ProfileAirConfig,
-  DeviceProfile,
-  ProfileSummary,
   GatewaySettings,
   GatewayStatusResponse,
   GatewaySettingsRecord,
@@ -53,15 +49,12 @@ export type {
 
 export {
   TRANSPORT_META,
-  DEVICE_ID_FORMATS,
   getTransportMeta,
-  getDeviceIDFormat,
 } from './api.types';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private deviceService = inject(DeviceService);
-  private profileService = inject(ProfileService);
   private rulesService = inject(RulesService);
   private sensorService = inject(SensorService);
   private gatewayService = inject(GatewayApiService);
@@ -86,14 +79,18 @@ export class ApiService {
 
   // ─── Provisioning ───────────────────────────────────────
 
-  provisionDevice(device_eui: string, device_name?: string, profile_id?: string, transport?: import('./api.types').TransportType, target_id?: string) {
-    return this.deviceService.provisionDevice(device_eui, device_name, profile_id, transport, target_id);
+  provisionDevice(device_eui: string, device_name?: string, transport?: import('./api.types').TransportType, spec?: import('./api.types').DeviceSpec) {
+    return this.deviceService.provisionDevice(device_eui, device_name, transport, spec);
   }
-  getDeviceTargets() { return this.deviceService.getDeviceTargets(); }
   deleteDevice(eui: string) { return this.deviceService.deleteDevice(eui); }
   getDeviceCredentials(eui: string) { return this.deviceService.getDeviceCredentials(eui); }
-  updateDeviceOverrides(eui: string, overrides: unknown) { return this.deviceService.updateDeviceOverrides(eui, overrides); }
   pushConfig(eui: string) { return this.deviceService.pushConfig(eui); }
+
+  // ─── Device Spec ────────────────────────────────────────
+
+  getDeviceSpec(eui: string) { return this.deviceService.getDeviceSpec(eui); }
+  applyDeviceSpec(eui: string, spec: import('./api.types').DeviceSpec) { return this.deviceService.applyDeviceSpec(eui, spec); }
+  testDecode(spec: import('./api.types').DeviceSpec, fport: number, payloadHex: string) { return this.deviceService.testDecode(spec, fport, payloadHex); }
 
   // ─── Firmware Commands ───────────────────────────────────────────────────
 
@@ -101,37 +98,6 @@ export class ApiService {
   getSensorCatalog() { return this.deviceService.getSensorCatalog(); }
   getBackendInfo() { return this.deviceService.getBackendInfo(); }
   patchBackendInfo(body: import('./api.types').BackendInfo) { return this.deviceService.patchBackendInfo(body); }
-
-  // ─── Profiles ───────────────────────────────────────────
-
-  getProfiles(templatesOnly = true, transport?: string) { return this.profileService.getProfiles(templatesOnly, transport); }
-  getProfile(id: string) { return this.profileService.getProfile(id); }
-  createProfile(body: { name: string; description?: string; profile_type: string; transport?: string; is_template?: boolean }) { return this.profileService.createProfile(body); }
-  updateProfile(id: string, body: Partial<{ name: string; description: string; is_template: boolean }>) { return this.profileService.updateProfile(id, body); }
-  deleteProfile(id: string) { return this.profileService.deleteProfile(id); }
-  testDecode(profileId: string, fport: number, payloadHex: string) { return this.profileService.testDecode(profileId, fport, payloadHex); }
-
-  // ─── Profile sub-component CRUD ─────────────────────────
-
-  getProfileFields(profileId: string) { return this.profileService.getProfileFields(profileId); }
-  createProfileField(data: Record<string, unknown>) { return this.profileService.createProfileField(data); }
-  updateProfileField(id: string, data: Record<string, unknown>) { return this.profileService.updateProfileField(id, data); }
-  deleteProfileField(id: string) { return this.profileService.deleteProfileField(id); }
-
-  getProfileControls(profileId: string) { return this.profileService.getProfileControls(profileId); }
-  createProfileControl(data: Record<string, unknown>) { return this.profileService.createProfileControl(data); }
-  updateProfileControl(id: string, data: Record<string, unknown>) { return this.profileService.updateProfileControl(id, data); }
-  deleteProfileControl(id: string) { return this.profileService.deleteProfileControl(id); }
-
-  getProfileCommands(profileId: string) { return this.profileService.getProfileCommands(profileId); }
-  createProfileCommand(data: Record<string, unknown>) { return this.profileService.createProfileCommand(data); }
-  updateProfileCommand(id: string, data: Record<string, unknown>) { return this.profileService.updateProfileCommand(id, data); }
-  deleteProfileCommand(id: string) { return this.profileService.deleteProfileCommand(id); }
-
-  getDecodeRules(profileId: string) { return this.profileService.getDecodeRules(profileId); }
-  createDecodeRule(data: Record<string, unknown>) { return this.profileService.createDecodeRule(data); }
-  updateDecodeRule(id: string, data: Record<string, unknown>) { return this.profileService.updateDecodeRule(id, data); }
-  deleteDecodeRule(id: string) { return this.profileService.deleteDecodeRule(id); }
 
   // ─── Device Rules ───────────────────────────────────────
 

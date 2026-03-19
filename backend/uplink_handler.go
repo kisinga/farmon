@@ -113,7 +113,7 @@ func handleStateChanges(app core.App, devEui, deviceName string, deviceCfg *Devi
 		}
 
 		_ = insertStateChange(app, devEui, controlKey, oldS, newS, source, deviceTs)
-		_ = upsertDeviceControl(app, devEui, controlKey, newS, source)
+		_ = upsertDeviceControl(app, devEui, controlKey, float64(newStateIdx), source)
 
 		if workflowEngine != nil {
 			go workflowEngine.Evaluate(TriggerContext{

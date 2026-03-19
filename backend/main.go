@@ -30,8 +30,6 @@ func main() {
 		ensureLorawanFramesCollection(app)
 		// Ensure firmware collections exist (firmware_commands + backend_info)
 		ensureFirmwareCollections(app)
-		// Seed default device profiles (FarMon Water Monitor, SenseCAP S2105)
-		seedDefaultTemplates(app)
 		// Seed firmware commands + backend_info
 		seedFirmwareData(app)
 		// Load gateway config from DB; start pipeline only if a valid record exists (event_url, command_url, region set)
@@ -95,22 +93,15 @@ func main() {
 
 		// Custom app API under /api/farmon only. Do NOT register routes under /api/ without the /farmon/ prefix,
 		// so PocketBase's built-in /api/collections/* and /api/records/* (used by the SDK) remain reachable.
-		// Device provisioning & targets
+		// Device provisioning
 		se.Router.POST("/api/farmon/devices", provisionDeviceHandler(app))
 		se.Router.DELETE("/api/farmon/devices", deleteDeviceHandler(app))
-		se.Router.GET("/api/farmon/device-targets", deviceTargetsHandler(app))
 
-		// Device templates
-		se.Router.GET("/api/farmon/templates", listTemplatesHandler(app))
-		se.Router.GET("/api/farmon/templates/{id}", getTemplateHandler(app))
-		se.Router.POST("/api/farmon/templates", createTemplateHandler(app))
-		se.Router.PATCH("/api/farmon/templates/{id}", updateTemplateHandler(app))
-		se.Router.DELETE("/api/farmon/templates/{id}", deleteTemplateHandler(app))
-		se.Router.POST("/api/farmon/templates/{id}/test-decode", testDecodeHandler(app))
+		// Device spec & config
+		se.Router.GET("/api/farmon/devices/{eui}/spec", getDeviceSpecHandler(app))
+		se.Router.POST("/api/farmon/devices/{eui}/apply-spec", applySpecHandler(app))
+		se.Router.POST("/api/farmon/test-decode", testDecodeHandler(app))
 		se.Router.POST("/api/farmon/validate-airconfig", validateAirConfigHandler())
-
-		// Device config
-		se.Router.POST("/api/farmon/devices/{eui}/apply-template", applyTemplateHandler(app))
 		se.Router.POST("/api/farmon/devices/{eui}/push-config", pushConfigHandler(app, gwState))
 		se.Router.POST("/api/farmon/devices/{eui}/push-rules", pushRulesHandler(app, gwState))
 		se.Router.POST("/api/farmon/devices/{eui}/push-sensor-slot", pushSensorSlotHandler(app, gwState))

@@ -80,7 +80,11 @@ func ingestHandler(app core.App, gwState *GatewayState, wifiState *WifiState) fu
 		}
 
 		// Record frame (reuse lorawan_frames for unified monitoring)
-		RecordUplink(app, devEUI, body.FPort, "wifi", payload, len(payload), nil, nil, "")
+		frameKind := "wifi"
+		if wifiCfg.TestMode {
+			frameKind = "wifi_test"
+		}
+		RecordUplink(app, devEUI, body.FPort, frameKind, payload, len(payload), nil, nil, "")
 
 		// Process through the shared pipeline (same path as LoRaWAN uplinks and test-inject)
 		cfg := gwState.Config()

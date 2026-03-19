@@ -15,12 +15,12 @@ import { ApiService } from '../../core/services/api.service';
             <span class="badge badge-secondary">WiFi</span>
           </h3>
           <label class="label cursor-pointer gap-2">
-            <span class="label-text text-sm">{{ enabled() ? 'Enabled' : 'Disabled' }}</span>
+            <span class="label-text text-sm">{{ form.enabled ? 'Enabled' : 'Disabled' }}</span>
             <input
               type="checkbox"
               class="toggle toggle-secondary"
-              [checked]="enabled()"
-              (change)="toggleEnabled()"
+              name="enabled"
+              [(ngModel)]="form.enabled"
               [disabled]="loading()"
             />
           </label>
@@ -31,15 +31,15 @@ import { ApiService } from '../../core/services/api.service';
             <span class="loading loading-spinner loading-lg text-secondary"></span>
           </div>
         } @else {
-          <div [class.opacity-50]="!enabled()" [class.pointer-events-none]="!enabled()">
+          <div [class.opacity-50]="!form.enabled" [class.pointer-events-none]="!form.enabled">
             <!-- Test mode toggle -->
             <div class="form-control mb-5">
               <label class="label cursor-pointer justify-start gap-3">
                 <input
                   type="checkbox"
                   class="toggle toggle-secondary"
-                  [checked]="testMode()"
-                  (change)="toggleTestMode()"
+                  name="test_mode"
+                  [(ngModel)]="form.test_mode"
                 />
                 <div>
                   <span class="label-text font-semibold">Test mode</span>
@@ -85,6 +85,33 @@ import { ApiService } from '../../core/services/api.service';
               </ul>
             </div>
           </div>
+
+          @if (saveError()) {
+            <div class="alert alert-error rounded-xl mt-4">
+              <span>{{ saveError() }}</span>
+            </div>
+          }
+          @if (saveSuccess()) {
+            <div class="alert alert-success rounded-xl mt-4">
+              <span>WiFi settings saved.</span>
+            </div>
+          }
+
+          <div class="flex flex-wrap gap-3 pt-4">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              [disabled]="saving()"
+              (click)="save()"
+            >
+              @if (saving()) {
+                <span class="loading loading-spinner loading-sm"></span>
+                Saving\u2026
+              } @else {
+                Save
+              }
+            </button>
+          </div>
         }
       </div>
     </div>
@@ -94,8 +121,11 @@ export class WifiSettingsComponent implements OnInit {
   private api = inject(ApiService);
 
   loading = signal(true);
-  enabled = signal(true);
-  testMode = signal(false);
+  saving = signal(false);
+  saveError = signal<string | null>(null);
+  saveSuccess = signal(false);
+
+  form = { enabled: true, test_mode: false };
 
   ingestUrl = window.location.origin;
   wifiExample = `{\n  "fport": 2,\n  "payload_hex": "7064002a..."\n}`;
@@ -103,23 +133,34 @@ export class WifiSettingsComponent implements OnInit {
   ngOnInit(): void {
     this.api.getWifiSettings().subscribe({
       next: (res) => {
-        this.enabled.set(res.enabled);
-        this.testMode.set(res.test_mode);
+        this.form.enabled = res.enabled;
+        this.form.test_mode = res.test_mode;
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
     });
   }
 
-  toggleEnabled(): void {
-    const newVal = !this.enabled();
-    this.enabled.set(newVal);
-    this.api.patchWifiSettings({ enabled: newVal }).subscribe();
-  }
-
-  toggleTestMode(): void {
-    const newVal = !this.testMode();
-    this.testMode.set(newVal);
-    this.api.patchWifiSettings({ test_mode: newVal }).subscribe();
+  save(): void {
+    if (this.saving()) return;
+    this.saveError.set(null);
+    this.saveSuccess.set(false);
+    this.saving.set(true);
+    this.api.patchWifiSettings({
+      enabled: this.form.enabled,
+      test_mode: this.form.test_mode,
+    }).subscribe({
+      next: (res) => {
+        this.form.enabled = res.enabled;
+        this.form.test_mode = res.test_mode;
+        this.saveSuccess.set(true);
+        this.saving.set(false);
+        setTimeout(() => this.saveSuccess.set(false), 4000);
+      },
+      error: (err) => {
+        this.saveError.set(err?.error?.error ?? err?.message ?? 'Failed to save');
+        this.saving.set(false);
+      },
+    });
   }
 }

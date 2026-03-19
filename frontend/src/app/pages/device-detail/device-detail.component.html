@@ -22,7 +22,7 @@
     </ul>
   </nav>
 
-  <header class="page-header flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+  <header class="page-header flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
     <div>
       <h1 class="page-title font-mono text-xl md:text-2xl">{{ deviceContext.device()!.device_name || deviceContext.eui() }}</h1>
       <p class="page-description mt-0.5">
@@ -30,28 +30,50 @@
       </p>
     </div>
     <div class="flex gap-2 shrink-0">
+      <a [routerLink]="['/device', deviceContext.eui(), 'config']" class="btn btn-ghost btn-sm gap-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        Configure
+      </a>
       <button
         type="button"
         class="btn btn-ghost btn-sm text-error hover:bg-error/10"
         [disabled]="deleting()"
         (click)="confirmDeleteDevice()"
       >
-        {{ deleting() ? 'Deleting…' : 'Delete device' }}
+        {{ deleting() ? 'Deleting…' : 'Delete' }}
       </button>
-      <a routerLink="/" class="btn btn-ghost btn-sm gap-1" aria-label="Back to devices">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-        </svg>
-        Back to list
-      </a>
     </div>
   </header>
 
-  <!-- Tabs (4 consolidated tabs) -->
+  <!-- Info strip -->
+  <div class="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-base-content/60 mb-6">
+    @if (deviceInfo(); as di) {
+      <span>{{ di.fieldCount }} fields · {{ di.controlCount }} controls · {{ di.commandCount }} commands</span>
+      @if (deviceContext.isAirConfig()) {
+        <span class="badge badge-xs" [class.badge-success]="di.configStatus === 'synced'" [class.badge-warning]="di.configStatus === 'pending'" [class.badge-ghost]="di.configStatus === 'n/a'">{{ di.configStatus }}</span>
+      }
+    }
+    @if (deviceContext.device()!.firmware_version) {
+      <span class="font-mono">
+        {{ deviceContext.device()!.firmware_version }}
+        @if (!firmwareCompatible()) {
+          <span class="badge badge-warning badge-xs ml-1">incompatible</span>
+        }
+      </span>
+    }
+    @if (deviceContext.device()!.transport) {
+      <span class="badge badge-xs badge-outline">{{ deviceContext.device()!.transport }}</span>
+    }
+  </div>
+
+  <!-- Tabs -->
   <div class="tabs tabs-boxed bg-base-200/50 p-1 rounded-xl mb-6 overflow-x-auto flex-nowrap md:flex-wrap">
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'overview'" (click)="activeTab.set('overview')">Overview</a>
-    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'controls'" (click)="activeTab.set('controls')">Controls</a>
-    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'telemetry'" (click)="activeTab.set('telemetry')">Telemetry</a>
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'history'" (click)="activeTab.set('history')">History</a>
+    <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'control'" (click)="activeTab.set('control')">Control</a>
     <a class="tab rounded-lg" [class.tab-active]="activeTab() === 'automation'" (click)="activeTab.set('automation')">
       Automation
       @if (activityCount() > 0) {
@@ -61,88 +83,22 @@
   </div>
 
   @switch (activeTab()) {
+
+    <!-- ═══════════ Overview ═══════════ -->
     @case ('overview') {
       <div class="space-y-6">
-        <div class="card-elevated">
-          <div class="card-body-spaced">
-            <h2 class="section-title">Details</h2>
-            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Name</dt>
-                <dd class="font-medium mt-0.5">{{ deviceContext.device()!.device_name || '—' }}</dd>
-              </div>
-              <div>
-                <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Type</dt>
-                <dd class="font-medium mt-0.5">{{ deviceContext.device()!.device_type || '—' }}</dd>
-              </div>
-              <div>
-                <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">EUI</dt>
-                <dd class="font-mono text-sm mt-0.5">{{ deviceContext.eui() }}</dd>
-              </div>
-              <div>
-                <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Last seen</dt>
-                <dd class="font-medium mt-0.5">{{ deviceContext.device()!.last_seen ? (deviceContext.device()!.last_seen | date:'medium') : '—' }}</dd>
-              </div>
-              @if (deviceInfo(); as di) {
-                <div>
-                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Schema</dt>
-                  <dd class="text-sm mt-0.5">{{ di.fieldCount }} fields · {{ di.controlCount }} controls · {{ di.commandCount }} commands</dd>
-                </div>
-                @if (di.provisionedFrom) {
-                  <div>
-                    <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Template</dt>
-                    <dd class="font-medium mt-0.5">
-                      <a [routerLink]="['/templates', di.provisionedFrom]" class="link link-hover">{{ di.provisionedFrom }}</a>
-                    </dd>
-                  </div>
-                }
-                @if (deviceContext.isAirConfig()) {
-                  <div>
-                    <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Config Status</dt>
-                    <dd class="mt-0.5">
-                      <span class="badge badge-sm" [class.badge-success]="di.configStatus === 'synced'" [class.badge-warning]="di.configStatus === 'pending'" [class.badge-ghost]="di.configStatus === 'n/a'">{{ di.configStatus }}</span>
-                    </dd>
-                  </div>
-                }
-              }
-              @if (deviceContext.device()!.firmware_version) {
-                <div>
-                  <dt class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Firmware</dt>
-                  <dd class="font-mono text-sm mt-0.5 flex items-center gap-2">
-                    <a routerLink="/settings" class="link link-hover">{{ deviceContext.device()!.firmware_version }}</a>
-                    @if (!firmwareCompatible()) {
-                      <span class="badge badge-warning badge-xs" title="This firmware version is not listed as compatible with the current backend. Check Settings.">incompatible</span>
-                    }
-                  </dd>
-                </div>
-              }
-            </dl>
-          </div>
-        </div>
         <app-device-credentials-card [eui]="deviceContext.eui()!" />
-        @if (deviceContext.controls().length > 0) {
-          <div class="card-elevated">
-            <div class="card-body-spaced">
-              <h2 class="section-title">Controls</h2>
-              <div class="flex flex-wrap gap-3">
-                @for (ctrl of deviceContext.controls(); track ctrl.id) {
-                  <div class="flex items-center gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2">
-                    <span class="font-medium text-sm capitalize">{{ ctrl.display_name || ctrl.control_key }}</span>
-                    <span class="badge badge-sm" [class.badge-success]="ctrl.current_state === 'on' || ctrl.current_state === 'open'" [class.badge-ghost]="ctrl.current_state !== 'on' && ctrl.current_state !== 'open'">{{ ctrl.current_state }}</span>
-                  </div>
-                }
-              </div>
-            </div>
-          </div>
-        }
+
         @if (telemetryFields().length > 0) {
           <div class="card-elevated">
             <div class="card-body-spaced">
               <h2 class="section-title">Telemetry</h2>
+              <p class="text-xs text-base-content/50 -mt-2 mb-3">Live field values transmitted by the device.</p>
               <app-current-values [fields]="telemetryFields()" [data]="deviceContext.latestTelemetry() || {}" />
             </div>
           </div>
         }
+
         @if (systemFields().length > 0) {
           <div class="card-elevated">
             <div class="card-body-spaced">
@@ -151,15 +107,9 @@
             </div>
           </div>
         }
-        @if (deviceContext.fieldConfigs().length === 0 && deviceContext.latestTelemetry()) {
-          <div class="card-elevated">
-            <div class="card-body-spaced">
-              <h2 class="section-title">Current values</h2>
-              <app-current-values [fields]="deviceContext.fieldConfigs()" [data]="deviceContext.latestTelemetry() || {}" />
-            </div>
-          </div>
-        }
+
         <app-error-bar [errorObject]="errorObjectFromTelemetry()" />
+
         <div class="card-elevated">
           <div class="card-body-spaced">
             <app-device-frames [eui]="deviceContext.eui()!" />
@@ -168,7 +118,37 @@
       </div>
     }
 
-    @case ('controls') {
+    <!-- ═══════════ History ═══════════ -->
+    @case ('history') {
+      <div class="card-elevated">
+        <div class="card-body-spaced">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="section-title mb-0">History</h2>
+            <select class="select select-bordered select-sm w-auto" (change)="onTimeRangeChange($event)">
+              <option value="1h" [selected]="timeRange() === '1h'">Last 1 hour</option>
+              <option value="24h" [selected]="timeRange() === '24h'">Last 24 hours</option>
+              <option value="7d" [selected]="timeRange() === '7d'">Last 7 days</option>
+            </select>
+          </div>
+          @if (chartFields().length === 0) {
+            <p class="text-sm text-base-content/40 py-8 text-center">No fields configured for charting.</p>
+          } @else {
+            <div class="grid gap-6">
+              @for (f of chartFields(); track f.field_key) {
+                <app-history-chart [eui]="deviceContext.eui()" [field]="f.field_key" [label]="f.display_name + (f.unit ? ' (' + f.unit + ')' : '')" [from]="historyFrom()" [to]="historyTo()" />
+              }
+              @if (deviceContext.device()!.transport !== 'wifi') {
+                <app-history-chart [eui]="deviceContext.eui()" field="rssi" label="RSSI (dBm)" [from]="historyFrom()" [to]="historyTo()" />
+                <app-history-chart [eui]="deviceContext.eui()" field="snr" label="SNR (dB)" [from]="historyFrom()" [to]="historyTo()" />
+              }
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- ═══════════ Control ═══════════ -->
+    @case ('control') {
       <div class="space-y-6">
         @if (transferStateLabel() !== null) {
           <div class="card-elevated">
@@ -202,59 +182,19 @@
         </div>
         <div class="card-elevated">
           <div class="card-body-spaced">
-            <app-device-config-panel />
-          </div>
-        </div>
-        <!-- Sensor configuration (merged from Sensors tab) -->
-        <div class="card-elevated">
-          <div class="card-body-spaced">
-            <h2 class="section-title">Sensor Configuration</h2>
-            <p class="text-xs text-base-content/50 -mt-2 mb-4">Add or reconfigure sensors via over-the-air AirConfig downlink. Changes take effect after the next device uplink.</p>
-            <app-device-sensor-config
-              [eui]="deviceContext.eui()"
-              [fieldConfigs]="deviceContext.fieldConfigs()"
-              (prefillRule)="onPrefillRule($event)" />
-          </div>
-        </div>
-        <div class="card-elevated">
-          <div class="card-body-spaced">
             <app-command-history [eui]="deviceContext.eui()!" />
           </div>
         </div>
       </div>
     }
 
-    @case ('telemetry') {
-      <div class="card-elevated">
-        <div class="card-body-spaced">
-          <h2 class="section-title">History</h2>
-          <div class="flex flex-wrap gap-2 mb-4">
-            <select class="select select-bordered select-sm w-auto" (change)="onTimeRangeChange($event)">
-              <option value="1h" [selected]="timeRange() === '1h'">Last 1 hour</option>
-              <option value="24h" [selected]="timeRange() === '24h'">Last 24 hours</option>
-              <option value="7d" [selected]="timeRange() === '7d'">Last 7 days</option>
-            </select>
-          </div>
-          <div class="grid gap-6">
-            @for (f of chartFields(); track f.field_key) {
-              <app-history-chart [eui]="deviceContext.eui()" [field]="f.field_key" [label]="f.display_name + (f.unit ? ' (' + f.unit + ')' : '')" [from]="historyFrom()" [to]="historyTo()" />
-            }
-            @if (deviceContext.device()!.transport !== 'wifi') {
-              <app-history-chart [eui]="deviceContext.eui()" field="rssi" label="RSSI (dBm)" [from]="historyFrom()" [to]="historyTo()" />
-              <app-history-chart [eui]="deviceContext.eui()" field="snr" label="SNR (dB)" [from]="historyFrom()" [to]="historyTo()" />
-            }
-          </div>
-        </div>
-      </div>
-    }
-
+    <!-- ═══════════ Automation ═══════════ -->
     @case ('automation') {
       <div class="space-y-6">
-        <!-- Device rules -->
         <div class="card-elevated">
           <div class="card-body-spaced">
             <h2 class="section-title">Device rules</h2>
-            <p class="text-xs text-base-content/50 -mt-2 mb-2">Run on the device itself for instant, offline-capable threshold-based control.</p>
+            <p class="text-xs text-base-content/50 -mt-2 mb-2">Threshold-based rules running on the device for instant, offline-capable control.</p>
             <app-device-rules-section
               [eui]="deviceContext.eui()"
               [fields]="deviceContext.fieldConfigs()"
@@ -263,7 +203,6 @@
           </div>
         </div>
 
-        <!-- Related workflows -->
         <div class="card-elevated">
           <div class="card-body-spaced">
             <div class="flex items-center justify-between">
@@ -303,12 +242,11 @@
           </div>
         </div>
 
-        <!-- Activity timeline (merged from Activity tab) -->
         <div class="card-elevated">
           <div class="card-body-spaced">
             <h2 class="section-title">Activity</h2>
             <p class="text-xs text-base-content/50 -mt-2 mb-4">
-              Unified timeline of state changes and workflow events affecting this device.
+              Unified timeline of state changes and workflow events.
             </p>
             @if (activityTimeline().length === 0) {
               <p class="text-sm text-base-content/40 py-4 text-center">No activity recorded yet.</p>
@@ -384,7 +322,6 @@
         </div>
       </div>
     }
-
 
   }
 }
