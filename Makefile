@@ -10,7 +10,7 @@
 #   make all
 #   make install DESTDIR=/opt/farmon
 
-DESTDIR ?= /opt/farmon
+DESTDIR ?= $(HOME)/farmon
 
 .PHONY: build all dev frontend backend check-go frontend-deps board-assets install clean
 
