@@ -8,7 +8,7 @@
 #
 # Full build with frontend:
 #   make all
-#   sudo make install
+#   sudo make install   (installs + creates systemd service)
 
 DESTDIR ?= /opt/farmon
 
@@ -58,9 +58,11 @@ check-go:
 backend: check-go
 	cd backend && CGO_ENABLED=0 go build -o pocketbase .
 
-# Install to a destination directory and create a systemd service.
-# Usage: sudo make install  (or: sudo make install DESTDIR=/opt/farmon)
-install: all
+# Install built artifacts and create a systemd service.
+# Run 'make all' first (as your user), then 'sudo make install'.
+install:
+	@test -f backend/pocketbase || { echo "ERROR: Run 'make all' first (as your user, not sudo)"; exit 1; }
+	@test -d backend/pb_public || { echo "ERROR: Run 'make all' first (as your user, not sudo)"; exit 1; }
 	@mkdir -p $(DESTDIR)
 	cp backend/pocketbase $(DESTDIR)/farmon
 	cp -r backend/pb_public $(DESTDIR)/pb_public
