@@ -131,6 +131,46 @@ func loadDeviceAirConfig(app core.App, devEUI string) (*AirConfig, error) {
 	}, nil
 }
 
+// upsertAirConfigSlot finds or creates the device_airconfig record and updates
+// a single slot in the given JSON array field ("sensors" or "controls").
+func upsertAirConfigSlot(app core.App, devEUI, field string, slot int, data map[string]any) error {
+	acColl, err := app.FindCollectionByNameOrId("device_airconfig")
+	if err != nil {
+		return fmt.Errorf("device_airconfig collection not found")
+	}
+
+	rec, err := app.FindFirstRecordByFilter("device_airconfig",
+		"device_eui = {:eui}", dbx.Params{"eui": devEUI})
+	if err != nil {
+		// Create stub record
+		rec = core.NewRecord(acColl)
+		rec.Set("device_eui", devEUI)
+		rec.Set("pin_map", []any{})
+		rec.Set("sensors", []any{})
+		rec.Set("controls", []any{})
+		rec.Set("lorawan", map[string]any{})
+	}
+
+	// Read existing array
+	var arr []any
+	raw := rec.Get(field)
+	switch v := raw.(type) {
+	case string:
+		_ = json.Unmarshal([]byte(v), &arr)
+	case []any:
+		arr = v
+	}
+
+	// Extend array if needed
+	for len(arr) <= slot {
+		arr = append(arr, map[string]any{})
+	}
+	arr[slot] = data
+	rec.Set(field, arr)
+
+	return app.Save(rec)
+}
+
 // getDeviceControlByIndex returns the device control at a given control_idx.
 func getDeviceControlByIndex(cfg *DeviceConfig, idx int) *DeviceControlInfo {
 	for i := range cfg.Controls {

@@ -28,10 +28,33 @@ export interface PinPickerMode {
 /**
  * ConfigContextService — single source of truth for the device configuration page.
  *
- * Replaces the ~250 lines of direct PocketBase calls scattered across DeviceConfigComponent.
- * All mutations route through this service; components only call the methods here.
+ * ## IO Architecture
  *
- * Usage: inject in DeviceConfigComponent and pass down to tab components.
+ * **Inputs** (sensors): Hardware sensors producing telemetry.
+ * - Firmware format: AirConfigSensor (10-byte fPort 35, subcommand 0x04)
+ * - Each sensor links to a DeviceField with linked_type='input'
+ * - Pin assignment stored in AirConfigSensor.pin_index
+ * - Can be used as automation CONDITIONS ("if temperature > 30")
+ *
+ * **Outputs** (controls): Hardware actuators executing actions.
+ * - DB format: DeviceControl (PocketBase CRUD), pushed as 8-byte fPort 35 subcommand 0x05
+ * - Each control auto-creates a DeviceField with linked_type='output' mirroring state
+ * - Pin assignment stored on DeviceControl.pin_index (+pin2_index for dual-pin)
+ * - Can be automation TARGETS ("then set pump → on")
+ *
+ * **Compute**: Derived values from expressions (no hardware pins).
+ *
+ * ## Push Mechanism
+ *
+ * Individual slots: POST /push-io-slot { kind: 'sensor'|'control', slot, ... }
+ * Full sync: POST /push-config (re-pushes entire AirConfig)
+ *
+ * ## Board SVG Colors
+ *
+ * - Input (sensor): teal #14b8a6
+ * - Output (control): rose #e11d48
+ * - Active/selected: blue #2563eb
+ * - Pin functions: green(relay), blue(adc), purple(i2c), orange(counter), yellow(pwm/dac), gray(unused)
  */
 @Injectable({ providedIn: 'root' })
 export class ConfigContextService {
@@ -129,7 +152,8 @@ export class ConfigContextService {
   usedSensorPins = computed<Set<number>>(() => {
     const pins = new Set<number>();
     for (const s of this._deviceSpec()?.airconfig?.sensors ?? []) {
-      if (s.pin_index !== 255) pins.add(s.pin_index);
+      const pin = Number(s.pin_index);
+      if (!isNaN(pin) && pin !== 255) pins.add(pin);
     }
     return pins;
   });
@@ -148,9 +172,11 @@ export class ConfigContextService {
     const sensors = this._deviceSpec()?.airconfig?.sensors ?? [];
     const fields = this._fields();
     for (const s of sensors) {
-      if (s.pin_index === 255) continue;
-      const field = fields.find(f => f.field_idx === s.field_index);
-      labels.set(s.pin_index, field?.display_name || field?.field_key || `sensor f${s.field_index}`);
+      const pin = Number(s.pin_index);
+      if (isNaN(pin) || pin === 255) continue;
+      const fieldIdx = Number(s.field_index);
+      const field = fields.find(f => f.field_idx === fieldIdx);
+      labels.set(pin, field?.display_name || field?.field_key || `sensor f${s.field_index}`);
     }
     for (const ctrl of this._controls()) {
       const name = ctrl.display_name || ctrl.control_key || 'output';
@@ -158,6 +184,20 @@ export class ConfigContextService {
       if (ctrl.pin2_index != null && ctrl.pin2_index !== 255) labels.set(ctrl.pin2_index, name + ' (dir)');
     }
     return labels;
+  });
+
+  /** Map field_idx → sensor pin_index for input variables. Used by inputs-tab to show pin badges. */
+  sensorPinByFieldIdx = computed<Map<number, number>>(() => {
+    const map = new Map<number, number>();
+    for (const s of this._deviceSpec()?.airconfig?.sensors ?? []) {
+      const type = Number(s.type);
+      const pin = Number(s.pin_index);
+      const fieldIdx = Number(s.field_index);
+      if (type !== 0 && !isNaN(pin) && pin !== 255) {
+        map.set(fieldIdx, pin);
+      }
+    }
+    return map;
   });
 
   /** Count of variables with report_mode='reported' (counts toward LoRaWAN field budget). */

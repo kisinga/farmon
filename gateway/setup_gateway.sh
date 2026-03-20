@@ -117,6 +117,8 @@ ExecStartPre=-/usr/bin/gpioset --mode=exit $GPIO_CHIP 23=0
 ExecStartPre=-/usr/bin/gpioset --mode=exit $GPIO_CHIP 18=0
 ExecStart=/usr/local/bin/chirpstack-concentratord-sx1302 -c $CONF_DIR/$MAIN_CONF -c $CONF_DIR/$CHAN_CONF
 Environment=RUST_BACKTRACE=1
+# Allow non-root processes (e.g. farmon backend) to connect to the IPC sockets.
+UMask=0000
 Restart=on-failure
 RestartSec=10
 KillMode=control-group

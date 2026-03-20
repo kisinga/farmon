@@ -109,7 +109,7 @@ func main() {
 		se.Router.POST("/api/farmon/validate-airconfig", validateAirConfigHandler())
 		se.Router.POST("/api/farmon/devices/{eui}/push-config", pushConfigHandler(app, gwState))
 		se.Router.POST("/api/farmon/devices/{eui}/push-rules", pushRulesHandler(app, gwState))
-		se.Router.POST("/api/farmon/devices/{eui}/push-sensor-slot", pushSensorSlotHandler(app, gwState))
+		se.Router.POST("/api/farmon/devices/{eui}/push-io-slot", pushIOSlotHandler(app, gwState))
 		se.Router.POST("/api/farmon/devices/{eui}/compile-expression", compileExpressionHandler())
 		// WiFi device ingest (transport-agnostic uplink via HTTP POST)
 		se.Router.POST("/api/farmon/ingest", ingestHandler(app, gwState, wifiState))
@@ -131,7 +131,8 @@ func main() {
 		se.Router.GET("/api/farmon/firmware-commands", listFirmwareCommandsHandler(app))
 
 		// Sensor catalog (read-only, sourced from sensors package)
-		se.Router.GET("/api/farmon/sensor-catalog", sensorCatalogHandler())
+		se.Router.GET("/api/farmon/io-catalog", ioCatalogHandler())
+		se.Router.GET("/api/farmon/sensor-catalog", ioCatalogHandler()) // backward compat
 
 		// Pin capability table (read-only, sourced from firmware pincaps package)
 		se.Router.GET("/api/farmon/pin-capabilities", pinCapsHandler(app))

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 
 import { ConfigContextService } from '../../../core/services/config-context.service';
 import { ApiService } from '../../../core/services/api.service';
-import { DeviceControl } from '../../../core/services/api.types';
+import { DeviceControl, OutputInterfaceInfo } from '../../../core/services/api.types';
 import { SyncStatusBadgeComponent } from '../sync-status-badge/sync-status-badge.component';
 import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.component';
 import { OutputFormComponent } from './output-form.component';
@@ -28,36 +28,32 @@ import { OutputFormComponent } from './output-form.component';
 
       <!-- Header -->
       <div class="flex items-center justify-between flex-wrap gap-3">
-        <div class="flex items-center gap-3">
-          <h3 class="font-semibold">Outputs</h3>
+        <div class="flex items-center gap-4 flex-wrap">
           @if (ctx.isAirConfig()) {
             <app-sync-status-badge [state]="ctx.airConfigSyncState()" />
           }
         </div>
-        @if (!showForm()) {
-          <button class="btn btn-sm btn-primary" (click)="startAdd()">+ Add Output</button>
-        }
+        <button
+          class="btn btn-sm btn-primary"
+          (click)="showForm() ? cancelForm() : startAdd()"
+          [disabled]="!ctx.eui()"
+        >
+          {{ showForm() && !editingControl() ? 'Cancel' : '+ Add Output' }}
+        </button>
       </div>
-
-      <!-- Flash message -->
-      @if (ctx.flashMessage()) {
-        <div class="alert text-sm py-2 rounded-xl"
-          [class.alert-error]="ctx.flashMessage()!.isError"
-          [class.alert-success]="!ctx.flashMessage()!.isError">
-          {{ ctx.flashMessage()!.text }}
-        </div>
-      }
 
       <!-- Add / Edit form -->
       @if (showForm()) {
-        <div class="border border-base-300 rounded-xl bg-base-200/30">
-          <div class="px-4 pt-4 text-sm font-semibold">
-            {{ editingControl() ? 'Edit Output' : 'Add Output' }}
+        <div class="border border-base-300 rounded-xl bg-base-200/30 p-4">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold">{{ editingControl() ? 'Edit Output' : 'Add Output' }}</h3>
+            <button class="btn btn-xs btn-ghost" (click)="cancelForm()">✕</button>
           </div>
           <app-output-form
             [existing]="editingControl() ?? undefined"
             [pinMap]="ctx.pinMapArray()"
             [usedPins]="usedPinsForForm()"
+            [outputInterfaces]="outputInterfaces()"
             (save)="onSave($event)"
             (cancel)="cancelForm()"
           />
@@ -72,15 +68,17 @@ import { OutputFormComponent } from './output-form.component';
           </div>
         } @else if (ctx.controls().length === 0) {
           <div class="text-sm text-base-content/60 py-6 text-center">
-            No outputs configured. Click "+ Add Output" to add an actuator.
+            No outputs configured. Click "+ Add Output" to add your first output.
           </div>
         } @else {
           @for (ctrl of ctx.controls(); track ctrl.id) {
             <div class="flex items-center justify-between gap-3 rounded-xl border border-base-300 bg-base-100 px-4 py-3">
               <div class="flex items-center gap-3 min-w-0">
+                <span class="badge badge-warning badge-sm">output</span>
                 <div class="min-w-0">
                   <p class="font-medium text-sm truncate">{{ ctrl.display_name || ctrl.control_key }}</p>
                   <div class="flex items-center gap-2 mt-0.5">
+                    <span class="font-mono text-xs text-base-content/50">{{ ctrl.control_key }}</span>
                     <span class="badge badge-ghost badge-xs">{{ actuatorLabel(ctrl.actuator_type) }}</span>
                     @if (ctrl.pin_index != null) {
                       <span class="badge badge-outline badge-xs">Pin {{ ctrl.pin_index }}</span>
@@ -91,7 +89,7 @@ import { OutputFormComponent } from './output-form.component';
                   </div>
                 </div>
               </div>
-              <div class="flex items-center gap-2 flex-shrink-0">
+              <div class="flex items-center gap-3 flex-shrink-0">
                 <button class="btn btn-xs btn-ghost" (click)="startEdit(ctrl)">Edit</button>
                 <button class="btn btn-xs btn-ghost text-error" (click)="confirmDelete(ctrl)">Delete</button>
               </div>
@@ -99,18 +97,6 @@ import { OutputFormComponent } from './output-form.component';
           }
         }
       </div>
-
-      <!-- Push to device (AirConfig only) -->
-      @if (ctx.isAirConfig() && ctx.controls().length > 0) {
-        <button
-          class="btn btn-sm btn-outline btn-primary w-full"
-          (click)="pushConfig()"
-          [disabled]="pushing()"
-        >
-          @if (pushing()) { <span class="loading loading-spinner loading-xs"></span> Pushing… }
-          @else { Push outputs to device }
-        </button>
-      }
 
       <!-- Delete confirmation -->
       <app-confirm-dialog
@@ -133,31 +119,29 @@ export class OutputsTabComponent {
   showForm = signal(false);
   editingControl = signal<DeviceControl | null>(null);
   deletingControl = signal<DeviceControl | null>(null);
-  pushing = signal(false);
 
-  /**
-   * All used pins (sensor + control), minus the current output's own pins.
-   * Passed to OutputFormComponent so the pin selector correctly marks other
-   * sensors' pins as occupied while allowing re-selection of the current output's pin.
-   */
+  /** Output interface catalog, loaded from firmware. */
+  outputInterfaces = signal<OutputInterfaceInfo[]>([]);
+
   usedPinsForForm = computed<Set<number>>(() => {
     const all = this.ctx.allUsedPins();
     const editing = this.editingControl();
     if (!editing) return all;
-    // Remove the current output's own pins so they show as available for re-selection
     const without = new Set(all);
     if (editing.pin_index != null) without.delete(editing.pin_index);
     if (editing.pin2_index != null && editing.pin2_index !== 255) without.delete(editing.pin2_index);
     return without;
   });
 
-  readonly ACTUATOR_LABELS: Record<number, string> = {
-    0: 'Relay', 1: 'Motorized Valve', 2: 'Solenoid',
-    3: 'PWM', 4: 'Servo', 5: 'DAC', 6: 'I2C PWM',
-  };
-
   actuatorLabel(type?: number): string {
-    return this.ACTUATOR_LABELS[type ?? 0] ?? 'Unknown';
+    const iface = this.outputInterfaces().find(i => i.actuator_type === (type ?? 0));
+    return iface?.label ?? 'Unknown';
+  }
+
+  constructor() {
+    this.api.getIOCatalog().subscribe(cat => {
+      this.outputInterfaces.set(cat.output_interfaces ?? []);
+    });
   }
 
   startAdd(): void {
@@ -184,12 +168,24 @@ export class OutputsTabComponent {
 
     this.ctx.setSaving(true);
     op$.subscribe({
-      next: () => {
+      next: (ctrl) => {
         this.ctx.setSaving(false);
         this.cancelForm();
         this.ctx.reloadControls();
         this.ctx.reloadFields();
         this.ctx.flash(editing ? 'Output updated.' : 'Output added.');
+        // Auto-push individual control slot to firmware (more efficient than full push-config)
+        if (this.ctx.isAirConfig() && ctrl.control_idx != null) {
+          this.api.pushControlSlot(eui, {
+            slot: ctrl.control_idx,
+            pin_index: ctrl.pin_index ?? 0,
+            state_count: ctrl.states_json?.length ?? 2,
+            flags: ctrl.flags ?? 0,
+            actuator_type: ctrl.actuator_type ?? 0,
+            pin2_index: ctrl.pin2_index ?? 255,
+            pulse_x100ms: ctrl.pulse_x100ms ?? 0,
+          }).subscribe();
+        }
       },
       error: (err) => {
         this.ctx.setSaving(false);
@@ -216,20 +212,4 @@ export class OutputsTabComponent {
     });
   }
 
-  pushConfig(): void {
-    const eui = this.ctx.eui();
-    if (!eui) return;
-    this.pushing.set(true);
-    this.api.pushConfig(eui).subscribe({
-      next: () => {
-        this.pushing.set(false);
-        this.ctx.flash('Config pushed to device.');
-        this.ctx.reloadAll();
-      },
-      error: (err) => {
-        this.pushing.set(false);
-        this.ctx.flash(err?.error?.message ?? 'Push failed', true);
-      },
-    });
-  }
 }

@@ -8,6 +8,8 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ConfigContextService } from '../../../core/services/config-context.service';
 import { BOARD_DEFINITIONS, BoardPinDef } from '../../../core/constants/board-definitions';
 import { pinFunctionName, PinFunctionName } from '../../../core/utils/firmware-constraints';
+import { PinOverlayComponent } from './pin-overlay.component';
+import { PinOverlayItem } from './pin-overlay.types';
 
 const FN_COLORS: Record<PinFunctionName, string> = {
   relay:   '#16a34a',
@@ -23,14 +25,13 @@ const FN_COLORS: Record<PinFunctionName, string> = {
 };
 
 const SENSOR_COLOR  = '#14b8a6'; // teal-500
-const CONTROL_COLOR = '#f59e0b'; // amber-500
+const CONTROL_COLOR = '#e11d48'; // rose-600 — distinct from PWM/DAC yellow
 const ACTIVE_COLOR  = '#2563eb'; // blue-600
-const LABEL_NS = 'http://www.w3.org/2000/svg';
 
 @Component({
   selector: 'app-device-board-svg',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, PinOverlayComponent],
   styles: [`
     @keyframes active-pulse {
       0%, 100% { opacity: 1; }
@@ -39,13 +40,10 @@ const LABEL_NS = 'http://www.w3.org/2000/svg';
     :host ::ng-deep .pin-active {
       animation: active-pulse 1s ease-in-out infinite;
     }
-    :host ::ng-deep .board-svg-wrap svg {
+    :host ::ng-deep .board-svg-inner svg {
       width: 100%;
       height: auto;
       max-height: 500px;
-    }
-    /* LoRa-E5 is a wide/short board — cap width so it doesn't stretch across the page */
-    :host ::ng-deep .board-svg-wrap.board-lorae5 svg {
       max-width: 480px;
     }
   `],
@@ -56,10 +54,19 @@ const LABEL_NS = 'http://www.w3.org/2000/svg';
       </p>
 
       @if (svgContent()) {
-        <div class="board-svg-wrap flex justify-center overflow-x-auto"
-          [class]="'board-svg-wrap board-' + boardDef()?.model"
-          #svgContainer
-          [innerHTML]="svgContent()">
+        <div class="board-svg-wrap-outer" style="position: relative"
+             [style.padding.px]="boardDef()?.labelMargin ?? 80"
+             [class]="'board-' + boardDef()?.model">
+          <div class="board-svg-inner flex justify-center overflow-x-auto"
+               #svgContainer
+               [innerHTML]="svgContent()">
+          </div>
+          <app-pin-overlay
+            [svgContainer]="svgContainer"
+            [overlayItems]="overlayItems()"
+            [domReady]="domReady()"
+            [margin]="boardDef()?.labelMargin ?? 80"
+          />
         </div>
       } @else if (!boardDef()) {
         <p class="text-xs text-base-content/40 py-4 text-center">
@@ -78,7 +85,7 @@ const LABEL_NS = 'http://www.w3.org/2000/svg';
             <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:#14b8a6"></span> Input
           </span>
           <span class="flex items-center gap-1">
-            <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:#f59e0b"></span> Output
+            <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:#e11d48"></span> Output
           </span>
           <span class="flex items-center gap-1">
             <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:#2563eb"></span> Selected
@@ -102,7 +109,7 @@ export class DeviceBoardSvgComponent {
   @ViewChild('svgContainer') svgContainer!: ElementRef<HTMLDivElement>;
 
   private rawSvg = signal<string | null>(null);
-  private domReady = signal(0);
+  domReady = signal(0);
 
   boardDef = computed(() => {
     const model = this.ctx.device()?.hardware_model;
@@ -112,6 +119,52 @@ export class DeviceBoardSvgComponent {
   svgContent = computed<SafeHtml | null>(() => {
     const raw = this.rawSvg();
     return raw ? this.sanitizer.bypassSecurityTrustHtml(raw) : null;
+  });
+
+  overlayItems = computed<PinOverlayItem[]>(() => {
+    const def = this.boardDef();
+    if (!def) return [];
+    const sensorPins = this.ctx.usedSensorPins();
+    const controlPins = this.ctx.usedControlPins();
+    const activePin = this.ctx.activePinSelection();
+    const pinMap = this.ctx.pinMapArray();
+    const pinLabels = this.ctx.pinLabels();
+
+    return def.pins
+      .filter(pin => {
+        const isActive = activePin === pin.firmwarePin;
+        const isSensor = sensorPins.has(pin.firmwarePin);
+        const isControl = controlPins.has(pin.firmwarePin);
+        const hasLabel = pinLabels.has(pin.firmwarePin);
+        return isActive || isSensor || isControl || hasLabel;
+      })
+      .map(pin => {
+        const isActive = activePin === pin.firmwarePin;
+        const isSensor = sensorPins.has(pin.firmwarePin);
+        const isControl = controlPins.has(pin.firmwarePin);
+        const hasLabel = pinLabels.has(pin.firmwarePin);
+
+        let color: string;
+        if (isActive) {
+          color = ACTIVE_COLOR;
+        } else if (isSensor || (hasLabel && !isControl)) {
+          color = SENSOR_COLOR;
+        } else if (isControl) {
+          color = CONTROL_COLOR;
+        } else {
+          const fn = pinFunctionName(pinMap[pin.firmwarePin] ?? 0);
+          color = FN_COLORS[fn] ?? FN_COLORS.unused;
+        }
+
+        return {
+          firmwarePin: pin.firmwarePin,
+          connectorId: pin.connectorId,
+          color,
+          label: pinLabels.get(pin.firmwarePin) ?? null,
+          isActive,
+          edge: pin.edge,
+        };
+      });
   });
 
   legendItems = computed(() => {
@@ -136,13 +189,17 @@ export class DeviceBoardSvgComponent {
     if (!def) { this.rawSvg.set(null); return; }
     this.http.get(def.svgUrl, { responseType: 'text' }).subscribe({
       next: svg => {
-        this.rawSvg.set(svg);
-        requestAnimationFrame(() => this.domReady.update(n => n + 1));
+        this.rawSvg.set(def.rotateDeg ? this.rotateSvg(svg, def.rotateDeg) : svg);
+        // Double-rAF: first frame sets innerHTML, second ensures layout has stabilized
+        requestAnimationFrame(() => requestAnimationFrame(() =>
+          this.domReady.update(n => n + 1)
+        ));
       },
       error: () => this.rawSvg.set(null),
     });
   });
 
+  /** Apply fill colors directly to SVG pin elements. */
   private colorEffect = effect(() => {
     const def = this.boardDef();
     const _ready = this.domReady();
@@ -154,121 +211,58 @@ export class DeviceBoardSvgComponent {
 
     if (!def || !_ready) return;
 
-    requestAnimationFrame(() =>
-      this.applyPinState(def.pins, sensorPins, controlPins, activePin, pinMap, pinLabels)
-    );
+    requestAnimationFrame(() => {
+      const container = this.svgContainer?.nativeElement;
+      if (!container) return;
+
+      for (const pin of def.pins) {
+        const el = container.querySelector(`#${pin.connectorId}`) as SVGGraphicsElement | null;
+        if (!el) continue;
+
+        const isActive = activePin === pin.firmwarePin;
+        const isSensor = sensorPins.has(pin.firmwarePin);
+        const isControl = controlPins.has(pin.firmwarePin);
+        const hasLabel = pinLabels.has(pin.firmwarePin);
+
+        let color: string;
+        if (isActive) {
+          color = ACTIVE_COLOR;
+        } else if (isSensor || (hasLabel && !isControl)) {
+          color = SENSOR_COLOR;
+        } else if (isControl) {
+          color = CONTROL_COLOR;
+        } else {
+          const fn = pinFunctionName(pinMap[pin.firmwarePin] ?? 0);
+          color = FN_COLORS[fn] ?? FN_COLORS.unused;
+        }
+
+        el.style.fill = color;
+        el.style.fillOpacity = '1';
+        el.classList.toggle('pin-active', isActive);
+      }
+    });
   });
 
-  /**
-   * Get the center of an SVG element in root SVG coordinate space.
-   * Uses getBoundingClientRect + inverse screen CTM as a robust fallback.
-   */
-  private pinCenter(el: SVGGraphicsElement, svgEl: SVGSVGElement): { x: number; y: number } | null {
-    // Method 1: getBoundingClientRect → SVG coords (most reliable for nested transforms)
-    try {
-      const rect = el.getBoundingClientRect();
-      const svgRect = svgEl.getBoundingClientRect();
-      const vb = svgEl.viewBox.baseVal;
-      if (svgRect.width === 0 || svgRect.height === 0) return null;
-      // Map screen coords to viewBox coords
-      const scaleX = vb.width / svgRect.width;
-      const scaleY = vb.height / svgRect.height;
-      return {
-        x: vb.x + (rect.x + rect.width / 2 - svgRect.x) * scaleX,
-        y: vb.y + (rect.y + rect.height / 2 - svgRect.y) * scaleY,
-      };
-    } catch {
-      return null;
+  /** Rotate an SVG string by swapping the viewBox and wrapping content in a transform group. */
+  private rotateSvg(svg: string, deg: number): string {
+    const vbMatch = svg.match(/viewBox="([.\d]+)\s+([.\d]+)\s+([.\d]+)\s+([.\d]+)"/);
+    if (!vbMatch) return svg;
+    const [, minX, minY, w, h] = vbMatch;
+    svg = svg.replace(
+      `viewBox="${minX} ${minY} ${w} ${h}"`,
+      `viewBox="${minX} ${minY} ${h} ${w}"`,
+    );
+    const wAttr = svg.match(/\bwidth="([^"]+)"/);
+    const hAttr = svg.match(/\bheight="([^"]+)"/);
+    if (wAttr && hAttr) {
+      svg = svg
+        .replace(`width="${wAttr[1]}"`, `width="${hAttr[1]}"`)
+        .replace(`height="${hAttr[1]}"`, `height="${wAttr[1]}"`);
     }
-  }
-
-  private applyPinState(
-    pins: BoardPinDef[],
-    sensorPins: Set<number>,
-    controlPins: Set<number>,
-    activePin: number | null,
-    pinMap: number[],
-    pinLabels: Map<number, string>,
-  ): void {
-    const container = this.svgContainer?.nativeElement;
-    if (!container) return;
-    const svgEl = container.querySelector('svg') as SVGSVGElement | null;
-    if (!svgEl) return;
-
-    // Remove previously injected overlays
-    svgEl.querySelectorAll('.farmon-overlay').forEach(el => el.remove());
-
-    // Parse viewBox to determine label offset scale
-    const vb = svgEl.viewBox.baseVal;
-    const dotRadius = Math.max(vb.width, vb.height) * 0.012;
-    const fontSize = Math.max(vb.width, vb.height) * 0.018;
-    const labelOffset = dotRadius + fontSize * 0.3;
-
-    for (const pin of pins) {
-      const el = container.querySelector(`#${pin.connectorId}`) as SVGGraphicsElement | null;
-      if (!el) continue;
-
-      // Determine status color
-      const isActive = activePin === pin.firmwarePin;
-      const isSensor = sensorPins.has(pin.firmwarePin);
-      const isControl = controlPins.has(pin.firmwarePin);
-      const hasLabel = pinLabels.has(pin.firmwarePin);
-      const isAssigned = isSensor || isControl || isActive || hasLabel;
-
-      let color: string;
-      if (isActive) {
-        color = ACTIVE_COLOR;
-      } else if (isSensor || (hasLabel && !isControl)) {
-        color = SENSOR_COLOR;
-      } else if (isControl) {
-        color = CONTROL_COLOR;
-      } else {
-        const fn = pinFunctionName(pinMap[pin.firmwarePin] ?? 0);
-        color = FN_COLORS[fn] ?? FN_COLORS.unused;
-      }
-
-      // Color the original pin element
-      el.style.fill = color;
-      el.style.fillOpacity = '1';
-      el.classList.toggle('pin-active', isActive);
-
-      if (!isAssigned) continue;
-
-      // Get pin center in root SVG coords
-      try {
-        const center = this.pinCenter(el, svgEl);
-        if (!center) continue;
-
-        // Colored dot overlay
-        const dot = document.createElementNS(LABEL_NS, 'circle');
-        dot.classList.add('farmon-overlay');
-        if (isActive) dot.classList.add('pin-active');
-        dot.setAttribute('cx', String(center.x));
-        dot.setAttribute('cy', String(center.y));
-        dot.setAttribute('r', String(dotRadius));
-        dot.setAttribute('fill', color);
-        dot.setAttribute('stroke', 'white');
-        dot.setAttribute('stroke-width', String(dotRadius * 0.3));
-        svgEl.appendChild(dot);
-
-        // Text label
-        const label = pinLabels.get(pin.firmwarePin);
-        if (label) {
-          const text = document.createElementNS(LABEL_NS, 'text');
-          text.classList.add('farmon-overlay');
-          text.setAttribute('x', String(center.x + labelOffset));
-          text.setAttribute('y', String(center.y));
-          text.setAttribute('font-size', String(fontSize));
-          text.setAttribute('font-family', 'system-ui, sans-serif');
-          text.setAttribute('font-weight', '600');
-          text.setAttribute('fill', color);
-          text.setAttribute('dominant-baseline', 'central');
-          text.textContent = label;
-          svgEl.appendChild(text);
-        }
-      } catch {
-        // getBBox can throw if element is not rendered
-      }
-    }
+    const insertAfter = svg.includes('</style>') ? '</style>' : /(<svg[^>]*>)/;
+    const tx = deg === -90 ? `translate(0,${w})` : `translate(${h},0)`;
+    svg = svg.replace(insertAfter, `$&<g transform="${tx} rotate(${deg})">`);
+    svg = svg.replace('</svg>', '</g></svg>');
+    return svg;
   }
 }

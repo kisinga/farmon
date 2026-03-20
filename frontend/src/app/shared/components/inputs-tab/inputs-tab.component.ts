@@ -87,11 +87,19 @@ import { AirConfigSensor, DeviceField } from '../../../core/services/api.types';
                 <span class="badge badge-info badge-sm">input</span>
                 <div class="min-w-0">
                   <p class="font-medium text-sm truncate">{{ v.display_name || v.field_key }}</p>
-                  <p class="font-mono text-xs text-base-content/50">{{ v.field_key }}
-                    @if (v.field_idx != null) {
-                      <span class="ml-1 text-base-content/30">· f{{ v.field_idx }}</span>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="font-mono text-xs text-base-content/50">{{ v.field_key }}
+                      @if (v.field_idx != null) {
+                        <span class="ml-1 text-base-content/30">· f{{ v.field_idx }}</span>
+                      }
+                    </span>
+                    @if (v.category) {
+                      <span class="badge badge-ghost badge-xs">{{ v.category }}</span>
                     }
-                  </p>
+                    @if (sensorPin(v) != null) {
+                      <span class="badge badge-outline badge-xs">Pin {{ sensorPin(v) }}</span>
+                    }
+                  </div>
                 </div>
               </div>
               <div class="flex items-center gap-3 flex-shrink-0">
@@ -110,14 +118,8 @@ import { AirConfigSensor, DeviceField } from '../../../core/services/api.types';
                     <option value="disabled">Disabled</option>
                   </select>
                 </div>
-                @if (ctx.isAirConfig()) {
-                  <button class="btn btn-xs btn-ghost" (click)="startEdit(v)" title="Edit sensor">
-                    ✎
-                  </button>
-                  <button class="btn btn-xs btn-ghost text-error" (click)="confirmDelete(v)" title="Delete sensor">
-                    ✕
-                  </button>
-                }
+                <button class="btn btn-xs btn-ghost" (click)="startEdit(v)">Edit</button>
+                <button class="btn btn-xs btn-ghost text-error" (click)="confirmDelete(v)">Delete</button>
               </div>
             </div>
           }
@@ -160,6 +162,12 @@ export class InputsTabComponent {
     without.delete(s.pin_index);
     return without;
   });
+
+  /** Look up the GPIO pin index for a sensor input variable. */
+  sensorPin(v: DeviceField): number | null {
+    if (v.field_idx == null) return null;
+    return this.ctx.sensorPinByFieldIdx().get(v.field_idx) ?? null;
+  }
 
   // ─── Delete state ────────────────────────────────────────────────────────────
 

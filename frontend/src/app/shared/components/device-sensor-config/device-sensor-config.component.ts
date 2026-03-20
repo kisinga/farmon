@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, DeviceField } from '../../../core/services/api.service';
 import { applyTrim } from '../../../core/constants/sensor-config';
 import { SensorInterfaceInfo, SensorPresetInfo, MeasurementInfo, AirConfigValidationError, AirConfigSensor } from '../../../core/services/api.types';
-import { SensorService } from '../../../core/services/sensor.service';
+import { IOSlotService } from '../../../core/services/io-slot.service';
 import { MAX_SENSOR_SLOTS, pinFunctionName, type PinFunctionName } from '../../../core/utils/firmware-constraints';
 import { ConfigContextService } from '../../../core/services/config-context.service';
 import { PinDropdownComponent } from '../pin-dropdown/pin-dropdown.component';
@@ -121,15 +121,18 @@ function defaultForm(): SensorForm {
               <div class="flex gap-2 flex-wrap pl-1 border-l-2 border-primary/30 ml-1">
                 <label class="form-control w-36">
                   <div class="label py-1"><span class="label-text text-xs">Field Key</span></div>
-                  <input class="input input-bordered input-sm" [(ngModel)]="form().fieldKey" placeholder="e.g. soil_1" />
+                  <input class="input input-bordered input-sm" [ngModel]="form().fieldKey"
+                    (ngModelChange)="onFieldKeyChange($event)" placeholder="e.g. soil_1" />
                 </label>
                 <label class="form-control w-48">
                   <div class="label py-1"><span class="label-text text-xs">Display Name</span></div>
-                  <input class="input input-bordered input-sm" [(ngModel)]="form().displayName" placeholder="e.g. Soil Moisture" />
+                  <input class="input input-bordered input-sm" [ngModel]="form().displayName"
+                    (ngModelChange)="onDisplayNameChange($event)" placeholder="e.g. Soil Moisture" />
                 </label>
                 <label class="form-control w-24">
                   <div class="label py-1"><span class="label-text text-xs">Unit</span></div>
-                  <input class="input input-bordered input-sm" [(ngModel)]="form().unit" placeholder="e.g. %" />
+                  <input class="input input-bordered input-sm" [ngModel]="form().unit"
+                    (ngModelChange)="onUnitChange($event)" placeholder="e.g. %" />
                 </label>
                 <label class="form-control w-36">
                   <div class="label py-1"><span class="label-text text-xs">Telemetry</span></div>
@@ -324,7 +327,7 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   saved = output<void>();
 
   private api = inject(ApiService);
-  private sensorService = inject(SensorService);
+  private ioSlotService = inject(IOSlotService);
   protected ctx = inject(ConfigContextService);
 
   readonly presets = signal<SensorPresetInfo[]>([]);
@@ -514,6 +517,10 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     }
   }
 
+  onFieldKeyChange(v: string): void { this.form.update(f => ({ ...f, fieldKey: v })); }
+  onDisplayNameChange(v: string): void { this.form.update(f => ({ ...f, displayName: v })); }
+  onUnitChange(v: string): void { this.form.update(f => ({ ...f, unit: v })); }
+
   setReportMode(value: 'reported' | 'on_change' | 'disabled'): void {
     this.form.update(f => ({ ...f, reportMode: value }));
   }
@@ -569,7 +576,7 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
       param2: 0,
     };
 
-    this.sensorService.validateAirConfig({
+    this.ioSlotService.validateAirConfig({
       sensors: [sensor],
       controls: [],
     }).subscribe({

@@ -189,8 +189,12 @@ export class DeviceService {
     return this.http.get<FirmwareCommand[]>(`${API}/firmware-commands`);
   }
 
+  getIOCatalog(): Observable<SensorCatalog> {
+    return this.http.get<SensorCatalog>(`${API}/io-catalog`);
+  }
+
   getSensorCatalog(): Observable<SensorCatalog> {
-    return this.http.get<SensorCatalog>(`${API}/sensor-catalog`);
+    return this.getIOCatalog();
   }
 
   getBackendInfo(): Observable<BackendInfo> {

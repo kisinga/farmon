@@ -12,6 +12,8 @@
  *   lorae5: firmware/targets/lorae5/cmd/node/main.go   boardPins[] + Wio-E5 mini schematic
  */
 
+export type PinEdge = 'top' | 'bottom' | 'left' | 'right';
+
 export interface BoardPinDef {
   /** Firmware pinMap index (0–19). */
   firmwarePin: number;
@@ -19,6 +21,8 @@ export interface BoardPinDef {
   connectorId: string;
   /** Human-readable label shown in dropdowns (e.g. "GP0", "PA2 / TX"). */
   label: string;
+  /** Which visual edge this pin sits on (after any rotation). Used for label placement. */
+  edge: PinEdge;
 }
 
 export interface BoardDefinition {
@@ -26,6 +30,10 @@ export interface BoardDefinition {
   label: string;
   /** Path relative to app root where the breadboard SVG is served. */
   svgUrl: string;
+  /** Rotate the SVG by this many degrees (e.g. -90 for portrait→landscape). */
+  rotateDeg?: number;
+  /** Margin in px around the SVG reserved for leader-line labels. Default 80. */
+  labelMargin?: number;
   pins: BoardPinDef[];
 }
 
@@ -36,27 +44,29 @@ const RP2040_BOARD: BoardDefinition = {
   model: 'rp2040',
   label: 'Raspberry Pi Pico W',
   svgUrl: 'boards/rp2040.svg',
+  rotateDeg: -90,
   pins: [
-    { firmwarePin: 0,  connectorId: 'connector0pin',  label: 'GP0'  },
-    { firmwarePin: 1,  connectorId: 'connector1pin',  label: 'GP1'  },
-    { firmwarePin: 2,  connectorId: 'connector3pin',  label: 'GP2'  },
-    { firmwarePin: 3,  connectorId: 'connector4pin',  label: 'GP3'  },
-    { firmwarePin: 4,  connectorId: 'connector5pin',  label: 'GP4'  },
-    { firmwarePin: 5,  connectorId: 'connector6pin',  label: 'GP5'  },
-    { firmwarePin: 6,  connectorId: 'connector8pin',  label: 'GP6'  },
-    { firmwarePin: 7,  connectorId: 'connector9pin',  label: 'GP7'  },
-    { firmwarePin: 8,  connectorId: 'connector10pin', label: 'GP8'  },
-    { firmwarePin: 9,  connectorId: 'connector11pin', label: 'GP9'  },
-    { firmwarePin: 10, connectorId: 'connector13pin', label: 'GP10' },
-    { firmwarePin: 11, connectorId: 'connector14pin', label: 'GP11' },
-    { firmwarePin: 12, connectorId: 'connector15pin', label: 'GP12' },
-    { firmwarePin: 13, connectorId: 'connector16pin', label: 'GP13' },
-    { firmwarePin: 14, connectorId: 'connector18pin', label: 'GP14' },
-    { firmwarePin: 15, connectorId: 'connector19pin', label: 'GP15' },
-    { firmwarePin: 16, connectorId: 'connector20pin', label: 'GP16' },
-    { firmwarePin: 17, connectorId: 'connector21pin', label: 'GP17' },
-    { firmwarePin: 18, connectorId: 'connector23pin', label: 'GP18' },
-    { firmwarePin: 19, connectorId: 'connector24pin', label: 'GP19' },
+    // After -90° rotation: physical left row → visual top, physical right row → visual bottom
+    { firmwarePin: 0,  connectorId: 'connector0pin',  label: 'GP0',  edge: 'top'    },
+    { firmwarePin: 1,  connectorId: 'connector1pin',  label: 'GP1',  edge: 'top'    },
+    { firmwarePin: 2,  connectorId: 'connector3pin',  label: 'GP2',  edge: 'top'    },
+    { firmwarePin: 3,  connectorId: 'connector4pin',  label: 'GP3',  edge: 'top'    },
+    { firmwarePin: 4,  connectorId: 'connector5pin',  label: 'GP4',  edge: 'top'    },
+    { firmwarePin: 5,  connectorId: 'connector6pin',  label: 'GP5',  edge: 'top'    },
+    { firmwarePin: 6,  connectorId: 'connector8pin',  label: 'GP6',  edge: 'top'    },
+    { firmwarePin: 7,  connectorId: 'connector9pin',  label: 'GP7',  edge: 'top'    },
+    { firmwarePin: 8,  connectorId: 'connector10pin', label: 'GP8',  edge: 'top'    },
+    { firmwarePin: 9,  connectorId: 'connector11pin', label: 'GP9',  edge: 'top'    },
+    { firmwarePin: 10, connectorId: 'connector13pin', label: 'GP10', edge: 'bottom' },
+    { firmwarePin: 11, connectorId: 'connector14pin', label: 'GP11', edge: 'bottom' },
+    { firmwarePin: 12, connectorId: 'connector15pin', label: 'GP12', edge: 'bottom' },
+    { firmwarePin: 13, connectorId: 'connector16pin', label: 'GP13', edge: 'bottom' },
+    { firmwarePin: 14, connectorId: 'connector18pin', label: 'GP14', edge: 'bottom' },
+    { firmwarePin: 15, connectorId: 'connector19pin', label: 'GP15', edge: 'bottom' },
+    { firmwarePin: 16, connectorId: 'connector20pin', label: 'GP16', edge: 'bottom' },
+    { firmwarePin: 17, connectorId: 'connector21pin', label: 'GP17', edge: 'bottom' },
+    { firmwarePin: 18, connectorId: 'connector23pin', label: 'GP18', edge: 'bottom' },
+    { firmwarePin: 19, connectorId: 'connector24pin', label: 'GP19', edge: 'bottom' },
   ],
 };
 
@@ -69,19 +79,22 @@ const LORAE5_BOARD: BoardDefinition = {
   label: 'Wio-E5 mini',
   svgUrl: 'boards/lorae5.svg',
   pins: [
-    { firmwarePin: 2,  connectorId: 'connector6pin',  label: 'PA2 / TX'   },
-    { firmwarePin: 3,  connectorId: 'connector5pin',  label: 'PA3 / RX'   },
-    { firmwarePin: 4,  connectorId: 'connector15pin', label: 'PA4 / NSS'  },
-    { firmwarePin: 5,  connectorId: 'connector14pin', label: 'PA5 / SCK'  },
-    { firmwarePin: 6,  connectorId: 'connector16pin', label: 'PA6 / MISO' },
-    { firmwarePin: 7,  connectorId: 'connector17pin', label: 'PA7 / MOSI' },
-    { firmwarePin: 11, connectorId: 'connector4pin',  label: 'PB3 / A3'   },
-    { firmwarePin: 12, connectorId: 'connector3pin',  label: 'PB4 / A4'   },
-    { firmwarePin: 13, connectorId: 'connector11pin', label: 'PB5 / TX2'  },
-    { firmwarePin: 14, connectorId: 'connector7pin',  label: 'PB6 / D0'   },
-    { firmwarePin: 15, connectorId: 'connector10pin', label: 'PB7 / RX2'  },
-    { firmwarePin: 16, connectorId: 'connector1pin',  label: 'PB8 / SCL'  },
-    { firmwarePin: 17, connectorId: 'connector2pin',  label: 'PB9 / SDA'  },
+    // Bottom header row
+    { firmwarePin: 2,  connectorId: 'connector6pin',  label: 'PA2 / TX',   edge: 'bottom' },
+    { firmwarePin: 3,  connectorId: 'connector5pin',  label: 'PA3 / RX',   edge: 'bottom' },
+    // Top header row
+    { firmwarePin: 4,  connectorId: 'connector15pin', label: 'PA4 / NSS',  edge: 'top'    },
+    { firmwarePin: 5,  connectorId: 'connector14pin', label: 'PA5 / SCK',  edge: 'top'    },
+    { firmwarePin: 6,  connectorId: 'connector16pin', label: 'PA6 / MISO', edge: 'top'    },
+    { firmwarePin: 7,  connectorId: 'connector17pin', label: 'PA7 / MOSI', edge: 'top'    },
+    // Bottom header row
+    { firmwarePin: 11, connectorId: 'connector4pin',  label: 'PB3 / A3',   edge: 'bottom' },
+    { firmwarePin: 12, connectorId: 'connector3pin',  label: 'PB4 / A4',   edge: 'bottom' },
+    { firmwarePin: 13, connectorId: 'connector11pin', label: 'PB5 / TX2',  edge: 'bottom' },
+    { firmwarePin: 14, connectorId: 'connector7pin',  label: 'PB6 / D0',   edge: 'bottom' },
+    { firmwarePin: 15, connectorId: 'connector10pin', label: 'PB7 / RX2',  edge: 'bottom' },
+    { firmwarePin: 16, connectorId: 'connector1pin',  label: 'PB8 / SCL',  edge: 'bottom' },
+    { firmwarePin: 17, connectorId: 'connector2pin',  label: 'PB9 / SDA',  edge: 'bottom' },
   ],
 };
 

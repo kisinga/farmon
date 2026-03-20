@@ -117,6 +117,9 @@ func testDecodeHandler(app core.App) func(*core.RequestEvent) error {
 }
 
 // POST /api/farmon/devices/{eui}/push-config — trigger AirConfig push for a device.
+// POST /api/farmon/devices/{eui}/push-config — full AirConfig sync.
+// Pushes pin_map + all sensor slots + all control slots + lorawan + hash.
+// For individual slot updates, prefer push-io-slot which sends only one subcommand.
 func pushConfigHandler(app core.App, gwState *GatewayState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		eui := e.Request.PathValue("eui")
@@ -235,8 +238,11 @@ func extractRuleData(records []*core.Record) ([]map[string]any, [][]ExtraConditi
 	return ruleMaps, extras, windowActive
 }
 
-// POST /api/farmon/devices/{eui}/push-sensor-slot — configure a single sensor slot via AirConfig downlink.
-func pushSensorSlotHandler(app core.App, gwState *GatewayState) func(*core.RequestEvent) error {
+// POST /api/farmon/devices/{eui}/push-io-slot — push a single sensor or control slot via AirConfig downlink (fPort 35).
+//
+// Sensor (kind="sensor"): subcommand 0x04, 10 bytes — [0x04, slot, type, pin, field_idx, flags, param1_lo, param1_hi, param2_lo, param2_hi]
+// Control (kind="control"): subcommand 0x05, 8 bytes — [0x05, slot, pin, state_count, flags, actuator_type, pin2, pulse_x100ms]
+func pushIOSlotHandler(app core.App, gwState *GatewayState) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		eui := normalizeEui(e.Request.PathValue("eui"))
 		if eui == "" {
@@ -244,7 +250,9 @@ func pushSensorSlotHandler(app core.App, gwState *GatewayState) func(*core.Reque
 		}
 
 		var body struct {
-			Slot        uint8   `json:"slot"`
+			Kind string `json:"kind"` // "sensor" or "control"
+			Slot uint8  `json:"slot"`
+			// Sensor fields (kind=sensor)
 			Type        uint8   `json:"type"`
 			PinIndex    uint8   `json:"pin_index"`
 			FieldIndex  uint8   `json:"field_index"`
@@ -253,6 +261,11 @@ func pushSensorSlotHandler(app core.App, gwState *GatewayState) func(*core.Reque
 			CalibSpan   float64 `json:"calib_span"`
 			Param1Raw   *uint16 `json:"param1_raw"`
 			Param2Raw   *uint16 `json:"param2_raw"`
+			// Control fields (kind=control)
+			StateCount   uint8 `json:"state_count"`
+			ActuatorType uint8 `json:"actuator_type"`
+			Pin2Index    uint8 `json:"pin2_index"`
+			PulseX100ms  uint8 `json:"pulse_x100ms"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.String(http.StatusBadRequest, "invalid body")
@@ -260,35 +273,61 @@ func pushSensorSlotHandler(app core.App, gwState *GatewayState) func(*core.Reque
 		if body.Slot >= 8 {
 			return e.String(http.StatusBadRequest, "slot must be 0-7")
 		}
-
-		var param1, param2 uint16
-		if body.Param1Raw != nil {
-			param1 = *body.Param1Raw
-		} else {
-			p1 := int16(body.CalibOffset * 10)
-			param1 = uint16(p1)
+		if body.Kind == "" {
+			body.Kind = "sensor" // backward compat during migration
 		}
-		if body.Param2Raw != nil {
-			param2 = *body.Param2Raw
-		} else {
-			p2 := body.CalibSpan * 10
-			if p2 < 0 {
-				p2 = 0
+
+		var payload []byte
+
+		switch body.Kind {
+		case "sensor":
+			var param1, param2 uint16
+			if body.Param1Raw != nil {
+				param1 = *body.Param1Raw
+			} else {
+				p1 := int16(body.CalibOffset * 10)
+				param1 = uint16(p1)
 			}
-			param2 = uint16(p2)
-		}
+			if body.Param2Raw != nil {
+				param2 = *body.Param2Raw
+			} else {
+				p2 := body.CalibSpan * 10
+				if p2 < 0 {
+					p2 = 0
+				}
+				param2 = uint16(p2)
+			}
+			payload = []byte{
+				0x04,
+				body.Slot,
+				body.Type,
+				body.PinIndex,
+				body.FieldIndex,
+				body.Flags,
+				byte(param1),
+				byte(param1 >> 8),
+				byte(param2),
+				byte(param2 >> 8),
+			}
 
-		payload := []byte{
-			0x04,
-			body.Slot,
-			body.Type,
-			body.PinIndex,
-			body.FieldIndex,
-			body.Flags,
-			byte(param1),
-			byte(param1 >> 8),
-			byte(param2),
-			byte(param2 >> 8),
+		case "control":
+			pin2 := body.Pin2Index
+			if pin2 == 0 {
+				pin2 = 0xFF
+			}
+			payload = []byte{
+				0x05,
+				body.Slot,
+				body.PinIndex,
+				body.StateCount,
+				body.Flags,
+				body.ActuatorType,
+				pin2,
+				body.PulseX100ms,
+			}
+
+		default:
+			return e.String(http.StatusBadRequest, "kind must be \"sensor\" or \"control\"")
 		}
 
 		cfg := gwState.Config()
@@ -298,7 +337,23 @@ func pushSensorSlotHandler(app core.App, gwState *GatewayState) func(*core.Reque
 		if err := EnqueueDownlinkForDevice(app, cfg, eui, 35, payload); err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
-		return e.JSON(http.StatusOK, map[string]any{"ok": true, "param1": param1, "param2": param2})
+
+		// Persist slot data to device_airconfig so the frontend can read it back
+		switch body.Kind {
+		case "sensor":
+			_ = upsertAirConfigSlot(app, eui, "sensors", int(body.Slot), map[string]any{
+				"type": body.Type, "pin_index": body.PinIndex,
+				"field_index": body.FieldIndex, "flags": body.Flags,
+			})
+		case "control":
+			_ = upsertAirConfigSlot(app, eui, "controls", int(body.Slot), map[string]any{
+				"pin_index": body.PinIndex, "state_count": body.StateCount,
+				"flags": body.Flags, "actuator_type": body.ActuatorType,
+				"pin2_index": body.Pin2Index, "pulse_x100ms": body.PulseX100ms,
+			})
+		}
+
+		return e.JSON(http.StatusOK, map[string]any{"ok": true})
 	}
 }
 

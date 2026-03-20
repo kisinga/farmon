@@ -483,12 +483,29 @@ export interface SensorPresetInfo {
   modbus_func_code?: number;
 }
 
-export interface SensorCatalog {
+export interface OutputInterfaceInfo {
+  id: string;
+  label: string;
+  actuator_type: number;
+  pin_function: number;
+  dual_pin: boolean;
+  bus_addressed: boolean;
+  has_pulse: boolean;
+  analog: boolean;
+  hint: string;
+}
+
+/** IO catalog — single source of truth for both input and output interface drivers. */
+export interface IOCatalog {
   interfaces: SensorInterfaceInfo[];
   measurements: MeasurementInfo[];
   presets: SensorPresetInfo[];
   field_counts: Record<string, number>;
+  output_interfaces: OutputInterfaceInfo[];
 }
+
+/** @deprecated Use IOCatalog */
+export type SensorCatalog = IOCatalog;
 
 // ─── AirConfig Validation ────────────────────────────────────────────────────
 

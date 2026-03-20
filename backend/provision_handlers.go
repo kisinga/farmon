@@ -158,6 +158,20 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			}
 		}
 
+		// Ensure device_airconfig record exists (stub if not created by spec)
+		if _, err := app.FindFirstRecordByFilter("device_airconfig",
+			"device_eui = {:eui}", dbx.Params{"eui": devEui}); err != nil {
+			if acColl, err2 := app.FindCollectionByNameOrId("device_airconfig"); err2 == nil {
+				stub := core.NewRecord(acColl)
+				stub.Set("device_eui", devEui)
+				stub.Set("pin_map", []any{})
+				stub.Set("sensors", []any{})
+				stub.Set("controls", []any{})
+				stub.Set("lorawan", map[string]any{})
+				_ = app.Save(stub)
+			}
+		}
+
 		resp := map[string]any{
 			"device_eui": devEui,
 			"transport":  transport,

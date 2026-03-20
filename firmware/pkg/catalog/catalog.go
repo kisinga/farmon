@@ -1,5 +1,5 @@
-// Package catalog is the single source of truth for sensor metadata.
-// It is imported by the backend and served as JSON at GET /api/farmon/sensor-catalog.
+// Package catalog is the single source of truth for IO interface metadata.
+// It is imported by the backend and served as JSON at GET /api/farmon/io-catalog.
 // The frontend fetches from that endpoint instead of maintaining its own copy.
 //
 // This package lives outside firmware/pkg/sensors (which imports "machine")
@@ -31,6 +31,32 @@ var Interfaces = []InterfaceInfo{
 	{ID: "pulse", Label: "Pulse Counter", SensorType: uint8(settings.SensorPulseGeneric), NeedsCalib: false, BusAddressed: false, PinFunction: uint8(settings.PinCounter)},
 	{ID: "modbus_rtu", Label: "Modbus RTU (RS-485)", SensorType: uint8(settings.SensorModbusRTU), NeedsCalib: false, BusAddressed: true, BusPinFunctions: []uint8{uint8(settings.PinUARTTX), uint8(settings.PinUARTRX)}},
 	{ID: "digital_in", Label: "Digital Input (GPIO)", SensorType: uint8(settings.SensorDigitalIn), NeedsCalib: false, BusAddressed: false, PinFunction: uint8(settings.PinButton)},
+}
+
+// ─── Output interfaces ─────────────────────────────────────────────────────
+
+// OutputInterfaceInfo describes an output/actuator interface category for the UI.
+type OutputInterfaceInfo struct {
+	ID             string `json:"id"`
+	Label          string `json:"label"`
+	ActuatorType   uint8  `json:"actuator_type"`
+	PinFunction    uint8  `json:"pin_function"`      // required pin function (0 = bus-addressed)
+	DualPin        bool   `json:"dual_pin"`           // true for motorized valve (open + close pins)
+	BusAddressed   bool   `json:"bus_addressed"`      // true for I2C PWM
+	HasPulse       bool   `json:"has_pulse"`          // solenoid, motorized valve
+	Analog         bool   `json:"analog"`             // PWM, Servo, DAC, I2C PWM
+	Hint           string `json:"hint"`               // short description for the UI
+}
+
+// OutputInterfaces is the authoritative list of output interface types.
+var OutputInterfaces = []OutputInterfaceInfo{
+	{ID: "relay", Label: "Relay / GPIO", ActuatorType: 0, PinFunction: uint8(settings.PinRelay), Hint: "Single pin toggled HIGH/LOW. For pumps, lights, contactors."},
+	{ID: "motorized_valve", Label: "Motorized Valve", ActuatorType: 1, PinFunction: uint8(settings.PinRelay), DualPin: true, HasPulse: true, Hint: "Two pins: pulse one to open, the other to close."},
+	{ID: "solenoid", Label: "Solenoid Valve", ActuatorType: 2, PinFunction: uint8(settings.PinRelay), HasPulse: true, Hint: "Single pin pulsed then released. For spring-return solenoid valves."},
+	{ID: "pwm", Label: "PWM Output", ActuatorType: 3, PinFunction: uint8(settings.PinPWM), Analog: true, Hint: "PWM duty cycle 0–100%. For variable speed fans or dimmers."},
+	{ID: "servo", Label: "Servo", ActuatorType: 4, PinFunction: uint8(settings.PinPWM), Analog: true, Hint: "Servo PWM (50 Hz). For throttle or ball valve positioning."},
+	{ID: "dac", Label: "DAC Analog Output", ActuatorType: 5, PinFunction: uint8(settings.PinDAC), Analog: true, Hint: "True analog voltage output. STM32 only."},
+	{ID: "i2c_pwm", Label: "I2C PWM (PCA9685)", ActuatorType: 6, BusAddressed: true, Analog: true, Hint: "PWM via I2C expander (PCA9685). No GPIO pin needed."},
 }
 
 // ─── Measurement types ──────────────────────────────────────────────────────
@@ -117,24 +143,31 @@ func FieldCountForType(t settings.SensorType) int {
 
 // ─── Combined catalog ───────────────────────────────────────────────────────
 
-// SensorCatalog is the combined API response.
-type SensorCatalog struct {
+// IOCatalog is the combined API response for both input and output interfaces.
+type IOCatalog struct {
+	// Input (sensor) interfaces
 	Interfaces   []InterfaceInfo   `json:"interfaces"`
 	Measurements []MeasurementInfo `json:"measurements"`
 	Presets      []SensorPreset    `json:"presets"`
 	FieldCounts  map[uint8]int     `json:"field_counts"`
+	// Output (actuator) interfaces
+	OutputInterfaces []OutputInterfaceInfo `json:"output_interfaces"`
 }
 
-// GetCatalog returns the full sensor catalog for JSON serialization.
-func GetCatalog() SensorCatalog {
+// SensorCatalog is an alias for backward compatibility.
+type SensorCatalog = IOCatalog
+
+// GetCatalog returns the full IO catalog for JSON serialization.
+func GetCatalog() IOCatalog {
 	fc := make(map[uint8]int, int(settings.SensorTypeMax))
 	for i := settings.SensorType(0); i < settings.SensorTypeMax; i++ {
 		fc[uint8(i)] = FieldCountForType(i)
 	}
-	return SensorCatalog{
-		Interfaces:   Interfaces,
-		Measurements: Measurements,
-		Presets:      Presets,
-		FieldCounts:  fc,
+	return IOCatalog{
+		Interfaces:       Interfaces,
+		Measurements:     Measurements,
+		Presets:          Presets,
+		FieldCounts:      fc,
+		OutputInterfaces: OutputInterfaces,
 	}
 }

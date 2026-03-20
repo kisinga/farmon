@@ -6,11 +6,8 @@ import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import {
   DeviceControl,
-  ACTUATOR_TYPES,
+  OutputInterfaceInfo,
   isAnalogActuator,
-  isDualPinActuator,
-  isBusActuator,
-  hasPulseParam,
 } from '../../../core/services/api.types';
 import { ConfigContextService } from '../../../core/services/config-context.service';
 import { PinFunctionName } from '../../../core/utils/firmware-constraints';
@@ -26,7 +23,7 @@ function toControlKey(name: string): string {
   standalone: true,
   imports: [FormsModule, CommonModule, PinDropdownComponent],
   template: `
-    <form (ngSubmit)="onSubmit()" class="space-y-5 p-4">
+    <form (ngSubmit)="onSubmit()" class="space-y-5">
 
       <!-- Name -->
       <div class="form-control">
@@ -37,23 +34,25 @@ function toControlKey(name: string): string {
           (ngModelChange)="onNameChange($event)" />
       </div>
 
-      <!-- Type -->
+      <!-- Interface / Driver -->
       <div class="form-control">
-        <label class="label text-xs py-0.5">Type</label>
+        <label class="label text-xs py-0.5">Interface / Driver</label>
         <select class="select select-bordered select-sm w-full max-w-xs"
           [(ngModel)]="draft.actuator_type" name="actuator_type"
-          (ngModelChange)="onTypeChange($event)">
-          @for (t of actuatorTypes; track t.id) {
-            <option [ngValue]="t.id">{{ t.label }}</option>
+          (ngModelChange)="onInterfaceChange($event)">
+          @for (iface of outputInterfaces(); track iface.id) {
+            <option [ngValue]="iface.actuator_type">{{ iface.label }}</option>
           }
         </select>
-        <label class="label text-xs py-0.5 text-base-content/50">{{ typeHint() }}</label>
+        @if (selectedInterface()) {
+          <label class="label text-xs py-0.5 text-base-content/50">{{ selectedInterface()!.hint }}</label>
+        }
       </div>
 
-      <!-- Hardware pin (non-bus actuators) -->
-      @if (!isBus()) {
+      <!-- GPIO Pin (non-bus actuators) -->
+      @if (!selectedInterface()?.bus_addressed) {
         <div class="form-control">
-          <label class="label text-xs py-0.5">Hardware Pin</label>
+          <label class="label text-xs py-0.5">GPIO Pin</label>
           <app-pin-dropdown
             [selectedPin]="draft.pin_index"
             [capability]="requiredCapability()"
@@ -64,8 +63,8 @@ function toControlKey(name: string): string {
           />
         </div>
 
-        <!-- Second pin (motorized valve: open/close direction) -->
-        @if (isDual()) {
+        <!-- Second GPIO pin (motorized valve: open/close direction) -->
+        @if (selectedInterface()?.dual_pin) {
           <div class="form-control">
             <label class="label text-xs py-0.5">
               Direction Pin <span class="text-base-content/40">(close signal)</span>
@@ -83,7 +82,7 @@ function toControlKey(name: string): string {
       }
 
       <!-- Bus actuator (I2C PWM) -->
-      @if (isBus()) {
+      @if (selectedInterface()?.bus_addressed) {
         <div class="flex flex-wrap gap-4">
           <div class="form-control">
             <label class="label text-xs py-0.5">Bus index</label>
@@ -104,7 +103,7 @@ function toControlKey(name: string): string {
       }
 
       <!-- Pulse duration (solenoid / motorized valve) -->
-      @if (hasPulse()) {
+      @if (selectedInterface()?.has_pulse) {
         <div class="form-control">
           <label class="label text-xs py-0.5">
             Pulse duration
@@ -116,7 +115,7 @@ function toControlKey(name: string): string {
       }
 
       <!-- Analog range (PWM / Servo / DAC) -->
-      @if (isAnalog()) {
+      @if (selectedInterface()?.analog) {
         <div class="flex flex-wrap gap-4">
           <div class="form-control">
             <label class="label text-xs py-0.5">Min value</label>
@@ -151,24 +150,22 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
   protected ctx = inject(ConfigContextService);
 
   existing = input<DeviceControl | undefined>(undefined);
-  /** Device pin_map from firmware (ConfigContextService.pinMapArray()). */
   pinMap = input<number[]>([]);
   usedPins = input<Set<number>>(new Set());
+  outputInterfaces = input<OutputInterfaceInfo[]>([]);
 
   save = output<Partial<DeviceControl>>();
   cancel = output<void>();
-
-  readonly actuatorTypes = ACTUATOR_TYPES;
 
   draft: Partial<DeviceControl> = this.emptyDraft();
   validationError = signal<string | null>(null);
 
   isEdit = computed(() => !!this.existing()?.id);
 
-  isAnalog = computed(() => isAnalogActuator(this.draft.actuator_type ?? 0));
-  isDual   = computed(() => isDualPinActuator(this.draft.actuator_type ?? 0));
-  isBus    = computed(() => isBusActuator(this.draft.actuator_type ?? 0));
-  hasPulse = computed(() => hasPulseParam(this.draft.actuator_type ?? 0));
+  selectedInterface = computed<OutputInterfaceInfo | null>(() => {
+    const type = this.draft.actuator_type ?? 0;
+    return this.outputInterfaces().find(i => i.actuator_type === type) ?? null;
+  });
 
   requiredCapability = computed<PinFunctionName>(() => {
     switch (this.draft.actuator_type ?? 0) {
@@ -179,28 +176,13 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
     }
   });
 
-  /** Exclude the secondary pin from the primary dropdown. */
   secondaryPinExclude = computed(() =>
     this.draft.pin2_index != null ? [this.draft.pin2_index] : []
   );
 
-  /** Exclude the primary pin from the secondary dropdown. */
   primaryPinExclude = computed(() =>
     this.draft.pin_index != null ? [this.draft.pin_index] : []
   );
-
-  typeHint = computed<string>(() => {
-    switch (this.draft.actuator_type ?? 0) {
-      case 0: return 'Single pin toggled HIGH/LOW. For pumps, lights, contactors.';
-      case 1: return 'Two pins: pulse one to open, the other to close. For motorized ball valves.';
-      case 2: return 'Single pin pulsed then released. For solenoid valves with spring return.';
-      case 3: return 'PWM duty cycle 0–100%. For variable speed fans or dimmers.';
-      case 4: return 'Servo PWM (50 Hz). For throttle or ball valve positioning.';
-      case 5: return 'True analog voltage output. STM32 only.';
-      case 6: return 'PWM via I2C expander (PCA9685). No GPIO pin needed.';
-      default: return '';
-    }
-  });
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['existing']) {
@@ -232,9 +214,9 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
     }
   }
 
-  onTypeChange(type: number): void {
-    this.draft.actuator_type = type;
-    this.draft.control_type = isAnalogActuator(type) ? 'analog' : 'binary';
+  onInterfaceChange(actuatorType: number): void {
+    this.draft.actuator_type = actuatorType;
+    this.draft.control_type = isAnalogActuator(actuatorType) ? 'analog' : 'binary';
     this.draft.pin_index = undefined;
     this.draft.pin2_index = undefined;
     this.ctx.setActivePinSelection(null);
@@ -251,16 +233,18 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
     this.validationError.set(null);
     this.ctx.setActivePinSelection(null);
 
+    const iface = this.selectedInterface();
     this.save.emit({
       ...this.draft,
-      states_json: this.isAnalog() ? undefined : ['off', 'on'],
+      states_json: iface?.analog ? undefined : ['off', 'on'],
     });
   }
 
   private validate(): string | null {
+    const iface = this.selectedInterface();
     if (!this.draft.display_name?.trim()) return 'Name is required.';
-    if (!this.isBus() && this.draft.pin_index == null) return 'Select a hardware pin.';
-    if (this.isDual() && this.draft.pin2_index == null) return 'Select the direction pin.';
+    if (!iface?.bus_addressed && this.draft.pin_index == null) return 'Select a GPIO pin.';
+    if (iface?.dual_pin && this.draft.pin2_index == null) return 'Select the direction pin.';
     return null;
   }
 

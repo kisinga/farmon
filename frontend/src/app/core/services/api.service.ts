@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 
 import { DeviceService } from './device.service';
 import { RulesService } from './rules.service';
-import { SensorService } from './sensor.service';
+import { IOSlotService } from './io-slot.service';
 import { GatewayApiService } from './gateway.service';
 import { WorkflowService } from './workflow.service';
 
@@ -53,6 +53,8 @@ export type {
   PinInfo,
   PinCapabilitiesResponse,
   ActuatorTypeId,
+  IOCatalog,
+  OutputInterfaceInfo,
   ValidationError,
 } from './api.types';
 
@@ -71,7 +73,7 @@ export {
 export class ApiService {
   private deviceService = inject(DeviceService);
   private rulesService = inject(RulesService);
-  private sensorService = inject(SensorService);
+  private ioSlotService = inject(IOSlotService);
   private gatewayService = inject(GatewayApiService);
   private workflowService = inject(WorkflowService);
 
@@ -124,7 +126,8 @@ export class ApiService {
   // ─── Firmware Commands ───────────────────────────────────────────────────
 
   getFirmwareCommands() { return this.deviceService.getFirmwareCommands(); }
-  getSensorCatalog() { return this.deviceService.getSensorCatalog(); }
+  getIOCatalog() { return this.deviceService.getIOCatalog(); }
+  getSensorCatalog() { return this.deviceService.getIOCatalog(); }
   getBackendInfo() { return this.deviceService.getBackendInfo(); }
   patchBackendInfo(body: import('./api.types').BackendInfo) { return this.deviceService.patchBackendInfo(body); }
 
@@ -136,22 +139,13 @@ export class ApiService {
   deleteDeviceRule(id: string) { return this.rulesService.deleteDeviceRule(id); }
   pushDeviceRules(eui: string) { return this.rulesService.pushDeviceRules(eui); }
 
-  // ─── Sensor Slot Config ─────────────────────────────────
+  // ─── IO Slot Config (sensors + controls → fPort 35) ─────
 
-  pushSensorSlot(eui: string, body: {
-    slot: number;
-    type: number;
-    pin_index: number;
-    field_index: number;
-    flags: number;
-    calib_offset?: number;
-    calib_span?: number;
-    param1_raw?: number;
-    param2_raw?: number;
-  }) { return this.sensorService.pushSensorSlot(eui, body); }
+  pushSensorSlot(eui: string, body: import('./io-slot.service').SensorSlotPayload) { return this.ioSlotService.pushSensorSlot(eui, body); }
+  pushControlSlot(eui: string, body: import('./io-slot.service').ControlSlotPayload) { return this.ioSlotService.pushControlSlot(eui, body); }
 
-  createDeviceField(data: Partial<import('./api.types').DeviceField>) { return this.sensorService.createDeviceField(data); }
-  updateDeviceField(id: string, data: Partial<import('./api.types').DeviceField>) { return this.sensorService.updateDeviceField(id, data); }
+  createDeviceField(data: Partial<import('./api.types').DeviceField>) { return this.ioSlotService.createDeviceField(data); }
+  updateDeviceField(id: string, data: Partial<import('./api.types').DeviceField>) { return this.ioSlotService.updateDeviceField(id, data); }
   deleteDeviceField(id: string) { return this.deviceService.deleteDeviceField(id); }
 
   createDeviceControl(data: Partial<import('./api.types').DeviceControl>) { return this.deviceService.createDeviceControl(data); }

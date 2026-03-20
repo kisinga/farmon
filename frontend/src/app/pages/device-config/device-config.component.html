@@ -58,20 +58,20 @@
   <!-- Tabs -->
   <div class="tabs tabs-boxed bg-base-200/50 p-1 rounded-xl mb-6 overflow-x-auto flex-nowrap">
     <button class="tab rounded-lg" [class.tab-active]="activeTab() === 'inputs'" (click)="activeTab.set('inputs')">
-      Inputs
+      Inputs <span class="badge badge-sm ml-1">{{ ctx.inputVariables().length }}</span>
     </button>
     <button class="tab rounded-lg" [class.tab-active]="activeTab() === 'outputs'" (click)="activeTab.set('outputs')">
-      Outputs
+      Outputs <span class="badge badge-sm ml-1">{{ ctx.controls().length }}</span>
     </button>
     <button class="tab rounded-lg" [class.tab-active]="activeTab() === 'variables'" (click)="activeTab.set('variables')">
-      Variables
+      Variables <span class="badge badge-sm ml-1">{{ ctx.fields().length }}</span>
     </button>
     <button class="tab rounded-lg" [class.tab-active]="activeTab() === 'automations'" (click)="activeTab.set('automations')">
-      Automations
+      Automations <span class="badge badge-sm ml-1">{{ ctx.rules().length }}</span>
     </button>
     @if (ctx.isLoRaWAN() && !ctx.isAirConfig()) {
       <button class="tab rounded-lg" [class.tab-active]="activeTab() === 'decode'" (click)="activeTab.set('decode')">
-        Decode
+        Decode <span class="badge badge-sm ml-1">{{ ctx.decodeRules().length }}</span>
       </button>
     }
   </div>
