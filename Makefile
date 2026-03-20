@@ -8,9 +8,9 @@
 #
 # Full build with frontend:
 #   make all
-#   make install DESTDIR=/opt/farmon
+#   sudo make install
 
-DESTDIR ?= $(HOME)/farmon
+DESTDIR ?= /opt/farmon
 
 .PHONY: build all dev frontend backend check-go frontend-deps board-assets install clean
 
@@ -58,13 +58,29 @@ check-go:
 backend: check-go
 	cd backend && CGO_ENABLED=0 go build -o pocketbase .
 
-# Install to a destination directory (for systemd deployment)
+# Install to a destination directory and create a systemd service.
+# Usage: sudo make install  (or: sudo make install DESTDIR=/opt/farmon)
 install: all
 	@mkdir -p $(DESTDIR)
 	cp backend/pocketbase $(DESTDIR)/farmon
 	cp -r backend/pb_public $(DESTDIR)/pb_public
 	cp -r backend/pb_migrations $(DESTDIR)/pb_migrations
-	@echo "Installed to $(DESTDIR). Run: $(DESTDIR)/farmon serve --http=0.0.0.0:8090"
+	@echo "[Unit]" > /etc/systemd/system/farmon.service
+	@echo "Description=FarMon Gateway Service" >> /etc/systemd/system/farmon.service
+	@echo "After=network.target" >> /etc/systemd/system/farmon.service
+	@echo "" >> /etc/systemd/system/farmon.service
+	@echo "[Service]" >> /etc/systemd/system/farmon.service
+	@echo "WorkingDirectory=$(DESTDIR)" >> /etc/systemd/system/farmon.service
+	@echo "ExecStart=$(DESTDIR)/farmon serve --http=0.0.0.0:8090" >> /etc/systemd/system/farmon.service
+	@echo "Restart=on-failure" >> /etc/systemd/system/farmon.service
+	@echo "RestartSec=5" >> /etc/systemd/system/farmon.service
+	@echo "" >> /etc/systemd/system/farmon.service
+	@echo "[Install]" >> /etc/systemd/system/farmon.service
+	@echo "WantedBy=multi-user.target" >> /etc/systemd/system/farmon.service
+	systemctl daemon-reload
+	systemctl enable farmon
+	systemctl restart farmon
+	@echo "Installed and started farmon service. Check: systemctl status farmon"
 
 clean:
 	rm -f backend/pocketbase
