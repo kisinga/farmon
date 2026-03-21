@@ -69,7 +69,7 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 		// [0x02, preset_id]
 		if len(data) >= 2 {
 			preset := settings.Preset(data[1])
-			*cfg = settings.ApplyPreset(preset)
+			settings.ApplyPresetTo(cfg, preset)
 			println("[airconfig] preset", data[1], "applied")
 			return ResultReboot
 		}
@@ -187,7 +187,7 @@ func Handle(cfg *settings.CoreSettings, data []byte, ext ExtensionHandler) Resul
 
 	case AirCfgReset:
 		// [0xFF] — factory reset (core only; transport config reset is caller's responsibility)
-		*cfg = settings.Defaults()
+		settings.ResetDefaults(cfg)
 		println("[airconfig] factory reset (core)")
 		return ResultReboot
 	}

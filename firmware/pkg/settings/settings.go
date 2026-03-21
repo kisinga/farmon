@@ -456,9 +456,27 @@ func Defaults() CoreSettings {
 	}
 }
 
-func ApplyPreset(p Preset) CoreSettings {
-	s := Defaults()
+// ResetDefaults zeroes the target and applies default values in-place.
+func ResetDefaults(s *CoreSettings) {
+	*s = CoreSettings{
+		TxIntervalSec: 60,
+		Transfer:      TransferDefaults(),
+	}
+}
 
+// ApplyPresetTo applies a preset configuration in-place, avoiding by-value copies.
+func ApplyPresetTo(s *CoreSettings, p Preset) {
+	ResetDefaults(s)
+	applyPresetFields(s, p)
+}
+
+func ApplyPreset(p Preset) CoreSettings {
+	var s CoreSettings
+	ApplyPresetTo(&s, p)
+	return s
+}
+
+func applyPresetFields(s *CoreSettings, p Preset) {
 	switch p {
 	case PresetWaterMonitor:
 		s.PinMap[3] = PinFlowSensor // PA3
@@ -562,6 +580,4 @@ func ApplyPreset(p Preset) CoreSettings {
 	case PresetGeneric:
 		// all pins None, user configures everything via AirConfig
 	}
-
-	return s
 }

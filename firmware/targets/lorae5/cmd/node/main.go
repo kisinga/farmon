@@ -43,15 +43,15 @@ func main() {
 	store = sharedflash.New(lorae5flash.STM32WLFlash{}, loraeMagic)
 
 	if data, ok := store.Load(settings.SettingsSize); ok {
-		cfg = decodeSettings(data)
+		decodeSettings(data)
 		println("[main] config loaded from flash")
 	} else {
-		cfg = defaultNodeConfig()
+		initDefaults()
 		println("[main] default preset: WaterMonitor")
-		cfg.Core = settings.ApplyPreset(settings.PresetWaterMonitor)
+		settings.ApplyPresetTo(&cfg.Core, settings.PresetWaterMonitor)
 	}
 
-	buses := sensors.InitBuses(cfg.Core, boardPins, busHW)
+	buses := sensors.InitBuses(&cfg.Core, boardPins, busHW)
 	registerDrivers()
 	active, activeFields, onChangeFields := initSensors(buses)
 	acts := initActuators()
@@ -172,7 +172,7 @@ func initSensors(buses *sensors.BusRegistry) ([]sensors.Driver, []uint8, []uint8
 }
 
 func saveSettings() {
-	if err := store.Save(encodeSettings(cfg)); err != nil {
+	if err := store.Save(encodeSettings(&cfg)); err != nil {
 		println("[flash] save failed:", err.Error())
 	}
 }

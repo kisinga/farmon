@@ -50,7 +50,7 @@ func main() {
 		println("[main] using defaults (provision WiFi credentials first)")
 	}
 
-	buses := sensors.InitBuses(cfg.Core, boardPins, busHW)
+	buses := sensors.InitBuses(&cfg.Core, boardPins, busHW)
 	registerDrivers()
 	active, activeFields, onChangeFields := initSensors(buses)
 	acts := initActuators()

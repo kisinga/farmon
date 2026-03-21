@@ -55,7 +55,7 @@ type BusHardware struct {
 //   - First PinUARTTX + adjacent PinUARTRX pair → UART[0]
 //   - Second such pair → UART[1]
 //   - PinRS485DE adjacent to a UART TX → RS485DE for that UART bus
-func InitBuses(cfg settings.CoreSettings, boardPins [settings.MaxPins]machine.Pin, hw BusHardware) *BusRegistry {
+func InitBuses(cfg *settings.CoreSettings, boardPins [settings.MaxPins]machine.Pin, hw BusHardware) *BusRegistry {
 	reg := &BusRegistry{}
 
 	i2cIdx := 0

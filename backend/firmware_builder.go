@@ -97,7 +97,10 @@ func buildFirmware(app core.App, req FirmwareBuildRequest) FirmwareBuildResult {
 	}
 
 	// Build with TinyGo
+	// outFile is the path from the backend's cwd; tinygo gets just the filename
+	// since cmd.Dir is already set to buildDir.
 	outFile := filepath.Join(buildDir, "firmware"+ext)
+	outFileName := "firmware" + ext
 	buildTags := driverBuildTags(req.DriverIDs)
 	if rTag := regionBuildTag(req.Credentials.Region); rTag != "" {
 		if buildTags != "" {
@@ -118,7 +121,7 @@ func buildFirmware(app core.App, req FirmwareBuildRequest) FirmwareBuildResult {
 		"-gc=" + gcFlag,
 		"-scheduler=" + schedulerFlag,
 		"-size=short",
-		"-o", outFile,
+		"-o", outFileName,
 	}
 	if buildTags != "" {
 		args = append(args, "-tags="+buildTags)
@@ -222,6 +225,15 @@ func findFirmwareRoot() (string, error) {
 // symlinkFirmwareFiles creates symlinks for the non-generated .go files
 // from the target source directory into the build directory.
 func symlinkFirmwareFiles(srcDir, buildDir, buildTag string) error {
+	// Clean stale .go symlinks from previous builds
+	existing, _ := os.ReadDir(buildDir)
+	for _, e := range existing {
+		name := e.Name()
+		if strings.HasSuffix(name, ".go") && !strings.HasPrefix(name, "generated_") {
+			os.Remove(filepath.Join(buildDir, name))
+		}
+	}
+
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
 		return err
