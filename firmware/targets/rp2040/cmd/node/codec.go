@@ -102,11 +102,11 @@ func encodeSettings(s rp2040Config) []byte {
 
 func decodeSettings(buf []byte) rp2040Config {
 	if len(buf) < offConfigHash+4 {
-		return defaultConfig()
+		return baseConfig()
 	}
 	magic := binary.LittleEndian.Uint16(buf[0:])
 	if magic != rp2040Magic || buf[2] != rp2040Version {
-		return defaultConfig()
+		return baseConfig()
 	}
 
 	var c rp2040Config
@@ -159,7 +159,7 @@ func decodeSettings(buf []byte) rp2040Config {
 	return c
 }
 
-func defaultConfig() rp2040Config {
+func baseConfig() rp2040Config {
 	return rp2040Config{
 		Core: settings.Defaults(),
 		WiFi: rp2040transport.WiFiSettings{},

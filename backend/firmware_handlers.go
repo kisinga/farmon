@@ -180,9 +180,21 @@ func buildCredentials(device *core.Record, fwRec *core.Record, host string) devi
 	if transport == "wifi" {
 		creds.WiFiSSID, _ = fwRec.Get("wifi_ssid").(string)
 		creds.WiFiPassword, _ = fwRec.Get("wifi_password").(string)
-		creds.BackendURL, _ = fwRec.Get("backend_url").(string)
-		if creds.BackendURL == "" {
-			creds.BackendURL = "http://" + host + "/api/farmon/ingest"
+		creds.BackendHost, _ = fwRec.Get("backend_host").(string)
+		creds.BackendPort, _ = fwRec.Get("backend_port").(string)
+		creds.BackendPath, _ = fwRec.Get("backend_path").(string)
+		if creds.BackendHost == "" {
+			creds.BackendHost = strings.Split(host, ":")[0]
+		}
+		if creds.BackendPort == "" {
+			if parts := strings.Split(host, ":"); len(parts) > 1 {
+				creds.BackendPort = parts[1]
+			} else {
+				creds.BackendPort = "8090"
+			}
+		}
+		if creds.BackendPath == "" {
+			creds.BackendPath = "/api/farmon/ingest"
 		}
 		creds.DeviceToken, _ = device.Get("device_token").(string)
 	} else {

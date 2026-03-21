@@ -55,7 +55,9 @@ type deviceConfigData struct {
 	// WiFi (RP2040)
 	WiFiSSID     string
 	WiFiPassword string
-	BackendURL   string
+	BackendHost  string
+	BackendPort  string
+	BackendPath  string
 	DeviceToken  string
 	// LoRaWAN (LoRa-E5)
 	AppKeyBytes string // comma-separated byte literals: "0x01, 0x02, ..."
@@ -226,11 +228,13 @@ const configTemplateRP2040 = `//go:build {{.BuildTag}}
 package main
 
 func defaultConfig() rp2040Config {
-	cfg := rp2040Config{}
-	cfg.WiFi.SSID = "{{.Config.WiFiSSID}}"
-	cfg.WiFi.Password = "{{.Config.WiFiPassword}}"
-	cfg.WiFi.BackendURL = "{{.Config.BackendURL}}"
-	cfg.WiFi.DeviceToken = "{{.Config.DeviceToken}}"
+	cfg := baseConfig()
+	copy(cfg.WiFi.SSID[:], "{{.Config.WiFiSSID}}")
+	copy(cfg.WiFi.Password[:], "{{.Config.WiFiPassword}}")
+	copy(cfg.WiFi.BackendHost[:], "{{.Config.BackendHost}}")
+	copy(cfg.WiFi.BackendPort[:], "{{.Config.BackendPort}}")
+	copy(cfg.WiFi.BackendPath[:], "{{.Config.BackendPath}}")
+	copy(cfg.WiFi.DeviceToken[:], "{{.Config.DeviceToken}}")
 	return cfg
 }
 `
