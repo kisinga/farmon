@@ -8,15 +8,15 @@ import (
 	"machine"
 	"time"
 
-	"github.com/farmon/firmware/pkg/airconfig"
-	sharedflash "github.com/farmon/firmware/pkg/flash"
-	node "github.com/farmon/firmware/pkg/node"
-	"github.com/farmon/firmware/pkg/sensors"
-	"github.com/farmon/firmware/pkg/settings"
-	"github.com/farmon/firmware/pkg/transfer"
-	lorae5flash "github.com/farmon/firmware/targets/lorae5/pkg/flash"
-	"github.com/farmon/firmware/targets/lorae5/pkg/radio"
-	loratransport "github.com/farmon/firmware/targets/lorae5/pkg/transport"
+	"github.com/kisinga/farmon/firmware/pkg/airconfig"
+	sharedflash "github.com/kisinga/farmon/firmware/pkg/flash"
+	node "github.com/kisinga/farmon/firmware/pkg/node"
+	"github.com/kisinga/farmon/firmware/pkg/sensors"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/transfer"
+	lorae5flash "github.com/kisinga/farmon/firmware/targets/lorae5/pkg/flash"
+	"github.com/kisinga/farmon/firmware/targets/lorae5/pkg/radio"
+	loratransport "github.com/kisinga/farmon/firmware/targets/lorae5/pkg/transport"
 )
 
 // Board pin table: PinMap index → physical machine.Pin on LoRa-E5 dev kit.
@@ -30,7 +30,7 @@ var boardPins = [settings.MaxPins]machine.Pin{
 
 // BusHardware for this target: STM32WL I2C and UART peripherals.
 var busHW = sensors.BusHardware{
-	I2C:  [2]*machine.I2C{machine.I2C0, machine.I2C1},
+	I2C:  [2]*machine.I2C{machine.I2C0, nil},
 	UART: [2]*machine.UART{machine.UART1, machine.UART2},
 }
 
@@ -65,7 +65,7 @@ func main() {
 		TxPower:    cfg.LoRaWAN.TxPower,
 		ADREnabled: cfg.LoRaWAN.ADREnabled,
 	})
-	go rad.Run(machine.SPI3, newRadioControl())
+	rad.Init(machine.SPI3, newRadioControl())
 	tport := loratransport.New(rad, cfg.LoRaWAN.Confirmed)
 
 	// Build ReadLevel callback for the transfer FSM using the pressure sensor field.
@@ -123,89 +123,6 @@ func handleLoRaWANAirConfig(data []byte) airconfig.Result {
 		cfg.LoRaWAN = settings.LoRaWANDefaults()
 	}
 	return airconfig.ResultNone
-}
-
-func registerDrivers() {
-	sensors.Register(settings.SensorFlowYFS201, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		ppl := slot.Param1
-		if ppl == 0 {
-			ppl = 450
-		}
-		return sensors.NewFlowSensor(boardPins[slot.PinIndex], slot.FieldIndex, ppl)
-	})
-	sensors.Register(settings.SensorBatteryADC, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		return sensors.NewBatteryADC(boardPins[slot.PinIndex], slot.FieldIndex)
-	})
-	sensors.Register(settings.SensorDS18B20, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		return sensors.NewDS18B20Sensor(boardPins[slot.PinIndex], slot.FieldIndex)
-	})
-	sensors.Register(settings.SensorSoilADC, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		dryRaw := slot.Param1
-		wetRaw := slot.Param2
-		if dryRaw == 0 {
-			dryRaw = 55000
-		}
-		if wetRaw == 0 {
-			wetRaw = 18000
-		}
-		return sensors.NewSoilADCSensor(boardPins[slot.PinIndex], slot.FieldIndex, dryRaw, wetRaw)
-	})
-	sensors.Register(settings.SensorBME280, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		busIdx := int(slot.PinIndex)
-		if busIdx >= 2 || b.I2C[busIdx] == nil {
-			println("[init] BME280: invalid I2C bus index", busIdx)
-			return nil
-		}
-		addr := uint8(slot.Param1 & 0xFF)
-		if addr == 0 {
-			addr = 0x76
-		}
-		return sensors.NewBME280Sensor(b.I2C[busIdx], addr, slot.FieldIndex)
-	})
-	sensors.Register(settings.SensorINA219, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		busIdx := int(slot.PinIndex)
-		if busIdx >= 2 || b.I2C[busIdx] == nil {
-			println("[init] INA219: invalid I2C bus index", busIdx)
-			return nil
-		}
-		addr := uint8(slot.Param1 & 0xFF)
-		if addr == 0 {
-			addr = 0x40
-		}
-		return sensors.NewINA219Sensor(b.I2C[busIdx], addr, slot.FieldIndex)
-	})
-	sensors.Register(settings.SensorADCLinear, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		return sensors.NewADCLinearSensor(boardPins[slot.PinIndex], slot.FieldIndex, slot.Param1, slot.Param2)
-	})
-	sensors.Register(settings.SensorADC4_20mA, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		return sensors.NewADC4_20mASensor(boardPins[slot.PinIndex], slot.FieldIndex, slot.Param1, slot.Param2)
-	})
-	sensors.Register(settings.SensorPulseGeneric, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		ppu := slot.Param1
-		if ppu == 0 {
-			ppu = 1
-		}
-		return sensors.NewPulseGenericSensor(boardPins[slot.PinIndex], slot.FieldIndex, ppu)
-	})
-	sensors.Register(settings.SensorModbusRTU, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		busIdx := int(slot.PinIndex)
-		if busIdx >= 2 || b.UART[busIdx] == nil {
-			println("[init] ModbusRTU: invalid UART bus index", busIdx)
-			return nil
-		}
-		devAddr := uint8(slot.Param1 & 0xFF)
-		funcCode := uint8(slot.Param1 >> 8)
-		if funcCode == 0 {
-			funcCode = 0x03
-		}
-		dePin, hasDEPin := b.RS485DEPin(busIdx)
-		signed := slot.Flags&0x04 != 0
-		return sensors.NewModbusRTUDriver(b.UART[busIdx], dePin, hasDEPin,
-			devAddr, funcCode, slot.Param2, signed, slot.FieldIndex)
-	})
-	sensors.Register(settings.SensorDigitalIn, func(slot settings.SensorSlot, b *sensors.BusRegistry) sensors.Driver {
-		return sensors.NewDigitalInSensor(boardPins[slot.PinIndex], slot.FieldIndex, slot.Param1)
-	})
 }
 
 func initSensors(buses *sensors.BusRegistry) ([]sensors.Driver, []uint8, []uint8) {

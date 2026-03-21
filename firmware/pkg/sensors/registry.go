@@ -1,6 +1,6 @@
 package sensors
 
-import "github.com/farmon/firmware/pkg/settings"
+import "github.com/kisinga/farmon/firmware/pkg/settings"
 
 // DriverFactory creates a Driver from a SensorSlot and a BusRegistry.
 // Returns nil if the slot configuration is invalid for this driver type.
@@ -35,12 +35,14 @@ func FieldCount(t settings.SensorType) int {
 	switch t {
 	case settings.SensorBME280:
 		return 3 // temp, humidity, pressure
-	case settings.SensorINA219:
+	case settings.SensorINA219, settings.SensorINA260:
 		return 3 // voltage, current, power
-	case settings.SensorFlowYFS201:
-		return 2 // pulse delta, total volume
-	case settings.SensorPulseGeneric:
-		return 2 // pulse delta, total count
+	case settings.SensorFlowYFS201, settings.SensorPulseGeneric:
+		return 2 // pulse delta, total volume/count
+	case settings.SensorSHT3x, settings.SensorSHT4x, settings.SensorAHT20:
+		return 2 // temperature, humidity
+	case settings.SensorBMP280, settings.SensorBMP388:
+		return 2 // temperature, pressure
 	default:
 		return 1
 	}

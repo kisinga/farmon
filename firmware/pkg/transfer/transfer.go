@@ -4,8 +4,8 @@
 package transfer
 
 import (
-	"github.com/farmon/firmware/pkg/actuator"
-	"github.com/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/actuator"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
 )
 
 // State represents the current FSM phase.

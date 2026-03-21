@@ -99,12 +99,20 @@ export class ApiService {
 
   // ─── Provisioning ───────────────────────────────────────
 
-  provisionDevice(device_eui: string, device_name?: string, transport?: import('./api.types').TransportType, spec?: import('./api.types').DeviceSpec, hardware_model?: string) {
-    return this.deviceService.provisionDevice(device_eui, device_name, transport, spec, hardware_model);
+  provisionDevice(device_eui: string, device_name?: string, transport?: import('./api.types').TransportType, spec?: import('./api.types').DeviceSpec, hardware_model?: string, device_category?: import('./api.types').DeviceCategory) {
+    return this.deviceService.provisionDevice(device_eui, device_name, transport, spec, hardware_model, device_category);
   }
   deleteDevice(eui: string) { return this.deviceService.deleteDevice(eui); }
   getDeviceCredentials(eui: string) { return this.deviceService.getDeviceCredentials(eui); }
   pushConfig(eui: string) { return this.deviceService.pushConfig(eui); }
+
+  // ─── Firmware Builder ───────────────────────────────────
+  getFirmwareStatus(eui: string) { return this.deviceService.getFirmwareStatus(eui); }
+  saveFirmwareCredentials(eui: string, data: { wifi_ssid?: string; wifi_password?: string; backend_url?: string }) {
+    return this.deviceService.saveFirmwareCredentials(eui, data);
+  }
+  buildFirmware(eui: string) { return this.deviceService.buildFirmware(eui); }
+  getFirmwareDownloadUrl(eui: string): string { return this.deviceService.getFirmwareDownloadUrl(eui); }
 
   // ─── Device Spec ────────────────────────────────────────
 
@@ -128,6 +136,7 @@ export class ApiService {
   getFirmwareCommands() { return this.deviceService.getFirmwareCommands(); }
   getIOCatalog() { return this.deviceService.getIOCatalog(); }
   getSensorCatalog() { return this.deviceService.getIOCatalog(); }
+  getDriverCatalog(target?: string) { return this.deviceService.getDriverCatalog(target); }
   getBackendInfo() { return this.deviceService.getBackendInfo(); }
   patchBackendInfo(body: import('./api.types').BackendInfo) { return this.deviceService.patchBackendInfo(body); }
 

@@ -8,7 +8,7 @@ import (
 	"encoding/binary"
 	"math"
 
-	"github.com/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
 )
 
 const maxStack = 8

@@ -1,12 +1,23 @@
-.PHONY: lorae5 lorae5-flash lorae5-size lorae5-monitor rp2040 rp2040-flash rp2040-size rp2040-provision
+.PHONY: lorae5 lorae5-dev lorae5-flash lorae5-size lorae5-monitor rp2040 rp2040-flash rp2040-size rp2040-provision
 
 # ─── LoRa-E5 (STM32WL) ───────────────────────────────────────────────────────
 
-LORAE5_ENTRY  = ./targets/lorae5/cmd/node
-LORAE5_FLAGS  = -target=lorae5 -opt=z -size=short
+LORAE5_ENTRY     = ./targets/lorae5/cmd/node
+LORAE5_COMMON    = -target=lorae5 -opt=z -gc=leaking -scheduler=none -size=short
+
+# Minimal build — specify only the drivers you need via LORAE5_TAGS.
+# Example: make lorae5 LORAE5_TAGS=farmon_bme280,farmon_ds18b20
+LORAE5_TAGS     ?=
+LORAE5_FLAGS     = $(LORAE5_COMMON) $(if $(LORAE5_TAGS),-tags=$(LORAE5_TAGS),)
+
+# Dev build — includes ALL drivers (may overflow flash, use for RP2040 or size checks).
+LORAE5_DEV_FLAGS = $(LORAE5_COMMON) -tags=farmon_all
 
 lorae5:
 	tinygo build $(LORAE5_FLAGS) -o build/lorae5.elf $(LORAE5_ENTRY)
+
+lorae5-dev:
+	tinygo build $(LORAE5_DEV_FLAGS) -o build/lorae5.elf $(LORAE5_ENTRY)
 
 lorae5-flash:
 	tinygo flash $(LORAE5_FLAGS) $(LORAE5_ENTRY)
@@ -20,7 +31,7 @@ lorae5-monitor:
 # ─── RP2040 (Pico W) ─────────────────────────────────────────────────────────
 
 RP2040_ENTRY  = ./targets/rp2040/cmd/node
-RP2040_FLAGS  = -target=pico-w -opt=z -size=short
+RP2040_FLAGS  = -target=pico-w -opt=z -size=short -tags=farmon_all
 
 rp2040:
 	tinygo build $(RP2040_FLAGS) -o build/rp2040.uf2 $(RP2040_ENTRY)

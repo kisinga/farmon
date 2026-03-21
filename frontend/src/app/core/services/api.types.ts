@@ -19,6 +19,11 @@ export function getTransportMeta(transport?: string): TransportMeta {
   return TRANSPORT_META[transport || 'lorawan'] ?? TRANSPORT_META['lorawan'];
 }
 
+// ─── Device category ─────────────────────────────────────────────────────────
+
+/** Top-level device category: FarMon (custom firmware) vs External (third-party). */
+export type DeviceCategory = 'farmon' | 'external';
+
 // ─── Hardware model ───────────────────────────────────────────────────────────
 
 /** Physical hardware target identifier — matches firmware/pkg/pincaps ForMCU() keys. */
@@ -44,6 +49,7 @@ export interface Device {
   device_eui: string;
   device_name: string;
   device_type?: string;
+  device_category?: DeviceCategory;
   hardware_model?: HardwareModelId;
   firmware_version?: string;
   last_seen?: string;
@@ -495,6 +501,40 @@ export interface OutputInterfaceInfo {
   hint: string;
 }
 
+// ─── Driver Catalog (new tiered model) ──────────────────────────────────────
+
+export type IOType = 'i2c' | 'spi' | 'gpio' | 'adc' | 'onewire' | 'uart' | 'pulse';
+export type DriverStatus = 'ready' | 'deferred';
+
+export interface DriverFieldDef {
+  measurement_id: string;
+  label: string;
+  unit: string;
+  default_min: number;
+  default_max: number;
+}
+
+export interface DriverDef {
+  id: string;
+  label: string;
+  description: string;
+  io_type: IOType;
+  tinygo_package?: string;
+  custom_driver: boolean;
+  sensor_type: number;
+  field_count: number;
+  fields: DriverFieldDef[];
+  default_i2c_addr?: number;
+  needs_calib: boolean;
+  pin_count: number;
+  pin_functions?: number[];
+  bus_pin_functions?: number[];
+  bus_addressed: boolean;
+  sub_types?: string[];
+  supported_targets: string[];
+  status: DriverStatus;
+}
+
 /** IO catalog — single source of truth for both input and output interface drivers. */
 export interface IOCatalog {
   interfaces: SensorInterfaceInfo[];
@@ -502,6 +542,7 @@ export interface IOCatalog {
   presets: SensorPresetInfo[];
   field_counts: Record<string, number>;
   output_interfaces: OutputInterfaceInfo[];
+  drivers: DriverDef[];
 }
 
 /** @deprecated Use IOCatalog */

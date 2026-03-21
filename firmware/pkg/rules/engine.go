@@ -7,7 +7,7 @@
 package rules
 
 import (
-	"github.com/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
 )
 
 const StateChangeSize = 11 // bytes per state change event

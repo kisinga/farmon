@@ -2,7 +2,7 @@
 // The backend imports this package to serve pin capability tables to the frontend.
 package pincaps
 
-import "github.com/farmon/firmware/pkg/settings"
+import "github.com/kisinga/farmon/firmware/pkg/settings"
 
 // PinCapability is a bitmask of hardware capabilities for a single GPIO pin.
 type PinCapability uint16

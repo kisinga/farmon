@@ -6,7 +6,7 @@
 // so that standard Go tooling (go vet, go build) can compile it without TinyGo.
 package catalog
 
-import "github.com/farmon/firmware/pkg/settings"
+import "github.com/kisinga/farmon/firmware/pkg/settings"
 
 // ─── Sensor interfaces ──────────────────────────────────────────────────────
 
@@ -127,14 +127,13 @@ var Presets = []SensorPreset{
 // It mirrors sensors.FieldCount() without importing the sensors package
 // (which depends on "machine"). Keep in sync with firmware/pkg/sensors/registry.go.
 func FieldCountForType(t settings.SensorType) int {
+	// Check driver catalog first (covers new drivers automatically).
+	if d := DriverBySensorType(uint8(t)); d != nil {
+		return d.FieldCount
+	}
+	// Fallback for legacy types not yet migrated to DriverDef.
 	switch t {
-	case settings.SensorBME280:
-		return 3
-	case settings.SensorINA219:
-		return 3
 	case settings.SensorFlowYFS201:
-		return 2
-	case settings.SensorPulseGeneric:
 		return 2
 	default:
 		return 1
@@ -145,13 +144,15 @@ func FieldCountForType(t settings.SensorType) int {
 
 // IOCatalog is the combined API response for both input and output interfaces.
 type IOCatalog struct {
-	// Input (sensor) interfaces
+	// Input (sensor) interfaces (legacy — kept for backward compat)
 	Interfaces   []InterfaceInfo   `json:"interfaces"`
 	Measurements []MeasurementInfo `json:"measurements"`
 	Presets      []SensorPreset    `json:"presets"`
 	FieldCounts  map[uint8]int     `json:"field_counts"`
 	// Output (actuator) interfaces
 	OutputInterfaces []OutputInterfaceInfo `json:"output_interfaces"`
+	// Driver catalog — the new authoritative driver registry
+	Drivers []DriverDef `json:"drivers"`
 }
 
 // SensorCatalog is an alias for backward compatibility.
@@ -169,5 +170,6 @@ func GetCatalog() IOCatalog {
 		Presets:          Presets,
 		FieldCounts:      fc,
 		OutputInterfaces: OutputInterfaces,
+		Drivers:          Drivers,
 	}
 }

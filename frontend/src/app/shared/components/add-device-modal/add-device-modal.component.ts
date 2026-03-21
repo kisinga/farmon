@@ -2,6 +2,7 @@ import { Component, inject, signal, computed, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NgClass } from '@angular/common';
 import { ApiService, ProvisionResponse, TransportType, getTransportMeta, DeviceSpec, HardwareModelId, HARDWARE_MODELS } from '../../../core/services/api.service';
+import { DeviceCategory } from '../../../core/services/api.types';
 import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-credentials';
 
 @Component({
@@ -13,29 +14,64 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
       <div class="modal-box max-w-lg rounded-2xl shadow-2xl" (click)="$event.stopPropagation()">
         @if (!result()) {
           <h3 class="font-bold text-lg">Add device</h3>
-          <p class="text-sm text-base-content/70 mt-1">Provision a new device. Optionally import a spec JSON.</p>
+          <p class="text-sm text-base-content/70 mt-1">Provision a new device.</p>
 
           <form class="mt-4 space-y-4" (ngSubmit)="onSubmit()">
-            <!-- Hardware model selection -->
+            <!-- Device category -->
             <div class="form-control w-full">
-              <span class="label pb-1"><span class="label-text font-medium">Hardware</span></span>
+              <span class="label pb-1"><span class="label-text font-medium">Device category</span></span>
               <div class="grid grid-cols-2 gap-2">
-                @for (hw of hardwareModels; track hw.id) {
-                  <button
-                    type="button"
-                    class="flex flex-col items-start gap-0.5 rounded-xl border-2 px-3 py-2.5 text-left transition-colors"
-                    [ngClass]="hardwareModel === hw.id ? 'border-primary bg-primary/5' : 'border-base-300'"
-                    (click)="selectHardware(hw.id)"
-                  >
-                    <span class="font-semibold text-sm">{{ hw.label }}</span>
-                    <span class="text-xs text-base-content/60">{{ hw.subLabel }}</span>
-                    <span class="badge badge-xs mt-1" [class.badge-primary]="hw.transport === 'lorawan'" [class.badge-secondary]="hw.transport === 'wifi'">
-                      {{ hw.transport === 'lorawan' ? 'LoRaWAN' : 'WiFi' }}
-                    </span>
-                  </button>
-                }
+                <button
+                  type="button"
+                  class="flex flex-col items-start gap-0.5 rounded-xl border-2 px-3 py-2.5 text-left transition-colors"
+                  [ngClass]="category === 'farmon' ? 'border-primary bg-primary/5' : 'border-base-300'"
+                  (click)="selectCategory('farmon')"
+                >
+                  <span class="font-semibold text-sm">FarMon Device</span>
+                  <span class="text-xs text-base-content/60">Custom firmware with full IO config, OTA, and firmware builds.</span>
+                </button>
+                <button
+                  type="button"
+                  class="flex flex-col items-start gap-0.5 rounded-xl border-2 px-3 py-2.5 text-left transition-colors"
+                  [ngClass]="category === 'external' ? 'border-primary bg-primary/5' : 'border-base-300'"
+                  (click)="selectCategory('external')"
+                >
+                  <span class="font-semibold text-sm">External Sensor</span>
+                  <span class="text-xs text-base-content/60">Third-party device (Dragino, Milesight, etc). Decoder config only.</span>
+                </button>
               </div>
             </div>
+
+            @if (category === 'farmon') {
+              <!-- Hardware model selection (FarMon devices) -->
+              <div class="form-control w-full">
+                <span class="label pb-1"><span class="label-text font-medium">Hardware</span></span>
+                <div class="grid grid-cols-2 gap-2">
+                  @for (hw of hardwareModels; track hw.id) {
+                    <button
+                      type="button"
+                      class="flex flex-col items-start gap-0.5 rounded-xl border-2 px-3 py-2.5 text-left transition-colors"
+                      [ngClass]="hardwareModel === hw.id ? 'border-primary bg-primary/5' : 'border-base-300'"
+                      (click)="selectHardware(hw.id)"
+                    >
+                      <span class="font-semibold text-sm">{{ hw.label }}</span>
+                      <span class="text-xs text-base-content/60">{{ hw.subLabel }}</span>
+                      <span class="badge badge-xs mt-1" [class.badge-primary]="hw.transport === 'lorawan'" [class.badge-secondary]="hw.transport === 'wifi'">
+                        {{ hw.transport === 'lorawan' ? 'LoRaWAN' : 'WiFi' }}
+                      </span>
+                    </button>
+                  }
+                </div>
+              </div>
+            } @else {
+              <!-- Transport selection (External devices) -->
+              <div class="form-control w-full">
+                <span class="label pb-1"><span class="label-text font-medium">Transport</span></span>
+                <select class="select select-bordered select-sm w-full" [(ngModel)]="transport" name="transport">
+                  <option value="lorawan">LoRaWAN</option>
+                </select>
+              </div>
+            }
 
             <!-- Device ID -->
             <label class="form-control w-full">
@@ -103,7 +139,11 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
           <div class="mt-4 space-y-4">
             <div class="alert alert-success text-sm rounded-xl">
               Device provisioned via <span class="badge badge-sm">{{ result()!.transport }}</span>.
-              Copy the {{ resultMeta().credentialLabel }} into your firmware.
+              @if (category === 'farmon') {
+                Copy the {{ resultMeta().credentialLabel }} into your firmware.
+              } @else {
+                Register this device on your LoRaWAN network server.
+              }
             </div>
             <label class="form-control w-full">
               <span class="label"><span class="label-text font-mono text-xs">Device ID</span></span>
@@ -182,6 +222,7 @@ export class AddDeviceModalComponent {
   showKey = signal(false);
 
   readonly hardwareModels = HARDWARE_MODELS;
+  category: DeviceCategory = 'farmon';
   hardwareModel: HardwareModelId = 'rp2040';
   transport: TransportType = 'wifi';
   eui = '';
@@ -192,6 +233,16 @@ export class AddDeviceModalComponent {
   deviceAdded = output<void>();
 
   resultMeta = computed(() => getTransportMeta(this.result()?.transport));
+
+  selectCategory(cat: DeviceCategory): void {
+    this.category = cat;
+    if (cat === 'external') {
+      this.transport = 'lorawan';
+      this.hardwareModel = 'rp2040'; // not used for external, but reset
+    } else {
+      this.selectHardware(this.hardwareModel);
+    }
+  }
 
   selectHardware(id: HardwareModelId): void {
     this.hardwareModel = id;
@@ -208,6 +259,7 @@ export class AddDeviceModalComponent {
     this.result.set(null);
     this.error.set(null);
     this.specError.set(null);
+    this.category = 'farmon';
     this.hardwareModel = 'rp2040';
     this.transport = 'wifi';
     this.eui = '';
@@ -230,6 +282,7 @@ export class AddDeviceModalComponent {
     this.result.set(null);
     this.error.set(null);
     this.specError.set(null);
+    this.category = 'farmon';
     this.hardwareModel = 'rp2040';
     this.transport = 'wifi';
     this.eui = '';
@@ -283,7 +336,9 @@ export class AddDeviceModalComponent {
 
     this.error.set(null);
     this.submitting.set(true);
-    this.api.provisionDevice(devEui, this.name.trim() || undefined, this.transport, spec, this.hardwareModel).subscribe({
+
+    const hwModel = this.category === 'farmon' ? this.hardwareModel : undefined;
+    this.api.provisionDevice(devEui, this.name.trim() || undefined, this.transport, spec, hwModel, this.category).subscribe({
       next: (res) => {
         this.result.set(res);
         this.submitting.set(false);

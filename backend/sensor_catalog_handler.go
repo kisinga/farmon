@@ -3,7 +3,7 @@ package main
 import (
 	"net/http"
 
-	"github.com/farmon/firmware/pkg/catalog"
+	"github.com/kisinga/farmon/firmware/pkg/catalog"
 	"github.com/pocketbase/pocketbase/core"
 )
 

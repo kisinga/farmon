@@ -19,7 +19,7 @@ func (f STM32WLFlash) WriteAt(buf []byte, off int64) (int, error) {
 }
 
 func (f STM32WLFlash) EraseBlocks(off int64, blockCount int) error {
-	return machine.Flash.EraseBlocks(off, blockCount)
+	return machine.Flash.EraseBlocks(off, int64(blockCount))
 }
 
 func (f STM32WLFlash) DataEnd() uintptr {

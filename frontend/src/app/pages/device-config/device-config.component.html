@@ -74,6 +74,11 @@
         Decode <span class="badge badge-sm ml-1">{{ ctx.decodeRules().length }}</span>
       </button>
     }
+    @if (ctx.device()?.device_category !== 'external') {
+      <button class="tab rounded-lg" [class.tab-active]="activeTab() === 'firmware'" (click)="activeTab.set('firmware')">
+        Firmware
+      </button>
+    }
   </div>
 
   <!-- Tab content -->
@@ -96,6 +101,9 @@
   }
   @if (activeTab() === 'decode' && ctx.isLoRaWAN() && !ctx.isAirConfig()) {
     <app-decode-tab />
+  }
+  @if (activeTab() === 'firmware' && ctx.device()?.device_category !== 'external') {
+    <app-firmware-tab [eui]="ctx.eui()" />
   }
 
 }

@@ -10,6 +10,7 @@ import {
   DeviceField,
   DeviceSpec,
   DeviceVisualization,
+  DriverDef,
   FirmwareCommand,
   PinCapabilitiesResponse,
   SensorCatalog,
@@ -154,8 +155,22 @@ export class DeviceService {
     ).pipe(map((res) => res.items));
   }
 
-  provisionDevice(device_eui: string, device_name?: string, transport?: TransportType, spec?: DeviceSpec, hardware_model?: string): Observable<ProvisionResponse> {
-    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name, transport, spec, hardware_model });
+  provisionDevice(device_eui: string, device_name?: string, transport?: TransportType, spec?: DeviceSpec, hardware_model?: string, device_category?: string): Observable<ProvisionResponse> {
+    return this.http.post<ProvisionResponse>(`${API}/devices`, { device_eui, device_name, transport, spec, hardware_model, device_category });
+  }
+
+  // ─── Firmware Builder ───────────────────────────────────
+  getFirmwareStatus(eui: string): Observable<Record<string, unknown>> {
+    return this.http.get<Record<string, unknown>>(`${API}/devices/${encodeURIComponent(eui)}/firmware`);
+  }
+  saveFirmwareCredentials(eui: string, data: { wifi_ssid?: string; wifi_password?: string; backend_url?: string }): Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(`${API}/devices/${encodeURIComponent(eui)}/firmware/credentials`, data);
+  }
+  buildFirmware(eui: string): Observable<Record<string, unknown>> {
+    return this.http.post<Record<string, unknown>>(`${API}/devices/${encodeURIComponent(eui)}/firmware/build`, {});
+  }
+  getFirmwareDownloadUrl(eui: string): string {
+    return `${API}/devices/${encodeURIComponent(eui)}/firmware/download`;
   }
 
   deleteDevice(eui: string): Observable<{ ok: boolean; message?: string }> {
@@ -195,6 +210,11 @@ export class DeviceService {
 
   getSensorCatalog(): Observable<SensorCatalog> {
     return this.getIOCatalog();
+  }
+
+  getDriverCatalog(target?: string): Observable<{ drivers: DriverDef[] }> {
+    const params = target ? `?target=${target}` : '';
+    return this.http.get<{ drivers: DriverDef[] }>(`${API}/driver-catalog${params}`);
   }
 
   getBackendInfo(): Observable<BackendInfo> {

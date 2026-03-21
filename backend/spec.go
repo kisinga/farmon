@@ -7,8 +7,8 @@ import (
 	"log"
 	"sort"
 
-	"github.com/farmon/firmware/pkg/catalog"
-	"github.com/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/catalog"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )

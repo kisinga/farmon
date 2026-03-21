@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/farmon/firmware/pkg/protocol"
+	"github.com/kisinga/farmon/firmware/pkg/protocol"
 	"github.com/kisinga/farmon/internal/gateway"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"

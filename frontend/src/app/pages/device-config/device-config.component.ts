@@ -10,8 +10,9 @@ import { DeviceAutomationsSectionComponent } from '../../shared/components/devic
 import { DecodeTabComponent } from '../../shared/components/decode-tab/decode-tab.component';
 import { SpecJsonModalComponent } from '../../shared/components/spec-json-modal/spec-json-modal.component';
 import { DeviceBoardSvgComponent } from '../../shared/components/device-board-svg/device-board-svg.component';
+import { FirmwareTabComponent } from '../../shared/components/firmware-tab/firmware-tab.component';
 
-type ConfigTab = 'inputs' | 'outputs' | 'variables' | 'automations' | 'decode';
+type ConfigTab = 'inputs' | 'outputs' | 'variables' | 'automations' | 'decode' | 'firmware';
 
 @Component({
   selector: 'app-device-config',
@@ -26,6 +27,7 @@ type ConfigTab = 'inputs' | 'outputs' | 'variables' | 'automations' | 'decode';
     DecodeTabComponent,
     SpecJsonModalComponent,
     DeviceBoardSvgComponent,
+    FirmwareTabComponent,
   ],
   templateUrl: './device-config.component.html',
 })

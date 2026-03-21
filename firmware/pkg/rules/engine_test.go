@@ -3,7 +3,7 @@ package rules
 import (
 	"testing"
 
-	"github.com/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
 )
 
 func makeEngine() *Engine {

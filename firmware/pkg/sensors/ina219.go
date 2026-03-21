@@ -1,3 +1,5 @@
+//go:build farmon_ina219 || farmon_all
+
 package sensors
 
 import "machine"

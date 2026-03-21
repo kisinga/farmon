@@ -1,3 +1,5 @@
+//go:build rp2040
+
 package sensors
 
 // decodeCalibParams decodes the Param1/Param2 encoding shared by ADC-based sensors.

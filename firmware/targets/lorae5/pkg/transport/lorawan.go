@@ -1,71 +1,66 @@
 // Package transport provides the LoRaWAN implementation of transport.Transport.
-// It wraps the radio.Radio goroutine behind the shared interface so main.go
-// only calls Transport methods rather than touching radio channels directly.
+// Fully synchronous — no goroutines or channels — compatible with -scheduler=none.
 package transport
 
 import (
-	"github.com/farmon/firmware/pkg/transport"
-	"github.com/farmon/firmware/targets/lorae5/pkg/radio"
+	"github.com/kisinga/farmon/firmware/pkg/transport"
+	"github.com/kisinga/farmon/firmware/targets/lorae5/pkg/radio"
 )
 
 // LoRaWANTransport adapts radio.Radio to the transport.Transport interface.
 type LoRaWANTransport struct {
 	rad       *radio.Radio
-	rxChan    chan transport.Packet
 	confirmed bool
+	rxBuf     [4]transport.Packet
+	rxCount   uint8
+	rxHead    uint8
 }
 
 // Compile-time interface check.
 var _ transport.Transport = (*LoRaWANTransport)(nil)
 
 // New creates a LoRaWANTransport wrapping the given Radio.
-// confirmed controls whether uplinks request a LoRaWAN ACK.
 func New(rad *radio.Radio, confirmed bool) *LoRaWANTransport {
-	t := &LoRaWANTransport{
+	return &LoRaWANTransport{
 		rad:       rad,
-		rxChan:    make(chan transport.Packet, 4),
 		confirmed: confirmed,
 	}
-	go t.bridgeRx()
-	return t
 }
 
-// Send enqueues a packet for transmission. Non-blocking: returns false if the
-// radio TX channel is full (e.g. still joining or backlogged).
+// Send transmits an uplink packet via LoRaWAN. Blocks through TX and RX windows.
+// Any received downlink is buffered for Recv().
 func (t *LoRaWANTransport) Send(p transport.Packet) bool {
-	tx := radio.TxMsg{
-		Port:      p.Port,
-		Confirmed: t.confirmed,
-		Len:       p.Len,
-	}
-	copy(tx.Payload[:], p.Payload[:p.Len])
-	select {
-	case t.rad.TxChan <- tx:
-		return true
-	default:
+	if !t.rad.IsJoined() {
 		return false
 	}
+	ok := t.rad.SendUplink(p.Payload[:p.Len])
+	if !ok {
+		return false
+	}
+
+	// Buffer any downlink received during the RX windows.
+	rx := t.rad.LastRx()
+	if rx.Valid && t.rxCount < uint8(len(t.rxBuf)) {
+		idx := (t.rxHead + t.rxCount) % uint8(len(t.rxBuf))
+		t.rxBuf[idx] = transport.Packet{Port: rx.Port, Len: rx.Len}
+		copy(t.rxBuf[idx].Payload[:], rx.Payload[:rx.Len])
+		t.rxCount++
+	}
+	return true
 }
 
-// RecvChan returns the channel for incoming downlink packets.
-func (t *LoRaWANTransport) RecvChan() <-chan transport.Packet {
-	return t.rxChan
+// Recv returns the next buffered downlink packet, or false if none.
+func (t *LoRaWANTransport) Recv() (transport.Packet, bool) {
+	if t.rxCount == 0 {
+		return transport.Packet{}, false
+	}
+	p := t.rxBuf[t.rxHead]
+	t.rxHead = (t.rxHead + 1) % uint8(len(t.rxBuf))
+	t.rxCount--
+	return p, true
 }
 
 // IsReady reports whether the radio has completed OTAA join.
 func (t *LoRaWANTransport) IsReady() bool {
 	return t.rad.IsJoined()
-}
-
-// bridgeRx copies radio.RxMsg values from the radio channel into the shared Packet channel.
-func (t *LoRaWANTransport) bridgeRx() {
-	for rx := range t.rad.RxChan {
-		p := transport.Packet{Port: rx.Port, Len: rx.Len}
-		copy(p.Payload[:], rx.Payload[:rx.Len])
-		select {
-		case t.rxChan <- p:
-		default:
-			println("[lorawan] rx chan full, dropping")
-		}
-	}
 }

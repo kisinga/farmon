@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/farmon/firmware/pkg/catalog"
-	"github.com/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/catalog"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
 )
 
 // ValidationError describes a single validation issue in an airconfig.

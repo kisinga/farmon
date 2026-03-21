@@ -1,50 +1,45 @@
+//go:build farmon_ds18b20 || farmon_all
+
 package sensors
 
 import (
 	"machine"
 	"time"
+
+	"tinygo.org/x/drivers/ds18b20"
+	"tinygo.org/x/drivers/onewire"
 )
 
-// DS18B20Sensor reads temperature from a Dallas 1-Wire DS18B20 sensor.
-// PinIndex = GPIO pin. Param1 lo byte = sensor index on bus (0 = first/only device).
-
+// DS18B20Sensor reads temperature from a Dallas 1-Wire DS18B20 sensor
+// using the TinyGo ds18b20 + onewire drivers.
+// PinIndex = GPIO pin.
 type DS18B20Sensor struct {
-	pin      machine.Pin
+	ow       *onewire.Device
+	dev      ds18b20.Device
 	fieldIdx uint8
 }
 
 func NewDS18B20Sensor(pin machine.Pin, fieldIdx uint8) *DS18B20Sensor {
-	return &DS18B20Sensor{pin: pin, fieldIdx: fieldIdx}
+	ow := onewire.New(pin)
+	dev := ds18b20.New(&ow)
+	return &DS18B20Sensor{ow: &ow, dev: dev, fieldIdx: fieldIdx}
 }
 
-func (d *DS18B20Sensor) Begin() {
-	d.pin.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
+func (s *DS18B20Sensor) Begin() {
+	s.ow.Configure(onewire.Config{})
+	s.dev.Configure()
 }
 
-func (d *DS18B20Sensor) Read() []Reading {
-	tempC, ok := ds18b20Read(d.pin)
-	return []Reading{{FieldIndex: d.fieldIdx, Value: tempC, Valid: ok}}
-}
-
-func (d *DS18B20Sensor) Name() string { return "DS18B20" }
-
-// ds18b20Read performs a single 1-Wire temperature conversion and scratchpad read.
-func ds18b20Read(pin machine.Pin) (float32, bool) {
-	if !owReset(pin) {
-		return 0, false
-	}
-	owWriteByte(pin, 0xCC) // SKIP ROM (single device)
-	owWriteByte(pin, 0x44) // CONVERT T
+func (s *DS18B20Sensor) Read() []Reading {
+	// Use SKIP ROM (nil romid) for single-device bus
+	s.dev.RequestTemperature(nil)
 	time.Sleep(750 * time.Millisecond)
 
-	if !owReset(pin) {
-		return 0, false
+	tempMilliC, err := s.dev.ReadTemperature(nil)
+	if err != nil {
+		return []Reading{{FieldIndex: s.fieldIdx, Valid: false}}
 	}
-	owWriteByte(pin, 0xCC) // SKIP ROM
-	owWriteByte(pin, 0xBE) // READ SCRATCHPAD
-
-	lo := owReadByte(pin)
-	hi := owReadByte(pin)
-	raw := int16(uint16(hi)<<8 | uint16(lo))
-	return float32(raw) / 16.0, true
+	return []Reading{{FieldIndex: s.fieldIdx, Value: float32(tempMilliC) / 1000, Valid: true}}
 }
+
+func (s *DS18B20Sensor) Name() string { return "DS18B20" }

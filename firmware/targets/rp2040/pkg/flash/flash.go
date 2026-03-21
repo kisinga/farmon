@@ -18,7 +18,7 @@ func (f RP2040Flash) WriteAt(buf []byte, off int64) (int, error) {
 }
 
 func (f RP2040Flash) EraseBlocks(off int64, blockCount int) error {
-	return machine.Flash.EraseBlocks(off, blockCount)
+	return machine.Flash.EraseBlocks(off, int64(blockCount))
 }
 
 func (f RP2040Flash) DataEnd() uintptr {

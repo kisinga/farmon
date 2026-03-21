@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
 )
 
 func f32Bytes(v float32) []byte {

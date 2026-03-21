@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/binary"
 
-	"github.com/farmon/firmware/pkg/settings"
-	rp2040transport "github.com/farmon/firmware/targets/rp2040/pkg/transport"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
+	rp2040transport "github.com/kisinga/farmon/firmware/targets/rp2040/pkg/transport"
 )
 
 // Binary codec for RP2040 flash storage (v4).

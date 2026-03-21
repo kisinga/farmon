@@ -21,16 +21,15 @@ type Packet struct {
 // Transport is the interface both LoRaWAN and WiFi implement.
 //
 // Contract:
-//   - Send is non-blocking: returns false and drops the packet if the
-//     outbound buffer is full (e.g. transport is reconnecting). The sensor
-//     loop must not stall waiting for the transport.
-//   - RecvChan returns a read-only channel that receives downlink/command
-//     packets. The caller ranges over this channel in the main goroutine.
+//   - Send transmits an uplink packet. On LoRaWAN it blocks through
+//     the TX/RX cycle and buffers any downlink received. On WiFi it
+//     POSTs to the backend and buffers response commands.
+//   - Recv returns the next buffered downlink packet, or false if none.
+//     It is non-blocking and safe to call in a tight loop.
 //   - IsReady reports whether the transport has a live connection to the
 //     backend (joined for LoRaWAN, associated+reachable for WiFi).
-//   - All methods are safe to call from any goroutine.
 type Transport interface {
 	Send(p Packet) bool
-	RecvChan() <-chan Packet
+	Recv() (Packet, bool)
 	IsReady() bool
 }

@@ -2,7 +2,10 @@ import { Component, input, output, signal, computed, inject, OnInit, OnDestroy }
 import { FormsModule } from '@angular/forms';
 import { ApiService, DeviceField } from '../../../core/services/api.service';
 import { applyTrim } from '../../../core/constants/sensor-config';
-import { SensorInterfaceInfo, SensorPresetInfo, MeasurementInfo, AirConfigValidationError, AirConfigSensor } from '../../../core/services/api.types';
+import {
+  SensorInterfaceInfo, MeasurementInfo, AirConfigValidationError, AirConfigSensor,
+  DriverDef, IOType, DriverStatus,
+} from '../../../core/services/api.types';
 import { IOSlotService } from '../../../core/services/io-slot.service';
 import { MAX_SENSOR_SLOTS, pinFunctionName, type PinFunctionName } from '../../../core/utils/firmware-constraints';
 import { ConfigContextService } from '../../../core/services/config-context.service';
@@ -17,7 +20,8 @@ interface CalibForm {
 }
 
 interface SensorForm {
-  presetId: string;
+  ioType: IOType | '';
+  driverId: string;
   interfaceId: string;
   unit: string;
   displayName: string;
@@ -37,7 +41,8 @@ interface SensorForm {
 
 function defaultForm(): SensorForm {
   return {
-    presetId: '',
+    ioType: '',
+    driverId: '',
     interfaceId: '',
     unit: '',
     displayName: '',
@@ -56,6 +61,11 @@ function defaultForm(): SensorForm {
   };
 }
 
+const IO_TYPE_LABELS: Record<string, string> = {
+  i2c: 'I2C', spi: 'SPI', gpio: 'Digital', adc: 'Analog',
+  onewire: 'OneWire', uart: 'UART', pulse: 'Pulse',
+};
+
 @Component({
   selector: 'app-device-sensor-config',
   standalone: true,
@@ -70,220 +80,242 @@ function defaultForm(): SensorForm {
         </div>
       }
 
-      <!-- Preset picker -->
+      <!-- Tier 1: IO Type -->
       <div class="card bg-base-200">
         <div class="card-body py-4">
-          <h3 class="card-title text-sm">Quick Start — Choose an input preset</h3>
+          <h3 class="card-title text-sm">IO Type</h3>
           <div class="flex flex-wrap gap-2 mt-2">
-            @for (p of presets(); track p.id) {
-              <button class="btn btn-sm" [class.btn-primary]="form().presetId === p.id"
-                (click)="applyPreset(p)">{{ p.label }}</button>
+            @for (iot of ioTypes(); track iot) {
+              <button class="btn btn-sm" [class.btn-primary]="form().ioType === iot"
+                (click)="selectIOType(iot)">{{ ioTypeLabel(iot) }}</button>
             }
-            <button class="btn btn-sm btn-ghost" (click)="clearPreset()">Custom</button>
           </div>
         </div>
       </div>
 
-      <!-- Main config form -->
-      <div class="card bg-base-200">
-        <div class="card-body py-4 space-y-3">
-          <h3 class="card-title text-sm">Input Configuration</h3>
+      @if (form().ioType) {
+        <!-- Tier 2: Driver selection (bus types) or sub-type (simple IO) -->
+        <div class="card bg-base-200">
+          <div class="card-body py-4 space-y-3">
+            <h3 class="card-title text-sm">
+              @if (needsDriverSelection()) { Driver } @else { Configuration }
+            </h3>
 
-          <!-- Interface -->
-          <label class="form-control w-full max-w-xs">
-            <div class="label py-1"><span class="label-text text-xs">Interface / Driver</span></div>
-            <select class="select select-bordered select-sm" [(ngModel)]="form().interfaceId"
-              (ngModelChange)="onInterfaceChange($event)">
-              <option value="">— select —</option>
-              @for (iface of interfaces(); track iface.id) {
-                <option [value]="iface.id">{{ iface.label }}</option>
-              }
-            </select>
-          </label>
+            @if (needsDriverSelection()) {
+              <!-- Driver dropdown for bus-based IO -->
+              <label class="form-control w-full max-w-xs">
+                <div class="label py-1"><span class="label-text text-xs">Driver</span></div>
+                <select class="select select-bordered select-sm" [ngModel]="form().driverId"
+                  (ngModelChange)="onDriverChange($event)">
+                  <option value="">— select —</option>
+                  @for (d of filteredDrivers(); track d.id) {
+                    <option [value]="d.id" [disabled]="d.status === 'deferred'">
+                      {{ d.label }}{{ d.status === 'deferred' ? ' (coming soon)' : '' }}
+                    </option>
+                  }
+                </select>
+              </label>
+            } @else if (form().ioType === 'adc') {
+              <!-- Analog sub-type -->
+              <div class="flex gap-2">
+                <button class="btn btn-sm" [class.btn-primary]="form().driverId === 'adc_linear'"
+                  (click)="onDriverChange('adc_linear')">0-VREF Linear</button>
+                <button class="btn btn-sm" [class.btn-primary]="form().driverId === 'adc_4_20ma'"
+                  (click)="onDriverChange('adc_4_20ma')">4-20mA Loop</button>
+              </div>
+            }
 
-          <!-- Target field (dropdown + inline create) -->
-          <div class="space-y-2">
-            <label class="form-control w-full max-w-xs">
-              <div class="label py-1"><span class="label-text text-xs">Target Field</span></div>
-              <select class="select select-bordered select-sm"
-                [ngModel]="fieldSelection()"
-                (ngModelChange)="onFieldSelect($event)">
-                <option value="">— select a field —</option>
-                @for (f of fieldConfigs(); track f.field_key) {
-                  <option [value]="f.field_key">{{ f.field_key }} — {{ f.display_name }}{{ f.unit ? ' (' + f.unit + ')' : '' }}</option>
-                }
-                <option value="__new__">+ Create new field</option>
-              </select>
-            </label>
-
-            <!-- Always show display name + unit so user can review/edit without guessing -->
-            @if (creatingNewField()) {
-              <div class="flex gap-2 flex-wrap pl-1 border-l-2 border-primary/30 ml-1">
-                <label class="form-control w-36">
-                  <div class="label py-1"><span class="label-text text-xs">Field Key</span></div>
-                  <input class="input input-bordered input-sm" [ngModel]="form().fieldKey"
-                    (ngModelChange)="onFieldKeyChange($event)" placeholder="e.g. soil_1" />
-                </label>
-                <label class="form-control w-48">
-                  <div class="label py-1"><span class="label-text text-xs">Display Name</span></div>
-                  <input class="input input-bordered input-sm" [ngModel]="form().displayName"
-                    (ngModelChange)="onDisplayNameChange($event)" placeholder="e.g. Soil Moisture" />
-                </label>
-                <label class="form-control w-24">
-                  <div class="label py-1"><span class="label-text text-xs">Unit</span></div>
-                  <input class="input input-bordered input-sm" [ngModel]="form().unit"
-                    (ngModelChange)="onUnitChange($event)" placeholder="e.g. %" />
-                </label>
-                <label class="form-control w-36">
-                  <div class="label py-1"><span class="label-text text-xs">Telemetry</span></div>
-                  <select class="select select-bordered select-sm"
-                    [value]="form().reportMode"
-                    (change)="setReportMode($any($event.target).value)">
-                    <option value="reported">Reported</option>
-                    <option value="on_change">On Change</option>
-                    <option value="disabled">Disabled</option>
+            <!-- Tier 3: Pin/Bus selection -->
+            @if (selectedDriver()) {
+              @if (selectedDriver()!.bus_addressed) {
+                <!-- Bus selector -->
+                <label class="form-control w-32">
+                  <div class="label py-1"><span class="label-text text-xs">Bus</span></div>
+                  <select class="select select-bordered select-sm" [(ngModel)]="form().busIndex">
+                    <option [value]="0">Bus 0</option>
+                    <option [value]="1">Bus 1</option>
                   </select>
-                  <div class="label py-0.5">
-                    <span class="label-text-alt text-base-content/40">
-                      @if (form().reportMode === 'reported') { Every interval }
-                      @else if (form().reportMode === 'on_change') { Only when value changes }
-                      @else { Never transmitted }
-                    </span>
-                  </div>
                 </label>
-              </div>
-            } @else if (fieldSelection() && fieldSelection() !== '__new__') {
-              <!-- Existing field selected — show its metadata as editable in case user wants to correct it -->
-              <div class="flex gap-2 flex-wrap pl-1 border-l-2 border-base-300 ml-1">
+              } @else {
+                <!-- GPIO pin selector -->
+                <label class="form-control w-full max-w-xs">
+                  <div class="label py-1"><span class="label-text text-xs">Pin</span></div>
+                  <app-pin-dropdown
+                    [selectedPin]="form().pinIndex"
+                    [capability]="requiredPinCapability()"
+                    [usedPins]="usedPins()"
+                    [pinMap]="pinMap()"
+                    (pinSelected)="onPinSelected($event)"
+                  />
+                </label>
+              }
+
+              <!-- Tier 3b: Driver parameters -->
+
+              <!-- I2C address -->
+              @if (selectedDriver()!.default_i2c_addr) {
+                <label class="form-control w-40">
+                  <div class="label py-1"><span class="label-text text-xs">I2C Address (hex)</span></div>
+                  <input class="input input-bordered input-sm" [value]="'0x' + form().i2cAddr.toString(16)"
+                    (change)="onI2CAddrChange($event)" placeholder="0x76" />
+                </label>
+              }
+
+              <!-- Pull mode (digital input only) -->
+              @if (form().driverId === 'digital_in') {
                 <label class="form-control w-48">
-                  <div class="label py-1"><span class="label-text text-xs">Display Name</span></div>
-                  <input class="input input-bordered input-sm" [(ngModel)]="form().displayName" placeholder="Display Name" />
+                  <div class="label py-1"><span class="label-text text-xs">Pull mode</span></div>
+                  <select class="select select-bordered select-sm" [(ngModel)]="form().digitalPullMode"
+                    (ngModelChange)="setDigitalPullMode($event)">
+                    <option [value]="0">Pull-up (default)</option>
+                    <option [value]="1">Pull-down</option>
+                    <option [value]="2">Floating (no pull)</option>
+                  </select>
                 </label>
-                <label class="form-control w-24">
-                  <div class="label py-1"><span class="label-text text-xs">Unit</span></div>
-                  <input class="input input-bordered input-sm" [(ngModel)]="form().unit" placeholder="e.g. %" />
+              }
+
+              <!-- Pulse settings -->
+              @if (form().driverId === 'pulse_generic') {
+                <label class="form-control w-40">
+                  <div class="label py-1"><span class="label-text text-xs">Pulses per Unit</span></div>
+                  <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().pulsesPerUnit" min="1" />
                 </label>
+              }
+
+              <!-- Modbus settings -->
+              @if (form().driverId === 'modbus_rtu') {
+                <div class="flex gap-2 flex-wrap">
+                  <label class="form-control w-28">
+                    <div class="label py-1"><span class="label-text text-xs">Device Address</span></div>
+                    <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().modbusDevAddr" min="1" max="247" />
+                  </label>
+                  <label class="form-control w-28">
+                    <div class="label py-1"><span class="label-text text-xs">Function Code</span></div>
+                    <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().modbusFuncCode" min="1" max="4" />
+                  </label>
+                  <label class="form-control w-28">
+                    <div class="label py-1"><span class="label-text text-xs">Register Address</span></div>
+                    <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().modbusRegAddr" min="0" max="65535" />
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-1"><span class="label-text text-xs">Signed (int16)</span></div>
+                    <input type="checkbox" class="checkbox checkbox-sm" [(ngModel)]="form().modbusRegSigned" />
+                  </label>
+                </div>
+              }
+
+              <!-- Calibration (ADC sensors) -->
+              @if (selectedDriver()!.needs_calib) {
+                <div class="divider text-xs">Calibration</div>
+                <div class="tabs tabs-boxed mb-2">
+                  <a class="tab tab-sm" [class.tab-active]="form().calib.mode === 'datasheet'"
+                    (click)="setCalibMode('datasheet')">Datasheet</a>
+                  <a class="tab tab-sm" [class.tab-active]="form().calib.mode === 'trim'"
+                    (click)="setCalibMode('trim')">Single-point Trim</a>
+                </div>
+                @if (form().calib.mode === 'datasheet') {
+                  <div class="flex gap-2 flex-wrap items-end">
+                    <label class="form-control w-28">
+                      <div class="label py-1"><span class="label-text text-xs">Min ({{ form().unit }})</span></div>
+                      <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().calib.physMin" />
+                    </label>
+                    <label class="form-control w-28">
+                      <div class="label py-1"><span class="label-text text-xs">Max ({{ form().unit }})</span></div>
+                      <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().calib.physMax" />
+                    </label>
+                    <div class="text-xs text-base-content/50 self-end pb-2">
+                      offset={{ calibPreview().offset.toFixed(1) }}, span={{ calibPreview().span.toFixed(1) }}
+                    </div>
+                  </div>
+                } @else {
+                  <div class="flex gap-2 flex-wrap items-end">
+                    <label class="form-control w-32">
+                      <div class="label py-1"><span class="label-text text-xs">Current Reading</span></div>
+                      <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().calib.currentReading" />
+                    </label>
+                    <label class="form-control w-32">
+                      <div class="label py-1"><span class="label-text text-xs">Expected Value</span></div>
+                      <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().calib.expectedValue" />
+                    </label>
+                    <div class="text-xs text-base-content/50 self-end pb-2">
+                      new offset={{ trimPreview().toFixed(1) }}
+                    </div>
+                  </div>
+                }
+              }
+
+              <!-- Auto-generated fields from driver definition -->
+              @if (selectedDriver()!.fields?.length) {
+                <div class="divider text-xs">Fields ({{ selectedDriver()!.field_count }})</div>
+                @for (f of selectedDriver()!.fields; track f.label; let i = $index) {
+                  <div class="flex gap-2 items-center text-sm">
+                    <span class="w-24 text-base-content/60">{{ f.label }}</span>
+                    <span class="badge badge-xs">{{ f.unit }}</span>
+                    <span class="text-xs text-base-content/40">{{ f.default_min }}–{{ f.default_max }}</span>
+                  </div>
+                }
+              }
+
+              <!-- Target field -->
+              <div class="space-y-2">
+                <label class="form-control w-full max-w-xs">
+                  <div class="label py-1"><span class="label-text text-xs">Target Field</span></div>
+                  <select class="select select-bordered select-sm"
+                    [ngModel]="fieldSelection()"
+                    (ngModelChange)="onFieldSelect($event)">
+                    <option value="">— select a field —</option>
+                    @for (f of fieldConfigs(); track f.field_key) {
+                      <option [value]="f.field_key">{{ f.field_key }} — {{ f.display_name }}{{ f.unit ? ' (' + f.unit + ')' : '' }}</option>
+                    }
+                    <option value="__new__">+ Create new field</option>
+                  </select>
+                </label>
+
+                @if (creatingNewField()) {
+                  <div class="flex gap-2 flex-wrap pl-1 border-l-2 border-primary/30 ml-1">
+                    <label class="form-control w-36">
+                      <div class="label py-1"><span class="label-text text-xs">Field Key</span></div>
+                      <input class="input input-bordered input-sm" [ngModel]="form().fieldKey"
+                        (ngModelChange)="onFieldKeyChange($event)" placeholder="e.g. soil_1" />
+                    </label>
+                    <label class="form-control w-48">
+                      <div class="label py-1"><span class="label-text text-xs">Display Name</span></div>
+                      <input class="input input-bordered input-sm" [ngModel]="form().displayName"
+                        (ngModelChange)="onDisplayNameChange($event)" placeholder="e.g. Soil Moisture" />
+                    </label>
+                    <label class="form-control w-24">
+                      <div class="label py-1"><span class="label-text text-xs">Unit</span></div>
+                      <input class="input input-bordered input-sm" [ngModel]="form().unit"
+                        (ngModelChange)="onUnitChange($event)" placeholder="e.g. %" />
+                    </label>
+                    <label class="form-control w-36">
+                      <div class="label py-1"><span class="label-text text-xs">Telemetry</span></div>
+                      <select class="select select-bordered select-sm"
+                        [value]="form().reportMode"
+                        (change)="setReportMode($any($event.target).value)">
+                        <option value="reported">Reported</option>
+                        <option value="on_change">On Change</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                    </label>
+                  </div>
+                } @else if (fieldSelection() && fieldSelection() !== '__new__') {
+                  <div class="flex gap-2 flex-wrap pl-1 border-l-2 border-base-300 ml-1">
+                    <label class="form-control w-48">
+                      <div class="label py-1"><span class="label-text text-xs">Display Name</span></div>
+                      <input class="input input-bordered input-sm" [(ngModel)]="form().displayName" placeholder="Display Name" />
+                    </label>
+                    <label class="form-control w-24">
+                      <div class="label py-1"><span class="label-text text-xs">Unit</span></div>
+                      <input class="input input-bordered input-sm" [(ngModel)]="form().unit" placeholder="e.g. %" />
+                    </label>
+                  </div>
+                }
               </div>
             }
           </div>
-
-          <!-- GPIO pin (non-bus sensors) -->
-          @if (selectedInterface() && !selectedInterface()!.bus_addressed) {
-            <label class="form-control w-full max-w-xs">
-              <div class="label py-1"><span class="label-text text-xs">GPIO Pin</span></div>
-              <app-pin-dropdown
-                [selectedPin]="form().pinIndex"
-                [capability]="requiredPinCapability()"
-                [usedPins]="usedPins()"
-                [pinMap]="pinMap()"
-                (pinSelected)="onPinSelected($event)"
-              />
-            </label>
-          }
-
-          <!-- Pull mode (digital input only) -->
-          @if (selectedInterface()?.id === 'digital_in') {
-            <label class="form-control w-48">
-              <div class="label py-1"><span class="label-text text-xs">Pull mode</span></div>
-              <select class="select select-bordered select-sm" [(ngModel)]="form().digitalPullMode"
-                (ngModelChange)="setDigitalPullMode($event)">
-                <option [value]="0">Pull-up (default)</option>
-                <option [value]="1">Pull-down</option>
-                <option [value]="2">Floating (no pull)</option>
-              </select>
-            </label>
-          }
-
-          <!-- Bus index (I2C/UART sensors) -->
-          @if (selectedInterface()?.bus_addressed) {
-            <label class="form-control w-32">
-              <div class="label py-1"><span class="label-text text-xs">Bus Index (0 or 1)</span></div>
-              <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().busIndex" min="0" max="1" />
-            </label>
-          }
-
-          <!-- I2C address (BME280, INA219) -->
-          @if (selectedInterface()?.id === 'i2c_bme280' || selectedInterface()?.id === 'i2c_ina219') {
-            <label class="form-control w-40">
-              <div class="label py-1"><span class="label-text text-xs">I2C Address (hex)</span></div>
-              <input class="input input-bordered input-sm" [value]="'0x' + form().i2cAddr.toString(16)"
-                (change)="onI2CAddrChange($event)" placeholder="0x76" />
-            </label>
-          }
-
-          <!-- Pulse settings -->
-          @if (selectedInterface()?.id === 'pulse') {
-            <label class="form-control w-40">
-              <div class="label py-1"><span class="label-text text-xs">Pulses per Unit</span></div>
-              <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().pulsesPerUnit" min="1" />
-            </label>
-          }
-
-          <!-- Modbus settings -->
-          @if (selectedInterface()?.id === 'modbus_rtu') {
-            <div class="flex gap-2 flex-wrap">
-              <label class="form-control w-28">
-                <div class="label py-1"><span class="label-text text-xs">Device Address</span></div>
-                <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().modbusDevAddr" min="1" max="247" />
-              </label>
-              <label class="form-control w-28">
-                <div class="label py-1"><span class="label-text text-xs">Function Code</span></div>
-                <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().modbusFuncCode" min="1" max="4" />
-              </label>
-              <label class="form-control w-28">
-                <div class="label py-1"><span class="label-text text-xs">Register Address</span></div>
-                <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().modbusRegAddr" min="0" max="65535" />
-              </label>
-              <label class="form-control">
-                <div class="label py-1"><span class="label-text text-xs">Signed (int16)</span></div>
-                <input type="checkbox" class="checkbox checkbox-sm" [(ngModel)]="form().modbusRegSigned" />
-              </label>
-            </div>
-          }
-
-          <!-- Calibration panel (ADC-based sensors only) -->
-          @if (selectedInterface()?.needs_calib) {
-            <div class="divider text-xs">Calibration</div>
-            <div class="tabs tabs-boxed mb-2">
-              <a class="tab tab-sm" [class.tab-active]="form().calib.mode === 'datasheet'"
-                (click)="setCalibMode('datasheet')">Datasheet</a>
-              <a class="tab tab-sm" [class.tab-active]="form().calib.mode === 'trim'"
-                (click)="setCalibMode('trim')">Single-point Trim</a>
-            </div>
-
-            @if (form().calib.mode === 'datasheet') {
-              <div class="flex gap-2 flex-wrap items-end">
-                <label class="form-control w-28">
-                  <div class="label py-1"><span class="label-text text-xs">Min ({{ form().unit }})</span></div>
-                  <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().calib.physMin" />
-                </label>
-                <label class="form-control w-28">
-                  <div class="label py-1"><span class="label-text text-xs">Max ({{ form().unit }})</span></div>
-                  <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().calib.physMax" />
-                </label>
-                <div class="text-xs text-base-content/50 self-end pb-2">
-                  → offset={{ calibPreview().offset.toFixed(1) }}, span={{ calibPreview().span.toFixed(1) }}
-                </div>
-              </div>
-            } @else {
-              <div class="flex gap-2 flex-wrap items-end">
-                <label class="form-control w-32">
-                  <div class="label py-1"><span class="label-text text-xs">Current Reading</span></div>
-                  <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().calib.currentReading" />
-                </label>
-                <label class="form-control w-32">
-                  <div class="label py-1"><span class="label-text text-xs">Expected Value</span></div>
-                  <input type="number" class="input input-bordered input-sm" [(ngModel)]="form().calib.expectedValue" />
-                </label>
-                <div class="text-xs text-base-content/50 self-end pb-2">
-                  → new offset={{ trimPreview().toFixed(1) }}
-                </div>
-              </div>
-            }
-          }
-
         </div>
-      </div>
+      }
 
       <!-- Validation results -->
       @if (validationErrors().length > 0) {
@@ -302,10 +334,12 @@ function defaultForm(): SensorForm {
       }
 
       <!-- Action -->
-      <button class="btn btn-primary w-full" [disabled]="!canSave() || saving()"
-        (click)="save()">
-        {{ saving() ? 'Sending…' : isEditMode() ? 'Update & Push' : 'Configure & Push to Device' }}
-      </button>
+      @if (selectedDriver()) {
+        <button class="btn btn-primary w-full" [disabled]="!canSave() || saving()"
+          (click)="save()">
+          {{ saving() ? 'Sending…' : isEditMode() ? 'Update & Push' : 'Configure & Push to Device' }}
+        </button>
+      }
 
     </div>
   `,
@@ -313,24 +347,21 @@ function defaultForm(): SensorForm {
 export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   eui = input.required<string>();
   fieldConfigs = input<DeviceField[]>([]);
-  /** pin_map from ConfigContextService — drives board picker. */
   pinMap = input<number[]>([]);
-  /** Pins already used by other sensors and outputs. */
   usedPins = input<Set<number>>(new Set());
 
-  /** Edit mode — pre-populate from existing sensor slot. */
   existingSlot = input<number | null>(null);
   existingSensor = input<AirConfigSensor | null>(null);
   existingField = input<DeviceField | null>(null);
 
-  /** Emitted after a successful save so the parent can reload and hide the wizard. */
   saved = output<void>();
 
   private api = inject(ApiService);
   private ioSlotService = inject(IOSlotService);
   protected ctx = inject(ConfigContextService);
 
-  readonly presets = signal<SensorPresetInfo[]>([]);
+  // Catalog data
+  readonly drivers = signal<DriverDef[]>([]);
   readonly interfaces = signal<SensorInterfaceInfo[]>([]);
   readonly measurements = signal<MeasurementInfo[]>([]);
   private fieldCounts = signal<Record<string, number>>({});
@@ -342,29 +373,65 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   validationErrors = signal<AirConfigValidationError[]>([]);
   validationWarnings = signal<AirConfigValidationError[]>([]);
 
-  // Field selection state
   creatingNewField = signal(false);
   fieldSelection = signal<string>('');
 
   isEditMode = computed(() => this.existingSlot() !== null);
 
-  selectedInterface = computed(() =>
-    this.interfaces().find(i => i.id === this.form().interfaceId) ?? null
-  );
+  // Distinct IO types from the driver catalog
+  ioTypes = computed<IOType[]>(() => {
+    const types = new Set<IOType>();
+    for (const d of this.drivers()) {
+      types.add(d.io_type);
+    }
+    // Desired order
+    const order: IOType[] = ['i2c', 'adc', 'gpio', 'onewire', 'spi', 'uart', 'pulse'];
+    return order.filter(t => types.has(t));
+  });
 
-  /** Maps the selected interface's pin_function code to a PinFunctionName for PinSelectorComponent. */
+  // Drivers filtered by selected IO type
+  filteredDrivers = computed(() => {
+    const ioType = this.form().ioType;
+    if (!ioType) return [];
+    return this.drivers()
+      .filter(d => d.io_type === ioType)
+      .sort((a, b) => {
+        // Ready first, then deferred
+        if (a.status !== b.status) return a.status === 'ready' ? -1 : 1;
+        return a.label.localeCompare(b.label);
+      });
+  });
+
+  // Whether the current IO type needs an explicit driver dropdown
+  needsDriverSelection = computed(() => {
+    const ioType = this.form().ioType;
+    return ioType === 'i2c' || ioType === 'spi' || ioType === 'uart';
+  });
+
+  selectedDriver = computed(() => {
+    const id = this.form().driverId;
+    if (!id) return null;
+    return this.drivers().find(d => d.id === id) ?? null;
+  });
+
+  // Map driver's pin function to PinFunctionName for the pin dropdown
   requiredPinCapability = computed<PinFunctionName>(() => {
-    const fn = this.selectedInterface()?.pin_function ?? 0;
+    const driver = this.selectedDriver();
+    if (!driver) return 'unused';
+    const fn = driver.pin_functions?.[0] ?? 0;
     return pinFunctionName(fn);
   });
 
+  ioTypeLabel(iot: IOType): string {
+    return IO_TYPE_LABELS[iot] ?? iot.toUpperCase();
+  }
 
   ngOnInit(): void {
     this.api.getSensorCatalog().subscribe(catalog => {
       this.interfaces.set(catalog.interfaces);
       this.measurements.set(catalog.measurements);
-      this.presets.set(catalog.presets);
       this.fieldCounts.set(catalog.field_counts);
+      this.drivers.set(catalog.drivers ?? []);
       if (this.existingSensor()) {
         this.populateFromExisting();
       }
@@ -376,8 +443,9 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     const field = this.existingField();
     if (!sensor) return;
 
-    const iface = this.interfaces().find(i => i.sensor_type === sensor.type);
-    if (!iface) return;
+    // Find the driver by sensor_type
+    const driver = this.drivers().find(d => d.sensor_type === sensor.type);
+    if (!driver) return;
 
     const flags = sensor.flags ?? 0x01;
     let reportMode: 'reported' | 'on_change' | 'disabled' = 'reported';
@@ -386,16 +454,19 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
 
     this.form.update(f => ({
       ...f,
-      interfaceId: iface.id,
+      ioType: driver.io_type,
+      driverId: driver.id,
+      interfaceId: driver.id,
       fieldKey: field?.field_key ?? '',
       displayName: field?.display_name ?? '',
       unit: field?.unit ?? '',
-      pinIndex: iface.bus_addressed ? f.pinIndex : sensor.pin_index,
-      busIndex: iface.bus_addressed ? sensor.pin_index : f.busIndex,
+      pinIndex: driver.bus_addressed ? f.pinIndex : sensor.pin_index,
+      busIndex: driver.bus_addressed ? sensor.pin_index : f.busIndex,
+      i2cAddr: driver.default_i2c_addr ?? 0x76,
       reportMode,
     }));
 
-    if (!iface.bus_addressed && sensor.pin_index !== 255) {
+    if (!driver.bus_addressed && sensor.pin_index !== 255) {
       this.ctx.setActivePinSelection(sensor.pin_index);
     }
 
@@ -421,27 +492,99 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
 
   canSave = computed(() => {
     const f = this.form();
-    if (f.interfaceId === '') return false;
+    if (!f.driverId) return false;
     if (this.creatingNewField()) {
       return f.fieldKey.trim() !== '' && f.displayName.trim() !== '';
     }
-    // Existing field selected
     return this.fieldSelection() !== '' && this.fieldSelection() !== '__new__';
   });
 
-  // ─── Field selection ─────────────────────────────────────
+  // ─── IO Type selection ─────────────────────────────────────
+  selectIOType(ioType: IOType): void {
+    const drivers = this.drivers().filter(d => d.io_type === ioType && d.status === 'ready');
 
+    // For simple IO types, auto-select the only driver
+    let driverId = '';
+    if (ioType === 'gpio') driverId = 'digital_in';
+    else if (ioType === 'onewire') driverId = 'ds18b20';
+    else if (ioType === 'pulse') driverId = 'pulse_generic';
+    else if (ioType === 'adc') driverId = 'adc_linear'; // default sub-type
+
+    this.form.update(f => ({ ...defaultForm(), ioType, driverId }));
+    this.fieldSelection.set('');
+    this.creatingNewField.set(false);
+    this.ctx.setActivePinSelection(null);
+    this.validationErrors.set([]);
+    this.validationWarnings.set([]);
+
+    // If a driver was auto-selected, auto-fill its defaults
+    if (driverId) {
+      this.applyDriverDefaults(driverId);
+    }
+  }
+
+  // ─── Driver selection ──────────────────────────────────────
+  onDriverChange(driverId: string): void {
+    this.form.update(f => ({
+      ...f,
+      driverId,
+      interfaceId: driverId,
+    }));
+    this.ctx.setActivePinSelection(null);
+    this.validationErrors.set([]);
+    this.validationWarnings.set([]);
+    this.fieldSelection.set('');
+    this.creatingNewField.set(false);
+
+    if (driverId) {
+      this.applyDriverDefaults(driverId);
+    }
+  }
+
+  private applyDriverDefaults(driverId: string): void {
+    const driver = this.drivers().find(d => d.id === driverId);
+    if (!driver) return;
+
+    // Auto-fill I2C address
+    if (driver.default_i2c_addr) {
+      this.form.update(f => ({ ...f, i2cAddr: driver.default_i2c_addr! }));
+    }
+
+    // Auto-fill unit from first field
+    if (driver.fields?.length) {
+      const firstField = driver.fields[0];
+      this.form.update(f => ({
+        ...f,
+        unit: firstField.unit,
+        displayName: driver.label,
+        calib: {
+          ...f.calib,
+          physMin: firstField.default_min,
+          physMax: firstField.default_max,
+        },
+      }));
+    }
+
+    // Auto-create new field
+    this.fieldSelection.set('__new__');
+    this.creatingNewField.set(true);
+    this.form.update(f => ({
+      ...f,
+      fieldKey: driverId + '_' + (this.fieldConfigs().length + 1),
+    }));
+  }
+
+  // ─── Field selection ─────────────────────────────────────
   onFieldSelect(value: string): void {
     this.fieldSelection.set(value);
     if (value === '__new__') {
       this.creatingNewField.set(true);
       this.form.update(f => ({
         ...f,
-        fieldKey: f.interfaceId ? f.interfaceId + '_' + (this.fieldConfigs().length + 1) : '',
+        fieldKey: f.driverId ? f.driverId + '_' + (this.fieldConfigs().length + 1) : '',
       }));
     } else if (value) {
       this.creatingNewField.set(false);
-      // Pre-fill display name and unit from the selected field so user can review/edit
       const field = this.fieldConfigs().find(fc => fc.field_key === value);
       if (field) {
         this.form.update(f => ({
@@ -457,50 +600,10 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     }
   }
 
-  // ─── Presets ─────────────────────────────────────────────
-
-  applyPreset(p: SensorPresetInfo): void {
-    // Look up unit from measurements catalog (internal only — not shown as a dropdown)
-    const unit = this.measurements().find(m => m.id === p.measurement)?.unit ?? '';
-    this.form.set({
-      ...defaultForm(),
-      presetId: p.id,
-      interfaceId: p.interface,
-      unit,
-      displayName: p.label,
-      fieldKey: p.id + '_' + (this.fieldConfigs().length + 1),
-      i2cAddr: p.i2c_addr ?? 0x76,
-      pulsesPerUnit: p.pulses_per_unit ?? 1,
-      calib: {
-        mode: 'datasheet',
-        physMin: p.calib_min,
-        physMax: p.calib_max,
-        currentReading: p.calib_min,
-        expectedValue: p.calib_min,
-      },
-    });
-    this.fieldSelection.set('__new__');
-    this.creatingNewField.set(true);
-  }
-
-  clearPreset(): void {
-    this.form.set(defaultForm());
-    this.fieldSelection.set('');
-    this.creatingNewField.set(false);
-  }
-
   // ─── Form handlers ──────────────────────────────────────
-
   onPinSelected(pin: number): void {
     this.form.update(f => ({ ...f, pinIndex: pin }));
     this.ctx.setActivePinSelection(pin);
-  }
-
-  onInterfaceChange(id: string): void {
-    this.form.update(f => ({ ...f, interfaceId: id }));
-    this.ctx.setActivePinSelection(null);
-    this.validationErrors.set([]);
-    this.validationWarnings.set([]);
   }
 
   setDigitalPullMode(v: unknown): void {
@@ -530,15 +633,12 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   }
 
   // ─── Field index helpers ────────────────────────────────
-
-  /** Compute the next unused field index based on existing fieldConfigs. */
   private nextFieldIndex(): number {
     const used = new Set<number>();
     const fc = this.fieldCounts();
     for (const cfg of this.fieldConfigs()) {
       const idx = cfg.field_idx ?? 0;
-      const iface = this.interfaces().find(i => i.sensor_type === parseInt(cfg.field_key?.split('_')[0] ?? '', 10));
-      const count = fc[String(iface?.sensor_type ?? 0)] ?? 1;
+      const count = fc[String(idx)] ?? 1;
       for (let i = 0; i < count; i++) used.add(idx + i);
     }
     let next = 0;
@@ -546,29 +646,26 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     return next;
   }
 
-  /** Compute the next unused sensor slot index. MAX_SENSOR_SLOTS = 8 (slots 0–7). */
   private nextSlot(): number {
     return Math.min(this.fieldConfigs().length, MAX_SENSOR_SLOTS - 1);
   }
 
-  /** Get field_idx for an existing field by key. */
   private getExistingFieldIndex(fieldKey: string): number {
     const field = this.fieldConfigs().find(f => f.field_key === fieldKey);
     return field?.field_idx ?? this.nextFieldIndex();
   }
 
   // ─── Validation ─────────────────────────────────────────
-
   validate(): void {
     const f = this.form();
-    const iface = this.interfaces().find(i => i.id === f.interfaceId);
-    if (!iface) return;
+    const driver = this.selectedDriver();
+    if (!driver) return;
 
     const fieldIndex = this.creatingNewField() ? this.nextFieldIndex() : this.getExistingFieldIndex(f.fieldKey);
-    const pinOrBus = iface.bus_addressed ? f.busIndex : f.pinIndex;
+    const pinOrBus = driver.bus_addressed ? f.busIndex : f.pinIndex;
 
     const sensor = {
-      type: iface.sensor_type,
+      type: driver.sensor_type,
       pin_index: pinOrBus,
       field_index: fieldIndex,
       flags: 0x01,
@@ -592,26 +689,25 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   }
 
   // ─── Save ───────────────────────────────────────────────
-
   save(): void {
     if (!this.canSave() || this.saving()) return;
     const f = this.form();
-    const iface = this.interfaces().find(i => i.id === f.interfaceId)!;
+    const driver = this.selectedDriver();
+    if (!driver) return;
+
     const isNewField = this.creatingNewField();
     const fieldIndex = isNewField ? this.nextFieldIndex() : this.getExistingFieldIndex(f.fieldKey);
     const slot = this.existingSlot() ?? this.nextSlot();
 
-    // Build push-sensor-slot body
     let param1Raw: number | undefined;
     let param2Raw: number | undefined;
     let calibOffset: number | undefined;
     let calibSpan: number | undefined;
-    // bit 0 = enabled, bit 4 = telemetry disabled, bit 5 = on_change
-    let flags = 0x01; // enabled
+    let flags = 0x01;
     if (f.reportMode === 'disabled') flags |= 0x10;
     else if (f.reportMode === 'on_change') flags |= 0x20;
 
-    if (iface.needs_calib) {
+    if (driver.needs_calib) {
       if (f.calib.mode === 'datasheet') {
         calibOffset = f.calib.physMin;
         calibSpan = f.calib.physMax - f.calib.physMin;
@@ -620,28 +716,28 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
         calibOffset = newOffset;
         calibSpan = f.calib.physMax - f.calib.physMin;
       }
-    } else if (f.interfaceId === 'i2c_bme280' || f.interfaceId === 'i2c_ina219') {
+    } else if (driver.default_i2c_addr) {
       param1Raw = f.i2cAddr & 0xFF;
       param2Raw = 0;
-    } else if (f.interfaceId === 'pulse') {
+    } else if (f.driverId === 'pulse_generic') {
       param1Raw = f.pulsesPerUnit & 0xFFFF;
       param2Raw = 0;
-    } else if (f.interfaceId === 'modbus_rtu') {
+    } else if (f.driverId === 'modbus_rtu') {
       param1Raw = (f.modbusDevAddr & 0xFF) | ((f.modbusFuncCode & 0xFF) << 8);
       param2Raw = f.modbusRegAddr & 0xFFFF;
       if (f.modbusRegSigned) flags |= 0x04;
-    } else if (f.interfaceId === 'digital_in') {
+    } else if (f.driverId === 'digital_in') {
       param1Raw = f.digitalPullMode;
     }
 
-    const pinOrBus = iface.bus_addressed ? f.busIndex : f.pinIndex;
+    const pinOrBus = driver.bus_addressed ? f.busIndex : f.pinIndex;
 
     this.saving.set(true);
     this.statusMsg.set('');
 
     this.api.pushSensorSlot(this.eui(), {
       slot,
-      type: iface.sensor_type,
+      type: driver.sensor_type,
       pin_index: pinOrBus,
       field_index: fieldIndex,
       flags,
@@ -652,26 +748,19 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     }).subscribe({
       next: () => {
         if (isNewField) {
-          // Create device field metadata record for new fields
           this.api.createDeviceField({
             device_eui: this.eui(),
             field_key: f.fieldKey.trim(),
             display_name: f.displayName.trim(),
             unit: f.unit,
             data_type: 'float',
-            category: f.interfaceId,
+            category: f.driverId,
             field_idx: fieldIndex,
             linked_type: 'input',
-            linked_key: f.interfaceId,
+            linked_key: f.driverId,
             report_mode: f.reportMode,
           }).subscribe({
-            next: () => {
-              this.saving.set(false);
-              this.form.set(defaultForm());
-              this.fieldSelection.set('');
-              this.creatingNewField.set(false);
-              this.saved.emit();
-            },
+            next: () => this.resetAndEmit(),
             error: (err: { message?: string }) => {
               this.saving.set(false);
               this.statusOk.set(false);
@@ -679,7 +768,6 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
             },
           });
         } else {
-          // Existing field — update metadata if display name / unit changed
           const existingF = this.existingField();
           const nameChanged = existingF && (existingF.display_name !== f.displayName.trim() || existingF.unit !== f.unit);
           if (existingF && nameChanged) {
@@ -687,28 +775,11 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
               display_name: f.displayName.trim(),
               unit: f.unit,
             }).subscribe({
-              next: () => {
-                this.saving.set(false);
-                this.form.set(defaultForm());
-                this.fieldSelection.set('');
-                this.creatingNewField.set(false);
-                this.saved.emit();
-              },
-              error: () => {
-                // Metadata update failed but slot was saved — still emit saved
-                this.saving.set(false);
-                this.form.set(defaultForm());
-                this.fieldSelection.set('');
-                this.creatingNewField.set(false);
-                this.saved.emit();
-              },
+              next: () => this.resetAndEmit(),
+              error: () => this.resetAndEmit(),
             });
           } else {
-            this.saving.set(false);
-            this.form.set(defaultForm());
-            this.fieldSelection.set('');
-            this.creatingNewField.set(false);
-            this.saved.emit();
+            this.resetAndEmit();
           }
         }
       },
@@ -720,4 +791,11 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     });
   }
 
+  private resetAndEmit(): void {
+    this.saving.set(false);
+    this.form.set(defaultForm());
+    this.fieldSelection.set('');
+    this.creatingNewField.set(false);
+    this.saved.emit();
+  }
 }

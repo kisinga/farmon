@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/binary"
 
-	"github.com/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
 )
 
 // Binary codec for LoRa-E5 flash storage (v4).

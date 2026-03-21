@@ -37,11 +37,12 @@ func appKey32(s string) string {
 func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var body struct {
-			DeviceEui     string      `json:"device_eui"`
-			DeviceName    string      `json:"device_name"`
-			Transport     string      `json:"transport"`
-			HardwareModel string      `json:"hardware_model"`
-			Spec          *DeviceSpec `json:"spec"`
+			DeviceEui      string      `json:"device_eui"`
+			DeviceName     string      `json:"device_name"`
+			Transport      string      `json:"transport"`
+			HardwareModel  string      `json:"hardware_model"`
+			DeviceCategory string      `json:"device_category"` // "farmon" or "external"
+			Spec           *DeviceSpec `json:"spec"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.String(http.StatusBadRequest, "invalid body")
@@ -53,6 +54,14 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 		}
 		if transport != "lorawan" && transport != "wifi" {
 			return e.String(http.StatusBadRequest, "transport must be 'lorawan' or 'wifi'")
+		}
+
+		category := strings.TrimSpace(body.DeviceCategory)
+		if category == "" {
+			category = "farmon"
+		}
+		if category != "farmon" && category != "external" {
+			return e.String(http.StatusBadRequest, "device_category must be 'farmon' or 'external'")
 		}
 
 		// Transport-aware ID validation
@@ -125,6 +134,7 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			}
 			existing.Set("config_status", configStatus)
 			existing.Set("transport", transport)
+			existing.Set("device_category", category)
 			existing.Set("last_seen", time.Now().Format(time.RFC3339))
 			if err := app.Save(existing); err != nil {
 				return e.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
@@ -135,6 +145,7 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			rec.Set("device_eui", devEui)
 			rec.Set("device_name", strings.TrimSpace(body.DeviceName))
 			rec.Set("device_type", deviceType)
+			rec.Set("device_category", category)
 			rec.Set("config_status", configStatus)
 			rec.Set("transport", transport)
 			if body.HardwareModel != "" {
@@ -158,17 +169,20 @@ func provisionDeviceHandler(app core.App) func(*core.RequestEvent) error {
 			}
 		}
 
-		// Ensure device_airconfig record exists (stub if not created by spec)
-		if _, err := app.FindFirstRecordByFilter("device_airconfig",
-			"device_eui = {:eui}", dbx.Params{"eui": devEui}); err != nil {
-			if acColl, err2 := app.FindCollectionByNameOrId("device_airconfig"); err2 == nil {
-				stub := core.NewRecord(acColl)
-				stub.Set("device_eui", devEui)
-				stub.Set("pin_map", []any{})
-				stub.Set("sensors", []any{})
-				stub.Set("controls", []any{})
-				stub.Set("lorawan", map[string]any{})
-				_ = app.Save(stub)
+		// Ensure device_airconfig record exists (stub if not created by spec).
+		// Skip for external devices — they don't use airconfig.
+		if category == "farmon" {
+			if _, err := app.FindFirstRecordByFilter("device_airconfig",
+				"device_eui = {:eui}", dbx.Params{"eui": devEui}); err != nil {
+				if acColl, err2 := app.FindCollectionByNameOrId("device_airconfig"); err2 == nil {
+					stub := core.NewRecord(acColl)
+					stub.Set("device_eui", devEui)
+					stub.Set("pin_map", []any{})
+					stub.Set("sensors", []any{})
+					stub.Set("controls", []any{})
+					stub.Set("lorawan", map[string]any{})
+					_ = app.Save(stub)
+				}
 			}
 		}
 

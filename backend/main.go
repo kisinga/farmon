@@ -133,6 +133,13 @@ func main() {
 		// Sensor catalog (read-only, sourced from sensors package)
 		se.Router.GET("/api/farmon/io-catalog", ioCatalogHandler())
 		se.Router.GET("/api/farmon/sensor-catalog", ioCatalogHandler()) // backward compat
+		se.Router.GET("/api/farmon/driver-catalog", driverCatalogHandler())
+
+		// Firmware builder
+		se.Router.GET("/api/farmon/devices/{eui}/firmware", firmwareStatusHandler(app))
+		se.Router.POST("/api/farmon/devices/{eui}/firmware/credentials", firmwareCredentialsHandler(app))
+		se.Router.POST("/api/farmon/devices/{eui}/firmware/build", firmwareBuildHandler(app))
+		se.Router.GET("/api/farmon/devices/{eui}/firmware/download", firmwareDownloadHandler(app))
 
 		// Pin capability table (read-only, sourced from firmware pincaps package)
 		se.Router.GET("/api/farmon/pin-capabilities", pinCapsHandler(app))

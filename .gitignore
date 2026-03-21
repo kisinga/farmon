@@ -1,1 +1,4 @@
 .gitnexus
+
+# Firmware build artifacts (generated per-device by backend)
+backend/builds/

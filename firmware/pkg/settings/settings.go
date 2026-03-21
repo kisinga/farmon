@@ -51,7 +51,11 @@ const (
 	PinRS485DE    PinFunction = 12 // RS485 direction-enable (DE/RE) for Modbus transceivers
 	PinPWM        PinFunction = 13 // PWM output (fan speed, LED dimmer)
 	PinDAC        PinFunction = 14 // DAC analog output (STM32 only)
-	PinMax        PinFunction = 15 // validation sentinel
+	PinSPISCK     PinFunction = 15 // SPI clock
+	PinSPIMOSI    PinFunction = 16 // SPI MOSI (Master Out Slave In)
+	PinSPIMISO    PinFunction = 17 // SPI MISO (Master In Slave Out)
+	PinSPICS      PinFunction = 18 // SPI chip select
+	PinMax        PinFunction = 19 // validation sentinel
 )
 
 func PinFunctionName(fn PinFunction) string {
@@ -59,6 +63,7 @@ func PinFunctionName(fn PinFunction) string {
 		"None", "Flow", "Relay", "Button", "ADC",
 		"I2C_SDA", "I2C_SCL", "1Wire", "UART_TX", "UART_RX",
 		"LED", "Counter", "RS485_DE", "PWM", "DAC",
+		"SPI_SCK", "SPI_MOSI", "SPI_MISO", "SPI_CS",
 	}
 	if int(fn) < len(names) {
 		return names[fn]
@@ -83,7 +88,20 @@ const (
 	SensorPulseGeneric SensorType = 9  // Generic pulse counter; Param1=pulses/unit
 	SensorModbusRTU    SensorType = 10 // Modbus RTU over RS485; PinIndex=UART bus idx, Param1=devAddr|funcCode, Param2=regAddr
 	SensorDigitalIn    SensorType = 11 // Digital GPIO input; PinIndex=GPIO, Param1: 0=pullup 1=pulldown 2=float; output 0.0 or 1.0
-	SensorTypeMax      SensorType = 12 // Sentinel for registry array sizing
+
+	// New I2C drivers (TinyGo wrappers)
+	SensorSHT3x   SensorType = 12 // I2C SHT3x; 2 fields (T/H)
+	SensorSHT4x   SensorType = 13 // I2C SHT4x; 2 fields (T/H)
+	SensorBMP280  SensorType = 14 // I2C BMP280; 2 fields (T/P)
+	SensorBMP388  SensorType = 15 // I2C BMP388; 2 fields (T/P)
+	SensorBH1750  SensorType = 16 // I2C BH1750; 1 field (lux)
+	SensorAHT20   SensorType = 17 // I2C AHT20; 2 fields (T/H)
+	SensorTMP102  SensorType = 18 // I2C TMP102; 1 field (T)
+	SensorMCP9808 SensorType = 19 // I2C MCP9808; 1 field (T)
+	SensorINA260  SensorType = 20 // I2C INA260; 3 fields (V/I/W)
+	SensorADT7410 SensorType = 21 // I2C ADT7410; 1 field (T)
+
+	SensorTypeMax SensorType = 22 // Sentinel for registry array sizing
 )
 
 // --- Slots ---

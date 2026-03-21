@@ -8,13 +8,13 @@ import (
 	"math"
 	"time"
 
-	"github.com/farmon/firmware/pkg/actuator"
-	"github.com/farmon/firmware/pkg/airconfig"
-	"github.com/farmon/firmware/pkg/rules"
-	"github.com/farmon/firmware/pkg/sensors"
-	"github.com/farmon/firmware/pkg/settings"
-	"github.com/farmon/firmware/pkg/transfer"
-	"github.com/farmon/firmware/pkg/transport"
+	"github.com/kisinga/farmon/firmware/pkg/actuator"
+	"github.com/kisinga/farmon/firmware/pkg/airconfig"
+	"github.com/kisinga/farmon/firmware/pkg/rules"
+	"github.com/kisinga/farmon/firmware/pkg/sensors"
+	"github.com/kisinga/farmon/firmware/pkg/settings"
+	"github.com/kisinga/farmon/firmware/pkg/transfer"
+	"github.com/kisinga/farmon/firmware/pkg/transport"
 	"github.com/kisinga/farmon/firmware/pkg/protocol"
 )
 
@@ -63,27 +63,19 @@ func New(cfg Config) *Node {
 	return n
 }
 
-// Run starts the sensor loop goroutine and blocks on the downlink loop.
+// Run is the main loop — reads sensors, evaluates rules, sends telemetry,
+// and drains downlinks. Fully synchronous, no goroutines.
 func (n *Node) Run() {
-	go n.sensorLoop()
-	n.downlinkLoop()
-}
-
-// --- Sensor loop ---
-
-func (n *Node) sensorLoop() {
 	for {
 		time.Sleep(time.Duration(n.cfg.Core.TxIntervalSec) * time.Second)
 		n.uptimeSec += uint32(n.cfg.Core.TxIntervalSec)
 
 		values := n.readAllSensors()
 		nowMs := uint32(time.Now().UnixNano() / 1e6)
-		n.eng.Evaluate(values, n.eng.GetControlStates(), nowMs)
+		n.eng.Evaluate(values, nowMs)
 
 		if n.cfg.Transfer != nil {
 			tState := n.cfg.Transfer.Tick(values, nowMs)
-			// Append transfer FSM state as a synthetic field at index 6.
-			// Must match the profile field sort_order=6 ("transfer_state") in the Water Manager profile.
 			const transferFieldIdx = 6
 			for len(values) <= transferFieldIdx {
 				values = append(values, 0)
@@ -93,15 +85,31 @@ func (n *Node) sensorLoop() {
 
 		n.txCount++
 		if n.txCount%n.checkinEvery == 1 {
-			// Send checkin on first TX and every Nth after.
 			n.sendCheckin()
 		}
 
 		n.sendTelemetry(values)
 		n.sendOnChangeFields(values)
 		n.sendStateChanges()
+
+		// Drain any downlinks received during the TX/RX cycle.
+		n.drainDownlinks()
 	}
 }
+
+// drainDownlinks polls the transport for buffered downlink packets.
+func (n *Node) drainDownlinks() {
+	for {
+		rx, ok := n.cfg.Transport.Recv()
+		if !ok {
+			return
+		}
+		n.rxCount++
+		n.handleDownlink(rx)
+	}
+}
+
+// --- Sensor reading ---
 
 func (n *Node) readAllSensors() []float32 {
 	var values []float32
@@ -226,82 +234,74 @@ func (n *Node) sendStateChanges() {
 	}
 }
 
-// --- Downlink loop ---
+// --- Downlink handling ---
 
-func (n *Node) downlinkLoop() {
-	for rx := range n.cfg.Transport.RecvChan() {
-		n.rxCount++
-		data := rx.Payload[:rx.Len]
+func (n *Node) handleDownlink(rx transport.Packet) {
+	data := rx.Payload[:rx.Len]
 
-		switch rx.Port {
+	switch rx.Port {
 
-		case protocol.FPortCmdReset:
-			n.txCount = 0
-			n.rxCount = 0
-			for _, s := range n.cfg.Sensors {
-				if fs, ok := s.(*sensors.FlowSensor); ok {
-					fs.SetTotalPulses(0)
-				}
+	case protocol.FPortCmdReset:
+		n.txCount = 0
+		n.rxCount = 0
+		for _, s := range n.cfg.Sensors {
+			if fs, ok := s.(*sensors.FlowSensor); ok {
+				fs.SetTotalPulses(0)
 			}
-			n.sendAck(rx.Port)
+		}
+		n.sendAck(rx.Port)
 
-		case protocol.FPortCmdInterval:
-			if rx.Len >= 2 {
-				v := binary.LittleEndian.Uint16(data[:2])
-				if v >= 10 && v <= 3600 {
-					n.cfg.Core.TxIntervalSec = v
-					n.cfg.SaveFn()
-				}
-			}
-			n.sendAck(rx.Port)
-
-		case protocol.FPortCmdReboot:
-			n.sendAck(rx.Port)
-			n.cfg.RebootFn()
-
-		case protocol.FPortDirectCtrl:
-			if rx.Len >= 2 {
-				nowMs := uint32(time.Now().UnixNano() / 1e6)
-				// If transfer FSM owns this control, abort it first.
-				if n.cfg.Transfer != nil {
-					n.cfg.Transfer.ForceIdle()
-				}
-				n.eng.SetState(data[0], data[1], rules.TriggerDownlink, 0, nowMs)
-				if rx.Len >= 6 {
-					n.eng.SetManualOverride(data[0], binary.LittleEndian.Uint32(data[2:6]), nowMs)
-				}
-			}
-			n.sendAck(rx.Port)
-
-		case protocol.FPortRuleUpdate:
-			if rx.Len == 1 && data[0] == 0xFF {
-				n.cfg.Core.RuleCount = 0
-				n.eng.LoadRules(nil)
-			} else {
-				for off := 0; off+settings.RuleSize <= int(rx.Len); off += settings.RuleSize {
-					var r settings.Rule
-					if r.FromBinary(data[off:]) {
-						n.upsertRule(&r)
-					}
-				}
-				n.eng.LoadRules(n.cfg.Core.Rules[:n.cfg.Core.RuleCount])
-			}
-			n.cfg.SaveFn()
-			n.sendAck(rx.Port)
-
-		case protocol.FPortAirConfig:
-			result := airconfig.Handle(n.cfg.Core, data, n.cfg.Extension)
-			if len(data) >= 1 && data[0] == airconfig.AirCfgReset {
-				// Transport-specific reset (WiFi creds, LoRaWAN keys) is handled
-				// by the Extension hook or caller — nothing to do here.
-			}
-			if result == airconfig.ResultSaved || result == airconfig.ResultReboot {
+	case protocol.FPortCmdInterval:
+		if rx.Len >= 2 {
+			v := binary.LittleEndian.Uint16(data[:2])
+			if v >= 10 && v <= 3600 {
+				n.cfg.Core.TxIntervalSec = v
 				n.cfg.SaveFn()
 			}
-			n.sendAck(rx.Port)
-			if result == airconfig.ResultReboot {
-				n.cfg.RebootFn()
+		}
+		n.sendAck(rx.Port)
+
+	case protocol.FPortCmdReboot:
+		n.sendAck(rx.Port)
+		n.cfg.RebootFn()
+
+	case protocol.FPortDirectCtrl:
+		if rx.Len >= 2 {
+			nowMs := uint32(time.Now().UnixNano() / 1e6)
+			if n.cfg.Transfer != nil {
+				n.cfg.Transfer.ForceIdle()
 			}
+			n.eng.SetState(data[0], data[1], rules.TriggerDownlink, 0, nowMs)
+			if rx.Len >= 6 {
+				n.eng.SetManualOverride(data[0], binary.LittleEndian.Uint32(data[2:6]), nowMs)
+			}
+		}
+		n.sendAck(rx.Port)
+
+	case protocol.FPortRuleUpdate:
+		if rx.Len == 1 && data[0] == 0xFF {
+			n.cfg.Core.RuleCount = 0
+			n.eng.LoadRules(nil)
+		} else {
+			for off := 0; off+settings.RuleSize <= int(rx.Len); off += settings.RuleSize {
+				var r settings.Rule
+				if r.FromBinary(data[off:]) {
+					n.upsertRule(&r)
+				}
+			}
+			n.eng.LoadRules(n.cfg.Core.Rules[:n.cfg.Core.RuleCount])
+		}
+		n.cfg.SaveFn()
+		n.sendAck(rx.Port)
+
+	case protocol.FPortAirConfig:
+		result := airconfig.Handle(n.cfg.Core, data, n.cfg.Extension)
+		if result == airconfig.ResultSaved || result == airconfig.ResultReboot {
+			n.cfg.SaveFn()
+		}
+		n.sendAck(rx.Port)
+		if result == airconfig.ResultReboot {
+			n.cfg.RebootFn()
 		}
 	}
 }
@@ -328,7 +328,6 @@ func (n *Node) sendAck(port uint8) {
 }
 
 // sendCheckin sends a 14-byte fPort 1 registration/checkin packet.
-// The backend uses this to verify config hash and push AirConfig if drifted.
 func (n *Node) sendCheckin() {
 	var p transport.Packet
 	p.Port = protocol.FPortRegistration
