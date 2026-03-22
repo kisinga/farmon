@@ -114,6 +114,9 @@ func buildFirmware(app core.App, req FirmwareBuildRequest) FirmwareBuildResult {
 	if target == "lorae5" {
 		gcFlag = "leaking"
 		schedulerFlag = "none"
+	} else if target == "esp32s3" {
+		gcFlag = "conservative"
+		schedulerFlag = "tasks"
 	}
 	args := []string{"build",
 		"-target=" + target,
@@ -202,6 +205,8 @@ func targetInfo(hwModel string) (target, ext, buildTag string) {
 	switch hwModel {
 	case "lorae5":
 		return "lorae5", ".elf", "stm32wlx"
+	case "heltec_v3":
+		return "esp32s3", ".bin", "esp32s3"
 	default:
 		return "pico-w", ".uf2", "rp2040"
 	}

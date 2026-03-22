@@ -56,12 +56,27 @@ import { copyToClipboard, formatAppKeyAsCpp } from '../../../core/utils/lorawan-
                     >
                       <span class="font-semibold text-sm">{{ hw.label }}</span>
                       <span class="text-xs text-base-content/60">{{ hw.subLabel }}</span>
-                      <span class="badge badge-xs mt-1" [class.badge-primary]="hw.transport === 'lorawan'" [class.badge-secondary]="hw.transport === 'wifi'">
-                        {{ hw.transport === 'lorawan' ? 'LoRaWAN' : 'WiFi' }}
+                      <span class="flex gap-1 mt-1">
+                        @for (t of hw.transports; track t) {
+                          <span class="badge badge-xs" [class.badge-primary]="t === 'lorawan'" [class.badge-secondary]="t === 'wifi'">
+                            {{ t === 'lorawan' ? 'LoRaWAN' : 'WiFi' }}
+                          </span>
+                        }
                       </span>
                     </button>
                   }
                 </div>
+
+                @if (selectedHwTransports().length > 1) {
+                  <div class="form-control w-full">
+                    <span class="label pb-1"><span class="label-text font-medium">Transport</span></span>
+                    <select class="select select-bordered select-sm w-full" [(ngModel)]="transport" name="hwTransport">
+                      @for (t of selectedHwTransports(); track t) {
+                        <option [value]="t">{{ t === 'lorawan' ? 'LoRaWAN' : 'WiFi' }}</option>
+                      }
+                    </select>
+                  </div>
+                }
               </div>
             } @else {
               <!-- Transport selection (External devices) -->
@@ -234,6 +249,11 @@ export class AddDeviceModalComponent {
 
   resultMeta = computed(() => getTransportMeta(this.result()?.transport));
 
+  selectedHwTransports(): TransportType[] {
+    const hw = this.hardwareModels.find(h => h.id === this.hardwareModel);
+    return hw?.transports ?? ['wifi'];
+  }
+
   selectCategory(cat: DeviceCategory): void {
     this.category = cat;
     if (cat === 'external') {
@@ -247,7 +267,14 @@ export class AddDeviceModalComponent {
   selectHardware(id: HardwareModelId): void {
     this.hardwareModel = id;
     const hw = this.hardwareModels.find(h => h.id === id);
-    if (hw) this.transport = hw.transport;
+    if (hw) {
+      // Auto-select if single transport, keep current if valid for this hardware
+      if (hw.transports.length === 1) {
+        this.transport = hw.transports[0];
+      } else if (!hw.transports.includes(this.transport)) {
+        this.transport = hw.transports[0];
+      }
+    }
   }
 
   ingestUrl(): string {

@@ -98,8 +98,40 @@ const LORAE5_BOARD: BoardDefinition = {
   ],
 };
 
+// ─── Heltec WiFi LoRa 32 V3 (ESP32-S3) ────────────────────────────────────
+// Firmware: GPIO1–GPIO20 → index 0–19 (avoiding strapping / LoRa / OLED pins).
+// Experimental — no Fritzing SVG yet; pin map based on Heltec V3 pinout diagram.
+const HELTEC_V3_BOARD: BoardDefinition = {
+  model: 'heltec_v3',
+  label: 'Heltec WiFi LoRa 32 V3',
+  svgUrl: 'boards/heltec_v3.svg',
+  pins: [
+    { firmwarePin: 0,  connectorId: 'connector0pin',  label: 'GPIO1',  edge: 'top'    },
+    { firmwarePin: 1,  connectorId: 'connector1pin',  label: 'GPIO2',  edge: 'top'    },
+    { firmwarePin: 2,  connectorId: 'connector2pin',  label: 'GPIO3',  edge: 'top'    },
+    { firmwarePin: 3,  connectorId: 'connector3pin',  label: 'GPIO4',  edge: 'top'    },
+    { firmwarePin: 4,  connectorId: 'connector4pin',  label: 'GPIO5',  edge: 'top'    },
+    { firmwarePin: 5,  connectorId: 'connector5pin',  label: 'GPIO6',  edge: 'top'    },
+    { firmwarePin: 6,  connectorId: 'connector6pin',  label: 'GPIO7',  edge: 'top'    },
+    { firmwarePin: 7,  connectorId: 'connector7pin',  label: 'GPIO19', edge: 'top'    },
+    { firmwarePin: 8,  connectorId: 'connector8pin',  label: 'GPIO20', edge: 'bottom' },
+    { firmwarePin: 9,  connectorId: 'connector9pin',  label: 'GPIO21', edge: 'bottom' },
+    { firmwarePin: 10, connectorId: 'connector10pin', label: 'GPIO26', edge: 'bottom' },
+    { firmwarePin: 11, connectorId: 'connector11pin', label: 'GPIO33', edge: 'bottom' },
+    { firmwarePin: 12, connectorId: 'connector12pin', label: 'GPIO34', edge: 'bottom' },
+    { firmwarePin: 13, connectorId: 'connector13pin', label: 'GPIO35', edge: 'bottom' },
+    { firmwarePin: 14, connectorId: 'connector14pin', label: 'GPIO36', edge: 'bottom' },
+    { firmwarePin: 15, connectorId: 'connector15pin', label: 'GPIO37', edge: 'bottom' },
+    { firmwarePin: 16, connectorId: 'connector16pin', label: 'GPIO38', edge: 'bottom' },
+    { firmwarePin: 17, connectorId: 'connector17pin', label: 'GPIO39', edge: 'bottom' },
+    { firmwarePin: 18, connectorId: 'connector18pin', label: 'GPIO40', edge: 'bottom' },
+    { firmwarePin: 19, connectorId: 'connector19pin', label: 'GPIO41', edge: 'bottom' },
+  ],
+};
+
 /** All known board definitions, keyed by HardwareModelId. */
 export const BOARD_DEFINITIONS: Record<string, BoardDefinition> = {
   rp2040: RP2040_BOARD,
   lorae5: LORAE5_BOARD,
+  heltec_v3: HELTEC_V3_BOARD,
 };

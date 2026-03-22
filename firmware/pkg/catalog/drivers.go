@@ -58,9 +58,10 @@ type DriverDef struct {
 }
 
 // allTargets is the default for drivers that work on all hardware.
-var allTargets = []string{"rp2040", "lorae5"}
+var allTargets = []string{"rp2040", "lorae5", "heltec_v3"}
 
 // rp2040Only is for drivers that require RP2040-specific hardware (e.g. ADC).
+// TODO: ESP32-S3 has ADC too — revisit when heltec_v3 ADC adapters are ready.
 var rp2040Only = []string{"rp2040"}
 
 // i2cBusPins is the standard bus pin set for I2C drivers.

@@ -108,6 +108,26 @@ var STM32WLCaps = func() PinCapsTable {
 	return t
 }()
 
+// ESP32S3Caps defines pin capabilities for the ESP32-S3 (Heltec WiFi LoRa 32 V3).
+// The board maps 20 user-accessible GPIOs to firmware indices 0–19.
+// ESP32-S3 has flexible pin muxing: most GPIOs support digital, ADC, PWM, I2C, UART.
+var ESP32S3Caps = func() PinCapsTable {
+	var t PinCapsTable
+	base := CapDigitalIn | CapDigitalOut | CapPWM | CapInterrupt | CapI2C | CapUART | CapOneWire
+	for i := range t {
+		t[i] = base
+	}
+	// ADC2 channels mapped to firmware indices 0–7 (GPIO1-7, GPIO19)
+	for i := 0; i < 8; i++ {
+		t[i] |= CapADC
+	}
+	// ADC1 channels mapped to firmware indices 8–9 (GPIO20, GPIO21)
+	t[8] |= CapADC
+	t[9] |= CapADC
+	// No DAC on ESP32-S3
+	return t
+}()
+
 // ForMCU returns the pin capability table for the given MCU identifier.
 func ForMCU(mcu string) *PinCapsTable {
 	switch mcu {
@@ -115,6 +135,8 @@ func ForMCU(mcu string) *PinCapsTable {
 		return &RP2040Caps
 	case "stm32wl", "lorae5":
 		return &STM32WLCaps
+	case "esp32s3", "heltec_v3":
+		return &ESP32S3Caps
 	default:
 		return &RP2040Caps
 	}

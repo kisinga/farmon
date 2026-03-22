@@ -27,19 +27,20 @@ export type DeviceCategory = 'farmon' | 'external';
 // ─── Hardware model ───────────────────────────────────────────────────────────
 
 /** Physical hardware target identifier — matches firmware/pkg/pincaps ForMCU() keys. */
-export type HardwareModelId = 'rp2040' | 'lorae5';
+export type HardwareModelId = 'rp2040' | 'lorae5' | 'heltec_v3';
 
 /** Display info for a hardware model shown in the device provisioning UI. */
 export interface HardwareModelInfo {
   id: HardwareModelId;
   label: string;
   subLabel: string;
-  transport: TransportType;
+  transports: TransportType[];
 }
 
 export const HARDWARE_MODELS: HardwareModelInfo[] = [
-  { id: 'rp2040',  label: 'RP2040',      subLabel: 'Raspberry Pi Pico W',  transport: 'wifi' },
-  { id: 'lorae5',  label: 'STM32WL',     subLabel: 'Seeed LoRa-E5',        transport: 'lorawan' },
+  { id: 'rp2040',    label: 'RP2040',      subLabel: 'Raspberry Pi Pico W',         transports: ['wifi'] },
+  { id: 'lorae5',    label: 'STM32WL',     subLabel: 'Seeed LoRa-E5',               transports: ['lorawan'] },
+  { id: 'heltec_v3', label: 'ESP32-S3',    subLabel: 'Heltec WiFi LoRa 32 V3 ⚗️',  transports: ['wifi', 'lorawan'] },
 ];
 
 // ─── Device types ────────────────────────────────────────────────────────────

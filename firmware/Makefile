@@ -1,4 +1,4 @@
-.PHONY: lorae5 lorae5-dev lorae5-flash lorae5-size lorae5-monitor rp2040 rp2040-flash rp2040-size rp2040-provision
+.PHONY: lorae5 lorae5-dev lorae5-flash lorae5-size lorae5-monitor rp2040 rp2040-flash rp2040-size rp2040-provision heltec heltec-flash heltec-size
 
 # ─── LoRa-E5 (STM32WL) ───────────────────────────────────────────────────────
 
@@ -46,3 +46,17 @@ rp2040-size:
 # Usage: make rp2040-provision SSID=MyNet PASS=secret TOKEN=abc URL=http://server:8090/api/farmon/ingest
 rp2040-provision:
 	go run ./tools/provision -target=rp2040 -ssid=$(SSID) -pass=$(PASS) -token=$(TOKEN) -url=$(URL)
+
+# ─── Heltec WiFi LoRa 32 V3 (ESP32-S3) — experimental ──────────────────────
+
+HELTEC_ENTRY  = ./targets/heltec_v3/cmd/node
+HELTEC_FLAGS  = -target=esp32s3 -opt=z -size=short -tags=farmon_all
+
+heltec:
+	tinygo build $(HELTEC_FLAGS) -o build/heltec_v3.bin $(HELTEC_ENTRY)
+
+heltec-flash:
+	tinygo flash $(HELTEC_FLAGS) $(HELTEC_ENTRY)
+
+heltec-size:
+	tinygo size $(HELTEC_FLAGS) $(HELTEC_ENTRY)
