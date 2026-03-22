@@ -8,57 +8,6 @@ package catalog
 
 import "github.com/kisinga/farmon/firmware/pkg/settings"
 
-// ─── Sensor interfaces ──────────────────────────────────────────────────────
-
-// InterfaceInfo describes a sensor interface category for the UI.
-type InterfaceInfo struct {
-	ID              string  `json:"id"`
-	Label           string  `json:"label"`
-	SensorType      uint8   `json:"sensor_type"`
-	NeedsCalib      bool    `json:"needs_calib"`
-	BusAddressed    bool    `json:"bus_addressed"`
-	PinFunction     uint8   `json:"pin_function"`      // required pin function for direct-pin sensors (0 = N/A)
-	BusPinFunctions []uint8 `json:"bus_pin_functions"`  // required bus pin functions (e.g., [SDA, SCL] for I2C)
-}
-
-// Interfaces is the authoritative list of sensor interface types.
-var Interfaces = []InterfaceInfo{
-	{ID: "adc_linear", Label: "Analog (0-VREF Linear)", SensorType: uint8(settings.SensorADCLinear), NeedsCalib: true, BusAddressed: false, PinFunction: uint8(settings.PinADC)},
-	{ID: "adc_4_20ma", Label: "Analog (4-20mA Loop)", SensorType: uint8(settings.SensorADC4_20mA), NeedsCalib: true, BusAddressed: false, PinFunction: uint8(settings.PinADC)},
-	{ID: "onewire", Label: "1-Wire (DS18B20)", SensorType: uint8(settings.SensorDS18B20), NeedsCalib: false, BusAddressed: false, PinFunction: uint8(settings.PinOneWire)},
-	{ID: "i2c_bme280", Label: "I2C — BME280 (T/H/P)", SensorType: uint8(settings.SensorBME280), NeedsCalib: false, BusAddressed: true, BusPinFunctions: []uint8{uint8(settings.PinI2CSDA), uint8(settings.PinI2CSCL)}},
-	{ID: "i2c_ina219", Label: "I2C — INA219 (V/I/W)", SensorType: uint8(settings.SensorINA219), NeedsCalib: false, BusAddressed: true, BusPinFunctions: []uint8{uint8(settings.PinI2CSDA), uint8(settings.PinI2CSCL)}},
-	{ID: "pulse", Label: "Pulse Counter", SensorType: uint8(settings.SensorPulseGeneric), NeedsCalib: false, BusAddressed: false, PinFunction: uint8(settings.PinCounter)},
-	{ID: "modbus_rtu", Label: "Modbus RTU (RS-485)", SensorType: uint8(settings.SensorModbusRTU), NeedsCalib: false, BusAddressed: true, BusPinFunctions: []uint8{uint8(settings.PinUARTTX), uint8(settings.PinUARTRX)}},
-	{ID: "digital_in", Label: "Digital Input (GPIO)", SensorType: uint8(settings.SensorDigitalIn), NeedsCalib: false, BusAddressed: false, PinFunction: uint8(settings.PinButton)},
-}
-
-// ─── Output interfaces ─────────────────────────────────────────────────────
-
-// OutputInterfaceInfo describes an output/actuator interface category for the UI.
-type OutputInterfaceInfo struct {
-	ID             string `json:"id"`
-	Label          string `json:"label"`
-	ActuatorType   uint8  `json:"actuator_type"`
-	PinFunction    uint8  `json:"pin_function"`      // required pin function (0 = bus-addressed)
-	DualPin        bool   `json:"dual_pin"`           // true for motorized valve (open + close pins)
-	BusAddressed   bool   `json:"bus_addressed"`      // true for I2C PWM
-	HasPulse       bool   `json:"has_pulse"`          // solenoid, motorized valve
-	Analog         bool   `json:"analog"`             // PWM, Servo, DAC, I2C PWM
-	Hint           string `json:"hint"`               // short description for the UI
-}
-
-// OutputInterfaces is the authoritative list of output interface types.
-var OutputInterfaces = []OutputInterfaceInfo{
-	{ID: "relay", Label: "Relay / GPIO", ActuatorType: 0, PinFunction: uint8(settings.PinRelay), Hint: "Single pin toggled HIGH/LOW. For pumps, lights, contactors."},
-	{ID: "motorized_valve", Label: "Motorized Valve", ActuatorType: 1, PinFunction: uint8(settings.PinRelay), DualPin: true, HasPulse: true, Hint: "Two pins: pulse one to open, the other to close."},
-	{ID: "solenoid", Label: "Solenoid Valve", ActuatorType: 2, PinFunction: uint8(settings.PinRelay), HasPulse: true, Hint: "Single pin pulsed then released. For spring-return solenoid valves."},
-	{ID: "pwm", Label: "PWM Output", ActuatorType: 3, PinFunction: uint8(settings.PinPWM), Analog: true, Hint: "PWM duty cycle 0–100%. For variable speed fans or dimmers."},
-	{ID: "servo", Label: "Servo", ActuatorType: 4, PinFunction: uint8(settings.PinPWM), Analog: true, Hint: "Servo PWM (50 Hz). For throttle or ball valve positioning."},
-	{ID: "dac", Label: "DAC Analog Output", ActuatorType: 5, PinFunction: uint8(settings.PinDAC), Analog: true, Hint: "True analog voltage output. STM32 only."},
-	{ID: "i2c_pwm", Label: "I2C PWM (PCA9685)", ActuatorType: 6, BusAddressed: true, Analog: true, Hint: "PWM via I2C expander (PCA9685). No GPIO pin needed."},
-}
-
 // ─── Measurement types ──────────────────────────────────────────────────────
 
 // MeasurementInfo describes a physical measurement category.
@@ -142,21 +91,13 @@ func FieldCountForType(t settings.SensorType) int {
 
 // ─── Combined catalog ───────────────────────────────────────────────────────
 
-// IOCatalog is the combined API response for both input and output interfaces.
+// IOCatalog is the combined API response for the unified driver registry.
 type IOCatalog struct {
-	// Input (sensor) interfaces (legacy — kept for backward compat)
-	Interfaces   []InterfaceInfo   `json:"interfaces"`
+	Drivers      []DriverDef       `json:"drivers"`
 	Measurements []MeasurementInfo `json:"measurements"`
-	Presets      []SensorPreset    `json:"presets"`
 	FieldCounts  map[uint8]int     `json:"field_counts"`
-	// Output (actuator) interfaces
-	OutputInterfaces []OutputInterfaceInfo `json:"output_interfaces"`
-	// Driver catalog — the new authoritative driver registry
-	Drivers []DriverDef `json:"drivers"`
+	Presets      []SensorPreset    `json:"presets,omitempty"`
 }
-
-// SensorCatalog is an alias for backward compatibility.
-type SensorCatalog = IOCatalog
 
 // GetCatalog returns the full IO catalog for JSON serialization.
 func GetCatalog() IOCatalog {
@@ -165,11 +106,9 @@ func GetCatalog() IOCatalog {
 		fc[uint8(i)] = FieldCountForType(i)
 	}
 	return IOCatalog{
-		Interfaces:       Interfaces,
-		Measurements:     Measurements,
-		Presets:          Presets,
-		FieldCounts:      fc,
-		OutputInterfaces: OutputInterfaces,
-		Drivers:          Drivers,
+		Drivers:      Drivers,
+		Measurements: Measurements,
+		FieldCounts:  fc,
+		Presets:      Presets,
 	}
 }

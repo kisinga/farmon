@@ -10,6 +10,7 @@ import (
 
 	"github.com/kisinga/farmon/firmware/pkg/actuator"
 	"github.com/kisinga/farmon/firmware/pkg/airconfig"
+	"github.com/kisinga/farmon/firmware/pkg/compute"
 	"github.com/kisinga/farmon/firmware/pkg/rules"
 	"github.com/kisinga/farmon/firmware/pkg/sensors"
 	"github.com/kisinga/farmon/firmware/pkg/settings"
@@ -39,6 +40,7 @@ type Config struct {
 type Node struct {
 	cfg              Config
 	eng              *rules.Engine
+	computeVM        compute.VM
 	uptimeSec        uint32
 	txCount          uint32
 	rxCount          uint32
@@ -60,6 +62,10 @@ func New(cfg Config) *Node {
 		n.eng.LoadRules(cfg.Core.Rules[:cfg.Core.RuleCount])
 		println("[node] loaded", cfg.Core.RuleCount, "rules")
 	}
+	if cfg.Core.ComputeCount > 0 {
+		n.eng.MarkComputeWritable(cfg.Core.Compute[:], cfg.Core.ComputeCount)
+		println("[node] loaded", cfg.Core.ComputeCount, "compute expressions")
+	}
 	return n
 }
 
@@ -71,6 +77,18 @@ func (n *Node) Run() {
 		n.uptimeSec += uint32(n.cfg.Core.TxIntervalSec)
 
 		values := n.readAllSensors()
+
+		// Evaluate compute fields before rules so rules can reference computed values.
+		if n.cfg.Core.ComputeCount > 0 {
+			for i := uint8(0); i < n.cfg.Core.ComputeCount; i++ {
+				fi := int(n.cfg.Core.Compute[i].FieldIdx)
+				for len(values) <= fi {
+					values = append(values, 0)
+				}
+			}
+			n.computeVM.Evaluate(values, n.cfg.Core.Compute[:], n.cfg.Core.ComputeCount)
+		}
+
 		nowMs := uint32(time.Now().UnixNano() / 1e6)
 		n.eng.Evaluate(values, nowMs)
 

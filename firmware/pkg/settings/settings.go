@@ -132,6 +132,8 @@ const (
 	ActuatorI2CPWM            ActuatorType = 4 // I2C bus-addressed PWM (e.g., PCA9685)
 	ActuatorServo             ActuatorType = 5 // single pin, servo pulse 500-2500µs
 	ActuatorDACLinear         ActuatorType = 6 // DAC analog output 0-255
+	ActuatorInternalLED       ActuatorType = 7 // onboard LED — firmware resolves GPIO from board
+	ActuatorNeopixel          ActuatorType = 8 // NeoPixel / WS2812 addressable RGB LED
 )
 
 // ControlSlot occupies 8 bytes in flash.
@@ -338,6 +340,9 @@ const (
 	OpAccum     ComputeOpcode = 0x40 // running sum (persistent state)
 	OpWindowAvg ComputeOpcode = 0x41 // rolling average; next byte = window size N
 	OpClamp     ComputeOpcode = 0x42 // clamp; next 8 bytes = min(f32) max(f32)
+	OpMod       ComputeOpcode = 0x14 // a % b (float modulo)
+	OpSelect    ComputeOpcode = 0x24 // pop cond, a, b → push (cond != 0 ? a : b)
+	OpDelta     ComputeOpcode = 0x43 // difference from previous cycle value
 )
 
 // --- LoRaWAN settings ---

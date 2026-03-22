@@ -455,17 +455,7 @@ export interface BackendInfo {
   supported_firmware_versions: string[];
 }
 
-// ─── Sensor Catalog (sourced from firmware/pkg/catalog) ─────────────────────
-
-export interface SensorInterfaceInfo {
-  id: string;
-  label: string;
-  sensor_type: number;
-  needs_calib: boolean;
-  bus_addressed: boolean;
-  pin_function: number;
-  bus_pin_functions: number[] | null;
-}
+// ─── IO Catalog (sourced from firmware/pkg/catalog) ─────────────────────────
 
 export interface MeasurementInfo {
   id: string;
@@ -490,22 +480,11 @@ export interface SensorPresetInfo {
   modbus_func_code?: number;
 }
 
-export interface OutputInterfaceInfo {
-  id: string;
-  label: string;
-  actuator_type: number;
-  pin_function: number;
-  dual_pin: boolean;
-  bus_addressed: boolean;
-  has_pulse: boolean;
-  analog: boolean;
-  hint: string;
-}
+// ─── Unified Driver Catalog ─────────────────────────────────────────────────
 
-// ─── Driver Catalog (new tiered model) ──────────────────────────────────────
-
-export type IOType = 'i2c' | 'spi' | 'gpio' | 'adc' | 'onewire' | 'uart' | 'pulse';
+export type IOType = 'i2c' | 'spi' | 'gpio' | 'adc' | 'onewire' | 'uart' | 'pulse' | 'pwm' | 'dac' | 'internal';
 export type DriverStatus = 'ready' | 'deferred';
+export type DriverDirection = 'input' | 'output' | 'both';
 
 export interface DriverFieldDef {
   measurement_id: string;
@@ -519,35 +498,41 @@ export interface DriverDef {
   id: string;
   label: string;
   description: string;
+  direction: DriverDirection;
   io_type: IOType;
   tinygo_package?: string;
   custom_driver: boolean;
-  sensor_type: number;
+  sensor_type?: number;
+  actuator_type?: number;
   field_count: number;
   fields: DriverFieldDef[];
   default_i2c_addr?: number;
   needs_calib: boolean;
   pin_count: number;
   pin_functions?: number[];
+  pin_labels?: string[];
   bus_pin_functions?: number[];
   bus_addressed: boolean;
+  has_pulse?: boolean;
+  analog?: boolean;
+  hint?: string;
   sub_types?: string[];
   supported_targets: string[];
   status: DriverStatus;
 }
 
-/** IO catalog — single source of truth for both input and output interface drivers. */
+/** IO catalog — single source of truth for both input and output drivers. */
 export interface IOCatalog {
-  interfaces: SensorInterfaceInfo[];
-  measurements: MeasurementInfo[];
-  presets: SensorPresetInfo[];
-  field_counts: Record<string, number>;
-  output_interfaces: OutputInterfaceInfo[];
   drivers: DriverDef[];
+  measurements: MeasurementInfo[];
+  field_counts: Record<string, number>;
+  presets?: SensorPresetInfo[];
 }
 
-/** @deprecated Use IOCatalog */
-export type SensorCatalog = IOCatalog;
+/** Returns true if a driver can act as an input (sensor). */
+export function isInputDriver(d: DriverDef): boolean { return d.direction === 'input' || d.direction === 'both'; }
+/** Returns true if a driver can act as an output (actuator). */
+export function isOutputDriver(d: DriverDef): boolean { return d.direction === 'output' || d.direction === 'both'; }
 
 // ─── AirConfig Validation ────────────────────────────────────────────────────
 
@@ -574,12 +559,19 @@ export interface BoardPinDef {
   edge: PinEdge;
 }
 
+export interface InternalOutput {
+  actuator_type: number;
+  label: string;
+  gpio_num: number;
+}
+
 export interface BoardDefinition {
   model: string;
   label: string;
   svg_url: string;
   rotate_deg?: number;
   pins: BoardPinDef[];
+  internal_outputs?: InternalOutput[];
 }
 
 // ─── Pin capabilities ────────────────────────────────────────────────────────
@@ -595,28 +587,14 @@ export interface PinCapabilitiesResponse {
   pins: PinInfo[];
 }
 
-// ─── Actuator types ──────────────────────────────────────────────────────────
+// ─── Actuator type helpers (derived from DriverDef properties) ───────────────
 
-export const ACTUATOR_TYPES = [
-  { id: 0, label: 'Relay' },           // binary, single pin
-  { id: 1, label: 'Motorized Valve' }, // binary, dual pin + pulse
-  { id: 2, label: 'Solenoid' },        // binary, single pin + pulse
-  { id: 3, label: 'PWM' },             // analog
-  { id: 4, label: 'Servo' },           // analog
-  { id: 5, label: 'DAC' },             // analog
-  { id: 6, label: 'I2C PWM' },         // analog, bus-addressed
-] as const;
-
-export type ActuatorTypeId = typeof ACTUATOR_TYPES[number]['id'];
-
-/** Returns true for analog actuator types (PWM, Servo, DAC, I2C PWM). */
+/** Returns true for analog output drivers. */
 export function isAnalogActuator(type: number): boolean { return [3, 4, 5, 6].includes(type); }
-/** Returns true for dual-pin actuators (Motorized Valve). */
-export function isDualPinActuator(type: number): boolean { return type === 1; }
 /** Returns true for bus-addressed actuators (I2C PWM). */
 export function isBusActuator(type: number): boolean { return type === 6; }
-/** Returns true for actuators that use a pulse parameter (Solenoid, Motorized Valve). */
-export function hasPulseParam(type: number): boolean { return [1, 2].includes(type); }
+/** Returns true for internal actuators (onboard LED, NeoPixel). */
+export function isInternalActuator(type: number): boolean { return type === 7 || type === 8; }
 
 // ─── Shared validation ───────────────────────────────────────────────────────
 

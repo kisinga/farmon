@@ -14,7 +14,7 @@ import {
   DriverDef,
   FirmwareCommand,
   PinCapabilitiesResponse,
-  SensorCatalog,
+  IOCatalog,
   HistoryResponse,
   TelemetryRecord,
   CommandRecord,
@@ -209,11 +209,11 @@ export class DeviceService {
     return this.http.get<FirmwareCommand[]>(`${API}/firmware-commands`);
   }
 
-  getIOCatalog(): Observable<SensorCatalog> {
-    return this.http.get<SensorCatalog>(`${API}/io-catalog`);
+  getIOCatalog(): Observable<IOCatalog> {
+    return this.http.get<IOCatalog>(`${API}/io-catalog`);
   }
 
-  getSensorCatalog(): Observable<SensorCatalog> {
+  getSensorCatalog(): Observable<IOCatalog> {
     return this.getIOCatalog();
   }
 

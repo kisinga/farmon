@@ -509,11 +509,10 @@ func derivePinMap(ac *AirConfig) ([]int, error) {
 		}
 	}
 
-	catInterfaces := catalog.Interfaces
 	sensorTypeToPinFn := make(map[uint8]uint8)
-	for _, iface := range catInterfaces {
-		if iface.PinFunction > 0 {
-			sensorTypeToPinFn[iface.SensorType] = iface.PinFunction
+	for _, d := range catalog.Drivers {
+		if d.IsInput() && len(d.PinFunctions) > 0 {
+			sensorTypeToPinFn[d.SensorType] = d.PinFunctions[0]
 		}
 	}
 

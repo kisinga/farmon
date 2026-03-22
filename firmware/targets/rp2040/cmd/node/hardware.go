@@ -79,11 +79,25 @@ func (s *solenoidMomentary) State() uint8 { return 0 }
 
 // --- initActuators: build actuators from ControlSlot config ---
 
+func createInternalActuator(ctrl settings.ControlSlot) actuator.Actuator {
+	switch ctrl.ActuatorType {
+	case settings.ActuatorInternalLED:
+		pin := machine.LED
+		pin.Configure(machine.PinConfig{Mode: machine.PinOutput})
+		return &simpleRelay{pin: pin}
+	}
+	return nil
+}
+
 func initActuators() [settings.MaxControls]actuator.Actuator {
 	var acts [settings.MaxControls]actuator.Actuator
 	for i := uint8(0); i < cfg.Core.ControlCount; i++ {
 		ctrl := cfg.Core.Controls[i]
 		if !ctrl.Enabled() {
+			continue
+		}
+		if ctrl.PinIndex == 255 {
+			acts[i] = createInternalActuator(ctrl)
 			continue
 		}
 		pin := boardPins[ctrl.PinIndex]

@@ -23,6 +23,7 @@ const (
 	cTokMinus
 	cTokStar
 	cTokSlash
+	cTokPercent
 	cTokLParen
 	cTokRParen
 	cTokComma
@@ -58,6 +59,9 @@ func cTokenize(expr string) ([]cToken, error) {
 			i++
 		case '/':
 			tokens = append(tokens, cToken{cTokSlash, "/", i})
+			i++
+		case '%':
+			tokens = append(tokens, cToken{cTokPercent, "%", i})
 			i++
 		case '(':
 			tokens = append(tokens, cToken{cTokLParen, "(", i})
@@ -191,7 +195,7 @@ func (p *cParser) term() (*cNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	for p.peek().typ == cTokStar || p.peek().typ == cTokSlash {
+	for p.peek().typ == cTokStar || p.peek().typ == cTokSlash || p.peek().typ == cTokPercent {
 		op := p.peek().val
 		p.pos++
 		right, err := p.factor()
@@ -336,6 +340,8 @@ func emitNode(buf []byte, n *cNode) ([]byte, error) {
 			buf = append(buf, byte(settings.OpMul))
 		case "/":
 			buf = append(buf, byte(settings.OpDiv))
+		case "%":
+			buf = append(buf, byte(settings.OpMod))
 		default:
 			return nil, fmt.Errorf("unknown operator '%s'", n.strVal)
 		}

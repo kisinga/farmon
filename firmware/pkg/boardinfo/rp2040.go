@@ -31,5 +31,8 @@ func init() {
 			{18, "GP18", "connector23pin", "bottom"},
 			{19, "GP19", "connector24pin", "bottom"},
 		},
+		InternalOutputs: []InternalOutput{
+			{ActuatorType: 7, Label: "Pico W LED", GPIONum: 0}, // CYW43 LED, special handling in firmware
+		},
 	})
 }

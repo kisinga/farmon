@@ -3,13 +3,13 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, DeviceField } from '../../../core/services/api.service';
 import { applyTrim } from '../../../core/constants/sensor-config';
 import {
-  SensorInterfaceInfo, MeasurementInfo, AirConfigValidationError, AirConfigSensor,
-  DriverDef, IOType, DriverStatus,
+  MeasurementInfo, AirConfigValidationError, AirConfigSensor,
+  DriverDef, IOType, DriverStatus, isInputDriver,
 } from '../../../core/services/api.types';
 import { IOSlotService } from '../../../core/services/io-slot.service';
 import { MAX_SENSOR_SLOTS, pinFunctionName, type PinFunctionName } from '../../../core/utils/firmware-constraints';
 import { ConfigContextService } from '../../../core/services/config-context.service';
-import { PinDropdownComponent } from '../pin-dropdown/pin-dropdown.component';
+import { PinRequirementsComponent } from '../pin-requirements/pin-requirements.component';
 
 interface CalibForm {
   mode: 'datasheet' | 'trim';
@@ -69,7 +69,7 @@ const IO_TYPE_LABELS: Record<string, string> = {
 @Component({
   selector: 'app-device-sensor-config',
   standalone: true,
-  imports: [FormsModule, PinDropdownComponent],
+  imports: [FormsModule, PinRequirementsComponent],
   template: `
     <div class="space-y-6">
 
@@ -94,72 +94,39 @@ const IO_TYPE_LABELS: Record<string, string> = {
       </div>
 
       @if (form().ioType) {
-        <!-- Tier 2: Driver selection (bus types) or sub-type (simple IO) -->
+        <!-- Tier 2: Driver selection -->
         <div class="card bg-base-200">
           <div class="card-body py-4 space-y-3">
-            <h3 class="card-title text-sm">
-              @if (needsDriverSelection()) { Driver } @else { Configuration }
-            </h3>
+            <h3 class="card-title text-sm">Driver</h3>
 
-            @if (needsDriverSelection()) {
-              <!-- Driver dropdown for bus-based IO -->
-              <label class="form-control w-full max-w-xs">
-                <div class="label py-1"><span class="label-text text-xs">Driver</span></div>
-                <select class="select select-bordered select-sm" [ngModel]="form().driverId"
-                  (ngModelChange)="onDriverChange($event)">
-                  <option value="">— select —</option>
-                  @for (d of filteredDrivers(); track d.id) {
-                    <option [value]="d.id" [disabled]="d.status === 'deferred'">
-                      {{ d.label }}{{ d.status === 'deferred' ? ' (coming soon)' : '' }}
-                    </option>
-                  }
-                </select>
-              </label>
-            } @else if (form().ioType === 'adc') {
-              <!-- Analog sub-type -->
-              <div class="flex gap-2">
-                <button class="btn btn-sm" [class.btn-primary]="form().driverId === 'adc_linear'"
-                  (click)="onDriverChange('adc_linear')">0-VREF Linear</button>
-                <button class="btn btn-sm" [class.btn-primary]="form().driverId === 'adc_4_20ma'"
-                  (click)="onDriverChange('adc_4_20ma')">4-20mA Loop</button>
-              </div>
-            }
+            <label class="form-control w-full max-w-xs">
+              <div class="label py-1"><span class="label-text text-xs">Driver</span></div>
+              <select class="select select-bordered select-sm" [ngModel]="form().driverId"
+                (ngModelChange)="onDriverChange($event)">
+                <option value="">— select —</option>
+                @for (d of filteredDrivers(); track d.id) {
+                  <option [value]="d.id" [disabled]="d.status === 'deferred'">
+                    {{ d.label }}{{ d.status === 'deferred' ? ' (coming soon)' : '' }}
+                  </option>
+                }
+              </select>
+            </label>
 
             <!-- Tier 3: Pin/Bus selection -->
             @if (selectedDriver()) {
-              @if (selectedDriver()!.bus_addressed) {
-                <!-- Bus selector -->
-                <label class="form-control w-32">
-                  <div class="label py-1"><span class="label-text text-xs">Bus</span></div>
-                  <select class="select select-bordered select-sm" [(ngModel)]="form().busIndex">
-                    <option [value]="0">Bus 0</option>
-                    <option [value]="1">Bus 1</option>
-                  </select>
-                </label>
-              } @else {
-                <!-- GPIO pin selector -->
-                <label class="form-control w-full max-w-xs">
-                  <div class="label py-1"><span class="label-text text-xs">Pin</span></div>
-                  <app-pin-dropdown
-                    [selectedPin]="form().pinIndex"
-                    [capability]="requiredPinCapability()"
-                    [usedPins]="usedPins()"
-                    [pinMap]="pinMap()"
-                    (pinSelected)="onPinSelected($event)"
-                  />
-                </label>
-              }
+              <app-pin-requirements
+                [driver]="selectedDriver()"
+                [pinMap]="pinMap()"
+                [usedPins]="usedPins()"
+                [selectedPins]="[form().pinIndex]"
+                [busIndex]="form().busIndex"
+                [busAddress]="form().i2cAddr"
+                (pinsChanged)="onPinSelected($any($event[0]))"
+                (busIndexChanged)="onBusIndexChange($event)"
+                (busAddressChanged)="onI2CAddrNum($event)"
+              />
 
               <!-- Tier 3b: Driver parameters -->
-
-              <!-- I2C address -->
-              @if (selectedDriver()!.default_i2c_addr) {
-                <label class="form-control w-40">
-                  <div class="label py-1"><span class="label-text text-xs">I2C Address (hex)</span></div>
-                  <input class="input input-bordered input-sm" [value]="'0x' + form().i2cAddr.toString(16)"
-                    (change)="onI2CAddrChange($event)" placeholder="0x76" />
-                </label>
-              }
 
               <!-- Pull mode (digital input only) -->
               @if (form().driverId === 'digital_in') {
@@ -362,7 +329,7 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
 
   // Catalog data
   readonly drivers = signal<DriverDef[]>([]);
-  readonly interfaces = signal<SensorInterfaceInfo[]>([]);
+  readonly interfaces = signal<unknown[]>([]); // legacy — unused, kept for catalog.interfaces compat
   readonly measurements = signal<MeasurementInfo[]>([]);
   private fieldCounts = signal<Record<string, number>>({});
 
@@ -378,34 +345,29 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
 
   isEditMode = computed(() => this.existingSlot() !== null);
 
-  // Distinct IO types from the driver catalog
+  // Input drivers only (exclude output-only drivers from sensor config)
+  private inputDrivers = computed(() => this.drivers().filter(isInputDriver));
+
+  // Distinct IO types from the input driver catalog
   ioTypes = computed<IOType[]>(() => {
     const types = new Set<IOType>();
-    for (const d of this.drivers()) {
+    for (const d of this.inputDrivers()) {
       types.add(d.io_type);
     }
-    // Desired order
     const order: IOType[] = ['i2c', 'adc', 'gpio', 'onewire', 'spi', 'uart', 'pulse'];
     return order.filter(t => types.has(t));
   });
 
-  // Drivers filtered by selected IO type
+  // Drivers filtered by selected IO type (input only)
   filteredDrivers = computed(() => {
     const ioType = this.form().ioType;
     if (!ioType) return [];
-    return this.drivers()
+    return this.inputDrivers()
       .filter(d => d.io_type === ioType)
       .sort((a, b) => {
-        // Ready first, then deferred
         if (a.status !== b.status) return a.status === 'ready' ? -1 : 1;
         return a.label.localeCompare(b.label);
       });
-  });
-
-  // Whether the current IO type needs an explicit driver dropdown
-  needsDriverSelection = computed(() => {
-    const ioType = this.form().ioType;
-    return ioType === 'i2c' || ioType === 'spi' || ioType === 'uart';
   });
 
   selectedDriver = computed(() => {
@@ -428,7 +390,6 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.api.getSensorCatalog().subscribe(catalog => {
-      this.interfaces.set(catalog.interfaces);
       this.measurements.set(catalog.measurements);
       this.fieldCounts.set(catalog.field_counts);
       this.drivers.set(catalog.drivers ?? []);
@@ -501,26 +462,12 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
 
   // ─── IO Type selection ─────────────────────────────────────
   selectIOType(ioType: IOType): void {
-    const drivers = this.drivers().filter(d => d.io_type === ioType && d.status === 'ready');
-
-    // For simple IO types, auto-select the only driver
-    let driverId = '';
-    if (ioType === 'gpio') driverId = 'digital_in';
-    else if (ioType === 'onewire') driverId = 'ds18b20';
-    else if (ioType === 'pulse') driverId = 'pulse_generic';
-    else if (ioType === 'adc') driverId = 'adc_linear'; // default sub-type
-
-    this.form.update(f => ({ ...defaultForm(), ioType, driverId }));
+    this.form.update(f => ({ ...defaultForm(), ioType, driverId: '' }));
     this.fieldSelection.set('');
     this.creatingNewField.set(false);
     this.ctx.setActivePinSelection(null);
     this.validationErrors.set([]);
     this.validationWarnings.set([]);
-
-    // If a driver was auto-selected, auto-fill its defaults
-    if (driverId) {
-      this.applyDriverDefaults(driverId);
-    }
   }
 
   // ─── Driver selection ──────────────────────────────────────
@@ -620,6 +567,14 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     }
   }
 
+  onI2CAddrNum(addr: number): void {
+    this.form.update(f => ({ ...f, i2cAddr: addr }));
+  }
+
+  onBusIndexChange(idx: number): void {
+    this.form.update(f => ({ ...f, busIndex: idx }));
+  }
+
   onFieldKeyChange(v: string): void { this.form.update(f => ({ ...f, fieldKey: v })); }
   onDisplayNameChange(v: string): void { this.form.update(f => ({ ...f, displayName: v })); }
   onUnitChange(v: string): void { this.form.update(f => ({ ...f, unit: v })); }
@@ -665,7 +620,7 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     const pinOrBus = driver.bus_addressed ? f.busIndex : f.pinIndex;
 
     const sensor = {
-      type: driver.sensor_type,
+      type: driver.sensor_type ?? 0,
       pin_index: pinOrBus,
       field_index: fieldIndex,
       flags: 0x01,
@@ -737,7 +692,7 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
 
     this.api.pushSensorSlot(this.eui(), {
       slot,
-      type: driver.sensor_type,
+      type: driver.sensor_type ?? 0,
       pin_index: pinOrBus,
       field_index: fieldIndex,
       flags,

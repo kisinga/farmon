@@ -12,13 +12,22 @@ type PinDef struct {
 	Edge        string `json:"edge"` // "top" | "bottom"
 }
 
+// InternalOutput describes an onboard peripheral that firmware can drive
+// without user pin selection (e.g., onboard LED, NeoPixel).
+type InternalOutput struct {
+	ActuatorType uint8  `json:"actuator_type"` // matches settings.ActuatorType
+	Label        string `json:"label"`
+	GPIONum      int    `json:"gpio_num"` // actual hardware GPIO number (not firmware index)
+}
+
 // BoardInfo describes a hardware board's visual and pin layout.
 type BoardInfo struct {
-	Model     string   `json:"model"`
-	Label     string   `json:"label"`
-	SvgUrl    string   `json:"svg_url"`
-	RotateDeg int      `json:"rotate_deg,omitempty"`
-	Pins      []PinDef `json:"pins"`
+	Model           string           `json:"model"`
+	Label           string           `json:"label"`
+	SvgUrl          string           `json:"svg_url"`
+	RotateDeg       int              `json:"rotate_deg,omitempty"`
+	Pins            []PinDef         `json:"pins"`
+	InternalOutputs []InternalOutput `json:"internal_outputs,omitempty"`
 }
 
 var registry = map[string]*BoardInfo{}

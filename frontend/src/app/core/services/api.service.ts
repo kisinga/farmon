@@ -54,9 +54,7 @@ export type {
   StateChangeRecord,
   PinInfo,
   PinCapabilitiesResponse,
-  ActuatorTypeId,
   IOCatalog,
-  OutputInterfaceInfo,
   ValidationError,
 } from './api.types';
 
@@ -64,11 +62,11 @@ export {
   TRANSPORT_META,
   getTransportMeta,
   HARDWARE_MODELS,
-  ACTUATOR_TYPES,
   isAnalogActuator,
-  isDualPinActuator,
   isBusActuator,
-  hasPulseParam,
+  isInternalActuator,
+  isInputDriver,
+  isOutputDriver,
 } from './api.types';
 
 @Injectable({ providedIn: 'root' })

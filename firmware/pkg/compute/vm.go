@@ -13,12 +13,14 @@ import (
 
 const maxStack = 8
 
-// State holds persistent per-field state for stateful opcodes (ACCUMULATE, WINDOW_AVG).
+// State holds persistent per-field state for stateful opcodes (ACCUMULATE, WINDOW_AVG, DELTA).
 type State struct {
 	Accum     float32
 	Window    [16]float32 // ring buffer for rolling average
 	WindowPos uint8
-	WindowLen uint8 // configured window size
+	WindowLen uint8       // configured window size
+	Prev      float32     // previous cycle value for OpDelta
+	PrevValid bool        // false on first cycle
 }
 
 // VM is the compute engine that evaluates bytecode programs against field values.
@@ -91,6 +93,13 @@ func (vm *VM) execute(code []byte, values []float32, state *State) float32 {
 			} else {
 				vm.push(0)
 			}
+		case settings.OpMod:
+			b, a := vm.pop(), vm.pop()
+			if b != 0 {
+				vm.push(a - float32(int32(a/b))*b)
+			} else {
+				vm.push(0)
+			}
 
 		case settings.OpCmpGT:
 			b, a := vm.pop(), vm.pop()
@@ -104,6 +113,15 @@ func (vm *VM) execute(code []byte, values []float32, state *State) float32 {
 		case settings.OpCmpLTE:
 			b, a := vm.pop(), vm.pop()
 			vm.push(boolF(a <= b))
+		case settings.OpSelect:
+			b := vm.pop()    // else value
+			a := vm.pop()    // then value
+			cond := vm.pop() // condition
+			if cond != 0 {
+				vm.push(a)
+			} else {
+				vm.push(b)
+			}
 
 		case settings.OpMin2:
 			b, a := vm.pop(), vm.pop()
@@ -175,6 +193,15 @@ func (vm *VM) execute(code []byte, values []float32, state *State) float32 {
 				v = hi
 			}
 			vm.push(v)
+		case settings.OpDelta:
+			v := vm.pop()
+			if state.PrevValid {
+				vm.push(v - state.Prev)
+			} else {
+				vm.push(0)
+			}
+			state.Prev = v
+			state.PrevValid = true
 
 		default:
 			// Unknown opcode — stop execution

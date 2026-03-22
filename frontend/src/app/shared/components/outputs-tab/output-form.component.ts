@@ -6,12 +6,12 @@ import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import {
   DeviceControl,
-  OutputInterfaceInfo,
+  DriverDef,
   isAnalogActuator,
+  BoardDefinition,
 } from '../../../core/services/api.types';
 import { ConfigContextService } from '../../../core/services/config-context.service';
-import { PinFunctionName } from '../../../core/utils/firmware-constraints';
-import { PinDropdownComponent } from '../pin-dropdown/pin-dropdown.component';
+import { PinRequirementsComponent } from '../pin-requirements/pin-requirements.component';
 
 /** Slugify a display name into a valid control key. */
 function toControlKey(name: string): string {
@@ -21,7 +21,7 @@ function toControlKey(name: string): string {
 @Component({
   selector: 'app-output-form',
   standalone: true,
-  imports: [FormsModule, CommonModule, PinDropdownComponent],
+  imports: [FormsModule, CommonModule, PinRequirementsComponent],
   template: `
     <form (ngSubmit)="onSubmit()" class="space-y-5">
 
@@ -34,80 +34,43 @@ function toControlKey(name: string): string {
           (ngModelChange)="onNameChange($event)" />
       </div>
 
-      <!-- Interface / Driver -->
+      <!-- Driver selection -->
       <div class="form-control">
         <label class="label text-xs py-0.5">Interface / Driver</label>
         <select class="select select-bordered select-sm w-full max-w-xs"
-          [(ngModel)]="draft.actuator_type" name="actuator_type"
-          (ngModelChange)="onInterfaceChange($event)">
-          @for (iface of outputInterfaces(); track iface.id) {
-            <option [ngValue]="iface.actuator_type">{{ iface.label }}</option>
+          [ngModel]="draft.actuator_type" name="driver"
+          (ngModelChange)="onDriverChange($event)">
+          @for (d of outputDrivers(); track d.id) {
+            <option [ngValue]="d.actuator_type">{{ d.label }}</option>
           }
         </select>
-        @if (selectedInterface()) {
-          <label class="label text-xs py-0.5 text-base-content/50">{{ selectedInterface()!.hint }}</label>
+        @if (selectedDriver()) {
+          <label class="label text-xs py-0.5 text-base-content/50">{{ selectedDriver()!.hint }}</label>
         }
       </div>
 
-      <!-- GPIO Pin (non-bus actuators) -->
-      @if (!selectedInterface()?.bus_addressed) {
-        <div class="form-control">
-          <label class="label text-xs py-0.5">GPIO Pin</label>
-          <app-pin-dropdown
-            [selectedPin]="draft.pin_index"
-            [capability]="requiredCapability()"
-            [usedPins]="usedPins()"
-            [excludePins]="secondaryPinExclude()"
-            [pinMap]="pinMap()"
-            (pinSelected)="onPrimaryPinChange($event)"
-          />
-        </div>
-
-        <!-- Second GPIO pin (motorized valve: open/close direction) -->
-        @if (selectedInterface()?.dual_pin) {
-          <div class="form-control">
-            <label class="label text-xs py-0.5">
-              Direction Pin <span class="text-base-content/40">(close signal)</span>
-            </label>
-            <app-pin-dropdown
-              [selectedPin]="draft.pin2_index"
-              capability="relay"
-              [usedPins]="usedPins()"
-              [excludePins]="primaryPinExclude()"
-              [pinMap]="pinMap()"
-              (pinSelected)="onSecondaryPinChange($event)"
-            />
-          </div>
-        }
-      }
-
-      <!-- Bus actuator (I2C PWM) -->
-      @if (selectedInterface()?.bus_addressed) {
-        <div class="flex flex-wrap gap-4">
-          <div class="form-control">
-            <label class="label text-xs py-0.5">Bus index</label>
-            <input type="number" class="input input-bordered input-sm w-24"
-              [(ngModel)]="draft.bus_index" name="bus_index" min="0" max="3" />
-          </div>
-          <div class="form-control">
-            <label class="label text-xs py-0.5">I2C address (hex)</label>
-            <input type="number" class="input input-bordered input-sm w-28"
-              [(ngModel)]="draft.bus_address" name="bus_address" min="0" max="127" />
-          </div>
-          <div class="form-control">
-            <label class="label text-xs py-0.5">Channel</label>
-            <input type="number" class="input input-bordered input-sm w-20"
-              [(ngModel)]="draft.bus_channel" name="bus_channel" min="0" max="15" />
-          </div>
-        </div>
-      }
+      <!-- Pin requirements (GPIO / Bus / Internal) -->
+      <app-pin-requirements
+        [driver]="selectedDriver()"
+        [pinMap]="pinMap()"
+        [usedPins]="usedPins()"
+        [selectedPins]="draftPins()"
+        [busIndex]="draft.bus_index ?? 0"
+        [busAddress]="draft.bus_address ?? 64"
+        [busChannel]="draft.bus_channel ?? 0"
+        [showBusChannel]="true"
+        (pinsChanged)="onPinsChanged($event)"
+        (busIndexChanged)="draft.bus_index = $event"
+        (busAddressChanged)="draft.bus_address = $event"
+        (busChannelChanged)="draft.bus_channel = $event"
+      />
 
       <!-- Pulse duration (solenoid / motorized valve) -->
-      @if (selectedInterface()?.has_pulse) {
+      @if (selectedDriver()?.has_pulse) {
         <div class="form-control">
           <label class="label text-xs py-0.5">
             Pulse duration
-            <span class="label-text-alt text-base-content/40">×100 ms — how long the pin is energized per command</span>
+            <span class="label-text-alt text-base-content/40">x100 ms -- how long the pin is energized per command</span>
           </label>
           <input type="number" class="input input-bordered input-sm w-32"
             [(ngModel)]="draft.pulse_x100ms" name="pulse_x100ms" min="1" />
@@ -115,7 +78,7 @@ function toControlKey(name: string): string {
       }
 
       <!-- Analog range (PWM / Servo / DAC) -->
-      @if (selectedInterface()?.analog) {
+      @if (selectedDriver()?.analog) {
         <div class="flex flex-wrap gap-4">
           <div class="form-control">
             <label class="label text-xs py-0.5">Min value</label>
@@ -152,7 +115,7 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
   existing = input<DeviceControl | undefined>(undefined);
   pinMap = input<number[]>([]);
   usedPins = input<Set<number>>(new Set());
-  outputInterfaces = input<OutputInterfaceInfo[]>([]);
+  outputDrivers = input<DriverDef[]>([]);
 
   save = output<Partial<DeviceControl>>();
   cancel = output<void>();
@@ -162,34 +125,26 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
 
   isEdit = computed(() => !!this.existing()?.id);
 
-  selectedInterface = computed<OutputInterfaceInfo | null>(() => {
+  selectedDriver = computed<DriverDef | null>(() => {
     const type = this.draft.actuator_type ?? 0;
-    return this.outputInterfaces().find(i => i.actuator_type === type) ?? null;
+    return this.outputDrivers().find(d => d.actuator_type === type) ?? null;
   });
 
-  requiredCapability = computed<PinFunctionName>(() => {
-    switch (this.draft.actuator_type ?? 0) {
-      case 3:
-      case 4:  return 'pwm';
-      case 5:  return 'dac';
-      default: return 'relay';
-    }
+  /** Expose current pin selections as array for PinRequirementsComponent. */
+  draftPins = computed(() => {
+    const pins: (number | undefined)[] = [];
+    if (this.draft.pin_index != null) pins.push(this.draft.pin_index);
+    else pins.push(undefined);
+    if (this.draft.pin2_index != null && this.draft.pin2_index !== 255) pins.push(this.draft.pin2_index);
+    return pins;
   });
-
-  secondaryPinExclude = computed(() =>
-    this.draft.pin2_index != null ? [this.draft.pin2_index] : []
-  );
-
-  primaryPinExclude = computed(() =>
-    this.draft.pin_index != null ? [this.draft.pin_index] : []
-  );
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['existing']) {
       const ex = this.existing();
       this.draft = ex ? { ...ex } : this.emptyDraft();
       this.validationError.set(null);
-      if (ex?.pin_index != null) {
+      if (ex?.pin_index != null && ex.pin_index !== 255) {
         this.ctx.setActivePinSelection(ex.pin_index);
       }
     }
@@ -199,13 +154,12 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
     this.ctx.setActivePinSelection(null);
   }
 
-  onPrimaryPinChange(pin: number): void {
-    this.draft = { ...this.draft, pin_index: pin };
-    this.ctx.setActivePinSelection(pin);
-  }
-
-  onSecondaryPinChange(pin: number): void {
-    this.draft = { ...this.draft, pin2_index: pin };
+  onPinsChanged(pins: (number | undefined)[]): void {
+    this.draft = {
+      ...this.draft,
+      pin_index: pins[0],
+      pin2_index: pins.length > 1 ? pins[1] : undefined,
+    };
   }
 
   onNameChange(name: string): void {
@@ -214,10 +168,11 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
     }
   }
 
-  onInterfaceChange(actuatorType: number): void {
+  onDriverChange(actuatorType: number): void {
+    const driver = this.outputDrivers().find(d => d.actuator_type === actuatorType);
     this.draft.actuator_type = actuatorType;
-    this.draft.control_type = isAnalogActuator(actuatorType) ? 'analog' : 'binary';
-    this.draft.pin_index = undefined;
+    this.draft.control_type = driver?.analog ? 'analog' : 'binary';
+    this.draft.pin_index = driver?.io_type === 'internal' ? 255 : undefined;
     this.draft.pin2_index = undefined;
     this.ctx.setActivePinSelection(null);
   }
@@ -233,18 +188,27 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
     this.validationError.set(null);
     this.ctx.setActivePinSelection(null);
 
-    const iface = this.selectedInterface();
+    const driver = this.selectedDriver();
     this.save.emit({
       ...this.draft,
-      states_json: iface?.analog ? undefined : ['off', 'on'],
+      states_json: driver?.analog ? undefined : ['off', 'on'],
     });
   }
 
   private validate(): string | null {
-    const iface = this.selectedInterface();
+    const driver = this.selectedDriver();
     if (!this.draft.display_name?.trim()) return 'Name is required.';
-    if (!iface?.bus_addressed && this.draft.pin_index == null) return 'Select a GPIO pin.';
-    if (iface?.dual_pin && this.draft.pin2_index == null) return 'Select the direction pin.';
+    if (driver?.io_type === 'internal') return null; // no pin needed
+    if (driver?.bus_addressed) return null; // bus fields have defaults
+    // Check all required pins are selected
+    const requiredCount = driver?.pin_functions?.length ?? 1;
+    for (let i = 0; i < requiredCount; i++) {
+      const pins = [this.draft.pin_index, this.draft.pin2_index];
+      if (pins[i] == null) {
+        const label = driver?.pin_labels?.[i] ?? `Pin ${i + 1}`;
+        return `Select ${label}.`;
+      }
+    }
     return null;
   }
 

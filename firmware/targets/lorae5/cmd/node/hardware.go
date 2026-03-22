@@ -86,6 +86,9 @@ func initActuators() [settings.MaxControls]actuator.Actuator {
 		if !ctrl.Enabled() {
 			continue
 		}
+		if ctrl.PinIndex == 255 {
+			continue // no internal outputs on LoRa-E5
+		}
 		pin := boardPins[ctrl.PinIndex]
 		pin.Configure(machine.PinConfig{Mode: machine.PinOutput})
 		if ctrl.ActiveLow() {

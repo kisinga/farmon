@@ -33,5 +33,8 @@ func init() {
 			{18, "GPIO47", "connector12pin", "top"},
 			{19, "GPIO48", "connector13pin", "top"},
 		},
+		InternalOutputs: []InternalOutput{
+			{ActuatorType: 7, Label: "Onboard LED", GPIONum: 35},
+		},
 	})
 }

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 
 import { ConfigContextService } from '../../../core/services/config-context.service';
 import { ApiService } from '../../../core/services/api.service';
-import { DeviceControl, OutputInterfaceInfo } from '../../../core/services/api.types';
+import { DeviceControl, DriverDef, isOutputDriver } from '../../../core/services/api.types';
 import { SyncStatusBadgeComponent } from '../sync-status-badge/sync-status-badge.component';
 import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.component';
 import { OutputFormComponent } from './output-form.component';
@@ -53,7 +53,7 @@ import { OutputFormComponent } from './output-form.component';
             [existing]="editingControl() ?? undefined"
             [pinMap]="ctx.pinMapArray()"
             [usedPins]="usedPinsForForm()"
-            [outputInterfaces]="outputInterfaces()"
+            [outputDrivers]="outputDrivers()"
             (save)="onSave($event)"
             (cancel)="cancelForm()"
           />
@@ -120,8 +120,8 @@ export class OutputsTabComponent {
   editingControl = signal<DeviceControl | null>(null);
   deletingControl = signal<DeviceControl | null>(null);
 
-  /** Output interface catalog, loaded from firmware. */
-  outputInterfaces = signal<OutputInterfaceInfo[]>([]);
+  /** Output drivers from unified catalog. */
+  outputDrivers = signal<DriverDef[]>([]);
 
   usedPinsForForm = computed<Set<number>>(() => {
     const all = this.ctx.allUsedPins();
@@ -134,13 +134,13 @@ export class OutputsTabComponent {
   });
 
   actuatorLabel(type?: number): string {
-    const iface = this.outputInterfaces().find(i => i.actuator_type === (type ?? 0));
-    return iface?.label ?? 'Unknown';
+    const driver = this.outputDrivers().find(d => d.actuator_type === (type ?? 0));
+    return driver?.label ?? 'Unknown';
   }
 
   constructor() {
     this.api.getIOCatalog().subscribe(cat => {
-      this.outputInterfaces.set(cat.output_interfaces ?? []);
+      this.outputDrivers.set((cat.drivers ?? []).filter(isOutputDriver));
     });
   }
 
