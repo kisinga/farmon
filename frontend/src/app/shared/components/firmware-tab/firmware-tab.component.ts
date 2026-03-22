@@ -102,22 +102,32 @@ import { ApiService } from '../../../core/services/api.service';
           @if (buildStatus() === 'success') {
             <div class="space-y-2">
               <a [href]="downloadUrl()" class="btn btn-sm btn-outline" download>
-                Download {{ hwModel() === 'lorae5' ? '.elf' : '.uf2' }}
+                Download {{ fwExtension() }}
               </a>
 
               <div class="divider text-xs">Flash</div>
-              @if (hwModel() === 'rp2040' || !hwModel()) {
-                <ol class="text-xs text-base-content/70 space-y-1 list-decimal list-inside">
-                  <li>Hold BOOTSEL button on Pico W</li>
-                  <li>Connect USB cable while holding button</li>
-                  <li>Release button — drive "RPI-RP2" appears</li>
-                  <li>Run this command:</li>
-                </ol>
-              } @else {
-                <ol class="text-xs text-base-content/70 space-y-1 list-decimal list-inside">
-                  <li>Connect ST-LINK to LoRa-E5 SWD pins</li>
-                  <li>Run this command:</li>
-                </ol>
+              @switch (hwModel()) {
+                @case ('lorae5') {
+                  <ol class="text-xs text-base-content/70 space-y-1 list-decimal list-inside">
+                    <li>Connect ST-LINK to LoRa-E5 SWD pins</li>
+                    <li>Run this command:</li>
+                  </ol>
+                }
+                @case ('heltec_v3') {
+                  <ol class="text-xs text-base-content/70 space-y-1 list-decimal list-inside">
+                    <li>Connect USB cable to Heltec V3</li>
+                    <li>Hold BOOT button, press RST, release BOOT</li>
+                    <li>Run this command:</li>
+                  </ol>
+                }
+                @default {
+                  <ol class="text-xs text-base-content/70 space-y-1 list-decimal list-inside">
+                    <li>Hold BOOTSEL button on Pico W</li>
+                    <li>Connect USB cable while holding button</li>
+                    <li>Release button — drive "RPI-RP2" appears</li>
+                    <li>Run this command:</li>
+                  </ol>
+                }
               }
               <div class="relative bg-base-300 rounded-lg p-2">
                 <code class="text-xs font-mono break-all">{{ flashCommand() }}</code>
@@ -187,7 +197,12 @@ export class FirmwareTabComponent implements OnInit {
       this.backendURL = (status['backend_url'] as string) ?? '';
 
       const model = this.hwModel();
-      this.hwLabel.set(model === 'lorae5' ? 'STM32WL (Seeed LoRa-E5)' : 'RP2040 (Raspberry Pi Pico W)');
+      const labels: Record<string, string> = {
+        lorae5: 'STM32WL (Seeed LoRa-E5)',
+        heltec_v3: 'ESP32-S3 (Heltec WiFi LoRa 32 V3)',
+        rp2040: 'RP2040 (Raspberry Pi Pico W)',
+      };
+      this.hwLabel.set(labels[model] ?? model);
     });
   }
 
@@ -233,12 +248,24 @@ export class FirmwareTabComponent implements OnInit {
     });
   }
 
+  fwExtension(): string {
+    switch (this.hwModel()) {
+      case 'lorae5': return '.elf';
+      case 'heltec_v3': return '.bin';
+      default: return '.uf2';
+    }
+  }
+
   flashCommand(): string {
     const url = this.downloadUrl();
-    if (this.hwModel() === 'lorae5') {
-      return `curl -sL ${url} -o firmware.elf && tinygo flash -target=lorae5 firmware.elf`;
+    switch (this.hwModel()) {
+      case 'lorae5':
+        return `curl -sL ${url} -o firmware.elf && tinygo flash -target=lorae5 firmware.elf`;
+      case 'heltec_v3':
+        return `curl -sL ${url} -o firmware.bin && esptool.py --chip esp32s3 write_flash 0x0 firmware.bin`;
+      default:
+        return `curl -sL ${url} -o fw.uf2 && cp fw.uf2 /media/$USER/RPI-RP2/`;
     }
-    return `curl -sL ${url} -o fw.uf2 && cp fw.uf2 /media/$USER/RPI-RP2/`;
   }
 
   copyFlashCmd(): void {

@@ -244,11 +244,7 @@ func (n *Node) handleDownlink(rx transport.Packet) {
 	case protocol.FPortCmdReset:
 		n.txCount = 0
 		n.rxCount = 0
-		for _, s := range n.cfg.Sensors {
-			if fs, ok := s.(*sensors.FlowSensor); ok {
-				fs.SetTotalPulses(0)
-			}
-		}
+		resetFlowCounters(n.cfg.Sensors)
 		n.sendAck(rx.Port)
 
 	case protocol.FPortCmdInterval:

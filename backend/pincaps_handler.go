@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/kisinga/farmon/firmware/pkg/boardinfo"
 	"github.com/kisinga/farmon/firmware/pkg/pincaps"
 	"github.com/kisinga/farmon/firmware/pkg/settings"
 	"github.com/pocketbase/dbx"
@@ -54,9 +55,12 @@ func pinCapsHandler(app core.App) func(*core.RequestEvent) error {
 
 		table := pincaps.ForMCU(mcu)
 
-		labelPrefix := "GP"
-		if mcu == "lorae5" || mcu == "stm32wl" {
-			labelPrefix = "D"
+		// Build label lookup from boardinfo (single source of truth).
+		labelMap := map[int]string{}
+		if bi := boardinfo.ForModel(mcu); bi != nil {
+			for _, p := range bi.Pins {
+				labelMap[p.FirmwareIdx] = p.GPIOLabel
+			}
 		}
 
 		pins := make([]pinInfoResponse, settings.MaxPins)
@@ -67,10 +71,14 @@ func pinCapsHandler(app core.App) func(*core.RequestEvent) error {
 					fns = append(fns, int(fn))
 				}
 			}
+			label := labelMap[idx]
+			if label == "" {
+				label = fmt.Sprintf("D%d", idx)
+			}
 			pins[idx] = pinInfoResponse{
 				Pin:       idx,
 				Functions: fns,
-				Label:     fmt.Sprintf("%s%d", labelPrefix, idx),
+				Label:     label,
 			}
 		}
 

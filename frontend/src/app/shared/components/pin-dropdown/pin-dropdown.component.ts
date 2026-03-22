@@ -2,7 +2,6 @@ import { Component, input, output, computed, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ConfigContextService } from '../../../core/services/config-context.service';
 import { pinFunctionName, PinFunctionName, MAX_PIN_INDEX } from '../../../core/utils/firmware-constraints';
-import { BOARD_DEFINITIONS } from '../../../core/constants/board-definitions';
 
 /**
  * Shared GPIO pin dropdown used by both Input and Output forms.
@@ -47,18 +46,17 @@ export class PinDropdownComponent {
     const used = this.usedPins();
     const required = this.capability();
     const excluded = new Set(this.excludePins());
-    const model = this.ctx.device()?.hardware_model;
-    const boardDef = model ? BOARD_DEFINITIONS[model] : undefined;
+    const boardDef = this.ctx.boardDef();
 
     if (map.length > 0) {
       // AirConfig mode: filter by capability
       return map
         .map((code, i) => {
-          const boardPin = boardDef?.pins.find(p => p.firmwarePin === i);
+          const boardPin = boardDef?.pins.find(p => p.firmware_idx === i);
           return {
             index: i,
             capName: pinFunctionName(code),
-            label: boardPin?.label ?? `Pin ${i} (${pinFunctionName(code)})`,
+            label: boardPin?.gpio_label ?? `Pin ${i} (${pinFunctionName(code)})`,
           };
         })
         .filter(p => p.capName === required && !used.has(p.index) && !excluded.has(p.index));
@@ -67,8 +65,8 @@ export class PinDropdownComponent {
     // No pinMap: show all board pins (or generic 0-19), exclude only used pins
     if (boardDef) {
       return boardDef.pins
-        .filter(p => !used.has(p.firmwarePin) && !excluded.has(p.firmwarePin))
-        .map(p => ({ index: p.firmwarePin, capName: 'unused' as PinFunctionName, label: p.label }));
+        .filter(p => !used.has(p.firmware_idx) && !excluded.has(p.firmware_idx))
+        .map(p => ({ index: p.firmware_idx, capName: 'unused' as PinFunctionName, label: p.gpio_label }));
     }
 
     // Last resort: generic 0-19

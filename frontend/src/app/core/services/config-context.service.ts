@@ -4,6 +4,7 @@ import { catchError } from 'rxjs/operators';
 
 import { ApiService } from './api.service';
 import {
+  BoardDefinition,
   Device,
   DeviceControl,
   DeviceDecodeRule,
@@ -69,6 +70,7 @@ export class ConfigContextService {
   private _decodeRules = signal<DeviceDecodeRule[]>([]);
   private _rules = signal<DeviceRuleRecord[]>([]);   // for pre-delete reference checks
   private _pinCaps = signal<PinCapabilitiesResponse | null>(null);
+  private _boardDef = signal<BoardDefinition | null>(null);
   private _deviceSpec = signal<DeviceSpec | null>(null);
   private _loading = signal(false);
   private _saving = signal(false);
@@ -95,6 +97,7 @@ export class ConfigContextService {
   decodeRules = this._decodeRules.asReadonly();
   rules = this._rules.asReadonly();
   pinCaps = this._pinCaps.asReadonly();
+  boardDef = this._boardDef.asReadonly();
   deviceSpec = this._deviceSpec.asReadonly();
   loading = this._loading.asReadonly();
   saving = this._saving.asReadonly();
@@ -252,6 +255,16 @@ export class ConfigContextService {
         this._pinCaps.set(pinCaps);
         this._deviceSpec.set(deviceSpec);
         this._loading.set(false);
+
+        // Fetch board info after device is loaded (needs hardware_model)
+        const model = device?.hardware_model;
+        if (model) {
+          this.api.getBoardInfo(model).pipe(catchError(() => of(null))).subscribe(
+            boardDef => this._boardDef.set(boardDef),
+          );
+        } else {
+          this._boardDef.set(null);
+        }
       },
       error: (err) => {
         this._error.set(err?.message ?? 'Failed to load device configuration');
@@ -425,6 +438,7 @@ export class ConfigContextService {
     this._decodeRules.set([]);
     this._rules.set([]);
     this._pinCaps.set(null);
+    this._boardDef.set(null);
     this._deviceSpec.set(null);
     this._loading.set(false);
     this._saving.set(false);

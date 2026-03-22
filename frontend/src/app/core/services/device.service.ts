@@ -4,6 +4,7 @@ import { Observable, from, map } from 'rxjs';
 import { PocketBaseService } from './pocketbase.service';
 import {
   BackendInfo,
+  BoardDefinition,
   Device,
   DeviceControl,
   DeviceDecodeRule,
@@ -121,6 +122,10 @@ export class DeviceService {
 
   getPinCapabilities(eui: string): Observable<PinCapabilitiesResponse> {
     return this.http.get<PinCapabilitiesResponse>(`${API}/pin-capabilities?eui=${eui}`);
+  }
+
+  getBoardInfo(model: string): Observable<BoardDefinition> {
+    return this.http.get<BoardDefinition>(`${API}/board-info?model=${model}`);
   }
 
   probeField(eui: string, fieldKey: string): Observable<{ ok: boolean }> {

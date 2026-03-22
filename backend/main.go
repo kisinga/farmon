@@ -144,6 +144,9 @@ func main() {
 		// Pin capability table (read-only, sourced from firmware pincaps package)
 		se.Router.GET("/api/farmon/pin-capabilities", pinCapsHandler(app))
 
+		// Board info (pin definitions, SVG layout — single source of truth)
+		se.Router.GET("/api/farmon/board-info", boardInfoHandler())
+
 		// Backend compatibility declaration
 		se.Router.GET("/api/farmon/backend-info", getBackendInfoHandler(app))
 		se.Router.PATCH("/api/farmon/backend-info", patchBackendInfoHandler(app))

@@ -40,7 +40,7 @@ export interface HardwareModelInfo {
 export const HARDWARE_MODELS: HardwareModelInfo[] = [
   { id: 'rp2040',    label: 'RP2040',      subLabel: 'Raspberry Pi Pico W',         transports: ['wifi'] },
   { id: 'lorae5',    label: 'STM32WL',     subLabel: 'Seeed LoRa-E5',               transports: ['lorawan'] },
-  { id: 'heltec_v3', label: 'ESP32-S3',    subLabel: 'Heltec WiFi LoRa 32 V3 ⚗️',  transports: ['wifi', 'lorawan'] },
+  { id: 'heltec_v3', label: 'ESP32-S3',    subLabel: 'Heltec WiFi LoRa 32 V3 ⚗️',  transports: ['lorawan'] },
 ];
 
 // ─── Device types ────────────────────────────────────────────────────────────
@@ -561,6 +561,25 @@ export interface AirConfigValidationError {
 export interface AirConfigValidationResult {
   errors: AirConfigValidationError[];
   warnings: AirConfigValidationError[];
+}
+
+// ─── Board info (pin definitions from backend boardinfo package) ─────────────
+
+export type PinEdge = 'top' | 'bottom' | 'left' | 'right';
+
+export interface BoardPinDef {
+  firmware_idx: number;
+  gpio_label: string;
+  connector_id: string;
+  edge: PinEdge;
+}
+
+export interface BoardDefinition {
+  model: string;
+  label: string;
+  svg_url: string;
+  rotate_deg?: number;
+  pins: BoardPinDef[];
 }
 
 // ─── Pin capabilities ────────────────────────────────────────────────────────

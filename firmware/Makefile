@@ -50,7 +50,8 @@ rp2040-provision:
 # ─── Heltec WiFi LoRa 32 V3 (ESP32-S3) — experimental ──────────────────────
 
 HELTEC_ENTRY  = ./targets/heltec_v3/cmd/node
-HELTEC_FLAGS  = -target=esp32s3 -opt=z -size=short -tags=farmon_all
+HELTEC_TAGS  ?=
+HELTEC_FLAGS  = -target=esp32s3 -opt=z -size=short $(if $(HELTEC_TAGS),-tags=$(HELTEC_TAGS),)
 
 heltec:
 	tinygo build $(HELTEC_FLAGS) -o build/heltec_v3.bin $(HELTEC_ENTRY)

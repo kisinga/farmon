@@ -117,13 +117,10 @@ var ESP32S3Caps = func() PinCapsTable {
 	for i := range t {
 		t[i] = base
 	}
-	// ADC2 channels mapped to firmware indices 0–7 (GPIO1-7, GPIO19)
-	for i := 0; i < 8; i++ {
+	// ADC1 channels: firmware indices 0–6 → GPIO1-7 (ADC1_CH0-CH6)
+	for i := 0; i < 7; i++ {
 		t[i] |= CapADC
 	}
-	// ADC1 channels mapped to firmware indices 8–9 (GPIO20, GPIO21)
-	t[8] |= CapADC
-	t[9] |= CapADC
 	// No DAC on ESP32-S3
 	return t
 }()

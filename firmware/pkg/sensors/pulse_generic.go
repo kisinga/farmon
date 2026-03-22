@@ -1,3 +1,5 @@
+//go:build !esp32s3
+
 package sensors
 
 import "machine"

@@ -2,22 +2,20 @@ package main
 
 import (
 	"encoding/binary"
-
 	"github.com/kisinga/farmon/firmware/pkg/settings"
-	esptransport "github.com/kisinga/farmon/firmware/targets/heltec_v3/pkg/transport"
 )
 
-// Binary codec for ESP32-S3 flash storage (v1).
-// Same layout as RP2040 v4 — shared CoreSettings + WiFiSettings.
+// Binary codec for ESP32-S3 / Heltec V3 flash storage.
+// Same layout as LoRa-E5: CoreSettings + LoRaWANSettings.
 
-type esp32s3Config struct {
-	Core settings.CoreSettings
-	WiFi esptransport.WiFiSettings
+type heltecConfig struct {
+	Core    settings.CoreSettings
+	LoRaWAN settings.LoRaWANSettings
 }
 
 const (
-	esp32s3Magic   = uint16(0xFB13)
-	esp32s3Version = uint8(1)
+	heltecMagic   = uint16(0xFB13)
+	heltecVersion = uint8(1)
 )
 
 const (
@@ -28,19 +26,17 @@ const (
 	offInterval     = offRules + 1 + settings.MaxRules*settings.RuleSize
 	offEvalInterval = offInterval + 2
 	offTransfer     = offEvalInterval + 2
-	offWiFi         = offTransfer + settings.TransferConfigSize
-	offConfigHash   = offWiFi + esptransport.WiFiSettingsSize
+	offLoRaWAN      = offTransfer + settings.TransferConfigSize
+	offConfigHash   = offLoRaWAN + 30
 )
 
-func encodeSettings(s esp32s3Config) []byte {
+func encodeSettings(s *heltecConfig) []byte {
 	buf := make([]byte, settings.SettingsSize)
-	binary.LittleEndian.PutUint16(buf[0:], esp32s3Magic)
-	buf[2] = esp32s3Version
-
+	binary.LittleEndian.PutUint16(buf[0:], heltecMagic)
+	buf[2] = heltecVersion
 	for i := 0; i < settings.MaxPins; i++ {
 		buf[offPinMap+i] = uint8(s.Core.PinMap[i])
 	}
-
 	off := offSensors
 	buf[off] = s.Core.SensorCount
 	off++
@@ -53,7 +49,6 @@ func encodeSettings(s esp32s3Config) []byte {
 		binary.LittleEndian.PutUint16(buf[off+6:], s.Core.Sensors[i].Param2)
 		off += settings.SensorSlotSize
 	}
-
 	buf[off] = s.Core.ControlCount
 	off++
 	for i := 0; i < settings.MaxControls; i++ {
@@ -65,114 +60,102 @@ func encodeSettings(s esp32s3Config) []byte {
 		buf[off+5] = s.Core.Controls[i].PulseDurX100ms
 		off += settings.ControlSlotSize
 	}
-
 	buf[off] = s.Core.RuleCount
 	off++
 	for i := 0; i < settings.MaxRules; i++ {
 		s.Core.Rules[i].ToBinary(buf[off:])
 		off += settings.RuleSize
 	}
-
 	binary.LittleEndian.PutUint16(buf[offInterval:], s.Core.TxIntervalSec)
 	binary.LittleEndian.PutUint16(buf[offEvalInterval:], s.Core.EvalIntervalSec)
 	writeTransfer(buf, offTransfer, &s.Core.Transfer)
-	wifiBytes := esptransport.EncodeWiFiSettings(s.WiFi)
-	copy(buf[offWiFi:], wifiBytes)
+	writeLoRaWAN(buf, offLoRaWAN, &s.LoRaWAN)
 	binary.LittleEndian.PutUint32(buf[offConfigHash:], s.Core.ConfigHash)
-
 	return buf
 }
 
-func decodeSettings(buf []byte) esp32s3Config {
+func decodeSettings(buf []byte) {
 	if len(buf) < offConfigHash+4 {
-		return baseConfig()
+		initDefaults()
+		return
 	}
 	magic := binary.LittleEndian.Uint16(buf[0:])
-	if magic != esp32s3Magic || buf[2] != esp32s3Version {
-		return baseConfig()
+	if magic != heltecMagic || buf[2] != heltecVersion {
+		initDefaults()
+		return
 	}
-
-	var c esp32s3Config
-
 	for i := 0; i < settings.MaxPins; i++ {
-		c.Core.PinMap[i] = settings.PinFunction(buf[offPinMap+i])
+		cfg.Core.PinMap[i] = settings.PinFunction(buf[offPinMap+i])
 	}
-
 	off := offSensors
-	c.Core.SensorCount = buf[off]
+	cfg.Core.SensorCount = buf[off]
 	off++
 	for i := 0; i < settings.MaxSensors; i++ {
-		c.Core.Sensors[i].Type = settings.SensorType(buf[off])
-		c.Core.Sensors[i].PinIndex = buf[off+1]
-		c.Core.Sensors[i].FieldIndex = buf[off+2]
-		c.Core.Sensors[i].Flags = buf[off+3]
-		c.Core.Sensors[i].Param1 = binary.LittleEndian.Uint16(buf[off+4:])
-		c.Core.Sensors[i].Param2 = binary.LittleEndian.Uint16(buf[off+6:])
+		cfg.Core.Sensors[i].Type = settings.SensorType(buf[off])
+		cfg.Core.Sensors[i].PinIndex = buf[off+1]
+		cfg.Core.Sensors[i].FieldIndex = buf[off+2]
+		cfg.Core.Sensors[i].Flags = buf[off+3]
+		cfg.Core.Sensors[i].Param1 = binary.LittleEndian.Uint16(buf[off+4:])
+		cfg.Core.Sensors[i].Param2 = binary.LittleEndian.Uint16(buf[off+6:])
 		off += settings.SensorSlotSize
 	}
-
 	off = offControls
-	c.Core.ControlCount = buf[off]
+	cfg.Core.ControlCount = buf[off]
 	off++
 	for i := 0; i < settings.MaxControls; i++ {
-		c.Core.Controls[i].PinIndex = buf[off]
-		c.Core.Controls[i].StateCount = buf[off+1]
-		c.Core.Controls[i].Flags = buf[off+2]
-		c.Core.Controls[i].ActuatorType = settings.ActuatorType(buf[off+3])
-		c.Core.Controls[i].Pin2Index = buf[off+4]
-		c.Core.Controls[i].PulseDurX100ms = buf[off+5]
+		cfg.Core.Controls[i].PinIndex = buf[off]
+		cfg.Core.Controls[i].StateCount = buf[off+1]
+		cfg.Core.Controls[i].Flags = buf[off+2]
+		cfg.Core.Controls[i].ActuatorType = settings.ActuatorType(buf[off+3])
+		cfg.Core.Controls[i].Pin2Index = buf[off+4]
+		cfg.Core.Controls[i].PulseDurX100ms = buf[off+5]
 		off += settings.ControlSlotSize
 	}
-
 	off = offRules
-	c.Core.RuleCount = buf[off]
+	cfg.Core.RuleCount = buf[off]
 	off++
 	for i := 0; i < settings.MaxRules; i++ {
-		c.Core.Rules[i].FromBinary(buf[off:])
+		cfg.Core.Rules[i].FromBinary(buf[off:])
 		off += settings.RuleSize
 	}
-
-	c.Core.TxIntervalSec = binary.LittleEndian.Uint16(buf[offInterval:])
-	c.Core.EvalIntervalSec = binary.LittleEndian.Uint16(buf[offEvalInterval:])
-	readTransfer(buf, offTransfer, &c.Core.Transfer)
-	c.WiFi = esptransport.DecodeWiFiSettings(buf[offWiFi:])
+	cfg.Core.TxIntervalSec = binary.LittleEndian.Uint16(buf[offInterval:])
+	cfg.Core.EvalIntervalSec = binary.LittleEndian.Uint16(buf[offEvalInterval:])
+	readTransfer(buf, offTransfer, &cfg.Core.Transfer)
+	readLoRaWAN(buf, offLoRaWAN, &cfg.LoRaWAN)
 	if len(buf) >= offConfigHash+4 {
-		c.Core.ConfigHash = binary.LittleEndian.Uint32(buf[offConfigHash:])
+		cfg.Core.ConfigHash = binary.LittleEndian.Uint32(buf[offConfigHash:])
 	}
-	return c
 }
 
-func baseConfig() esp32s3Config {
-	return esp32s3Config{
-		Core: settings.Defaults(),
-		WiFi: esptransport.WiFiSettings{},
-	}
+func initDefaults() {
+	settings.ResetDefaults(&cfg.Core)
+	cfg.LoRaWAN = settings.LoRaWANDefaults()
 }
 
 func readTransfer(buf []byte, off int, t *settings.TransferConfig) {
-	t.Enabled = buf[off]
-	t.PumpCtrlIdx = buf[off+1]
-	t.ValveT1CtrlIdx = buf[off+2]
-	t.ValveT2CtrlIdx = buf[off+3]
-	t.SVCtrlIdx = buf[off+4]
-	t.LevelT1FieldIdx = buf[off+5]
-	t.LevelT2FieldIdx = buf[off+6]
-	t.StartDeltaPct = buf[off+7]
-	t.StopT1MinPct = buf[off+8]
-	t.MeasurePulseSec = buf[off+9]
-	t.Flags = buf[off+10]
+	t.Enabled = buf[off]; t.PumpCtrlIdx = buf[off+1]; t.ValveT1CtrlIdx = buf[off+2]
+	t.ValveT2CtrlIdx = buf[off+3]; t.SVCtrlIdx = buf[off+4]; t.LevelT1FieldIdx = buf[off+5]
+	t.LevelT2FieldIdx = buf[off+6]; t.StartDeltaPct = buf[off+7]; t.StopT1MinPct = buf[off+8]
+	t.MeasurePulseSec = buf[off+9]; t.Flags = buf[off+10]
 }
 
 func writeTransfer(buf []byte, off int, t *settings.TransferConfig) {
-	buf[off] = t.Enabled
-	buf[off+1] = t.PumpCtrlIdx
-	buf[off+2] = t.ValveT1CtrlIdx
-	buf[off+3] = t.ValveT2CtrlIdx
-	buf[off+4] = t.SVCtrlIdx
-	buf[off+5] = t.LevelT1FieldIdx
-	buf[off+6] = t.LevelT2FieldIdx
-	buf[off+7] = t.StartDeltaPct
-	buf[off+8] = t.StopT1MinPct
-	buf[off+9] = t.MeasurePulseSec
-	buf[off+10] = t.Flags
+	buf[off] = t.Enabled; buf[off+1] = t.PumpCtrlIdx; buf[off+2] = t.ValveT1CtrlIdx
+	buf[off+3] = t.ValveT2CtrlIdx; buf[off+4] = t.SVCtrlIdx; buf[off+5] = t.LevelT1FieldIdx
+	buf[off+6] = t.LevelT2FieldIdx; buf[off+7] = t.StartDeltaPct; buf[off+8] = t.StopT1MinPct
+	buf[off+9] = t.MeasurePulseSec; buf[off+10] = t.Flags
+}
+
+func readLoRaWAN(buf []byte, off int, lora *settings.LoRaWANSettings) {
+	lora.Region = buf[off]; lora.SubBand = buf[off+1]; lora.DataRate = buf[off+2]
+	lora.TxPower = buf[off+3]; lora.ADREnabled = buf[off+4] == 1; lora.Confirmed = buf[off+5] == 1
+	copy(lora.AppEUI[:], buf[off+6:off+14]); copy(lora.AppKey[:], buf[off+14:off+30])
+}
+
+func writeLoRaWAN(buf []byte, off int, lora *settings.LoRaWANSettings) {
+	buf[off] = lora.Region; buf[off+1] = lora.SubBand; buf[off+2] = lora.DataRate
+	buf[off+3] = lora.TxPower
+	if lora.ADREnabled { buf[off+4] = 1 }
+	if lora.Confirmed { buf[off+5] = 1 }
+	copy(buf[off+6:off+14], lora.AppEUI[:]); copy(buf[off+14:off+30], lora.AppKey[:])
 }

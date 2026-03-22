@@ -6,7 +6,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ConfigContextService } from '../../../core/services/config-context.service';
-import { BOARD_DEFINITIONS, BoardPinDef } from '../../../core/constants/board-definitions';
+import { BoardPinDef } from '../../../core/services/api.types';
 import { pinFunctionName, PinFunctionName } from '../../../core/utils/firmware-constraints';
 import { PinOverlayComponent } from './pin-overlay.component';
 import { PinOverlayItem } from './pin-overlay.types';
@@ -55,7 +55,7 @@ const ACTIVE_COLOR  = '#2563eb'; // blue-600
 
       @if (svgContent()) {
         <div class="board-svg-wrap-outer" style="position: relative"
-             [style.padding.px]="boardDef()?.labelMargin ?? 80"
+             [style.padding.px]="80"
              [class]="'board-' + boardDef()?.model">
           <div class="board-svg-inner flex justify-center overflow-x-auto"
                #svgContainer
@@ -65,7 +65,7 @@ const ACTIVE_COLOR  = '#2563eb'; // blue-600
             [svgContainer]="svgContainer"
             [overlayItems]="overlayItems()"
             [domReady]="domReady()"
-            [margin]="boardDef()?.labelMargin ?? 80"
+            [margin]="80"
           />
         </div>
       } @else if (!boardDef()) {
@@ -111,10 +111,7 @@ export class DeviceBoardSvgComponent {
   private rawSvg = signal<string | null>(null);
   domReady = signal(0);
 
-  boardDef = computed(() => {
-    const model = this.ctx.device()?.hardware_model;
-    return model ? BOARD_DEFINITIONS[model] ?? null : null;
-  });
+  boardDef = this.ctx.boardDef;
 
   svgContent = computed<SafeHtml | null>(() => {
     const raw = this.rawSvg();
@@ -132,17 +129,17 @@ export class DeviceBoardSvgComponent {
 
     return def.pins
       .filter(pin => {
-        const isActive = activePin === pin.firmwarePin;
-        const isSensor = sensorPins.has(pin.firmwarePin);
-        const isControl = controlPins.has(pin.firmwarePin);
-        const hasLabel = pinLabels.has(pin.firmwarePin);
+        const isActive = activePin === pin.firmware_idx;
+        const isSensor = sensorPins.has(pin.firmware_idx);
+        const isControl = controlPins.has(pin.firmware_idx);
+        const hasLabel = pinLabels.has(pin.firmware_idx);
         return isActive || isSensor || isControl || hasLabel;
       })
       .map(pin => {
-        const isActive = activePin === pin.firmwarePin;
-        const isSensor = sensorPins.has(pin.firmwarePin);
-        const isControl = controlPins.has(pin.firmwarePin);
-        const hasLabel = pinLabels.has(pin.firmwarePin);
+        const isActive = activePin === pin.firmware_idx;
+        const isSensor = sensorPins.has(pin.firmware_idx);
+        const isControl = controlPins.has(pin.firmware_idx);
+        const hasLabel = pinLabels.has(pin.firmware_idx);
 
         let color: string;
         if (isActive) {
@@ -152,15 +149,15 @@ export class DeviceBoardSvgComponent {
         } else if (isControl) {
           color = CONTROL_COLOR;
         } else {
-          const fn = pinFunctionName(pinMap[pin.firmwarePin] ?? 0);
+          const fn = pinFunctionName(pinMap[pin.firmware_idx] ?? 0);
           color = FN_COLORS[fn] ?? FN_COLORS.unused;
         }
 
         return {
-          firmwarePin: pin.firmwarePin,
-          connectorId: pin.connectorId,
+          firmwarePin: pin.firmware_idx,
+          connectorId: pin.connector_id,
           color,
-          label: pinLabels.get(pin.firmwarePin) ?? null,
+          label: pinLabels.get(pin.firmware_idx) ?? null,
           isActive,
           edge: pin.edge,
         };
@@ -187,9 +184,9 @@ export class DeviceBoardSvgComponent {
   private svgLoadEffect = effect(() => {
     const def = this.boardDef();
     if (!def) { this.rawSvg.set(null); return; }
-    this.http.get(def.svgUrl, { responseType: 'text' }).subscribe({
+    this.http.get(def.svg_url, { responseType: 'text' }).subscribe({
       next: svg => {
-        this.rawSvg.set(def.rotateDeg ? this.rotateSvg(svg, def.rotateDeg) : svg);
+        this.rawSvg.set(def.rotate_deg ? this.rotateSvg(svg, def.rotate_deg) : svg);
         // Double-rAF: first frame sets innerHTML, second ensures layout has stabilized
         requestAnimationFrame(() => requestAnimationFrame(() =>
           this.domReady.update(n => n + 1)
@@ -216,13 +213,13 @@ export class DeviceBoardSvgComponent {
       if (!container) return;
 
       for (const pin of def.pins) {
-        const el = container.querySelector(`#${pin.connectorId}`) as SVGGraphicsElement | null;
+        const el = container.querySelector(`#${pin.connector_id}`) as SVGGraphicsElement | null;
         if (!el) continue;
 
-        const isActive = activePin === pin.firmwarePin;
-        const isSensor = sensorPins.has(pin.firmwarePin);
-        const isControl = controlPins.has(pin.firmwarePin);
-        const hasLabel = pinLabels.has(pin.firmwarePin);
+        const isActive = activePin === pin.firmware_idx;
+        const isSensor = sensorPins.has(pin.firmware_idx);
+        const isControl = controlPins.has(pin.firmware_idx);
+        const hasLabel = pinLabels.has(pin.firmware_idx);
 
         let color: string;
         if (isActive) {
@@ -232,7 +229,7 @@ export class DeviceBoardSvgComponent {
         } else if (isControl) {
           color = CONTROL_COLOR;
         } else {
-          const fn = pinFunctionName(pinMap[pin.firmwarePin] ?? 0);
+          const fn = pinFunctionName(pinMap[pin.firmware_idx] ?? 0);
           color = FN_COLORS[fn] ?? FN_COLORS.unused;
         }
 

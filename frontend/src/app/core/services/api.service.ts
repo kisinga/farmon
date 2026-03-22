@@ -9,6 +9,8 @@ import { WorkflowService } from './workflow.service';
 // Re-export all types so existing consumers that import from 'api.service.ts' keep working.
 export type {
   BackendInfo,
+  BoardDefinition,
+  BoardPinDef,
   FirmwareCommand,
   TransportType,
   TransportMeta,
@@ -90,6 +92,7 @@ export class ApiService {
 
   setControl(eui: string, control: string, state: string, duration?: number, value?: number) { return this.deviceService.setControl(eui, control, state, duration, value); }
   getPinCapabilities(eui: string) { return this.deviceService.getPinCapabilities(eui); }
+  getBoardInfo(model: string) { return this.deviceService.getBoardInfo(model); }
   probeField(eui: string, fieldKey: string) { return this.deviceService.probeField(eui, fieldKey); }
   compileExpression(eui: string, expression: string) { return this.deviceService.compileExpression(eui, expression); }
   sendCommand(eui: string, command: string, value?: number) { return this.deviceService.sendCommand(eui, command, value); }
