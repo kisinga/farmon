@@ -209,6 +209,73 @@ func TestCompileWrongArgCount(t *testing.T) {
 	}
 }
 
+// ─── New opcodes: mod, select, delta ────────────────────────────────────────
+
+func TestCompileMod(t *testing.T) {
+	bc, err := CompileExpression("mod(f0, 60)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []byte{byte(settings.OpLoadField), 0}
+	expected = append(expected, byte(settings.OpPushF32))
+	expected = append(expected, f32Bytes(60)...)
+	expected = append(expected, byte(settings.OpMod))
+	assertBytesEqual(t, expected, bc)
+}
+
+func TestCompileModInfix(t *testing.T) {
+	bc, err := CompileExpression("f0 % 60")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []byte{byte(settings.OpLoadField), 0}
+	expected = append(expected, byte(settings.OpPushF32))
+	expected = append(expected, f32Bytes(60)...)
+	expected = append(expected, byte(settings.OpMod))
+	assertBytesEqual(t, expected, bc)
+}
+
+func TestCompileSelect(t *testing.T) {
+	bc, err := CompileExpression("select(gt(f0, 100), f1, f2)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []byte{byte(settings.OpLoadField), 0}
+	expected = append(expected, byte(settings.OpPushF32))
+	expected = append(expected, f32Bytes(100)...)
+	expected = append(expected, byte(settings.OpCmpGT))
+	expected = append(expected, byte(settings.OpLoadField), 1)
+	expected = append(expected, byte(settings.OpLoadField), 2)
+	expected = append(expected, byte(settings.OpSelect))
+	assertBytesEqual(t, expected, bc)
+}
+
+func TestCompileDelta(t *testing.T) {
+	bc, err := CompileExpression("delta(f0)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []byte{
+		byte(settings.OpLoadField), 0,
+		byte(settings.OpDelta),
+	}
+	assertBytesEqual(t, expected, bc)
+}
+
+func TestCompileSelectWrongArgs(t *testing.T) {
+	_, err := CompileExpression("select(f0, f1)")
+	if err == nil {
+		t.Fatal("expected error for select() with 2 args")
+	}
+}
+
+func TestCompileDeltaWrongArgs(t *testing.T) {
+	_, err := CompileExpression("delta(f0, f1)")
+	if err == nil {
+		t.Fatal("expected error for delta() with 2 args")
+	}
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 func assertBytesEqual(t *testing.T, expected, actual []byte) {

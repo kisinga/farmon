@@ -1,5 +1,7 @@
 package boardinfo
 
+import "github.com/kisinga/farmon/firmware/pkg/settings"
+
 // LoRa-E5 / Wio-E5 mini (STM32WL) board definition.
 // Firmware: PA0–PA7 → index 0–7, PB0–PB7 → index 8–15, PB8/9/10/15 → index 16–19.
 // Only pins broken out on the Wio-E5 mini headers are listed.
@@ -22,6 +24,10 @@ func init() {
 			{15, "PB7 / RX2", "connector10pin", "bottom"},
 			{16, "PB8 / SCL", "connector1pin", "bottom"},
 			{17, "PB9 / SDA", "connector2pin", "bottom"},
+		},
+		DefaultBuses: []BusDef{
+			{PinIndices: []int{14, 15}, PinFunctions: []int{int(settings.PinI2CSDA), int(settings.PinI2CSCL)}}, // PB6=SDA, PB7=SCL
+			{PinIndices: []int{2, 3}, PinFunctions: []int{int(settings.PinUARTTX), int(settings.PinUARTRX)}},   // PA2=TX, PA3=RX
 		},
 	})
 }

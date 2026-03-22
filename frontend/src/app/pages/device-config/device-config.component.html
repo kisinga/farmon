@@ -50,8 +50,9 @@
     </div>
   }
 
-  <!-- Board SVG diagram -->
-  <div class="mb-6">
+  <!-- Board SVG diagram — sticky on inputs/outputs tabs -->
+  <div class="mb-6"
+    [ngClass]="{ 'sticky top-0 z-10 bg-base-100': activeTab() === 'inputs' || activeTab() === 'outputs' }">
     <app-device-board-svg />
   </div>
 

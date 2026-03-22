@@ -1,5 +1,7 @@
 package boardinfo
 
+import "github.com/kisinga/farmon/firmware/pkg/settings"
+
 // RP2040 (Raspberry Pi Pico W) board definition.
 // Firmware: GP0–GP19 map 1:1 to pinMap index 0–19.
 // Fritzing: connector N = physical pin (N+1). Layout from Pico W datasheet.
@@ -33,6 +35,10 @@ func init() {
 		},
 		InternalOutputs: []InternalOutput{
 			{ActuatorType: 7, Label: "Pico W LED", GPIONum: 0}, // CYW43 LED, special handling in firmware
+		},
+		DefaultBuses: []BusDef{
+			{PinIndices: []int{4, 5}, PinFunctions: []int{int(settings.PinI2CSDA), int(settings.PinI2CSCL)}},   // GP4=SDA, GP5=SCL (I2C0)
+			{PinIndices: []int{8, 9}, PinFunctions: []int{int(settings.PinUARTTX), int(settings.PinUARTRX)}},    // GP8=TX, GP9=RX (UART1)
 		},
 	})
 }

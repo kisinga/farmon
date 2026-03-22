@@ -27,7 +27,7 @@ interface SensorForm {
   displayName: string;
   fieldKey: string;
   pinIndex: number;
-  busIndex: number;
+  busIndex: number | undefined;
   i2cAddr: number;
   pulsesPerUnit: number;
   modbusDevAddr: number;
@@ -48,7 +48,7 @@ function defaultForm(): SensorForm {
     displayName: '',
     fieldKey: '',
     pinIndex: 0,
-    busIndex: 0,
+    busIndex: undefined,
     i2cAddr: 0x76,
     pulsesPerUnit: 1,
     modbusDevAddr: 1,
@@ -117,6 +117,8 @@ const IO_TYPE_LABELS: Record<string, string> = {
               <app-pin-requirements
                 [driver]="selectedDriver()"
                 [pinMap]="pinMap()"
+                [pinCaps]="ctx.pinCaps()?.pins ?? []"
+                [boardDef]="ctx.boardDef()"
                 [usedPins]="usedPins()"
                 [selectedPins]="[form().pinIndex]"
                 [busIndex]="form().busIndex"
@@ -454,6 +456,8 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
   canSave = computed(() => {
     const f = this.form();
     if (!f.driverId) return false;
+    const driver = this.selectedDriver();
+    if (driver?.bus_addressed && f.busIndex == null) return false;
     if (this.creatingNewField()) {
       return f.fieldKey.trim() !== '' && f.displayName.trim() !== '';
     }
@@ -617,7 +621,7 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
     if (!driver) return;
 
     const fieldIndex = this.creatingNewField() ? this.nextFieldIndex() : this.getExistingFieldIndex(f.fieldKey);
-    const pinOrBus = driver.bus_addressed ? f.busIndex : f.pinIndex;
+    const pinOrBus = driver.bus_addressed ? (f.busIndex ?? 0) : f.pinIndex;
 
     const sensor = {
       type: driver.sensor_type ?? 0,
@@ -685,7 +689,7 @@ export class DeviceSensorConfigComponent implements OnInit, OnDestroy {
       param1Raw = f.digitalPullMode;
     }
 
-    const pinOrBus = driver.bus_addressed ? f.busIndex : f.pinIndex;
+    const pinOrBus = driver.bus_addressed ? (f.busIndex ?? 0) : f.pinIndex;
 
     this.saving.set(true);
     this.statusMsg.set('');

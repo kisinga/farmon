@@ -123,20 +123,20 @@ export class DeviceBoardSvgComponent {
     if (!def) return [];
     const sensorPins = this.ctx.usedSensorPins();
     const controlPins = this.ctx.usedControlPins();
-    const activePin = this.ctx.activePinSelection();
+    const activePins = this.ctx.activePinSelection();
     const pinMap = this.ctx.pinMapArray();
     const pinLabels = this.ctx.pinLabels();
 
     return def.pins
       .filter(pin => {
-        const isActive = activePin === pin.firmware_idx;
+        const isActive = activePins.has(pin.firmware_idx);
         const isSensor = sensorPins.has(pin.firmware_idx);
         const isControl = controlPins.has(pin.firmware_idx);
         const hasLabel = pinLabels.has(pin.firmware_idx);
         return isActive || isSensor || isControl || hasLabel;
       })
       .map(pin => {
-        const isActive = activePin === pin.firmware_idx;
+        const isActive = activePins.has(pin.firmware_idx);
         const isSensor = sensorPins.has(pin.firmware_idx);
         const isControl = controlPins.has(pin.firmware_idx);
         const hasLabel = pinLabels.has(pin.firmware_idx);
@@ -202,7 +202,7 @@ export class DeviceBoardSvgComponent {
     const _ready = this.domReady();
     const sensorPins = this.ctx.usedSensorPins();
     const controlPins = this.ctx.usedControlPins();
-    const activePin = this.ctx.activePinSelection();
+    const activePins = this.ctx.activePinSelection();
     const pinMap = this.ctx.pinMapArray();
     const pinLabels = this.ctx.pinLabels();
 
@@ -216,7 +216,7 @@ export class DeviceBoardSvgComponent {
         const el = container.querySelector(`#${pin.connector_id}`) as SVGGraphicsElement | null;
         if (!el) continue;
 
-        const isActive = activePin === pin.firmware_idx;
+        const isActive = activePins.has(pin.firmware_idx);
         const isSensor = sensorPins.has(pin.firmware_idx);
         const isControl = controlPins.has(pin.firmware_idx);
         const hasLabel = pinLabels.has(pin.firmware_idx);

@@ -63,9 +63,9 @@ type DriverDef struct {
 	DefaultI2CAddr   uint8           `json:"default_i2c_addr,omitempty"`
 	NeedsCalib       bool            `json:"needs_calib"`
 	PinCount         int             `json:"pin_count"`
-	PinFunctions     []uint8         `json:"pin_functions,omitempty"`
+	PinFunctions     []int           `json:"pin_functions,omitempty"`
 	PinLabels        []string        `json:"pin_labels,omitempty"`        // human label per pin, parallel to PinFunctions
-	BusPinFunctions  []uint8         `json:"bus_pin_functions,omitempty"`
+	BusPinFunctions  []int           `json:"bus_pin_functions,omitempty"`
 	BusAddressed     bool            `json:"bus_addressed"`
 	HasPulse         bool            `json:"has_pulse,omitempty"`         // output: solenoid/motorized valve
 	Analog           bool            `json:"analog,omitempty"`            // output: PWM/DAC/servo
@@ -83,10 +83,10 @@ var allTargets = []string{"rp2040", "lorae5", "heltec_v3"}
 var rp2040Only = []string{"rp2040"}
 
 // i2cBusPins is the standard bus pin set for I2C drivers.
-var i2cBusPins = []uint8{uint8(settings.PinI2CSDA), uint8(settings.PinI2CSCL)}
+var i2cBusPins = []int{int(settings.PinI2CSDA), int(settings.PinI2CSCL)}
 
 // uartBusPins is the standard bus pin set for UART drivers.
-var uartBusPins = []uint8{uint8(settings.PinUARTTX), uint8(settings.PinUARTRX)}
+var uartBusPins = []int{int(settings.PinUARTTX), int(settings.PinUARTRX)}
 
 // Drivers is the authoritative list of all sensor/input drivers.
 var Drivers = []DriverDef{
@@ -97,28 +97,28 @@ var Drivers = []DriverDef{
 		ID: "adc_linear", Label: "Analog (0-VREF Linear)", Description: "Any linear 0-VREF analog sensor with offset/span calibration",
 		Direction: DriverInput, IOType: IOTypeADC, CustomDriver: true, SensorType: uint8(settings.SensorADCLinear),
 		FieldCount: 1, Fields: []DriverField{{MeasurementID: "custom", Label: "Value", Unit: "", DefaultMin: 0, DefaultMax: 100}},
-		NeedsCalib: true, PinCount: 1, PinFunctions: []uint8{uint8(settings.PinADC)},
+		NeedsCalib: true, PinCount: 1, PinFunctions: []int{int(settings.PinADC)},
 		SupportedTargets: rp2040Only, Status: DriverReady,
 	},
 	{
 		ID: "adc_4_20ma", Label: "Analog (4-20mA Loop)", Description: "4-20mA current loop with 250Ω shunt resistor",
 		Direction: DriverInput, IOType: IOTypeADC, CustomDriver: true, SensorType: uint8(settings.SensorADC4_20mA),
 		FieldCount: 1, Fields: []DriverField{{MeasurementID: "custom", Label: "Value", Unit: "", DefaultMin: 0, DefaultMax: 100}},
-		NeedsCalib: true, PinCount: 1, PinFunctions: []uint8{uint8(settings.PinADC)},
+		NeedsCalib: true, PinCount: 1, PinFunctions: []int{int(settings.PinADC)},
 		SupportedTargets: rp2040Only, Status: DriverReady,
 	},
 	{
 		ID: "ds18b20", Label: "DS18B20 (1-Wire)", Description: "Waterproof digital temperature sensor, -55 to 125°C",
 		Direction: DriverInput, IOType: IOTypeOneWire, CustomDriver: true, SensorType: uint8(settings.SensorDS18B20),
 		FieldCount: 1, Fields: []DriverField{{MeasurementID: "temperature", Label: "Temperature", Unit: "°C", DefaultMin: -55, DefaultMax: 125}},
-		PinCount: 1, PinFunctions: []uint8{uint8(settings.PinOneWire)},
+		PinCount: 1, PinFunctions: []int{int(settings.PinOneWire)},
 		SupportedTargets: allTargets, Status: DriverReady,
 	},
 	{
 		ID: "digital_in", Label: "Digital Input (GPIO)", Description: "GPIO digital input with configurable pull-up/pull-down",
 		Direction: DriverInput, IOType: IOTypeGPIO, CustomDriver: true, SensorType: uint8(settings.SensorDigitalIn),
 		FieldCount: 1, Fields: []DriverField{{MeasurementID: "state", Label: "State", Unit: "", DefaultMin: 0, DefaultMax: 1}},
-		PinCount: 1, PinFunctions: []uint8{uint8(settings.PinButton)},
+		PinCount: 1, PinFunctions: []int{int(settings.PinButton)},
 		SupportedTargets: allTargets, Status: DriverReady,
 	},
 	{
@@ -128,7 +128,7 @@ var Drivers = []DriverDef{
 			{MeasurementID: "flow_rate", Label: "Rate", Unit: "/min", DefaultMin: 0, DefaultMax: 100},
 			{MeasurementID: "volume", Label: "Total", Unit: "", DefaultMin: 0, DefaultMax: 10000},
 		},
-		PinCount: 1, PinFunctions: []uint8{uint8(settings.PinCounter)},
+		PinCount: 1, PinFunctions: []int{int(settings.PinCounter)},
 		SupportedTargets: allTargets, Status: DriverReady,
 	},
 	{
@@ -325,7 +325,7 @@ var Drivers = []DriverDef{
 	// ──────────────────────────────────────────────────────────
 	// Deferred — GPIO sensors
 	// ──────────────────────────────────────────────────────────
-	{Direction: DriverInput, ID: "dhtxx", Label: "DHT11/DHT22", Description: "Single-wire temperature and humidity sensor", IOType: IOTypeGPIO, TinyGoPackage: "tinygo.org/x/drivers/dht", FieldCount: 2, PinCount: 1, PinFunctions: []uint8{uint8(settings.PinButton)}, SupportedTargets: allTargets, Status: DriverDeferred},
+	{Direction: DriverInput, ID: "dhtxx", Label: "DHT11/DHT22", Description: "Single-wire temperature and humidity sensor", IOType: IOTypeGPIO, TinyGoPackage: "tinygo.org/x/drivers/dht", FieldCount: 2, PinCount: 1, PinFunctions: []int{int(settings.PinButton)}, SupportedTargets: allTargets, Status: DriverDeferred},
 	{Direction: DriverInput, ID: "hcsr04", Label: "HC-SR04", Description: "Ultrasonic distance sensor (2-400cm)", IOType: IOTypeGPIO, TinyGoPackage: "tinygo.org/x/drivers/hcsr04", FieldCount: 1, PinCount: 2, SupportedTargets: allTargets, Status: DriverDeferred},
 
 	// ──────────────────────────────────────────────────────────
@@ -335,7 +335,7 @@ var Drivers = []DriverDef{
 		ID: "relay", Label: "Relay / GPIO", Description: "Single pin toggled HIGH/LOW. For pumps, lights, contactors.",
 		Direction: DriverOutput, IOType: IOTypeGPIO, CustomDriver: true,
 		ActuatorType: uint8(settings.ActuatorRelay),
-		PinCount: 1, PinFunctions: []uint8{uint8(settings.PinRelay)}, PinLabels: []string{"Output pin"},
+		PinCount: 1, PinFunctions: []int{int(settings.PinRelay)}, PinLabels: []string{"Output pin"},
 		Hint: "Single pin toggled HIGH/LOW. For pumps, lights, contactors.",
 		SupportedTargets: allTargets, Status: DriverReady,
 	},
@@ -343,7 +343,7 @@ var Drivers = []DriverDef{
 		ID: "motorized_valve", Label: "Motorized Valve", Description: "Two pins: pulse one to open, the other to close.",
 		Direction: DriverOutput, IOType: IOTypeGPIO, CustomDriver: true,
 		ActuatorType: uint8(settings.ActuatorMotorizedValve),
-		PinCount: 2, PinFunctions: []uint8{uint8(settings.PinRelay), uint8(settings.PinRelay)},
+		PinCount: 2, PinFunctions: []int{int(settings.PinRelay), int(settings.PinRelay)},
 		PinLabels: []string{"Open pin", "Close pin"},
 		HasPulse: true, Hint: "Two pins: pulse one to open, the other to close.",
 		SupportedTargets: allTargets, Status: DriverReady,
@@ -352,7 +352,7 @@ var Drivers = []DriverDef{
 		ID: "solenoid", Label: "Solenoid Valve", Description: "Single pin pulsed then released. For spring-return solenoid valves.",
 		Direction: DriverOutput, IOType: IOTypeGPIO, CustomDriver: true,
 		ActuatorType: uint8(settings.ActuatorSolenoidMomentary),
-		PinCount: 1, PinFunctions: []uint8{uint8(settings.PinRelay)}, PinLabels: []string{"Output pin"},
+		PinCount: 1, PinFunctions: []int{int(settings.PinRelay)}, PinLabels: []string{"Output pin"},
 		HasPulse: true, Hint: "Single pin pulsed then released. For spring-return solenoid valves.",
 		SupportedTargets: allTargets, Status: DriverReady,
 	},
@@ -360,7 +360,7 @@ var Drivers = []DriverDef{
 		ID: "pwm_out", Label: "PWM Output", Description: "PWM duty cycle 0-100%. For variable speed fans or dimmers.",
 		Direction: DriverOutput, IOType: IOTypePWM, CustomDriver: true,
 		ActuatorType: uint8(settings.ActuatorPWM),
-		PinCount: 1, PinFunctions: []uint8{uint8(settings.PinPWM)}, PinLabels: []string{"PWM pin"},
+		PinCount: 1, PinFunctions: []int{int(settings.PinPWM)}, PinLabels: []string{"PWM pin"},
 		Analog: true, Hint: "PWM duty cycle 0–100%. For variable speed fans or dimmers.",
 		SupportedTargets: allTargets, Status: DriverReady,
 	},
@@ -368,7 +368,7 @@ var Drivers = []DriverDef{
 		ID: "servo", Label: "Servo", Description: "Servo PWM (50 Hz). For throttle or ball valve positioning.",
 		Direction: DriverOutput, IOType: IOTypePWM, CustomDriver: true,
 		ActuatorType: uint8(settings.ActuatorServo),
-		PinCount: 1, PinFunctions: []uint8{uint8(settings.PinPWM)}, PinLabels: []string{"Servo pin"},
+		PinCount: 1, PinFunctions: []int{int(settings.PinPWM)}, PinLabels: []string{"Servo pin"},
 		Analog: true, Hint: "Servo PWM (50 Hz). For throttle or ball valve positioning.",
 		SupportedTargets: allTargets, Status: DriverReady,
 	},
@@ -376,7 +376,7 @@ var Drivers = []DriverDef{
 		ID: "dac_out", Label: "DAC Analog Output", Description: "True analog voltage output. STM32 only.",
 		Direction: DriverOutput, IOType: IOTypeDAC, CustomDriver: true,
 		ActuatorType: uint8(settings.ActuatorDACLinear),
-		PinCount: 1, PinFunctions: []uint8{uint8(settings.PinDAC)}, PinLabels: []string{"DAC pin"},
+		PinCount: 1, PinFunctions: []int{int(settings.PinDAC)}, PinLabels: []string{"DAC pin"},
 		Analog: true, Hint: "True analog voltage output. STM32 only.",
 		SupportedTargets: []string{"lorae5"}, Status: DriverReady,
 	},

@@ -85,8 +85,8 @@ export class ConfigContextService {
    */
   private _lastPinPick = signal<{ pin: number; target: 'primary' | 'secondary' } | null>(null);
 
-  /** Pin currently selected in the active form. Board SVG highlights this pin. */
-  private _activePinSelection = signal<number | null>(null);
+  /** Pin(s) currently selected in the active form. Board SVG highlights these pins. */
+  private _activePinSelection = signal<Set<number>>(new Set());
 
   // ─── Public readonly signals ────────────────────────────────────────────────
 
@@ -397,9 +397,15 @@ export class ConfigContextService {
     this._pinPickerMode.set(null);
   }
 
-  /** Set the pin currently selected in a form. Board SVG highlights it. */
-  setActivePinSelection(pin: number | null): void {
-    this._activePinSelection.set(pin);
+  /** Set the pin(s) currently selected in a form. Board SVG highlights them. */
+  setActivePinSelection(pins: number | number[] | null): void {
+    if (pins === null) {
+      this._activePinSelection.set(new Set());
+    } else if (Array.isArray(pins)) {
+      this._activePinSelection.set(new Set(pins));
+    } else {
+      this._activePinSelection.set(new Set([pins]));
+    }
   }
 
   // ─── Optimistic sensor spec update ──────────────────────────────────────────
@@ -446,6 +452,6 @@ export class ConfigContextService {
     this._flashMessage.set(null);
     this._pinPickerMode.set(null);
     this._lastPinPick.set(null);
-    this._activePinSelection.set(null);
+    this._activePinSelection.set(new Set());
   }
 }

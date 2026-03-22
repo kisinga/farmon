@@ -523,6 +523,48 @@ func emitCall(buf []byte, n *cNode) ([]byte, error) {
 		}
 		buf = append(buf, byte(settings.OpCmpLTE))
 
+	case "mod":
+		if len(args) != 2 {
+			return nil, fmt.Errorf("mod() requires 2 arguments, got %d", len(args))
+		}
+		buf, err = emitNode(buf, args[0])
+		if err != nil {
+			return nil, err
+		}
+		buf, err = emitNode(buf, args[1])
+		if err != nil {
+			return nil, err
+		}
+		buf = append(buf, byte(settings.OpMod))
+
+	case "select":
+		if len(args) != 3 {
+			return nil, fmt.Errorf("select() requires 3 arguments (condition, ifTrue, ifFalse), got %d", len(args))
+		}
+		buf, err = emitNode(buf, args[0])
+		if err != nil {
+			return nil, err
+		}
+		buf, err = emitNode(buf, args[1])
+		if err != nil {
+			return nil, err
+		}
+		buf, err = emitNode(buf, args[2])
+		if err != nil {
+			return nil, err
+		}
+		buf = append(buf, byte(settings.OpSelect))
+
+	case "delta":
+		if len(args) != 1 {
+			return nil, fmt.Errorf("delta() requires 1 argument, got %d", len(args))
+		}
+		buf, err = emitNode(buf, args[0])
+		if err != nil {
+			return nil, err
+		}
+		buf = append(buf, byte(settings.OpDelta))
+
 	default:
 		return nil, fmt.Errorf("unknown function '%s'", name)
 	}

@@ -1,5 +1,7 @@
 package boardinfo
 
+import "github.com/kisinga/farmon/firmware/pkg/settings"
+
 // Heltec WiFi LoRa 32 V3 (ESP32-S3) board definition.
 // Connector IDs from Fritzing part: part.Heltec WiFi Kit 32 (V3)-latest_*.fzp
 // Excluded from user pins: GPIO8-14 (SX1262 LoRa SPI), GPIO17-18 (OLED I2C),
@@ -35,6 +37,9 @@ func init() {
 		},
 		InternalOutputs: []InternalOutput{
 			{ActuatorType: 7, Label: "Onboard LED", GPIONum: 35},
+		},
+		DefaultBuses: []BusDef{
+			{PinIndices: []int{2, 3}, PinFunctions: []int{int(settings.PinI2CSDA), int(settings.PinI2CSCL)}}, // GPIO3=SDA, GPIO4=SCL
 		},
 	})
 }

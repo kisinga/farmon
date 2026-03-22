@@ -20,6 +20,14 @@ type InternalOutput struct {
 	GPIONum      int    `json:"gpio_num"` // actual hardware GPIO number (not firmware index)
 }
 
+// BusDef describes a default bus pin configuration for a board.
+// PinIndices are firmware pin map indices (not raw GPIO numbers).
+// PinFunctions are the settings.PinFunction values for each pin.
+type BusDef struct {
+	PinIndices   []int `json:"pin_indices"`   // e.g. [4, 5] for firmware indices
+	PinFunctions []int `json:"pin_functions"` // e.g. [5, 6] for PinI2CSDA, PinI2CSCL
+}
+
 // BoardInfo describes a hardware board's visual and pin layout.
 type BoardInfo struct {
 	Model           string           `json:"model"`
@@ -28,6 +36,7 @@ type BoardInfo struct {
 	RotateDeg       int              `json:"rotate_deg,omitempty"`
 	Pins            []PinDef         `json:"pins"`
 	InternalOutputs []InternalOutput `json:"internal_outputs,omitempty"`
+	DefaultBuses    []BusDef         `json:"default_buses,omitempty"`
 }
 
 var registry = map[string]*BoardInfo{}

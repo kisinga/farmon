@@ -201,6 +201,115 @@ import { VariableSelectorComponent } from '../variable-selector/variable-selecto
           </div>
         }
 
+        @case ('rate_of_change') {
+          <div class="grid grid-cols-2 gap-3">
+            <div class="form-control">
+              <label class="label text-xs py-0.5">Source</label>
+              <app-variable-selector
+                [variables]="ctx.fields()"
+                [selectedKey]="sourceFieldKey()"
+                [showIndex]="true"
+                [filterFn]="nonComputeFilter"
+                placeholder="Select source…"
+                (selected)="onSourceSelected($event)"
+              />
+            </div>
+            <div class="form-control">
+              <label class="label text-xs py-0.5">Scale factor <span class="text-base-content/40">(1 = raw delta)</span></label>
+              <input type="number" class="input input-bordered input-sm" [(ngModel)]="rateScale" step="any" />
+            </div>
+          </div>
+        }
+
+        @case ('sensor_mapping') {
+          <div class="space-y-3">
+            <div class="form-control max-w-xs">
+              <label class="label text-xs py-0.5">Source</label>
+              <app-variable-selector
+                [variables]="ctx.fields()"
+                [selectedKey]="sourceFieldKey()"
+                [showIndex]="true"
+                [filterFn]="nonComputeFilter"
+                placeholder="Select source…"
+                (selected)="onSourceSelected($event)"
+              />
+            </div>
+            <div class="grid grid-cols-4 gap-3">
+              <div class="form-control">
+                <label class="label text-xs py-0.5">Input Low</label>
+                <input type="number" class="input input-bordered input-sm" [(ngModel)]="mapInLow" step="any" />
+              </div>
+              <div class="form-control">
+                <label class="label text-xs py-0.5">Input High</label>
+                <input type="number" class="input input-bordered input-sm" [(ngModel)]="mapInHigh" step="any" />
+              </div>
+              <div class="form-control">
+                <label class="label text-xs py-0.5">Output Low</label>
+                <input type="number" class="input input-bordered input-sm" [(ngModel)]="mapOutLow" step="any" />
+              </div>
+              <div class="form-control">
+                <label class="label text-xs py-0.5">Output High</label>
+                <input type="number" class="input input-bordered input-sm" [(ngModel)]="mapOutHigh" step="any" />
+              </div>
+            </div>
+          </div>
+        }
+
+        @case ('conditional') {
+          <div class="space-y-3">
+            <div class="grid grid-cols-3 gap-3">
+              <div class="form-control">
+                <label class="label text-xs py-0.5">Condition Field</label>
+                <app-variable-selector
+                  [variables]="ctx.fields()"
+                  [selectedKey]="condFieldKey()"
+                  [showIndex]="true"
+                  [filterFn]="nonComputeFilter"
+                  placeholder="Select field…"
+                  (selected)="onCondFieldSelected($event)"
+                />
+              </div>
+              <div class="form-control">
+                <label class="label text-xs py-0.5">Operator</label>
+                <select class="select select-bordered select-sm" [(ngModel)]="condOp">
+                  <option value="gt">Greater than (&gt;)</option>
+                  <option value="lt">Less than (&lt;)</option>
+                  <option value="gte">Greater or equal (&ge;)</option>
+                  <option value="lte">Less or equal (&le;)</option>
+                </select>
+              </div>
+              <div class="form-control">
+                <label class="label text-xs py-0.5">Threshold</label>
+                <input type="number" class="input input-bordered input-sm" [(ngModel)]="condThreshold" step="any" />
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="form-control">
+                <label class="label text-xs py-0.5">If True → use</label>
+                <app-variable-selector
+                  [variables]="ctx.fields()"
+                  [selectedKey]="ifTrueFieldKey()"
+                  [showIndex]="true"
+                  [filterFn]="nonComputeFilter"
+                  placeholder="Select field…"
+                  (selected)="onIfTrueSelected($event)"
+                />
+              </div>
+              <div class="form-control">
+                <label class="label text-xs py-0.5">If False → use</label>
+                <app-variable-selector
+                  [variables]="ctx.fields()"
+                  [selectedKey]="ifFalseFieldKey()"
+                  [showIndex]="true"
+                  [filterFn]="nonComputeFilter"
+                  placeholder="Select field…"
+                  (selected)="onIfFalseSelected($event)"
+                />
+              </div>
+            </div>
+          </div>
+        }
+
         @case ('custom') {
           <div class="space-y-2">
             <div class="form-control">
@@ -325,6 +434,25 @@ export class ComputeVariableEditorComponent {
   secondFieldKey = signal<string>('');
   combineOp: '+' | '-' | '*' | '/' | 'min' | 'max' = '+';
 
+  // Recipe params — rate_of_change
+  rateScale = 1;
+
+  // Recipe params — sensor_mapping
+  mapInLow = 0;
+  mapInHigh = 1023;
+  mapOutLow = 0;
+  mapOutHigh = 100;
+
+  // Recipe params — conditional
+  condFieldIdx = signal<number | null>(null);
+  condFieldKey = signal<string>('');
+  condOp: 'gt' | 'lt' | 'gte' | 'lte' = 'gt';
+  condThreshold = 0;
+  ifTrueFieldIdx = signal<number | null>(null);
+  ifTrueFieldKey = signal<string>('');
+  ifFalseFieldIdx = signal<number | null>(null);
+  ifFalseFieldKey = signal<string>('');
+
   // Recipe params — custom
   customExpression = '';
 
@@ -343,6 +471,11 @@ export class ComputeVariableEditorComponent {
     const recipe = this.selectedRecipe();
     const srcIdx = this.sourceFieldIdx();
     const secIdx = this.secondFieldIdx();
+
+    // Touch conditional signals for reactivity
+    const condIdx = this.condFieldIdx();
+    const ifTrueIdx = this.ifTrueFieldIdx();
+    const ifFalseIdx = this.ifFalseFieldIdx();
 
     switch (recipe) {
       case 'unit_conversion':
@@ -363,6 +496,15 @@ export class ComputeVariableEditorComponent {
       case 'combine':
         if (srcIdx == null || secIdx == null) return '';
         return recipeToExpression({ recipe: 'combine', params: { fieldIdxA: srcIdx, fieldIdxB: secIdx, op: this.combineOp } });
+      case 'rate_of_change':
+        if (srcIdx == null) return '';
+        return recipeToExpression({ recipe: 'rate_of_change', params: { fieldIdx: srcIdx, scale: this.rateScale } });
+      case 'sensor_mapping':
+        if (srcIdx == null) return '';
+        return recipeToExpression({ recipe: 'sensor_mapping', params: { fieldIdx: srcIdx, inLow: this.mapInLow, inHigh: this.mapInHigh, outLow: this.mapOutLow, outHigh: this.mapOutHigh } });
+      case 'conditional':
+        if (condIdx == null || ifTrueIdx == null || ifFalseIdx == null) return '';
+        return recipeToExpression({ recipe: 'conditional', params: { condFieldIdx: condIdx, op: this.condOp, threshold: this.condThreshold, ifTrueFieldIdx: ifTrueIdx, ifFalseFieldIdx: ifFalseIdx } });
       case 'custom':
         return this.customExpression;
     }
@@ -414,6 +556,21 @@ export class ComputeVariableEditorComponent {
   onSecondSelected(v: DeviceVariable | null): void {
     this.secondFieldIdx.set(v?.field_idx ?? null);
     this.secondFieldKey.set(v?.field_key ?? '');
+  }
+
+  onCondFieldSelected(v: DeviceVariable | null): void {
+    this.condFieldIdx.set(v?.field_idx ?? null);
+    this.condFieldKey.set(v?.field_key ?? '');
+  }
+
+  onIfTrueSelected(v: DeviceVariable | null): void {
+    this.ifTrueFieldIdx.set(v?.field_idx ?? null);
+    this.ifTrueFieldKey.set(v?.field_key ?? '');
+  }
+
+  onIfFalseSelected(v: DeviceVariable | null): void {
+    this.ifFalseFieldIdx.set(v?.field_idx ?? null);
+    this.ifFalseFieldKey.set(v?.field_key ?? '');
   }
 
   onProbe(): void {

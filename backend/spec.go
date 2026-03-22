@@ -7,6 +7,7 @@ import (
 	"log"
 	"sort"
 
+	"github.com/kisinga/farmon/firmware/pkg/boardinfo"
 	"github.com/kisinga/farmon/firmware/pkg/catalog"
 	"github.com/kisinga/farmon/firmware/pkg/settings"
 	"github.com/pocketbase/dbx"
@@ -403,6 +404,45 @@ func loadDeviceSpec(app core.App, devEUI string) (*DeviceSpec, error) {
 			Transfer:   getRawJSON(ac, "transfer"),
 			ConfigHash: ac.GetString("config_hash"),
 		}
+
+		// Seed default bus pins from board definition into pin_map if not already present.
+		hwModel := dev.GetString("hardware_model")
+		if bi := boardinfo.ForModel(hwModel); bi != nil && len(bi.DefaultBuses) > 0 {
+			pinMap := make([]int, settings.MaxPins)
+			if len(spec.AirConfig.PinMap) > 0 {
+				var existing []int
+				if err := json.Unmarshal(spec.AirConfig.PinMap, &existing); err == nil {
+					copy(pinMap, existing)
+				}
+			}
+			changed := false
+			for _, bus := range bi.DefaultBuses {
+				if len(bus.PinIndices) != len(bus.PinFunctions) {
+					continue
+				}
+				// Only seed if ALL pins in this bus are unassigned (PinNone=0)
+				allFree := true
+				for _, idx := range bus.PinIndices {
+					if idx >= 0 && idx < len(pinMap) && pinMap[idx] != 0 {
+						allFree = false
+						break
+					}
+				}
+				if allFree {
+					for j, idx := range bus.PinIndices {
+						if idx >= 0 && idx < len(pinMap) {
+							pinMap[idx] = bus.PinFunctions[j]
+							changed = true
+						}
+					}
+				}
+			}
+			if changed {
+				if raw, err := json.Marshal(pinMap); err == nil {
+					spec.AirConfig.PinMap = raw
+				}
+			}
+		}
 	}
 
 	// Visualizations
@@ -512,7 +552,7 @@ func derivePinMap(ac *AirConfig) ([]int, error) {
 	sensorTypeToPinFn := make(map[uint8]uint8)
 	for _, d := range catalog.Drivers {
 		if d.IsInput() && len(d.PinFunctions) > 0 {
-			sensorTypeToPinFn[d.SensorType] = d.PinFunctions[0]
+			sensorTypeToPinFn[d.SensorType] = uint8(d.PinFunctions[0])
 		}
 	}
 

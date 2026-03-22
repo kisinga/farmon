@@ -53,9 +53,11 @@ function toControlKey(name: string): string {
       <app-pin-requirements
         [driver]="selectedDriver()"
         [pinMap]="pinMap()"
+        [pinCaps]="ctx.pinCaps()?.pins ?? []"
+        [boardDef]="ctx.boardDef()"
         [usedPins]="usedPins()"
         [selectedPins]="draftPins()"
-        [busIndex]="draft.bus_index ?? 0"
+        [busIndex]="draft.bus_index"
         [busAddress]="draft.bus_address ?? 64"
         [busChannel]="draft.bus_channel ?? 0"
         [showBusChannel]="true"
@@ -174,6 +176,7 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
     this.draft.control_type = driver?.analog ? 'analog' : 'binary';
     this.draft.pin_index = driver?.io_type === 'internal' ? 255 : undefined;
     this.draft.pin2_index = undefined;
+    this.draft.bus_index = undefined;
     this.ctx.setActivePinSelection(null);
   }
 
@@ -199,7 +202,9 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
     const driver = this.selectedDriver();
     if (!this.draft.display_name?.trim()) return 'Name is required.';
     if (driver?.io_type === 'internal') return null; // no pin needed
-    if (driver?.bus_addressed) return null; // bus fields have defaults
+    if (driver?.bus_addressed) {
+      return this.draft.bus_index == null ? 'Select a bus.' : null;
+    }
     // Check all required pins are selected
     const requiredCount = driver?.pin_functions?.length ?? 1;
     for (let i = 0; i < requiredCount; i++) {
@@ -222,7 +227,7 @@ export class OutputFormComponent implements OnChanges, OnDestroy {
       pin2_index: undefined,
       min_value: 0,
       max_value: 100,
-      bus_index: 0,
+      bus_index: undefined,
       bus_address: 0x40,
       bus_channel: 0,
       pulse_x100ms: 10,

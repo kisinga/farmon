@@ -39,13 +39,16 @@ export const OP = {
   Accum:      0x40,
   WindowAvg:  0x41,
   Clamp:      0x42,
+  Mod:        0x14,
+  Select:     0x24,
+  Delta:      0x43,
 } as const;
 
 // ─── Tokens ─────────────────────────────────────────────────────────────────
 
 export type TokenType =
   | 'number' | 'field_ref' | 'ident'
-  | '+' | '-' | '*' | '/' | '(' | ')' | ',';
+  | '+' | '-' | '*' | '/' | '%' | '(' | ')' | ',';
 
 export interface Token {
   type: TokenType;
@@ -61,7 +64,7 @@ export function tokenize(expr: string): Token[] {
     if (/\s/.test(expr[i])) { i++; continue; }
 
     // Single-char operators / delimiters
-    if ('+-*/(),'.includes(expr[i])) {
+    if ('+-*/(),%'.includes(expr[i])) {
       tokens.push({ type: expr[i] as TokenType, pos: i, value: expr[i] });
       i++;
       continue;
@@ -102,7 +105,7 @@ export function tokenize(expr: string): Token[] {
 export type ASTNode =
   | { type: 'number'; value: number }
   | { type: 'field_ref'; index: number }
-  | { type: 'binary_op'; op: '+' | '-' | '*' | '/'; left: ASTNode; right: ASTNode }
+  | { type: 'binary_op'; op: '+' | '-' | '*' | '/' | '%'; left: ASTNode; right: ASTNode }
   | { type: 'unary_neg'; arg: ASTNode }
   | { type: 'call'; name: string; args: ASTNode[] };
 
@@ -158,8 +161,8 @@ class Parser {
 
   private term(): ASTNode {
     let left = this.factor();
-    while (this.peek()?.type === '*' || this.peek()?.type === '/') {
-      const op = this.eat(this.peek()!.type).type as '*' | '/';
+    while (this.peek()?.type === '*' || this.peek()?.type === '/' || this.peek()?.type === '%') {
+      const op = this.eat(this.peek()!.type).type as '*' | '/' | '%';
       const right = this.factor();
       left = { type: 'binary_op', op, left, right };
     }
@@ -244,6 +247,9 @@ const KNOWN_FUNCTIONS: Record<string, { minArgs: number; maxArgs: number }> = {
   lt:     { minArgs: 2, maxArgs: 2 },
   gte:    { minArgs: 2, maxArgs: 2 },
   lte:    { minArgs: 2, maxArgs: 2 },
+  mod:    { minArgs: 2, maxArgs: 2 },
+  select: { minArgs: 3, maxArgs: 3 },
+  delta:  { minArgs: 1, maxArgs: 1 },
 };
 
 export interface ExprValidationError {
@@ -369,6 +375,9 @@ export const FUNCTION_CATALOG: FunctionInfo[] = [
   { name: 'lt',    signature: 'lt(a, b)',               description: 'Returns 1 if a < b, else 0',        example: 'lt(f0, 10)' },
   { name: 'gte',   signature: 'gte(a, b)',              description: 'Returns 1 if a >= b, else 0',       example: 'gte(f0, 25)' },
   { name: 'lte',   signature: 'lte(a, b)',              description: 'Returns 1 if a <= b, else 0',       example: 'lte(f0, 10)' },
+  { name: 'mod',   signature: 'mod(a, b)',              description: 'Modulo (remainder of a / b)',        example: 'mod(f0, 60)' },
+  { name: 'select', signature: 'select(cond, a, b)',    description: 'Returns a when cond != 0, else b',   example: 'select(gt(f0, 100), f1, f2)' },
+  { name: 'delta', signature: 'delta(field)',            description: 'Change since previous cycle',        example: 'delta(f0)' },
 ];
 
 // ─── Recipe types ───────────────────────────────────────────────────────────
@@ -380,6 +389,9 @@ export type RecipeType =
   | 'running_total'
   | 'comparison'
   | 'combine'
+  | 'rate_of_change'
+  | 'sensor_mapping'
+  | 'conditional'
   | 'custom';
 
 export interface RecipeTemplate {
@@ -395,6 +407,9 @@ export const RECIPE_TEMPLATES: RecipeTemplate[] = [
   { id: 'running_total',   label: 'Running Total',    description: 'Cumulative sum (e.g. rainfall)' },
   { id: 'comparison',      label: 'Comparison',       description: 'Boolean flag (0 or 1)' },
   { id: 'combine',         label: 'Combine Fields',   description: 'Operate on two fields' },
+  { id: 'rate_of_change',  label: 'Rate of Change',   description: 'Change per cycle (delta)' },
+  { id: 'sensor_mapping',  label: 'Sensor Mapping',   description: 'Map input range to output range' },
+  { id: 'conditional',     label: 'Conditional',      description: 'Choose value based on condition' },
   { id: 'custom',          label: 'Custom',           description: 'Write a raw expression' },
 ];
 
@@ -407,6 +422,9 @@ export interface RunningTotalParams   { fieldIdx: number; }
 export interface ComparisonParams     { fieldIdx: number; op: 'gt' | 'lt' | 'gte' | 'lte'; threshold: number; }
 export interface CombineParams        { fieldIdxA: number; fieldIdxB: number; op: '+' | '-' | '*' | '/' | 'min' | 'max'; }
 export interface CustomParams         { expression: string; }
+export interface RateOfChangeParams  { fieldIdx: number; scale: number; }
+export interface SensorMappingParams { fieldIdx: number; inLow: number; inHigh: number; outLow: number; outHigh: number; }
+export interface ConditionalParams   { condFieldIdx: number; op: 'gt' | 'lt' | 'gte' | 'lte'; threshold: number; ifTrueFieldIdx: number; ifFalseFieldIdx: number; }
 
 export type RecipeParams =
   | { recipe: 'unit_conversion'; params: UnitConversionParams }
@@ -415,6 +433,9 @@ export type RecipeParams =
   | { recipe: 'running_total';   params: RunningTotalParams }
   | { recipe: 'comparison';      params: ComparisonParams }
   | { recipe: 'combine';         params: CombineParams }
+  | { recipe: 'rate_of_change';  params: RateOfChangeParams }
+  | { recipe: 'sensor_mapping';  params: SensorMappingParams }
+  | { recipe: 'conditional';     params: ConditionalParams }
   | { recipe: 'custom';          params: CustomParams };
 
 export function recipeToExpression(rp: RecipeParams): string {
@@ -437,6 +458,19 @@ export function recipeToExpression(rp: RecipeParams): string {
       const { fieldIdxA, fieldIdxB, op } = rp.params;
       if (op === 'min' || op === 'max') return `${op}(f${fieldIdxA}, f${fieldIdxB})`;
       return `f${fieldIdxA} ${op} f${fieldIdxB}`;
+    }
+    case 'rate_of_change': {
+      const { fieldIdx, scale } = rp.params;
+      if (scale === 1) return `delta(f${fieldIdx})`;
+      return `delta(f${fieldIdx}) * ${scale}`;
+    }
+    case 'sensor_mapping': {
+      const { fieldIdx, inLow, inHigh, outLow, outHigh } = rp.params;
+      return `(f${fieldIdx} - ${inLow}) / (${inHigh} - ${inLow}) * (${outHigh} - ${outLow}) + ${outLow}`;
+    }
+    case 'conditional': {
+      const { condFieldIdx, op, threshold, ifTrueFieldIdx, ifFalseFieldIdx } = rp.params;
+      return `select(${op}(f${condFieldIdx}, ${threshold}), f${ifTrueFieldIdx}, f${ifFalseFieldIdx})`;
     }
     case 'custom':
       return rp.params.expression;
