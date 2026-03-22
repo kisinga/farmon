@@ -244,3 +244,78 @@ Option 2 is the best choice. It solves the main problem of the current custom pr
 
 Long term plan:
 Full scale migration to LoRaWAN. Option 2.
+
+---
+
+## The Pivot: From Custom Stack to Community Stack (March 2026)
+
+### What we built
+
+Over several months, we built a full custom IoT stack from scratch:
+
+- **Firmware** (TinyGo): 7,600 LOC. 3 board targets (RP2040, LoRa-E5, Heltec V3), 28 sensor drivers, a bytecode compute VM, edge rules engine, binary codec, AirConfig OTA system, custom LoRaWAN MAC handling.
+- **Backend** (Go/PocketBase): 10,100 LOC. 50+ API endpoints, 5 custom binary decode formats, workflow engine with cron/triggers/delayed actions, LoRaWAN join/session management via ZMQ to Concentratord, WiFi transport, downlink queue, device provisioning with templates, firmware builder.
+- **Frontend** (Angular 19): 13,300 LOC. 42 components, device config with pin mapping UI, board SVG visualisation, history charts, workflow builder, LoRaWAN frame monitor.
+
+~30,000 lines of code. One developer. Bus factor of 1.
+
+### Why we're walking away from it
+
+Honest reasons:
+
+1. **Maintenance terror.** Every new sensor is code. Every new board is ~800 LOC of hand-written radio driver. Every protocol change touches firmware + backend + frontend in lockstep. I'm the only person who can fix any of it.
+
+2. **The firmware is the millstone.** 28 sensor drivers that Tasmota/ESPHome already maintain. A LoRaWAN MAC layer that ChirpStack handles better. A compute VM and rules engine that looked clever but weren't mature — and ESPHome's YAML automations match or exceed them for practical use.
+
+3. **The backend is less capable than ChirpStack + HA combined.** I was proud of it, but when I actually compared feature-by-feature: ChirpStack has better LoRaWAN handling, more device codecs, FUOTA, multi-gateway support. Home Assistant has 3000+ integrations, mobile app, community dashboards, backup/restore. My backend's unique features (AirConfig, compute compiler, binary codec) only exist to serve my custom firmware — remove the firmware and they're pointless.
+
+4. **Nobody can Google my error messages.** If a pump doesn't turn off at 2am, that's on me. With ChirpStack + HA, thousands of people have hit the same bugs before.
+
+5. **On-device processing was over-engineered.** I built a bytecode VM and edge rules engine because I believed on-device intelligence was critical. For safety-critical stuff (pump shutoff), ESPHome's local automations handle it. For everything else, server-side HA automations are fine. I over-built for a problem that mostly doesn't exist in my use case.
+
+### The journey in this conversation
+
+Started by asking how FarMon differs from Tasmota. That led to:
+
+- **Tasmota can't be a LoRaWAN end node** — maintainers explicitly said it won't happen (too power hungry, better options exist). Neither can ESPHome. So custom firmware can't be fully replaced... unless we use AT command modules.
+- **RAK3172 / Wio-E5 over UART** — LoRaWAN modules that handle the protocol via AT commands. Pair with an ESP32 running ESPHome. One small custom component (~200 LOC C++) bridges them. Existing [ESP32-RAK3172 library](https://github.com/Kampi/ESP32-RAK3172) already does the hard part.
+- **ESPHome > Tasmota when HA is the server** — ESPHome has native API, auto-discovery, config-as-code. Tasmota's independence is wasted when you have HA.
+- **My backend is not better than ChirpStack + HA.** I validated this claim critically. The features where my backend wins (AirConfig, compute VM, binary codec) are all firmware-facing. Remove the firmware, and I'm left with a less tested, less documented, less capable version of community software.
+- **HA OS is too locked down** — Buildroot-based, no apt, no package manager, no custom Docker containers. Can't run Concentratord or ChirpStack alongside it.
+- **HA Supervised is being deprecated** (announced May 2025, 6-month deprecation period).
+- **HA Container (Docker) is the only viable option** — gives full Linux (Raspberry Pi OS), Docker for everything, SSH, Tailscale for remote VPN access.
+
+### What we're building now
+
+**Raspberry Pi OS + Docker Compose** with:
+
+- **Home Assistant Container** — automations, dashboards, mobile app
+- **ChirpStack** — LoRaWAN network server (device management, codecs, downlinks)
+- **PostgreSQL** — ChirpStack's database
+- **Redis** — ChirpStack's session/cache
+- **Mosquitto** — MQTT broker (HA ↔ ChirpStack ↔ devices)
+- **ESPHome** — device firmware management (WiFi devices)
+- **Tailscale** — VPN for secure remote access
+- **Concentratord** — SX1302 HAT gateway (systemd service, not Docker)
+
+**Device strategy:**
+- Off-the-shelf LoRaWAN sensors (Dragino, Milesight) for remote monitoring — no firmware to write
+- ESPHome on ESP32 for WiFi devices near infrastructure — YAML config, no code
+- ESPHome + RAK3172/Wio-E5 (UART AT commands) for custom LoRaWAN nodes if needed — one small custom component
+
+### What survives from the old stack
+
+Almost nothing as code. Everything as lessons:
+
+- The firmware taught us LoRaWAN, binary protocols, embedded constraints, and that commodity problems deserve commodity solutions.
+- The backend taught us PocketBase, workflow engines, codec design, and that being the only person who understands the system is a liability, not an asset.
+- The frontend taught us Angular, real-time IoT dashboards, and that community dashboards with drag-and-drop are what farmers actually want.
+- The dev journal taught us to document decisions honestly, including the wrong ones.
+
+### Lessons
+
+1. **Build what's unique, buy/use what's commodity.** Sensor drivers, LoRaWAN stacks, MQTT brokers, dashboards — these are solved problems. Don't re-solve them.
+2. **Bus factor of 1 is a product risk, not just a team risk.** If your customers can't get support without you personally, you don't have a product.
+3. **On-device intelligence is insurance, not architecture.** Put smarts on the server, put safety fallbacks on the device. Don't build the whole system around edge compute.
+4. **Pride in code is not a reason to keep it.** The code was good. Walking away from it is better.
+5. **The ecosystem is the product.** HA's 3000+ integrations, community forums, and mobile app are worth more than any custom feature I could build alone.

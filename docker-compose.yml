@@ -1,0 +1,135 @@
+version: "3.8"
+
+# FarMon Stack: HA + ChirpStack + ESPHome on Raspberry Pi OS
+# Prerequisites:
+#   - Raspberry Pi OS 64-bit (Bookworm)
+#   - Docker + Docker Compose installed
+#   - Concentratord installed as systemd service (for SX1302 HAT)
+#   - Tailscale installed at OS level (not containerised)
+#
+# Usage:
+#   docker compose up -d
+#
+# First run:
+#   1. Access HA at http://<pi-ip>:8123 — create admin account
+#   2. Access ChirpStack at http://<pi-ip>:8080 — default admin/admin
+#   3. Configure HA MQTT integration → point to mosquitto:1883
+#   4. Add ChirpStack MQTT integration in HA
+#   5. Install ESPHome dashboard via HA or access http://<pi-ip>:6052
+
+services:
+
+  # --- MQTT Broker ---
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+
+  # --- ChirpStack Dependencies ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: chirpstack-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chirpstack
+      POSTGRES_USER: chirpstack
+      POSTGRES_PASSWORD: ${CHIRPSTACK_DB_PASSWORD:-chirpstack}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chirpstack"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: chirpstack-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- ChirpStack LoRaWAN Network Server ---
+  chirpstack:
+    image: chirpstack/chirpstack:4
+    container_name: chirpstack
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    ports:
+      - "8080:8080"   # Web UI + REST API
+      - "8000:8000"   # gRPC API (optional)
+    volumes:
+      - ./config/chirpstack/chirpstack.toml:/etc/chirpstack/chirpstack.toml:ro
+      - chirpstack_data:/data
+    environment:
+      MQTT_BROKER_HOST: mosquitto
+      POSTGRESQL_HOST: postgres
+      REDIS_HOST: redis
+
+  # --- ChirpStack Gateway Bridge ---
+  # Translates Concentratord/packet-forwarder → MQTT for ChirpStack
+  chirpstack-gateway-bridge:
+    image: chirpstack/chirpstack-gateway-bridge:4
+    container_name: chirpstack-gateway-bridge
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    ports:
+      - "1700:1700/udp"   # Semtech UDP packet forwarder
+    volumes:
+      - ./config/chirpstack-gateway-bridge/chirpstack-gateway-bridge.toml:/etc/chirpstack-gateway-bridge/chirpstack-gateway-bridge.toml:ro
+
+  # --- Home Assistant ---
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./config/homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+    privileged: true
+    network_mode: host
+
+  # --- ESPHome ---
+  esphome:
+    image: ghcr.io/esphome/esphome:stable
+    container_name: esphome
+    restart: unless-stopped
+    ports:
+      - "6052:6052"
+    volumes:
+      - ./config/esphome:/config
+      - /etc/localtime:/etc/localtime:ro
+    # Needed for USB flashing and mDNS discovery
+    privileged: true
+    network_mode: host
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+  postgres_data:
+  redis_data:
+  chirpstack_data:
