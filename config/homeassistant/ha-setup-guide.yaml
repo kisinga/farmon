@@ -1,0 +1,137 @@
+# =============================================================================
+# HA Setup — All via UI
+# =============================================================================
+#
+# STEP 1: HELPERS (Settings → Helpers → Create)
+# -----------------------------------------------
+# [Dropdown] "Operating Mode"    → Options: Rainy Season, Dry Season
+# [Dropdown] "Pump Source"       → Options: Tank 1, Tank 2
+# [Dropdown] "Pump Destination"  → Options: Tank 2 (Refill), House 2
+# [Toggle]   "Auto-Refill Enabled"
+#
+#
+# STEP 2: SCRIPTS (Settings → Automations → Scripts → Add → ⋮ → Edit in YAML)
+# Paste one at a time.
+# =============================================================================
+
+# --- Script 1: Start pump with selected source/dest ---
+alias: "Pump Start"
+mode: single
+sequence:
+  - variables:
+      inlet: "{% if is_state('input_select.pump_source', 'Tank 1') %}1{% else %}2{% endif %}"
+      outlet: "{% if is_state('input_select.pump_destination', 'Tank 2 (Refill)') %}3{% else %}4{% endif %}"
+  - condition: state
+    entity_id: sensor.pump_system_state
+    state: "IDLE"
+  - service: esphome.pump_controller_pump_start
+    data:
+      inlet: "{{ inlet | int }}"
+      outlet: "{{ outlet | int }}"
+
+# --- Script 2: Stop pump ---
+alias: "Pump Stop"
+mode: single
+sequence:
+  - service: esphome.pump_controller_pump_stop
+
+# --- Script 3: Reset fault ---
+alias: "Pump Fault Reset"
+mode: single
+sequence:
+  - service: esphome.pump_controller_fault_reset
+
+# =============================================================================
+# STEP 3: AUTOMATIONS (Settings → Automations → Add → ⋮ → Edit in YAML)
+# Paste one at a time.
+# =============================================================================
+
+# --- Automation 1: Auto-refill Tank 2 (mode-aware) ---
+alias: "Auto-Refill Tank 2"
+mode: single
+trigger:
+  - platform: state
+    entity_id: sensor.tank_2_level
+    for: "00:01:00"
+condition:
+  - condition: state
+    entity_id: input_boolean.auto_refill_enabled
+    state: "on"
+  - condition: state
+    entity_id: sensor.pump_system_state
+    state: "IDLE"
+  - condition: template
+    value_template: >
+      {% set mode = states('input_select.operating_mode') %}
+      {% set t2 = states('sensor.tank_2_level') | float(100) %}
+      {% set t1 = states('sensor.tank_1_level') | float(0) %}
+      {% if mode == 'Rainy Season' %}
+        {{ t2 < 80 and t1 > 20 }}
+      {% else %}
+        {{ t2 < 10 and t1 > 70 }}
+      {% endif %}
+action:
+  - service: input_select.select_option
+    target: {entity_id: input_select.pump_source}
+    data: {option: "Tank 1"}
+  - service: input_select.select_option
+    target: {entity_id: input_select.pump_destination}
+    data: {option: "Tank 2 (Refill)"}
+  - service: script.turn_on
+    target: {entity_id: script.pump_start}
+
+# --- Automation 2: Stop refill when Tank 2 full or Tank 1 low ---
+alias: "Stop Refill"
+trigger:
+  - platform: state
+    entity_id:
+      - sensor.tank_2_level
+      - sensor.tank_1_level
+condition:
+  - condition: state
+    entity_id: sensor.pump_system_state
+    state: "RUNNING"
+  - condition: state
+    entity_id: input_select.pump_destination
+    state: "Tank 2 (Refill)"
+  - condition: template
+    value_template: >
+      {% set mode = states('input_select.operating_mode') %}
+      {% set t2 = states('sensor.tank_2_level') | float(0) %}
+      {% set t1 = states('sensor.tank_1_level') | float(100) %}
+      {% if mode == 'Rainy Season' %}
+        {{ t2 >= 90 or t1 <= 20 }}
+      {% else %}
+        {{ t2 >= 40 or t1 <= 70 }}
+      {% endif %}
+action:
+  - service: script.turn_on
+    target: {entity_id: script.pump_stop}
+
+# --- Automation 3: Fault notification ---
+alias: "Pump Fault Alert"
+trigger:
+  - platform: state
+    entity_id: sensor.pump_system_state
+    to: "FAULT"
+action:
+  - service: persistent_notification.create
+    data:
+      title: "PUMP FAULT"
+      message: "{{ states('sensor.pump_fault') }}. Reset from dashboard."
+
+# --- Automation 4: Low water warning ---
+alias: "Water Critical"
+trigger:
+  - platform: template
+    value_template: >
+      {{ ((states('sensor.tank_1_level') | float(0)) +
+          (states('sensor.tank_2_level') | float(0))) / 2 < 35 }}
+    for: "00:05:00"
+action:
+  - service: persistent_notification.create
+    data:
+      title: "WATER LOW"
+      message: >
+        Tank 1: {{ states('sensor.tank_1_level') }}%,
+        Tank 2: {{ states('sensor.tank_2_level') }}%.
