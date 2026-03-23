@@ -2,3 +2,6 @@
 
 # Firmware build artifacts (generated per-device by backend)
 backend/builds/
+
+# ESPHome secrets
+esphome/secrets.yaml
