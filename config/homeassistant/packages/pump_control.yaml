@@ -1,0 +1,501 @@
+# =============================================================================
+# Pump Control Package — Home Assistant
+# =============================================================================
+# Operating modes:
+#
+#   RAINY SEASON — Tank 1 fills from rain. Priority: keep Tank 2 full.
+#     - Auto-refill Tank 2 aggressively (trigger 80%, stop 90%)
+#     - Allow Tank 1 to drain to 20% (rain replenishes)
+#     - Prefer Tank 1 as House 2 source (abundant, free water)
+#
+#   DRY SEASON — No rain. Priority: conserve Tank 1.
+#     - Auto-refill Tank 2 sparingly (trigger 10%, stop 40%)
+#     - Protect Tank 1: stop pumping from it at 70% (conserve)
+#     - Absolute Tank 1 low: 20% (critical warning)
+#     - Prefer Tank 2 as House 2 source (preserve Tank 1)
+#
+# Combined warning: average of both tanks < 35%.
+# All thresholds are adjustable per mode from the dashboard.
+# =============================================================================
+
+# --- Operating mode ----------------------------------------------------------
+
+input_select:
+  operating_mode:
+    name: Operating Mode
+    icon: mdi:weather-cloudy
+    options:
+      - "Rainy Season"
+      - "Dry Season"
+    initial: "Rainy Season"
+
+  pump_source:
+    name: Pump Source
+    icon: mdi:water-well
+    options:
+      - "Tank 1"
+      - "Tank 2"
+    initial: "Tank 1"
+
+  pump_destination:
+    name: Pump Destination
+    icon: mdi:home-city
+    options:
+      - "Tank 2 (Refill)"
+      - "House 2"
+    initial: "Tank 2 (Refill)"
+
+# --- Per-mode thresholds (all adjustable) ------------------------------------
+
+input_number:
+  pump_duration_minutes:
+    name: Pump Duration
+    icon: mdi:timer-outline
+    min: 1
+    max: 30
+    step: 1
+    initial: 15
+    unit_of_measurement: min
+
+  # Rainy season
+  rainy_tank2_refill_trigger:
+    name: "[Rainy] Tank 2 refill below"
+    icon: mdi:arrow-down-bold
+    min: 30
+    max: 90
+    step: 5
+    initial: 80
+    unit_of_measurement: "%"
+
+  rainy_tank2_refill_stop:
+    name: "[Rainy] Tank 2 refill stop at"
+    icon: mdi:arrow-up-bold
+    min: 50
+    max: 95
+    step: 5
+    initial: 90
+    unit_of_measurement: "%"
+
+  rainy_tank1_min:
+    name: "[Rainy] Tank 1 stop pumping at"
+    icon: mdi:shield-alert
+    min: 5
+    max: 50
+    step: 5
+    initial: 20
+    unit_of_measurement: "%"
+
+  # Dry season
+  dry_tank2_refill_trigger:
+    name: "[Dry] Tank 2 refill below"
+    icon: mdi:arrow-down-bold
+    min: 5
+    max: 40
+    step: 5
+    initial: 10
+    unit_of_measurement: "%"
+
+  dry_tank2_refill_stop:
+    name: "[Dry] Tank 2 refill stop at"
+    icon: mdi:arrow-up-bold
+    min: 20
+    max: 70
+    step: 5
+    initial: 40
+    unit_of_measurement: "%"
+
+  dry_tank1_min:
+    name: "[Dry] Tank 1 stop pumping at"
+    icon: mdi:shield-alert
+    min: 20
+    max: 80
+    step: 5
+    initial: 70
+    unit_of_measurement: "%"
+
+  # Global
+  critical_combined_level:
+    name: Combined low-water warning
+    icon: mdi:alert
+    min: 10
+    max: 50
+    step: 5
+    initial: 35
+    unit_of_measurement: "%"
+
+input_boolean:
+  auto_refill_enabled:
+    name: Auto-Refill Enabled
+    icon: mdi:autorenew
+    initial: true
+
+# --- Template sensors --------------------------------------------------------
+
+template:
+  - sensor:
+      - name: "Pump Mode Display"
+        unique_id: pump_mode_display
+        icon: mdi:water-pump
+        state: >
+          {% set s = states('sensor.pump_system_state') %}
+          {% if s in ['RUNNING', 'PREPARING'] %}
+            {{ states('input_select.pump_source') }} → {{ states('input_select.pump_destination') }}
+          {% else %}{{ s | default('Unknown') }}{% endif %}
+
+      # --- Active thresholds (resolved from mode) ---
+      - name: "Active Tank 2 Refill Trigger"
+        unique_id: active_t2_refill_trigger
+        unit_of_measurement: "%"
+        state: >
+          {% if is_state('input_select.operating_mode', 'Rainy Season') %}
+            {{ states('input_number.rainy_tank2_refill_trigger') }}
+          {% else %}
+            {{ states('input_number.dry_tank2_refill_trigger') }}
+          {% endif %}
+
+      - name: "Active Tank 2 Refill Stop"
+        unique_id: active_t2_refill_stop
+        unit_of_measurement: "%"
+        state: >
+          {% if is_state('input_select.operating_mode', 'Rainy Season') %}
+            {{ states('input_number.rainy_tank2_refill_stop') }}
+          {% else %}
+            {{ states('input_number.dry_tank2_refill_stop') }}
+          {% endif %}
+
+      - name: "Active Tank 1 Min Level"
+        unique_id: active_t1_min
+        unit_of_measurement: "%"
+        state: >
+          {% if is_state('input_select.operating_mode', 'Rainy Season') %}
+            {{ states('input_number.rainy_tank1_min') }}
+          {% else %}
+            {{ states('input_number.dry_tank1_min') }}
+          {% endif %}
+
+      - name: "Preferred House 2 Source"
+        unique_id: preferred_house2_source
+        icon: mdi:home-import-outline
+        state: >
+          {% if is_state('input_select.operating_mode', 'Rainy Season') %}
+            Tank 1
+          {% else %}
+            Tank 2
+          {% endif %}
+
+      - name: "Combined Tank Level"
+        unique_id: combined_tank_level
+        unit_of_measurement: "%"
+        icon: mdi:gauge
+        state: >
+          {{ ((states('sensor.tank_1_level') | float(0)) +
+              (states('sensor.tank_2_level') | float(0))) / 2 | round(0) }}
+
+      - name: "House 1 Daily Usage"
+        unique_id: house1_daily_usage
+        unit_of_measurement: "L"
+        icon: mdi:water
+        state: "{{ states('sensor.house_1_total_usage') | float(0) | round(1) }}"
+
+      - name: "House 2 Daily Usage"
+        unique_id: house2_daily_usage
+        unit_of_measurement: "L"
+        icon: mdi:water
+        state: "{{ states('sensor.house_2_total_usage') | float(0) | round(1) }}"
+
+  - binary_sensor:
+      - name: "Water Critical"
+        unique_id: water_critical
+        device_class: problem
+        state: >
+          {{ ((states('sensor.tank_1_level') | float(0)) +
+              (states('sensor.tank_2_level') | float(0))) / 2
+             < (states('input_number.critical_combined_level') | float(35)) }}
+
+# --- Scripts -----------------------------------------------------------------
+
+script:
+  pump_start_selected:
+    alias: "Pump — Start Selected Mode"
+    icon: mdi:water-pump
+    mode: single
+    sequence:
+      - variables:
+          inlet: >
+            {% if is_state('input_select.pump_source', 'Tank 1') %}1{% else %}2{% endif %}
+          outlet: >
+            {% if is_state('input_select.pump_destination', 'Tank 2 (Refill)') %}3{% else %}4{% endif %}
+      - condition: template
+        value_template: "{{ not (inlet == '2' and outlet == '3') }}"
+      - condition: template
+        value_template: "{{ not is_state('sensor.pump_system_state', 'unavailable') }}"
+      - condition: state
+        entity_id: sensor.pump_system_state
+        state: "IDLE"
+      - service: esphome.pump_controller_pump_start
+        data:
+          inlet: "{{ inlet | int }}"
+          outlet: "{{ outlet | int }}"
+      - delay:
+          minutes: "{{ states('input_number.pump_duration_minutes') | int(15) }}"
+      - condition: state
+        entity_id: sensor.pump_system_state
+        state: "RUNNING"
+      - service: esphome.pump_controller_pump_stop
+
+  pump_stop:
+    alias: "Pump — Stop"
+    icon: mdi:stop-circle
+    mode: single
+    sequence:
+      - service: esphome.pump_controller_pump_stop
+
+  pump_fault_reset:
+    alias: "Pump — Reset Fault"
+    icon: mdi:alert-circle-check
+    mode: single
+    sequence:
+      - service: esphome.pump_controller_fault_reset
+
+  pump_tank1_to_tank2:
+    alias: "Pump: Tank 1 → Tank 2"
+    icon: mdi:water-sync
+    mode: single
+    sequence:
+      - service: input_select.select_option
+        target: {entity_id: input_select.pump_source}
+        data: {option: "Tank 1"}
+      - service: input_select.select_option
+        target: {entity_id: input_select.pump_destination}
+        data: {option: "Tank 2 (Refill)"}
+      - service: script.turn_on
+        target: {entity_id: script.pump_start_selected}
+
+  pump_tank1_to_house2:
+    alias: "Pump: Tank 1 → House 2"
+    icon: mdi:home-import-outline
+    mode: single
+    sequence:
+      - service: input_select.select_option
+        target: {entity_id: input_select.pump_source}
+        data: {option: "Tank 1"}
+      - service: input_select.select_option
+        target: {entity_id: input_select.pump_destination}
+        data: {option: "House 2"}
+      - service: script.turn_on
+        target: {entity_id: script.pump_start_selected}
+
+  pump_tank2_to_house2:
+    alias: "Pump: Tank 2 → House 2"
+    icon: mdi:home-import-outline
+    mode: single
+    sequence:
+      - service: input_select.select_option
+        target: {entity_id: input_select.pump_source}
+        data: {option: "Tank 2"}
+      - service: input_select.select_option
+        target: {entity_id: input_select.pump_destination}
+        data: {option: "House 2"}
+      - service: script.turn_on
+        target: {entity_id: script.pump_start_selected}
+
+  # Preferred source shortcut — resolves from operating mode
+  pump_house2_preferred:
+    alias: "Pump: House 2 (preferred source)"
+    icon: mdi:home-import-outline
+    mode: single
+    sequence:
+      - service: input_select.select_option
+        target: {entity_id: input_select.pump_source}
+        data:
+          option: "{{ states('sensor.preferred_house_2_source') }}"
+      - service: input_select.select_option
+        target: {entity_id: input_select.pump_destination}
+        data: {option: "House 2"}
+      - service: script.turn_on
+        target: {entity_id: script.pump_start_selected}
+
+# --- Automations -------------------------------------------------------------
+
+automation:
+  # --- Mode change: set preferred source default ---
+  - id: mode_change_set_defaults
+    alias: "Mode — Set Defaults on Change"
+    trigger:
+      - platform: state
+        entity_id: input_select.operating_mode
+    action:
+      - service: input_select.select_option
+        target: {entity_id: input_select.pump_source}
+        data:
+          option: "{{ states('sensor.preferred_house_2_source') }}"
+
+  # --- Prevent Tank 2 → Tank 2 loop ---
+  - id: pump_safety_loop_guard
+    alias: "Pump — Prevent Tank 2 Loop"
+    trigger:
+      - platform: state
+        entity_id: [input_select.pump_source, input_select.pump_destination]
+    condition:
+      - condition: state
+        entity_id: input_select.pump_source
+        state: "Tank 2"
+      - condition: state
+        entity_id: input_select.pump_destination
+        state: "Tank 2 (Refill)"
+    action:
+      - service: input_select.select_option
+        target: {entity_id: input_select.pump_destination}
+        data: {option: "House 2"}
+      - service: persistent_notification.create
+        data:
+          title: "Pump Safety"
+          message: "Cannot pump Tank 2 → Tank 2. Changed to House 2."
+
+  # --- Fault notification ---
+  - id: pump_fault_notify
+    alias: "Pump — Fault Notification"
+    trigger:
+      - platform: state
+        entity_id: sensor.pump_system_state
+        to: "FAULT"
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "PUMP FAULT"
+          message: >
+            {{ states('sensor.pump_fault') }}.
+            Pump killed, relief vented, valves closed. Reset from dashboard.
+
+  # --- State logging ---
+  - id: pump_state_log
+    alias: "Pump — State Log"
+    trigger:
+      - platform: state
+        entity_id: sensor.pump_system_state
+    condition:
+      - "{{ trigger.from_state.state != trigger.to_state.state }}"
+    action:
+      - service: logbook.log
+        data:
+          name: "Pump"
+          message: "{{ trigger.from_state.state }} → {{ trigger.to_state.state }}"
+          entity_id: sensor.pump_system_state
+
+  # --- Auto-refill Tank 2 ---------------------------------------------------
+  # Trigger: Tank 2 drops below active threshold for 1 minute.
+  # Guard: auto-refill enabled, system IDLE, Tank 1 above its mode-specific min.
+  - id: pump_auto_refill
+    alias: "Pump — Auto-Refill Tank 2"
+    mode: single
+    trigger:
+      - platform: template
+        value_template: >
+          {{ (states('sensor.tank_2_level') | float(100)) <
+             (states('sensor.active_tank_2_refill_trigger') | float(80)) }}
+        for: "00:01:00"
+    condition:
+      - condition: state
+        entity_id: input_boolean.auto_refill_enabled
+        state: "on"
+      - condition: state
+        entity_id: sensor.pump_system_state
+        state: "IDLE"
+      # Tank 1 must be above the mode-specific conservation limit
+      - condition: template
+        value_template: >
+          {{ (states('sensor.tank_1_level') | float(0)) >
+             (states('sensor.active_tank_1_min_level') | float(20)) }}
+    action:
+      - service: script.turn_on
+        target: {entity_id: script.pump_tank1_to_tank2}
+      - service: persistent_notification.create
+        data:
+          title: "Auto-Refill Started"
+          message: >
+            [{{ states('input_select.operating_mode') }}]
+            Tank 2 at {{ states('sensor.tank_2_level') }}%
+            (trigger: {{ states('sensor.active_tank_2_refill_trigger') }}%).
+            Refilling from Tank 1 ({{ states('sensor.tank_1_level') }}%).
+
+  # --- Auto-stop refill: Tank 2 reached target OR Tank 1 hit min -----------
+  - id: pump_auto_refill_stop_full
+    alias: "Pump — Stop Refill (Tank 2 Full)"
+    trigger:
+      - platform: template
+        value_template: >
+          {{ (states('sensor.tank_2_level') | float(0)) >=
+             (states('sensor.active_tank_2_refill_stop') | float(90)) }}
+    condition:
+      - condition: state
+        entity_id: sensor.pump_system_state
+        state: "RUNNING"
+      - condition: state
+        entity_id: input_select.pump_destination
+        state: "Tank 2 (Refill)"
+    action:
+      - service: script.turn_on
+        target: {entity_id: script.pump_stop}
+      - service: persistent_notification.create
+        data:
+          title: "Refill Complete"
+          message: "Tank 2 at {{ states('sensor.tank_2_level') }}%. Stopped."
+
+  - id: pump_auto_refill_stop_source_low
+    alias: "Pump — Stop Refill (Tank 1 Low)"
+    trigger:
+      - platform: template
+        value_template: >
+          {{ (states('sensor.tank_1_level') | float(100)) <=
+             (states('sensor.active_tank_1_min_level') | float(20)) }}
+    condition:
+      - condition: state
+        entity_id: sensor.pump_system_state
+        state: "RUNNING"
+      - condition: state
+        entity_id: input_select.pump_destination
+        state: "Tank 2 (Refill)"
+    action:
+      - service: script.turn_on
+        target: {entity_id: script.pump_stop}
+      - service: persistent_notification.create
+        data:
+          title: "Refill Stopped — Tank 1 Conservation"
+          message: >
+            Tank 1 hit {{ states('sensor.active_tank_1_min_level') }}% limit
+            ({{ states('input_select.operating_mode') }} mode).
+            Tank 2 at {{ states('sensor.tank_2_level') }}%.
+
+  # --- Combined low-water critical warning -----------------------------------
+  - id: water_critical_warning
+    alias: "Water — Critical Low Warning"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.water_critical
+        to: "on"
+        for: "00:05:00"
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "WATER CRITICAL"
+          message: >
+            Combined tank level at {{ states('sensor.combined_tank_level') }}%
+            (Tank 1: {{ states('sensor.tank_1_level') }}%,
+             Tank 2: {{ states('sensor.tank_2_level') }}%).
+            Below {{ states('input_number.critical_combined_level') }}% threshold.
+
+  # --- Tank 1 low (absolute) ------------------------------------------------
+  - id: tank1_absolute_low
+    alias: "Tank 1 — Absolute Low Warning"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.tank_1_level
+        below: 20
+        for: "00:05:00"
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "Tank 1 Critical"
+          message: >
+            Tank 1 at {{ states('sensor.tank_1_level') }}%.
+            Manual intervention needed — no automatic refill source.

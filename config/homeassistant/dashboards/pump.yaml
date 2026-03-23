@@ -1,0 +1,215 @@
+title: Water System
+views:
+  # =========================================================================
+  # OVERVIEW
+  # =========================================================================
+  - title: Overview
+    path: overview
+    icon: mdi:water-pump
+    cards:
+      # --- System state + mode -----------------------------------------------
+      - type: entities
+        title: System
+        entities:
+          - entity: input_select.operating_mode
+            name: Season Mode
+          - entity: sensor.pump_system_state
+            name: Pump State
+          - entity: sensor.pump_mode_display
+            name: Active Operation
+          - entity: sensor.pump_fault
+            name: Fault
+
+      # --- Tank gauges -------------------------------------------------------
+      - type: horizontal-stack
+        cards:
+          - type: gauge
+            entity: sensor.tank_1_level
+            name: Tank 1 (Rain)
+            min: 0
+            max: 100
+            severity:
+              red: 0
+              yellow: 25
+              green: 50
+            needle: true
+
+          - type: gauge
+            entity: sensor.tank_2_level
+            name: Tank 2
+            min: 0
+            max: 100
+            severity:
+              red: 0
+              yellow: 25
+              green: 50
+            needle: true
+
+      - type: entities
+        entities:
+          - entity: sensor.combined_tank_level
+            name: Combined Average
+          - entity: binary_sensor.water_critical
+            name: Water Critical
+
+      # --- Pump control ------------------------------------------------------
+      - type: vertical-stack
+        title: Pump Control
+        cards:
+          - type: entities
+            entities:
+              - entity: input_select.pump_source
+                name: Source
+              - entity: input_select.pump_destination
+                name: Destination
+              - entity: sensor.preferred_house_2_source
+                name: Recommended H2 Source
+              - entity: input_number.pump_duration_minutes
+                name: Duration
+
+          - type: horizontal-stack
+            cards:
+              - type: button
+                name: "Tank 1 → Tank 2"
+                icon: mdi:water-sync
+                tap_action:
+                  action: call-service
+                  service: script.turn_on
+                  target: {entity_id: script.pump_tank1_to_tank2}
+                show_state: false
+
+              - type: button
+                name: "House 2 (auto)"
+                icon: mdi:home-import-outline
+                tap_action:
+                  action: call-service
+                  service: script.turn_on
+                  target: {entity_id: script.pump_house2_preferred}
+                show_state: false
+
+              - type: button
+                name: "Start Selected"
+                icon: mdi:play-circle
+                icon_color: green
+                tap_action:
+                  action: call-service
+                  service: script.turn_on
+                  target: {entity_id: script.pump_start_selected}
+                show_state: false
+
+          - type: horizontal-stack
+            cards:
+              - type: button
+                name: "Stop"
+                icon: mdi:stop-circle
+                icon_color: red
+                tap_action:
+                  action: call-service
+                  service: script.turn_on
+                  target: {entity_id: script.pump_stop}
+                show_state: false
+
+              - type: button
+                name: "Reset Fault"
+                icon: mdi:alert-circle-check
+                icon_color: orange
+                tap_action:
+                  action: call-service
+                  service: script.turn_on
+                  target: {entity_id: script.pump_fault_reset}
+                show_state: false
+
+      # --- Auto-refill config ------------------------------------------------
+      - type: entities
+        title: Auto-Refill
+        entities:
+          - entity: input_boolean.auto_refill_enabled
+            name: Enabled
+          - entity: sensor.active_tank_2_refill_trigger
+            name: Tank 2 refill below (active)
+          - entity: sensor.active_tank_2_refill_stop
+            name: Tank 2 refill stop at (active)
+          - entity: sensor.active_tank_1_min_level
+            name: Tank 1 conservation limit (active)
+
+      # --- House usage -------------------------------------------------------
+      - type: horizontal-stack
+        cards:
+          - type: vertical-stack
+            cards:
+              - type: sensor
+                entity: sensor.house_1_water_flow
+                name: "House 1 Flow"
+                graph: line
+                hours_to_show: 6
+              - type: statistic
+                entity: sensor.house_1_total_usage
+                name: "House 1 Daily"
+                stat_type: state
+                period: {calendar: {period: day}}
+
+          - type: vertical-stack
+            cards:
+              - type: sensor
+                entity: sensor.house_2_water_flow
+                name: "House 2 Flow"
+                graph: line
+                hours_to_show: 6
+              - type: statistic
+                entity: sensor.house_2_total_usage
+                name: "House 2 Daily"
+                stat_type: state
+                period: {calendar: {period: day}}
+
+      # --- Hardware status ---------------------------------------------------
+      - type: glance
+        title: Hardware
+        show_state: true
+        entities:
+          - entity: switch.pump_relay
+            name: Pump
+          - entity: switch.pressure_relief_solenoid
+            name: Relief
+          - entity: cover.valve_1_tank_1_outlet
+            name: V1
+          - entity: cover.valve_2_tank_2_outlet
+            name: V2
+          - entity: cover.valve_3_pump_to_tank_2
+            name: V3
+          - entity: cover.valve_4_pump_to_house_2
+            name: V4
+
+  # =========================================================================
+  # SETTINGS — per-mode thresholds
+  # =========================================================================
+  - title: Settings
+    path: settings
+    icon: mdi:cog
+    cards:
+      - type: entities
+        title: "Rainy Season Thresholds"
+        entities:
+          - entity: input_number.rainy_tank2_refill_trigger
+            name: Tank 2 refill below
+          - entity: input_number.rainy_tank2_refill_stop
+            name: Tank 2 refill stop at
+          - entity: input_number.rainy_tank1_min
+            name: Tank 1 stop pumping at
+
+      - type: entities
+        title: "Dry Season Thresholds"
+        entities:
+          - entity: input_number.dry_tank2_refill_trigger
+            name: Tank 2 refill below
+          - entity: input_number.dry_tank2_refill_stop
+            name: Tank 2 refill stop at
+          - entity: input_number.dry_tank1_min
+            name: Tank 1 stop pumping at
+
+      - type: entities
+        title: "Global"
+        entities:
+          - entity: input_number.critical_combined_level
+            name: Combined low-water warning
+          - entity: input_number.pump_duration_minutes
+            name: Pump duration
