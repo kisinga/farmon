@@ -135,6 +135,7 @@ display:
     pages:
       - id: page_status
         lambda: |-
+          it.fill(COLOR_OFF);
           it.printf(0, 0, id(font_large), "${friendly_name}");
           if (id(ip_addr).has_state()) {
             it.printf(0, 18, id(font_small), "IP: %s", id(ip_addr).state.c_str());
@@ -154,6 +155,7 @@ display:
 
       - id: page_wifi
         lambda: |-
+          it.fill(COLOR_OFF);
           it.printf(0, 0, id(font_large), "WiFi Signal");
           if (id(wifi_dbm).has_state()) {
             it.printf(0, 24, id(font_large), "%.0f dBm", id(wifi_dbm).state);
