@@ -1,0 +1,171 @@
+# =============================================================================
+# Heltec WiFi LoRa 32 V3 — Base Board Package
+# =============================================================================
+# Shared by all devices running on this board. Provides:
+#   - ESP32-S3 config, buses (I2C, SPI reserved for LoRa)
+#   - Vext power gate, onboard LED
+#   - Networking (WiFi, captive_portal, OTA)
+#   - API with encryption (devices extend with services)
+#   - Battery monitoring (ADC + percent)
+#   - Common sensors (WiFi signal, uptime, ESP temp, IP)
+#   - Fonts and images for SSD1306 OLED
+#
+# Does NOT include:
+#   - esphome: block (name/on_boot are per-device)
+#   - display: component (runtime page content is per-device)
+#
+# Requires substitutions from the including config:
+#   ${friendly_name}, ${update_interval}, ${pin_battery_adc}, ${battery_divider}
+# =============================================================================
+
+esp32:
+  variant: esp32s3
+  flash_size: 8MB
+  cpu_frequency: 240MHZ
+  framework:
+    type: esp-idf
+
+logger:
+  hardware_uart: UART0
+
+# --- Networking --------------------------------------------------------------
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${friendly_name} Fallback"
+    password: !secret fallback_password
+
+captive_portal:
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# --- Buses -------------------------------------------------------------------
+
+spi:
+  clk_pin: GPIO9
+  mosi_pin: GPIO10
+  miso_pin: GPIO11
+
+i2c:
+  sda: GPIO17
+  scl: GPIO18
+  frequency: 400kHz
+
+# --- Vext power gate & LED ---------------------------------------------------
+
+switch:
+  - platform: gpio
+    pin: GPIO36
+    id: vext
+    name: "Vext Control"
+    inverted: true
+    restore_mode: ALWAYS_ON
+
+output:
+  - platform: gpio
+    pin: GPIO35
+    id: led_output
+
+light:
+  - platform: binary
+    name: "Onboard LED"
+    output: led_output
+
+# --- Fonts -------------------------------------------------------------------
+
+font:
+  - file: "gfonts://Roboto+Condensed"
+    id: font_top_bar
+    size: 10
+    bpp: 1
+    glyphs: ' !"#$%&()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]abcdefghijklmnopqrstuvwxyz{}|'
+  - file: "gfonts://Roboto+Condensed"
+    id: font_body
+    size: 10
+    bpp: 1
+    glyphs: ' !"#$%&()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]abcdefghijklmnopqrstuvwxyz{}|°'
+
+# --- Images ------------------------------------------------------------------
+
+image:
+  - file: "../common/images/logo.svg"
+    id: logo_splash
+    resize: 60x60
+    type: BINARY
+  - file: "../common/images/logo.svg"
+    id: logo_small
+    resize: 40x40
+    type: BINARY
+
+# --- Common sensors ----------------------------------------------------------
+
+sensor:
+  - platform: adc
+    pin: ${pin_battery_adc}
+    id: battery_voltage
+    name: "Battery Voltage"
+    unit_of_measurement: "V"
+    icon: "mdi:battery"
+    accuracy_decimals: 2
+    attenuation: 12db
+    update_interval: ${update_interval}
+    filters:
+      - multiply: ${battery_divider}
+      - exponential_moving_average:
+          alpha: 0.3
+          send_every: 1
+
+  - platform: copy
+    source_id: battery_voltage
+    id: battery_percent
+    name: "Battery Percent"
+    unit_of_measurement: "%"
+    icon: "mdi:battery"
+    accuracy_decimals: 0
+    filters:
+      - calibrate_linear:
+          method: exact
+          datapoints:
+            - 3.04 -> 0
+            - 3.20 -> 5
+            - 3.50 -> 20
+            - 3.70 -> 40
+            - 3.85 -> 60
+            - 4.00 -> 80
+            - 4.20 -> 100
+      - clamp:
+          min_value: 0
+          max_value: 100
+
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: ${update_interval}
+    id: wifi_dbm
+
+  - platform: uptime
+    name: "Uptime"
+    update_interval: ${update_interval}
+    id: uptime_sec
+
+  - platform: internal_temperature
+    name: "ESP32 Temperature"
+    update_interval: ${update_interval}
+    id: esp_temp
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      id: ip_addr
+    ssid:
+      name: "Connected SSID"
+    mac_address:
+      name: "MAC Address"

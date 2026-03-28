@@ -1,0 +1,145 @@
+# =============================================================================
+# Pump Controller — Hardware Layer
+# =============================================================================
+# Physical actuators only. No state logic, no sensor readings.
+#
+# Components:
+#   - 1x pump relay (guarded: only energizes in RUNNING state)
+#   - 1x pressure relief solenoid (normally closed, opens during FAULT)
+#   - 4x motorized ball valves (2-pin each, hardware interlocked)
+# =============================================================================
+
+switch:
+  # --- Pump relay ------------------------------------------------------------
+  # Defence-in-depth: on_turn_on blocks activation unless state machine is in
+  # RUNNING. Even if HA or a bug tries to energize the pump, this guard fires.
+  - platform: gpio
+    pin: ${pin_pump_relay}
+    id: pump_relay
+    name: "Pump Relay"
+    icon: "mdi:water-pump"
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - if:
+          condition:
+            lambda: 'return id(system_state) != 2;'
+          then:
+            - switch.turn_off: pump_relay
+            - logger.log: {level: WARN, format: "BLOCKED: pump only runs in RUNNING state"}
+
+  # --- Pressure relief solenoid ----------------------------------------------
+  # Normally closed. Opens during FAULT sequence to depressurize the system.
+  - platform: gpio
+    pin: ${pin_pressure_relief}
+    id: pressure_relief
+    name: "Pressure Relief Solenoid"
+    icon: "mdi:valve"
+    restore_mode: ALWAYS_OFF
+
+  # --- Valve motor pins (internal) -------------------------------------------
+  # Each ball valve has open + close pins with hardware interlocks.
+  # 100ms interlock_wait_time prevents simultaneous drive (mechanical safety).
+  - platform: gpio
+    pin: ${pin_valve1_o}
+    id: valve1_open_pin
+    internal: true
+    restore_mode: ALWAYS_OFF
+    interlock: [valve1_open_pin, valve1_close_pin]
+    interlock_wait_time: 100ms
+  - platform: gpio
+    pin: ${pin_valve1_c}
+    id: valve1_close_pin
+    internal: true
+    restore_mode: ALWAYS_OFF
+    interlock: [valve1_open_pin, valve1_close_pin]
+    interlock_wait_time: 100ms
+
+  - platform: gpio
+    pin: ${pin_valve2_o}
+    id: valve2_open_pin
+    internal: true
+    restore_mode: ALWAYS_OFF
+    interlock: [valve2_open_pin, valve2_close_pin]
+    interlock_wait_time: 100ms
+  - platform: gpio
+    pin: ${pin_valve2_c}
+    id: valve2_close_pin
+    internal: true
+    restore_mode: ALWAYS_OFF
+    interlock: [valve2_open_pin, valve2_close_pin]
+    interlock_wait_time: 100ms
+
+  - platform: gpio
+    pin: ${pin_valve3_o}
+    id: valve3_open_pin
+    internal: true
+    restore_mode: ALWAYS_OFF
+    interlock: [valve3_open_pin, valve3_close_pin]
+    interlock_wait_time: 100ms
+  - platform: gpio
+    pin: ${pin_valve3_c}
+    id: valve3_close_pin
+    internal: true
+    restore_mode: ALWAYS_OFF
+    interlock: [valve3_open_pin, valve3_close_pin]
+    interlock_wait_time: 100ms
+
+  - platform: gpio
+    pin: ${pin_valve4_o}
+    id: valve4_open_pin
+    internal: true
+    restore_mode: ALWAYS_OFF
+    interlock: [valve4_open_pin, valve4_close_pin]
+    interlock_wait_time: 100ms
+  - platform: gpio
+    pin: ${pin_valve4_c}
+    id: valve4_close_pin
+    internal: true
+    restore_mode: ALWAYS_OFF
+    interlock: [valve4_open_pin, valve4_close_pin]
+    interlock_wait_time: 100ms
+
+# --- Ball valves (covers) ----------------------------------------------------
+# Time-based covers wrap the motor pins with open/close/stop semantics.
+# HA sees these as valve entities with position tracking.
+
+cover:
+  - platform: time_based
+    id: valve1
+    name: "Valve 1 — Tank 1 Outlet"
+
+    open_action:  [{switch.turn_on: valve1_open_pin}]
+    close_action: [{switch.turn_on: valve1_close_pin}]
+    stop_action:  [{switch.turn_off: valve1_open_pin}, {switch.turn_off: valve1_close_pin}]
+    open_duration: ${valve_travel_time}
+    close_duration: ${valve_travel_time}
+
+  - platform: time_based
+    id: valve2
+    name: "Valve 2 — Tank 2 Outlet"
+
+    open_action:  [{switch.turn_on: valve2_open_pin}]
+    close_action: [{switch.turn_on: valve2_close_pin}]
+    stop_action:  [{switch.turn_off: valve2_open_pin}, {switch.turn_off: valve2_close_pin}]
+    open_duration: ${valve_travel_time}
+    close_duration: ${valve_travel_time}
+
+  - platform: time_based
+    id: valve3
+    name: "Valve 3 — Pump to Tank 2"
+
+    open_action:  [{switch.turn_on: valve3_open_pin}]
+    close_action: [{switch.turn_on: valve3_close_pin}]
+    stop_action:  [{switch.turn_off: valve3_open_pin}, {switch.turn_off: valve3_close_pin}]
+    open_duration: ${valve_travel_time}
+    close_duration: ${valve_travel_time}
+
+  - platform: time_based
+    id: valve4
+    name: "Valve 4 — Pump to House 2"
+
+    open_action:  [{switch.turn_on: valve4_open_pin}]
+    close_action: [{switch.turn_on: valve4_close_pin}]
+    stop_action:  [{switch.turn_off: valve4_open_pin}, {switch.turn_off: valve4_close_pin}]
+    open_duration: ${valve_travel_time}
+    close_duration: ${valve_travel_time}

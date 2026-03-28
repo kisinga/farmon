@@ -1,0 +1,112 @@
+# =============================================================================
+# Heltec V3 — Standalone Monitoring Device
+# =============================================================================
+# Base board with OLED displaying generic telemetry:
+#   IP address, temperature, WiFi signal, uptime
+# =============================================================================
+
+substitutions:
+  device_name: heltec
+  friendly_name: Heltec V3
+  update_interval: 30s
+  pin_battery_adc: GPIO1
+  battery_divider: "2.0"
+
+packages:
+  board: !include ../common/heltec_board.yaml
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  on_boot:
+    - priority: 600
+      then:
+        - display.page.show: page_splash
+        - component.update: oled
+        - delay: 2s
+        - display.page.show: page_runtime
+        - component.update: oled
+
+# --- OLED Display ------------------------------------------------------------
+# Top bar: device name, battery icon, WiFi bars
+# Main content: logo + telemetry text
+
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    reset_pin: GPIO21
+    address: 0x3C
+    id: oled
+    update_interval: 1s
+    pages:
+      - id: page_splash
+        lambda: |-
+          it.image(34, 2, id(logo_splash));
+
+      - id: page_runtime
+        lambda: |-
+          // === Top bar (y=0..11) ===
+          it.printf(0, 0, id(font_top_bar), "${friendly_name}");
+
+          // Battery icon (x=48, 20x10 body + 2px tip)
+          int bx = 48, by = 1;
+          it.rectangle(bx, by, 20, 10);
+          it.filled_rectangle(bx + 20, by + 3, 2, 4);
+          if (id(battery_percent).has_state() && !std::isnan(id(battery_percent).state)) {
+            int pct = (int)id(battery_percent).state;
+            int fw = (16 * pct) / 100;
+            if (pct > 0 && fw < 1) fw = 1;
+            if (fw > 0) {
+              if (pct <= 15) {
+                for (int fx = bx + 2; fx < bx + 2 + fw; fx += 2) {
+                  it.filled_rectangle(fx, by + 2, 1, 6);
+                }
+              } else {
+                it.filled_rectangle(bx + 2, by + 2, fw, 6);
+              }
+            }
+          }
+
+          // WiFi signal bars (right-aligned, x=110)
+          int wx = 110;
+          int wifi_bars = 0;
+          if (id(wifi_dbm).has_state() && !std::isnan(id(wifi_dbm).state)) {
+            float dbm = id(wifi_dbm).state;
+            if (dbm > -85) wifi_bars = 1;
+            if (dbm > -75) wifi_bars = 2;
+            if (dbm > -65) wifi_bars = 3;
+            if (dbm > -50) wifi_bars = 4;
+          }
+          for (int i = 0; i < 4; i++) {
+            int bh = 3 + i * 2;
+            int bar_x = wx + i * 3;
+            int bar_y = 11 - bh;
+            if (i < wifi_bars) it.filled_rectangle(bar_x, bar_y, 2, bh);
+            else it.rectangle(bar_x, bar_y, 2, bh);
+          }
+          if (wifi_bars == 0) {
+            it.line(wx, 2, wx + 11, 10);
+            it.line(wx, 10, wx + 11, 2);
+          }
+
+          it.line(0, 12, 127, 12);
+
+          // === Main content (y=14..63) ===
+          it.image(4, 16, id(logo_small));
+
+          int tx = 50;
+          if (id(ip_addr).has_state()) {
+            it.printf(tx, 16, id(font_body), "%s", id(ip_addr).state.c_str());
+          }
+          if (id(esp_temp).has_state() && !std::isnan(id(esp_temp).state)) {
+            it.printf(tx, 28, id(font_body), "%.1f°C", id(esp_temp).state);
+          }
+          if (id(wifi_dbm).has_state() && !std::isnan(id(wifi_dbm).state)) {
+            it.printf(tx, 40, id(font_body), "%.0f dBm", id(wifi_dbm).state);
+          }
+          if (id(uptime_sec).has_state() && !std::isnan(id(uptime_sec).state)) {
+            int total = (int)id(uptime_sec).state;
+            int h = total / 3600;
+            int m = (total % 3600) / 60;
+            it.printf(tx, 52, id(font_body), "%dh %dm", h, m);
+          }

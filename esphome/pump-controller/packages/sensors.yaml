@@ -1,0 +1,120 @@
+# =============================================================================
+# Pump Controller — Sensor & Measurement Layer
+# =============================================================================
+# Everything we read. No actuation, no orchestration.
+#
+# Components:
+#   - 2x flow sensors (pulse counter → L/min + totalization)
+#   - 2x tank level sensors (ADC → 0–100%)
+#   - Diagnostics (WiFi signal, uptime)
+#   - State exposure (system_state_text, fault_text for HA)
+# =============================================================================
+
+sensor:
+  # --- Flow sensors ----------------------------------------------------------
+  - platform: pulse_counter
+    pin:
+      number: ${pin_flow_house1}
+      mode: INPUT_PULLUP
+    id: flow_house1
+    name: "House 1 Water Flow"
+    unit_of_measurement: "L/min"
+    icon: "mdi:water"
+    update_interval: ${update_interval}
+    filters:
+      - lambda: return x / ${flow_cal};
+
+  - platform: pulse_counter
+    pin:
+      number: ${pin_flow_house2}
+      mode: INPUT_PULLUP
+    id: flow_house2
+    name: "House 2 Water Flow"
+    unit_of_measurement: "L/min"
+    icon: "mdi:water"
+    update_interval: ${update_interval}
+    filters:
+      - lambda: return x / ${flow_cal};
+    on_value:
+      # Feeds the flow watchdog: any flow > 0.1 L/min resets the timer.
+      # Only flow_house2 matters — it's the only sensor on a pump path (valve4).
+      - lambda: |-
+          if (x > 0.1f) id(last_flow_time) = millis();
+
+  # --- Flow totalization -----------------------------------------------------
+  - platform: integration
+    sensor: flow_house1
+    name: "House 1 Total Usage"
+    id: house1_total
+    unit_of_measurement: "L"
+    time_unit: min
+    icon: "mdi:counter"
+
+  - platform: integration
+    sensor: flow_house2
+    name: "House 2 Total Usage"
+    id: house2_total
+    unit_of_measurement: "L"
+    time_unit: min
+    icon: "mdi:counter"
+
+  # --- Tank levels -----------------------------------------------------------
+  - platform: adc
+    pin: ${pin_tank1_level}
+    id: tank1_level
+    name: "Tank 1 Level"
+    unit_of_measurement: "%"
+    icon: "mdi:storage-tank"
+    update_interval: ${update_interval}
+    attenuation: 12db
+    filters:
+      - calibrate_linear:
+          - 0.0 -> 0.0
+          - 3.3 -> 100.0
+      - clamp: {min_value: 0, max_value: 100}
+
+  - platform: adc
+    pin: ${pin_tank2_level}
+    id: tank2_level
+    name: "Tank 2 Level"
+    unit_of_measurement: "%"
+    icon: "mdi:storage-tank"
+    update_interval: ${update_interval}
+    attenuation: 12db
+    filters:
+      - calibrate_linear:
+          - 0.0 -> 0.0
+          - 3.3 -> 100.0
+      - clamp: {min_value: 0, max_value: 100}
+
+# --- State exposure to HA ----------------------------------------------------
+# Template text sensors that translate numeric state/fault into human-readable
+# strings for dashboards and automations.
+
+text_sensor:
+  - platform: template
+    id: system_state_text
+    name: "Pump System State"
+    icon: "mdi:state-machine"
+    update_interval: 2s
+    lambda: |-
+      const char* states[] = {"IDLE", "PREPARING", "RUNNING", "STOPPING", "FAULT"};
+      int s = id(system_state);
+      return std::string((s >= 0 && s <= 4) ? states[s] : "UNKNOWN");
+
+  - platform: template
+    id: fault_text
+    name: "Pump Fault"
+    icon: "mdi:alert-circle"
+    update_interval: 2s
+    lambda: |-
+      const char* faults[] = {
+        "None",
+        "No flow detected (House 2 path)",
+        "No level rise detected (refill path)",
+        "Max runtime exceeded",
+        "HA connection lost",
+        "Source tank empty"
+      };
+      int f = id(fault_code);
+      return std::string((f >= 0 && f <= 5) ? faults[f] : "Unknown");

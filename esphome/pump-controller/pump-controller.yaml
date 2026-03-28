@@ -1,0 +1,208 @@
+# =============================================================================
+# Pump Controller — ESPHome (on Heltec V3)
+# =============================================================================
+# Extends the Heltec V3 base board with pump control logic.
+# OLED displays the state machine, active path, and fault status.
+#
+# All safety-critical logic lives on the ESP32, not in HA.
+# HA only sets mode (source/dest) and requests start/stop.
+#
+# Topology:
+#   Tank 1 → valve1 ──────────────────┐
+#   Tank 2 → splitter → valve2 ───────┤→ PUMP → valve3 → Tank 2 inlet
+#                └→ flow_house1 → H1   └──────→ valve4 → flow_house2 → H2
+#
+# State machine: IDLE → PREPARING → RUNNING → STOPPING → IDLE
+#                         └──────→ FAULT ←──────┘
+#
+# Quick reference:
+#   States:  0=IDLE  1=PREPARING  2=RUNNING  3=STOPPING  4=FAULT
+#   Faults:  0=none  1=no_flow  2=no_rise  3=max_runtime  4=api_lost  5=source_empty
+#   Inlets:  1=valve1(Tank1)  2=valve2(Tank2)
+#   Outlets: 3=valve3(Tank2 refill)  4=valve4(House2)
+#   Valid:   T1→T2(1→3)  T1→H2(1→4)  T2→H2(2→4)
+#   Invalid: T2→T2(2→3) — self-loop rejected
+# =============================================================================
+
+substitutions:
+  device_name: pump-controller
+  friendly_name: Pump Controller
+  update_interval: 5s
+  pin_battery_adc: GPIO1
+  battery_divider: "2.0"
+
+  # --- Pump GPIO pins ---
+  pin_pump_relay: GPIO16
+  pin_valve1_o: GPIO4
+  pin_valve1_c: GPIO5
+  pin_valve2_o: GPIO6
+  pin_valve2_c: GPIO7
+  pin_valve3_o: GPIO14
+  pin_valve3_c: GPIO15
+  pin_valve4_o: GPIO46
+  pin_valve4_c: GPIO45
+  pin_pressure_relief: GPIO42
+  pin_flow_house1: GPIO41
+  pin_flow_house2: GPIO40
+  pin_tank1_level: GPIO2
+  pin_tank2_level: GPIO3
+
+  # --- Timing ---
+  valve_travel_time: "8s"
+  max_runtime_seconds: "1800"
+  flow_watchdog_seconds: "30"
+  refill_watchdog_seconds: "60"
+  refill_min_rise_pct: "0.5"
+  api_watchdog_seconds: "300"
+
+  # --- Flow calibration ---
+  flow_cal: "450.0"
+
+# --- Packages ----------------------------------------------------------------
+
+packages:
+  board: !include ../common/heltec_board.yaml
+  hardware: !include packages/hardware.yaml
+  sensors: !include packages/sensors.yaml
+  control: !include packages/control.yaml
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  on_boot:
+    # Splash screen (runs early, display is ready)
+    - priority: 600
+      then:
+        - display.page.show: page_splash
+        - component.update: oled
+        - delay: 2s
+        - display.page.show: page_runtime
+        - component.update: oled
+    # Safe defaults (runs after all components initialized)
+    - priority: -100
+      then:
+        - switch.turn_off: pump_relay
+        - switch.turn_off: pressure_relief
+        - script.execute: close_all_valves
+        - script.wait: close_all_valves
+        - lambda: |-
+            id(system_state) = 0;
+            id(pump_start_time) = 0;
+            id(last_flow_time) = 0;
+            id(api_lost_time) = 0;
+            id(fault_code) = 0;
+            id(refill_baseline_level) = -1.0f;
+            id(refill_baseline_time) = 0;
+            ESP_LOGI("pump", "Boot complete — IDLE");
+
+# --- OLED Display ------------------------------------------------------------
+# Top bar: device name, battery icon, WiFi bars
+# Main content: state machine status, active path, tank levels
+
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    reset_pin: GPIO21
+    address: 0x3C
+    id: oled
+    update_interval: 1s
+    pages:
+      - id: page_splash
+        lambda: |-
+          it.image(34, 2, id(logo_splash));
+
+      - id: page_runtime
+        lambda: |-
+          // === Top bar (y=0..11) ===
+          it.printf(0, 0, id(font_top_bar), "${friendly_name}");
+
+          // Battery icon (x=48, 20x10 body + 2px tip)
+          int bx = 48, by = 1;
+          it.rectangle(bx, by, 20, 10);
+          it.filled_rectangle(bx + 20, by + 3, 2, 4);
+          if (id(battery_percent).has_state() && !std::isnan(id(battery_percent).state)) {
+            int pct = (int)id(battery_percent).state;
+            int fw = (16 * pct) / 100;
+            if (pct > 0 && fw < 1) fw = 1;
+            if (fw > 0) {
+              if (pct <= 15) {
+                for (int fx = bx + 2; fx < bx + 2 + fw; fx += 2) {
+                  it.filled_rectangle(fx, by + 2, 1, 6);
+                }
+              } else {
+                it.filled_rectangle(bx + 2, by + 2, fw, 6);
+              }
+            }
+          }
+
+          // WiFi signal bars (right-aligned, x=110)
+          int wx = 110;
+          int wifi_bars = 0;
+          if (id(wifi_dbm).has_state() && !std::isnan(id(wifi_dbm).state)) {
+            float dbm = id(wifi_dbm).state;
+            if (dbm > -85) wifi_bars = 1;
+            if (dbm > -75) wifi_bars = 2;
+            if (dbm > -65) wifi_bars = 3;
+            if (dbm > -50) wifi_bars = 4;
+          }
+          for (int i = 0; i < 4; i++) {
+            int bh = 3 + i * 2;
+            int bar_x = wx + i * 3;
+            int bar_y = 11 - bh;
+            if (i < wifi_bars) it.filled_rectangle(bar_x, bar_y, 2, bh);
+            else it.rectangle(bar_x, bar_y, 2, bh);
+          }
+          if (wifi_bars == 0) {
+            it.line(wx, 2, wx + 11, 10);
+            it.line(wx, 10, wx + 11, 2);
+          }
+
+          it.line(0, 12, 127, 12);
+
+          // === Main content (y=14..63) — State machine status ===
+
+          // State name (large, left-aligned)
+          const char* states[] = {"IDLE", "PREPARING", "RUNNING", "STOPPING", "FAULT"};
+          int s = id(system_state);
+          const char* state_str = (s >= 0 && s <= 4) ? states[s] : "???";
+          it.printf(0, 15, id(font_top_bar), "%s", state_str);
+
+          // Active path (when not idle)
+          if (s >= 1 && s <= 3) {
+            const char* inlets[] = {"", "T1", "T2"};
+            const char* outlets[] = {"", "", "", "T2", "H2"};
+            int in_v = id(target_inlet);
+            int out_v = id(target_outlet);
+            if (in_v >= 1 && in_v <= 2 && out_v >= 3 && out_v <= 4) {
+              it.printf(64, 15, id(font_body), "%s>%s", inlets[in_v], outlets[out_v]);
+            }
+          }
+
+          // Fault reason (when faulted)
+          if (s == 4) {
+            const char* faults[] = {"", "No flow", "No rise", "Max time", "API lost", "Src empty"};
+            int f = id(fault_code);
+            if (f >= 1 && f <= 5) {
+              it.printf(0, 27, id(font_body), "FAULT: %s", faults[f]);
+            }
+          }
+
+          // Runtime (when running)
+          if (s == 2) {
+            uint32_t rt = (millis() - id(pump_start_time)) / 1000;
+            it.printf(0, 27, id(font_body), "Run: %um %us", rt / 60, rt % 60);
+          }
+
+          // Tank levels
+          if (id(tank1_level).has_state() && !std::isnan(id(tank1_level).state)) {
+            it.printf(0, 39, id(font_body), "T1: %.0f%%", id(tank1_level).state);
+          }
+          if (id(tank2_level).has_state() && !std::isnan(id(tank2_level).state)) {
+            it.printf(64, 39, id(font_body), "T2: %.0f%%", id(tank2_level).state);
+          }
+
+          // Uptime
+          if (id(uptime_sec).has_state() && !std::isnan(id(uptime_sec).state)) {
+            int total = (int)id(uptime_sec).state;
+            it.printf(0, 52, id(font_body), "Up: %dh %dm", total / 3600, (total % 3600) / 60);
+          }
