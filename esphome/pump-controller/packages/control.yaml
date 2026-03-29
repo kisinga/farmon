@@ -147,10 +147,10 @@ script:
           then: [{script.stop: do_prepare_and_run}]
       # Open target inlet and outlet
       - lambda: |-
-          if (id(target_inlet) == 1) id(valve1).open();
-          else id(valve2).open();
-          if (id(target_outlet) == 3) id(valve3).open();
-          else id(valve4).open();
+          if (id(target_inlet) == 1) id(valve1).make_call().set_command_open().perform();
+          else id(valve2).make_call().set_command_open().perform();
+          if (id(target_outlet) == 3) id(valve3).make_call().set_command_open().perform();
+          else id(valve4).make_call().set_command_open().perform();
       - delay: ${valve_travel_time}
       - delay: 1s   # settle
       # Abort if pump_stop was called while valves were moving

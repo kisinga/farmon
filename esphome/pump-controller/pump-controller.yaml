@@ -25,8 +25,8 @@
 # =============================================================================
 
 substitutions:
-  device_name: pump-controller
-  friendly_name: Pump Controller
+  device_name: pump-ctrl
+  friendly_name: Pump-ctrl
   update_interval: 5s
   pin_battery_adc: GPIO1
   battery_divider: "2.0"
@@ -48,7 +48,7 @@ substitutions:
   pin_tank2_level: GPIO3
 
   # --- Timing ---
-  valve_travel_time: "8s"
+  valve_travel_time: "15s"
   max_runtime_seconds: "1800"
   flow_watchdog_seconds: "30"
   refill_watchdog_seconds: "60"

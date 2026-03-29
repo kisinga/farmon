@@ -13,18 +13,18 @@ views:
         entities:
           - entity: input_select.operating_mode
             name: Season Mode
-          - entity: sensor.pump_system_state
+          - entity: sensor.pump_ctrl_pump_system_state
             name: Pump State
           - entity: sensor.pump_mode_display
             name: Active Operation
-          - entity: sensor.pump_fault
+          - entity: sensor.pump_ctrl_pump_fault
             name: Fault
 
       # --- Tank gauges -------------------------------------------------------
       - type: horizontal-stack
         cards:
           - type: gauge
-            entity: sensor.tank_1_level
+            entity: sensor.pump_ctrl_tank_1_level
             name: Tank 1 (Rain)
             min: 0
             max: 100
@@ -35,7 +35,7 @@ views:
             needle: true
 
           - type: gauge
-            entity: sensor.tank_2_level
+            entity: sensor.pump_ctrl_tank_2_level
             name: Tank 2
             min: 0
             max: 100
@@ -94,7 +94,7 @@ views:
                 tap_action:
                   action: call-service
                   service: script.turn_on
-                  target: {entity_id: script.pump_start_selected}
+                  target: {entity_id: script.pump_start}
                 show_state: false
 
           - type: horizontal-stack
@@ -138,12 +138,12 @@ views:
           - type: vertical-stack
             cards:
               - type: sensor
-                entity: sensor.house_1_water_flow
+                entity: sensor.pump_ctrl_house_1_water_flow
                 name: "House 1 Flow"
                 graph: line
                 hours_to_show: 6
               - type: statistic
-                entity: sensor.house_1_total_usage
+                entity: sensor.pump_ctrl_house_1_total_usage
                 name: "House 1 Daily"
                 stat_type: state
                 period: {calendar: {period: day}}
@@ -151,12 +151,12 @@ views:
           - type: vertical-stack
             cards:
               - type: sensor
-                entity: sensor.house_2_water_flow
+                entity: sensor.pump_ctrl_house_2_water_flow
                 name: "House 2 Flow"
                 graph: line
                 hours_to_show: 6
               - type: statistic
-                entity: sensor.house_2_total_usage
+                entity: sensor.pump_ctrl_house_2_total_usage
                 name: "House 2 Daily"
                 stat_type: state
                 period: {calendar: {period: day}}
@@ -166,17 +166,17 @@ views:
         title: Hardware
         show_state: true
         entities:
-          - entity: switch.pump_relay
+          - entity: switch.pump_ctrl_pump_relay
             name: Pump
-          - entity: switch.pressure_relief_solenoid
+          - entity: switch.pump_ctrl_pressure_relief_solenoid
             name: Relief
-          - entity: cover.valve_1_tank_1_outlet
+          - entity: cover.pump_ctrl_valve_1_tank_1_outlet
             name: V1
-          - entity: cover.valve_2_tank_2_outlet
+          - entity: cover.pump_ctrl_valve_2_tank_2_outlet
             name: V2
-          - entity: cover.valve_3_pump_to_tank_2
+          - entity: cover.pump_ctrl_valve_3_pump_to_tank_2
             name: V3
-          - entity: cover.valve_4_pump_to_house_2
+          - entity: cover.pump_ctrl_valve_4_pump_to_house_2
             name: V4
 
   # =========================================================================

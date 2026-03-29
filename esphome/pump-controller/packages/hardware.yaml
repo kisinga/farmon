@@ -14,7 +14,9 @@ switch:
   # Defence-in-depth: on_turn_on blocks activation unless state machine is in
   # RUNNING. Even if HA or a bug tries to energize the pump, this guard fires.
   - platform: gpio
-    pin: ${pin_pump_relay}
+    pin:
+      number: ${pin_pump_relay}
+      inverted: true
     id: pump_relay
     name: "Pump Relay"
     icon: "mdi:water-pump"
@@ -30,7 +32,9 @@ switch:
   # --- Pressure relief solenoid ----------------------------------------------
   # Normally closed. Opens during FAULT sequence to depressurize the system.
   - platform: gpio
-    pin: ${pin_pressure_relief}
+    pin:
+      number: ${pin_pressure_relief}
+      inverted: true
     id: pressure_relief
     name: "Pressure Relief Solenoid"
     icon: "mdi:valve"
@@ -40,14 +44,18 @@ switch:
   # Each ball valve has open + close pins with hardware interlocks.
   # 100ms interlock_wait_time prevents simultaneous drive (mechanical safety).
   - platform: gpio
-    pin: ${pin_valve1_o}
+    pin:
+      number: ${pin_valve1_o}
+      inverted: true
     id: valve1_open_pin
     internal: true
     restore_mode: ALWAYS_OFF
     interlock: [valve1_open_pin, valve1_close_pin]
     interlock_wait_time: 100ms
   - platform: gpio
-    pin: ${pin_valve1_c}
+    pin:
+      number: ${pin_valve1_c}
+      inverted: true
     id: valve1_close_pin
     internal: true
     restore_mode: ALWAYS_OFF
@@ -55,14 +63,18 @@ switch:
     interlock_wait_time: 100ms
 
   - platform: gpio
-    pin: ${pin_valve2_o}
+    pin:
+      number: ${pin_valve2_o}
+      inverted: true
     id: valve2_open_pin
     internal: true
     restore_mode: ALWAYS_OFF
     interlock: [valve2_open_pin, valve2_close_pin]
     interlock_wait_time: 100ms
   - platform: gpio
-    pin: ${pin_valve2_c}
+    pin:
+      number: ${pin_valve2_c}
+      inverted: true
     id: valve2_close_pin
     internal: true
     restore_mode: ALWAYS_OFF
@@ -70,14 +82,18 @@ switch:
     interlock_wait_time: 100ms
 
   - platform: gpio
-    pin: ${pin_valve3_o}
+    pin:
+      number: ${pin_valve3_o}
+      inverted: true
     id: valve3_open_pin
     internal: true
     restore_mode: ALWAYS_OFF
     interlock: [valve3_open_pin, valve3_close_pin]
     interlock_wait_time: 100ms
   - platform: gpio
-    pin: ${pin_valve3_c}
+    pin:
+      number: ${pin_valve3_c}
+      inverted: true
     id: valve3_close_pin
     internal: true
     restore_mode: ALWAYS_OFF
@@ -85,14 +101,18 @@ switch:
     interlock_wait_time: 100ms
 
   - platform: gpio
-    pin: ${pin_valve4_o}
+    pin:
+      number: ${pin_valve4_o}
+      inverted: true
     id: valve4_open_pin
     internal: true
     restore_mode: ALWAYS_OFF
     interlock: [valve4_open_pin, valve4_close_pin]
     interlock_wait_time: 100ms
   - platform: gpio
-    pin: ${pin_valve4_c}
+    pin:
+      number: ${pin_valve4_c}
+      inverted: true
     id: valve4_close_pin
     internal: true
     restore_mode: ALWAYS_OFF

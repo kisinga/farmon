@@ -73,6 +73,10 @@ output:
   - platform: gpio
     pin: GPIO35
     id: led_output
+  - platform: gpio
+    pin: GPIO37
+    id: bat_adc_enable
+    inverted: true   # Active-low: pull LOW to connect VBAT to ADC divider
 
 light:
   - platform: binary
@@ -116,7 +120,7 @@ sensor:
     icon: "mdi:battery"
     accuracy_decimals: 2
     attenuation: 12db
-    update_interval: ${update_interval}
+    update_interval: never   # Driven by interval below
     filters:
       - multiply: ${battery_divider}
       - exponential_moving_average:
@@ -169,3 +173,14 @@ text_sensor:
       name: "Connected SSID"
     mac_address:
       name: "MAC Address"
+
+# --- Battery ADC enable ------------------------------------------------------
+# GPIO37 must be pulled LOW to connect VBAT to the resistor divider on GPIO1.
+# Enable → short settle → read → disable to save power.
+interval:
+  - interval: ${update_interval}
+    then:
+      - output.turn_on: bat_adc_enable
+      - delay: 20ms
+      - component.update: battery_voltage
+      - output.turn_off: bat_adc_enable

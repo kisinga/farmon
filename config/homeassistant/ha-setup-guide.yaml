@@ -1,16 +1,90 @@
 # =============================================================================
-# HA Setup — All via UI
+# HA Setup Guide for Pump Controller
 # =============================================================================
 #
 # STEP 1: HELPERS (Settings → Helpers → Create)
 # -----------------------------------------------
-# [Dropdown] "Operating Mode"    → Options: Rainy Season, Dry Season
-# [Dropdown] "Pump Source"       → Options: Tank 1, Tank 2
-# [Dropdown] "Pump Destination"  → Options: Tank 2 (Refill), House 2
+# [Dropdown] "Operating Mode"         → Options: Rainy Season, Dry Season
+# [Dropdown] "Pump Source"            → Options: Tank 1, Tank 2
+# [Dropdown] "Pump Destination"       → Options: Tank 2 (Refill), House 2
 # [Toggle]   "Auto-Refill Enabled"
+# [Number]   "Pump Duration Minutes"  → Min: 1, Max: 60, Step: 1, Unit: min
+# [Number]   "Rainy Tank2 Refill Trigger" → Min: 0, Max: 100, Step: 5, Initial: 80
+# [Number]   "Rainy Tank2 Refill Stop"    → Min: 0, Max: 100, Step: 5, Initial: 90
+# [Number]   "Rainy Tank1 Min"            → Min: 0, Max: 100, Step: 5, Initial: 20
+# [Number]   "Dry Tank2 Refill Trigger"   → Min: 0, Max: 100, Step: 5, Initial: 10
+# [Number]   "Dry Tank2 Refill Stop"      → Min: 0, Max: 100, Step: 5, Initial: 40
+# [Number]   "Dry Tank1 Min"              → Min: 0, Max: 100, Step: 5, Initial: 70
+# [Number]   "Critical Combined Level"    → Min: 0, Max: 100, Step: 5, Initial: 35
 #
 #
-# STEP 2: SCRIPTS (Settings → Automations → Scripts → Add → ⋮ → Edit in YAML)
+# STEP 2: TEMPLATE SENSORS — add to configuration.yaml then restart HA
+# ---------------------------------------------------------------------
+# Paste the block below into /config/configuration.yaml:
+#
+# template:
+#   - sensor:
+#       - name: "Pump Mode Display"
+#         state: >
+#           {% set s = states('sensor.pump_ctrl_pump_system_state') %}
+#           {% if s == 'IDLE' %}Idle
+#           {% elif s == 'PREPARING' %}
+#             {{ states('input_select.pump_source') }} → {{ states('input_select.pump_destination') }} (preparing)
+#           {% elif s == 'RUNNING' %}
+#             {{ states('input_select.pump_source') }} → {{ states('input_select.pump_destination') }}
+#           {% elif s == 'STOPPING' %}Stopping
+#           {% elif s == 'FAULT' %}FAULT: {{ states('sensor.pump_ctrl_pump_fault') }}
+#           {% else %}{{ s }}
+#           {% endif %}
+#
+#       - name: "Combined Tank Level"
+#         unit_of_measurement: "%"
+#         state: >
+#           {{ ((states('sensor.pump_ctrl_tank_1_level') | float(0)) +
+#               (states('sensor.pump_ctrl_tank_2_level') | float(0))) / 2 | round(1) }}
+#
+#       - name: "Preferred House 2 Source"
+#         state: >
+#           {% set t1 = states('sensor.pump_ctrl_tank_1_level') | float(0) %}
+#           {% set t2 = states('sensor.pump_ctrl_tank_2_level') | float(0) %}
+#           {% if t1 > t2 %}Tank 1{% else %}Tank 2{% endif %}
+#
+#       - name: "Active Tank 2 Refill Trigger"
+#         unit_of_measurement: "%"
+#         state: >
+#           {% if is_state('input_select.operating_mode', 'Rainy Season') %}
+#             {{ states('input_number.rainy_tank2_refill_trigger') }}
+#           {% else %}
+#             {{ states('input_number.dry_tank2_refill_trigger') }}
+#           {% endif %}
+#
+#       - name: "Active Tank 2 Refill Stop"
+#         unit_of_measurement: "%"
+#         state: >
+#           {% if is_state('input_select.operating_mode', 'Rainy Season') %}
+#             {{ states('input_number.rainy_tank2_refill_stop') }}
+#           {% else %}
+#             {{ states('input_number.dry_tank2_refill_stop') }}
+#           {% endif %}
+#
+#       - name: "Active Tank 1 Min Level"
+#         unit_of_measurement: "%"
+#         state: >
+#           {% if is_state('input_select.operating_mode', 'Rainy Season') %}
+#             {{ states('input_number.rainy_tank1_min') }}
+#           {% else %}
+#             {{ states('input_number.dry_tank1_min') }}
+#           {% endif %}
+#
+#   - binary_sensor:
+#       - name: "Water Critical"
+#         state: >
+#           {{ ((states('sensor.pump_ctrl_tank_1_level') | float(0)) +
+#               (states('sensor.pump_ctrl_tank_2_level') | float(0))) / 2
+#              < (states('input_number.critical_combined_level') | float(35)) }}
+#
+#
+# STEP 3: SCRIPTS (Settings → Automations → Scripts → Add → ⋮ → Edit in YAML)
 # Paste one at a time.
 # =============================================================================
 
@@ -22,9 +96,9 @@ sequence:
       inlet: "{% if is_state('input_select.pump_source', 'Tank 1') %}1{% else %}2{% endif %}"
       outlet: "{% if is_state('input_select.pump_destination', 'Tank 2 (Refill)') %}3{% else %}4{% endif %}"
   - condition: state
-    entity_id: sensor.pump_system_state
+    entity_id: sensor.pump_ctrl_pump_system_state
     state: "IDLE"
-  - service: esphome.pump_controller_pump_start
+  - action: esphome.pump_ctrl_pump_start
     data:
       inlet: "{{ inlet | int }}"
       outlet: "{{ outlet | int }}"
@@ -33,51 +107,79 @@ sequence:
 alias: "Pump Stop"
 mode: single
 sequence:
-  - service: esphome.pump_controller_pump_stop
+  - action: esphome.pump_ctrl_pump_stop
 
 # --- Script 3: Reset fault ---
 alias: "Pump Fault Reset"
 mode: single
 sequence:
-  - service: esphome.pump_controller_fault_reset
+  - action: esphome.pump_ctrl_fault_reset
+
+# --- Script 4: Quick action — Tank 1 → Tank 2 ---
+alias: "Pump Tank1 to Tank2"
+mode: single
+sequence:
+  - action: input_select.select_option
+    target: {entity_id: input_select.pump_source}
+    data: {option: "Tank 1"}
+  - action: input_select.select_option
+    target: {entity_id: input_select.pump_destination}
+    data: {option: "Tank 2 (Refill)"}
+  - action: script.turn_on
+    target: {entity_id: script.pump_start}
+
+# --- Script 5: Quick action — House 2 from preferred source ---
+alias: "Pump House2 Preferred"
+mode: single
+sequence:
+  - action: input_select.select_option
+    target: {entity_id: input_select.pump_source}
+    data:
+      option: "{{ states('sensor.preferred_house_2_source') }}"
+  - action: input_select.select_option
+    target: {entity_id: input_select.pump_destination}
+    data: {option: "House 2"}
+  - action: script.turn_on
+    target: {entity_id: script.pump_start}
+
+# --- Script 6: Start with currently selected source/dest (same as Script 1) ---
+# The "Start Selected" button just calls script.pump_start directly.
+# No separate script needed — the dashboard button points to script.pump_start.
 
 # =============================================================================
-# STEP 3: AUTOMATIONS (Settings → Automations → Add → ⋮ → Edit in YAML)
+# STEP 4: AUTOMATIONS (Settings → Automations → Add → ⋮ → Edit in YAML)
 # Paste one at a time.
 # =============================================================================
 
-# --- Automation 1: Auto-refill Tank 2 (mode-aware) ---
+# --- Automation 1: Auto-refill Tank 2 (mode-aware, uses configurable thresholds) ---
 alias: "Auto-Refill Tank 2"
 mode: single
 trigger:
   - platform: state
-    entity_id: sensor.tank_2_level
+    entity_id: sensor.pump_ctrl_tank_2_level
     for: "00:01:00"
 condition:
   - condition: state
     entity_id: input_boolean.auto_refill_enabled
     state: "on"
   - condition: state
-    entity_id: sensor.pump_system_state
+    entity_id: sensor.pump_ctrl_pump_system_state
     state: "IDLE"
   - condition: template
     value_template: >
-      {% set mode = states('input_select.operating_mode') %}
-      {% set t2 = states('sensor.tank_2_level') | float(100) %}
-      {% set t1 = states('sensor.tank_1_level') | float(0) %}
-      {% if mode == 'Rainy Season' %}
-        {{ t2 < 80 and t1 > 20 }}
-      {% else %}
-        {{ t2 < 10 and t1 > 70 }}
-      {% endif %}
+      {% set t2 = states('sensor.pump_ctrl_tank_2_level') | float(100) %}
+      {% set t1 = states('sensor.pump_ctrl_tank_1_level') | float(0) %}
+      {% set trigger_pct = states('sensor.active_tank_2_refill_trigger') | float(80) %}
+      {% set min_t1 = states('sensor.active_tank_1_min_level') | float(20) %}
+      {{ t2 < trigger_pct and t1 > min_t1 }}
 action:
-  - service: input_select.select_option
+  - action: input_select.select_option
     target: {entity_id: input_select.pump_source}
     data: {option: "Tank 1"}
-  - service: input_select.select_option
+  - action: input_select.select_option
     target: {entity_id: input_select.pump_destination}
     data: {option: "Tank 2 (Refill)"}
-  - service: script.turn_on
+  - action: script.turn_on
     target: {entity_id: script.pump_start}
 
 # --- Automation 2: Stop refill when Tank 2 full or Tank 1 low ---
@@ -85,53 +187,49 @@ alias: "Stop Refill"
 trigger:
   - platform: state
     entity_id:
-      - sensor.tank_2_level
-      - sensor.tank_1_level
+      - sensor.pump_ctrl_tank_2_level
+      - sensor.pump_ctrl_tank_1_level
 condition:
   - condition: state
-    entity_id: sensor.pump_system_state
+    entity_id: sensor.pump_ctrl_pump_system_state
     state: "RUNNING"
   - condition: state
     entity_id: input_select.pump_destination
     state: "Tank 2 (Refill)"
   - condition: template
     value_template: >
-      {% set mode = states('input_select.operating_mode') %}
-      {% set t2 = states('sensor.tank_2_level') | float(0) %}
-      {% set t1 = states('sensor.tank_1_level') | float(100) %}
-      {% if mode == 'Rainy Season' %}
-        {{ t2 >= 90 or t1 <= 20 }}
-      {% else %}
-        {{ t2 >= 40 or t1 <= 70 }}
-      {% endif %}
+      {% set t2 = states('sensor.pump_ctrl_tank_2_level') | float(0) %}
+      {% set t1 = states('sensor.pump_ctrl_tank_1_level') | float(100) %}
+      {% set stop_pct = states('sensor.active_tank_2_refill_stop') | float(90) %}
+      {% set min_t1 = states('sensor.active_tank_1_min_level') | float(20) %}
+      {{ t2 >= stop_pct or t1 <= min_t1 }}
 action:
-  - service: script.turn_on
+  - action: script.turn_on
     target: {entity_id: script.pump_stop}
 
 # --- Automation 3: Fault notification ---
 alias: "Pump Fault Alert"
 trigger:
   - platform: state
-    entity_id: sensor.pump_system_state
+    entity_id: sensor.pump_ctrl_pump_system_state
     to: "FAULT"
 action:
-  - service: persistent_notification.create
+  - action: persistent_notification.create
     data:
       title: "PUMP FAULT"
-      message: "{{ states('sensor.pump_fault') }}. Reset from dashboard."
+      message: "{{ states('sensor.pump_ctrl_pump_fault') }}. Reset from dashboard."
 
 # --- Automation 4: Low water warning ---
 alias: "Water Critical"
 trigger:
-  - platform: template
-    value_template: >
-      {{ ((states('sensor.tank_1_level') | float(0)) +
-          (states('sensor.tank_2_level') | float(0))) / 2 < 35 }}
+  - platform: state
+    entity_id: binary_sensor.water_critical
+    to: "on"
     for: "00:05:00"
 action:
-  - service: persistent_notification.create
+  - action: persistent_notification.create
     data:
       title: "WATER LOW"
       message: >
-        Tank 1: {{ states('sensor.tank_1_level') }}%,
-        Tank 2: {{ states('sensor.tank_2_level') }}%.
+        Tank 1: {{ states('sensor.pump_ctrl_tank_1_level') }}%,
+        Tank 2: {{ states('sensor.pump_ctrl_tank_2_level') }}%.
