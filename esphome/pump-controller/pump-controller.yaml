@@ -32,20 +32,20 @@ substitutions:
   battery_divider: "2.0"
 
   # --- Pump GPIO pins ---
-  pin_pump_relay: GPIO16
+  pin_pump_relay: GPIO42
   pin_valve1_o: GPIO4
   pin_valve1_c: GPIO5
   pin_valve2_o: GPIO6
   pin_valve2_c: GPIO7
-  pin_valve3_o: GPIO14
-  pin_valve3_c: GPIO15
-  pin_valve4_o: GPIO46
-  pin_valve4_c: GPIO45
-  pin_pressure_relief: GPIO42
-  pin_flow_house1: GPIO41
-  pin_flow_house2: GPIO40
-  pin_tank1_level: GPIO2
-  pin_tank2_level: GPIO3
+  pin_valve3_o: GPIO2
+  pin_valve3_c: GPIO3
+  pin_valve4_o: GPIO39
+  pin_valve4_c: GPIO40
+  pin_pressure_relief: GPIO41
+  pin_flow_house1: GPIO45
+  pin_flow_house2: GPIO46
+  pin_tank1_level: GPIO19
+  pin_tank2_level: GPIO20
 
   # --- Timing ---
   valve_travel_time: "15s"
@@ -70,6 +70,15 @@ esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
   on_boot:
+    # Reset OLED before I2C bus init to prevent SCL held LOW
+    - priority: 800
+      then:
+        - lambda: |-
+            gpio_set_direction(GPIO_NUM_21, GPIO_MODE_OUTPUT);
+            gpio_set_level(GPIO_NUM_21, 0);
+            delay(10);
+            gpio_set_level(GPIO_NUM_21, 1);
+            delay(10);
     # Splash screen (runs early, display is ready)
     - priority: 600
       then:

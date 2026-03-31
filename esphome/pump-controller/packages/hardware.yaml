@@ -20,6 +20,7 @@ switch:
     id: pump_relay
     name: "Pump Relay"
     icon: "mdi:water-pump"
+    internal: true
     restore_mode: ALWAYS_OFF
     on_turn_on:
       - if:
