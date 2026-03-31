@@ -86,7 +86,7 @@ api:
               return;
             }
             float src = (inlet == 1) ? id(tank1_level).state : id(tank2_level).state;
-            if (src < 5.0f) {
+            if (!id(safety_override).state && src < 5.0f) {
               ESP_LOGW("pump", "Rejected: source at %.0f%%", src);
               id(fault_code) = 5;
               id(system_state) = 4;
@@ -117,6 +117,17 @@ api:
             id(fault_code) = 0;
             id(system_state) = 0;
             ESP_LOGI("pump", "Fault cleared → IDLE");
+
+# --- Safety override ---------------------------------------------------------
+# When ON, all runtime watchdogs are bypassed and low-source check is skipped.
+# Restores to OFF on every boot so it can't be left on accidentally.
+
+switch:
+  - platform: template
+    name: "Safety Override"
+    id: safety_override
+    optimistic: true
+    restore_mode: ALWAYS_OFF
 
 # --- Scripts -----------------------------------------------------------------
 
@@ -211,6 +222,7 @@ interval:
     then:
       - lambda: |-
           if (id(system_state) != 2) return;
+          if (id(safety_override).state) return;
           uint32_t now = millis();
           uint32_t runtime = now - id(pump_start_time);
 
