@@ -57,6 +57,16 @@ globals:
     type: uint32_t
     initial_value: "0"
 
+  - id: flow_confirmed
+    type: bool
+    initial_value: "false"
+    # True once flow > 0.1 L/min sustained for flow_confirm_seconds after pump start
+
+  - id: tank_full_detected
+    type: bool
+    initial_value: "false"
+    # Signal: no-flow detected but flow was previously confirmed → clean stop
+
 # --- API + Services ----------------------------------------------------------
 
 api:
@@ -170,6 +180,8 @@ script:
           then: [{script.stop: do_prepare_and_run}]
       # Transition to RUNNING and arm watchdogs
       - lambda: |-
+          id(flow_confirmed) = false;
+          id(tank_full_detected) = false;
           id(system_state) = 2;
           id(pump_start_time) = millis();
           id(last_flow_time) = millis();
@@ -196,6 +208,8 @@ script:
           id(system_state) = 0;
           id(target_inlet) = 0;
           id(target_outlet) = 0;
+          id(flow_confirmed) = false;
+          id(tank_full_detected) = false;
           ESP_LOGI("pump", "IDLE");
 
   - id: do_fault
@@ -205,11 +219,14 @@ script:
       - switch.turn_off: pump_relay
       # Emergency depressurization via relief solenoid
       - switch.turn_on: pressure_relief
-      - delay: 10s
+      - delay: 2s
       - switch.turn_off: pressure_relief
       - script.execute: close_all_valves
       - script.wait: close_all_valves
-      - lambda: 'ESP_LOGE("pump", "FAULT %d — awaiting reset", id(fault_code));'
+      - lambda: |-
+          id(flow_confirmed) = false;
+          id(tank_full_detected) = false;
+          ESP_LOGE("pump", "FAULT %d — awaiting reset", id(fault_code));
 
 # --- Safety monitor — runs every 2s -----------------------------------------
 # Watchdog strategy depends on active flow path:
@@ -233,8 +250,15 @@ interval:
               if (runtime > (${flow_watchdog_seconds} * 1000U)) {
                 uint32_t age = now - id(last_flow_time);
                 if (age > (${flow_watchdog_seconds} * 1000U)) {
-                  ESP_LOGE("safety", "No flow for %us on House 2 path", age / 1000);
-                  id(fault_code) = 1;
+                  if (id(flow_confirmed)) {
+                    // Flow was established then stopped → tank full
+                    ESP_LOGI("safety", "Tank full: flow confirmed then stopped (%us ago)", age / 1000);
+                    id(tank_full_detected) = true;
+                  } else {
+                    // Flow was never established → genuine fault
+                    ESP_LOGE("safety", "No flow for %us on House 2 path", age / 1000);
+                    id(fault_code) = 1;
+                  }
                 }
               }
             } else {
@@ -288,3 +312,11 @@ interval:
             lambda: 'return id(system_state) == 2 && id(fault_code) != 0;'
           then:
             - script.execute: do_fault
+      - if:
+          condition:
+            lambda: 'return id(system_state) == 2 && id(tank_full_detected);'
+          then:
+            - lambda: |-
+                ESP_LOGI("pump", "Tank full — clean stop");
+                id(tank_full_detected) = false;
+            - script.execute: do_stop

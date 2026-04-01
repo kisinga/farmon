@@ -39,7 +39,19 @@ sensor:
       # Feeds the flow watchdog: any flow > 0.1 L/min resets the timer.
       # Only flow_house2 matters — it's the only sensor on a pump path (valve4).
       - lambda: |-
-          if (x > 0.1f) id(last_flow_time) = millis();
+          if (x > 0.1f) {
+            id(last_flow_time) = millis();
+            // After sustained flow for flow_confirm_seconds, mark flow as confirmed.
+            // This distinguishes "tank full" (flow established then stopped) from
+            // "pump failure" (flow never established) in the safety watchdog.
+            if (!id(flow_confirmed) && id(system_state) == 2) {
+              uint32_t elapsed = millis() - id(pump_start_time);
+              if (elapsed > (${flow_confirm_seconds} * 1000U)) {
+                id(flow_confirmed) = true;
+                ESP_LOGI("safety", "Flow confirmed after %us", elapsed / 1000);
+              }
+            }
+          }
 
   # --- Flow totalization -----------------------------------------------------
   - platform: integration

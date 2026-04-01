@@ -219,7 +219,36 @@ action:
       title: "PUMP FAULT"
       message: "{{ states('sensor.pump_ctrl_pump_fault') }}. Reset from dashboard."
 
-# --- Automation 4: Low water warning ---
+# --- Automation 4: Scheduled House 2 top-up (3x daily) ---
+# Runs at 06:00, 12:00, and 18:00. Uses preferred source tank.
+# The ESP's tank-full detection handles stopping automatically —
+# if the tank is already full, flow stops within seconds and the
+# pump does a clean shutdown (minimal wear).
+alias: "House 2 Scheduled Top-Up"
+mode: single
+trigger:
+  - platform: time
+    at:
+      - "06:00:00"
+      - "12:00:00"
+      - "18:00:00"
+condition:
+  - condition: state
+    entity_id: sensor.pump_ctrl_pump_system_state
+    state: "IDLE"
+  - condition: template
+    value_template: >
+      {% set src = states('sensor.preferred_house_2_source') %}
+      {% if src == 'Tank 1' %}
+        {{ states('sensor.pump_ctrl_tank_1_level') | float(0) > 5 }}
+      {% else %}
+        {{ states('sensor.pump_ctrl_tank_2_level') | float(0) > 5 }}
+      {% endif %}
+action:
+  - action: script.turn_on
+    target: {entity_id: script.pump_house2_preferred}
+
+# --- Automation 5: Low water warning ---
 alias: "Water Critical"
 trigger:
   - platform: state
