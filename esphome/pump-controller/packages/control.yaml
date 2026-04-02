@@ -217,10 +217,7 @@ script:
     then:
       - lambda: 'id(system_state) = 4;'
       - switch.turn_off: pump_relay
-      # Emergency depressurization via relief solenoid
-      - switch.turn_on: pressure_relief
-      - delay: 2s
-      - switch.turn_off: pressure_relief
+      - delay: 2s   # passive depressurization before closing valves
       - script.execute: close_all_valves
       - script.wait: close_all_valves
       - lambda: |-

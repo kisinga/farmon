@@ -215,8 +215,6 @@ views:
             title: Hardware
             show_state: true
             entities:
-              - entity: switch.pump_ctrl_pressure_relief_solenoid
-                name: Relief
               - entity: cover.pump_ctrl_valve_1_tank_1_outlet
                 name: V1
               - entity: cover.pump_ctrl_valve_2_tank_2_outlet

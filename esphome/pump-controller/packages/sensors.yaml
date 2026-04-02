@@ -84,6 +84,11 @@ sensor:
           - 0.0 -> 0.0
           - 3.3 -> 100.0
       - clamp: {min_value: 0, max_value: 100}
+      # Hold last-known-good value when this tank is the active pump source —
+      # pump operation disturbs the pressure reading on the inlet line.
+      - lambda: |-
+          if (id(system_state) == 2 && id(target_inlet) == 1) return {};
+          return x;
 
   - platform: adc
     pin: ${pin_tank2_level}
@@ -98,6 +103,9 @@ sensor:
           - 0.0 -> 0.0
           - 3.3 -> 100.0
       - clamp: {min_value: 0, max_value: 100}
+      - lambda: |-
+          if (id(system_state) == 2 && id(target_inlet) == 2) return {};
+          return x;
 
 # --- State exposure to HA ----------------------------------------------------
 # Template text sensors that translate numeric state/fault into human-readable

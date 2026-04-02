@@ -30,17 +30,6 @@ switch:
             - switch.turn_off: pump_relay
             - logger.log: {level: WARN, format: "BLOCKED: pump only runs in RUNNING state"}
 
-  # --- Pressure relief solenoid ----------------------------------------------
-  # Normally closed. Opens during FAULT sequence to depressurize the system.
-  - platform: gpio
-    pin:
-      number: ${pin_pressure_relief}
-      inverted: true
-    id: pressure_relief
-    name: "Pressure Relief Solenoid"
-    icon: "mdi:valve"
-    restore_mode: ALWAYS_OFF
-
   # --- Valve motor pins (internal) -------------------------------------------
   # Each ball valve has open + close pins with hardware interlocks.
   # 100ms interlock_wait_time prevents simultaneous drive (mechanical safety).

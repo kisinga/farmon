@@ -41,7 +41,6 @@ substitutions:
   pin_valve3_c: GPIO3
   pin_valve4_o: GPIO39
   pin_valve4_c: GPIO40
-  pin_pressure_relief: GPIO41
   pin_flow_house1: GPIO45
   pin_flow_house2: GPIO46
   pin_tank1_level: GPIO19
@@ -92,7 +91,6 @@ esphome:
     - priority: -100
       then:
         - switch.turn_off: pump_relay
-        - switch.turn_off: pressure_relief
         - script.execute: close_all_valves
         - script.wait: close_all_valves
         - lambda: |-
