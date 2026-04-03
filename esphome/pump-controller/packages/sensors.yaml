@@ -36,10 +36,10 @@ sensor:
     filters:
       - lambda: return x / ${flow_cal};
     on_value:
-      # Feeds the flow watchdog: any flow > 0.1 L/min resets the timer.
+      # Feeds the flow watchdog: any flow > 0.5 L/min resets the timer.
       # Only flow_house2 matters — it's the only sensor on a pump path (valve4).
       - lambda: |-
-          if (x > 0.1f) {
+          if (x > 0.5f) {
             id(last_flow_time) = millis();
             // After sustained flow for flow_confirm_seconds, mark flow as confirmed.
             // This distinguishes "tank full" (flow established then stopped) from
@@ -73,6 +73,8 @@ sensor:
     state_class: total_increasing
 
   # --- Tank levels -----------------------------------------------------------
+  # 4-20mA pressure sensors with shunt resistors on ADC inputs.
+  # Calibration voltages are exposed as HA-adjustable numbers — no reflash needed.
   - platform: adc
     pin: ${pin_tank1_level}
     id: tank1_level
@@ -82,15 +84,26 @@ sensor:
     update_interval: ${update_interval}
     attenuation: 12db
     filters:
-      - calibrate_linear:
-          - 0.0 -> 0.0
-          - 3.3 -> 100.0
-      - clamp: {min_value: 0, max_value: 100}
+      - lambda: |-
+          id(tank1_raw_voltage).publish_state(x);
+          float v_empty = id(tank1_cal_empty).state;
+          float v_full  = id(tank1_cal_full).state;
+          if (v_full <= v_empty) return 0.0f;
+          float pct = (x - v_empty) / (v_full - v_empty) * 100.0f;
+          return clamp(pct, 0.0f, 100.0f);
       # Hold last-known-good value when this tank is the active pump source —
       # pump operation disturbs the pressure reading on the inlet line.
       - lambda: |-
           if (id(system_state) == 2 && id(target_inlet) == 1) return {};
           return x;
+
+  - platform: template
+    id: tank1_raw_voltage
+    name: "Tank 1 Raw Voltage"
+    unit_of_measurement: "V"
+    icon: "mdi:flash-triangle"
+    accuracy_decimals: 3
+    entity_category: diagnostic
 
   - platform: adc
     pin: ${pin_tank2_level}
@@ -101,13 +114,78 @@ sensor:
     update_interval: ${update_interval}
     attenuation: 12db
     filters:
-      - calibrate_linear:
-          - 0.0 -> 0.0
-          - 3.3 -> 100.0
-      - clamp: {min_value: 0, max_value: 100}
+      - lambda: |-
+          id(tank2_raw_voltage).publish_state(x);
+          float v_empty = id(tank2_cal_empty).state;
+          float v_full  = id(tank2_cal_full).state;
+          if (v_full <= v_empty) return 0.0f;
+          float pct = (x - v_empty) / (v_full - v_empty) * 100.0f;
+          return clamp(pct, 0.0f, 100.0f);
       - lambda: |-
           if (id(system_state) == 2 && id(target_inlet) == 2) return {};
           return x;
+
+  - platform: template
+    id: tank2_raw_voltage
+    name: "Tank 2 Raw Voltage"
+    unit_of_measurement: "V"
+    icon: "mdi:flash-triangle"
+    accuracy_decimals: 3
+    entity_category: diagnostic
+
+# --- Calibration numbers (adjustable from HA) --------------------------------
+# Voltage at empty (0%) and full (100%) for each tank's pressure sensor.
+# Use raw voltage diagnostic sensors to read actual values, then set these.
+# Defaults span full ADC range until calibrated.
+
+number:
+  - platform: template
+    name: "Tank 1 Cal Empty (V)"
+    id: tank1_cal_empty
+    icon: "mdi:tune-vertical"
+    min_value: 0.0
+    max_value: 3.3
+    step: 0.001
+    initial_value: 0.0
+    optimistic: true
+    restore_value: true
+    entity_category: config
+
+  - platform: template
+    name: "Tank 1 Cal Full (V)"
+    id: tank1_cal_full
+    icon: "mdi:tune-vertical"
+    min_value: 0.0
+    max_value: 3.3
+    step: 0.001
+    initial_value: 3.3
+    optimistic: true
+    restore_value: true
+    entity_category: config
+
+  - platform: template
+    name: "Tank 2 Cal Empty (V)"
+    id: tank2_cal_empty
+    icon: "mdi:tune-vertical"
+    min_value: 0.0
+    max_value: 3.3
+    step: 0.001
+    initial_value: 0.0
+    optimistic: true
+    restore_value: true
+    entity_category: config
+
+  - platform: template
+    name: "Tank 2 Cal Full (V)"
+    id: tank2_cal_full
+    icon: "mdi:tune-vertical"
+    min_value: 0.0
+    max_value: 3.3
+    step: 0.001
+    initial_value: 3.3
+    optimistic: true
+    restore_value: true
+    entity_category: config
 
 # --- State exposure to HA ----------------------------------------------------
 # Template text sensors that translate numeric state/fault into human-readable

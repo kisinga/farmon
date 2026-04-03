@@ -268,3 +268,14 @@ views:
             name: Combined low-water warning
           - entity: input_number.pump_duration_minutes
             name: Pump duration
+      - type: entities
+        title: Sensor Calibration (voltage)
+        entities:
+          - entity: number.pump_ctrl_tank_1_cal_empty_v
+            name: Tank 1 Empty
+          - entity: number.pump_ctrl_tank_1_cal_full_v
+            name: Tank 1 Full
+          - entity: number.pump_ctrl_tank_2_cal_empty_v
+            name: Tank 2 Empty
+          - entity: number.pump_ctrl_tank_2_cal_full_v
+            name: Tank 2 Full

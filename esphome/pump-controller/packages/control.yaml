@@ -60,7 +60,7 @@ globals:
   - id: flow_confirmed
     type: bool
     initial_value: "false"
-    # True once flow > 0.1 L/min sustained for flow_confirm_seconds after pump start
+    # True once flow > 0.5 L/min sustained for flow_confirm_seconds after pump start
 
   - id: tank_full_detected
     type: bool
