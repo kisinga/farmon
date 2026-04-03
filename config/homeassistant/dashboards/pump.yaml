@@ -90,13 +90,16 @@ views:
                     name: House 1 Flow
                     graph: line
                     hours_to_show: 6
-                  - type: statistic
-                    entity: sensor.pump_ctrl_house_1_total_usage
-                    name: House 1 Daily
-                    stat_type: state
+                  - type: statistics-graph
+                    entities:
+                      - sensor.pump_ctrl_house_1_total_usage
+                    stat_types:
+                      - change
+                    chart_type: bar
                     period:
                       calendar:
                         period: day
+                    days_to_show: 7
               - type: vertical-stack
                 cards:
                   - type: sensor
@@ -104,13 +107,16 @@ views:
                     name: House 2 Flow
                     graph: line
                     hours_to_show: 6
-                  - type: statistic
-                    entity: sensor.pump_ctrl_house_2_total_usage
-                    name: House 2 Daily
-                    stat_type: state
+                  - type: statistics-graph
+                    entities:
+                      - sensor.pump_ctrl_house_2_total_usage
+                    stat_types:
+                      - change
+                    chart_type: bar
                     period:
                       calendar:
                         period: day
+                    days_to_show: 7
             grid_options:
               columns: full
         column_span: 1

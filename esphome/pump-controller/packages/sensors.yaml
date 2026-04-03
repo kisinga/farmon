@@ -61,6 +61,7 @@ sensor:
     unit_of_measurement: "L"
     time_unit: min
     icon: "mdi:counter"
+    state_class: total_increasing
 
   - platform: integration
     sensor: flow_house2
@@ -69,6 +70,7 @@ sensor:
     unit_of_measurement: "L"
     time_unit: min
     icon: "mdi:counter"
+    state_class: total_increasing
 
   # --- Tank levels -----------------------------------------------------------
   - platform: adc
