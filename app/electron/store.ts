@@ -8,18 +8,16 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 // ---------------------------------------------------------------------------
 
 export const SCHEMA_VERSION = 3;     // version this app writes
-export const MIN_SCHEMA_VERSION = 2; // oldest version this app can read (auto-migrated to 3)
 
 export class SchemaError extends Error {
   constructor(
     public file: string,
     public fileVersion: number,
-    public reason: "too_old" | "too_new"
   ) {
     const msg =
-      reason === "too_old"
-        ? `"${file}" uses schema v${fileVersion}, but this app requires v${MIN_SCHEMA_VERSION}+. Re-create the file or migrate it.`
-        : `"${file}" uses schema v${fileVersion}, but this app only supports up to v${SCHEMA_VERSION}. Update the app.`;
+      fileVersion < SCHEMA_VERSION
+        ? `"${file}" uses schema v${fileVersion}, but this app requires v${SCHEMA_VERSION}. Re-create the file.`
+        : `"${file}" uses schema v${fileVersion}, but this app only supports v${SCHEMA_VERSION}. Update the app.`;
     super(msg);
     this.name = "SchemaError";
   }
@@ -27,8 +25,7 @@ export class SchemaError extends Error {
 
 function checkSchema(data: Record<string, unknown>, filePath: string): void {
   const v = typeof data.schema === "number" ? data.schema : 0;
-  if (v < MIN_SCHEMA_VERSION) throw new SchemaError(filePath, v, "too_old");
-  if (v > SCHEMA_VERSION) throw new SchemaError(filePath, v, "too_new");
+  if (v !== SCHEMA_VERSION) throw new SchemaError(filePath, v);
 }
 
 // ---------------------------------------------------------------------------
@@ -242,18 +239,6 @@ export function loadConfig(name: string): Record<string, unknown> {
   const raw = fs.readFileSync(filePath, "utf-8");
   const data = parseYaml(raw) as Record<string, unknown>;
   checkSchema(data, `configs/${name}.yaml`);
-
-  // Auto-migrate schema 2 → 3 on load
-  const v = typeof data.schema === "number" ? data.schema : 0;
-  if (v < SCHEMA_VERSION && data.tanks && !data.nodes) {
-    const { ManifestSchema } = require("./lib/schema.js");
-    const { manifestToTopology } = require("./lib/manifest-to-topology.js");
-    const manifest = ManifestSchema.parse(data);
-    const topology = manifestToTopology(manifest) as Record<string, unknown>;
-    // Save to store so the migration persists (doesn't touch defaults)
-    saveConfig(name, topology);
-    return topology;
-  }
 
   return data;
 }

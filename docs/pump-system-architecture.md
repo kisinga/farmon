@@ -1,4 +1,4 @@
-# Pump System — Architecture
+# MajiFlow — System Architecture
 
 ## Hardware
 

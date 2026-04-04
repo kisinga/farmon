@@ -149,6 +149,8 @@ export function generateDashboard(m: Manifest): string {
   ]);
 
   // --- Build the YAML structure ---
+  // Only ESPHome-derived entities are included. Deployment-specific HA entities
+  // (automations, input_selects, scripts, etc.) should be added by the user.
   const dashboard = {
     title: "Water System",
     views: [
@@ -167,49 +169,11 @@ export function generateDashboard(m: Manifest): string {
                 type: "entities",
                 title: "System Status",
                 entities: [
-                  {
-                    entity: "input_select.operating_mode",
-                    name: "Season Mode",
-                  },
                   { entity: stateSensor, name: "Pump State" },
-                  {
-                    entity: "sensor.pump_mode_display",
-                    name: "Active Operation",
-                  },
                   { entity: faultSensor, name: "Fault" },
+                  { entity: stopReasonSensor, name: "Last Stop Reason" },
+                  { entity: safetyOverride },
                 ],
-                grid_options: { columns: "full" },
-              },
-              {
-                type: "heading",
-                heading: "Automations",
-                heading_style: "title",
-              },
-              {
-                type: "entities",
-                entities: [
-                  {
-                    entity: "automation.auto_refill_tank_2_4",
-                    name: "Auto refill tank2 3 times a day",
-                  },
-                  {
-                    entity: "sensor.active_tank_2_refill_trigger",
-                    name: "Tank 2 refill below (active)",
-                  },
-                  {
-                    entity: "sensor.active_tank_2_refill_stop",
-                    name: "Tank 2 refill stop at (active)",
-                  },
-                  {
-                    entity: "sensor.active_tank_1_min_level",
-                    name: "Tank 1 conservation limit (active)",
-                  },
-                  {
-                    entity: "input_boolean.auto_refill_enabled",
-                    name: "Automatic routing based on above thresholds",
-                  },
-                ],
-                show_header_toggle: false,
                 grid_options: { columns: "full" },
               },
             ],
@@ -223,24 +187,6 @@ export function generateDashboard(m: Manifest): string {
                 type: "heading",
                 heading: "Water levels",
                 heading_style: "title",
-                badges: [
-                  {
-                    type: "entity",
-                    show_state: true,
-                    show_icon: true,
-                    entity: "sensor.combined_tank_level",
-                  },
-                ],
-              },
-              {
-                type: "entities",
-                entities: [
-                  {
-                    entity: "binary_sensor.water_critical",
-                    name: "Water Critical",
-                  },
-                ],
-                grid_options: { columns: "full" },
               },
               {
                 type: "horizontal-stack",
@@ -259,7 +205,7 @@ export function generateDashboard(m: Manifest): string {
             ],
             column_span: 1,
           },
-          // Section 3: Direct Control
+          // Section 3: Route Control
           {
             type: "grid",
             cards: [
@@ -270,35 +216,7 @@ export function generateDashboard(m: Manifest): string {
                     type: "entities",
                     entities: [
                       { entity: stateSensor, name: "State" },
-                      {
-                        entity: "sensor.pump_mode_display",
-                        name: "Operation",
-                      },
                       { entity: faultSensor, name: "Fault" },
-                    ],
-                    state_color: true,
-                    show_header_toggle: false,
-                  },
-                  {
-                    type: "entities",
-                    entities: [
-                      {
-                        entity: "input_select.pump_source",
-                        name: "Source",
-                      },
-                      {
-                        entity: "input_select.pump_destination",
-                        name: "Destination",
-                      },
-                      {
-                        entity: "sensor.preferred_house_2_source",
-                        name: "Recommended H2 Source",
-                      },
-                      {
-                        entity: "input_number.pump_duration_minutes",
-                        name: "Duration",
-                      },
-                      { entity: safetyOverride },
                     ],
                     state_color: true,
                     show_header_toggle: false,
@@ -318,8 +236,7 @@ export function generateDashboard(m: Manifest): string {
                         icon: "mdi:stop-circle",
                         tap_action: {
                           action: "call-service",
-                          service: "script.turn_on",
-                          target: { entity_id: "script.pump_stop" },
+                          service: `esphome.${dev}_pump_stop`,
                         },
                         show_state: false,
                         color: "red",
@@ -332,10 +249,7 @@ export function generateDashboard(m: Manifest): string {
                         icon: "mdi:alert-circle-check",
                         tap_action: {
                           action: "call-service",
-                          service: "script.turn_on",
-                          target: {
-                            entity_id: "script.pump_fault_reset",
-                          },
+                          service: `esphome.${dev}_fault_reset`,
                         },
                         show_state: false,
                         color: "accent",
@@ -343,7 +257,7 @@ export function generateDashboard(m: Manifest): string {
                     ],
                   },
                 ],
-                title: "Direct  control",
+                title: "Route Control",
                 grid_options: { columns: "full", rows: "auto" },
               },
               {
@@ -357,73 +271,14 @@ export function generateDashboard(m: Manifest): string {
             column_span: 1,
           },
         ],
-        badges: [
-          {
-            type: "entity",
-            show_name: true,
-            show_state: true,
-            show_icon: true,
-            entity: "sensor.combined_tank_level",
-            name: "Total water level",
-          },
-        ],
+        badges: [],
       },
-      // Settings view
+      // Settings view — calibration only (ESPHome-derived)
       {
         title: "Settings",
         path: "settings",
         icon: "mdi:cog",
         cards: [
-          {
-            type: "entities",
-            title: "Rainy Season Thresholds",
-            entities: [
-              {
-                entity: "input_number.rainy_tank2_refill_trigger",
-                name: "Tank 2 refill below",
-              },
-              {
-                entity: "input_number.rainy_tank2_refill_stop",
-                name: "Tank 2 refill stop at",
-              },
-              {
-                entity: "input_number.rainy_tank1_min",
-                name: "Tank 1 stop pumping at",
-              },
-            ],
-          },
-          {
-            type: "entities",
-            title: "Dry Season Thresholds",
-            entities: [
-              {
-                entity: "input_number.dry_tank2_refill_trigger",
-                name: "Tank 2 refill below",
-              },
-              {
-                entity: "input_number.dry_tank2_refill_stop",
-                name: "Tank 2 refill stop at",
-              },
-              {
-                entity: "input_number.dry_tank1_min",
-                name: "Tank 1 stop pumping at",
-              },
-            ],
-          },
-          {
-            type: "entities",
-            title: "Global",
-            entities: [
-              {
-                entity: "input_number.critical_combined_level",
-                name: "Combined low-water warning",
-              },
-              {
-                entity: "input_number.pump_duration_minutes",
-                name: "Pump duration",
-              },
-            ],
-          },
           {
             type: "entities",
             title: "Sensor Calibration (voltage)",

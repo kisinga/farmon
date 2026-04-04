@@ -75,7 +75,7 @@ export class App implements OnInit {
     const segments = url.split('/').filter(Boolean);
     this.currentRoute.set(segments[0] ?? 'library');
 
-    if ((segments[0] === 'editor' || segments[0] === 'generate') && segments[1]) {
+    if (segments[0] === 'editor' && segments[1]) {
       this.activeConfig.set(decodeURIComponent(segments[1]));
     }
   }

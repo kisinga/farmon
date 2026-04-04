@@ -1,4 +1,4 @@
-# Market Analysis — Pump Controller
+# Market Analysis — MajiFlow
 
 Last updated: 2026-04-04
 
@@ -103,7 +103,7 @@ All existing projects are either single-tank or put all logic in HA/Node-RED (no
 
 | System | Internet down | WiFi down | Cloud dies | On-device safety |
 |--------|--------------|-----------|------------|-----------------|
-| **Our system** | Safety runs. HA overlay lost. | Safety runs. OLED shows status. | No impact. | Full state machine. |
+| **MajiFlow** | Safety runs. HA overlay lost. | Safety runs. OLED shows status. | No impact. | Full state machine. |
 | Tuya stack | Schedules stop. LocalTuya works. | Stuck in last state. | Brick without pre-extracted keys. | None. |
 | Farmbot/Farmo | No control. | N/A (cellular) | No control. | None. |
 | HA-only DIY | No remote. Local automations run. | Pump uncontrolled. | N/A. | None — logic is server-side. |

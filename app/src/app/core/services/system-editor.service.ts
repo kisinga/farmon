@@ -3,7 +3,7 @@ import type { BoardDef } from '../models/board.model';
 import { reservedPins, exposedPins, pinsWithCap } from '../models/board.model';
 import type { ValidationResult } from '../models/electron-api';
 import type { SystemTopology } from '../models/topology.model';
-import { getTanks, getPump, getValves, getFlowSensors } from '../models/topology.model';
+import { getNodesByKind, getNodeByKind, getComponentsByKind } from '../models/topology.model';
 
 @Injectable({ providedIn: 'root' })
 export class SystemEditorService {
@@ -43,16 +43,16 @@ export class SystemEditorService {
     const t = this._topology();
     if (!t) return new Map<string, string>();
     const pins = new Map<string, string>();
-    const pump = getPump(t);
+    const pump = getNodeByKind(t, 'pump');
     if (pump?.pin) pins.set(pump.pin, 'pump');
-    for (const tank of getTanks(t)) {
+    for (const tank of getNodesByKind(t, 'tank')) {
       if (tank.level_pin) pins.set(tank.level_pin, `tank:${tank.id}`);
     }
-    for (const v of getValves(t)) {
+    for (const v of getComponentsByKind(t, 'valve')) {
       if (v.open_pin) pins.set(v.open_pin, `valve:${v.id}:open`);
       if (v.close_pin) pins.set(v.close_pin, `valve:${v.id}:close`);
     }
-    for (const f of getFlowSensors(t)) {
+    for (const f of getComponentsByKind(t, 'flow_sensor')) {
       if (f.pin) pins.set(f.pin, `flow:${f.id}`);
     }
     return pins;

@@ -80,7 +80,7 @@ export class TimingTabComponent {
   update(key: string, value: string) {
     this.editor.updateTopology((t) => {
       const num = Number(value);
-      t.timing[key] = isNaN(num) ? value : num;
+      (t.timing as Record<string, string | number>)[key] = isNaN(num) ? value : num;
     });
   }
 }

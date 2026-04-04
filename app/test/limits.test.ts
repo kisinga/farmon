@@ -6,7 +6,7 @@
  */
 
 import * as path from "node:path";
-import { ManifestSchema } from "../electron/lib/schema.js";
+import type { Manifest } from "../electron/lib/schema.js";
 import { validate } from "../electron/lib/validate.js";
 import { generateAll } from "../electron/lib/generate.js";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
@@ -34,7 +34,7 @@ interface ScaleParams {
   routes: number;
 }
 
-function buildManifest(p: ScaleParams): unknown {
+function buildManifest(p: ScaleParams): Manifest {
   let pinIdx = 0;
   const pumpPin = pin(pinIdx++);
 
@@ -95,8 +95,15 @@ function buildManifest(p: ScaleParams): unknown {
     valves,
     flow_sensors: flows,
     routes: routes.length > 0
-      ? routes
+      ? routes as Manifest["routes"]
       : [{ name: "R0", source: "tank1", valves: ["valve1"], flow_sensor: "flow1", max_runtime_seconds: 1800 }],
+    timing: {
+      valve_travel_time: "15s",
+      flow_watchdog_seconds: 30,
+      flow_confirm_seconds: 15,
+      api_watchdog_seconds: 300,
+      update_interval: "5s",
+    },
   };
 }
 
@@ -116,34 +123,26 @@ interface TestResult {
 
 function runTest(label: string, p: ScaleParams): TestResult {
   const flowCount = Math.max(p.flows, 1);
-  const raw = buildManifest(p);
+  const manifest = buildManifest(p);
   const result: TestResult = {
     label,
     pins: 1 + p.tanks + p.valves * 2 + flowCount,
-    routes: 0,
-    parseOk: false,
+    routes: manifest.routes.length,
+    parseOk: true,
     validateOk: false,
     generateOk: false,
     errors: [],
     warnings: [],
   };
 
-  const parsed = ManifestSchema.safeParse(raw);
-  if (!parsed.success) {
-    result.errors = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
-    return result;
-  }
-  result.parseOk = true;
-  result.routes = parsed.data.routes.length;
-
-  const v = validate(parsed.data, board, { loose: true });
+  const v = validate(manifest, board, { loose: true });
   result.validateOk = v.ok;
   result.warnings = v.warnings;
   result.errors = v.errors;
   if (!v.ok) return result;
 
   try {
-    const files = generateAll(parsed.data, board);
+    const files = generateAll(manifest, board);
     result.generateOk = true;
     const rh = files.find((f) => f.relativePath.endsWith("routes.h"));
     if (rh) result.routesHLines = rh.content.split("\n").length;

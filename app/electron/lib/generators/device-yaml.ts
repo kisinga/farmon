@@ -116,7 +116,7 @@ export function generateDeviceYaml(
 
   // --- OLED display (only if board has one) ---
   const displayBlock = hasOled
-    ? buildOledDisplay(board)
+    ? buildOledDisplay(board, m)
     : null;
 
   // --- Assemble the full device YAML as a string ---
@@ -184,9 +184,18 @@ export function generateDeviceYaml(
   return lines.join("\n") + "\n";
 }
 
-function buildOledDisplay(board: BoardDef): string {
+function buildOledDisplay(board: BoardDef, m: Manifest): string {
   const oled = board.peripherals.oled!;
   const resetPin = oled.reset_pin;
+
+  // Generate tank level lines dynamically (up to 2 fit side-by-side on 128px OLED)
+  const displayTanks = m.tanks.slice(0, 2);
+  const tankLines = displayTanks.map((t, i) => {
+    const x = i === 0 ? 0 : 64;
+    const label = t.name.length > 4 ? `T${i + 1}` : t.name;
+    return `          if (id(${t.id}_level).has_state() && !std::isnan(id(${t.id}_level).state))
+            it.printf(${x}, 39, id(font_body), "${label}: %.0f%%", id(${t.id}_level).state);`;
+  }).join("\n");
 
   // The display lambda renders state machine info on the OLED
   const runtimeLambda = `|-
@@ -247,11 +256,8 @@ function buildOledDisplay(board: BoardDef): string {
             it.printf(0, 27, id(font_body), "Run: %um %us", rt / 60, rt % 60);
           }
 
-          // Tank levels (first two)
-          if (id(tank1_level).has_state() && !std::isnan(id(tank1_level).state))
-            it.printf(0, 39, id(font_body), "T1: %.0f%%", id(tank1_level).state);
-          if (id(tank2_level).has_state() && !std::isnan(id(tank2_level).state))
-            it.printf(64, 39, id(font_body), "T2: %.0f%%", id(tank2_level).state);
+          // Tank levels (first ${displayTanks.length})
+${tankLines}
 
           if (id(uptime_sec).has_state() && !std::isnan(id(uptime_sec).state)) {
             int total = (int)id(uptime_sec).state;

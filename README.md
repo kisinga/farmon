@@ -1,6 +1,6 @@
-# waterctl
+# MajiFlow
 
-Code generator and desktop configurator for ESP32 water management systems. Define your hardware topology — get compiled ESPHome firmware, HA dashboards, and safety watchdogs.
+Code generator and desktop configurator for ESP32 water orchestration systems. Define your hardware topology — get compiled ESPHome firmware, HA dashboards, and safety watchdogs.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ cd app && npm install && npm run dev
 ## Project structure
 
 ```
-waterctl/
+majiflow/
 ├── app/                          # Electron + Angular desktop app
 │   ├── electron/                 # Main process + IPC handlers
 │   └── src/                      # Angular renderer (DaisyUI + Tailwind)
@@ -76,9 +76,9 @@ npm run test:limits # Scaling ceiling discovery
 
 ## Desktop app
 
-Angular 19 + Electron + DaisyUI. Visual system editor with:
+Angular 20 + Electron + DaisyUI. Visual system editor with:
 - Config library (list, create, duplicate, delete)
 - Interactive board SVG with pin overlays
-- Tabbed editor (device, tanks, valves, flows, routes, timing)
+- Tabbed editor (device, tanks, valves, flows, routes, timing, topology)
 - Real-time validation panel with GPIO budget bar
 - Generate + compile + flash from the app

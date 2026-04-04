@@ -1,316 +1,494 @@
-import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef } from '@angular/core';
-import * as joint from 'jointjs';
+import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, computed, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { DomSanitizer } from '@angular/platform-browser';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
-import type { TopologyNode, PipeSegment, InlineComponent } from '../../../core/models/topology.model';
-import {
-  createTankElement,
-  createPumpElement,
-  createEndpointElement,
-  createValveElement,
-  createFlowSensorElement,
-  createPipeSubLink,
-  COLORS,
-} from './symbols';
-
-/** Half-sizes for centering calculations */
-const NODE_HALF: Record<string, { dx: number; dy: number }> = {
-  tank: { dx: 60, dy: 35 },
-  pump: { dx: 30, dy: 30 },
-  endpoint: { dx: 60, dy: 25 },
-};
-
-const COMP_HALF = { dx: 25, dy: 14 };
+import type { TopologyNode, PipeSegment } from '../../../core/models/topology.model';
+import { NODE_REGISTRY, INLINE_REGISTRY, type NodeDescriptor, type InlineComponentDescriptor } from '../../../core/models/entities.model';
+import { entityColor } from '../../../core/models/colors.model';
+import { TopologyCanvas, type Selection } from './topology-canvas';
+import { deriveRoutes } from './derive-routes';
 
 @Component({
   selector: 'app-topology-tab',
   standalone: true,
+  imports: [FormsModule],
   template: `
-    <div class="flex items-center justify-between px-4 py-2 border-b border-base-300/30 bg-base-200/30">
-      <div class="flex items-center gap-3">
-        <h2 class="text-sm font-semibold text-base-content/70">System Topology</h2>
-        <span class="badge badge-ghost badge-xs">Read-only</span>
+    <!-- Toolbar -->
+    <div class="flex items-center gap-2 px-4 py-2 border-b border-base-300/30 bg-base-200/30">
+      <h2 class="text-sm font-semibold text-base-content/70">Design</h2>
+      <div class="flex-1"></div>
+      <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button" class="btn btn-ghost btn-xs gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Node
+        </div>
+        <ul tabindex="0" class="dropdown-content menu menu-xs bg-base-200 rounded-lg shadow-lg z-30 w-40 p-1">
+          @for (desc of nodeDescs; track desc.kind) {
+            <li><a (click)="addNode(desc.kind)" [class.disabled]="desc.singleton && kindExists(desc.kind)">
+              <span [innerHTML]="trustSvg(desc.legendSvg)"></span> {{ desc.label }}
+            </a></li>
+          }
+        </ul>
       </div>
-      <div class="flex gap-1">
-        <button class="btn btn-ghost btn-xs" (click)="zoomIn()">+</button>
-        <button class="btn btn-ghost btn-xs" (click)="zoomOut()">&minus;</button>
-        <button class="btn btn-ghost btn-xs" (click)="fitContent()">Fit</button>
-      </div>
+      <div class="divider divider-horizontal mx-0 h-4"></div>
+      <button class="btn btn-ghost btn-xs" (click)="doZoomIn()">+</button>
+      <button class="btn btn-ghost btn-xs" (click)="doZoomOut()">&minus;</button>
+      <button class="btn btn-ghost btn-xs" (click)="doFit()">Fit</button>
     </div>
-    <div class="canvas-wrap">
-      <div #canvas></div>
-      <div class="legend">
-        <div class="legend-item">
-          <span class="swatch" [style.background]="colors.tank"></span>
-          <span>Tank</span>
-        </div>
-        <div class="legend-item">
-          <span class="swatch swatch-circle" [style.background]="colors.pump"></span>
-          <span>Pump</span>
-        </div>
-        <div class="legend-item">
-          <span class="swatch swatch-dashed" [style.border-color]="colors.endpoint"></span>
-          <span>Endpoint</span>
-        </div>
-        <div class="legend-item">
-          <span class="swatch" [style.background]="colors.valve"></span>
-          <span>Valve</span>
-        </div>
-        <div class="legend-item">
-          <span class="swatch" [style.background]="colors.flow"></span>
-          <span>Flow Sensor</span>
+
+    <div class="flex flex-1 min-h-0 overflow-hidden">
+      <!-- Canvas -->
+      <div class="canvas-wrap flex-1 min-w-0">
+        <div #canvas></div>
+        <div class="legend">
+          @for (desc of nodeDescs; track desc.kind) {
+            <div class="legend-item">
+              <span [innerHTML]="trustSvg(desc.legendSvg)"></span>
+              <span>{{ desc.label }}</span>
+            </div>
+          }
+          @for (desc of inlineDescs; track desc.kind) {
+            <div class="legend-item">
+              <span [innerHTML]="trustSvg(desc.legendSvg)"></span>
+              <span>{{ desc.label }}</span>
+            </div>
+          }
         </div>
       </div>
+
+      <!-- Sidebar -->
+      <aside class="sidebar w-64 border-l border-base-300/30 bg-base-100 overflow-y-auto shrink-0">
+
+        <!-- Node properties (data-driven) -->
+        @if (selectedNodeData(); as sn) {
+          <div class="sidebar-section">
+            <h3 class="sidebar-title">{{ sn.desc.label }}</h3>
+            <div class="sidebar-fields">
+              @for (field of sn.desc.sidebarFields; track field.key) {
+                <label class="sidebar-label">{{ field.label }}</label>
+                @if (field.type === 'pin') {
+                  <div class="flex items-center gap-2">
+                    <input class="input input-xs input-bordered flex-1 font-mono"
+                      [ngModel]="$any(sn.node)[field.key]"
+                      (ngModelChange)="updateNodeField(sn.node.id, field.key, $event)"
+                      [placeholder]="field.placeholder ?? ''" />
+                    @if (field.pinCap === 'adc') {
+                      @if (editor.adcPins().has($any(sn.node)[field.key])) {
+                        <span class="badge badge-success badge-xs">ADC</span>
+                      } @else if ($any(sn.node)[field.key]) {
+                        <span class="badge badge-error badge-xs">No ADC</span>
+                      }
+                    }
+                  </div>
+                } @else if (field.type === 'number') {
+                  <input type="number" class="input input-xs input-bordered w-full font-mono"
+                    [ngModel]="$any(sn.node)[field.key]"
+                    (ngModelChange)="updateNodeField(sn.node.id, field.key, +$event)" min="0" />
+                } @else {
+                  <input class="input input-xs input-bordered w-full font-mono"
+                    [ngModel]="$any(sn.node)[field.key]"
+                    (ngModelChange)="updateNodeField(sn.node.id, field.key, $event)" />
+                }
+              }
+            </div>
+            @if (!sn.desc.singleton) {
+              <button class="btn btn-error btn-xs mt-3 w-full" (click)="deleteNode(sn.node.id)">Delete {{ sn.desc.label }}</button>
+            }
+          </div>
+        }
+
+        <!-- Pipe properties -->
+        @if (selectedPipeData(); as pipeData) {
+          <div class="sidebar-section">
+            <h3 class="sidebar-title">Pipe</h3>
+            <div class="text-xs font-mono text-base-content/60 mb-2">{{ pipeData.pipe.from }} → {{ pipeData.pipe.to }}</div>
+
+            @for (comp of pipeData.pipe.components; track comp.id) {
+              <div class="card bg-base-200/40 mb-2">
+                <div class="card-body p-2 gap-1">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold" [style.color]="entityColor(comp.kind)">
+                      {{ getInlineDesc(comp.kind)?.label }}
+                    </span>
+                    <button class="btn btn-ghost btn-xs text-error" (click)="removeComponent(pipeData.pipe.id, comp.id)">×</button>
+                  </div>
+                  <div class="sidebar-fields">
+                    @for (field of getInlineDesc(comp.kind)?.sidebarFields ?? []; track field.key) {
+                      <label class="sidebar-label">{{ field.label }}</label>
+                      @if (field.type === 'number') {
+                        <input type="number" class="input input-xs input-bordered w-full font-mono"
+                          [ngModel]="$any(comp)[field.key]"
+                          (ngModelChange)="updateComponent(pipeData.pipe.id, comp.id, field.key, +$event)" min="1" />
+                      } @else {
+                        <input class="input input-xs input-bordered w-full font-mono"
+                          [ngModel]="$any(comp)[field.key]"
+                          (ngModelChange)="updateComponent(pipeData.pipe.id, comp.id, field.key, $event)"
+                          [placeholder]="field.placeholder ?? ''" />
+                      }
+                    }
+                  </div>
+                </div>
+              </div>
+            }
+
+            <div class="flex gap-1 mt-1">
+              @for (desc of inlineDescs; track desc.kind) {
+                <button class="btn btn-ghost btn-xs flex-1" (click)="addComponentToPipe(pipeData.pipe.id, desc.kind)">+ {{ desc.label }}</button>
+              }
+            </div>
+            <button class="btn btn-error btn-xs mt-2 w-full" (click)="deletePipe(pipeData.pipe.id)">Delete Pipe</button>
+          </div>
+        }
+
+        <!-- Component properties (clicked on valve/flow sensor on canvas) -->
+        @if (selectedComponent(); as sc) {
+          <div class="sidebar-section">
+            <h3 class="sidebar-title" [style.color]="entityColor(sc.comp.kind)">
+              {{ getInlineDesc(sc.comp.kind)?.label }}
+            </h3>
+            <div class="sidebar-fields">
+              @for (field of getInlineDesc(sc.comp.kind)?.sidebarFields ?? []; track field.key) {
+                <label class="sidebar-label">{{ field.label }}</label>
+                @if (field.type === 'number') {
+                  <input type="number" class="input input-xs input-bordered w-full font-mono"
+                    [ngModel]="$any(sc.comp)[field.key]"
+                    (ngModelChange)="updateComponent(sc.pipeId, sc.comp.id, field.key, +$event)" min="1" />
+                } @else {
+                  <input class="input input-xs input-bordered w-full font-mono"
+                    [ngModel]="$any(sc.comp)[field.key]"
+                    (ngModelChange)="updateComponent(sc.pipeId, sc.comp.id, field.key, $event)"
+                    [placeholder]="field.placeholder ?? ''" />
+                }
+              }
+              <label class="sidebar-label">On Pipe</label>
+              <span class="text-xs font-mono text-base-content/60">{{ sc.pipeId }}</span>
+            </div>
+            <button class="btn btn-error btn-xs mt-3 w-full" (click)="removeComponent(sc.pipeId, sc.comp.id)">
+              Delete {{ getInlineDesc(sc.comp.kind)?.label }}
+            </button>
+          </div>
+        }
+
+        <!-- Routes (default view when nothing selected) -->
+        @if (!selection()) {
+          <div class="sidebar-section">
+            <h3 class="sidebar-title">Derived Routes</h3>
+            @if (derivedRoutes().length === 0) {
+              <div class="text-base-content/40 text-center py-4 text-xs">No routes derived yet.<br>Connect nodes with pipes.</div>
+            } @else {
+              @for (route of derivedRoutes(); track route.key) {
+                <div class="flex items-center justify-between py-1.5 border-b border-base-300/20">
+                  <span class="font-mono text-xs">{{ route.key }}</span>
+                  <span class="badge badge-xs" [class.badge-success]="route.valid" [class.badge-ghost]="!route.valid">
+                    {{ route.valid ? 'Valid' : 'Incomplete' }}
+                  </span>
+                </div>
+              }
+            }
+          </div>
+
+          <div class="sidebar-section">
+            <h3 class="sidebar-title">Route Overrides</h3>
+            @if (overrideEntries().length === 0) {
+              <div class="text-base-content/40 text-center py-4 text-xs">No overrides defined.</div>
+            } @else {
+              @for (entry of overrideEntries(); track entry.key) {
+                <div class="card bg-base-200/40 mb-2">
+                  <div class="card-body p-2 gap-1">
+                    <span class="font-mono font-semibold text-xs">{{ entry.override.name ?? entry.key }}</span>
+                    <div class="flex items-center gap-2">
+                      <label class="text-[10px] text-base-content/50">Max Runtime</label>
+                      <input type="number" class="input input-xs input-bordered w-20 font-mono"
+                        [ngModel]="entry.override.max_runtime_seconds ?? 1800"
+                        (ngModelChange)="updateMaxRuntime(entry.key, $event)" min="0" step="60" />
+                      <span class="text-[10px] text-base-content/50">s</span>
+                    </div>
+                  </div>
+                </div>
+              }
+            }
+          </div>
+        }
+      </aside>
     </div>
   `,
   styles: [`
     :host {
-      display: block;
+      display: flex;
+      flex-direction: column;
       flex: 1;
       min-height: 0;
       overflow: hidden;
     }
-    :host ::ng-deep .joint-paper {
-      border: none !important;
-    }
-    .canvas-wrap {
-      position: relative;
-      flex: 1;
-      min-height: 0;
-    }
+    :host ::ng-deep .joint-paper { border: none !important; cursor: grab; }
+    :host ::ng-deep .joint-paper:active { cursor: grabbing; }
+    .canvas-wrap { position: relative; }
     .legend {
-      position: absolute;
-      bottom: 12px;
-      left: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 8px 10px;
-      background: rgba(255,255,255,0.92);
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      font-size: 10px;
-      font-family: ui-monospace, monospace;
-      color: #1e293b;
-      pointer-events: none;
-      z-index: 10;
+      position: absolute; bottom: 12px; left: 12px;
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 8px 10px; background: rgba(255,255,255,0.92);
+      border: 1px solid #e2e8f0; border-radius: 6px;
+      font-size: 10px; font-family: ui-monospace, monospace;
+      color: #1e293b; pointer-events: none; z-index: 10;
     }
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .sidebar { font-size: 12px; }
+    .sidebar-section { padding: 12px; border-bottom: 1px solid oklch(var(--b3) / 0.3); }
+    .sidebar-title {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.05em; color: oklch(var(--bc) / 0.5); margin-bottom: 8px;
     }
-    .swatch {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border-radius: 2px;
-      flex-shrink: 0;
-    }
-    .swatch-circle {
-      border-radius: 50%;
-    }
-    .swatch-dashed {
-      background: transparent;
-      border: 2px dashed;
-      border-radius: 2px;
-    }
+    .sidebar-fields { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; }
+    .sidebar-label { font-size: 10px; color: oklch(var(--bc) / 0.5); white-space: nowrap; }
   `],
 })
 export class TopologyTabComponent {
-  private editor = inject(SystemEditorService);
-  private hostRef = inject(ElementRef<HTMLElement>);
+  protected editor = inject(SystemEditorService);
+  private sanitizer = inject(DomSanitizer);
   private destroyRef = inject(DestroyRef);
   private canvasRef = viewChild.required<ElementRef<HTMLDivElement>>('canvas');
 
-  private graph!: joint.dia.Graph;
-  private paper!: joint.dia.Paper;
+  private canvas!: TopologyCanvas;
 
-  /** Node center positions for auto-placing inline components */
-  private nodeCenters = new Map<string, { x: number; y: number }>();
+  // Registry arrays for template iteration
+  protected nodeDescs: NodeDescriptor[] = Array.from(NODE_REGISTRY.values());
+  protected inlineDescs: InlineComponentDescriptor[] = Array.from(INLINE_REGISTRY.values());
 
-  /** Short labels for inline components */
-  private compLabels = new Map<string, string>();
+  // Expose entityColor to template
+  protected entityColor = entityColor;
 
-  /** Expose COLORS for template */
-  colors = COLORS;
+  // --- Selection state ---
+  protected selection = signal<Selection | null>(null);
+
+  protected selectedNodeData = computed(() => {
+    const sel = this.selection();
+    const t = this.editor.topology();
+    if (!sel || sel.kind !== 'node' || !t) return null;
+    const node = t.nodes.find(n => n.id === sel.nodeId);
+    if (!node) return null;
+    const desc = NODE_REGISTRY.get(node.kind);
+    return desc ? { node, desc } : null;
+  });
+
+  protected selectedPipeData = computed(() => {
+    const sel = this.selection();
+    const t = this.editor.topology();
+    if (!sel || sel.kind !== 'pipe' || !t) return null;
+    const pipe = t.pipes.find(p => p.id === sel.pipeId);
+    return pipe ? { pipe } : null;
+  });
+
+  protected selectedComponent = computed(() => {
+    const sel = this.selection();
+    const t = this.editor.topology();
+    if (!sel || sel.kind !== 'component' || !t) return null;
+    const pipe = t.pipes.find(p => p.id === sel.pipeId);
+    if (!pipe) return null;
+    const comp = pipe.components.find(c => c.id === sel.componentId);
+    return comp ? { comp, pipeId: sel.pipeId } : null;
+  });
+
+  protected derivedRoutes = computed(() => {
+    const t = this.editor.topology();
+    return t ? deriveRoutes(t) : [];
+  });
+
+  protected overrideEntries = computed(() => {
+    const t = this.editor.topology();
+    if (!t) return [];
+    return Object.entries(t.route_overrides).map(([key, override]) => ({ key, override }));
+  });
 
   constructor() {
     afterNextRender(() => this.init());
   }
 
-  private init() {
-    const canvas = this.canvasRef().nativeElement;
-    const host = this.hostRef.nativeElement;
+  // --- Template helpers ---
 
-    this.graph = new joint.dia.Graph();
-    this.paper = new joint.dia.Paper({
-      el: canvas,
-      model: this.graph,
-      width: 800,
-      height: 600,
-      gridSize: 10,
-      drawGrid: { name: 'dot', args: { color: '#e2e8f0' } },
-      background: { color: '#fafbfc' },
-      interactive: false,
-      defaultRouter: { name: 'manhattan' },
-      defaultConnector: { name: 'rounded' },
+  trustSvg(svg: string) {
+    return this.sanitizer.bypassSecurityTrustHtml(svg);
+  }
+
+  getInlineDesc(kind: string): InlineComponentDescriptor | undefined {
+    return INLINE_REGISTRY.get(kind);
+  }
+
+  kindExists(kind: string): boolean {
+    const t = this.editor.topology();
+    return t ? t.nodes.some(n => n.kind === kind) : false;
+  }
+
+  private init() {
+    const canvasEl = this.canvasRef().nativeElement;
+    const canvasWrap = canvasEl.parentElement!;
+
+    this.canvas = new TopologyCanvas(canvasEl, {
+      onNodesMoved: (positions) => {
+        this.editor.updateTopology(t => {
+          for (const node of t.nodes) {
+            const pos = positions.get(node.id);
+            if (pos) node.position = pos;
+          }
+        });
+      },
+      onPipeCreated: (from, to) => {
+        this.editor.updateTopology(t => {
+          t.pipes.push({ id: this.nextPipeId(t), from, to, components: [] });
+        });
+        const t = this.editor.topology()!;
+        const newPipe = t.pipes[t.pipes.length - 1];
+        this.canvas.addPipeCells(newPipe, t);
+      },
+      onPipeDeleted: (pipeId) => {
+        const t = this.editor.topology();
+        const pipe = t?.pipes.find(p => p.id === pipeId);
+        const compIds = pipe?.components.map(c => c.id) ?? [];
+        this.canvas.removePipeCells(pipeId, compIds);
+        this.editor.updateTopology(t => {
+          t.pipes = t.pipes.filter(p => p.id !== pipeId);
+        });
+        this.selection.set(null);
+      },
+      onSelected: (sel) => {
+        this.selection.set(sel);
+        this.canvas.highlight(sel);
+      },
     });
 
+    this.destroyRef.onDestroy(() => this.canvas.destroy());
+
     const syncSize = () => {
-      const toolbar = host.firstElementChild as HTMLElement;
-      const w = host.clientWidth;
-      const h = host.clientHeight - (toolbar?.offsetHeight ?? 0);
-      if (w > 0 && h > 0) {
-        this.paper.setDimensions(w, h);
-      }
+      const w = canvasWrap.clientWidth;
+      const h = canvasWrap.clientHeight;
+      this.canvas.resize(w, h);
     };
 
     const observer = new ResizeObserver(() => syncSize());
-    observer.observe(host);
+    observer.observe(canvasWrap);
     this.destroyRef.onDestroy(() => observer.disconnect());
 
     syncSize();
-    this.render();
-  }
 
-  private render() {
     const t = this.editor.topology();
-    if (!t) return;
+    if (t) this.canvas.render(t);
+  }
 
-    this.graph.clear();
-    this.nodeCenters.clear();
-    this.compLabels.clear();
+  // --- Toolbar actions ---
 
-    // Build short-label indices (V1, V2... F1, F2...)
-    let valveIdx = 0;
-    let flowIdx = 0;
-    for (const pipe of t.pipes) {
-      for (const comp of pipe.components) {
-        if (comp.kind === 'valve') {
-          this.compLabels.set(comp.id, `V${++valveIdx}`);
-        } else {
-          this.compLabels.set(comp.id, `F${++flowIdx}`);
-        }
+  addNode(kind: string) {
+    const desc = NODE_REGISTRY.get(kind);
+    if (!desc) return;
+    if (desc.singleton && this.kindExists(kind)) return;
+
+    this.editor.updateTopology(t => {
+      const existing = t.nodes.filter(n => n.kind === kind).length;
+      const y = 100 + t.nodes.length * 120;
+      const n = existing + 1;
+      const id = desc.singleton ? kind : `${kind}${n}`;
+      t.nodes.push({
+        kind,
+        id,
+        ...desc.defaultData(n),
+        ports: desc.defaultPorts.map(p => ({ ...p })),
+        position: { x: 100, y },
+      } as TopologyNode);
+    });
+    this.canvas.render(this.editor.topology()!);
+  }
+
+  doZoomIn() { this.canvas.zoomIn(); }
+  doZoomOut() { this.canvas.zoomOut(); }
+  doFit() { this.canvas.fitContent(); }
+
+  // --- Node editing ---
+
+  deleteNode(nodeId: string) {
+    this.editor.updateTopology(t => {
+      t.nodes = t.nodes.filter(n => n.id !== nodeId);
+      t.pipes = t.pipes.filter(p => {
+        const fn = p.from.split(':')[0];
+        const tn = p.to.split(':')[0];
+        return fn !== nodeId && tn !== nodeId;
+      });
+      for (const key of Object.keys(t.route_overrides)) {
+        if (key.includes(nodeId)) delete t.route_overrides[key];
       }
-    }
-
-    // Create nodes and record centers
-    for (const node of t.nodes) {
-      const el = this.createNode(node);
-      if (el) {
-        this.graph.addCell(el);
-        const half = NODE_HALF[node.kind];
-        this.nodeCenters.set(node.id, {
-          x: node.position.x + half.dx,
-          y: node.position.y + half.dy,
-        });
-      }
-    }
-
-    // Create pipe elements (inline components + sub-links)
-    for (const pipe of t.pipes) {
-      const cells = this.createPipeElements(pipe);
-      this.graph.addCells(cells);
-    }
-
-    setTimeout(() => this.fitContent(), 50);
+    });
+    this.selection.set(null);
+    this.canvas.render(this.editor.topology()!);
   }
 
-  private createNode(node: TopologyNode): joint.dia.Element | null {
-    const ports = node.ports.map((p) => ({
-      id: p.id,
-      group: p.direction === 'inlet' ? 'inlet' : 'outlet',
-    }));
-    switch (node.kind) {
-      case 'tank':
-        return createTankElement(node.id, node.name, node.position.x, node.position.y, ports);
-      case 'pump':
-        return createPumpElement(node.id, node.position.x, node.position.y);
-      case 'endpoint':
-        return createEndpointElement(node.id, node.name, node.position.x, node.position.y, ports);
-    }
+  updateNodeField(nodeId: string, field: string, value: any) {
+    this.editor.updateTopology(t => {
+      const node = t.nodes.find(n => n.id === nodeId);
+      if (node) (node as any)[field] = value;
+    });
   }
 
-  private createPipeElements(pipe: PipeSegment): joint.dia.Cell[] {
-    const [fromNode, fromPort] = pipe.from.split(':');
-    const [toNode, toPort] = pipe.to.split(':');
-    const comps = pipe.components;
+  // --- Pipe editing ---
 
-    // No inline components — single direct link
-    if (comps.length === 0) {
-      return [
-        createPipeSubLink(
-          `pipe-${pipe.id}`,
-          `node-${fromNode}`, fromPort,
-          `node-${toNode}`, toPort,
-        ),
-      ];
-    }
-
-    // Get source/target centers for position interpolation
-    const srcCenter = this.nodeCenters.get(fromNode);
-    const tgtCenter = this.nodeCenters.get(toNode);
-    if (!srcCenter || !tgtCenter) return [];
-
-    const cells: joint.dia.Cell[] = [];
-
-    // Create inline component elements at interpolated positions
-    for (let i = 0; i < comps.length; i++) {
-      const fraction = (i + 1) / (comps.length + 1);
-      const cx = srcCenter.x + (tgtCenter.x - srcCenter.x) * fraction;
-      const cy = srcCenter.y + (tgtCenter.y - srcCenter.y) * fraction;
-      const comp = comps[i];
-      const label = this.compLabels.get(comp.id) ?? comp.id;
-
-      if (comp.kind === 'valve') {
-        cells.push(createValveElement(comp.id, label, cx - COMP_HALF.dx, cy - COMP_HALF.dy));
-      } else {
-        cells.push(createFlowSensorElement(comp.id, label, cx - COMP_HALF.dx, cy - COMP_HALF.dy));
-      }
-    }
-
-    // Create chain of sub-links: source → comp[0] → comp[1] → ... → target
-    const chain: Array<{ elId: string; portOut: string; portIn: string }> = [];
-
-    // Source node
-    chain.push({ elId: `node-${fromNode}`, portOut: fromPort, portIn: '' });
-    // Inline components
-    for (const comp of comps) {
-      chain.push({ elId: `comp-${comp.id}`, portOut: 'outlet', portIn: 'inlet' });
-    }
-    // Target node
-    chain.push({ elId: `node-${toNode}`, portOut: '', portIn: toPort });
-
-    for (let i = 0; i < chain.length - 1; i++) {
-      const src = chain[i];
-      const tgt = chain[i + 1];
-      // First and last links use manhattan; middle links between components use normal
-      const router: 'manhattan' | 'normal' =
-        (i === 0 || i === chain.length - 2) ? 'manhattan' : 'normal';
-      cells.push(
-        createPipeSubLink(
-          `pipe-${pipe.id}-seg-${i}`,
-          src.elId, src.portOut,
-          tgt.elId, tgt.portIn,
-          router,
-        ),
-      );
-    }
-
-    return cells;
+  deletePipe(pipeId: string) {
+    const t = this.editor.topology();
+    const pipe = t?.pipes.find(p => p.id === pipeId);
+    const compIds = pipe?.components.map(c => c.id) ?? [];
+    this.canvas.removePipeCells(pipeId, compIds);
+    this.editor.updateTopology(t => {
+      t.pipes = t.pipes.filter(p => p.id !== pipeId);
+    });
+    this.selection.set(null);
   }
 
-  zoomIn() {
-    const s = this.paper.scale();
-    this.paper.scale(s.sx * 1.2, s.sy * 1.2);
+  addComponentToPipe(pipeId: string, kind: string) {
+    const desc = INLINE_REGISTRY.get(kind);
+    if (!desc) return;
+
+    this.editor.updateTopology(t => {
+      const pipe = t.pipes.find(p => p.id === pipeId);
+      if (!pipe) return;
+      const n = pipe.components.filter(c => c.kind === kind).length + 1;
+      pipe.components.push({
+        kind,
+        id: `${pipeId}_${desc.labelPrefix.toLowerCase()}${n}`,
+        ...desc.defaultData(n),
+      } as any);
+    });
+    this.canvas.render(this.editor.topology()!);
   }
 
-  zoomOut() {
-    const s = this.paper.scale();
-    this.paper.scale(s.sx / 1.2, s.sy / 1.2);
+  removeComponent(pipeId: string, compId: string) {
+    this.editor.updateTopology(t => {
+      const pipe = t.pipes.find(p => p.id === pipeId);
+      if (pipe) pipe.components = pipe.components.filter(c => c.id !== compId);
+    });
+    this.canvas.render(this.editor.topology()!);
   }
 
-  fitContent() {
-    this.paper.scaleContentToFit({ padding: 40, maxScale: 1.5, minScale: 0.3 });
+  updateComponent(pipeId: string, compId: string, field: string, value: any) {
+    this.editor.updateTopology(t => {
+      const pipe = t.pipes.find(p => p.id === pipeId);
+      if (!pipe) return;
+      const comp = pipe.components.find(c => c.id === compId);
+      if (comp) (comp as any)[field] = value;
+    });
+  }
+
+  // --- Route overrides ---
+
+  updateMaxRuntime(key: string, value: number) {
+    this.editor.updateTopology(t => {
+      if (t.route_overrides[key]) t.route_overrides[key].max_runtime_seconds = value;
+    });
+  }
+
+  // --- Helpers ---
+
+  private nextPipeId(t: { pipes: PipeSegment[] }): string {
+    const nums = t.pipes
+      .map(p => p.id.match(/^pipe(\d+)$/))
+      .filter(Boolean)
+      .map(m => parseInt(m![1], 10));
+    return `pipe${Math.max(0, ...nums) + 1}`;
   }
 }

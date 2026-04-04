@@ -16,9 +16,4 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/editor/editor.component').then((m) => m.EditorComponent),
   },
-  {
-    path: 'generate/:name',
-    loadComponent: () =>
-      import('./pages/generate/generate.component').then((m) => m.GenerateComponent),
-  },
 ];

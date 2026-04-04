@@ -10,7 +10,8 @@ import {
 } from '@angular/core';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import type { BoardDef, PinDef } from '../../core/models/board.model';
-import { PIN_COLORS, reservedPins } from '../../core/models/board.model';
+import { reservedPins } from '../../core/models/board.model';
+import { entityColor, UI_COLORS } from '../../core/models/colors.model';
 
 interface PinOverlay {
   pin: PinDef;
@@ -88,16 +89,16 @@ export class BoardSvgComponent {
       const usage = used.get(pin.gpio);
       const reservedReason = reserved.get(pin.gpio);
 
-      let color: string = PIN_COLORS.available;
+      let color: string = UI_COLORS.available;
       let label = pin.gpio.replace('GPIO', '');
 
       if (sel === pin.gpio) {
-        color = PIN_COLORS.selected;
+        color = UI_COLORS.selected;
       } else if (reservedReason) {
-        color = PIN_COLORS.reserved;
+        color = UI_COLORS.reserved;
       } else if (usage) {
         const [type] = usage.split(':');
-        color = (PIN_COLORS as Record<string, string>)[type] ?? PIN_COLORS.available;
+        color = entityColor(type) ?? UI_COLORS.available;
         label = usage.split(':').slice(1).join(':') || label;
       }
 

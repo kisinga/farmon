@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
-import { getPump } from '../../../core/models/topology.model';
+import { getNodeByKind } from '../../../core/models/topology.model';
 
 @Component({
   selector: 'app-device-tab',
@@ -118,7 +118,7 @@ export class DeviceTabComponent {
 
   protected pumpPin = computed(() => {
     const t = this.editor.topology();
-    return t ? getPump(t)?.pin ?? '' : '';
+    return t ? getNodeByKind(t, 'pump')?.pin ?? '' : '';
   });
 
   protected peripherals = computed(() => {

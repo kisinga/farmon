@@ -2,6 +2,11 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
+import {
+  reservedPins as _reservedPins,
+  exposedPins as _exposedPins,
+  pinsWithCap as _pinsWithCap,
+} from "../../shared/board.types.js";
 
 // --- Pin capabilities -------------------------------------------------------
 
@@ -83,53 +88,10 @@ export const BoardDefSchema = z.object({
 export type BoardDef = z.infer<typeof BoardDefSchema>;
 export type PinDef = z.infer<typeof PinDefSchema>;
 
-// --- Derived helpers --------------------------------------------------------
+// --- Derived helpers (delegated to shared/board.types.ts) -------------------
 
-/**
- * Compute all GPIO pins reserved by peripherals and buses.
- * Returns a map of GPIO → reason string.
- */
-export function reservedPins(board: BoardDef): Map<string, string> {
-  const reserved = new Map<string, string>();
-
-  const p = board.peripherals;
-
-  if (p.oled) {
-    reserved.set(p.oled.reset_pin, "OLED reset");
-  }
-  if (p.lora) {
-    for (const [fn, pin] of Object.entries(p.lora.spi_pins)) {
-      reserved.set(pin, `LoRa SPI ${fn}`);
-    }
-  }
-  if (p.battery) {
-    reserved.set(p.battery.adc_pin, "battery ADC");
-    reserved.set(p.battery.enable_pin, "battery ADC enable");
-  }
-  if (p.led) {
-    reserved.set(p.led.pin, "onboard LED");
-  }
-  if (p.vext) {
-    reserved.set(p.vext.pin, "Vext gate");
-  }
-
-  for (const [busName, busDef] of Object.entries(board.buses)) {
-    for (const [fn, val] of Object.entries(busDef)) {
-      if (typeof val === "string" && /^GPIO\d+$/.test(val)) {
-        reserved.set(val, `${busName} ${fn}`);
-      }
-    }
-  }
-
-  return reserved;
-}
-
-/**
- * Set of all GPIO pins exposed on headers (available for user assignment).
- */
-export function exposedPins(board: BoardDef): Set<string> {
-  return new Set(board.pins.map((p) => p.gpio));
-}
+export const reservedPins = _reservedPins;
+export const exposedPins = _exposedPins;
 
 /**
  * Filter exposed pins by a required capability.
@@ -138,9 +100,7 @@ export function pinsWithCapability(
   board: BoardDef,
   cap: PinCapability
 ): Set<string> {
-  return new Set(
-    board.pins.filter((p) => p.caps.includes(cap)).map((p) => p.gpio)
-  );
+  return _pinsWithCap(board, cap);
 }
 
 /**

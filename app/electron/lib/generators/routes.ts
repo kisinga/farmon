@@ -42,7 +42,7 @@ export function generateRoutes(m: Manifest): string {
 
   return `\
 // =============================================================================
-// MajiFlow — Route Table & Hardware Dispatch
+// MajiFlow — Route Table, Hardware Dispatch & Shared Enums
 // =============================================================================
 // AUTO-GENERATED from system manifest. Do not edit by hand.
 //
@@ -76,6 +76,23 @@ static const int NUM_VALVES       = ${m.valves.length};
 static const int NUM_TANKS        = ${m.tanks.length};
 static const int NUM_FLOW_SENSORS = ${m.flow_sensors.length};
 static const int NUM_ROUTES       = ${m.routes.length};
+
+// --- Fault codes (used by safety monitor → do_fault) -------------------------
+static const int FAULT_NONE        = 0;
+static const int FAULT_NO_FLOW     = 1;
+static const int FAULT_MAX_RUNTIME = 2;
+static const int FAULT_API_LOST    = 3;
+
+// --- Stop reasons (persists across runs for HA display) ----------------------
+static const int STOP_NONE         = 0;
+static const int STOP_MANUAL       = 1;
+static const int STOP_TANK_FULL    = 2;
+static const int STOP_NO_FLOW      = 3;  // = FAULT_NO_FLOW + 2
+static const int STOP_MAX_RUNTIME  = 4;  // = FAULT_MAX_RUNTIME + 2
+static const int STOP_API_LOST     = 5;  // = FAULT_API_LOST + 2
+
+// Converts fault_code to stop_reason: stop_reason = fault_code + FAULT_TO_STOP_OFFSET
+static const int FAULT_TO_STOP_OFFSET = 2;
 
 // --- Route table ------------------------------------------------------------
 //

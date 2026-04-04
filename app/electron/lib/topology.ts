@@ -1,11 +1,17 @@
 import { z } from "zod";
+import { GpioPin, DeviceSchema, TimingSchema } from "./shared-schema.js";
 
 // ---------------------------------------------------------------------------
 // Shared primitives
 // ---------------------------------------------------------------------------
 
-const GpioPin = z.string().regex(/^GPIO\d{1,2}$/, "Must be GPIOnn format");
 const Position = z.object({ x: z.number(), y: z.number() });
+
+/** Valid ESPHome/C++ identifier: lowercase letters, digits, underscores. */
+const ComponentId = z.string().regex(
+  /^[a-z][a-z0-9_]*$/,
+  "Must be a valid identifier (lowercase letters, digits, underscores; must start with a letter)"
+);
 
 // ---------------------------------------------------------------------------
 // Ports
@@ -25,7 +31,7 @@ const PortSchema = z.object({
 
 const TankNodeSchema = z.object({
   kind: z.literal("tank"),
-  id: z.string().min(1),
+  id: ComponentId,
   name: z.string().min(1),
   level_pin: GpioPin,
   ports: z.array(PortSchema).min(1),
@@ -34,7 +40,7 @@ const TankNodeSchema = z.object({
 
 const PumpNodeSchema = z.object({
   kind: z.literal("pump"),
-  id: z.string().min(1),
+  id: ComponentId,
   pin: GpioPin,
   ports: z
     .array(PortSchema)
@@ -50,7 +56,7 @@ const PumpNodeSchema = z.object({
 
 const EndpointNodeSchema = z.object({
   kind: z.literal("endpoint"),
-  id: z.string().min(1),
+  id: ComponentId,
   name: z.string().min(1),
   ports: z.array(PortSchema).min(1),
   position: Position,
@@ -68,7 +74,7 @@ const TopologyNodeSchema = z.discriminatedUnion("kind", [
 
 const ValveComponentSchema = z.object({
   kind: z.literal("valve"),
-  id: z.string().min(1),
+  id: ComponentId,
   name: z.string().min(1),
   open_pin: GpioPin,
   close_pin: GpioPin,
@@ -76,7 +82,7 @@ const ValveComponentSchema = z.object({
 
 const FlowComponentSchema = z.object({
   kind: z.literal("flow_sensor"),
-  id: z.string().min(1),
+  id: ComponentId,
   name: z.string().min(1),
   pin: GpioPin,
   flow_cal: z.number().default(450.0),
@@ -108,25 +114,6 @@ const PipeSegmentSchema = z.object({
 const RouteOverrideSchema = z.object({
   name: z.string().optional(),
   max_runtime_seconds: z.number().optional(),
-});
-
-// ---------------------------------------------------------------------------
-// Device & Timing (shared with manifest schema)
-// ---------------------------------------------------------------------------
-
-const DeviceSchema = z.object({
-  name: z.string().min(1),
-  friendly_name: z.string().min(1),
-  board: z.string().min(1),
-  directory: z.string().optional(),
-});
-
-const TimingSchema = z.object({
-  valve_travel_time: z.string().default("15s"),
-  flow_watchdog_seconds: z.number().default(30),
-  flow_confirm_seconds: z.number().default(15),
-  api_watchdog_seconds: z.number().default(300),
-  update_interval: z.string().default("5s"),
 });
 
 // ---------------------------------------------------------------------------

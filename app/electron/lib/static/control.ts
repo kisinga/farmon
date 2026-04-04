@@ -116,7 +116,7 @@ api:
       then:
         - lambda: |-
             if (id(system_state) == 0 || id(system_state) == 3) return;
-            id(stop_reason) = 1;  // manual
+            id(stop_reason) = STOP_MANUAL;
             ESP_LOGI("pump", "Stop requested");
         - script.execute: do_stop
 
@@ -275,7 +275,7 @@ interval:
                 // Flow was never established → genuine fault
                 ESP_LOGE("safety", "No flow for %us on route %d [%s]",
                          age / 1000, id(active_route), r.name);
-                id(fault_code) = 1;
+                id(fault_code) = FAULT_NO_FLOW;
               }
             }
           }
@@ -284,7 +284,7 @@ interval:
           if (id(fault_code) == 0 && runtime > ((uint32_t)r.max_runtime_s * 1000U)) {
             ESP_LOGE("safety", "Max runtime %us exceeded on route %d [%s]",
                      r.max_runtime_s, id(active_route), r.name);
-            id(fault_code) = 2;
+            id(fault_code) = FAULT_MAX_RUNTIME;
           }
 
           // --- API WATCHDOG ---
@@ -292,7 +292,7 @@ interval:
             uint32_t age = now - id(api_lost_time);
             if (age > (\${api_watchdog_seconds} * 1000U)) {
               ESP_LOGE("safety", "API lost %us", age / 1000);
-              id(fault_code) = 3;
+              id(fault_code) = FAULT_API_LOST;
             }
           }
 
@@ -300,7 +300,7 @@ interval:
           condition:
             lambda: 'return id(system_state) == 2 && id(fault_code) != 0;'
           then:
-            - lambda: 'id(stop_reason) = id(fault_code) + 2;'
+            - lambda: 'id(stop_reason) = id(fault_code) + FAULT_TO_STOP_OFFSET;'
             - script.execute: do_fault
       - if:
           condition:
@@ -309,6 +309,6 @@ interval:
             - lambda: |-
                 ESP_LOGI("pump", "Tank full — clean stop");
                 id(tank_full_detected) = false;
-                id(stop_reason) = 2;  // tank full
+                id(stop_reason) = STOP_TANK_FULL;
             - script.execute: do_stop
 `;

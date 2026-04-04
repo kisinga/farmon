@@ -2,7 +2,6 @@
 // Consumed by: cli/main.ts, app/ (Electron renderer), and tests.
 
 export {
-  ManifestSchema,
   type Manifest,
   type Tank,
   type Valve,
