@@ -1,4 +1,4 @@
-import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, computed, signal } from '@angular/core';
+import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, computed, signal, effect } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer } from '@angular/platform-browser';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
@@ -45,13 +45,13 @@ import { deriveRoutes } from './derive-routes';
         <div class="legend">
           @for (desc of nodeDescs; track desc.kind) {
             <div class="legend-item">
-              <span [innerHTML]="trustSvg(desc.legendSvg)"></span>
+              <span class="legend-swatch" [class.legend-circle]="desc.kind === 'pump'" [class.legend-dashed]="desc.kind === 'endpoint'" [style.border-color]="desc.color"></span>
               <span>{{ desc.label }}</span>
             </div>
           }
           @for (desc of inlineDescs; track desc.kind) {
             <div class="legend-item">
-              <span [innerHTML]="trustSvg(desc.legendSvg)"></span>
+              <span class="legend-swatch legend-sm" [style.border-color]="desc.color"></span>
               <span>{{ desc.label }}</span>
             </div>
           }
@@ -234,6 +234,13 @@ import { deriveRoutes } from './derive-routes';
       color: #1e293b; pointer-events: none; z-index: 10;
     }
     .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-swatch {
+      display: inline-block; width: 16px; height: 12px;
+      border: 2.5px solid; border-radius: 2px; background: #f8fafc;
+    }
+    .legend-swatch.legend-circle { border-radius: 50%; width: 14px; height: 14px; }
+    .legend-swatch.legend-dashed { border-style: dashed; border-width: 2px; border-radius: 4px; }
+    .legend-swatch.legend-sm { width: 14px; height: 10px; border-width: 2px; border-radius: 3px; }
     .sidebar { font-size: 12px; }
     .sidebar-section { padding: 12px; border-bottom: 1px solid oklch(var(--b3) / 0.3); }
     .sidebar-title {
@@ -250,7 +257,8 @@ export class TopologyTabComponent {
   private destroyRef = inject(DestroyRef);
   private canvasRef = viewChild.required<ElementRef<HTMLDivElement>>('canvas');
 
-  private canvas!: TopologyCanvas;
+  private canvas: TopologyCanvas | null = null;
+  private get c(): TopologyCanvas { return this.canvas!; }
 
   // Registry arrays for template iteration
   protected nodeDescs: NodeDescriptor[] = Array.from(NODE_REGISTRY.values());
@@ -301,8 +309,21 @@ export class TopologyTabComponent {
     return Object.entries(t.route_overrides).map(([key, override]) => ({ key, override }));
   });
 
+  // Signal that flips to true once the canvas is ready
+  private canvasReady = signal(false);
+
   constructor() {
-    afterNextRender(() => this.init());
+    afterNextRender(() => {
+      this.initCanvas();
+      this.canvasReady.set(true);
+    });
+
+    // Re-render canvas whenever topology changes OR canvas becomes ready
+    effect(() => {
+      const ready = this.canvasReady();
+      const t = this.editor.topology();
+      if (ready && this.canvas && t) this.c.render(t);
+    });
   }
 
   // --- Template helpers ---
@@ -320,7 +341,7 @@ export class TopologyTabComponent {
     return t ? t.nodes.some(n => n.kind === kind) : false;
   }
 
-  private init() {
+  private initCanvas() {
     const canvasEl = this.canvasRef().nativeElement;
     const canvasWrap = canvasEl.parentElement!;
 
@@ -339,13 +360,13 @@ export class TopologyTabComponent {
         });
         const t = this.editor.topology()!;
         const newPipe = t.pipes[t.pipes.length - 1];
-        this.canvas.addPipeCells(newPipe, t);
+        this.c.addPipeCells(newPipe, t);
       },
       onPipeDeleted: (pipeId) => {
         const t = this.editor.topology();
         const pipe = t?.pipes.find(p => p.id === pipeId);
         const compIds = pipe?.components.map(c => c.id) ?? [];
-        this.canvas.removePipeCells(pipeId, compIds);
+        this.c.removePipeCells(pipeId, compIds);
         this.editor.updateTopology(t => {
           t.pipes = t.pipes.filter(p => p.id !== pipeId);
         });
@@ -353,16 +374,16 @@ export class TopologyTabComponent {
       },
       onSelected: (sel) => {
         this.selection.set(sel);
-        this.canvas.highlight(sel);
+        this.c.highlight(sel);
       },
     });
 
-    this.destroyRef.onDestroy(() => this.canvas.destroy());
+    this.destroyRef.onDestroy(() => this.c.destroy());
 
     const syncSize = () => {
       const w = canvasWrap.clientWidth;
       const h = canvasWrap.clientHeight;
-      this.canvas.resize(w, h);
+      this.c.resize(w, h);
     };
 
     const observer = new ResizeObserver(() => syncSize());
@@ -370,9 +391,6 @@ export class TopologyTabComponent {
     this.destroyRef.onDestroy(() => observer.disconnect());
 
     syncSize();
-
-    const t = this.editor.topology();
-    if (t) this.canvas.render(t);
   }
 
   // --- Toolbar actions ---
@@ -395,12 +413,12 @@ export class TopologyTabComponent {
         position: { x: 100, y },
       } as TopologyNode);
     });
-    this.canvas.render(this.editor.topology()!);
+    this.c.render(this.editor.topology()!);
   }
 
-  doZoomIn() { this.canvas.zoomIn(); }
-  doZoomOut() { this.canvas.zoomOut(); }
-  doFit() { this.canvas.fitContent(); }
+  doZoomIn() { this.c.zoomIn(); }
+  doZoomOut() { this.c.zoomOut(); }
+  doFit() { this.c.fitContent(); }
 
   // --- Node editing ---
 
@@ -417,7 +435,7 @@ export class TopologyTabComponent {
       }
     });
     this.selection.set(null);
-    this.canvas.render(this.editor.topology()!);
+    this.c.render(this.editor.topology()!);
   }
 
   updateNodeField(nodeId: string, field: string, value: any) {
@@ -433,7 +451,7 @@ export class TopologyTabComponent {
     const t = this.editor.topology();
     const pipe = t?.pipes.find(p => p.id === pipeId);
     const compIds = pipe?.components.map(c => c.id) ?? [];
-    this.canvas.removePipeCells(pipeId, compIds);
+    this.c.removePipeCells(pipeId, compIds);
     this.editor.updateTopology(t => {
       t.pipes = t.pipes.filter(p => p.id !== pipeId);
     });
@@ -454,7 +472,7 @@ export class TopologyTabComponent {
         ...desc.defaultData(n),
       } as any);
     });
-    this.canvas.render(this.editor.topology()!);
+    this.c.render(this.editor.topology()!);
   }
 
   removeComponent(pipeId: string, compId: string) {
@@ -462,7 +480,7 @@ export class TopologyTabComponent {
       const pipe = t.pipes.find(p => p.id === pipeId);
       if (pipe) pipe.components = pipe.components.filter(c => c.id !== compId);
     });
-    this.canvas.render(this.editor.topology()!);
+    this.c.render(this.editor.topology()!);
   }
 
   updateComponent(pipeId: string, compId: string, field: string, value: any) {
