@@ -35,11 +35,8 @@ export function generateSubstitutions(m: Manifest): string {
   lines.push("");
   lines.push(`  # --- Timing ---`);
   lines.push(`  valve_travel_time: "${m.timing.valve_travel_time}"`);
-  lines.push(`  max_runtime_seconds: "${m.timing.max_runtime_seconds}"`);
   lines.push(`  flow_watchdog_seconds: "${m.timing.flow_watchdog_seconds}"`);
   lines.push(`  flow_confirm_seconds: "${m.timing.flow_confirm_seconds}"`);
-  lines.push(`  refill_watchdog_seconds: "${m.timing.refill_watchdog_seconds}"`);
-  lines.push(`  refill_min_rise_pct: "${m.timing.refill_min_rise_pct}"`);
   lines.push(`  api_watchdog_seconds: "${m.timing.api_watchdog_seconds}"`);
 
   lines.push("");

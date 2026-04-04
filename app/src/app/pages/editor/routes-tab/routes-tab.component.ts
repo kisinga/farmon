@@ -14,6 +14,12 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
           <button class="btn btn-primary btn-sm" (click)="add()">+ Add Route</button>
         </div>
 
+        @if (m.flow_sensors.length === 0) {
+          <div class="alert alert-warning">
+            <span>Every route requires a flow sensor. Add at least one in the Flows tab.</span>
+          </div>
+        }
+
         @if (m.routes.length === 0) {
           <div class="text-base-content/40 text-center py-8">No routes defined.</div>
         } @else {
@@ -56,6 +62,13 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
                   </div>
                 </div>
 
+                @if (route.destination) {
+                  <div class="text-xs text-info flex items-center gap-1">
+                    <span class="i-mdi-information-outline"></span>
+                    Float switch required on destination tank for overflow protection.
+                  </div>
+                }
+
                 <!-- Valves -->
                 <div class="form-control">
                   <label class="label py-0"><span class="label-text text-xs">Valves (select all that open for this route)</span></label>
@@ -75,27 +88,28 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
-                  <!-- Watchdog -->
+                  <!-- Flow sensor (required) -->
                   <div class="form-control">
-                    <label class="label py-0"><span class="label-text text-xs">Watchdog</span></label>
-                    <select class="select select-bordered select-xs" [ngModel]="route.watchdog"
-                      (ngModelChange)="updateField(i, 'watchdog', $event)">
-                      <option value="flow">Flow sensor</option>
-                      <option value="level_rise">Level rise</option>
-                      <option value="runtime_only">Runtime only</option>
-                    </select>
-                  </div>
-
-                  <!-- Flow sensor -->
-                  <div class="form-control">
-                    <label class="label py-0"><span class="label-text text-xs">Flow Sensor</span></label>
-                    <select class="select select-bordered select-xs" [ngModel]="route.flow_sensor ?? ''"
-                      (ngModelChange)="updateField(i, 'flow_sensor', $event || undefined)">
-                      <option value="">None</option>
+                    <label class="label py-0"><span class="label-text text-xs">Flow Sensor (required)</span></label>
+                    <select class="select select-bordered select-xs" [ngModel]="route.flow_sensor"
+                      (ngModelChange)="updateField(i, 'flow_sensor', $event)">
                       @for (f of m.flow_sensors; track f.id) {
                         <option [value]="f.id">{{ f.name }}</option>
                       }
                     </select>
+                  </div>
+
+                  <!-- Max runtime -->
+                  <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">Max Runtime (seconds)</span></label>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-24 font-mono"
+                      [ngModel]="route.max_runtime_seconds"
+                      (ngModelChange)="updateField(i, 'max_runtime_seconds', +$event)"
+                      placeholder="1800"
+                      min="10"
+                    />
                   </div>
                 </div>
               </div>
@@ -115,7 +129,8 @@ export class RoutesTabComponent {
         name: '',
         source: m.tanks[0]?.id ?? '',
         valves: [],
-        watchdog: 'runtime_only',
+        flow_sensor: m.flow_sensors[0]?.id ?? '',
+        max_runtime_seconds: 1800,
       });
     });
   }

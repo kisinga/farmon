@@ -38,6 +38,9 @@ function buildManifest(p: ScaleParams): unknown {
   let pinIdx = 0;
   const pumpPin = pin(pinIdx++);
 
+  // Ensure at least 1 flow sensor (schema requires it)
+  const flowCount = Math.max(p.flows, 1);
+
   const tanks = Array.from({ length: p.tanks }, (_, i) => ({
     name: `Tank ${i + 1}`,
     id: `tank${i + 1}`,
@@ -51,7 +54,7 @@ function buildManifest(p: ScaleParams): unknown {
     close_pin: pin(pinIdx++),
   }));
 
-  const flows = Array.from({ length: p.flows }, (_, i) => ({
+  const flows = Array.from({ length: flowCount }, (_, i) => ({
     name: `Flow ${i + 1}`,
     id: `flow${i + 1}`,
     pin: pin(pinIdx++),
@@ -71,24 +74,17 @@ function buildManifest(p: ScaleParams): unknown {
         ? [`valve${v1Idx + 1}`]
         : [`valve${v1Idx + 1}`, `valve${v2Idx + 1}`];
 
-    if (isRefill) {
-      routes.push({
-        name: `R${r}:T${srcIdx + 1}>T${dstIdx! + 1}`,
-        source: `tank${srcIdx + 1}`,
-        destination: `tank${dstIdx! + 1}`,
-        valves: routeValves,
-        watchdog: "level_rise",
-      });
-    } else {
-      routes.push({
-        name: `R${r}:T${srcIdx + 1}>E`,
-        source: `tank${srcIdx + 1}`,
-        valves: routeValves,
-        ...(p.flows > 0
-          ? { flow_sensor: `flow${(r % p.flows) + 1}`, watchdog: "flow" }
-          : { watchdog: "runtime_only" }),
-      });
-    }
+    // Every route requires a flow sensor — no watchdog field
+    routes.push({
+      name: isRefill
+        ? `R${r}:T${srcIdx + 1}>T${dstIdx! + 1}`
+        : `R${r}:T${srcIdx + 1}>E`,
+      source: `tank${srcIdx + 1}`,
+      ...(isRefill ? { destination: `tank${dstIdx! + 1}` } : {}),
+      valves: routeValves,
+      flow_sensor: `flow${(r % flowCount) + 1}`,
+      max_runtime_seconds: isRefill ? 600 : 1800,
+    });
   }
 
   return {
@@ -99,7 +95,7 @@ function buildManifest(p: ScaleParams): unknown {
     flow_sensors: flows,
     routes: routes.length > 0
       ? routes
-      : [{ name: "R0", source: "tank1", valves: ["valve1"], watchdog: "runtime_only" }],
+      : [{ name: "R0", source: "tank1", valves: ["valve1"], flow_sensor: "flow1", max_runtime_seconds: 1800 }],
   };
 }
 
@@ -118,10 +114,11 @@ interface TestResult {
 }
 
 function runTest(label: string, p: ScaleParams): TestResult {
+  const flowCount = Math.max(p.flows, 1);
   const raw = buildManifest(p);
   const result: TestResult = {
     label,
-    pins: 1 + p.tanks + p.valves * 2 + p.flows,
+    pins: 1 + p.tanks + p.valves * 2 + flowCount,
     routes: 0,
     parseOk: false,
     validateOk: false,
@@ -165,20 +162,20 @@ function printResult(r: TestResult) {
     `  ${status.padEnd(10)} ${r.label.padEnd(35)} pins=${String(r.pins).padEnd(4)} routes=${String(r.routes).padEnd(4)} h=${String(r.routesHLines ?? "-").padEnd(5)}${warn}`
   );
   for (const e of r.errors.slice(0, 2)) {
-    console.log(`             ✗ ${e}`);
+    console.log(`             \u2717 ${e}`);
   }
   if (r.errors.length > 2) console.log(`             ... +${r.errors.length - 2} more`);
 }
 
 function suite(name: string, tests: TestResult[]) {
-  console.log(`\n━━━ ${name} ━━━`);
+  console.log(`\n\u2501\u2501\u2501 ${name} \u2501\u2501\u2501`);
   for (const t of tests) printResult(t);
   const lastOk = [...tests].reverse().find((t) => t.generateOk);
   const firstFail = tests.find((t) => !t.generateOk);
   if (lastOk && firstFail) {
-    console.log(`  → Max: ${lastOk.label} | Fails at: ${firstFail.label}`);
+    console.log(`  \u2192 Max: ${lastOk.label} | Fails at: ${firstFail.label}`);
   } else if (tests.every((t) => t.generateOk)) {
-    console.log(`  → All passed through ${tests[tests.length - 1].label}`);
+    console.log(`  \u2192 All passed through ${tests[tests.length - 1].label}`);
   }
 }
 
@@ -213,7 +210,7 @@ run("Valves (2 tanks, 2 flows)", [
 ]);
 
 run("Flow sensors (2 tanks, 4 valves)", [
-  ["0 flows", { tanks: 2, valves: 4, flows: 0, routes: 4 }],
+  ["1 flow", { tanks: 2, valves: 4, flows: 1, routes: 4 }],
   ["4 flows", { tanks: 2, valves: 4, flows: 4, routes: 4 }],
   ["10 flows", { tanks: 2, valves: 4, flows: 10, routes: 4 }],
 ]);
@@ -224,7 +221,7 @@ run("Routes (4 tanks, 8 valves, 4 flows)", [
   ["50 routes", { tanks: 4, valves: 8, flows: 4, routes: 50 }],
 ]);
 
-run("Proportional N (N tanks, 2N valves, N flows, N² routes)", [
+run("Proportional N (N tanks, 2N valves, N flows, N\u00b2 routes)", [
   ["N=2", { tanks: 2, valves: 4, flows: 2, routes: 4 }],
   ["N=4", { tanks: 4, valves: 8, flows: 4, routes: 16 }],
   ["N=6", { tanks: 6, valves: 12, flows: 6, routes: 36 }],
@@ -238,13 +235,14 @@ run("valve_mask overflow (uint16_t = 16 bits)", [
 
 // --- Summary ---
 
-console.log(`\n${"━".repeat(50)}`);
+console.log(`\n${"\u2501".repeat(50)}`);
 console.log("Hard limits:");
-console.log("  valve_mask      uint16_t       → max 16 valves/controller");
-console.log("  ADC pins        ESP32-S3       → max ~10 native tank sensors");
-console.log("  Pulse counter   native GPIO    → max ~6 flow sensors");
-console.log("  GPIO budget     Heltec V3      → ~17 free (expandable via I2C)");
-console.log("  Routes          flash memory   → practically unlimited");
+console.log("  valve_mask      uint16_t       \u2192 max 16 valves/controller");
+console.log("  ADC pins        ESP32-S3       \u2192 max ~10 native tank sensors");
+console.log("  Pulse counter   native GPIO    \u2192 max ~6 flow sensors");
+console.log("  GPIO budget     Heltec V3      \u2192 ~17 free (expandable via I2C)");
+console.log("  Routes          flash memory   \u2192 practically unlimited");
+console.log("  Flow sensors    1 per route    \u2192 every route requires a flow sensor");
 
 console.log(`\n${totalPass} passed, ${totalFail} expected failures`);
 process.exit(0);

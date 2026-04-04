@@ -99,16 +99,16 @@ export function validate(
         errors.push(`Route "${route.name}": valve "${v}" not found`);
       }
     }
-    if (route.flow_sensor && !flowIds.has(route.flow_sensor)) {
+    if (!flowIds.has(route.flow_sensor)) {
       errors.push(`Route "${route.name}": flow_sensor "${route.flow_sensor}" not found`);
     }
 
-    // Watchdog consistency
-    if (route.watchdog === "flow" && !route.flow_sensor) {
-      errors.push(`Route "${route.name}": flow watchdog requires flow_sensor`);
+    // Per-route max runtime bounds
+    if (route.max_runtime_seconds < 10) {
+      errors.push(`Route "${route.name}": max_runtime_seconds must be >= 10`);
     }
-    if (route.watchdog === "level_rise" && !route.destination) {
-      errors.push(`Route "${route.name}": level_rise watchdog requires destination tank`);
+    if (route.max_runtime_seconds > 7200) {
+      warnings.push(`Route "${route.name}": max_runtime_seconds=${route.max_runtime_seconds} is very high (>2h)`);
     }
 
     // Self-loops
@@ -160,9 +160,7 @@ export function validate(
       warnings.push(`Valve "${v.id}" defined but not used in any route`);
     }
   }
-  const usedFlows = new Set(
-    m.routes.filter((r) => r.flow_sensor).map((r) => r.flow_sensor!)
-  );
+  const usedFlows = new Set(m.routes.map((r) => r.flow_sensor));
   for (const f of m.flow_sensors) {
     if (!usedFlows.has(f.id)) {
       warnings.push(`Flow sensor "${f.id}" defined but not used in any route`);

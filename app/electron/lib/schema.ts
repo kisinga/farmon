@@ -32,24 +32,19 @@ const FlowSensorSchema = z.object({
   pin: GpioPin,
 });
 
-export const WatchdogType = z.enum(["flow", "level_rise", "runtime_only"]);
-
 const RouteSchema = z.object({
   name: z.string().min(1),
   source: z.string().min(1),
   destination: z.string().optional(),
   valves: z.array(z.string().min(1)).min(1),
-  flow_sensor: z.string().optional(),
-  watchdog: WatchdogType,
+  flow_sensor: z.string().min(1),
+  max_runtime_seconds: z.number().default(1800),
 });
 
 const TimingSchema = z.object({
   valve_travel_time: z.string().default("15s"),
-  max_runtime_seconds: z.number().default(1800),
   flow_watchdog_seconds: z.number().default(30),
   flow_confirm_seconds: z.number().default(15),
-  refill_watchdog_seconds: z.number().default(60),
-  refill_min_rise_pct: z.number().default(0.5),
   api_watchdog_seconds: z.number().default(300),
   flow_cal: z.number().default(450.0),
   update_interval: z.string().default("5s"),
@@ -61,7 +56,7 @@ export const ManifestSchema = z.object({
   pump: PumpSchema,
   tanks: z.array(TankSchema).min(1),
   valves: z.array(ValveSchema).min(1),
-  flow_sensors: z.array(FlowSensorSchema).default([]),
+  flow_sensors: z.array(FlowSensorSchema).min(1),
   routes: z.array(RouteSchema).min(1),
   timing: TimingSchema.default({}),
 });

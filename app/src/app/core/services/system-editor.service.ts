@@ -20,8 +20,8 @@ export interface SystemManifest {
     source: string;
     destination?: string;
     valves: string[];
-    flow_sensor?: string;
-    watchdog: 'flow' | 'level_rise' | 'runtime_only';
+    flow_sensor: string;
+    max_runtime_seconds: number;
   }>;
   timing: Record<string, string | number>;
 }

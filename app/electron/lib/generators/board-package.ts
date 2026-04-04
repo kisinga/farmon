@@ -250,16 +250,23 @@ export function generateBoardPackage(board: BoardDef): string {
       ? "#   ${pin_battery_adc}, ${battery_divider}"
       : null,
     "# =============================================================================",
-    "",
   ]
     .filter(Boolean)
-    .join("\n");
+    .join("\n") + "\n\n";
 
-  const body = sections
-    .map((s) =>
-      stringify(s, { indent: 2, lineWidth: 0, defaultStringType: "PLAIN" })
-    )
-    .join("\n");
+  // Merge all sections into a single object so we produce one YAML document
+  const merged: Record<string, unknown> = {};
+  for (const section of sections) {
+    for (const [key, val] of Object.entries(section)) {
+      merged[key] = val;
+    }
+  }
+
+  const body = stringify(merged, {
+    indent: 2,
+    lineWidth: 0,
+    defaultStringType: "PLAIN",
+  });
 
   return header + body;
 }

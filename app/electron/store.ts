@@ -256,3 +256,9 @@ export function writeOutput(files: Array<{ relativePath: string; content: string
 export function getStorePath(): string {
   return storeRoot();
 }
+
+export function getOutputDir(): string {
+  const dir = path.join(app.getPath("userData"), "output");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}

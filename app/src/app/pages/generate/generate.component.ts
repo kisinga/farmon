@@ -1,8 +1,14 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ElectronService } from '../../core/services/electron.service';
 import { LibraryService } from '../../core/services/library.service';
-import type { GenerateResult, ValidationResult } from '../../core/models/electron-api';
+import type { EsphomeStatus } from '../../core/models/electron-api';
+
+interface FileEntry {
+  path: string;
+  description: string;
+  lines: number;
+}
 
 @Component({
   selector: 'app-generate',
@@ -10,6 +16,7 @@ import type { GenerateResult, ValidationResult } from '../../core/models/electro
   imports: [RouterLink],
   template: `
     <div class="p-8 max-w-4xl mx-auto">
+      <!-- Header -->
       <div class="flex items-center gap-3 mb-8">
         <a [routerLink]="['/editor', configName()]" class="btn btn-ghost btn-sm gap-1">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -17,42 +24,33 @@ import type { GenerateResult, ValidationResult } from '../../core/models/electro
           </svg>
           Editor
         </a>
-        <h1 class="text-3xl font-bold tracking-tight">Generate Firmware</h1>
+        <h1 class="text-3xl font-bold tracking-tight">Generate & Flash</h1>
       </div>
 
-      @if (validation()?.ok === false) {
-        <div class="alert alert-error mb-6 shadow-sm">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-          </svg>
-          <div>
-            <div class="font-semibold">Validation failed</div>
-            <div class="text-sm">Fix errors in the editor before generating.</div>
-          </div>
-        </div>
-      }
-
-      <!-- Success banner -->
-      @if (success()) {
-        <div class="alert alert-success mb-6 shadow-sm">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-          </svg>
-          <div>
-            <div class="font-semibold">Files generated successfully</div>
-            <div class="text-sm">{{ generatedFiles().length }} files written to disk.</div>
-          </div>
-        </div>
-      }
-
-      @if (generatedFiles().length > 0) {
-        <div class="card bg-base-100 shadow-sm border border-base-200 mb-6">
-          <div class="card-body p-0">
-            <div class="px-5 pt-4 pb-2">
-              <h2 class="font-semibold">Output Files</h2>
+      <!-- Step 1: Generate -->
+      <div class="card bg-base-100 shadow-sm border border-base-200 mb-6">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="font-semibold text-lg">1. Generate Firmware</h2>
+              <p class="text-sm text-base-content/50">Produce ESPHome YAML, C++ route table, and HA dashboard.</p>
             </div>
+            <button
+              class="btn btn-primary gap-2"
+              (click)="generate()"
+              [disabled]="generating()"
+            >
+              @if (generating()) {
+                <span class="loading loading-spinner loading-sm"></span>
+              }
+              {{ files().length > 0 ? 'Regenerate' : 'Generate' }}
+            </button>
+          </div>
+
+          @if (files().length > 0) {
+            <div class="divider my-2"></div>
             <div class="overflow-x-auto">
-              <table class="table table-sm">
+              <table class="table table-xs">
                 <thead>
                   <tr class="bg-base-200/50">
                     <th>File</th>
@@ -61,92 +59,207 @@ import type { GenerateResult, ValidationResult } from '../../core/models/electro
                   </tr>
                 </thead>
                 <tbody>
-                  @for (file of generatedFiles(); track file.path) {
+                  @for (f of files(); track f.path) {
                     <tr>
-                      <td class="font-mono text-xs text-primary/80">{{ file.path }}</td>
-                      <td class="text-sm text-base-content/70">{{ file.description }}</td>
-                      <td class="text-right text-sm tabular-nums">{{ file.lines }}</td>
+                      <td class="font-mono text-xs text-primary/80">{{ f.path }}</td>
+                      <td class="text-xs text-base-content/60">{{ f.description }}</td>
+                      <td class="text-right text-xs tabular-nums">{{ f.lines }}</td>
                     </tr>
                   }
                 </tbody>
               </table>
             </div>
+            @if (outputDir()) {
+              <div class="text-xs text-base-content/40 mt-2 font-mono">{{ outputDir() }}</div>
+            }
+          }
+        </div>
+      </div>
+
+      <!-- Step 2: Compile (ESPHome required) -->
+      <div class="card bg-base-100 shadow-sm border border-base-200 mb-6" [class.opacity-50]="!canCompile()">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="font-semibold text-lg">2. Compile</h2>
+              @if (esphome()?.installed) {
+                <p class="text-sm text-base-content/50">Build firmware binary using ESPHome.</p>
+              } @else {
+                <p class="text-sm text-warning">ESPHome not found on PATH. Install it to compile and flash.</p>
+              }
+            </div>
+            <button
+              class="btn btn-outline gap-2"
+              (click)="compile()"
+              [disabled]="!canCompile() || running()"
+            >
+              @if (running() && activeAction() === 'compile') {
+                <span class="loading loading-spinner loading-sm"></span>
+              }
+              Compile
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Flash (ESPHome required) -->
+      <div class="card bg-base-100 shadow-sm border border-base-200 mb-6" [class.opacity-50]="!canCompile()">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="font-semibold text-lg">3. Flash Device</h2>
+              <p class="text-sm text-base-content/50">Upload firmware via USB or OTA.</p>
+            </div>
+            <div class="flex gap-2">
+              <button
+                class="btn btn-outline gap-2"
+                (click)="flash()"
+                [disabled]="!canCompile() || running()"
+              >
+                @if (running() && activeAction() === 'flash') {
+                  <span class="loading loading-spinner loading-sm"></span>
+                }
+                Flash (USB)
+              </button>
+              <button
+                class="btn btn-outline btn-sm gap-1"
+                (click)="flash(deviceIp())"
+                [disabled]="!canCompile() || running() || !deviceIp()"
+              >
+                OTA
+              </button>
+              <input
+                type="text"
+                class="input input-bordered input-sm w-36 font-mono"
+                placeholder="192.168.1.50"
+                [value]="deviceIp()"
+                (input)="deviceIp.set(toInputValue($event))"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Terminal output -->
+      @if (terminalLines().length > 0) {
+        <div class="card bg-neutral text-neutral-content shadow-sm mb-6">
+          <div class="card-body p-0">
+            <div class="flex items-center justify-between px-4 pt-3 pb-1">
+              <span class="text-xs font-mono text-neutral-content/50">ESPHome Output</span>
+              <button class="btn btn-ghost btn-xs text-neutral-content/50" (click)="terminalLines.set([])">Clear</button>
+            </div>
+            <pre class="px-4 pb-4 text-xs font-mono overflow-auto max-h-80 whitespace-pre-wrap">{{ terminalText() }}</pre>
           </div>
         </div>
       }
 
-      <div class="flex gap-3">
-        <button
-          class="btn btn-primary gap-2"
-          (click)="generate()"
-          [disabled]="generating() || validation()?.ok === false"
-        >
-          @if (generating()) {
-            <span class="loading loading-spinner loading-sm"></span>
-          } @else {
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clip-rule="evenodd" />
-            </svg>
-          }
-          {{ generatedFiles().length > 0 ? 'Regenerate' : 'Generate Files' }}
-        </button>
-      </div>
-
+      <!-- Errors -->
       @if (error()) {
-        <div class="alert alert-error mt-6 shadow-sm">
+        <div class="alert alert-error shadow-sm">
           <span class="font-mono text-sm">{{ error() }}</span>
         </div>
       }
     </div>
   `,
 })
-export class GenerateComponent implements OnInit {
+export class GenerateComponent implements OnInit, OnDestroy {
   private electron = inject(ElectronService);
   private library = inject(LibraryService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
   protected configName = signal('');
-  protected validation = signal<ValidationResult | null>(null);
-  protected generatedFiles = signal<GenerateResult[]>([]);
+  protected files = signal<FileEntry[]>([]);
+  protected outputDir = signal('');
   protected generating = signal(false);
-  protected success = signal(false);
+  protected running = signal(false);
+  protected activeAction = signal<'compile' | 'flash' | null>(null);
   protected error = signal<string | null>(null);
+  protected esphome = signal<EsphomeStatus | null>(null);
+  protected deviceIp = signal('');
+  protected terminalLines = signal<string[]>([]);
+
+  protected terminalText = computed(() => this.terminalLines().join(''));
+  protected canCompile = computed(() => this.esphome()?.installed && this.files().length > 0);
+
+  private unsubOutput: (() => void) | null = null;
+  private unsubDone: (() => void) | null = null;
 
   async ngOnInit() {
     const name = this.route.snapshot.paramMap.get('name');
     if (!name) { this.router.navigate(['/library']); return; }
     this.configName.set(name);
 
-    try {
-      const raw = await this.library.load(name);
-      const manifest = raw as Record<string, unknown>;
-      const boardId = (manifest['device'] as Record<string, string>)?.['board'];
-      if (!boardId) throw new Error('No board in manifest');
-      const { board } = await this.electron.boardLoad(boardId);
-      const result = await this.electron.validate(manifest, board);
-      this.validation.set(result);
-    } catch (err) {
-      this.error.set(String(err));
-    }
+    this.esphome.set(await this.electron.esphomeAvailable());
+
+    // Subscribe to ESPHome process output
+    this.unsubOutput = this.electron.onEsphomeOutput((data) => {
+      this.terminalLines.update((lines) => [...lines, data.text]);
+    });
+    this.unsubDone = this.electron.onEsphomeDone((data) => {
+      const msg = data.code === 0
+        ? '\n--- Done (success) ---\n'
+        : `\n--- Exited with code ${data.code} ---\n`;
+      this.terminalLines.update((lines) => [...lines, msg]);
+      this.running.set(false);
+      this.activeAction.set(null);
+    });
+  }
+
+  ngOnDestroy() {
+    this.unsubOutput?.();
+    this.unsubDone?.();
   }
 
   async generate() {
     this.generating.set(true);
-    this.success.set(false);
     this.error.set(null);
     try {
       const raw = await this.library.load(this.configName());
       const manifest = raw as Record<string, unknown>;
       const boardId = (manifest['device'] as Record<string, string>)?.['board'];
       const { board } = await this.electron.boardLoad(boardId!);
-      const files = await this.electron.generate(manifest, board);
-      this.generatedFiles.set(files);
-      this.success.set(true);
+      const result = await this.electron.generate(manifest, board);
+      this.files.set(result.files);
+      this.outputDir.set(result.outputDir);
     } catch (err) {
       this.error.set(String(err));
     } finally {
       this.generating.set(false);
     }
+  }
+
+  async compile() {
+    this.running.set(true);
+    this.activeAction.set('compile');
+    this.terminalLines.set([]);
+    this.error.set(null);
+    try {
+      const dir = this.configName(); // e.g. "pump-controller"
+      await this.electron.esphomeCompile(dir);
+    } catch (err) {
+      this.error.set(String(err));
+      this.running.set(false);
+      this.activeAction.set(null);
+    }
+  }
+
+  async flash(device?: string) {
+    this.running.set(true);
+    this.activeAction.set('flash');
+    this.terminalLines.set([]);
+    this.error.set(null);
+    try {
+      const dir = this.configName();
+      await this.electron.esphomeFlash(dir, device);
+    } catch (err) {
+      this.error.set(String(err));
+      this.running.set(false);
+      this.activeAction.set(null);
+    }
+  }
+
+  protected toInputValue(event: Event): string {
+    return (event.target as HTMLInputElement).value;
   }
 }

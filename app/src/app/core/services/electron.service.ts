@@ -6,12 +6,10 @@ import type {
   BoardLoadResult,
   GenerateResult,
   ValidationResult,
+  EsphomeStatus,
+  EsphomeResult,
 } from '../models/electron-api';
 
-/**
- * Type-safe wrapper around the Electron IPC bridge.
- * Falls back to mock data when running in browser (ng serve without Electron).
- */
 @Injectable({ providedIn: 'root' })
 export class ElectronService {
   private get api(): ElectronAPI | undefined {
@@ -22,43 +20,67 @@ export class ElectronService {
     return !!this.api;
   }
 
-  async libraryList(): Promise<LibraryEntry[]> {
-    if (!this.api) return [];
-    return this.api.libraryList();
+  // --- Library ---
+  libraryList(): Promise<LibraryEntry[]> {
+    return this.api?.libraryList() ?? Promise.resolve([]);
   }
-
-  async libraryLoad(name: string): Promise<unknown> {
-    if (!this.api) throw new Error('Not running in Electron');
-    return this.api.libraryLoad(name);
+  libraryLoad(name: string): Promise<unknown> {
+    return this.invoke(() => this.api!.libraryLoad(name));
   }
-
   async librarySave(name: string, data: unknown): Promise<void> {
-    if (!this.api) throw new Error('Not running in Electron');
-    await this.api.librarySave(name, data);
+    await this.invoke(() => this.api!.librarySave(name, data));
   }
-
   async libraryDelete(name: string): Promise<void> {
-    if (!this.api) throw new Error('Not running in Electron');
-    await this.api.libraryDelete(name);
+    await this.invoke(() => this.api!.libraryDelete(name));
   }
 
-  async boardList(): Promise<BoardListEntry[]> {
-    if (!this.api) return [];
-    return this.api.boardList();
+  // --- Boards ---
+  boardList(): Promise<BoardListEntry[]> {
+    return this.api?.boardList() ?? Promise.resolve([]);
+  }
+  boardLoad(model: string): Promise<BoardLoadResult> {
+    return this.invoke(() => this.api!.boardLoad(model));
   }
 
-  async boardLoad(model: string): Promise<BoardLoadResult> {
-    if (!this.api) throw new Error('Not running in Electron');
-    return this.api.boardLoad(model);
-  }
-
-  async validate(manifest: unknown, board: unknown): Promise<ValidationResult> {
-    if (!this.api) return { errors: ['Not running in Electron'], warnings: [], ok: false };
+  // --- Codegen ---
+  validate(manifest: unknown, board: unknown): Promise<ValidationResult> {
+    if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false });
     return this.api.codegenValidate(manifest, board);
   }
+  generate(manifest: unknown, board: unknown): Promise<GenerateResult> {
+    return this.invoke(() => this.api!.codegenGenerate(manifest, board));
+  }
 
-  async generate(manifest: unknown, board: unknown): Promise<GenerateResult[]> {
-    if (!this.api) throw new Error('Not running in Electron');
-    return this.api.codegenGenerate(manifest, board);
+  // --- ESPHome ---
+  esphomeAvailable(): Promise<EsphomeStatus> {
+    if (!this.api) return Promise.resolve({ installed: false, path: null });
+    return this.api.esphomeAvailable();
+  }
+  esphomeCompile(configName: string): Promise<EsphomeResult> {
+    return this.invoke(() => this.api!.esphomeCompile(configName));
+  }
+  esphomeFlash(configName: string, device?: string): Promise<EsphomeResult> {
+    return this.invoke(() => this.api!.esphomeFlash(configName, device));
+  }
+  esphomeLogs(configName: string, device?: string): Promise<EsphomeResult> {
+    return this.invoke(() => this.api!.esphomeLogs(configName, device));
+  }
+
+  /** Subscribe to ESPHome stdout/stderr stream. Returns unsubscribe fn. */
+  onEsphomeOutput(callback: (data: { stream: string; text: string }) => void): () => void {
+    return this.api?.onEsphomeOutput(callback) ?? (() => {});
+  }
+  onEsphomeDone(callback: (data: { code: number | null; signal: string | null }) => void): () => void {
+    return this.api?.onEsphomeDone(callback) ?? (() => {});
+  }
+
+  // --- Store ---
+  outputDir(): Promise<string> {
+    return this.invoke(() => this.api!.outputDir());
+  }
+
+  private invoke<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.api) return Promise.reject(new Error('Not running in Electron'));
+    return fn();
   }
 }

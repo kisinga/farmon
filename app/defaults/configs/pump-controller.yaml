@@ -1,4 +1,4 @@
-schema: 1
+schema: 2
 
 # =============================================================================
 # Water System Manifest — Pump Controller
@@ -6,9 +6,8 @@ schema: 1
 # Describes the physical topology of the water system. The codegen tool
 # reads this file and generates all ESPHome YAML + C++ files.
 #
-# Usage:
-#   npx tsx tools/codegen/src/main.ts generate system.yaml
-#   npx tsx tools/codegen/src/main.ts validate system.yaml
+# Every route requires a flow sensor. Tank level sensors are suppressed
+# during pump operation. Dest tanks need hardware float switches.
 # =============================================================================
 
 device:
@@ -59,32 +58,34 @@ flow_sensors:
     id: flow2
     pin: GPIO46
 
+  - name: Refill Line Flow
+    id: flow3
+    pin: GPIO47
+
 routes:
   - name: "T1>T2"
     source: tank1
     destination: tank2
     valves: [valve1, valve3]
-    watchdog: level_rise
+    flow_sensor: flow3
+    max_runtime_seconds: 600
 
   - name: "T1>H2"
     source: tank1
     valves: [valve1, valve4]
     flow_sensor: flow2
-    watchdog: flow
+    max_runtime_seconds: 1800
 
   - name: "T2>H2"
     source: tank2
     valves: [valve2, valve4]
     flow_sensor: flow2
-    watchdog: flow
+    max_runtime_seconds: 1800
 
 timing:
   valve_travel_time: "15s"
-  max_runtime_seconds: 1800
   flow_watchdog_seconds: 30
   flow_confirm_seconds: 15
-  refill_watchdog_seconds: 60
-  refill_min_rise_pct: 0.5
   api_watchdog_seconds: 300
   flow_cal: 450.0
   update_interval: "5s"

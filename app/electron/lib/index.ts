@@ -3,7 +3,6 @@
 
 export {
   ManifestSchema,
-  WatchdogType,
   type Manifest,
   type Tank,
   type Valve,

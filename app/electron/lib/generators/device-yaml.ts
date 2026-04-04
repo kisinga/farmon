@@ -48,11 +48,8 @@ export function generateDeviceYaml(
 
   // Timing
   subs.valve_travel_time = `"${m.timing.valve_travel_time}"`;
-  subs.max_runtime_seconds = `"${m.timing.max_runtime_seconds}"`;
   subs.flow_watchdog_seconds = `"${m.timing.flow_watchdog_seconds}"`;
   subs.flow_confirm_seconds = `"${m.timing.flow_confirm_seconds}"`;
-  subs.refill_watchdog_seconds = `"${m.timing.refill_watchdog_seconds}"`;
-  subs.refill_min_rise_pct = `"${m.timing.refill_min_rise_pct}"`;
   subs.api_watchdog_seconds = `"${m.timing.api_watchdog_seconds}"`;
   subs.flow_cal = `"${m.timing.flow_cal}"`;
 
@@ -101,8 +98,6 @@ export function generateDeviceYaml(
     "id(last_flow_time) = 0;",
     "id(api_lost_time) = 0;",
     "id(fault_code) = 0;",
-    "id(refill_baseline_level) = -1.0f;",
-    "id(refill_baseline_time) = 0;",
     "id(flow_confirmed) = false;",
     "id(tank_full_detected) = false;",
     '// stop_reason intentionally NOT reset — survives reboot',
@@ -240,9 +235,9 @@ function buildOledDisplay(board: BoardDef): string {
           }
 
           if (s == 4) {
-            const char* faults[] = {"", "No flow", "No rise", "Max time", "API lost", "Src empty"};
+            const char* faults[] = {"", "No flow", "Max time", "API lost"};
             int f = id(fault_code);
-            if (f >= 1 && f <= 5) it.printf(0, 27, id(font_body), "FAULT: %s", faults[f]);
+            if (f >= 1 && f <= 3) it.printf(0, 27, id(font_body), "FAULT: %s", faults[f]);
           }
 
           if (s == 2) {

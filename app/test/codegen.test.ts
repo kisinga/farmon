@@ -27,10 +27,10 @@ let failed = 0;
 
 function assert(condition: boolean, name: string, detail?: string) {
   if (condition) {
-    console.log(`  ✓ ${name}`);
+    console.log(`  \u2713 ${name}`);
     passed++;
   } else {
-    console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
+    console.log(`  \u2717 ${name}${detail ? ` \u2014 ${detail}` : ""}`);
     failed++;
   }
 }
@@ -111,6 +111,11 @@ assert(deviceYaml.includes("packages/control.yaml"), "Includes control");
 assert(deviceYaml.includes("display:"), "OLED display block (board has OLED)");
 assert(deviceYaml.includes("GPIO_NUM_21"), "OLED reset in boot (GPIO21)");
 assert(deviceYaml.includes("NUM_ROUTES"), "Boot logs route count");
+// Removed fields should NOT appear in substitutions
+assert(!deviceYaml.includes("refill_watchdog_seconds"), "No refill_watchdog_seconds sub");
+assert(!deviceYaml.includes("refill_min_rise_pct"), "No refill_min_rise_pct sub");
+assert(!deviceYaml.includes("max_runtime_seconds"), "No global max_runtime_seconds sub");
+assert(!deviceYaml.includes("refill_baseline"), "No refill_baseline in boot");
 
 // --- routes.h ---
 
@@ -118,12 +123,21 @@ console.log("\nroutes.h:");
 const routesH = getFile("routes.h");
 assert(routesH.includes(`NUM_ROUTES       = ${manifest.routes.length}`), `NUM_ROUTES = ${manifest.routes.length}`);
 assert(routesH.includes(`NUM_VALVES       = ${manifest.valves.length}`), `NUM_VALVES = ${manifest.valves.length}`);
+assert(routesH.includes(`NUM_FLOW_SENSORS = ${manifest.flow_sensors.length}`), `NUM_FLOW_SENSORS = ${manifest.flow_sensors.length}`);
 for (const v of manifest.valves) {
   assert(routesH.includes(`id(${v.id}).make_call()`), `Valve ${v.id} in dispatch`);
 }
 for (const r of manifest.routes) {
   assert(routesH.includes(`"${r.name}"`), `Route "${r.name}" in table`);
 }
+// Architecture: no watchdog strategy dispatch
+assert(!routesH.includes("WD_LEVEL_RISE"), "No WD_LEVEL_RISE define");
+assert(!routesH.includes("WD_RUNTIME"), "No WD_RUNTIME define");
+assert(!routesH.includes("WD_FLOW"), "No WD_FLOW define (removed — flow is unconditional)");
+assert(!routesH.includes("uint8_t     watchdog"), "No watchdog field in struct");
+assert(routesH.includes("max_runtime_s"), "Has max_runtime_s field in struct");
+// Every route has a valid flow sensor index (never 0xFF)
+assert(!routesH.includes("0xFF, ") || !routesH.match(/\d+, 0xFF,.*0xFF,/), "No 0xFF flow sensor in any route");
 
 // --- hardware.yaml ---
 
@@ -147,7 +161,15 @@ for (const t of manifest.tanks) {
   assert(sensors.includes(`id: ${t.id}_level`), `Tank ${t.id} level`);
   assert(sensors.includes(`id: ${t.id}_cal_empty`), `Tank ${t.id} cal`);
 }
-assert(sensors.includes("ROUTES[id(active_route)]"), "Route table reference");
+// Tank suppression: checks source AND dest, states 1-3
+assert(sensors.includes("r.source_tank == TANK_IDX || r.dest_tank == TANK_IDX"), "Suppresses source AND dest tanks");
+assert(sensors.includes("s >= 1 && s <= 3"), "Suppresses during states 1, 2, 3");
+// Fault/stop text: no old codes
+assert(!sensors.includes("No level rise"), "No 'level rise' in fault/stop text");
+assert(!sensors.includes("Source tank empty"), "No 'source empty' in fault/stop text");
+assert(sensors.includes("No flow detected"), "Has 'No flow detected' fault");
+assert(sensors.includes("Max runtime exceeded"), "Has 'Max runtime exceeded' fault");
+assert(sensors.includes("HA connection lost"), "Has 'HA connection lost' fault");
 
 // --- Cross-file consistency ---
 
@@ -155,19 +177,19 @@ console.log("\nCross-file consistency:");
 for (const t of manifest.tanks) {
   assert(
     sensors.includes(`id: ${t.id}_level`) && routesH.includes(`id(${t.id}_level)`),
-    `Tank ${t.id}: sensors ↔ routes.h`
+    `Tank ${t.id}: sensors \u2194 routes.h`
   );
 }
 for (const f of manifest.flow_sensors) {
   assert(
     sensors.includes(`id: ${f.id}`) && routesH.includes(`id(${f.id})`),
-    `Flow ${f.id}: sensors ↔ routes.h`
+    `Flow ${f.id}: sensors \u2194 routes.h`
   );
 }
 for (const v of manifest.valves) {
   assert(
     hw.includes(`id: ${v.id}\n`) && routesH.includes(`id(${v.id}).make_call()`),
-    `Valve ${v.id}: hardware ↔ routes.h`
+    `Valve ${v.id}: hardware \u2194 routes.h`
   );
 }
 
@@ -179,6 +201,14 @@ for (const route of manifest.routes) {
   const mask = route.valves.reduce((acc, v) => acc | (1 << valveIdx.get(v)!), 0);
   const maskBin = `0b${mask.toString(2).padStart(manifest.valves.length, "0")}`;
   assert(routesH.includes(maskBin), `Route "${route.name}" valve_mask = ${maskBin}`);
+}
+
+// Every route has per-route max_runtime in the table
+for (const route of manifest.routes) {
+  assert(
+    routesH.includes(`${route.max_runtime_seconds}, "${route.name}"`),
+    `Route "${route.name}" max_runtime_s = ${route.max_runtime_seconds}`
+  );
 }
 
 // --- Summary ---

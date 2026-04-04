@@ -13,11 +13,8 @@ interface TimingField {
 
 const FIELDS: TimingField[] = [
   { key: 'valve_travel_time', label: 'Valve Travel Time', description: 'Time for motorized ball valves to fully open or close', unit: 'duration', default: '15s', group: 'Mechanical' },
-  { key: 'max_runtime_seconds', label: 'Max Runtime', description: 'Hard ceiling — pump stops after this regardless of state', unit: 'seconds', default: 1800, group: 'Safety' },
   { key: 'flow_watchdog_seconds', label: 'Flow Watchdog Timeout', description: 'If no flow detected within this window, fault is raised', unit: 'seconds', default: 30, group: 'Safety' },
   { key: 'flow_confirm_seconds', label: 'Flow Confirmation Time', description: 'Sustained flow duration before marking flow as "confirmed"', unit: 'seconds', default: 15, group: 'Safety' },
-  { key: 'refill_watchdog_seconds', label: 'Refill Watchdog Window', description: 'Dest tank must rise within this window or fault is raised', unit: 'seconds', default: 60, group: 'Safety' },
-  { key: 'refill_min_rise_pct', label: 'Min Level Rise', description: 'Minimum percentage rise per watchdog window', unit: '%', default: 0.5, group: 'Safety' },
   { key: 'api_watchdog_seconds', label: 'API Watchdog Timeout', description: 'Fault if Home Assistant disconnected for this long', unit: 'seconds', default: 300, group: 'Safety' },
   { key: 'flow_cal', label: 'Flow Calibration', description: 'Pulse count per liter for flow sensors', unit: 'pulses/L', default: 450, group: 'Calibration' },
   { key: 'update_interval', label: 'Sensor Update Interval', description: 'How often ADC and diagnostic sensors are read', unit: 'duration', default: '5s', group: 'Calibration' },

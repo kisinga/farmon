@@ -1,11 +1,5 @@
 import type { Manifest } from "../schema.js";
 
-const WATCHDOG_MAP: Record<string, { value: number; define: string }> = {
-  flow: { value: 0, define: "WD_FLOW" },
-  level_rise: { value: 1, define: "WD_LEVEL_RISE" },
-  runtime_only: { value: 2, define: "WD_RUNTIME" },
-};
-
 export function generateRoutes(m: Manifest): string {
   const tankIdx = new Map(m.tanks.map((t, i) => [t.id, i]));
   const valveIdx = new Map(m.valves.map((v, i) => [v.id, i]));
@@ -16,10 +10,9 @@ export function generateRoutes(m: Manifest): string {
     const mask = r.valves.reduce((acc, v) => acc | (1 << valveIdx.get(v)!), 0);
     const src = tankIdx.get(r.source)!;
     const dst = r.destination ? tankIdx.get(r.destination)! : "0xFF";
-    const flow = r.flow_sensor ? flowIdx.get(r.flow_sensor)! : "0xFF";
-    const wd = WATCHDOG_MAP[r.watchdog].define;
+    const flow = flowIdx.get(r.flow_sensor)!;
     const maskBin = mask.toString(2).padStart(m.valves.length, "0");
-    return `  { ${i}, 0b${maskBin}, ${src}, ${dst}, ${flow}, ${wd}, "${r.name}" },`;
+    return `  { ${i}, 0b${maskBin}, ${src}, ${dst}, ${flow}, ${r.max_runtime_seconds}, "${r.name}" },`;
   });
 
   // Build valve index comment
@@ -29,9 +22,9 @@ export function generateRoutes(m: Manifest): string {
   const tankComment = m.tanks
     .map((t, i) => `${i}=${t.id}(${t.name})`)
     .join("  ");
-  const flowComment = m.flow_sensors.length
-    ? m.flow_sensors.map((f, i) => `${i}=${f.id}(${f.name})`).join("  ")
-    : "(none)";
+  const flowComment = m.flow_sensors
+    .map((f, i) => `${i}=${f.id}(${f.name})`)
+    .join("  ");
 
   // Build dispatch functions
   const openCases = m.valves
@@ -52,21 +45,18 @@ export function generateRoutes(m: Manifest): string {
 // Pump Controller — Route Table & Hardware Dispatch
 // =============================================================================
 // AUTO-GENERATED from system manifest. Do not edit by hand.
-// Regenerate: npx tsx tools/codegen/src/main.ts generate system.yaml
 //
 // The state machine (control.yaml) is topology-agnostic — it never
 // references valve/tank/flow IDs directly. All routing goes through
 // the ROUTES[] table and dispatch functions defined here.
+//
+// Every route has a flow sensor. The safety monitor uses flow-based
+// watchdog unconditionally — no watchdog strategy dispatch needed.
 // =============================================================================
 
 #pragma once
 
 #include "esphome.h"
-
-// --- Watchdog strategies ----------------------------------------------------
-#define WD_FLOW        0   // Flow sensor must see pulses within timeout
-#define WD_LEVEL_RISE  1   // Destination tank level must rise within window
-#define WD_RUNTIME     2   // No path sensor — only max_runtime protects
 
 // --- Route descriptor -------------------------------------------------------
 
@@ -75,8 +65,8 @@ struct Route {
   uint16_t    valve_mask;     // bit N = open valve N for this route
   uint8_t     source_tank;    // index into tanks — 0xFF = none
   uint8_t     dest_tank;      // index into tanks — 0xFF = endpoint (house/irrigation)
-  uint8_t     flow_sensor;    // index into flow sensors — 0xFF = none
-  uint8_t     watchdog;       // WD_FLOW, WD_LEVEL_RISE, or WD_RUNTIME
+  uint8_t     flow_sensor;    // index into flow sensors (always valid)
+  uint16_t    max_runtime_s;  // per-route max runtime in seconds
   const char* name;           // human label for OLED / logs / HA
 };
 
@@ -94,7 +84,7 @@ static const int NUM_ROUTES       = ${m.routes.length};
 // Flow indices:   ${flowComment}
 
 static const Route ROUTES[NUM_ROUTES] = {
-  //  id   valve_mask  src  dst   flow   watchdog       name
+  //  id   valve_mask  src  dst   flow  max_rt  name
 ${routeLines.join("\n")}
 };
 
@@ -121,7 +111,8 @@ ${tankCases}
 
 inline float get_flow_rate(int idx) {
   switch (idx) {
-${flowCases}${flowCases ? "\n" : ""}    default: return -1.0f;
+${flowCases}
+    default: return -1.0f;
   }
 }
 `;

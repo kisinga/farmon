@@ -59,8 +59,12 @@ export function generateSensors(m: Manifest): string {
           return clamp(pct, 0.0f, 100.0f);
       - lambda: |-
           const int TANK_IDX = ${i};
-          if (id(system_state) == 2 && id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
-            if (ROUTES[id(active_route)].source_tank == TANK_IDX) return {};
+          if (id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
+            int s = id(system_state);
+            if (s >= 1 && s <= 3) {
+              const Route& r = ROUTES[id(active_route)];
+              if (r.source_tank == TANK_IDX || r.dest_tank == TANK_IDX) return {};
+            }
           }
           return x;
 
@@ -102,12 +106,14 @@ export function generateSensors(m: Manifest): string {
 # Pump Controller — Sensor & Measurement Layer
 # =============================================================================
 # AUTO-GENERATED from system manifest. Do not edit by hand.
-# Regenerate: npx tsx tools/codegen/src/main.ts generate system.yaml
 #
 # Components:
 #   - ${m.flow_sensors.length}x flow sensors (pulse counter -> L/min + totalization)
 #   - ${m.tanks.length}x tank level sensors (ADC -> 0-100%)
 #   - State exposure (system_state_text, fault_text for HA)
+#
+# Tank level readings are suppressed during pump operation (states 1-3)
+# for any tank involved in the active route (source or destination).
 # =============================================================================
 
 sensor:
@@ -149,12 +155,10 @@ text_sensor:
       const char* faults[] = {
         "None",
         "No flow detected",
-        "No level rise detected",
         "Max runtime exceeded",
-        "HA connection lost",
-        "Source tank empty"
+        "HA connection lost"
       };
-      std::string msg = (f >= 0 && f <= 5) ? faults[f] : "Unknown";
+      std::string msg = (f >= 0 && f <= 3) ? faults[f] : "Unknown";
       if (id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
         msg += " (";
         msg += ROUTES[id(active_route)].name;
@@ -173,12 +177,10 @@ text_sensor:
         "Manual stop",
         "Tank full",
         "No flow detected",
-        "No level rise detected",
         "Max runtime exceeded",
-        "HA connection lost",
-        "Source tank empty"
+        "HA connection lost"
       };
       int r = id(stop_reason);
-      return std::string((r >= 0 && r <= 7) ? reasons[r] : "Unknown");
+      return std::string((r >= 0 && r <= 5) ? reasons[r] : "Unknown");
 `;
 }
