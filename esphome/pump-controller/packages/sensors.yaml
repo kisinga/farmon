@@ -1,12 +1,12 @@
 # =============================================================================
 # Pump Controller — Sensor & Measurement Layer
 # =============================================================================
-# Everything we read. No actuation, no orchestration.
+# AUTO-GENERATED from system manifest. Do not edit by hand.
+# Regenerate: npx tsx tools/codegen/src/main.ts generate system.yaml
 #
 # Components:
-#   - 2x flow sensors (pulse counter → L/min + totalization)
-#   - 2x tank level sensors (ADC → 0–100%)
-#   - Diagnostics (WiFi signal, uptime)
+#   - 2x flow sensors (pulse counter -> L/min + totalization)
+#   - 2x tank level sensors (ADC -> 0-100%)
 #   - State exposure (system_state_text, fault_text for HA)
 # =============================================================================
 
@@ -14,21 +14,37 @@ sensor:
   # --- Flow sensors ----------------------------------------------------------
   - platform: pulse_counter
     pin:
-      number: ${pin_flow_house1}
+      number: ${pin_flow1}
       mode: INPUT_PULLUP
-    id: flow_house1
+    id: flow1
     name: "House 1 Water Flow"
     unit_of_measurement: "L/min"
     icon: "mdi:water"
     update_interval: ${update_interval}
     filters:
       - lambda: return x / ${flow_cal};
+    on_value:
+      - lambda: |-
+          const int SENSOR_IDX = 0;
+          if (id(system_state) == 2 && id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
+            const Route& r = ROUTES[id(active_route)];
+            if (r.flow_sensor == SENSOR_IDX && x > 0.5f) {
+              id(last_flow_time) = millis();
+              if (!id(flow_confirmed)) {
+                uint32_t elapsed = millis() - id(pump_start_time);
+                if (elapsed > (${flow_confirm_seconds} * 1000U)) {
+                  id(flow_confirmed) = true;
+                  ESP_LOGI("safety", "Flow confirmed on sensor %d after %us", SENSOR_IDX, elapsed / 1000);
+                }
+              }
+            }
+          }
 
   - platform: pulse_counter
     pin:
-      number: ${pin_flow_house2}
+      number: ${pin_flow2}
       mode: INPUT_PULLUP
-    id: flow_house2
+    id: flow2
     name: "House 2 Water Flow"
     unit_of_measurement: "L/min"
     icon: "mdi:water"
@@ -36,49 +52,46 @@ sensor:
     filters:
       - lambda: return x / ${flow_cal};
     on_value:
-      # Feeds the flow watchdog: any flow > 0.5 L/min resets the timer.
-      # Only flow_house2 matters — it's the only sensor on a pump path (valve4).
       - lambda: |-
-          if (x > 0.5f) {
-            id(last_flow_time) = millis();
-            // After sustained flow for flow_confirm_seconds, mark flow as confirmed.
-            // This distinguishes "tank full" (flow established then stopped) from
-            // "pump failure" (flow never established) in the safety watchdog.
-            if (!id(flow_confirmed) && id(system_state) == 2) {
-              uint32_t elapsed = millis() - id(pump_start_time);
-              if (elapsed > (${flow_confirm_seconds} * 1000U)) {
-                id(flow_confirmed) = true;
-                ESP_LOGI("safety", "Flow confirmed after %us", elapsed / 1000);
+          const int SENSOR_IDX = 1;
+          if (id(system_state) == 2 && id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
+            const Route& r = ROUTES[id(active_route)];
+            if (r.flow_sensor == SENSOR_IDX && x > 0.5f) {
+              id(last_flow_time) = millis();
+              if (!id(flow_confirmed)) {
+                uint32_t elapsed = millis() - id(pump_start_time);
+                if (elapsed > (${flow_confirm_seconds} * 1000U)) {
+                  id(flow_confirmed) = true;
+                  ESP_LOGI("safety", "Flow confirmed on sensor %d after %us", SENSOR_IDX, elapsed / 1000);
+                }
               }
             }
           }
 
   # --- Flow totalization -----------------------------------------------------
   - platform: integration
-    sensor: flow_house1
+    sensor: flow1
     name: "House 1 Total Usage"
-    id: house1_total
+    id: flow1_total
     unit_of_measurement: "L"
     time_unit: min
     icon: "mdi:counter"
     state_class: total_increasing
 
   - platform: integration
-    sensor: flow_house2
+    sensor: flow2
     name: "House 2 Total Usage"
-    id: house2_total
+    id: flow2_total
     unit_of_measurement: "L"
     time_unit: min
     icon: "mdi:counter"
     state_class: total_increasing
 
   # --- Tank levels -----------------------------------------------------------
-  # 4-20mA pressure sensors with shunt resistors on ADC inputs.
-  # Calibration voltages are exposed as HA-adjustable numbers — no reflash needed.
   - platform: adc
     pin: ${pin_tank1_level}
     id: tank1_level
-    name: "Tank 1 Level"
+    name: "Rain Tank Level"
     unit_of_measurement: "%"
     icon: "mdi:storage-tank"
     update_interval: ${update_interval}
@@ -91,15 +104,16 @@ sensor:
           if (v_full <= v_empty) return 0.0f;
           float pct = (x - v_empty) / (v_full - v_empty) * 100.0f;
           return clamp(pct, 0.0f, 100.0f);
-      # Hold last-known-good value when this tank is the active pump source —
-      # pump operation disturbs the pressure reading on the inlet line.
       - lambda: |-
-          if (id(system_state) == 2 && id(target_inlet) == 1) return {};
+          const int TANK_IDX = 0;
+          if (id(system_state) == 2 && id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
+            if (ROUTES[id(active_route)].source_tank == TANK_IDX) return {};
+          }
           return x;
 
   - platform: template
     id: tank1_raw_voltage
-    name: "Tank 1 Raw Voltage"
+    name: "Rain Tank Raw Voltage"
     unit_of_measurement: "V"
     icon: "mdi:flash-triangle"
     accuracy_decimals: 3
@@ -108,7 +122,7 @@ sensor:
   - platform: adc
     pin: ${pin_tank2_level}
     id: tank2_level
-    name: "Tank 2 Level"
+    name: "Storage Tank Level"
     unit_of_measurement: "%"
     icon: "mdi:storage-tank"
     update_interval: ${update_interval}
@@ -122,25 +136,25 @@ sensor:
           float pct = (x - v_empty) / (v_full - v_empty) * 100.0f;
           return clamp(pct, 0.0f, 100.0f);
       - lambda: |-
-          if (id(system_state) == 2 && id(target_inlet) == 2) return {};
+          const int TANK_IDX = 1;
+          if (id(system_state) == 2 && id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
+            if (ROUTES[id(active_route)].source_tank == TANK_IDX) return {};
+          }
           return x;
 
   - platform: template
     id: tank2_raw_voltage
-    name: "Tank 2 Raw Voltage"
+    name: "Storage Tank Raw Voltage"
     unit_of_measurement: "V"
     icon: "mdi:flash-triangle"
     accuracy_decimals: 3
     entity_category: diagnostic
 
 # --- Calibration numbers (adjustable from HA) --------------------------------
-# Voltage at empty (0%) and full (100%) for each tank's pressure sensor.
-# Use raw voltage diagnostic sensors to read actual values, then set these.
-# Defaults span full ADC range until calibrated.
 
 number:
   - platform: template
-    name: "Tank 1 Cal Empty (V)"
+    name: "Rain Tank Cal Empty (V)"
     id: tank1_cal_empty
     icon: "mdi:tune-vertical"
     min_value: 0.0
@@ -152,7 +166,7 @@ number:
     entity_category: config
 
   - platform: template
-    name: "Tank 1 Cal Full (V)"
+    name: "Rain Tank Cal Full (V)"
     id: tank1_cal_full
     icon: "mdi:tune-vertical"
     min_value: 0.0
@@ -164,7 +178,7 @@ number:
     entity_category: config
 
   - platform: template
-    name: "Tank 2 Cal Empty (V)"
+    name: "Storage Tank Cal Empty (V)"
     id: tank2_cal_empty
     icon: "mdi:tune-vertical"
     min_value: 0.0
@@ -176,7 +190,7 @@ number:
     entity_category: config
 
   - platform: template
-    name: "Tank 2 Cal Full (V)"
+    name: "Storage Tank Cal Full (V)"
     id: tank2_cal_full
     icon: "mdi:tune-vertical"
     min_value: 0.0
@@ -188,8 +202,6 @@ number:
     entity_category: config
 
 # --- State exposure to HA ----------------------------------------------------
-# Template text sensors that translate numeric state/fault into human-readable
-# strings for dashboards and automations.
 
 text_sensor:
   - platform: template
@@ -208,13 +220,39 @@ text_sensor:
     icon: "mdi:alert-circle"
     update_interval: 2s
     lambda: |-
+      int f = id(fault_code);
+      if (f == 0) return std::string("None");
       const char* faults[] = {
         "None",
-        "No flow detected (House 2 path)",
-        "No level rise detected (refill path)",
+        "No flow detected",
+        "No level rise detected",
         "Max runtime exceeded",
         "HA connection lost",
         "Source tank empty"
       };
-      int f = id(fault_code);
-      return std::string((f >= 0 && f <= 5) ? faults[f] : "Unknown");
+      std::string msg = (f >= 0 && f <= 5) ? faults[f] : "Unknown";
+      if (id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
+        msg += " (";
+        msg += ROUTES[id(active_route)].name;
+        msg += ")";
+      }
+      return msg;
+
+  - platform: template
+    id: last_stop_reason_text
+    name: "Pump Last Stop Reason"
+    icon: "mdi:alert-octagon-outline"
+    update_interval: 2s
+    lambda: |-
+      const char* reasons[] = {
+        "None",
+        "Manual stop",
+        "Tank full",
+        "No flow detected",
+        "No level rise detected",
+        "Max runtime exceeded",
+        "HA connection lost",
+        "Source tank empty"
+      };
+      int r = id(stop_reason);
+      return std::string((r >= 0 && r <= 7) ? reasons[r] : "Unknown");

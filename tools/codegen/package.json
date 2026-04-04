@@ -1,0 +1,21 @@
+{
+  "name": "@farm/codegen",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "tsx src/main.ts generate",
+    "validate": "tsx src/main.ts validate",
+    "secrets": "tsx src/main.ts secrets",
+    "flash": "tsx src/main.ts flash"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "@types/node": "^22.0.0"
+  }
+}

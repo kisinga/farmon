@@ -3,5 +3,15 @@
 # Firmware build artifacts (generated per-device by backend)
 backend/builds/
 
-# ESPHome secrets
-esphome/secrets.yaml
+# ESPHome secrets (per-device, gitignored for safety)
+esphome/**/secrets.yaml
+
+# ESPHome build output
+.esphome/
+
+# Codegen tool
+tools/codegen/node_modules/
+tools/codegen/dist/
+
+# Codegen temp output
+_substitutions.yaml

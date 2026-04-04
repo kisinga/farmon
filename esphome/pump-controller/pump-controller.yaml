@@ -10,18 +10,17 @@
 # Topology:
 #   Tank 1 → valve1 ──────────────────┐
 #   Tank 2 → splitter → valve2 ───────┤→ PUMP → valve3 → Tank 2 inlet
-#                └→ flow_house1 → H1   └──────→ valve4 → flow_house2 → H2
+#                └→ flow1 → H1         └──────→ valve4 → flow2 → H2
 #
 # State machine: IDLE → PREPARING → RUNNING → STOPPING → IDLE
 #                         └──────→ FAULT ←──────┘
 #
 # Quick reference:
-#   States:  0=IDLE  1=PREPARING  2=RUNNING  3=STOPPING  4=FAULT
-#   Faults:  0=none  1=no_flow  2=no_rise  3=max_runtime  4=api_lost  5=source_empty
-#   Inlets:  1=valve1(Tank1)  2=valve2(Tank2)
-#   Outlets: 3=valve3(Tank2 refill)  4=valve4(House2)
-#   Valid:   T1→T2(1→3)  T1→H2(1→4)  T2→H2(2→4)
-#   Invalid: T2→T2(2→3) — self-loop rejected
+#   States:    0=IDLE  1=PREPARING  2=RUNNING  3=STOPPING  4=FAULT
+#   Faults:    0=none  1=no_flow  2=no_rise  3=max_runtime  4=api_lost  5=source_empty
+#   Watchdogs: 0=FLOW  1=LEVEL_RISE  2=RUNTIME_ONLY
+#   Routes:    Defined in packages/routes.h — see ROUTES[] table
+#   API:       pump_start(route_id)  pump_stop()  fault_reset()
 # =============================================================================
 
 substitutions:
@@ -31,8 +30,10 @@ substitutions:
   pin_battery_adc: GPIO1
   battery_divider: "2.0"
 
-  # --- Pump GPIO pins ---
+  # --- Pump ---
   pin_pump_relay: GPIO42
+
+  # --- Valves ---
   pin_valve1_o: GPIO4
   pin_valve1_c: GPIO5
   pin_valve2_o: GPIO6
@@ -41,8 +42,12 @@ substitutions:
   pin_valve3_c: GPIO3
   pin_valve4_o: GPIO39
   pin_valve4_c: GPIO40
-  pin_flow_house1: GPIO45
-  pin_flow_house2: GPIO46
+
+  # --- Flow sensors ---
+  pin_flow1: GPIO45
+  pin_flow2: GPIO46
+
+  # --- Tank levels ---
   pin_tank1_level: GPIO19
   pin_tank2_level: GPIO20
 
@@ -56,7 +61,7 @@ substitutions:
   api_watchdog_seconds: "300"
 
   # --- Flow calibration ---
-  flow_cal: "450.0"
+  flow_cal: "450"
 
 # --- Packages ----------------------------------------------------------------
 
@@ -69,6 +74,8 @@ packages:
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
+  includes:
+    - packages/routes.h
   on_boot:
     # Reset OLED before I2C bus init to prevent SCL held LOW
     - priority: 800
@@ -95,6 +102,7 @@ esphome:
         - script.wait: close_all_valves
         - lambda: |-
             id(system_state) = 0;
+            id(active_route) = -1;
             id(pump_start_time) = 0;
             id(last_flow_time) = 0;
             id(api_lost_time) = 0;
@@ -103,7 +111,9 @@ esphome:
             id(refill_baseline_time) = 0;
             id(flow_confirmed) = false;
             id(tank_full_detected) = false;
-            ESP_LOGI("pump", "Boot complete — IDLE");
+            // stop_reason intentionally NOT reset — survives reboot so HA
+            // can still show why the pump last stopped.
+            ESP_LOGI("pump", "Boot complete — IDLE (%d routes)", NUM_ROUTES);
 
 # --- OLED Display ------------------------------------------------------------
 # Top bar: device name, battery icon, WiFi bars
@@ -179,12 +189,9 @@ display:
 
           // Active path (when not idle)
           if (s >= 1 && s <= 3) {
-            const char* inlets[] = {"", "T1", "T2"};
-            const char* outlets[] = {"", "", "", "T2", "H2"};
-            int in_v = id(target_inlet);
-            int out_v = id(target_outlet);
-            if (in_v >= 1 && in_v <= 2 && out_v >= 3 && out_v <= 4) {
-              it.printf(64, 15, id(font_body), "%s>%s", inlets[in_v], outlets[out_v]);
+            int ar = id(active_route);
+            if (ar >= 0 && ar < NUM_ROUTES) {
+              it.printf(64, 15, id(font_body), "%s", ROUTES[ar].name);
             }
           }
 

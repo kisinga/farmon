@@ -59,8 +59,8 @@ views:
           - type: horizontal-stack
             cards:
               - type: gauge
-                entity: sensor.pump_ctrl_tank_1_level
-                name: Tank 1 (Rain)
+                entity: sensor.pump_ctrl_rain_tank_level
+                name: Rain Tank
                 min: 0
                 max: 100
                 severity:
@@ -69,8 +69,8 @@ views:
                   green: 50
                 needle: true
               - type: gauge
-                entity: sensor.pump_ctrl_tank_2_level
-                name: Tank 2
+                entity: sensor.pump_ctrl_storage_tank_level
+                name: Storage Tank
                 min: 0
                 max: 100
                 severity:
@@ -96,10 +96,24 @@ views:
                     stat_types:
                       - change
                     chart_type: bar
-                    period:
-                      calendar:
-                        period: day
-                    days_to_show: 7
+                    period: week
+                    days_to_show: 56
+                  - type: horizontal-stack
+                    cards:
+                      - type: statistic
+                        entity: sensor.pump_ctrl_house_1_total_usage
+                        stat_type: change
+                        period:
+                          calendar:
+                            period: month
+                        name: Month
+                      - type: statistic
+                        entity: sensor.pump_ctrl_house_1_total_usage
+                        stat_type: change
+                        period:
+                          calendar:
+                            period: year
+                        name: Year
               - type: vertical-stack
                 cards:
                   - type: sensor
@@ -113,10 +127,24 @@ views:
                     stat_types:
                       - change
                     chart_type: bar
-                    period:
-                      calendar:
-                        period: day
-                    days_to_show: 7
+                    period: week
+                    days_to_show: 56
+                  - type: horizontal-stack
+                    cards:
+                      - type: statistic
+                        entity: sensor.pump_ctrl_house_2_total_usage
+                        stat_type: change
+                        period:
+                          calendar:
+                            period: month
+                        name: Month
+                      - type: statistic
+                        entity: sensor.pump_ctrl_house_2_total_usage
+                        stat_type: change
+                        period:
+                          calendar:
+                            period: year
+                        name: Year
             grid_options:
               columns: full
         column_span: 1
@@ -152,41 +180,39 @@ views:
                   - show_name: true
                     show_icon: true
                     type: button
-                    name: Tank 1 → Tank 2
+                    name: T1>T2
                     icon: mdi:water-sync
                     tap_action:
                       action: call-service
-                      service: script.turn_on
-                      target:
-                        entity_id: script.pump_tank1_to_tank2
+                      service: esphome.pump_ctrl_pump_start
+                      data:
+                        route_id: 0
                     show_state: false
                     color: purple
                   - show_name: true
                     show_icon: true
                     type: button
-                    name: House 2 (auto)
-                    icon: mdi:home-import-outline
+                    name: T1>H2
+                    icon: mdi:water-sync
                     tap_action:
                       action: call-service
-                      service: script.turn_on
-                      target:
-                        entity_id: script.pump_house2_preferred
+                      service: esphome.pump_ctrl_pump_start
+                      data:
+                        route_id: 1
                     show_state: false
                     color: deep-purple
                   - show_name: true
                     show_icon: true
                     type: button
-                    name: Start Selected
-                    icon: mdi:play-circle
+                    name: T2>H2
+                    icon: mdi:water-sync
                     tap_action:
                       action: call-service
-                      service: script.turn_on
-                      target:
-                        entity_id: script.pump_start
-                      confirmation:
-                        text: "Start pump with selected source/destination?"
+                      service: esphome.pump_ctrl_pump_start
+                      data:
+                        route_id: 2
                     show_state: false
-                    color: green
+                    color: indigo
               - type: horizontal-stack
                 cards:
                   - show_name: true
@@ -221,13 +247,13 @@ views:
             title: Hardware
             show_state: true
             entities:
-              - entity: cover.pump_ctrl_valve_1_tank_1_outlet
+              - entity: cover.pump_ctrl_tank_1_outlet
                 name: V1
-              - entity: cover.pump_ctrl_valve_2_tank_2_outlet
+              - entity: cover.pump_ctrl_tank_2_outlet
                 name: V2
-              - entity: cover.pump_ctrl_valve_3_pump_to_tank_2
+              - entity: cover.pump_ctrl_pump_to_tank_2
                 name: V3
-              - entity: cover.pump_ctrl_valve_4_pump_to_house_2
+              - entity: cover.pump_ctrl_pump_to_house_2
                 name: V4
             grid_options:
               columns: full
@@ -271,11 +297,11 @@ views:
       - type: entities
         title: Sensor Calibration (voltage)
         entities:
-          - entity: number.pump_ctrl_tank_1_cal_empty_v
-            name: Tank 1 Empty
-          - entity: number.pump_ctrl_tank_1_cal_full_v
-            name: Tank 1 Full
-          - entity: number.pump_ctrl_tank_2_cal_empty_v
-            name: Tank 2 Empty
-          - entity: number.pump_ctrl_tank_2_cal_full_v
-            name: Tank 2 Full
+          - entity: number.pump_ctrl_rain_tank_cal_empty_v
+            name: Rain Tank Empty
+          - entity: number.pump_ctrl_rain_tank_cal_full_v
+            name: Rain Tank Full
+          - entity: number.pump_ctrl_storage_tank_cal_empty_v
+            name: Storage Tank Empty
+          - entity: number.pump_ctrl_storage_tank_cal_full_v
+            name: Storage Tank Full

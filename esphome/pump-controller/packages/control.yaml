@@ -7,18 +7,24 @@
 #                                └──────→ FAULT(4) ←──────┘
 #
 # All safety-critical logic lives HERE on the ESP32, not in HA.
-# HA only selects source/destination and requests start/stop.
+# HA only selects a route and requests start/stop.
+#
+# Topology is defined in routes.h — this file never references specific
+# valve/tank/flow IDs. All routing goes through ROUTES[] and dispatch functions.
 # =============================================================================
 
 # --- Globals -----------------------------------------------------------------
-# State machine variables. These are the shared vocabulary between services,
-# scripts, and the safety watchdog.
 
 globals:
   - id: system_state
     type: int
     initial_value: "0"
     # 0=IDLE, 1=PREPARING, 2=RUNNING, 3=STOPPING, 4=FAULT
+
+  - id: active_route
+    type: int
+    initial_value: "-1"
+    # Index into ROUTES[]. -1 = no active route.
 
   - id: pump_start_time
     type: uint32_t
@@ -37,16 +43,6 @@ globals:
     initial_value: "0"
     # 0=none, 1=no_flow, 2=no_level_rise, 3=max_runtime,
     # 4=api_lost, 5=source_empty
-
-  - id: target_inlet
-    type: int
-    initial_value: "0"
-    # 1=valve1 (tank1), 2=valve2 (tank2)
-
-  - id: target_outlet
-    type: int
-    initial_value: "0"
-    # 3=valve3 (tank2 refill), 4=valve4 (house2)
 
   - id: refill_baseline_level
     type: float
@@ -67,6 +63,13 @@ globals:
     initial_value: "false"
     # Signal: no-flow detected but flow was previously confirmed → clean stop
 
+  - id: stop_reason
+    type: int
+    initial_value: "0"
+    # Persists across runs so HA can show why the pump last stopped.
+    # 0=none  1=manual  2=tank_full  3=no_flow  4=no_rise
+    # 5=max_runtime  6=api_lost  7=source_empty
+
 # --- API + Services ----------------------------------------------------------
 
 api:
@@ -79,34 +82,31 @@ api:
   services:
     - service: pump_start
       variables:
-        inlet: int
-        outlet: int
+        route_id: int
       then:
         - lambda: |-
             if (id(system_state) != 0) {
               ESP_LOGW("pump", "Rejected: state=%d, need IDLE", id(system_state));
               return;
             }
-            if (inlet < 1 || inlet > 2 || outlet < 3 || outlet > 4) {
-              ESP_LOGW("pump", "Rejected: invalid inlet=%d outlet=%d", inlet, outlet);
+            if (route_id < 0 || route_id >= NUM_ROUTES) {
+              ESP_LOGW("pump", "Rejected: invalid route_id=%d (max %d)", route_id, NUM_ROUTES - 1);
               return;
             }
-            if (inlet == 2 && outlet == 3) {
-              ESP_LOGW("pump", "Rejected: Tank 2 → Tank 2 loop");
-              return;
+            const Route& r = ROUTES[route_id];
+            if (r.source_tank != 0xFF) {
+              float src = get_tank_level(r.source_tank);
+              if (!id(safety_override).state && (std::isnan(src) || src < 5.0f)) {
+                ESP_LOGW("pump", "Rejected: source tank %d at %.0f%%", r.source_tank, src);
+                id(fault_code) = 5;
+                id(system_state) = 4;
+                return;
+              }
             }
-            float src = (inlet == 1) ? id(tank1_level).state : id(tank2_level).state;
-            if (!id(safety_override).state && src < 5.0f) {
-              ESP_LOGW("pump", "Rejected: source at %.0f%%", src);
-              id(fault_code) = 5;
-              id(system_state) = 4;
-              return;
-            }
-            id(target_inlet) = inlet;
-            id(target_outlet) = outlet;
+            id(active_route) = route_id;
             id(fault_code) = 0;
             id(system_state) = 1;
-            ESP_LOGI("pump", "Start: inlet=%d outlet=%d src=%.0f%%", inlet, outlet, src);
+            ESP_LOGI("pump", "Start route %d [%s]", route_id, r.name);
         - if:
             condition:
               lambda: 'return id(system_state) == 1;'
@@ -117,6 +117,7 @@ api:
       then:
         - lambda: |-
             if (id(system_state) == 0 || id(system_state) == 3) return;
+            id(stop_reason) = 1;  // manual
             ESP_LOGI("pump", "Stop requested");
         - script.execute: do_stop
 
@@ -126,6 +127,7 @@ api:
             if (id(system_state) != 4) return;
             id(fault_code) = 0;
             id(system_state) = 0;
+            id(active_route) = -1;
             ESP_LOGI("pump", "Fault cleared → IDLE");
 
 # --- Safety override ---------------------------------------------------------
@@ -142,15 +144,14 @@ switch:
 # --- Scripts -----------------------------------------------------------------
 
 script:
-  # Reusable: close all valves and wait for them to finish.
-  # Single place to edit when adding/removing valves.
+  # Close all valves via dispatch loop.
   - id: close_all_valves
     mode: single
     then:
-      - cover.close: valve1
-      - cover.close: valve2
-      - cover.close: valve3
-      - cover.close: valve4
+      - lambda: |-
+          for (int i = 0; i < NUM_VALVES; i++) {
+            close_valve(i);
+          }
       - delay: ${valve_travel_time}
       - delay: 1s   # extra settle time after motor stops
 
@@ -166,12 +167,14 @@ script:
       - if:
           condition: {lambda: 'return id(system_state) != 1;'}
           then: [{script.stop: do_prepare_and_run}]
-      # Open target inlet and outlet
+      # Open valves for the active route
       - lambda: |-
-          if (id(target_inlet) == 1) id(valve1).make_call().set_command_open().perform();
-          else id(valve2).make_call().set_command_open().perform();
-          if (id(target_outlet) == 3) id(valve3).make_call().set_command_open().perform();
-          else id(valve4).make_call().set_command_open().perform();
+          const Route& r = ROUTES[id(active_route)];
+          for (int i = 0; i < NUM_VALVES; i++) {
+            if (r.valve_mask & (1 << i)) {
+              open_valve(i);
+            }
+          }
       - delay: ${valve_travel_time}
       - delay: 1s   # settle
       # Abort if pump_stop was called while valves were moving
@@ -180,19 +183,19 @@ script:
           then: [{script.stop: do_prepare_and_run}]
       # Transition to RUNNING and arm watchdogs
       - lambda: |-
+          const Route& r = ROUTES[id(active_route)];
           id(flow_confirmed) = false;
           id(tank_full_detected) = false;
           id(system_state) = 2;
           id(pump_start_time) = millis();
           id(last_flow_time) = millis();
-          if (id(target_outlet) == 3) {
-            // Refill path: snapshot Tank 2 level as baseline for rise detection
-            id(refill_baseline_level) = id(tank2_level).state;
+          if (r.watchdog == WD_LEVEL_RISE && r.dest_tank != 0xFF) {
+            id(refill_baseline_level) = get_tank_level(r.dest_tank);
             id(refill_baseline_time) = millis();
           } else {
             id(refill_baseline_level) = -1.0f;  // sentinel: not tracking
           }
-          ESP_LOGI("pump", "RUNNING — watchdog armed");
+          ESP_LOGI("pump", "RUNNING route %d [%s] — watchdog=%d", id(active_route), r.name, r.watchdog);
       - switch.turn_on: pump_relay
 
   # Caller (pump_stop service) already guards against IDLE/STOPPING
@@ -206,8 +209,7 @@ script:
       - script.wait: close_all_valves
       - lambda: |-
           id(system_state) = 0;
-          id(target_inlet) = 0;
-          id(target_outlet) = 0;
+          id(active_route) = -1;
           id(flow_confirmed) = false;
           id(tank_full_detected) = false;
           ESP_LOGI("pump", "IDLE");
@@ -226,10 +228,10 @@ script:
           ESP_LOGE("pump", "FAULT %d — awaiting reset", id(fault_code));
 
 # --- Safety monitor — runs every 2s -----------------------------------------
-# Watchdog strategy depends on active flow path:
-#   outlet=4 (House 2):  flow_house2 must see pulses within flow_watchdog_seconds
-#   outlet=3 (Refill):   tank2_level must rise ≥ refill_min_rise_pct within window
-# First fault wins — once fault_code ≠ 0, remaining checks are skipped.
+# Watchdog strategy is determined by ROUTES[active_route].watchdog:
+#   WD_FLOW:       flow sensor must see pulses within flow_watchdog_seconds
+#   WD_LEVEL_RISE: dest tank level must rise ≥ refill_min_rise_pct per window
+#   WD_RUNTIME:    no path-specific sensor — only max_runtime protects
 
 interval:
   - interval: 2s
@@ -237,52 +239,68 @@ interval:
       - lambda: |-
           if (id(system_state) != 2) return;
           if (id(safety_override).state) return;
+          if (id(active_route) < 0 || id(active_route) >= NUM_ROUTES) return;
           uint32_t now = millis();
           uint32_t runtime = now - id(pump_start_time);
+          const Route& r = ROUTES[id(active_route)];
 
           // --- WATCHDOG: path-dependent ---
           if (id(fault_code) == 0) {
-            if (id(target_outlet) == 4) {
-              // House 2 path: check flow sensor
-              if (runtime > (${flow_watchdog_seconds} * 1000U)) {
-                uint32_t age = now - id(last_flow_time);
-                if (age > (${flow_watchdog_seconds} * 1000U)) {
-                  if (id(flow_confirmed)) {
-                    // Flow was established then stopped → tank full
-                    ESP_LOGI("safety", "Tank full: flow confirmed then stopped (%us ago)", age / 1000);
-                    id(tank_full_detected) = true;
-                  } else {
-                    // Flow was never established → genuine fault
-                    ESP_LOGE("safety", "No flow for %us on House 2 path", age / 1000);
-                    id(fault_code) = 1;
+            switch (r.watchdog) {
+
+              case WD_FLOW: {
+                if (r.flow_sensor == 0xFF) break;  // misconfigured — skip
+                if (runtime > (${flow_watchdog_seconds} * 1000U)) {
+                  uint32_t age = now - id(last_flow_time);
+                  if (age > (${flow_watchdog_seconds} * 1000U)) {
+                    if (id(flow_confirmed)) {
+                      // Flow was established then stopped → tank full
+                      ESP_LOGI("safety", "Tank full on route %d [%s]: flow stopped %us ago",
+                               id(active_route), r.name, age / 1000);
+                      id(tank_full_detected) = true;
+                    } else {
+                      // Flow was never established → genuine fault
+                      ESP_LOGE("safety", "No flow for %us on route %d [%s]",
+                               age / 1000, id(active_route), r.name);
+                      id(fault_code) = 1;
+                    }
                   }
                 }
+                break;
               }
-            } else {
-              // Refill path: check Tank 2 level is rising
-              if (runtime > (${refill_watchdog_seconds} * 1000U)) {
-                float current = id(tank2_level).state;
-                float baseline = id(refill_baseline_level);
-                uint32_t baseline_age = now - id(refill_baseline_time);
-                if (baseline_age > (${refill_watchdog_seconds} * 1000U)) {
-                  float rise = current - baseline;
-                  if (rise < ${refill_min_rise_pct}) {
-                    ESP_LOGE("safety", "Tank 2 rise %.1f%% < min %.1f%% in %us",
-                             rise, (float)${refill_min_rise_pct}, baseline_age / 1000);
-                    id(fault_code) = 2;
-                  } else {
-                    // Reset baseline for next window
-                    id(refill_baseline_level) = current;
-                    id(refill_baseline_time) = now;
+
+              case WD_LEVEL_RISE: {
+                if (r.dest_tank == 0xFF) break;  // misconfigured — skip
+                if (runtime > (${refill_watchdog_seconds} * 1000U)) {
+                  float current = get_tank_level(r.dest_tank);
+                  float baseline = id(refill_baseline_level);
+                  uint32_t baseline_age = now - id(refill_baseline_time);
+                  if (baseline_age > (${refill_watchdog_seconds} * 1000U)) {
+                    float rise = current - baseline;
+                    if (rise < ${refill_min_rise_pct}) {
+                      ESP_LOGE("safety", "Level rise %.1f%% < %.1f%% in %us on route %d [%s]",
+                               rise, (float)${refill_min_rise_pct}, baseline_age / 1000,
+                               id(active_route), r.name);
+                      id(fault_code) = 2;
+                    } else {
+                      // Reset baseline for next window
+                      id(refill_baseline_level) = current;
+                      id(refill_baseline_time) = now;
+                    }
                   }
                 }
+                break;
               }
+
+              case WD_RUNTIME:
+                // No path-specific watchdog — max_runtime still applies below
+                break;
             }
           }
 
           // --- MAX RUNTIME ---
           if (id(fault_code) == 0 && runtime > (${max_runtime_seconds} * 1000U)) {
-            ESP_LOGE("safety", "Max runtime exceeded");
+            ESP_LOGE("safety", "Max runtime exceeded on route %d [%s]", id(active_route), r.name);
             id(fault_code) = 3;
           }
 
@@ -296,10 +314,11 @@ interval:
           }
 
           // --- SOURCE TANK DEPLETED ---
-          if (id(fault_code) == 0) {
-            float lvl = (id(target_inlet) == 1) ? id(tank1_level).state : id(tank2_level).state;
+          if (id(fault_code) == 0 && r.source_tank != 0xFF) {
+            float lvl = get_tank_level(r.source_tank);
             if (lvl < 3.0f) {
-              ESP_LOGE("safety", "Source depleted: %.0f%%", lvl);
+              ESP_LOGE("safety", "Source tank %d depleted: %.0f%% on route %d [%s]",
+                       r.source_tank, lvl, id(active_route), r.name);
               id(fault_code) = 5;
             }
           }
@@ -308,6 +327,7 @@ interval:
           condition:
             lambda: 'return id(system_state) == 2 && id(fault_code) != 0;'
           then:
+            - lambda: 'id(stop_reason) = id(fault_code) + 2;'
             - script.execute: do_fault
       - if:
           condition:
@@ -316,4 +336,5 @@ interval:
             - lambda: |-
                 ESP_LOGI("pump", "Tank full — clean stop");
                 id(tank_full_detected) = false;
+                id(stop_reason) = 2;  // tank full
             - script.execute: do_stop

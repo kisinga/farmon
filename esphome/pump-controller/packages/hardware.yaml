@@ -1,18 +1,18 @@
 # =============================================================================
 # Pump Controller — Hardware Layer
 # =============================================================================
+# AUTO-GENERATED from system manifest. Do not edit by hand.
+# Regenerate: npx tsx tools/codegen/src/main.ts generate system.yaml
+#
 # Physical actuators only. No state logic, no sensor readings.
 #
 # Components:
 #   - 1x pump relay (guarded: only energizes in RUNNING state)
-#   - 1x pressure relief solenoid (normally closed, opens during FAULT)
 #   - 4x motorized ball valves (2-pin each, hardware interlocked)
 # =============================================================================
 
 switch:
   # --- Pump relay ------------------------------------------------------------
-  # Defence-in-depth: on_turn_on blocks activation unless state machine is in
-  # RUNNING. Even if HA or a bug tries to energize the pump, this guard fires.
   - platform: gpio
     pin:
       number: ${pin_pump_relay}
@@ -30,9 +30,7 @@ switch:
             - switch.turn_off: pump_relay
             - logger.log: {level: WARN, format: "BLOCKED: pump only runs in RUNNING state"}
 
-  # --- Valve motor pins (internal) -------------------------------------------
-  # Each ball valve has open + close pins with hardware interlocks.
-  # 100ms interlock_wait_time prevents simultaneous drive (mechanical safety).
+  # --- Tank 1 Outlet ---
   - platform: gpio
     pin:
       number: ${pin_valve1_o}
@@ -52,6 +50,7 @@ switch:
     interlock: [valve1_open_pin, valve1_close_pin]
     interlock_wait_time: 100ms
 
+  # --- Tank 2 Outlet ---
   - platform: gpio
     pin:
       number: ${pin_valve2_o}
@@ -71,6 +70,7 @@ switch:
     interlock: [valve2_open_pin, valve2_close_pin]
     interlock_wait_time: 100ms
 
+  # --- Pump to Tank 2 ---
   - platform: gpio
     pin:
       number: ${pin_valve3_o}
@@ -90,6 +90,7 @@ switch:
     interlock: [valve3_open_pin, valve3_close_pin]
     interlock_wait_time: 100ms
 
+  # --- Pump to House 2 ---
   - platform: gpio
     pin:
       number: ${pin_valve4_o}
@@ -110,13 +111,11 @@ switch:
     interlock_wait_time: 100ms
 
 # --- Ball valves (covers) ----------------------------------------------------
-# Time-based covers wrap the motor pins with open/close/stop semantics.
-# HA sees these as valve entities with position tracking.
 
 cover:
   - platform: time_based
     id: valve1
-    name: "Valve 1 — Tank 1 Outlet"
+    name: "Tank 1 Outlet"
 
     open_action:  [{switch.turn_on: valve1_open_pin}]
     close_action: [{switch.turn_on: valve1_close_pin}]
@@ -126,7 +125,7 @@ cover:
 
   - platform: time_based
     id: valve2
-    name: "Valve 2 — Tank 2 Outlet"
+    name: "Tank 2 Outlet"
 
     open_action:  [{switch.turn_on: valve2_open_pin}]
     close_action: [{switch.turn_on: valve2_close_pin}]
@@ -136,7 +135,7 @@ cover:
 
   - platform: time_based
     id: valve3
-    name: "Valve 3 — Pump to Tank 2"
+    name: "Pump to Tank 2"
 
     open_action:  [{switch.turn_on: valve3_open_pin}]
     close_action: [{switch.turn_on: valve3_close_pin}]
@@ -146,7 +145,7 @@ cover:
 
   - platform: time_based
     id: valve4
-    name: "Valve 4 — Pump to House 2"
+    name: "Pump to House 2"
 
     open_action:  [{switch.turn_on: valve4_open_pin}]
     close_action: [{switch.turn_on: valve4_close_pin}]
