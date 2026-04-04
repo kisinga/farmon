@@ -1,16 +1,13 @@
 # Dependencies
 node_modules/
+
+# Build output
 dist/
-
-# ESPHome
-.esphome/
-esphome/**/secrets.yaml
-
-# Codegen artifacts
-_substitutions.yaml
+dist-electron/
 
 # IDE / tools
 .gitnexus
+.vscode/
 
 # OS
 .DS_Store

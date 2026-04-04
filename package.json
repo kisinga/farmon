@@ -2,22 +2,10 @@
   "name": "waterctl",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "generate": "tsx cli/main.ts generate",
-    "validate": "tsx cli/main.ts validate",
-    "secrets": "tsx cli/main.ts secrets",
-    "flash": "tsx cli/main.ts flash",
-    "test": "tsx test/codegen.test.ts",
-    "test:limits": "tsx test/limits.test.ts"
-  },
-  "dependencies": {
-    "yaml": "^2.7.0",
-    "zod": "^3.24.0"
-  },
-  "devDependencies": {
-    "tsx": "^4.19.0",
-    "typescript": "^5.8.0",
-    "@types/node": "^22.0.0"
+    "dev": "npm run dev --prefix app",
+    "build": "npm run build --prefix app && npm run build:electron --prefix app",
+    "test": "npx --prefix app tsx app/test/codegen.test.ts",
+    "test:limits": "npx --prefix app tsx app/test/limits.test.ts"
   }
 }
