@@ -1,0 +1,279 @@
+import { stringify } from "yaml";
+import type { BoardDef } from "../board.js";
+import type { Manifest } from "../schema.js";
+
+/**
+ * Generate the ESPHome device YAML from board definition + system manifest.
+ * This replaces the hand-written pump-controller.yaml — OLED display pages,
+ * boot sequence, and package includes are all driven by capabilities.
+ */
+export function generateDeviceYaml(
+  board: BoardDef,
+  m: Manifest
+): string {
+  const dir = m.device.directory ?? m.device.name;
+  const hasOled = !!board.peripherals.oled;
+  const hasBattery = !!board.peripherals.battery;
+
+  // --- Substitutions (inline, not a separate file) ---
+  const subs: Record<string, string> = {
+    device_name: m.device.name,
+    friendly_name: m.device.friendly_name,
+    update_interval: m.timing.update_interval,
+  };
+
+  if (hasBattery) {
+    subs.pin_battery_adc = board.peripherals.battery!.adc_pin;
+    subs.battery_divider = String(board.peripherals.battery!.divider);
+  }
+
+  // Pump
+  subs.pin_pump_relay = m.pump.pin;
+
+  // Valves
+  for (const v of m.valves) {
+    subs[`pin_${v.id}_o`] = v.open_pin;
+    subs[`pin_${v.id}_c`] = v.close_pin;
+  }
+
+  // Flow sensors
+  for (const f of m.flow_sensors) {
+    subs[`pin_${f.id}`] = f.pin;
+  }
+
+  // Tank levels
+  for (const t of m.tanks) {
+    subs[`pin_${t.id}_level`] = t.level_pin;
+  }
+
+  // Timing
+  subs.valve_travel_time = `"${m.timing.valve_travel_time}"`;
+  subs.max_runtime_seconds = `"${m.timing.max_runtime_seconds}"`;
+  subs.flow_watchdog_seconds = `"${m.timing.flow_watchdog_seconds}"`;
+  subs.flow_confirm_seconds = `"${m.timing.flow_confirm_seconds}"`;
+  subs.refill_watchdog_seconds = `"${m.timing.refill_watchdog_seconds}"`;
+  subs.refill_min_rise_pct = `"${m.timing.refill_min_rise_pct}"`;
+  subs.api_watchdog_seconds = `"${m.timing.api_watchdog_seconds}"`;
+  subs.flow_cal = `"${m.timing.flow_cal}"`;
+
+  // --- On-boot sequence ---
+  const bootSteps: unknown[] = [];
+
+  // OLED reset (must run before I2C init)
+  if (hasOled) {
+    const resetPin = board.peripherals.oled!.reset_pin;
+    const gpioNum = resetPin.replace("GPIO", "");
+    bootSteps.push({
+      priority: 800,
+      then: [
+        {
+          lambda: [
+            `gpio_set_direction(GPIO_NUM_${gpioNum}, GPIO_MODE_OUTPUT);`,
+            `gpio_set_level(GPIO_NUM_${gpioNum}, 0);`,
+            "delay(10);",
+            `gpio_set_level(GPIO_NUM_${gpioNum}, 1);`,
+            "delay(10);",
+          ].join("\n"),
+        },
+      ],
+    });
+  }
+
+  // Splash screen (only if OLED)
+  if (hasOled) {
+    bootSteps.push({
+      priority: 600,
+      then: [
+        { "display.page.show": "page_splash" },
+        { "component.update": "oled" },
+        { delay: "2s" },
+        { "display.page.show": "page_runtime" },
+        { "component.update": "oled" },
+      ],
+    });
+  }
+
+  // Safe defaults (always)
+  const initVars = [
+    "id(system_state) = 0;",
+    "id(active_route) = -1;",
+    "id(pump_start_time) = 0;",
+    "id(last_flow_time) = 0;",
+    "id(api_lost_time) = 0;",
+    "id(fault_code) = 0;",
+    "id(refill_baseline_level) = -1.0f;",
+    "id(refill_baseline_time) = 0;",
+    "id(flow_confirmed) = false;",
+    "id(tank_full_detected) = false;",
+    '// stop_reason intentionally NOT reset — survives reboot',
+    `ESP_LOGI("pump", "Boot complete — IDLE (%d routes)", NUM_ROUTES);`,
+  ].join("\n");
+
+  bootSteps.push({
+    priority: -100,
+    then: [
+      { "switch.turn_off": "pump_relay" },
+      { "script.execute": "close_all_valves" },
+      { "script.wait": "close_all_valves" },
+      { lambda: initVars },
+    ],
+  });
+
+  // --- OLED display (only if board has one) ---
+  const displayBlock = hasOled
+    ? buildOledDisplay(board)
+    : null;
+
+  // --- Assemble the full device YAML as a string ---
+  // We build this as a string rather than an object because ESPHome YAML
+  // uses !include and !secret which aren't standard YAML.
+
+  const lines: string[] = [];
+  lines.push("# =============================================================================");
+  lines.push(`# ${m.device.friendly_name} — ESPHome Device`);
+  lines.push("# =============================================================================");
+  lines.push("# AUTO-GENERATED from board definition + system manifest.");
+  lines.push(`# Board: ${board.label}`);
+  lines.push(`# Manifest: library/${dir}.yaml`);
+  lines.push("#");
+  lines.push("# State machine: IDLE -> PREPARING -> RUNNING -> STOPPING -> IDLE");
+  lines.push("#                          '-------> FAULT <-------'");
+  lines.push("#");
+  lines.push(`# Routes: Defined in packages/routes.h (${m.routes.length} routes)`);
+  lines.push(`# API: pump_start(route_id)  pump_stop()  fault_reset()`);
+  lines.push("# =============================================================================");
+  lines.push("");
+
+  // Substitutions
+  lines.push("substitutions:");
+  for (const [key, val] of Object.entries(subs)) {
+    lines.push(`  ${key}: ${val}`);
+  }
+  lines.push("");
+
+  // Packages
+  lines.push("packages:");
+  lines.push("  board: !include common/board.yaml");
+  lines.push("  hardware: !include packages/hardware.yaml");
+  lines.push("  sensors: !include packages/sensors.yaml");
+  lines.push("  control: !include packages/control.yaml");
+  lines.push("");
+
+  // ESPHome block
+  lines.push("esphome:");
+  lines.push(`  name: \${device_name}`);
+  lines.push(`  friendly_name: \${friendly_name}`);
+  lines.push("  includes:");
+  lines.push("    - packages/routes.h");
+  lines.push("  on_boot:");
+  for (const step of bootSteps) {
+    const stepYaml = stringify(step, {
+      indent: 2,
+      lineWidth: 0,
+      defaultStringType: "PLAIN",
+    });
+    // Indent each line by 4 spaces (under on_boot:)
+    for (const line of stepYaml.split("\n")) {
+      if (line.trim()) lines.push(`    ${line}`);
+    }
+  }
+  lines.push("");
+
+  // Display (if OLED)
+  if (displayBlock) {
+    lines.push(displayBlock);
+  }
+
+  return lines.join("\n") + "\n";
+}
+
+function buildOledDisplay(board: BoardDef): string {
+  const oled = board.peripherals.oled!;
+  const resetPin = oled.reset_pin;
+
+  // The display lambda renders state machine info on the OLED
+  const runtimeLambda = `|-
+          // === Top bar ===
+          it.printf(0, 0, id(font_top_bar), "\${friendly_name}");
+
+          // Battery icon
+          ${board.peripherals.battery ? `int bx = 48, by = 1;
+          it.rectangle(bx, by, 20, 10);
+          it.filled_rectangle(bx + 20, by + 3, 2, 4);
+          if (id(battery_percent).has_state() && !std::isnan(id(battery_percent).state)) {
+            int pct = (int)id(battery_percent).state;
+            int fw = (16 * pct) / 100;
+            if (pct > 0 && fw < 1) fw = 1;
+            if (fw > 0) it.filled_rectangle(bx + 2, by + 2, fw, 6);
+          }` : "// No battery on this board"}
+
+          // WiFi bars
+          int wx = 110;
+          int wifi_bars = 0;
+          if (id(wifi_dbm).has_state() && !std::isnan(id(wifi_dbm).state)) {
+            float dbm = id(wifi_dbm).state;
+            if (dbm > -85) wifi_bars = 1;
+            if (dbm > -75) wifi_bars = 2;
+            if (dbm > -65) wifi_bars = 3;
+            if (dbm > -50) wifi_bars = 4;
+          }
+          for (int i = 0; i < 4; i++) {
+            int bh = 3 + i * 2;
+            int bar_x = wx + i * 3;
+            int bar_y = 11 - bh;
+            if (i < wifi_bars) it.filled_rectangle(bar_x, bar_y, 2, bh);
+            else it.rectangle(bar_x, bar_y, 2, bh);
+          }
+
+          it.line(0, 12, 127, 12);
+
+          // === State machine ===
+          const char* states[] = {"IDLE", "PREPARING", "RUNNING", "STOPPING", "FAULT"};
+          int s = id(system_state);
+          it.printf(0, 15, id(font_top_bar), "%s", (s >= 0 && s <= 4) ? states[s] : "???");
+
+          if (s >= 1 && s <= 3) {
+            int ar = id(active_route);
+            if (ar >= 0 && ar < NUM_ROUTES) {
+              it.printf(64, 15, id(font_body), "%s", ROUTES[ar].name);
+            }
+          }
+
+          if (s == 4) {
+            const char* faults[] = {"", "No flow", "No rise", "Max time", "API lost", "Src empty"};
+            int f = id(fault_code);
+            if (f >= 1 && f <= 5) it.printf(0, 27, id(font_body), "FAULT: %s", faults[f]);
+          }
+
+          if (s == 2) {
+            uint32_t rt = (millis() - id(pump_start_time)) / 1000;
+            it.printf(0, 27, id(font_body), "Run: %um %us", rt / 60, rt % 60);
+          }
+
+          // Tank levels (first two)
+          if (id(tank1_level).has_state() && !std::isnan(id(tank1_level).state))
+            it.printf(0, 39, id(font_body), "T1: %.0f%%", id(tank1_level).state);
+          if (id(tank2_level).has_state() && !std::isnan(id(tank2_level).state))
+            it.printf(64, 39, id(font_body), "T2: %.0f%%", id(tank2_level).state);
+
+          if (id(uptime_sec).has_state() && !std::isnan(id(uptime_sec).state)) {
+            int total = (int)id(uptime_sec).state;
+            it.printf(0, 52, id(font_body), "Up: %dh %dm", total / 3600, (total % 3600) / 60);
+          }`;
+
+  return `# --- OLED Display ------------------------------------------------------------
+display:
+  - platform: ${oled.platform}
+    model: "${oled.model}"
+    reset_pin: ${resetPin}
+    address: 0x${oled.address.toString(16).toUpperCase()}
+    id: oled
+    update_interval: 1s
+    pages:
+      - id: page_splash
+        lambda: |-
+          it.image(34, 2, id(logo_splash));
+
+      - id: page_runtime
+        lambda: ${runtimeLambda}`;
+}

@@ -1,4 +1,6 @@
 import type { Manifest } from "./schema.js";
+import type { BoardDef } from "./board.js";
+import { reservedPins, exposedPins, pinsWithCapability } from "./board.js";
 
 export interface ValidateOptions {
   /** When true, GPIO budget overruns are warnings instead of errors. */
@@ -16,6 +18,8 @@ interface PinUsage {
   owner: string;
 }
 
+const MAX_VALVE_MASK_BITS = 16; // uint16_t
+
 function collectAllPins(m: Manifest): PinUsage[] {
   const pins: PinUsage[] = [];
   pins.push({ pin: m.pump.pin, owner: "pump relay" });
@@ -32,39 +36,22 @@ function collectAllPins(m: Manifest): PinUsage[] {
   return pins;
 }
 
-// Heltec V3 board-reserved GPIOs (cannot be used by pump hardware)
-const BOARD_RESERVED = new Set([
-  1,  // battery ADC
-  9, 10, 11,  // SPI (LoRa)
-  17, 18,  // I2C (OLED + expanders)
-  21,  // OLED reset
-  35,  // LED
-  36,  // Vext gate
-  37,  // battery ADC enable
-]);
-
-// ESP32-S3 ADC-capable pins (ADC1 + ADC2)
-const ADC_CAPABLE = new Set([
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // ADC1
-  11, 12, 13, 14, 15, 16, 17, 18, 19, 20,  // ADC2
-]);
-
-const MAX_NATIVE_GPIO = 17;
-const MAX_VALVE_MASK_BITS = 16; // uint16_t
-
-function gpioNum(pin: string): number {
-  return parseInt(pin.replace("GPIO", ""), 10);
-}
-
 export function validate(
   m: Manifest,
+  board: BoardDef,
   opts: ValidateOptions = {}
 ): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   const loose = opts.loose ?? false;
 
-  // --- Pin conflicts ---
+  // Derive all constraints from board definition
+  const reserved = reservedPins(board);
+  const exposed = exposedPins(board);
+  const adcPins = pinsWithCapability(board, "adc");
+  const pcntPins = pinsWithCapability(board, "pulse_counter");
+
+  // --- Pin conflicts (duplicate usage) ---
   const allPins = collectAllPins(m);
   const seen = new Map<string, string>();
   for (const { pin, owner } of allPins) {
@@ -76,10 +63,22 @@ export function validate(
     }
   }
 
-  // --- Board-reserved pin usage ---
+  // --- Reserved pin usage ---
   for (const { pin, owner } of allPins) {
-    if (BOARD_RESERVED.has(gpioNum(pin))) {
-      warnings.push(`${pin} used by ${owner} is board-reserved on Heltec V3`);
+    const reason = reserved.get(pin);
+    if (reason) {
+      errors.push(
+        `Pin ${pin} used by ${owner} is reserved for ${reason} on ${board.label}`
+      );
+    }
+  }
+
+  // --- Pin not exposed on board headers ---
+  for (const { pin, owner } of allPins) {
+    if (!exposed.has(pin) && !reserved.has(pin)) {
+      warnings.push(
+        `Pin ${pin} used by ${owner} is not on ${board.label} headers`
+      );
     }
   }
 
@@ -104,7 +103,7 @@ export function validate(
       errors.push(`Route "${route.name}": flow_sensor "${route.flow_sensor}" not found`);
     }
 
-    // --- Watchdog consistency ---
+    // Watchdog consistency
     if (route.watchdog === "flow" && !route.flow_sensor) {
       errors.push(`Route "${route.name}": flow watchdog requires flow_sensor`);
     }
@@ -112,7 +111,7 @@ export function validate(
       errors.push(`Route "${route.name}": level_rise watchdog requires destination tank`);
     }
 
-    // --- Self-loops ---
+    // Self-loops
     if (route.source === route.destination) {
       errors.push(`Route "${route.name}": source equals destination (self-loop)`);
     }
@@ -126,15 +125,13 @@ export function validate(
     );
   }
 
-  // --- Per-route valve count check ---
   const valveIndexMap = new Map(m.valves.map((v, i) => [v.id, i]));
   for (const route of m.routes) {
     for (const v of route.valves) {
       const idx = valveIndexMap.get(v);
       if (idx !== undefined && idx >= MAX_VALVE_MASK_BITS) {
         errors.push(
-          `Route "${route.name}": valve "${v}" at index ${idx} overflows uint16_t valve_mask. ` +
-          `Max ${MAX_VALVE_MASK_BITS} valves per controller.`
+          `Route "${route.name}": valve "${v}" at index ${idx} overflows uint16_t valve_mask.`
         );
       }
     }
@@ -172,19 +169,28 @@ export function validate(
     }
   }
 
-  // --- ADC pin validity ---
+  // --- Pin capability checks (board-driven) ---
   for (const tank of m.tanks) {
-    const num = gpioNum(tank.level_pin);
-    if (!ADC_CAPABLE.has(num)) {
-      errors.push(`Tank "${tank.id}": ${tank.level_pin} is not ADC-capable`);
+    if (!adcPins.has(tank.level_pin)) {
+      errors.push(
+        `Tank "${tank.id}": ${tank.level_pin} does not have ADC capability on ${board.label}`
+      );
+    }
+  }
+  for (const flow of m.flow_sensors) {
+    if (!pcntPins.has(flow.pin)) {
+      warnings.push(
+        `Flow "${flow.id}": ${flow.pin} does not have pulse_counter capability on ${board.label}. ` +
+        `Software counting may miss pulses at high flow rates.`
+      );
     }
   }
 
-  // --- GPIO budget (strict by default) ---
+  // --- GPIO budget ---
   const uniquePins = new Set(allPins.map((p) => p.pin));
-  if (uniquePins.size > MAX_NATIVE_GPIO) {
-    const msg =
-      `${uniquePins.size} GPIOs used — Heltec V3 has ~${MAX_NATIVE_GPIO} free.`;
+  const maxPins = exposed.size;
+  if (uniquePins.size > maxPins) {
+    const msg = `${uniquePins.size} GPIOs used — ${board.label} has ${maxPins} exposed pins.`;
     if (loose) {
       warnings.push(`${msg} Running in --loose mode, continuing anyway.`);
     } else {

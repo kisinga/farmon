@@ -5,7 +5,7 @@ const GpioPin = z.string().regex(/^GPIO\d{1,2}$/, "Must be GPIOnn format");
 const DeviceSchema = z.object({
   name: z.string().min(1),
   friendly_name: z.string().min(1),
-  board: z.enum(["heltec-v3"]),
+  board: z.string().min(1),  // references a board definition in boards/
   directory: z.string().optional(), // override output dir name (default: device name)
 });
 

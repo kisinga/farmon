@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "generate": "tsx src/main.ts generate",
-    "validate": "tsx src/main.ts validate",
-    "secrets": "tsx src/main.ts secrets",
-    "flash": "tsx src/main.ts flash",
+    "generate": "tsx cli/main.ts generate",
+    "validate": "tsx cli/main.ts validate",
+    "secrets": "tsx cli/main.ts secrets",
+    "flash": "tsx cli/main.ts flash",
     "test": "tsx test/codegen.test.ts",
     "test:limits": "tsx test/limits.test.ts"
   },

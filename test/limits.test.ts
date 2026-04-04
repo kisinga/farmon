@@ -5,9 +5,14 @@
  * Usage: npm run test:limits
  */
 
-import { ManifestSchema } from "../src/schema.js";
-import { validate } from "../src/validate.js";
-import { generateAll } from "../src/generate.js";
+import * as path from "node:path";
+import { ManifestSchema } from "../lib/schema.js";
+import { validate } from "../lib/validate.js";
+import { generateAll } from "../lib/generate.js";
+import { loadBoard, type BoardDef } from "../lib/board.js";
+
+const ROOT = path.resolve(import.meta.dirname, "..");
+const board: BoardDef = loadBoard(path.join(ROOT, "boards/heltec-v3"));
 
 // --- GPIO pin pool (free pins on Heltec V3) ---
 const FREE_PINS = [
@@ -133,14 +138,14 @@ function runTest(label: string, p: ScaleParams): TestResult {
   result.parseOk = true;
   result.routes = parsed.data.routes.length;
 
-  const v = validate(parsed.data, { loose: true });
+  const v = validate(parsed.data, board, { loose: true });
   result.validateOk = v.ok;
   result.warnings = v.warnings;
   result.errors = v.errors;
   if (!v.ok) return result;
 
   try {
-    const files = generateAll(parsed.data);
+    const files = generateAll(parsed.data, board);
     result.generateOk = true;
     const rh = files.find((f) => f.relativePath.endsWith("routes.h"));
     if (rh) result.routesHLines = rh.content.split("\n").length;
