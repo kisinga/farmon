@@ -1,7 +1,7 @@
 {
-  "name": "waterctl-app",
+  "name": "majiflow-app",
   "version": "1.0.0",
-  "description": "Water management system configurator",
+  "description": "MajiFlow — water orchestration configurator",
   "main": "dist-electron/main.js",
   "scripts": {
     "ng": "ng",

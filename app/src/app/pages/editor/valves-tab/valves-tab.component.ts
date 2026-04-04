@@ -1,7 +1,7 @@
 import { Component, inject, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
-import { getValves, type ValveComponent } from '../../../core/models/topology.model';
+import { getValves } from '../../../core/models/topology.model';
 
 @Component({
   selector: 'app-valves-tab',
@@ -73,12 +73,12 @@ export class ValvesTabComponent {
     return pipe ? `${pipe.from} \u2192 ${pipe.to}` : '';
   }
 
-  updateField(valveId: string, field: keyof ValveComponent, value: string) {
+  updateField(valveId: string, field: 'name' | 'open_pin' | 'close_pin', value: string) {
     this.editor.updateTopology((t) => {
       for (const pipe of t.pipes) {
         const comp = pipe.components.find((c) => c.kind === 'valve' && c.id === valveId);
         if (comp && comp.kind === 'valve') {
-          (comp as Record<string, unknown>)[field] = value;
+          comp[field] = value;
           return;
         }
       }

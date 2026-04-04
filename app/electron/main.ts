@@ -12,7 +12,7 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
-    title: "waterctl",
+    title: "MajiFlow",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

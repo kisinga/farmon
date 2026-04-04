@@ -1,7 +1,7 @@
 import { Component, inject, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
-import { getFlowSensors, type FlowComponent } from '../../../core/models/topology.model';
+import { getFlowSensors } from '../../../core/models/topology.model';
 
 @Component({
   selector: 'app-flows-tab',
@@ -93,12 +93,12 @@ export class FlowsTabComponent {
     return pipe ? `${pipe.from} \u2192 ${pipe.to}` : '';
   }
 
-  updateField(flowId: string, field: keyof FlowComponent, value: string) {
+  updateField(flowId: string, field: 'name' | 'pin', value: string) {
     this.editor.updateTopology((t) => {
       for (const pipe of t.pipes) {
         const comp = pipe.components.find((c) => c.kind === 'flow_sensor' && c.id === flowId);
         if (comp && comp.kind === 'flow_sensor') {
-          (comp as Record<string, unknown>)[field] = value;
+          comp[field] = value;
           return;
         }
       }

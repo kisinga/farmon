@@ -103,7 +103,7 @@ export function generateSensors(m: Manifest): string {
 
   return `\
 # =============================================================================
-# Pump Controller — Sensor & Measurement Layer
+# MajiFlow — Sensor & Measurement Layer
 # =============================================================================
 # AUTO-GENERATED from system manifest. Do not edit by hand.
 #

@@ -181,14 +181,14 @@ import { ElectronService } from '../../core/services/electron.service';
         <dialog class="modal modal-open">
           <div class="modal-box max-w-md">
             <h3 class="text-lg font-bold">New System</h3>
-            <p class="text-sm text-base-content/60 mt-1 mb-5">Configure a new water pump control system.</p>
+            <p class="text-sm text-base-content/60 mt-1 mb-5">Configure a new water orchestration system.</p>
             <div class="space-y-4">
               <label class="form-control">
                 <div class="label pb-1"><span class="label-text text-xs font-medium">System Name</span></div>
                 <input
                   type="text"
                   class="input input-bordered input-sm"
-                  placeholder="e.g. My Pump Controller"
+                  placeholder="e.g. My Farm System"
                   [ngModel]="dialogName()"
                   (ngModelChange)="dialogName.set($event)"
                   (keydown.enter)="confirmCreate()"

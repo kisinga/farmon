@@ -1,4 +1,4 @@
-// Public API for the waterctl codegen library.
+// Public API for the MajiFlow codegen library.
 // Consumed by: cli/main.ts, app/ (Electron renderer), and tests.
 
 export {

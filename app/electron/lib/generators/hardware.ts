@@ -56,7 +56,7 @@ switch:
 
   return `\
 # =============================================================================
-# Pump Controller — Hardware Layer
+# MajiFlow — Hardware Layer
 # =============================================================================
 # AUTO-GENERATED from system manifest. Do not edit by hand.
 # Regenerate: npx tsx tools/codegen/src/main.ts generate system.yaml

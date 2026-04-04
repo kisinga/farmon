@@ -42,7 +42,7 @@ export function generateRoutes(m: Manifest): string {
 
   return `\
 // =============================================================================
-// Pump Controller — Route Table & Hardware Dispatch
+// MajiFlow — Route Table & Hardware Dispatch
 // =============================================================================
 // AUTO-GENERATED from system manifest. Do not edit by hand.
 //

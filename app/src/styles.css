@@ -1,10 +1,11 @@
 @import "tailwindcss";
+@import "jointjs/dist/joint.core.css";
 @plugin "daisyui";
 
 @theme {
-  --color-primary: #2e7d32;
-  --color-secondary: #00897b;
-  --color-accent: #0284c7;
+  --color-primary: #0C4A6E;
+  --color-secondary: #0284C7;
+  --color-accent: #0EA5E9;
   --color-neutral: #1f2937;
   --color-base-100: #ffffff;
   --color-info: #0284c7;

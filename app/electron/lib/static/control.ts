@@ -1,5 +1,5 @@
 export const CONTROL_YAML = `# =============================================================================
-# Pump Controller — Control Layer
+# MajiFlow — Control Layer
 # =============================================================================
 # The brain: state machine, API services, sequencing scripts, safety watchdog.
 #

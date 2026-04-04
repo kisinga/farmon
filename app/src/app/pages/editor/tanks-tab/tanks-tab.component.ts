@@ -1,7 +1,7 @@
 import { Component, inject, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
-import { getTanks, type TankNode } from '../../../core/models/topology.model';
+import { getTanks } from '../../../core/models/topology.model';
 
 @Component({
   selector: 'app-tanks-tab',
@@ -119,11 +119,11 @@ export class TanksTabComponent {
     });
   }
 
-  updateField(tankId: string, field: keyof TankNode, value: string) {
+  updateField(tankId: string, field: 'name' | 'id' | 'level_pin', value: string) {
     this.editor.updateTopology((t) => {
       const tank = t.nodes.find((n) => n.kind === 'tank' && n.id === tankId);
       if (tank && tank.kind === 'tank') {
-        (tank as Record<string, unknown>)[field] = value;
+        tank[field] = value;
       }
     });
   }
