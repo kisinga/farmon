@@ -9,6 +9,7 @@ import { generateDashboard } from "./generators/dashboard.js";
 
 export interface GeneratedFile {
   relativePath: string;
+  description: string;
   content: string;
 }
 
@@ -18,22 +19,27 @@ export function generateAll(m: Manifest): GeneratedFile[] {
   return [
     {
       relativePath: `${deviceDir}/packages/routes.h`,
+      description: "C++ route table + dispatch functions",
       content: generateRoutes(m),
     },
     {
       relativePath: `${deviceDir}/packages/hardware.yaml`,
+      description: "Pump relay, valve switches + covers",
       content: generateHardware(m),
     },
     {
       relativePath: `${deviceDir}/packages/sensors.yaml`,
+      description: "Flow sensors, tank levels, calibration, state text",
       content: generateSensors(m),
     },
     {
       relativePath: `_substitutions.yaml`,
+      description: "Pin mappings + timing (copy into device YAML)",
       content: generateSubstitutions(m),
     },
     {
       relativePath: `config/homeassistant/dashboards/pump.yaml`,
+      description: "HA dashboard with gauges, controls, settings",
       content: generateDashboard(m),
     },
   ];
@@ -44,22 +50,15 @@ export function writeFiles(
   outDir: string,
   dryRun: boolean
 ): void {
+  const maxPathLen = Math.max(...files.map((f) => f.relativePath.length));
+
   for (const file of files) {
     const fullPath = path.join(outDir, file.relativePath);
+    const lines = file.content.split("\n").length;
+    const padded = file.relativePath.padEnd(maxPathLen + 2);
 
     if (dryRun) {
-      console.log(`\n  [dry-run] Would write: ${fullPath}`);
-      console.log("  " + "─".repeat(60));
-      const preview = file.content.split("\n").slice(0, 10).join("\n");
-      console.log(
-        preview
-          .split("\n")
-          .map((l) => "  " + l)
-          .join("\n")
-      );
-      if (file.content.split("\n").length > 10) {
-        console.log(`  ... (${file.content.split("\n").length} lines total)`);
-      }
+      console.log(`  [dry-run] ${padded} ${file.description} (${lines} lines)`);
       continue;
     }
 
@@ -69,6 +68,6 @@ export function writeFiles(
     }
 
     fs.writeFileSync(fullPath, file.content, "utf-8");
-    console.log(`  Wrote ${fullPath}`);
+    console.log(`  ${padded} ${file.description} (${lines} lines)`);
   }
 }

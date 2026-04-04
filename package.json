@@ -1,5 +1,5 @@
 {
-  "name": "@farm/codegen",
+  "name": "waterctl",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,9 @@
     "generate": "tsx src/main.ts generate",
     "validate": "tsx src/main.ts validate",
     "secrets": "tsx src/main.ts secrets",
-    "flash": "tsx src/main.ts flash"
+    "flash": "tsx src/main.ts flash",
+    "test": "tsx test/codegen.test.ts",
+    "test:limits": "tsx test/limits.test.ts"
   },
   "dependencies": {
     "yaml": "^2.7.0",

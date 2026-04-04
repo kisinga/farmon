@@ -24,6 +24,7 @@ Options:
   --out-dir <path>     Output directory (default: repo root)
   --device <ip>        Flash via OTA to this IP (default: USB serial)
   --dry-run            Show what would be generated without writing
+  --loose              Allow GPIO budget overruns (e.g. when using I2C expanders)
 `;
 
 function die(msg: string): never {
@@ -40,6 +41,8 @@ function parseArgs() {
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--dry-run") {
       flags.dryRun = true;
+    } else if (args[i] === "--loose") {
+      flags.loose = true;
     } else if (args[i] === "--out-dir" && args[i + 1]) {
       flags.outDir = args[++i];
     } else if (args[i] === "--device" && args[i + 1]) {
@@ -101,9 +104,9 @@ function printValidation(
 // Commands
 // ---------------------------------------------------------------------------
 
-async function cmdValidate(manifestPath: string) {
+async function cmdValidate(manifestPath: string, loose: boolean) {
   const manifest = loadManifest(manifestPath);
-  const result = validate(manifest);
+  const result = validate(manifest, { loose });
   printValidation(result, "Validation passed");
   process.exit(result.ok ? 0 : 1);
 }
@@ -111,10 +114,11 @@ async function cmdValidate(manifestPath: string) {
 async function cmdGenerate(
   manifestPath: string,
   outDir: string,
-  dryRun: boolean
+  dryRun: boolean,
+  loose: boolean,
 ) {
   const manifest = loadManifest(manifestPath);
-  const result = validate(manifest);
+  const result = validate(manifest, { loose });
   printValidation(result, "Validation passed");
 
   if (!result.ok) {
@@ -125,18 +129,15 @@ async function cmdGenerate(
   const files = generateAll(manifest);
   writeFiles(files, outDir, dryRun);
 
-  if (!dryRun) {
-    console.log("\n  Substitutions written to _substitutions.yaml");
-    console.log(
-      "  Copy the substitutions block into your pump-controller.yaml"
-    );
-    console.log(
-      `\n  Generated ${files.length} files. Run:`
-    );
-    const dir = manifest.device.directory ?? manifest.device.name;
-    console.log(
-      `    esphome compile esphome/${dir}/${dir}.yaml`
-    );
+  const dir = manifest.device.directory ?? manifest.device.name;
+  if (dryRun) {
+    console.log(`\n  ${files.length} files would be generated.`);
+  } else {
+    console.log(`\n  Generated ${files.length} files to ${outDir}/`);
+    console.log(`\n  Next steps:`);
+    console.log(`    1. Copy _substitutions.yaml into esphome/${dir}/${dir}.yaml`);
+    console.log(`    2. esphome compile esphome/${dir}/${dir}.yaml`);
+    console.log(`    3. esphome run esphome/${dir}/${dir}.yaml`);
   }
 }
 
@@ -147,10 +148,11 @@ async function cmdSecrets(deviceDir: string) {
 async function cmdFlash(
   manifestPath: string,
   outDir: string,
-  device?: string
+  loose: boolean,
+  device?: string,
 ) {
   const manifest = loadManifest(manifestPath);
-  const result = validate(manifest);
+  const result = validate(manifest, { loose });
   printValidation(result, "Validation passed");
 
   if (!result.ok) {
@@ -200,16 +202,16 @@ async function cmdFlash(
 async function main() {
   const { command, positional, flags } = parseArgs();
 
-  // Resolve output dir — default to repo root (3 levels up from tools/codegen/src/)
+  // Resolve output dir — default to repo root (1 level up from src/)
   const outDir =
     (flags.outDir as string) ||
-    path.resolve(import.meta.dirname, "..", "..", "..");
+    path.resolve(import.meta.dirname, "..");
 
   switch (command) {
     case "validate": {
       const manifestPath = positional[0];
       if (!manifestPath) die("Usage: validate <manifest.yaml>");
-      await cmdValidate(path.resolve(manifestPath));
+      await cmdValidate(path.resolve(manifestPath), !!flags.loose);
       break;
     }
     case "generate": {
@@ -218,7 +220,8 @@ async function main() {
       await cmdGenerate(
         path.resolve(manifestPath),
         outDir,
-        !!flags.dryRun
+        !!flags.dryRun,
+        !!flags.loose,
       );
       break;
     }
@@ -234,7 +237,8 @@ async function main() {
       await cmdFlash(
         path.resolve(manifestPath),
         outDir,
-        flags.device as string | undefined
+        !!flags.loose,
+        flags.device as string | undefined,
       );
       break;
     }

@@ -1,17 +1,16 @@
-.gitnexus
+# Dependencies
+node_modules/
+dist/
 
-# Firmware build artifacts (generated per-device by backend)
-backend/builds/
-
-# ESPHome secrets (per-device, gitignored for safety)
+# ESPHome
+.esphome/
 esphome/**/secrets.yaml
 
-# ESPHome build output
-.esphome/
-
-# Codegen tool
-tools/codegen/node_modules/
-tools/codegen/dist/
-
-# Codegen temp output
+# Codegen artifacts
 _substitutions.yaml
+
+# IDE / tools
+.gitnexus
+
+# OS
+.DS_Store

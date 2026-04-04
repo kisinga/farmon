@@ -1,5 +1,10 @@
 import type { Manifest } from "./schema.js";
 
+export interface ValidateOptions {
+  /** When true, GPIO budget overruns are warnings instead of errors. */
+  loose?: boolean;
+}
+
 export interface ValidationResult {
   errors: string[];
   warnings: string[];
@@ -44,13 +49,20 @@ const ADC_CAPABLE = new Set([
   11, 12, 13, 14, 15, 16, 17, 18, 19, 20,  // ADC2
 ]);
 
+const MAX_NATIVE_GPIO = 17;
+const MAX_VALVE_MASK_BITS = 16; // uint16_t
+
 function gpioNum(pin: string): number {
   return parseInt(pin.replace("GPIO", ""), 10);
 }
 
-export function validate(m: Manifest): ValidationResult {
+export function validate(
+  m: Manifest,
+  opts: ValidateOptions = {}
+): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const loose = opts.loose ?? false;
 
   // --- Pin conflicts ---
   const allPins = collectAllPins(m);
@@ -106,6 +118,28 @@ export function validate(m: Manifest): ValidationResult {
     }
   }
 
+  // --- Valve mask overflow ---
+  if (m.valves.length > MAX_VALVE_MASK_BITS) {
+    errors.push(
+      `${m.valves.length} valves exceeds valve_mask capacity (uint16_t max ${MAX_VALVE_MASK_BITS}). ` +
+      `Split across multiple controllers.`
+    );
+  }
+
+  // --- Per-route valve count check ---
+  const valveIndexMap = new Map(m.valves.map((v, i) => [v.id, i]));
+  for (const route of m.routes) {
+    for (const v of route.valves) {
+      const idx = valveIndexMap.get(v);
+      if (idx !== undefined && idx >= MAX_VALVE_MASK_BITS) {
+        errors.push(
+          `Route "${route.name}": valve "${v}" at index ${idx} overflows uint16_t valve_mask. ` +
+          `Max ${MAX_VALVE_MASK_BITS} valves per controller.`
+        );
+      }
+    }
+  }
+
   // --- Unique IDs ---
   const allIds = [
     ...m.tanks.map((t) => t.id),
@@ -146,12 +180,18 @@ export function validate(m: Manifest): ValidationResult {
     }
   }
 
-  // --- GPIO budget ---
+  // --- GPIO budget (strict by default) ---
   const uniquePins = new Set(allPins.map((p) => p.pin));
-  if (uniquePins.size > 17) {
-    warnings.push(
-      `${uniquePins.size} GPIOs used — Heltec V3 has ~17 free. Consider I2C expander.`
-    );
+  if (uniquePins.size > MAX_NATIVE_GPIO) {
+    const msg =
+      `${uniquePins.size} GPIOs used — Heltec V3 has ~${MAX_NATIVE_GPIO} free.`;
+    if (loose) {
+      warnings.push(`${msg} Running in --loose mode, continuing anyway.`);
+    } else {
+      errors.push(
+        `${msg} If using I2C expanders, re-run with --loose to bypass this check.`
+      );
+    }
   }
 
   // --- Route name uniqueness ---
