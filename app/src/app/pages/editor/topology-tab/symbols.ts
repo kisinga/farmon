@@ -50,34 +50,8 @@ export function createNodeElement(
 ): joint.dia.Element {
   const { width: w, height: h } = desc.size;
 
-  // Pump is circular
-  if (desc.kind === 'pump') {
-    const r = Math.min(w, h) / 2;
-    return new joint.shapes.standard.Circle({
-      id: `node-${id}`,
-      position: { x, y },
-      size: { width: w, height: h },
-      ports: { groups: portGroups, items: ports },
-      attrs: {
-        body: {
-          fill: UI_COLORS.bg,
-          stroke: desc.color,
-          strokeWidth: 2.5,
-        },
-        label: {
-          text: 'P',
-          fontSize: 18,
-          fontWeight: 'bold',
-          fontFamily: 'ui-monospace, monospace',
-          fill: desc.color,
-        },
-      },
-      data: { nodeId: id, kind: desc.kind },
-    });
-  }
-
-  // Endpoint has dashed border
-  const strokeDasharray = desc.kind === 'endpoint' ? '6,3' : undefined;
+  const isPump = desc.kind === 'pump';
+  const isEndpoint = desc.kind === 'endpoint';
 
   return new joint.shapes.standard.Rectangle({
     id: `node-${id}`,
@@ -86,19 +60,19 @@ export function createNodeElement(
     ports: { groups: portGroups, items: ports },
     attrs: {
       body: {
-        fill: UI_COLORS.bg,
+        fill: isPump ? desc.color + '15' : UI_COLORS.bg,
         stroke: desc.color,
         strokeWidth: 2.5,
-        rx: desc.kind === 'endpoint' ? 6 : 3,
-        ry: desc.kind === 'endpoint' ? 6 : 3,
-        ...(strokeDasharray ? { strokeDasharray } : {}),
+        rx: isPump ? w / 2 : isEndpoint ? 6 : 3,
+        ry: isPump ? h / 2 : isEndpoint ? 6 : 3,
+        ...(isEndpoint ? { strokeDasharray: '6,3' } : {}),
       },
       label: {
-        text: name,
-        fontSize: 12,
-        fontWeight: '600',
+        text: isPump ? 'P' : name,
+        fontSize: isPump ? 18 : 12,
+        fontWeight: isPump ? 'bold' : '600',
         fontFamily: 'ui-monospace, monospace',
-        fill: UI_COLORS.text,
+        fill: isPump ? desc.color : UI_COLORS.text,
       },
     },
     data: { nodeId: id, kind: desc.kind },

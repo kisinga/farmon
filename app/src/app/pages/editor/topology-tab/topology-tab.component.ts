@@ -1,4 +1,4 @@
-import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, computed, signal, effect } from '@angular/core';
+import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, computed, signal, effect, Injector } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer } from '@angular/platform-browser';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
@@ -254,6 +254,7 @@ import { deriveRoutes } from './derive-routes';
 export class TopologyTabComponent {
   protected editor = inject(SystemEditorService);
   private sanitizer = inject(DomSanitizer);
+  private injector = inject(Injector);
   private destroyRef = inject(DestroyRef);
   private canvasRef = viewChild.required<ElementRef<HTMLDivElement>>('canvas');
 
@@ -309,21 +310,30 @@ export class TopologyTabComponent {
     return Object.entries(t.route_overrides).map(([key, override]) => ({ key, override }));
   });
 
-  // Signal that flips to true once the canvas is ready
-  private canvasReady = signal(false);
-
   constructor() {
     afterNextRender(() => {
       this.initCanvas();
-      this.canvasReady.set(true);
+      this.doInitialRender();
     });
+  }
 
-    // Re-render canvas whenever topology changes OR canvas becomes ready
-    effect(() => {
-      const ready = this.canvasReady();
+  /** Render once data is available. If topology loaded before canvas, it's ready now.
+   *  If not, watch for it. */
+  private doInitialRender() {
+    const t = this.editor.topology();
+    if (t) {
+      this.c.render(t);
+      return;
+    }
+    // Topology not yet loaded — watch the signal until it arrives
+    const stop = effect(() => {
       const t = this.editor.topology();
-      if (ready && this.canvas && t) this.c.render(t);
-    });
+      if (t) {
+        this.c.render(t);
+        queueMicrotask(() => stop.destroy());
+      }
+    }, { injector: this.injector });
+    this.destroyRef.onDestroy(() => stop.destroy());
   }
 
   // --- Template helpers ---
