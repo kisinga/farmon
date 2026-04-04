@@ -10,20 +10,20 @@ import { ElectronService } from '../../core/services/electron.service';
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div class="h-full flex flex-col">
+    <div class="min-h-full flex flex-col">
       <!-- Page header -->
-      <div class="px-8 pt-6 pb-4 bg-base-100 border-b border-base-300/30">
+      <div class="px-8 pt-6 pb-4 bg-base-100 border-b border-base-300/50 sticky top-0 z-10">
         <div class="flex items-center justify-between">
           <div>
-            <h1 class="text-2xl font-bold tracking-tight">System Library</h1>
-            <p class="text-sm text-base-content/40 mt-0.5">
+            <h1 class="text-xl font-bold tracking-tight">System Library</h1>
+            <p class="text-sm text-base-content/60 mt-0.5">
               {{ library.entries().length }} configuration{{ library.entries().length !== 1 ? 's' : '' }}
             </p>
           </div>
           <div class="flex items-center gap-2">
             <!-- Import dropdown -->
             <div class="dropdown dropdown-end">
-              <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1.5 text-base-content/60">
+              <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1.5 text-base-content/70">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
@@ -46,7 +46,7 @@ import { ElectronService } from '../../core/services/electron.service';
         <!-- Search bar -->
         @if (library.entries().length > 0) {
           <div class="mt-4">
-            <label class="input input-bordered input-sm flex items-center gap-2 max-w-sm bg-base-200/50 border-base-300/40 focus-within:border-primary/50">
+            <label class="input input-bordered input-sm flex items-center gap-2 max-w-sm bg-base-200/50 border-base-300/60 focus-within:border-primary/50">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -98,8 +98,8 @@ import { ElectronService } from '../../core/services/electron.service';
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
             </div>
-            <h2 class="text-lg font-semibold text-base-content/50 mb-1">No configurations yet</h2>
-            <p class="text-sm text-base-content/30 mb-6 max-w-xs text-center">
+            <h2 class="text-lg font-semibold text-base-content/60 mb-1">No configurations yet</h2>
+            <p class="text-sm text-base-content/50 mb-6 max-w-xs text-center">
               Create your first water system or import an existing configuration file.
             </p>
             <div class="flex gap-3">
@@ -108,7 +108,7 @@ import { ElectronService } from '../../core/services/electron.service';
             </div>
           </div>
         } @else if (filteredEntries().length === 0) {
-          <div class="text-center py-20 text-base-content/30 text-sm">
+          <div class="text-center py-20 text-base-content/50 text-sm">
             No configs matching "{{ searchQuery() }}"
           </div>
         } @else {
@@ -129,7 +129,7 @@ import { ElectronService } from '../../core/services/electron.service';
                   <!-- Name & ID -->
                   <div class="flex-1 min-w-0">
                     <h3 class="font-semibold text-sm truncate group-hover:text-primary transition-colors">{{ entry.friendlyName }}</h3>
-                    <p class="text-xs text-base-content/35 font-mono mt-0.5">{{ entry.deviceName }}</p>
+                    <p class="text-xs text-base-content/50 font-mono mt-0.5">{{ entry.deviceName }}</p>
                   </div>
 
                   <!-- Board badge -->
@@ -139,15 +139,15 @@ import { ElectronService } from '../../core/services/electron.service';
                   <div class="flex gap-5 text-center">
                     <div>
                       <div class="text-sm font-bold tabular-nums">{{ entry.tanks }}</div>
-                      <div class="text-[10px] text-base-content/30 uppercase tracking-wider">Tanks</div>
+                      <div class="text-[10px] text-base-content/50 uppercase tracking-wider">Tanks</div>
                     </div>
                     <div>
                       <div class="text-sm font-bold tabular-nums">{{ entry.valves }}</div>
-                      <div class="text-[10px] text-base-content/30 uppercase tracking-wider">Valves</div>
+                      <div class="text-[10px] text-base-content/50 uppercase tracking-wider">Valves</div>
                     </div>
                     <div>
                       <div class="text-sm font-bold tabular-nums">{{ entry.routes }}</div>
-                      <div class="text-[10px] text-base-content/30 uppercase tracking-wider">Routes</div>
+                      <div class="text-[10px] text-base-content/50 uppercase tracking-wider">Routes</div>
                     </div>
                   </div>
 
@@ -181,7 +181,7 @@ import { ElectronService } from '../../core/services/electron.service';
         <dialog class="modal modal-open">
           <div class="modal-box max-w-md">
             <h3 class="text-lg font-bold">New System</h3>
-            <p class="text-sm text-base-content/40 mt-1 mb-5">Configure a new water pump control system.</p>
+            <p class="text-sm text-base-content/60 mt-1 mb-5">Configure a new water pump control system.</p>
             <div class="space-y-4">
               <label class="form-control">
                 <div class="label pb-1"><span class="label-text text-xs font-medium">System Name</span></div>
@@ -196,7 +196,7 @@ import { ElectronService } from '../../core/services/electron.service';
                 />
                 @if (dialogName()) {
                   <div class="label pb-0">
-                    <span class="label-text-alt text-base-content/30 font-mono text-[11px]">
+                    <span class="label-text-alt text-base-content/50 font-mono text-[11px]">
                       {{ toSlug(dialogName()) }}
                     </span>
                   </div>
@@ -215,7 +215,7 @@ import { ElectronService } from '../../core/services/electron.service';
                   }
                 </select>
                 <div class="label pb-0">
-                  <span class="label-text-alt text-base-content/30 text-[11px]">
+                  <span class="label-text-alt text-base-content/50 text-[11px]">
                     Determines available pins and peripherals.
                   </span>
                 </div>
@@ -239,7 +239,7 @@ import { ElectronService } from '../../core/services/electron.service';
         <dialog class="modal modal-open">
           <div class="modal-box max-w-sm">
             <h3 class="text-lg font-bold">Duplicate System</h3>
-            <p class="text-sm text-base-content/40 mt-1 mb-5">Create a copy of "{{ duplicateSource() }}".</p>
+            <p class="text-sm text-base-content/60 mt-1 mb-5">Create a copy of "{{ duplicateSource() }}".</p>
             <label class="form-control">
               <div class="label pb-1"><span class="label-text text-xs font-medium">New Name</span></div>
               <input

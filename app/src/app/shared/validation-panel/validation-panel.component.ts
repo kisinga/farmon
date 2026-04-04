@@ -7,7 +7,7 @@ import type { ValidationResult } from '../../core/models/electron-api';
   template: `
     <div class="space-y-1 text-sm">
       @if (!result()) {
-        <div class="text-base-content/30 italic">No validation run yet</div>
+        <div class="text-base-content/50 italic">No validation run yet</div>
       } @else {
         <!-- GPIO budget -->
         @if (gpioUsage()) {

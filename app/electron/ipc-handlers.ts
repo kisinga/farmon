@@ -1,8 +1,9 @@
 import { ipcMain, BrowserWindow, dialog } from "electron";
-import { ManifestSchema } from "./lib/schema.js";
 import { BoardDefSchema } from "./lib/board.js";
+import { TopologySchema } from "./lib/topology.js";
 import { validate } from "./lib/validate.js";
 import { generateAll } from "./lib/generate.js";
+import { topologyToManifest } from "./lib/topology-to-manifest.js";
 import * as store from "./store.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
@@ -18,6 +19,12 @@ function winFromEvent(event: Electron.IpcMainInvokeEvent): BrowserWindow {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) throw new Error("No window");
   return win;
+}
+
+/** Parse topology and derive the flat manifest for codegen/validation. */
+function resolveManifest(dataRaw: unknown): import("./lib/schema.js").Manifest {
+  const topology = TopologySchema.parse(dataRaw);
+  return topologyToManifest(topology);
 }
 
 // ---------------------------------------------------------------------------
@@ -72,20 +79,22 @@ export function registerIpcHandlers() {
 
   // --- Codegen ---
 
+  // --- Codegen (accepts topology or manifest) ---
+
   ipcMain.handle(
     "codegen:validate",
-    async (_e, manifestRaw: unknown, boardRaw: unknown) => {
-      const manifest = ManifestSchema.parse(manifestRaw);
+    async (_e, dataRaw: unknown, boardRaw: unknown) => {
       const board = BoardDefSchema.parse(boardRaw);
+      const manifest = resolveManifest(dataRaw);
       return validate(manifest, board);
     }
   );
 
   ipcMain.handle(
     "codegen:generate",
-    async (_e, manifestRaw: unknown, boardRaw: unknown) => {
-      const manifest = ManifestSchema.parse(manifestRaw);
+    async (_e, dataRaw: unknown, boardRaw: unknown) => {
       const board = BoardDefSchema.parse(boardRaw);
+      const manifest = resolveManifest(dataRaw);
       const files = generateAll(manifest, board);
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);

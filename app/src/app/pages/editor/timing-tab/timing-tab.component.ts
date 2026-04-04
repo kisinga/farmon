@@ -24,7 +24,7 @@ const FIELDS: TimingField[] = [
   standalone: true,
   imports: [FormsModule],
   template: `
-    @if (editor.manifest(); as m) {
+    @if (editor.topology(); as t) {
       <div class="max-w-2xl space-y-6">
         <div>
           <h2 class="text-lg font-semibold">Timing & Safety Constants</h2>
@@ -42,17 +42,17 @@ const FIELDS: TimingField[] = [
                   <div class="flex items-center gap-4 py-3">
                     <div class="flex-1 min-w-0">
                       <div class="font-medium text-sm">{{ field.label }}</div>
-                      <div class="text-xs text-base-content/40 mt-0.5">{{ field.description }}</div>
+                      <div class="text-xs text-base-content/60 mt-0.5">{{ field.description }}</div>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                       <input
                         type="text"
                         class="input input-bordered input-sm w-24 text-right font-mono"
-                        [ngModel]="getTimingValue(m, field)"
+                        [ngModel]="getTimingValue(t, field)"
                         (ngModelChange)="update(field.key, $event)"
                         [placeholder]="'' + field.default"
                       />
-                      <span class="text-xs text-base-content/40 w-16">{{ field.unit }}</span>
+                      <span class="text-xs text-base-content/60 w-16">{{ field.unit }}</span>
                     </div>
                   </div>
                 }
@@ -69,8 +69,8 @@ export class TimingTabComponent {
 
   protected groups = [...new Set(FIELDS.map((f) => f.group))];
 
-  protected getTimingValue(m: { timing: Record<string, string | number> }, field: TimingField): string | number {
-    return field.key in m.timing ? m.timing[field.key] : field.default;
+  protected getTimingValue(t: { timing: Record<string, string | number> }, field: TimingField): string | number {
+    return field.key in t.timing ? t.timing[field.key] : field.default;
   }
 
   protected fieldsByGroup(group: string): TimingField[] {
@@ -78,9 +78,9 @@ export class TimingTabComponent {
   }
 
   update(key: string, value: string) {
-    this.editor.updateManifest((m) => {
+    this.editor.updateTopology((t) => {
       const num = Number(value);
-      m.timing[key] = isNaN(num) ? value : num;
+      t.timing[key] = isNaN(num) ? value : num;
     });
   }
 }

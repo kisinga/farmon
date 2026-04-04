@@ -1,21 +1,22 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
+import { getValves, type ValveComponent } from '../../../core/models/topology.model';
 
 @Component({
   selector: 'app-valves-tab',
   standalone: true,
   imports: [FormsModule],
   template: `
-    @if (editor.manifest(); as m) {
+    @if (editor.topology()) {
       <div class="space-y-4">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold">Valves ({{ m.valves.length }})</h2>
-          <button class="btn btn-primary btn-sm" (click)="add()">+ Add Valve</button>
+          <h2 class="text-lg font-semibold">Valves ({{ valves().length }})</h2>
+          <div class="text-xs text-base-content/50">Valves live on pipes. Add them via the topology view.</div>
         </div>
 
-        @if (m.valves.length === 0) {
-          <div class="text-base-content/40 text-center py-8">No valves defined.</div>
+        @if (valves().length === 0) {
+          <div class="text-base-content/60 text-center py-8">No valves defined.</div>
         } @else {
           <table class="table table-sm bg-base-100 rounded-xl">
             <thead>
@@ -24,30 +25,29 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
                 <th>ID</th>
                 <th>Open Pin</th>
                 <th>Close Pin</th>
-                <th></th>
+                <th>On Pipe</th>
               </tr>
             </thead>
             <tbody>
-              @for (valve of m.valves; track valve.id; let i = $index) {
+              @for (valve of valves(); track valve.id) {
                 <tr>
                   <td>
                     <input class="input input-bordered input-xs w-36" [ngModel]="valve.name"
-                      (ngModelChange)="updateField(i, 'name', $event)" />
+                      (ngModelChange)="updateField(valve.id, 'name', $event)" />
                   </td>
                   <td>
-                    <input class="input input-bordered input-xs w-24 font-mono" [ngModel]="valve.id"
-                      (ngModelChange)="updateField(i, 'id', $event)" />
+                    <span class="font-mono text-xs">{{ valve.id }}</span>
                   </td>
                   <td>
                     <input class="input input-bordered input-xs w-24 font-mono" [ngModel]="valve.open_pin"
-                      (ngModelChange)="updateField(i, 'open_pin', $event)" placeholder="GPIO4" />
+                      (ngModelChange)="updateField(valve.id, 'open_pin', $event)" placeholder="GPIO4" />
                   </td>
                   <td>
                     <input class="input input-bordered input-xs w-24 font-mono" [ngModel]="valve.close_pin"
-                      (ngModelChange)="updateField(i, 'close_pin', $event)" placeholder="GPIO5" />
+                      (ngModelChange)="updateField(valve.id, 'close_pin', $event)" placeholder="GPIO5" />
                   </td>
                   <td>
-                    <button class="btn btn-ghost btn-xs text-error" (click)="remove(i)">Delete</button>
+                    <span class="text-xs text-base-content/50">{{ valvePipeLabel(valve.id) }}</span>
                   </td>
                 </tr>
               }
@@ -61,20 +61,27 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 export class ValvesTabComponent {
   protected editor = inject(SystemEditorService);
 
-  add() {
-    this.editor.updateManifest((m) => {
-      const n = m.valves.length + 1;
-      m.valves.push({ name: `Valve ${n}`, id: `valve${n}`, open_pin: '', close_pin: '' });
-    });
+  protected valves = computed(() => {
+    const t = this.editor.topology();
+    return t ? getValves(t) : [];
+  });
+
+  protected valvePipeLabel(valveId: string): string {
+    const t = this.editor.topology();
+    if (!t) return '';
+    const pipe = t.pipes.find((p) => p.components.some((c) => c.id === valveId));
+    return pipe ? `${pipe.from} \u2192 ${pipe.to}` : '';
   }
 
-  remove(index: number) {
-    this.editor.updateManifest((m) => { m.valves.splice(index, 1); });
-  }
-
-  updateField(index: number, field: string, value: string) {
-    this.editor.updateManifest((m) => {
-      (m.valves[index] as Record<string, string>)[field] = value;
+  updateField(valveId: string, field: keyof ValveComponent, value: string) {
+    this.editor.updateTopology((t) => {
+      for (const pipe of t.pipes) {
+        const comp = pipe.components.find((c) => c.kind === 'valve' && c.id === valveId);
+        if (comp && comp.kind === 'valve') {
+          (comp as Record<string, unknown>)[field] = value;
+          return;
+        }
+      }
     });
   }
 }

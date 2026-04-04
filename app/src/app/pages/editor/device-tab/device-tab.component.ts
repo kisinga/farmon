@@ -3,13 +3,14 @@ import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
+import { getPump } from '../../../core/models/topology.model';
 
 @Component({
   selector: 'app-device-tab',
   standalone: true,
   imports: [FormsModule],
   template: `
-    @if (editor.manifest(); as m) {
+    @if (editor.topology(); as t) {
       <div class="max-w-2xl space-y-6">
         <!-- Device identity -->
         <div class="card bg-base-100 shadow-sm border border-base-200">
@@ -20,8 +21,8 @@ import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../.
                 <div class="label"><span class="label-text font-medium">Friendly Name</span></div>
                 <input
                   type="text"
-                  class="input input-bordered"
-                  [ngModel]="m.device.friendly_name"
+                  class="input input-bordered input-sm"
+                  [ngModel]="t.device.friendly_name"
                   (ngModelChange)="update('friendly_name', $event)"
                 />
               </label>
@@ -29,11 +30,11 @@ import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../.
                 <div class="label"><span class="label-text font-medium">Device ID</span></div>
                 <input
                   type="text"
-                  class="input input-bordered font-mono"
-                  [ngModel]="m.device.name"
+                  class="input input-bordered input-sm font-mono"
+                  [ngModel]="t.device.name"
                   (ngModelChange)="update('name', $event)"
                 />
-                <div class="label"><span class="label-text-alt text-base-content/40">Lowercase, no spaces. Used in ESPHome config.</span></div>
+                <div class="label"><span class="label-text-alt text-base-content/60">Lowercase, no spaces. Used in ESPHome config.</span></div>
               </label>
             </div>
           </div>
@@ -46,8 +47,8 @@ import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../.
             <label class="form-control">
               <div class="label"><span class="label-text font-medium">Board</span></div>
               <select
-                class="select select-bordered"
-                [ngModel]="m.device.board"
+                class="select select-bordered select-sm"
+                [ngModel]="t.device.board"
                 (ngModelChange)="changeBoard($event)"
               >
                 @for (b of boards.boards(); track b.id) {
@@ -57,7 +58,6 @@ import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../.
             </label>
 
             @if (editor.board(); as board) {
-              <!-- Peripherals grid — rendered from board definition -->
               <div class="grid grid-cols-2 gap-3 mt-2">
                 @for (p of peripherals(); track p.key) {
                   <div class="flex items-center gap-3 p-3 rounded-lg bg-base-200/50">
@@ -68,13 +68,12 @@ import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../.
                     </div>
                     <div>
                       <div class="text-sm font-medium">{{ p.label }}</div>
-                      <div class="text-xs text-base-content/50">{{ p.description }}</div>
+                      <div class="text-xs text-base-content/60">{{ p.description }}</div>
                     </div>
                   </div>
                 }
               </div>
 
-              <!-- Pin summary -->
               <div class="stats stats-horizontal bg-base-200/50 w-full mt-2">
                 <div class="stat py-3 px-4">
                   <div class="stat-title text-xs">Exposed Pins</div>
@@ -101,8 +100,8 @@ import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../.
               <div class="label"><span class="label-text font-medium">GPIO Pin</span></div>
               <input
                 type="text"
-                class="input input-bordered font-mono"
-                [ngModel]="m.pump.pin"
+                class="input input-bordered input-sm font-mono"
+                [ngModel]="pumpPin()"
                 (ngModelChange)="updatePump($event)"
                 placeholder="GPIO42"
               />
@@ -116,6 +115,11 @@ import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../.
 export class DeviceTabComponent {
   protected editor = inject(SystemEditorService);
   protected boards = inject(BoardService);
+
+  protected pumpPin = computed(() => {
+    const t = this.editor.topology();
+    return t ? getPump(t)?.pin ?? '' : '';
+  });
 
   protected peripherals = computed(() => {
     const board = this.editor.board();
@@ -131,15 +135,18 @@ export class DeviceTabComponent {
   });
 
   update(field: 'name' | 'friendly_name', value: string) {
-    this.editor.updateManifest((m) => { m.device[field] = value; });
+    this.editor.updateTopology((t) => { t.device[field] = value; });
   }
 
   updatePump(pin: string) {
-    this.editor.updateManifest((m) => { m.pump.pin = pin; });
+    this.editor.updateTopology((t) => {
+      const pump = t.nodes.find((n) => n.kind === 'pump');
+      if (pump && pump.kind === 'pump') pump.pin = pin;
+    });
   }
 
   async changeBoard(boardId: string) {
     await this.boards.load(boardId);
-    this.editor.updateManifest((m) => { m.device.board = boardId; });
+    this.editor.updateTopology((t) => { t.device.board = boardId; });
   }
 }

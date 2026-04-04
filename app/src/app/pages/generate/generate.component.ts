@@ -15,11 +15,11 @@ interface FileEntry {
   standalone: true,
   imports: [],
   template: `
-    <div class="h-full flex flex-col">
+    <div class="min-h-full flex flex-col">
       <!-- Header -->
-      <div class="px-6 pt-5 pb-4 bg-base-100 border-b border-base-300/30">
-        <h1 class="text-xl font-bold tracking-tight">Generate & Flash</h1>
-        <p class="text-xs text-base-content/40 mt-0.5 font-mono">{{ configName() }}</p>
+      <div class="px-6 pt-5 pb-4 bg-base-100 border-b border-base-300/50 sticky top-0 z-10">
+        <h1 class="text-lg font-bold tracking-tight">Generate & Flash</h1>
+        <p class="text-xs text-base-content/60 mt-0.5 font-mono">{{ configName() }}</p>
       </div>
 
       <div class="flex-1 overflow-auto">
@@ -32,7 +32,7 @@ interface FileEntry {
                 <div class="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-sm font-bold text-primary/70">1</div>
                 <div>
                   <h2 class="font-semibold text-sm">Generate Firmware</h2>
-                  <p class="text-xs text-base-content/40 mt-0.5">ESPHome YAML, C++ route table, HA dashboard</p>
+                  <p class="text-xs text-base-content/60 mt-0.5">ESPHome YAML, C++ route table, HA dashboard</p>
                 </div>
               </div>
               <button
@@ -52,9 +52,9 @@ interface FileEntry {
                 <table class="table table-xs">
                   <thead>
                     <tr>
-                      <th class="text-[10px] uppercase tracking-wider text-base-content/30 font-semibold">File</th>
-                      <th class="text-[10px] uppercase tracking-wider text-base-content/30 font-semibold">Description</th>
-                      <th class="text-[10px] uppercase tracking-wider text-base-content/30 font-semibold text-right">Lines</th>
+                      <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">File</th>
+                      <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Description</th>
+                      <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold text-right">Lines</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -62,13 +62,13 @@ interface FileEntry {
                       <tr class="hover">
                         <td class="font-mono text-[11px] text-primary/70">{{ f.path }}</td>
                         <td class="text-[11px] text-base-content/50">{{ f.description }}</td>
-                        <td class="text-right text-[11px] tabular-nums text-base-content/40">{{ f.lines }}</td>
+                        <td class="text-right text-[11px] tabular-nums text-base-content/60">{{ f.lines }}</td>
                       </tr>
                     }
                   </tbody>
                 </table>
                 @if (outputDir()) {
-                  <div class="text-[10px] text-base-content/25 mt-2 font-mono truncate">{{ outputDir() }}</div>
+                  <div class="text-xs text-base-content/50 mt-2 font-mono truncate">{{ outputDir() }}</div>
                 }
               </div>
             }
@@ -86,7 +86,7 @@ interface FileEntry {
                 <div>
                   <h2 class="font-semibold text-sm">Compile</h2>
                   @if (toolchain()?.esphomePath) {
-                    <p class="text-xs text-base-content/40 mt-0.5">Build firmware binary with ESPHome</p>
+                    <p class="text-xs text-base-content/60 mt-0.5">Build firmware binary with ESPHome</p>
                   } @else {
                     <p class="text-xs text-warning mt-0.5">ESPHome not found on PATH</p>
                   }
@@ -117,7 +117,7 @@ interface FileEntry {
                   <div class="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-sm font-bold text-primary/70">3</div>
                   <div>
                     <h2 class="font-semibold text-sm">Flash Device</h2>
-                    <p class="text-xs text-base-content/40 mt-0.5">Upload firmware to your controller</p>
+                    <p class="text-xs text-base-content/60 mt-0.5">Upload firmware to your controller</p>
                   </div>
                 </div>
                 @if (running() && activeAction() === 'flash') {

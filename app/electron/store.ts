@@ -7,8 +7,8 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 // Schema versioning
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 2;     // version this app writes
-export const MIN_SCHEMA_VERSION = 2; // oldest version this app can read
+export const SCHEMA_VERSION = 3;     // version this app writes
+export const MIN_SCHEMA_VERSION = 3; // oldest version this app can read
 
 export class SchemaError extends Error {
   constructor(
@@ -181,14 +181,20 @@ export function listConfigs(): ConfigListEntry[] {
       const parsed = parseYaml(raw) as Record<string, unknown>;
       const device = parsed.device as Record<string, unknown> | undefined;
       const name = f.replace(".yaml", "");
+      const nodes = Array.isArray(parsed.nodes) ? parsed.nodes as Array<Record<string, unknown>> : [];
+      const pipes = Array.isArray(parsed.pipes) ? parsed.pipes as Array<Record<string, unknown>> : [];
+      const components = pipes.flatMap(
+        (p) => Array.isArray(p.components) ? p.components as Array<Record<string, unknown>> : []
+      );
+
       return {
         name,
         deviceName: (device?.name as string) ?? name,
         friendlyName: (device?.friendly_name as string) ?? name,
         board: (device?.board as string) ?? "unknown",
-        tanks: Array.isArray(parsed.tanks) ? parsed.tanks.length : 0,
-        valves: Array.isArray(parsed.valves) ? parsed.valves.length : 0,
-        routes: Array.isArray(parsed.routes) ? parsed.routes.length : 0,
+        tanks: nodes.filter((n) => n.kind === "tank").length,
+        valves: components.filter((c) => c.kind === "valve").length,
+        routes: 0, // routes are derived, not stored
       };
     });
 }

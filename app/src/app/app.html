@@ -1,4 +1,4 @@
-<div class="min-h-screen bg-base-200 flex">
+<div class="h-screen bg-base-200 flex overflow-hidden">
   <!-- Sidebar -->
   <aside class="w-56 bg-base-100 border-r border-base-300/40 flex flex-col shrink-0">
     <!-- Logo & brand -->
@@ -6,7 +6,7 @@
       <div class="w-8 h-8 shrink-0 overflow-hidden" [innerHTML]="logoSvg"></div>
       <div>
         <div class="font-bold text-base tracking-tight text-base-content leading-none">waterctl</div>
-        <div class="text-[10px] text-base-content/40 mt-0.5">Pump Control System</div>
+        <div class="text-[10px] text-base-content/50 mt-0.5">Pump Control System</div>
       </div>
     </a>
 
@@ -29,7 +29,7 @@
 
       @if (activeConfig()) {
         <div class="pt-3 pb-1 px-3">
-          <div class="text-[10px] font-semibold text-base-content/30 uppercase tracking-widest">Active Config</div>
+          <div class="text-[10px] font-semibold text-base-content/50 uppercase tracking-widest">Active Config</div>
         </div>
         <a
           [routerLink]="['/editor', activeConfig()]"
@@ -75,7 +75,7 @@
             [class.bg-warning]="hasFixable()"
             [class.bg-error]="hasUnfixable()"
           ></span>
-          <span class="text-base-content/50">{{ h.ok ? 'System healthy' : 'Issues detected' }}</span>
+          <span class="text-base-content/60">{{ h.ok ? 'System healthy' : 'Issues detected' }}</span>
         </button>
       }
     </div>

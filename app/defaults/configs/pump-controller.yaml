@@ -1,93 +1,121 @@
-schema: 2
-
-# =============================================================================
-# Water System Manifest — Pump Controller
-# =============================================================================
-# Describes the physical topology of the water system. The codegen tool
-# reads this file and generates all ESPHome YAML + C++ files.
-#
-# Every route requires a flow sensor. Tank level sensors are suppressed
-# during pump operation. Dest tanks need hardware float switches.
-# =============================================================================
-
+schema: 3
 device:
   name: pump-ctrl
   friendly_name: Pump-ctrl
   board: heltec-v3
   directory: pump-controller
-
-pump:
-  pin: GPIO42
-
-tanks:
-  - name: Rain Tank
+nodes:
+  - kind: tank
     id: tank1
+    name: Rain Tank
     level_pin: GPIO19
-
-  - name: Storage Tank
+    ports:
+      - id: inlet
+        label: Inlet
+        direction: inlet
+      - id: outlet
+        label: Outlet
+        direction: outlet
+    position:
+      x: 100
+      y: 100
+  - kind: tank
     id: tank2
+    name: Storage Tank
     level_pin: GPIO20
-
-valves:
-  - name: Tank 1 Outlet
-    id: valve1
-    open_pin: GPIO4
-    close_pin: GPIO5
-
-  - name: Tank 2 Outlet
-    id: valve2
-    open_pin: GPIO6
-    close_pin: GPIO7
-
-  - name: Pump to Tank 2
-    id: valve3
-    open_pin: GPIO2
-    close_pin: GPIO3
-
-  - name: Pump to House 2
-    id: valve4
-    open_pin: GPIO39
-    close_pin: GPIO40
-
-flow_sensors:
-  - name: House 1 Water Flow
-    id: flow1
-    pin: GPIO45
-    flow_cal: 450.0
-
-  - name: House 2 Water Flow
-    id: flow2
-    pin: GPIO46
-    flow_cal: 450.0
-
-  - name: Refill Line Flow
-    id: flow3
-    pin: GPIO47
-    flow_cal: 450.0
-
-routes:
-  - name: "T1>T2"
-    source: tank1
-    destination: tank2
-    valves: [valve1, valve3]
-    flow_sensor: flow3
+    ports:
+      - id: inlet
+        label: Inlet
+        direction: inlet
+      - id: outlet
+        label: Outlet
+        direction: outlet
+    position:
+      x: 700
+      y: 250
+  - kind: pump
+    id: pump
+    pin: GPIO42
+    ports:
+      - id: in
+        label: Inlet
+        direction: inlet
+      - id: out
+        label: Outlet
+        direction: outlet
+    position:
+      x: 400
+      y: 175
+  - kind: endpoint
+    id: h2
+    name: House 2
+    ports:
+      - id: inlet
+        label: Inlet
+        direction: inlet
+    position:
+      x: 700
+      y: 400
+pipes:
+  - id: pipe1
+    from: tank1:outlet
+    to: pump:in
+    components:
+      - kind: valve
+        id: valve1
+        name: Tank 1 Outlet
+        open_pin: GPIO4
+        close_pin: GPIO5
+  - id: pipe2
+    from: tank2:outlet
+    to: pump:in
+    components:
+      - kind: valve
+        id: valve2
+        name: Tank 2 Outlet
+        open_pin: GPIO6
+        close_pin: GPIO7
+  - id: pipe3
+    from: pump:out
+    to: tank2:inlet
+    components:
+      - kind: valve
+        id: valve3
+        name: Pump to Tank 2
+        open_pin: GPIO2
+        close_pin: GPIO3
+      - kind: flow_sensor
+        id: flow3
+        name: Refill Line Flow
+        pin: GPIO47
+        flow_cal: 450
+  - id: pipe4
+    from: pump:out
+    to: h2:inlet
+    components:
+      - kind: valve
+        id: valve4
+        name: Pump to House 2
+        open_pin: GPIO39
+        close_pin: GPIO40
+      - kind: flow_sensor
+        id: flow2
+        name: House 2 Water Flow
+        pin: GPIO46
+        flow_cal: 450
+route_overrides:
+  tank1>tank2:
+    name: T1>T2
     max_runtime_seconds: 600
-
-  - name: "T1>H2"
-    source: tank1
-    valves: [valve1, valve4]
-    flow_sensor: flow2
+  tank1>h2:
+    name: T1>H2
     max_runtime_seconds: 1800
-
-  - name: "T2>H2"
-    source: tank2
-    valves: [valve2, valve4]
-    flow_sensor: flow2
+  tank2>h2:
+    name: T2>H2
     max_runtime_seconds: 1800
-
 timing:
-  valve_travel_time: "15s"
+  valve_travel_time: 15s
   flow_watchdog_seconds: 30
   flow_confirm_seconds: 15
   api_watchdog_seconds: 300
-  update_interval: "5s"
+  update_interval: 5s

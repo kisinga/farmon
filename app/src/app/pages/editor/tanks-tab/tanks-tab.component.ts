@@ -1,21 +1,22 @@
 import { Component, inject, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
+import { getTanks, type TankNode } from '../../../core/models/topology.model';
 
 @Component({
   selector: 'app-tanks-tab',
   standalone: true,
   imports: [FormsModule],
   template: `
-    @if (editor.manifest(); as m) {
+    @if (editor.topology(); as t) {
       <div class="space-y-4">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold">Tanks ({{ m.tanks.length }})</h2>
+          <h2 class="text-lg font-semibold">Tanks ({{ tanks().length }})</h2>
           <button class="btn btn-primary btn-sm" (click)="add()">+ Add Tank</button>
         </div>
 
-        @if (m.tanks.length === 0) {
-          <div class="text-base-content/40 text-center py-8">No tanks defined. Add one to get started.</div>
+        @if (tanks().length === 0) {
+          <div class="text-base-content/60 text-center py-8">No tanks defined. Add one to get started.</div>
         } @else {
           <table class="table table-sm bg-base-100 rounded-xl">
             <thead>
@@ -28,27 +29,27 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
               </tr>
             </thead>
             <tbody>
-              @for (tank of m.tanks; track tank.id; let i = $index) {
+              @for (tank of tanks(); track tank.id; let i = $index) {
                 <tr>
                   <td>
                     <input
                       class="input input-bordered input-xs w-32"
                       [ngModel]="tank.name"
-                      (ngModelChange)="updateField(i, 'name', $event)"
+                      (ngModelChange)="updateField(tank.id, 'name', $event)"
                     />
                   </td>
                   <td>
                     <input
                       class="input input-bordered input-xs w-24 font-mono"
                       [ngModel]="tank.id"
-                      (ngModelChange)="updateField(i, 'id', $event)"
+                      (ngModelChange)="updateField(tank.id, 'id', $event)"
                     />
                   </td>
                   <td>
                     <input
                       class="input input-bordered input-xs w-24 font-mono"
                       [ngModel]="tank.level_pin"
-                      (ngModelChange)="updateField(i, 'level_pin', $event)"
+                      (ngModelChange)="updateField(tank.id, 'level_pin', $event)"
                       placeholder="GPIO19"
                     />
                   </td>
@@ -60,7 +61,7 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
                     }
                   </td>
                   <td>
-                    <button class="btn btn-ghost btn-xs text-error" (click)="remove(i)">Delete</button>
+                    <button class="btn btn-ghost btn-xs text-error" (click)="remove(tank.id)">Delete</button>
                   </td>
                 </tr>
               }
@@ -77,24 +78,53 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 })
 export class TanksTabComponent {
   protected editor = inject(SystemEditorService);
+
+  protected tanks = computed(() => {
+    const t = this.editor.topology();
+    return t ? getTanks(t) : [];
+  });
+
   protected adcPinList = computed(() => Array.from(this.editor.adcPins()).join(', '));
 
   add() {
-    this.editor.updateManifest((m) => {
-      const n = m.tanks.length + 1;
-      m.tanks.push({ name: `Tank ${n}`, id: `tank${n}`, level_pin: '' });
+    this.editor.updateTopology((t) => {
+      const n = getTanks(t).length + 1;
+      t.nodes.push({
+        kind: 'tank',
+        id: `tank${n}`,
+        name: `Tank ${n}`,
+        level_pin: '',
+        ports: [
+          { id: 'inlet', label: 'Inlet', direction: 'inlet' },
+          { id: 'outlet', label: 'Outlet', direction: 'outlet' },
+        ],
+        position: { x: 100, y: 100 + (n - 1) * 150 },
+      });
     });
   }
 
-  remove(index: number) {
-    this.editor.updateManifest((m) => {
-      m.tanks.splice(index, 1);
+  remove(tankId: string) {
+    this.editor.updateTopology((t) => {
+      t.nodes = t.nodes.filter((n) => !(n.kind === 'tank' && n.id === tankId));
+      // Remove pipes connected to this tank
+      t.pipes = t.pipes.filter((p) => {
+        const fromNode = p.from.split(':')[0];
+        const toNode = p.to.split(':')[0];
+        return fromNode !== tankId && toNode !== tankId;
+      });
+      // Remove route overrides referencing this tank
+      for (const key of Object.keys(t.route_overrides)) {
+        if (key.includes(tankId)) delete t.route_overrides[key];
+      }
     });
   }
 
-  updateField(index: number, field: 'name' | 'id' | 'level_pin', value: string) {
-    this.editor.updateManifest((m) => {
-      (m.tanks[index] as Record<string, string>)[field] = value;
+  updateField(tankId: string, field: keyof TankNode, value: string) {
+    this.editor.updateTopology((t) => {
+      const tank = t.nodes.find((n) => n.kind === 'tank' && n.id === tankId);
+      if (tank && tank.kind === 'tank') {
+        (tank as Record<string, unknown>)[field] = value;
+      }
     });
   }
 }

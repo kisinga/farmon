@@ -8,13 +8,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ManifestSchema, type Manifest } from "../electron/lib/schema.js";
+import type { Manifest } from "../electron/lib/schema.js";
+import { TopologySchema } from "../electron/lib/topology.js";
+import { topologyToManifest } from "../electron/lib/topology-to-manifest.js";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
 import { validate } from "../electron/lib/validate.js";
 import { generateAll, type GeneratedFile } from "../electron/lib/generate.js";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
-const MANIFEST_PATH = path.join(DEFAULTS, "configs/pump-controller.yaml");
+const CONFIG_PATH = path.join(DEFAULTS, "configs/pump-controller.yaml");
 const BOARD_DIR = path.join(DEFAULTS, "boards/heltec-v3");
 
 let manifest: Manifest;
@@ -48,8 +50,9 @@ console.log("Codegen Integration Tests");
 console.log("=========================\n");
 
 board = loadBoard(BOARD_DIR);
-const rawManifest = fs.readFileSync(MANIFEST_PATH, "utf-8");
-manifest = ManifestSchema.parse(parseYaml(rawManifest));
+const rawConfig = fs.readFileSync(CONFIG_PATH, "utf-8");
+const topology = TopologySchema.parse(parseYaml(rawConfig));
+manifest = topologyToManifest(topology);
 const validation = validate(manifest, board);
 files = generateAll(manifest, board);
 fileMap = new Map(files.map((f) => [f.relativePath, f.content]));

@@ -1,21 +1,22 @@
 import { Component, inject, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
+import { getFlowSensors, type FlowComponent } from '../../../core/models/topology.model';
 
 @Component({
   selector: 'app-flows-tab',
   standalone: true,
   imports: [FormsModule],
   template: `
-    @if (editor.manifest(); as m) {
+    @if (editor.topology()) {
       <div class="space-y-4">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold">Flow Sensors ({{ m.flow_sensors.length }})</h2>
-          <button class="btn btn-primary btn-sm" (click)="add()">+ Add Flow Sensor</button>
+          <h2 class="text-lg font-semibold">Flow Sensors ({{ flows().length }})</h2>
+          <div class="text-xs text-base-content/50">Flow sensors live on pipes. Add them via the topology view.</div>
         </div>
 
-        @if (m.flow_sensors.length === 0) {
-          <div class="text-base-content/40 text-center py-8">No flow sensors defined.</div>
+        @if (flows().length === 0) {
+          <div class="text-base-content/60 text-center py-8">No flow sensors defined.</div>
         } @else {
           <table class="table table-sm bg-base-100 rounded-xl">
             <thead>
@@ -25,30 +26,29 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
                 <th>Pin</th>
                 <th>Cal (pulses/L)</th>
                 <th>PCNT</th>
-                <th></th>
+                <th>On Pipe</th>
               </tr>
             </thead>
             <tbody>
-              @for (flow of m.flow_sensors; track flow.id; let i = $index) {
+              @for (flow of flows(); track flow.id) {
                 <tr>
                   <td>
                     <input class="input input-bordered input-xs w-36" [ngModel]="flow.name"
-                      (ngModelChange)="updateField(i, 'name', $event)" />
+                      (ngModelChange)="updateField(flow.id, 'name', $event)" />
                   </td>
                   <td>
-                    <input class="input input-bordered input-xs w-24 font-mono" [ngModel]="flow.id"
-                      (ngModelChange)="updateField(i, 'id', $event)" />
+                    <span class="font-mono text-xs">{{ flow.id }}</span>
                   </td>
                   <td>
                     <input class="input input-bordered input-xs w-24 font-mono" [ngModel]="flow.pin"
-                      (ngModelChange)="updateField(i, 'pin', $event)" placeholder="GPIO46" />
+                      (ngModelChange)="updateField(flow.id, 'pin', $event)" placeholder="GPIO46" />
                   </td>
                   <td>
                     <input
                       type="number"
                       class="input input-bordered input-xs w-24 font-mono text-right"
                       [ngModel]="flow.flow_cal"
-                      (ngModelChange)="updateNumField(i, 'flow_cal', $event)"
+                      (ngModelChange)="updateNumField(flow.id, $event)"
                       placeholder="450"
                       min="1"
                     />
@@ -61,7 +61,7 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
                     }
                   </td>
                   <td>
-                    <button class="btn btn-ghost btn-xs text-error" (click)="remove(i)">Delete</button>
+                    <span class="text-xs text-base-content/50">{{ flowPipeLabel(flow.id) }}</span>
                   </td>
                 </tr>
               }
@@ -81,26 +81,39 @@ export class FlowsTabComponent {
   protected editor = inject(SystemEditorService);
   protected pcntPinList = computed(() => Array.from(this.editor.pcntPins()).join(', '));
 
-  add() {
-    this.editor.updateManifest((m) => {
-      const n = m.flow_sensors.length + 1;
-      m.flow_sensors.push({ name: `Flow ${n}`, id: `flow${n}`, pin: '', flow_cal: 450 });
+  protected flows = computed(() => {
+    const t = this.editor.topology();
+    return t ? getFlowSensors(t) : [];
+  });
+
+  protected flowPipeLabel(flowId: string): string {
+    const t = this.editor.topology();
+    if (!t) return '';
+    const pipe = t.pipes.find((p) => p.components.some((c) => c.id === flowId));
+    return pipe ? `${pipe.from} \u2192 ${pipe.to}` : '';
+  }
+
+  updateField(flowId: string, field: keyof FlowComponent, value: string) {
+    this.editor.updateTopology((t) => {
+      for (const pipe of t.pipes) {
+        const comp = pipe.components.find((c) => c.kind === 'flow_sensor' && c.id === flowId);
+        if (comp && comp.kind === 'flow_sensor') {
+          (comp as Record<string, unknown>)[field] = value;
+          return;
+        }
+      }
     });
   }
 
-  remove(index: number) {
-    this.editor.updateManifest((m) => { m.flow_sensors.splice(index, 1); });
-  }
-
-  updateField(index: number, field: string, value: string) {
-    this.editor.updateManifest((m) => {
-      (m.flow_sensors[index] as Record<string, unknown>)[field] = value;
-    });
-  }
-
-  updateNumField(index: number, field: string, value: unknown) {
-    this.editor.updateManifest((m) => {
-      (m.flow_sensors[index] as Record<string, unknown>)[field] = Number(value) || 0;
+  updateNumField(flowId: string, value: unknown) {
+    this.editor.updateTopology((t) => {
+      for (const pipe of t.pipes) {
+        const comp = pipe.components.find((c) => c.kind === 'flow_sensor' && c.id === flowId);
+        if (comp && comp.kind === 'flow_sensor') {
+          comp.flow_cal = Number(value) || 0;
+          return;
+        }
+      }
     });
   }
 }

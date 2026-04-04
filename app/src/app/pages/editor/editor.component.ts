@@ -12,6 +12,7 @@ import { ValvesTabComponent } from './valves-tab/valves-tab.component';
 import { FlowsTabComponent } from './flows-tab/flows-tab.component';
 import { RoutesTabComponent } from './routes-tab/routes-tab.component';
 import { TimingTabComponent } from './timing-tab/timing-tab.component';
+import type { SystemTopology } from '../../core/models/topology.model';
 
 type TabId = 'device' | 'tanks' | 'valves' | 'flows' | 'routes' | 'timing';
 
@@ -39,26 +40,25 @@ const TAB_ICONS: Record<TabId, string> = {
     TimingTabComponent,
   ],
   template: `
-    <div class="flex flex-col h-full">
+    <div class="flex flex-col h-full overflow-hidden">
       <!-- Header bar -->
-      <div class="flex items-center justify-between px-5 py-2.5 bg-base-100 border-b border-base-300/30">
+      <div class="flex items-center justify-between px-6 py-3 bg-base-100 border-b border-base-300/50">
         <div class="flex items-center gap-3">
           <div>
-            <h1 class="text-base font-bold leading-tight">
-              {{ editor.manifest()?.device?.friendly_name ?? 'Loading...' }}
+            <h1 class="text-lg font-semibold leading-tight">
+              {{ editor.topology()?.device?.friendly_name ?? 'Loading...' }}
             </h1>
-            <p class="text-[11px] text-base-content/35 font-mono">{{ editor.manifest()?.device?.name }}</p>
+            <p class="text-xs text-base-content/50 font-mono mt-0.5">{{ editor.topology()?.device?.name }}</p>
           </div>
           @if (editor.dirty()) {
-            <span class="badge badge-warning badge-xs gap-1 py-2">
-              <span class="w-1 h-1 rounded-full bg-warning-content"></span>
+            <span class="badge badge-warning badge-sm gap-1">
               Unsaved
             </span>
           }
         </div>
         <div class="flex gap-2">
           <button
-            class="btn btn-ghost btn-xs"
+            class="btn btn-ghost btn-sm"
             (click)="save()"
             [disabled]="!editor.dirty()"
           >
@@ -66,9 +66,9 @@ const TAB_ICONS: Record<TabId, string> = {
           </button>
           <a
             [routerLink]="['/generate', editor.configName()]"
-            class="btn btn-primary btn-xs gap-1"
+            class="btn btn-primary btn-sm gap-1.5"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
             Generate
@@ -76,28 +76,29 @@ const TAB_ICONS: Record<TabId, string> = {
         </div>
       </div>
 
-      <!-- Main layout -->
-      <div class="flex flex-1 overflow-hidden">
-        <!-- Tab nav -->
-        <nav class="w-40 bg-base-100 border-r border-base-300/30 flex flex-col pt-2 gap-0.5 px-2">
+      <!-- Horizontal tab bar -->
+      <div class="bg-base-100 border-b border-base-300/50 px-6">
+        <div role="tablist" class="tabs tabs-bordered -mb-px">
           @for (tab of tabs; track tab.id) {
             <button
-              class="btn btn-ghost btn-xs justify-start gap-2 font-normal h-8 min-h-8"
-              [class.bg-primary/8]="activeTab() === tab.id"
-              [class.text-primary]="activeTab() === tab.id"
-              [class.font-semibold]="activeTab() === tab.id"
+              role="tab"
+              class="tab gap-2 text-sm"
+              [class.tab-active]="activeTab() === tab.id"
               (click)="activeTab.set(tab.id)"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                 <path stroke-linecap="round" stroke-linejoin="round" [attr.d]="tabIcon(tab.id)" />
               </svg>
-              <span class="text-xs">{{ tab.label }}</span>
+              {{ tab.label }}
             </button>
           }
-        </nav>
+        </div>
+      </div>
 
+      <!-- Main layout -->
+      <div class="flex flex-1 overflow-hidden">
         <!-- Tab content -->
-        <main class="flex-1 overflow-auto p-5 bg-base-200/40">
+        <main class="flex-1 overflow-auto p-6">
           @switch (activeTab()) {
             @case ('device') { <app-device-tab /> }
             @case ('tanks') { <app-tanks-tab /> }
@@ -109,12 +110,12 @@ const TAB_ICONS: Record<TabId, string> = {
         </main>
 
         <!-- Right panel: board + validation -->
-        <aside class="w-72 bg-base-100 border-l border-base-300/30 flex flex-col overflow-auto">
-          <div class="p-3 border-b border-base-300/30">
+        <aside class="w-72 bg-base-100 border-l border-base-300/50 flex flex-col overflow-y-auto shrink-0">
+          <div class="p-4 border-b border-base-300/30">
             <div class="flex items-center justify-between mb-2">
-              <h3 class="text-[10px] font-semibold text-base-content/30 uppercase tracking-widest">Board</h3>
+              <h3 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Board</h3>
               @if (boards.activeBoard(); as b) {
-                <span class="text-[10px] text-base-content/40">{{ b.label }}</span>
+                <span class="text-xs text-base-content/60">{{ b.label }}</span>
               }
             </div>
             <app-board-svg
@@ -123,8 +124,8 @@ const TAB_ICONS: Record<TabId, string> = {
               [usedPins]="editor.usedPins()"
             />
           </div>
-          <div class="p-3 flex-1">
-            <h3 class="text-[10px] font-semibold text-base-content/30 uppercase tracking-widest mb-2">Validation</h3>
+          <div class="p-4 flex-1">
+            <h3 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-3">Validation</h3>
             <app-validation-panel
               [result]="editor.validation()"
               [gpioUsage]="editor.gpioUsage()"
@@ -159,10 +160,10 @@ export class EditorComponent implements OnInit, OnDestroy {
   }
 
   constructor() {
-    // Re-validate whenever manifest changes
+    // Re-validate whenever topology changes
     effect(() => {
-      const m = this.editor.manifest();
-      if (m) this.runValidation();
+      const t = this.editor.topology();
+      if (t) this.runValidation();
     });
   }
 
@@ -177,9 +178,9 @@ export class EditorComponent implements OnInit, OnDestroy {
 
     try {
       const raw = await this.library.load(name);
-      const manifest = raw as any;
-      const board = await this.boards.load(manifest.device.board);
-      this.editor.load(name, manifest, board);
+      const topology = raw as SystemTopology;
+      const board = await this.boards.load(topology.device.board);
+      this.editor.load(name, topology, board);
     } catch (err) {
       console.error('Failed to load config:', err);
       this.router.navigate(['/library']);
@@ -193,17 +194,18 @@ export class EditorComponent implements OnInit, OnDestroy {
 
   async save() {
     const name = this.editor.configName();
-    const manifest = this.editor.manifest();
-    if (!name || !manifest) return;
-    await this.library.save(name, manifest);
+    const topology = this.editor.topology();
+    if (!name || !topology) return;
+    await this.library.save(name, topology);
     this.editor.markSaved();
   }
 
   private async runValidation() {
-    const manifest = this.editor.manifest();
+    const topology = this.editor.topology();
     const board = this.editor.board();
-    if (!manifest || !board) return;
-    const result = await this.electron.validate(manifest, board);
+    if (!topology || !board) return;
+    // IPC handler converts topology → manifest → validate
+    const result = await this.electron.validate(topology, board);
     this.editor.setValidation(result);
   }
 }
