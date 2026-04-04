@@ -53,14 +53,17 @@ flow_sensors:
   - name: House 1 Water Flow
     id: flow1
     pin: GPIO45
+    flow_cal: 450.0
 
   - name: House 2 Water Flow
     id: flow2
     pin: GPIO46
+    flow_cal: 450.0
 
   - name: Refill Line Flow
     id: flow3
     pin: GPIO47
+    flow_cal: 450.0
 
 routes:
   - name: "T1>T2"
@@ -87,5 +90,4 @@ timing:
   flow_watchdog_seconds: 30
   flow_confirm_seconds: 15
   api_watchdog_seconds: 300
-  flow_cal: 450.0
   update_interval: "5s"

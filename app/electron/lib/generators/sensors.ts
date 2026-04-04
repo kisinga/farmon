@@ -12,7 +12,7 @@ export function generateSensors(m: Manifest): string {
     icon: "mdi:water"
     update_interval: \${update_interval}
     filters:
-      - lambda: return x / \${flow_cal};
+      - lambda: return x / \${flow_cal_${f.id}};
     on_value:
       - lambda: |-
           const int SENSOR_IDX = ${i};

@@ -58,6 +58,7 @@ function buildManifest(p: ScaleParams): unknown {
     name: `Flow ${i + 1}`,
     id: `flow${i + 1}`,
     pin: pin(pinIdx++),
+    flow_cal: 450,
   }));
 
   const routes: Array<Record<string, unknown>> = [];

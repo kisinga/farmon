@@ -182,6 +182,9 @@ export function validate(
         `Software counting may miss pulses at high flow rates.`
       );
     }
+    if (flow.flow_cal <= 0) {
+      errors.push(`Flow "${flow.id}": flow_cal must be > 0 (got ${flow.flow_cal})`);
+    }
   }
 
   // --- GPIO budget ---

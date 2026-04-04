@@ -2,6 +2,7 @@ import { app, BrowserWindow } from "electron";
 import * as path from "node:path";
 import { registerIpcHandlers } from "./ipc-handlers.js";
 import { initStore } from "./store.js";
+import { killAll } from "./process-manager.js";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -50,6 +51,10 @@ app.whenReady().then(() => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on("before-quit", () => {
+  killAll();
 });
 
 app.on("window-all-closed", () => {

@@ -7,8 +7,8 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 // Schema versioning
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 1;     // version this app writes
-export const MIN_SCHEMA_VERSION = 1; // oldest version this app can read
+export const SCHEMA_VERSION = 2;     // version this app writes
+export const MIN_SCHEMA_VERSION = 2; // oldest version this app can read
 
 export class SchemaError extends Error {
   constructor(
@@ -240,6 +240,12 @@ export function importConfig(sourcePath: string): string {
   return name;
 }
 
+export function exportConfig(name: string, destPath: string): void {
+  const srcPath = path.join(configsDir(), `${name}.yaml`);
+  if (!fs.existsSync(srcPath)) throw new Error(`Config not found: ${name}`);
+  fs.copyFileSync(srcPath, destPath);
+}
+
 // ---------------------------------------------------------------------------
 // Output
 // ---------------------------------------------------------------------------
@@ -258,7 +264,7 @@ export function getStorePath(): string {
 }
 
 export function getOutputDir(): string {
-  const dir = path.join(app.getPath("userData"), "output");
+  const dir = path.join(app.getPath("home"), ".waterctl", "output");
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

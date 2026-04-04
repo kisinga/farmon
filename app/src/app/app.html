@@ -1,13 +1,130 @@
-<div class="min-h-screen bg-base-200 flex flex-col">
-  <div class="navbar bg-base-100 border-b border-base-200 px-5 min-h-12 h-12">
-    <div class="flex-1">
-      <a routerLink="/library" class="font-bold text-primary tracking-tight text-lg">
-        waterctl
-      </a>
-    </div>
-  </div>
+<div class="min-h-screen bg-base-200 flex">
+  <!-- Sidebar -->
+  <aside class="w-56 bg-base-100 border-r border-base-300/40 flex flex-col shrink-0">
+    <!-- Logo & brand -->
+    <a routerLink="/library" class="flex items-center gap-3 px-5 py-4 border-b border-base-300/30">
+      <div class="w-8 h-8 shrink-0 overflow-hidden" [innerHTML]="logoSvg"></div>
+      <div>
+        <div class="font-bold text-base tracking-tight text-base-content leading-none">waterctl</div>
+        <div class="text-[10px] text-base-content/40 mt-0.5">Pump Control System</div>
+      </div>
+    </a>
 
-  <main class="flex-1 flex flex-col">
-    <router-outlet />
-  </main>
+    <!-- Navigation -->
+    <nav class="flex-1 px-3 py-4 space-y-1">
+      <a
+        routerLink="/library"
+        class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors"
+        [class.bg-primary/10]="isRoute('library')"
+        [class.text-primary]="isRoute('library')"
+        [class.font-semibold]="isRoute('library')"
+        [class.text-base-content/70]="!isRoute('library')"
+        [class.hover:bg-base-200]="!isRoute('library')"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+        Library
+      </a>
+
+      @if (activeConfig()) {
+        <div class="pt-3 pb-1 px-3">
+          <div class="text-[10px] font-semibold text-base-content/30 uppercase tracking-widest">Active Config</div>
+        </div>
+        <a
+          [routerLink]="['/editor', activeConfig()]"
+          class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors"
+          [class.bg-primary/10]="isRoute('editor')"
+          [class.text-primary]="isRoute('editor')"
+          [class.font-semibold]="isRoute('editor')"
+          [class.text-base-content/70]="!isRoute('editor')"
+          [class.hover:bg-base-200]="!isRoute('editor')"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          <span class="truncate">{{ activeConfig() }}</span>
+        </a>
+        <a
+          [routerLink]="['/generate', activeConfig()]"
+          class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors"
+          [class.bg-primary/10]="isRoute('generate')"
+          [class.text-primary]="isRoute('generate')"
+          [class.font-semibold]="isRoute('generate')"
+          [class.text-base-content/70]="!isRoute('generate')"
+          [class.hover:bg-base-200]="!isRoute('generate')"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          Generate & Flash
+        </a>
+      }
+    </nav>
+
+    <!-- Health status footer -->
+    <div class="px-3 py-3 border-t border-base-300/30">
+      @if (health(); as h) {
+        <button
+          class="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs transition-colors hover:bg-base-200"
+          (click)="showHealth.set(!showHealth())"
+        >
+          <span
+            class="w-2 h-2 rounded-full shrink-0"
+            [class.bg-success]="h.ok"
+            [class.bg-warning]="hasFixable()"
+            [class.bg-error]="hasUnfixable()"
+          ></span>
+          <span class="text-base-content/50">{{ h.ok ? 'System healthy' : 'Issues detected' }}</span>
+        </button>
+      }
+    </div>
+  </aside>
+
+  <!-- Main content area -->
+  <div class="flex-1 flex flex-col min-w-0">
+    <!-- Health panel overlay -->
+    @if (showHealth() && health(); as h) {
+      <div class="absolute left-56 bottom-14 z-50 w-80 ml-2">
+        <div class="card bg-base-100 shadow-xl border border-base-300/50">
+          <div class="card-body p-4 gap-3">
+            <div class="flex items-center justify-between">
+              <h3 class="font-semibold text-sm">System Health</h3>
+              <button class="btn btn-ghost btn-xs" (click)="showHealth.set(false)">&#10005;</button>
+            </div>
+            @for (check of h.checks; track check.name) {
+              <div class="flex items-center gap-3">
+                <span
+                  class="w-2 h-2 rounded-full shrink-0"
+                  [class.bg-success]="check.status === 'ok'"
+                  [class.bg-error]="check.status === 'missing'"
+                  [class.bg-warning]="check.status === 'error'"
+                ></span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium">{{ check.name }}</div>
+                  <div class="text-xs text-base-content/50 truncate">{{ check.detail }}</div>
+                </div>
+              </div>
+            }
+            @if (hasFixable()) {
+              <button
+                class="btn btn-sm btn-primary w-full mt-1"
+                (click)="fix()"
+                [disabled]="fixing()"
+              >
+                @if (fixing()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                }
+                Install missing dependencies
+              </button>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
+    <main class="flex-1 flex flex-col overflow-auto">
+      <router-outlet />
+    </main>
+  </div>
 </div>

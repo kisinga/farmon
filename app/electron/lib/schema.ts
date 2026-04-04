@@ -30,6 +30,7 @@ const FlowSensorSchema = z.object({
   name: z.string().min(1),
   id: z.string().min(1),
   pin: GpioPin,
+  flow_cal: z.number().default(450.0),
 });
 
 const RouteSchema = z.object({
@@ -46,7 +47,6 @@ const TimingSchema = z.object({
   flow_watchdog_seconds: z.number().default(30),
   flow_confirm_seconds: z.number().default(15),
   api_watchdog_seconds: z.number().default(300),
-  flow_cal: z.number().default(450.0),
   update_interval: z.string().default("5s"),
 });
 

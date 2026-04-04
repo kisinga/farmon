@@ -6,8 +6,13 @@ import type {
   BoardLoadResult,
   GenerateResult,
   ValidationResult,
-  EsphomeStatus,
-  EsphomeResult,
+  ToolchainInfo,
+  ProcessResult,
+  ProcessHandle,
+  ProcessOutputEvent,
+  ProcessDoneEvent,
+  SerialDevice,
+  HealthReport,
 } from '../models/electron-api';
 
 @Injectable({ providedIn: 'root' })
@@ -51,27 +56,78 @@ export class ElectronService {
     return this.invoke(() => this.api!.codegenGenerate(manifest, board));
   }
 
-  // --- ESPHome ---
-  esphomeAvailable(): Promise<EsphomeStatus> {
-    if (!this.api) return Promise.resolve({ installed: false, path: null });
-    return this.api.esphomeAvailable();
+  // --- Toolchain ---
+  toolchainStatus(): Promise<ToolchainInfo> {
+    if (!this.api) return Promise.resolve({ esphomePath: null, pythonPath: null, version: null });
+    return this.api.toolchainStatus();
   }
-  esphomeCompile(configName: string): Promise<EsphomeResult> {
-    return this.invoke(() => this.api!.esphomeCompile(configName));
-  }
-  esphomeFlash(configName: string, device?: string): Promise<EsphomeResult> {
-    return this.invoke(() => this.api!.esphomeFlash(configName, device));
-  }
-  esphomeLogs(configName: string, device?: string): Promise<EsphomeResult> {
-    return this.invoke(() => this.api!.esphomeLogs(configName, device));
+  toolchainRefresh(): Promise<ToolchainInfo> {
+    return this.invoke(() => this.api!.toolchainRefresh());
   }
 
-  /** Subscribe to ESPHome stdout/stderr stream. Returns unsubscribe fn. */
-  onEsphomeOutput(callback: (data: { stream: string; text: string }) => void): () => void {
+  // --- ESPHome operations ---
+  esphomeCompile(configName: string): Promise<ProcessResult> {
+    return this.invoke(() => this.api!.esphomeCompile(configName));
+  }
+  esphomeFlash(configName: string, device?: string): Promise<ProcessResult> {
+    return this.invoke(() => this.api!.esphomeFlash(configName, device));
+  }
+  esphomeLogs(configName: string, device?: string): Promise<ProcessResult> {
+    return this.invoke(() => this.api!.esphomeLogs(configName, device));
+  }
+  esphomeCancel(processId: string): Promise<{ cancelled: boolean }> {
+    return this.invoke(() => this.api!.esphomeCancel(processId));
+  }
+
+  // --- ESPHome events ---
+  onEsphomeStarted(callback: (handle: ProcessHandle) => void): () => void {
+    return this.api?.onEsphomeStarted(callback) ?? (() => {});
+  }
+  onEsphomeOutput(callback: (data: ProcessOutputEvent) => void): () => void {
     return this.api?.onEsphomeOutput(callback) ?? (() => {});
   }
-  onEsphomeDone(callback: (data: { code: number | null; signal: string | null }) => void): () => void {
+  onEsphomeDone(callback: (data: ProcessDoneEvent) => void): () => void {
     return this.api?.onEsphomeDone(callback) ?? (() => {});
+  }
+
+  // --- Discovery ---
+  deviceListSerial(): Promise<SerialDevice[]> {
+    if (!this.api) return Promise.resolve([]);
+    return this.api.deviceListSerial();
+  }
+
+  // --- Import / Export ---
+  importConfig(filePath: string): Promise<string> {
+    return this.invoke(() => this.api!.libraryImport(filePath));
+  }
+  importBoard(dirPath: string): Promise<string> {
+    return this.invoke(() => this.api!.boardImport(dirPath));
+  }
+  exportConfig(name: string, destPath: string): Promise<{ ok: boolean }> {
+    return this.invoke(() => this.api!.libraryExport(name, destPath));
+  }
+
+  // --- File Dialogs ---
+  pickFile(options: { title?: string; filters?: Array<{ name: string; extensions: string[] }> } = {}): Promise<string | null> {
+    if (!this.api) return Promise.resolve(null);
+    return this.api.pickFile(options);
+  }
+  pickDirectory(options: { title?: string } = {}): Promise<string | null> {
+    if (!this.api) return Promise.resolve(null);
+    return this.api.pickDirectory(options);
+  }
+  saveFile(options: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> } = {}): Promise<string | null> {
+    if (!this.api) return Promise.resolve(null);
+    return this.api.saveFile(options);
+  }
+
+  // --- Health ---
+  healthCheck(): Promise<HealthReport> {
+    if (!this.api) return Promise.resolve({ ok: false, checks: [] });
+    return this.api.healthCheck();
+  }
+  healthFix(): Promise<{ success: boolean; output: string }> {
+    return this.invoke(() => this.api!.healthFix());
   }
 
   // --- Store ---

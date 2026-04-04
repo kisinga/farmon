@@ -8,6 +8,7 @@ import { generateDashboard } from "./generators/dashboard.js";
 import { generateBoardPackage } from "./generators/board-package.js";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { CONTROL_YAML } from "./static/control.js";
+import { LOGO_SVG } from "./static/logo.js";
 
 export interface GeneratedFile {
   relativePath: string;
@@ -40,6 +41,11 @@ export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
       relativePath: `${deviceDir}/common/board.yaml`,
       description: `${board.label} board package (buses, battery, LED, diagnostics)`,
       content: generateBoardPackage(board),
+    },
+    {
+      relativePath: `${deviceDir}/common/images/logo.svg`,
+      description: "Logo image for OLED splash screen",
+      content: LOGO_SVG,
     },
     {
       relativePath: `${deviceDir}/${dir}.yaml`,

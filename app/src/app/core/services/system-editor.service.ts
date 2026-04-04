@@ -14,7 +14,7 @@ export interface SystemManifest {
   pump: { pin: string };
   tanks: Array<{ name: string; id: string; level_pin: string }>;
   valves: Array<{ name: string; id: string; open_pin: string; close_pin: string }>;
-  flow_sensors: Array<{ name: string; id: string; pin: string }>;
+  flow_sensors: Array<{ name: string; id: string; pin: string; flow_cal: number }>;
   routes: Array<{
     name: string;
     source: string;

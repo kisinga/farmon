@@ -21,9 +21,10 @@ export function generateSubstitutions(m: Manifest): string {
   }
 
   lines.push("");
-  lines.push(`  # --- Flow sensors ---`);
+  lines.push(`  # --- Flow sensors (pin + calibration) ---`);
   for (const f of m.flow_sensors) {
     lines.push(`  pin_${f.id}: ${f.pin}`);
+    lines.push(`  flow_cal_${f.id}: "${f.flow_cal}"`);
   }
 
   lines.push("");
@@ -38,10 +39,6 @@ export function generateSubstitutions(m: Manifest): string {
   lines.push(`  flow_watchdog_seconds: "${m.timing.flow_watchdog_seconds}"`);
   lines.push(`  flow_confirm_seconds: "${m.timing.flow_confirm_seconds}"`);
   lines.push(`  api_watchdog_seconds: "${m.timing.api_watchdog_seconds}"`);
-
-  lines.push("");
-  lines.push(`  # --- Flow calibration ---`);
-  lines.push(`  flow_cal: "${m.timing.flow_cal}"`);
 
   return `substitutions:\n${lines.join("\n")}\n`;
 }

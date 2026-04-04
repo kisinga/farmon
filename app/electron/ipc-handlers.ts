@@ -1,43 +1,39 @@
-import { ipcMain, BrowserWindow } from "electron";
-import { spawn } from "node:child_process";
-import * as path from "node:path";
+import { ipcMain, BrowserWindow, dialog } from "electron";
 import { ManifestSchema } from "./lib/schema.js";
+import { BoardDefSchema } from "./lib/board.js";
 import { validate } from "./lib/validate.js";
 import { generateAll } from "./lib/generate.js";
-import { BoardDefSchema } from "./lib/board.js";
 import * as store from "./store.js";
+import { detectToolchain, refreshToolchain } from "./toolchain.js";
+import { checkHealth, fixDeps } from "./health.js";
+import * as esphome from "./esphome.js";
+import { killProcess } from "./process-manager.js";
+import { listSerialPorts } from "./discovery.js";
 
 // ---------------------------------------------------------------------------
-// ESPHome detection
+// Helpers
 // ---------------------------------------------------------------------------
 
-function findEsphome(): string | null {
-  const { execSync } = require("node:child_process");
-  try {
-    return execSync("which esphome", { encoding: "utf-8" }).trim() || null;
-  } catch {
-    return null;
-  }
+function winFromEvent(event: Electron.IpcMainInvokeEvent): BrowserWindow {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) throw new Error("No window");
+  return win;
 }
-
-let esphomePath: string | null = null;
 
 // ---------------------------------------------------------------------------
 // IPC handlers
 // ---------------------------------------------------------------------------
 
 export function registerIpcHandlers() {
-  esphomePath = findEsphome();
-
   // --- Boards ---
 
   ipcMain.handle("board:list", async () => store.listBoards());
 
-  ipcMain.handle("board:load", async (_event, model: string) =>
+  ipcMain.handle("board:load", async (_e, model: string) =>
     store.loadBoard(model)
   );
 
-  ipcMain.handle("board:import", async (_event, dirPath: string) =>
+  ipcMain.handle("board:import", async (_e, dirPath: string) =>
     store.importBoard(dirPath)
   );
 
@@ -45,29 +41,40 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("library:list", async () => store.listConfigs());
 
-  ipcMain.handle("library:load", async (_event, name: string) =>
+  ipcMain.handle("library:load", async (_e, name: string) =>
     store.loadConfig(name)
   );
 
-  ipcMain.handle("library:save", async (_event, name: string, data: unknown) => {
-    store.saveConfig(name, data);
-    return { ok: true };
-  });
+  ipcMain.handle(
+    "library:save",
+    async (_e, name: string, data: unknown) => {
+      store.saveConfig(name, data);
+      return { ok: true };
+    }
+  );
 
-  ipcMain.handle("library:delete", async (_event, name: string) => {
+  ipcMain.handle("library:delete", async (_e, name: string) => {
     store.deleteConfig(name);
     return { ok: true };
   });
 
-  ipcMain.handle("library:import", async (_event, filePath: string) =>
+  ipcMain.handle("library:import", async (_e, filePath: string) =>
     store.importConfig(filePath)
+  );
+
+  ipcMain.handle(
+    "library:export",
+    async (_e, name: string, destPath: string) => {
+      store.exportConfig(name, destPath);
+      return { ok: true };
+    }
   );
 
   // --- Codegen ---
 
   ipcMain.handle(
     "codegen:validate",
-    async (_event, manifestRaw: unknown, boardRaw: unknown) => {
+    async (_e, manifestRaw: unknown, boardRaw: unknown) => {
       const manifest = ManifestSchema.parse(manifestRaw);
       const board = BoardDefSchema.parse(boardRaw);
       return validate(manifest, board);
@@ -76,14 +83,12 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     "codegen:generate",
-    async (_event, manifestRaw: unknown, boardRaw: unknown) => {
+    async (_e, manifestRaw: unknown, boardRaw: unknown) => {
       const manifest = ManifestSchema.parse(manifestRaw);
       const board = BoardDefSchema.parse(boardRaw);
       const files = generateAll(manifest, board);
-
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);
-
       return {
         outputDir,
         files: files.map((f) => ({
@@ -95,58 +100,105 @@ export function registerIpcHandlers() {
     }
   );
 
-  // --- ESPHome ---
+  // --- Toolchain ---
 
-  ipcMain.handle("esphome:available", async () => ({
-    installed: !!esphomePath,
-    path: esphomePath,
-  }));
+  ipcMain.handle("toolchain:status", async () => detectToolchain());
+  ipcMain.handle("toolchain:refresh", async () => refreshToolchain());
 
-  // Compile: spawns esphome compile, streams stdout/stderr to renderer via events
-  ipcMain.handle(
-    "esphome:compile",
-    async (event, configName: string) => {
-      if (!esphomePath) throw new Error("ESPHome not installed");
+  // --- ESPHome operations ---
 
-      const outputDir = store.getOutputDir();
-      const dir = configName; // e.g. "pump-controller"
-      const configPath = path.join(outputDir, "esphome", dir, `${dir}.yaml`);
+  ipcMain.handle("esphome:compile", async (event, configName: string) => {
+    const { result } = esphome.compile(winFromEvent(event), configName);
+    return result;
+  });
 
-      return runEsphome(event, ["compile", configPath]);
-    }
-  );
-
-  // Flash: spawns esphome run, optionally with --device
   ipcMain.handle(
     "esphome:flash",
     async (event, configName: string, device?: string) => {
-      if (!esphomePath) throw new Error("ESPHome not installed");
-
-      const outputDir = store.getOutputDir();
-      const dir = configName;
-      const configPath = path.join(outputDir, "esphome", dir, `${dir}.yaml`);
-
-      const args = ["run", configPath];
-      if (device) args.push("--device", device);
-
-      return runEsphome(event, args);
+      const { result } = esphome.flash(
+        winFromEvent(event),
+        configName,
+        device
+      );
+      return result;
     }
   );
 
-  // Logs: spawns esphome logs
   ipcMain.handle(
     "esphome:logs",
     async (event, configName: string, device?: string) => {
-      if (!esphomePath) throw new Error("ESPHome not installed");
+      const { result } = esphome.logs(
+        winFromEvent(event),
+        configName,
+        device
+      );
+      return result;
+    }
+  );
 
-      const outputDir = store.getOutputDir();
-      const dir = configName;
-      const configPath = path.join(outputDir, "esphome", dir, `${dir}.yaml`);
+  ipcMain.handle("esphome:cancel", async (_e, processId: string) => ({
+    cancelled: killProcess(processId),
+  }));
 
-      const args = ["logs", configPath];
-      if (device) args.push("--device", device);
+  // --- Discovery ---
 
-      return runEsphome(event, args);
+  ipcMain.handle("device:list-serial", async () => listSerialPorts());
+
+  // --- Health ---
+
+  ipcMain.handle("health:check", async () => checkHealth());
+  ipcMain.handle("health:fix", async () => fixDeps());
+
+  // --- File dialogs ---
+
+  ipcMain.handle(
+    "dialog:open-file",
+    async (
+      event,
+      options: {
+        title?: string;
+        filters?: Array<{ name: string; extensions: string[] }>;
+      }
+    ) => {
+      const win = winFromEvent(event);
+      const result = await dialog.showOpenDialog(win, {
+        title: options.title,
+        filters: options.filters,
+        properties: ["openFile"],
+      });
+      return result.canceled ? null : result.filePaths[0];
+    }
+  );
+
+  ipcMain.handle(
+    "dialog:open-directory",
+    async (event, options: { title?: string }) => {
+      const win = winFromEvent(event);
+      const result = await dialog.showOpenDialog(win, {
+        title: options.title,
+        properties: ["openDirectory"],
+      });
+      return result.canceled ? null : result.filePaths[0];
+    }
+  );
+
+  ipcMain.handle(
+    "dialog:save-file",
+    async (
+      event,
+      options: {
+        title?: string;
+        defaultPath?: string;
+        filters?: Array<{ name: string; extensions: string[] }>;
+      }
+    ) => {
+      const win = winFromEvent(event);
+      const result = await dialog.showSaveDialog(win, {
+        title: options.title,
+        defaultPath: options.defaultPath,
+        filters: options.filters,
+      });
+      return result.canceled ? null : result.filePath;
     }
   );
 
@@ -154,45 +206,4 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("store:path", async () => store.getStorePath());
   ipcMain.handle("store:output-dir", async () => store.getOutputDir());
-}
-
-// ---------------------------------------------------------------------------
-// ESPHome process runner — streams output to renderer
-// ---------------------------------------------------------------------------
-
-function runEsphome(
-  event: Electron.IpcMainInvokeEvent,
-  args: string[]
-): Promise<{ code: number | null; signal: string | null }> {
-  return new Promise((resolve, reject) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) return reject(new Error("No window"));
-
-    const proc = spawn(esphomePath!, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    proc.stdout.on("data", (chunk: Buffer) => {
-      win.webContents.send("esphome:output", {
-        stream: "stdout",
-        text: chunk.toString("utf-8"),
-      });
-    });
-
-    proc.stderr.on("data", (chunk: Buffer) => {
-      win.webContents.send("esphome:output", {
-        stream: "stderr",
-        text: chunk.toString("utf-8"),
-      });
-    });
-
-    proc.on("close", (code, signal) => {
-      win.webContents.send("esphome:done", { code, signal });
-      resolve({ code, signal });
-    });
-
-    proc.on("error", (err) => {
-      reject(new Error(`Failed to start ESPHome: ${err.message}`));
-    });
-  });
 }

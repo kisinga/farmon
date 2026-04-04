@@ -36,9 +36,10 @@ export function generateDeviceYaml(
     subs[`pin_${v.id}_c`] = v.close_pin;
   }
 
-  // Flow sensors
+  // Flow sensors (pin + per-sensor calibration)
   for (const f of m.flow_sensors) {
     subs[`pin_${f.id}`] = f.pin;
+    subs[`flow_cal_${f.id}`] = `"${f.flow_cal}"`;
   }
 
   // Tank levels
@@ -51,7 +52,6 @@ export function generateDeviceYaml(
   subs.flow_watchdog_seconds = `"${m.timing.flow_watchdog_seconds}"`;
   subs.flow_confirm_seconds = `"${m.timing.flow_confirm_seconds}"`;
   subs.api_watchdog_seconds = `"${m.timing.api_watchdog_seconds}"`;
-  subs.flow_cal = `"${m.timing.flow_cal}"`;
 
   // --- On-boot sequence ---
   const bootSteps: unknown[] = [];
@@ -162,14 +162,16 @@ export function generateDeviceYaml(
   lines.push("    - packages/routes.h");
   lines.push("  on_boot:");
   for (const step of bootSteps) {
-    const stepYaml = stringify(step, {
+    const s = step as { priority: number; then: unknown[] };
+    lines.push(`    - priority: ${s.priority}`);
+    lines.push(`      then:`);
+    const thenYaml = stringify(s.then, {
       indent: 2,
       lineWidth: 0,
       defaultStringType: "PLAIN",
     });
-    // Indent each line by 4 spaces (under on_boot:)
-    for (const line of stepYaml.split("\n")) {
-      if (line.trim()) lines.push(`    ${line}`);
+    for (const line of thenYaml.split("\n")) {
+      if (line.trim()) lines.push(`        ${line}`);
     }
   }
   lines.push("");

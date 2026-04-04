@@ -36,37 +36,115 @@ export interface ValidationResult {
   ok: boolean;
 }
 
-export interface EsphomeStatus {
-  installed: boolean;
-  path: string | null;
+// --- Toolchain ---
+
+export interface ToolchainInfo {
+  esphomePath: string | null;
+  pythonPath: string | null;
+  version: string | null;
 }
 
-export interface EsphomeResult {
+// --- Process lifecycle ---
+
+export type ProcessOperation = "compile" | "flash" | "logs";
+
+export interface ProcessHandle {
+  id: string;
+  operation: ProcessOperation;
+  configName: string;
+  pid: number | undefined;
+}
+
+export interface ProcessResult {
+  id: string;
   code: number | null;
   signal: string | null;
 }
 
+export interface ProcessOutputEvent {
+  id: string;
+  operation: ProcessOperation;
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
+export interface ProcessDoneEvent {
+  id: string;
+  operation: ProcessOperation;
+  code: number | null;
+  signal: string | null;
+}
+
+// --- Discovery ---
+
+export interface SerialDevice {
+  port: string;
+  description: string;
+  hwid: string;
+}
+
+// --- Health ---
+
+export interface HealthReport {
+  ok: boolean;
+  checks: HealthCheck[];
+}
+
+export interface HealthCheck {
+  name: string;
+  status: 'ok' | 'missing' | 'error';
+  detail: string;
+  fixable: boolean;
+}
+
+// --- ElectronAPI ---
+
 export interface ElectronAPI {
+  // Library
   libraryList(): Promise<LibraryEntry[]>;
   libraryLoad(name: string): Promise<unknown>;
   librarySave(name: string, data: unknown): Promise<{ ok: boolean }>;
   libraryDelete(name: string): Promise<{ ok: boolean }>;
   libraryImport(filePath: string): Promise<string>;
+  libraryExport(name: string, destPath: string): Promise<{ ok: boolean }>;
 
+  // Boards
   boardList(): Promise<BoardListEntry[]>;
   boardLoad(model: string): Promise<BoardLoadResult>;
   boardImport(dirPath: string): Promise<string>;
 
+  // Codegen
   codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
   codegenGenerate(manifest: unknown, board: unknown): Promise<GenerateResult>;
 
-  esphomeAvailable(): Promise<EsphomeStatus>;
-  esphomeCompile(configName: string): Promise<EsphomeResult>;
-  esphomeFlash(configName: string, device?: string): Promise<EsphomeResult>;
-  esphomeLogs(configName: string, device?: string): Promise<EsphomeResult>;
-  onEsphomeOutput(callback: (data: { stream: string; text: string }) => void): () => void;
-  onEsphomeDone(callback: (data: { code: number | null; signal: string | null }) => void): () => void;
+  // Toolchain
+  toolchainStatus(): Promise<ToolchainInfo>;
+  toolchainRefresh(): Promise<ToolchainInfo>;
 
+  // ESPHome operations
+  esphomeCompile(configName: string): Promise<ProcessResult>;
+  esphomeFlash(configName: string, device?: string): Promise<ProcessResult>;
+  esphomeLogs(configName: string, device?: string): Promise<ProcessResult>;
+  esphomeCancel(processId: string): Promise<{ cancelled: boolean }>;
+
+  // ESPHome events
+  onEsphomeStarted(callback: (handle: ProcessHandle) => void): () => void;
+  onEsphomeOutput(callback: (data: ProcessOutputEvent) => void): () => void;
+  onEsphomeDone(callback: (data: ProcessDoneEvent) => void): () => void;
+
+  // Discovery
+  deviceListSerial(): Promise<SerialDevice[]>;
+
+  // Health
+  healthCheck(): Promise<HealthReport>;
+  healthFix(): Promise<{ success: boolean; output: string }>;
+
+  // File dialogs
+  pickFile(options: { title?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>;
+  pickDirectory(options: { title?: string }): Promise<string | null>;
+  saveFile(options: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>;
+
+  // Store
   storePath(): Promise<string>;
   outputDir(): Promise<string>;
 }

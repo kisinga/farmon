@@ -116,6 +116,10 @@ assert(!deviceYaml.includes("refill_watchdog_seconds"), "No refill_watchdog_seco
 assert(!deviceYaml.includes("refill_min_rise_pct"), "No refill_min_rise_pct sub");
 assert(!deviceYaml.includes("max_runtime_seconds"), "No global max_runtime_seconds sub");
 assert(!deviceYaml.includes("refill_baseline"), "No refill_baseline in boot");
+// Per-sensor flow_cal substitutions (not global)
+for (const f of manifest.flow_sensors) {
+  assert(deviceYaml.includes(`flow_cal_${f.id}: "${f.flow_cal}"`), `Per-sensor flow_cal sub for ${f.id}`);
+}
 
 // --- routes.h ---
 
@@ -156,6 +160,7 @@ console.log("\nsensors.yaml:");
 const sensors = getFile("sensors.yaml");
 for (const f of manifest.flow_sensors) {
   assert(sensors.includes(`id: ${f.id}`), `Flow ${f.id} defined`);
+  assert(sensors.includes(`\${flow_cal_${f.id}}`), `Flow ${f.id} uses per-sensor cal`);
 }
 for (const t of manifest.tanks) {
   assert(sensors.includes(`id: ${t.id}_level`), `Tank ${t.id} level`);

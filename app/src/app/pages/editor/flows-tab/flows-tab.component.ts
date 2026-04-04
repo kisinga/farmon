@@ -23,6 +23,7 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
                 <th>Name</th>
                 <th>ID</th>
                 <th>Pin</th>
+                <th>Cal (pulses/L)</th>
                 <th>PCNT</th>
                 <th></th>
               </tr>
@@ -43,6 +44,16 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
                       (ngModelChange)="updateField(i, 'pin', $event)" placeholder="GPIO46" />
                   </td>
                   <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-24 font-mono text-right"
+                      [ngModel]="flow.flow_cal"
+                      (ngModelChange)="updateNumField(i, 'flow_cal', $event)"
+                      placeholder="450"
+                      min="1"
+                    />
+                  </td>
+                  <td>
                     @if (editor.pcntPins().has(flow.pin)) {
                       <span class="badge badge-success badge-xs">OK</span>
                     } @else if (flow.pin) {
@@ -57,8 +68,9 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
             </tbody>
           </table>
 
-          <div class="text-xs text-base-content/50">
-            Pulse counter pins: {{ pcntPinList() }}
+          <div class="text-xs text-base-content/50 space-y-1">
+            <div>Pulse counter pins: {{ pcntPinList() }}</div>
+            <div>Common calibration values: YF-S201 = 450, YF-B1 = 660, YF-S402B = 4380</div>
           </div>
         }
       </div>
@@ -72,7 +84,7 @@ export class FlowsTabComponent {
   add() {
     this.editor.updateManifest((m) => {
       const n = m.flow_sensors.length + 1;
-      m.flow_sensors.push({ name: `Flow ${n}`, id: `flow${n}`, pin: '' });
+      m.flow_sensors.push({ name: `Flow ${n}`, id: `flow${n}`, pin: '', flow_cal: 450 });
     });
   }
 
@@ -82,7 +94,13 @@ export class FlowsTabComponent {
 
   updateField(index: number, field: string, value: string) {
     this.editor.updateManifest((m) => {
-      (m.flow_sensors[index] as Record<string, string>)[field] = value;
+      (m.flow_sensors[index] as Record<string, unknown>)[field] = value;
+    });
+  }
+
+  updateNumField(index: number, field: string, value: unknown) {
+    this.editor.updateManifest((m) => {
+      (m.flow_sensors[index] as Record<string, unknown>)[field] = Number(value) || 0;
     });
   }
 }

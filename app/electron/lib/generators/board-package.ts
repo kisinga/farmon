@@ -123,13 +123,13 @@ export function generateBoardPackage(board: BoardDef): string {
     sections.push({
       image: [
         {
-          file: "../common/images/logo.svg",
+          file: "common/images/logo.svg",
           id: "logo_splash",
           resize: "60x60",
           type: "BINARY",
         },
         {
-          file: "../common/images/logo.svg",
+          file: "common/images/logo.svg",
           id: "logo_small",
           resize: "40x40",
           type: "BINARY",
