@@ -20,6 +20,7 @@ export interface CanvasEvents {
   onPipeCreated(from: string, to: string): void;
   onPipeDeleted(pipeId: string): void;
   onSelected(selection: Selection | null): void;
+  onDanglingPipe(from: string, graphPos: { x: number; y: number }, clientPos: { x: number; y: number }): void;
 }
 
 // --- Canvas class ---
@@ -35,6 +36,7 @@ export class TopologyCanvas {
   private positionTimer: ReturnType<typeof setTimeout> | null = null;
   private rendering = false;
   private selectedPipeId: string | null = null;
+  private dragSource: { from: string; clientX: number; clientY: number } | null = null;
 
   constructor(container: HTMLElement, events: CanvasEvents) {
     this.events = events;
@@ -113,22 +115,36 @@ export class TopologyCanvas {
   }
 
   highlight(selection: Selection | null): void {
+    // Reset previous selection
     if (this.selectedPipeId) {
       for (const link of this.graph.getLinks()) {
         if (String(link.id) === `pipe-${this.selectedPipeId}`) {
           link.attr('line/stroke', UI_COLORS.pipe);
           link.attr('line/strokeWidth', 2.5);
+          const view = this.paper.findViewByModel(link);
+          if (view) (view as any).removeTools();
         }
       }
     }
 
     this.selectedPipeId = selection?.kind === 'pipe' ? selection.pipeId : null;
 
+    // Highlight selected pipe and show delete tool
     if (this.selectedPipeId) {
       for (const link of this.graph.getLinks()) {
         if (String(link.id) === `pipe-${this.selectedPipeId}`) {
           link.attr('line/stroke', UI_COLORS.selected);
           link.attr('line/strokeWidth', 3.5);
+          const view = this.paper.findViewByModel(link);
+          if (view) {
+            const toolsView = new joint.dia.ToolsView({
+              tools: [new (joint as any).linkTools.Remove({
+                distance: '50%',
+                action: () => this.events.onPipeDeleted(this.selectedPipeId!),
+              })],
+            });
+            (view as any).addTools(toolsView);
+          }
         }
       }
     }
@@ -150,6 +166,15 @@ export class TopologyCanvas {
 
   resize(w: number, h: number): void {
     if (w > 0 && h > 0) this.paper.setDimensions(w, h);
+  }
+
+  getViewportCenter(): { x: number; y: number } {
+    const s = this.paper.scale();
+    const t = this.paper.translate();
+    const el = (this.paper as any).el as HTMLElement;
+    const cx = (el.clientWidth / 2 - t.tx) / s.sx;
+    const cy = (el.clientHeight / 2 - t.ty) / s.sy;
+    return { x: Math.round(cx), y: Math.round(cy) };
   }
 
   destroy(): void {
@@ -199,7 +224,22 @@ export class TopologyCanvas {
       this.positionTimer = setTimeout(() => this.persistNodePositions(), 300);
     });
 
+    // Track mouse position during link drag for dangling pipe detection
+    this.paper.on('link:pointermove', (linkView: any, evt: any) => {
+      const link = linkView.model;
+      if (this.extractPipeId(String(link.id))) return;
+      const src = link.source();
+      if (src?.id && src.port) {
+        this.dragSource = {
+          from: `${String(src.id).replace('node-', '')}:${src.port}`,
+          clientX: evt.clientX,
+          clientY: evt.clientY,
+        };
+      }
+    });
+
     this.paper.on('link:connect', (linkView: any) => {
+      this.dragSource = null; // Clear before remove to prevent popup
       const link = linkView.model;
       const src = link.source();
       const tgt = link.target();
@@ -208,6 +248,21 @@ export class TopologyCanvas {
       const from = `${String(src.id).replace('node-', '')}:${src.port}`;
       const to = `${String(tgt.id).replace('node-', '')}:${tgt.port}`;
       this.events.onPipeCreated(from, to);
+    });
+
+    // Detect failed connection: drag link removed without link:connect
+    (this.graph as any).on('remove', (cell: any) => {
+      if (!cell.isLink() || this.rendering) return;
+      if (this.extractPipeId(String(cell.id))) return; // A pipe being deleted, not a drag link
+      if (!this.dragSource) return; // Already handled by link:connect
+      const info = this.dragSource;
+      this.dragSource = null;
+      const localPoint = this.paper.clientToLocalPoint(info.clientX, info.clientY);
+      this.events.onDanglingPipe(
+        info.from,
+        { x: Math.round(localPoint.x), y: Math.round(localPoint.y) },
+        { x: info.clientX, y: info.clientY },
+      );
     });
 
     this.paper.on('element:pointerclick', (elementView: any) => {
@@ -222,21 +277,6 @@ export class TopologyCanvas {
       if (pipeId) {
         this.events.onSelected({ kind: 'pipe', pipeId });
       }
-    });
-
-    this.paper.on('link:mouseenter', (linkView: any) => {
-      const pipeId = this.extractPipeId(String(linkView.model.id));
-      if (!pipeId) return;
-      const toolsView = new joint.dia.ToolsView({
-        tools: [new (joint as any).linkTools.Remove({
-          distance: '50%',
-          action: () => this.events.onPipeDeleted(pipeId),
-        })],
-      });
-      linkView.addTools(toolsView);
-    });
-    this.paper.on('link:mouseleave', (linkView: any) => {
-      linkView.removeTools();
     });
   }
 

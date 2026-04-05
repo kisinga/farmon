@@ -11,6 +11,7 @@ import { deriveRoutes } from './derive-routes';
   selector: 'app-topology-tab',
   standalone: true,
   imports: [FormsModule],
+  host: { '(document:keydown.escape)': 'closePopup()' },
   template: `
     <!-- Toolbar -->
     <div class="flex items-center gap-2 px-4 py-2 border-b border-base-300/30 bg-base-200/30">
@@ -50,6 +51,20 @@ import { deriveRoutes } from './derive-routes';
           }
         </div>
       </div>
+
+      <!-- Node selector popup (shown when pipe dropped on empty space) -->
+      @if (nodePopup(); as popup) {
+        <div class="node-popup-backdrop" (click)="closePopup()"></div>
+        <div class="node-popup" [style.left.px]="popup.clientPos.x" [style.top.px]="popup.clientPos.y">
+          <ul class="menu menu-xs bg-base-200 rounded-lg shadow-lg w-40 p-1">
+            @for (desc of popupDescs(); track desc.kind) {
+              <li><a (click)="selectPopupNode(desc.kind)">
+                <span [innerHTML]="trustSvg(desc.legendSvg)"></span> {{ desc.label }}
+              </a></li>
+            }
+          </ul>
+        </div>
+      }
 
       <!-- Sidebar -->
       <aside class="sidebar w-64 border-l border-base-300/30 bg-base-100 overflow-y-auto shrink-0">
@@ -178,6 +193,8 @@ import { deriveRoutes } from './derive-routes';
     }
     .sidebar-fields { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; }
     .sidebar-label { font-size: 10px; color: oklch(var(--bc) / 0.5); white-space: nowrap; }
+    .node-popup-backdrop { position: fixed; inset: 0; z-index: 50; }
+    .node-popup { position: fixed; z-index: 51; }
   `],
 })
 export class TopologyTabComponent {
@@ -195,6 +212,21 @@ export class TopologyTabComponent {
 
   // --- Selection state ---
   protected selection = signal<Selection | null>(null);
+
+  // --- Node popup state (pipe dropped on empty space) ---
+  protected nodePopup = signal<{
+    from: string;
+    graphPos: { x: number; y: number };
+    clientPos: { x: number; y: number };
+  } | null>(null);
+
+  protected popupDescs = computed(() => {
+    if (!this.nodePopup()) return [];
+    return this.nodeDescs.filter(desc => {
+      if (desc.singleton && this.kindExists(desc.kind)) return false;
+      return desc.defaultPorts.some(p => p.direction === 'inlet');
+    });
+  });
 
   protected selectedNodeData = computed(() => {
     const sel = this.selection();
@@ -289,6 +321,9 @@ export class TopologyTabComponent {
         this.selection.set(sel);
         this.c.highlight(sel);
       },
+      onDanglingPipe: (from, graphPos, clientPos) => {
+        this.nodePopup.set({ from, graphPos, clientPos });
+      },
     });
 
     this.destroyRef.onDestroy(() => this.c.destroy());
@@ -313,9 +348,10 @@ export class TopologyTabComponent {
     if (!desc) return;
     if (desc.singleton && this.kindExists(kind)) return;
 
+    const center = this.c.getViewportCenter();
+
     this.editor.updateTopology(t => {
       const existing = t.nodes.filter(n => n.kind === kind).length;
-      const y = 100 + t.nodes.length * 120;
       const n = existing + 1;
       const id = desc.singleton ? kind : `${kind}${n}`;
       t.nodes.push({
@@ -323,7 +359,7 @@ export class TopologyTabComponent {
         id,
         ...desc.defaultData(n),
         ports: desc.defaultPorts.map(p => ({ ...p })),
-        position: { x: 100, y },
+        position: { x: center.x - desc.size.width / 2, y: center.y - desc.size.height / 2 },
       } as TopologyNode);
     });
     this.c.render(this.editor.topology()!);
@@ -374,6 +410,41 @@ export class TopologyTabComponent {
     this.editor.updateTopology(t => {
       if (t.route_overrides[key]) t.route_overrides[key].max_runtime_seconds = value;
     });
+  }
+
+  // --- Node popup ---
+
+  selectPopupNode(kind: string) {
+    const popup = this.nodePopup();
+    if (!popup) return;
+    this.nodePopup.set(null);
+
+    const desc = NODE_REGISTRY.get(kind);
+    if (!desc) return;
+    if (desc.singleton && this.kindExists(kind)) return;
+
+    this.editor.updateTopology(t => {
+      const existing = t.nodes.filter(n => n.kind === kind).length;
+      const n = existing + 1;
+      const id = desc.singleton ? kind : `${kind}${n}`;
+      t.nodes.push({
+        kind,
+        id,
+        ...desc.defaultData(n),
+        ports: desc.defaultPorts.map(p => ({ ...p })),
+        position: popup.graphPos,
+      } as TopologyNode);
+
+      const inletPort = desc.defaultPorts.find(p => p.direction === 'inlet');
+      if (inletPort) {
+        t.pipes.push({ id: this.nextPipeId(t), from: popup.from, to: `${id}:${inletPort.id}` });
+      }
+    });
+    this.c.render(this.editor.topology()!);
+  }
+
+  closePopup() {
+    this.nodePopup.set(null);
   }
 
   // --- Helpers ---
