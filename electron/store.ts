@@ -31,12 +31,11 @@ function checkSchema(data: Record<string, unknown>, filePath: string): void {
 // ---------------------------------------------------------------------------
 // Store paths
 //
-// Two layers:
-//   1. defaults/ — bundled read-only seed data (boards + configs)
-//   2. store/    — user-writable data (overrides defaults on name collision)
+// defaults/ contains bundled seed data (boards + configs).
+// store/    is the single source of truth at runtime.
 //
-// Reads check store/ first, then fall back to defaults/.
-// Writes always go to store/.
+// On init, defaults are seeded into store (missing or stale entries replaced).
+// All reads and writes go through store/ only.
 // ---------------------------------------------------------------------------
 
 let _defaultsDir = "";
@@ -62,14 +61,8 @@ function defaultConfigsDir(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Initialization — just store the defaults path, create user dirs
+// Helpers
 // ---------------------------------------------------------------------------
-
-export function initStore(defaultsDir: string): void {
-  _defaultsDir = defaultsDir;
-  fs.mkdirSync(boardsDir(), { recursive: true });
-  fs.mkdirSync(configsDir(), { recursive: true });
-}
 
 function copyDirSync(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });
@@ -81,6 +74,54 @@ function copyDirSync(src: string, dest: string): void {
   }
 }
 
+/** True if the config name matches a bundled default. */
+function isLibraryConfig(name: string): boolean {
+  return fs.existsSync(path.join(defaultConfigsDir(), `${name}.yaml`));
+}
+
+/** True if the board model matches a bundled default. */
+function isLibraryBoard(model: string): boolean {
+  return fs.existsSync(path.join(defaultBoardsDir(), model));
+}
+
+/** Generate a unique name that doesn't collide with existing store entries. */
+function uniqueName(base: string, dir: string, ext: string): string {
+  let candidate = `${base}-copy`;
+  let i = 1;
+  while (fs.existsSync(path.join(dir, `${candidate}${ext}`))) {
+    candidate = `${base}-copy-${++i}`;
+  }
+  return candidate;
+}
+
+// ---------------------------------------------------------------------------
+// Initialization — seed defaults into store, then store is the only source
+// ---------------------------------------------------------------------------
+
+export function initStore(defaultsDir: string): void {
+  _defaultsDir = defaultsDir;
+  fs.mkdirSync(boardsDir(), { recursive: true });
+  fs.mkdirSync(configsDir(), { recursive: true });
+  seedDefaults();
+}
+
+/** Always overwrite library entries in store from bundled defaults. */
+function seedDefaults(): void {
+  if (fs.existsSync(defaultBoardsDir())) {
+    for (const d of fs.readdirSync(defaultBoardsDir(), { withFileTypes: true })) {
+      if (!d.isDirectory()) continue;
+      copyDirSync(path.join(defaultBoardsDir(), d.name), path.join(boardsDir(), d.name));
+    }
+  }
+
+  if (fs.existsSync(defaultConfigsDir())) {
+    for (const f of fs.readdirSync(defaultConfigsDir())) {
+      if (!f.endsWith(".yaml")) continue;
+      fs.copyFileSync(path.join(defaultConfigsDir(), f), path.join(configsDir(), f));
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Boards
 // ---------------------------------------------------------------------------
@@ -89,46 +130,32 @@ export interface BoardListEntry {
   id: string;
   model: string;
   label: string;
+  library: boolean;
 }
 
-/** Merge board directories from defaults + store (store wins on collision). */
 export function listBoards(): BoardListEntry[] {
-  const entries = new Map<string, string>(); // id → dir path
+  if (!fs.existsSync(boardsDir())) return [];
 
-  // Defaults first
-  if (fs.existsSync(defaultBoardsDir())) {
-    for (const d of fs.readdirSync(defaultBoardsDir(), { withFileTypes: true })) {
-      if (d.isDirectory()) entries.set(d.name, path.join(defaultBoardsDir(), d.name));
-    }
-  }
-  // Store overrides
-  if (fs.existsSync(boardsDir())) {
-    for (const d of fs.readdirSync(boardsDir(), { withFileTypes: true })) {
-      if (d.isDirectory()) entries.set(d.name, path.join(boardsDir(), d.name));
-    }
-  }
-
-  return [...entries.entries()]
-    .map(([id, dir]) => {
-      const yamlPath = path.join(dir, "board.yaml");
+  return fs.readdirSync(boardsDir(), { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => {
+      const yamlPath = path.join(boardsDir(), d.name, "board.yaml");
       if (!fs.existsSync(yamlPath)) return null;
       const raw = fs.readFileSync(yamlPath, "utf-8");
       const parsed = parseYaml(raw) as Record<string, unknown>;
       return {
-        id,
-        model: (parsed.model as string) ?? id,
-        label: (parsed.label as string) ?? id,
+        id: d.name,
+        model: (parsed.model as string) ?? d.name,
+        label: (parsed.label as string) ?? d.name,
+        library: isLibraryBoard(d.name),
       };
     })
     .filter((x): x is BoardListEntry => x !== null);
 }
 
-/** Resolve a board directory: store first, then defaults. */
 function resolveBoardDir(model: string): string {
-  const storeDir = path.join(boardsDir(), model);
-  if (fs.existsSync(storeDir)) return storeDir;
-  const defaultDir = path.join(defaultBoardsDir(), model);
-  if (fs.existsSync(defaultDir)) return defaultDir;
+  const dir = path.join(boardsDir(), model);
+  if (fs.existsSync(dir)) return dir;
   throw new Error(`Board not found: ${model}`);
 }
 
@@ -172,65 +199,44 @@ export interface ConfigListEntry {
   tanks: number;
   valves: number;
   routes: number;
+  library: boolean;
 }
 
-/** Merge config files from defaults + store (store wins on collision). */
 export function listConfigs(): ConfigListEntry[] {
-  const files = new Map<string, string>(); // name → file path
+  if (!fs.existsSync(configsDir())) return [];
 
-  // Defaults first
-  if (fs.existsSync(defaultConfigsDir())) {
-    for (const f of fs.readdirSync(defaultConfigsDir())) {
-      if (f.endsWith(".yaml")) files.set(f.replace(".yaml", ""), path.join(defaultConfigsDir(), f));
-    }
-  }
-  // Store overrides
-  if (fs.existsSync(configsDir())) {
-    for (const f of fs.readdirSync(configsDir())) {
-      if (f.endsWith(".yaml")) files.set(f.replace(".yaml", ""), path.join(configsDir(), f));
-    }
-  }
+  return fs.readdirSync(configsDir())
+    .filter((f) => f.endsWith(".yaml"))
+    .map((f) => {
+      const name = f.replace(".yaml", "");
+      const filePath = path.join(configsDir(), f);
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const parsed = parseYaml(raw) as Record<string, unknown>;
+      const device = parsed.device as Record<string, unknown> | undefined;
+      const nodes = Array.isArray(parsed.nodes)
+        ? (parsed.nodes as Array<Record<string, unknown>>)
+        : [];
+      const overrides =
+        typeof parsed.route_overrides === "object" && parsed.route_overrides !== null
+          ? (parsed.route_overrides as Record<string, unknown>)
+          : {};
 
-  return [...files.entries()].map(([name, filePath]) => {
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const parsed = parseYaml(raw) as Record<string, unknown>;
-    const device = parsed.device as Record<string, unknown> | undefined;
-
-    const isV3 = Array.isArray(parsed.nodes);
-    let tankCount: number;
-    let valveCount: number;
-
-    if (isV3) {
-      const nodes = parsed.nodes as Array<Record<string, unknown>>;
-      const pipes = Array.isArray(parsed.pipes) ? parsed.pipes as Array<Record<string, unknown>> : [];
-      const components = pipes.flatMap(
-        (p) => Array.isArray(p.components) ? p.components as Array<Record<string, unknown>> : []
-      );
-      tankCount = nodes.filter((n) => n.kind === "tank").length;
-      valveCount = components.filter((c) => c.kind === "valve").length;
-    } else {
-      tankCount = Array.isArray(parsed.tanks) ? parsed.tanks.length : 0;
-      valveCount = Array.isArray(parsed.valves) ? parsed.valves.length : 0;
-    }
-
-    return {
-      name,
-      deviceName: (device?.name as string) ?? name,
-      friendlyName: (device?.friendly_name as string) ?? name,
-      board: (device?.board as string) ?? "unknown",
-      tanks: tankCount,
-      valves: valveCount,
-      routes: isV3 ? 0 : (Array.isArray(parsed.routes) ? parsed.routes.length : 0),
-    };
-  });
+      return {
+        name,
+        deviceName: (device?.name as string) ?? name,
+        friendlyName: (device?.friendly_name as string) ?? name,
+        board: (device?.board as string) ?? "unknown",
+        tanks: nodes.filter((n) => n.kind === "tank").length,
+        valves: nodes.filter((n) => n.kind === "valve").length,
+        routes: Object.keys(overrides).length,
+        library: isLibraryConfig(name),
+      };
+    });
 }
 
-/** Resolve a config file: store first, then defaults. */
 function resolveConfigPath(name: string): string {
-  const storePath = path.join(configsDir(), `${name}.yaml`);
-  if (fs.existsSync(storePath)) return storePath;
-  const defaultPath = path.join(defaultConfigsDir(), `${name}.yaml`);
-  if (fs.existsSync(defaultPath)) return defaultPath;
+  const filePath = path.join(configsDir(), `${name}.yaml`);
+  if (fs.existsSync(filePath)) return filePath;
   throw new Error(`Config not found: ${name}`);
 }
 
@@ -239,20 +245,22 @@ export function loadConfig(name: string): Record<string, unknown> {
   const raw = fs.readFileSync(filePath, "utf-8");
   const data = parseYaml(raw) as Record<string, unknown>;
   checkSchema(data, `configs/${name}.yaml`);
-
   return data;
 }
 
-/** Always writes to the store directory. */
-export function saveConfig(name: string, data: unknown): void {
+/** Writes to store. Library configs are read-only — saves a copy instead. Returns the saved name. */
+export function saveConfig(name: string, data: unknown): string {
   fs.mkdirSync(configsDir(), { recursive: true });
-  const filePath = path.join(configsDir(), `${name}.yaml`);
+
+  const saveName = isLibraryConfig(name) ? uniqueName(name, configsDir(), ".yaml") : name;
+  const filePath = path.join(configsDir(), `${saveName}.yaml`);
 
   const obj = data as Record<string, unknown>;
   if (!obj.schema) obj.schema = SCHEMA_VERSION;
 
   const yaml = stringifyYaml(obj, { indent: 2, lineWidth: 0 });
   fs.writeFileSync(filePath, yaml, "utf-8");
+  return saveName;
 }
 
 export function deleteConfig(name: string): void {

@@ -55,8 +55,8 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     "library:save",
     async (_e, name: string, data: unknown) => {
-      store.saveConfig(name, data);
-      return { ok: true };
+      const savedName = store.saveConfig(name, data);
+      return { ok: true, name: savedName };
     }
   );
 
