@@ -26,7 +26,7 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(
-      path.join(__dirname, "..", "dist", "app", "browser", "index.html")
+      path.join(__dirname, "..", "..", "dist", "app", "browser", "index.html")
     );
   }
 
@@ -41,7 +41,7 @@ app.whenReady().then(() => {
   // In production: defaults/ is bundled with the app
   const isDev = !app.isPackaged;
   const defaultsDir = isDev
-    ? path.join(__dirname, "..", "defaults")
+    ? path.join(__dirname, "..", "..", "defaults")
     : path.join(process.resourcesPath, "defaults");
 
   initStore(defaultsDir);

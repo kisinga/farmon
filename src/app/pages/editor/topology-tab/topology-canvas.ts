@@ -38,6 +38,10 @@ export class TopologyCanvas {
   private nodeCenters = new Map<string, { x: number; y: number }>();
   private compLabels = new Map<string, string>();
   private compToPipe = new Map<string, string>();
+  /** pipeId → ordered component IDs (for repositioning on node move) */
+  private pipeCompOrder = new Map<string, string[]>();
+  /** pipeId → { fromNode, toNode } (for repositioning on node move) */
+  private pipeEndpoints = new Map<string, { fromNode: string; toNode: string }>();
 
   private isPanning = false;
   private panStart = { x: 0, y: 0 };
@@ -94,6 +98,8 @@ export class TopologyCanvas {
     this.graph.clear();
     this.nodeCenters.clear();
     this.compLabels.clear();
+    this.pipeCompOrder.clear();
+    this.pipeEndpoints.clear();
 
     this.buildCompLabels(topology);
 
@@ -127,6 +133,11 @@ export class TopologyCanvas {
 
   addPipeCells(pipe: PipeSegment, topology: SystemTopology): void {
     this.rendering = true;
+
+    // Ensure node centers are up-to-date from graph elements
+    // (may be stale if nodes were added without a full re-render)
+    this.refreshNodeCenters();
+
     this.buildCompLabels(topology);
     const cells = this.buildPipeCells(pipe);
     this.graph.addCells(cells);
@@ -145,6 +156,13 @@ export class TopologyCanvas {
     }
     if (toRemove.length > 0) {
       this.graph.removeCells(toRemove);
+    }
+
+    // Clean up tracking maps
+    this.pipeEndpoints.delete(pipeId);
+    this.pipeCompOrder.delete(pipeId);
+    for (const compId of componentIds) {
+      this.compToPipe.delete(compId);
     }
   }
 
@@ -284,7 +302,10 @@ export class TopologyCanvas {
 
   private buildNodeElement(node: TopologyNode): joint.dia.Element | null {
     const desc = NODE_REGISTRY.get(node.kind);
-    if (!desc) return null;
+    if (!desc) {
+      console.warn(`[topology-canvas] unknown node kind "${node.kind}" for node "${node.id}"`);
+      return null;
+    }
 
     const ports = node.ports.map((p) => ({
       id: p.id,
@@ -296,9 +317,39 @@ export class TopologyCanvas {
   }
 
   private buildPipeCells(pipe: PipeSegment): joint.dia.Cell[] {
-    const [fromNode, fromPort] = pipe.from.split(':');
-    const [toNode, toPort] = pipe.to.split(':');
+    const parts = pipe.from.split(':');
+    const fromNode = parts[0];
+    const fromPort = parts[1];
+    const partsTo = pipe.to.split(':');
+    const toNode = partsTo[0];
+    const toPort = partsTo[1];
+
+    if (!fromNode || !fromPort) {
+      console.warn(`[topology-canvas] pipe "${pipe.id}" has malformed 'from': "${pipe.from}"`);
+      return [];
+    }
+    if (!toNode || !toPort) {
+      console.warn(`[topology-canvas] pipe "${pipe.id}" has malformed 'to': "${pipe.to}"`);
+      return [];
+    }
+
+    // Validate that source and target node elements exist on the graph
+    const srcEl = this.graph.getCell(`node-${fromNode}` as any);
+    const tgtEl = this.graph.getCell(`node-${toNode}` as any);
+    if (!srcEl) {
+      console.warn(`[topology-canvas] pipe "${pipe.id}" references missing source node "${fromNode}"`);
+      return [];
+    }
+    if (!tgtEl) {
+      console.warn(`[topology-canvas] pipe "${pipe.id}" references missing target node "${toNode}"`);
+      return [];
+    }
+
     const comps = pipe.components;
+
+    // Track pipe endpoints for component repositioning on node move
+    this.pipeEndpoints.set(pipe.id, { fromNode, toNode });
+    this.pipeCompOrder.set(pipe.id, comps.map(c => c.id));
 
     if (comps.length === 0) {
       return [
@@ -308,7 +359,16 @@ export class TopologyCanvas {
 
     const srcCenter = this.nodeCenters.get(fromNode);
     const tgtCenter = this.nodeCenters.get(toNode);
-    if (!srcCenter || !tgtCenter) return [];
+    if (!srcCenter || !tgtCenter) {
+      console.warn(
+        `[topology-canvas] pipe "${pipe.id}" cannot position inline components:` +
+        ` missing center for ${!srcCenter ? `"${fromNode}"` : `"${toNode}"`}`,
+      );
+      // Fallback: render a direct link without inline components
+      return [
+        createPipeSubLink(`pipe-${pipe.id}`, `node-${fromNode}`, fromPort, `node-${toNode}`, toPort),
+      ];
+    }
 
     const cells: joint.dia.Cell[] = [];
 
@@ -324,6 +384,8 @@ export class TopologyCanvas {
         const halfW = desc.size.width / 2;
         const halfH = desc.size.height / 2;
         cells.push(createInlineElement(desc, comp.id, label, cx - halfW, cy - halfH));
+      } else {
+        console.warn(`[topology-canvas] unknown inline component kind "${comp.kind}" on pipe "${pipe.id}"`);
       }
     }
 
@@ -366,24 +428,85 @@ export class TopologyCanvas {
 
   private persistNodePositions(): void {
     const positions = new Map<string, { x: number; y: number }>();
+    const movedNodeIds = new Set<string>();
 
     for (const el of this.graph.getElements()) {
       const data = (el as any).attributes?.data as { nodeId?: string; kind?: string } | undefined;
       if (!data?.nodeId) continue;
       const pos = el.position();
-      positions.set(data.nodeId, { x: Math.round(pos.x), y: Math.round(pos.y) });
+      const rounded = { x: Math.round(pos.x), y: Math.round(pos.y) };
+      positions.set(data.nodeId, rounded);
 
       const desc = data.kind ? NODE_REGISTRY.get(data.kind) : undefined;
       if (desc) {
+        const oldCenter = this.nodeCenters.get(data.nodeId);
+        const newCenter = {
+          x: pos.x + desc.size.width / 2,
+          y: pos.y + desc.size.height / 2,
+        };
+        if (!oldCenter || oldCenter.x !== newCenter.x || oldCenter.y !== newCenter.y) {
+          movedNodeIds.add(data.nodeId);
+        }
+        this.nodeCenters.set(data.nodeId, newCenter);
+      }
+    }
+
+    // Reposition inline components on pipes whose endpoints moved
+    if (movedNodeIds.size > 0) {
+      this.repositionInlineComponents(movedNodeIds);
+    }
+
+    if (positions.size > 0) {
+      this.events.onNodesMoved(positions);
+    }
+  }
+
+  /**
+   * After nodes move, reposition inline component elements so they stay
+   * centered between their pipe's source and target nodes.
+   * JointJS automatically re-routes the links when elements move.
+   */
+  private repositionInlineComponents(movedNodeIds: Set<string>): void {
+    for (const [pipeId, endpoints] of this.pipeEndpoints) {
+      // Only reposition if one of this pipe's endpoints moved
+      if (!movedNodeIds.has(endpoints.fromNode) && !movedNodeIds.has(endpoints.toNode)) continue;
+
+      const srcCenter = this.nodeCenters.get(endpoints.fromNode);
+      const tgtCenter = this.nodeCenters.get(endpoints.toNode);
+      if (!srcCenter || !tgtCenter) continue;
+
+      const compIds = this.pipeCompOrder.get(pipeId);
+      if (!compIds || compIds.length === 0) continue;
+
+      for (let i = 0; i < compIds.length; i++) {
+        const el = this.graph.getCell(`comp-${compIds[i]}` as any) as joint.dia.Element | undefined;
+        if (!el) continue;
+
+        const fraction = (i + 1) / (compIds.length + 1);
+        const cx = srcCenter.x + (tgtCenter.x - srcCenter.x) * fraction;
+        const cy = srcCenter.y + (tgtCenter.y - srcCenter.y) * fraction;
+        const size = el.size();
+        el.position(cx - size.width / 2, cy - size.height / 2);
+      }
+    }
+  }
+
+  /**
+   * Rebuild nodeCenters from current graph element positions.
+   * Ensures centers are available even when nodes were added incrementally.
+   */
+  private refreshNodeCenters(): void {
+    for (const el of this.graph.getElements()) {
+      const data = (el as any).attributes?.data as { nodeId?: string; kind?: string } | undefined;
+      if (!data?.nodeId) continue;
+      const desc = data.kind ? NODE_REGISTRY.get(data.kind) : undefined;
+      if (desc) {
+        const pos = el.position();
         this.nodeCenters.set(data.nodeId, {
           x: pos.x + desc.size.width / 2,
           y: pos.y + desc.size.height / 2,
         });
       }
-    }
-
-    if (positions.size > 0) {
-      this.events.onNodesMoved(positions);
     }
   }
 

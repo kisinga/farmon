@@ -1,0 +1,28 @@
+appId: com.majiflow.app
+productName: MajiFlow
+
+directories:
+  output: output
+
+files:
+  - dist-electron/**/*
+  - dist/app/browser/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/node_modules/**/*.md"
+
+extraResources:
+  - from: defaults
+    to: defaults
+
+asar: true
+
+linux:
+  target: AppImage
+  category: Utility
+
+win:
+  target: nsis
+
+mac:
+  target: dmg

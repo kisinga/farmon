@@ -4,7 +4,11 @@ node_modules/
 # Build output
 dist/
 dist-electron/
+out-tsc/
 output/
+
+# Angular
+.angular/
 
 # IDE / tools
 .gitnexus
@@ -12,3 +16,6 @@ output/
 
 # OS
 .DS_Store
+
+# Python (legacy/)
+.venv/

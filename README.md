@@ -15,36 +15,26 @@ The state machine (IDLE/PREPARING/RUNNING/STOPPING/FAULT) is static and board-ag
 ## Quick start
 
 ```bash
-# CLI: validate + generate
 npm install
-npm run validate -- library/pump-controller.yaml
-npm run generate -- library/pump-controller.yaml
-
-# Desktop app
-cd app && npm install && npm run dev
+npm run dev
 ```
 
 ## Project structure
 
 ```
 majiflow/
-├── app/                          # Electron + Angular desktop app
-│   ├── electron/                 # Main process + IPC handlers
-│   └── src/                      # Angular renderer (DaisyUI + Tailwind)
-├── lib/                          # Codegen library (pure logic, no I/O)
-│   ├── board.ts                  # Board definition schema + helpers
-│   ├── schema.ts                 # System manifest schema
-│   ├── validate.ts               # Constraint validation
-│   ├── generate.ts               # Orchestrator
-│   └── generators/               # One per output file (8 generators)
-├── cli/                          # CLI entry point
-├── boards/                       # Board definitions (YAML + SVG)
-│   └── heltec-v3/
-├── templates/                    # Static firmware (control.yaml)
-├── library/                      # Saved system configs
+├── src/                          # Angular frontend (renderer process)
+├── electron/                     # Electron main process + IPC handlers
+│   └── lib/                      # Codegen, validation, generators
+├── shared/                       # Types shared between Angular & Electron
 ├── test/                         # Integration + scaling tests
+├── defaults/                     # Bundled board defs & example configs
+│   ├── boards/                   # Board definitions (YAML + SVG)
+│   └── configs/                  # Example system configs
+├── public/                       # Static assets
+├── legacy/                       # Previous custom stack
 ├── deploy/                       # Docker infrastructure
-└── legacy/                       # Previous custom stack
+└── docs/                         # Documentation
 ```
 
 ## Generated files
