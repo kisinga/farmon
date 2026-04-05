@@ -7,7 +7,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 // Schema versioning
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 3;     // version this app writes
+export const SCHEMA_VERSION = 4;     // version this app writes
 
 export class SchemaError extends Error {
   constructor(

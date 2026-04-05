@@ -3,8 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { DomSanitizer } from '@angular/platform-browser';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import type { TopologyNode, PipeSegment } from '../../../core/models/topology.model';
-import { NODE_REGISTRY, INLINE_REGISTRY, type NodeDescriptor, type InlineComponentDescriptor } from '../../../core/models/entities.model';
-import { entityColor } from '../../../core/models/colors.model';
+import { NODE_REGISTRY, type NodeDescriptor } from '../../../core/models/entities.model';
 import { TopologyCanvas, type Selection } from './topology-canvas';
 import { deriveRoutes } from './derive-routes';
 
@@ -46,12 +45,6 @@ import { deriveRoutes } from './derive-routes';
           @for (desc of nodeDescs; track desc.kind) {
             <div class="legend-item">
               <span class="legend-swatch" [class.legend-circle]="desc.kind === 'pump'" [class.legend-dashed]="desc.kind === 'endpoint'" [style.border-color]="desc.color"></span>
-              <span>{{ desc.label }}</span>
-            </div>
-          }
-          @for (desc of inlineDescs; track desc.kind) {
-            <div class="legend-item">
-              <span class="legend-swatch legend-sm" [style.border-color]="desc.color"></span>
               <span>{{ desc.label }}</span>
             </div>
           }
@@ -103,71 +96,8 @@ import { deriveRoutes } from './derive-routes';
         @if (selectedPipeData(); as pipeData) {
           <div class="sidebar-section">
             <h3 class="sidebar-title">Pipe</h3>
-            <div class="text-xs font-mono text-base-content/60 mb-2">{{ pipeData.pipe.from }} → {{ pipeData.pipe.to }}</div>
-
-            @for (comp of pipeData.pipe.components; track comp.id) {
-              <div class="card bg-base-200/40 mb-2">
-                <div class="card-body p-2 gap-1">
-                  <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold" [style.color]="entityColor(comp.kind)">
-                      {{ getInlineDesc(comp.kind)?.label }}
-                    </span>
-                    <button class="btn btn-ghost btn-xs text-error" (click)="removeComponent(pipeData.pipe.id, comp.id)">×</button>
-                  </div>
-                  <div class="sidebar-fields">
-                    @for (field of getInlineDesc(comp.kind)?.sidebarFields ?? []; track field.key) {
-                      <label class="sidebar-label">{{ field.label }}</label>
-                      @if (field.type === 'number') {
-                        <input type="number" class="input input-xs input-bordered w-full font-mono"
-                          [ngModel]="$any(comp)[field.key]"
-                          (ngModelChange)="updateComponent(pipeData.pipe.id, comp.id, field.key, +$event)" min="1" />
-                      } @else {
-                        <input class="input input-xs input-bordered w-full font-mono"
-                          [ngModel]="$any(comp)[field.key]"
-                          (ngModelChange)="updateComponent(pipeData.pipe.id, comp.id, field.key, $event)"
-                          [placeholder]="field.placeholder ?? ''" />
-                      }
-                    }
-                  </div>
-                </div>
-              </div>
-            }
-
-            <div class="flex gap-1 mt-1">
-              @for (desc of inlineDescs; track desc.kind) {
-                <button class="btn btn-ghost btn-xs flex-1" (click)="addComponentToPipe(pipeData.pipe.id, desc.kind)">+ {{ desc.label }}</button>
-              }
-            </div>
-            <button class="btn btn-error btn-xs mt-2 w-full" (click)="deletePipe(pipeData.pipe.id)">Delete Pipe</button>
-          </div>
-        }
-
-        <!-- Component properties (clicked on valve/flow sensor on canvas) -->
-        @if (selectedComponent(); as sc) {
-          <div class="sidebar-section">
-            <h3 class="sidebar-title" [style.color]="entityColor(sc.comp.kind)">
-              {{ getInlineDesc(sc.comp.kind)?.label }}
-            </h3>
-            <div class="sidebar-fields">
-              @for (field of getInlineDesc(sc.comp.kind)?.sidebarFields ?? []; track field.key) {
-                <label class="sidebar-label">{{ field.label }}</label>
-                @if (field.type === 'number') {
-                  <input type="number" class="input input-xs input-bordered w-full font-mono"
-                    [ngModel]="$any(sc.comp)[field.key]"
-                    (ngModelChange)="updateComponent(sc.pipeId, sc.comp.id, field.key, +$event)" min="1" />
-                } @else {
-                  <input class="input input-xs input-bordered w-full font-mono"
-                    [ngModel]="$any(sc.comp)[field.key]"
-                    (ngModelChange)="updateComponent(sc.pipeId, sc.comp.id, field.key, $event)"
-                    [placeholder]="field.placeholder ?? ''" />
-                }
-              }
-              <label class="sidebar-label">On Pipe</label>
-              <span class="text-xs font-mono text-base-content/60">{{ sc.pipeId }}</span>
-            </div>
-            <button class="btn btn-error btn-xs mt-3 w-full" (click)="removeComponent(sc.pipeId, sc.comp.id)">
-              Delete {{ getInlineDesc(sc.comp.kind)?.label }}
-            </button>
+            <div class="text-xs font-mono text-base-content/60 mb-2">{{ pipeData.pipe.from }} &rarr; {{ pipeData.pipe.to }}</div>
+            <button class="btn btn-error btn-xs w-full" (click)="deletePipe(pipeData.pipe.id)">Delete Pipe</button>
           </div>
         }
 
@@ -240,7 +170,6 @@ import { deriveRoutes } from './derive-routes';
     }
     .legend-swatch.legend-circle { border-radius: 50%; width: 14px; height: 14px; }
     .legend-swatch.legend-dashed { border-style: dashed; border-width: 2px; border-radius: 4px; }
-    .legend-swatch.legend-sm { width: 14px; height: 10px; border-width: 2px; border-radius: 3px; }
     .sidebar { font-size: 12px; }
     .sidebar-section { padding: 12px; border-bottom: 1px solid oklch(var(--b3) / 0.3); }
     .sidebar-title {
@@ -263,10 +192,6 @@ export class TopologyTabComponent {
 
   // Registry arrays for template iteration
   protected nodeDescs: NodeDescriptor[] = Array.from(NODE_REGISTRY.values());
-  protected inlineDescs: InlineComponentDescriptor[] = Array.from(INLINE_REGISTRY.values());
-
-  // Expose entityColor to template
-  protected entityColor = entityColor;
 
   // --- Selection state ---
   protected selection = signal<Selection | null>(null);
@@ -289,16 +214,6 @@ export class TopologyTabComponent {
     return pipe ? { pipe } : null;
   });
 
-  protected selectedComponent = computed(() => {
-    const sel = this.selection();
-    const t = this.editor.topology();
-    if (!sel || sel.kind !== 'component' || !t) return null;
-    const pipe = t.pipes.find(p => p.id === sel.pipeId);
-    if (!pipe) return null;
-    const comp = pipe.components.find(c => c.id === sel.componentId);
-    return comp ? { comp, pipeId: sel.pipeId } : null;
-  });
-
   protected derivedRoutes = computed(() => {
     const t = this.editor.topology();
     return t ? deriveRoutes(t) : [];
@@ -317,15 +232,12 @@ export class TopologyTabComponent {
     });
   }
 
-  /** Render once data is available. If topology loaded before canvas, it's ready now.
-   *  If not, watch for it. */
   private doInitialRender() {
     const t = this.editor.topology();
     if (t) {
       this.c.render(t);
       return;
     }
-    // Topology not yet loaded — watch the signal until it arrives
     const stop = effect(() => {
       const t = this.editor.topology();
       if (t) {
@@ -340,10 +252,6 @@ export class TopologyTabComponent {
 
   trustSvg(svg: string) {
     return this.sanitizer.bypassSecurityTrustHtml(svg);
-  }
-
-  getInlineDesc(kind: string): InlineComponentDescriptor | undefined {
-    return INLINE_REGISTRY.get(kind);
   }
 
   kindExists(kind: string): boolean {
@@ -366,21 +274,16 @@ export class TopologyTabComponent {
       },
       onPipeCreated: (from, to) => {
         this.editor.updateTopology(t => {
-          t.pipes.push({ id: this.nextPipeId(t), from, to, components: [] });
+          t.pipes.push({ id: this.nextPipeId(t), from, to });
         });
-        const t = this.editor.topology()!;
-        const newPipe = t.pipes[t.pipes.length - 1];
-        this.c.addPipeCells(newPipe, t);
+        this.c.render(this.editor.topology()!);
       },
       onPipeDeleted: (pipeId) => {
-        const t = this.editor.topology();
-        const pipe = t?.pipes.find(p => p.id === pipeId);
-        const compIds = pipe?.components.map(c => c.id) ?? [];
-        this.c.removePipeCells(pipeId, compIds);
         this.editor.updateTopology(t => {
           t.pipes = t.pipes.filter(p => p.id !== pipeId);
         });
         this.selection.set(null);
+        this.c.render(this.editor.topology()!);
       },
       onSelected: (sel) => {
         this.selection.set(sel);
@@ -458,48 +361,11 @@ export class TopologyTabComponent {
   // --- Pipe editing ---
 
   deletePipe(pipeId: string) {
-    const t = this.editor.topology();
-    const pipe = t?.pipes.find(p => p.id === pipeId);
-    const compIds = pipe?.components.map(c => c.id) ?? [];
-    this.c.removePipeCells(pipeId, compIds);
     this.editor.updateTopology(t => {
       t.pipes = t.pipes.filter(p => p.id !== pipeId);
     });
     this.selection.set(null);
-  }
-
-  addComponentToPipe(pipeId: string, kind: string) {
-    const desc = INLINE_REGISTRY.get(kind);
-    if (!desc) return;
-
-    this.editor.updateTopology(t => {
-      const pipe = t.pipes.find(p => p.id === pipeId);
-      if (!pipe) return;
-      const n = pipe.components.filter(c => c.kind === kind).length + 1;
-      pipe.components.push({
-        kind,
-        id: `${pipeId}_${desc.labelPrefix.toLowerCase()}${n}`,
-        ...desc.defaultData(n),
-      } as any);
-    });
     this.c.render(this.editor.topology()!);
-  }
-
-  removeComponent(pipeId: string, compId: string) {
-    this.editor.updateTopology(t => {
-      const pipe = t.pipes.find(p => p.id === pipeId);
-      if (pipe) pipe.components = pipe.components.filter(c => c.id !== compId);
-    });
-    this.c.render(this.editor.topology()!);
-  }
-
-  updateComponent(pipeId: string, compId: string, field: string, value: any) {
-    this.editor.updateTopology(t => {
-      const pipe = t.pipes.find(p => p.id === pipeId);
-      if (!pipe) return;
-      const comp = pipe.components.find(c => c.id === compId);
-      if (comp) (comp as any)[field] = value;
-    });
   }
 
   // --- Route overrides ---

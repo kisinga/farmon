@@ -62,35 +62,32 @@ const EndpointNodeSchema = z.object({
   position: Position,
 });
 
-const TopologyNodeSchema = z.discriminatedUnion("kind", [
-  TankNodeSchema,
-  PumpNodeSchema,
-  EndpointNodeSchema,
-]);
-
-// ---------------------------------------------------------------------------
-// Inline components (live on pipes)
-// ---------------------------------------------------------------------------
-
-const ValveComponentSchema = z.object({
+const ValveNodeSchema = z.object({
   kind: z.literal("valve"),
   id: ComponentId,
   name: z.string().min(1),
   open_pin: GpioPin,
   close_pin: GpioPin,
+  ports: z.array(PortSchema).min(1),
+  position: Position,
 });
 
-const FlowComponentSchema = z.object({
+const FlowSensorNodeSchema = z.object({
   kind: z.literal("flow_sensor"),
   id: ComponentId,
   name: z.string().min(1),
   pin: GpioPin,
   flow_cal: z.number().default(450.0),
+  ports: z.array(PortSchema).min(1),
+  position: Position,
 });
 
-const InlineComponentSchema = z.discriminatedUnion("kind", [
-  ValveComponentSchema,
-  FlowComponentSchema,
+const TopologyNodeSchema = z.discriminatedUnion("kind", [
+  TankNodeSchema,
+  PumpNodeSchema,
+  EndpointNodeSchema,
+  ValveNodeSchema,
+  FlowSensorNodeSchema,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -104,7 +101,6 @@ const PipeSegmentSchema = z.object({
   id: z.string().min(1),
   from: PortRef,
   to: PortRef,
-  components: z.array(InlineComponentSchema).default([]),
 });
 
 // ---------------------------------------------------------------------------
@@ -117,11 +113,11 @@ const RouteOverrideSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Topology (top-level document)
+// Topology (top-level document) — Schema v4
 // ---------------------------------------------------------------------------
 
 export const TopologySchema = z.object({
-  schema: z.literal(3),
+  schema: z.literal(4),
   device: DeviceSchema,
   nodes: z.array(TopologyNodeSchema).min(1),
   pipes: z.array(PipeSegmentSchema).default([]),
@@ -137,10 +133,9 @@ export type Port = z.infer<typeof PortSchema>;
 export type TankNode = z.infer<typeof TankNodeSchema>;
 export type PumpNode = z.infer<typeof PumpNodeSchema>;
 export type EndpointNode = z.infer<typeof EndpointNodeSchema>;
+export type ValveNode = z.infer<typeof ValveNodeSchema>;
+export type FlowSensorNode = z.infer<typeof FlowSensorNodeSchema>;
 export type TopologyNode = z.infer<typeof TopologyNodeSchema>;
-export type ValveComponent = z.infer<typeof ValveComponentSchema>;
-export type FlowComponent = z.infer<typeof FlowComponentSchema>;
-export type InlineComponent = z.infer<typeof InlineComponentSchema>;
 export type PipeSegment = z.infer<typeof PipeSegmentSchema>;
 export type RouteOverride = z.infer<typeof RouteOverrideSchema>;
 export type Topology = z.infer<typeof TopologySchema>;

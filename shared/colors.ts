@@ -1,7 +1,7 @@
 /**
  * Consolidated color tokens — single source for entity and UI colors.
  */
-import { NODE_REGISTRY, INLINE_REGISTRY } from './entity-registry';
+import { NODE_REGISTRY } from './entity-registry';
 
 // ---------------------------------------------------------------------------
 // Non-entity UI colors
@@ -23,7 +23,5 @@ export const UI_COLORS = {
 // ---------------------------------------------------------------------------
 
 export function entityColor(kind: string): string {
-  return NODE_REGISTRY.get(kind)?.color
-    ?? INLINE_REGISTRY.get(kind)?.color
-    ?? UI_COLORS.text;
+  return NODE_REGISTRY.get(kind)?.color ?? UI_COLORS.text;
 }

@@ -1,4 +1,4 @@
-import { INLINE_REGISTRY, type InlineComponentDescriptor } from '../entity-registry';
+import { NODE_REGISTRY, type NodeDescriptor } from '../entity-registry';
 
 function escXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -7,14 +7,18 @@ function escXml(s: string): string {
 const COLOR = '#e11d48'; // rose
 const W = 50, H = 36;
 
-const valve: InlineComponentDescriptor = {
+const valve: NodeDescriptor = {
   kind: 'valve',
   label: 'Valve',
-  labelPrefix: 'V',
   color: COLOR,
   size: { width: W, height: H },
+  role: 'passthrough',
+  defaultPorts: [
+    { id: 'inlet', label: 'Inlet', direction: 'inlet' },
+    { id: 'outlet', label: 'Outlet', direction: 'outlet' },
+  ],
   defaultData: (n) => ({ name: `Valve ${n}`, open_pin: '', close_pin: '' }),
-  renderSvg: (shortLabel) => {
+  renderSvg: (name) => {
     const cx = W / 2, cy = H / 2 + 3;
     const hx = 16, hy = 10;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
@@ -22,7 +26,7 @@ const valve: InlineComponentDescriptor = {
       <path d="M ${cx + hx} ${cy - hy} L ${cx} ${cy} L ${cx + hx} ${cy + hy} Z" fill="${COLOR}" fill-opacity="0.15" stroke="${COLOR}" stroke-width="2.5" stroke-linejoin="round"/>
       <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - 12}" stroke="${COLOR}" stroke-width="2.5" stroke-linecap="round"/>
       <line x1="${cx - 7}" y1="${cy - 12}" x2="${cx + 7}" y2="${cy - 12}" stroke="${COLOR}" stroke-width="2.5" stroke-linecap="round"/>
-      <text x="${cx}" y="${cy + hy + 11}" text-anchor="middle" dominant-baseline="middle" font-size="9" font-family="ui-monospace, monospace" font-weight="700" fill="${COLOR}">${escXml(shortLabel)}</text>
+      <text x="${cx}" y="${cy + hy + 11}" text-anchor="middle" dominant-baseline="middle" font-size="9" font-family="ui-monospace, monospace" font-weight="700" fill="${COLOR}">${escXml(name)}</text>
     </svg>`;
   },
   legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><path d="M3 3 L10 8 L3 13 Z" fill="${COLOR}" opacity="0.15" stroke="${COLOR}" stroke-width="2" stroke-linejoin="round"/><path d="M17 3 L10 8 L17 13 Z" fill="${COLOR}" opacity="0.15" stroke="${COLOR}" stroke-width="2" stroke-linejoin="round"/><line x1="10" y1="8" x2="10" y2="2" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/><line x1="7" y1="2" x2="13" y2="2" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/></svg>`,
@@ -33,4 +37,4 @@ const valve: InlineComponentDescriptor = {
   ],
 };
 
-INLINE_REGISTRY.set('valve', valve);
+NODE_REGISTRY.set('valve', valve);

@@ -28,13 +28,13 @@ function assert(condition: boolean, name: string, detail?: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Load topology config (schema 3)
+// Load topology config (schema 4)
 // ---------------------------------------------------------------------------
 
 console.log("Loading topology config...");
 const raw = parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
 const topology = TopologySchema.parse(raw);
-assert(topology.schema === 3, "Schema version is 3");
+assert(topology.schema === 4, "Schema version is 4");
 
 // ---------------------------------------------------------------------------
 // Node structure
@@ -44,10 +44,14 @@ console.log("\nNode structure:");
 const tanks = topology.nodes.filter((n) => n.kind === "tank");
 const pumps = topology.nodes.filter((n) => n.kind === "pump");
 const endpoints = topology.nodes.filter((n) => n.kind === "endpoint");
+const valves = topology.nodes.filter((n) => n.kind === "valve");
+const flowSensors = topology.nodes.filter((n) => n.kind === "flow_sensor");
 
 assert(tanks.length === 2, `${tanks.length} tank nodes (expected 2)`);
 assert(pumps.length === 1, `${pumps.length} pump node (expected 1)`);
 assert(endpoints.length === 1, `${endpoints.length} endpoint node (expected 1)`);
+assert(valves.length === 4, `${valves.length} valve nodes (expected 4)`);
+assert(flowSensors.length === 2, `${flowSensors.length} flow sensor nodes (expected 2)`);
 
 for (const t of tanks) {
   assert(t.ports.length >= 1, `Tank "${t.id}" has ${t.ports.length} port(s)`);
@@ -62,17 +66,7 @@ assert(pumps[0].ports.length === 2, `Pump has ${pumps[0].ports.length} ports (ex
 // ---------------------------------------------------------------------------
 
 console.log("\nPipe structure:");
-assert(topology.pipes.length === 4, `${topology.pipes.length} pipes (expected 4)`);
-
-const pipeValves = topology.pipes.flatMap((p) =>
-  p.components.filter((c) => c.kind === "valve")
-);
-assert(pipeValves.length === 4, `${pipeValves.length} valves on pipes (expected 4)`);
-
-const pipeFlows = topology.pipes.flatMap((p) =>
-  p.components.filter((c) => c.kind === "flow_sensor")
-);
-assert(pipeFlows.length === 2, `${pipeFlows.length} flow sensors on pipes (expected 2)`);
+assert(topology.pipes.length === 10, `${topology.pipes.length} pipes (expected 10)`);
 
 // Route overrides
 assert(
@@ -125,7 +119,7 @@ for (const exp of expectedRoutes) {
 }
 
 // ---------------------------------------------------------------------------
-// Passive path detection
+// Passive path detection (gravity flow — no pump crossing)
 // ---------------------------------------------------------------------------
 
 console.log("\nPassive path detection:");
@@ -138,25 +132,25 @@ const topologyWithGravity: Topology = {
       id: "garden",
       name: "Garden",
       ports: [{ id: "inlet", label: "Inlet", direction: "inlet" as const }],
-      position: { x: 800, y: 400 },
+      position: { x: 800, y: 600 },
+    },
+    {
+      kind: "flow_sensor" as const,
+      id: "flow_gravity",
+      name: "Garden Flow",
+      pin: "GPIO48",
+      flow_cal: 450,
+      ports: [
+        { id: "inlet", label: "Inlet", direction: "inlet" as const },
+        { id: "outlet", label: "Outlet", direction: "outlet" as const },
+      ],
+      position: { x: 600, y: 600 },
     },
   ],
   pipes: [
     ...topology.pipes,
-    {
-      id: "gravity_pipe",
-      from: "tank1:outlet",
-      to: "garden:inlet",
-      components: [
-        {
-          kind: "flow_sensor" as const,
-          id: "flow_gravity",
-          name: "Garden Flow",
-          pin: "GPIO48",
-          flow_cal: 450,
-        },
-      ],
-    },
+    { id: "gravity_pipe1", from: "tank1:outlet", to: "flow_gravity:inlet" },
+    { id: "gravity_pipe2", from: "flow_gravity:outlet", to: "garden:inlet" },
   ],
 };
 

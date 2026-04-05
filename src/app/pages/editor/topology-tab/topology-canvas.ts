@@ -1,25 +1,19 @@
 /**
  * Framework-agnostic JointJS topology canvas manager.
  * Owns Graph + Paper lifecycle. Knows nothing about Angular.
- * All entity-specific logic is driven by registries.
+ * All entity-specific logic is driven by the NODE_REGISTRY.
  */
-import * as joint from 'jointjs';
-import { NODE_REGISTRY, INLINE_REGISTRY } from '../../../core/models/entities.model';
+import * as joint from '@joint/core';
+import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import { UI_COLORS } from '../../../core/models/colors.model';
 import type { SystemTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
-import {
-  createNodeElement,
-  createInlineElement,
-  createPipeSubLink,
-  createDragLink,
-} from './symbols';
+import { createNodeElement, createPipeLink, createDragLink } from './symbols';
 
 // --- Types ---
 
 export type Selection =
   | { kind: 'node'; nodeId: string }
-  | { kind: 'pipe'; pipeId: string }
-  | { kind: 'component'; componentId: string; pipeId: string };
+  | { kind: 'pipe'; pipeId: string };
 
 export interface CanvasEvents {
   onNodesMoved(positions: Map<string, { x: number; y: number }>): void;
@@ -35,14 +29,7 @@ export class TopologyCanvas {
   private paper: joint.dia.Paper;
   private events: CanvasEvents;
 
-  private nodeCenters = new Map<string, { x: number; y: number }>();
-  private compLabels = new Map<string, string>();
-  private compToPipe = new Map<string, string>();
-  /** pipeId → ordered component IDs (for repositioning on node move) */
-  private pipeCompOrder = new Map<string, string[]>();
-  /** pipeId → { fromNode, toNode } (for repositioning on node move) */
-  private pipeEndpoints = new Map<string, { fromNode: string; toNode: string }>();
-
+  private nodeIds = new Set<string>();
   private isPanning = false;
   private panStart = { x: 0, y: 0 };
   private positionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -67,16 +54,14 @@ export class TopologyCanvas {
       markAvailable: true,
       multiLinks: false,
       defaultLink: () => createDragLink(),
-      defaultRouter: { name: 'manhattan' },
+      defaultRouter: { name: 'rightAngle', args: { margin: 20 } },
       defaultConnector: { name: 'rounded' },
+      defaultConnectionPoint: { name: 'anchor' },
       validateMagnet: (_view: any, magnet: SVGElement) =>
         magnet.getAttribute('port-group') === 'outlet',
       validateConnection: (cellViewS: any, _mS: any, cellViewT: any, magnetT: any) => {
         if (cellViewS.model.id === cellViewT.model.id) return false;
-        if (magnetT?.getAttribute('port-group') !== 'inlet') return false;
-        const srcId = String(cellViewS.model.id);
-        const tgtId = String(cellViewT.model.id);
-        return srcId.startsWith('node-') && tgtId.startsWith('node-');
+        return magnetT?.getAttribute('port-group') === 'inlet';
       },
     } as any);
 
@@ -95,82 +80,42 @@ export class TopologyCanvas {
     }
 
     this.rendering = true;
-    this.graph.clear();
-    this.nodeCenters.clear();
-    this.compLabels.clear();
-    this.pipeCompOrder.clear();
-    this.pipeEndpoints.clear();
+    (this.paper as any).freeze();
+    this.nodeIds.clear();
 
-    this.buildCompLabels(topology);
+    // Build ALL cells before touching the graph
+    const allCells: joint.dia.Cell[] = [];
 
     for (const node of topology.nodes) {
       const el = this.buildNodeElement(node);
       if (el) {
-        this.graph.addCell(el);
-        const desc = NODE_REGISTRY.get(node.kind);
-        if (desc) {
-          this.nodeCenters.set(node.id, {
-            x: node.position.x + desc.size.width / 2,
-            y: node.position.y + desc.size.height / 2,
-          });
-        }
+        allCells.push(el);
+        this.nodeIds.add(node.id);
       }
     }
 
     for (const pipe of topology.pipes) {
-      const cells = this.buildPipeCells(pipe);
-      this.graph.addCells(cells);
+      const link = this.buildPipeLink(pipe);
+      if (link) allCells.push(link);
     }
 
+    // Atomic replace + synchronous view creation
+    this.graph.resetCells(allCells);
     this.rendering = false;
+    (this.paper as any).unfreeze();
+    (this.paper as any).updateViews();
 
     if (viewport) {
       this.restoreViewport(viewport);
     } else {
-      setTimeout(() => this.fitContent(), 50);
-    }
-  }
-
-  addPipeCells(pipe: PipeSegment, topology: SystemTopology): void {
-    this.rendering = true;
-
-    // Ensure node centers are up-to-date from graph elements
-    // (may be stale if nodes were added without a full re-render)
-    this.refreshNodeCenters();
-
-    this.buildCompLabels(topology);
-    const cells = this.buildPipeCells(pipe);
-    this.graph.addCells(cells);
-    this.rendering = false;
-  }
-
-  removePipeCells(pipeId: string, componentIds: string[]): void {
-    const toRemove: joint.dia.Cell[] = [];
-    for (const cell of this.graph.getCells()) {
-      const id = String(cell.id);
-      if (id.startsWith(`pipe-${pipeId}`)) toRemove.push(cell);
-    }
-    for (const compId of componentIds) {
-      const cell = this.graph.getCell(`comp-${compId}` as any);
-      if (cell) toRemove.push(cell);
-    }
-    if (toRemove.length > 0) {
-      this.graph.removeCells(toRemove);
-    }
-
-    // Clean up tracking maps
-    this.pipeEndpoints.delete(pipeId);
-    this.pipeCompOrder.delete(pipeId);
-    for (const compId of componentIds) {
-      this.compToPipe.delete(compId);
+      this.fitContent();
     }
   }
 
   highlight(selection: Selection | null): void {
     if (this.selectedPipeId) {
       for (const link of this.graph.getLinks()) {
-        const id = String(link.id);
-        if (id.startsWith(`pipe-${this.selectedPipeId}`)) {
+        if (String(link.id) === `pipe-${this.selectedPipeId}`) {
           link.attr('line/stroke', UI_COLORS.pipe);
           link.attr('line/strokeWidth', 2.5);
         }
@@ -181,8 +126,7 @@ export class TopologyCanvas {
 
     if (this.selectedPipeId) {
       for (const link of this.graph.getLinks()) {
-        const id = String(link.id);
-        if (id.startsWith(`pipe-${this.selectedPipeId}`)) {
+        if (String(link.id) === `pipe-${this.selectedPipeId}`) {
           link.attr('line/stroke', UI_COLORS.selected);
           link.attr('line/strokeWidth', 3.5);
         }
@@ -236,9 +180,13 @@ export class TopologyCanvas {
 
     const handleZoom = (_evt: any, x: number, y: number, delta: number) => {
       const s = this.paper.scale();
+      const t = this.paper.translate();
       const factor = delta > 0 ? 1.1 : 1 / 1.1;
       const newScale = Math.min(3, Math.max(0.2, s.sx * factor));
-      this.paper.scale(newScale, newScale, x, y);
+      const dx = x * (1 - newScale / s.sx);
+      const dy = y * (1 - newScale / s.sy);
+      this.paper.scale(newScale, newScale);
+      this.paper.translate(t.tx + dx, t.ty + dy);
     };
     this.paper.on('blank:mousewheel', handleZoom);
     this.paper.on('cell:mousewheel', (_cellView: any, evt: any, x: number, y: number, delta: number) => {
@@ -263,15 +211,9 @@ export class TopologyCanvas {
     });
 
     this.paper.on('element:pointerclick', (elementView: any) => {
-      const data = elementView.model?.attributes?.data as
-        { nodeId?: string; componentId?: string; kind?: string } | undefined;
+      const data = elementView.model?.attributes?.data as { nodeId?: string } | undefined;
       if (data?.nodeId) {
         this.events.onSelected({ kind: 'node', nodeId: data.nodeId });
-      } else if (data?.componentId) {
-        const pipeId = this.findPipeForComponent(data.componentId);
-        if (pipeId) {
-          this.events.onSelected({ kind: 'component', componentId: data.componentId, pipeId });
-        }
       }
     });
 
@@ -316,206 +258,41 @@ export class TopologyCanvas {
     return createNodeElement(desc, node.id, name, node.position.x, node.position.y, ports);
   }
 
-  private buildPipeCells(pipe: PipeSegment): joint.dia.Cell[] {
-    const parts = pipe.from.split(':');
-    const fromNode = parts[0];
-    const fromPort = parts[1];
-    const partsTo = pipe.to.split(':');
-    const toNode = partsTo[0];
-    const toPort = partsTo[1];
+  private buildPipeLink(pipe: PipeSegment): joint.dia.Cell | null {
+    const [fromNode, fromPort] = pipe.from.split(':');
+    const [toNode, toPort] = pipe.to.split(':');
 
-    if (!fromNode || !fromPort) {
-      console.warn(`[topology-canvas] pipe "${pipe.id}" has malformed 'from': "${pipe.from}"`);
-      return [];
+    if (!fromNode || !fromPort || !toNode || !toPort) {
+      console.warn(`[topology-canvas] pipe "${pipe.id}" has malformed endpoints`);
+      return null;
     }
-    if (!toNode || !toPort) {
-      console.warn(`[topology-canvas] pipe "${pipe.id}" has malformed 'to': "${pipe.to}"`);
-      return [];
+    if (!this.nodeIds.has(fromNode)) {
+      console.warn(`[topology-canvas] pipe "${pipe.id}" references missing node "${fromNode}"`);
+      return null;
     }
-
-    // Validate that source and target node elements exist on the graph
-    const srcEl = this.graph.getCell(`node-${fromNode}` as any);
-    const tgtEl = this.graph.getCell(`node-${toNode}` as any);
-    if (!srcEl) {
-      console.warn(`[topology-canvas] pipe "${pipe.id}" references missing source node "${fromNode}"`);
-      return [];
-    }
-    if (!tgtEl) {
-      console.warn(`[topology-canvas] pipe "${pipe.id}" references missing target node "${toNode}"`);
-      return [];
+    if (!this.nodeIds.has(toNode)) {
+      console.warn(`[topology-canvas] pipe "${pipe.id}" references missing node "${toNode}"`);
+      return null;
     }
 
-    const comps = pipe.components;
-
-    // Track pipe endpoints for component repositioning on node move
-    this.pipeEndpoints.set(pipe.id, { fromNode, toNode });
-    this.pipeCompOrder.set(pipe.id, comps.map(c => c.id));
-
-    if (comps.length === 0) {
-      return [
-        createPipeSubLink(`pipe-${pipe.id}`, `node-${fromNode}`, fromPort, `node-${toNode}`, toPort),
-      ];
-    }
-
-    const srcCenter = this.nodeCenters.get(fromNode);
-    const tgtCenter = this.nodeCenters.get(toNode);
-    if (!srcCenter || !tgtCenter) {
-      console.warn(
-        `[topology-canvas] pipe "${pipe.id}" cannot position inline components:` +
-        ` missing center for ${!srcCenter ? `"${fromNode}"` : `"${toNode}"`}`,
-      );
-      // Fallback: render a direct link without inline components
-      return [
-        createPipeSubLink(`pipe-${pipe.id}`, `node-${fromNode}`, fromPort, `node-${toNode}`, toPort),
-      ];
-    }
-
-    const cells: joint.dia.Cell[] = [];
-
-    for (let i = 0; i < comps.length; i++) {
-      const fraction = (i + 1) / (comps.length + 1);
-      const cx = srcCenter.x + (tgtCenter.x - srcCenter.x) * fraction;
-      const cy = srcCenter.y + (tgtCenter.y - srcCenter.y) * fraction;
-      const comp = comps[i];
-      const label = this.compLabels.get(comp.id) ?? comp.id;
-
-      const desc = INLINE_REGISTRY.get(comp.kind);
-      if (desc) {
-        const halfW = desc.size.width / 2;
-        const halfH = desc.size.height / 2;
-        cells.push(createInlineElement(desc, comp.id, label, cx - halfW, cy - halfH));
-      } else {
-        console.warn(`[topology-canvas] unknown inline component kind "${comp.kind}" on pipe "${pipe.id}"`);
-      }
-    }
-
-    const chain: Array<{ elId: string; portOut: string; portIn: string }> = [];
-    chain.push({ elId: `node-${fromNode}`, portOut: fromPort, portIn: '' });
-    for (const comp of comps) {
-      chain.push({ elId: `comp-${comp.id}`, portOut: 'outlet', portIn: 'inlet' });
-    }
-    chain.push({ elId: `node-${toNode}`, portOut: '', portIn: toPort });
-
-    for (let i = 0; i < chain.length - 1; i++) {
-      const src = chain[i];
-      const tgt = chain[i + 1];
-      const router: 'manhattan' | 'normal' =
-        (i === 0 || i === chain.length - 2) ? 'manhattan' : 'normal';
-      cells.push(
-        createPipeSubLink(`pipe-${pipe.id}-seg-${i}`, src.elId, src.portOut, tgt.elId, tgt.portIn, router),
-      );
-    }
-
-    return cells;
-  }
-
-  private buildCompLabels(topology: SystemTopology): void {
-    this.compLabels.clear();
-    this.compToPipe.clear();
-    const counters = new Map<string, number>();
-    for (const pipe of topology.pipes) {
-      for (const comp of pipe.components) {
-        this.compToPipe.set(comp.id, pipe.id);
-        const desc = INLINE_REGISTRY.get(comp.kind);
-        if (desc) {
-          const n = (counters.get(comp.kind) ?? 0) + 1;
-          counters.set(comp.kind, n);
-          this.compLabels.set(comp.id, `${desc.labelPrefix}${n}`);
-        }
-      }
-    }
+    return createPipeLink(`pipe-${pipe.id}`, `node-${fromNode}`, fromPort, `node-${toNode}`, toPort);
   }
 
   private persistNodePositions(): void {
     const positions = new Map<string, { x: number; y: number }>();
-    const movedNodeIds = new Set<string>();
-
     for (const el of this.graph.getElements()) {
-      const data = (el as any).attributes?.data as { nodeId?: string; kind?: string } | undefined;
+      const data = (el as any).attributes?.data as { nodeId?: string } | undefined;
       if (!data?.nodeId) continue;
       const pos = el.position();
-      const rounded = { x: Math.round(pos.x), y: Math.round(pos.y) };
-      positions.set(data.nodeId, rounded);
-
-      const desc = data.kind ? NODE_REGISTRY.get(data.kind) : undefined;
-      if (desc) {
-        const oldCenter = this.nodeCenters.get(data.nodeId);
-        const newCenter = {
-          x: pos.x + desc.size.width / 2,
-          y: pos.y + desc.size.height / 2,
-        };
-        if (!oldCenter || oldCenter.x !== newCenter.x || oldCenter.y !== newCenter.y) {
-          movedNodeIds.add(data.nodeId);
-        }
-        this.nodeCenters.set(data.nodeId, newCenter);
-      }
+      positions.set(data.nodeId, { x: Math.round(pos.x), y: Math.round(pos.y) });
     }
-
-    // Reposition inline components on pipes whose endpoints moved
-    if (movedNodeIds.size > 0) {
-      this.repositionInlineComponents(movedNodeIds);
-    }
-
     if (positions.size > 0) {
       this.events.onNodesMoved(positions);
     }
   }
 
-  /**
-   * After nodes move, reposition inline component elements so they stay
-   * centered between their pipe's source and target nodes.
-   * JointJS automatically re-routes the links when elements move.
-   */
-  private repositionInlineComponents(movedNodeIds: Set<string>): void {
-    for (const [pipeId, endpoints] of this.pipeEndpoints) {
-      // Only reposition if one of this pipe's endpoints moved
-      if (!movedNodeIds.has(endpoints.fromNode) && !movedNodeIds.has(endpoints.toNode)) continue;
-
-      const srcCenter = this.nodeCenters.get(endpoints.fromNode);
-      const tgtCenter = this.nodeCenters.get(endpoints.toNode);
-      if (!srcCenter || !tgtCenter) continue;
-
-      const compIds = this.pipeCompOrder.get(pipeId);
-      if (!compIds || compIds.length === 0) continue;
-
-      for (let i = 0; i < compIds.length; i++) {
-        const el = this.graph.getCell(`comp-${compIds[i]}` as any) as joint.dia.Element | undefined;
-        if (!el) continue;
-
-        const fraction = (i + 1) / (compIds.length + 1);
-        const cx = srcCenter.x + (tgtCenter.x - srcCenter.x) * fraction;
-        const cy = srcCenter.y + (tgtCenter.y - srcCenter.y) * fraction;
-        const size = el.size();
-        el.position(cx - size.width / 2, cy - size.height / 2);
-      }
-    }
-  }
-
-  /**
-   * Rebuild nodeCenters from current graph element positions.
-   * Ensures centers are available even when nodes were added incrementally.
-   */
-  private refreshNodeCenters(): void {
-    for (const el of this.graph.getElements()) {
-      const data = (el as any).attributes?.data as { nodeId?: string; kind?: string } | undefined;
-      if (!data?.nodeId) continue;
-      const desc = data.kind ? NODE_REGISTRY.get(data.kind) : undefined;
-      if (desc) {
-        const pos = el.position();
-        this.nodeCenters.set(data.nodeId, {
-          x: pos.x + desc.size.width / 2,
-          y: pos.y + desc.size.height / 2,
-        });
-      }
-    }
-  }
-
-  private findPipeForComponent(componentId: string): string | null {
-    return this.compToPipe.get(componentId) ?? null;
-  }
-
   private extractPipeId(cellId: string): string | null {
-    const match = cellId.match(/^pipe-(.+?)(-seg-\d+)?$/);
+    const match = cellId.match(/^pipe-(.+)$/);
     return match ? match[1] : null;
   }
 

@@ -4,8 +4,6 @@
  */
 export {
   NODE_REGISTRY,
-  INLINE_REGISTRY,
   type NodeDescriptor,
-  type InlineComponentDescriptor,
   type FieldDef,
 } from '../../../../shared/entities';

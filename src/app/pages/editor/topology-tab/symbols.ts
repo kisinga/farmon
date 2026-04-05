@@ -1,10 +1,9 @@
 /**
  * JointJS shape factories using native shapes (no SVG data URIs).
- * Nodes → rectangles/circles with text labels.
- * Inline components → small colored shapes with labels.
+ * All topology entities are nodes — valves/sensors included.
  */
-import * as joint from 'jointjs';
-import type { NodeDescriptor, InlineComponentDescriptor } from '../../../core/models/entities.model';
+import * as joint from '@joint/core';
+import type { NodeDescriptor } from '../../../core/models/entities.model';
 import { UI_COLORS } from '../../../core/models/colors.model';
 
 // --- Port groups ---
@@ -52,6 +51,9 @@ export function createNodeElement(
 
   const isPump = desc.kind === 'pump';
   const isEndpoint = desc.kind === 'endpoint';
+  const isPassthrough = desc.role === 'passthrough';
+
+  const labelText = isPassthrough ? desc.label[0] : name;
 
   return new joint.shapes.standard.Rectangle({
     id: `node-${id}`,
@@ -60,7 +62,7 @@ export function createNodeElement(
     ports: { groups: portGroups, items: ports },
     attrs: {
       body: {
-        fill: isPump ? desc.color + '15' : UI_COLORS.bg,
+        fill: isPassthrough ? desc.color + '15' : UI_COLORS.bg,
         stroke: desc.color,
         strokeWidth: 2.5,
         rx: isPump ? w / 2 : isEndpoint ? 6 : 3,
@@ -68,7 +70,7 @@ export function createNodeElement(
         ...(isEndpoint ? { strokeDasharray: '6,3' } : {}),
       },
       label: {
-        text: isPump ? 'P' : name,
+        text: labelText,
         fontSize: isPump ? 18 : 12,
         fontWeight: isPump ? 'bold' : '600',
         fontFamily: 'ui-monospace, monospace',
@@ -79,67 +81,25 @@ export function createNodeElement(
   });
 }
 
-// --- Generic inline component element factory ---
-export function createInlineElement(
-  desc: InlineComponentDescriptor,
-  id: string,
-  shortLabel: string,
-  x: number,
-  y: number,
-): joint.dia.Element {
-  const { width: w, height: h } = desc.size;
-
-  return new joint.shapes.standard.Rectangle({
-    id: `comp-${id}`,
-    position: { x, y },
-    size: { width: w, height: h },
-    ports: {
-      groups: portGroups,
-      items: [
-        { id: 'inlet', group: 'inlet' },
-        { id: 'outlet', group: 'outlet' },
-      ],
-    },
-    attrs: {
-      body: {
-        fill: UI_COLORS.bg,
-        stroke: desc.color,
-        strokeWidth: 2,
-        rx: 4,
-        ry: 4,
-      },
-      label: {
-        text: shortLabel,
-        fontSize: 10,
-        fontWeight: '700',
-        fontFamily: 'ui-monospace, monospace',
-        fill: desc.color,
-      },
-    },
-    data: { componentId: id, kind: desc.kind },
-  });
-}
-
-// --- Pipe sub-link ---
-export function createPipeSubLink(
+// --- Pipe link ---
+export function createPipeLink(
   id: string,
   sourceElId: string,
   sourcePortId: string,
   targetElId: string,
   targetPortId: string,
-  routerName: 'manhattan' | 'normal' = 'manhattan',
 ) {
   return new joint.shapes.standard.Link({
     id,
-    source: { id: sourceElId, port: sourcePortId },
-    target: { id: targetElId, port: targetPortId },
+    source: { id: sourceElId, port: sourcePortId, anchor: { name: 'right' }, connectionPoint: { name: 'anchor' } },
+    target: { id: targetElId, port: targetPortId, anchor: { name: 'left' }, connectionPoint: { name: 'anchor' } },
     attrs: {
       line: {
         stroke: UI_COLORS.pipe, strokeWidth: 2.5,
         targetMarker: { type: 'path', d: 'M 10 -5 0 0 10 5 z', fill: UI_COLORS.pipe },
       },
     },
-    router: { name: routerName },
+    router: { name: 'rightAngle', args: { margin: 20 } },
     connector: { name: 'rounded' },
   });
 }
@@ -153,7 +113,7 @@ export function createDragLink() {
         targetMarker: { type: 'path', d: 'M 10 -5 0 0 10 5 z', fill: UI_COLORS.pipe },
       },
     },
-    router: { name: 'manhattan' },
+    router: { name: 'rightAngle', args: { margin: 20 } },
     connector: { name: 'rounded' },
   });
 }

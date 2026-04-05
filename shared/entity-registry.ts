@@ -1,6 +1,6 @@
 /**
- * Entity registry — single source of truth for node and inline component descriptors.
- * Each entity self-registers by calling NODE_REGISTRY.set() or INLINE_REGISTRY.set().
+ * Entity registry — single source of truth for node descriptors.
+ * Each entity self-registers by calling NODE_REGISTRY.set().
  */
 
 // ---------------------------------------------------------------------------
@@ -38,24 +38,7 @@ export interface NodeDescriptor {
 }
 
 // ---------------------------------------------------------------------------
-// Inline component descriptor
-// ---------------------------------------------------------------------------
-
-export interface InlineComponentDescriptor {
-  kind: string;
-  label: string;
-  labelPrefix: string;
-  color: string;
-  size: { width: number; height: number };
-  defaultData: (index: number) => Record<string, any>;
-  renderSvg: (shortLabel: string) => string;
-  legendSvg: string;
-  sidebarFields: FieldDef[];
-}
-
-// ---------------------------------------------------------------------------
-// Registries
+// Registry
 // ---------------------------------------------------------------------------
 
 export const NODE_REGISTRY = new Map<string, NodeDescriptor>();
-export const INLINE_REGISTRY = new Map<string, InlineComponentDescriptor>();

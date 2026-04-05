@@ -1,6 +1,6 @@
 /**
  * Pure BFS route derivation.
- * Uses entity registry roles for node classification instead of hardcoded kind checks.
+ * Traverses the node-pipe graph collecting valves and flow sensors along each path.
  */
 import type { SystemTopology, TopologyNode, PipeSegment } from '../../../core/models/topology.model';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
@@ -16,6 +16,7 @@ export interface DerivedRoute {
   valid: boolean;
 }
 
+/** Build adjacency: nodeId → outgoing pipes */
 function buildAdjacency(pipes: PipeSegment[]): Map<string, PipeSegment[]> {
   const adj = new Map<string, PipeSegment[]>();
   for (const pipe of pipes) {
@@ -64,15 +65,13 @@ function traceRoutes(
       const targetDesc = NODE_REGISTRY.get(target.kind);
       const targetRole = targetDesc?.role;
 
-      // Domain semantics: valves define routes, flow sensors confirm flow
-      const pipeValves = pipe.components
-        .filter((c) => c.kind === 'valve')
-        .map((c) => c.id);
-      const pipeFlow = pipe.components.find((c) => c.kind === 'flow_sensor');
+      // Collect valves and flow sensors from the TARGET node
+      const nextValves = [...entry.valves];
+      let nextFlow = entry.flowSensor;
+      if (target.kind === 'valve') nextValves.push(target.id);
+      if (target.kind === 'flow_sensor') nextFlow = target.id;
 
-      const nextValves = [...entry.valves, ...pipeValves];
-      const nextFlow = pipeFlow ? pipeFlow.id : entry.flowSensor;
-      const nextPump = entry.crossesPump || targetRole === 'passthrough';
+      const nextPump = entry.crossesPump || target.kind === 'pump';
       const nextVisited = new Set(entry.visited);
       nextVisited.add(targetId);
 

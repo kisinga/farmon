@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "jointjs/dist/joint.core.css";
 @plugin "daisyui";
 
 @theme {

@@ -19,17 +19,18 @@ function buildAdjacency(pipes: PipeSegment[]): Map<string, PipeSegment[]> {
 }
 
 interface TracedRoute {
-  source: string;         // source tank id
-  destNodeId: string;     // destination node id (tank or endpoint)
+  source: string;
+  destNodeId: string;
   destKind: "tank" | "endpoint";
-  valves: string[];       // valve ids along the path, in order
+  valves: string[];
   flowSensor: string | undefined;
   crossesPump: boolean;
 }
 
 /**
- * BFS from a source tank through pipes to all reachable terminal nodes
- * (tanks and endpoints). Collects valves, flow sensors, and pump crossing.
+ * BFS from a source tank through the node-pipe graph to all reachable
+ * terminal nodes. Collects valves, flow sensors, and pump crossings
+ * from the nodes traversed along the path.
  */
 function traceRoutes(
   sourceId: string,
@@ -65,20 +66,17 @@ function traceRoutes(
       const target = nodes.get(targetId);
       if (!target) continue;
 
-      // Collect inline components on this pipe segment
-      const pipeValves = pipe.components
-        .filter((c) => c.kind === "valve")
-        .map((c) => c.id);
-      const pipeFlow = pipe.components.find((c) => c.kind === "flow_sensor");
+      // Collect valves and flow sensors from the target node
+      const nextValves = [...entry.valves];
+      let nextFlow = entry.flowSensor;
+      if (target.kind === "valve") nextValves.push(target.id);
+      if (target.kind === "flow_sensor") nextFlow = target.id;
 
-      const nextValves = [...entry.valves, ...pipeValves];
-      const nextFlow = pipeFlow ? pipeFlow.id : entry.flowSensor;
       const nextPump = entry.crossesPump || target.kind === "pump";
       const nextVisited = new Set(entry.visited);
       nextVisited.add(targetId);
 
       if (target.kind === "tank" || target.kind === "endpoint") {
-        // Terminal node — record the route
         results.push({
           source: sourceId,
           destNodeId: target.id,
@@ -88,7 +86,6 @@ function traceRoutes(
           crossesPump: nextPump,
         });
       } else {
-        // Intermediate node (pump) — keep traversing
         queue.push({
           nodeId: targetId,
           valves: nextValves,
@@ -111,7 +108,7 @@ export function topologyToManifest(topology: Topology): Manifest {
   const nodes = new Map(topology.nodes.map((n) => [n.id, n]));
   const adj = buildAdjacency(topology.pipes);
 
-  // --- Flat component extraction ---
+  // --- Flat node extraction ---
 
   const tanks = topology.nodes
     .filter((n): n is Extract<TopologyNode, { kind: "tank" }> => n.kind === "tank")
@@ -122,32 +119,13 @@ export function topologyToManifest(topology: Topology): Manifest {
     throw new Error("Topology must contain exactly one pump node");
   }
 
-  const valves: Manifest["valves"] = [];
-  const flowSensors: Manifest["flow_sensors"] = [];
-  const seen = new Set<string>();
+  const valves: Manifest["valves"] = topology.nodes
+    .filter((n): n is Extract<TopologyNode, { kind: "valve" }> => n.kind === "valve")
+    .map((v) => ({ name: v.name, id: v.id, open_pin: v.open_pin, close_pin: v.close_pin }));
 
-  for (const pipe of topology.pipes) {
-    for (const comp of pipe.components) {
-      if (seen.has(comp.id)) continue;
-      seen.add(comp.id);
-
-      if (comp.kind === "valve") {
-        valves.push({
-          name: comp.name,
-          id: comp.id,
-          open_pin: comp.open_pin,
-          close_pin: comp.close_pin,
-        });
-      } else {
-        flowSensors.push({
-          name: comp.name,
-          id: comp.id,
-          pin: comp.pin,
-          flow_cal: comp.flow_cal,
-        });
-      }
-    }
-  }
+  const flowSensors: Manifest["flow_sensors"] = topology.nodes
+    .filter((n): n is Extract<TopologyNode, { kind: "flow_sensor" }> => n.kind === "flow_sensor")
+    .map((f) => ({ name: f.name, id: f.id, pin: f.pin, flow_cal: f.flow_cal }));
 
   // --- Route derivation ---
 
@@ -157,11 +135,8 @@ export function topologyToManifest(topology: Topology): Manifest {
     const traced = traceRoutes(tank.id, adj, nodes);
 
     for (const tr of traced) {
-      // Skip passive paths (don't cross the pump)
       if (!tr.crossesPump) continue;
-      // Skip invalid routes (no flow sensor)
       if (!tr.flowSensor) continue;
-      // Must have at least one valve
       if (tr.valves.length === 0) continue;
 
       const overrideKey = `${tr.source}>${tr.destNodeId}`;
@@ -170,7 +145,6 @@ export function topologyToManifest(topology: Topology): Manifest {
       routes.push({
         name: override.name ?? overrideKey,
         source: tr.source,
-        // Manifest uses destination=undefined for endpoints, tank id for tanks
         destination: tr.destKind === "tank" ? tr.destNodeId : undefined,
         valves: tr.valves,
         flow_sensor: tr.flowSensor,

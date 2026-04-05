@@ -5,5 +5,5 @@ import './endpoint';
 import './valve';
 import './flow-sensor';
 
-export { NODE_REGISTRY, INLINE_REGISTRY } from '../entity-registry';
-export type { NodeDescriptor, InlineComponentDescriptor, FieldDef } from '../entity-registry';
+export { NODE_REGISTRY } from '../entity-registry';
+export type { NodeDescriptor, FieldDef } from '../entity-registry';

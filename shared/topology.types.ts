@@ -53,29 +53,27 @@ export interface EndpointNode {
   position: Position;
 }
 
-export type TopologyNode = TankNode | PumpNode | EndpointNode;
-
-// ---------------------------------------------------------------------------
-// Inline components (live on pipes)
-// ---------------------------------------------------------------------------
-
-export interface ValveComponent {
+export interface ValveNode {
   kind: 'valve';
   id: string;
   name: string;
   open_pin: string;
   close_pin: string;
+  ports: Port[];
+  position: Position;
 }
 
-export interface FlowComponent {
+export interface FlowSensorNode {
   kind: 'flow_sensor';
   id: string;
   name: string;
   pin: string;
   flow_cal: number;
+  ports: Port[];
+  position: Position;
 }
 
-export type InlineComponent = ValveComponent | FlowComponent;
+export type TopologyNode = TankNode | PumpNode | EndpointNode | ValveNode | FlowSensorNode;
 
 // ---------------------------------------------------------------------------
 // Pipes
@@ -85,7 +83,6 @@ export interface PipeSegment {
   id: string;
   from: string; // "nodeId:portId"
   to: string;   // "nodeId:portId"
-  components: InlineComponent[];
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +99,7 @@ export interface RouteOverride {
 // ---------------------------------------------------------------------------
 
 export interface SystemTopology {
-  schema: 3;
+  schema: 4;
   device: {
     name: string;
     friendly_name: string;
@@ -135,20 +132,4 @@ export function getNodeByKind<K extends TopologyNode['kind']>(
   t: SystemTopology, kind: K,
 ): Extract<TopologyNode, { kind: K }> | undefined {
   return t.nodes.find((n): n is Extract<TopologyNode, { kind: K }> => n.kind === kind);
-}
-
-export function getComponentsByKind<K extends InlineComponent['kind']>(
-  t: SystemTopology, kind: K,
-): Extract<InlineComponent, { kind: K }>[] {
-  const seen = new Set<string>();
-  const result: Extract<InlineComponent, { kind: K }>[] = [];
-  for (const pipe of t.pipes) {
-    for (const c of pipe.components) {
-      if (c.kind === kind && !seen.has(c.id)) {
-        seen.add(c.id);
-        result.push(c as Extract<InlineComponent, { kind: K }>);
-      }
-    }
-  }
-  return result;
 }
