@@ -13,12 +13,13 @@ export const reservedPinsRule: ManifestRule = {
     const reserved = reservedPins(board);
     const allPins = collectAllPins(m);
 
-    for (const { pin, owner } of allPins) {
+    for (const { pin, owner, nodeId } of allPins) {
       const reason = reserved.get(pin);
       if (reason) {
         diagnostics.push({
           severity: "error",
           message: `Pin ${pin} used by ${owner} is reserved for ${reason} on ${board.label}`,
+          target: nodeId,
           ruleId: this.id,
         });
       }

@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("library:save", name, data),
   libraryDelete: (name: string) =>
     ipcRenderer.invoke("library:delete", name),
+  libraryDuplicate: (sourceName: string, newName: string) =>
+    ipcRenderer.invoke("library:duplicate", sourceName, newName),
   libraryImport: (filePath: string) =>
     ipcRenderer.invoke("library:import", filePath),
   libraryExport: (name: string, destPath: string) =>

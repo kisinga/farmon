@@ -123,7 +123,7 @@ const RouteOverrideSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Topology (top-level document) — Schema v4
+// Topology (top-level document) — Schema v5
 // ---------------------------------------------------------------------------
 
 export const TopologySchema = z.object({

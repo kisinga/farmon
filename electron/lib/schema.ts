@@ -10,7 +10,7 @@ import type { Device, Timing } from "./shared-schema.js";
 
 export interface Manifest {
   device: Device;
-  pump: { pin: string };
+  pump?: { pin: string };
   tanks: Tank[];
   water_sources: WaterSource[];
   valves: Valve[];

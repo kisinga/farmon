@@ -14,11 +14,12 @@ export const pinExposure: ManifestRule = {
     const exposed = exposedPins(board);
     const allPins = collectAllPins(m);
 
-    for (const { pin, owner } of allPins) {
+    for (const { pin, owner, nodeId } of allPins) {
       if (!exposed.has(pin) && !reserved.has(pin)) {
         diagnostics.push({
           severity: "warning",
           message: `Pin ${pin} used by ${owner} is not on ${board.label} headers`,
+          target: nodeId,
           ruleId: this.id,
         });
       }

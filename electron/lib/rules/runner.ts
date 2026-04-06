@@ -2,13 +2,9 @@ import type { Topology } from "../topology.js";
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 import type { TopologyRule, ManifestRule, RuleDiagnostic } from "./rule.types.js";
+import type { ValidationResult } from "../../../shared/validation.types.js";
 
-export interface ValidationResult {
-  errors: string[];
-  warnings: string[];
-  ok: boolean;
-  diagnostics: RuleDiagnostic[];
-}
+export type { ValidationResult } from "../../../shared/validation.types.js";
 
 function toResult(diagnostics: RuleDiagnostic[]): ValidationResult {
   return {

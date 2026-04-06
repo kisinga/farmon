@@ -44,13 +44,13 @@ export function generateDashboard(m: Manifest): string {
   const stateSensor = entityId(
     "sensor",
     m.device.name,
-    "Pump System State"
+    "System State"
   );
-  const faultSensor = entityId("sensor", m.device.name, "Pump Fault");
+  const faultSensor = entityId("sensor", m.device.name, "System Fault");
   const stopReasonSensor = entityId(
     "sensor",
     m.device.name,
-    "Pump Last Stop Reason"
+    "Last Stop Reason"
   );
   const safetyOverride = entityId(
     "switch",

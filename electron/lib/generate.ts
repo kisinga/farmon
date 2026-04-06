@@ -7,7 +7,7 @@ import { generateSensors } from "./generators/sensors.js";
 import { generateDashboard } from "./generators/dashboard.js";
 import { generateBoardPackage } from "./generators/board-package.js";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
-import { CONTROL_YAML } from "./static/control.js";
+import { generateControl } from "./generators/control.js";
 import { LOGO_SVG } from "./static/logo.js";
 
 export interface GeneratedFile {
@@ -59,8 +59,8 @@ export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
     },
     {
       relativePath: `${deviceDir}/packages/control.yaml`,
-      description: "State machine, API services, safety watchdog (static)",
-      content: CONTROL_YAML,
+      description: "State machine, API services, safety watchdog",
+      content: generateControl(m),
     },
     {
       relativePath: `${deviceDir}/packages/routes.h`,
@@ -78,7 +78,7 @@ export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
       content: generateSensors(m),
     },
     {
-      relativePath: `config/homeassistant/dashboards/pump.yaml`,
+      relativePath: `config/homeassistant/dashboards/dashboard.yaml`,
       description: "HA dashboard with gauges, controls, settings",
       content: generateDashboard(m),
     },

@@ -7,7 +7,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 // Schema versioning
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 4;     // version this app writes
+export const SCHEMA_VERSION = 5;     // version this app writes
 
 export class SchemaError extends Error {
   constructor(
@@ -248,22 +248,44 @@ export function loadConfig(name: string): Record<string, unknown> {
   return data;
 }
 
-/** Writes to store. Library configs are read-only — saves a copy instead. Returns the saved name. */
-export function saveConfig(name: string, data: unknown): string {
+/** Writes a user config to store. Throws if name is a bundled template. */
+export function saveConfig(name: string, data: unknown): void {
+  if (isLibraryConfig(name)) {
+    throw new Error(`Cannot overwrite template "${name}". Duplicate it first.`);
+  }
   fs.mkdirSync(configsDir(), { recursive: true });
 
-  const saveName = isLibraryConfig(name) ? uniqueName(name, configsDir(), ".yaml") : name;
-  const filePath = path.join(configsDir(), `${saveName}.yaml`);
-
+  const filePath = path.join(configsDir(), `${name}.yaml`);
   const obj = data as Record<string, unknown>;
   if (!obj.schema) obj.schema = SCHEMA_VERSION;
 
   const yaml = stringifyYaml(obj, { indent: 2, lineWidth: 0 });
   fs.writeFileSync(filePath, yaml, "utf-8");
-  return saveName;
 }
 
+/** Copy a config (template or user) to a new user config name. Returns the saved name. */
+export function duplicateConfig(sourceName: string, newName: string): string {
+  const sourceData = loadConfig(sourceName);
+  const finalName = isLibraryConfig(newName)
+    ? uniqueName(newName, configsDir(), ".yaml")
+    : newName;
+
+  // Ensure the destination doesn't collide with an existing file
+  const destPath = path.join(configsDir(), `${finalName}.yaml`);
+  if (fs.existsSync(destPath) && !isLibraryConfig(finalName)) {
+    throw new Error(`Config "${finalName}" already exists.`);
+  }
+
+  const yaml = stringifyYaml(sourceData, { indent: 2, lineWidth: 0 });
+  fs.writeFileSync(destPath, yaml, "utf-8");
+  return finalName;
+}
+
+/** Deletes a user config. Throws if name is a bundled template. */
 export function deleteConfig(name: string): void {
+  if (isLibraryConfig(name)) {
+    throw new Error(`Cannot delete template "${name}". Templates are re-seeded on startup.`);
+  }
   const filePath = path.join(configsDir(), `${name}.yaml`);
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }

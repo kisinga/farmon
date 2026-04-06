@@ -27,8 +27,10 @@ export function generateDeviceYaml(
     subs.battery_divider = String(board.peripherals.battery!.divider);
   }
 
-  // Pump
-  subs.pin_pump_relay = m.pump.pin;
+  // Pump (optional)
+  if (m.pump) {
+    subs.pin_pump_relay = m.pump.pin;
+  }
 
   // Valves
   for (const v of m.valves) {
@@ -99,24 +101,25 @@ export function generateDeviceYaml(
   const initVars = [
     "id(system_state) = 0;",
     "id(active_route) = -1;",
-    "id(pump_start_time) = 0;",
+    "id(route_start_time) = 0;",
     "id(last_flow_time) = 0;",
     "id(api_lost_time) = 0;",
     "id(fault_code) = 0;",
     "id(flow_confirmed) = false;",
     "id(tank_full_detected) = false;",
     '// stop_reason intentionally NOT reset — survives reboot',
-    `ESP_LOGI("pump", "Boot complete — IDLE (%d routes)", NUM_ROUTES);`,
+    `ESP_LOGI("ctrl", "Boot complete — IDLE (%d routes)", NUM_ROUTES);`,
   ].join("\n");
+
+  const bootActions: unknown[] = [];
+  if (m.pump) bootActions.push({ "switch.turn_off": "pump_relay" });
+  bootActions.push({ "script.execute": "close_all_valves" });
+  bootActions.push({ "script.wait": "close_all_valves" });
+  bootActions.push({ lambda: initVars });
 
   bootSteps.push({
     priority: -100,
-    then: [
-      { "switch.turn_off": "pump_relay" },
-      { "script.execute": "close_all_valves" },
-      { "script.wait": "close_all_valves" },
-      { lambda: initVars },
-    ],
+    then: bootActions,
   });
 
   // --- OLED display (only if board has one) ---
@@ -140,7 +143,7 @@ export function generateDeviceYaml(
   lines.push("#                          '-------> FAULT <-------'");
   lines.push("#");
   lines.push(`# Routes: Defined in packages/routes.h (${m.routes.length} routes)`);
-  lines.push(`# API: pump_start(route_id)  pump_stop()  fault_reset()`);
+  lines.push(`# API: route_start(route_id)  route_stop()  fault_reset()`);
   lines.push("# =============================================================================");
   lines.push("");
 
@@ -257,7 +260,7 @@ function buildOledDisplay(board: BoardDef, m: Manifest): string {
           }
 
           if (s == 2) {
-            uint32_t rt = (millis() - id(pump_start_time)) / 1000;
+            uint32_t rt = (millis() - id(route_start_time)) / 1000;
             it.printf(0, 27, id(font_body), "Run: %um %us", rt / 60, rt % 60);
           }
 

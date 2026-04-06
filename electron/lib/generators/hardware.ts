@@ -1,7 +1,7 @@
 import type { Manifest } from "../schema.js";
 
 export function generateHardware(m: Manifest): string {
-  const relayBlock = `\
+  const relayBlock = m.pump ? `\
 switch:
   # --- Pump relay ------------------------------------------------------------
   - platform: gpio
@@ -20,7 +20,7 @@ switch:
           then:
             - switch.turn_off: pump_relay
             - logger.log: {level: WARN, format: "BLOCKED: pump only runs in RUNNING state"}
-`;
+` : "";
 
   const valveBlocks = m.valves.map((v) => `\
   # --- ${v.name} ---
@@ -64,7 +64,7 @@ switch:
 # Physical actuators only. No state logic, no sensor readings.
 #
 # Components:
-#   - 1x pump relay (guarded: only energizes in RUNNING state)
+${m.pump ? "#   - 1x pump relay (guarded: only energizes in RUNNING state)\n" : ""}\
 #   - ${m.valves.length}x motorized ball valves (2-pin each, hardware interlocked)
 # =============================================================================
 

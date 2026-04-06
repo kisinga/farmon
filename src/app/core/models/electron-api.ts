@@ -8,12 +8,14 @@ export interface LibraryEntry {
   tanks: number;
   valves: number;
   routes: number;
+  library: boolean;
 }
 
 export interface BoardListEntry {
   id: string;
   model: string;
   label: string;
+  library: boolean;
 }
 
 export interface BoardLoadResult {
@@ -30,11 +32,8 @@ export interface GenerateResult {
   }>;
 }
 
-export interface ValidationResult {
-  errors: string[];
-  warnings: string[];
-  ok: boolean;
-}
+import type { ValidationResult, RuleDiagnostic } from '../../../../shared/validation.types';
+export type { ValidationResult, RuleDiagnostic };
 
 // --- Toolchain ---
 
@@ -105,6 +104,7 @@ export interface ElectronAPI {
   libraryLoad(name: string): Promise<unknown>;
   librarySave(name: string, data: unknown): Promise<{ ok: boolean }>;
   libraryDelete(name: string): Promise<{ ok: boolean }>;
+  libraryDuplicate(sourceName: string, newName: string): Promise<{ ok: boolean; name: string }>;
   libraryImport(filePath: string): Promise<string>;
   libraryExport(name: string, destPath: string): Promise<{ ok: boolean }>;
 

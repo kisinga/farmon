@@ -23,7 +23,7 @@ export function generateSensors(m: Manifest): string {
                 id(last_flow_time) = millis();
                 id(${f.id}_fault_count) = 0;  // reset on good reading
                 if (!id(flow_confirmed)) {
-                  uint32_t elapsed = millis() - id(pump_start_time);
+                  uint32_t elapsed = millis() - id(route_start_time);
                   if (elapsed > (\${flow_confirm_seconds} * 1000U)) {
                     id(flow_confirmed) = true;
                     ESP_LOGI("safety", "Flow confirmed on sensor %d after %us", SENSOR_IDX, elapsed / 1000);
@@ -33,12 +33,12 @@ export function generateSensors(m: Manifest): string {
                 // Zero reading after flow was confirmed — potential sensor fault
                 id(${f.id}_fault_count) += 1;
                 if (id(${f.id}_fault_count) == 3) {
-                  ESP_LOGW("safety", "Sensor fault detected on ${f.id} — 3 consecutive zero readings while pump running");
+                  ESP_LOGW("safety", "Sensor fault detected on ${f.id} — 3 consecutive zero readings while route running");
                 }
               }
             }
           } else if (id(system_state) == 0) {
-            // Reset fault counter when pump is idle
+            // Reset fault counter when idle
             id(${f.id}_fault_count) = 0;
           }`);
 
@@ -146,7 +146,7 @@ export function generateSensors(m: Manifest): string {
 #   - ${wsWithPressure}x water source pressure sensors (ADC -> bar)
 #   - State exposure (system_state_text, fault_text for HA)
 #
-# Tank level readings are suppressed during pump operation (states 1-3)
+# Tank level readings are suppressed during route operation (states 1-3)
 # for any tank involved in the active route (source or destination).
 # =============================================================================
 
@@ -174,7 +174,7 @@ ${calBlocks.join("\n\n")}
 text_sensor:
   - platform: template
     id: system_state_text
-    name: "Pump System State"
+    name: "System State"
     icon: "mdi:state-machine"
     update_interval: 2s
     lambda: |-
@@ -184,7 +184,7 @@ text_sensor:
 
   - platform: template
     id: fault_text
-    name: "Pump Fault"
+    name: "System Fault"
     icon: "mdi:alert-circle"
     update_interval: 2s
     lambda: |-
@@ -206,7 +206,7 @@ text_sensor:
 
   - platform: template
     id: last_stop_reason_text
-    name: "Pump Last Stop Reason"
+    name: "Last Stop Reason"
     icon: "mdi:alert-octagon-outline"
     update_interval: 2s
     lambda: |-
@@ -222,10 +222,10 @@ text_sensor:
       return std::string((r >= 0 && r <= 5) ? reasons[r] : "Unknown");
 ${m.flow_sensors.length > 0 ? `
 # --- Sensor fault detection --------------------------------------------------
-# When the pump is RUNNING and valves are open, a zero reading on an inline
+# When a route is RUNNING and valves are open, a zero reading on an inline
 # flow sensor indicates a potential sensor fault. After 3 consecutive zero
 # readings, the sensor_fault binary_sensor is set to true and exposed to HA.
-# The counter resets on successful flow or pump stop.
+# The counter resets on successful flow or route stop.
 
 globals:
 ${m.flow_sensors.map((f) => `\

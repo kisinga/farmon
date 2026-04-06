@@ -10,18 +10,19 @@ export const pinConflicts: ManifestRule = {
   evaluate(m: Manifest, _board: BoardDef): RuleDiagnostic[] {
     const diagnostics: RuleDiagnostic[] = [];
     const allPins = collectAllPins(m);
-    const seen = new Map<string, string>();
+    const seen = new Map<string, { owner: string; nodeId: string }>();
 
-    for (const { pin, owner } of allPins) {
+    for (const { pin, owner, nodeId } of allPins) {
       const existing = seen.get(pin);
       if (existing) {
         diagnostics.push({
           severity: "error",
-          message: `Pin ${pin} used by both ${existing} and ${owner}`,
+          message: `Pin ${pin} used by both ${existing.owner} and ${owner}`,
+          target: nodeId,
           ruleId: this.id,
         });
       } else {
-        seen.set(pin, owner);
+        seen.set(pin, { owner, nodeId });
       }
     }
 

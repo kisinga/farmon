@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { LibraryService } from '../../core/services/library.service';
 import { BoardService } from '../../core/services/board.service';
 import { ElectronService } from '../../core/services/electron.service';
+import type { SystemTopology } from '../../core/models/topology.model';
 
 @Component({
   selector: 'app-library',
@@ -17,7 +18,8 @@ import { ElectronService } from '../../core/services/electron.service';
           <div>
             <h1 class="text-xl font-bold tracking-tight">System Library</h1>
             <p class="text-sm text-base-content/60 mt-0.5">
-              {{ library.entries().length }} configuration{{ library.entries().length !== 1 ? 's' : '' }}
+              {{ library.userConfigs().length }} system{{ library.userConfigs().length !== 1 ? 's' : '' }},
+              {{ library.templates().length }} template{{ library.templates().length !== 1 ? 's' : '' }}
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -107,72 +109,159 @@ import { ElectronService } from '../../core/services/electron.service';
               <button class="btn btn-ghost btn-sm" (click)="importConfig()">Import Config</button>
             </div>
           </div>
-        } @else if (filteredEntries().length === 0) {
-          <div class="text-center py-20 text-base-content/50 text-sm">
-            No configs matching "{{ searchQuery() }}"
-          </div>
         } @else {
-          <div class="grid gap-3">
-            @for (entry of filteredEntries(); track entry.name) {
-              <div
-                class="group bg-base-100 rounded-xl border border-base-300/40 hover:border-primary/30 hover:shadow-md transition-all cursor-pointer"
-                (click)="open(entry.name)"
-              >
-                <div class="flex items-center gap-5 px-5 py-4">
-                  <!-- Icon -->
-                  <div class="w-10 h-10 rounded-lg bg-primary/8 flex items-center justify-center shrink-0 group-hover:bg-primary/15 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                    </svg>
-                  </div>
-
-                  <!-- Name & ID -->
-                  <div class="flex-1 min-w-0">
-                    <h3 class="font-semibold text-sm truncate group-hover:text-primary transition-colors">{{ entry.friendlyName }}</h3>
-                    <p class="text-xs text-base-content/50 font-mono mt-0.5">{{ entry.deviceName }}</p>
-                  </div>
-
-                  <!-- Board badge -->
-                  <div class="badge badge-sm bg-primary/8 text-primary/70 border-primary/15 font-medium">{{ entry.board }}</div>
-
-                  <!-- Stats -->
-                  <div class="flex gap-5 text-center">
-                    <div>
-                      <div class="text-sm font-bold tabular-nums">{{ entry.tanks }}</div>
-                      <div class="text-[10px] text-base-content/50 uppercase tracking-wider">Tanks</div>
-                    </div>
-                    <div>
-                      <div class="text-sm font-bold tabular-nums">{{ entry.valves }}</div>
-                      <div class="text-[10px] text-base-content/50 uppercase tracking-wider">Valves</div>
-                    </div>
-                    <div>
-                      <div class="text-sm font-bold tabular-nums">{{ entry.routes }}</div>
-                      <div class="text-[10px] text-base-content/50 uppercase tracking-wider">Routes</div>
-                    </div>
-                  </div>
-
-                  <!-- Actions -->
-                  <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button class="btn btn-ghost btn-xs btn-square" title="Export" (click)="exportConfig(entry.name, $event)">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                    </button>
-                    <button class="btn btn-ghost btn-xs btn-square" title="Duplicate" (click)="startDuplicate(entry.name, $event)">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    </button>
-                    <button class="btn btn-ghost btn-xs btn-square text-error/60 hover:text-error" title="Delete" (click)="remove(entry.name, $event)">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
+          <!-- My Systems section -->
+          @if (filteredUserConfigs().length > 0 || !searchQuery()) {
+            <div class="mb-8">
+              <h2 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-3">My Systems</h2>
+              @if (filteredUserConfigs().length === 0) {
+                <div class="text-sm text-base-content/40 py-4 pl-1">
+                  @if (searchQuery()) {
+                    No systems matching "{{ searchQuery() }}"
+                  } @else {
+                    No systems yet. Create one or use a template below.
+                  }
                 </div>
+              } @else {
+                <div class="grid gap-3">
+                  @for (entry of filteredUserConfigs(); track entry.name) {
+                    <div
+                      class="group bg-base-100 rounded-xl border border-base-300/40 hover:border-primary/30 hover:shadow-md transition-all cursor-pointer"
+                      (click)="open(entry.name)"
+                    >
+                      <div class="flex items-center gap-5 px-5 py-4">
+                        <!-- Icon -->
+                        <div class="w-10 h-10 rounded-lg bg-primary/8 flex items-center justify-center shrink-0 group-hover:bg-primary/15 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                          </svg>
+                        </div>
+
+                        <!-- Name & ID -->
+                        <div class="flex-1 min-w-0">
+                          <h3 class="font-semibold text-sm truncate group-hover:text-primary transition-colors">{{ entry.friendlyName }}</h3>
+                          <p class="text-xs text-base-content/50 font-mono mt-0.5">{{ entry.deviceName }}</p>
+                        </div>
+
+                        <!-- Board badge -->
+                        <div class="badge badge-sm bg-primary/8 text-primary/70 border-primary/15 font-medium">{{ entry.board }}</div>
+
+                        <!-- Stats -->
+                        <div class="flex gap-5 text-center">
+                          <div>
+                            <div class="text-sm font-bold tabular-nums">{{ entry.tanks }}</div>
+                            <div class="text-[10px] text-base-content/50 uppercase tracking-wider">Tanks</div>
+                          </div>
+                          <div>
+                            <div class="text-sm font-bold tabular-nums">{{ entry.valves }}</div>
+                            <div class="text-[10px] text-base-content/50 uppercase tracking-wider">Valves</div>
+                          </div>
+                          <div>
+                            <div class="text-sm font-bold tabular-nums">{{ entry.routes }}</div>
+                            <div class="text-[10px] text-base-content/50 uppercase tracking-wider">Routes</div>
+                          </div>
+                        </div>
+
+                        <!-- Actions (user configs: export, duplicate, delete) -->
+                        <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button class="btn btn-ghost btn-xs btn-square" title="Export" (click)="exportConfig(entry.name, $event)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                          </button>
+                          <button class="btn btn-ghost btn-xs btn-square" title="Duplicate" (click)="startDuplicate(entry.name, $event)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                          <button class="btn btn-ghost btn-xs btn-square text-error/60 hover:text-error" title="Delete" (click)="remove(entry.name, $event)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          <!-- Templates section -->
+          @if (filteredTemplates().length > 0) {
+            <div>
+              <h2 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-3">Templates</h2>
+              <p class="text-xs text-base-content/40 mb-3">Read-only examples. Use a template to create an editable copy.</p>
+              <div class="grid gap-3">
+                @for (entry of filteredTemplates(); track entry.name) {
+                  <div
+                    class="group bg-base-100 rounded-xl border border-base-300/40 border-dashed hover:border-primary/30 hover:shadow-md transition-all cursor-pointer"
+                    (click)="useTemplate(entry.name, $event)"
+                  >
+                    <div class="flex items-center gap-5 px-5 py-4">
+                      <!-- Icon (template variant) -->
+                      <div class="w-10 h-10 rounded-lg bg-base-300/30 flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                        </svg>
+                      </div>
+
+                      <!-- Name & ID -->
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                          <h3 class="font-semibold text-sm truncate group-hover:text-primary transition-colors">{{ entry.friendlyName }}</h3>
+                          <span class="badge badge-xs badge-ghost text-base-content/40 border-base-300/60">Template</span>
+                        </div>
+                        <p class="text-xs text-base-content/50 font-mono mt-0.5">{{ entry.deviceName }}</p>
+                      </div>
+
+                      <!-- Board badge -->
+                      <div class="badge badge-sm bg-base-300/30 text-base-content/50 border-base-300/40 font-medium">{{ entry.board }}</div>
+
+                      <!-- Stats -->
+                      <div class="flex gap-5 text-center">
+                        <div>
+                          <div class="text-sm font-bold tabular-nums text-base-content/60">{{ entry.tanks }}</div>
+                          <div class="text-[10px] text-base-content/40 uppercase tracking-wider">Tanks</div>
+                        </div>
+                        <div>
+                          <div class="text-sm font-bold tabular-nums text-base-content/60">{{ entry.valves }}</div>
+                          <div class="text-[10px] text-base-content/40 uppercase tracking-wider">Valves</div>
+                        </div>
+                        <div>
+                          <div class="text-sm font-bold tabular-nums text-base-content/60">{{ entry.routes }}</div>
+                          <div class="text-[10px] text-base-content/40 uppercase tracking-wider">Routes</div>
+                        </div>
+                      </div>
+
+                      <!-- Actions (templates: use, export only) -->
+                      <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button class="btn btn-ghost btn-xs btn-square" title="Export" (click)="exportConfig(entry.name, $event)">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </button>
+                        <button class="btn btn-primary btn-xs gap-1" title="Use Template" (click)="useTemplate(entry.name, $event)">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          Use
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                }
               </div>
-            }
-          </div>
+            </div>
+          }
+
+          <!-- No search results -->
+          @if (filteredUserConfigs().length === 0 && filteredTemplates().length === 0 && searchQuery()) {
+            <div class="text-center py-20 text-base-content/50 text-sm">
+              No configs matching "{{ searchQuery() }}"
+            </div>
+          }
         }
       </div>
 
@@ -238,8 +327,10 @@ import { ElectronService } from '../../core/services/electron.service';
       @if (showDuplicateDialog()) {
         <dialog class="modal modal-open">
           <div class="modal-box max-w-sm">
-            <h3 class="text-lg font-bold">Duplicate System</h3>
-            <p class="text-sm text-base-content/60 mt-1 mb-5">Create a copy of "{{ duplicateSource() }}".</p>
+            <h3 class="text-lg font-bold">{{ duplicateIsTemplate() ? 'New From Template' : 'Duplicate System' }}</h3>
+            <p class="text-sm text-base-content/60 mt-1 mb-5">
+              {{ duplicateIsTemplate() ? 'Create an editable copy of' : 'Create a copy of' }} "{{ duplicateSource() }}".
+            </p>
             <label class="form-control">
               <div class="label pb-1"><span class="label-text text-xs font-medium">New Name</span></div>
               <input
@@ -250,10 +341,19 @@ import { ElectronService } from '../../core/services/electron.service';
                 (keydown.enter)="confirmDuplicate()"
                 autofocus
               />
+              @if (dialogName()) {
+                <div class="label pb-0">
+                  <span class="label-text-alt text-base-content/50 font-mono text-[11px]">
+                    {{ toSlug(dialogName()) }}
+                  </span>
+                </div>
+              }
             </label>
             <div class="modal-action mt-6">
               <button class="btn btn-ghost btn-sm" (click)="showDuplicateDialog.set(false)">Cancel</button>
-              <button class="btn btn-primary btn-sm" (click)="confirmDuplicate()" [disabled]="!dialogName()">Duplicate</button>
+              <button class="btn btn-primary btn-sm" (click)="confirmDuplicate()" [disabled]="!dialogName()">
+                {{ duplicateIsTemplate() ? 'Create' : 'Duplicate' }}
+              </button>
             </div>
           </div>
           <div class="modal-backdrop bg-black/30" (click)="showDuplicateDialog.set(false)"></div>
@@ -272,15 +372,18 @@ export class LibraryComponent implements OnInit {
   protected errorMessage = signal('');
   protected successMessage = signal('');
 
-  protected filteredEntries = computed(() => {
+  protected filteredUserConfigs = computed(() => {
     const q = this.searchQuery().toLowerCase();
-    if (!q) return this.library.entries();
-    return this.library.entries().filter(
-      (e) =>
-        e.friendlyName.toLowerCase().includes(q) ||
-        e.deviceName.toLowerCase().includes(q) ||
-        e.board.toLowerCase().includes(q)
-    );
+    const entries = this.library.userConfigs();
+    if (!q) return entries;
+    return entries.filter(e => this.matchesSearch(e, q));
+  });
+
+  protected filteredTemplates = computed(() => {
+    const q = this.searchQuery().toLowerCase();
+    const entries = this.library.templates();
+    if (!q) return entries;
+    return entries.filter(e => this.matchesSearch(e, q));
   });
 
   protected toSlug(name: string): string {
@@ -292,6 +395,7 @@ export class LibraryComponent implements OnInit {
   protected dialogName = signal('');
   protected dialogBoard = signal('');
   protected duplicateSource = signal('');
+  protected duplicateIsTemplate = signal(false);
 
   ngOnInit() {
     this.library.refresh();
@@ -312,25 +416,59 @@ export class LibraryComponent implements OnInit {
     const name = this.dialogName();
     const board = this.dialogBoard();
     if (!name || !board) return;
-    const slug = name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    const slug = this.toSlug(name);
     this.showCreateDialog.set(false);
     this.dialogName.set('');
     this.dialogBoard.set('');
-    await this.library.save(slug, {
-      device: { name: slug, friendly_name: name, board },
-      pump: { pin: 'GPIO42' },
-      tanks: [],
-      valves: [],
-      flow_sensors: [],
-      routes: [],
-      timing: {},
-    });
-    this.router.navigate(['/editor', slug]);
+
+    try {
+      const topology: SystemTopology = {
+        schema: 5,
+        device: { name: slug, friendly_name: name, board },
+        nodes: [
+          {
+            kind: 'pump',
+            id: 'pump',
+            pin: 'GPIO42',
+            ports: [
+              { id: 'inlet', label: 'In', direction: 'inlet' },
+              { id: 'outlet', label: 'Out', direction: 'outlet' },
+            ],
+            position: { x: 300, y: 200 },
+          },
+        ],
+        pipes: [],
+        route_overrides: {},
+        timing: {
+          valve_travel_time: '15s',
+          flow_watchdog_seconds: 30,
+          flow_confirm_seconds: 15,
+          api_watchdog_seconds: 300,
+          update_interval: '5s',
+        },
+      };
+      await this.library.save(slug, topology);
+      this.router.navigate(['/editor', slug]);
+    } catch (err: any) {
+      this.errorMessage.set(err?.message ?? 'Failed to create system');
+    }
   }
 
+  /** Open the duplicate dialog — works for both templates and user configs. */
   startDuplicate(name: string, event: Event) {
     event.stopPropagation();
+    const entry = this.library.entries().find(e => e.name === name);
     this.duplicateSource.set(name);
+    this.duplicateIsTemplate.set(entry?.library ?? false);
+    this.dialogName.set(`${name}-copy`);
+    this.showDuplicateDialog.set(true);
+  }
+
+  /** Templates: clicking the row opens the duplicate dialog. */
+  useTemplate(name: string, event: Event) {
+    event.stopPropagation();
+    this.duplicateSource.set(name);
+    this.duplicateIsTemplate.set(true);
     this.dialogName.set(`${name}-copy`);
     this.showDuplicateDialog.set(true);
   }
@@ -338,14 +476,25 @@ export class LibraryComponent implements OnInit {
   async confirmDuplicate() {
     const newName = this.dialogName();
     if (!newName) return;
+    const slug = this.toSlug(newName);
     this.showDuplicateDialog.set(false);
     this.dialogName.set('');
-    await this.library.duplicate(this.duplicateSource(), newName);
+
+    try {
+      const savedName = await this.library.duplicate(this.duplicateSource(), slug);
+      this.router.navigate(['/editor', savedName]);
+    } catch (err: any) {
+      this.errorMessage.set(err?.message ?? 'Failed to duplicate');
+    }
   }
 
   async remove(name: string, event: Event) {
     event.stopPropagation();
-    await this.library.remove(name);
+    try {
+      await this.library.remove(name);
+    } catch (err: any) {
+      this.errorMessage.set(err?.message ?? 'Failed to delete');
+    }
   }
 
   async importConfig() {
@@ -392,5 +541,13 @@ export class LibraryComponent implements OnInit {
     } catch (err: any) {
       this.errorMessage.set(err?.message ?? 'Failed to export config');
     }
+  }
+
+  private matchesSearch(e: { friendlyName: string; deviceName: string; board: string }, q: string): boolean {
+    return (
+      e.friendlyName.toLowerCase().includes(q) ||
+      e.deviceName.toLowerCase().includes(q) ||
+      e.board.toLowerCase().includes(q)
+    );
   }
 }

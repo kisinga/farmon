@@ -3,6 +3,8 @@
  * Each entity self-registers by calling NODE_REGISTRY.set().
  */
 
+import type { PinCap } from './board.types';
+
 // ---------------------------------------------------------------------------
 // Field definition (drives sidebar forms)
 // ---------------------------------------------------------------------------
@@ -12,8 +14,8 @@ export interface FieldDef {
   label: string;
   type: 'text' | 'number' | 'pin';
   placeholder?: string;
-  /** Pin capability to validate against board, e.g. 'adc'. Drives badge in sidebar. */
-  pinCap?: string;
+  /** Pin capability required for this field, e.g. 'adc'. Filters pin selection and drives validation. */
+  pinCap?: PinCap;
 }
 
 // ---------------------------------------------------------------------------

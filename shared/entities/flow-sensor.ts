@@ -34,7 +34,7 @@ const flowSensor: NodeDescriptor = {
   legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><circle cx="10" cy="8" r="6" fill="none" stroke="${COLOR}" stroke-width="2"/><text x="10" y="8" text-anchor="middle" dominant-baseline="central" fill="${COLOR}" font-size="9" font-weight="800" font-family="ui-monospace, monospace">F</text><path d="M0 8 L4 8 M16 8 L20 8 M17 6 L20 8 L17 10" fill="none" stroke="${COLOR}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   sidebarFields: [
     { key: 'name', label: 'Name', type: 'text' },
-    { key: 'pin', label: 'Pin', type: 'pin', placeholder: 'GPIO47' },
+    { key: 'pin', label: 'Pin', type: 'pin', placeholder: 'GPIO47', pinCap: 'pulse_counter' },
     { key: 'flow_cal', label: 'Cal (pulses/L)', type: 'number' },
   ],
 };

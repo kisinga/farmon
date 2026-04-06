@@ -56,7 +56,15 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     "library:save",
     async (_e, name: string, data: unknown) => {
-      const savedName = store.saveConfig(name, data);
+      store.saveConfig(name, data);
+      return { ok: true };
+    }
+  );
+
+  ipcMain.handle(
+    "library:duplicate",
+    async (_e, sourceName: string, newName: string) => {
+      const savedName = store.duplicateConfig(sourceName, newName);
       return { ok: true, name: savedName };
     }
   );

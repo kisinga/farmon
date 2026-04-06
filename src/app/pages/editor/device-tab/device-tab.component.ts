@@ -3,7 +3,6 @@ import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
-import { getNodeByKind } from '../../../core/models/topology.model';
 
 @Component({
   selector: 'app-device-tab',
@@ -91,23 +90,6 @@ import { getNodeByKind } from '../../../core/models/topology.model';
             }
           </div>
         </div>
-
-        <!-- Pump -->
-        <div class="card bg-base-100 shadow-sm border border-base-200">
-          <div class="card-body gap-4">
-            <h2 class="card-title text-base">Pump Relay</h2>
-            <label class="form-control max-w-xs">
-              <div class="label"><span class="label-text font-medium">GPIO Pin</span></div>
-              <input
-                type="text"
-                class="input input-bordered input-sm font-mono"
-                [ngModel]="pumpPin()"
-                (ngModelChange)="updatePump($event)"
-                placeholder="GPIO42"
-              />
-            </label>
-          </div>
-        </div>
       </div>
     }
   `,
@@ -115,11 +97,6 @@ import { getNodeByKind } from '../../../core/models/topology.model';
 export class DeviceTabComponent {
   protected editor = inject(SystemEditorService);
   protected boards = inject(BoardService);
-
-  protected pumpPin = computed(() => {
-    const t = this.editor.topology();
-    return t ? getNodeByKind(t, 'pump')?.pin ?? '' : '';
-  });
 
   protected peripherals = computed(() => {
     const board = this.editor.board();
@@ -136,13 +113,6 @@ export class DeviceTabComponent {
 
   update(field: 'name' | 'friendly_name', value: string) {
     this.editor.updateTopology((t) => { t.device[field] = value; });
-  }
-
-  updatePump(pin: string) {
-    this.editor.updateTopology((t) => {
-      const pump = t.nodes.find((n) => n.kind === 'pump');
-      if (pump && pump.kind === 'pump') pump.pin = pin;
-    });
   }
 
   async changeBoard(boardId: string) {

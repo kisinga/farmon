@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import {
+  type PinCap,
   reservedPins as _reservedPins,
   exposedPins as _exposedPins,
   pinsWithCap as _pinsWithCap,
@@ -19,7 +20,7 @@ export const PinCapability = z.enum([
   "uart",
   "dac",
 ]);
-export type PinCapability = z.infer<typeof PinCapability>;
+export type PinCapability = PinCap;
 
 // --- Board definition schema ------------------------------------------------
 

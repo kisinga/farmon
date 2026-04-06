@@ -3,6 +3,7 @@
  * All types and helpers now live in shared/board.types.ts.
  */
 export {
+  type PinCap,
   type PinDef,
   type BoardDef,
   reservedPins,

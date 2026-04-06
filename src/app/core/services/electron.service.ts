@@ -35,6 +35,10 @@ export class ElectronService {
   async librarySave(name: string, data: unknown): Promise<void> {
     await this.invoke(() => this.api!.librarySave(name, data));
   }
+  async libraryDuplicate(sourceName: string, newName: string): Promise<string> {
+    const result = await this.invoke(() => this.api!.libraryDuplicate(sourceName, newName));
+    return result.name;
+  }
   async libraryDelete(name: string): Promise<void> {
     await this.invoke(() => this.api!.libraryDelete(name));
   }
@@ -49,7 +53,7 @@ export class ElectronService {
 
   // --- Codegen ---
   validate(manifest: unknown, board: unknown): Promise<ValidationResult> {
-    if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false });
+    if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false, diagnostics: [] });
     return this.api.codegenValidate(manifest, board);
   }
   generate(manifest: unknown, board: unknown): Promise<GenerateResult> {

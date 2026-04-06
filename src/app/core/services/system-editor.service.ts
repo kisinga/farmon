@@ -1,9 +1,9 @@
 import { Injectable, signal, computed } from '@angular/core';
-import type { BoardDef } from '../models/board.model';
-import { reservedPins, exposedPins, pinsWithCap } from '../models/board.model';
-import type { ValidationResult } from '../models/electron-api';
+import type { BoardDef, PinDef, PinCap } from '../models/board.model';
+import { reservedPins, exposedPins } from '../models/board.model';
+import type { ValidationResult, RuleDiagnostic } from '../models/electron-api';
 import type { SystemTopology } from '../models/topology.model';
-import { getNodesByKind, getNodeByKind } from '../models/topology.model';
+import { collectPins } from '../../../../shared/pin-collect';
 
 @Injectable({ providedIn: 'root' })
 export class SystemEditorService {
@@ -29,34 +29,38 @@ export class SystemEditorService {
     return b ? exposedPins(b) : new Set<string>();
   });
 
-  readonly adcPins = computed(() => {
-    const b = this._board();
-    return b ? pinsWithCap(b, 'adc') : new Set<string>();
-  });
 
-  readonly pcntPins = computed(() => {
-    const b = this._board();
-    return b ? pinsWithCap(b, 'pulse_counter') : new Set<string>();
+  readonly pinUsages = computed(() => {
+    const t = this._topology();
+    return t ? collectPins(t.nodes) : [];
   });
 
   readonly usedPins = computed(() => {
-    const t = this._topology();
-    if (!t) return new Map<string, string>();
-    const pins = new Map<string, string>();
-    const pump = getNodeByKind(t, 'pump');
-    if (pump?.pin) pins.set(pump.pin, 'pump');
-    for (const tank of getNodesByKind(t, 'tank')) {
-      if (tank.level_pin) pins.set(tank.level_pin, `tank:${tank.id}`);
+    const map = new Map<string, string>();
+    for (const u of this.pinUsages()) {
+      map.set(u.pin, u.owner);
     }
-    for (const v of getNodesByKind(t, 'valve')) {
-      if (v.open_pin) pins.set(v.open_pin, `valve:${v.id}:open`);
-      if (v.close_pin) pins.set(v.close_pin, `valve:${v.id}:close`);
-    }
-    for (const f of getNodesByKind(t, 'flow_sensor')) {
-      if (f.pin) pins.set(f.pin, `flow:${f.id}`);
-    }
-    return pins;
+    return map;
   });
+
+  readonly boardPins = computed(() => {
+    const b = this._board();
+    return b ? b.pins : [];
+  });
+
+  /**
+   * Returns non-reserved pins, optionally filtered by capability.
+   * Each pin is annotated with its current usage status.
+   */
+  availablePins(cap?: PinCap): (PinDef & { usedBy?: string })[] {
+    const pins = this.boardPins();
+    const reserved = this.reservedPins();
+    const used = this.usedPins();
+    return pins
+      .filter(p => !reserved.has(p.gpio))
+      .filter(p => !cap || p.caps.includes(cap))
+      .map(p => ({ ...p, usedBy: used.get(p.gpio) }));
+  }
 
   readonly gpioUsage = computed(() => {
     const used = this.usedPins().size;
@@ -67,6 +71,21 @@ export class SystemEditorService {
   // --- Validation ---
   private _validation = signal<ValidationResult | null>(null);
   readonly validation = this._validation.asReadonly();
+
+  readonly diagnostics = computed(() => {
+    return this._validation()?.diagnostics ?? [];
+  });
+
+  readonly diagnosticsByTarget = computed(() => {
+    const map = new Map<string, RuleDiagnostic[]>();
+    for (const d of this.diagnostics()) {
+      const key = d.target ?? '';
+      const arr = map.get(key) ?? [];
+      arr.push(d);
+      map.set(key, arr);
+    }
+    return map;
+  });
 
   // --- Actions ---
 

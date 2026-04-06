@@ -2,6 +2,7 @@ import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, 
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer } from '@angular/platform-browser';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
+import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import type { TopologyNode, PipeSegment } from '../../../core/models/topology.model';
 import { NODE_REGISTRY, type NodeDescriptor } from '../../../core/models/entities.model';
 import { TopologyCanvas, type Selection } from './topology-canvas';
@@ -40,7 +41,7 @@ import { deriveRoutes } from './derive-routes';
 
     <div class="flex flex-1 min-h-0 overflow-hidden">
       <!-- Canvas -->
-      <div class="canvas-wrap flex-1 min-w-0">
+      <div class="canvas-wrap flex-1 min-w-0 min-h-0">
         <div #canvas></div>
         <div class="legend">
           @for (desc of nodeDescs; track desc.kind) {
@@ -77,19 +78,16 @@ import { deriveRoutes } from './derive-routes';
               @for (field of sn.desc.sidebarFields; track field.key) {
                 <label class="sidebar-label">{{ field.label }}</label>
                 @if (field.type === 'pin') {
-                  <div class="flex items-center gap-2">
-                    <input class="input input-xs input-bordered flex-1 font-mono"
-                      [ngModel]="$any(sn.node)[field.key]"
-                      (ngModelChange)="updateNodeField(sn.node.id, field.key, $event)"
-                      [placeholder]="field.placeholder ?? ''" />
-                    @if (field.pinCap === 'adc') {
-                      @if (editor.adcPins().has($any(sn.node)[field.key])) {
-                        <span class="badge badge-success badge-xs">ADC</span>
-                      } @else if ($any(sn.node)[field.key]) {
-                        <span class="badge badge-error badge-xs">No ADC</span>
-                      }
+                  <select class="select select-xs select-bordered flex-1 font-mono"
+                    [ngModel]="$any(sn.node)[field.key]"
+                    (ngModelChange)="updateNodeField(sn.node.id, field.key, $event)">
+                    <option value="">-- select --</option>
+                    @for (pin of editor.availablePins(field.pinCap); track pin.gpio) {
+                      <option [value]="pin.gpio" [disabled]="!!pin.usedBy">
+                        {{ pin.gpio }} [{{ pin.caps.join(', ') }}]{{ pin.usedBy ? ' (' + pin.usedBy + ')' : '' }}
+                      </option>
                     }
-                  </div>
+                  </select>
                 } @else if (field.type === 'number') {
                   <input type="number" class="input input-xs input-bordered w-full font-mono"
                     [ngModel]="$any(sn.node)[field.key]"
@@ -101,6 +99,14 @@ import { deriveRoutes } from './derive-routes';
                 }
               }
             </div>
+            @for (d of nodeDiagnostics(sn.node.id); track d.message) {
+              <div class="flex items-start gap-1.5 py-0.5 mt-1 text-[11px]"
+                [class.text-error]="d.severity === 'error'"
+                [class.text-warning]="d.severity === 'warning'">
+                <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : '\u26A0' }}</span>
+                <span>{{ d.message }}</span>
+              </div>
+            }
             @if (!sn.desc.singleton) {
               <button class="btn btn-error btn-xs mt-3 w-full" (click)="deleteNode(sn.node.id)">Delete {{ sn.desc.label }}</button>
             }
@@ -126,13 +132,39 @@ import { deriveRoutes } from './derive-routes';
               @for (route of derivedRoutes(); track route.key) {
                 <div class="flex items-center justify-between py-1.5 border-b border-base-300/20">
                   <span class="font-mono text-xs">{{ route.key }}</span>
-                  <span class="badge badge-xs" [class.badge-success]="route.valid" [class.badge-ghost]="!route.valid">
-                    {{ route.valid ? 'Valid' : 'Incomplete' }}
-                  </span>
+                  @if (routeDiagnostics(route.key).length > 0) {
+                    <span class="badge badge-error badge-xs">Error</span>
+                  } @else if (!route.valid) {
+                    <span class="badge badge-warning badge-xs">Incomplete</span>
+                  } @else {
+                    <span class="badge badge-success badge-xs">Valid</span>
+                  }
                 </div>
+                @for (d of routeDiagnostics(route.key); track d.message) {
+                  <div class="flex items-start gap-1.5 px-2 py-0.5 text-[11px]"
+                    [class.text-error]="d.severity === 'error'"
+                    [class.text-warning]="d.severity === 'warning'">
+                    <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : '\u26A0' }}</span>
+                    <span>{{ d.message }}</span>
+                  </div>
+                }
               }
             }
           </div>
+
+          @if (editor.diagnostics().length > 0) {
+            <div class="sidebar-section">
+              <h3 class="sidebar-title">Validation</h3>
+              @for (d of editor.diagnostics(); track $index) {
+                <div class="flex items-start gap-1.5 py-0.5 text-[11px]"
+                  [class.text-error]="d.severity === 'error'"
+                  [class.text-warning]="d.severity === 'warning'">
+                  <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : '\u26A0' }}</span>
+                  <span>{{ d.message }}</span>
+                </div>
+              }
+            </div>
+          }
 
           <div class="sidebar-section">
             <h3 class="sidebar-title">Route Overrides</h3>
@@ -169,7 +201,7 @@ import { deriveRoutes } from './derive-routes';
     }
     :host ::ng-deep .joint-paper { border: none !important; cursor: grab; }
     :host ::ng-deep .joint-paper:active { cursor: grabbing; }
-    .canvas-wrap { position: relative; }
+    .canvas-wrap { position: relative; overflow: hidden; min-height: 0; }
     .legend {
       position: absolute; bottom: 12px; left: 12px;
       display: flex; flex-direction: column; gap: 4px;
@@ -291,6 +323,14 @@ export class TopologyTabComponent {
     return t ? t.nodes.some(n => n.kind === kind) : false;
   }
 
+  nodeDiagnostics(nodeId: string): RuleDiagnostic[] {
+    return this.editor.diagnosticsByTarget().get(nodeId) ?? [];
+  }
+
+  routeDiagnostics(routeKey: string): RuleDiagnostic[] {
+    return this.editor.diagnosticsByTarget().get(routeKey) ?? [];
+  }
+
   private initCanvas() {
     const canvasEl = this.canvasRef().nativeElement;
     const canvasWrap = canvasEl.parentElement!;
@@ -347,6 +387,9 @@ export class TopologyTabComponent {
     const desc = NODE_REGISTRY.get(kind);
     if (!desc) return;
     if (desc.singleton && this.kindExists(kind)) return;
+
+    // Close the DaisyUI dropdown by blurring the focused trigger
+    (document.activeElement as HTMLElement)?.blur();
 
     const center = this.c.getViewportCenter();
 

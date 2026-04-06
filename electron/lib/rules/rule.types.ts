@@ -2,16 +2,8 @@ import type { Topology } from "../topology.js";
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 
-export type Severity = "error" | "warning";
-
-export interface RuleDiagnostic {
-  severity: Severity;
-  message: string;
-  /** Node, route, or component ID this diagnostic applies to. */
-  target?: string;
-  /** The rule that produced this diagnostic. */
-  ruleId: string;
-}
+export type { Severity, RuleDiagnostic } from "../../../shared/validation.types.js";
+import type { RuleDiagnostic } from "../../../shared/validation.types.js";
 
 /** A rule that validates the topology graph structure. */
 export interface TopologyRule {

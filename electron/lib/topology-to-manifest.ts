@@ -111,27 +111,33 @@ export function topologyToManifest(topology: Topology): Manifest {
   const nodes = new Map(topology.nodes.map((n) => [n.id, n]));
   const adj = buildAdjacency(topology.pipes);
 
-  // --- Flat node extraction ---
+  // Flow is the source of truth: only nodes connected via pipes get into the manifest.
+  const connected = new Set<string>();
+  for (const pipe of topology.pipes) {
+    connected.add(parsePortRef(pipe.from).nodeId);
+    connected.add(parsePortRef(pipe.to).nodeId);
+  }
+
+  // --- Flat node extraction (connected nodes only) ---
 
   const tanks = topology.nodes
-    .filter((n): n is Extract<TopologyNode, { kind: "tank" }> => n.kind === "tank")
+    .filter((n): n is Extract<TopologyNode, { kind: "tank" }> => n.kind === "tank" && connected.has(n.id))
     .map((t) => ({ name: t.name, id: t.id, level_pin: t.level_pin }));
 
   const waterSources = topology.nodes
-    .filter((n): n is Extract<TopologyNode, { kind: "water_source" }> => n.kind === "water_source")
+    .filter((n): n is Extract<TopologyNode, { kind: "water_source" }> => n.kind === "water_source" && connected.has(n.id))
     .map((ws) => ({ name: ws.name, id: ws.id, pressure_pin: ws.pressure_pin }));
 
-  const pump = topology.nodes.find((n) => n.kind === "pump");
-  if (!pump || pump.kind !== "pump") {
-    throw new Error("Topology must contain exactly one pump node");
-  }
+  const pumpNode = topology.nodes.find(
+    (n): n is Extract<TopologyNode, { kind: "pump" }> => n.kind === "pump" && connected.has(n.id),
+  );
 
   const valves: Manifest["valves"] = topology.nodes
-    .filter((n): n is Extract<TopologyNode, { kind: "valve" }> => n.kind === "valve")
+    .filter((n): n is Extract<TopologyNode, { kind: "valve" }> => n.kind === "valve" && connected.has(n.id))
     .map((v) => ({ name: v.name, id: v.id, open_pin: v.open_pin, close_pin: v.close_pin }));
 
   const flowSensors: Manifest["flow_sensors"] = topology.nodes
-    .filter((n): n is Extract<TopologyNode, { kind: "flow_sensor" }> => n.kind === "flow_sensor")
+    .filter((n): n is Extract<TopologyNode, { kind: "flow_sensor" }> => n.kind === "flow_sensor" && connected.has(n.id))
     .map((f) => ({ name: f.name, id: f.id, pin: f.pin, flow_cal: f.flow_cal }));
 
   // --- Route derivation ---
@@ -148,7 +154,6 @@ export function topologyToManifest(topology: Topology): Manifest {
     const traced = traceRoutes(src.id, src.kind, adj, nodes);
 
     for (const tr of traced) {
-      if (!tr.crossesPump) continue;
       if (!tr.flowSensor) continue;
       if (tr.valves.length === 0) continue;
 
@@ -169,7 +174,7 @@ export function topologyToManifest(topology: Topology): Manifest {
 
   return {
     device: { ...topology.device },
-    pump: { pin: pump.pin },
+    pump: pumpNode ? { pin: pumpNode.pin } : undefined,
     tanks,
     water_sources: waterSources,
     valves,

@@ -10,8 +10,10 @@ export function generateSubstitutions(m: Manifest): string {
   lines.push(`  battery_divider: "2.0"`);
   lines.push("");
 
-  lines.push(`  # --- Pump ---`);
-  lines.push(`  pin_pump_relay: ${m.pump.pin}`);
+  if (m.pump) {
+    lines.push(`  # --- Pump ---`);
+    lines.push(`  pin_pump_relay: ${m.pump.pin}`);
+  }
 
   lines.push("");
   lines.push(`  # --- Valves ---`);

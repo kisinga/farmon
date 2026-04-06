@@ -5,11 +5,13 @@
  * No runtime dependencies. Pure interfaces and helper functions.
  */
 
+export type PinCap = 'digital' | 'adc' | 'pwm' | 'pulse_counter' | 'i2c' | 'uart' | 'dac';
+
 export interface PinDef {
   gpio: string;
   connector: string;
   edge: 'top' | 'bottom' | 'left' | 'right';
-  caps: string[];
+  caps: PinCap[];
 }
 
 export interface BoardDef {
@@ -66,7 +68,7 @@ export function exposedPins(board: BoardDef): Set<string> {
   return new Set(board.pins.map(p => p.gpio));
 }
 
-export function pinsWithCap(board: BoardDef, cap: string): Set<string> {
+export function pinsWithCap(board: BoardDef, cap: PinCap): Set<string> {
   return new Set(board.pins.filter(p => p.caps.includes(cap)).map(p => p.gpio));
 }
 

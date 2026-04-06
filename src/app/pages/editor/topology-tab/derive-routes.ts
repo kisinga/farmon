@@ -77,7 +77,7 @@ function traceRoutes(
 
       if (targetRole === 'terminal') {
         const key = `${sourceId}>${target.id}`;
-        const valid = nextPump && !!nextFlow && nextValves.length > 0;
+        const valid = !!nextFlow && nextValves.length > 0;
         results.push({
           key,
           source: sourceId,
