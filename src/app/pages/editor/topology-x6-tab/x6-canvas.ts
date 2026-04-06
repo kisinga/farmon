@@ -94,12 +94,12 @@ export class X6Canvas {
         router: MANHATTAN_ROUTER,
         connector: { name: 'rounded' },
         validateMagnet({ magnet }) {
-          return magnet?.getAttribute('port-group') === 'outlet';
+          return magnet?.getAttribute('port-group')?.startsWith('outlet') ?? false;
         },
         validateConnection({ sourceCell, targetCell, targetMagnet }) {
           if (!sourceCell || !targetCell) return false;
           if (sourceCell.id === targetCell.id) return false;
-          return targetMagnet?.getAttribute('port-group') === 'inlet';
+          return targetMagnet?.getAttribute('port-group')?.startsWith('inlet') ?? false;
         },
         createEdge() {
           return new Shape.Edge(buildDragEdgeAttrs());
@@ -311,10 +311,15 @@ export class X6Canvas {
   private toNodeConfig(node: TopologyNode): Node.Metadata | null {
     const desc = NODE_REGISTRY.get(node.kind);
     if (!desc) return null;
-    const ports = node.ports.map(p => ({
-      id: p.id,
-      group: p.direction === 'inlet' ? 'inlet' : 'outlet',
-    }));
+    const ports = node.ports.map(p => {
+      const defPort = desc.defaultPorts.find(dp => dp.id === p.id);
+      const group = p.direction === 'inlet' ? 'inlet' : 'outlet';
+      if (defPort?.y != null) {
+        const x = group === 'inlet' ? 0 : desc.size.width;
+        return { id: p.id, group: `${group}-abs`, args: { x, y: defPort.y } };
+      }
+      return { id: p.id, group };
+    });
     return buildNodeConfig(desc, node.id, extractNodeData(node), node.position.x, node.position.y, ports);
   }
 

@@ -31,14 +31,18 @@ const portGroup = (side: 'left' | 'right') => ({
   label: { position: side },
 });
 
-const PORT_GROUPS = { inlet: portGroup('left'), outlet: portGroup('right') };
+const PORT_GROUPS = {
+  inlet: portGroup('left'),
+  outlet: portGroup('right'),
+  'inlet-abs': { ...portGroup('left'), position: 'absolute' as const },
+  'outlet-abs': { ...portGroup('right'), position: 'absolute' as const },
+};
 
 // --- Port spacing ---
 
-type PortItem = { id: string; group: string };
-type SpacedPort = PortItem & { args?: { y: number } };
+export type PortItem = { id: string; group: string; args?: { x?: number; y?: number } };
 
-function spacePorts(ports: PortItem[], nodeHeight: number): SpacedPort[] {
+function spacePorts(ports: PortItem[], nodeHeight: number): PortItem[] {
   const byGroup = new Map<string, PortItem[]>();
   for (const p of ports) {
     const list = byGroup.get(p.group) ?? [];
@@ -46,13 +50,17 @@ function spacePorts(ports: PortItem[], nodeHeight: number): SpacedPort[] {
     byGroup.set(p.group, list);
   }
 
-  const result: SpacedPort[] = [];
+  const result: PortItem[] = [];
   for (const [, items] of byGroup) {
     if (items.length <= 1) {
       result.push(...items);
     } else {
       items.forEach((p, i) => {
-        result.push({ ...p, args: { y: ((i + 1) / (items.length + 1)) * nodeHeight } });
+        if (p.args?.y != null) {
+          result.push(p);
+        } else {
+          result.push({ ...p, args: { y: ((i + 1) / (items.length + 1)) * nodeHeight } });
+        }
       });
     }
   }
@@ -67,7 +75,7 @@ export function buildNodeConfig(
   nodeData: Record<string, unknown>,
   x: number,
   y: number,
-  ports: Array<{ id: string; group: string }>,
+  ports: PortItem[],
 ): Node.Metadata {
   const { width, height } = desc.size;
   return {

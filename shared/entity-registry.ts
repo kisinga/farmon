@@ -74,7 +74,7 @@ export interface NodeDescriptor {
   experimental?: boolean;
   /** URL to installation/usage docs for this entity type. */
   helpUrl?: string;
-  defaultPorts: Array<{ id: string; label: string; direction: 'inlet' | 'outlet' }>;
+  defaultPorts: Array<{ id: string; label: string; direction: 'inlet' | 'outlet'; y?: number }>;
   defaultData: (index: number) => Record<string, any>;
   /** Returns a raw SVG string for the canvas element. Receives full node data. */
   renderSvg: (data: Record<string, any>) => string;

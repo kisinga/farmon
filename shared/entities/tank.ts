@@ -36,8 +36,8 @@ NODE_REGISTRY.set('tank', {
   helpUrl: 'docs/installation-guidelines.md#tank-level-sensors',
   schema: TankNodeSchema,
   defaultPorts: [
-    { id: 'inlet', label: 'Inlet', direction: 'inlet' },
-    { id: 'outlet', label: 'Outlet', direction: 'outlet' },
+    { id: 'inlet', label: 'Inlet', direction: 'inlet', y: 15 },
+    { id: 'outlet', label: 'Outlet', direction: 'outlet', y: 55 },
   ],
   defaultData: (n) => ({ name: `Tank ${n}`, level_pin: '' }),
 
