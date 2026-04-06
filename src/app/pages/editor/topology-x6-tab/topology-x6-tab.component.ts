@@ -3,18 +3,19 @@ import { DomSanitizer } from '@angular/platform-browser';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import type { TopologyNode, PipeSegment } from '../../../core/models/topology.model';
 import { NODE_REGISTRY, type NodeDescriptor } from '../../../core/models/entities.model';
-import { TopologyCanvas, type Selection } from './topology-canvas';
+import { X6Canvas, type Selection } from './x6-canvas';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
 
 @Component({
-  selector: 'app-topology-tab',
+  selector: 'app-topology-x6-tab',
   standalone: true,
   imports: [TopologySidebarComponent],
   host: { '(document:keydown.escape)': 'closePopup()' },
   template: `
     <!-- Toolbar -->
     <div class="flex items-center gap-2 px-4 py-2 border-b border-base-300/30 bg-base-200/30">
-      <h2 class="text-sm font-semibold text-base-content/70">Design</h2>
+      <h2 class="text-sm font-semibold text-base-content/70">Design v2</h2>
+      <span class="badge badge-ghost badge-xs">X6</span>
       <div class="flex-1"></div>
       <div class="dropdown dropdown-end">
         <div tabindex="0" role="button" class="btn btn-ghost btn-xs gap-1">
@@ -40,7 +41,7 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
     <div class="flex flex-1 min-h-0 overflow-hidden">
       <!-- Canvas -->
       <div class="canvas-wrap flex-1 min-w-0 min-h-0">
-        <div #canvas></div>
+        <div #x6canvas></div>
         <div class="legend">
           @for (desc of nodeDescs; track desc.kind) {
             <div class="legend-item">
@@ -85,8 +86,8 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
       min-height: 0;
       overflow: hidden;
     }
-    :host ::ng-deep .joint-paper { border: none !important; cursor: grab; }
-    :host ::ng-deep .joint-paper:active { cursor: grabbing; }
+    :host ::ng-deep .x6-graph { cursor: grab; }
+    :host ::ng-deep .x6-graph:active { cursor: grabbing; }
     .canvas-wrap { position: relative; overflow: hidden; min-height: 0; }
     .legend {
       position: absolute; bottom: 12px; left: 12px;
@@ -108,15 +109,15 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
     .node-popup { position: fixed; z-index: 51; }
   `],
 })
-export class TopologyTabComponent {
+export class TopologyX6TabComponent {
   protected editor = inject(SystemEditorService);
   private sanitizer = inject(DomSanitizer);
   private injector = inject(Injector);
   private destroyRef = inject(DestroyRef);
-  private canvasRef = viewChild.required<ElementRef<HTMLDivElement>>('canvas');
+  private canvasRef = viewChild.required<ElementRef<HTMLDivElement>>('x6canvas');
 
-  private canvas: TopologyCanvas | null = null;
-  private get c(): TopologyCanvas { return this.canvas!; }
+  private canvas: X6Canvas | null = null;
+  private get c(): X6Canvas { return this.canvas!; }
 
   // Registry arrays for template iteration
   protected nodeDescs: NodeDescriptor[] = Array.from(NODE_REGISTRY.values());
@@ -138,7 +139,6 @@ export class TopologyTabComponent {
       return desc.defaultPorts.some(p => p.direction === 'inlet');
     });
   });
-
 
   constructor() {
     afterNextRender(() => {
@@ -178,7 +178,7 @@ export class TopologyTabComponent {
     const canvasEl = this.canvasRef().nativeElement;
     const canvasWrap = canvasEl.parentElement!;
 
-    this.canvas = new TopologyCanvas(canvasEl, {
+    this.canvas = new X6Canvas(canvasEl, {
       onNodesMoved: (positions) => {
         this.editor.updateTopology(t => {
           for (const node of t.nodes) {
