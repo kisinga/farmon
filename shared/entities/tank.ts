@@ -22,7 +22,8 @@ const tank: NodeDescriptor = {
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
   defaultData: (n) => ({ name: `Tank ${n}`, level_pin: '' }),
-  renderSvg: (name) => {
+  renderSvg: (data) => {
+    const name = data['name'] ?? 'Tank';
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
       <rect x="5" y="30" width="${W - 10}" height="${H - 33}" rx="2" fill="${UI_COLORS.water}" opacity="0.5"/>
       <path d="M 3 8 L 3 ${H - 3} Q 3 ${H} 9 ${H} L ${W - 9} ${H} Q ${W - 3} ${H} ${W - 3} ${H - 3} L ${W - 3} 8" fill="none" stroke="${COLOR}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>

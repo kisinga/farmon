@@ -21,7 +21,8 @@ const flowSensor: NodeDescriptor = {
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
   defaultData: (n) => ({ name: `Flow ${n}`, pin: '', flow_cal: 450 }),
-  renderSvg: (name) => {
+  renderSvg: (data) => {
+    const name = data['name'] ?? 'Flow';
     const cx = W / 2, cy = H / 2, r = 13;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
       <path d="M 0 ${cy} L ${cx - r} ${cy}" fill="none" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/>

@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
-import { deriveRoutes } from '../topology-tab/derive-routes';
+import { deriveRoutes } from './derive-routes';
 
 export type Selection =
   | { kind: 'node'; nodeId: string }

@@ -10,12 +10,19 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
   selector: 'app-topology-x6-tab',
   standalone: true,
   imports: [TopologySidebarComponent],
-  host: { '(document:keydown.escape)': 'closePopup()' },
+  host: {
+    '(document:keydown.escape)': 'closePopup()',
+    '(document:keydown.control.z)': 'doUndo()',
+    '(document:keydown.control.y)': 'doRedo()',
+    '(document:keydown.meta.z)': 'doUndo()',
+    '(document:keydown.meta.shift.z)': 'doRedo()',
+    '(document:keydown.delete)': 'deleteSelected()',
+    '(document:keydown.backspace)': 'deleteSelected()',
+  },
   template: `
     <!-- Toolbar -->
     <div class="flex items-center gap-2 px-4 py-2 border-b border-base-300/30 bg-base-200/30">
-      <h2 class="text-sm font-semibold text-base-content/70">Design v2</h2>
-      <span class="badge badge-ghost badge-xs">X6</span>
+      <h2 class="text-sm font-semibold text-base-content/70">Design</h2>
       <div class="flex-1"></div>
       <div class="dropdown dropdown-end">
         <div tabindex="0" role="button" class="btn btn-ghost btn-xs gap-1">
@@ -33,6 +40,9 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
         </ul>
       </div>
       <div class="divider divider-horizontal mx-0 h-4"></div>
+      <button class="btn btn-ghost btn-xs" title="Undo" (click)="doUndo()">&#x21A9;</button>
+      <button class="btn btn-ghost btn-xs" title="Redo" (click)="doRedo()">&#x21AA;</button>
+      <div class="divider divider-horizontal mx-0 h-4"></div>
       <button class="btn btn-ghost btn-xs" (click)="doZoomIn()">+</button>
       <button class="btn btn-ghost btn-xs" (click)="doZoomOut()">&minus;</button>
       <button class="btn btn-ghost btn-xs" (click)="doFit()">Fit</button>
@@ -45,7 +55,7 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
         <div class="legend">
           @for (desc of nodeDescs; track desc.kind) {
             <div class="legend-item">
-              <span class="legend-swatch" [class.legend-circle]="desc.kind === 'pump'" [class.legend-dashed]="desc.kind === 'endpoint'" [style.border-color]="desc.color"></span>
+              <span [innerHTML]="trustSvg(desc.legendSvg)"></span>
               <span>{{ desc.label }}</span>
             </div>
           }
@@ -98,12 +108,6 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
       color: #1e293b; pointer-events: none; z-index: 10;
     }
     .legend-item { display: flex; align-items: center; gap: 6px; }
-    .legend-swatch {
-      display: inline-block; width: 16px; height: 12px;
-      border: 2.5px solid; border-radius: 2px; background: #f8fafc;
-    }
-    .legend-swatch.legend-circle { border-radius: 50%; width: 14px; height: 14px; }
-    .legend-swatch.legend-dashed { border-style: dashed; border-width: 2px; border-radius: 4px; }
     .sidebar { font-size: 12px; }
     .node-popup-backdrop { position: fixed; inset: 0; z-index: 50; }
     .node-popup { position: fixed; z-index: 51; }
@@ -150,13 +154,13 @@ export class TopologyX6TabComponent {
   private doInitialRender() {
     const t = this.editor.topology();
     if (t) {
-      this.c.render(t);
+      this.c.reset(t);
       return;
     }
     const stop = effect(() => {
       const t = this.editor.topology();
       if (t) {
-        this.c.render(t);
+        this.c.reset(t);
         queueMicrotask(() => stop.destroy());
       }
     }, { injector: this.injector });
@@ -202,7 +206,8 @@ export class TopologyX6TabComponent {
       },
       onSelected: (sel) => {
         this.selection.set(sel);
-        this.c.highlight(sel);
+        const t = this.editor.topology();
+        if (t) this.c.highlight(sel, t);
       },
       onDanglingPipe: (from, graphPos, clientPos) => {
         this.nodePopup.set({ from, graphPos, clientPos });
@@ -231,7 +236,6 @@ export class TopologyX6TabComponent {
     if (!desc) return;
     if (desc.singleton && this.kindExists(kind)) return;
 
-    // Close the DaisyUI dropdown by blurring the focused trigger
     (document.activeElement as HTMLElement)?.blur();
 
     const center = this.c.getViewportCenter();
@@ -254,6 +258,27 @@ export class TopologyX6TabComponent {
   doZoomIn() { this.c.zoomIn(); }
   doZoomOut() { this.c.zoomOut(); }
   doFit() { this.c.fitContent(); }
+  doUndo() { this.c.undo(); }
+  doRedo() { this.c.redo(); }
+
+  deleteSelected() {
+    const sel = this.selection();
+    if (!sel) return;
+    if (sel.kind === 'node') {
+      // Don't allow deleting singleton nodes via keyboard
+      const t = this.editor.topology();
+      if (t) {
+        const node = t.nodes.find(n => n.id === sel.nodeId);
+        if (node) {
+          const desc = NODE_REGISTRY.get(node.kind);
+          if (desc?.singleton) return;
+        }
+      }
+      this.deleteNode(sel.nodeId);
+    } else {
+      this.deletePipe(sel.pipeId);
+    }
+  }
 
   // --- Node editing ---
 
@@ -276,8 +301,10 @@ export class TopologyX6TabComponent {
   updateNodeField(nodeId: string, field: string, value: any) {
     this.editor.updateTopology(t => {
       const node = t.nodes.find(n => n.id === nodeId);
-      if (node) (node as any)[field] = value;
+      if (node) Object.assign(node, { [field]: value });
     });
+    // Push to X6 for live SVG update without full re-render
+    this.c.render(this.editor.topology()!);
   }
 
   // --- Pipe editing ---

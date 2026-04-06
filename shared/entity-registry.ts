@@ -36,8 +36,8 @@ export interface NodeDescriptor {
   helpUrl?: string;
   defaultPorts: Array<{ id: string; label: string; direction: 'inlet' | 'outlet' }>;
   defaultData: (index: number) => Record<string, any>;
-  /** Returns a raw SVG string for the canvas element. */
-  renderSvg: (name: string) => string;
+  /** Returns a raw SVG string for the canvas element. Receives full node data. */
+  renderSvg: (data: Record<string, any>) => string;
   /** Small static SVG for legend and add-node menu. */
   legendSvg: string;
   sidebarFields: FieldDef[];

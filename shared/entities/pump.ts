@@ -17,7 +17,7 @@ const pump: NodeDescriptor = {
     { id: 'out', label: 'Outlet', direction: 'outlet' },
   ],
   defaultData: () => ({ pin: '' }),
-  renderSvg: () => {
+  renderSvg: (_data) => {
     const cx = S / 2, cy = S / 2, r = S / 2 - 3;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2.5"/>

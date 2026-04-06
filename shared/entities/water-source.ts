@@ -21,7 +21,8 @@ const waterSource: NodeDescriptor = {
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
   defaultData: (n) => ({ name: `Source ${n}` }),
-  renderSvg: (name) => {
+  renderSvg: (data) => {
+    const name = data['name'] ?? 'Source';
     const icx = 20, icy = H / 2;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
       <rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="6" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2"/>

@@ -19,7 +19,8 @@ const endpoint: NodeDescriptor = {
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
   ],
   defaultData: (n) => ({ name: `Endpoint ${n}` }),
-  renderSvg: (name) => {
+  renderSvg: (data) => {
+    const name = data['name'] ?? 'Endpoint';
     const icx = 20, icy = H / 2;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
       <rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="6" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2" stroke-dasharray="6,3"/>

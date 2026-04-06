@@ -8,17 +8,15 @@ import { BoardSvgComponent } from '../../shared/board-svg/board-svg.component';
 import { ValidationPanelComponent } from '../../shared/validation-panel/validation-panel.component';
 import { DeviceTabComponent } from './device-tab/device-tab.component';
 import { TimingTabComponent } from './timing-tab/timing-tab.component';
-import { TopologyTabComponent } from './topology-tab/topology-tab.component';
 import { TopologyX6TabComponent } from './topology-x6-tab/topology-x6-tab.component';
 import { DeployTabComponent } from './deploy-tab/deploy-tab.component';
 import type { SystemTopology } from '../../core/models/topology.model';
 
-type TabId = 'device' | 'design' | 'design-v2' | 'timing' | 'deploy';
+type TabId = 'device' | 'design' | 'timing' | 'deploy';
 
 const TAB_ICONS: Record<TabId, string> = {
   device: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z',
   design: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z',
-  'design-v2': 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z',
   timing: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
   deploy: 'M13 10V3L4 14h7v7l9-11h-7z',
 };
@@ -31,7 +29,6 @@ const TAB_ICONS: Record<TabId, string> = {
     ValidationPanelComponent,
     DeviceTabComponent,
     TimingTabComponent,
-    TopologyTabComponent,
     TopologyX6TabComponent,
     DeployTabComponent,
   ],
@@ -81,20 +78,14 @@ const TAB_ICONS: Record<TabId, string> = {
 
       <!-- Main layout -->
       <div class="flex flex-1 min-h-0 overflow-hidden">
-        <!-- Design tab: always alive, hidden via display:none to preserve JointJS canvas state -->
+        <!-- Design tab: always alive, hidden via display:none to preserve X6 canvas state -->
         <main class="flex-1 min-h-0 min-w-0 flex flex-col"
           [style.display]="activeTab() === 'design' ? 'flex' : 'none'">
-          <app-topology-tab />
-        </main>
-
-        <!-- Design v2 tab: always alive, hidden via display:none to preserve X6 canvas state -->
-        <main class="flex-1 min-h-0 min-w-0 flex flex-col"
-          [style.display]="activeTab() === 'design-v2' ? 'flex' : 'none'">
           <app-topology-x6-tab />
         </main>
 
         <!-- Other tabs: created/destroyed on switch (lightweight, no canvas state to preserve) -->
-        @if (activeTab() !== 'design' && activeTab() !== 'design-v2') {
+        @if (activeTab() !== 'design') {
           <main class="flex-1 min-h-0 min-w-0 flex flex-col overflow-auto p-6">
             @switch (activeTab()) {
               @case ('device') { <app-device-tab /> }
@@ -105,7 +96,7 @@ const TAB_ICONS: Record<TabId, string> = {
         }
 
         <!-- Board panel (flex child, not overlay) -->
-        @if (activeTab() !== 'design' && activeTab() !== 'design-v2' && activeTab() !== 'deploy') {
+        @if (activeTab() !== 'design' && activeTab() !== 'deploy') {
           <aside
             class="w-72 shrink-0 bg-base-100 border-l border-base-300/50 flex flex-col overflow-y-auto transition-[width,padding,border] duration-200 ease-in-out"
             [class.w-72]="panelOpen()"
@@ -146,7 +137,7 @@ const TAB_ICONS: Record<TabId, string> = {
         }
 
         <!-- Panel toggle (when closed) -->
-        @if (!panelOpen() && activeTab() !== 'design' && activeTab() !== 'design-v2' && activeTab() !== 'deploy') {
+        @if (!panelOpen() && activeTab() !== 'design' && activeTab() !== 'deploy') {
           <button
             class="shrink-0 flex flex-col items-center justify-center gap-1 py-4 px-1.5 bg-base-200 hover:bg-primary/10 border-l border-base-300 transition-colors group"
             (click)="panelOpen.set(true)"
@@ -179,7 +170,6 @@ export class EditorComponent implements OnInit, OnDestroy {
   protected tabs: { id: TabId; label: string }[] = [
     { id: 'device', label: 'Device' },
     { id: 'design', label: 'Design' },
-    { id: 'design-v2', label: 'Design v2' },
     { id: 'timing', label: 'Timing' },
     { id: 'deploy', label: 'Deploy' },
   ];

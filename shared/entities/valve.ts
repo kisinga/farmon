@@ -20,7 +20,8 @@ const valve: NodeDescriptor = {
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
   defaultData: (n) => ({ name: `Valve ${n}`, open_pin: '', close_pin: '' }),
-  renderSvg: (name) => {
+  renderSvg: (data) => {
+    const name = data['name'] ?? 'Valve';
     const cx = W / 2, cy = H / 2 + 3;
     const hx = 16, hy = 10;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">

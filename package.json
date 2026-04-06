@@ -31,7 +31,6 @@
     "@antv/x6-plugin-minimap": "^2.0.7",
     "@antv/x6-plugin-selection": "^2.2.2",
     "@antv/x6-plugin-snapline": "^2.1.7",
-    "@joint/core": "^4.2.4",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "yaml": "^2.8.3",

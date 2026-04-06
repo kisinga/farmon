@@ -1,122 +1,89 @@
 /**
- * X6 shape and port factories.
- * Mirrors symbols.ts but targets @antv/x6 instead of JointJS.
+ * X6 shape and port configuration factories.
+ * Nodes use the built-in 'image' shape with SVG data URIs from NodeDescriptor.renderSvg().
  */
-import type { Edge } from '@antv/x6';
+import type { Node, Edge } from '@antv/x6';
 import type { NodeDescriptor } from '../../../core/models/entities.model';
 import { UI_COLORS } from '../../../core/models/colors.model';
+import { svgDataUri } from './scada-shape';
 
-// --- Port group type (X6 doesn't export PortManager directly) ---
+// --- Shared router config (used by edges and drag connections) ---
 
-interface PortGroupDef {
-  position: string | { name: string; args?: Record<string, unknown> };
-  attrs?: Record<string, Record<string, unknown>>;
-  label?: { position: string | { name: string; args?: Record<string, unknown> } };
-}
-
-// --- Port groups ---
-
-export const portGroups: Record<string, PortGroupDef> = {
-  inlet: {
-    position: 'left',
-    attrs: {
-      circle: {
-        r: 6,
-        fill: UI_COLORS.port,
-        stroke: '#fff',
-        strokeWidth: 2,
-        magnet: true,
-      },
-      text: { fontSize: 9, fill: UI_COLORS.text },
-    },
-    label: { position: 'left' },
-  },
-  outlet: {
-    position: 'right',
-    attrs: {
-      circle: {
-        r: 6,
-        fill: UI_COLORS.port,
-        stroke: '#fff',
-        strokeWidth: 2,
-        magnet: true,
-      },
-      text: { fontSize: 9, fill: UI_COLORS.text },
-    },
-    label: { position: 'right' },
+export const MANHATTAN_ROUTER = {
+  name: 'manhattan' as const,
+  args: {
+    step: 10,
+    padding: { top: 20, right: 20, bottom: 20, left: 20 },
+    excludeTerminals: ['source', 'target'],
+    startDirections: ['right'],
+    endDirections: ['left'],
   },
 };
 
-// --- Node config factory ---
+// --- Port groups ---
 
-export interface X6NodeConfig {
-  id: string;
-  shape: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  ports: { groups: Record<string, PortGroupDef>; items: Array<{ id: string; group: string }> };
-  attrs: Record<string, Record<string, unknown>>;
-  data: { nodeId: string; kind: string };
+const portGroup = (side: 'left' | 'right') => ({
+  position: side,
+  attrs: {
+    circle: { r: 6, fill: UI_COLORS.port, stroke: '#fff', strokeWidth: 2, magnet: true },
+    text: { fontSize: 9, fill: UI_COLORS.text },
+  },
+  label: { position: side },
+});
+
+const PORT_GROUPS = { inlet: portGroup('left'), outlet: portGroup('right') };
+
+// --- Port spacing ---
+
+type PortItem = { id: string; group: string };
+type SpacedPort = PortItem & { args?: { y: number } };
+
+function spacePorts(ports: PortItem[], nodeHeight: number): SpacedPort[] {
+  const byGroup = new Map<string, PortItem[]>();
+  for (const p of ports) {
+    const list = byGroup.get(p.group) ?? [];
+    list.push(p);
+    byGroup.set(p.group, list);
+  }
+
+  const result: SpacedPort[] = [];
+  for (const [, items] of byGroup) {
+    if (items.length <= 1) {
+      result.push(...items);
+    } else {
+      items.forEach((p, i) => {
+        result.push({ ...p, args: { y: ((i + 1) / (items.length + 1)) * nodeHeight } });
+      });
+    }
+  }
+  return result;
 }
+
+// --- Node config ---
 
 export function buildNodeConfig(
   desc: NodeDescriptor,
   id: string,
-  name: string,
+  nodeData: Record<string, unknown>,
   x: number,
   y: number,
   ports: Array<{ id: string; group: string }>,
-): X6NodeConfig {
-  const { width: w, height: h } = desc.size;
-
-  const isPump = desc.kind === 'pump';
-  const isEndpoint = desc.kind === 'endpoint';
-  const isPassthrough = desc.role === 'passthrough';
-
-  const labelText = isPassthrough ? desc.label[0] : name;
-
+): Node.Metadata {
+  const { width, height } = desc.size;
   return {
     id: `node-${id}`,
-    shape: 'rect',
+    shape: 'image',
     x,
     y,
-    width: w,
-    height: h,
-    ports: { groups: portGroups, items: ports },
-    attrs: {
-      body: {
-        fill: isPassthrough ? desc.color + '15' : UI_COLORS.bg,
-        stroke: desc.color,
-        strokeWidth: 2.5,
-        rx: isPump ? w / 2 : isEndpoint ? 6 : 3,
-        ry: isPump ? h / 2 : isEndpoint ? 6 : 3,
-        ...(isEndpoint ? { strokeDasharray: '6,3' } : {}),
-      },
-      label: {
-        text: labelText,
-        fontSize: isPump ? 18 : 12,
-        fontWeight: isPump ? 'bold' : '600',
-        fontFamily: 'ui-monospace, monospace',
-        fill: isPump ? desc.color : UI_COLORS.text,
-      },
-    },
-    data: { nodeId: id, kind: desc.kind },
+    width,
+    height,
+    imageUrl: svgDataUri(desc.kind, nodeData),
+    ports: { groups: PORT_GROUPS, items: spacePorts(ports, height) },
+    data: { nodeId: id, kind: desc.kind, ...nodeData },
   };
 }
 
-// --- Edge config factory ---
-
-export interface X6EdgeConfig {
-  id: string;
-  shape: string;
-  source: { cell: string; port: string };
-  target: { cell: string; port: string };
-  attrs: Record<string, Record<string, unknown>>;
-  router: { name: string; args?: Record<string, unknown> };
-  connector: { name: string };
-}
+// --- Edge config ---
 
 export function buildEdgeConfig(
   id: string,
@@ -124,7 +91,7 @@ export function buildEdgeConfig(
   sourcePort: string,
   targetCell: string,
   targetPort: string,
-): X6EdgeConfig {
+): Edge.Metadata {
   return {
     id,
     shape: 'edge',
@@ -137,21 +104,12 @@ export function buildEdgeConfig(
         targetMarker: { name: 'classic', size: 8 },
       },
     },
-    router: {
-      name: 'manhattan',
-      args: {
-        step: 10,
-        padding: { top: 20, right: 20, bottom: 20, left: 20 },
-        excludeTerminals: ['source', 'target'],
-        startDirections: ['right'],
-        endDirections: ['left'],
-      },
-    },
+    router: MANHATTAN_ROUTER,
     connector: { name: 'rounded' },
   };
 }
 
-// --- Drag edge config (for in-progress connections) ---
+// --- Drag edge (in-progress connections) ---
 
 export function buildDragEdgeAttrs(): Edge.Metadata {
   return {
@@ -163,16 +121,7 @@ export function buildDragEdgeAttrs(): Edge.Metadata {
         targetMarker: { name: 'classic', size: 8 },
       },
     },
-    router: {
-      name: 'manhattan',
-      args: {
-        step: 10,
-        padding: { top: 20, right: 20, bottom: 20, left: 20 },
-        excludeTerminals: ['source', 'target'],
-        startDirections: ['right'],
-        endDirections: ['left'],
-      },
-    },
+    router: MANHATTAN_ROUTER,
     connector: { name: 'rounded' },
   };
 }
