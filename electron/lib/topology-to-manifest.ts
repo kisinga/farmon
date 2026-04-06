@@ -1,4 +1,4 @@
-import type { Manifest } from "./schema.js";
+import type { Manifest, ManifestNode, Route } from "./schema.js";
 import type { Topology, TopologyNode, PipeSegment } from "./topology.js";
 import { parsePortRef } from "./topology.js";
 
@@ -29,9 +29,8 @@ interface TracedRoute {
 }
 
 /**
- * BFS from a source tank through the node-pipe graph to all reachable
- * terminal nodes. Collects valves, flow sensors, and pump crossings
- * from the nodes traversed along the path.
+ * BFS from a source through the node-pipe graph to all reachable
+ * terminal nodes. Collects valves, flow sensors, and pump crossings.
  */
 function traceRoutes(
   sourceId: string,
@@ -68,7 +67,6 @@ function traceRoutes(
       const target = nodes.get(targetId);
       if (!target) continue;
 
-      // Collect valves and flow sensors from the target node
       const nextValves = [...entry.valves];
       let nextFlow = entry.flowSensor;
       if (target.kind === "valve") nextValves.push(target.id);
@@ -108,50 +106,32 @@ function traceRoutes(
 // ---------------------------------------------------------------------------
 
 export function topologyToManifest(topology: Topology): Manifest {
-  const nodes = new Map(topology.nodes.map((n) => [n.id, n]));
+  const nodeMap = new Map(topology.nodes.map((n) => [n.id, n]));
   const adj = buildAdjacency(topology.pipes);
 
-  // Flow is the source of truth: only nodes connected via pipes get into the manifest.
+  // Only nodes connected via pipes enter the manifest.
   const connected = new Set<string>();
   for (const pipe of topology.pipes) {
     connected.add(parsePortRef(pipe.from).nodeId);
     connected.add(parsePortRef(pipe.to).nodeId);
   }
 
-  // --- Flat node extraction (connected nodes only) ---
-
-  const tanks = topology.nodes
-    .filter((n): n is Extract<TopologyNode, { kind: "tank" }> => n.kind === "tank" && connected.has(n.id))
-    .map((t) => ({ name: t.name, id: t.id, level_pin: t.level_pin }));
-
-  const waterSources = topology.nodes
-    .filter((n): n is Extract<TopologyNode, { kind: "water_source" }> => n.kind === "water_source" && connected.has(n.id))
-    .map((ws) => ({ name: ws.name, id: ws.id, pressure_pin: ws.pressure_pin }));
-
-  const pumpNode = topology.nodes.find(
-    (n): n is Extract<TopologyNode, { kind: "pump" }> => n.kind === "pump" && connected.has(n.id),
-  );
-
-  const valves: Manifest["valves"] = topology.nodes
-    .filter((n): n is Extract<TopologyNode, { kind: "valve" }> => n.kind === "valve" && connected.has(n.id))
-    .map((v) => ({ name: v.name, id: v.id, open_pin: v.open_pin, close_pin: v.close_pin }));
-
-  const flowSensors: Manifest["flow_sensors"] = topology.nodes
-    .filter((n): n is Extract<TopologyNode, { kind: "flow_sensor" }> => n.kind === "flow_sensor" && connected.has(n.id))
-    .map((f) => ({ name: f.name, id: f.id, pin: f.pin, flow_cal: f.flow_cal }));
+  // Strip layout fields (ports, position) — generators don't need them.
+  const nodes: ManifestNode[] = topology.nodes
+    .filter(n => connected.has(n.id))
+    .map(({ ports, position, ...data }) => data as ManifestNode);
 
   // --- Route derivation ---
 
-  const routes: Manifest["routes"] = [];
+  const routes: Route[] = [];
 
-  // Trace from all route sources (tanks and water sources)
-  const routeSources: Array<{ id: string; kind: "tank" | "water_source" }> = [
-    ...tanks.map((t) => ({ id: t.id, kind: "tank" as const })),
-    ...waterSources.map((ws) => ({ id: ws.id, kind: "water_source" as const })),
-  ];
+  const routeSources = topology.nodes.filter(
+    (n): n is Extract<TopologyNode, { kind: "tank" }> | Extract<TopologyNode, { kind: "water_source" }> =>
+      (n.kind === "tank" || n.kind === "water_source") && connected.has(n.id),
+  );
 
   for (const src of routeSources) {
-    const traced = traceRoutes(src.id, src.kind, adj, nodes);
+    const traced = traceRoutes(src.id, src.kind as "tank" | "water_source", adj, nodeMap);
 
     for (const tr of traced) {
       if (!tr.flowSensor) continue;
@@ -174,11 +154,7 @@ export function topologyToManifest(topology: Topology): Manifest {
 
   return {
     device: { ...topology.device },
-    pump: pumpNode ? { pin: pumpNode.pin } : undefined,
-    tanks,
-    water_sources: waterSources,
-    valves,
-    flow_sensors: flowSensors,
+    nodes,
     routes,
     timing: { ...topology.timing },
   };

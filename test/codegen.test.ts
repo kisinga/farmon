@@ -8,7 +8,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { Manifest } from "../electron/lib/schema.js";
+import type { Manifest, ManifestNode } from "../electron/lib/schema.js";
+import { nodesByKind } from "../electron/lib/schema.js";
 import { TopologySchema } from "../electron/lib/topology.js";
 import { topologyToManifest } from "../electron/lib/topology-to-manifest.js";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
@@ -44,10 +45,18 @@ function getFile(suffix: string): string {
   throw new Error(`No generated file ending with "${suffix}"`);
 }
 
+/** Shorthand for ManifestNode string field access. */
+function n(node: ManifestNode, key: string): string {
+  return String(node[key] ?? '');
+}
+
 // --- Setup ---
 
 console.log("Codegen Integration Tests");
 console.log("=========================\n");
+
+// Import entity registrations (side effect)
+import "../shared/entities/index.js";
 
 board = loadBoard(BOARD_DIR);
 const rawConfig = fs.readFileSync(CONFIG_PATH, "utf-8");
@@ -56,6 +65,12 @@ manifest = topologyToManifest(topology);
 const validation = validateAll(topology, manifest, board);
 files = generateAll(manifest, board);
 fileMap = new Map(files.map((f) => [f.relativePath, f.content]));
+
+// Helper arrays
+const valves = nodesByKind(manifest.nodes, 'valve');
+const flowSensors = nodesByKind(manifest.nodes, 'flow_sensor');
+const tanks = nodesByKind(manifest.nodes, 'tank');
+const waterSources = nodesByKind(manifest.nodes, 'water_source');
 
 // --- Board definition ---
 
@@ -81,7 +96,7 @@ const expectedSuffixes = [
   "routes.h",
   "hardware.yaml",
   "sensors.yaml",
-  "pump.yaml",
+  "control.yaml",
 ];
 for (const suffix of expectedSuffixes) {
   const found = [...fileMap.keys()].some((k) => k.endsWith(suffix));
@@ -120,8 +135,8 @@ assert(!deviceYaml.includes("refill_min_rise_pct"), "No refill_min_rise_pct sub"
 assert(!deviceYaml.includes("max_runtime_seconds"), "No global max_runtime_seconds sub");
 assert(!deviceYaml.includes("refill_baseline"), "No refill_baseline in boot");
 // Per-sensor flow_cal substitutions (not global)
-for (const f of manifest.flow_sensors) {
-  assert(deviceYaml.includes(`flow_cal_${f.id}: "${f.flow_cal}"`), `Per-sensor flow_cal sub for ${f.id}`);
+for (const f of flowSensors) {
+  assert(deviceYaml.includes(`flow_cal_${n(f, 'id')}: "${n(f, 'flow_cal')}"`), `Per-sensor flow_cal sub for ${n(f, 'id')}`);
 }
 
 // --- routes.h ---
@@ -129,11 +144,11 @@ for (const f of manifest.flow_sensors) {
 console.log("\nroutes.h:");
 const routesH = getFile("routes.h");
 assert(routesH.includes(`NUM_ROUTES        = ${manifest.routes.length}`), `NUM_ROUTES = ${manifest.routes.length}`);
-assert(routesH.includes(`NUM_VALVES        = ${manifest.valves.length}`), `NUM_VALVES = ${manifest.valves.length}`);
-assert(routesH.includes(`NUM_FLOW_SENSORS  = ${manifest.flow_sensors.length}`), `NUM_FLOW_SENSORS = ${manifest.flow_sensors.length}`);
-assert(routesH.includes(`NUM_WATER_SOURCES = ${manifest.water_sources.length}`), `NUM_WATER_SOURCES = ${manifest.water_sources.length}`);
-for (const v of manifest.valves) {
-  assert(routesH.includes(`id(${v.id}).make_call()`), `Valve ${v.id} in dispatch`);
+assert(routesH.includes(`NUM_VALVES        = ${valves.length}`), `NUM_VALVES = ${valves.length}`);
+assert(routesH.includes(`NUM_FLOW_SENSORS  = ${flowSensors.length}`), `NUM_FLOW_SENSORS = ${flowSensors.length}`);
+assert(routesH.includes(`NUM_WATER_SOURCES = ${waterSources.length}`), `NUM_WATER_SOURCES = ${waterSources.length}`);
+for (const v of valves) {
+  assert(routesH.includes(`id(${n(v, 'id')}).make_call()`), `Valve ${n(v, 'id')} in dispatch`);
 }
 for (const r of manifest.routes) {
   assert(routesH.includes(`"${r.name}"`), `Route "${r.name}" in table`);
@@ -153,8 +168,8 @@ console.log("\nhardware.yaml:");
 const hw = getFile("hardware.yaml");
 assert(hw.includes("pump_relay"), "Has pump relay");
 assert(hw.includes("system_state") && hw.includes("!= 2"), "Relay guard");
-for (const v of manifest.valves) {
-  assert(hw.includes(`id: ${v.id}_open_pin`), `Valve ${v.id} open pin`);
+for (const v of valves) {
+  assert(hw.includes(`id: ${n(v, 'id')}_open_pin`), `Valve ${n(v, 'id')} open pin`);
   assert(hw.includes(`interlock:`), `Has interlock`);
 }
 
@@ -162,14 +177,14 @@ for (const v of manifest.valves) {
 
 console.log("\nsensors.yaml:");
 const sensors = getFile("sensors.yaml");
-for (const f of manifest.flow_sensors) {
-  assert(sensors.includes(`id: ${f.id}`), `Flow ${f.id} defined`);
-  assert(sensors.includes(`\${flow_cal_${f.id}}`), `Flow ${f.id} uses per-sensor cal`);
+for (const f of flowSensors) {
+  assert(sensors.includes(`id: ${n(f, 'id')}`), `Flow ${n(f, 'id')} defined`);
+  assert(sensors.includes(`\${flow_cal_${n(f, 'id')}}`), `Flow ${n(f, 'id')} uses per-sensor cal`);
 }
-for (const t of manifest.tanks) {
-  if (t.level_pin) {
-    assert(sensors.includes(`id: ${t.id}_level`), `Tank ${t.id} level`);
-    assert(sensors.includes(`id: ${t.id}_cal_empty`), `Tank ${t.id} cal`);
+for (const t of tanks) {
+  if (t['level_pin']) {
+    assert(sensors.includes(`id: ${n(t, 'id')}_level`), `Tank ${n(t, 'id')} level`);
+    assert(sensors.includes(`id: ${n(t, 'id')}_cal_empty`), `Tank ${n(t, 'id')} cal`);
   }
 }
 // Tank suppression: checks source AND dest, states 1-3
@@ -185,34 +200,34 @@ assert(sensors.includes("HA connection lost"), "Has 'HA connection lost' fault")
 // --- Cross-file consistency ---
 
 console.log("\nCross-file consistency:");
-for (const t of manifest.tanks) {
-  if (t.level_pin) {
+for (const t of tanks) {
+  if (t['level_pin']) {
     assert(
-      sensors.includes(`id: ${t.id}_level`) && routesH.includes(`id(${t.id}_level)`),
-      `Tank ${t.id}: sensors \u2194 routes.h`
+      sensors.includes(`id: ${n(t, 'id')}_level`) && routesH.includes(`id(${n(t, 'id')}_level)`),
+      `Tank ${n(t, 'id')}: sensors \u2194 routes.h`
     );
   }
 }
-for (const f of manifest.flow_sensors) {
+for (const f of flowSensors) {
   assert(
-    sensors.includes(`id: ${f.id}`) && routesH.includes(`id(${f.id})`),
-    `Flow ${f.id}: sensors \u2194 routes.h`
+    sensors.includes(`id: ${n(f, 'id')}`) && routesH.includes(`id(${n(f, 'id')})`),
+    `Flow ${n(f, 'id')}: sensors \u2194 routes.h`
   );
 }
-for (const v of manifest.valves) {
+for (const v of valves) {
   assert(
-    hw.includes(`id: ${v.id}\n`) && routesH.includes(`id(${v.id}).make_call()`),
-    `Valve ${v.id}: hardware \u2194 routes.h`
+    hw.includes(`id: ${n(v, 'id')}\n`) && routesH.includes(`id(${n(v, 'id')}).make_call()`),
+    `Valve ${n(v, 'id')}: hardware \u2194 routes.h`
   );
 }
 
 // --- Route table correctness ---
 
 console.log("\nRoute table logic:");
-const valveIdx = new Map(manifest.valves.map((v, i) => [v.id, i]));
+const valveIdx = new Map(valves.map((v, i) => [n(v, 'id'), i]));
 for (const route of manifest.routes) {
   const mask = route.valves.reduce((acc, v) => acc | (1 << valveIdx.get(v)!), 0);
-  const maskBin = `0b${mask.toString(2).padStart(manifest.valves.length, "0")}`;
+  const maskBin = `0b${mask.toString(2).padStart(valves.length, "0")}`;
   assert(routesH.includes(maskBin), `Route "${route.name}" valve_mask = ${maskBin}`);
 }
 

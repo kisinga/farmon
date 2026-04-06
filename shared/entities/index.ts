@@ -5,6 +5,9 @@ import './endpoint';
 import './valve';
 import './flow-sensor';
 import './water-source';
+import './pressure-sensor';
+import './filter';
+import './dosing-pump';
 
 export { NODE_REGISTRY } from '../entity-registry';
 export type { NodeDescriptor, FieldDef } from '../entity-registry';

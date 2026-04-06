@@ -3,12 +3,10 @@
 
 export {
   type Manifest,
-  type Tank,
-  type WaterSource,
-  type Valve,
-  type FlowSensor,
+  type ManifestNode,
   type Route,
   type Timing,
+  nodesByKind,
 } from "./schema.js";
 
 export {

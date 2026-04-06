@@ -2,87 +2,48 @@
  * Shared topology types — the single source of truth for both
  * Electron (validated via Zod) and Angular (used as-is).
  *
- * No runtime dependencies. Pure interfaces and helper functions.
+ * Individual node types are defined and exported from their entity files
+ * in shared/entities/. The TopologyNode union is assembled here.
  */
 
+// Re-export types from schemas
+export type { Port, Position } from './schemas';
+
+// Re-export individual node types from entity files
+export type { TankNode } from './entities/tank';
+export type { PumpNode } from './entities/pump';
+export type { EndpointNode } from './entities/endpoint';
+export type { ValveNode } from './entities/valve';
+export type { FlowSensorNode } from './entities/flow-sensor';
+export type { WaterSourceNode } from './entities/water-source';
+export type { PressureSensorNode } from './entities/pressure-sensor';
+export type { FilterNode } from './entities/filter';
+export type { DosingPumpNode } from './entities/dosing-pump';
+
+import type { TankNode } from './entities/tank';
+import type { PumpNode } from './entities/pump';
+import type { EndpointNode } from './entities/endpoint';
+import type { ValveNode } from './entities/valve';
+import type { FlowSensorNode } from './entities/flow-sensor';
+import type { WaterSourceNode } from './entities/water-source';
+import type { PressureSensorNode } from './entities/pressure-sensor';
+import type { FilterNode } from './entities/filter';
+import type { DosingPumpNode } from './entities/dosing-pump';
+
 // ---------------------------------------------------------------------------
-// Ports
+// Node union
 // ---------------------------------------------------------------------------
 
-export interface Port {
-  id: string;
-  label: string;
-  direction: 'inlet' | 'outlet';
-}
-
-// ---------------------------------------------------------------------------
-// Position
-// ---------------------------------------------------------------------------
-
-export interface Position {
-  x: number;
-  y: number;
-}
-
-// ---------------------------------------------------------------------------
-// Nodes
-// ---------------------------------------------------------------------------
-
-export interface TankNode {
-  kind: 'tank';
-  id: string;
-  name: string;
-  level_pin?: string;
-  ports: Port[];
-  position: Position;
-}
-
-export interface PumpNode {
-  kind: 'pump';
-  id: string;
-  pin: string;
-  ports: Port[];
-  position: Position;
-}
-
-export interface EndpointNode {
-  kind: 'endpoint';
-  id: string;
-  name: string;
-  ports: Port[];
-  position: Position;
-}
-
-export interface ValveNode {
-  kind: 'valve';
-  id: string;
-  name: string;
-  open_pin: string;
-  close_pin: string;
-  ports: Port[];
-  position: Position;
-}
-
-export interface FlowSensorNode {
-  kind: 'flow_sensor';
-  id: string;
-  name: string;
-  pin: string;
-  flow_cal: number;
-  ports: Port[];
-  position: Position;
-}
-
-export interface WaterSourceNode {
-  kind: 'water_source';
-  id: string;
-  name: string;
-  pressure_pin?: string;
-  ports: Port[];
-  position: Position;
-}
-
-export type TopologyNode = TankNode | PumpNode | EndpointNode | ValveNode | FlowSensorNode | WaterSourceNode;
+export type TopologyNode =
+  | TankNode
+  | PumpNode
+  | EndpointNode
+  | ValveNode
+  | FlowSensorNode
+  | WaterSourceNode
+  | PressureSensorNode
+  | FilterNode
+  | DosingPumpNode;
 
 // ---------------------------------------------------------------------------
 // Pipes

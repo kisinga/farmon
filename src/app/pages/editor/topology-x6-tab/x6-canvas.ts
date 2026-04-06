@@ -12,7 +12,7 @@ import { UI_COLORS } from '../../../core/models/colors.model';
 import type { SystemTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
 import { svgDataUri } from './scada-shape';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
-import { findConnectedPipes } from '../shared/derive-routes';
+import { findConnectedPipes, findPipesFromSource, findPipesToDestination } from '../shared/derive-routes';
 
 // --- Types ---
 
@@ -50,6 +50,17 @@ function stripPrefix(id: string, prefix: string): string | null {
   return id.startsWith(prefix) ? id.slice(prefix.length) : null;
 }
 
+// --- Inject flow animation CSS (once per document) ---
+
+const FLOW_STYLE_ID = 'x6-flow-animation';
+function ensureFlowStyles(): void {
+  if (document.getElementById(FLOW_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = FLOW_STYLE_ID;
+  style.textContent = `@keyframes x6-flow { to { stroke-dashoffset: -1000; } }`;
+  document.head.appendChild(style);
+}
+
 // --- Canvas class ---
 
 export class X6Canvas {
@@ -64,6 +75,7 @@ export class X6Canvas {
 
   constructor(container: HTMLElement, events: CanvasEvents) {
     this.events = events;
+    ensureFlowStyles();
 
     this.graph = new Graph({
       container,
@@ -179,18 +191,36 @@ export class X6Canvas {
       const connected = findConnectedPipes(selection.pipeId, topology);
       for (const pid of connected) {
         if (pid !== selection.pipeId) {
-          this.highlightEdge(pid, UI_COLORS.selected, 2.5, 0.4);
+          this.highlightEdge(pid, UI_COLORS.selected, 2.5, 0.4, true);
         }
       }
     }
 
     if (selection.kind === 'node') {
-      for (const pipe of topology.pipes) {
-        const from = pipe.from.split(':')[0];
-        const to = pipe.to.split(':')[0];
-        if (from === selection.nodeId || to === selection.nodeId) {
-          this.highlightEdge(pipe.id, UI_COLORS.selected, 2.5, 0.5);
+      const node = topology.nodes.find(n => n.id === selection.nodeId);
+      const desc = node ? NODE_REGISTRY.get(node.kind) : null;
+
+      let pipeIds: string[];
+      if (desc?.routeSource) {
+        // Source node (tank, water_source): show all downstream paths
+        pipeIds = findPipesFromSource(selection.nodeId, topology);
+      } else if (desc?.role === 'terminal') {
+        // Destination endpoint: show all upstream paths back to sources
+        pipeIds = findPipesToDestination(selection.nodeId, topology);
+      } else {
+        // Passthrough node (valve, pump, sensor): show full connected route
+        pipeIds = [];
+        for (const pipe of topology.pipes) {
+          const from = pipe.from.split(':')[0];
+          const to = pipe.to.split(':')[0];
+          if (from === selection.nodeId || to === selection.nodeId) {
+            pipeIds.push(...findConnectedPipes(pipe.id, topology));
+          }
         }
+      }
+
+      for (const pid of pipeIds) {
+        this.highlightEdge(pid, UI_COLORS.selected, 2.5, 0.5, true);
       }
     }
   }
@@ -307,10 +337,19 @@ export class X6Canvas {
     if (positions.size > 0) this.events.onNodesMoved(positions);
   }
 
-  private highlightEdge(pipeId: string, color: string, width: number, opacity: number): void {
+  private highlightEdge(pipeId: string, color: string, width: number, opacity: number, animate = false): void {
     const edge = this.graph.getCellById(`pipe-${pipeId}`);
     if (!edge?.isEdge()) return;
-    edge.setAttrs({ line: { stroke: color, strokeWidth: width, strokeOpacity: opacity } });
+
+    edge.setAttrs({
+      line: {
+        stroke: color, strokeWidth: width, strokeOpacity: opacity,
+        ...(animate ? {
+          strokeDasharray: 5,
+          style: { animation: 'x6-flow 30s infinite linear' },
+        } : {}),
+      },
+    });
     this.highlightedEdges.add(pipeId);
   }
 
@@ -318,7 +357,15 @@ export class X6Canvas {
     for (const pid of this.highlightedEdges) {
       const edge = this.graph.getCellById(`pipe-${pid}`);
       if (edge?.isEdge()) {
-        edge.setAttrs({ line: { stroke: UI_COLORS.pipe, strokeWidth: 2.5, strokeOpacity: 1 } });
+        edge.setAttrs({
+          line: {
+            stroke: UI_COLORS.pipe,
+            strokeWidth: 2.5,
+            strokeOpacity: 1,
+            strokeDasharray: 0,
+            style: { animation: '' },
+          },
+        });
         edge.removeTools();
       }
     }

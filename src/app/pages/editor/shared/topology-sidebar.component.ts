@@ -17,7 +17,9 @@ export type Selection =
     <!-- Node properties (data-driven) -->
     @if (selectedNodeData(); as sn) {
       <div class="sidebar-section">
-        <h3 class="sidebar-title">{{ sn.desc.label }}</h3>
+        <h3 class="sidebar-title">{{ sn.desc.label }}
+          @if (sn.desc.experimental) { <span class="badge badge-ghost badge-xs ml-1">experimental</span> }
+        </h3>
         <div class="sidebar-fields">
           @for (field of sn.desc.sidebarFields; track field.key) {
             <label class="sidebar-label">{{ field.label }}</label>

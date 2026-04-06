@@ -1,7 +1,7 @@
 import type { Topology } from "../topology.js";
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
-import type { TopologyRule, ManifestRule } from "./rule.types.js";
+import type { TopologyRule, ManifestRule, RuleDiagnostic } from "./rule.types.js";
 import {
   runTopologyRules as _runTopologyRules,
   runManifestRules as _runManifestRules,
@@ -10,12 +10,10 @@ import {
   type ValidateOptions,
 } from "./runner.js";
 
-// Topology rules
+// Cross-cutting topology rules (reference multiple node kinds / route sequences)
 import { pumpOutletOrdering } from "./topology/pump-outlet-ordering.js";
 import { pumpInletValve } from "./topology/pump-inlet-valve.js";
-import { tankLevelWarning } from "./topology/tank-level-warning.js";
 import { endpointFlowWarning } from "./topology/endpoint-flow-warning.js";
-import { waterSourcePressureWarning } from "./topology/water-source-pressure-warning.js";
 
 // Manifest rules
 import { pinConflicts } from "./manifest/pin-conflicts.js";
@@ -29,12 +27,13 @@ import { pinCapabilities } from "./manifest/pin-capabilities.js";
 import { gpioBudget } from "./manifest/gpio-budget.js";
 import { routeNames } from "./manifest/route-names.js";
 
+// Entity-specific topology rules are registered on NodeDescriptor.rules
+// and collected by the runner via NODE_REGISTRY. No imports needed here.
+
 export const ALL_TOPOLOGY_RULES: TopologyRule[] = [
   pumpOutletOrdering,
   pumpInletValve,
-  tankLevelWarning,
   endpointFlowWarning,
-  waterSourcePressureWarning,
 ];
 
 export const ALL_MANIFEST_RULES: ManifestRule[] = [

@@ -1,11 +1,16 @@
-import type { Manifest } from "../schema.js";
+import type { Manifest, ManifestNode } from "../schema.js";
+import { nodesByKind } from "../schema.js";
 
 export function generateRoutes(m: Manifest): string {
-  const tankIdx = new Map(m.tanks.map((t, i) => [t.id, i]));
-  const valveIdx = new Map(m.valves.map((v, i) => [v.id, i]));
-  const flowIdx = new Map(m.flow_sensors.map((f, i) => [f.id, i]));
+  const tanks = nodesByKind(m.nodes, 'tank');
+  const valves = nodesByKind(m.nodes, 'valve');
+  const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
+  const waterSources = nodesByKind(m.nodes, 'water_source');
 
-  const wsIdx = new Map(m.water_sources.map((ws, i) => [ws.id, i]));
+  const tankIdx = new Map(tanks.map((t, i) => [t['id'], i]));
+  const valveIdx = new Map(valves.map((v, i) => [v['id'], i]));
+  const flowIdx = new Map(flowSensors.map((f, i) => [f['id'], i]));
+  const wsIdx = new Map(waterSources.map((ws, i) => [ws['id'], i]));
 
   // Build route entries
   const routeLines = m.routes.map((r, i) => {
@@ -14,39 +19,31 @@ export function generateRoutes(m: Manifest): string {
     const srcWs = r.source_type === "water_source" ? wsIdx.get(r.source)! : "0xFF";
     const dst = r.destination ? tankIdx.get(r.destination)! : "0xFF";
     const flow = flowIdx.get(r.flow_sensor)!;
-    const maskBin = mask.toString(2).padStart(m.valves.length, "0");
+    const maskBin = mask.toString(2).padStart(valves.length, "0");
     return `  { ${i}, 0b${maskBin}, ${srcTank}, ${srcWs}, ${dst}, ${flow}, ${r.max_runtime_seconds}, "${r.name}" },`;
   });
 
-  // Build valve index comment
-  const valveComment = m.valves
-    .map((v, i) => `${i}=${v.id}(${v.name})`)
-    .join("  ");
-  const tankComment = m.tanks
-    .map((t, i) => `${i}=${t.id}(${t.name})`)
-    .join("  ");
-  const wsComment = m.water_sources
-    .map((ws, i) => `${i}=${ws.id}(${ws.name})`)
-    .join("  ");
-  const flowComment = m.flow_sensors
-    .map((f, i) => `${i}=${f.id}(${f.name})`)
-    .join("  ");
+  // Build index comments
+  const valveComment = valves.map((v, i) => `${i}=${v['id']}(${v['name']})`).join("  ");
+  const tankComment = tanks.map((t, i) => `${i}=${t['id']}(${t['name']})`).join("  ");
+  const wsComment = waterSources.map((ws, i) => `${i}=${ws['id']}(${ws['name']})`).join("  ");
+  const flowComment = flowSensors.map((f, i) => `${i}=${f['id']}(${f['name']})`).join("  ");
 
   // Build dispatch functions
-  const openCases = m.valves
-    .map((v, i) => `    case ${i}: id(${v.id}).make_call().set_command_open().perform(); break;`)
+  const openCases = valves
+    .map((v, i) => `    case ${i}: id(${v['id']}).make_call().set_command_open().perform(); break;`)
     .join("\n");
-  const closeCases = m.valves
-    .map((v, i) => `    case ${i}: id(${v.id}).make_call().set_command_close().perform(); break;`)
+  const closeCases = valves
+    .map((v, i) => `    case ${i}: id(${v['id']}).make_call().set_command_close().perform(); break;`)
     .join("\n");
-  const tankCases = m.tanks
+  const tankCases = tanks
     .map((t, i) => {
-      if (!t.level_pin) return `    case ${i}: return -1.0f; // ${t.id}: no level sensor`;
-      return `    case ${i}: return id(${t.id}_level).state;`;
+      if (!t['level_pin']) return `    case ${i}: return -1.0f; // ${t['id']}: no level sensor`;
+      return `    case ${i}: return id(${t['id']}_level).state;`;
     })
     .join("\n");
-  const flowCases = m.flow_sensors
-    .map((f, i) => `    case ${i}: return id(${f.id}).state;`)
+  const flowCases = flowSensors
+    .map((f, i) => `    case ${i}: return id(${f['id']}).state;`)
     .join("\n");
 
   return `\
@@ -82,10 +79,10 @@ struct Route {
 
 // --- Component counts -------------------------------------------------------
 
-static const int NUM_VALVES        = ${m.valves.length};
-static const int NUM_TANKS         = ${m.tanks.length};
-static const int NUM_WATER_SOURCES = ${m.water_sources.length};
-static const int NUM_FLOW_SENSORS  = ${m.flow_sensors.length};
+static const int NUM_VALVES        = ${valves.length};
+static const int NUM_TANKS         = ${tanks.length};
+static const int NUM_WATER_SOURCES = ${waterSources.length};
+static const int NUM_FLOW_SENSORS  = ${flowSensors.length};
 static const int NUM_ROUTES        = ${m.routes.length};
 
 // --- Fault codes (used by safety monitor → do_fault) -------------------------

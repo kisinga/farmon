@@ -2,6 +2,7 @@ import type { Manifest } from "../../schema.js";
 import type { BoardDef } from "../../board.js";
 import { pinsWithCapability } from "../../board.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
+import { NODE_REGISTRY } from "../../../../shared/entity-registry.js";
 
 export const pinCapabilities: ManifestRule = {
   id: "pin-capabilities",
@@ -9,51 +10,33 @@ export const pinCapabilities: ManifestRule = {
 
   evaluate(m: Manifest, board: BoardDef): RuleDiagnostic[] {
     const diagnostics: RuleDiagnostic[] = [];
-    const adcPins = pinsWithCapability(board, "adc");
-    const pcntPins = pinsWithCapability(board, "pulse_counter");
 
-    // Tank level pins must have ADC
-    for (const tank of m.tanks) {
-      if (tank.level_pin && !adcPins.has(tank.level_pin)) {
-        diagnostics.push({
-          severity: "error",
-          message: `Tank "${tank.id}": ${tank.level_pin} does not have ADC capability on ${board.label}`,
-          target: tank.id,
-          ruleId: this.id,
-        });
-      }
-    }
+    // Cache capability lookups
+    const capCache = new Map<string, Set<string>>();
+    const getPins = (cap: string) => {
+      if (!capCache.has(cap)) capCache.set(cap, pinsWithCapability(board, cap as any));
+      return capCache.get(cap)!;
+    };
 
-    // Water source pressure pins must have ADC
-    for (const ws of m.water_sources) {
-      if (ws.pressure_pin && !adcPins.has(ws.pressure_pin)) {
-        diagnostics.push({
-          severity: "error",
-          message: `Water source "${ws.id}": ${ws.pressure_pin} does not have ADC capability on ${board.label}`,
-          target: ws.id,
-          ruleId: this.id,
-        });
-      }
-    }
+    // Check every node's pin fields against required capabilities
+    for (const node of m.nodes) {
+      const desc = NODE_REGISTRY.get(node['kind']);
+      if (!desc) continue;
 
-    // Flow sensor pins should have pulse_counter
-    for (const flow of m.flow_sensors) {
-      if (!pcntPins.has(flow.pin)) {
-        diagnostics.push({
-          severity: "warning",
-          message: `Flow "${flow.id}": ${flow.pin} does not have pulse_counter capability on ${board.label}. ` +
-            `Software counting may miss pulses at high flow rates.`,
-          target: flow.id,
-          ruleId: this.id,
-        });
-      }
-      if (flow.flow_cal <= 0) {
-        diagnostics.push({
-          severity: "error",
-          message: `Flow "${flow.id}": flow_cal must be > 0 (got ${flow.flow_cal})`,
-          target: flow.id,
-          ruleId: this.id,
-        });
+      for (const field of desc.sidebarFields) {
+        if (field.type !== 'pin' || !field.pinCap) continue;
+        const pin = node[field.key];
+        if (typeof pin !== 'string' || !pin) continue;
+
+        const validPins = getPins(field.pinCap);
+        if (!validPins.has(pin)) {
+          diagnostics.push({
+            severity: field.pinCap === 'pulse_counter' ? 'warning' : 'error',
+            message: `${desc.label} "${node['id']}": ${pin} does not have ${field.pinCap} capability on ${board.label}`,
+            target: String(node['id']),
+            ruleId: this.id,
+          });
+        }
       }
     }
 

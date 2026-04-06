@@ -1,4 +1,5 @@
 import type { Manifest } from "../../schema.js";
+import { nodesByKind } from "../../schema.js";
 import type { BoardDef } from "../../board.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
 
@@ -8,13 +9,12 @@ export const referenceIntegrity: ManifestRule = {
 
   evaluate(m: Manifest, _board: BoardDef): RuleDiagnostic[] {
     const diagnostics: RuleDiagnostic[] = [];
-    const tankIds = new Set(m.tanks.map((t) => t.id));
-    const wsIds = new Set(m.water_sources.map((ws) => ws.id));
-    const valveIds = new Set(m.valves.map((v) => v.id));
-    const flowIds = new Set(m.flow_sensors.map((f) => f.id));
+    const tankIds = new Set(nodesByKind(m.nodes, 'tank').map((t) => t['id']));
+    const wsIds = new Set(nodesByKind(m.nodes, 'water_source').map((ws) => ws['id']));
+    const valveIds = new Set(nodesByKind(m.nodes, 'valve').map((v) => v['id']));
+    const flowIds = new Set(nodesByKind(m.nodes, 'flow_sensor').map((f) => f['id']));
 
     for (const route of m.routes) {
-      // Source must exist in tanks or water_sources
       if (route.source_type === "tank" && !tankIds.has(route.source)) {
         diagnostics.push({
           severity: "error",

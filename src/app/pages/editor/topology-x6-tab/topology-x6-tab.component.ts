@@ -31,11 +31,15 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
           </svg>
           Add Node
         </div>
-        <ul tabindex="0" class="dropdown-content menu menu-xs bg-base-200 rounded-lg shadow-lg z-30 w-40 p-1">
-          @for (desc of nodeDescs; track desc.kind) {
-            <li><a (click)="addNode(desc.kind)" [class.disabled]="desc.singleton && kindExists(desc.kind)">
-              <span [innerHTML]="trustSvg(desc.legendSvg)"></span> {{ desc.label }}
-            </a></li>
+        <ul tabindex="0" class="dropdown-content menu menu-xs bg-base-200 rounded-lg shadow-lg z-30 w-48 p-1">
+          @for (group of groupedDescs; track group.label) {
+            <li class="menu-title text-[9px] uppercase tracking-wider opacity-50 pt-2">{{ group.label }}</li>
+            @for (desc of group.items; track desc.kind) {
+              <li><a (click)="addNode(desc.kind)" [class.disabled]="desc.singleton && kindExists(desc.kind)">
+                <span [innerHTML]="trustSvg(desc.legendSvg)"></span> {{ desc.label }}
+                @if (desc.experimental) { <span class="badge badge-ghost badge-xs ml-auto">exp</span> }
+              </a></li>
+            }
           }
         </ul>
       </div>
@@ -125,6 +129,17 @@ export class TopologyX6TabComponent {
 
   // Registry arrays for template iteration
   protected nodeDescs: NodeDescriptor[] = Array.from(NODE_REGISTRY.values());
+
+  protected groupedDescs = (() => {
+    const groups = new Map<string, NodeDescriptor[]>();
+    for (const desc of this.nodeDescs) {
+      const key = desc.group ?? desc.category ?? 'other';
+      const list = groups.get(key) ?? [];
+      list.push(desc);
+      groups.set(key, list);
+    }
+    return [...groups.entries()].map(([label, items]) => ({ label, items }));
+  })();
 
   // --- Selection state ---
   protected selection = signal<Selection | null>(null);

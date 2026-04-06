@@ -1,6 +1,8 @@
 import { stringify } from "yaml";
 import type { BoardDef } from "../board.js";
 import type { Manifest } from "../schema.js";
+import { nodesByKind } from "../schema.js";
+import { NODE_REGISTRY } from "../../../shared/entity-registry.js";
 
 /**
  * Generate the ESPHome device YAML from board definition + system manifest.
@@ -27,31 +29,14 @@ export function generateDeviceYaml(
     subs.battery_divider = String(board.peripherals.battery!.divider);
   }
 
-  // Pump (optional)
-  if (m.pump) {
-    subs.pin_pump_relay = m.pump.pin;
-  }
-
-  // Valves
-  for (const v of m.valves) {
-    subs[`pin_${v.id}_o`] = v.open_pin;
-    subs[`pin_${v.id}_c`] = v.close_pin;
-  }
-
-  // Flow sensors (pin + per-sensor calibration)
-  for (const f of m.flow_sensors) {
-    subs[`pin_${f.id}`] = f.pin;
-    subs[`flow_cal_${f.id}`] = `"${f.flow_cal}"`;
-  }
-
-  // Tank levels (only tanks with level sensors)
-  for (const t of m.tanks) {
-    if (t.level_pin) subs[`pin_${t.id}_level`] = t.level_pin;
-  }
-
-  // Water source pressure sensors
-  for (const ws of m.water_sources) {
-    if (ws.pressure_pin) subs[`pin_${ws.id}_pressure`] = ws.pressure_pin;
+  // Collect substitutions from all entity codegen contributors
+  for (const node of m.nodes) {
+    const desc = NODE_REGISTRY.get(node.kind);
+    if (!desc?.codegen?.substitutions) continue;
+    for (const line of desc.codegen.substitutions(node)) {
+      const [key, ...rest] = line.split(': ');
+      if (key) subs[key.trim()] = rest.join(': ').trim();
+    }
   }
 
   // Timing
@@ -112,7 +97,7 @@ export function generateDeviceYaml(
   ].join("\n");
 
   const bootActions: unknown[] = [];
-  if (m.pump) bootActions.push({ "switch.turn_off": "pump_relay" });
+  if (nodesByKind(m.nodes, 'pump').length > 0) bootActions.push({ "switch.turn_off": "pump_relay" });
   bootActions.push({ "script.execute": "close_all_valves" });
   bootActions.push({ "script.wait": "close_all_valves" });
   bootActions.push({ lambda: initVars });
@@ -197,12 +182,14 @@ function buildOledDisplay(board: BoardDef, m: Manifest): string {
   const resetPin = oled.reset_pin;
 
   // Generate tank level lines dynamically (up to 2 fit side-by-side on 128px OLED)
-  const displayTanks = m.tanks.filter((t) => t.level_pin).slice(0, 2);
+  const displayTanks = nodesByKind(m.nodes, 'tank').filter((t) => t['level_pin']).slice(0, 2);
   const tankLines = displayTanks.map((t, i) => {
     const x = i === 0 ? 0 : 64;
-    const label = t.name.length > 4 ? `T${i + 1}` : t.name;
-    return `          if (id(${t.id}_level).has_state() && !std::isnan(id(${t.id}_level).state))
-            it.printf(${x}, 39, id(font_body), "${label}: %.0f%%", id(${t.id}_level).state);`;
+    const name = t['name'] as string;
+    const id = t['id'] as string;
+    const label = name.length > 4 ? `T${i + 1}` : name;
+    return `          if (id(${id}_level).has_state() && !std::isnan(id(${id}_level).state))
+            it.printf(${x}, 39, id(font_body), "${label}: %.0f%%", id(${id}_level).state);`;
   }).join("\n");
 
   // The display lambda renders state machine info on the OLED

@@ -1,4 +1,5 @@
 import type { Manifest } from "../../schema.js";
+import { nodesByKind } from "../../schema.js";
 import type { BoardDef } from "../../board.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
 
@@ -10,17 +11,18 @@ export const valveMaskOverflow: ManifestRule = {
 
   evaluate(m: Manifest, _board: BoardDef): RuleDiagnostic[] {
     const diagnostics: RuleDiagnostic[] = [];
+    const valves = nodesByKind(m.nodes, 'valve');
 
-    if (m.valves.length > MAX_VALVE_MASK_BITS) {
+    if (valves.length > MAX_VALVE_MASK_BITS) {
       diagnostics.push({
         severity: "error",
-        message: `${m.valves.length} valves exceeds valve_mask capacity (uint16_t max ${MAX_VALVE_MASK_BITS}). ` +
+        message: `${valves.length} valves exceeds valve_mask capacity (uint16_t max ${MAX_VALVE_MASK_BITS}). ` +
           `Split across multiple controllers.`,
         ruleId: this.id,
       });
     }
 
-    const valveIndexMap = new Map(m.valves.map((v, i) => [v.id, i]));
+    const valveIndexMap = new Map(valves.map((v, i) => [v['id'], i]));
     for (const route of m.routes) {
       for (const v of route.valves) {
         const idx = valveIndexMap.get(v);

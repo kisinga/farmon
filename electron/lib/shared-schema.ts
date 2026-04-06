@@ -1,10 +1,7 @@
 import { z } from "zod";
 
-// ---------------------------------------------------------------------------
-// Shared Zod primitives used by both topology.ts and schema.ts
-// ---------------------------------------------------------------------------
-
-export const GpioPin = z.string().regex(/^GPIO\d{1,2}$/, "Must be GPIOnn format");
+// Re-export GpioPin from shared schemas (single source of truth)
+export { GpioPin } from "../../shared/schemas.js";
 
 export const DeviceSchema = z.object({
   name: z.string().min(1),

@@ -9,14 +9,9 @@ export const uniqueIds: ManifestRule = {
   evaluate(m: Manifest, _board: BoardDef): RuleDiagnostic[] {
     const diagnostics: RuleDiagnostic[] = [];
 
-    const allIds = [
-      ...m.tanks.map((t) => t.id),
-      ...m.water_sources.map((ws) => ws.id),
-      ...m.valves.map((v) => v.id),
-      ...m.flow_sensors.map((f) => f.id),
-    ];
     const idCounts = new Map<string, number>();
-    for (const id of allIds) {
+    for (const node of m.nodes) {
+      const id = String(node['id']);
       idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
     }
     for (const [id, count] of idCounts) {

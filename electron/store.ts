@@ -23,9 +23,33 @@ export class SchemaError extends Error {
   }
 }
 
-function checkSchema(data: Record<string, unknown>, filePath: string): void {
-  const v = typeof data.schema === "number" ? data.schema : 0;
+// ---------------------------------------------------------------------------
+// Migration chain
+// ---------------------------------------------------------------------------
+// Add migrations here when breaking structural changes are made.
+// Each function transforms data from version N to N+1.
+// New additive node kinds do NOT require a migration — only structural changes.
+
+type Migration = (data: Record<string, unknown>) => Record<string, unknown>;
+
+const MIGRATIONS: Record<number, Migration> = {
+  // Example for future use:
+  // 5: (data) => { data.schema = 6; /* transform fields */ return data; },
+};
+
+function migrateIfNeeded(data: Record<string, unknown>, filePath: string): Record<string, unknown> {
+  let v = typeof data.schema === "number" ? data.schema : 0;
+  while (MIGRATIONS[v]) {
+    data = MIGRATIONS[v](data);
+    v = typeof data.schema === "number" ? data.schema : v + 1;
+  }
   if (v !== SCHEMA_VERSION) throw new SchemaError(filePath, v);
+  return data;
+}
+
+/** @deprecated Use migrateIfNeeded instead */
+function checkSchema(data: Record<string, unknown>, filePath: string): void {
+  migrateIfNeeded(data, filePath);
 }
 
 // ---------------------------------------------------------------------------

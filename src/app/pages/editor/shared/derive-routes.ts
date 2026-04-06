@@ -119,6 +119,76 @@ export function deriveRoutes(topology: SystemTopology): DerivedRoute[] {
 }
 
 /**
+ * Find all pipe IDs reachable forward from a node (BFS stopping at terminal nodes).
+ */
+export function findPipesFromSource(sourceId: string, topology: SystemTopology): string[] {
+  const adj = buildAdjacency(topology.pipes);
+  const nodes = new Map(topology.nodes.map(n => [n.id, n]));
+  const collected = new Set<string>();
+
+  const queue: { nodeId: string; visited: Set<string> }[] = [
+    { nodeId: sourceId, visited: new Set([sourceId]) },
+  ];
+
+  while (queue.length > 0) {
+    const { nodeId, visited } = queue.shift()!;
+    for (const pipe of adj.get(nodeId) ?? []) {
+      collected.add(pipe.id);
+      const targetId = pipe.to.split(':')[0];
+      if (visited.has(targetId)) continue;
+      const target = nodes.get(targetId);
+      if (!target) continue;
+      const desc = NODE_REGISTRY.get(target.kind);
+      // Keep going through passthrough nodes, stop at terminals
+      if (desc?.role !== 'terminal') {
+        const next = new Set(visited);
+        next.add(targetId);
+        queue.push({ nodeId: targetId, visited: next });
+      }
+    }
+  }
+  return [...collected];
+}
+
+/**
+ * Find all pipe IDs reachable backward to a node (BFS tracing incoming pipes, stopping at terminal sources).
+ */
+export function findPipesToDestination(destId: string, topology: SystemTopology): string[] {
+  const nodes = new Map(topology.nodes.map(n => [n.id, n]));
+
+  // Build reverse adjacency: nodeId → incoming pipes
+  const rev = new Map<string, PipeSegment[]>();
+  for (const p of topology.pipes) {
+    const toNode = p.to.split(':')[0];
+    rev.set(toNode, [...(rev.get(toNode) ?? []), p]);
+  }
+
+  const collected = new Set<string>();
+  const queue: { nodeId: string; visited: Set<string> }[] = [
+    { nodeId: destId, visited: new Set([destId]) },
+  ];
+
+  while (queue.length > 0) {
+    const { nodeId, visited } = queue.shift()!;
+    for (const pipe of rev.get(nodeId) ?? []) {
+      collected.add(pipe.id);
+      const fromId = pipe.from.split(':')[0];
+      if (visited.has(fromId)) continue;
+      const from = nodes.get(fromId);
+      if (!from) continue;
+      const desc = NODE_REGISTRY.get(from.kind);
+      // Keep going through passthrough nodes, stop at terminal sources
+      if (desc?.role !== 'terminal') {
+        const next = new Set(visited);
+        next.add(fromId);
+        queue.push({ nodeId: fromId, visited: next });
+      }
+    }
+  }
+  return [...collected];
+}
+
+/**
  * Given a pipe, find all pipe IDs that belong to the same connected route(s).
  * Traces forward and backward from the pipe's endpoints, stopping at terminal nodes.
  */

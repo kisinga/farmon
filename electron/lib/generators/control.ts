@@ -1,7 +1,8 @@
 import type { Manifest } from "../schema.js";
+import { nodesByKind } from "../schema.js";
 
 export function generateControl(m: Manifest): string {
-  const hasPump = !!m.pump;
+  const hasPump = nodesByKind(m.nodes, 'pump').length > 0;
 
   // Conditional pump relay actions
   const pumpOff = hasPump ? "      - switch.turn_off: pump_relay\n" : "";

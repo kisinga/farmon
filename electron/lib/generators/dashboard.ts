@@ -1,8 +1,7 @@
 import { stringify } from "yaml";
-import type { Manifest } from "../schema.js";
+import type { Manifest, ManifestNode } from "../schema.js";
+import { nodesByKind } from "../schema.js";
 
-// ESPHome entity ID: {domain}.{device_slug}_{name_slug}
-// Device name "pump-ctrl" → "pump_ctrl", sensor name "Rain Tank Level" → "rain_tank_level"
 function slug(s: string): string {
   return s
     .toLowerCase()
@@ -11,64 +10,48 @@ function slug(s: string): string {
     .replace(/_+/g, "_");
 }
 
-function entityId(
-  domain: string,
-  deviceName: string,
-  name: string
-): string {
+function entityId(domain: string, deviceName: string, name: string): string {
   return `${domain}.${slug(deviceName)}_${slug(name)}`;
+}
+
+/** Shorthand for accessing ManifestNode string fields. */
+function n(node: ManifestNode, key: string): string {
+  return String(node[key] ?? '');
 }
 
 export function generateDashboard(m: Manifest): string {
   const dev = slug(m.device.name);
 
   // --- Entity ID helpers ---
-  const tankSensor = (t: { name: string }) =>
-    entityId("sensor", m.device.name, `${t.name} Level`);
-  const tankRaw = (t: { name: string }) =>
-    entityId("sensor", m.device.name, `${t.name} Raw Voltage`);
-  const tankCalEmpty = (t: { name: string }) =>
-    entityId("number", m.device.name, `${t.name} Cal Empty V`);
-  const tankCalFull = (t: { name: string }) =>
-    entityId("number", m.device.name, `${t.name} Cal Full V`);
-  const flowSensor = (f: { name: string }) =>
-    entityId("sensor", m.device.name, f.name);
-  const flowTotal = (f: { name: string }) => {
-    const totalName = f.name
-      .replace("Water Flow", "Total Usage")
-      .replace("Flow", "Total");
+  const tankSensor = (t: ManifestNode) => entityId("sensor", m.device.name, `${n(t, 'name')} Level`);
+  const tankCalEmpty = (t: ManifestNode) => entityId("number", m.device.name, `${n(t, 'name')} Cal Empty V`);
+  const tankCalFull = (t: ManifestNode) => entityId("number", m.device.name, `${n(t, 'name')} Cal Full V`);
+  const flowSensor = (f: ManifestNode) => entityId("sensor", m.device.name, n(f, 'name'));
+  const flowTotal = (f: ManifestNode) => {
+    const totalName = n(f, 'name').replace("Water Flow", "Total Usage").replace("Flow", "Total");
     return entityId("sensor", m.device.name, totalName);
   };
-  const valveCover = (v: { name: string }) =>
-    entityId("cover", m.device.name, v.name);
-  const stateSensor = entityId(
-    "sensor",
-    m.device.name,
-    "System State"
-  );
-  const faultSensor = entityId("sensor", m.device.name, "System Fault");
-  const stopReasonSensor = entityId(
-    "sensor",
-    m.device.name,
-    "Last Stop Reason"
-  );
-  const safetyOverride = entityId(
-    "switch",
-    m.device.name,
-    "Safety Override"
-  );
+  const valveCover = (v: ManifestNode) => entityId("cover", m.device.name, n(v, 'name'));
+  const wsPressureSensor = (ws: ManifestNode) => entityId("sensor", m.device.name, `${n(ws, 'name')} Pressure`);
 
-  // --- Water source pressure helpers ---
-  const wsPressureSensor = (ws: { name: string }) =>
-    entityId("sensor", m.device.name, `${ws.name} Pressure`);
+  const stateSensor = entityId("sensor", m.device.name, "System State");
+  const faultSensor = entityId("sensor", m.device.name, "System Fault");
+  const stopReasonSensor = entityId("sensor", m.device.name, "Last Stop Reason");
+  const safetyOverride = entityId("switch", m.device.name, "Safety Override");
+
+  // --- Node lists ---
+  const tanks = nodesByKind(m.nodes, 'tank');
+  const waterSources = nodesByKind(m.nodes, 'water_source');
+  const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
+  const valves = nodesByKind(m.nodes, 'valve');
 
   // --- Water source pressure gauges ---
-  const wsPressureGauges = m.water_sources
-    .filter((ws) => ws.pressure_pin)
+  const wsPressureGauges = waterSources
+    .filter((ws) => ws['pressure_pin'])
     .map((ws) => ({
       type: "gauge",
       entity: wsPressureSensor(ws),
-      name: `${ws.name} Pressure`,
+      name: `${n(ws, 'name')} Pressure`,
       min: 0,
       max: 10,
       severity: { red: 0, yellow: 1, green: 2 },
@@ -76,24 +59,24 @@ export function generateDashboard(m: Manifest): string {
     }));
 
   // --- Tank gauges ---
-  const tankGauges = m.tanks.filter((t) => t.level_pin).map((t) => ({
+  const tankGauges = tanks.filter((t) => t['level_pin']).map((t) => ({
     type: "gauge",
     entity: tankSensor(t),
-    name: t.name,
+    name: n(t, 'name'),
     min: 0,
     max: 100,
     severity: { red: 0, yellow: 25, green: 50 },
     needle: true,
   }));
 
-  // --- Flow cards (graph + weekly bar + month/year stats) ---
-  const flowColumns = m.flow_sensors.map((f) => ({
+  // --- Flow cards ---
+  const flowColumns = flowSensors.map((f) => ({
     type: "vertical-stack",
     cards: [
       {
         type: "sensor",
         entity: flowSensor(f),
-        name: `${f.name.replace(" Water Flow", "").replace(" Flow", "")} Flow`,
+        name: `${n(f, 'name').replace(" Water Flow", "").replace(" Flow", "")} Flow`,
         graph: "line",
         hours_to_show: 6,
       },
@@ -128,16 +111,7 @@ export function generateDashboard(m: Manifest): string {
   }));
 
   // --- Route quick-action buttons ---
-  const routeColors = [
-    "purple",
-    "deep-purple",
-    "indigo",
-    "blue",
-    "teal",
-    "cyan",
-    "light-blue",
-    "green",
-  ];
+  const routeColors = ["purple", "deep-purple", "indigo", "blue", "teal", "cyan", "light-blue", "green"];
   const routeButtons = m.routes.map((r, i) => ({
     show_name: true,
     show_icon: true,
@@ -154,20 +128,18 @@ export function generateDashboard(m: Manifest): string {
   }));
 
   // --- Valve glance entities ---
-  const valveEntities = m.valves.map((v, i) => ({
+  const valveEntities = valves.map((v, i) => ({
     entity: valveCover(v),
     name: `V${i + 1}`,
   }));
 
   // --- Calibration entities ---
-  const calEntities = m.tanks.filter((t) => t.level_pin).flatMap((t) => [
-    { entity: tankCalEmpty(t), name: `${t.name} Empty` },
-    { entity: tankCalFull(t), name: `${t.name} Full` },
+  const calEntities = tanks.filter((t) => t['level_pin']).flatMap((t) => [
+    { entity: tankCalEmpty(t), name: `${n(t, 'name')} Empty` },
+    { entity: tankCalFull(t), name: `${n(t, 'name')} Full` },
   ]);
 
   // --- Build the YAML structure ---
-  // Only ESPHome-derived entities are included. Deployment-specific HA entities
-  // (automations, input_selects, scripts, etc.) should be added by the user.
   const dashboard = {
     title: "Water System",
     views: [
@@ -178,7 +150,6 @@ export function generateDashboard(m: Manifest): string {
         type: "sections",
         subview: false,
         sections: [
-          // Section 1: System Status
           {
             type: "grid",
             cards: [
@@ -196,46 +167,22 @@ export function generateDashboard(m: Manifest): string {
             ],
             column_span: 1,
           },
-          // Section 2: Water levels + Flow
           {
             type: "grid",
             cards: [
-              {
-                type: "heading",
-                heading: "Water levels",
-                heading_style: "title",
-              },
+              { type: "heading", heading: "Water levels", heading_style: "title" },
               ...(tankGauges.length > 0
-                ? [
-                    {
-                      type: "horizontal-stack",
-                      cards: tankGauges,
-                      grid_options: { columns: "full", rows: "auto" },
-                    },
-                  ]
+                ? [{ type: "horizontal-stack", cards: tankGauges, grid_options: { columns: "full", rows: "auto" } }]
                 : []),
               ...(wsPressureGauges.length > 0
-                ? [
-                    {
-                      type: "horizontal-stack",
-                      cards: wsPressureGauges,
-                      grid_options: { columns: "full", rows: "auto" },
-                    },
-                  ]
+                ? [{ type: "horizontal-stack", cards: wsPressureGauges, grid_options: { columns: "full", rows: "auto" } }]
                 : []),
               ...(flowColumns.length > 0
-                ? [
-                    {
-                      type: "horizontal-stack",
-                      cards: flowColumns,
-                      grid_options: { columns: "full" },
-                    },
-                  ]
+                ? [{ type: "horizontal-stack", cards: flowColumns, grid_options: { columns: "full" } }]
                 : []),
             ],
             column_span: 1,
           },
-          // Section 3: Route Control
           {
             type: "grid",
             cards: [
@@ -251,38 +198,21 @@ export function generateDashboard(m: Manifest): string {
                     state_color: true,
                     show_header_toggle: false,
                   },
-                  {
-                    type: "horizontal-stack",
-                    cards: routeButtons,
-                  },
+                  { type: "horizontal-stack", cards: routeButtons },
                   {
                     type: "horizontal-stack",
                     cards: [
                       {
-                        show_name: true,
-                        show_icon: true,
-                        type: "button",
-                        name: "Stop",
-                        icon: "mdi:stop-circle",
-                        tap_action: {
-                          action: "call-service",
-                          service: `esphome.${dev}_pump_stop`,
-                        },
-                        show_state: false,
-                        color: "red",
+                        show_name: true, show_icon: true, type: "button",
+                        name: "Stop", icon: "mdi:stop-circle",
+                        tap_action: { action: "call-service", service: `esphome.${dev}_pump_stop` },
+                        show_state: false, color: "red",
                       },
                       {
-                        show_name: true,
-                        show_icon: true,
-                        type: "button",
-                        name: "Reset Fault",
-                        icon: "mdi:alert-circle-check",
-                        tap_action: {
-                          action: "call-service",
-                          service: `esphome.${dev}_fault_reset`,
-                        },
-                        show_state: false,
-                        color: "accent",
+                        show_name: true, show_icon: true, type: "button",
+                        name: "Reset Fault", icon: "mdi:alert-circle-check",
+                        tap_action: { action: "call-service", service: `esphome.${dev}_fault_reset` },
+                        show_state: false, color: "accent",
                       },
                     ],
                   },
@@ -303,17 +233,12 @@ export function generateDashboard(m: Manifest): string {
         ],
         badges: [],
       },
-      // Settings view — calibration only (ESPHome-derived)
       {
         title: "Settings",
         path: "settings",
         icon: "mdi:cog",
         cards: [
-          {
-            type: "entities",
-            title: "Sensor Calibration (voltage)",
-            entities: calEntities,
-          },
+          { type: "entities", title: "Sensor Calibration (voltage)", entities: calEntities },
         ],
       },
     ],
