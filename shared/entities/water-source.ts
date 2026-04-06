@@ -23,15 +23,16 @@ const waterSource: NodeDescriptor = {
   defaultData: (n) => ({ name: `Source ${n}` }),
   renderSvg: (data) => {
     const name = data['name'] ?? 'Source';
-    const icx = 20, icy = H / 2;
+    const icy = H / 2;
+    // Soft chevrons pointing right — flow exits this node
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-      <rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="6" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2"/>
-      <path d="M ${icx - 8} ${icy - 8} L ${icx - 8} ${icy + 8} L ${icx + 8} ${icy}" fill="${COLOR}" fill-opacity="0.25" stroke="${COLOR}" stroke-width="2" stroke-linejoin="round"/>
-      <path d="M ${icx + 8} ${icy} L ${icx + 16} ${icy}" fill="none" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/>
-      <text x="42" y="${H / 2}" text-anchor="start" dominant-baseline="middle" font-size="12" font-family="ui-monospace, monospace" font-weight="500" fill="${UI_COLORS.text}">${escXml(name)}</text>
+      <rect x="1.5" y="1.5" width="${W - 3}" height="${H - 3}" rx="8" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2"/>
+      <path d="M 14 ${icy - 9} Q 25 ${icy} 14 ${icy + 9}" fill="none" stroke="${COLOR}" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M 21 ${icy - 7} Q 30 ${icy} 21 ${icy + 7}" fill="none" stroke="${COLOR}" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+      <text x="40" y="${icy}" text-anchor="start" dominant-baseline="middle" font-size="12" font-family="ui-monospace, monospace" font-weight="600" fill="${UI_COLORS.text}">${escXml(name)}</text>
     </svg>`;
   },
-  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><rect x="1" y="1" width="18" height="14" rx="3" fill="none" stroke="${COLOR}" stroke-width="1.5"/><path d="M5 4 L5 12 L13 8 Z" fill="${COLOR}" opacity="0.25" stroke="${COLOR}" stroke-width="1.5" stroke-linejoin="round"/><path d="M13 8 L17 8" fill="none" stroke="${COLOR}" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><rect x="1" y="1" width="18" height="14" rx="3" fill="none" stroke="${COLOR}" stroke-width="1.5"/><path d="M6 4 Q12 8 6 12" fill="none" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/><path d="M10 5 Q15 8 10 11" fill="none" stroke="${COLOR}" stroke-width="1.5" stroke-linecap="round" opacity="0.35"/></svg>`,
   sidebarFields: [
     { key: 'name', label: 'Name', type: 'text' },
     { key: 'id', label: 'ID', type: 'text' },
