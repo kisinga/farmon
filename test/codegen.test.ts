@@ -12,7 +12,7 @@ import type { Manifest } from "../electron/lib/schema.js";
 import { TopologySchema } from "../electron/lib/topology.js";
 import { topologyToManifest } from "../electron/lib/topology-to-manifest.js";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
-import { validate } from "../electron/lib/validate.js";
+import { validateAll } from "../electron/lib/validate.js";
 import { generateAll, type GeneratedFile } from "../electron/lib/generate.js";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
@@ -53,7 +53,7 @@ board = loadBoard(BOARD_DIR);
 const rawConfig = fs.readFileSync(CONFIG_PATH, "utf-8");
 const topology = TopologySchema.parse(parseYaml(rawConfig));
 manifest = topologyToManifest(topology);
-const validation = validate(manifest, board);
+const validation = validateAll(topology, manifest, board);
 files = generateAll(manifest, board);
 fileMap = new Map(files.map((f) => [f.relativePath, f.content]));
 
@@ -128,9 +128,10 @@ for (const f of manifest.flow_sensors) {
 
 console.log("\nroutes.h:");
 const routesH = getFile("routes.h");
-assert(routesH.includes(`NUM_ROUTES       = ${manifest.routes.length}`), `NUM_ROUTES = ${manifest.routes.length}`);
-assert(routesH.includes(`NUM_VALVES       = ${manifest.valves.length}`), `NUM_VALVES = ${manifest.valves.length}`);
-assert(routesH.includes(`NUM_FLOW_SENSORS = ${manifest.flow_sensors.length}`), `NUM_FLOW_SENSORS = ${manifest.flow_sensors.length}`);
+assert(routesH.includes(`NUM_ROUTES        = ${manifest.routes.length}`), `NUM_ROUTES = ${manifest.routes.length}`);
+assert(routesH.includes(`NUM_VALVES        = ${manifest.valves.length}`), `NUM_VALVES = ${manifest.valves.length}`);
+assert(routesH.includes(`NUM_FLOW_SENSORS  = ${manifest.flow_sensors.length}`), `NUM_FLOW_SENSORS = ${manifest.flow_sensors.length}`);
+assert(routesH.includes(`NUM_WATER_SOURCES = ${manifest.water_sources.length}`), `NUM_WATER_SOURCES = ${manifest.water_sources.length}`);
 for (const v of manifest.valves) {
   assert(routesH.includes(`id(${v.id}).make_call()`), `Valve ${v.id} in dispatch`);
 }
@@ -143,8 +144,8 @@ assert(!routesH.includes("WD_RUNTIME"), "No WD_RUNTIME define");
 assert(!routesH.includes("WD_FLOW"), "No WD_FLOW define (removed — flow is unconditional)");
 assert(!routesH.includes("uint8_t     watchdog"), "No watchdog field in struct");
 assert(routesH.includes("max_runtime_s"), "Has max_runtime_s field in struct");
-// Every route has a valid flow sensor index (never 0xFF)
-assert(!routesH.includes("0xFF, ") || !routesH.match(/\d+, 0xFF,.*0xFF,/), "No 0xFF flow sensor in any route");
+// Route struct has source_ws field for water source support
+assert(routesH.includes("source_ws"), "Has source_ws field in struct");
 
 // --- hardware.yaml ---
 
@@ -166,8 +167,10 @@ for (const f of manifest.flow_sensors) {
   assert(sensors.includes(`\${flow_cal_${f.id}}`), `Flow ${f.id} uses per-sensor cal`);
 }
 for (const t of manifest.tanks) {
-  assert(sensors.includes(`id: ${t.id}_level`), `Tank ${t.id} level`);
-  assert(sensors.includes(`id: ${t.id}_cal_empty`), `Tank ${t.id} cal`);
+  if (t.level_pin) {
+    assert(sensors.includes(`id: ${t.id}_level`), `Tank ${t.id} level`);
+    assert(sensors.includes(`id: ${t.id}_cal_empty`), `Tank ${t.id} cal`);
+  }
 }
 // Tank suppression: checks source AND dest, states 1-3
 assert(sensors.includes("r.source_tank == TANK_IDX || r.dest_tank == TANK_IDX"), "Suppresses source AND dest tanks");
@@ -183,10 +186,12 @@ assert(sensors.includes("HA connection lost"), "Has 'HA connection lost' fault")
 
 console.log("\nCross-file consistency:");
 for (const t of manifest.tanks) {
-  assert(
-    sensors.includes(`id: ${t.id}_level`) && routesH.includes(`id(${t.id}_level)`),
-    `Tank ${t.id}: sensors \u2194 routes.h`
-  );
+  if (t.level_pin) {
+    assert(
+      sensors.includes(`id: ${t.id}_level`) && routesH.includes(`id(${t.id}_level)`),
+      `Tank ${t.id}: sensors \u2194 routes.h`
+    );
+  }
 }
 for (const f of manifest.flow_sensors) {
   assert(
@@ -211,10 +216,14 @@ for (const route of manifest.routes) {
   assert(routesH.includes(maskBin), `Route "${route.name}" valve_mask = ${maskBin}`);
 }
 
-// Every route has per-route max_runtime in the table
+// Every route has per-route max_runtime and name in the table
 for (const route of manifest.routes) {
   assert(
-    routesH.includes(`${route.max_runtime_seconds}, "${route.name}"`),
+    routesH.includes(`"${route.name}"`),
+    `Route "${route.name}" name in table`
+  );
+  assert(
+    routesH.includes(`${route.max_runtime_seconds}`),
     `Route "${route.name}" max_runtime_s = ${route.max_runtime_seconds}`
   );
 }

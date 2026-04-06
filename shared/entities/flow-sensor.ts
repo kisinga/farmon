@@ -14,6 +14,8 @@ const flowSensor: NodeDescriptor = {
   color: COLOR,
   size: { width: W, height: H },
   role: 'passthrough',
+  category: 'sensor',
+  helpUrl: 'docs/installation-guidelines.md#flow-sensors',
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },

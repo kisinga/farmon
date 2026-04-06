@@ -20,8 +20,9 @@ function buildAdjacency(pipes: PipeSegment[]): Map<string, PipeSegment[]> {
 
 interface TracedRoute {
   source: string;
+  sourceKind: "tank" | "water_source";
   destNodeId: string;
-  destKind: "tank" | "endpoint";
+  destKind: "tank" | "endpoint" | "water_source";
   valves: string[];
   flowSensor: string | undefined;
   crossesPump: boolean;
@@ -34,6 +35,7 @@ interface TracedRoute {
  */
 function traceRoutes(
   sourceId: string,
+  sourceKind: "tank" | "water_source",
   adj: Map<string, PipeSegment[]>,
   nodes: Map<string, TopologyNode>,
 ): TracedRoute[] {
@@ -76,9 +78,10 @@ function traceRoutes(
       const nextVisited = new Set(entry.visited);
       nextVisited.add(targetId);
 
-      if (target.kind === "tank" || target.kind === "endpoint") {
+      if (target.kind === "tank" || target.kind === "endpoint" || target.kind === "water_source") {
         results.push({
           source: sourceId,
+          sourceKind,
           destNodeId: target.id,
           destKind: target.kind,
           valves: nextValves,
@@ -114,6 +117,10 @@ export function topologyToManifest(topology: Topology): Manifest {
     .filter((n): n is Extract<TopologyNode, { kind: "tank" }> => n.kind === "tank")
     .map((t) => ({ name: t.name, id: t.id, level_pin: t.level_pin }));
 
+  const waterSources = topology.nodes
+    .filter((n): n is Extract<TopologyNode, { kind: "water_source" }> => n.kind === "water_source")
+    .map((ws) => ({ name: ws.name, id: ws.id, pressure_pin: ws.pressure_pin }));
+
   const pump = topology.nodes.find((n) => n.kind === "pump");
   if (!pump || pump.kind !== "pump") {
     throw new Error("Topology must contain exactly one pump node");
@@ -131,8 +138,14 @@ export function topologyToManifest(topology: Topology): Manifest {
 
   const routes: Manifest["routes"] = [];
 
-  for (const tank of tanks) {
-    const traced = traceRoutes(tank.id, adj, nodes);
+  // Trace from all route sources (tanks and water sources)
+  const routeSources: Array<{ id: string; kind: "tank" | "water_source" }> = [
+    ...tanks.map((t) => ({ id: t.id, kind: "tank" as const })),
+    ...waterSources.map((ws) => ({ id: ws.id, kind: "water_source" as const })),
+  ];
+
+  for (const src of routeSources) {
+    const traced = traceRoutes(src.id, src.kind, adj, nodes);
 
     for (const tr of traced) {
       if (!tr.crossesPump) continue;
@@ -145,6 +158,7 @@ export function topologyToManifest(topology: Topology): Manifest {
       routes.push({
         name: override.name ?? overrideKey,
         source: tr.source,
+        source_type: tr.sourceKind,
         destination: tr.destKind === "tank" ? tr.destNodeId : undefined,
         valves: tr.valves,
         flow_sensor: tr.flowSensor,
@@ -157,6 +171,7 @@ export function topologyToManifest(topology: Topology): Manifest {
     device: { ...topology.device },
     pump: { pin: pump.pin },
     tanks,
+    water_sources: waterSources,
     valves,
     flow_sensors: flowSensors,
     routes,

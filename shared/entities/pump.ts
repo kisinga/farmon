@@ -11,6 +11,7 @@ const pump: NodeDescriptor = {
   size: { width: S, height: S },
   singleton: true,
   role: 'passthrough',
+  category: 'actuator',
   defaultPorts: [
     { id: 'in', label: 'Inlet', direction: 'inlet' },
     { id: 'out', label: 'Outlet', direction: 'outlet' },

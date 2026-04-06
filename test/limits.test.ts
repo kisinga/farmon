@@ -7,7 +7,7 @@
 
 import * as path from "node:path";
 import type { Manifest } from "../electron/lib/schema.js";
-import { validate } from "../electron/lib/validate.js";
+import { runManifestRules } from "../electron/lib/validate.js";
 import { generateAll } from "../electron/lib/generate.js";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
 
@@ -81,6 +81,7 @@ function buildManifest(p: ScaleParams): Manifest {
         ? `R${r}:T${srcIdx + 1}>T${dstIdx! + 1}`
         : `R${r}:T${srcIdx + 1}>E`,
       source: `tank${srcIdx + 1}`,
+      source_type: "tank",
       ...(isRefill ? { destination: `tank${dstIdx! + 1}` } : {}),
       valves: routeValves,
       flow_sensor: `flow${(r % flowCount) + 1}`,
@@ -92,11 +93,12 @@ function buildManifest(p: ScaleParams): Manifest {
     device: { name: "limit-test", friendly_name: "Limit Test", board: "heltec-v3" },
     pump: { pin: pumpPin },
     tanks,
+    water_sources: [],
     valves,
     flow_sensors: flows,
     routes: routes.length > 0
       ? routes as Manifest["routes"]
-      : [{ name: "R0", source: "tank1", valves: ["valve1"], flow_sensor: "flow1", max_runtime_seconds: 1800 }],
+      : [{ name: "R0", source: "tank1", source_type: "tank" as const, valves: ["valve1"], flow_sensor: "flow1", max_runtime_seconds: 1800 }],
     timing: {
       valve_travel_time: "15s",
       flow_watchdog_seconds: 30,
@@ -135,7 +137,7 @@ function runTest(label: string, p: ScaleParams): TestResult {
     warnings: [],
   };
 
-  const v = validate(manifest, board, { loose: true });
+  const v = runManifestRules(manifest, board, undefined, { loose: true });
   result.validateOk = v.ok;
   result.warnings = v.warnings;
   result.errors = v.errors;

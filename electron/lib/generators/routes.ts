@@ -5,14 +5,17 @@ export function generateRoutes(m: Manifest): string {
   const valveIdx = new Map(m.valves.map((v, i) => [v.id, i]));
   const flowIdx = new Map(m.flow_sensors.map((f, i) => [f.id, i]));
 
+  const wsIdx = new Map(m.water_sources.map((ws, i) => [ws.id, i]));
+
   // Build route entries
   const routeLines = m.routes.map((r, i) => {
     const mask = r.valves.reduce((acc, v) => acc | (1 << valveIdx.get(v)!), 0);
-    const src = tankIdx.get(r.source)!;
+    const srcTank = r.source_type === "tank" ? tankIdx.get(r.source)! : "0xFF";
+    const srcWs = r.source_type === "water_source" ? wsIdx.get(r.source)! : "0xFF";
     const dst = r.destination ? tankIdx.get(r.destination)! : "0xFF";
     const flow = flowIdx.get(r.flow_sensor)!;
     const maskBin = mask.toString(2).padStart(m.valves.length, "0");
-    return `  { ${i}, 0b${maskBin}, ${src}, ${dst}, ${flow}, ${r.max_runtime_seconds}, "${r.name}" },`;
+    return `  { ${i}, 0b${maskBin}, ${srcTank}, ${srcWs}, ${dst}, ${flow}, ${r.max_runtime_seconds}, "${r.name}" },`;
   });
 
   // Build valve index comment
@@ -21,6 +24,9 @@ export function generateRoutes(m: Manifest): string {
     .join("  ");
   const tankComment = m.tanks
     .map((t, i) => `${i}=${t.id}(${t.name})`)
+    .join("  ");
+  const wsComment = m.water_sources
+    .map((ws, i) => `${i}=${ws.id}(${ws.name})`)
     .join("  ");
   const flowComment = m.flow_sensors
     .map((f, i) => `${i}=${f.id}(${f.name})`)
@@ -34,7 +40,10 @@ export function generateRoutes(m: Manifest): string {
     .map((v, i) => `    case ${i}: id(${v.id}).make_call().set_command_close().perform(); break;`)
     .join("\n");
   const tankCases = m.tanks
-    .map((t, i) => `    case ${i}: return id(${t.id}_level).state;`)
+    .map((t, i) => {
+      if (!t.level_pin) return `    case ${i}: return -1.0f; // ${t.id}: no level sensor`;
+      return `    case ${i}: return id(${t.id}_level).state;`;
+    })
     .join("\n");
   const flowCases = m.flow_sensors
     .map((f, i) => `    case ${i}: return id(${f.id}).state;`)
@@ -62,20 +71,22 @@ export function generateRoutes(m: Manifest): string {
 
 struct Route {
   uint8_t     id;
-  uint16_t    valve_mask;     // bit N = open valve N for this route
-  uint8_t     source_tank;    // index into tanks — 0xFF = none
-  uint8_t     dest_tank;      // index into tanks — 0xFF = endpoint (house/irrigation)
-  uint8_t     flow_sensor;    // index into flow sensors (always valid)
-  uint16_t    max_runtime_s;  // per-route max runtime in seconds
-  const char* name;           // human label for OLED / logs / HA
+  uint16_t    valve_mask;      // bit N = open valve N for this route
+  uint8_t     source_tank;     // index into tanks — 0xFF = water source (no level)
+  uint8_t     source_ws;       // index into water sources — 0xFF = tank source
+  uint8_t     dest_tank;       // index into tanks — 0xFF = endpoint (house/irrigation)
+  uint8_t     flow_sensor;     // index into flow sensors (always valid)
+  uint16_t    max_runtime_s;   // per-route max runtime in seconds
+  const char* name;            // human label for OLED / logs / HA
 };
 
 // --- Component counts -------------------------------------------------------
 
-static const int NUM_VALVES       = ${m.valves.length};
-static const int NUM_TANKS        = ${m.tanks.length};
-static const int NUM_FLOW_SENSORS = ${m.flow_sensors.length};
-static const int NUM_ROUTES       = ${m.routes.length};
+static const int NUM_VALVES        = ${m.valves.length};
+static const int NUM_TANKS         = ${m.tanks.length};
+static const int NUM_WATER_SOURCES = ${m.water_sources.length};
+static const int NUM_FLOW_SENSORS  = ${m.flow_sensors.length};
+static const int NUM_ROUTES        = ${m.routes.length};
 
 // --- Fault codes (used by safety monitor → do_fault) -------------------------
 static const int FAULT_NONE        = 0;
@@ -96,12 +107,13 @@ static const int FAULT_TO_STOP_OFFSET = 2;
 
 // --- Route table ------------------------------------------------------------
 //
-// Valve indices:  ${valveComment}
-// Tank indices:   ${tankComment}
-// Flow indices:   ${flowComment}
+// Valve indices:   ${valveComment}
+// Tank indices:    ${tankComment}
+// WSource indices: ${wsComment}
+// Flow indices:    ${flowComment}
 
 static const Route ROUTES[NUM_ROUTES] = {
-  //  id   valve_mask  src  dst   flow  max_rt  name
+  //  id   valve_mask  src_tank  src_ws  dst   flow  max_rt  name
 ${routeLines.join("\n")}
 };
 

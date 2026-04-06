@@ -32,7 +32,7 @@ export interface TankNode {
   kind: 'tank';
   id: string;
   name: string;
-  level_pin: string;
+  level_pin?: string;
   ports: Port[];
   position: Position;
 }
@@ -73,7 +73,16 @@ export interface FlowSensorNode {
   position: Position;
 }
 
-export type TopologyNode = TankNode | PumpNode | EndpointNode | ValveNode | FlowSensorNode;
+export interface WaterSourceNode {
+  kind: 'water_source';
+  id: string;
+  name: string;
+  pressure_pin?: string;
+  ports: Port[];
+  position: Position;
+}
+
+export type TopologyNode = TankNode | PumpNode | EndpointNode | ValveNode | FlowSensorNode | WaterSourceNode;
 
 // ---------------------------------------------------------------------------
 // Pipes
@@ -99,7 +108,7 @@ export interface RouteOverride {
 // ---------------------------------------------------------------------------
 
 export interface SystemTopology {
-  schema: 4;
+  schema: 5;
   device: {
     name: string;
     friendly_name: string;

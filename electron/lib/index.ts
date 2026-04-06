@@ -4,6 +4,7 @@
 export {
   type Manifest,
   type Tank,
+  type WaterSource,
   type Valve,
   type FlowSensor,
   type Route,
@@ -23,9 +24,14 @@ export {
 } from "./board.js";
 
 export {
-  validate,
+  runTopologyRules,
+  runManifestRules,
+  validateAll,
   type ValidateOptions,
   type ValidationResult,
+  type RuleDiagnostic,
+  type TopologyRule,
+  type ManifestRule,
 } from "./validate.js";
 
 export { generateAll, type GeneratedFile } from "./generate.js";

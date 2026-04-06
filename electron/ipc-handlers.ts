@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow, dialog } from "electron";
 import { BoardDefSchema } from "./lib/board.js";
 import { TopologySchema } from "./lib/topology.js";
-import { validate } from "./lib/validate.js";
+import { validateAll } from "./lib/validate.js";
 import { generateAll } from "./lib/generate.js";
 import { topologyToManifest } from "./lib/topology-to-manifest.js";
 import * as store from "./store.js";
@@ -22,9 +22,10 @@ function winFromEvent(event: Electron.IpcMainInvokeEvent): BrowserWindow {
 }
 
 /** Parse topology and derive the flat manifest for codegen/validation. */
-function resolveManifest(dataRaw: unknown): import("./lib/schema.js").Manifest {
+function resolveTopologyAndManifest(dataRaw: unknown) {
   const topology = TopologySchema.parse(dataRaw);
-  return topologyToManifest(topology);
+  const manifest = topologyToManifest(topology);
+  return { topology, manifest };
 }
 
 // ---------------------------------------------------------------------------
@@ -85,8 +86,8 @@ export function registerIpcHandlers() {
     "codegen:validate",
     async (_e, dataRaw: unknown, boardRaw: unknown) => {
       const board = BoardDefSchema.parse(boardRaw);
-      const manifest = resolveManifest(dataRaw);
-      return validate(manifest, board);
+      const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
+      return validateAll(topology, manifest, board);
     }
   );
 
@@ -94,7 +95,7 @@ export function registerIpcHandlers() {
     "codegen:generate",
     async (_e, dataRaw: unknown, boardRaw: unknown) => {
       const board = BoardDefSchema.parse(boardRaw);
-      const manifest = resolveManifest(dataRaw);
+      const { manifest } = resolveTopologyAndManifest(dataRaw);
       const files = generateAll(manifest, board);
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);

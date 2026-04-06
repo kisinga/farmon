@@ -58,8 +58,25 @@ export function generateDashboard(m: Manifest): string {
     "Safety Override"
   );
 
+  // --- Water source pressure helpers ---
+  const wsPressureSensor = (ws: { name: string }) =>
+    entityId("sensor", m.device.name, `${ws.name} Pressure`);
+
+  // --- Water source pressure gauges ---
+  const wsPressureGauges = m.water_sources
+    .filter((ws) => ws.pressure_pin)
+    .map((ws) => ({
+      type: "gauge",
+      entity: wsPressureSensor(ws),
+      name: `${ws.name} Pressure`,
+      min: 0,
+      max: 10,
+      severity: { red: 0, yellow: 1, green: 2 },
+      needle: true,
+    }));
+
   // --- Tank gauges ---
-  const tankGauges = m.tanks.map((t) => ({
+  const tankGauges = m.tanks.filter((t) => t.level_pin).map((t) => ({
     type: "gauge",
     entity: tankSensor(t),
     name: t.name,
@@ -143,7 +160,7 @@ export function generateDashboard(m: Manifest): string {
   }));
 
   // --- Calibration entities ---
-  const calEntities = m.tanks.flatMap((t) => [
+  const calEntities = m.tanks.filter((t) => t.level_pin).flatMap((t) => [
     { entity: tankCalEmpty(t), name: `${t.name} Empty` },
     { entity: tankCalFull(t), name: `${t.name} Full` },
   ]);
@@ -188,11 +205,24 @@ export function generateDashboard(m: Manifest): string {
                 heading: "Water levels",
                 heading_style: "title",
               },
-              {
-                type: "horizontal-stack",
-                cards: tankGauges,
-                grid_options: { columns: "full", rows: "auto" },
-              },
+              ...(tankGauges.length > 0
+                ? [
+                    {
+                      type: "horizontal-stack",
+                      cards: tankGauges,
+                      grid_options: { columns: "full", rows: "auto" },
+                    },
+                  ]
+                : []),
+              ...(wsPressureGauges.length > 0
+                ? [
+                    {
+                      type: "horizontal-stack",
+                      cards: wsPressureGauges,
+                      grid_options: { columns: "full", rows: "auto" },
+                    },
+                  ]
+                : []),
               ...(flowColumns.length > 0
                 ? [
                     {

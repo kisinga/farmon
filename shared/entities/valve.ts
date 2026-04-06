@@ -13,6 +13,8 @@ const valve: NodeDescriptor = {
   color: COLOR,
   size: { width: W, height: H },
   role: 'passthrough',
+  category: 'actuator',
+  helpUrl: 'docs/installation-guidelines.md#valves',
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },

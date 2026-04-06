@@ -28,6 +28,10 @@ export interface NodeDescriptor {
   singleton?: boolean;
   role: 'terminal' | 'passthrough';
   routeSource?: boolean;
+  /** Category for grouping in add-node menu. */
+  category?: 'source' | 'actuator' | 'sensor' | 'destination';
+  /** URL to installation/usage docs for this entity type. */
+  helpUrl?: string;
   defaultPorts: Array<{ id: string; label: string; direction: 'inlet' | 'outlet' }>;
   defaultData: (index: number) => Record<string, any>;
   /** Returns a raw SVG string for the canvas element. */

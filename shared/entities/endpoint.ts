@@ -14,6 +14,7 @@ const endpoint: NodeDescriptor = {
   color: COLOR,
   size: { width: W, height: H },
   role: 'terminal',
+  category: 'destination',
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
   ],

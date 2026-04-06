@@ -33,7 +33,7 @@ const TankNodeSchema = z.object({
   kind: z.literal("tank"),
   id: ComponentId,
   name: z.string().min(1),
-  level_pin: GpioPin,
+  level_pin: GpioPin.optional(),
   ports: z.array(PortSchema).min(1),
   position: Position,
 });
@@ -82,12 +82,22 @@ const FlowSensorNodeSchema = z.object({
   position: Position,
 });
 
+const WaterSourceNodeSchema = z.object({
+  kind: z.literal("water_source"),
+  id: ComponentId,
+  name: z.string().min(1),
+  pressure_pin: GpioPin.optional(),
+  ports: z.array(PortSchema).min(1),
+  position: Position,
+});
+
 const TopologyNodeSchema = z.discriminatedUnion("kind", [
   TankNodeSchema,
   PumpNodeSchema,
   EndpointNodeSchema,
   ValveNodeSchema,
   FlowSensorNodeSchema,
+  WaterSourceNodeSchema,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -117,7 +127,7 @@ const RouteOverrideSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const TopologySchema = z.object({
-  schema: z.literal(4),
+  schema: z.literal(5),
   device: DeviceSchema,
   nodes: z.array(TopologyNodeSchema).min(1),
   pipes: z.array(PipeSegmentSchema).default([]),
@@ -135,6 +145,7 @@ export type PumpNode = z.infer<typeof PumpNodeSchema>;
 export type EndpointNode = z.infer<typeof EndpointNodeSchema>;
 export type ValveNode = z.infer<typeof ValveNodeSchema>;
 export type FlowSensorNode = z.infer<typeof FlowSensorNodeSchema>;
+export type WaterSourceNode = z.infer<typeof WaterSourceNodeSchema>;
 export type TopologyNode = z.infer<typeof TopologyNodeSchema>;
 export type PipeSegment = z.infer<typeof PipeSegmentSchema>;
 export type RouteOverride = z.infer<typeof RouteOverrideSchema>;

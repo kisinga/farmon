@@ -15,6 +15,8 @@ const tank: NodeDescriptor = {
   size: { width: W, height: H },
   role: 'terminal',
   routeSource: true,
+  category: 'source',
+  helpUrl: 'docs/installation-guidelines.md#tank-level-sensors',
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },

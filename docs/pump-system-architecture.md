@@ -216,13 +216,24 @@ HA automations can listen for these to send mobile notifications, log events, et
 
 ### Flow Sensors
 - One flow sensor per pump output path (not optional)
-- Mount downstream of the last valve in each route
+- Mount downstream of the last valve in each route (valve must come before flow sensor on pump outlet side)
 - Use pulse-counter type (YF-S201 or similar)
+- See [Installation Guidelines](installation-guidelines.md#flow-sensors) for the 10D/5D rule
+
+### Sensor Fault Detection
+- Each flow sensor has built-in fault detection: 3 consecutive zero readings while pump is running triggers a `sensor_fault` binary sensor in HA
+- See [Sensor Fault Detection](sensor-fault-detection.md) for full algorithm details
 
 ### Tank Level Sensors (Pressure)
 - Mount at the bottom of the tank on a standpipe if possible
 - Readings are suppressed during pump operation — accuracy only matters when pump is off
 - Calibrate empty/full voltages via HA number entities
+- Level sensor is optional — tanks without one emit a validation warning and skip pre-flight level checks
+
+### Water Sources
+- WaterSource nodes represent external water supplies (mains, borehole) with no level sensor
+- Routes from water sources skip source level pre-flight checks
+- Optional pressure_pin (ADC) monitors incoming supply pressure
 
 ### Float Switches (REQUIRED for destination tanks)
 - Every tank that is a destination in any route must have a high-level float switch
@@ -234,6 +245,8 @@ HA automations can listen for these to send mobile notifications, log events, et
 - Motorised ball valves with 2-wire control (open/close)
 - Default travel time: 15s — adjust `valve_travel_time` if different
 - Hardware interlocked in ESPHome (open and close pins can't be active simultaneously)
+- Pump inlet: at least one valve required for isolation
+- Pump outlet: valve must be placed before flow sensor
 
 ## GPIO Pin Map
 

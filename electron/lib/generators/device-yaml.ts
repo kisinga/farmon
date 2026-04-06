@@ -42,9 +42,14 @@ export function generateDeviceYaml(
     subs[`flow_cal_${f.id}`] = `"${f.flow_cal}"`;
   }
 
-  // Tank levels
+  // Tank levels (only tanks with level sensors)
   for (const t of m.tanks) {
-    subs[`pin_${t.id}_level`] = t.level_pin;
+    if (t.level_pin) subs[`pin_${t.id}_level`] = t.level_pin;
+  }
+
+  // Water source pressure sensors
+  for (const ws of m.water_sources) {
+    if (ws.pressure_pin) subs[`pin_${ws.id}_pressure`] = ws.pressure_pin;
   }
 
   // Timing
@@ -189,7 +194,7 @@ function buildOledDisplay(board: BoardDef, m: Manifest): string {
   const resetPin = oled.reset_pin;
 
   // Generate tank level lines dynamically (up to 2 fit side-by-side on 128px OLED)
-  const displayTanks = m.tanks.slice(0, 2);
+  const displayTanks = m.tanks.filter((t) => t.level_pin).slice(0, 2);
   const tankLines = displayTanks.map((t, i) => {
     const x = i === 0 ? 0 : 64;
     const label = t.name.length > 4 ? `T${i + 1}` : t.name;

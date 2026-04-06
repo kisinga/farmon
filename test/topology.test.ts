@@ -28,13 +28,13 @@ function assert(condition: boolean, name: string, detail?: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Load topology config (schema 4)
+// Load topology config (schema 5)
 // ---------------------------------------------------------------------------
 
 console.log("Loading topology config...");
 const raw = parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
 const topology = TopologySchema.parse(raw);
-assert(topology.schema === 4, "Schema version is 4");
+assert(topology.schema === 5, "Schema version is 5");
 
 // ---------------------------------------------------------------------------
 // Node structure

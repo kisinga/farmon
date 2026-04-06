@@ -10,6 +10,7 @@ export {
   type EndpointNode,
   type ValveNode,
   type FlowSensorNode,
+  type WaterSourceNode,
   type TopologyNode,
   type PipeSegment,
   type RouteOverride,

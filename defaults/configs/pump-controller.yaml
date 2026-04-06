@@ -1,4 +1,4 @@
-schema: 4
+schema: 5
 device:
   name: pump-ctrl
   friendly_name: Pump-ctrl
