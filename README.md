@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="defaults/assets/logo.svg" alt="MajiFlow logo" width="120" height="120">
+</p>
+
 # MajiFlow
 
 Code generator and desktop configurator for ESP32 water orchestration systems. Define your hardware topology — get compiled ESPHome firmware, HA dashboards, and safety watchdogs.

@@ -12,11 +12,13 @@ export class SystemEditorService {
   private _board = signal<BoardDef | null>(null);
   private _configName = signal<string | null>(null);
   private _dirty = signal(false);
+  private _readonly = signal(false);
 
   readonly topology = this._topology.asReadonly();
   readonly board = this._board.asReadonly();
   readonly configName = this._configName.asReadonly();
   readonly dirty = this._dirty.asReadonly();
+  readonly readonly = this._readonly.asReadonly();
 
   // --- Derived: pin usage (computed from topology) ---
   readonly reservedPins = computed(() => {
@@ -89,16 +91,18 @@ export class SystemEditorService {
 
   // --- Actions ---
 
-  load(name: string, topology: SystemTopology, board: BoardDef): void {
+  load(name: string, topology: SystemTopology, board: BoardDef, opts?: { readonly?: boolean }): void {
     this._configName.set(name);
     this._topology.set(structuredClone(topology));
     this._board.set(board);
     this._dirty.set(false);
+    this._readonly.set(opts?.readonly ?? false);
     this._validation.set(null);
   }
 
   /** Mutate topology via an updater function. Marks config as dirty. */
   updateTopology(updater: (t: SystemTopology) => void): void {
+    if (this._readonly()) return;
     const t = this._topology();
     if (!t) return;
     const clone = structuredClone(t);
@@ -120,6 +124,7 @@ export class SystemEditorService {
     this._board.set(null);
     this._configName.set(null);
     this._dirty.set(false);
+    this._readonly.set(false);
     this._validation.set(null);
   }
 }

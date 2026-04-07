@@ -1,5 +1,5 @@
 import { Component, inject, OnInit, signal, computed } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { LibraryService } from '../../core/services/library.service';
 import { BoardService } from '../../core/services/board.service';
@@ -197,7 +197,7 @@ import type { SystemTopology } from '../../core/models/topology.model';
                 @for (entry of filteredTemplates(); track entry.name) {
                   <div
                     class="group bg-base-100 rounded-xl border border-base-300/40 border-dashed hover:border-primary/30 hover:shadow-md transition-all cursor-pointer"
-                    (click)="useTemplate(entry.name, $event)"
+                    (click)="previewTemplate(entry.name)"
                   >
                     <div class="flex items-center gap-5 px-5 py-4">
                       <!-- Icon (template variant) -->
@@ -235,8 +235,14 @@ import type { SystemTopology } from '../../core/models/topology.model';
                         </div>
                       </div>
 
-                      <!-- Actions (templates: use, export only) -->
+                      <!-- Actions (templates: preview, use, export) -->
                       <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button class="btn btn-ghost btn-xs btn-square" title="Preview" (click)="previewTemplate(entry.name); $event.stopPropagation()">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        </button>
                         <button class="btn btn-ghost btn-xs btn-square" title="Export" (click)="exportConfig(entry.name, $event)">
                           <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -367,6 +373,7 @@ export class LibraryComponent implements OnInit {
   protected boardService = inject(BoardService);
   private electron = inject(ElectronService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
   protected searchQuery = signal('');
   protected errorMessage = signal('');
@@ -400,10 +407,20 @@ export class LibraryComponent implements OnInit {
   ngOnInit() {
     this.library.refresh();
     this.boardService.refresh();
+
+    // Handle ?use= query param from preview page's "Use Template" CTA
+    const useParam = this.route.snapshot.queryParamMap.get('use');
+    if (useParam) {
+      this.useTemplate(useParam, new Event('click'));
+    }
   }
 
   open(name: string) {
     this.router.navigate(['/editor', name]);
+  }
+
+  previewTemplate(name: string) {
+    this.router.navigate(['/preview', name]);
   }
 
   openCreateDialog() {

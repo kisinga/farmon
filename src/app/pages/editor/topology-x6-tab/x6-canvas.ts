@@ -116,6 +116,13 @@ export class X6Canvas {
 
   // --- Public API ---
 
+  /** Toggle read-only mode: disables node dragging and port connections. Pan/zoom remain active. */
+  setReadonly(readonly: boolean): void {
+    this.graph.options.interacting = readonly
+      ? { nodeMovable: false, magnetConnectable: false }
+      : true;
+  }
+
   /** Incrementally reconcile the graph with the topology. */
   render(topology: SystemTopology): void {
     this.rendering = true;

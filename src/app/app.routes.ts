@@ -16,4 +16,10 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/editor/editor.component').then((m) => m.EditorComponent),
   },
+  {
+    path: 'preview/:name',
+    loadComponent: () =>
+      import('./pages/editor/editor.component').then((m) => m.EditorComponent),
+    data: { preview: true },
+  },
 ];

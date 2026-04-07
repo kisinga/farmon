@@ -25,29 +25,31 @@ import { activeTopology } from '../../../../../shared/active-topology';
     <div class="flex items-center gap-2 px-4 py-2 border-b border-base-300/30 bg-base-200/30">
       <h2 class="text-sm font-semibold text-base-content/70">Design</h2>
       <div class="flex-1"></div>
-      <div class="dropdown dropdown-end">
-        <div tabindex="0" role="button" class="btn btn-ghost btn-xs gap-1">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          Add Node
-        </div>
-        <ul tabindex="0" class="dropdown-content menu menu-xs bg-base-200 rounded-lg shadow-lg z-30 w-48 p-1">
-          @for (group of groupedDescs; track group.label) {
-            <li class="menu-title text-[9px] uppercase tracking-wider opacity-50 pt-2">{{ group.label }}</li>
-            @for (desc of group.items; track desc.kind) {
-              <li><a (click)="addNode(desc.kind)" [class.disabled]="desc.singleton && kindExists(desc.kind)">
-                <span [innerHTML]="legendSvg(desc)"></span> {{ desc.label }}
-                @if (desc.experimental) { <span class="badge badge-ghost badge-xs ml-auto">exp</span> }
-              </a></li>
+      @if (!editor.readonly()) {
+        <div class="dropdown dropdown-end">
+          <div tabindex="0" role="button" class="btn btn-ghost btn-xs gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Node
+          </div>
+          <ul tabindex="0" class="dropdown-content menu menu-xs bg-base-200 rounded-lg shadow-lg z-30 w-48 p-1">
+            @for (group of groupedDescs; track group.label) {
+              <li class="menu-title text-[9px] uppercase tracking-wider opacity-50 pt-2">{{ group.label }}</li>
+              @for (desc of group.items; track desc.kind) {
+                <li><a (click)="addNode(desc.kind)" [class.disabled]="desc.singleton && kindExists(desc.kind)">
+                  <span [innerHTML]="legendSvg(desc)"></span> {{ desc.label }}
+                  @if (desc.experimental) { <span class="badge badge-ghost badge-xs ml-auto">exp</span> }
+                </a></li>
+              }
             }
-          }
-        </ul>
-      </div>
-      <div class="divider divider-horizontal mx-0 h-4"></div>
-      <button class="btn btn-ghost btn-xs" title="Undo" (click)="doUndo()">&#x21A9;</button>
-      <button class="btn btn-ghost btn-xs" title="Redo" (click)="doRedo()">&#x21AA;</button>
-      <div class="divider divider-horizontal mx-0 h-4"></div>
+          </ul>
+        </div>
+        <div class="divider divider-horizontal mx-0 h-4"></div>
+        <button class="btn btn-ghost btn-xs" title="Undo" (click)="doUndo()">&#x21A9;</button>
+        <button class="btn btn-ghost btn-xs" title="Redo" (click)="doRedo()">&#x21AA;</button>
+        <div class="divider divider-horizontal mx-0 h-4"></div>
+      }
       <button class="btn btn-ghost btn-xs" (click)="doZoomIn()">+</button>
       <button class="btn btn-ghost btn-xs" (click)="doZoomOut()">&minus;</button>
       <button class="btn btn-ghost btn-xs" (click)="doFit()">Fit</button>
@@ -118,6 +120,14 @@ import { activeTopology } from '../../../../../shared/active-topology';
     .legend-item { display: contents; }
     .legend-icon { display: flex; justify-content: center; align-items: center; }
     .sidebar { font-size: 12px; }
+    :host-context(.preview) .sidebar input,
+    :host-context(.preview) .sidebar select,
+    :host-context(.preview) .sidebar .toggle,
+    :host-context(.preview) .sidebar button.btn-error,
+    :host-context(.preview) .sidebar button[title="Delete"] {
+      pointer-events: none;
+      opacity: 0.5;
+    }
     .node-popup-backdrop { position: fixed; inset: 0; z-index: 50; }
     .node-popup { position: fixed; z-index: 51; }
   `],
@@ -237,6 +247,10 @@ export class TopologyX6TabComponent {
         this.nodePopup.set({ from, graphPos, clientPos });
       },
     });
+
+    if (this.editor.readonly()) {
+      this.canvas.setReadonly(true);
+    }
 
     this.destroyRef.onDestroy(() => this.c.destroy());
 

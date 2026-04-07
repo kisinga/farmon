@@ -59,14 +59,6 @@ export type { Selection };
             }
           }
         </div>
-        @for (d of nodeDiagnostics(sn.node.id); track d.message) {
-          <div class="flex items-start gap-1.5 py-0.5 mt-1 text-[11px]"
-            [class.text-error]="d.severity === 'error'"
-            [class.text-warning]="d.severity === 'warning'">
-            <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : '\u26A0' }}</span>
-            <span>{{ d.message }}</span>
-          </div>
-        }
         @if (!sn.desc.singleton) {
           <button class="btn btn-error btn-xs mt-3 w-full" (click)="deleteNode.emit(sn.node.id)">Delete {{ sn.desc.label }}</button>
         }
@@ -107,37 +99,11 @@ export type { Selection };
               <span class="badge badge-success badge-xs">Valid</span>
             }
           </div>
-          @for (d of routeDiagnostics(route.key); track d.message) {
-            <div class="flex items-start gap-1.5 px-2 py-0.5 text-[11px] cursor-pointer hover:bg-base-200/50 rounded"
-              [class.text-error]="d.severity === 'error'"
-              [class.text-warning]="d.severity === 'warning'"
-              [class.text-base-content/50]="d.severity === 'info'"
-              (click)="selectRoute.emit({ route, sharedNodeIds: d.sharedNodeIds })">
-              <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : d.severity === 'warning' ? '\u26A0' : '\u2139' }}</span>
-              <span>{{ d.message }}</span>
-            </div>
-          }
         }
       }
     </div>
 
     @if (!selection()) {
-      @if (globalDiagnostics().length > 0) {
-        <div class="sidebar-section">
-          <h3 class="sidebar-title">Validation</h3>
-          @for (d of globalDiagnostics(); track $index) {
-            <div class="flex items-start gap-1.5 py-0.5 text-[11px] cursor-pointer hover:bg-base-200/50 rounded px-1 -mx-1"
-              [class.text-error]="d.severity === 'error'"
-              [class.text-warning]="d.severity === 'warning'"
-              [class.text-base-content/50]="d.severity === 'info'"
-              (click)="onDiagnosticClick(d)">
-              <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : d.severity === 'warning' ? '\u26A0' : '\u2139' }}</span>
-              <span>{{ d.message }}</span>
-            </div>
-          }
-        </div>
-      }
-
       <div class="sidebar-section">
         <h3 class="sidebar-title">Route Overrides</h3>
         @if (overrideEntries().length === 0) {
@@ -222,14 +188,6 @@ export class TopologySidebarComponent {
     return t ? deriveRoutes(activeTopology(t)) : [];
   });
 
-  protected globalDiagnostics = computed(() => {
-    const routeKeys = new Set(this.derivedRoutes().map(r => r.key));
-    const nodeIds = new Set(this.editor.topology()?.nodes.map(n => n.id) ?? []);
-    return this.editor.diagnostics().filter(d =>
-      d.severity === 'error' || !d.target || (!routeKeys.has(d.target) && !nodeIds.has(d.target))
-    );
-  });
-
   protected overrideEntries = computed(() => {
     const t = this.editor.topology();
     if (!t) return [];
@@ -237,10 +195,6 @@ export class TopologySidebarComponent {
   });
 
   // --- Helpers ---
-  nodeDiagnostics(nodeId: string): RuleDiagnostic[] {
-    return this.editor.diagnosticsByTarget().get(nodeId) ?? [];
-  }
-
   routeDiagnostics(routeKey: string): RuleDiagnostic[] {
     return this.editor.diagnosticsByTarget().get(routeKey) ?? [];
   }
@@ -257,25 +211,9 @@ export class TopologySidebarComponent {
     return this.routeDiagnostics(routeKey).some(d => d.severity === 'info');
   }
 
-  routeByKey(target: string | undefined): DerivedRoute | undefined {
-    if (!target) return undefined;
-    return this.derivedRoutes().find(r => r.key === target);
-  }
-
   onRouteClick(route: DerivedRoute) {
-    // Aggregate all shared node IDs from this route's diagnostics
     const diags = this.routeDiagnostics(route.key);
     const sharedNodeIds = [...new Set(diags.flatMap(d => d.sharedNodeIds ?? []))];
     this.selectRoute.emit({ route, sharedNodeIds: sharedNodeIds.length ? sharedNodeIds : undefined });
-  }
-
-  onDiagnosticClick(d: RuleDiagnostic) {
-    if (!d.target) return;
-    const route = this.routeByKey(d.target);
-    if (route) {
-      this.selectRoute.emit({ route, sharedNodeIds: d.sharedNodeIds });
-    } else {
-      this.selectNode.emit(d.target);
-    }
   }
 }
