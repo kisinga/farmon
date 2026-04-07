@@ -18,5 +18,29 @@ export const TimingSchema = z.object({
   update_interval: z.string().default("5s"),
 });
 
+// Re-export ComponentId from shared schemas
+export { ComponentId } from "../../shared/schemas.js";
+import { ComponentId } from "../../shared/schemas.js";
+
+export const AutomationTriggerSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("time"), at: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:MM format') }),
+  z.object({ type: z.literal("level"), entity: z.string().min(1), below: z.number().optional(), above: z.number().optional() }),
+]);
+
+export const AutomationSchema = z.object({
+  id: ComponentId,
+  name: z.string().min(1),
+  route: z.string().min(1),
+  trigger: AutomationTriggerSchema,
+  days_of_week: z.array(z.enum(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']))
+    .default(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']),
+  conditions: z.object({
+    source_min_level: z.number().min(0).max(100).optional(),
+    dest_max_level: z.number().min(0).max(100).optional(),
+  }).default({}),
+  enabled: z.boolean().default(true),
+});
+
 export type Device = z.infer<typeof DeviceSchema>;
 export type Timing = z.infer<typeof TimingSchema>;
+export type Automation = z.infer<typeof AutomationSchema>;

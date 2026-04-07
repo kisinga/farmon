@@ -1,4 +1,4 @@
-import type { Manifest, ManifestNode, Route } from "./schema.js";
+import type { Manifest, ManifestNode, ManifestAutomation, Route } from "./schema.js";
 import type { Topology, TopologyNode, PipeSegment } from "./topology.js";
 import { parsePortRef } from "./topology.js";
 
@@ -158,10 +158,39 @@ export function topologyToManifest(topology: Topology): Manifest {
     }
   }
 
+  // --- Automation resolution ---
+
+  const routeKeyToIndex = new Map(routes.map((r, i) => [r.key, i]));
+
+  const automations: ManifestAutomation[] = (topology.automations ?? [])
+    .filter(a => {
+      if (!routeKeyToIndex.has(a.route)) {
+        console.warn(`Automation "${a.id}" references unknown route "${a.route}" — skipped`);
+        return false;
+      }
+      return true;
+    })
+    .map(a => {
+      const idx = routeKeyToIndex.get(a.route)!;
+      return {
+        id: a.id,
+        name: a.name,
+        route_index: idx,
+        route_key: a.route,
+        route_name: routes[idx].name,
+        trigger: a.trigger as ManifestAutomation['trigger'],
+        days_of_week: a.days_of_week,
+        source_min_level: a.conditions?.source_min_level,
+        dest_max_level: a.conditions?.dest_max_level,
+        enabled: a.enabled,
+      };
+    });
+
   return {
     device: { ...topology.device },
     nodes,
     routes,
     timing: { ...topology.timing },
+    automations,
   };
 }

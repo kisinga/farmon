@@ -18,11 +18,25 @@ export type ManifestNode = Record<string, any> & {
   id: string;
 };
 
+export interface ManifestAutomation {
+  id: string;
+  name: string;
+  route_index: number;      // resolved index into routes[]
+  route_key: string;        // original key for display
+  route_name: string;       // human-readable route name
+  trigger: { type: 'time'; at: string } | { type: 'level'; entity: string; below?: number; above?: number };
+  days_of_week: string[];
+  source_min_level?: number;
+  dest_max_level?: number;
+  enabled: boolean;
+}
+
 export interface Manifest {
   device: Device;
   nodes: ManifestNode[];
   routes: Route[];
   timing: Timing;
+  automations: ManifestAutomation[];
 }
 
 export interface Route {

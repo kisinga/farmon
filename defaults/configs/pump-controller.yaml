@@ -1,4 +1,4 @@
-schema: 5
+schema: 6
 device:
   name: pump-ctrl
   friendly_name: Pump-ctrl
@@ -190,3 +190,15 @@ timing:
   flow_confirm_seconds: 15
   api_watchdog_seconds: 300
   update_interval: 5s
+automations:
+  - id: daily_refill
+    name: Daily Refill
+    route: tank1>tank2
+    trigger:
+      type: time
+      at: "06:00"
+    days_of_week: [MON, TUE, WED, THU, FRI, SAT, SUN]
+    conditions:
+      source_min_level: 20
+      dest_max_level: 90
+    enabled: true

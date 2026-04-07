@@ -64,11 +64,36 @@ export interface RouteOverride {
 }
 
 // ---------------------------------------------------------------------------
+// Automations
+// ---------------------------------------------------------------------------
+
+export interface AutomationTrigger {
+  type: 'time' | 'level';
+  at?: string;          // HH:MM (for type: time)
+  entity?: string;      // entity reference (for type: level)
+  below?: number;
+  above?: number;
+}
+
+export interface Automation {
+  id: string;
+  name: string;
+  route: string;          // route key e.g. "tank1>tank2"
+  trigger: AutomationTrigger;
+  days_of_week: ('MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN')[];
+  conditions: {
+    source_min_level?: number;
+    dest_max_level?: number;
+  };
+  enabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Topology (top-level document)
 // ---------------------------------------------------------------------------
 
 export interface SystemTopology {
-  schema: 5;
+  schema: 6;
   device: {
     name: string;
     friendly_name: string;
@@ -85,6 +110,7 @@ export interface SystemTopology {
     api_watchdog_seconds: number;
     update_interval: string;
   };
+  automations: Automation[];
 }
 
 // ---------------------------------------------------------------------------

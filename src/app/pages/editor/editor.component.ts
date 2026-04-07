@@ -6,16 +6,18 @@ import { LibraryService } from '../../core/services/library.service';
 import { ElectronService } from '../../core/services/electron.service';
 import { DeviceTabComponent } from './device-tab/device-tab.component';
 import { TimingTabComponent } from './timing-tab/timing-tab.component';
+import { AutomationsTabComponent } from './automations-tab/automations-tab.component';
 import { TopologyX6TabComponent } from './topology-x6-tab/topology-x6-tab.component';
 import { DeployTabComponent } from './deploy-tab/deploy-tab.component';
 import type { SystemTopology } from '../../core/models/topology.model';
 
-type TabId = 'device' | 'design' | 'timing' | 'deploy';
+type TabId = 'device' | 'design' | 'timing' | 'automations' | 'deploy';
 
 const TAB_ICONS: Record<TabId, string> = {
   device: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z',
   design: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z',
   timing: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+  automations: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
   deploy: 'M13 10V3L4 14h7v7l9-11h-7z',
 };
 
@@ -25,6 +27,7 @@ const TAB_ICONS: Record<TabId, string> = {
   imports: [
     DeviceTabComponent,
     TimingTabComponent,
+    AutomationsTabComponent,
     TopologyX6TabComponent,
     DeployTabComponent,
   ],
@@ -106,6 +109,7 @@ const TAB_ICONS: Record<TabId, string> = {
               @switch (activeTab()) {
                 @case ('device') { <app-device-tab /> }
                 @case ('timing') { <app-timing-tab /> }
+                @case ('automations') { <app-automations-tab /> }
                 @case ('deploy') { <app-deploy-tab /> }
               }
             </fieldset>
@@ -130,6 +134,7 @@ export class EditorComponent implements OnInit, OnDestroy {
     { id: 'device', label: 'Device' },
     { id: 'design', label: 'Design' },
     { id: 'timing', label: 'Timing' },
+    { id: 'automations', label: 'Automations' },
     { id: 'deploy', label: 'Deploy' },
   ];
 

@@ -157,6 +157,19 @@ text_sensor:
         if (rid >= 0 && rid < NUM_ROUTES) s += ROUTES[rid].name;
       }
       return s;
+
+  # --- Per-route status sensors ------------------------------------------------
+${m.routes.map((r, i) => `\
+  - platform: template
+    id: route_${i}_status
+    name: "Route: ${r.name}"
+    icon: "mdi:routes"
+    update_interval: 2s
+    lambda: |-
+      int s = find_slot_by_route(${i});
+      if (s < 0) return std::string("Idle");
+      const char* st[] = {"Idle","Preparing","Running","Stopping","Fault"};
+      return std::string((slots[s].state >= 0 && slots[s].state <= 4) ? st[slots[s].state] : "Unknown");`).join("\n\n")}
 ${globalBlocks.length > 0 ? `
 # --- Sensor fault detection --------------------------------------------------
 

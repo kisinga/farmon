@@ -1,6 +1,14 @@
 import type { Manifest } from "../schema.js";
 import { nodesByKind } from "../schema.js";
 
+function slug(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .replace(/_+/g, "_");
+}
+
 export function generateControl(m: Manifest): string {
   const hasPump = nodesByKind(m.nodes, 'pump').length > 0;
 
@@ -72,73 +80,23 @@ api:
         route_id: int
       then:
         - lambda: |-
-            // Validate route_id
-            if (route_id < 0 || route_id >= NUM_ROUTES) {
-              ESP_LOGW("ctrl", "Rejected: invalid route_id=%d", route_id);
-              return;
+            const char* results[] = {"started", "queued", "rejected", "source low", "dest full"};
+            int r = try_route_start(route_id);
+            if (r == 0) {
+              ESP_LOGI("ctrl", "API start route %d [%s]: %s", route_id,
+                       (route_id >= 0 && route_id < NUM_ROUTES) ? ROUTES[route_id].name : "?", results[r]);
+            } else {
+              ESP_LOGW("ctrl", "API start route %d: %s", route_id, (r >= 0 && r <= 4) ? results[r] : "?");
             }
-            // Reject if already active
-            if (find_slot_by_route(route_id) != -1) {
-              ESP_LOGW("ctrl", "Rejected: route %d already active", route_id);
-              return;
-            }
-            // Check flow sensor conflict or no free slot → queue
-            if (has_conflict(route_id) || find_free_slot() == -1) {
-              if (queue_push(route_id)) {
-                ESP_LOGI("ctrl", "Queued route %d [%s] (flow conflict or no slot)", route_id, ROUTES[route_id].name);
-              } else {
-                ESP_LOGW("ctrl", "Rejected: queue full, cannot enqueue route %d", route_id);
-              }
-              return;
-            }
-            const Route& r = ROUTES[route_id];
-            // Pre-start: source tank must have enough water
-            if (r.source_tank != 0xFF) {
-              float src = get_tank_level(r.source_tank);
-              if (!id(safety_override).state && (std::isnan(src) || src < 5.0f)) {
-                ESP_LOGW("ctrl", "Rejected: source tank %d at %.0f%%", r.source_tank, src);
-                return;
-              }
-            }
-            // Pre-start: dest tank must not be full
-            if (r.dest_tank != 0xFF) {
-              float dst = get_tank_level(r.dest_tank);
-              if (!id(safety_override).state && !std::isnan(dst) && dst > 95.0f) {
-                ESP_LOGW("ctrl", "Rejected: dest tank %d at %.0f%%", r.dest_tank, dst);
-                return;
-              }
-            }
-            // Allocate slot
-            int slot = find_free_slot();
-            init_slot(slot);
-            slots[slot].route_id = route_id;
-            slots[slot].state = 1;  // PREPARING
-            slots[slot].start_time = millis();
-            // Open route valves
-            for (int i = 0; i < NUM_VALVES; i++) {
-              if (r.valve_mask & (1 << i)) open_valve_hw(i);
-            }
-            if (id(active_slot) == -1) id(active_slot) = slot;
-            id(system_state) = derived_system_state();
-            ESP_LOGI("ctrl", "Start route %d [%s] in slot %d", route_id, r.name, slot);
 
     - service: route_stop
       variables:
         route_id: int
       then:
         - lambda: |-
-            int s = find_slot_by_route(route_id);
-            if (s < 0) {
-              ESP_LOGW("ctrl", "route_stop: route %d not active", route_id);
-              return;
-            }
-            if (slots[s].state == 0 || slots[s].state == 3) return;
-            slots[s].stop_reason = STOP_MANUAL;
-            slots[s].state = 3;  // STOPPING
-            slots[s].stop_time = millis();
-            slots[s].valves_closing = false;
-            id(system_state) = derived_system_state();
-            ESP_LOGI("ctrl", "Stop requested for route %d slot %d", route_id, s);
+            const char* results[] = {"stopping", "not active", "already idle/stopping"};
+            int r = try_route_stop(route_id);
+            ESP_LOGI("ctrl", "API stop route %d: %s", route_id, (r >= 0 && r <= 2) ? results[r] : "?");
 
     - service: stop_all
       then:
@@ -189,6 +147,31 @@ switch:
     id: safety_override
     optimistic: true
     restore_mode: ALWAYS_OFF
+
+# --- Per-route button entities -----------------------------------------------
+# Each route gets a Start and Stop button — first-class HA entities that are
+# trivially automatable. All actions go through the state machine.
+
+button:
+${m.routes.map((r, i) => `\
+  - platform: template
+    name: "Start: ${r.name}"
+    id: route_${i}_start
+    icon: "mdi:play-circle"
+    on_press:
+      - lambda: |-
+          const char* res[] = {"started","queued","rejected","source low","dest full"};
+          int rc = try_route_start(${i});
+          ESP_LOGI("btn", "Route ${i} [${r.name}] start: %s", res[rc]);
+  - platform: template
+    name: "Stop: ${r.name}"
+    id: route_${i}_stop
+    icon: "mdi:stop-circle"
+    on_press:
+      - lambda: |-
+          const char* res[] = {"stopping","not active","already idle"};
+          int rc = try_route_stop(${i});
+          ESP_LOGI("btn", "Route ${i} [${r.name}] stop: %s", res[rc]);`).join("\n")}
 
 # --- 1s Transition Interval --------------------------------------------------
 # Handles: PREPARING→RUNNING, STOPPING→IDLE, FAULT valve close,

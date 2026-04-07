@@ -7,7 +7,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 // Schema versioning
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 5;     // version this app writes
+export const SCHEMA_VERSION = 6;     // version this app writes
 
 export class SchemaError extends Error {
   constructor(
@@ -33,8 +33,7 @@ export class SchemaError extends Error {
 type Migration = (data: Record<string, unknown>) => Record<string, unknown>;
 
 const MIGRATIONS: Record<number, Migration> = {
-  // Example for future use:
-  // 5: (data) => { data.schema = 6; /* transform fields */ return data; },
+  5: (data) => { data.schema = 6; data.automations = data.automations ?? []; return data; },
 };
 
 function migrateIfNeeded(data: Record<string, unknown>, filePath: string): Record<string, unknown> {
@@ -341,9 +340,28 @@ export function exportConfig(name: string, destPath: string): void {
 // Output
 // ---------------------------------------------------------------------------
 
+// Stale files to clean up from previous generator versions.
+const DEPRECATED_FILES = [
+  "config/homeassistant/dashboards/pump.yaml",
+];
+
 export function writeOutput(files: Array<{ relativePath: string; content: string }>, outputDir: string): void {
+  // Remove known stale files from previous generations
+  for (const stale of DEPRECATED_FILES) {
+    const stalePath = path.join(outputDir, stale);
+    if (fs.existsSync(stalePath)) {
+      fs.unlinkSync(stalePath);
+    }
+  }
+
   for (const file of files) {
     const fullPath = path.join(outputDir, file.relativePath);
+
+    // Don't overwrite secrets if they already exist (preserves user credentials)
+    if (file.relativePath.endsWith("secrets.yaml") && fs.existsSync(fullPath)) {
+      continue;
+    }
+
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(fullPath, file.content, "utf-8");

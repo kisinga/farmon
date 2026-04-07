@@ -52,6 +52,10 @@ export class ElectronService {
   }
 
   // --- Codegen ---
+  deriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>> {
+    if (!this.api) return Promise.resolve([]);
+    return this.api.codegenDeriveRoutes(topology);
+  }
   validate(manifest: unknown, board: unknown): Promise<ValidationResult> {
     if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false, diagnostics: [] });
     return this.api.codegenValidate(manifest, board);

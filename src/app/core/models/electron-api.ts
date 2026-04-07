@@ -115,6 +115,7 @@ export interface ElectronAPI {
   boardImport(dirPath: string): Promise<string>;
 
   // Codegen
+  codegenDeriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>>;
   codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
   codegenGenerate(manifest: unknown, board: unknown): Promise<GenerateResult>;
 

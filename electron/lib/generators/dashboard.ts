@@ -26,20 +26,38 @@ export function generateDashboard(m: Manifest): string {
   const tankSensor = (t: ManifestNode) => entityId("sensor", m.device.name, `${n(t, 'name')} Level`);
   const tankCalEmpty = (t: ManifestNode) => entityId("number", m.device.name, `${n(t, 'name')} Cal Empty V`);
   const tankCalFull = (t: ManifestNode) => entityId("number", m.device.name, `${n(t, 'name')} Cal Full V`);
+  const tankRawVoltage = (t: ManifestNode) => entityId("sensor", m.device.name, `${n(t, 'name')} Raw Voltage`);
   const flowSensor = (f: ManifestNode) => entityId("sensor", m.device.name, n(f, 'name'));
   const flowTotal = (f: ManifestNode) => {
     const totalName = n(f, 'name').replace("Water Flow", "Total Usage").replace("Flow", "Total");
     return entityId("sensor", m.device.name, totalName);
   };
+  const flowFault = (f: ManifestNode) => entityId("binary_sensor", m.device.name, `${n(f, 'name')} Sensor Fault`);
   const valveCover = (v: ManifestNode) => entityId("cover", m.device.name, n(v, 'name'));
   const wsPressureSensor = (ws: ManifestNode) => entityId("sensor", m.device.name, `${n(ws, 'name')} Pressure`);
 
+  // System-level entities
   const stateSensor = entityId("sensor", m.device.name, "System State");
   const faultSensor = entityId("sensor", m.device.name, "System Fault");
   const stopReasonSensor = entityId("sensor", m.device.name, "Last Stop Reason");
   const activeRoutesSensor = entityId("sensor", m.device.name, "Active Routes");
   const queueSensor = entityId("sensor", m.device.name, "Route Queue");
   const safetyOverride = entityId("switch", m.device.name, "Safety Override");
+
+  // Device health entities
+  const batteryPercent = entityId("sensor", m.device.name, "Battery Percent");
+  const wifiSignal = entityId("sensor", m.device.name, "WiFi Signal");
+  const espTemp = entityId("sensor", m.device.name, "ESP32 Temperature");
+  const uptime = entityId("sensor", m.device.name, "Uptime");
+  const ipAddress = entityId("sensor", m.device.name, "IP Address");
+
+  // Per-route entities (button + status)
+  const routeStartButton = (r: typeof m.routes[number], i: number) =>
+    entityId("button", m.device.name, `Start ${r.name}`);
+  const routeStopButton = (r: typeof m.routes[number], i: number) =>
+    entityId("button", m.device.name, `Stop ${r.name}`);
+  const routeStatus = (r: typeof m.routes[number], i: number) =>
+    entityId("sensor", m.device.name, `Route ${r.name}`);
 
   // --- Node lists ---
   const tanks = nodesByKind(m.nodes, 'tank');
@@ -112,7 +130,7 @@ export function generateDashboard(m: Manifest): string {
     ],
   }));
 
-  // --- Route quick-action buttons ---
+  // --- Per-route start/stop buttons (using button entities) ---
   const routeColors = ["purple", "deep-purple", "indigo", "blue", "teal", "cyan", "light-blue", "green"];
   const routeStartButtons = m.routes.map((r, i) => ({
     show_name: true,
@@ -122,8 +140,8 @@ export function generateDashboard(m: Manifest): string {
     icon: "mdi:water-sync",
     tap_action: {
       action: "call-service",
-      service: `esphome.${dev}_route_start`,
-      data: { route_id: i },
+      service: "button.press",
+      target: { entity_id: routeStartButton(r, i) },
     },
     show_state: false,
     color: routeColors[i % routeColors.length],
@@ -137,11 +155,17 @@ export function generateDashboard(m: Manifest): string {
     icon: "mdi:stop-circle-outline",
     tap_action: {
       action: "call-service",
-      service: `esphome.${dev}_route_stop`,
-      data: { route_id: i },
+      service: "button.press",
+      target: { entity_id: routeStopButton(r, i) },
     },
     show_state: false,
     color: "red",
+  }));
+
+  // --- Per-route status entities ---
+  const routeStatusEntities = m.routes.map((r, i) => ({
+    entity: routeStatus(r, i),
+    name: r.name,
   }));
 
   // --- Valve glance entities ---
@@ -150,11 +174,30 @@ export function generateDashboard(m: Manifest): string {
     name: `V${i + 1}`,
   }));
 
-  // --- Calibration entities ---
+  // --- Calibration entities (with raw voltage) ---
   const calEntities = tanks.filter((t) => t['level_pin']).flatMap((t) => [
+    { entity: tankRawVoltage(t), name: `${n(t, 'name')} Raw V` },
     { entity: tankCalEmpty(t), name: `${n(t, 'name')} Empty` },
     { entity: tankCalFull(t), name: `${n(t, 'name')} Full` },
   ]);
+
+  // --- Automation section (conditional) ---
+  const automationSection = m.automations.length > 0 ? [{
+    type: "grid",
+    cards: [
+      {
+        type: "entities",
+        title: "Automations",
+        entities: m.automations.map(a => ({
+          entity: `automation.majiflow_${a.id}`,
+          name: `${a.name}: ${a.route_name}`,
+          icon: "mdi:calendar-clock",
+        })),
+        grid_options: { columns: "full" },
+      },
+    ],
+    column_span: 1,
+  }] : [];
 
   // --- Build the YAML structure ---
   const dashboard = {
@@ -167,6 +210,7 @@ export function generateDashboard(m: Manifest): string {
         type: "sections",
         subview: false,
         sections: [
+          // Section 1: System Status (glance)
           {
             type: "grid",
             cards: [
@@ -186,6 +230,7 @@ export function generateDashboard(m: Manifest): string {
             ],
             column_span: 1,
           },
+          // Section 2: Water Levels & Flow
           {
             type: "grid",
             cards: [
@@ -202,24 +247,26 @@ export function generateDashboard(m: Manifest): string {
             ],
             column_span: 1,
           },
+          // Section 3: Route Control
           {
             type: "grid",
             cards: [
               {
                 type: "vertical-stack",
                 cards: [
+                  // Per-route status
                   {
                     type: "entities",
-                    entities: [
-                      { entity: activeRoutesSensor, name: "Active" },
-                      { entity: queueSensor, name: "Queue" },
-                      { entity: faultSensor, name: "Fault" },
-                    ],
+                    title: "Route Status",
+                    entities: routeStatusEntities,
                     state_color: true,
                     show_header_toggle: false,
                   },
+                  // Start buttons
                   { type: "horizontal-stack", cards: routeStartButtons },
+                  // Stop buttons
                   { type: "horizontal-stack", cards: routeStopButtons },
+                  // Global actions
                   {
                     type: "horizontal-stack",
                     cards: [
@@ -257,15 +304,41 @@ export function generateDashboard(m: Manifest): string {
             ],
             column_span: 1,
           },
+          // Section 4: Automations (conditional)
+          ...automationSection,
         ],
         badges: [],
       },
+      // Settings tab
       {
         title: "Settings",
         path: "settings",
         icon: "mdi:cog",
         cards: [
-          { type: "entities", title: "Sensor Calibration (voltage)", entities: calEntities },
+          {
+            type: "entities",
+            title: "Sensor Calibration (voltage)",
+            entities: calEntities,
+          },
+          {
+            type: "glance",
+            title: "Device Health",
+            show_state: true,
+            entities: [
+              { entity: batteryPercent, name: "Battery" },
+              { entity: wifiSignal, name: "WiFi" },
+              { entity: espTemp, name: "Temp" },
+              { entity: uptime, name: "Uptime" },
+            ],
+          },
+          ...(flowSensors.length > 0 ? [{
+            type: "entities",
+            title: "Sensor Diagnostics",
+            entities: flowSensors.map(f => ({
+              entity: flowFault(f),
+              name: `${n(f, 'name')} Fault`,
+            })),
+          }] : []),
         ],
       },
     ],

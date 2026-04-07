@@ -440,7 +440,7 @@ export class LibraryComponent implements OnInit {
 
     try {
       const topology: SystemTopology = {
-        schema: 5,
+        schema: 6,
         device: { name: slug, friendly_name: name, board },
         nodes: [
           {
@@ -464,6 +464,7 @@ export class LibraryComponent implements OnInit {
           api_watchdog_seconds: 300,
           update_interval: '5s',
         },
+        automations: [],
       };
       await this.library.save(slug, topology);
       this.router.navigate(['/editor', slug]);

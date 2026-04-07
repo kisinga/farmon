@@ -93,6 +93,14 @@ export function registerIpcHandlers() {
   // --- Codegen (accepts topology or manifest) ---
 
   ipcMain.handle(
+    "codegen:derive-routes",
+    async (_e, dataRaw: unknown) => {
+      const { manifest } = resolveTopologyAndManifest(dataRaw);
+      return manifest.routes.map(r => ({ key: r.key, name: r.name }));
+    }
+  );
+
+  ipcMain.handle(
     "codegen:validate",
     async (_e, dataRaw: unknown, boardRaw: unknown) => {
       const board = BoardDefSchema.parse(boardRaw);

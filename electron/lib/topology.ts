@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DeviceSchema, TimingSchema } from "./shared-schema.js";
+import { DeviceSchema, TimingSchema, AutomationSchema } from "./shared-schema.js";
 
 // Import schemas from entity files (source of truth)
 import { TankNodeSchema } from "../../shared/entities/tank.js";
@@ -49,16 +49,17 @@ const RouteOverrideSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Topology (top-level document) — Schema v5
+// Topology (top-level document) — Schema v6
 // ---------------------------------------------------------------------------
 
 export const TopologySchema = z.object({
-  schema: z.literal(5),
+  schema: z.literal(6),
   device: DeviceSchema,
   nodes: z.array(TopologyNodeSchema).min(1),
   pipes: z.array(PipeSegmentSchema).default([]),
   route_overrides: z.record(z.string(), RouteOverrideSchema).default({}),
   timing: TimingSchema.default({}),
+  automations: z.array(AutomationSchema).default([]),
 });
 
 // ---------------------------------------------------------------------------

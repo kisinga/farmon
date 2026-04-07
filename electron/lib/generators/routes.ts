@@ -309,5 +309,52 @@ ${flowCases}
     default: return -1.0f;
   }
 }
+
+// --- Route start/stop (shared by API services + button entities) -------------
+//
+// Returns: 0=started, 1=queued, 2=rejected (invalid/duplicate/full),
+//          3=rejected (source low), 4=rejected (dest full)
+inline int try_route_start(int route_id) {
+  if (route_id < 0 || route_id >= NUM_ROUTES) return 2;
+  if (find_slot_by_route(route_id) != -1) return 2;  // already active
+
+  if (has_conflict(route_id) || find_free_slot() == -1) {
+    return queue_push(route_id) ? 1 : 2;
+  }
+
+  const Route& r = ROUTES[route_id];
+  if (r.source_tank != 0xFF) {
+    float src = get_tank_level(r.source_tank);
+    if (!id(safety_override).state && (std::isnan(src) || src < 5.0f)) return 3;
+  }
+  if (r.dest_tank != 0xFF) {
+    float dst = get_tank_level(r.dest_tank);
+    if (!id(safety_override).state && !std::isnan(dst) && dst > 95.0f) return 4;
+  }
+
+  int slot = find_free_slot();
+  init_slot(slot);
+  slots[slot].route_id = route_id;
+  slots[slot].state = 1;  // PREPARING
+  slots[slot].start_time = millis();
+  for (int i = 0; i < NUM_VALVES; i++)
+    if (r.valve_mask & (1 << i)) open_valve_hw(i);
+  if (id(active_slot) == -1) id(active_slot) = slot;
+  id(system_state) = derived_system_state();
+  return 0;
+}
+
+// Returns: 0=stopping, 1=not active, 2=already stopping/idle
+inline int try_route_stop(int route_id) {
+  int s = find_slot_by_route(route_id);
+  if (s < 0) return 1;
+  if (slots[s].state == 0 || slots[s].state == 3) return 2;
+  slots[s].stop_reason = STOP_MANUAL;
+  slots[s].state = 3;  // STOPPING
+  slots[s].stop_time = millis();
+  slots[s].valves_closing = false;
+  id(system_state) = derived_system_state();
+  return 0;
+}
 `;
 }

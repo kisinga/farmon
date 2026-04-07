@@ -14,6 +14,8 @@ export {
   type TopologyNode,
   type PipeSegment,
   type RouteOverride,
+  type Automation,
+  type AutomationTrigger,
   type SystemTopology,
   getNodesByKind,
   getNodeByKind,

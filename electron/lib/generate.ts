@@ -8,6 +8,7 @@ import { generateDashboard } from "./generators/dashboard.js";
 import { generateBoardPackage } from "./generators/board-package.js";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
+import { generateAutomations } from "./generators/automations.js";
 import { LOGO_SVG } from "./static/logo.js";
 
 export interface GeneratedFile {
@@ -36,7 +37,7 @@ export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const deviceDir = `esphome/${dir}`;
 
-  return [
+  const files: GeneratedFile[] = [
     {
       relativePath: `${deviceDir}/common/board.yaml`,
       description: `${board.label} board package (buses, battery, LED, diagnostics)`,
@@ -83,4 +84,16 @@ export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
       content: generateDashboard(m),
     },
   ];
+
+  // Conditionally add HA automations
+  const automationsContent = generateAutomations(m);
+  if (automationsContent) {
+    files.push({
+      relativePath: `config/homeassistant/automations/${dir}.yaml`,
+      description: "HA automations for scheduled route activation",
+      content: automationsContent,
+    });
+  }
+
+  return files;
 }
