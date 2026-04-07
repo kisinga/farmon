@@ -4,6 +4,7 @@ import { TopologySchema } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
 import { generateAll } from "./lib/generate.js";
 import { topologyToManifest } from "./lib/topology-to-manifest.js";
+import { activeTopology } from "../shared/active-topology.js";
 import * as store from "./store.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
@@ -21,9 +22,10 @@ function winFromEvent(event: Electron.IpcMainInvokeEvent): BrowserWindow {
   return win;
 }
 
-/** Parse topology and derive the flat manifest for codegen/validation. */
+/** Parse topology, filter to active (non-disabled) nodes, and derive manifest. */
 function resolveTopologyAndManifest(dataRaw: unknown) {
-  const topology = TopologySchema.parse(dataRaw);
+  const full = TopologySchema.parse(dataRaw);
+  const topology = activeTopology(full);
   const manifest = topologyToManifest(topology);
   return { topology, manifest };
 }

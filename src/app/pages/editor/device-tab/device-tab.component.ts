@@ -3,11 +3,12 @@ import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
+import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
 
 @Component({
   selector: 'app-device-tab',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, BoardSvgComponent],
   template: `
     @if (editor.topology(); as t) {
       <div class="max-w-2xl space-y-6">
@@ -87,6 +88,17 @@ import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../.
                   <div class="stat-value text-lg">{{ board.pins.length - editor.reservedPins().size }}</div>
                 </div>
               </div>
+
+              <!-- Board pinout diagram -->
+              @if (boards.activeSvg()) {
+                <div class="mt-3">
+                  <app-board-svg
+                    [board]="boards.activeBoard()"
+                    [svgContent]="boards.activeSvg()"
+                    [usedPins]="editor.usedPins()"
+                  />
+                </div>
+              }
             }
           </div>
         </div>

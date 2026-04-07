@@ -1,16 +1,18 @@
 import { Component, inject, input, output, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
+import { ValidationPanelComponent } from '../../../shared/validation-panel/validation-panel.component';
 import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import { deriveRoutes, type DerivedRoute } from './derive-routes';
+import { activeTopology } from '../../../../../shared/active-topology';
 import type { Selection } from './selection';
 export type { Selection };
 
 @Component({
   selector: 'app-topology-sidebar',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, ValidationPanelComponent],
   template: `
     <!-- Node properties (data-driven) -->
     @if (selectedNodeData(); as sn) {
@@ -158,6 +160,15 @@ export type { Selection };
         }
       </div>
     }
+
+    <!-- Validation summary (always visible) -->
+    <div class="sidebar-section">
+      <h3 class="sidebar-title">Validation</h3>
+      <app-validation-panel
+        [result]="editor.validation()"
+        [gpioUsage]="editor.gpioUsage()"
+      />
+    </div>
   `,
   styles: [`
     :host {
@@ -208,7 +219,7 @@ export class TopologySidebarComponent {
 
   protected derivedRoutes = computed(() => {
     const t = this.editor.topology();
-    return t ? deriveRoutes(t) : [];
+    return t ? deriveRoutes(activeTopology(t)) : [];
   });
 
   protected globalDiagnostics = computed(() => {

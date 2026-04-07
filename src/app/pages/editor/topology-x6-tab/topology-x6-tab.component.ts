@@ -5,6 +5,7 @@ import type { TopologyNode, PipeSegment } from '../../../core/models/topology.mo
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
+import { activeTopology } from '../../../../../shared/active-topology';
 
 @Component({
   selector: 'app-topology-x6-tab',
@@ -230,7 +231,7 @@ export class TopologyX6TabComponent {
       onSelected: (sel) => {
         this.selection.set(sel);
         const t = this.editor.topology();
-        if (t) this.c.highlight(sel, t);
+        if (t) this.c.highlight(sel, activeTopology(t));
       },
       onDanglingPipe: (from, graphPos, clientPos) => {
         this.nodePopup.set({ from, graphPos, clientPos });
@@ -381,14 +382,14 @@ export class TopologyX6TabComponent {
     const sel: Selection = { kind: 'route', route: ev.route, sharedNodeIds: ev.sharedNodeIds };
     this.selection.set(sel);
     const t = this.editor.topology();
-    if (t) this.c.highlight(sel, t);
+    if (t) this.c.highlight(sel, activeTopology(t));
   }
 
   onNodeSelected(nodeId: string) {
     const sel: Selection = { kind: 'node', nodeId };
     this.selection.set(sel);
     const t = this.editor.topology();
-    if (t) this.c.highlight(sel, t);
+    if (t) this.c.highlight(sel, activeTopology(t));
   }
 
   // --- Route overrides ---

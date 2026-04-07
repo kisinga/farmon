@@ -63,7 +63,6 @@ function traceSequences(
 
       const target = nodes.get(targetId);
       if (!target) continue;
-      if ((target as any).disabled) continue;
 
       const nextSequence = [...entry.sequence, targetId];
       const nextPumpIndex = target.kind === "pump"
@@ -103,7 +102,6 @@ export function deriveRouteSequences(topology: Topology): RouteSequence[] {
   const results: RouteSequence[] = [];
 
   for (const node of topology.nodes) {
-    if ((node as any).disabled) continue;
     if (node.kind === "tank" || node.kind === "water_source") {
       results.push(...traceSequences(node.id, node.kind, adj, nodes));
     }

@@ -4,8 +4,6 @@ import { SystemEditorService } from '../../core/services/system-editor.service';
 import { BoardService } from '../../core/services/board.service';
 import { LibraryService } from '../../core/services/library.service';
 import { ElectronService } from '../../core/services/electron.service';
-import { BoardSvgComponent } from '../../shared/board-svg/board-svg.component';
-import { ValidationPanelComponent } from '../../shared/validation-panel/validation-panel.component';
 import { DeviceTabComponent } from './device-tab/device-tab.component';
 import { TimingTabComponent } from './timing-tab/timing-tab.component';
 import { TopologyX6TabComponent } from './topology-x6-tab/topology-x6-tab.component';
@@ -25,8 +23,6 @@ const TAB_ICONS: Record<TabId, string> = {
   selector: 'app-editor',
   standalone: true,
   imports: [
-    BoardSvgComponent,
-    ValidationPanelComponent,
     DeviceTabComponent,
     TimingTabComponent,
     TopologyX6TabComponent,
@@ -94,78 +90,19 @@ const TAB_ICONS: Record<TabId, string> = {
             }
           </main>
         }
-
-        <!-- Board panel (flex child, not overlay) -->
-        @if (activeTab() !== 'design' && activeTab() !== 'deploy') {
-          <aside
-            class="w-72 shrink-0 bg-base-100 border-l border-base-300/50 flex flex-col overflow-y-auto transition-[width,padding,border] duration-200 ease-in-out"
-            [class.w-72]="panelOpen()"
-            [class.!w-0]="!panelOpen()"
-            [class.!border-l-0]="!panelOpen()"
-            [class.!overflow-hidden]="!panelOpen()"
-          >
-            <div class="w-72 shrink-0">
-              <div class="p-4 border-b border-base-300/30">
-                <div class="flex items-center justify-between mb-2">
-                  <h3 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Board</h3>
-                  <div class="flex items-center gap-2">
-                    @if (boards.activeBoard(); as b) {
-                      <span class="text-xs text-base-content/60">{{ b.label }}</span>
-                    }
-                    <button class="btn btn-ghost btn-xs" (click)="panelOpen.set(false)" title="Hide panel">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-                <app-board-svg
-                  [board]="boards.activeBoard()"
-                  [svgContent]="boards.activeSvg()"
-                  [usedPins]="editor.usedPins()"
-                />
-              </div>
-              <div class="p-4 flex-1">
-                <h3 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-3">Validation</h3>
-                <app-validation-panel
-                  [result]="editor.validation()"
-                  [gpioUsage]="editor.gpioUsage()"
-                />
-              </div>
-            </div>
-          </aside>
-        }
-
-        <!-- Panel toggle (when closed) -->
-        @if (!panelOpen() && activeTab() !== 'design' && activeTab() !== 'deploy') {
-          <button
-            class="shrink-0 flex flex-col items-center justify-center gap-1 py-4 px-1.5 bg-base-200 hover:bg-primary/10 border-l border-base-300 transition-colors group"
-            (click)="panelOpen.set(true)"
-            title="Show device preview"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4 rotate-180 group-hover:scale-110 transition-transform"
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-            <span class="text-[9px] font-semibold uppercase tracking-widest text-base-content/60 group-hover:text-primary transition-colors"
-              style="writing-mode: vertical-lr;">Board</span>
-          </button>
-        }
       </div>
     </div>
   `,
 })
 export class EditorComponent implements OnInit, OnDestroy {
   protected editor = inject(SystemEditorService);
-  protected boards = inject(BoardService);
+  private boards = inject(BoardService);
   private library = inject(LibraryService);
   private electron = inject(ElectronService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
   protected activeTab = signal<TabId>('device');
-  protected panelOpen = signal(true);
 
   protected tabs: { id: TabId; label: string }[] = [
     { id: 'device', label: 'Device' },
@@ -226,11 +163,16 @@ export class EditorComponent implements OnInit, OnDestroy {
     this.editor.markSaved();
   }
 
+  private validationGen = 0;
+
   private async runValidation() {
     const topology = this.editor.topology();
     const board = this.editor.board();
     if (!topology || !board) return;
+    const gen = ++this.validationGen;
     const result = await this.electron.validate(topology, board);
+    // Discard stale results — a newer topology change has already fired
+    if (gen !== this.validationGen) return;
     this.editor.setValidation(result);
   }
 }

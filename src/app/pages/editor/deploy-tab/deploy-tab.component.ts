@@ -1,6 +1,7 @@
 import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { ElectronService } from '../../../core/services/electron.service';
+import { ValidationPanelComponent } from '../../../shared/validation-panel/validation-panel.component';
 import type { ToolchainInfo, SerialDevice } from '../../../core/models/electron-api';
 
 interface FileEntry {
@@ -12,9 +13,18 @@ interface FileEntry {
 @Component({
   selector: 'app-deploy-tab',
   standalone: true,
-  imports: [],
+  imports: [ValidationPanelComponent],
   template: `
     <div class="max-w-3xl space-y-4">
+
+      <!-- Validation summary -->
+      <div class="bg-base-100 rounded-xl border border-base-300/40 px-5 py-3.5">
+        <h3 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-3">Validation</h3>
+        <app-validation-panel
+          [result]="editor.validation()"
+          [gpioUsage]="editor.gpioUsage()"
+        />
+      </div>
 
       <!-- Step 1: Generate -->
       <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
