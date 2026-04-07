@@ -25,6 +25,7 @@ export interface BoardLoadResult {
 
 export interface GenerateResult {
   outputDir: string;
+  deviceDir: string;
   files: Array<{
     path: string;
     description: string;
@@ -143,6 +144,10 @@ export interface ElectronAPI {
   pickFile(options: { title?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>;
   pickDirectory(options: { title?: string }): Promise<string | null>;
   saveFile(options: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>;
+
+  // Shell
+  shellOpenPath(fullPath: string): Promise<string>;
+  shellShowInFolder(fullPath: string): Promise<{ ok: boolean }>;
 
   // Store
   storePath(): Promise<string>;

@@ -102,6 +102,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     filters?: Array<{ name: string; extensions: string[] }>;
   }) => ipcRenderer.invoke("dialog:save-file", options),
 
+  // Shell
+  shellOpenPath: (fullPath: string) =>
+    ipcRenderer.invoke("shell:open-path", fullPath),
+  shellShowInFolder: (fullPath: string) =>
+    ipcRenderer.invoke("shell:show-item-in-folder", fullPath),
+
   // Store
   storePath: () => ipcRenderer.invoke("store:path"),
   outputDir: () => ipcRenderer.invoke("store:output-dir"),

@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog } from "electron";
+import { ipcMain, BrowserWindow, dialog, shell } from "electron";
 import { BoardDefSchema } from "./lib/board.js";
 import { TopologySchema } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
@@ -116,8 +116,10 @@ export function registerIpcHandlers() {
       const files = generateAll(manifest, board);
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);
+      const deviceDir = manifest.device.directory ?? manifest.device.name;
       return {
         outputDir,
+        deviceDir,
         files: files.map((f) => ({
           path: f.relativePath,
           description: f.description,
@@ -228,6 +230,17 @@ export function registerIpcHandlers() {
       return result.canceled ? null : result.filePath;
     }
   );
+
+  // --- Shell ---
+
+  ipcMain.handle("shell:open-path", async (_e, fullPath: string) =>
+    shell.openPath(fullPath)
+  );
+
+  ipcMain.handle("shell:show-item-in-folder", async (_e, fullPath: string) => {
+    shell.showItemInFolder(fullPath);
+    return { ok: true };
+  });
 
   // --- Store info ---
 

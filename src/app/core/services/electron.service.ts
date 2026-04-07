@@ -125,6 +125,16 @@ export class ElectronService {
     return this.api.saveFile(options);
   }
 
+  // --- Shell ---
+  shellOpenPath(fullPath: string): Promise<string> {
+    if (!this.api) return Promise.resolve('');
+    return this.api.shellOpenPath(fullPath);
+  }
+  shellShowInFolder(fullPath: string): Promise<{ ok: boolean }> {
+    if (!this.api) return Promise.resolve({ ok: false });
+    return this.api.shellShowInFolder(fullPath);
+  }
+
   // --- Health ---
   healthCheck(): Promise<HealthReport> {
     if (!this.api) return Promise.resolve({ ok: false, checks: [] });
