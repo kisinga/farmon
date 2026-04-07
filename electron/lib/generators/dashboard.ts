@@ -37,6 +37,8 @@ export function generateDashboard(m: Manifest): string {
   const stateSensor = entityId("sensor", m.device.name, "System State");
   const faultSensor = entityId("sensor", m.device.name, "System Fault");
   const stopReasonSensor = entityId("sensor", m.device.name, "Last Stop Reason");
+  const activeRoutesSensor = entityId("sensor", m.device.name, "Active Routes");
+  const queueSensor = entityId("sensor", m.device.name, "Route Queue");
   const safetyOverride = entityId("switch", m.device.name, "Safety Override");
 
   // --- Node lists ---
@@ -112,7 +114,7 @@ export function generateDashboard(m: Manifest): string {
 
   // --- Route quick-action buttons ---
   const routeColors = ["purple", "deep-purple", "indigo", "blue", "teal", "cyan", "light-blue", "green"];
-  const routeButtons = m.routes.map((r, i) => ({
+  const routeStartButtons = m.routes.map((r, i) => ({
     show_name: true,
     show_icon: true,
     type: "button",
@@ -120,11 +122,26 @@ export function generateDashboard(m: Manifest): string {
     icon: "mdi:water-sync",
     tap_action: {
       action: "call-service",
-      service: `esphome.${dev}_pump_start`,
+      service: `esphome.${dev}_route_start`,
       data: { route_id: i },
     },
     show_state: false,
     color: routeColors[i % routeColors.length],
+  }));
+
+  const routeStopButtons = m.routes.map((r, i) => ({
+    show_name: true,
+    show_icon: true,
+    type: "button",
+    name: `Stop ${r.name}`,
+    icon: "mdi:stop-circle-outline",
+    tap_action: {
+      action: "call-service",
+      service: `esphome.${dev}_route_stop`,
+      data: { route_id: i },
+    },
+    show_state: false,
+    color: "red",
   }));
 
   // --- Valve glance entities ---
@@ -157,7 +174,9 @@ export function generateDashboard(m: Manifest): string {
                 type: "entities",
                 title: "System Status",
                 entities: [
-                  { entity: stateSensor, name: "Pump State" },
+                  { entity: stateSensor, name: "State" },
+                  { entity: activeRoutesSensor, name: "Active Routes" },
+                  { entity: queueSensor, name: "Queue" },
                   { entity: faultSensor, name: "Fault" },
                   { entity: stopReasonSensor, name: "Last Stop Reason" },
                   { entity: safetyOverride },

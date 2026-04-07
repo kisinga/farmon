@@ -98,21 +98,18 @@ text_sensor:
     icon: "mdi:alert-circle"
     update_interval: 2s
     lambda: |-
-      int f = id(fault_code);
-      if (f == 0) return std::string("None");
-      const char* faults[] = {
-        "None",
-        "No flow detected",
-        "Max runtime exceeded",
-        "HA connection lost"
-      };
-      std::string msg = (f >= 0 && f <= 3) ? faults[f] : "Unknown";
-      if (id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
-        msg += " (";
-        msg += ROUTES[id(active_route)].name;
-        msg += ")";
+      const char* faults[] = {"","No flow detected","Max runtime exceeded","HA connection lost"};
+      std::string msg;
+      for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
+        if (slots[s].fault_code == 0) continue;
+        if (msg.length() > 0) msg += " | ";
+        int f = slots[s].fault_code;
+        msg += (f >= 1 && f <= 3) ? faults[f] : "Unknown";
+        if (slots[s].route_id >= 0 && slots[s].route_id < NUM_ROUTES) {
+          msg += " ("; msg += ROUTES[slots[s].route_id].name; msg += ")";
+        }
       }
-      return msg;
+      return msg.empty() ? std::string("None") : msg;
 
   - platform: template
     id: last_stop_reason_text
@@ -130,6 +127,36 @@ text_sensor:
       };
       int r = id(stop_reason);
       return std::string((r >= 0 && r <= 5) ? reasons[r] : "Unknown");
+
+  - platform: template
+    id: active_routes_text
+    name: "Active Routes"
+    icon: "mdi:routes"
+    update_interval: 2s
+    lambda: |-
+      const char* st[] = {"","PREP","RUN","STOP"};
+      std::string s;
+      for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) {
+        if (slots[i].state < 1 || slots[i].state > 3 || slots[i].route_id < 0) continue;
+        if (s.length() > 0) s += " | ";
+        s += st[slots[i].state]; s += ":"; s += ROUTES[slots[i].route_id].name;
+      }
+      return s.empty() ? std::string("Idle") : s;
+
+  - platform: template
+    id: route_queue_text
+    name: "Route Queue"
+    icon: "mdi:tray-full"
+    update_interval: 2s
+    lambda: |-
+      if (queue_count == 0) return std::string("Empty");
+      std::string s;
+      for (int i = 0; i < queue_count; i++) {
+        int rid = queue_peek(i);
+        if (i > 0) s += " > ";
+        if (rid >= 0 && rid < NUM_ROUTES) s += ROUTES[rid].name;
+      }
+      return s;
 ${globalBlocks.length > 0 ? `
 # --- Sensor fault detection --------------------------------------------------
 

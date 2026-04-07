@@ -148,6 +148,7 @@ export function topologyToManifest(topology: Topology): Manifest {
         valves: tr.valves,
         flow_sensor: tr.flowSensor,
         max_runtime_seconds: override.max_runtime_seconds ?? 1800,
+        needs_pump: tr.crossesPump,
       });
     }
   }

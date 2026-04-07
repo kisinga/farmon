@@ -81,29 +81,27 @@ NODE_REGISTRY.set('flow_sensor', {
     on_value:
       - lambda: |-
           const int SENSOR_IDX = ${idx};
-          if (id(system_state) == 2 && id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
-            const Route& r = ROUTES[id(active_route)];
-            if (r.flow_sensor == SENSOR_IDX) {
-              if (x > 0.5f) {
-                id(last_flow_time) = millis();
-                id(${node['id']}_fault_count) = 0;
-                if (!id(flow_confirmed)) {
-                  uint32_t elapsed = millis() - id(route_start_time);
-                  if (elapsed > (\${flow_confirm_seconds} * 1000U)) {
-                    id(flow_confirmed) = true;
-                    ESP_LOGI("safety", "Flow confirmed on sensor %d after %us", SENSOR_IDX, elapsed / 1000);
-                  }
-                }
-              } else if (id(flow_confirmed)) {
-                id(${node['id']}_fault_count) += 1;
-                if (id(${node['id']}_fault_count) == 3) {
-                  ESP_LOGW("safety", "Sensor fault detected on ${node['id']} — 3 consecutive zero readings while route running");
+          for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
+            if (slots[s].state != 2 || slots[s].route_id < 0) continue;
+            if (ROUTES[slots[s].route_id].flow_sensor != SENSOR_IDX) continue;
+            if (x > 0.5f) {
+              slots[s].last_flow_time = millis();
+              id(${node['id']}_fault_count) = 0;
+              if (!slots[s].flow_confirmed) {
+                if (millis() - slots[s].run_start_time > FLOW_CONFIRM_MS) {
+                  slots[s].flow_confirmed = true;
+                  ESP_LOGI("safety", "Flow confirmed on sensor %d slot %d", SENSOR_IDX, s);
                 }
               }
+            } else if (slots[s].flow_confirmed) {
+              id(${node['id']}_fault_count) += 1;
+              if (id(${node['id']}_fault_count) == 3) {
+                ESP_LOGW("safety", "Sensor fault on ${node['id']} — 3 consecutive zero readings");
+              }
             }
-          } else if (id(system_state) == 0) {
-            id(${node['id']}_fault_count) = 0;
+            break;  // each flow sensor serves at most one active route
           }
+          if (derived_system_state() == 0) id(${node['id']}_fault_count) = 0;
 
   - platform: integration
     sensor: ${node['id']}

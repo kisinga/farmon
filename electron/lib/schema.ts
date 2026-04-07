@@ -33,6 +33,7 @@ export interface Route {
   valves: string[];
   flow_sensor: string;
   max_runtime_seconds: number;
+  needs_pump: boolean;
 }
 
 // ---------------------------------------------------------------------------

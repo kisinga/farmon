@@ -33,7 +33,6 @@ NODE_REGISTRY.set('pump', {
   label: 'Pump',
   color: COLOR,
   size: { width: S, height: S },
-  singleton: true,
   role: 'passthrough',
   category: 'actuator',
   group: 'pump',
@@ -45,14 +44,28 @@ NODE_REGISTRY.set('pump', {
   defaultData: () => ({ pin: '' }),
 
   renderSvg: (_data) => {
-    const cx = S / 2, cy = S / 2, r = S / 2 - 3;
+    const cx = S / 2, cy = S / 2, r = S / 2 - 5;
+    const v = r - 4; // vane reach
+    // Curved impeller vanes: each vane arcs from center outward (backward-curved, like a real centrifugal impeller)
+    const vanes = [0, 60, 120, 180, 240, 300].map(deg => {
+      const rad = deg * Math.PI / 180;
+      const ex = Math.round(Math.cos(rad) * v);
+      const ey = Math.round(Math.sin(rad) * v);
+      // Control point offset perpendicular (clockwise) for backward curve
+      const cpRad = rad + Math.PI / 3;
+      const cpx = Math.round(Math.cos(cpRad) * v * 0.55);
+      const cpy = Math.round(Math.sin(cpRad) * v * 0.55);
+      return `<path d="M 0 0 Q ${cpx} ${cpy} ${ex} ${ey}" fill="none" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/>`;
+    }).join('');
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2.5"/>
-      <polygon points="${cx - 10},${cy - 12} ${cx - 10},${cy + 12} ${cx + 14},${cy}" fill="${COLOR}" opacity="0.85"/>
+      <line x1="${cx + r}" y1="${cy}" x2="${S}" y2="${cy}" stroke="${COLOR}" stroke-width="3" stroke-linecap="round"/>
+      <line x1="0" y1="${cy}" x2="${cx - r}" y2="${cy}" stroke="${COLOR}" stroke-width="3" stroke-linecap="round"/>
+      <g transform="translate(${cx},${cy})">${vanes}<circle r="3" fill="${COLOR}"/></g>
     </svg>`;
   },
 
-  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><circle cx="10" cy="8" r="7" fill="none" stroke="${COLOR}" stroke-width="2"/><polygon points="7,3 7,13 15,8" fill="${COLOR}" opacity="0.85"/></svg>`,
+  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><circle cx="10" cy="8" r="6" fill="none" stroke="${COLOR}" stroke-width="2"/><line x1="16" y1="8" x2="20" y2="8" stroke="${COLOR}" stroke-width="2"/><line x1="0" y1="8" x2="4" y2="8" stroke="${COLOR}" stroke-width="2"/><path d="M10 8 Q13 5 10 3" fill="none" stroke="${COLOR}" stroke-width="1.5"/><path d="M10 8 Q7 11 10 13" fill="none" stroke="${COLOR}" stroke-width="1.5"/><path d="M10 8 Q13 11 14 8" fill="none" stroke="${COLOR}" stroke-width="1.5"/><path d="M10 8 Q7 5 6 8" fill="none" stroke="${COLOR}" stroke-width="1.5"/><circle cx="10" cy="8" r="1.5" fill="${COLOR}"/></svg>`,
 
   sidebarFields: [
     { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42' },
@@ -75,10 +88,10 @@ NODE_REGISTRY.set('pump', {
     on_turn_on:
       - if:
           condition:
-            lambda: 'return id(system_state) != 2;'
+            lambda: 'return pump_ref_count() == 0;'
           then:
             - switch.turn_off: pump_relay
-            - logger.log: {level: WARN, format: "BLOCKED: pump only runs in RUNNING state"}`,
+            - logger.log: {level: WARN, format: "BLOCKED: pump only runs when a pumped route is RUNNING"}`,
 
     substitutions: (node) => [`pin_pump_relay: "${node['pin']}"`],
   },

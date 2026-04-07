@@ -1,6 +1,15 @@
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind } from "../schema.js";
 
+/** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
+function parseDurationMs(s: string): number {
+  const ms = s.match(/^(\d+)\s*ms$/);
+  if (ms) return parseInt(ms[1], 10);
+  const sec = s.match(/^(\d+)\s*s$/);
+  if (sec) return parseInt(sec[1], 10) * 1000;
+  return 15000; // fallback
+}
+
 export function generateRoutes(m: Manifest): string {
   const tanks = nodesByKind(m.nodes, 'tank');
   const valves = nodesByKind(m.nodes, 'valve');
@@ -12,6 +21,9 @@ export function generateRoutes(m: Manifest): string {
   const flowIdx = new Map(flowSensors.map((f, i) => [f['id'], i]));
   const wsIdx = new Map(waterSources.map((ws, i) => [ws['id'], i]));
 
+  // Timing constants
+  const valveTravelMs = parseDurationMs(m.timing.valve_travel_time);
+
   // Build route entries
   const routeLines = m.routes.map((r, i) => {
     const mask = r.valves.reduce((acc, v) => acc | (1 << valveIdx.get(v)!), 0);
@@ -20,7 +32,8 @@ export function generateRoutes(m: Manifest): string {
     const dst = r.destination ? tankIdx.get(r.destination)! : "0xFF";
     const flow = flowIdx.get(r.flow_sensor)!;
     const maskBin = mask.toString(2).padStart(valves.length, "0");
-    return `  { ${i}, 0b${maskBin}, ${srcTank}, ${srcWs}, ${dst}, ${flow}, ${r.max_runtime_seconds}, "${r.name}" },`;
+    const pump = r.needs_pump ? "true" : "false";
+    return `  { ${i}, 0b${maskBin}, ${srcTank}, ${srcWs}, ${dst}, ${flow}, ${r.max_runtime_seconds}, ${pump}, "${r.name}" },`;
   });
 
   // Build index comments
@@ -29,7 +42,7 @@ export function generateRoutes(m: Manifest): string {
   const wsComment = waterSources.map((ws, i) => `${i}=${ws['id']}(${ws['name']})`).join("  ");
   const flowComment = flowSensors.map((f, i) => `${i}=${f['id']}(${f['name']})`).join("  ");
 
-  // Build dispatch functions
+  // Build dispatch functions (hardware-level, renamed with _hw suffix)
   const openCases = valves
     .map((v, i) => `    case ${i}: id(${v['id']}).make_call().set_command_open().perform(); break;`)
     .join("\n");
@@ -48,36 +61,38 @@ export function generateRoutes(m: Manifest): string {
 
   return `\
 // =============================================================================
-// MajiFlow — Route Table, Hardware Dispatch & Shared Enums
+// MajiFlow — Route Table, Slot Management & Hardware Dispatch
 // =============================================================================
 // AUTO-GENERATED from system manifest. Do not edit by hand.
 //
-// The state machine (control.yaml) is topology-agnostic — it never
-// references valve/tank/flow IDs directly. All routing goes through
-// the ROUTES[] table and dispatch functions defined here.
+// This header provides:
+//   1. Route table (ROUTES[]) — static, topology-derived
+//   2. RouteSlot[] — per-slot state for concurrent execution
+//   3. Queue — circular buffer for deferred route starts
+//   4. Helpers — slot management, conflict detection, pump refcount
+//   5. Hardware dispatch — valve/tank/flow access by index
 //
-// Every route has a flow sensor. The safety monitor uses flow-based
-// watchdog unconditionally — no watchdog strategy dispatch needed.
+// The control layer (control.yaml) is topology-agnostic — it never
+// references valve/tank/flow IDs directly. All routing goes through
+// these structures and dispatch functions.
 // =============================================================================
 
 #pragma once
 
 #include "esphome.h"
+#include <cstring>
 
-// --- Route descriptor -------------------------------------------------------
+// --- Constants ---------------------------------------------------------------
 
-struct Route {
-  uint8_t     id;
-  uint16_t    valve_mask;      // bit N = open valve N for this route
-  uint8_t     source_tank;     // index into tanks — 0xFF = water source (no level)
-  uint8_t     source_ws;       // index into water sources — 0xFF = tank source
-  uint8_t     dest_tank;       // index into tanks — 0xFF = endpoint (house/irrigation)
-  uint8_t     flow_sensor;     // index into flow sensors (always valid)
-  uint16_t    max_runtime_s;   // per-route max runtime in seconds
-  const char* name;            // human label for OLED / logs / HA
-};
+static const int MAX_CONCURRENT_ROUTES = 2;
+static const int MAX_QUEUE_SIZE        = 4;
+static const uint32_t VALVE_TRAVEL_MS  = ${valveTravelMs};
+static const uint32_t DEPRESSURIZE_MS  = 2000;
+static const uint32_t FLOW_WATCHDOG_MS = ${m.timing.flow_watchdog_seconds * 1000}U;
+static const uint32_t FLOW_CONFIRM_MS  = ${m.timing.flow_confirm_seconds * 1000}U;
+static const uint32_t API_WATCHDOG_MS  = ${m.timing.api_watchdog_seconds * 1000}U;
 
-// --- Component counts -------------------------------------------------------
+// --- Component counts --------------------------------------------------------
 
 static const int NUM_VALVES        = ${valves.length};
 static const int NUM_TANKS         = ${tanks.length};
@@ -85,24 +100,39 @@ static const int NUM_WATER_SOURCES = ${waterSources.length};
 static const int NUM_FLOW_SENSORS  = ${flowSensors.length};
 static const int NUM_ROUTES        = ${m.routes.length};
 
-// --- Fault codes (used by safety monitor → do_fault) -------------------------
+// --- Fault codes -------------------------------------------------------------
+
 static const int FAULT_NONE        = 0;
 static const int FAULT_NO_FLOW     = 1;
 static const int FAULT_MAX_RUNTIME = 2;
 static const int FAULT_API_LOST    = 3;
 
-// --- Stop reasons (persists across runs for HA display) ----------------------
+// --- Stop reasons ------------------------------------------------------------
+
 static const int STOP_NONE         = 0;
 static const int STOP_MANUAL       = 1;
 static const int STOP_TANK_FULL    = 2;
-static const int STOP_NO_FLOW      = 3;  // = FAULT_NO_FLOW + 2
-static const int STOP_MAX_RUNTIME  = 4;  // = FAULT_MAX_RUNTIME + 2
-static const int STOP_API_LOST     = 5;  // = FAULT_API_LOST + 2
+static const int STOP_NO_FLOW      = 3;
+static const int STOP_MAX_RUNTIME  = 4;
+static const int STOP_API_LOST     = 5;
 
-// Converts fault_code to stop_reason: stop_reason = fault_code + FAULT_TO_STOP_OFFSET
 static const int FAULT_TO_STOP_OFFSET = 2;
 
-// --- Route table ------------------------------------------------------------
+// --- Route descriptor --------------------------------------------------------
+
+struct Route {
+  uint8_t     id;
+  uint16_t    valve_mask;
+  uint8_t     source_tank;     // index into tanks — 0xFF = water source
+  uint8_t     source_ws;       // index into water sources — 0xFF = tank source
+  uint8_t     dest_tank;       // index into tanks — 0xFF = endpoint
+  uint8_t     flow_sensor;     // index into flow sensors (always valid)
+  uint16_t    max_runtime_s;
+  bool        needs_pump;      // true if route path crosses the pump node
+  const char* name;
+};
+
+// --- Route table -------------------------------------------------------------
 //
 // Valve indices:   ${valveComment}
 // Tank indices:    ${tankComment}
@@ -110,19 +140,121 @@ static const int FAULT_TO_STOP_OFFSET = 2;
 // Flow indices:    ${flowComment}
 
 static const Route ROUTES[NUM_ROUTES] = {
-  //  id   valve_mask  src_tank  src_ws  dst   flow  max_rt  name
+  //  id   valve_mask  src_tank  src_ws  dst   flow  max_rt  pump  name
 ${routeLines.join("\n")}
 };
 
-// --- Dispatch functions -----------------------------------------------------
+// --- Route slot (per concurrent execution) -----------------------------------
 
-inline void open_valve(int idx) {
+struct RouteSlot {
+  int      route_id;         // -1 = empty
+  int      state;            // 0=IDLE 1=PREPARING 2=RUNNING 3=STOPPING 4=FAULT
+  uint32_t start_time;       // millis() when PREPARING began
+  uint32_t run_start_time;   // millis() when RUNNING began (for watchdogs)
+  uint32_t last_flow_time;   // millis() of last flow > 0.5 L/min
+  uint32_t stop_time;        // millis() when STOPPING/FAULT began
+  int      fault_code;
+  int      stop_reason;
+  bool     flow_confirmed;
+  bool     tank_full_detected;
+  bool     valves_closing;   // true after depressurize, close commands issued
+};
+
+static RouteSlot slots[MAX_CONCURRENT_ROUTES];
+
+// --- Slot helpers ------------------------------------------------------------
+
+inline void init_slot(int s) {
+  memset(&slots[s], 0, sizeof(RouteSlot));
+  slots[s].route_id = -1;
+}
+
+inline int find_free_slot() {
+  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++)
+    if (slots[i].state == 0) return i;
+  return -1;
+}
+
+inline int find_slot_by_route(int rid) {
+  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++)
+    if (slots[i].route_id == rid) return i;
+  return -1;
+}
+
+// --- Conflict detection ------------------------------------------------------
+
+// Returns bitmask of valves used by PREPARING or RUNNING slots.
+// STOPPING slots are excluded — their valves are being released.
+inline uint16_t active_valve_mask() {
+  uint16_t mask = 0;
+  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++)
+    if ((slots[i].state == 1 || slots[i].state == 2) && slots[i].route_id >= 0)
+      mask |= ROUTES[slots[i].route_id].valve_mask;
+  return mask;
+}
+
+inline bool has_valve_conflict(int rid) {
+  return (ROUTES[rid].valve_mask & active_valve_mask()) != 0;
+}
+
+// --- Pump reference counting -------------------------------------------------
+
+// Count of RUNNING slots whose route needs the pump.
+inline int pump_ref_count() {
+  int c = 0;
+  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++)
+    if (slots[i].state == 2 && slots[i].route_id >= 0 && ROUTES[slots[i].route_id].needs_pump)
+      c++;
+  return c;
+}
+
+// --- Derived system state ----------------------------------------------------
+
+// Highest-priority state across all slots. FAULT(4) wins, then STOPPING, etc.
+inline int derived_system_state() {
+  int h = 0;
+  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) {
+    if (slots[i].state == 4) return 4;
+    if (slots[i].state > h) h = slots[i].state;
+  }
+  return h;
+}
+
+// --- Queue (circular buffer) -------------------------------------------------
+
+static int route_queue[MAX_QUEUE_SIZE];
+static int queue_head = 0;
+static int queue_count = 0;
+
+inline bool queue_push(int rid) {
+  if (queue_count >= MAX_QUEUE_SIZE) return false;
+  route_queue[(queue_head + queue_count) % MAX_QUEUE_SIZE] = rid;
+  queue_count++;
+  return true;
+}
+
+inline int queue_pop() {
+  if (queue_count == 0) return -1;
+  int v = route_queue[queue_head];
+  queue_head = (queue_head + 1) % MAX_QUEUE_SIZE;
+  queue_count--;
+  return v;
+}
+
+inline int queue_peek(int i) {
+  if (i >= queue_count) return -1;
+  return route_queue[(queue_head + i) % MAX_QUEUE_SIZE];
+}
+
+// --- Hardware dispatch -------------------------------------------------------
+
+inline void open_valve_hw(int idx) {
   switch (idx) {
 ${openCases}
   }
 }
 
-inline void close_valve(int idx) {
+inline void close_valve_hw(int idx) {
   switch (idx) {
 ${closeCases}
   }

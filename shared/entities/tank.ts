@@ -82,12 +82,10 @@ NODE_REGISTRY.set('tank', {
           return clamp(pct, 0.0f, 100.0f);
       - lambda: |-
           const int TANK_IDX = ${idx};
-          if (id(active_route) >= 0 && id(active_route) < NUM_ROUTES) {
-            int s = id(system_state);
-            if (s >= 1 && s <= 3) {
-              const Route& r = ROUTES[id(active_route)];
-              if (r.source_tank == TANK_IDX || r.dest_tank == TANK_IDX) return {};
-            }
+          for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
+            if (slots[s].state < 1 || slots[s].state > 3 || slots[s].route_id < 0) continue;
+            const Route& r = ROUTES[slots[s].route_id];
+            if (r.source_tank == TANK_IDX || r.dest_tank == TANK_IDX) return {};
           }
           return x;
 

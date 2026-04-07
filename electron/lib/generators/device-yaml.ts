@@ -84,22 +84,18 @@ export function generateDeviceYaml(
 
   // Safe defaults (always)
   const initVars = [
+    "for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) init_slot(i);",
+    "queue_head = 0; queue_count = 0;",
     "id(system_state) = 0;",
-    "id(active_route) = -1;",
-    "id(route_start_time) = 0;",
-    "id(last_flow_time) = 0;",
     "id(api_lost_time) = 0;",
-    "id(fault_code) = 0;",
-    "id(flow_confirmed) = false;",
-    "id(tank_full_detected) = false;",
+    "id(active_slot) = -1;",
+    "for (int i = 0; i < NUM_VALVES; i++) close_valve_hw(i);",
     '// stop_reason intentionally NOT reset — survives reboot',
-    `ESP_LOGI("ctrl", "Boot complete — IDLE (%d routes)", NUM_ROUTES);`,
+    `ESP_LOGI("ctrl", "Boot complete — IDLE (%d routes, %d slots)", NUM_ROUTES, MAX_CONCURRENT_ROUTES);`,
   ].join("\n");
 
   const bootActions: unknown[] = [];
   if (nodesByKind(m.nodes, 'pump').length > 0) bootActions.push({ "switch.turn_off": "pump_relay" });
-  bootActions.push({ "script.execute": "close_all_valves" });
-  bootActions.push({ "script.wait": "close_all_valves" });
   bootActions.push({ lambda: initVars });
 
   bootSteps.push({
@@ -127,8 +123,8 @@ export function generateDeviceYaml(
   lines.push("# State machine: IDLE -> PREPARING -> RUNNING -> STOPPING -> IDLE");
   lines.push("#                          '-------> FAULT <-------'");
   lines.push("#");
-  lines.push(`# Routes: Defined in packages/routes.h (${m.routes.length} routes)`);
-  lines.push(`# API: route_start(route_id)  route_stop()  fault_reset()`);
+  lines.push(`# Routes: Defined in packages/routes.h (${m.routes.length} routes, 2 concurrent slots)`);
+  lines.push(`# API: route_start(route_id)  route_stop(route_id)  stop_all  fault_reset(route_id)  fault_reset_all  queue_clear`);
   lines.push("# =============================================================================");
   lines.push("");
 
@@ -229,29 +225,29 @@ function buildOledDisplay(board: BoardDef, m: Manifest): string {
           it.line(0, 12, 127, 12);
 
           // === State machine ===
-          const char* states[] = {"IDLE", "PREPARING", "RUNNING", "STOPPING", "FAULT"};
-          int s = id(system_state);
-          it.printf(0, 15, id(font_top_bar), "%s", (s >= 0 && s <= 4) ? states[s] : "???");
+          const char* states[] = {"IDLE", "PREP", "RUN", "STOP", "FAULT"};
+          int st = id(system_state);
+          it.printf(0, 15, id(font_top_bar), "%s", (st >= 0 && st <= 4) ? states[st] : "???");
 
-          if (s >= 1 && s <= 3) {
-            int ar = id(active_route);
-            if (ar >= 0 && ar < NUM_ROUTES) {
-              it.printf(64, 15, id(font_body), "%s", ROUTES[ar].name);
+          // Slot info (up to 2 lines)
+          int y = 27;
+          for (int s = 0; s < MAX_CONCURRENT_ROUTES && y < 46; s++) {
+            if (slots[s].state >= 1 && slots[s].state <= 3 && slots[s].route_id >= 0) {
+              uint32_t rt = (millis() - slots[s].start_time) / 1000;
+              it.printf(0, y, id(font_body), "%s %um%us",
+                        ROUTES[slots[s].route_id].name, rt / 60, rt % 60);
+              y += 12;
+            } else if (slots[s].state == 4 && slots[s].route_id >= 0) {
+              const char* faults[] = {"", "NoFlow", "MaxRT", "API"};
+              int f = slots[s].fault_code;
+              it.printf(0, y, id(font_body), "F:%s %s",
+                        ROUTES[slots[s].route_id].name,
+                        (f >= 1 && f <= 3) ? faults[f] : "?");
+              y += 12;
             }
           }
 
-          if (s == 4) {
-            const char* faults[] = {"", "No flow", "Max time", "API lost"};
-            int f = id(fault_code);
-            if (f >= 1 && f <= 3) it.printf(0, 27, id(font_body), "FAULT: %s", faults[f]);
-          }
-
-          if (s == 2) {
-            uint32_t rt = (millis() - id(route_start_time)) / 1000;
-            it.printf(0, 27, id(font_body), "Run: %um %us", rt / 60, rt % 60);
-          }
-
-          // Tank levels (first ${displayTanks.length})
+          // Tank levels
 ${tankLines}
 
           if (id(uptime_sec).has_state() && !std::isnan(id(uptime_sec).state)) {
