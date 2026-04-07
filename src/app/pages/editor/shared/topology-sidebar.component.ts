@@ -27,6 +27,10 @@ export type { Selection };
           <label class="sidebar-label">ID</label>
           <input class="input input-xs input-bordered w-full font-mono text-base-content/50"
             [ngModel]="sn.node.id" readonly />
+          <label class="sidebar-label">Enabled</label>
+          <input type="checkbox" class="toggle toggle-xs toggle-success"
+            [ngModel]="!$any(sn.node).disabled"
+            (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'disabled', value: !$event })" />
           <!-- Entity-specific fields -->
           @for (field of sn.desc.sidebarFields; track field.key) {
             <label class="sidebar-label">{{ field.label }}</label>

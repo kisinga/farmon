@@ -61,6 +61,8 @@ function traceRoutes(
 
       const target = nodes.get(targetId);
       if (!target) continue;
+      // Disabled nodes block propagation
+      if ((target as any).disabled) continue;
 
       const targetDesc = NODE_REGISTRY.get(target.kind);
       const targetRole = targetDesc?.role;
@@ -109,6 +111,7 @@ export function deriveRoutes(topology: SystemTopology): DerivedRoute[] {
   const routes: DerivedRoute[] = [];
 
   for (const node of topology.nodes) {
+    if ((node as any).disabled) continue;
     const desc = NODE_REGISTRY.get(node.kind);
     if (desc?.routeSource) {
       routes.push(...traceRoutes(node.id, adj, nodes));
@@ -138,6 +141,7 @@ export function findPipesFromSource(sourceId: string, topology: SystemTopology):
       if (visited.has(targetId)) continue;
       const target = nodes.get(targetId);
       if (!target) continue;
+      if ((target as any).disabled) continue;
       const desc = NODE_REGISTRY.get(target.kind);
       // Keep going through passthrough nodes, stop at terminals
       if (desc?.role !== 'terminal') {
@@ -176,6 +180,7 @@ export function findPipesToDestination(destId: string, topology: SystemTopology)
       if (visited.has(fromId)) continue;
       const from = nodes.get(fromId);
       if (!from) continue;
+      if ((from as any).disabled) continue;
       const desc = NODE_REGISTRY.get(from.kind);
       // Keep going through passthrough nodes, stop at terminal sources
       if (desc?.role !== 'terminal') {
@@ -213,6 +218,7 @@ export function findConnectedPipes(pipeId: string, topology: SystemTopology): st
   const isTerminal = (nodeId: string) => {
     const node = nodes.get(nodeId);
     if (!node) return true;
+    if ((node as any).disabled) return true;
     const desc = NODE_REGISTRY.get(node.kind);
     return desc?.role === 'terminal';
   };

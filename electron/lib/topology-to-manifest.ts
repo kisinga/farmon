@@ -66,6 +66,7 @@ function traceRoutes(
 
       const target = nodes.get(targetId);
       if (!target) continue;
+      if ((target as any).disabled) continue;
 
       const nextValves = [...entry.valves];
       let nextFlow = entry.flowSensor;
@@ -107,18 +108,27 @@ function traceRoutes(
 
 export function topologyToManifest(topology: Topology): Manifest {
   const nodeMap = new Map(topology.nodes.map((n) => [n.id, n]));
-  const adj = buildAdjacency(topology.pipes);
+
+  // Disabled nodes are cosmetic — exclude them and any pipes touching them.
+  const disabledIds = new Set(topology.nodes.filter(n => (n as any).disabled).map(n => n.id));
+  const activePipes = topology.pipes.filter(p => {
+    const from = parsePortRef(p.from).nodeId;
+    const to = parsePortRef(p.to).nodeId;
+    return !disabledIds.has(from) && !disabledIds.has(to);
+  });
+
+  const adj = buildAdjacency(activePipes);
 
   // Only nodes connected via pipes enter the manifest.
   const connected = new Set<string>();
-  for (const pipe of topology.pipes) {
+  for (const pipe of activePipes) {
     connected.add(parsePortRef(pipe.from).nodeId);
     connected.add(parsePortRef(pipe.to).nodeId);
   }
 
   // Strip layout fields (ports, position) — generators don't need them.
   const nodes: ManifestNode[] = topology.nodes
-    .filter(n => connected.has(n.id))
+    .filter(n => connected.has(n.id) && !disabledIds.has(n.id))
     .map(({ ports, position, ...data }) => data as ManifestNode);
 
   // --- Route derivation ---
@@ -127,7 +137,7 @@ export function topologyToManifest(topology: Topology): Manifest {
 
   const routeSources = topology.nodes.filter(
     (n): n is Extract<TopologyNode, { kind: "tank" }> | Extract<TopologyNode, { kind: "water_source" }> =>
-      (n.kind === "tank" || n.kind === "water_source") && connected.has(n.id),
+      (n.kind === "tank" || n.kind === "water_source") && connected.has(n.id) && !disabledIds.has(n.id),
   );
 
   for (const src of routeSources) {

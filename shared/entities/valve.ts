@@ -13,6 +13,7 @@ export const ValveNodeSchema = z.object({
   name: z.string().min(1),
   open_pin: GpioPin,
   close_pin: GpioPin,
+  disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
 });

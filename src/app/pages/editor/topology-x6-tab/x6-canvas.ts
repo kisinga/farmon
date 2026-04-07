@@ -70,6 +70,7 @@ export class X6Canvas {
   private rendering = false;
   private highlightedEdges = new Set<string>();
   private highlightedNodes = new Set<string>();
+  private disabledPipes = new Set<string>();
 
   constructor(container: HTMLElement, events: CanvasEvents) {
     this.events = events;
@@ -163,9 +164,34 @@ export class X6Canvas {
       }
     }
 
-    // Add new edges (edges are immutable once created)
+    // Collect disabled node IDs for pipe dimming
+    const disabledNodeIds = new Set(
+      topology.nodes.filter(n => (n as any).disabled).map(n => n.id),
+    );
+
+    // Add or update edges — dim pipes touching disabled nodes
     for (const [id, cfg] of desiredEdges) {
-      if (!this.graph.getCellById(id)) this.graph.addEdge(cfg);
+      const existing = this.graph.getCellById(id);
+      if (!existing) {
+        this.graph.addEdge(cfg);
+      }
+    }
+    // Track and style pipes touching disabled nodes
+    this.disabledPipes.clear();
+    for (const pipe of topology.pipes) {
+      const fromNode = pipe.from.split(':')[0];
+      const toNode = pipe.to.split(':')[0];
+      const isDimmed = disabledNodeIds.has(fromNode) || disabledNodeIds.has(toNode);
+      if (isDimmed) this.disabledPipes.add(pipe.id);
+      const edge = this.graph.getCellById(`pipe-${pipe.id}`);
+      if (edge?.isEdge()) {
+        edge.setAttrs({
+          line: {
+            strokeOpacity: isDimmed ? 0.15 : 1,
+            strokeDasharray: isDimmed ? '2,4' : 0,
+          },
+        });
+      }
     }
 
     this.graph.stopBatch('render');
@@ -374,12 +400,13 @@ export class X6Canvas {
     for (const pid of this.highlightedEdges) {
       const edge = this.graph.getCellById(`pipe-${pid}`);
       if (edge?.isEdge()) {
+        const isDimmed = this.disabledPipes.has(pid);
         edge.setAttrs({
           line: {
             stroke: UI_COLORS.pipe,
             strokeWidth: 2.5,
-            strokeOpacity: 1,
-            strokeDasharray: 0,
+            strokeOpacity: isDimmed ? 0.15 : 1,
+            strokeDasharray: isDimmed ? '2,4' : 0,
             style: { animation: '' },
           },
         });

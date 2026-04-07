@@ -325,9 +325,44 @@ export class TopologyX6TabComponent {
     this.editor.updateTopology(t => {
       const node = t.nodes.find(n => n.id === nodeId);
       if (node) Object.assign(node, { [field]: value });
+
+      // Cascade disabled state to all downstream nodes
+      if (field === 'disabled') {
+        const downstream = this.collectDownstream(nodeId, t.nodes, t.pipes);
+        for (const dn of downstream) {
+          Object.assign(dn, { disabled: value });
+        }
+      }
     });
     // Push to X6 for live SVG update without full re-render
     this.c.render(this.editor.topology()!);
+  }
+
+  /** BFS forward from a node, collecting all downstream TopologyNode references. */
+  private collectDownstream(startId: string, nodes: TopologyNode[], pipes: PipeSegment[]): TopologyNode[] {
+    const adj = new Map<string, PipeSegment[]>();
+    for (const p of pipes) {
+      const from = p.from.split(':')[0];
+      adj.set(from, [...(adj.get(from) ?? []), p]);
+    }
+    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    const visited = new Set<string>([startId]);
+    const queue = [startId];
+    const result: TopologyNode[] = [];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      for (const p of adj.get(id) ?? []) {
+        const targetId = p.to.split(':')[0];
+        if (visited.has(targetId)) continue;
+        visited.add(targetId);
+        const target = nodeMap.get(targetId);
+        if (target) {
+          result.push(target);
+          queue.push(targetId);
+        }
+      }
+    }
+    return result;
   }
 
   // --- Pipe editing ---

@@ -14,6 +14,7 @@ export const DosingPumpNodeSchema = z.object({
   name: z.string().min(1),
   pin: GpioPin,
   flow_rate_ml_min: z.number().default(100),
+  disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
 });

@@ -15,6 +15,7 @@ export const PressureSensorNodeSchema = z.object({
   pin: GpioPin,
   min_bar: z.number().default(0),
   max_bar: z.number().default(10),
+  disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
 });

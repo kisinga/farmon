@@ -17,6 +17,7 @@ export const WaterSourceNodeSchema = z.object({
   id: ComponentId,
   name: z.string().min(1),
   pressure_pin: GpioPin.optional(),
+  disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
 });

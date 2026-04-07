@@ -14,6 +14,7 @@ export const FilterNodeSchema = z.object({
   name: z.string().min(1),
   inlet_pressure_pin: GpioPin.optional(),
   outlet_pressure_pin: GpioPin.optional(),
+  disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
 });

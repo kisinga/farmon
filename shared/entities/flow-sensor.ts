@@ -14,6 +14,7 @@ export const FlowSensorNodeSchema = z.object({
   name: z.string().min(1),
   pin: GpioPin,
   flow_cal: z.number().default(450.0),
+  disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
 });

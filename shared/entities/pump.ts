@@ -13,6 +13,7 @@ export const PumpNodeSchema = z.object({
   id: ComponentId,
   name: z.string().default('Pump'),
   pin: GpioPin,
+  disabled: z.boolean().optional(),
   ports: z
     .array(PortSchema)
     .length(2)

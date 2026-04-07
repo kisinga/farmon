@@ -16,6 +16,7 @@ export const EndpointNodeSchema = z.object({
   kind: z.literal('endpoint'),
   id: ComponentId,
   name: z.string().min(1),
+  disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
 });
