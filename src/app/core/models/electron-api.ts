@@ -31,6 +31,7 @@ export interface GenerateResult {
     description: string;
     lines: number;
   }>;
+  documentationHtml: string | null;
 }
 
 import type { ValidationResult, RuleDiagnostic } from '../../../../shared/validation.types';

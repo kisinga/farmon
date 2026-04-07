@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import type { Manifest } from "./schema.js";
 import type { BoardDef } from "./board.js";
+import type { Topology } from "./topology.js";
 import { generateRoutes } from "./generators/routes.js";
 import { generateHardware } from "./generators/hardware.js";
 import { generateSensors } from "./generators/sensors.js";
@@ -9,7 +10,8 @@ import { generateBoardPackage } from "./generators/board-package.js";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
 import { generateAutomations } from "./generators/automations.js";
-import { generateReadme } from "./generators/readme.js";
+import { generateDocumentation } from "./generators/readme.js";
+import { generateTopologySvg } from "./generators/topology-svg.js";
 import { LOGO_SVG } from "./static/logo.js";
 
 export interface GeneratedFile {
@@ -34,7 +36,7 @@ function generateSecrets(m: Manifest): string {
   ].join("\n");
 }
 
-export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
+export function generateAll(m: Manifest, board: BoardDef, topology?: Topology): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const deviceDir = `esphome/${dir}`;
 
@@ -96,12 +98,15 @@ export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
     });
   }
 
-  // System documentation
-  files.push({
-    relativePath: `${deviceDir}/README.md`,
-    description: "System documentation (routes, safety, installation)",
-    content: generateReadme(m),
-  });
+  // System documentation (HTML with embedded topology SVG)
+  if (topology) {
+    const topologySvg = generateTopologySvg(topology);
+    files.push({
+      relativePath: `${deviceDir}/documentation.html`,
+      description: "System documentation (print to PDF from browser)",
+      content: generateDocumentation(m, topologySvg),
+    });
+  }
 
   return files;
 }

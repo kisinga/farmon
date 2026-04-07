@@ -414,6 +414,7 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.files.set(result.files);
       this.outputDir.set(result.outputDir);
       this.deviceDir.set(result.deviceDir);
+      this.editor.setGenerateResult(result);
     } catch (err) {
       this.error.set(String(err));
     } finally {

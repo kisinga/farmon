@@ -9,15 +9,17 @@ import { TimingTabComponent } from './timing-tab/timing-tab.component';
 import { AutomationsTabComponent } from './automations-tab/automations-tab.component';
 import { TopologyX6TabComponent } from './topology-x6-tab/topology-x6-tab.component';
 import { DeployTabComponent } from './deploy-tab/deploy-tab.component';
+import { DocsTabComponent } from './docs-tab/docs-tab.component';
 import type { SystemTopology } from '../../core/models/topology.model';
 
-type TabId = 'device' | 'design' | 'timing' | 'automations' | 'deploy';
+type TabId = 'device' | 'design' | 'automations' | 'timing' | 'docs' | 'deploy';
 
 const TAB_ICONS: Record<TabId, string> = {
   device: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z',
   design: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z',
-  timing: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
   automations: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+  timing: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+  docs: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
   deploy: 'M13 10V3L4 14h7v7l9-11h-7z',
 };
 
@@ -30,6 +32,7 @@ const TAB_ICONS: Record<TabId, string> = {
     AutomationsTabComponent,
     TopologyX6TabComponent,
     DeployTabComponent,
+    DocsTabComponent,
   ],
   host: {
     class: 'flex-1 min-h-0 flex flex-col overflow-hidden',
@@ -108,8 +111,9 @@ const TAB_ICONS: Record<TabId, string> = {
             <fieldset [disabled]="isPreview()">
               @switch (activeTab()) {
                 @case ('device') { <app-device-tab /> }
-                @case ('timing') { <app-timing-tab /> }
                 @case ('automations') { <app-automations-tab /> }
+                @case ('timing') { <app-timing-tab /> }
+                @case ('docs') { <app-docs-tab /> }
                 @case ('deploy') { <app-deploy-tab /> }
               }
             </fieldset>
@@ -136,6 +140,7 @@ export class EditorComponent implements OnInit, OnDestroy {
     { id: 'automations', label: 'Automations' },
     { id: 'timing', label: 'Timing' },
     { id: 'deploy', label: 'Deploy' },
+    { id: 'docs', label: 'Docs' },
   ];
 
   protected visibleTabs = computed(() =>

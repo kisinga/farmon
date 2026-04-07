@@ -119,10 +119,11 @@ export function registerIpcHandlers() {
           .map(d => d.message);
         throw new Error(errors.join('\n'));
       }
-      const files = generateAll(manifest, board);
+      const files = generateAll(manifest, board, topology);
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);
       const deviceDir = manifest.device.directory ?? manifest.device.name;
+      const docFile = files.find(f => f.relativePath.endsWith('documentation.html'));
       return {
         outputDir,
         deviceDir,
@@ -131,6 +132,7 @@ export function registerIpcHandlers() {
           description: f.description,
           lines: f.content.split("\n").length,
         })),
+        documentationHtml: docFile?.content ?? null,
       };
     }
   );

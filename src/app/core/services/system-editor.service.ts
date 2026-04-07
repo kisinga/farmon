@@ -1,7 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 import type { BoardDef, PinDef, PinCap } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
-import type { ValidationResult, RuleDiagnostic } from '../models/electron-api';
+import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
 import type { SystemTopology } from '../models/topology.model';
 import { collectPins } from '../../../../shared/pin-collect';
 
@@ -74,6 +74,10 @@ export class SystemEditorService {
   private _validation = signal<ValidationResult | null>(null);
   readonly validation = this._validation.asReadonly();
 
+  // --- Generated output (populated after deploy) ---
+  private _generatedFiles = signal<GenerateResult | null>(null);
+  readonly generatedFiles = this._generatedFiles.asReadonly();
+
   readonly diagnostics = computed(() => {
     return this._validation()?.diagnostics ?? [];
   });
@@ -119,6 +123,10 @@ export class SystemEditorService {
     this._dirty.set(false);
   }
 
+  setGenerateResult(result: GenerateResult): void {
+    this._generatedFiles.set(result);
+  }
+
   clear(): void {
     this._topology.set(null);
     this._board.set(null);
@@ -126,5 +134,6 @@ export class SystemEditorService {
     this._dirty.set(false);
     this._readonly.set(false);
     this._validation.set(null);
+    this._generatedFiles.set(null);
   }
 }
