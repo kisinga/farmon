@@ -12,6 +12,25 @@ export const automationRouteRef: ManifestRule = {
     const seenIds = new Set<string>();
 
     for (const auto of manifest.automations) {
+      // Incomplete automation (draft state — name or route not yet filled in)
+      if (!auto.name) {
+        diagnostics.push({
+          ruleId: "automation-route-ref",
+          severity: "warning",
+          message: `Automation "${auto.id}" has no name`,
+          target: auto.id,
+        });
+      }
+      if (!auto.route_key) {
+        diagnostics.push({
+          ruleId: "automation-route-ref",
+          severity: "warning",
+          message: `Automation "${auto.id}" has no route assigned`,
+          target: auto.id,
+        });
+        continue; // skip further checks — route-dependent
+      }
+
       // Duplicate ID check
       if (seenIds.has(auto.id)) {
         diagnostics.push({

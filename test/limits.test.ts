@@ -89,16 +89,26 @@ function buildManifest(p: ScaleParams): Manifest {
     });
   }
 
+  // Build flat nodes array (new manifest shape)
+  const nodes = [
+    { kind: 'pump', id: 'pump1', name: 'Pump', pin: pumpPin },
+    ...tanks.map(t => ({ kind: 'tank' as const, ...t })),
+    ...valves.map(v => ({ kind: 'valve' as const, ...v })),
+    ...flows.map(f => ({ kind: 'flow_sensor' as const, ...f })),
+  ];
+
+  const defaultRoute: Manifest["routes"][number] = {
+    key: "tank1>endpoint", name: "R0", source: "tank1", source_type: "tank" as const,
+    valves: ["valve1"], flow_sensor: "flow1", max_runtime_seconds: 1800,
+    needs_pump: true, nodeSequence: ["tank1", "valve1", "pump1", "flow1", "endpoint"],
+  };
+
   return {
     device: { name: "limit-test", friendly_name: "Limit Test", board: "heltec-v3" },
-    pump: { pin: pumpPin },
-    tanks,
-    water_sources: [],
-    valves,
-    flow_sensors: flows,
+    nodes,
     routes: routes.length > 0
-      ? routes as Manifest["routes"]
-      : [{ name: "R0", source: "tank1", source_type: "tank" as const, valves: ["valve1"], flow_sensor: "flow1", max_runtime_seconds: 1800 }],
+      ? (routes as Manifest["routes"]).map(r => ({ ...r, key: `${r.source}>${r.destination ?? 'endpoint'}`, needs_pump: true, nodeSequence: [] }))
+      : [defaultRoute],
     timing: {
       valve_travel_time: "15s",
       flow_watchdog_seconds: 30,
@@ -106,6 +116,7 @@ function buildManifest(p: ScaleParams): Manifest {
       api_watchdog_seconds: 300,
       update_interval: "5s",
     },
+    automations: [],
   };
 }
 

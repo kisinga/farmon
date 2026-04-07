@@ -49,6 +49,8 @@ export interface Route {
   flow_sensor: string;
   max_runtime_seconds: number;
   needs_pump: boolean;
+  /** Ordered node IDs from source to destination (inclusive). */
+  nodeSequence: string[];
 }
 
 // ---------------------------------------------------------------------------

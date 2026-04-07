@@ -12,7 +12,8 @@ import { UI_COLORS } from '../../../core/models/colors.model';
 import type { SystemTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
 import { svgDataUri } from './scada-shape';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
-import { findConnectedPipes, findPipesFromSource, findPipesToDestination } from '../shared/derive-routes';
+import { buildGraph, type TopologyGraph } from '../shared/derive-routes';
+import { pipesFromSource, pipesToDestination, connectedPipes } from '../../../../../shared/graph/index';
 import type { Selection } from '../shared/selection';
 
 export type { Selection };
@@ -213,13 +214,13 @@ export class X6Canvas {
   }
 
   /** Highlight routes through the selected entity. */
-  highlight(selection: Selection | null, topology: SystemTopology): void {
+  highlight(selection: Selection | null, tg: TopologyGraph): void {
     this.clearHighlights();
     if (!selection) return;
 
     if (selection.kind === 'pipe') {
       this.highlightEdge(selection.pipeId, UI_COLORS.selected, 3.5, 1);
-      const connected = findConnectedPipes(selection.pipeId, topology);
+      const connected = connectedPipes(tg, selection.pipeId);
       for (const pid of connected) {
         if (pid !== selection.pipeId) {
           this.highlightEdge(pid, UI_COLORS.selected, 2.5, 0.4, true);
@@ -228,8 +229,8 @@ export class X6Canvas {
     }
 
     if (selection.kind === 'route') {
-      const fromSource = new Set(findPipesFromSource(selection.route.source, topology));
-      const routePipes = findPipesToDestination(selection.route.destination, topology)
+      const fromSource = new Set(pipesFromSource(tg, selection.route.source));
+      const routePipes = pipesToDestination(tg, selection.route.destination)
         .filter(id => fromSource.has(id));
       const color = selection.route.valid ? UI_COLORS.selected : UI_COLORS.warning;
       for (const pid of routePipes) {
@@ -241,26 +242,21 @@ export class X6Canvas {
     }
 
     if (selection.kind === 'node') {
-      const node = topology.nodes.find(n => n.id === selection.nodeId);
-      const desc = node ? NODE_REGISTRY.get(node.kind) : null;
+      if (!tg.hasNode(selection.nodeId)) return;
+      const attrs = tg.getNodeAttributes(selection.nodeId);
+      const desc = NODE_REGISTRY.get(attrs.kind);
 
       let pipeIds: string[];
       if (desc?.routeSource) {
-        // Source node (tank, water_source): show all downstream paths
-        pipeIds = findPipesFromSource(selection.nodeId, topology);
+        pipeIds = pipesFromSource(tg, selection.nodeId);
       } else if (desc?.role === 'terminal') {
-        // Destination endpoint: show all upstream paths back to sources
-        pipeIds = findPipesToDestination(selection.nodeId, topology);
+        pipeIds = pipesToDestination(tg, selection.nodeId);
       } else {
-        // Passthrough node (valve, pump, sensor): show full connected route
+        // Passthrough: find any edge touching this node, then trace connected
         pipeIds = [];
-        for (const pipe of topology.pipes) {
-          const from = pipe.from.split(':')[0];
-          const to = pipe.to.split(':')[0];
-          if (from === selection.nodeId || to === selection.nodeId) {
-            pipeIds.push(...findConnectedPipes(pipe.id, topology));
-          }
-        }
+        tg.forEachEdge(selection.nodeId, (_edge, edgeAttrs) => {
+          pipeIds.push(...connectedPipes(tg, edgeAttrs.pipeId));
+        });
       }
 
       for (const pid of pipeIds) {

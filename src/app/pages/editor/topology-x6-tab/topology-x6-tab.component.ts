@@ -5,7 +5,8 @@ import type { TopologyNode, PipeSegment } from '../../../core/models/topology.mo
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
-import { activeTopology } from '../../../../../shared/active-topology';
+import { buildGraph, activeGraph } from '../../../../../shared/graph/index';
+import { downstreamNodes } from '../../../../../shared/graph/index';
 
 @Component({
   selector: 'app-topology-x6-tab',
@@ -241,7 +242,7 @@ export class TopologyX6TabComponent {
       onSelected: (sel) => {
         this.selection.set(sel);
         const t = this.editor.topology();
-        if (t) this.c.highlight(sel, activeTopology(t));
+        if (t) this.c.highlight(sel, activeGraph(buildGraph(t.nodes, t.pipes)));
       },
       onDanglingPipe: (from, graphPos, clientPos) => {
         this.nodePopup.set({ from, graphPos, clientPos });
@@ -343,9 +344,11 @@ export class TopologyX6TabComponent {
 
       // Cascade disabled state to all downstream nodes
       if (field === 'disabled') {
-        const downstream = this.collectDownstream(nodeId, t.nodes, t.pipes);
-        for (const dn of downstream) {
-          Object.assign(dn, { disabled: value });
+        const g = buildGraph(t.nodes, t.pipes);
+        const dsIds = downstreamNodes(g, nodeId);
+        for (const dsId of dsIds) {
+          const dn = t.nodes.find(n => n.id === dsId);
+          if (dn) Object.assign(dn, { disabled: value });
         }
       }
     });
@@ -353,32 +356,6 @@ export class TopologyX6TabComponent {
     this.c.render(this.editor.topology()!);
   }
 
-  /** BFS forward from a node, collecting all downstream TopologyNode references. */
-  private collectDownstream(startId: string, nodes: TopologyNode[], pipes: PipeSegment[]): TopologyNode[] {
-    const adj = new Map<string, PipeSegment[]>();
-    for (const p of pipes) {
-      const from = p.from.split(':')[0];
-      adj.set(from, [...(adj.get(from) ?? []), p]);
-    }
-    const nodeMap = new Map(nodes.map(n => [n.id, n]));
-    const visited = new Set<string>([startId]);
-    const queue = [startId];
-    const result: TopologyNode[] = [];
-    while (queue.length > 0) {
-      const id = queue.shift()!;
-      for (const p of adj.get(id) ?? []) {
-        const targetId = p.to.split(':')[0];
-        if (visited.has(targetId)) continue;
-        visited.add(targetId);
-        const target = nodeMap.get(targetId);
-        if (target) {
-          result.push(target);
-          queue.push(targetId);
-        }
-      }
-    }
-    return result;
-  }
 
   // --- Pipe editing ---
 
@@ -396,14 +373,14 @@ export class TopologyX6TabComponent {
     const sel: Selection = { kind: 'route', route: ev.route, sharedNodeIds: ev.sharedNodeIds };
     this.selection.set(sel);
     const t = this.editor.topology();
-    if (t) this.c.highlight(sel, activeTopology(t));
+    if (t) this.c.highlight(sel, activeGraph(buildGraph(t.nodes, t.pipes)));
   }
 
   onNodeSelected(nodeId: string) {
     const sel: Selection = { kind: 'node', nodeId };
     this.selection.set(sel);
     const t = this.editor.topology();
-    if (t) this.c.highlight(sel, activeTopology(t));
+    if (t) this.c.highlight(sel, activeGraph(buildGraph(t.nodes, t.pipes)));
   }
 
   // --- Route overrides ---

@@ -29,8 +29,8 @@ export const AutomationTriggerSchema = z.discriminatedUnion("type", [
 
 export const AutomationSchema = z.object({
   id: ComponentId,
-  name: z.string().min(1),
-  route: z.string().min(1),
+  name: z.string().default(''),
+  route: z.string().default(''),
   trigger: AutomationTriggerSchema,
   days_of_week: z.array(z.enum(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']))
     .default(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']),

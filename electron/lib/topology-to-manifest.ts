@@ -1,118 +1,21 @@
-import type { Manifest, ManifestNode, ManifestAutomation, Route } from "./schema.js";
-import type { Topology, TopologyNode, PipeSegment } from "./topology.js";
-import { parsePortRef } from "./topology.js";
-
-// ---------------------------------------------------------------------------
-// Graph helpers
-// ---------------------------------------------------------------------------
-
-/** Build adjacency: nodeId → outgoing pipes from that node. */
-function buildAdjacency(pipes: PipeSegment[]): Map<string, PipeSegment[]> {
-  const adj = new Map<string, PipeSegment[]>();
-  for (const pipe of pipes) {
-    const { nodeId } = parsePortRef(pipe.from);
-    const list = adj.get(nodeId) ?? [];
-    list.push(pipe);
-    adj.set(nodeId, list);
-  }
-  return adj;
-}
-
-interface TracedRoute {
-  source: string;
-  sourceKind: "tank" | "water_source";
-  destNodeId: string;
-  destKind: "tank" | "endpoint" | "water_source";
-  valves: string[];
-  flowSensor: string | undefined;
-  crossesPump: boolean;
-}
-
-/**
- * BFS from a source through the node-pipe graph to all reachable
- * terminal nodes. Collects valves, flow sensors, and pump crossings.
- */
-function traceRoutes(
-  sourceId: string,
-  sourceKind: "tank" | "water_source",
-  adj: Map<string, PipeSegment[]>,
-  nodes: Map<string, TopologyNode>,
-): TracedRoute[] {
-  const results: TracedRoute[] = [];
-
-  interface BfsEntry {
-    nodeId: string;
-    valves: string[];
-    flowSensor: string | undefined;
-    crossesPump: boolean;
-    visited: Set<string>;
-  }
-
-  const queue: BfsEntry[] = [{
-    nodeId: sourceId,
-    valves: [],
-    flowSensor: undefined,
-    crossesPump: false,
-    visited: new Set([sourceId]),
-  }];
-
-  while (queue.length > 0) {
-    const entry = queue.shift()!;
-    const outPipes = adj.get(entry.nodeId) ?? [];
-
-    for (const pipe of outPipes) {
-      const { nodeId: targetId } = parsePortRef(pipe.to);
-      if (entry.visited.has(targetId)) continue;
-
-      const target = nodes.get(targetId);
-      if (!target) continue;
-      const nextValves = [...entry.valves];
-      let nextFlow = entry.flowSensor;
-      if (target.kind === "valve") nextValves.push(target.id);
-      if (target.kind === "flow_sensor") nextFlow = target.id;
-
-      const nextPump = entry.crossesPump || target.kind === "pump";
-      const nextVisited = new Set(entry.visited);
-      nextVisited.add(targetId);
-
-      if (target.kind === "tank" || target.kind === "endpoint" || target.kind === "water_source") {
-        results.push({
-          source: sourceId,
-          sourceKind,
-          destNodeId: target.id,
-          destKind: target.kind,
-          valves: nextValves,
-          flowSensor: nextFlow,
-          crossesPump: nextPump,
-        });
-      } else {
-        queue.push({
-          nodeId: targetId,
-          valves: nextValves,
-          flowSensor: nextFlow,
-          crossesPump: nextPump,
-          visited: nextVisited,
-        });
-      }
-    }
-  }
-
-  return results;
-}
+import type { Manifest, ManifestNode, ManifestAutomation, Route as ManifestRoute } from "./schema.js";
+import type { Topology, TopologyNode } from "./topology.js";
+import { buildGraph, activeGraph, deriveRoutes, type Route } from "../../shared/graph/index.js";
 
 // ---------------------------------------------------------------------------
 // Main conversion
 // ---------------------------------------------------------------------------
 
 export function topologyToManifest(topology: Topology): Manifest {
-  const nodeMap = new Map(topology.nodes.map((n) => [n.id, n]));
-  const adj = buildAdjacency(topology.pipes);
+  const graph = buildGraph(topology.nodes, topology.pipes);
+  const active = activeGraph(graph);
+  const routes = deriveRoutes(active);
 
   // Only nodes connected via pipes enter the manifest.
   const connected = new Set<string>();
   for (const pipe of topology.pipes) {
-    connected.add(parsePortRef(pipe.from).nodeId);
-    connected.add(parsePortRef(pipe.to).nodeId);
+    connected.add(pipe.from.split(':')[0]);
+    connected.add(pipe.to.split(':')[0]);
   }
 
   // Strip layout fields (ports, position) — generators don't need them.
@@ -120,47 +23,36 @@ export function topologyToManifest(topology: Topology): Manifest {
     .filter(n => connected.has(n.id))
     .map(({ ports, position, ...data }) => data as ManifestNode);
 
-  // --- Route derivation ---
+  // --- Route mapping ---
 
-  const routes: Route[] = [];
+  const nodeMap = new Map(topology.nodes.map(n => [n.id, n]));
 
-  const routeSources = topology.nodes.filter(
-    (n): n is Extract<TopologyNode, { kind: "tank" }> | Extract<TopologyNode, { kind: "water_source" }> =>
-      (n.kind === "tank" || n.kind === "water_source") && connected.has(n.id),
-  );
+  const manifestRoutes: ManifestRoute[] = routes
+    .filter(r => r.valid) // only routes with a flow sensor
+    .map(r => {
+      const override = topology.route_overrides[r.key] ?? {};
+      const srcNode = nodeMap.get(r.source);
+      const dstNode = nodeMap.get(r.destination);
+      const srcLabel = (srcNode as any)?.name ?? r.source;
+      const dstLabel = (dstNode as any)?.name ?? r.destination;
 
-  for (const src of routeSources) {
-    const traced = traceRoutes(src.id, src.kind as "tank" | "water_source", adj, nodeMap);
-
-    for (const tr of traced) {
-      if (!tr.flowSensor) continue;
-
-      const overrideKey = `${tr.source}>${tr.destNodeId}`;
-      const override = topology.route_overrides[overrideKey] ?? {};
-
-      // Route name derived from node names (e.g. "Rain Tank > Roof Tank")
-      const srcNode = nodeMap.get(tr.source);
-      const dstNode = nodeMap.get(tr.destNodeId);
-      const srcLabel = (srcNode as any)?.name ?? tr.source;
-      const dstLabel = (dstNode as any)?.name ?? tr.destNodeId;
-
-      routes.push({
-        key: overrideKey,
+      return {
+        key: r.key,
         name: `${srcLabel} > ${dstLabel}`,
-        source: tr.source,
-        source_type: tr.sourceKind,
-        destination: tr.destKind === "tank" ? tr.destNodeId : undefined,
-        valves: tr.valves,
-        flow_sensor: tr.flowSensor,
+        source: r.source,
+        source_type: r.sourceKind as 'tank' | 'water_source',
+        destination: r.destKind === 'tank' ? r.destination : undefined,
+        valves: r.valves,
+        flow_sensor: r.flowSensors[0],
         max_runtime_seconds: override.max_runtime_seconds ?? 1800,
-        needs_pump: tr.crossesPump,
-      });
-    }
-  }
+        needs_pump: r.crossesPump,
+        nodeSequence: r.nodeSequence,
+      };
+    });
 
   // --- Automation resolution ---
 
-  const routeKeyToIndex = new Map(routes.map((r, i) => [r.key, i]));
+  const routeKeyToIndex = new Map(manifestRoutes.map((r, i) => [r.key, i]));
 
   const automations: ManifestAutomation[] = (topology.automations ?? [])
     .filter(a => {
@@ -177,7 +69,7 @@ export function topologyToManifest(topology: Topology): Manifest {
         name: a.name,
         route_index: idx,
         route_key: a.route,
-        route_name: routes[idx].name,
+        route_name: manifestRoutes[idx].name,
         trigger: a.trigger as ManifestAutomation['trigger'],
         days_of_week: a.days_of_week,
         source_min_level: a.conditions?.source_min_level,
@@ -189,7 +81,7 @@ export function topologyToManifest(topology: Topology): Manifest {
   return {
     device: { ...topology.device },
     nodes,
-    routes,
+    routes: manifestRoutes,
     timing: { ...topology.timing },
     automations,
   };

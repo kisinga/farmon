@@ -4,6 +4,7 @@ import type { BoardDef } from "../board.js";
 import type { TopologyRule, ManifestRule, RuleDiagnostic } from "./rule.types.js";
 import type { ValidationResult } from "../../../shared/validation.types.js";
 import { NODE_REGISTRY } from "../../../shared/entity-registry.js";
+import { buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateEscalations } from "../../../shared/graph/index.js";
 
 export type { ValidationResult } from "../../../shared/validation.types.js";
 
@@ -66,19 +67,35 @@ function runEntityRules(nodes: Array<Record<string, any>>): RuleDiagnostic[] {
   return diagnostics;
 }
 
-/** Run topology-level rules against the graph structure. */
+// ---------------------------------------------------------------------------
+// Layer 1: Topology — graph structure + entity-declared constraints
+// ---------------------------------------------------------------------------
+
 export function runTopologyRules(
   topology: Topology,
   rules: TopologyRule[],
 ): ValidationResult {
+  const graph = buildGraph(topology.nodes, topology.pipes);
+  const active = activeGraph(graph);
+  const routes = deriveRoutes(active);
+
   const diagnostics: RuleDiagnostic[] = [];
+
+  // Entity-declared flow constraints (from NODE_REGISTRY.constraints)
+  diagnostics.push(...evaluateConstraints(active, routes));
+
+  // Explicit topology rules (if any remain beyond constraints)
   for (const rule of rules) {
-    diagnostics.push(...rule.evaluate(topology));
+    diagnostics.push(...rule.evaluate(active, routes));
   }
+
   return toResult(diagnostics);
 }
 
-/** Run manifest-level rules against the flat IR + board. */
+// ---------------------------------------------------------------------------
+// Layer 2: Manifest — flat IR + board hardware constraints
+// ---------------------------------------------------------------------------
+
 export function runManifestRules(
   manifest: Manifest,
   board: BoardDef,
@@ -101,7 +118,10 @@ export function runManifestRules(
   return toResult(diagnostics);
 }
 
-/** Run all rules: topology first, then manifest + entity rules. */
+// ---------------------------------------------------------------------------
+// All layers combined
+// ---------------------------------------------------------------------------
+
 export function validateAll(
   topology: Topology,
   manifest: Manifest,
@@ -110,9 +130,29 @@ export function validateAll(
   manifestRules: ManifestRule[],
   opts: ValidateOptions = {},
 ): ValidationResult {
-  const topologyResult = runTopologyRules(topology, topologyRules);
+  // Layer 1: Graph + constraints
+  const graph = buildGraph(topology.nodes, topology.pipes);
+  const active = activeGraph(graph);
+  const routes = deriveRoutes(active);
+
+  const topoDiags: RuleDiagnostic[] = [];
+  topoDiags.push(...evaluateConstraints(active, routes));
+  for (const rule of topologyRules) {
+    topoDiags.push(...rule.evaluate(active, routes));
+  }
+
+  // Layer 2: Manifest + board
   const manifestResult = runManifestRules(manifest, board, manifestRules, opts);
 
-  const allDiagnostics = [...topologyResult.diagnostics, ...manifestResult.diagnostics];
+  // Layer 3: Escalation — automated routes promote warnings to errors
+  const escalated = evaluateEscalations(topoDiags, routes, topology.automations ?? []);
+  const escalatedBaseIds = new Set(
+    escalated.map(d => `${d.target}:${d.ruleId.replace(':escalated', '')}`),
+  );
+  const filteredTopo = topoDiags.filter(
+    d => !escalatedBaseIds.has(`${d.target}:${d.ruleId}`),
+  );
+
+  const allDiagnostics = [...filteredTopo, ...escalated, ...manifestResult.diagnostics];
   return toResult(allDiagnostics);
 }

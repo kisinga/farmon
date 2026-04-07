@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { NODE_REGISTRY } from '../entity-registry';
 import { ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import type { FlowConstraint } from '../graph/constraints';
 
 function escXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -50,6 +51,12 @@ NODE_REGISTRY.set('endpoint', {
   },
 
   sidebarFields: [],
+
+  constraints: [
+    { type: 'presence', id: 'endpoint-flow-sensor', requiredKind: 'flow_sensor',
+      position: 'upstream', baseSeverity: 'warning',
+      description: 'Flow sensor recommended for usage tracking' },
+  ] satisfies FlowConstraint[],
 
   // Endpoint has no codegen — it's a terminal node with no hardware.
 });

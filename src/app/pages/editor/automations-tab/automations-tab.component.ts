@@ -21,7 +21,7 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
           </p>
         </div>
 
-        @for (auto of t.automations ?? []; track auto.id; let i = $index) {
+        @for (auto of t.automations; track auto.id; let i = $index) {
           <div class="card bg-base-100 shadow-sm border border-base-200">
             <div class="card-body gap-4">
               <div class="flex items-center justify-between">
@@ -118,8 +118,8 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                   @for (day of days; track day) {
                     <button
                       class="btn btn-xs"
-                      [class.btn-primary]="(auto.days_of_week ?? days).includes(day)"
-                      [class.btn-ghost]="!(auto.days_of_week ?? days).includes(day)"
+                      [class.btn-primary]="(auto.days_of_week).includes(day)"
+                      [class.btn-ghost]="!(auto.days_of_week).includes(day)"
                       (click)="toggleDay(i, day)"
                     >{{ day.slice(0, 2) }}</button>
                   }
@@ -139,7 +139,7 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                       <input
                         type="number"
                         class="input input-bordered input-sm"
-                        [ngModel]="auto.conditions?.source_min_level ?? ''"
+                        [ngModel]="auto.conditions.source_min_level ?? ''"
                         (ngModelChange)="updateCondition(i, 'source_min_level', $event)"
                         min="0"
                         max="100"
@@ -151,7 +151,7 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                       <input
                         type="number"
                         class="input input-bordered input-sm"
-                        [ngModel]="auto.conditions?.dest_max_level ?? ''"
+                        [ngModel]="auto.conditions.dest_max_level ?? ''"
                         (ngModelChange)="updateCondition(i, 'dest_max_level', $event)"
                         min="0"
                         max="100"

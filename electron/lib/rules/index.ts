@@ -10,10 +10,9 @@ import {
   type ValidateOptions,
 } from "./runner.js";
 
-// Cross-cutting topology rules (reference multiple node kinds / route sequences)
-import { pumpOutletOrdering } from "./topology/pump-outlet-ordering.js";
-import { pumpInletValve } from "./topology/pump-inlet-valve.js";
-import { endpointFlowWarning } from "./topology/endpoint-flow-warning.js";
+// Topology rules — pump-inlet-valve, pump-outlet-ordering, endpoint-flow-warning
+// are now entity-declared constraints (on pump.ts and endpoint.ts descriptors).
+// ALL_TOPOLOGY_RULES is empty unless new non-constraint topology rules are added.
 
 // Manifest rules
 import { pinConflicts } from "./manifest/pin-conflicts.js";
@@ -32,11 +31,7 @@ import { automationRouteRef } from "./manifest/automation-route-ref.js";
 // Entity-specific topology rules are registered on NodeDescriptor.rules
 // and collected by the runner via NODE_REGISTRY. No imports needed here.
 
-export const ALL_TOPOLOGY_RULES: TopologyRule[] = [
-  pumpOutletOrdering,
-  pumpInletValve,
-  endpointFlowWarning,
-];
+export const ALL_TOPOLOGY_RULES: TopologyRule[] = [];
 
 export const ALL_MANIFEST_RULES: ManifestRule[] = [
   pinConflicts,

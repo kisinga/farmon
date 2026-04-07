@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { NODE_REGISTRY } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import type { FlowConstraint } from '../graph/constraints';
 
 const COLOR = '#dc2626'; // red
 const S = 60;
@@ -70,6 +71,18 @@ NODE_REGISTRY.set('pump', {
   sidebarFields: [
     { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42' },
   ],
+
+  constraints: [
+    { type: 'presence', id: 'pump-inlet-valve', requiredKind: 'valve',
+      position: 'upstream', baseSeverity: 'error',
+      description: 'Isolation valve required before pump inlet' },
+    { type: 'presence', id: 'pump-downstream-flow', requiredKind: 'flow_sensor',
+      position: 'downstream', baseSeverity: 'warning',
+      description: 'Flow sensor recommended downstream for dry-run protection' },
+    { type: 'ordering', id: 'pump-outlet-ordering', segment: 'downstream',
+      firstKind: 'valve', secondKind: 'flow_sensor', baseSeverity: 'error',
+      description: 'Outlet valve must precede flow sensor for isolation' },
+  ] satisfies FlowConstraint[],
 
   // --- Codegen ---
 

@@ -1,4 +1,5 @@
-import type { Topology } from "../topology.js";
+import type { TopologyGraph } from "../../../shared/graph/topology-graph.js";
+import type { Route } from "../../../shared/graph/routes.js";
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 
@@ -9,7 +10,7 @@ import type { RuleDiagnostic } from "../../../shared/validation.types.js";
 export interface TopologyRule {
   id: string;
   name: string;
-  evaluate(topology: Topology): RuleDiagnostic[];
+  evaluate(graph: TopologyGraph, routes: Route[]): RuleDiagnostic[];
 }
 
 /** A rule that validates the flat manifest against the board definition. */

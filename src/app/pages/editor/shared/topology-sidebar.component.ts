@@ -4,8 +4,8 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 import { ValidationPanelComponent } from '../../../shared/validation-panel/validation-panel.component';
 import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
-import { deriveRoutes, type DerivedRoute } from './derive-routes';
-import { activeTopology } from '../../../../../shared/active-topology';
+import type { DerivedRoute } from './derive-routes';
+import { buildGraph, activeGraph, deriveRoutes } from '../../../../../shared/graph/index';
 import type { Selection } from './selection';
 export type { Selection };
 
@@ -185,7 +185,9 @@ export class TopologySidebarComponent {
 
   protected derivedRoutes = computed(() => {
     const t = this.editor.topology();
-    return t ? deriveRoutes(activeTopology(t)) : [];
+    if (!t) return [];
+    const g = activeGraph(buildGraph(t.nodes, t.pipes));
+    return deriveRoutes(g);
   });
 
   protected overrideEntries = computed(() => {

@@ -10,6 +10,7 @@ import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { TopologySchema, type Topology } from "../electron/lib/topology.js";
 import { topologyToManifest } from "../electron/lib/topology-to-manifest.js";
+import { nodesByKind } from "../electron/lib/schema.js";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
 const CONFIG_PATH = path.join(DEFAULTS, "configs/pump-controller.yaml");
@@ -34,7 +35,7 @@ function assert(condition: boolean, name: string, detail?: string) {
 console.log("Loading topology config...");
 const raw = parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
 const topology = TopologySchema.parse(raw);
-assert(topology.schema === 5, "Schema version is 5");
+assert(topology.schema === 6, "Schema version is 6");
 
 // ---------------------------------------------------------------------------
 // Node structure
@@ -83,19 +84,24 @@ const manifest = topologyToManifest(topology);
 
 assert(manifest.device.name === "pump-ctrl", "Device name preserved");
 assert(manifest.device.board === "heltec-v3", "Board preserved");
-assert(manifest.pump.pin === "GPIO42", `Pump pin = ${manifest.pump.pin}`);
 
-assert(manifest.tanks.length === 2, `${manifest.tanks.length} tanks`);
-assert(manifest.valves.length === 4, `${manifest.valves.length} valves`);
-assert(manifest.flow_sensors.length === 2, `${manifest.flow_sensors.length} flow sensors`);
+const manifestPumps = nodesByKind(manifest.nodes, 'pump');
+assert(manifestPumps[0]?.['pin'] === "GPIO42", `Pump pin = ${manifestPumps[0]?.['pin']}`);
+
+const manifestTanks = nodesByKind(manifest.nodes, 'tank');
+const manifestValves = nodesByKind(manifest.nodes, 'valve');
+const manifestFlows = nodesByKind(manifest.nodes, 'flow_sensor');
+assert(manifestTanks.length === 2, `${manifestTanks.length} tanks`);
+assert(manifestValves.length === 4, `${manifestValves.length} valves`);
+assert(manifestFlows.length === 2, `${manifestFlows.length} flow sensors`);
 assert(manifest.routes.length === 3, `${manifest.routes.length} routes`);
 
 // Check each expected route
 console.log("\nDerived routes:");
 const expectedRoutes = [
-  { name: "T1>T2", source: "tank1", dest: "tank2", valves: ["valve1", "valve3"], flow: "flow3", runtime: 600 },
-  { name: "T1>H2", source: "tank1", dest: undefined, valves: ["valve1", "valve4"], flow: "flow2", runtime: 1800 },
-  { name: "T2>H2", source: "tank2", dest: undefined, valves: ["valve2", "valve4"], flow: "flow2", runtime: 1800 },
+  { name: "Rain Tank > Storage Tank", source: "tank1", dest: "tank2", valves: ["valve1", "valve3"], flow: "flow3", runtime: 600 },
+  { name: "Rain Tank > House 2", source: "tank1", dest: undefined, valves: ["valve1", "valve4"], flow: "flow2", runtime: 1800 },
+  { name: "Storage Tank > House 2", source: "tank2", dest: undefined, valves: ["valve2", "valve4"], flow: "flow2", runtime: 1800 },
 ];
 
 for (const exp of expectedRoutes) {
@@ -156,9 +162,9 @@ const topologyWithGravity: Topology = {
 
 const derivedWithGravity = topologyToManifest(topologyWithGravity);
 const gravityRoute = derivedWithGravity.routes.find((r) => r.flow_sensor === "flow_gravity");
-assert(!gravityRoute, "Gravity pipe does NOT produce a pumped route");
+assert(!!gravityRoute, "Gravity pipe produces a valid route (has flow sensor)");
 assert(
-  derivedWithGravity.flow_sensors.some((f) => f.id === "flow_gravity"),
+  nodesByKind(derivedWithGravity.nodes, 'flow_sensor').some((f) => f['id'] === "flow_gravity"),
   "Gravity flow sensor included in manifest for monitoring"
 );
 

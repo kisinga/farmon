@@ -9,6 +9,7 @@
 
 import type { z } from 'zod';
 import type { PinCap } from './board.types';
+import type { FlowConstraint } from './graph/constraints';
 
 // ---------------------------------------------------------------------------
 // Field definition (drives sidebar forms)
@@ -90,6 +91,9 @@ export interface NodeDescriptor {
 
   /** Per-entity validation rules — only consumed by electron rule runner. */
   rules?: EntityRule[];
+
+  /** Flow constraints this entity declares on routes it appears in. */
+  constraints?: FlowConstraint[];
 }
 
 // ---------------------------------------------------------------------------
