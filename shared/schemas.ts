@@ -4,8 +4,11 @@
  */
 import { z } from 'zod';
 
-/** Valid GPIO pin reference: GPIO0–GPIO99. */
-export const GpioPin = z.string().regex(/^GPIO\d{1,2}$/, 'Must be GPIOnn format');
+/** Valid GPIO pin reference: GPIO0–GPIO99, or empty string (not configured). */
+export const GpioPin = z.union([
+  z.string().regex(/^GPIO\d{1,2}$/, 'Must be GPIOnn format'),
+  z.literal(''),
+]);
 
 /** Valid ESPHome/C++ identifier: lowercase letters, digits, underscores. */
 export const ComponentId = z.string().regex(

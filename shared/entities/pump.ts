@@ -11,6 +11,7 @@ const S = 60;
 export const PumpNodeSchema = z.object({
   kind: z.literal('pump'),
   id: ComponentId,
+  name: z.string().default('Pump'),
   pin: GpioPin,
   ports: z
     .array(PortSchema)
@@ -41,7 +42,7 @@ NODE_REGISTRY.set('pump', {
     { id: 'in', label: 'Inlet', direction: 'inlet' },
     { id: 'out', label: 'Outlet', direction: 'outlet' },
   ],
-  defaultData: () => ({ pin: '' }),
+  defaultData: () => ({ name: 'Pump', pin: '' }),
 
   renderSvg: (_data) => {
     const cx = S / 2, cy = S / 2, r = S / 2 - 5;
@@ -64,8 +65,6 @@ NODE_REGISTRY.set('pump', {
       <g transform="translate(${cx},${cy})">${vanes}<circle r="3" fill="${COLOR}"/></g>
     </svg>`;
   },
-
-  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><circle cx="10" cy="8" r="6" fill="none" stroke="${COLOR}" stroke-width="2"/><line x1="16" y1="8" x2="20" y2="8" stroke="${COLOR}" stroke-width="2"/><line x1="0" y1="8" x2="4" y2="8" stroke="${COLOR}" stroke-width="2"/><path d="M10 8 Q13 5 10 3" fill="none" stroke="${COLOR}" stroke-width="1.5"/><path d="M10 8 Q7 11 10 13" fill="none" stroke="${COLOR}" stroke-width="1.5"/><path d="M10 8 Q13 11 14 8" fill="none" stroke="${COLOR}" stroke-width="1.5"/><path d="M10 8 Q7 5 6 8" fill="none" stroke="${COLOR}" stroke-width="1.5"/><circle cx="10" cy="8" r="1.5" fill="${COLOR}"/></svg>`,
 
   sidebarFields: [
     { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42' },

@@ -429,6 +429,7 @@ export class LibraryComponent implements OnInit {
           {
             kind: 'pump',
             id: 'pump',
+            name: 'Pump',
             pin: 'GPIO42',
             ports: [
               { id: 'inlet', label: 'In', direction: 'inlet' },

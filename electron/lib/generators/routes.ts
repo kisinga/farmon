@@ -24,6 +24,21 @@ export function generateRoutes(m: Manifest): string {
   // Timing constants
   const valveTravelMs = parseDurationMs(m.timing.valve_travel_time);
 
+  // Compute conflict masks — routes conflict when they share a flow sensor
+  // but go to different destinations (ambiguous readings).
+  // Same sensor + same destination = safe to run concurrently.
+  const destOf = (r: typeof m.routes[number]) => r.key.split('>')[1];
+  const conflictMasks = m.routes.map((r, i) => {
+    let mask = 0;
+    for (let j = 0; j < m.routes.length; j++) {
+      if (i === j) continue;
+      if (r.flow_sensor === m.routes[j].flow_sensor && destOf(r) !== destOf(m.routes[j])) {
+        mask |= (1 << j);
+      }
+    }
+    return mask;
+  });
+
   // Build route entries
   const routeLines = m.routes.map((r, i) => {
     const mask = r.valves.reduce((acc, v) => acc | (1 << valveIdx.get(v)!), 0);
@@ -32,8 +47,9 @@ export function generateRoutes(m: Manifest): string {
     const dst = r.destination ? tankIdx.get(r.destination)! : "0xFF";
     const flow = flowIdx.get(r.flow_sensor)!;
     const maskBin = mask.toString(2).padStart(valves.length, "0");
+    const conflictBin = conflictMasks[i].toString(2).padStart(m.routes.length, "0");
     const pump = r.needs_pump ? "true" : "false";
-    return `  { ${i}, 0b${maskBin}, ${srcTank}, ${srcWs}, ${dst}, ${flow}, ${r.max_runtime_seconds}, ${pump}, "${r.name}" },`;
+    return `  { ${i}, 0b${maskBin}, ${srcTank}, ${srcWs}, ${dst}, ${flow}, 0b${conflictBin}, ${r.max_runtime_seconds}, ${pump}, "${r.name}" },`;
   });
 
   // Build index comments
@@ -127,6 +143,8 @@ struct Route {
   uint8_t     source_ws;       // index into water sources — 0xFF = tank source
   uint8_t     dest_tank;       // index into tanks — 0xFF = endpoint
   uint8_t     flow_sensor;     // index into flow sensors (always valid)
+  uint16_t    conflict_mask;   // bitmask of route IDs that cannot run concurrently
+                               // (shared sensor + different destination = ambiguous reading)
   uint16_t    max_runtime_s;
   bool        needs_pump;      // true if route path crosses the pump node
   const char* name;
@@ -140,7 +158,7 @@ struct Route {
 // Flow indices:    ${flowComment}
 
 static const Route ROUTES[NUM_ROUTES] = {
-  //  id   valve_mask  src_tank  src_ws  dst   flow  max_rt  pump  name
+  //  id   valve_mask  src_tank  src_ws  dst   flow  conflict  max_rt  pump  name
 ${routeLines.join("\n")}
 };
 
@@ -182,9 +200,12 @@ inline int find_slot_by_route(int rid) {
 }
 
 // --- Conflict detection ------------------------------------------------------
+//
+// Actuators (valves, pump) can be shared — multiple routes may need them ON.
+// Sensors (flow) cannot — readings are ambiguous when shared.
+// Concurrency is gated on sensor conflicts only; actuators are refcounted.
 
 // Returns bitmask of valves used by PREPARING or RUNNING slots.
-// STOPPING slots are excluded — their valves are being released.
 inline uint16_t active_valve_mask() {
   uint16_t mask = 0;
   for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++)
@@ -193,8 +214,23 @@ inline uint16_t active_valve_mask() {
   return mask;
 }
 
-inline bool has_valve_conflict(int rid) {
-  return (ROUTES[rid].valve_mask & active_valve_mask()) != 0;
+// Valves safe to close for a stopping slot — excludes valves still needed
+// by other PREPARING/RUNNING slots (actuator refcounting).
+inline uint16_t safe_close_mask(int stopping_slot) {
+  uint16_t other = 0;
+  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++)
+    if (i != stopping_slot && (slots[i].state == 1 || slots[i].state == 2) && slots[i].route_id >= 0)
+      other |= ROUTES[slots[i].route_id].valve_mask;
+  return ROUTES[slots[stopping_slot].route_id].valve_mask & ~other;
+}
+
+// True if any PREPARING/RUNNING slot conflicts with route rid.
+// Conflict = shared sensor + different destination (computed at codegen time).
+inline bool has_conflict(int rid) {
+  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++)
+    if ((slots[i].state == 1 || slots[i].state == 2) && slots[i].route_id >= 0)
+      if (ROUTES[rid].conflict_mask & (1 << slots[i].route_id)) return true;
+  return false;
 }
 
 // --- Pump reference counting -------------------------------------------------

@@ -179,13 +179,10 @@ pipes:
     to: h2:inlet
 route_overrides:
   tank1>tank2:
-    name: T1>T2
     max_runtime_seconds: 600
   tank1>h2:
-    name: T1>H2
     max_runtime_seconds: 1800
   tank2>h2:
-    name: T2>H2
     max_runtime_seconds: 1800
 timing:
   valve_travel_time: 15s

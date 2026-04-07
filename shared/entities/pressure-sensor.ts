@@ -49,10 +49,7 @@ NODE_REGISTRY.set('pressure_sensor', {
     </svg>`;
   },
 
-  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><circle cx="10" cy="8" r="6" fill="none" stroke="${COLOR}" stroke-width="2"/><path d="M6 11 A 5 5 0 0 1 14 11" fill="none" stroke="${COLOR}" stroke-width="1.5" stroke-linecap="round"/><line x1="10" y1="10" x2="13" y2="5" stroke="${COLOR}" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="10" r="1.5" fill="${COLOR}"/></svg>`,
-
   sidebarFields: [
-    { key: 'name', label: 'Name', type: 'text' },
     { key: 'pin', label: 'Pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc' },
     { key: 'min_bar', label: 'Min (bar)', type: 'number' },
     { key: 'max_bar', label: 'Max (bar)', type: 'number' },

@@ -19,7 +19,7 @@ export const referenceIntegrity: ManifestRule = {
         diagnostics.push({
           severity: "error",
           message: `Route "${route.name}": source "${route.source}" not found in tanks`,
-          target: route.name,
+          target: route.key,
           ruleId: this.id,
         });
       }
@@ -27,7 +27,7 @@ export const referenceIntegrity: ManifestRule = {
         diagnostics.push({
           severity: "error",
           message: `Route "${route.name}": source "${route.source}" not found in water sources`,
-          target: route.name,
+          target: route.key,
           ruleId: this.id,
         });
       }
@@ -36,7 +36,7 @@ export const referenceIntegrity: ManifestRule = {
         diagnostics.push({
           severity: "error",
           message: `Route "${route.name}": destination "${route.destination}" not found in tanks`,
-          target: route.name,
+          target: route.key,
           ruleId: this.id,
         });
       }
@@ -46,7 +46,7 @@ export const referenceIntegrity: ManifestRule = {
           diagnostics.push({
             severity: "error",
             message: `Route "${route.name}": valve "${v}" not found`,
-            target: route.name,
+            target: route.key,
             ruleId: this.id,
           });
         }
@@ -56,7 +56,7 @@ export const referenceIntegrity: ManifestRule = {
         diagnostics.push({
           severity: "error",
           message: `Route "${route.name}": flow_sensor "${route.flow_sensor}" not found`,
-          target: route.name,
+          target: route.key,
           ruleId: this.id,
         });
       }
@@ -65,7 +65,7 @@ export const referenceIntegrity: ManifestRule = {
         diagnostics.push({
           severity: "error",
           message: `Route "${route.name}": max_runtime_seconds must be >= 10`,
-          target: route.name,
+          target: route.key,
           ruleId: this.id,
         });
       }
@@ -73,7 +73,7 @@ export const referenceIntegrity: ManifestRule = {
         diagnostics.push({
           severity: "warning",
           message: `Route "${route.name}": max_runtime_seconds=${route.max_runtime_seconds} is very high (>2h)`,
-          target: route.name,
+          target: route.key,
           ruleId: this.id,
         });
       }
@@ -82,7 +82,7 @@ export const referenceIntegrity: ManifestRule = {
         diagnostics.push({
           severity: "error",
           message: `Route "${route.name}": source equals destination (self-loop)`,
-          target: route.name,
+          target: route.key,
           ruleId: this.id,
         });
       }

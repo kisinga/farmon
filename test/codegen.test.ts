@@ -151,7 +151,7 @@ for (const v of valves) {
   assert(routesH.includes(`id(${n(v, 'id')}).make_call()`), `Valve ${n(v, 'id')} in dispatch`);
 }
 for (const r of manifest.routes) {
-  assert(routesH.includes(`"${r.name}"`), `Route "${r.name}" in table`);
+  assert(routesH.includes(`"${r.name}"`), `Route "${r.name}" in route table`);
 }
 // Architecture: no watchdog strategy dispatch
 assert(!routesH.includes("WD_LEVEL_RISE"), "No WD_LEVEL_RISE define");
@@ -161,13 +161,28 @@ assert(!routesH.includes("uint8_t     watchdog"), "No watchdog field in struct")
 assert(routesH.includes("max_runtime_s"), "Has max_runtime_s field in struct");
 // Route struct has source_ws field for water source support
 assert(routesH.includes("source_ws"), "Has source_ws field in struct");
+// Concurrent execution support
+assert(routesH.includes("struct RouteSlot"), "Has RouteSlot struct");
+assert(routesH.includes("MAX_CONCURRENT_ROUTES"), "Has MAX_CONCURRENT_ROUTES constant");
+assert(routesH.includes("needs_pump"), "Has needs_pump field in Route struct");
+assert(routesH.includes("queue_push"), "Has queue_push function");
+assert(routesH.includes("queue_pop"), "Has queue_pop function");
+assert(routesH.includes("pump_ref_count"), "Has pump_ref_count function");
+assert(routesH.includes("has_conflict"), "Has conflict detection");
+assert(routesH.includes("conflict_mask"), "Has conflict mask in Route struct");
+assert(routesH.includes("safe_close_mask"), "Has valve refcount for safe close");
+assert(routesH.includes("derived_system_state"), "Has derived_system_state function");
+assert(routesH.includes("open_valve_hw"), "Valve dispatch renamed to _hw");
+assert(routesH.includes("close_valve_hw"), "Valve close dispatch renamed to _hw");
+assert(routesH.includes("VALVE_TRAVEL_MS"), "Has valve travel timing constant");
+assert(routesH.includes("FLOW_WATCHDOG_MS"), "Has flow watchdog timing constant");
 
 // --- hardware.yaml ---
 
 console.log("\nhardware.yaml:");
 const hw = getFile("hardware.yaml");
 assert(hw.includes("pump_relay"), "Has pump relay");
-assert(hw.includes("system_state") && hw.includes("!= 2"), "Relay guard");
+assert(hw.includes("pump_ref_count()"), "Relay guard uses pump refcount");
 for (const v of valves) {
   assert(hw.includes(`id: ${n(v, 'id')}_open_pin`), `Valve ${n(v, 'id')} open pin`);
   assert(hw.includes(`interlock:`), `Has interlock`);
@@ -187,15 +202,38 @@ for (const t of tanks) {
     assert(sensors.includes(`id: ${n(t, 'id')}_cal_empty`), `Tank ${n(t, 'id')} cal`);
   }
 }
-// Tank suppression: checks source AND dest, states 1-3
+// Tank suppression: iterates slots, checks source AND dest
 assert(sensors.includes("r.source_tank == TANK_IDX || r.dest_tank == TANK_IDX"), "Suppresses source AND dest tanks");
-assert(sensors.includes("s >= 1 && s <= 3"), "Suppresses during states 1, 2, 3");
+assert(sensors.includes("MAX_CONCURRENT_ROUTES"), "Tank suppression iterates slots");
 // Fault/stop text: no old codes
 assert(!sensors.includes("No level rise"), "No 'level rise' in fault/stop text");
 assert(!sensors.includes("Source tank empty"), "No 'source empty' in fault/stop text");
 assert(sensors.includes("No flow detected"), "Has 'No flow detected' fault");
 assert(sensors.includes("Max runtime exceeded"), "Has 'Max runtime exceeded' fault");
 assert(sensors.includes("HA connection lost"), "Has 'HA connection lost' fault");
+// New concurrent execution sensors
+assert(sensors.includes("active_routes_text"), "Has active_routes_text sensor");
+assert(sensors.includes("route_queue_text"), "Has route_queue_text sensor");
+assert(sensors.includes("queue_count"), "Queue text references queue_count");
+
+// --- control.yaml ---
+
+console.log("\ncontrol.yaml:");
+const control = getFile("control.yaml");
+assert(control.includes("service: route_start"), "Has route_start service");
+assert(control.includes("service: route_stop"), "Has route_stop service");
+assert(control.includes("service: stop_all"), "Has stop_all service");
+assert(control.includes("service: fault_reset_all"), "Has fault_reset_all service");
+assert(control.includes("service: queue_clear"), "Has queue_clear service");
+assert(control.includes("interval: 1s"), "Has 1s transition interval");
+assert(control.includes("interval: 2s"), "Has 2s safety interval");
+assert(control.includes("find_slot_by_route"), "Uses slot-based route lookup");
+assert(control.includes("has_conflict"), "Checks conflicts before starting");
+assert(control.includes("safe_close_mask"), "Uses valve refcount on stop");
+assert(control.includes("queue_push"), "Queues conflicting routes");
+assert(!control.includes("close_all_valves"), "No close_all_valves script");
+assert(!control.includes("do_prepare_and_run"), "No do_prepare_and_run script");
+assert(!control.includes("id(active_route)"), "No active_route global reference");
 
 // --- Cross-file consistency ---
 

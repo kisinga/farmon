@@ -51,10 +51,7 @@ NODE_REGISTRY.set('filter', {
     </svg>`;
   },
 
-  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><rect x="2" y="2" width="16" height="12" rx="2" fill="none" stroke="${COLOR}" stroke-width="1.5"/><line x1="7" y1="2" x2="7" y2="14" stroke="${COLOR}" stroke-width="1" opacity="0.4"/><line x1="13" y1="2" x2="13" y2="14" stroke="${COLOR}" stroke-width="1" opacity="0.4"/><line x1="2" y1="8" x2="18" y2="8" stroke="${COLOR}" stroke-width="1" opacity="0.4"/></svg>`,
-
   sidebarFields: [
-    { key: 'name', label: 'Name', type: 'text' },
     { key: 'inlet_pressure_pin', label: 'Inlet Pressure', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc' },
     { key: 'outlet_pressure_pin', label: 'Outlet Pressure', type: 'pin', placeholder: 'GPIO20', pinCap: 'adc' },
   ],

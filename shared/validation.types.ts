@@ -5,7 +5,7 @@
  * No runtime dependencies. Pure interfaces.
  */
 
-export type Severity = 'error' | 'warning';
+export type Severity = 'error' | 'warning' | 'info';
 
 export interface RuleDiagnostic {
   severity: Severity;
@@ -14,6 +14,8 @@ export interface RuleDiagnostic {
   target?: string;
   /** The rule that produced this diagnostic. */
   ruleId: string;
+  /** Node IDs of shared/conflicting resources (for highlighting). */
+  sharedNodeIds?: string[];
 }
 
 export interface ValidationResult {

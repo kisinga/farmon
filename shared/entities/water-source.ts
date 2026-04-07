@@ -51,11 +51,7 @@ NODE_REGISTRY.set('water_source', {
     </svg>`;
   },
 
-  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><rect x="1" y="1" width="18" height="14" rx="3" fill="none" stroke="${COLOR}" stroke-width="1.5"/><path d="M6 4 Q12 8 6 12" fill="none" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/><path d="M10 5 Q15 8 10 11" fill="none" stroke="${COLOR}" stroke-width="1.5" stroke-linecap="round" opacity="0.35"/></svg>`,
-
   sidebarFields: [
-    { key: 'name', label: 'Name', type: 'text' },
-    { key: 'id', label: 'ID', type: 'text' },
     { key: 'pressure_pin', label: 'Pressure Pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc' },
   ],
 

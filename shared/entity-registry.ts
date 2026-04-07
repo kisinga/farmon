@@ -74,12 +74,12 @@ export interface NodeDescriptor {
   experimental?: boolean;
   /** URL to installation/usage docs for this entity type. */
   helpUrl?: string;
-  defaultPorts: Array<{ id: string; label: string; direction: 'inlet' | 'outlet'; y?: number }>;
+  defaultPorts: Array<{ id: string; label: string; direction: 'inlet' | 'outlet' }>;
   defaultData: (index: number) => Record<string, any>;
   /** Returns a raw SVG string for the canvas element. Receives full node data. */
   renderSvg: (data: Record<string, any>) => string;
-  /** Small static SVG for legend and add-node menu. */
-  legendSvg: string;
+  /** Optional fixed port y-positions keyed by port id. Used for entities like tanks where inlet/outlet height matters. */
+  portLayout?: Record<string, { y: number }>;
   sidebarFields: FieldDef[];
 
   /** Zod schema for this node kind. Source of truth for the TypeScript type. */
@@ -90,6 +90,20 @@ export interface NodeDescriptor {
 
   /** Per-entity validation rules — only consumed by electron rule runner. */
   rules?: EntityRule[];
+}
+
+// ---------------------------------------------------------------------------
+// Legend SVG — derived from renderSvg, scaled to fit menu/legend contexts
+// ---------------------------------------------------------------------------
+
+const LEGEND_H = 16;
+
+export function legendSvgFor(desc: NodeDescriptor): string {
+  const { width, height } = desc.size;
+  const w = Math.round(width * (LEGEND_H / height));
+  const svg = desc.renderSvg(desc.defaultData(1));
+  const inner = svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '').replace(/<text[^>]*>.*?<\/text>/g, '');
+  return `<svg width="${w}" height="${LEGEND_H}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
 }
 
 // ---------------------------------------------------------------------------

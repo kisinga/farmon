@@ -135,13 +135,19 @@ export function topologyToManifest(topology: Topology): Manifest {
 
     for (const tr of traced) {
       if (!tr.flowSensor) continue;
-      if (tr.valves.length === 0) continue;
 
       const overrideKey = `${tr.source}>${tr.destNodeId}`;
       const override = topology.route_overrides[overrideKey] ?? {};
 
+      // Route name derived from node names (e.g. "Rain Tank > Roof Tank")
+      const srcNode = nodeMap.get(tr.source);
+      const dstNode = nodeMap.get(tr.destNodeId);
+      const srcLabel = (srcNode as any)?.name ?? tr.source;
+      const dstLabel = (dstNode as any)?.name ?? tr.destNodeId;
+
       routes.push({
-        name: override.name ?? overrideKey,
+        key: overrideKey,
+        name: `${srcLabel} > ${dstLabel}`,
         source: tr.source,
         source_type: tr.sourceKind,
         destination: tr.destKind === "tank" ? tr.destNodeId : undefined,

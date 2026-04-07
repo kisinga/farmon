@@ -13,6 +13,8 @@ export const UI_COLORS = {
   text: '#1e293b',      // slate-800
   bg: '#f8fafc',        // slate-50
   selected: '#3b82f6',  // blue-500
+  warning: '#f59e0b',   // amber-500
+  error: '#ef4444',     // red-500
   water: '#bae6fd',     // sky-200
   reserved: '#6b7280',  // gray-500
   available: '#d1d5db', // gray-300

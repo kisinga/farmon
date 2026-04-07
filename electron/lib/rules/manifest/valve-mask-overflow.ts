@@ -30,7 +30,7 @@ export const valveMaskOverflow: ManifestRule = {
           diagnostics.push({
             severity: "error",
             message: `Route "${route.name}": valve "${v}" at index ${idx} overflows uint16_t valve_mask.`,
-            target: route.name,
+            target: route.key,
             ruleId: this.id,
           });
         }

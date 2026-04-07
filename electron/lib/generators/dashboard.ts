@@ -211,27 +211,35 @@ export function generateDashboard(m: Manifest): string {
                   {
                     type: "entities",
                     entities: [
-                      { entity: stateSensor, name: "State" },
+                      { entity: activeRoutesSensor, name: "Active" },
+                      { entity: queueSensor, name: "Queue" },
                       { entity: faultSensor, name: "Fault" },
                     ],
                     state_color: true,
                     show_header_toggle: false,
                   },
-                  { type: "horizontal-stack", cards: routeButtons },
+                  { type: "horizontal-stack", cards: routeStartButtons },
+                  { type: "horizontal-stack", cards: routeStopButtons },
                   {
                     type: "horizontal-stack",
                     cards: [
                       {
                         show_name: true, show_icon: true, type: "button",
-                        name: "Stop", icon: "mdi:stop-circle",
-                        tap_action: { action: "call-service", service: `esphome.${dev}_pump_stop` },
+                        name: "Stop All", icon: "mdi:stop-circle",
+                        tap_action: { action: "call-service", service: `esphome.${dev}_stop_all` },
                         show_state: false, color: "red",
                       },
                       {
                         show_name: true, show_icon: true, type: "button",
-                        name: "Reset Fault", icon: "mdi:alert-circle-check",
-                        tap_action: { action: "call-service", service: `esphome.${dev}_fault_reset` },
+                        name: "Reset Faults", icon: "mdi:alert-circle-check",
+                        tap_action: { action: "call-service", service: `esphome.${dev}_fault_reset_all` },
                         show_state: false, color: "accent",
+                      },
+                      {
+                        show_name: true, show_icon: true, type: "button",
+                        name: "Clear Queue", icon: "mdi:tray-remove",
+                        tap_action: { action: "call-service", service: `esphome.${dev}_queue_clear` },
+                        show_state: false, color: "grey",
                       },
                     ],
                   },

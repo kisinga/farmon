@@ -3,11 +3,9 @@ import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
-import { deriveRoutes } from './derive-routes';
-
-export type Selection =
-  | { kind: 'node'; nodeId: string }
-  | { kind: 'pipe'; pipeId: string };
+import { deriveRoutes, type DerivedRoute } from './derive-routes';
+import type { Selection } from './selection';
+export type { Selection };
 
 @Component({
   selector: 'app-topology-sidebar',
@@ -21,6 +19,15 @@ export type Selection =
           @if (sn.desc.experimental) { <span class="badge badge-ghost badge-xs ml-1">experimental</span> }
         </h3>
         <div class="sidebar-fields">
+          <!-- Standard fields: Name + ID (all entities) -->
+          <label class="sidebar-label">Name</label>
+          <input class="input input-xs input-bordered w-full font-mono"
+            [ngModel]="$any(sn.node).name"
+            (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'name', value: $event })" />
+          <label class="sidebar-label">ID</label>
+          <input class="input input-xs input-bordered w-full font-mono text-base-content/50"
+            [ngModel]="sn.node.id" readonly />
+          <!-- Entity-specific fields -->
           @for (field of sn.desc.sidebarFields; track field.key) {
             <label class="sidebar-label">{{ field.label }}</label>
             @if (field.type === 'pin') {
@@ -68,44 +75,55 @@ export type Selection =
       </div>
     }
 
-    <!-- Routes (default view when nothing selected) -->
-    @if (!selection()) {
-      <div class="sidebar-section">
-        <h3 class="sidebar-title">Derived Routes</h3>
-        @if (derivedRoutes().length === 0) {
-          <div class="text-base-content/40 text-center py-4 text-xs">No routes derived yet.<br>Connect nodes with pipes.</div>
-        } @else {
-          @for (route of derivedRoutes(); track route.key) {
-            <div class="flex items-center justify-between py-1.5 border-b border-base-300/20">
-              <span class="font-mono text-xs">{{ route.key }}</span>
-              @if (routeDiagnostics(route.key).length > 0) {
-                <span class="badge badge-error badge-xs">Error</span>
-              } @else if (!route.valid) {
-                <span class="badge badge-warning badge-xs">Incomplete</span>
-              } @else {
-                <span class="badge badge-success badge-xs">Valid</span>
-              }
-            </div>
-            @for (d of routeDiagnostics(route.key); track d.message) {
-              <div class="flex items-start gap-1.5 px-2 py-0.5 text-[11px]"
-                [class.text-error]="d.severity === 'error'"
-                [class.text-warning]="d.severity === 'warning'">
-                <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : '\u26A0' }}</span>
-                <span>{{ d.message }}</span>
-              </div>
+    <!-- Routes (always visible) -->
+    <div class="sidebar-section">
+      <h3 class="sidebar-title">Derived Routes</h3>
+      @if (derivedRoutes().length === 0) {
+        <div class="text-base-content/40 text-center py-4 text-xs">No routes derived yet.<br>Connect nodes with pipes.</div>
+      } @else {
+        @for (route of derivedRoutes(); track route.key) {
+          <div class="route-row flex items-center justify-between py-1.5 border-b border-base-300/20 cursor-pointer hover:bg-base-200/50 px-2 -mx-1 rounded"
+            (click)="onRouteClick(route)">
+            <span class="font-mono text-xs flex items-center gap-1.5">
+              <span class="text-base-content/30 text-[9px]">&#x25B6;</span>
+              {{ route.key }}
+            </span>
+            @if (hasErrorDiagnostics(route.key)) {
+              <span class="badge badge-error badge-xs">Error</span>
+            } @else if (hasWarningDiagnostics(route.key)) {
+              <span class="badge badge-warning badge-xs">Warning</span>
+            } @else if (!route.valid) {
+              <span class="badge badge-ghost badge-xs">Passive</span>
+            } @else if (hasInfoDiagnostics(route.key)) {
+              <span class="badge badge-info badge-xs">Info</span>
+            } @else {
+              <span class="badge badge-success badge-xs">Valid</span>
             }
+          </div>
+          @for (d of routeDiagnostics(route.key); track d.message) {
+            <div class="flex items-start gap-1.5 px-2 py-0.5 text-[11px] cursor-pointer hover:bg-base-200/50 rounded"
+              [class.text-error]="d.severity === 'error'"
+              [class.text-warning]="d.severity === 'warning'"
+              [class.text-base-content/50]="d.severity === 'info'"
+              (click)="selectRoute.emit({ route, sharedNodeIds: d.sharedNodeIds })">
+              <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : d.severity === 'warning' ? '\u26A0' : '\u2139' }}</span>
+              <span>{{ d.message }}</span>
+            </div>
           }
         }
-      </div>
+      }
+    </div>
 
-      @if (editor.diagnostics().length > 0) {
+    @if (!selection()) {
+      @if (globalDiagnostics().length > 0) {
         <div class="sidebar-section">
           <h3 class="sidebar-title">Validation</h3>
-          @for (d of editor.diagnostics(); track $index) {
+          @for (d of globalDiagnostics(); track $index) {
             <div class="flex items-start gap-1.5 py-0.5 text-[11px]"
               [class.text-error]="d.severity === 'error'"
-              [class.text-warning]="d.severity === 'warning'">
-              <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : '\u26A0' }}</span>
+              [class.text-warning]="d.severity === 'warning'"
+              [class.text-base-content/50]="d.severity === 'info'">
+              <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : d.severity === 'warning' ? '\u26A0' : '\u2139' }}</span>
               <span>{{ d.message }}</span>
             </div>
           }
@@ -120,7 +138,7 @@ export type Selection =
           @for (entry of overrideEntries(); track entry.key) {
             <div class="card bg-base-200/40 mb-2">
               <div class="card-body p-2 gap-1">
-                <span class="font-mono font-semibold text-xs">{{ entry.override.name ?? entry.key }}</span>
+                <span class="font-mono font-semibold text-xs">{{ entry.key }}</span>
                 <div class="flex items-center gap-2">
                   <label class="text-[10px] text-base-content/50">Max Runtime</label>
                   <input type="number" class="input input-xs input-bordered w-20 font-mono"
@@ -160,6 +178,7 @@ export class TopologySidebarComponent {
   deletePipe = output<string>();
   updateField = output<{ nodeId: string; field: string; value: any }>();
   updateMaxRuntime = output<{ key: string; value: number }>();
+  selectRoute = output<{ route: DerivedRoute; sharedNodeIds?: string[] }>();
 
   // --- Computed ---
   protected selectedNodeData = computed(() => {
@@ -185,6 +204,14 @@ export class TopologySidebarComponent {
     return t ? deriveRoutes(t) : [];
   });
 
+  protected globalDiagnostics = computed(() => {
+    const routeKeys = new Set(this.derivedRoutes().map(r => r.key));
+    const nodeIds = new Set(this.editor.topology()?.nodes.map(n => n.id) ?? []);
+    return this.editor.diagnostics().filter(d =>
+      !d.target || (!routeKeys.has(d.target) && !nodeIds.has(d.target))
+    );
+  });
+
   protected overrideEntries = computed(() => {
     const t = this.editor.topology();
     if (!t) return [];
@@ -198,5 +225,34 @@ export class TopologySidebarComponent {
 
   routeDiagnostics(routeKey: string): RuleDiagnostic[] {
     return this.editor.diagnosticsByTarget().get(routeKey) ?? [];
+  }
+
+  hasErrorDiagnostics(routeKey: string): boolean {
+    return this.routeDiagnostics(routeKey).some(d => d.severity === 'error');
+  }
+
+  hasWarningDiagnostics(routeKey: string): boolean {
+    return this.routeDiagnostics(routeKey).some(d => d.severity === 'warning');
+  }
+
+  hasInfoDiagnostics(routeKey: string): boolean {
+    return this.routeDiagnostics(routeKey).some(d => d.severity === 'info');
+  }
+
+  routeByKey(target: string | undefined): DerivedRoute | undefined {
+    if (!target) return undefined;
+    return this.derivedRoutes().find(r => r.key === target);
+  }
+
+  onRouteClick(route: DerivedRoute) {
+    // Aggregate all shared node IDs from this route's diagnostics
+    const diags = this.routeDiagnostics(route.key);
+    const sharedNodeIds = [...new Set(diags.flatMap(d => d.sharedNodeIds ?? []))];
+    this.selectRoute.emit({ route, sharedNodeIds: sharedNodeIds.length ? sharedNodeIds : undefined });
+  }
+
+  onDiagnosticClick(d: RuleDiagnostic) {
+    const route = this.routeByKey(d.target);
+    if (route) this.selectRoute.emit({ route, sharedNodeIds: d.sharedNodeIds });
   }
 }

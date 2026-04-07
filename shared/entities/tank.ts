@@ -36,9 +36,10 @@ NODE_REGISTRY.set('tank', {
   helpUrl: 'docs/installation-guidelines.md#tank-level-sensors',
   schema: TankNodeSchema,
   defaultPorts: [
-    { id: 'inlet', label: 'Inlet', direction: 'inlet', y: 15 },
-    { id: 'outlet', label: 'Outlet', direction: 'outlet', y: 55 },
+    { id: 'inlet', label: 'Inlet', direction: 'inlet' },
+    { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
+  portLayout: { inlet: { y: 15 }, outlet: { y: 55 } },
   defaultData: (n) => ({ name: `Tank ${n}`, level_pin: '' }),
 
   renderSvg: (data) => {
@@ -50,11 +51,7 @@ NODE_REGISTRY.set('tank', {
     </svg>`;
   },
 
-  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><path d="M1 2 L1 14 Q1 15 3 15 L17 15 Q19 15 19 14 L19 2" fill="none" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/><rect x="3" y="7" width="14" height="7" rx="1" fill="#bae6fd" opacity="0.5"/></svg>`,
-
   sidebarFields: [
-    { key: 'name', label: 'Name', type: 'text' },
-    { key: 'id', label: 'ID', type: 'text' },
     { key: 'level_pin', label: 'Level Pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc' },
   ],
 

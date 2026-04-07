@@ -26,6 +26,7 @@ export interface Manifest {
 }
 
 export interface Route {
+  key: string;             // stable ID: "sourceId>destId" (matches DerivedRoute.key)
   name: string;
   source: string;
   source_type: 'tank' | 'water_source';

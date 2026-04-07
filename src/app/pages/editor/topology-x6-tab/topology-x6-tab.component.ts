@@ -2,7 +2,7 @@ import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, 
 import { DomSanitizer } from '@angular/platform-browser';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import type { TopologyNode, PipeSegment } from '../../../core/models/topology.model';
-import { NODE_REGISTRY, type NodeDescriptor } from '../../../core/models/entities.model';
+import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
 
@@ -36,7 +36,7 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
             <li class="menu-title text-[9px] uppercase tracking-wider opacity-50 pt-2">{{ group.label }}</li>
             @for (desc of group.items; track desc.kind) {
               <li><a (click)="addNode(desc.kind)" [class.disabled]="desc.singleton && kindExists(desc.kind)">
-                <span [innerHTML]="trustSvg(desc.legendSvg)"></span> {{ desc.label }}
+                <span [innerHTML]="legendSvg(desc)"></span> {{ desc.label }}
                 @if (desc.experimental) { <span class="badge badge-ghost badge-xs ml-auto">exp</span> }
               </a></li>
             }
@@ -59,7 +59,7 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
         <div class="legend">
           @for (desc of nodeDescs; track desc.kind) {
             <div class="legend-item">
-              <span [innerHTML]="trustSvg(desc.legendSvg)"></span>
+              <span class="legend-icon" [innerHTML]="legendSvg(desc)"></span>
               <span>{{ desc.label }}</span>
             </div>
           }
@@ -73,7 +73,7 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
           <ul class="menu menu-xs bg-base-200 rounded-lg shadow-lg w-40 p-1">
             @for (desc of popupDescs(); track desc.kind) {
               <li><a (click)="selectPopupNode(desc.kind)">
-                <span [innerHTML]="trustSvg(desc.legendSvg)"></span> {{ desc.label }}
+                <span [innerHTML]="legendSvg(desc)"></span> {{ desc.label }}
               </a></li>
             }
           </ul>
@@ -88,6 +88,7 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
           (deletePipe)="deletePipe($event)"
           (updateField)="updateNodeField($event.nodeId, $event.field, $event.value)"
           (updateMaxRuntime)="updateMaxRuntime($event.key, $event.value)"
+          (selectRoute)="onRouteSelected($event)"
         />
       </aside>
     </div>
@@ -105,13 +106,15 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
     .canvas-wrap { position: relative; overflow: hidden; min-height: 0; }
     .legend {
       position: absolute; bottom: 12px; left: 12px;
-      display: flex; flex-direction: column; gap: 4px;
-      padding: 8px 10px; background: rgba(255,255,255,0.92);
+      display: grid; grid-template-columns: 20px 1fr;
+      gap: 2px 8px; align-items: center;
+      padding: 8px 12px; background: rgba(255,255,255,0.92);
       border: 1px solid #e2e8f0; border-radius: 6px;
       font-size: 10px; font-family: ui-monospace, monospace;
       color: #1e293b; pointer-events: none; z-index: 10;
     }
-    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-item { display: contents; }
+    .legend-icon { display: flex; justify-content: center; align-items: center; }
     .sidebar { font-size: 12px; }
     .node-popup-backdrop { position: fixed; inset: 0; z-index: 50; }
     .node-popup { position: fixed; z-index: 51; }
@@ -186,6 +189,10 @@ export class TopologyX6TabComponent {
 
   trustSvg(svg: string) {
     return this.sanitizer.bypassSecurityTrustHtml(svg);
+  }
+
+  legendSvg(desc: NodeDescriptor) {
+    return this.trustSvg(legendSvgFor(desc));
   }
 
   kindExists(kind: string): boolean {
@@ -290,7 +297,7 @@ export class TopologyX6TabComponent {
         }
       }
       this.deleteNode(sel.nodeId);
-    } else {
+    } else if (sel.kind === 'pipe') {
       this.deletePipe(sel.pipeId);
     }
   }
@@ -330,6 +337,15 @@ export class TopologyX6TabComponent {
     });
     this.selection.set(null);
     this.c.render(this.editor.topology()!);
+  }
+
+  // --- Route selection ---
+
+  onRouteSelected(ev: { route: import('../shared/derive-routes').DerivedRoute; sharedNodeIds?: string[] }) {
+    const sel: Selection = { kind: 'route', route: ev.route, sharedNodeIds: ev.sharedNodeIds };
+    this.selection.set(sel);
+    const t = this.editor.topology();
+    if (t) this.c.highlight(sel, t);
   }
 
   // --- Route overrides ---

@@ -55,10 +55,7 @@ NODE_REGISTRY.set('flow_sensor', {
     </svg>`;
   },
 
-  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><circle cx="10" cy="8" r="6" fill="none" stroke="${COLOR}" stroke-width="2"/><circle cx="10" cy="8" r="1.5" fill="${COLOR}"/><path d="M10 8 Q12 5 15 8 Q12 11 10 8 M10 8 Q7 5 7 2 Q11 5 10 8 M10 8 Q7 11 7 14 Q11 11 10 8" fill="${COLOR}" opacity="0.7"/></svg>`,
-
   sidebarFields: [
-    { key: 'name', label: 'Name', type: 'text' },
     { key: 'pin', label: 'Pin', type: 'pin', placeholder: 'GPIO47', pinCap: 'pulse_counter' },
     { key: 'flow_cal', label: 'Cal (pulses/L)', type: 'number' },
   ],
@@ -99,7 +96,7 @@ NODE_REGISTRY.set('flow_sensor', {
                 ESP_LOGW("safety", "Sensor fault on ${node['id']} — 3 consecutive zero readings");
               }
             }
-            break;  // each flow sensor serves at most one active route
+            // No break — multiple concurrent routes may share this sensor
           }
           if (derived_system_state() == 0) id(${node['id']}_fault_count) = 0;
 

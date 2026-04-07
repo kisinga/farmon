@@ -47,10 +47,7 @@ NODE_REGISTRY.set('valve', {
     </svg>`;
   },
 
-  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><path d="M2 3 L10 8 L2 13 Z" fill="${COLOR}" opacity="0.15" stroke="${COLOR}" stroke-width="2" stroke-linejoin="round"/><path d="M18 3 L10 8 L18 13 Z" fill="${COLOR}" opacity="0.15" stroke="${COLOR}" stroke-width="2" stroke-linejoin="round"/><line x1="10" y1="8" x2="10" y2="1" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/><line x1="7" y1="1" x2="13" y2="1" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/></svg>`,
-
   sidebarFields: [
-    { key: 'name', label: 'Name', type: 'text' },
     { key: 'open_pin', label: 'Open Pin', type: 'pin', placeholder: 'GPIO4' },
     { key: 'close_pin', label: 'Close Pin', type: 'pin', placeholder: 'GPIO5' },
   ],

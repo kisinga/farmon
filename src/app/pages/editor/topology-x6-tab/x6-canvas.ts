@@ -13,12 +13,9 @@ import type { SystemTopology, PipeSegment, TopologyNode } from '../../../core/mo
 import { svgDataUri } from './scada-shape';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
 import { findConnectedPipes, findPipesFromSource, findPipesToDestination } from '../shared/derive-routes';
+import type { Selection } from '../shared/selection';
 
-// --- Types ---
-
-export type Selection =
-  | { kind: 'node'; nodeId: string }
-  | { kind: 'pipe'; pipeId: string };
+export type { Selection };
 
 export interface CanvasEvents {
   onNodesMoved(positions: Map<string, { x: number; y: number }>): void;
@@ -72,6 +69,7 @@ export class X6Canvas {
   private positionTimer: ReturnType<typeof setTimeout> | null = null;
   private rendering = false;
   private highlightedEdges = new Set<string>();
+  private highlightedNodes = new Set<string>();
 
   constructor(container: HTMLElement, events: CanvasEvents) {
     this.events = events;
@@ -196,6 +194,19 @@ export class X6Canvas {
       }
     }
 
+    if (selection.kind === 'route') {
+      const fromSource = new Set(findPipesFromSource(selection.route.source, topology));
+      const routePipes = findPipesToDestination(selection.route.destination, topology)
+        .filter(id => fromSource.has(id));
+      const color = selection.route.valid ? UI_COLORS.selected : UI_COLORS.warning;
+      for (const pid of routePipes) {
+        this.highlightEdge(pid, color, 2.5, 0.8, true);
+      }
+      for (const nid of selection.sharedNodeIds ?? []) {
+        this.highlightNode(nid, UI_COLORS.warning);
+      }
+    }
+
     if (selection.kind === 'node') {
       const node = topology.nodes.find(n => n.id === selection.nodeId);
       const desc = node ? NODE_REGISTRY.get(node.kind) : null;
@@ -311,12 +322,13 @@ export class X6Canvas {
   private toNodeConfig(node: TopologyNode): Node.Metadata | null {
     const desc = NODE_REGISTRY.get(node.kind);
     if (!desc) return null;
+    const layout = desc.portLayout;
     const ports = node.ports.map(p => {
-      const defPort = desc.defaultPorts.find(dp => dp.id === p.id);
       const group = p.direction === 'inlet' ? 'inlet' : 'outlet';
-      if (defPort?.y != null) {
+      const override = layout?.[p.id];
+      if (override) {
         const x = group === 'inlet' ? 0 : desc.size.width;
-        return { id: p.id, group: `${group}-abs`, args: { x, y: defPort.y } };
+        return { id: p.id, group: `${group}-abs`, args: { x, y: override.y } };
       }
       return { id: p.id, group };
     });
@@ -375,5 +387,21 @@ export class X6Canvas {
       }
     }
     this.highlightedEdges.clear();
+
+    for (const nid of this.highlightedNodes) {
+      const node = this.graph.getCellById(`node-${nid}`);
+      if (node?.isNode()) node.removeTools();
+    }
+    this.highlightedNodes.clear();
+  }
+
+  private highlightNode(nodeId: string, color: string): void {
+    const node = this.graph.getCellById(`node-${nodeId}`);
+    if (!node?.isNode()) return;
+    node.addTools([{
+      name: 'boundary',
+      args: { padding: 6, attrs: { fill: 'none', stroke: color, strokeWidth: 2.5, strokeDasharray: '5,3' } },
+    }]);
+    this.highlightedNodes.add(nodeId);
   }
 }

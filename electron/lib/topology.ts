@@ -45,7 +45,6 @@ const PipeSegmentSchema = z.object({
 // ---------------------------------------------------------------------------
 
 const RouteOverrideSchema = z.object({
-  name: z.string().optional(),
   max_runtime_seconds: z.number().optional(),
 });
 

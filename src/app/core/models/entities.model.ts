@@ -4,6 +4,7 @@
  */
 export {
   NODE_REGISTRY,
+  legendSvgFor,
   type NodeDescriptor,
   type FieldDef,
 } from '../../../../shared/entities';

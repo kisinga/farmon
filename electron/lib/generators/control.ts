@@ -22,7 +22,8 @@ export function generateControl(m: Manifest): string {
 #                                └──────→ FAULT(4) ←──────┘
 #
 # Up to MAX_CONCURRENT_ROUTES (2) routes can execute simultaneously in
-# independent slots. Routes with conflicting valves are queued automatically.
+# independent slots. Routes sharing a flow sensor are queued (ambiguous
+# readings). Shared valves are refcounted — closed only when no route needs them.
 #
 # All safety-critical logic lives HERE on the ESP32, not in HA.
 # HA selects routes and requests start/stop via API services.
@@ -81,10 +82,10 @@ api:
               ESP_LOGW("ctrl", "Rejected: route %d already active", route_id);
               return;
             }
-            // Check valve conflict or no free slot → queue
-            if (has_valve_conflict(route_id) || find_free_slot() == -1) {
+            // Check flow sensor conflict or no free slot → queue
+            if (has_conflict(route_id) || find_free_slot() == -1) {
               if (queue_push(route_id)) {
-                ESP_LOGI("ctrl", "Queued route %d [%s] (conflict or no slot)", route_id, ROUTES[route_id].name);
+                ESP_LOGI("ctrl", "Queued route %d [%s] (flow conflict or no slot)", route_id, ROUTES[route_id].name);
               } else {
                 ESP_LOGW("ctrl", "Rejected: queue full, cannot enqueue route %d", route_id);
               }
@@ -215,11 +216,12 @@ interval:
             }
 
             // STOPPING/FAULT → close valves after depressurize
+            // Only close valves not needed by other active routes (actuator refcount).
             if ((slots[s].state == 3 || slots[s].state == 4) && !slots[s].valves_closing) {
               if (now - slots[s].stop_time > DEPRESSURIZE_MS) {
-                uint16_t mask = ROUTES[rid].valve_mask;
+                uint16_t to_close = safe_close_mask(s);
                 for (int i = 0; i < NUM_VALVES; i++)
-                  if (mask & (1 << i)) close_valve_hw(i);
+                  if (to_close & (1 << i)) close_valve_hw(i);
                 slots[s].valves_closing = true;
               }
             }
@@ -242,7 +244,7 @@ ${pumpMgmt}
             int next = queue_peek(0);
             if (next < 0 || next >= NUM_ROUTES) { queue_pop(); continue; }
             if (find_slot_by_route(next) != -1) { queue_pop(); continue; }
-            if (has_valve_conflict(next) || find_free_slot() == -1) break;
+            if (has_conflict(next) || find_free_slot() == -1) break;
             queue_pop();
             int slot = find_free_slot();
             init_slot(slot);

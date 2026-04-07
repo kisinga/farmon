@@ -47,10 +47,7 @@ NODE_REGISTRY.set('dosing_pump', {
     </svg>`;
   },
 
-  legendSvg: `<svg width="20" height="16" viewBox="0 0 20 16"><circle cx="10" cy="8" r="6" fill="none" stroke="${COLOR}" stroke-width="2"/><path d="M10 4 Q13 7 13 9 A 3 3 0 0 1 7 9 Q7 7 10 4" fill="${COLOR}" opacity="0.6"/></svg>`,
-
   sidebarFields: [
-    { key: 'name', label: 'Name', type: 'text' },
     { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42' },
     { key: 'flow_rate_ml_min', label: 'Rate (mL/min)', type: 'number' },
   ],

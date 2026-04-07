@@ -60,7 +60,6 @@ export interface PipeSegment {
 // ---------------------------------------------------------------------------
 
 export interface RouteOverride {
-  name?: string;
   max_runtime_seconds?: number;
 }
 

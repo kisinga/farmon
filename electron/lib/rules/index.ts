@@ -26,6 +26,7 @@ import { orphanedComponents } from "./manifest/orphaned-components.js";
 import { pinCapabilities } from "./manifest/pin-capabilities.js";
 import { gpioBudget } from "./manifest/gpio-budget.js";
 import { routeNames } from "./manifest/route-names.js";
+import { routeConcurrency } from "./manifest/route-concurrency.js";
 
 // Entity-specific topology rules are registered on NodeDescriptor.rules
 // and collected by the runner via NODE_REGISTRY. No imports needed here.
@@ -47,6 +48,7 @@ export const ALL_MANIFEST_RULES: ManifestRule[] = [
   pinCapabilities,
   gpioBudget,
   routeNames,
+  routeConcurrency,
 ];
 
 // Convenience wrappers with default rule sets

@@ -9,18 +9,18 @@ export const routeNames: ManifestRule = {
   evaluate(m: Manifest, _board: BoardDef): RuleDiagnostic[] {
     const diagnostics: RuleDiagnostic[] = [];
 
-    const nameCounts = new Map<string, number>();
+    const seen = new Map<string, typeof m.routes[number]>();
     for (const route of m.routes) {
-      nameCounts.set(route.name, (nameCounts.get(route.name) ?? 0) + 1);
-    }
-    for (const [name, count] of nameCounts) {
-      if (count > 1) {
+      const prev = seen.get(route.name);
+      if (prev) {
         diagnostics.push({
           severity: "error",
-          message: `Duplicate route name: "${name}"`,
-          target: name,
+          message: `Duplicate route name: "${route.name}"`,
+          target: route.key,
           ruleId: this.id,
         });
+      } else {
+        seen.set(route.name, route);
       }
     }
 
