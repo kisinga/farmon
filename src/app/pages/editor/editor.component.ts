@@ -133,8 +133,8 @@ export class EditorComponent implements OnInit, OnDestroy {
   protected tabs: { id: TabId; label: string }[] = [
     { id: 'device', label: 'Device' },
     { id: 'design', label: 'Design' },
-    { id: 'timing', label: 'Timing' },
     { id: 'automations', label: 'Automations' },
+    { id: 'timing', label: 'Timing' },
     { id: 'deploy', label: 'Deploy' },
   ];
 

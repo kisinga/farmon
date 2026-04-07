@@ -9,6 +9,7 @@ import { generateBoardPackage } from "./generators/board-package.js";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
 import { generateAutomations } from "./generators/automations.js";
+import { generateReadme } from "./generators/readme.js";
 import { LOGO_SVG } from "./static/logo.js";
 
 export interface GeneratedFile {
@@ -90,10 +91,17 @@ export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
   if (automationsContent) {
     files.push({
       relativePath: `config/homeassistant/automations/${dir}.yaml`,
-      description: "HA automations for scheduled route activation",
+      description: "HA automations + system notifications",
       content: automationsContent,
     });
   }
+
+  // System documentation
+  files.push({
+    relativePath: `${deviceDir}/README.md`,
+    description: "System documentation (routes, safety, installation)",
+    content: generateReadme(m),
+  });
 
   return files;
 }

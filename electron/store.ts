@@ -7,7 +7,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 // Schema versioning
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 7;     // version this app writes
+export const SCHEMA_VERSION = 8;     // version this app writes
 
 export class SchemaError extends Error {
   constructor(
@@ -55,6 +55,12 @@ const MIGRATIONS: Record<number, Migration> = {
       delete a.conditions;
     }
     data.route_overrides = overrides;
+    return data;
+  },
+  7: (data) => {
+    // Level triggers now support 'node' (topology ref) alongside 'entity' (raw HA).
+    // Existing 'entity' values are preserved — no auto-conversion needed.
+    data.schema = 8;
     return data;
   },
 };

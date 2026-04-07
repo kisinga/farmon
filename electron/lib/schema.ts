@@ -24,7 +24,7 @@ export interface ManifestAutomation {
   route_index: number;      // resolved index into routes[]
   route_key: string;        // original key for display
   route_name: string;       // human-readable route name
-  trigger: { type: 'time'; at: string } | { type: 'level'; entity: string; below?: number; above?: number };
+  trigger: { type: 'time'; at: string } | { type: 'level'; node?: string; entity?: string; below?: number; above?: number; for_minutes?: number };
   days_of_week: string[];
   enabled: boolean;
 }

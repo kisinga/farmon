@@ -73,10 +73,12 @@ export interface RouteOverride {
 
 export interface AutomationTrigger {
   type: 'time' | 'level';
-  at?: string;          // HH:MM (for type: time)
-  entity?: string;      // entity reference (for type: level)
+  at?: string;            // HH:MM (for type: time)
+  node?: string;          // topology node ID (for type: level) — resolved to HA entity at codegen
+  entity?: string;        // raw HA entity ID (for type: level) — fallback for external sensors
   below?: number;
   above?: number;
+  for_minutes?: number;   // hold duration in minutes before trigger fires
 }
 
 export interface Automation {
@@ -93,7 +95,7 @@ export interface Automation {
 // ---------------------------------------------------------------------------
 
 export interface SystemTopology {
-  schema: 7;
+  schema: 8;
   device: {
     name: string;
     friendly_name: string;

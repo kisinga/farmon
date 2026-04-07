@@ -24,7 +24,14 @@ import { ComponentId } from "../../shared/schemas.js";
 
 export const AutomationTriggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("time"), at: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:MM format') }),
-  z.object({ type: z.literal("level"), entity: z.string().min(1), below: z.number().optional(), above: z.number().optional() }),
+  z.object({
+    type: z.literal("level"),
+    node: z.string().optional(),        // topology node ID — resolved at codegen
+    entity: z.string().optional(),      // raw HA entity ID — fallback for external sensors
+    below: z.number().optional(),
+    above: z.number().optional(),
+    for_minutes: z.number().min(0).optional(),
+  }),
 ]);
 
 export const AutomationSchema = z.object({

@@ -36,6 +36,10 @@ export function generateDashboard(m: Manifest): string {
   const valveCover = (v: ManifestNode) => entityId("cover", m.device.name, n(v, 'name'));
   const wsPressureSensor = (ws: ManifestNode) => entityId("sensor", m.device.name, `${n(ws, 'name')} Pressure`);
 
+  // System-level entities (derived)
+  const combinedLevelSensor = entityId("sensor", m.device.name, "Combined Tank Level");
+  const waterCriticalSensor = entityId("binary_sensor", m.device.name, "Water Critical");
+
   // System-level entities
   const stateSensor = entityId("sensor", m.device.name, "System State");
   const faultSensor = entityId("sensor", m.device.name, "System Fault");
@@ -234,7 +238,14 @@ export function generateDashboard(m: Manifest): string {
           {
             type: "grid",
             cards: [
-              { type: "heading", heading: "Water levels", heading_style: "title" },
+              { type: "heading", heading: "Water levels", heading_style: "title",
+                ...(tanks.filter(t => t['level_pin']).length >= 2
+                  ? { badges: [{ type: "entity", show_state: true, show_icon: true, entity: combinedLevelSensor }] }
+                  : {}),
+              },
+              ...(tanks.filter(t => t['level_pin']).length >= 2
+                ? [{ type: "entities", entities: [{ entity: waterCriticalSensor, name: "Water Critical" }], grid_options: { columns: "full" } }]
+                : []),
               ...(tankGauges.length > 0
                 ? [{ type: "horizontal-stack", cards: tankGauges, grid_options: { columns: "full", rows: "auto" } }]
                 : []),

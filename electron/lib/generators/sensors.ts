@@ -171,13 +171,36 @@ ${m.routes.map((r, i) => `\
       if (s < 0) return std::string("Idle");
       const char* st[] = {"Idle","Preparing","Running","Stopping","Fault"};
       return std::string((slots[s].state >= 0 && slots[s].state <= 4) ? st[slots[s].state] : "Unknown");`).join("\n\n")}
+${tanksWithLevel.length >= 2 ? `
+  # --- Combined level (auto-derived from ${tanksWithLevel.length} tanks) ------
+
+  - platform: template
+    id: combined_tank_level
+    name: "Combined Tank Level"
+    unit_of_measurement: "%"
+    icon: "mdi:water-percent"
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      float sum = 0; int count = 0;
+${tanksWithLevel.map(t => `\
+      { float v = id(${t['id']}_level).state; if (!std::isnan(v)) { sum += v; count++; } }`).join("\n")}
+      return count > 0 ? sum / (float)count : 0.0f;` : ""}
 ${globalBlocks.length > 0 ? `
 # --- Sensor fault detection --------------------------------------------------
 
 globals:
 ${globalBlocks.join("\n")}` : ""}
-${faultSensors.length > 0 ? `
+${faultSensors.length > 0 || tanksWithLevel.length >= 2 ? `
 binary_sensor:
-${faultSensors.join("\n\n")}` : ""}
+${faultSensors.join("\n\n")}${tanksWithLevel.length >= 2 ? `
+  - platform: template
+    id: water_critical
+    name: "Water Critical"
+    icon: "mdi:water-alert"
+    device_class: problem
+    lambda: |-
+      float c = id(combined_tank_level).state;
+      return !std::isnan(c) && c < 35.0f;` : ""}` : ""}
 `;
 }

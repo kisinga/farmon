@@ -1,4 +1,4 @@
-import { Component, inject, signal, effect } from '@angular/core';
+import { Component, inject, signal, effect, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { ElectronService } from '../../../core/services/electron.service';
@@ -99,13 +99,36 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                 }
                 @if (auto.trigger.type === 'level') {
                   <div class="form-control">
-                    <label class="label pb-1"><span class="label-text text-xs">Entity</span></label>
+                    <label class="label pb-1"><span class="label-text text-xs">Tank / Sensor</span></label>
+                    <select
+                      class="select select-bordered select-sm"
+                      [ngModel]="auto.trigger.node ?? ''"
+                      (ngModelChange)="updateTrigger(i, 'node', $event)"
+                    >
+                      <option value="">Select node...</option>
+                      @for (node of levelNodes(); track node.id) {
+                        <option [value]="node.id">{{ node.name }}</option>
+                      }
+                    </select>
+                  </div>
+                  <div class="form-control">
+                    <label class="label pb-1"><span class="label-text text-xs">Below (%)</span></label>
                     <input
-                      type="text"
+                      type="number"
                       class="input input-bordered input-sm"
-                      [ngModel]="auto.trigger.entity ?? ''"
-                      (ngModelChange)="updateTrigger(i, 'entity', $event)"
-                      placeholder="sensor.xxx_level"
+                      [ngModel]="auto.trigger.below ?? ''"
+                      (ngModelChange)="updateTrigger(i, 'below', $event === '' ? undefined : +$event)"
+                      min="0" max="100" placeholder="e.g. 80"
+                    />
+                  </div>
+                  <div class="form-control">
+                    <label class="label pb-1"><span class="label-text text-xs">Hold (min)</span></label>
+                    <input
+                      type="number"
+                      class="input input-bordered input-sm"
+                      [ngModel]="auto.trigger.for_minutes ?? ''"
+                      (ngModelChange)="updateTrigger(i, 'for_minutes', $event === '' ? undefined : +$event)"
+                      min="0" max="60" placeholder="e.g. 1"
                     />
                   </div>
                 }
@@ -150,6 +173,15 @@ export class AutomationsTabComponent {
 
   protected days = DAYS;
   protected derivedRoutes = signal<Array<{ key: string; name: string }>>([]);
+
+  /** Nodes that can be used as level trigger sources (tanks with level sensors). */
+  protected levelNodes = computed(() => {
+    const t = this.editor.topology();
+    if (!t) return [];
+    return t.nodes
+      .filter(n => n.kind === 'tank' && (n as any).level_pin)
+      .map(n => ({ id: n.id, name: (n as any).name ?? n.id }));
+  });
 
   constructor() {
     effect(() => {
