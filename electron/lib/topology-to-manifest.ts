@@ -1,6 +1,6 @@
 import type { Manifest, ManifestNode, ManifestAutomation, Route as ManifestRoute } from "./schema.js";
-import type { Topology, TopologyNode } from "./topology.js";
-import { buildGraph, activeGraph, deriveRoutes, type Route } from "../../shared/graph/index.js";
+import type { Topology } from "./topology.js";
+import { buildGraph, activeGraph, deriveRoutes } from "../../shared/graph/index.js";
 
 // ---------------------------------------------------------------------------
 // Main conversion
@@ -36,6 +36,16 @@ export function topologyToManifest(topology: Topology): Manifest {
       const srcLabel = (srcNode as any)?.name ?? r.source;
       const dstLabel = (dstNode as any)?.name ?? r.destination;
 
+      // Determine if runtime level checks are reliable for this route
+      const runtimeLevelOk = !r.crossesPump || (() => {
+        // If route crosses pump, check if source/dest tank sensors are pump-rated
+        const srcNode = nodeMap.get(r.source);
+        const dstNode = nodeMap.get(r.destination);
+        const srcOk = !srcNode || srcNode.kind !== 'tank' || !!(srcNode as any).pump_rated;
+        const dstOk = !dstNode || dstNode.kind !== 'tank' || !!(dstNode as any).pump_rated;
+        return srcOk && dstOk;
+      })();
+
       return {
         key: r.key,
         name: `${srcLabel} > ${dstLabel}`,
@@ -47,6 +57,9 @@ export function topologyToManifest(topology: Topology): Manifest {
         max_runtime_seconds: override.max_runtime_seconds ?? 1800,
         needs_pump: r.crossesPump,
         nodeSequence: r.nodeSequence,
+        source_min_pct: override.source_min_level ?? 0,
+        dest_max_pct: override.dest_max_level ?? 0,
+        runtime_level_ok: runtimeLevelOk,
       };
     });
 
@@ -72,8 +85,6 @@ export function topologyToManifest(topology: Topology): Manifest {
         route_name: manifestRoutes[idx].name,
         trigger: a.trigger as ManifestAutomation['trigger'],
         days_of_week: a.days_of_week,
-        source_min_level: a.conditions?.source_min_level,
-        dest_max_level: a.conditions?.dest_max_level,
         enabled: a.enabled,
       };
     });

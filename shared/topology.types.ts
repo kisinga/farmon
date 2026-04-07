@@ -61,6 +61,10 @@ export interface PipeSegment {
 
 export interface RouteOverride {
   max_runtime_seconds?: number;
+  /** Firmware rejects start (and stops run if sensor is pump-rated) when source below this %. */
+  source_min_level?: number;
+  /** Firmware rejects start (and stops run if sensor is pump-rated) when dest above this %. */
+  dest_max_level?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,10 +85,6 @@ export interface Automation {
   route: string;          // route key e.g. "tank1>tank2"
   trigger: AutomationTrigger;
   days_of_week: ('MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN')[];
-  conditions: {
-    source_min_level?: number;
-    dest_max_level?: number;
-  };
   enabled: boolean;
 }
 
@@ -93,7 +93,7 @@ export interface Automation {
 // ---------------------------------------------------------------------------
 
 export interface SystemTopology {
-  schema: 6;
+  schema: 7;
   device: {
     name: string;
     friendly_name: string;

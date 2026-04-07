@@ -77,30 +77,15 @@ export const automationRouteRef: ManifestRule = {
         }
       }
 
-      // Source level condition requires a tank source with level sensor
-      if (auto.source_min_level !== undefined) {
-        const route = manifest.routes[auto.route_index];
-        if (route && route.source_type !== 'tank') {
-          diagnostics.push({
-            ruleId: "automation-route-ref",
-            severity: "warning",
-            message: `Automation "${auto.name}" has source_min_level but route source is not a tank`,
-            target: auto.id,
-          });
-        }
-      }
-
-      // Dest level condition requires a tank destination
-      if (auto.dest_max_level !== undefined) {
-        const route = manifest.routes[auto.route_index];
-        if (route && !route.destination) {
-          diagnostics.push({
-            ruleId: "automation-route-ref",
-            severity: "warning",
-            message: `Automation "${auto.name}" has dest_max_level but route destination is not a tank`,
-            target: auto.id,
-          });
-        }
+      // Warn if automated route has no firmware-level source conservation
+      const route = manifest.routes[auto.route_index];
+      if (route && route.source_type === 'tank' && route.source_min_pct === 0) {
+        diagnostics.push({
+          ruleId: "automation-route-ref",
+          severity: "warning",
+          message: `Automation "${auto.name}": route has no source_min_level — firmware won't prevent source tank from draining empty`,
+          target: auto.route_key,
+        });
       }
     }
 

@@ -60,29 +60,10 @@ export function generateAutomations(m: Manifest): string | null {
       });
     }
 
-    // Source tank level condition
-    if (a.source_min_level !== undefined && route.source_type === 'tank') {
-      const tank = tanks.find(t => t['id'] === route.source);
-      if (tank && tank['level_pin']) {
-        condition.push({
-          condition: "numeric_state",
-          entity_id: entityId("sensor", m.device.name, `${tank['name']} Level`),
-          above: a.source_min_level,
-        });
-      }
-    }
-
-    // Dest tank level condition
-    if (a.dest_max_level !== undefined && route.destination) {
-      const destTank = tanks.find(t => t['id'] === route.destination);
-      if (destTank && destTank['level_pin']) {
-        condition.push({
-          condition: "numeric_state",
-          entity_id: entityId("sensor", m.device.name, `${destTank['name']} Level`),
-          below: a.dest_max_level,
-        });
-      }
-    }
+    // Source/dest level checks are firmware-enforced via route_overrides
+    // (source_min_pct / dest_max_pct in the C++ Route struct).
+    // The HA automation just decides *when* to attempt a start;
+    // firmware decides *whether* it's safe.
 
     return {
       id: `majiflow_${a.id}`,

@@ -18,7 +18,7 @@ import type { FlowConstraint } from './graph/constraints';
 export interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'pin';
+  type: 'text' | 'number' | 'pin' | 'toggle';
   placeholder?: string;
   /** Pin capability required for this field, e.g. 'adc'. Filters pin selection and drives validation. */
   pinCap?: PinCap;

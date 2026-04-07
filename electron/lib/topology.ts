@@ -46,6 +46,8 @@ const PipeSegmentSchema = z.object({
 
 const RouteOverrideSchema = z.object({
   max_runtime_seconds: z.number().optional(),
+  source_min_level: z.number().min(0).max(100).optional(),
+  dest_max_level: z.number().min(0).max(100).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -53,7 +55,7 @@ const RouteOverrideSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const TopologySchema = z.object({
-  schema: z.literal(6),
+  schema: z.literal(7),
   device: DeviceSchema,
   nodes: z.array(TopologyNodeSchema).min(1),
   pipes: z.array(PipeSegmentSchema).default([]),

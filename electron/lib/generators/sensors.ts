@@ -123,10 +123,11 @@ text_sensor:
         "Tank full",
         "No flow detected",
         "Max runtime exceeded",
-        "HA connection lost"
+        "HA connection lost",
+        "Source tank low"
       };
       int r = id(stop_reason);
-      return std::string((r >= 0 && r <= 5) ? reasons[r] : "Unknown");
+      return std::string((r >= 0 && r <= 6) ? reasons[r] : "Unknown");
 
   - platform: template
     id: active_routes_text

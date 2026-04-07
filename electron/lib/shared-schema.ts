@@ -34,10 +34,6 @@ export const AutomationSchema = z.object({
   trigger: AutomationTriggerSchema,
   days_of_week: z.array(z.enum(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']))
     .default(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']),
-  conditions: z.object({
-    source_min_level: z.number().min(0).max(100).optional(),
-    dest_max_level: z.number().min(0).max(100).optional(),
-  }).default({}),
   enabled: z.boolean().default(true),
 });
 

@@ -26,8 +26,6 @@ export interface ManifestAutomation {
   route_name: string;       // human-readable route name
   trigger: { type: 'time'; at: string } | { type: 'level'; entity: string; below?: number; above?: number };
   days_of_week: string[];
-  source_min_level?: number;
-  dest_max_level?: number;
   enabled: boolean;
 }
 
@@ -51,6 +49,12 @@ export interface Route {
   needs_pump: boolean;
   /** Ordered node IDs from source to destination (inclusive). */
   nodeSequence: string[];
+  /** Firmware pre-start: reject if source tank below this %. 0 = no check. */
+  source_min_pct: number;
+  /** Firmware pre-start: reject if dest tank above this %. 0 = no check. */
+  dest_max_pct: number;
+  /** True if level sensors on this route are reliable during pump operation. */
+  runtime_level_ok: boolean;
 }
 
 // ---------------------------------------------------------------------------

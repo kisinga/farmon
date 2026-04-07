@@ -49,7 +49,10 @@ export function generateRoutes(m: Manifest): string {
     const maskBin = mask.toString(2).padStart(valves.length, "0");
     const conflictBin = conflictMasks[i].toString(2).padStart(m.routes.length, "0");
     const pump = r.needs_pump ? "true" : "false";
-    return `  { ${i}, 0b${maskBin}, ${srcTank}, ${srcWs}, ${dst}, ${flow}, 0b${conflictBin}, ${r.max_runtime_seconds}, ${pump}, "${r.name}" },`;
+    const srcMin = r.source_min_pct ?? 0;
+    const dstMax = r.dest_max_pct ?? 0;
+    const rtLvl = r.runtime_level_ok ? "true" : "false";
+    return `  { ${i}, 0b${maskBin}, ${srcTank}, ${srcWs}, ${dst}, ${flow}, 0b${conflictBin}, ${r.max_runtime_seconds}, ${pump}, ${srcMin}, ${dstMax}, ${rtLvl}, "${r.name}" },`;
   });
 
   // Build index comments
@@ -131,6 +134,7 @@ static const int STOP_TANK_FULL    = 2;
 static const int STOP_NO_FLOW      = 3;
 static const int STOP_MAX_RUNTIME  = 4;
 static const int STOP_API_LOST     = 5;
+static const int STOP_SOURCE_LOW   = 6;
 
 static const int FAULT_TO_STOP_OFFSET = 2;
 
@@ -147,6 +151,9 @@ struct Route {
                                // (shared sensor + different destination = ambiguous reading)
   uint16_t    max_runtime_s;
   bool        needs_pump;      // true if route path crosses the pump node
+  uint8_t     source_min_pct;  // pre-start: reject if source tank below this %. 0 = no check.
+  uint8_t     dest_max_pct;    // pre-start: reject if dest tank above this %. 0 = no check.
+  bool        runtime_level_ok; // true if tank sensors are reliable during pump operation
   const char* name;
 };
 
@@ -323,13 +330,13 @@ inline int try_route_start(int route_id) {
   }
 
   const Route& r = ROUTES[route_id];
-  if (r.source_tank != 0xFF) {
+  if (r.source_tank != 0xFF && r.source_min_pct > 0) {
     float src = get_tank_level(r.source_tank);
-    if (!id(safety_override).state && (std::isnan(src) || src < 5.0f)) return 3;
+    if (!id(safety_override).state && (std::isnan(src) || src < (float)r.source_min_pct)) return 3;
   }
-  if (r.dest_tank != 0xFF) {
+  if (r.dest_tank != 0xFF && r.dest_max_pct > 0) {
     float dst = get_tank_level(r.dest_tank);
-    if (!id(safety_override).state && !std::isnan(dst) && dst > 95.0f) return 4;
+    if (!id(safety_override).state && !std::isnan(dst) && dst > (float)r.dest_max_pct) return 4;
   }
 
   int slot = find_free_slot();

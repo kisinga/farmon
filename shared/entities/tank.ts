@@ -17,6 +17,8 @@ export const TankNodeSchema = z.object({
   id: ComponentId,
   name: z.string().min(1),
   level_pin: GpioPin.optional(),
+  /** True if level sensor is rated for reliable readings during pump operation (e.g., pressure transducer). */
+  pump_rated: z.boolean().default(false),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
@@ -41,7 +43,7 @@ NODE_REGISTRY.set('tank', {
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
   portLayout: { inlet: { y: 15 }, outlet: { y: 55 } },
-  defaultData: (n) => ({ name: `Tank ${n}`, level_pin: '' }),
+  defaultData: (n) => ({ name: `Tank ${n}`, level_pin: '', pump_rated: false }),
 
   renderSvg: (data) => {
     const name = data['name'] ?? 'Tank';
@@ -54,6 +56,7 @@ NODE_REGISTRY.set('tank', {
 
   sidebarFields: [
     { key: 'level_pin', label: 'Level Pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc' },
+    { key: 'pump_rated', label: 'Pump-rated sensor', type: 'toggle' },
   ],
 
   // --- Codegen ---

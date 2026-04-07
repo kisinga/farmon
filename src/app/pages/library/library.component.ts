@@ -440,7 +440,7 @@ export class LibraryComponent implements OnInit {
 
     try {
       const topology: SystemTopology = {
-        schema: 6,
+        schema: 7,
         device: { name: slug, friendly_name: name, board },
         nodes: [
           {

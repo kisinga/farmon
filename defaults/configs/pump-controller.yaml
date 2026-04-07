@@ -1,4 +1,4 @@
-schema: 6
+schema: 7
 device:
   name: pump-ctrl
   friendly_name: Pump-ctrl
@@ -180,6 +180,8 @@ pipes:
 route_overrides:
   tank1>tank2:
     max_runtime_seconds: 600
+    source_min_level: 20
+    dest_max_level: 90
   tank1>h2:
     max_runtime_seconds: 1800
   tank2>h2:
@@ -198,7 +200,4 @@ automations:
       type: time
       at: "06:00"
     days_of_week: [MON, TUE, WED, THU, FRI, SAT, SUN]
-    conditions:
-      source_min_level: 20
-      dest_max_level: 90
     enabled: true

@@ -282,6 +282,32 @@ ${pumpMgmt}
               }
             }
 
+            // --- RUNTIME LEVEL CHECKS (only when sensors are pump-rated) ---
+            if (slots[s].fault_code == 0 && r.runtime_level_ok) {
+              if (r.source_min_pct > 0 && r.source_tank != 0xFF) {
+                float src = get_tank_level(r.source_tank);
+                if (!std::isnan(src) && src < (float)r.source_min_pct) {
+                  slots[s].stop_reason = STOP_SOURCE_LOW;
+                  slots[s].state = 3;
+                  slots[s].stop_time = now;
+                  slots[s].valves_closing = false;
+                  ESP_LOGI("safety", "Source low (%.0f%% < %u%%) — clean stop slot %d route [%s]",
+                           src, r.source_min_pct, s, r.name);
+                }
+              }
+              if (slots[s].state == 2 && r.dest_max_pct > 0 && r.dest_tank != 0xFF) {
+                float dst = get_tank_level(r.dest_tank);
+                if (!std::isnan(dst) && dst >= (float)r.dest_max_pct) {
+                  slots[s].stop_reason = STOP_TANK_FULL;
+                  slots[s].state = 3;
+                  slots[s].stop_time = now;
+                  slots[s].valves_closing = false;
+                  ESP_LOGI("safety", "Dest full (%.0f%% >= %u%%) — clean stop slot %d route [%s]",
+                           dst, r.dest_max_pct, s, r.name);
+                }
+              }
+            }
+
             // --- PER-ROUTE MAX RUNTIME ---
             if (slots[s].fault_code == 0 && runtime > ((uint32_t)r.max_runtime_s * 1000U)) {
               ESP_LOGE("safety", "Max runtime %us exceeded on slot %d route [%s]",

@@ -126,41 +126,10 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                 </div>
               </div>
 
-              <!-- Conditions -->
-              <div class="collapse collapse-arrow bg-base-200/50">
-                <input type="checkbox" class="peer" />
-                <div class="collapse-title text-xs font-medium text-base-content/60 min-h-0 py-2">
-                  Conditions
-                </div>
-                <div class="collapse-content">
-                  <div class="grid grid-cols-2 gap-4 pt-2">
-                    <div class="form-control">
-                      <label class="label pb-1"><span class="label-text text-xs">Source min level (%)</span></label>
-                      <input
-                        type="number"
-                        class="input input-bordered input-sm"
-                        [ngModel]="auto.conditions.source_min_level ?? ''"
-                        (ngModelChange)="updateCondition(i, 'source_min_level', $event)"
-                        min="0"
-                        max="100"
-                        placeholder="e.g. 20"
-                      />
-                    </div>
-                    <div class="form-control">
-                      <label class="label pb-1"><span class="label-text text-xs">Dest max level (%)</span></label>
-                      <input
-                        type="number"
-                        class="input input-bordered input-sm"
-                        [ngModel]="auto.conditions.dest_max_level ?? ''"
-                        (ngModelChange)="updateCondition(i, 'dest_max_level', $event)"
-                        min="0"
-                        max="100"
-                        placeholder="e.g. 90"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <!-- Safety thresholds are on the route (Route Overrides), not the automation -->
+              <p class="text-xs text-base-content/40 italic">
+                Source/dest level thresholds are enforced by firmware via Route Overrides.
+              </p>
             </div>
           </div>
         }
@@ -203,7 +172,6 @@ export class AutomationsTabComponent {
         route: '',
         trigger: { type: 'time', at: '06:00' },
         days_of_week: [...DAYS],
-        conditions: {},
         enabled: true,
       });
     });
@@ -252,15 +220,4 @@ export class AutomationsTabComponent {
     });
   }
 
-  protected updateCondition(index: number, field: 'source_min_level' | 'dest_max_level', value: string) {
-    this.editor.updateTopology(t => {
-      if (!t.automations[index].conditions) t.automations[index].conditions = {};
-      const num = Number(value);
-      if (value === '' || isNaN(num)) {
-        delete (t.automations[index].conditions as Record<string, unknown>)[field];
-      } else {
-        (t.automations[index].conditions as Record<string, unknown>)[field] = num;
-      }
-    });
-  }
 }

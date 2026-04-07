@@ -7,7 +7,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 // Schema versioning
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 6;     // version this app writes
+export const SCHEMA_VERSION = 7;     // version this app writes
 
 export class SchemaError extends Error {
   constructor(
@@ -34,6 +34,29 @@ type Migration = (data: Record<string, unknown>) => Record<string, unknown>;
 
 const MIGRATIONS: Record<number, Migration> = {
   5: (data) => { data.schema = 6; data.automations = data.automations ?? []; return data; },
+  6: (data) => {
+    data.schema = 7;
+    // Move automation conditions to route_overrides (firmware-enforced)
+    const overrides = (data.route_overrides ?? {}) as Record<string, Record<string, unknown>>;
+    const automations = (data.automations ?? []) as Array<Record<string, unknown>>;
+    for (const a of automations) {
+      const cond = a.conditions as Record<string, unknown> | undefined;
+      if (!cond) continue;
+      const routeKey = a.route as string;
+      if (!routeKey) continue;
+      const ov = overrides[routeKey] ?? {};
+      if (cond.source_min_level != null && ov.source_min_level == null) {
+        ov.source_min_level = cond.source_min_level;
+      }
+      if (cond.dest_max_level != null && ov.dest_max_level == null) {
+        ov.dest_max_level = cond.dest_max_level;
+      }
+      overrides[routeKey] = ov;
+      delete a.conditions;
+    }
+    data.route_overrides = overrides;
+    return data;
+  },
 };
 
 function migrateIfNeeded(data: Record<string, unknown>, filePath: string): Record<string, unknown> {
@@ -46,10 +69,6 @@ function migrateIfNeeded(data: Record<string, unknown>, filePath: string): Recor
   return data;
 }
 
-/** @deprecated Use migrateIfNeeded instead */
-function checkSchema(data: Record<string, unknown>, filePath: string): void {
-  migrateIfNeeded(data, filePath);
-}
 
 // ---------------------------------------------------------------------------
 // Store paths
@@ -187,7 +206,7 @@ export function loadBoard(model: string): { board: Record<string, unknown>; svg:
   const yamlPath = path.join(dir, "board.yaml");
   const raw = fs.readFileSync(yamlPath, "utf-8");
   const board = parseYaml(raw) as Record<string, unknown>;
-  checkSchema(board, `boards/${model}/board.yaml`);
+  migrateIfNeeded(board, `boards/${model}/board.yaml`);
 
   const svgField = (board.svg as string) ?? "board.svg";
   const svgPath = path.join(dir, svgField);
@@ -202,7 +221,7 @@ export function importBoard(sourcePath: string): string {
 
   const raw = fs.readFileSync(yamlPath, "utf-8");
   const parsed = parseYaml(raw) as Record<string, unknown>;
-  checkSchema(parsed, yamlPath);
+  migrateIfNeeded(parsed, yamlPath);
 
   const model = (parsed.model as string) ?? path.basename(sourcePath);
   const dest = path.join(boardsDir(), model);
@@ -267,7 +286,7 @@ export function loadConfig(name: string): Record<string, unknown> {
   const filePath = resolveConfigPath(name);
   const raw = fs.readFileSync(filePath, "utf-8");
   const data = parseYaml(raw) as Record<string, unknown>;
-  checkSchema(data, `configs/${name}.yaml`);
+  migrateIfNeeded(data, `configs/${name}.yaml`);
   return data;
 }
 
@@ -316,7 +335,7 @@ export function deleteConfig(name: string): void {
 export function importConfig(sourcePath: string): string {
   const raw = fs.readFileSync(sourcePath, "utf-8");
   const parsed = parseYaml(raw) as Record<string, unknown>;
-  checkSchema(parsed, sourcePath);
+  migrateIfNeeded(parsed, sourcePath);
 
   const device = parsed.device as Record<string, unknown> | undefined;
   const boardId = device?.board as string | undefined;
