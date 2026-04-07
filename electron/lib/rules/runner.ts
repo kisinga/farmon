@@ -29,8 +29,28 @@ export interface ValidateOptions {
 function runEntityRules(nodes: Array<Record<string, any>>): RuleDiagnostic[] {
   const diagnostics: RuleDiagnostic[] = [];
   for (const [kind, desc] of NODE_REGISTRY) {
-    if (!desc.rules?.length) continue;
     const kindNodes = nodes.filter(n => n['kind'] === kind);
+
+    // General pin check — flag empty pin fields from sidebarFields metadata.
+    // Skipped for entities with their own rules (they provide richer messages).
+    if (!desc.rules?.length) {
+      const pinFields = desc.sidebarFields.filter(f => f.type === 'pin');
+      for (const node of kindNodes) {
+        for (const field of pinFields) {
+          if (!node[field.key]) {
+            diagnostics.push({
+              severity: 'error',
+              message: `${desc.label} "${node['name'] || node['id']}": ${field.label} not configured`,
+              target: String(node['id']),
+              ruleId: 'pin-not-configured',
+            });
+          }
+        }
+      }
+      continue;
+    }
+
+    // Per-entity rules
     for (const rule of desc.rules) {
       const results = rule.evaluate(kindNodes, nodes);
       for (const r of results) {

@@ -89,6 +89,7 @@ import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
           (updateField)="updateNodeField($event.nodeId, $event.field, $event.value)"
           (updateMaxRuntime)="updateMaxRuntime($event.key, $event.value)"
           (selectRoute)="onRouteSelected($event)"
+          (selectNode)="onNodeSelected($event)"
         />
       </aside>
     </div>
@@ -343,6 +344,13 @@ export class TopologyX6TabComponent {
 
   onRouteSelected(ev: { route: import('../shared/derive-routes').DerivedRoute; sharedNodeIds?: string[] }) {
     const sel: Selection = { kind: 'route', route: ev.route, sharedNodeIds: ev.sharedNodeIds };
+    this.selection.set(sel);
+    const t = this.editor.topology();
+    if (t) this.c.highlight(sel, t);
+  }
+
+  onNodeSelected(nodeId: string) {
+    const sel: Selection = { kind: 'node', nodeId };
     this.selection.set(sel);
     const t = this.editor.topology();
     if (t) this.c.highlight(sel, t);

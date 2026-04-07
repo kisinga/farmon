@@ -32,6 +32,7 @@ export type { Selection };
             <label class="sidebar-label">{{ field.label }}</label>
             @if (field.type === 'pin') {
               <select class="select select-xs select-bordered flex-1 font-mono"
+                [class.select-warning]="!$any(sn.node)[field.key]"
                 [ngModel]="$any(sn.node)[field.key]"
                 (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })">
                 <option value="">-- select --</option>
@@ -119,10 +120,11 @@ export type { Selection };
         <div class="sidebar-section">
           <h3 class="sidebar-title">Validation</h3>
           @for (d of globalDiagnostics(); track $index) {
-            <div class="flex items-start gap-1.5 py-0.5 text-[11px]"
+            <div class="flex items-start gap-1.5 py-0.5 text-[11px] cursor-pointer hover:bg-base-200/50 rounded px-1 -mx-1"
               [class.text-error]="d.severity === 'error'"
               [class.text-warning]="d.severity === 'warning'"
-              [class.text-base-content/50]="d.severity === 'info'">
+              [class.text-base-content/50]="d.severity === 'info'"
+              (click)="onDiagnosticClick(d)">
               <span class="shrink-0">{{ d.severity === 'error' ? '\u2715' : d.severity === 'warning' ? '\u26A0' : '\u2139' }}</span>
               <span>{{ d.message }}</span>
             </div>
@@ -179,6 +181,7 @@ export class TopologySidebarComponent {
   updateField = output<{ nodeId: string; field: string; value: any }>();
   updateMaxRuntime = output<{ key: string; value: number }>();
   selectRoute = output<{ route: DerivedRoute; sharedNodeIds?: string[] }>();
+  selectNode = output<string>();
 
   // --- Computed ---
   protected selectedNodeData = computed(() => {
@@ -208,7 +211,7 @@ export class TopologySidebarComponent {
     const routeKeys = new Set(this.derivedRoutes().map(r => r.key));
     const nodeIds = new Set(this.editor.topology()?.nodes.map(n => n.id) ?? []);
     return this.editor.diagnostics().filter(d =>
-      !d.target || (!routeKeys.has(d.target) && !nodeIds.has(d.target))
+      d.severity === 'error' || !d.target || (!routeKeys.has(d.target) && !nodeIds.has(d.target))
     );
   });
 
@@ -252,7 +255,12 @@ export class TopologySidebarComponent {
   }
 
   onDiagnosticClick(d: RuleDiagnostic) {
+    if (!d.target) return;
     const route = this.routeByKey(d.target);
-    if (route) this.selectRoute.emit({ route, sharedNodeIds: d.sharedNodeIds });
+    if (route) {
+      this.selectRoute.emit({ route, sharedNodeIds: d.sharedNodeIds });
+    } else {
+      this.selectNode.emit(d.target);
+    }
   }
 }

@@ -103,7 +103,14 @@ export function registerIpcHandlers() {
     "codegen:generate",
     async (_e, dataRaw: unknown, boardRaw: unknown) => {
       const board = BoardDefSchema.parse(boardRaw);
-      const { manifest } = resolveTopologyAndManifest(dataRaw);
+      const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
+      const validation = validateAll(topology, manifest, board);
+      if (!validation.ok) {
+        const errors = validation.diagnostics
+          .filter(d => d.severity === 'error')
+          .map(d => d.message);
+        throw new Error(errors.join('\n'));
+      }
       const files = generateAll(manifest, board);
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);
