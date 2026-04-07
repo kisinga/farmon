@@ -109,7 +109,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     "codegen:generate",
-    async (_e, dataRaw: unknown, boardRaw: unknown) => {
+    async (_e, dataRaw: unknown, boardRaw: unknown, canvasSvg?: string) => {
       const board = BoardDefSchema.parse(boardRaw);
       const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
       const validation = validateAll(topology, manifest, board);
@@ -119,7 +119,7 @@ export function registerIpcHandlers() {
           .map(d => d.message);
         throw new Error(errors.join('\n'));
       }
-      const files = generateAll(manifest, board, topology);
+      const files = generateAll(manifest, board, topology, canvasSvg);
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);
       const deviceDir = manifest.device.directory ?? manifest.device.name;

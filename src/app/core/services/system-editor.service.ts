@@ -123,6 +123,14 @@ export class SystemEditorService {
     this._dirty.set(false);
   }
 
+  // --- Canvas snapshot (captured from X6 design tab) ---
+  private _canvasSvg = signal<string | null>(null);
+  readonly canvasSvg = this._canvasSvg.asReadonly();
+
+  setCanvasSvg(svg: string): void {
+    this._canvasSvg.set(svg);
+  }
+
   setGenerateResult(result: GenerateResult): void {
     this._generatedFiles.set(result);
   }
@@ -135,5 +143,6 @@ export class SystemEditorService {
     this._readonly.set(false);
     this._validation.set(null);
     this._generatedFiles.set(null);
+    this._canvasSvg.set(null);
   }
 }

@@ -410,7 +410,8 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
       const topology = this.editor.topology();
       const board = this.editor.board();
       if (!topology || !board) throw new Error('No topology or board loaded');
-      const result = await this.electron.generate(topology, board);
+      const canvasSvg = this.editor.canvasSvg() ?? undefined;
+      const result = await this.electron.generate(topology, board, canvasSvg);
       this.files.set(result.files);
       this.outputDir.set(result.outputDir);
       this.deviceDir.set(result.deviceDir);

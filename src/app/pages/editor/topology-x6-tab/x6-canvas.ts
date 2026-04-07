@@ -288,6 +288,22 @@ export class X6Canvas {
     };
   }
 
+  /** Export the current canvas as a standalone SVG string. */
+  exportSvg(): string {
+    const svg = this.graph.container.querySelector('svg');
+    if (!svg) return '';
+    const clone = svg.cloneNode(true) as SVGElement;
+    // Set explicit dimensions from the content bounding box
+    const bbox = this.graph.getContentBBox();
+    const pad = 40;
+    clone.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
+    clone.setAttribute('width', String(bbox.width + pad * 2));
+    clone.setAttribute('height', String(bbox.height + pad * 2));
+    // Remove grid background for clean export
+    clone.style.background = 'none';
+    return new XMLSerializer().serializeToString(clone);
+  }
+
   destroy(): void {
     if (this.positionTimer) clearTimeout(this.positionTimer);
     this.graph.dispose();

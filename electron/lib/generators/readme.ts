@@ -142,6 +142,33 @@ ${autoItems}
   </tbody>
 </table>` : ''}
 
+<h2>Home Assistant Entities</h2>
+<p style="font-size:11px;color:#666;margin-bottom:8px;">These entities are created on the ESP32 and appear in HA automatically. Calibration and override values are adjustable from the HA UI.</p>
+<table>
+  <thead><tr><th>Entity</th><th>Type</th><th>Purpose</th></tr></thead>
+  <tbody>
+${m.routes.map((r, i) => `\
+    <tr><td>button.…_start_${i}</td><td>Button</td><td>Start route: ${r.name}</td></tr>
+    <tr><td>button.…_stop_${i}</td><td>Button</td><td>Stop route: ${r.name}</td></tr>`).join('\n')}
+${tanksWithLevel.map(t => `\
+    <tr><td>number.…_${t['id']}_cal_empty</td><td>Number</td><td>${t['name']} empty voltage calibration</td></tr>
+    <tr><td>number.…_${t['id']}_cal_full</td><td>Number</td><td>${t['name']} full voltage calibration</td></tr>`).join('\n')}
+    <tr><td>switch.…_safety_override</td><td>Switch</td><td>Bypass pre-start level checks (use with caution)</td></tr>
+  </tbody>
+</table>
+
+<h2>Timing Parameters</h2>
+<table>
+  <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>Valve travel time</td><td>${m.timing.valve_travel_time}</td><td>Time allowed for valves to fully open/close</td></tr>
+    <tr><td>Flow watchdog</td><td>${m.timing.flow_watchdog_seconds}s</td><td>No-flow duration before fault/tank-full detection</td></tr>
+    <tr><td>Flow confirm</td><td>${m.timing.flow_confirm_seconds}s</td><td>Time to confirm flow is established after start</td></tr>
+    <tr><td>API watchdog</td><td>${m.timing.api_watchdog_seconds}s</td><td>HA disconnect duration before route is faulted</td></tr>
+    <tr><td>Sensor update</td><td>${m.timing.update_interval}</td><td>ADC/sensor polling interval</td></tr>
+  </tbody>
+</table>
+
 <h2>Firmware Safety</h2>
 <div class="safety-grid">
   <div class="safety-card">

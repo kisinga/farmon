@@ -36,7 +36,7 @@ function generateSecrets(m: Manifest): string {
   ].join("\n");
 }
 
-export function generateAll(m: Manifest, board: BoardDef, topology?: Topology): GeneratedFile[] {
+export function generateAll(m: Manifest, board: BoardDef, topology?: Topology, canvasSvg?: string): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const deviceDir = `esphome/${dir}`;
 
@@ -99,8 +99,8 @@ export function generateAll(m: Manifest, board: BoardDef, topology?: Topology): 
   }
 
   // System documentation (HTML with embedded topology SVG)
-  if (topology) {
-    const topologySvg = generateTopologySvg(topology);
+  const topologySvg = canvasSvg || (topology ? generateTopologySvg(topology) : '');
+  if (topologySvg) {
     files.push({
       relativePath: `${deviceDir}/documentation.html`,
       description: "System documentation (print to PDF from browser)",

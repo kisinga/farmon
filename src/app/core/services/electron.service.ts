@@ -60,8 +60,8 @@ export class ElectronService {
     if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false, diagnostics: [] });
     return this.api.codegenValidate(manifest, board);
   }
-  generate(manifest: unknown, board: unknown): Promise<GenerateResult> {
-    return this.invoke(() => this.api!.codegenGenerate(manifest, board));
+  generate(manifest: unknown, board: unknown, canvasSvg?: string): Promise<GenerateResult> {
+    return this.invoke(() => this.api!.codegenGenerate(manifest, board, canvasSvg));
   }
 
   // --- Toolchain ---

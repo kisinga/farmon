@@ -1,7 +1,7 @@
 import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, computed, signal, effect, Injector } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
-import type { TopologyNode, PipeSegment } from '../../../core/models/topology.model';
+import type { SystemTopology, TopologyNode, PipeSegment } from '../../../core/models/topology.model';
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
@@ -182,16 +182,25 @@ export class TopologyX6TabComponent {
     });
   }
 
+  /** Render and capture SVG snapshot for documentation. */
+  private renderAndSnapshot(topology: SystemTopology) {
+    this.c.render(topology);
+    // Defer snapshot to next frame so X6 finishes layout
+    requestAnimationFrame(() => this.editor.setCanvasSvg(this.c.exportSvg()));
+  }
+
   private doInitialRender() {
     const t = this.editor.topology();
     if (t) {
       this.c.reset(t);
+      requestAnimationFrame(() => this.editor.setCanvasSvg(this.c.exportSvg()));
       return;
     }
     const stop = effect(() => {
       const t = this.editor.topology();
       if (t) {
         this.c.reset(t);
+        requestAnimationFrame(() => this.editor.setCanvasSvg(this.c.exportSvg()));
         queueMicrotask(() => stop.destroy());
       }
     }, { injector: this.injector });
@@ -230,14 +239,14 @@ export class TopologyX6TabComponent {
         this.editor.updateTopology(t => {
           t.pipes.push({ id: this.nextPipeId(t), from, to });
         });
-        this.c.render(this.editor.topology()!);
+        this.renderAndSnapshot(this.editor.topology()!);
       },
       onPipeDeleted: (pipeId) => {
         this.editor.updateTopology(t => {
           t.pipes = t.pipes.filter(p => p.id !== pipeId);
         });
         this.selection.set(null);
-        this.c.render(this.editor.topology()!);
+        this.renderAndSnapshot(this.editor.topology()!);
       },
       onSelected: (sel) => {
         this.selection.set(sel);
@@ -291,7 +300,7 @@ export class TopologyX6TabComponent {
         position: { x: center.x - desc.size.width / 2, y: center.y - desc.size.height / 2 },
       } as TopologyNode);
     });
-    this.c.render(this.editor.topology()!);
+    this.renderAndSnapshot(this.editor.topology()!);
   }
 
   doZoomIn() { this.c.zoomIn(); }
@@ -334,7 +343,7 @@ export class TopologyX6TabComponent {
       }
     });
     this.selection.set(null);
-    this.c.render(this.editor.topology()!);
+    this.renderAndSnapshot(this.editor.topology()!);
   }
 
   updateNodeField(nodeId: string, field: string, value: any) {
@@ -353,7 +362,7 @@ export class TopologyX6TabComponent {
       }
     });
     // Push to X6 for live SVG update without full re-render
-    this.c.render(this.editor.topology()!);
+    this.renderAndSnapshot(this.editor.topology()!);
   }
 
 
@@ -364,7 +373,7 @@ export class TopologyX6TabComponent {
       t.pipes = t.pipes.filter(p => p.id !== pipeId);
     });
     this.selection.set(null);
-    this.c.render(this.editor.topology()!);
+    this.renderAndSnapshot(this.editor.topology()!);
   }
 
   // --- Route selection ---
@@ -419,7 +428,7 @@ export class TopologyX6TabComponent {
         t.pipes.push({ id: this.nextPipeId(t), from: popup.from, to: `${id}:${inletPort.id}` });
       }
     });
-    this.c.render(this.editor.topology()!);
+    this.renderAndSnapshot(this.editor.topology()!);
   }
 
   closePopup() {

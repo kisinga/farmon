@@ -118,7 +118,7 @@ export interface ElectronAPI {
   // Codegen
   codegenDeriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>>;
   codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
-  codegenGenerate(manifest: unknown, board: unknown): Promise<GenerateResult>;
+  codegenGenerate(manifest: unknown, board: unknown, canvasSvg?: string): Promise<GenerateResult>;
 
   // Toolchain
   toolchainStatus(): Promise<ToolchainInfo>;
