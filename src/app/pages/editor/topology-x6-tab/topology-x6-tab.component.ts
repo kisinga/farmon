@@ -182,25 +182,25 @@ export class TopologyX6TabComponent {
     });
   }
 
-  /** Render and capture SVG snapshot for documentation. */
+  /** Render and capture PNG snapshot for documentation. */
   private renderAndSnapshot(topology: SystemTopology) {
     this.c.render(topology);
     // Defer snapshot to next frame so X6 finishes layout
-    requestAnimationFrame(() => this.editor.setCanvasSvg(this.c.exportSvg()));
+    requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)));
   }
 
   private doInitialRender() {
     const t = this.editor.topology();
     if (t) {
       this.c.reset(t);
-      requestAnimationFrame(() => this.editor.setCanvasSvg(this.c.exportSvg()));
+      requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)));
       return;
     }
     const stop = effect(() => {
       const t = this.editor.topology();
       if (t) {
         this.c.reset(t);
-        requestAnimationFrame(() => this.editor.setCanvasSvg(this.c.exportSvg()));
+        requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)));
         queueMicrotask(() => stop.destroy());
       }
     }, { injector: this.injector });

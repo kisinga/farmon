@@ -4,15 +4,15 @@
  * All entity-specific logic is driven by the NODE_REGISTRY.
  */
 import { Graph, Shape } from '@antv/x6';
+import { Export } from '@antv/x6-plugin-export';
 import { History } from '@antv/x6-plugin-history';
 import { Snapline } from '@antv/x6-plugin-snapline';
 import type { Node, Edge as X6Edge } from '@antv/x6';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import { UI_COLORS } from '../../../core/models/colors.model';
 import type { SystemTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
-import { svgDataUri } from './scada-shape';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
-import { buildGraph, type TopologyGraph } from '../shared/derive-routes';
+import type { TopologyGraph } from '../shared/derive-routes';
 import { pipesFromSource, pipesToDestination, connectedPipes } from '../../../../../shared/graph/index';
 import type { Selection } from '../shared/selection';
 
@@ -108,6 +108,7 @@ export class X6Canvas {
     });
 
     this.graph.use(new Snapline({ enabled: true }));
+    this.graph.use(new Export());
 
     this.history = new History({ enabled: true });
     this.graph.use(this.history);
@@ -288,20 +289,61 @@ export class X6Canvas {
     };
   }
 
-  /** Export the current canvas as a standalone SVG string. */
-  exportSvg(): string {
-    const svg = this.graph.container.querySelector('svg');
-    if (!svg) return '';
-    const clone = svg.cloneNode(true) as SVGElement;
-    // Set explicit dimensions from the content bounding box
-    const bbox = this.graph.getContentBBox();
-    const pad = 40;
-    clone.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
-    clone.setAttribute('width', String(bbox.width + pad * 2));
-    clone.setAttribute('height', String(bbox.height + pad * 2));
-    // Remove grid background for clean export
-    clone.style.background = 'none';
-    return new XMLSerializer().serializeToString(clone);
+  /** Export the current canvas as a self-contained SVG string with all images inlined. */
+  exportSvg(): Promise<string> {
+    return new Promise((resolve) => {
+      this.graph.toSVG((svg: string) => {
+        resolve(svg);
+      }, {
+        preserveDimensions: true,
+        copyStyles: false,
+        beforeSerialize: (_svg: SVGSVGElement) => {
+          // X6 renders nodes as <image xlink:href="data:image/svg+xml;charset=utf-8,...">
+          // The export plugin's serializeImages skips data URIs, so these survive as-is.
+          // Browsers won't render SVG-via-<image>-data-URI when printing to PDF.
+          // Fix: decode each SVG data URI and inline its content as a <g>.
+          const images = Array.from(_svg.querySelectorAll('image'));
+          for (const img of images) {
+            const href = img.getAttribute('xlink:href') || img.getAttribute('href') || '';
+            if (!href.startsWith('data:image/svg+xml')) continue;
+
+            const svgText = decodeURIComponent(href.replace(/^data:image\/svg\+xml[^,]*,/, ''));
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(svgText, 'image/svg+xml');
+            const innerSvg = doc.documentElement;
+
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            // Position the inlined SVG at the same location as the <image>
+            const x = img.getAttribute('x') || '0';
+            const y = img.getAttribute('y') || '0';
+            const w = img.getAttribute('width');
+            const h = img.getAttribute('height');
+            g.setAttribute('transform', `translate(${x},${y})`);
+
+            // Copy the SVG viewBox scaling if dimensions differ
+            const vb = innerSvg.getAttribute('viewBox');
+            if (vb && w && h) {
+              const [, , vw, vh] = vb.split(/[\s,]+/).map(Number);
+              if (vw && vh) {
+                const sx = parseFloat(w) / vw;
+                const sy = parseFloat(h) / vh;
+                if (Math.abs(sx - 1) > 0.001 || Math.abs(sy - 1) > 0.001) {
+                  g.setAttribute('transform', `translate(${x},${y}) scale(${sx},${sy})`);
+                }
+              }
+            }
+
+            // Move all children from the parsed SVG into the <g>
+            while (innerSvg.firstChild) {
+              g.appendChild(innerSvg.firstChild);
+            }
+
+            img.parentNode!.replaceChild(g, img);
+          }
+          return _svg;
+        },
+      });
+    });
   }
 
   destroy(): void {
