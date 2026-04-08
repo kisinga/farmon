@@ -5,6 +5,8 @@ import type {
   BoardListEntry,
   BoardLoadResult,
   GenerateResult,
+  GenerationMeta,
+  GenerationSnapshot,
   ValidationResult,
   ToolchainInfo,
   ProcessResult,
@@ -60,8 +62,8 @@ export class ElectronService {
     if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false, diagnostics: [] });
     return this.api.codegenValidate(manifest, board);
   }
-  generate(manifest: unknown, board: unknown, canvasSvg?: string): Promise<GenerateResult> {
-    return this.invoke(() => this.api!.codegenGenerate(manifest, board, canvasSvg));
+  generate(manifest: unknown, board: unknown): Promise<GenerateResult> {
+    return this.invoke(() => this.api!.codegenGenerate(manifest, board));
   }
 
   // --- Toolchain ---
@@ -151,6 +153,20 @@ export class ElectronService {
   // --- Store ---
   outputDir(): Promise<string> {
     return this.invoke(() => this.api!.outputDir());
+  }
+
+  // --- Generation history ---
+  generationList(configName: string): Promise<GenerationMeta[]> {
+    return this.api?.generationList(configName) ?? Promise.resolve([]);
+  }
+  generationLoad(id: number): Promise<GenerationSnapshot | null> {
+    return this.invoke(() => this.api!.generationLoad(id));
+  }
+  generationFind(version: string): Promise<GenerationSnapshot | null> {
+    return this.invoke(() => this.api!.generationFind(version));
+  }
+  generationLatest(configName: string): Promise<GenerationMeta | null> {
+    return this.api?.generationLatest(configName) ?? Promise.resolve(null);
   }
 
   private invoke<T>(fn: () => Promise<T>): Promise<T> {

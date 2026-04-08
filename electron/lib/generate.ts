@@ -1,7 +1,6 @@
 import * as crypto from "node:crypto";
 import type { Manifest } from "./schema.js";
 import type { BoardDef } from "./board.js";
-import type { Topology } from "./topology.js";
 import { generateRoutes } from "./generators/routes.js";
 import { generateHardware } from "./generators/hardware.js";
 import { generateSensors } from "./generators/sensors.js";
@@ -10,9 +9,7 @@ import { generateBoardPackage } from "./generators/board-package.js";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
 import { generateAutomations } from "./generators/automations.js";
-import { generateDocumentation } from "./generators/readme.js";
-import { generateTopologySvg } from "./generators/topology-svg.js";
-import { LOGO_SVG } from "./static/logo.js";
+import { LOGO_SVG } from "../../shared/static/logo.js";
 
 export interface GeneratedFile {
   relativePath: string;
@@ -36,7 +33,7 @@ function generateSecrets(m: Manifest): string {
   ].join("\n");
 }
 
-export function generateAll(m: Manifest, board: BoardDef, topology?: Topology, canvasSvg?: string): GeneratedFile[] {
+export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const deviceDir = `esphome/${dir}`;
 
@@ -95,16 +92,6 @@ export function generateAll(m: Manifest, board: BoardDef, topology?: Topology, c
       relativePath: `config/homeassistant/automations/${dir}.yaml`,
       description: "HA automations + system notifications",
       content: automationsContent,
-    });
-  }
-
-  // System documentation (HTML with embedded topology SVG)
-  const topologySvg = canvasSvg || (topology ? generateTopologySvg(topology) : '');
-  if (topologySvg) {
-    files.push({
-      relativePath: `${deviceDir}/documentation.html`,
-      description: "System documentation (print to PDF from browser)",
-      content: generateDocumentation(m, topologySvg),
     });
   }
 

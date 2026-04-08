@@ -186,21 +186,21 @@ export class TopologyX6TabComponent {
   private renderAndSnapshot(topology: SystemTopology) {
     this.c.render(topology);
     // Defer snapshot to next frame so X6 finishes layout
-    requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)));
+    requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)).catch(e => console.error('[MajiFlow] SVG export failed:', e)));
   }
 
   private doInitialRender() {
     const t = this.editor.topology();
     if (t) {
       this.c.reset(t);
-      requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)));
+      requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)).catch(e => console.error('[MajiFlow] SVG export failed:', e)));
       return;
     }
     const stop = effect(() => {
       const t = this.editor.topology();
       if (t) {
         this.c.reset(t);
-        requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)));
+        requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)).catch(e => console.error('[MajiFlow] SVG export failed:', e)));
         queueMicrotask(() => stop.destroy());
       }
     }, { injector: this.injector });

@@ -4,7 +4,7 @@
 
 # MajiFlow
 
-Code generator and desktop configurator for ESP32 water orchestration systems. Define your hardware topology — get compiled ESPHome firmware, HA dashboards, and safety watchdogs.
+Code generator and desktop configurator for ESP32 water orchestration systems. Define your hardware topology, get compiled ESPHome firmware, HA dashboards, and safety watchdogs. Its visual a CAD for water automation systems
 
 ## Architecture
 

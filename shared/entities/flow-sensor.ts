@@ -86,7 +86,7 @@ NODE_REGISTRY.set('flow_sensor', {
               slots[s].last_flow_time = millis();
               id(${node['id']}_fault_count) = 0;
               if (!slots[s].flow_confirmed) {
-                if (millis() - slots[s].run_start_time > FLOW_CONFIRM_MS) {
+                if (millis() - slots[s].run_start_time > (uint32_t)id(flow_confirm_ms).state) {
                   slots[s].flow_confirmed = true;
                   ESP_LOGI("safety", "Flow confirmed on sensor %d slot %d", SENSOR_IDX, s);
                 }

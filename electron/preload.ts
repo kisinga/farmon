@@ -26,8 +26,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("codegen:derive-routes", topology),
   codegenValidate: (manifest: unknown, board: unknown) =>
     ipcRenderer.invoke("codegen:validate", manifest, board),
-  codegenGenerate: (manifest: unknown, board: unknown, canvasSvg?: string) =>
-    ipcRenderer.invoke("codegen:generate", manifest, board, canvasSvg),
+  codegenGenerate: (manifest: unknown, board: unknown) =>
+    ipcRenderer.invoke("codegen:generate", manifest, board),
 
   // Toolchain
   toolchainStatus: () => ipcRenderer.invoke("toolchain:status"),
@@ -113,4 +113,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Store
   storePath: () => ipcRenderer.invoke("store:path"),
   outputDir: () => ipcRenderer.invoke("store:output-dir"),
+
+  // Generation history
+  generationList: (configName: string) =>
+    ipcRenderer.invoke("generation:list", configName),
+  generationLoad: (id: number) =>
+    ipcRenderer.invoke("generation:load", id),
+  generationFind: (version: string) =>
+    ipcRenderer.invoke("generation:find", version),
+  generationLatest: (configName: string) =>
+    ipcRenderer.invoke("generation:latest", configName),
 });

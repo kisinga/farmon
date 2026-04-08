@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MajiFlow — {{deviceName}}</title>
+<style>{{{css}}}</style>
+</head>
+<body>
+
+<!-- Header with branding -->
+<div class="doc-header">
+  <div class="logo">{{{logoSvg}}}</div>
+  <div>
+    <h1>MajiFlow</h1>
+    <div class="subtitle">{{deviceName}} — Water System Documentation</div>
+    <div class="pills">
+        {{#each componentPills}}<span class="pill">{{this.label}}</span>
+        {{/each}}
+    </div>
+  </div>
+</div>
+
+<h2>System Topology</h2>
+<div class="diagram">
+{{{topologySvg}}}
+</div>
+<div class="legend">
+      {{#each legendItems}}<span class="legend-item">{{{this.svg}}} <span>{{this.label}}</span></span>
+      {{/each}}
+</div>
+
+{{{boardPinoutSection}}}
+
+<h2>Routes</h2>
+<table>
+  <thead>
+    <tr><th>Route</th><th>Type</th><th>Source Min</th><th>Dest Max</th><th>Max Runtime</th><th>Runtime Level</th></tr>
+  </thead>
+  <tbody>
+{{#each routes}}
+    <tr>
+      <td>{{this.name}}</td>
+      <td><span class="badge {{#if this.needsPump}}badge-pump{{else}}badge-gravity{{/if}}">{{#if this.needsPump}}Pumped{{else}}Gravity{{/if}}</span></td>
+      <td>{{this.sourceMin}}</td>
+      <td>{{this.destMax}}</td>
+      <td>{{this.runtime}}</td>
+      <td>{{#if this.runtimeLevelOk}}✓{{else}}—{{/if}}</td>
+    </tr>
+{{/each}}
+  </tbody>
+</table>
+
+{{#if hasAutomations}}
+<h2>Automations</h2>
+<table>
+  <thead>
+    <tr><th>Name</th><th>Trigger</th><th>Schedule</th><th>Route</th></tr>
+  </thead>
+  <tbody>
+{{#each automations}}
+    <tr><td>{{this.name}}</td><td>{{this.trigger}}</td><td>{{this.days}}</td><td>{{this.routeName}}</td></tr>
+{{/each}}
+  </tbody>
+</table>
+{{/if}}
+
+<h2>Home Assistant Entities</h2>
+<p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">These entities are created on the ESP32 and appear in HA automatically. Calibration and override values are adjustable from the HA UI.</p>
+<table>
+  <thead><tr><th>Entity</th><th>Type</th><th>Purpose</th></tr></thead>
+  <tbody>
+{{#each routeEntities}}
+    <tr><td><code>button.…_start_{{this.index}}</code></td><td>Button</td><td>Start route: {{this.name}}</td></tr>
+    <tr><td><code>button.…_stop_{{this.index}}</code></td><td>Button</td><td>Stop route: {{this.name}}</td></tr>
+{{/each}}
+{{#each tankCalEntities}}
+    <tr><td><code>number.…_{{this.id}}_cal_empty</code></td><td>Number</td><td>{{this.name}} empty voltage calibration</td></tr>
+    <tr><td><code>number.…_{{this.id}}_cal_full</code></td><td>Number</td><td>{{this.name}} full voltage calibration</td></tr>
+{{/each}}
+    <tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Bypass pre-start level checks (use with caution)</td></tr>
+  </tbody>
+</table>
+
+<h2>Timing Parameters</h2>
+<table>
+  <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>Valve travel time</td><td><strong>{{timing.valve_travel_time}}</strong></td><td>Time allowed for valves to fully open/close</td></tr>
+    <tr><td>Flow watchdog</td><td><strong>{{timing.flow_watchdog_seconds}}s</strong></td><td>No-flow duration before fault/tank-full detection</td></tr>
+    <tr><td>Flow confirm</td><td><strong>{{timing.flow_confirm_seconds}}s</strong></td><td>Time to confirm flow is established after start</td></tr>
+    <tr><td>API watchdog</td><td><strong>{{timing.api_watchdog_seconds}}s</strong></td><td>HA disconnect duration before route is faulted</td></tr>
+    <tr><td>Sensor update</td><td><strong>{{timing.update_interval}}</strong></td><td>ADC/sensor polling interval</td></tr>
+  </tbody>
+</table>
+
+<h2>Firmware Safety</h2>
+<div class="safety-grid">
+  <div class="safety-card">
+    <strong>Pre-start checks</strong>
+    <span>Source/dest level thresholds enforced before every start (pump off, sensors reliable)</span>
+  </div>
+  <div class="safety-card">
+    <strong>Flow watchdog</strong>
+    <span>No-flow fault after {{timing.flow_watchdog_seconds}}s · Flow confirmed within {{timing.flow_confirm_seconds}}s</span>
+  </div>
+  <div class="safety-card">
+    <strong>Runtime level</strong>
+    <span>Active on routes with pump-rated sensors · Clean stop on threshold breach</span>
+  </div>
+  <div class="safety-card">
+    <strong>API watchdog</strong>
+    <span>Route faulted if HA disconnects for {{timing.api_watchdog_seconds}}s</span>
+  </div>
+</div>
+
+<h2>System Alerts</h2>
+<ul>
+  <li>Fault notification on any route entering FAULT state</li>
+{{#if hasMultipleLevelTanks}}
+  <li>Water critical alert when combined tank level drops below 35%</li>
+{{/if}}
+</ul>
+
+<div class="installation">
+<h2>Installation Guidelines</h2>
+
+{{#if hasFlowSensors}}
+<h3>Flow Sensors</h3>
+
+<h4>Placement — The 10D/5D Rule</h4>
+<p>Flow sensors require straight, undisturbed pipe upstream and downstream for accurate readings:</p>
+<ul>
+  <li><strong>10D upstream</strong>: 10 pipe diameters of straight pipe before the sensor</li>
+  <li><strong>5D downstream</strong>: 5 pipe diameters of straight pipe after the sensor</li>
+</ul>
+<p>For a 1" (25mm) pipe: 250mm straight before, 125mm straight after.</p>
+<p>Avoid placing sensors immediately after:</p>
+<ul>
+  <li>Elbows, tees, or reducers</li>
+  <li>Partially open valves</li>
+  <li>Pump outlets (turbulence)</li>
+</ul>
+
+<h4>Mounting Orientation</h4>
+<ul>
+  <li>Mount <strong>horizontally</strong> with the impeller axis vertical</li>
+  <li>Ensure the arrow on the sensor body matches flow direction</li>
+  <li>The sensor must be fully flooded (no air pockets)</li>
+</ul>
+
+<h4>Sensor Sizing</h4>
+<p>Match the sensor to the pipe diameter. An oversized sensor in a small pipe will under-read; an undersized sensor will create excessive pressure drop.</p>
+<table>
+  <thead><tr><th>Sensor Model</th><th>Pipe Size</th><th>Flow Range</th><th>Pulses/L</th></tr></thead>
+  <tbody>
+    <tr><td>YF-S201</td><td>1/2" (DN15)</td><td>1–30 L/min</td><td>~450</td></tr>
+    <tr><td>YF-S401</td><td>1" (DN25)</td><td>0.3–10 L/min</td><td>~5880</td></tr>
+    <tr><td>YF-DN50</td><td>2" (DN50)</td><td>10–200 L/min</td><td>~55</td></tr>
+  </tbody>
+</table>
+<p>Calibrate <code>flow_cal</code> (pulses/L) for your specific sensor — manufacturer values are approximate.</p>
+
+<h4>Electrical</h4>
+<ul>
+  <li>Use shielded cable for runs &gt; 2m to reduce electrical noise</li>
+  <li>Pull-up resistor (10kΩ to 3.3V) is recommended if not built into the sensor</li>
+  <li>MajiFlow configures <code>INPUT_PULLUP</code> by default in ESPHome</li>
+</ul>
+{{/if}}
+
+{{#if hasValves}}
+<h3>Valves</h3>
+
+<h4>Motorized Ball Valves</h4>
+<ul>
+  <li>Mount <strong>horizontally</strong> or with the actuator <strong>above</strong> the pipe (never below — condensation risk)</li>
+  <li>Ensure the valve is accessible for manual override</li>
+  <li>Default travel time: <strong>15 seconds</strong> — adjust <code>valve_travel_time</code> in the topology if using faster/slower actuators</li>
+</ul>
+
+<h4>Wiring</h4>
+<ul>
+  <li>2-wire control: one wire for OPEN direction, one for CLOSE direction</li>
+  <li><strong>Never energize both directions simultaneously</strong> — MajiFlow generates ESPHome interlocks to prevent this</li>
+  <li>Wire gauge: 18 AWG minimum for runs up to 15m; 16 AWG for longer runs</li>
+  <li>Relay/MOSFET board must handle the motor stall current (typically 0.5–1.5A)</li>
+</ul>
+{{/if}}
+
+{{#if hasTanks}}
+<h3>Tank Level Sensors</h3>
+
+<h4>Pressure-Based Level Sensing (ADC)</h4>
+<p>MajiFlow uses analog pressure sensors at the tank bottom to measure water column height.</p>
+<ul>
+  <li>Mount at the <strong>lowest point</strong> of the tank, or on a standpipe connected to the bottom</li>
+  <li>The sensor must be <strong>below</strong> the minimum water level</li>
+  <li>Use a bleed valve or T-fitting for easy sensor removal/calibration</li>
+</ul>
+
+<h4>Calibration</h4>
+<p>Calibrate via Home Assistant number entities:</p>
+<ol>
+  <li><strong>Cal Empty (V)</strong>: Voltage reading when tank is empty</li>
+  <li><strong>Cal Full (V)</strong>: Voltage reading when tank is full</li>
+</ol>
+<p>MajiFlow generates these as adjustable HA entities. The firmware calculates percentage as:<br>
+<code>pct = clamp((voltage - v_empty) / (v_full - v_empty) × 100, 0, 100)</code></p>
+
+<h4>Reading Suppression</h4>
+<p>Tank readings are <strong>suppressed during pump operation</strong> (PREPARING, RUNNING, STOPPING states) because the pump creates pressure artifacts. Levels are only trusted when the pump is IDLE or FAULT.</p>
+{{/if}}
+
+{{#if hasPressureSensors}}
+<h3>Pressure Sensors</h3>
+
+<h4>Water Source Pressure Monitoring</h4>
+<p>For WaterSource nodes with a pressure pin, an ADC pressure sensor monitors incoming supply pressure (mains, borehole).</p>
+<ul>
+  <li>Mount <strong>after</strong> any pressure regulator and <strong>before</strong> the first branch/valve</li>
+  <li>Use a sensor rated for the expected pressure range (typically 0–10 bar for mains)</li>
+  <li>Install a snubber or damper if the supply has water hammer</li>
+</ul>
+
+<h4>Sensor Selection</h4>
+<table>
+  <thead><tr><th>Type</th><th>Range</th><th>Output</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>0–10 bar, 0.5–4.5V</td><td>Mains supply</td><td>Analog (ADC)</td><td>Most common for residential</td></tr>
+    <tr><td>0–6 bar, 4–20mA</td><td>Low pressure</td><td>Requires signal converter</td><td>Better noise immunity</td></tr>
+  </tbody>
+</table>
+{{/if}}
+
+<h3>General Piping Notes</h3>
+<ul>
+  <li><strong>Pipe sizing</strong>: Match pipe diameter to expected flow rates. Undersized pipes increase pressure drop and reduce sensor accuracy.</li>
+  <li><strong>Pressure regulators</strong>: Install upstream of the system if mains pressure exceeds component ratings (typically &gt;6 bar).</li>
+  <li><strong>Check valves</strong>: Consider non-return valves to prevent backflow, especially on tank inlet lines.</li>
+  <li><strong>Strainers/filters</strong>: Install upstream of flow sensors to prevent debris from fouling the impeller.</li>
+  <li><strong>Float switches</strong>: Required on every destination tank as a hardware safety interlock independent of the ESP32.</li>
+</ul>
+
+<h3>Electrical Notes</h3>
+<ul>
+  <li><strong>Relay board</strong>: Must handle the total inrush current of all simultaneously energized actuators</li>
+  <li><strong>Power supply</strong>: 12V or 24V DC for valve motors; 3.3V logic for ESP32 GPIOs</li>
+  <li><strong>Grounding</strong>: Ensure all metallic pipes and the relay board share a common ground</li>
+  <li><strong>Wire runs</strong>: Keep signal wires (sensors) separated from power wires (motors, pump relay) to reduce interference</li>
+</ul>
+</div>
+
+<div class="footer">
+  <div class="brand">{{{logoSvgSmall}}} MajiFlow</div>
+  <div>{{deviceName}} · Board: {{board}} · Generated {{genDate}}{{#if hasVersion}} · v{{genVersion}}{{/if}}</div>
+</div>
+
+</body>
+</html>

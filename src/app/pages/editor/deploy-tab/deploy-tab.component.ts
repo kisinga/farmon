@@ -2,7 +2,7 @@ import { Component, inject, OnInit, OnDestroy, signal, computed, ElementRef, Vie
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { ElectronService } from '../../../core/services/electron.service';
 import { ValidationPanelComponent } from '../../../shared/validation-panel/validation-panel.component';
-import type { ToolchainInfo, SerialDevice } from '../../../core/models/electron-api';
+import type { ToolchainInfo, SerialDevice, GenerationMeta } from '../../../core/models/electron-api';
 
 interface FileEntry {
   path: string;
@@ -54,7 +54,7 @@ interface TerminalLine {
               @if (generating()) {
                 <span class="loading loading-spinner loading-xs"></span>
               }
-              {{ files().length > 0 ? 'Regenerate' : 'Generate' }}
+              {{ files().length > 0 || lastGeneration() ? 'Regenerate' : 'Generate' }}
             </button>
           </div>
         </div>
@@ -97,6 +97,81 @@ interface TerminalLine {
           </div>
         }
       </div>
+
+      <!-- Generation History -->
+      @if (lastGeneration() || files().length > 0) {
+        <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
+          <div class="flex items-center justify-between px-5 py-3.5">
+            <div class="flex items-center gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <h2 class="font-semibold text-sm">Generation History</h2>
+                <p class="text-xs text-base-content/50 mt-0.5">
+                  @if (lastGeneration(); as gen) {
+                    Latest: <span class="font-mono text-primary/70">{{ gen.version }}</span>
+                    · {{ formatDate(gen.createdAt) }}
+                    · {{ gen.fileCount }} files
+                  } @else {
+                    No previous generations
+                  }
+                </p>
+              </div>
+            </div>
+            <button class="btn btn-ghost btn-xs" (click)="toggleHistory()">
+              {{ showHistory() ? 'Hide' : 'History' }}
+            </button>
+          </div>
+
+          @if (showHistory()) {
+            <div class="border-t border-base-300/30 px-5 py-3 bg-base-200/30 space-y-3">
+              <label class="input input-bordered input-xs flex items-center gap-2 max-w-xs bg-base-200/50 border-base-300/60 focus-within:border-primary/50">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input type="text" class="grow" placeholder="Search by version..."
+                       [value]="versionSearch()"
+                       (input)="versionSearch.set(toInputValue($event))" />
+              </label>
+
+              @if (filteredHistory().length > 0) {
+                <table class="table table-xs">
+                  <thead>
+                    <tr>
+                      <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Version</th>
+                      <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Date</th>
+                      <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold text-right">Files</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (gen of filteredHistory(); track gen.id) {
+                      <tr class="hover" [class.bg-primary/5]="gen.id === lastGeneration()?.id">
+                        <td class="font-mono text-[11px] text-primary/70">{{ gen.version }}</td>
+                        <td class="text-[11px] text-base-content/60">{{ formatDate(gen.createdAt) }}</td>
+                        <td class="text-right text-[11px] tabular-nums text-base-content/60">{{ gen.fileCount }}</td>
+                        <td class="text-right">
+                          <button
+                            class="btn btn-ghost btn-xs text-primary/60"
+                            (click)="restoreGeneration(gen.id)"
+                            [disabled]="generating()"
+                            title="Regenerate from this snapshot"
+                          >Restore</button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              } @else if (versionSearch()) {
+                <p class="text-xs text-base-content/40 italic py-2">No matching versions</p>
+              } @else {
+                <p class="text-xs text-base-content/40 italic py-2">No generation history</p>
+              }
+            </div>
+          }
+        </div>
+      }
 
       <!-- Step 2: Build & Deploy -->
       <div
@@ -338,7 +413,20 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
   protected showOtaInput = signal(false);
   private activeProcessId = signal<string | null>(null);
 
+  // Generation history
+  protected lastGeneration = signal<GenerationMeta | null>(null);
+  protected generationHistory = signal<GenerationMeta[]>([]);
+  protected showHistory = signal(false);
+  protected versionSearch = signal('');
+
   protected canBuild = computed(() => !!this.toolchain()?.esphomePath && this.files().length > 0);
+
+  protected filteredHistory = computed(() => {
+    const q = this.versionSearch().toLowerCase().trim();
+    const history = this.generationHistory();
+    if (!q) return history;
+    return history.filter(g => g.version.includes(q));
+  });
 
   private unsubStarted: (() => void) | null = null;
   private unsubOutput: (() => void) | null = null;
@@ -354,6 +442,16 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
 
     if (this.toolchain()?.esphomePath) {
       this.scanPorts();
+    }
+
+    // Restore latest generation state from DB
+    if (deviceName) {
+      const latest = await this.electron.generationLatest(deviceName);
+      if (latest) {
+        this.lastGeneration.set(latest);
+        this.outputDir.set(await this.electron.outputDir());
+        this.deviceDir.set(latest.configName);
+      }
     }
 
     this.unsubStarted = this.electron.onEsphomeStarted((handle) => {
@@ -410,12 +508,28 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
       const topology = this.editor.topology();
       const board = this.editor.board();
       if (!topology || !board) throw new Error('No topology or board loaded');
-      const canvasSvg = this.editor.canvasSvg() ?? undefined;
-      const result = await this.electron.generate(topology, board, canvasSvg);
+      const result = await this.electron.generate(topology, board);
       this.files.set(result.files);
       this.outputDir.set(result.outputDir);
       this.deviceDir.set(result.deviceDir);
       this.editor.setGenerateResult(result);
+
+      // Update generation tracking
+      this.lastGeneration.set({
+        id: result.generationId,
+        version: result.version,
+        configName: topology.device?.name ?? '',
+        schemaVersion: 0,
+        fileCount: result.files.length,
+        createdAt: new Date().toISOString(),
+      });
+      // Refresh history if panel is open
+      if (this.showHistory()) {
+        const configName = topology.device?.name;
+        if (configName) {
+          this.generationHistory.set(await this.electron.generationList(configName));
+        }
+      }
     } catch (err) {
       this.error.set(String(err));
     } finally {
@@ -510,6 +624,53 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
       }
     } finally {
       this.scanningPorts.set(false);
+    }
+  }
+
+  async toggleHistory() {
+    this.showHistory.update(v => !v);
+    if (this.showHistory() && this.generationHistory().length === 0) {
+      const configName = this.editor.topology()?.device?.name;
+      if (configName) {
+        this.generationHistory.set(await this.electron.generationList(configName));
+      }
+    }
+  }
+
+  async restoreGeneration(id: number) {
+    const snapshot = await this.electron.generationLoad(id);
+    if (!snapshot) return;
+    const topology = JSON.parse(snapshot.topology);
+    const board = JSON.parse(snapshot.board);
+    this.generating.set(true);
+    this.error.set(null);
+    this.compileSuccess.set(false);
+    try {
+      const result = await this.electron.generate(topology, board);
+      this.files.set(result.files);
+      this.outputDir.set(result.outputDir);
+      this.deviceDir.set(result.deviceDir);
+      this.editor.setGenerateResult(result);
+
+      const configName = this.editor.topology()?.device?.name;
+      if (configName) {
+        this.generationHistory.set(await this.electron.generationList(configName));
+        this.lastGeneration.set(this.generationHistory()[0] ?? null);
+      }
+    } catch (err) {
+      this.error.set(String(err));
+    } finally {
+      this.generating.set(false);
+    }
+  }
+
+  formatDate(iso: string): string {
+    try {
+      return new Date(iso).toLocaleDateString(undefined, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+    } catch {
+      return iso;
     }
   }
 

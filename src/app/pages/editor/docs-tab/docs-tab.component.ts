@@ -78,7 +78,9 @@ export class DocsTabComponent {
   protected result = computed(() => this.editor.generatedFiles());
   protected selectedIndex = signal(0);
 
-  protected docHtml = computed(() => this.result()?.documentationHtml ?? null);
+  protected docHtml = computed(() =>
+    this.result()?.documentationHtml ?? null
+  );
 
   protected selectedFile = computed(() => {
     const r = this.result();

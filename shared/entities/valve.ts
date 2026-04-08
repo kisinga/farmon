@@ -13,6 +13,7 @@ export const ValveNodeSchema = z.object({
   name: z.string().min(1),
   open_pin: GpioPin,
   close_pin: GpioPin,
+  travel_time: z.string().optional(),  // e.g. "15s", "20s" — per-valve override, defaults to global
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
@@ -51,6 +52,7 @@ NODE_REGISTRY.set('valve', {
   sidebarFields: [
     { key: 'open_pin', label: 'Open Pin', type: 'pin', placeholder: 'GPIO4' },
     { key: 'close_pin', label: 'Close Pin', type: 'pin', placeholder: 'GPIO5' },
+    { key: 'travel_time', label: 'Travel Time', type: 'text', placeholder: '15s' },
   ],
 
   // --- Codegen ---

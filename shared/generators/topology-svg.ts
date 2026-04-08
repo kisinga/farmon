@@ -1,14 +1,18 @@
 /**
  * Generate a standalone SVG rendering of the topology diagram.
  * Uses the same renderSvg() from entity descriptors — identical visuals to the canvas.
- * No DOM required — runs in Node (Electron main process).
+ * No DOM required — runs in both Node and browser.
  */
-import type { Topology, TopologyNode, PipeSegment } from "../topology.js";
-import { parsePortRef } from "../topology.js";
-import { NODE_REGISTRY } from "../../../shared/entity-registry.js";
+import type { SystemTopology, TopologyNode } from "../topology.types";
+import { NODE_REGISTRY } from "../entities/index";
 
 const PADDING = 40;
 const PIPE_COLOR = '#6b7280';
+
+function parsePortRef(ref: string): { nodeId: string; portId: string } {
+  const [nodeId, portId] = ref.split(":");
+  return { nodeId, portId };
+}
 
 function getPortPosition(node: TopologyNode, portId: string): { x: number; y: number } {
   const desc = NODE_REGISTRY.get(node.kind);
@@ -33,7 +37,7 @@ function getPortPosition(node: TopologyNode, portId: string): { x: number; y: nu
   return { x: node.position.x + width, y: node.position.y + height / 2 };
 }
 
-export function generateTopologySvg(topology: Topology): string {
+export function generateTopologySvg(topology: SystemTopology): string {
   const nodes = topology.nodes.filter(n => !n.disabled);
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 

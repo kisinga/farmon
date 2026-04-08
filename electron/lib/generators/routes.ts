@@ -2,7 +2,7 @@ import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind } from "../schema.js";
 
 /** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
-function parseDurationMs(s: string): number {
+export function parseDurationMs(s: string): number {
   const ms = s.match(/^(\d+)\s*ms$/);
   if (ms) return parseInt(ms[1], 10);
   const sec = s.match(/^(\d+)\s*s$/);
@@ -78,6 +78,14 @@ export function generateRoutes(m: Manifest): string {
     .map((f, i) => `    case ${i}: return id(${f['id']}).state;`)
     .join("\n");
 
+  const runtimeCases = m.routes
+    .map((_, i) => `    case ${i}: return (uint16_t)id(route_${i}_max_runtime).state;`)
+    .join("\n");
+
+  const valveTravelCases = valves
+    .map((v, i) => `    case ${i}: return (uint32_t)id(${v['id']}_travel_ms).state;`)
+    .join("\n");
+
   return `\
 // =============================================================================
 // MajiFlow — Route Table, Slot Management & Hardware Dispatch
@@ -105,11 +113,7 @@ export function generateRoutes(m: Manifest): string {
 
 static const int MAX_CONCURRENT_ROUTES = 2;
 static const int MAX_QUEUE_SIZE        = 4;
-static const uint32_t VALVE_TRAVEL_MS  = ${valveTravelMs};
 static const uint32_t DEPRESSURIZE_MS  = 2000;
-static const uint32_t FLOW_WATCHDOG_MS = ${m.timing.flow_watchdog_seconds * 1000}U;
-static const uint32_t FLOW_CONFIRM_MS  = ${m.timing.flow_confirm_seconds * 1000}U;
-static const uint32_t API_WATCHDOG_MS  = ${m.timing.api_watchdog_seconds * 1000}U;
 
 // --- Component counts --------------------------------------------------------
 
@@ -315,6 +319,36 @@ inline float get_flow_rate(int idx) {
 ${flowCases}
     default: return -1.0f;
   }
+}
+
+// Max runtime — reads from HA number entities (adjustable, persisted).
+// Falls back to 1800s if route_id is out of range.
+inline uint16_t get_max_runtime_s(int route_id) {
+  switch (route_id) {
+${runtimeCases}
+    default: return 1800;
+  }
+}
+
+// Per-valve travel time — reads from HA number entities (adjustable, persisted).
+inline uint32_t get_valve_travel_ms(int idx) {
+  switch (idx) {
+${valveTravelCases}
+    default: return 15000;
+  }
+}
+
+// Route travel time — max across all valves in the route's valve_mask.
+inline uint32_t get_route_travel_ms(int route_id) {
+  uint32_t mx = 0;
+  uint16_t mask = ROUTES[route_id].valve_mask;
+  for (int i = 0; i < NUM_VALVES; i++) {
+    if (mask & (1 << i)) {
+      uint32_t t = get_valve_travel_ms(i);
+      if (t > mx) mx = t;
+    }
+  }
+  return mx;
 }
 
 // --- Route start/stop (shared by API services + button entities) -------------

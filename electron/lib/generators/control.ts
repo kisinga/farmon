@@ -189,7 +189,7 @@ interval:
 
             // PREPARING → RUNNING (valve travel complete)
             if (slots[s].state == 1) {
-              if (now - slots[s].start_time > VALVE_TRAVEL_MS + 1000) {
+              if (now - slots[s].start_time > get_route_travel_ms(rid) + 1000) {
                 slots[s].state = 2;
                 slots[s].run_start_time = now;
                 slots[s].last_flow_time = now;
@@ -211,7 +211,7 @@ interval:
 
             // STOPPING → IDLE (valve close complete)
             if (slots[s].state == 3 && slots[s].valves_closing) {
-              if (now - slots[s].stop_time > DEPRESSURIZE_MS + VALVE_TRAVEL_MS + 1000) {
+              if (now - slots[s].stop_time > DEPRESSURIZE_MS + get_route_travel_ms(rid) + 1000) {
                 id(stop_reason) = slots[s].stop_reason;
                 ESP_LOGI("ctrl", "IDLE slot %d (reason=%d)", s, slots[s].stop_reason);
                 init_slot(s);
@@ -265,9 +265,9 @@ ${pumpMgmt}
             uint32_t runtime = now - slots[s].run_start_time;
 
             // --- FLOW WATCHDOG ---
-            if (slots[s].fault_code == 0 && runtime > FLOW_WATCHDOG_MS) {
+            if (slots[s].fault_code == 0 && runtime > (uint32_t)id(flow_watchdog_ms).state) {
               uint32_t age = now - slots[s].last_flow_time;
-              if (age > FLOW_WATCHDOG_MS) {
+              if (age > (uint32_t)id(flow_watchdog_ms).state) {
                 if (slots[s].flow_confirmed) {
                   // Flow was established then stopped → tank full
                   ESP_LOGI("safety", "Tank full on slot %d route [%s]: flow stopped %us ago",
@@ -309,16 +309,19 @@ ${pumpMgmt}
             }
 
             // --- PER-ROUTE MAX RUNTIME ---
-            if (slots[s].fault_code == 0 && runtime > ((uint32_t)r.max_runtime_s * 1000U)) {
-              ESP_LOGE("safety", "Max runtime %us exceeded on slot %d route [%s]",
-                       r.max_runtime_s, s, r.name);
-              slots[s].fault_code = FAULT_MAX_RUNTIME;
+            {
+              uint16_t max_rt = get_max_runtime_s(slots[s].route_id);
+              if (slots[s].fault_code == 0 && runtime > ((uint32_t)max_rt * 1000U)) {
+                ESP_LOGE("safety", "Max runtime %us exceeded on slot %d route [%s]",
+                         max_rt, s, r.name);
+                slots[s].fault_code = FAULT_MAX_RUNTIME;
+              }
             }
 
             // --- API WATCHDOG ---
             if (slots[s].fault_code == 0 && id(api_lost_time) > 0) {
               uint32_t age = now - id(api_lost_time);
-              if (age > API_WATCHDOG_MS) {
+              if (age > (uint32_t)id(api_watchdog_ms).state) {
                 ESP_LOGE("safety", "API lost %us — faulting slot %d", age / 1000, s);
                 slots[s].fault_code = FAULT_API_LOST;
               }

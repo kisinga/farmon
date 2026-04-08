@@ -5,8 +5,21 @@ import { validateAll } from "./lib/validate.js";
 import { generateAll } from "./lib/generate.js";
 import { topologyToManifest } from "./lib/topology-to-manifest.js";
 import * as store from "./store.js";
+import {
+  createGeneration,
+  finalizeGeneration,
+  listGenerations,
+  loadGeneration,
+  loadGenerationByVersion,
+  pruneGenerations,
+} from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
+import { generateDocumentation } from "./lib/generators/readme.js";
+import { generateTopologySvg } from "../shared/generators/topology-svg.js";
+import { collectPins } from "../shared/pin-collect.js";
+import { reservedPins } from "../shared/board.types.js";
+import { computePinOverlays } from "../shared/board-pin-overlays.js";
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
 import { listSerialPorts } from "./discovery.js";
@@ -109,7 +122,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     "codegen:generate",
-    async (_e, dataRaw: unknown, boardRaw: unknown, canvasSvg?: string) => {
+    async (_e, dataRaw: unknown, boardRaw: unknown) => {
       const board = BoardDefSchema.parse(boardRaw);
       const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
       const validation = validateAll(topology, manifest, board);
@@ -119,14 +132,52 @@ export function registerIpcHandlers() {
           .map(d => d.message);
         throw new Error(errors.join('\n'));
       }
-      const files = generateAll(manifest, board, topology, canvasSvg);
+
+      const configName = manifest.device.name;
+      const gen = createGeneration(configName, topology, board);
+      const latestMeta = gen ? null : listGenerations(configName)[0] ?? null;
+
+      const version = gen?.version ?? latestMeta?.version ?? '';
+      const createdAt = gen ? new Date().toISOString() : (latestMeta?.createdAt ?? '');
+
+      const files = generateAll(manifest, board);
+
+      // Documentation — generated separately with full context (boardSvg + pin overlays)
+      const deviceDir = manifest.device.directory ?? manifest.device.name;
+      const topologySvg = generateTopologySvg(topology);
+      if (topologySvg) {
+        const boardSvg = store.loadBoard(board.model).svg;
+        const usedPins = new Map(
+          collectPins(topology.nodes).map(u => [u.pin, u.owner])
+        );
+        const reserved = reservedPins(board);
+        const pinOverlays = computePinOverlays(board, usedPins, reserved);
+
+        files.push({
+          relativePath: `esphome/${deviceDir}/documentation.html`,
+          description: "System documentation (print to PDF from browser)",
+          content: generateDocumentation(manifest, topologySvg, {
+            generation: version ? { version, createdAt } : undefined,
+            boardSvg: boardSvg ?? undefined,
+            pinOverlays,
+          }),
+        });
+      }
+
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);
-      const deviceDir = manifest.device.directory ?? manifest.device.name;
+
+      if (gen) {
+        finalizeGeneration(gen.id, files.length);
+        pruneGenerations(configName, 10);
+      }
+
       const docFile = files.find(f => f.relativePath.endsWith('documentation.html'));
       return {
         outputDir,
         deviceDir,
+        generationId: gen?.id ?? latestMeta?.id ?? 0,
+        version,
         files: files.map((f) => ({
           path: f.relativePath,
           description: f.description,
@@ -254,4 +305,23 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("store:path", async () => store.getStorePath());
   ipcMain.handle("store:output-dir", async () => store.getOutputDir());
+
+  // --- Generation history ---
+
+  ipcMain.handle("generation:list", async (_e, configName: string) =>
+    listGenerations(configName)
+  );
+
+  ipcMain.handle("generation:load", async (_e, id: number) =>
+    loadGeneration(id)
+  );
+
+  ipcMain.handle("generation:find", async (_e, version: string) =>
+    loadGenerationByVersion(version)
+  );
+
+  ipcMain.handle("generation:latest", async (_e, configName: string) => {
+    const all = listGenerations(configName);
+    return all[0] ?? null;
+  });
 }

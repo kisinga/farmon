@@ -1,7 +1,8 @@
 import { app, BrowserWindow } from "electron";
 import * as path from "node:path";
 import { registerIpcHandlers } from "./ipc-handlers.js";
-import { initStore } from "./store.js";
+import { initStore, getStorePath } from "./store.js";
+import { openDb, closeDb } from "./db.js";
 import { killAll } from "./process-manager.js";
 
 let mainWindow: BrowserWindow | null = null;
@@ -35,7 +36,7 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Init store: copy bundled defaults on first run
   // In dev: defaults/ is alongside electron/ in the source tree
   // In production: defaults/ is bundled with the app
@@ -45,6 +46,7 @@ app.whenReady().then(() => {
     : path.join(process.resourcesPath, "defaults");
 
   initStore(defaultsDir);
+  await openDb(getStorePath());
   registerIpcHandlers();
   createWindow();
 
@@ -54,6 +56,7 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  closeDb();
   killAll();
 });
 

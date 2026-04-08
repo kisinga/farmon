@@ -1,6 +1,7 @@
 import type { Manifest } from "../schema.js";
 import { nodesByKind } from "../schema.js";
 import { NODE_REGISTRY } from "../../../shared/entity-registry.js";
+import { parseDurationMs } from "./routes.js";
 
 export function generateSensors(m: Manifest): string {
   // Collect sensor blocks from all entities that provide them
@@ -49,6 +50,53 @@ export function generateSensors(m: Manifest): string {
     restore_value: true
     entity_category: config`);
 
+  // Route max-runtime numbers — adjustable from HA, persisted across reboots
+  const runtimeBlocks = m.routes.map((r, i) => `\
+  - platform: template
+    name: "Route: ${r.name} Max Runtime (s)"
+    id: route_${i}_max_runtime
+    icon: "mdi:timer-outline"
+    min_value: 60
+    max_value: 7200
+    step: 60
+    initial_value: ${r.max_runtime_seconds}
+    optimistic: true
+    restore_value: true
+    entity_category: config`);
+
+  // Per-valve travel time — defaults to global timing if no per-valve override
+  const valves = nodesByKind(m.nodes, 'valve');
+  const travelBlocks = valves.map((v) => `\
+  - platform: template
+    name: "${v['name']} Travel Time (ms)"
+    id: ${v['id']}_travel_ms
+    icon: "mdi:timer-cog-outline"
+    min_value: 1000
+    max_value: 30000
+    step: 1000
+    initial_value: ${parseDurationMs(v['travel_time'] ?? m.timing.valve_travel_time)}
+    optimistic: true
+    restore_value: true
+    entity_category: config`);
+
+  // Global safety timing — adjustable from HA
+  const safetyBlocks = [
+    { name: 'Flow Watchdog', id: 'flow_watchdog_ms', icon: 'mdi:waves-arrow-up', min: 5000, max: 120000, step: 1000, initial: m.timing.flow_watchdog_seconds * 1000 },
+    { name: 'Flow Confirm', id: 'flow_confirm_ms', icon: 'mdi:check-decagram-outline', min: 3000, max: 60000, step: 1000, initial: m.timing.flow_confirm_seconds * 1000 },
+    { name: 'API Watchdog', id: 'api_watchdog_ms', icon: 'mdi:api', min: 30000, max: 600000, step: 10000, initial: m.timing.api_watchdog_seconds * 1000 },
+  ].map((p) => `\
+  - platform: template
+    name: "${p.name} (ms)"
+    id: ${p.id}
+    icon: "${p.icon}"
+    min_value: ${p.min}
+    max_value: ${p.max}
+    step: ${p.step}
+    initial_value: ${p.initial}
+    optimistic: true
+    restore_value: true
+    entity_category: config`);
+
   // Flow sensor fault detection binary sensors
   const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
   const faultSensors = flowSensors.map((f) => `\
@@ -74,10 +122,10 @@ export function generateSensors(m: Manifest): string {
 sensor:
 ${sensorBlocks.join("\n\n")}
 
-${calBlocks.length > 0 ? `# --- Calibration numbers (adjustable from HA) --------------------------------
+${[...calBlocks, ...runtimeBlocks, ...travelBlocks, ...safetyBlocks].length > 0 ? `# --- Adjustable numbers (persisted, editable from HA) -------------------------
 
 number:
-${calBlocks.join("\n\n")}` : ""}
+${[...calBlocks, ...runtimeBlocks, ...travelBlocks, ...safetyBlocks].join("\n\n")}` : ""}
 
 # --- State exposure to HA ----------------------------------------------------
 

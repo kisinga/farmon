@@ -295,7 +295,7 @@ export class X6Canvas {
       this.graph.toSVG((svg: string) => {
         resolve(svg);
       }, {
-        preserveDimensions: true,
+        preserveDimensions: false,
         copyStyles: false,
         beforeSerialize: (_svg: SVGSVGElement) => {
           // X6 renders nodes as <image xlink:href="data:image/svg+xml;charset=utf-8,...">

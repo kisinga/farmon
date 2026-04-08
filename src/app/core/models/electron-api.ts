@@ -26,12 +26,28 @@ export interface BoardLoadResult {
 export interface GenerateResult {
   outputDir: string;
   deviceDir: string;
+  generationId: number;
+  version: string;
   files: Array<{
     path: string;
     description: string;
     lines: number;
   }>;
   documentationHtml: string | null;
+}
+
+export interface GenerationMeta {
+  id: number;
+  version: string;
+  configName: string;
+  schemaVersion: number;
+  fileCount: number;
+  createdAt: string;
+}
+
+export interface GenerationSnapshot extends GenerationMeta {
+  topology: string;
+  board: string;
 }
 
 import type { ValidationResult, RuleDiagnostic } from '../../../../shared/validation.types';
@@ -118,7 +134,7 @@ export interface ElectronAPI {
   // Codegen
   codegenDeriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>>;
   codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
-  codegenGenerate(manifest: unknown, board: unknown, canvasSvg?: string): Promise<GenerateResult>;
+  codegenGenerate(manifest: unknown, board: unknown): Promise<GenerateResult>;
 
   // Toolchain
   toolchainStatus(): Promise<ToolchainInfo>;
@@ -154,6 +170,12 @@ export interface ElectronAPI {
   // Store
   storePath(): Promise<string>;
   outputDir(): Promise<string>;
+
+  // Generation history
+  generationList(configName: string): Promise<GenerationMeta[]>;
+  generationLoad(id: number): Promise<GenerationSnapshot | null>;
+  generationFind(version: string): Promise<GenerationSnapshot | null>;
+  generationLatest(configName: string): Promise<GenerationMeta | null>;
 }
 
 declare global {

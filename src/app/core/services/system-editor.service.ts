@@ -4,9 +4,9 @@ import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
 import type { SystemTopology } from '../models/topology.model';
 import { collectPins } from '../../../../shared/pin-collect';
-
 @Injectable({ providedIn: 'root' })
 export class SystemEditorService {
+
   // --- Core state: topology is the source of truth ---
   private _topology = signal<SystemTopology | null>(null);
   private _board = signal<BoardDef | null>(null);
@@ -128,8 +128,15 @@ export class SystemEditorService {
   readonly canvasSvg = this._canvasSvg.asReadonly();
 
   setCanvasSvg(svg: string): void {
-    this._canvasSvg.set(svg);
+    if (svg && svg.includes('<svg')) {
+      this._canvasSvg.set(svg);
+    } else {
+      console.warn('[MajiFlow] exportSvg produced invalid SVG, ignoring:', svg?.slice(0, 100));
+    }
   }
+
+  // Documentation HTML comes from the Electron deploy result — single source of truth.
+  readonly documentationHtml = computed(() => this._generatedFiles()?.documentationHtml ?? null);
 
   setGenerateResult(result: GenerateResult): void {
     this._generatedFiles.set(result);

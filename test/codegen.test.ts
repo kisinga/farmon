@@ -174,8 +174,9 @@ assert(routesH.includes("safe_close_mask"), "Has valve refcount for safe close")
 assert(routesH.includes("derived_system_state"), "Has derived_system_state function");
 assert(routesH.includes("open_valve_hw"), "Valve dispatch renamed to _hw");
 assert(routesH.includes("close_valve_hw"), "Valve close dispatch renamed to _hw");
-assert(routesH.includes("VALVE_TRAVEL_MS"), "Has valve travel timing constant");
-assert(routesH.includes("FLOW_WATCHDOG_MS"), "Has flow watchdog timing constant");
+assert(routesH.includes("get_valve_travel_ms"), "Has per-valve travel time dispatch");
+assert(routesH.includes("get_route_travel_ms"), "Has per-route travel time dispatch");
+assert(routesH.includes("get_max_runtime_s"), "Has per-route max runtime dispatch");
 
 // --- hardware.yaml ---
 

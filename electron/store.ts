@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+
 // ---------------------------------------------------------------------------
 // Schema versioning
 // ---------------------------------------------------------------------------
@@ -146,10 +147,16 @@ function uniqueName(base: string, dir: string, ext: string): string {
 // Initialization — seed defaults into store, then store is the only source
 // ---------------------------------------------------------------------------
 
+function templatesDir(): string {
+  return path.join(storeRoot(), "templates");
+}
+
+
 export function initStore(defaultsDir: string): void {
   _defaultsDir = defaultsDir;
   fs.mkdirSync(boardsDir(), { recursive: true });
   fs.mkdirSync(configsDir(), { recursive: true });
+  fs.mkdirSync(templatesDir(), { recursive: true });
   seedDefaults();
 }
 
@@ -168,6 +175,15 @@ function seedDefaults(): void {
       fs.copyFileSync(path.join(defaultConfigsDir(), f), path.join(configsDir(), f));
     }
   }
+
+}
+
+/**
+ * Read a user-editable template by name. Returns undefined if not found.
+ */
+export function getTemplate(name: string): string | undefined {
+  const p = path.join(templatesDir(), name);
+  return fs.existsSync(p) ? fs.readFileSync(p, "utf-8") : undefined;
 }
 
 // ---------------------------------------------------------------------------
