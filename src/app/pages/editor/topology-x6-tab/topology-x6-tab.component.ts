@@ -18,8 +18,8 @@ import { downstreamNodes } from '../../../../../shared/graph/index';
     '(document:keydown.control.y)': 'doRedo()',
     '(document:keydown.meta.z)': 'doUndo()',
     '(document:keydown.meta.shift.z)': 'doRedo()',
-    '(document:keydown.delete)': 'deleteSelected()',
-    '(document:keydown.backspace)': 'deleteSelected()',
+    '(document:keydown.delete)': 'deleteSelected($event)',
+    '(document:keydown.backspace)': 'deleteSelected($event)',
   },
   template: `
     <!-- Toolbar -->
@@ -309,7 +309,11 @@ export class TopologyX6TabComponent {
   doUndo() { this.c.undo(); }
   doRedo() { this.c.redo(); }
 
-  deleteSelected() {
+  deleteSelected(e?: Event) {
+    if (e) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable) return;
+    }
     const sel = this.selection();
     if (!sel) return;
     if (sel.kind === 'node') {

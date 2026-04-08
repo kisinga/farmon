@@ -133,6 +133,7 @@ export type { Selection };
       <app-validation-panel
         [result]="editor.validation()"
         [gpioUsage]="editor.gpioUsage()"
+        (selectTarget)="selectNode.emit($event)"
       />
     </div>
   `,

@@ -20,7 +20,7 @@ export function topologyToManifest(topology: Topology): Manifest {
 
   // Strip layout fields (ports, position) — generators don't need them.
   const nodes: ManifestNode[] = topology.nodes
-    .filter(n => connected.has(n.id))
+    .filter(n => connected.has(n.id) && !n.disabled)
     .map(({ ports, position, ...data }) => data as ManifestNode);
 
   // --- Route mapping ---
