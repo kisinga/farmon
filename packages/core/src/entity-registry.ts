@@ -111,7 +111,31 @@ export function legendSvgFor(desc: NodeDescriptor): string {
 }
 
 // ---------------------------------------------------------------------------
-// Registry
+// Registry — explicit composition, no side-effect imports
 // ---------------------------------------------------------------------------
 
-export const NODE_REGISTRY = new Map<string, NodeDescriptor>();
+import { tankDescriptor } from './entities/tank';
+import { pumpDescriptor } from './entities/pump';
+import { endpointDescriptor } from './entities/endpoint';
+import { valveDescriptor } from './entities/valve';
+import { flowSensorDescriptor } from './entities/flow-sensor';
+import { waterSourceDescriptor } from './entities/water-source';
+import { pressureSensorDescriptor } from './entities/pressure-sensor';
+import { filterDescriptor } from './entities/filter';
+import { dosingPumpDescriptor } from './entities/dosing-pump';
+
+export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
+  tankDescriptor,
+  pumpDescriptor,
+  endpointDescriptor,
+  valveDescriptor,
+  flowSensorDescriptor,
+  waterSourceDescriptor,
+  pressureSensorDescriptor,
+  filterDescriptor,
+  dosingPumpDescriptor,
+];
+
+export const NODE_REGISTRY: ReadonlyMap<string, NodeDescriptor> = new Map(
+  ALL_DESCRIPTORS.map(d => [d.kind, d]),
+);

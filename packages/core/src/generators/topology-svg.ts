@@ -4,7 +4,7 @@
  * No DOM required — runs in both Node and browser.
  */
 import type { SystemTopology, TopologyNode } from "../topology.types";
-import { NODE_REGISTRY } from "../entities/index";
+import { NODE_REGISTRY } from "../entity-registry";
 
 const PADDING = 40;
 const PIPE_COLOR = '#6b7280';

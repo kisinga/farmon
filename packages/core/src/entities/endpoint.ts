@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NODE_REGISTRY } from '../entity-registry';
+import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
@@ -24,9 +24,9 @@ export const EndpointNodeSchema = z.object({
 
 export type EndpointNode = z.infer<typeof EndpointNodeSchema>;
 
-// --- Register ---
+// --- Descriptor ---
 
-NODE_REGISTRY.set('endpoint', {
+export const endpointDescriptor: NodeDescriptor = {
   kind: 'endpoint',
   label: 'Endpoint',
   color: COLOR,
@@ -59,4 +59,4 @@ NODE_REGISTRY.set('endpoint', {
   ] satisfies FlowConstraint[],
 
   // Endpoint has no codegen — it's a terminal node with no hardware.
-});
+};

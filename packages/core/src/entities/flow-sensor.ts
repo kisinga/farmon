@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NODE_REGISTRY } from '../entity-registry';
+import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 
@@ -21,9 +21,9 @@ export const FlowSensorNodeSchema = z.object({
 
 export type FlowSensorNode = z.infer<typeof FlowSensorNodeSchema>;
 
-// --- Register ---
+// --- Descriptor ---
 
-NODE_REGISTRY.set('flow_sensor', {
+export const flowSensorDescriptor: NodeDescriptor = {
   kind: 'flow_sensor',
   label: 'Flow Sensor',
   color: COLOR,
@@ -120,4 +120,4 @@ NODE_REGISTRY.set('flow_sensor', {
     type: int
     initial_value: '0'`,
   },
-});
+};

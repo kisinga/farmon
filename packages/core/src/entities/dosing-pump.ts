@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NODE_REGISTRY } from '../entity-registry';
+import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 
@@ -21,9 +21,9 @@ export const DosingPumpNodeSchema = z.object({
 
 export type DosingPumpNode = z.infer<typeof DosingPumpNodeSchema>;
 
-// --- Register ---
+// --- Descriptor ---
 
-NODE_REGISTRY.set('dosing_pump', {
+export const dosingPumpDescriptor: NodeDescriptor = {
   kind: 'dosing_pump',
   label: 'Dosing Pump',
   color: COLOR,
@@ -54,4 +54,4 @@ NODE_REGISTRY.set('dosing_pump', {
   ],
 
   // No codegen — experimental, UI only.
-});
+};

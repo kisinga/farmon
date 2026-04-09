@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NODE_REGISTRY } from '../entity-registry';
+import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 
@@ -24,9 +24,9 @@ export const WaterSourceNodeSchema = z.object({
 
 export type WaterSourceNode = z.infer<typeof WaterSourceNodeSchema>;
 
-// --- Register ---
+// --- Descriptor ---
 
-NODE_REGISTRY.set('water_source', {
+export const waterSourceDescriptor: NodeDescriptor = {
   kind: 'water_source',
   label: 'Water Source',
   color: COLOR,
@@ -94,4 +94,4 @@ NODE_REGISTRY.set('water_source', {
         target: ws['id'],
       })),
   }],
-});
+};

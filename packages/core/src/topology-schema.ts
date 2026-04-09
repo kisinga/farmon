@@ -8,9 +8,6 @@ import { z } from 'zod';
 import { NODE_REGISTRY } from './entity-registry';
 import { DeviceSchema, TimingSchema, AutomationSchema } from './schemas';
 
-// Side-effect: ensure all entities are registered before we read the registry.
-import './entities';
-
 // ---------------------------------------------------------------------------
 // Node discriminated union — driven by the registry
 // ---------------------------------------------------------------------------

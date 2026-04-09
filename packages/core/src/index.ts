@@ -6,9 +6,6 @@
  * for future splitting if needed.
  */
 
-// --- Entity side-effect registration (populates NODE_REGISTRY) ---
-import './entities/index.js';
-
 // --- Types ---
 export type {
   SystemTopology, TopologyNode, PipeSegment, RouteOverride,

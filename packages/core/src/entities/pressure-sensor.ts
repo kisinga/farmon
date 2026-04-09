@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NODE_REGISTRY } from '../entity-registry';
+import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 
@@ -22,9 +22,9 @@ export const PressureSensorNodeSchema = z.object({
 
 export type PressureSensorNode = z.infer<typeof PressureSensorNodeSchema>;
 
-// --- Register ---
+// --- Descriptor ---
 
-NODE_REGISTRY.set('pressure_sensor', {
+export const pressureSensorDescriptor: NodeDescriptor = {
   kind: 'pressure_sensor',
   label: 'Pressure Sensor',
   color: COLOR,
@@ -89,4 +89,4 @@ NODE_REGISTRY.set('pressure_sensor', {
         target: String(n['id']),
       })),
   }],
-});
+};

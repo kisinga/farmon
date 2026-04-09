@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NODE_REGISTRY } from '../entity-registry';
+import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 
 const COLOR = '#e11d48'; // rose
@@ -21,9 +21,9 @@ export const ValveNodeSchema = z.object({
 
 export type ValveNode = z.infer<typeof ValveNodeSchema>;
 
-// --- Register ---
+// --- Descriptor ---
 
-NODE_REGISTRY.set('valve', {
+export const valveDescriptor: NodeDescriptor = {
   kind: 'valve',
   label: 'Valve',
   color: COLOR,
@@ -84,4 +84,4 @@ NODE_REGISTRY.set('valve', {
       `pin_${node['id']}_c: "${node['close_pin']}"`,
     ],
   },
-});
+};

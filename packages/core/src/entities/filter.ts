@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NODE_REGISTRY } from '../entity-registry';
+import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 
@@ -21,9 +21,9 @@ export const FilterNodeSchema = z.object({
 
 export type FilterNode = z.infer<typeof FilterNodeSchema>;
 
-// --- Register ---
+// --- Descriptor ---
 
-NODE_REGISTRY.set('filter', {
+export const filterDescriptor: NodeDescriptor = {
   kind: 'filter',
   label: 'Filter',
   color: COLOR,
@@ -69,4 +69,4 @@ NODE_REGISTRY.set('filter', {
         target: String(n['id']),
       })),
   }],
-});
+};

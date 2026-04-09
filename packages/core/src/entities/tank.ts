@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NODE_REGISTRY } from '../entity-registry';
+import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 
@@ -26,9 +26,9 @@ export const TankNodeSchema = z.object({
 
 export type TankNode = z.infer<typeof TankNodeSchema>;
 
-// --- Register ---
+// --- Descriptor ---
 
-NODE_REGISTRY.set('tank', {
+export const tankDescriptor: NodeDescriptor = {
   kind: 'tank',
   label: 'Tank',
   color: COLOR,
@@ -120,4 +120,4 @@ NODE_REGISTRY.set('tank', {
         target: t['id'],
       })),
   }],
-});
+};

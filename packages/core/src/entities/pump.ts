@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NODE_REGISTRY } from '../entity-registry';
+import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
@@ -29,9 +29,9 @@ export const PumpNodeSchema = z.object({
 
 export type PumpNode = z.infer<typeof PumpNodeSchema>;
 
-// --- Register ---
+// --- Descriptor ---
 
-NODE_REGISTRY.set('pump', {
+export const pumpDescriptor: NodeDescriptor = {
   kind: 'pump',
   label: 'Pump',
   color: COLOR,
@@ -108,4 +108,4 @@ NODE_REGISTRY.set('pump', {
 
     substitutions: (node) => [`pin_pump_relay: "${node['pin']}"`],
   },
-});
+};
