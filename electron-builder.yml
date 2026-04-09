@@ -6,6 +6,9 @@ directories:
 
 files:
   - dist-electron/**/*
+  - packages/core/dist/**/*
+  - packages/core/package.json
+  - packages/core/src/templates/**/*
   - dist/app/browser/**/*
   - package.json
   - "!**/*.map"

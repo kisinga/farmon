@@ -9,7 +9,7 @@ import { generateBoardPackage } from "./generators/board-package.js";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
 import { generateAutomations } from "./generators/automations.js";
-import { LOGO_SVG } from "../../shared/static/logo.js";
+import { LOGO_SVG } from '@far-mon/core';
 
 export interface GeneratedFile {
   relativePath: string;

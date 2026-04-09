@@ -1,5 +1,4 @@
 /**
- * Re-exports from shared colors.
- * All definitions live in shared/colors.ts.
+ * Re-exports from @far-mon/core.
  */
-export { UI_COLORS, entityColor } from '../../../../shared/colors';
+export { UI_COLORS, entityColor } from '@far-mon/core';

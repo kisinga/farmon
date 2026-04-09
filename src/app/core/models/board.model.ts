@@ -1,12 +1,5 @@
 /**
- * Re-exports from shared board types.
- * All types and helpers now live in shared/board.types.ts.
+ * Re-exports from @far-mon/core.
  */
-export {
-  type PinCap,
-  type PinDef,
-  type BoardDef,
-  reservedPins,
-  exposedPins,
-  pinsWithCap,
-} from '../../../../shared/board.types';
+export type { PinCap, PinDef, BoardDef } from '@far-mon/core';
+export { reservedPins, exposedPins, pinsWithCap } from '@far-mon/core';

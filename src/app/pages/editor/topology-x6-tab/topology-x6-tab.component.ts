@@ -5,8 +5,7 @@ import type { SystemTopology, TopologyNode, PipeSegment } from '../../../core/mo
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
-import { buildGraph, activeGraph } from '../../../../../shared/graph/index';
-import { downstreamNodes } from '../../../../../shared/graph/index';
+import { buildGraph, activeGraph, downstreamNodes } from '@far-mon/core';
 
 @Component({
   selector: 'app-topology-x6-tab',

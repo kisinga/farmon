@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow, dialog, shell } from "electron";
 import { BoardDefSchema } from "./lib/board.js";
-import { TopologySchema } from "./lib/topology.js";
+import { parseTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
 import { generateAll } from "./lib/generate.js";
 import { topologyToManifest } from "./lib/topology-to-manifest.js";
@@ -16,10 +16,7 @@ import {
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
 import { generateDocumentation } from "./lib/generators/readme.js";
-import { generateTopologySvg } from "../shared/generators/topology-svg.js";
-import { collectPins } from "../shared/pin-collect.js";
-import { reservedPins } from "../shared/board.types.js";
-import { computePinOverlays } from "../shared/board-pin-overlays.js";
+import { generateTopologySvg, collectPins, reservedPins, computePinOverlays } from '@far-mon/core';
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
 import { listSerialPorts } from "./discovery.js";
@@ -36,7 +33,7 @@ function winFromEvent(event: Electron.IpcMainInvokeEvent): BrowserWindow {
 
 /** Parse topology and derive manifest (activeGraph filtering happens inside topologyToManifest). */
 function resolveTopologyAndManifest(dataRaw: unknown) {
-  const topology = TopologySchema.parse(dataRaw);
+  const topology = parseTopology(dataRaw);
   const manifest = topologyToManifest(topology);
   return { topology, manifest };
 }

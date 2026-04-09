@@ -1,27 +1,26 @@
 /**
- * Thin delegation layer — re-exports from shared/graph/ so existing
+ * Thin delegation layer — re-exports from @far-mon/core so existing
  * import paths (from '../shared/derive-routes') continue to work.
  */
 import type { SystemTopology } from '../../../core/models/topology.model';
-import { buildGraph, activeGraph, deriveRoutes as _deriveRoutes, type Route } from '../../../../../shared/graph/index';
+import { buildGraph, deriveRoutes as _deriveRoutes, type Route } from '@far-mon/core';
 
 export type DerivedRoute = Route;
 
-export { type Route } from '../../../../../shared/graph/index';
+export { type Route } from '@far-mon/core';
 
 export function deriveRoutes(topology: SystemTopology): DerivedRoute[] {
   const graph = buildGraph(topology.nodes, topology.pipes);
   return _deriveRoutes(graph);
 }
 
-// Re-export highlighting functions that accept SystemTopology
-// (builds the graph internally for convenience)
+// Re-export highlighting functions
 export {
   pipesFromSource as findPipesFromSource,
   pipesToDestination as findPipesToDestination,
   connectedPipes as findConnectedPipes,
-} from '../../../../../shared/graph/index';
+} from '@far-mon/core';
 
-// Re-export buildGraph + graph-based functions for consumers that work with TopologyGraph directly
-export { buildGraph, activeGraph } from '../../../../../shared/graph/index';
-export type { TopologyGraph } from '../../../../../shared/graph/index';
+// Re-export graph functions for consumers that work with TopologyGraph directly
+export { buildGraph, activeGraph } from '@far-mon/core';
+export type { TopologyGraph } from '@far-mon/core';

@@ -1,5 +1,5 @@
 import type { Manifest } from "../../schema.js";
-import { NODE_REGISTRY } from "../../../../shared/entity-registry.js";
+import { NODE_REGISTRY } from '@far-mon/core';
 
 export interface PinUsage {
   pin: string;

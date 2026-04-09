@@ -2,7 +2,7 @@ import type { Manifest } from "../../schema.js";
 import type { BoardDef } from "../../board.js";
 import { pinsWithCapability } from "../../board.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
-import { NODE_REGISTRY } from "../../../../shared/entity-registry.js";
+import { NODE_REGISTRY } from '@far-mon/core';
 
 export const pinCapabilities: ManifestRule = {
   id: "pin-capabilities",

@@ -1,13 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import Handlebars from 'handlebars';
-import type { Manifest } from "../../../shared/manifest.types.js";
-import { nodesByKind } from "../../../shared/manifest.types.js";
-import { NODE_REGISTRY, legendSvgFor } from "../../../shared/entities/index.js";
-import { LOGO_SVG_SMALL } from "../../../shared/static/logo.js";
-import type { PinOverlayData } from "../../../shared/board-pin-overlays.js";
+import { nodesByKind, NODE_REGISTRY, legendSvgFor, LOGO_SVG_SMALL, type Manifest, type PinOverlayData } from '@far-mon/core';
 
-const TEMPLATES_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'shared', 'templates');
+const TEMPLATES_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'packages', 'core', 'src', 'templates');
 
 export interface GenerationInfo {
   version: string;

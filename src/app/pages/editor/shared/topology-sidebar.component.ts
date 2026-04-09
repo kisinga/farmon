@@ -5,7 +5,7 @@ import { ValidationPanelComponent } from '../../../shared/validation-panel/valid
 import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
-import { buildGraph, activeGraph, deriveRoutes } from '../../../../../shared/graph/index';
+import { buildGraph, activeGraph, deriveRoutes } from '@far-mon/core';
 import type { Selection } from './selection';
 export type { Selection };
 

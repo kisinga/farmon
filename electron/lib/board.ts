@@ -7,7 +7,7 @@ import {
   reservedPins as _reservedPins,
   exposedPins as _exposedPins,
   pinsWithCap as _pinsWithCap,
-} from "../../shared/board.types.js";
+} from '@far-mon/core';
 
 // --- Pin capabilities -------------------------------------------------------
 

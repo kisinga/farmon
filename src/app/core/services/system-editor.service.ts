@@ -3,7 +3,7 @@ import type { BoardDef, PinDef, PinCap } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
 import type { SystemTopology } from '../models/topology.model';
-import { collectPins } from '../../../../shared/pin-collect';
+import { collectPins } from '@far-mon/core';
 @Injectable({ providedIn: 'root' })
 export class SystemEditorService {
 

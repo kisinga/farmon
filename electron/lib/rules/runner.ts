@@ -1,12 +1,10 @@
-import type { Topology } from "../topology.js";
+import type { SystemTopology } from '@far-mon/core';
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 import type { TopologyRule, ManifestRule, RuleDiagnostic } from "./rule.types.js";
-import type { ValidationResult } from "../../../shared/validation.types.js";
-import { NODE_REGISTRY } from "../../../shared/entity-registry.js";
-import { buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateEscalations } from "../../../shared/graph/index.js";
+import { NODE_REGISTRY, buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateEscalations, type ValidationResult } from '@far-mon/core';
 
-export type { ValidationResult } from "../../../shared/validation.types.js";
+export type { ValidationResult } from '@far-mon/core';
 
 function toResult(diagnostics: RuleDiagnostic[]): ValidationResult {
   return {
@@ -72,7 +70,7 @@ function runEntityRules(nodes: Array<Record<string, any>>): RuleDiagnostic[] {
 // ---------------------------------------------------------------------------
 
 export function runTopologyRules(
-  topology: Topology,
+  topology: SystemTopology,
   rules: TopologyRule[],
 ): ValidationResult {
   const graph = buildGraph(topology.nodes, topology.pipes);
@@ -123,7 +121,7 @@ export function runManifestRules(
 // ---------------------------------------------------------------------------
 
 export function validateAll(
-  topology: Topology,
+  topology: SystemTopology,
   manifest: Manifest,
   board: BoardDef,
   topologyRules: TopologyRule[],

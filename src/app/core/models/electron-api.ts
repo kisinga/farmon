@@ -50,7 +50,7 @@ export interface GenerationSnapshot extends GenerationMeta {
   board: string;
 }
 
-import type { ValidationResult, RuleDiagnostic } from '../../../../shared/validation.types';
+import type { ValidationResult, RuleDiagnostic } from '@far-mon/core';
 export type { ValidationResult, RuleDiagnostic };
 
 // --- Toolchain ---

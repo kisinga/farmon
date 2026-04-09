@@ -10,11 +10,14 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "declaration": false,
-    "sourceMap": true
+    "sourceMap": true,
+    "paths": {
+      "@far-mon/core": ["./packages/core/src/index.ts"]
+    }
   },
   "include": [
     "electron/**/*.ts",
-    "shared/**/*.ts"
+    "packages/core/src/**/*.ts"
   ],
   "exclude": [
     "node_modules"

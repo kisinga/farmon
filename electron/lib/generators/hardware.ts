@@ -1,6 +1,6 @@
 import type { Manifest } from "../schema.js";
 import { nodesByKind } from "../schema.js";
-import { NODE_REGISTRY } from "../../../shared/entity-registry.js";
+import { NODE_REGISTRY } from '@far-mon/core';
 
 export function generateHardware(m: Manifest): string {
   // Collect hardware blocks from all entities that provide them

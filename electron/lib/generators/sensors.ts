@@ -1,6 +1,6 @@
 import type { Manifest } from "../schema.js";
 import { nodesByKind } from "../schema.js";
-import { NODE_REGISTRY } from "../../../shared/entity-registry.js";
+import { NODE_REGISTRY } from '@far-mon/core';
 import { parseDurationMs } from "./routes.js";
 
 export function generateSensors(m: Manifest): string {

@@ -13,7 +13,10 @@
     "experimentalDecorators": true,
     "importHelpers": true,
     "target": "ES2022",
-    "module": "preserve"
+    "module": "preserve",
+    "paths": {
+      "@far-mon/core": ["./packages/core/src/index.ts"]
+    }
   },
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,
@@ -24,6 +27,9 @@
   },
   "files": [],
   "references": [
+    {
+      "path": "./packages/core"
+    },
     {
       "path": "./tsconfig.app.json"
     },

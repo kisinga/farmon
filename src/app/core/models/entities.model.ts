@@ -1,10 +1,5 @@
 /**
- * Re-exports from shared entity registry.
- * All definitions live in shared/entities/.
+ * Re-exports from @far-mon/core.
  */
-export {
-  NODE_REGISTRY,
-  legendSvgFor,
-  type NodeDescriptor,
-  type FieldDef,
-} from '../../../../shared/entities';
+export { NODE_REGISTRY, legendSvgFor } from '@far-mon/core';
+export type { NodeDescriptor, FieldDef } from '@far-mon/core';

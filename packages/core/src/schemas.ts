@@ -26,3 +26,47 @@ export const PositionSchema = z.object({ x: z.number(), y: z.number() });
 
 export type Port = z.infer<typeof PortSchema>;
 export type Position = z.infer<typeof PositionSchema>;
+
+// ---------------------------------------------------------------------------
+// Device & timing schemas (previously in electron/lib/shared-schema.ts)
+// ---------------------------------------------------------------------------
+
+export const DeviceSchema = z.object({
+  name: z.string().min(1),
+  friendly_name: z.string().min(1),
+  board: z.string().min(1),
+  directory: z.string().optional(),
+});
+
+export const TimingSchema = z.object({
+  valve_travel_time: z.string().default("15s"),
+  flow_watchdog_seconds: z.number().default(30),
+  flow_confirm_seconds: z.number().default(15),
+  api_watchdog_seconds: z.number().default(300),
+  update_interval: z.string().default("5s"),
+});
+
+export const AutomationTriggerSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("time"), at: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:MM format') }),
+  z.object({
+    type: z.literal("level"),
+    node: z.string().optional(),
+    entity: z.string().optional(),
+    below: z.number().optional(),
+    above: z.number().optional(),
+    for_minutes: z.number().min(0).optional(),
+  }),
+]);
+
+export const AutomationSchema = z.object({
+  id: ComponentId,
+  name: z.string().default(''),
+  route: z.string().default(''),
+  trigger: AutomationTriggerSchema,
+  days_of_week: z.array(z.enum(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']))
+    .default(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']),
+  enabled: z.boolean().default(true),
+});
+
+// Note: Device/Timing types for consumer use are derived from SystemTopology
+// in manifest.types.ts. These Zod-inferred types are for internal validation only.

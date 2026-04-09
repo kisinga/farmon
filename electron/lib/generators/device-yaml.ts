@@ -2,7 +2,7 @@ import { stringify } from "yaml";
 import type { BoardDef } from "../board.js";
 import type { Manifest } from "../schema.js";
 import { nodesByKind } from "../schema.js";
-import { NODE_REGISTRY } from "../../../shared/entity-registry.js";
+import { NODE_REGISTRY } from '@far-mon/core';
 
 /**
  * Generate the ESPHome device YAML from board definition + system manifest.

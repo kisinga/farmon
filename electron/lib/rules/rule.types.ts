@@ -1,10 +1,8 @@
-import type { TopologyGraph } from "../../../shared/graph/topology-graph.js";
-import type { Route } from "../../../shared/graph/routes.js";
+import type { TopologyGraph, Route, RuleDiagnostic, Severity } from '@far-mon/core';
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 
-export type { Severity, RuleDiagnostic } from "../../../shared/validation.types.js";
-import type { RuleDiagnostic } from "../../../shared/validation.types.js";
+export type { Severity, RuleDiagnostic } from '@far-mon/core';
 
 /** A rule that validates the topology graph structure. */
 export interface TopologyRule {

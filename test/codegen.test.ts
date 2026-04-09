@@ -8,10 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { Manifest, ManifestNode } from "../electron/lib/schema.js";
-import { nodesByKind } from "../electron/lib/schema.js";
-import { TopologySchema } from "../electron/lib/topology.js";
-import { topologyToManifest } from "../electron/lib/topology-to-manifest.js";
+import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifest } from "@far-mon/core";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
 import { validateAll } from "../electron/lib/validate.js";
 import { generateAll, type GeneratedFile } from "../electron/lib/generate.js";
@@ -55,12 +52,9 @@ function n(node: ManifestNode, key: string): string {
 console.log("Codegen Integration Tests");
 console.log("=========================\n");
 
-// Import entity registrations (side effect)
-import "../shared/entities/index.js";
-
 board = loadBoard(BOARD_DIR);
 const rawConfig = fs.readFileSync(CONFIG_PATH, "utf-8");
-const topology = TopologySchema.parse(parseYaml(rawConfig));
+const topology = parseTopology(parseYaml(rawConfig));
 manifest = topologyToManifest(topology);
 const validation = validateAll(topology, manifest, board);
 files = generateAll(manifest, board);
@@ -231,7 +225,7 @@ assert(control.includes("interval: 2s"), "Has 2s safety interval");
 assert(control.includes("find_slot_by_route"), "Uses slot-based route lookup");
 assert(control.includes("has_conflict"), "Checks conflicts before starting");
 assert(control.includes("safe_close_mask"), "Uses valve refcount on stop");
-assert(control.includes("queue_push"), "Queues conflicting routes");
+assert(control.includes("try_route_start"), "Delegates to try_route_start (which queues on conflict)");
 assert(!control.includes("close_all_valves"), "No close_all_valves script");
 assert(!control.includes("do_prepare_and_run"), "No do_prepare_and_run script");
 assert(!control.includes("id(active_route)"), "No active_route global reference");

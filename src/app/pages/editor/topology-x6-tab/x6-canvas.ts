@@ -13,7 +13,7 @@ import { UI_COLORS } from '../../../core/models/colors.model';
 import type { SystemTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
 import type { TopologyGraph } from '../shared/derive-routes';
-import { pipesFromSource, pipesToDestination, connectedPipes } from '../../../../../shared/graph/index';
+import { pipesFromSource, pipesToDestination, connectedPipes } from '@far-mon/core';
 import type { Selection } from '../shared/selection';
 
 export type { Selection };
