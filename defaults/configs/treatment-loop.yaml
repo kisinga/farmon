@@ -1,0 +1,89 @@
+schema: 8
+device:
+  name: treatment-loop
+  friendly_name: Treatment Loop
+  board: heltec-v3
+  directory: treatment-loop
+
+nodes:
+  - kind: water_source
+    id: mains
+    name: Mains Supply
+    ports:
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 50, y: 200 }
+
+  - kind: valve
+    id: valve1
+    name: Inlet Valve
+    open_pin: GPIO4
+    close_pin: GPIO5
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 200, y: 200 }
+
+  - kind: filter
+    id: filter1
+    name: Sediment Filter
+    inlet_pressure_pin: GPIO2
+    outlet_pressure_pin: GPIO3
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 350, y: 200 }
+
+  - kind: dosing_pump
+    id: doser1
+    name: Chlorine Doser
+    pin: GPIO6
+    flow_rate_ml_min: 100
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 500, y: 200 }
+
+  - kind: pressure_sensor
+    id: ps1
+    name: Line Pressure
+    pin: GPIO7
+    min_bar: 0
+    max_bar: 10
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 650, y: 200 }
+
+  - kind: flow_sensor
+    id: flow1
+    name: Outlet Flow
+    pin: GPIO47
+    flow_cal: 450
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 800, y: 200 }
+
+  - kind: tank
+    id: tank1
+    name: Storage Tank
+    level_pin: GPIO19
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 950, y: 200 }
+
+pipes:
+  - { id: p1, from: "mains:outlet",   to: "valve1:inlet" }
+  - { id: p2, from: "valve1:outlet",  to: "filter1:inlet" }
+  - { id: p3, from: "filter1:outlet", to: "doser1:inlet" }
+  - { id: p4, from: "doser1:outlet",  to: "ps1:inlet" }
+  - { id: p5, from: "ps1:outlet",     to: "flow1:inlet" }
+  - { id: p6, from: "flow1:outlet",   to: "tank1:inlet" }
+
+timing:
+  valve_travel_time: 15s
+  flow_watchdog_seconds: 30
+  flow_confirm_seconds: 15
+  api_watchdog_seconds: 300
+  update_interval: 5s

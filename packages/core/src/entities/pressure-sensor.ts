@@ -92,11 +92,7 @@ export const pressureSensorDescriptor: NodeDescriptor = {
     substitutions: () => [],
   },
 
-  constraints: [
-    { type: 'presence', id: 'pressure-upstream-valve', requiredKind: 'valve',
-      position: 'upstream', baseSeverity: 'warning',
-      description: 'Isolation valve recommended upstream of pressure sensor for maintenance' },
-  ] satisfies FlowConstraint[],
+  constraints: [] satisfies FlowConstraint[],
 
   // --- Validation ---
 

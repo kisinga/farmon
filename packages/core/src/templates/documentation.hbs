@@ -141,6 +141,13 @@
   <li>Pump outlets (turbulence)</li>
 </ul>
 
+<h4>Float Valve Requirement</h4>
+<p>A float valve <strong>must</strong> be installed upstream of each flow sensor on routes filling a destination tank. When the tank is full, the float valve closes and flow drops to zero — this is how MajiFlow detects tank-full and triggers a clean stop via the flow watchdog.</p>
+<ul>
+  <li>Without a float valve, there is no backpressure signal and the system cannot detect a full tank</li>
+  <li>The float valve is a passive mechanical device — it does not appear in the MajiFlow topology</li>
+</ul>
+
 <h4>Mounting Orientation</h4>
 <ul>
   <li>Mount <strong>horizontally</strong> with the impeller axis vertical</li>
@@ -230,6 +237,12 @@
     <tr><td>0–6 bar, 4–20mA</td><td>Low pressure</td><td>Requires signal converter</td><td>Better noise immunity</td></tr>
   </tbody>
 </table>
+
+<h4>Maintenance</h4>
+<ul>
+  <li><strong>Isolation valve</strong>: Install a manual isolation valve upstream of each pressure sensor to allow replacement or calibration without draining the system.</li>
+  <li>This is a manual (non-actuated) valve — it does not appear in the MajiFlow topology.</li>
+</ul>
 {{/if}}
 
 <h3>General Piping Notes</h3>
