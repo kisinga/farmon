@@ -99,6 +99,7 @@ const BusSchema = z.record(z.union([z.string(), z.number()]));
 
 export const BoardDefSchema = z.object({
   schema: z.number().int().positive().optional(),
+  id: z.string().optional(),
   model: z.string(),
   label: z.string(),
   svg: z.string(),

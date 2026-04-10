@@ -15,6 +15,7 @@ import type {
   ProcessDoneEvent,
   SerialDevice,
   HealthReport,
+  SeedChange,
 } from '../models/electron-api';
 
 @Injectable({ providedIn: 'root' })
@@ -153,6 +154,15 @@ export class ElectronService {
   // --- Store ---
   outputDir(): Promise<string> {
     return this.invoke(() => this.api!.outputDir());
+  }
+  seedChanges(): Promise<SeedChange[]> {
+    return this.api?.seedChanges() ?? Promise.resolve([]);
+  }
+  applySeed(id?: string): Promise<{ ok: boolean }> {
+    return this.invoke(() => this.api!.applySeed(id));
+  }
+  dismissSeed(id: string): Promise<{ ok: boolean }> {
+    return this.invoke(() => this.api!.dismissSeed(id));
   }
 
   // --- Generation history ---

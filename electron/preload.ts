@@ -113,6 +113,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Store
   storePath: () => ipcRenderer.invoke("store:path"),
   outputDir: () => ipcRenderer.invoke("store:output-dir"),
+  seedChanges: () => ipcRenderer.invoke("store:seed-changes"),
+  applySeed: (id?: string) => ipcRenderer.invoke("store:apply-seed", id),
+  dismissSeed: (id: string) => ipcRenderer.invoke("store:dismiss-seed", id),
 
   // Generation history
   generationList: (configName: string) =>

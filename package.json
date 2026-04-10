@@ -8,7 +8,7 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
-    "build:electron": "tsc -p tsconfig.electron.json",
+    "build:electron": "tsc -p tsconfig.electron.json && ln -sfn ../../dist-electron/packages/core/src packages/core/dist",
     "dev": "npm run build:electron && concurrently \"ng serve\" \"wait-on http://localhost:4200 && electron .\"",
     "package": "ng build --configuration production && npm run build:electron && electron-builder",
     "package:linux": "ng build --configuration production && npm run build:electron && electron-builder --linux",

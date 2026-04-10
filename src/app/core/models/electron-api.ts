@@ -114,6 +114,15 @@ export interface HealthCheck {
   fixable: boolean;
 }
 
+// --- Seed changes ---
+
+export interface SeedChange {
+  kind: "board" | "config";
+  id: string;
+  label: string;
+  action: "added" | "updated";
+}
+
 // --- ElectronAPI ---
 
 export interface ElectronAPI {
@@ -170,6 +179,9 @@ export interface ElectronAPI {
   // Store
   storePath(): Promise<string>;
   outputDir(): Promise<string>;
+  seedChanges(): Promise<SeedChange[]>;
+  applySeed(id?: string): Promise<{ ok: boolean }>;
+  dismissSeed(id: string): Promise<{ ok: boolean }>;
 
   // Generation history
   generationList(configName: string): Promise<GenerationMeta[]>;

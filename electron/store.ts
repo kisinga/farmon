@@ -1,6 +1,7 @@
 import { app } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as crypto from "node:crypto";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 
@@ -151,6 +152,93 @@ function templatesDir(): string {
   return path.join(storeRoot(), "templates");
 }
 
+function hashesPath(): string {
+  return path.join(storeRoot(), "seed-hashes.json");
+}
+
+/** SHA-256 hash of a file's contents. */
+function fileHash(filePath: string): string {
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+/** Recursively hash all files in a directory into a single digest. */
+function dirHash(dirPath: string): string {
+  const hash = crypto.createHash("sha256");
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    const full = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) hash.update(dirHash(full));
+    else hash.update(fs.readFileSync(full));
+  }
+  return hash.digest("hex");
+}
+
+export interface SeedChange {
+  kind: "board" | "config";
+  id: string;
+  label: string;
+  action: "added" | "updated";
+}
+
+let _pendingChanges: SeedChange[] = [];
+
+/** Returns pending default updates that require user confirmation. */
+export function getSeedChanges(): SeedChange[] {
+  return _pendingChanges;
+}
+
+/**
+ * Apply one or all pending seed changes (user confirmed the overwrite).
+ * If no id is given, applies all pending changes.
+ */
+export function applySeedChanges(id?: string): void {
+  const hPath = hashesPath();
+  const hashes: Record<string, string> = fs.existsSync(hPath)
+    ? JSON.parse(fs.readFileSync(hPath, "utf-8"))
+    : {};
+
+  const toApply = id ? _pendingChanges.filter((c) => c.id === id) : [..._pendingChanges];
+
+  for (const change of toApply) {
+    if (change.kind === "board") {
+      const srcDir = path.join(defaultBoardsDir(), change.id);
+      const destDir = path.join(boardsDir(), change.id);
+      copyDirSync(srcDir, destDir);
+      hashes[`board:${change.id}`] = dirHash(srcDir);
+    } else {
+      const srcPath = path.join(defaultConfigsDir(), `${change.id}.yaml`);
+      const destPath = path.join(configsDir(), `${change.id}.yaml`);
+      fs.copyFileSync(srcPath, destPath);
+      hashes[`config:${change.id}.yaml`] = fileHash(srcPath);
+    }
+  }
+
+  fs.writeFileSync(hPath, JSON.stringify(hashes, null, 2), "utf-8");
+
+  // Remove applied entries from pending list
+  const appliedIds = new Set(toApply.map((c) => c.id));
+  _pendingChanges = _pendingChanges.filter((c) => !appliedIds.has(c.id));
+}
+
+/** Dismiss a pending change without applying it. */
+export function dismissSeedChange(id: string): void {
+  // Update hash to current bundled version so it won't prompt again
+  const hPath = hashesPath();
+  const hashes: Record<string, string> = fs.existsSync(hPath)
+    ? JSON.parse(fs.readFileSync(hPath, "utf-8"))
+    : {};
+
+  const change = _pendingChanges.find((c) => c.id === id);
+  if (change) {
+    if (change.kind === "board") {
+      hashes[`board:${change.id}`] = dirHash(path.join(defaultBoardsDir(), change.id));
+    } else {
+      hashes[`config:${change.id}.yaml`] = fileHash(path.join(defaultConfigsDir(), `${change.id}.yaml`));
+    }
+    fs.writeFileSync(hPath, JSON.stringify(hashes, null, 2), "utf-8");
+  }
+  _pendingChanges = _pendingChanges.filter((c) => c.id !== id);
+}
 
 export function initStore(defaultsDir: string): void {
   _defaultsDir = defaultsDir;
@@ -160,22 +248,80 @@ export function initStore(defaultsDir: string): void {
   seedDefaults();
 }
 
-/** Always overwrite library entries in store from bundled defaults. */
+/**
+ * Seed defaults into store.
+ * - New entries (not yet in store) are copied automatically.
+ * - Changed entries (hash mismatch) are queued as pending — the user
+ *   must confirm before they overwrite the store copy.
+ */
 function seedDefaults(): void {
+  const pending: SeedChange[] = [];
+
+  // Load previous hashes
+  const hPath = hashesPath();
+  const prevHashes: Record<string, string> = fs.existsSync(hPath)
+    ? JSON.parse(fs.readFileSync(hPath, "utf-8"))
+    : {};
+  const newHashes: Record<string, string> = { ...prevHashes };
+
+  // Seed boards
   if (fs.existsSync(defaultBoardsDir())) {
     for (const d of fs.readdirSync(defaultBoardsDir(), { withFileTypes: true })) {
       if (!d.isDirectory()) continue;
-      copyDirSync(path.join(defaultBoardsDir(), d.name), path.join(boardsDir(), d.name));
+      const srcDir = path.join(defaultBoardsDir(), d.name);
+      const destDir = path.join(boardsDir(), d.name);
+      const key = `board:${d.name}`;
+      const hash = dirHash(srcDir);
+      const existed = fs.existsSync(destDir);
+
+      if (hash !== prevHashes[key]) {
+        // Read label from YAML for user-friendly notification
+        const yamlPath = path.join(srcDir, "board.yaml");
+        let label = d.name;
+        if (fs.existsSync(yamlPath)) {
+          const parsed = parseYaml(fs.readFileSync(yamlPath, "utf-8")) as Record<string, unknown>;
+          label = (parsed.label as string) ?? d.name;
+        }
+
+        if (!existed) {
+          // New board — auto-seed, no prompt needed
+          copyDirSync(srcDir, destDir);
+          newHashes[key] = hash;
+        } else {
+          // Changed board — queue for user confirmation
+          pending.push({ kind: "board", id: d.name, label, action: "updated" });
+        }
+      }
     }
   }
 
+  // Seed configs
   if (fs.existsSync(defaultConfigsDir())) {
     for (const f of fs.readdirSync(defaultConfigsDir())) {
       if (!f.endsWith(".yaml")) continue;
-      fs.copyFileSync(path.join(defaultConfigsDir(), f), path.join(configsDir(), f));
+      const srcPath = path.join(defaultConfigsDir(), f);
+      const destPath = path.join(configsDir(), f);
+      const key = `config:${f}`;
+      const hash = fileHash(srcPath);
+      const existed = fs.existsSync(destPath);
+
+      if (hash !== prevHashes[key]) {
+        const name = f.replace(".yaml", "");
+        if (!existed) {
+          // New config — auto-seed
+          fs.copyFileSync(srcPath, destPath);
+          newHashes[key] = hash;
+        } else {
+          // Changed config — queue for user confirmation
+          pending.push({ kind: "config", id: name, label: name, action: "updated" });
+        }
+      }
     }
   }
 
+  // Persist hashes (only for auto-seeded new entries)
+  fs.writeFileSync(hPath, JSON.stringify(newHashes, null, 2), "utf-8");
+  _pendingChanges = pending;
 }
 
 /**
@@ -217,18 +363,42 @@ export function listBoards(): BoardListEntry[] {
     .filter((x): x is BoardListEntry => x !== null);
 }
 
-function resolveBoardDir(model: string): string {
-  const dir = path.join(boardsDir(), model);
+/**
+ * Resolve a board directory by ID (directory name) or model name.
+ * First tries a direct directory match, then falls back to scanning
+ * board directories for a matching `model` field in their YAML.
+ */
+function resolveBoardDir(idOrModel: string): string {
+  // Direct match by directory name (the canonical ID)
+  const dir = path.join(boardsDir(), idOrModel);
   if (fs.existsSync(dir)) return dir;
-  throw new Error(`Board not found: ${model}`);
+
+  // Fallback: scan for a board whose YAML `model` field matches
+  const base = boardsDir();
+  if (fs.existsSync(base)) {
+    for (const d of fs.readdirSync(base, { withFileTypes: true })) {
+      if (!d.isDirectory()) continue;
+      const yamlPath = path.join(base, d.name, "board.yaml");
+      if (!fs.existsSync(yamlPath)) continue;
+      const raw = fs.readFileSync(yamlPath, "utf-8");
+      const parsed = parseYaml(raw) as Record<string, unknown>;
+      if (parsed.model === idOrModel) return path.join(base, d.name);
+    }
+  }
+
+  throw new Error(`Board not found: ${idOrModel}`);
 }
 
-export function loadBoard(model: string): { board: Record<string, unknown>; svg: string | null } {
-  const dir = resolveBoardDir(model);
+export function loadBoard(idOrModel: string): { board: Record<string, unknown>; svg: string | null } {
+  const dir = resolveBoardDir(idOrModel);
+  const id = path.basename(dir);
   const yamlPath = path.join(dir, "board.yaml");
   const raw = fs.readFileSync(yamlPath, "utf-8");
   const board = parseYaml(raw) as Record<string, unknown>;
-  migrateIfNeeded(board, `boards/${model}/board.yaml`);
+  migrateIfNeeded(board, `boards/${id}/board.yaml`);
+
+  // Inject canonical directory ID so downstream code never guesses
+  board.id = id;
 
   const svgField = (board.svg as string) ?? "board.svg";
   const svgPath = path.join(dir, svgField);

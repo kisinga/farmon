@@ -2,7 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { ElectronService } from './core/services/electron.service';
-import type { HealthReport } from './core/models/electron-api';
+import type { HealthReport, SeedChange } from './core/models/electron-api';
 import { filter } from 'rxjs';
 
 const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="width:100%;height:100%;display:block">
@@ -50,6 +50,8 @@ export class App implements OnInit {
   protected hasFixable = signal(false);
   protected hasUnfixable = signal(false);
   protected activeConfig = signal<string | null>(null);
+  protected seedChanges = signal<SeedChange[]>([]);
+  protected applyingSeed = signal(false);
   private currentRoute = signal('library');
 
   constructor() {
@@ -63,6 +65,8 @@ export class App implements OnInit {
   async ngOnInit() {
     if (this.electron.isElectron) {
       await this.refreshHealth();
+      const changes = await this.electron.seedChanges();
+      if (changes.length > 0) this.seedChanges.set(changes);
     }
 
     this.updateFromUrl(this.router.url);
@@ -92,5 +96,17 @@ export class App implements OnInit {
     await this.electron.healthFix();
     await this.refreshHealth();
     this.fixing.set(false);
+  }
+
+  async applyAllSeedChanges() {
+    this.applyingSeed.set(true);
+    await this.electron.applySeed();
+    this.seedChanges.set([]);
+    this.applyingSeed.set(false);
+  }
+
+  async dismissSeedChange(id: string) {
+    await this.electron.dismissSeed(id);
+    this.seedChanges.update((list) => list.filter((c) => c.id !== id));
   }
 }

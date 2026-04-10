@@ -143,7 +143,7 @@ export function registerIpcHandlers() {
       const deviceDir = manifest.device.directory ?? manifest.device.name;
       const topologySvg = generateTopologySvg(topology);
       if (topologySvg) {
-        const boardSvg = store.loadBoard(board.model).svg;
+        const boardSvg = store.loadBoard(board.id ?? board.model).svg;
         const usedPins = new Map(
           collectPins(topology.nodes).map(u => [u.pin, u.owner])
         );
@@ -302,6 +302,15 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("store:path", async () => store.getStorePath());
   ipcMain.handle("store:output-dir", async () => store.getOutputDir());
+  ipcMain.handle("store:seed-changes", async () => store.getSeedChanges());
+  ipcMain.handle("store:apply-seed", async (_e, id?: string) => {
+    store.applySeedChanges(id);
+    return { ok: true };
+  });
+  ipcMain.handle("store:dismiss-seed", async (_e, id: string) => {
+    store.dismissSeedChange(id);
+    return { ok: true };
+  });
 
   // --- Generation history ---
 

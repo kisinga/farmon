@@ -113,4 +113,39 @@
       <router-outlet />
     </main>
   </div>
+
+  <!-- Seed-change prompt: shown when bundled defaults have newer versions -->
+  @if (seedChanges().length > 0) {
+    <div class="toast toast-end toast-bottom z-50">
+      <div class="alert alert-info shadow-lg max-w-sm">
+        <div class="flex flex-col gap-2 w-full">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-sm">Updates available</span>
+          </div>
+          <ul class="text-xs space-y-1">
+            @for (c of seedChanges(); track c.id) {
+              <li class="flex items-center justify-between gap-2">
+                <span>{{ c.kind === 'board' ? 'Board' : 'Config' }} "{{ c.label }}"</span>
+                <button
+                  class="btn btn-ghost btn-xs opacity-60"
+                  title="Skip this update"
+                  (click)="dismissSeedChange(c.id)"
+                >&#10005;</button>
+              </li>
+            }
+          </ul>
+          <button
+            class="btn btn-sm btn-primary w-full"
+            (click)="applyAllSeedChanges()"
+            [disabled]="applyingSeed()"
+          >
+            @if (applyingSeed()) {
+              <span class="loading loading-spinner loading-xs"></span>
+            }
+            Update all
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 </div>
