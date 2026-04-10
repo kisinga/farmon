@@ -2,7 +2,8 @@ import type { SystemTopology } from '@far-mon/core';
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 import type { TopologyRule, ManifestRule, RuleDiagnostic } from "./rule.types.js";
-import { NODE_REGISTRY, buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateEscalations, type ValidationResult } from '@far-mon/core';
+import { z } from 'zod';
+import { NODE_REGISTRY, REGISTRY_RULES, buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateEscalations, type ValidationResult } from '@far-mon/core';
 
 export type { ValidationResult } from '@far-mon/core';
 
@@ -21,22 +22,48 @@ export interface ValidateOptions {
 }
 
 /**
+ * Check if a schema field is required (not optional) using the Zod schema
+ * as the single source of truth. Every sidebarField key must exist in the schema.
+ */
+function isSchemaFieldRequired(schema: z.ZodTypeAny, fieldKey: string): boolean {
+  if (!(schema instanceof z.ZodObject)) return false;
+  const field = (schema.shape as Record<string, z.ZodTypeAny>)[fieldKey];
+  return field ? !field.isOptional() : false;
+}
+
+/**
  * Collect per-entity validation rules from the NODE_REGISTRY.
- * Each entity can define rules on its descriptor — these are evaluated
- * against the manifest nodes of that kind.
+ *
+ * Pin validation uses the Zod schema as single source of truth for
+ * required vs optional. Entities with custom `rules` handle their own
+ * pin validation (richer messages). The generic check only runs for
+ * entities without rules. REGISTRY_RULES run last for cross-cutting checks.
  */
 function runEntityRules(nodes: Array<Record<string, any>>): RuleDiagnostic[] {
   const diagnostics: RuleDiagnostic[] = [];
   for (const [kind, desc] of NODE_REGISTRY) {
     const kindNodes = nodes.filter(n => n['kind'] === kind);
 
-    // General pin check — flag empty pin fields from sidebarFields metadata.
-    // Skipped for entities with their own rules (they provide richer messages).
-    if (!desc.rules?.length) {
+    if (desc.rules?.length) {
+      // Entity-specific rules are the authority — they produce richer messages
+      // and handle both required and optional pin validation.
+      for (const rule of desc.rules) {
+        const results = rule.evaluate(kindNodes, nodes);
+        for (const r of results) {
+          diagnostics.push({
+            severity: rule.severity,
+            message: r.message,
+            target: r.target,
+            ruleId: rule.id,
+          });
+        }
+      }
+    } else {
+      // Generic pin validation — uses Zod schema for required vs optional.
       const pinFields = desc.sidebarFields.filter(f => f.type === 'pin');
       for (const node of kindNodes) {
         for (const field of pinFields) {
-          if (!node[field.key]) {
+          if (!node[field.key] && isSchemaFieldRequired(desc.schema, field.key)) {
             diagnostics.push({
               severity: 'error',
               message: `${desc.label} "${node['name'] || node['id']}": ${field.label} not configured`,
@@ -46,32 +73,20 @@ function runEntityRules(nodes: Array<Record<string, any>>): RuleDiagnostic[] {
           }
         }
       }
-      continue;
-    }
-
-    // Per-entity rules
-    for (const rule of desc.rules) {
-      const results = rule.evaluate(kindNodes, nodes);
-      for (const r of results) {
-        diagnostics.push({
-          severity: rule.severity,
-          message: r.message,
-          target: r.target,
-          ruleId: rule.id,
-        });
-      }
     }
   }
 
-  // Cross-entity check: at most one isPump entity (they share pump_relay ID)
-  const pumpNodes = nodes.filter(n => NODE_REGISTRY.get(n['kind'])?.isPump);
-  if (pumpNodes.length > 1) {
-    diagnostics.push({
-      severity: 'error',
-      message: `Multiple pump entities found (${pumpNodes.map(n => `"${n['id']}"`).join(', ')}). Only one entity with isPump can exist — they share the pump_relay component ID.`,
-      target: pumpNodes[1]['id'],
-      ruleId: 'pump-singleton',
-    });
+  // Cross-cutting rules from the registry (pump uniqueness, experimental warnings, etc.)
+  for (const rule of REGISTRY_RULES) {
+    const results = rule.evaluate([], nodes);
+    for (const r of results) {
+      diagnostics.push({
+        severity: rule.severity,
+        message: r.message,
+        target: r.target,
+        ruleId: rule.id,
+      });
+    }
   }
 
   return diagnostics;

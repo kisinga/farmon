@@ -11,23 +11,23 @@ export type {
   SystemTopology, TopologyNode, PipeSegment, RouteOverride,
   Automation, AutomationTrigger,
   TankNode, PumpNode, EndpointNode, ValveNode,
-  FlowSensorNode, WaterSourceNode, PressureSensorNode, FilterNode, DosingPumpNode,
+  FlowSensorNode, WaterSourceNode, PressureSensorNode, FilterNode, DosingPumpNode, VfdNode,
   Port, Position,
 } from './topology.types';
 export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
-export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext } from './entity-registry';
+export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext, TypedDescriptor } from './entity-registry';
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
 
 // --- Schemas ---
 export { TopologySchema, parseTopology, parsePortRef, portRef, type Topology } from './topology-schema';
-export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, UartBusSchema, parseDurationMs } from './schemas';
+export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, UartBusSchema, parseDurationMs, escXml } from './schemas';
 
 // --- Registry ---
-export { NODE_REGISTRY, legendSvgFor, nodesWithFlag } from './entity-registry';
+export { NODE_REGISTRY, ALL_DESCRIPTORS, REGISTRY_RULES, legendSvgFor, nodesWithFlag, getTypedDescriptor } from './entity-registry';
 
 // --- Conversion & utilities ---
 export { topologyToManifest } from './topology-to-manifest';
@@ -38,12 +38,16 @@ export { entityColor, UI_COLORS } from './colors';
 export { nodesByKind } from './manifest.types';
 export { getNodesByKind, getNodeByKind } from './topology.types';
 
+// --- YAML fragment utilities ---
+export { indent, joinYamlItems } from './yaml-fragment';
+
 // --- Codegen IDs ---
 export {
   pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId,
   flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId,
   tankLevelId, tankRawVoltageId, tankCalEmptyId, tankCalFullId,
   pressureSensorId, waterSourcePressureId,
+  dosingPumpSwitchId, filterInletPressureId, filterOutletPressureId, filterDeltaPressureId,
   resolvePinYaml,
 } from './codegen-ids';
 
@@ -52,7 +56,7 @@ export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';
 
 // --- Graph ---
 export { buildGraph, type TopologyGraph, type NodeAttrs, type EdgeAttrs } from './graph/topology-graph';
-export { activeGraph } from './graph/active-graph';
+export { activeGraph, isNodeActive } from './graph/active-graph';
 export { deriveRoutes, type Route } from './graph/routes';
 export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes } from './graph/highlight';
 export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './graph/constraints';

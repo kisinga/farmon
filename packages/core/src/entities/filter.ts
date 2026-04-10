@@ -2,6 +2,8 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import type { FlowConstraint } from '../graph/constraints';
+import { filterInletPressureId, filterOutletPressureId, filterDeltaPressureId } from '../codegen-ids';
 
 const COLOR = '#78716c'; // stone
 const W = 50, H = 36;
@@ -57,7 +59,70 @@ export const filterDescriptor: NodeDescriptor = {
     { key: 'outlet_pressure_pin', label: 'Outlet Pressure', type: 'pin', placeholder: 'GPIO20', pinCap: 'adc' },
   ],
 
-  // No codegen — experimental, UI only.
+  constraints: [
+    { type: 'presence', id: 'filter-upstream-valve', requiredKind: 'valve',
+      position: 'upstream', baseSeverity: 'error',
+      description: 'Isolation valve required before filter for maintenance bypass' },
+  ] satisfies FlowConstraint[],
+
+  // --- Codegen ---
+
+  codegen: {
+    sensors: (node: FilterNode, _idx, ctx) => {
+      const parts: string[] = [];
+      if (node.inlet_pressure_pin) {
+        const id = filterInletPressureId(node);
+        const pin = ctx?.resolvePin(node.inlet_pressure_pin) ?? `number: ${node.inlet_pressure_pin}`;
+        parts.push(`\
+- platform: adc
+  pin:
+    ${pin}
+  id: ${id}
+  name: "${node.name} Inlet Pressure"
+  unit_of_measurement: "bar"
+  icon: "mdi:gauge"
+  update_interval: \${update_interval}
+  attenuation: 12db
+  accuracy_decimals: 2`);
+      }
+      if (node.outlet_pressure_pin) {
+        const id = filterOutletPressureId(node);
+        const pin = ctx?.resolvePin(node.outlet_pressure_pin) ?? `number: ${node.outlet_pressure_pin}`;
+        parts.push(`\
+- platform: adc
+  pin:
+    ${pin}
+  id: ${id}
+  name: "${node.name} Outlet Pressure"
+  unit_of_measurement: "bar"
+  icon: "mdi:gauge"
+  update_interval: \${update_interval}
+  attenuation: 12db
+  accuracy_decimals: 2`);
+      }
+      if (node.inlet_pressure_pin && node.outlet_pressure_pin) {
+        const inId = filterInletPressureId(node);
+        const outId = filterOutletPressureId(node);
+        const deltaId = filterDeltaPressureId(node);
+        parts.push(`\
+- platform: template
+  id: ${deltaId}
+  name: "${node.name} Differential Pressure"
+  unit_of_measurement: "bar"
+  icon: "mdi:delta"
+  accuracy_decimals: 2
+  update_interval: \${update_interval}
+  lambda: |-
+    float inlet = id(${inId}).state;
+    float outlet = id(${outId}).state;
+    if (std::isnan(inlet) || std::isnan(outlet)) return NAN;
+    return inlet - outlet;`);
+      }
+      return parts.join('\n');
+    },
+
+    substitutions: () => [],
+  },
 
   rules: [{
     id: 'filter-pressure-warning',

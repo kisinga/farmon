@@ -14,7 +14,7 @@ export const ValveNodeSchema = z.object({
   name: z.string().min(1),
   open_pin: GpioPin,
   close_pin: GpioPin,
-  travel_time: z.string().optional(),  // e.g. "15s", "20s" — per-valve override, defaults to global
+  travel_time: z.string().regex(/^\d+\s*(s|ms)$/, 'Must be a duration like "15s" or "2000ms"').optional(),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
@@ -61,59 +61,59 @@ export const valveDescriptor: NodeDescriptor = {
   // --- Codegen ---
 
   codegen: {
-    hardware: (node, _idx, ctx) => {
-      const openId = valveOpenPinId(node as { id: string });
-      const closeId = valveClosePinId(node as { id: string });
-      const openPin = ctx?.resolvePin(node['open_pin'], { inverted: true }) ?? `number: ${node['open_pin']}\n      inverted: true`;
-      const closePin = ctx?.resolvePin(node['close_pin'], { inverted: true }) ?? `number: ${node['close_pin']}\n      inverted: true`;
+    hardware: (node: ValveNode, _idx, ctx) => {
+      const openId = valveOpenPinId(node);
+      const closeId = valveClosePinId(node);
+      const openPin = ctx?.resolvePin(node.open_pin, { inverted: true }) ?? `number: ${node.open_pin}\n    inverted: true`;
+      const closePin = ctx?.resolvePin(node.close_pin, { inverted: true }) ?? `number: ${node.close_pin}\n    inverted: true`;
       return `\
-  # --- ${node['name']} ---
-  - platform: gpio
-    pin:
-      ${openPin}
-    id: ${openId}
-    internal: true
-    restore_mode: ALWAYS_OFF
-    interlock: [${openId}, ${closeId}]
-    interlock_wait_time: 100ms
-  - platform: gpio
-    pin:
-      ${closePin}
-    id: ${closeId}
-    internal: true
-    restore_mode: ALWAYS_OFF
-    interlock: [${openId}, ${closeId}]
-    interlock_wait_time: 100ms`;
+# --- ${node['name']} ---
+- platform: gpio
+  pin:
+    ${openPin}
+  id: ${openId}
+  internal: true
+  restore_mode: ALWAYS_OFF
+  interlock: [${openId}, ${closeId}]
+  interlock_wait_time: 100ms
+- platform: gpio
+  pin:
+    ${closePin}
+  id: ${closeId}
+  internal: true
+  restore_mode: ALWAYS_OFF
+  interlock: [${openId}, ${closeId}]
+  interlock_wait_time: 100ms`;
     },
 
-    extraComponents: (node) => {
-      const coverId = valveCoverId(node as { id: string });
-      const openId = valveOpenPinId(node as { id: string });
-      const closeId = valveClosePinId(node as { id: string });
-      const travelId = valveTravelMsId(node as { id: string });
+    extraComponents: (node: ValveNode) => {
+      const coverId = valveCoverId(node);
+      const openId = valveOpenPinId(node);
+      const closeId = valveClosePinId(node);
+      const travelId = valveTravelMsId(node);
       return {
         cover: `\
-  - platform: time_based
-    id: ${coverId}
-    name: "${node['name']}"
+- platform: time_based
+  id: ${coverId}
+  name: "${node.name}"
 
-    open_action:  [{switch.turn_on: ${openId}}]
-    close_action: [{switch.turn_on: ${closeId}}]
-    stop_action:  [{switch.turn_off: ${openId}}, {switch.turn_off: ${closeId}}]
-    open_duration: \${valve_travel_time}
-    close_duration: \${valve_travel_time}`,
+  open_action:  [{switch.turn_on: ${openId}}]
+  close_action: [{switch.turn_on: ${closeId}}]
+  stop_action:  [{switch.turn_off: ${openId}}, {switch.turn_off: ${closeId}}]
+  open_duration: \${valve_travel_time}
+  close_duration: \${valve_travel_time}`,
         number: `\
-  - platform: template
-    name: "${node['name']} Travel Time (ms)"
-    id: ${travelId}
-    icon: "mdi:timer-cog-outline"
-    min_value: 1000
-    max_value: 30000
-    step: 1000
-    initial_value: ${parseDurationMs(node['travel_time'] ?? '15s')}
-    optimistic: true
-    restore_value: true
-    entity_category: config`,
+- platform: template
+  name: "${node.name} Travel Time (ms)"
+  id: ${travelId}
+  icon: "mdi:timer-cog-outline"
+  min_value: 1000
+  max_value: 30000
+  step: 1000
+  initial_value: ${parseDurationMs(node.travel_time ?? '15s')}
+  optimistic: true
+  restore_value: true
+  entity_category: config`,
       };
     },
 

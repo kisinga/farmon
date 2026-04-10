@@ -1,5 +1,6 @@
 import type { Manifest } from "../schema.js";
 import { nodesWithFlag } from "../schema.js";
+import { joinYamlItems } from '@far-mon/core';
 import type { CollectedCodegen } from "./collect.js";
 
 export function generateHardware(m: Manifest, collected: CollectedCodegen): string {
@@ -21,11 +22,11 @@ ${pump ? "#   - 1x pump relay (guarded: only energizes in RUNNING state)\n" : ""
 #   - ${valves.length}x motorized ball valves (2-pin each, hardware interlocked)
 # =============================================================================
 
-${collected.switches.length > 0 ? `switch:\n${collected.switches.join("\n\n")}` : ""}
+${collected.switches.length > 0 ? `switch:\n${joinYamlItems(collected.switches)}` : ""}
 
 ${covers.length > 0 ? `# --- Ball valves (covers) ----------------------------------------------------
 
 cover:
-${covers.join("\n\n")}` : ""}
+${joinYamlItems(covers)}` : ""}
 `;
 }

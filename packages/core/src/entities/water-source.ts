@@ -1,12 +1,9 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
+import { GpioPin, ComponentId, PortSchema, PositionSchema, escXml } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { waterSourcePressureId } from '../codegen-ids';
-
-function escXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+import type { FlowConstraint } from '../graph/constraints';
 
 const COLOR = '#0ea5e9'; // sky blue
 const W = 120, H = 50;
@@ -60,24 +57,31 @@ export const waterSourceDescriptor: NodeDescriptor = {
   // --- Codegen ---
 
   codegen: {
-    sensors: (node) => {
-      if (!node['pressure_pin']) return '';
-      const sId = waterSourcePressureId(node as { id: string });
-      const pin = node['pressure_pin'] as string;
+    sensors: (node: WaterSourceNode, _idx, ctx) => {
+      if (!node.pressure_pin) return '';
+      const sId = waterSourcePressureId(node);
+      const pin = ctx?.resolvePin(node.pressure_pin) ?? `number: ${node.pressure_pin}`;
       return `\
-  - platform: adc
-    pin: ${pin}
-    id: ${sId}
-    name: "${node['name']} Pressure"
-    unit_of_measurement: "bar"
-    icon: "mdi:gauge"
-    update_interval: \${update_interval}
-    attenuation: 12db
-    accuracy_decimals: 2`;
+- platform: adc
+  pin:
+    ${pin}
+  id: ${sId}
+  name: "${node.name} Pressure"
+  unit_of_measurement: "bar"
+  icon: "mdi:gauge"
+  update_interval: \${update_interval}
+  attenuation: 12db
+  accuracy_decimals: 2`;
     },
 
     substitutions: () => [],
   },
+
+  constraints: [
+    { type: 'presence', id: 'source-downstream-valve', requiredKind: 'valve',
+      position: 'downstream', baseSeverity: 'error',
+      description: 'Isolation valve required downstream of water source' },
+  ] satisfies FlowConstraint[],
 
   // --- Validation ---
 

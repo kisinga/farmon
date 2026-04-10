@@ -30,12 +30,6 @@ export interface ConflictManifest {
 
 // ── Detection ───────────────────────────────────────────────────────────────
 
-import { NODE_REGISTRY } from '../entity-registry';
-
-function classifyResource(kind: string): 'sensor' | 'actuator' {
-  return NODE_REGISTRY.get(kind)?.conflictClass ?? 'actuator';
-}
-
 export function detectConflicts(routes: Route[], graph: TopologyGraph): ConflictManifest {
   const conflicts: RouteConflict[] = [];
 
@@ -54,7 +48,7 @@ export function detectConflicts(routes: Route[], graph: TopologyGraph): Conflict
       const shared: SharedResource[] = sharedIds.map(nodeId => ({
         nodeId,
         kind: graph.getNodeAttribute(nodeId, 'kind'),
-        type: classifyResource(graph.getNodeAttribute(nodeId, 'kind')),
+        type: graph.getNodeAttribute(nodeId, 'conflictClass') ?? 'actuator',
       }));
 
       // Blocking = shared sensor with different destinations (ambiguous reading)

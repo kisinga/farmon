@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { pressureSensorId } from '../codegen-ids';
+import type { FlowConstraint } from '../graph/constraints';
 
 const COLOR = '#8b5cf6'; // violet
 const W = 50, H = 36;
@@ -28,6 +29,7 @@ export type PressureSensorNode = z.infer<typeof PressureSensorNodeSchema>;
 export const pressureSensorDescriptor: NodeDescriptor = {
   kind: 'pressure_sensor',
   label: 'Pressure Sensor',
+  isPressureSensor: true,
   conflictClass: 'sensor',
   color: COLOR,
   size: { width: W, height: H },
@@ -61,27 +63,40 @@ export const pressureSensorDescriptor: NodeDescriptor = {
   // --- Codegen (native — full support) ---
 
   codegen: {
-    sensors: (node) => {
-      const sId = pressureSensorId(node as { id: string });
-      const pin = node['pin'] as string;
+    sensors: (node: PressureSensorNode, _idx, ctx) => {
+      const sId = pressureSensorId(node);
+      const pin = ctx?.resolvePin(node.pin) ?? `number: ${node.pin}`;
       return `\
-  - platform: adc
-    pin: ${pin}
-    id: ${sId}
-    name: "${node['name']} Pressure"
-    unit_of_measurement: "bar"
-    icon: "mdi:gauge"
-    update_interval: \${update_interval}
-    attenuation: 12db
-    accuracy_decimals: 2
-    filters:
-      - calibrate_linear:
-          - 0.0 -> ${node['min_bar']}
-          - 3.3 -> ${node['max_bar']}`;
+- platform: adc
+  pin:
+    ${pin}
+  id: ${sId}
+  name: "${node.name} Pressure"
+  unit_of_measurement: "bar"
+  icon: "mdi:gauge"
+  update_interval: \${update_interval}
+  attenuation: 12db
+  accuracy_decimals: 2
+  filters:
+    - median:
+        window_size: 5
+        send_every: 1
+    - sliding_window_moving_average:
+        window_size: 5
+        send_every: 1
+    - calibrate_linear:
+        - 0.0 -> ${node.min_bar}
+        - 3.3 -> ${node.max_bar}`;
     },
 
     substitutions: () => [],
   },
+
+  constraints: [
+    { type: 'presence', id: 'pressure-upstream-valve', requiredKind: 'valve',
+      position: 'upstream', baseSeverity: 'warning',
+      description: 'Isolation valve recommended upstream of pressure sensor for maintenance' },
+  ] satisfies FlowConstraint[],
 
   // --- Validation ---
 

@@ -37,23 +37,21 @@ export interface CodegenContext {
   resolvePin: (pin: string, opts?: { inverted?: boolean; mode?: string }) => string;
 }
 
-export interface EntityCodegen {
+export interface EntityCodegen<T extends Record<string, any> = Record<string, any>> {
   /** YAML fragment for sensors.yaml sensor: section (ADC, pulse counter, template sensors). */
-  sensors?: (node: Record<string, any>, index: number, ctx?: CodegenContext) => string;
+  sensors?: (node: T, index: number, ctx?: CodegenContext) => string;
   /** YAML fragment for hardware.yaml switch: section (switches, relays). */
-  hardware?: (node: Record<string, any>, index: number, ctx?: CodegenContext) => string;
+  hardware?: (node: T, index: number, ctx?: CodegenContext) => string;
   /** Substitution lines for device.yaml (non-pin substitutions only). */
-  substitutions?: (node: Record<string, any>) => string[];
-  /** Dashboard card YAML fragment. */
-  dashboard?: (node: Record<string, any>, deviceName: string) => string;
+  substitutions?: (node: T) => string[];
   /** Additional globals for control.yaml. */
-  globals?: (node: Record<string, any>) => string;
+  globals?: (node: T) => string;
   /**
    * Additional ESPHome component blocks keyed by YAML section name.
    * e.g. { number: "- platform: ...", cover: "- platform: ...", button: "- platform: ..." }
    * Each value is a YAML fragment (indented with 2 spaces) appended to that section.
    */
-  extraComponents?: (node: Record<string, any>, index: number, ctx?: CodegenContext) => Record<string, string>;
+  extraComponents?: (node: T, index: number, ctx?: CodegenContext) => Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +100,7 @@ export interface NodeDescriptor {
   schema: z.ZodTypeAny;
 
   /** Codegen templates — only consumed by electron generators. */
-  codegen?: EntityCodegen;
+  codegen?: EntityCodegen<any>;
 
   /** Per-entity validation rules — only consumed by electron rule runner. */
   rules?: EntityRule[];
@@ -120,6 +118,8 @@ export interface NodeDescriptor {
   isFlowSensor?: boolean;
   /** Acts as a level sensor — included in level dispatch. */
   isLevelSensor?: boolean;
+  /** Acts as a pressure sensor — included in pressure dispatch and route analysis. */
+  isPressureSensor?: boolean;
   /** Conflict class: 'sensor' readings are ambiguous when shared, 'actuator' access is refcountable. */
   conflictClass?: 'sensor' | 'actuator';
 }
@@ -171,10 +171,63 @@ export const NODE_REGISTRY: ReadonlyMap<string, NodeDescriptor> = new Map(
 );
 
 // ---------------------------------------------------------------------------
+// Registry-level rules — cross-cutting validation derived from descriptors
+// ---------------------------------------------------------------------------
+
+/**
+ * Shared rule: warns when experimental nodes without codegen are present.
+ * Applies across all node kinds — not tied to a single entity.
+ */
+export const REGISTRY_RULES: readonly EntityRule[] = [
+  {
+    id: 'experimental-no-codegen',
+    severity: 'warning',
+    evaluate: (_kindNodes, allNodes) => {
+      return allNodes
+        .filter(n => {
+          const desc = NODE_REGISTRY.get(n['kind']);
+          return desc?.experimental && !desc.codegen;
+        })
+        .map(n => ({
+          message: `"${n['name'] ?? n['id']}" is experimental and will not generate hardware configuration.`,
+          target: String(n['id']),
+        }));
+    },
+  },
+  {
+    id: 'pump-id-uniqueness',
+    severity: 'error',
+    evaluate: (_kind, allNodes) => {
+      const pumpNodes = allNodes.filter(n => NODE_REGISTRY.get(n['kind'])?.isPump);
+      if (pumpNodes.length <= 1) return [];
+      // Multiple pump-flagged nodes share the same pumpSwitchId — conflict
+      return pumpNodes.slice(1).map(n => ({
+        message: `Multiple pump entities found. "${n['name'] ?? n['id']}" conflicts with an existing pump — only one pump-class node is supported per device.`,
+        target: String(n['id']),
+      }));
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-type DispatchFlag = 'isPump' | 'isValve' | 'isFlowSensor' | 'isLevelSensor';
+type DispatchFlag = 'isPump' | 'isValve' | 'isFlowSensor' | 'isLevelSensor' | 'isPressureSensor';
+
+/**
+ * Type-safe descriptor accessor — narrows to a specific entity's data shape.
+ * Use when the kind is known and you need typed access to renderSvg, defaultData, or codegen.
+ * Generic iteration should continue using the untyped NODE_REGISTRY.
+ */
+export type TypedDescriptor<T extends Record<string, any>> =
+  NodeDescriptor & { renderSvg: (data: T) => string; defaultData: (i: number) => T; codegen?: EntityCodegen<T> };
+
+export function getTypedDescriptor<T extends Record<string, any>>(
+  kind: string,
+): TypedDescriptor<T> | undefined {
+  return NODE_REGISTRY.get(kind) as TypedDescriptor<T> | undefined;
+}
 
 /** Filter manifest nodes by a descriptor dispatch flag. */
 export function nodesWithFlag(

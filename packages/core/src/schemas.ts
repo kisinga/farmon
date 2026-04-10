@@ -78,6 +78,15 @@ export const AutomationSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// XML/SVG utility
+// ---------------------------------------------------------------------------
+
+/** Escape a string for safe use in XML/SVG text content. */
+export function escXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ---------------------------------------------------------------------------
 // Duration parsing utility
 // ---------------------------------------------------------------------------
 

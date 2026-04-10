@@ -19,6 +19,7 @@ export type { WaterSourceNode } from './entities/water-source';
 export type { PressureSensorNode } from './entities/pressure-sensor';
 export type { FilterNode } from './entities/filter';
 export type { DosingPumpNode } from './entities/dosing-pump';
+export type { VfdNode } from './entities/vfd';
 
 import type { TankNode } from './entities/tank';
 import type { PumpNode } from './entities/pump';

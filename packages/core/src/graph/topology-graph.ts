@@ -17,6 +17,9 @@ export interface NodeAttrs {
   isPump: boolean;
   isValve: boolean;
   isFlowSensor: boolean;
+  isLevelSensor: boolean;
+  isPressureSensor: boolean;
+  conflictClass: 'sensor' | 'actuator' | null;
   data: TopologyNode;
 }
 
@@ -42,6 +45,9 @@ export function buildGraph(nodes: TopologyNode[], pipes: PipeSegment[]): Topolog
       isPump: desc?.isPump ?? false,
       isValve: desc?.isValve ?? false,
       isFlowSensor: desc?.isFlowSensor ?? false,
+      isLevelSensor: desc?.isLevelSensor ?? false,
+      isPressureSensor: desc?.isPressureSensor ?? false,
+      conflictClass: desc?.conflictClass ?? null,
       data: node,
     });
   }

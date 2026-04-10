@@ -1,12 +1,8 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { ComponentId, PortSchema, PositionSchema } from '../schemas';
+import { ComponentId, PortSchema, PositionSchema, escXml } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
-
-function escXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 const COLOR = '#d97706'; // amber
 const W = 120, H = 50;

@@ -1,6 +1,6 @@
 import type { Manifest } from "../schema.js";
 import { nodesWithFlag } from "../schema.js";
-import { tankLevelId } from '@far-mon/core';
+import { tankLevelId, joinYamlItems } from '@far-mon/core';
 import type { CollectedCodegen } from "./collect.js";
 
 export function generateSensors(m: Manifest, collected: CollectedCodegen): string {
@@ -54,12 +54,12 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
 # =============================================================================
 
 sensor:
-${collected.sensors.join("\n\n")}
+${joinYamlItems(collected.sensors)}
 
 ${numberBlocks.length > 0 ? `# --- Adjustable numbers (persisted, editable from HA) -------------------------
 
 number:
-${numberBlocks.join("\n\n")}` : ""}
+${joinYamlItems(numberBlocks)}` : ""}
 
 # --- State exposure to HA ----------------------------------------------------
 
@@ -172,10 +172,10 @@ ${collected.globals.length > 0 ? `
 # --- Sensor fault detection --------------------------------------------------
 
 globals:
-${collected.globals.join("\n")}` : ""}
+${joinYamlItems(collected.globals)}` : ""}
 ${binarySensorBlocks.length > 0 || tanksWithLevel.length >= 2 ? `
 binary_sensor:
-${binarySensorBlocks.join("\n\n")}${tanksWithLevel.length >= 2 ? `
+${joinYamlItems(binarySensorBlocks)}${tanksWithLevel.length >= 2 ? `
   - platform: template
     id: water_critical
     name: "Water Critical"
@@ -186,7 +186,7 @@ ${binarySensorBlocks.join("\n\n")}${tanksWithLevel.length >= 2 ? `
       return !std::isnan(c) && c < 35.0f;` : ""}` : ""}
 ${Object.entries(collected.sections)
     .filter(([k]) => !['number', 'binary_sensor', 'cover'].includes(k))
-    .map(([section, blocks]) => `\n${section}:\n${blocks.join("\n\n")}`)
+    .map(([section, blocks]) => `\n${section}:\n${joinYamlItems(blocks)}`)
     .join("\n")}
 `;
 }

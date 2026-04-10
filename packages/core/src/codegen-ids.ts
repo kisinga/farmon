@@ -55,6 +55,20 @@ export const pressureSensorId = (node: { id: string }) => `${node.id}_pressure`;
 export const waterSourcePressureId = (node: { id: string }) => `${node.id}_pressure`;
 
 // ---------------------------------------------------------------------------
+// Component IDs — dosing pump
+// ---------------------------------------------------------------------------
+
+export const dosingPumpSwitchId = (node: { id: string }) => `${node.id}_relay`;
+
+// ---------------------------------------------------------------------------
+// Component IDs — filter
+// ---------------------------------------------------------------------------
+
+export const filterInletPressureId = (node: { id: string }) => `${node.id}_inlet_pressure`;
+export const filterOutletPressureId = (node: { id: string }) => `${node.id}_outlet_pressure`;
+export const filterDeltaPressureId = (node: { id: string }) => `${node.id}_delta_pressure`;
+
+// ---------------------------------------------------------------------------
 // Pin resolution — maps a logical pin name to an ESPHome YAML pin block
 // ---------------------------------------------------------------------------
 
@@ -65,7 +79,9 @@ export const waterSourcePressureId = (node: { id: string }) => `${node.id}_press
  * For expander pins (e.g. "OUT1"), looks up the expander and port number
  * from the board definition and returns a structured block.
  *
- * The returned string is indented for use inside a `pin:` key at 6-space indent.
+ * The returned string is zero-indented — each additional key-value is on its
+ * own line with no leading whitespace. Callers handle indentation via
+ * yaml-fragment utilities or template literal positioning.
  */
 export function resolvePinYaml(
   pinName: string,
@@ -89,12 +105,12 @@ export function resolvePinYaml(
       `mode: { output: true }`,
     ];
     if (opts?.inverted) lines.push(`inverted: true`);
-    return lines.join('\n      ');
+    return lines.join('\n    ');
   }
 
   // Native GPIO pin — simple block
   const lines = [`number: ${pinName}`];
   if (opts?.mode) lines.push(`mode: ${opts.mode}`);
   if (opts?.inverted) lines.push(`inverted: true`);
-  return lines.join('\n      ');
+  return lines.join('\n    ');
 }

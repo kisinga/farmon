@@ -35,6 +35,14 @@ export function generateDashboard(m: Manifest): string {
   const flowFault = (f: ManifestNode) => entityId("binary_sensor", m.device.name, `${n(f, 'name')} Sensor Fault`);
   const valveCover = (v: ManifestNode) => entityId("cover", m.device.name, n(v, 'name'));
   const wsPressureSensor = (ws: ManifestNode) => entityId("sensor", m.device.name, `${n(ws, 'name')} Pressure`);
+  const pressureSensor = (ps: ManifestNode) => entityId("sensor", m.device.name, `${n(ps, 'name')} Pressure`);
+  const filterDeltaPressure = (f: ManifestNode) => entityId("sensor", m.device.name, `${n(f, 'name')} Differential Pressure`);
+  const dosingRelay = (dp: ManifestNode) => entityId("switch", m.device.name, `${n(dp, 'name')} Relay`);
+  const vfdPower = (v: ManifestNode) => entityId("sensor", m.device.name, `${n(v, 'name')} Power`);
+  const vfdFrequency = (v: ManifestNode) => entityId("sensor", m.device.name, `${n(v, 'name')} Frequency`);
+  const vfdFaultCode = (v: ManifestNode) => entityId("sensor", m.device.name, `${n(v, 'name')} Fault Code`);
+  const vfdSpeedSetpoint = (v: ManifestNode) => entityId("number", m.device.name, `${n(v, 'name')} Speed Setpoint`);
+  const vfdFaultReset = (v: ManifestNode) => entityId("button", m.device.name, `${n(v, 'name')} Fault Reset`);
 
   // System-level entities (derived)
   const combinedLevelSensor = entityId("sensor", m.device.name, "Combined Tank Level");
@@ -68,6 +76,10 @@ export function generateDashboard(m: Manifest): string {
   const waterSources = nodesByKind(m.nodes, 'water_source');
   const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
   const valves = nodesByKind(m.nodes, 'valve');
+  const pressureSensors = nodesByKind(m.nodes, 'pressure_sensor');
+  const filters = nodesByKind(m.nodes, 'filter');
+  const dosingPumps = nodesByKind(m.nodes, 'dosing_pump');
+  const vfds = nodesByKind(m.nodes, 'vfd');
 
   // --- Water source pressure gauges ---
   const wsPressureGauges = waterSources
@@ -80,6 +92,25 @@ export function generateDashboard(m: Manifest): string {
       max: 10,
       severity: { red: 0, yellow: 1, green: 2 },
       needle: true,
+    }));
+
+  // --- Standalone pressure sensor gauges ---
+  const pressureGauges = pressureSensors.map((ps) => ({
+    type: "gauge",
+    entity: pressureSensor(ps),
+    name: `${n(ps, 'name')}`,
+    min: Number(ps['min_bar'] ?? 0),
+    max: Number(ps['max_bar'] ?? 10),
+    severity: { red: 0, yellow: 1, green: 2 },
+    needle: true,
+  }));
+
+  // --- Filter differential pressure entities ---
+  const filterEntities = filters
+    .filter((f) => f['inlet_pressure_pin'] && f['outlet_pressure_pin'])
+    .map((f) => ({
+      entity: filterDeltaPressure(f),
+      name: `${n(f, 'name')} ΔP`,
     }));
 
   // --- Tank gauges ---
@@ -178,6 +209,23 @@ export function generateDashboard(m: Manifest): string {
     name: `V${i + 1}`,
   }));
 
+  // --- Dosing pump entities ---
+  const dosingEntities = dosingPumps.map((dp) => ({
+    entity: dosingRelay(dp),
+    name: n(dp, 'name'),
+  }));
+
+  // --- VFD entities ---
+  const vfdEntities = vfds.flatMap((v) => {
+    const items: Array<{ entity: string; name: string }> = [];
+    if (v['power_register'] != null) items.push({ entity: vfdPower(v), name: `${n(v, 'name')} Power` });
+    if (v['frequency_register'] != null) items.push({ entity: vfdFrequency(v), name: `${n(v, 'name')} Freq` });
+    if (v['fault_register'] != null) items.push({ entity: vfdFaultCode(v), name: `${n(v, 'name')} Fault` });
+    if (v['speed_register'] != null) items.push({ entity: vfdSpeedSetpoint(v), name: `${n(v, 'name')} Speed` });
+    if (v['fault_reset_register'] != null) items.push({ entity: vfdFaultReset(v), name: `${n(v, 'name')} Reset` });
+    return items;
+  });
+
   // --- Calibration entities (with raw voltage) ---
   const calEntities = tanks.filter((t) => t['level_pin']).flatMap((t) => [
     { entity: tankRawVoltage(t), name: `${n(t, 'name')} Raw V` },
@@ -252,6 +300,12 @@ export function generateDashboard(m: Manifest): string {
               ...(wsPressureGauges.length > 0
                 ? [{ type: "horizontal-stack", cards: wsPressureGauges, grid_options: { columns: "full", rows: "auto" } }]
                 : []),
+              ...(pressureGauges.length > 0
+                ? [{ type: "horizontal-stack", cards: pressureGauges, grid_options: { columns: "full", rows: "auto" } }]
+                : []),
+              ...(filterEntities.length > 0
+                ? [{ type: "entities", title: "Filter Status", entities: filterEntities, grid_options: { columns: "full" } }]
+                : []),
               ...(flowColumns.length > 0
                 ? [{ type: "horizontal-stack", cards: flowColumns, grid_options: { columns: "full" } }]
                 : []),
@@ -309,9 +363,17 @@ export function generateDashboard(m: Manifest): string {
                 type: "glance",
                 title: "Hardware",
                 show_state: true,
-                entities: valveEntities,
+                entities: [...valveEntities, ...dosingEntities],
                 grid_options: { columns: "full" },
               },
+              ...(vfdEntities.length > 0
+                ? [{
+                    type: "entities",
+                    title: "VFD Drive",
+                    entities: vfdEntities,
+                    grid_options: { columns: "full" },
+                  }]
+                : []),
             ],
             column_span: 1,
           },

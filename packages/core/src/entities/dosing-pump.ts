@@ -2,6 +2,8 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import type { FlowConstraint } from '../graph/constraints';
+import { dosingPumpSwitchId } from '../codegen-ids';
 
 const COLOR = '#ea580c'; // orange
 const S = 50;
@@ -26,7 +28,9 @@ export type DosingPumpNode = z.infer<typeof DosingPumpNodeSchema>;
 export const dosingPumpDescriptor: NodeDescriptor = {
   kind: 'dosing_pump',
   label: 'Dosing Pump',
-  isPump: true,
+  // No isPump — a dosing pump is a chemical injector, not a circulation pump.
+  // It has its own relay ID (dosingPumpSwitchId) and does not participate in
+  // pump refcounting or share the pump_relay component ID.
   conflictClass: 'actuator',
   color: COLOR,
   size: { width: S, height: S },
@@ -55,5 +59,30 @@ export const dosingPumpDescriptor: NodeDescriptor = {
     { key: 'flow_rate_ml_min', label: 'Rate (mL/min)', type: 'number' },
   ],
 
-  // No codegen — experimental, UI only.
+  constraints: [
+    { type: 'presence', id: 'dosing-downstream-flow', requiredKind: 'flow_sensor',
+      position: 'downstream', baseSeverity: 'warning',
+      description: 'Flow sensor recommended downstream of dosing pump for injection verification' },
+  ] satisfies FlowConstraint[],
+
+  // --- Codegen ---
+
+  codegen: {
+    hardware: (node: DosingPumpNode, _idx, ctx) => {
+      const id = dosingPumpSwitchId(node);
+      const pin = ctx?.resolvePin(node.pin, { inverted: true }) ?? `number: ${node.pin}\n    inverted: true`;
+      return `\
+# --- ${node.name} ---
+- platform: gpio
+  pin:
+    ${pin}
+  id: ${id}
+  name: "${node.name} Relay"
+  icon: "mdi:pump"
+  internal: true
+  restore_mode: ALWAYS_OFF`;
+    },
+
+    substitutions: () => [],
+  },
 };

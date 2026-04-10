@@ -82,96 +82,96 @@ export const vfdDescriptor: NodeDescriptor = {
   // --- Codegen ---
 
   codegen: {
-    hardware: (node) => {
+    hardware: (node: VfdNode) => {
       const id = pumpSwitchId();
       return `\
-  # --- VFD: ${node['name']} ---
-  # Modbus start/stop switch — same id (${id}) as GPIO pump for state machine compat
-  - platform: modbus_controller
-    modbus_controller_id: ${node['bus']}_modbus
-    id: ${id}
-    name: "${node['name']}"
-    icon: "mdi:pump"
-    register_type: holding
-    address: ${node['start_register']}
-    bitmask: 1
-    write_lambda: |-
-      ESP_LOGI("vfd", "Pump %s via Modbus", x ? "START" : "STOP");
-      return x;`;
+# --- VFD: ${node.name} ---
+# Modbus start/stop switch — same id (${id}) as GPIO pump for state machine compat
+- platform: modbus_controller
+  modbus_controller_id: ${node.bus}_modbus
+  id: ${id}
+  name: "${node.name}"
+  icon: "mdi:pump"
+  register_type: holding
+  address: ${node.start_register}
+  bitmask: 1
+  write_lambda: |-
+    ESP_LOGI("vfd", "Pump %s via Modbus", x ? "START" : "STOP");
+    return x;`;
     },
 
-    sensors: (node) => {
+    sensors: (node: VfdNode) => {
       const parts: string[] = [];
-      if (node['power_register'] != null) {
+      if (node.power_register != null) {
         parts.push(`\
-  - platform: modbus_controller
-    modbus_controller_id: ${node['bus']}_modbus
-    id: ${node['id']}_power
-    name: "${node['name']} Power"
-    register_type: holding
-    address: ${node['power_register']}
-    unit_of_measurement: "kW"
-    icon: "mdi:flash"
-    value_type: U_WORD
-    accuracy_decimals: 1`);
+- platform: modbus_controller
+  modbus_controller_id: ${node.bus}_modbus
+  id: ${node.id}_power
+  name: "${node.name} Power"
+  register_type: holding
+  address: ${node.power_register}
+  unit_of_measurement: "kW"
+  icon: "mdi:flash"
+  value_type: U_WORD
+  accuracy_decimals: 1`);
       }
-      if (node['frequency_register'] != null) {
+      if (node.frequency_register != null) {
         parts.push(`\
-  - platform: modbus_controller
-    modbus_controller_id: ${node['bus']}_modbus
-    id: ${node['id']}_frequency
-    name: "${node['name']} Frequency"
-    register_type: holding
-    address: ${node['frequency_register']}
-    unit_of_measurement: "Hz"
-    icon: "mdi:sine-wave"
-    value_type: U_WORD
-    accuracy_decimals: 1`);
+- platform: modbus_controller
+  modbus_controller_id: ${node.bus}_modbus
+  id: ${node.id}_frequency
+  name: "${node.name} Frequency"
+  register_type: holding
+  address: ${node.frequency_register}
+  unit_of_measurement: "Hz"
+  icon: "mdi:sine-wave"
+  value_type: U_WORD
+  accuracy_decimals: 1`);
       }
-      if (node['fault_register'] != null) {
+      if (node.fault_register != null) {
         parts.push(`\
-  - platform: modbus_controller
-    modbus_controller_id: ${node['bus']}_modbus
-    id: ${node['id']}_fault_code
-    name: "${node['name']} Fault Code"
-    register_type: holding
-    address: ${node['fault_register']}
-    icon: "mdi:alert-octagon"
-    value_type: U_WORD
-    entity_category: diagnostic`);
+- platform: modbus_controller
+  modbus_controller_id: ${node.bus}_modbus
+  id: ${node.id}_fault_code
+  name: "${node.name} Fault Code"
+  register_type: holding
+  address: ${node.fault_register}
+  icon: "mdi:alert-octagon"
+  value_type: U_WORD
+  entity_category: diagnostic`);
       }
       return parts.join('\n');
     },
 
-    extraComponents: (node) => {
+    extraComponents: (node: VfdNode) => {
       const sections: Record<string, string> = {};
-      if (node['speed_register'] != null) {
+      if (node.speed_register != null) {
         sections['number'] = `\
-  - platform: modbus_controller
-    modbus_controller_id: ${node['bus']}_modbus
-    id: ${node['id']}_speed_setpoint
-    name: "${node['name']} Speed Setpoint"
-    register_type: holding
-    address: ${node['speed_register']}
-    min_value: 0
-    max_value: ${node['max_frequency'] ?? 50}
-    unit_of_measurement: "Hz"
-    icon: "mdi:speedometer"
-    value_type: U_WORD`;
+- platform: modbus_controller
+  modbus_controller_id: ${node.bus}_modbus
+  id: ${node.id}_speed_setpoint
+  name: "${node.name} Speed Setpoint"
+  register_type: holding
+  address: ${node.speed_register}
+  min_value: 0
+  max_value: ${node.max_frequency ?? 50}
+  unit_of_measurement: "Hz"
+  icon: "mdi:speedometer"
+  value_type: U_WORD`;
       }
-      if (node['fault_reset_register'] != null) {
+      if (node.fault_reset_register != null) {
         sections['button'] = `\
-  - platform: template
-    id: ${node['id']}_fault_reset
-    name: "${node['name']} Fault Reset"
-    icon: "mdi:restart"
-    on_press:
-      - lambda: |-
-          auto call = id(${node['bus']}_modbus).make_set_holding_call();
-          call.set_address(${node['fault_reset_register']});
-          call.set_value(1);
-          call.perform();
-          ESP_LOGI("vfd", "Fault reset sent to ${node['name']}");`;
+- platform: template
+  id: ${node.id}_fault_reset
+  name: "${node.name} Fault Reset"
+  icon: "mdi:restart"
+  on_press:
+    - lambda: |-
+        auto call = id(${node.bus}_modbus).make_set_holding_call();
+        call.set_address(${node.fault_reset_register});
+        call.set_value(1);
+        call.perform();
+        ESP_LOGI("vfd", "Fault reset sent to ${node.name}");`;
       }
       return sections;
     },
