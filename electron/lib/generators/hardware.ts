@@ -5,28 +5,26 @@ import { NODE_REGISTRY } from '@far-mon/core';
 export function generateHardware(m: Manifest): string {
   // Collect hardware blocks from all entities that provide them
   const switchBlocks: string[] = [];
+  const extraSections: Record<string, string[]> = {};
 
   for (const node of m.nodes) {
     const desc = NODE_REGISTRY.get(node.kind);
-    if (!desc?.codegen?.hardware) continue;
+    if (!desc?.codegen) continue;
     const idx = nodesByKind(m.nodes, node.kind).indexOf(node);
-    const block = desc.codegen.hardware(node, idx);
-    if (block) switchBlocks.push(block);
+    if (desc.codegen.hardware) {
+      const block = desc.codegen.hardware(node, idx);
+      if (block) switchBlocks.push(block);
+    }
+    if (desc.codegen.extraComponents) {
+      const sections = desc.codegen.extraComponents(node, idx);
+      // hardware.ts owns only 'cover' — all other sections go to sensors.ts
+      for (const [section, block] of Object.entries(sections)) {
+        if (section === 'cover' && block) (extraSections[section] ??= []).push(block);
+      }
+    }
   }
 
-  // Valve covers — still specific to valves (covers are a distinct YAML section)
   const valves = nodesWithFlag(m.nodes, 'isValve');
-  const coverBlocks = valves.map((v) => `\
-  - platform: time_based
-    id: ${v['id']}
-    name: "${v['name']}"
-
-    open_action:  [{switch.turn_on: ${v['id']}_open_pin}]
-    close_action: [{switch.turn_on: ${v['id']}_close_pin}]
-    stop_action:  [{switch.turn_off: ${v['id']}_open_pin}, {switch.turn_off: ${v['id']}_close_pin}]
-    open_duration: \${valve_travel_time}
-    close_duration: \${valve_travel_time}`);
-
   const pump = nodesWithFlag(m.nodes, 'isPump')[0];
 
   return `\
@@ -44,9 +42,13 @@ ${pump ? "#   - 1x pump relay (guarded: only energizes in RUNNING state)\n" : ""
 
 ${switchBlocks.length > 0 ? `switch:\n${switchBlocks.join("\n\n")}` : ""}
 
-${coverBlocks.length > 0 ? `# --- Ball valves (covers) ----------------------------------------------------
+${(extraSections['cover'] ?? []).length > 0 ? `# --- Ball valves (covers) ----------------------------------------------------
 
 cover:
-${coverBlocks.join("\n\n")}` : ""}
+${(extraSections['cover']).join("\n\n")}` : ""}
+${Object.entries(extraSections)
+    .filter(([k]) => k !== 'cover')
+    .map(([section, blocks]) => `\n${section}:\n${blocks.join("\n\n")}`)
+    .join("\n")}
 `;
 }

@@ -33,8 +33,11 @@ nodes:
     bus: uart_modbus
     modbus_address: 1
     start_register: 1
+    speed_register: 2
+    max_frequency: 50
     power_register: 8
     frequency_register: 9
+    fault_reset_register: 10
     ports:
       - { id: in, label: Inlet, direction: inlet }
       - { id: out, label: Outlet, direction: outlet }

@@ -112,6 +112,17 @@ export const flowSensorDescriptor: NodeDescriptor = {
     icon: "mdi:counter"
     state_class: total_increasing`,
 
+    extraComponents: (node) => ({
+      binary_sensor: `\
+  - platform: template
+    id: ${node['id']}_sensor_fault
+    name: "${node['name']} Sensor Fault"
+    icon: "mdi:alert-decagram"
+    device_class: problem
+    entity_category: diagnostic
+    lambda: return id(${node['id']}_fault_count) >= 3;`,
+    }),
+
     substitutions: (node) => [
       `pin_${node['id']}: "${node['pin']}"`,
       `flow_cal_${node['id']}: "${node['flow_cal']}"`,

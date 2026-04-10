@@ -24,7 +24,7 @@ export type { PinOverlayData } from './board-pin-overlays';
 
 // --- Schemas ---
 export { TopologySchema, parseTopology, parsePortRef, portRef, type Topology } from './topology-schema';
-export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, UartBusSchema } from './schemas';
+export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, UartBusSchema, parseDurationMs } from './schemas';
 
 // --- Registry ---
 export { NODE_REGISTRY, legendSvgFor, nodesWithFlag } from './entity-registry';

@@ -101,6 +101,36 @@ export const tankDescriptor: NodeDescriptor = {
     entity_category: diagnostic`;
     },
 
+    extraComponents: (node): Record<string, string> => {
+      if (!node['level_pin']) return {};
+      return {
+        number: `\
+  - platform: template
+    name: "${node['name']} Cal Empty (V)"
+    id: ${node['id']}_cal_empty
+    icon: "mdi:tune-vertical"
+    min_value: 0.0
+    max_value: 3.3
+    step: 0.001
+    initial_value: 0.0
+    optimistic: true
+    restore_value: true
+    entity_category: config
+
+  - platform: template
+    name: "${node['name']} Cal Full (V)"
+    id: ${node['id']}_cal_full
+    icon: "mdi:tune-vertical"
+    min_value: 0.0
+    max_value: 3.3
+    step: 0.001
+    initial_value: 3.3
+    optimistic: true
+    restore_value: true
+    entity_category: config`,
+      };
+    },
+
     substitutions: (node) => {
       const lines: string[] = [];
       if (node['level_pin']) {

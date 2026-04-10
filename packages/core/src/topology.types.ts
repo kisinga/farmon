@@ -111,7 +111,7 @@ export interface SystemTopology {
     friendly_name: string;
     board: string;
     directory?: string;
-    uart_buses: UartBus[];
+    uart_buses?: UartBus[];
   };
   nodes: TopologyNode[];
   pipes: PipeSegment[];

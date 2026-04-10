@@ -77,5 +77,15 @@ export const AutomationSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-// Note: Device/Timing types for consumer use are derived from SystemTopology
-// in manifest.types.ts. These Zod-inferred types are for internal validation only.
+// ---------------------------------------------------------------------------
+// Duration parsing utility
+// ---------------------------------------------------------------------------
+
+/** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
+export function parseDurationMs(s: string): number {
+  const ms = s.match(/^(\d+)\s*ms$/);
+  if (ms) return parseInt(ms[1], 10);
+  const sec = s.match(/^(\d+)\s*s$/);
+  if (sec) return parseInt(sec[1], 10) * 1000;
+  return 15000; // fallback
+}

@@ -62,6 +62,18 @@ function runEntityRules(nodes: Array<Record<string, any>>): RuleDiagnostic[] {
       }
     }
   }
+
+  // Cross-entity check: at most one isPump entity (they share pump_relay ID)
+  const pumpNodes = nodes.filter(n => NODE_REGISTRY.get(n['kind'])?.isPump);
+  if (pumpNodes.length > 1) {
+    diagnostics.push({
+      severity: 'error',
+      message: `Multiple pump entities found (${pumpNodes.map(n => `"${n['id']}"`).join(', ')}). Only one entity with isPump can exist — they share the pump_relay component ID.`,
+      target: pumpNodes[1]['id'],
+      ruleId: 'pump-singleton',
+    });
+  }
+
   return diagnostics;
 }
 

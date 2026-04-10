@@ -29,9 +29,9 @@ export interface FieldDef {
 // ---------------------------------------------------------------------------
 
 export interface EntityCodegen {
-  /** YAML fragment for sensors.yaml (ADC, pulse counter, template sensors). */
+  /** YAML fragment for sensors.yaml sensor: section (ADC, pulse counter, template sensors). */
   sensors?: (node: Record<string, any>, index: number) => string;
-  /** YAML fragment for hardware.yaml (switches, covers, relays). */
+  /** YAML fragment for hardware.yaml switch: section (switches, relays). */
   hardware?: (node: Record<string, any>, index: number) => string;
   /** Substitution lines for device.yaml. */
   substitutions?: (node: Record<string, any>) => string[];
@@ -39,6 +39,12 @@ export interface EntityCodegen {
   dashboard?: (node: Record<string, any>, deviceName: string) => string;
   /** Additional globals for control.yaml. */
   globals?: (node: Record<string, any>) => string;
+  /**
+   * Additional ESPHome component blocks keyed by YAML section name.
+   * e.g. { number: "- platform: ...", cover: "- platform: ...", button: "- platform: ..." }
+   * Each value is a YAML fragment (indented with 2 spaces) appended to that section.
+   */
+  extraComponents?: (node: Record<string, any>, index: number) => Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------

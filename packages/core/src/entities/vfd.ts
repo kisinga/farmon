@@ -15,9 +15,12 @@ export const VfdNodeSchema = z.object({
   bus: ComponentId,
   modbus_address: z.number().min(1).max(247),
   start_register: z.number().default(0x0001),
+  speed_register: z.number().optional(),
+  max_frequency: z.number().default(50),
   power_register: z.number().optional(),
   frequency_register: z.number().optional(),
   fault_register: z.number().optional(),
+  fault_reset_register: z.number().optional(),
   disabled: z.boolean().optional(),
   ports: z
     .array(PortSchema)
@@ -50,7 +53,7 @@ export const vfdDescriptor: NodeDescriptor = {
     { id: 'in', label: 'Inlet', direction: 'inlet' },
     { id: 'out', label: 'Outlet', direction: 'outlet' },
   ],
-  defaultData: () => ({ name: 'VFD Pump', bus: '', modbus_address: 1 }),
+  defaultData: () => ({ name: 'VFD Pump', bus: '', modbus_address: 1, max_frequency: 50 }),
 
   renderSvg: (_data) => {
     const cx = S / 2, cy = S / 2, r = S / 2 - 5;
@@ -67,9 +70,12 @@ export const vfdDescriptor: NodeDescriptor = {
     { key: 'bus', label: 'UART Bus', type: 'text', placeholder: 'uart_modbus' },
     { key: 'modbus_address', label: 'Modbus Address', type: 'number' },
     { key: 'start_register', label: 'Start Register', type: 'number' },
+    { key: 'speed_register', label: 'Speed Register', type: 'number' },
+    { key: 'max_frequency', label: 'Max Frequency (Hz)', type: 'number' },
     { key: 'power_register', label: 'Power Register', type: 'number' },
     { key: 'frequency_register', label: 'Frequency Register', type: 'number' },
     { key: 'fault_register', label: 'Fault Register', type: 'number' },
+    { key: 'fault_reset_register', label: 'Fault Reset Register', type: 'number' },
   ],
 
   // --- Codegen ---
@@ -131,6 +137,39 @@ export const vfdDescriptor: NodeDescriptor = {
     entity_category: diagnostic`);
       }
       return parts.join('\n');
+    },
+
+    extraComponents: (node) => {
+      const sections: Record<string, string> = {};
+      if (node['speed_register'] != null) {
+        sections['number'] = `\
+  - platform: modbus_controller
+    modbus_controller_id: ${node['bus']}_modbus
+    id: ${node['id']}_speed_setpoint
+    name: "${node['name']} Speed Setpoint"
+    register_type: holding
+    address: ${node['speed_register']}
+    min_value: 0
+    max_value: ${node['max_frequency'] ?? 50}
+    unit_of_measurement: "Hz"
+    icon: "mdi:speedometer"
+    value_type: U_WORD`;
+      }
+      if (node['fault_reset_register'] != null) {
+        sections['button'] = `\
+  - platform: template
+    id: ${node['id']}_fault_reset
+    name: "${node['name']} Fault Reset"
+    icon: "mdi:restart"
+    on_press:
+      - lambda: |-
+          auto call = id(${node['bus']}_modbus).make_set_holding_call();
+          call.set_address(${node['fault_reset_register']});
+          call.set_value(1);
+          call.perform();
+          ESP_LOGI("vfd", "Fault reset sent to ${node['name']}");`;
+      }
+      return sections;
     },
 
     substitutions: () => [],

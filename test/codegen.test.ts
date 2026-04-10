@@ -300,8 +300,8 @@ function getVfdFile(suffix: string): string {
 // --- Topology & routes ---
 
 console.log("Topology:");
-assert(vfdTopology.device.uart_buses.length === 1, "Has 1 UART bus");
-assert(vfdTopology.device.uart_buses[0].id === "uart_modbus", "UART bus id = uart_modbus");
+assert(vfdTopology.device.uart_buses?.length === 1, "Has 1 UART bus");
+assert(vfdTopology.device.uart_buses?.[0].id === "uart_modbus", "UART bus id = uart_modbus");
 
 const vfdRoutes = vfdManifest.routes;
 assert(vfdRoutes.length === 1, `${vfdRoutes.length} route (tank1>tank2)`);
@@ -335,6 +335,11 @@ console.log("\nSensors:");
 const vfdSensors = getVfdFile("sensors.yaml");
 assert(vfdSensors.includes("vfd1_power"), "Has VFD power sensor");
 assert(vfdSensors.includes("vfd1_frequency"), "Has VFD frequency sensor");
+assert(vfdSensors.includes("vfd1_speed_setpoint"), "Has VFD speed setpoint number");
+assert(vfdSensors.includes("max_value: 50"), "Speed setpoint max = max_frequency");
+assert(vfdSensors.includes("number:"), "Has number: section for speed setpoint");
+assert(vfdSensors.includes("button:"), "Has button: section for fault reset");
+assert(vfdSensors.includes("vfd1_fault_reset"), "Has VFD fault reset button");
 
 // --- Routes.h ---
 

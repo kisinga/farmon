@@ -1,12 +1,14 @@
 import type { Manifest } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
 import { NODE_REGISTRY } from '@far-mon/core';
-import { parseDurationMs } from "./routes.js";
+
 
 export function generateSensors(m: Manifest): string {
   // Collect sensor blocks from all entities that provide them
   const sensorBlocks: string[] = [];
   const globalBlocks: string[] = [];
+
+  const extraSections: Record<string, string[]> = {};
 
   for (const node of m.nodes) {
     const desc = NODE_REGISTRY.get(node.kind);
@@ -21,34 +23,17 @@ export function generateSensors(m: Manifest): string {
       const block = desc.codegen.globals(node);
       if (block) globalBlocks.push(block);
     }
+    if (desc.codegen.extraComponents) {
+      const sections = desc.codegen.extraComponents(node, idx);
+      // sensors.ts owns everything except 'cover' (which hardware.ts owns)
+      for (const [section, block] of Object.entries(sections)) {
+        if (section !== 'cover' && block) (extraSections[section] ??= []).push(block);
+      }
+    }
   }
 
-  // Tank calibration numbers — specific to tanks with level sensors
+  // Level sensors with pins (for OLED display and combined level)
   const tanksWithLevel = nodesWithFlag(m.nodes, 'isLevelSensor').filter(t => t['level_pin']);
-  const calBlocks = tanksWithLevel.map((t) => `\
-  - platform: template
-    name: "${t['name']} Cal Empty (V)"
-    id: ${t['id']}_cal_empty
-    icon: "mdi:tune-vertical"
-    min_value: 0.0
-    max_value: 3.3
-    step: 0.001
-    initial_value: 0.0
-    optimistic: true
-    restore_value: true
-    entity_category: config
-
-  - platform: template
-    name: "${t['name']} Cal Full (V)"
-    id: ${t['id']}_cal_full
-    icon: "mdi:tune-vertical"
-    min_value: 0.0
-    max_value: 3.3
-    step: 0.001
-    initial_value: 3.3
-    optimistic: true
-    restore_value: true
-    entity_category: config`);
 
   // Route max-runtime numbers — adjustable from HA, persisted across reboots
   const runtimeBlocks = m.routes.map((r, i) => `\
@@ -60,21 +45,6 @@ export function generateSensors(m: Manifest): string {
     max_value: 7200
     step: 60
     initial_value: ${r.max_runtime_seconds}
-    optimistic: true
-    restore_value: true
-    entity_category: config`);
-
-  // Per-valve travel time — defaults to global timing if no per-valve override
-  const valves = nodesWithFlag(m.nodes, 'isValve');
-  const travelBlocks = valves.map((v) => `\
-  - platform: template
-    name: "${v['name']} Travel Time (ms)"
-    id: ${v['id']}_travel_ms
-    icon: "mdi:timer-cog-outline"
-    min_value: 1000
-    max_value: 30000
-    step: 1000
-    initial_value: ${parseDurationMs(v['travel_time'] ?? m.timing.valve_travel_time)}
     optimistic: true
     restore_value: true
     entity_category: config`);
@@ -97,16 +67,6 @@ export function generateSensors(m: Manifest): string {
     restore_value: true
     entity_category: config`);
 
-  // Flow sensor fault detection binary sensors
-  const flowSensors = nodesWithFlag(m.nodes, 'isFlowSensor');
-  const faultSensors = flowSensors.map((f) => `\
-  - platform: template
-    id: ${f['id']}_sensor_fault
-    name: "${f['name']} Sensor Fault"
-    icon: "mdi:alert-decagram"
-    device_class: problem
-    entity_category: diagnostic
-    lambda: return id(${f['id']}_fault_count) >= 3;`);
 
   return `\
 # =============================================================================
@@ -122,10 +82,10 @@ export function generateSensors(m: Manifest): string {
 sensor:
 ${sensorBlocks.join("\n\n")}
 
-${[...calBlocks, ...runtimeBlocks, ...travelBlocks, ...safetyBlocks].length > 0 ? `# --- Adjustable numbers (persisted, editable from HA) -------------------------
+${[...runtimeBlocks, ...safetyBlocks, ...(extraSections['number'] ?? [])].length > 0 ? `# --- Adjustable numbers (persisted, editable from HA) -------------------------
 
 number:
-${[...calBlocks, ...runtimeBlocks, ...travelBlocks, ...safetyBlocks].join("\n\n")}` : ""}
+${[...runtimeBlocks, ...safetyBlocks, ...(extraSections['number'] ?? [])].join("\n\n")}` : ""}
 
 # --- State exposure to HA ----------------------------------------------------
 
@@ -239,9 +199,9 @@ ${globalBlocks.length > 0 ? `
 
 globals:
 ${globalBlocks.join("\n")}` : ""}
-${faultSensors.length > 0 || tanksWithLevel.length >= 2 ? `
+${(extraSections['binary_sensor'] ?? []).length > 0 || tanksWithLevel.length >= 2 ? `
 binary_sensor:
-${faultSensors.join("\n\n")}${tanksWithLevel.length >= 2 ? `
+${(extraSections['binary_sensor'] ?? []).join("\n\n")}${tanksWithLevel.length >= 2 ? `
   - platform: template
     id: water_critical
     name: "Water Critical"
@@ -250,5 +210,9 @@ ${faultSensors.join("\n\n")}${tanksWithLevel.length >= 2 ? `
     lambda: |-
       float c = id(combined_tank_level).state;
       return !std::isnan(c) && c < 35.0f;` : ""}` : ""}
+${Object.entries(extraSections)
+    .filter(([k]) => !['number', 'binary_sensor'].includes(k))
+    .map(([section, blocks]) => `\n${section}:\n${blocks.join("\n\n")}`)
+    .join("\n")}
 `;
 }

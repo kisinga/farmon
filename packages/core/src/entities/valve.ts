@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
+import { GpioPin, ComponentId, PortSchema, PositionSchema, parseDurationMs } from '../schemas';
 
 const COLOR = '#e11d48'; // rose
 const W = 50, H = 36;
@@ -80,6 +80,31 @@ export const valveDescriptor: NodeDescriptor = {
     restore_mode: ALWAYS_OFF
     interlock: [${node['id']}_open_pin, ${node['id']}_close_pin]
     interlock_wait_time: 100ms`,
+
+    extraComponents: (node) => ({
+      cover: `\
+  - platform: time_based
+    id: ${node['id']}
+    name: "${node['name']}"
+
+    open_action:  [{switch.turn_on: ${node['id']}_open_pin}]
+    close_action: [{switch.turn_on: ${node['id']}_close_pin}]
+    stop_action:  [{switch.turn_off: ${node['id']}_open_pin}, {switch.turn_off: ${node['id']}_close_pin}]
+    open_duration: \${valve_travel_time}
+    close_duration: \${valve_travel_time}`,
+      number: `\
+  - platform: template
+    name: "${node['name']} Travel Time (ms)"
+    id: ${node['id']}_travel_ms
+    icon: "mdi:timer-cog-outline"
+    min_value: 1000
+    max_value: 30000
+    step: 1000
+    initial_value: ${parseDurationMs(node['travel_time'] ?? '15s')}
+    optimistic: true
+    restore_value: true
+    entity_category: config`,
+    }),
 
     substitutions: (node) => [
       `pin_${node['id']}_o: "${node['open_pin']}"`,
