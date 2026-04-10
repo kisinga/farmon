@@ -31,6 +31,8 @@ export type TankNode = z.infer<typeof TankNodeSchema>;
 export const tankDescriptor: NodeDescriptor = {
   kind: 'tank',
   label: 'Tank',
+  isLevelSensor: true,
+  conflictClass: 'sensor',
   color: COLOR,
   size: { width: W, height: H },
   role: 'terminal',

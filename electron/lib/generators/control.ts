@@ -1,5 +1,5 @@
 import type { Manifest } from "../schema.js";
-import { nodesByKind } from "../schema.js";
+import { nodesWithFlag } from "../schema.js";
 
 function slug(s: string): string {
   return s
@@ -10,7 +10,7 @@ function slug(s: string): string {
 }
 
 export function generateControl(m: Manifest): string {
-  const hasPump = nodesByKind(m.nodes, 'pump').length > 0;
+  const hasPump = nodesWithFlag(m.nodes, 'isPump').length > 0;
 
   // Conditional pump management in the transition interval
   const pumpMgmt = hasPump ? `

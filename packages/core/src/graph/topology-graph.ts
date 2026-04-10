@@ -14,6 +14,9 @@ export interface NodeAttrs {
   kind: string;
   role: 'terminal' | 'passthrough';
   routeSource: boolean;
+  isPump: boolean;
+  isValve: boolean;
+  isFlowSensor: boolean;
   data: TopologyNode;
 }
 
@@ -36,6 +39,9 @@ export function buildGraph(nodes: TopologyNode[], pipes: PipeSegment[]): Topolog
       kind: node.kind,
       role: desc?.role ?? 'passthrough',
       routeSource: desc?.routeSource ?? false,
+      isPump: desc?.isPump ?? false,
+      isValve: desc?.isValve ?? false,
+      isFlowSensor: desc?.isFlowSensor ?? false,
       data: node,
     });
   }

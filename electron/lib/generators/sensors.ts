@@ -1,5 +1,5 @@
 import type { Manifest } from "../schema.js";
-import { nodesByKind } from "../schema.js";
+import { nodesByKind, nodesWithFlag } from "../schema.js";
 import { NODE_REGISTRY } from '@far-mon/core';
 import { parseDurationMs } from "./routes.js";
 
@@ -24,7 +24,7 @@ export function generateSensors(m: Manifest): string {
   }
 
   // Tank calibration numbers — specific to tanks with level sensors
-  const tanksWithLevel = nodesByKind(m.nodes, 'tank').filter(t => t['level_pin']);
+  const tanksWithLevel = nodesWithFlag(m.nodes, 'isLevelSensor').filter(t => t['level_pin']);
   const calBlocks = tanksWithLevel.map((t) => `\
   - platform: template
     name: "${t['name']} Cal Empty (V)"
@@ -65,7 +65,7 @@ export function generateSensors(m: Manifest): string {
     entity_category: config`);
 
   // Per-valve travel time — defaults to global timing if no per-valve override
-  const valves = nodesByKind(m.nodes, 'valve');
+  const valves = nodesWithFlag(m.nodes, 'isValve');
   const travelBlocks = valves.map((v) => `\
   - platform: template
     name: "${v['name']} Travel Time (ms)"
@@ -98,7 +98,7 @@ export function generateSensors(m: Manifest): string {
     entity_category: config`);
 
   // Flow sensor fault detection binary sensors
-  const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
+  const flowSensors = nodesWithFlag(m.nodes, 'isFlowSensor');
   const faultSensors = flowSensors.map((f) => `\
   - platform: template
     id: ${f['id']}_sensor_fault

@@ -26,6 +26,8 @@ export type ValveNode = z.infer<typeof ValveNodeSchema>;
 export const valveDescriptor: NodeDescriptor = {
   kind: 'valve',
   label: 'Valve',
+  isValve: true,
+  conflictClass: 'actuator',
   color: COLOR,
   size: { width: W, height: H },
   role: 'passthrough',

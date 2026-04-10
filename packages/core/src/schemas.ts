@@ -31,11 +31,20 @@ export type Position = z.infer<typeof PositionSchema>;
 // Device & timing schemas (previously in electron/lib/shared-schema.ts)
 // ---------------------------------------------------------------------------
 
+export const UartBusSchema = z.object({
+  id: ComponentId,
+  tx_pin: GpioPin,
+  rx_pin: GpioPin,
+  de_pin: GpioPin.optional(),
+  baud_rate: z.number().default(9600),
+});
+
 export const DeviceSchema = z.object({
   name: z.string().min(1),
   friendly_name: z.string().min(1),
   board: z.string().min(1),
   directory: z.string().optional(),
+  uart_buses: z.array(UartBusSchema).default([]),
 });
 
 export const TimingSchema = z.object({

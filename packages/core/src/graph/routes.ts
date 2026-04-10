@@ -42,10 +42,10 @@ function analyzePathSequence(graph: TopologyGraph, path: string[]): Route {
   let pumpIndex = -1;
 
   for (let i = 0; i < path.length; i++) {
-    const kind = graph.getNodeAttribute(path[i], 'kind');
-    if (kind === 'valve') valves.push(path[i]);
-    if (kind === 'flow_sensor') flowSensors.push(path[i]);
-    if ((kind === 'pump' || kind === 'dosing_pump') && pumpIndex === -1) pumpIndex = i;
+    const attrs = graph.getNodeAttributes(path[i]);
+    if (attrs.isValve) valves.push(path[i]);
+    if (attrs.isFlowSensor) flowSensors.push(path[i]);
+    if (attrs.isPump && pumpIndex === -1) pumpIndex = i;
   }
 
   const source = path[0];

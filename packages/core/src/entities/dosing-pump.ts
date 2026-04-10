@@ -26,6 +26,8 @@ export type DosingPumpNode = z.infer<typeof DosingPumpNodeSchema>;
 export const dosingPumpDescriptor: NodeDescriptor = {
   kind: 'dosing_pump',
   label: 'Dosing Pump',
+  isPump: true,
+  conflictClass: 'actuator',
   color: COLOR,
   size: { width: S, height: S },
   role: 'passthrough',

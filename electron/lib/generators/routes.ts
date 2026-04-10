@@ -1,5 +1,5 @@
 import type { Manifest, ManifestNode } from "../schema.js";
-import { nodesByKind } from "../schema.js";
+import { nodesByKind, nodesWithFlag } from "../schema.js";
 
 /** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
 export function parseDurationMs(s: string): number {
@@ -11,9 +11,9 @@ export function parseDurationMs(s: string): number {
 }
 
 export function generateRoutes(m: Manifest): string {
-  const tanks = nodesByKind(m.nodes, 'tank');
-  const valves = nodesByKind(m.nodes, 'valve');
-  const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
+  const tanks = nodesWithFlag(m.nodes, 'isLevelSensor');
+  const valves = nodesWithFlag(m.nodes, 'isValve');
+  const flowSensors = nodesWithFlag(m.nodes, 'isFlowSensor');
   const waterSources = nodesByKind(m.nodes, 'water_source');
 
   const tankIdx = new Map(tanks.map((t, i) => [t['id'], i]));

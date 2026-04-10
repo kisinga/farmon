@@ -26,6 +26,8 @@ export type FlowSensorNode = z.infer<typeof FlowSensorNodeSchema>;
 export const flowSensorDescriptor: NodeDescriptor = {
   kind: 'flow_sensor',
   label: 'Flow Sensor',
+  isFlowSensor: true,
+  conflictClass: 'sensor',
   color: COLOR,
   size: { width: W, height: H },
   role: 'passthrough',

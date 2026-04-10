@@ -94,6 +94,19 @@ export interface NodeDescriptor {
 
   /** Flow constraints this entity declares on routes it appears in. */
   constraints?: FlowConstraint[];
+
+  // --- Dispatch flags — tell the graph layer and generators what this entity does ---
+
+  /** Acts as a pump — participates in pump refcounting. */
+  isPump?: boolean;
+  /** Acts as a valve — included in route valve masks and dispatch. */
+  isValve?: boolean;
+  /** Acts as a flow sensor — required for valid routes, flow dispatch. */
+  isFlowSensor?: boolean;
+  /** Acts as a level sensor — included in level dispatch. */
+  isLevelSensor?: boolean;
+  /** Conflict class: 'sensor' readings are ambiguous when shared, 'actuator' access is refcountable. */
+  conflictClass?: 'sensor' | 'actuator';
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +136,7 @@ import { waterSourceDescriptor } from './entities/water-source';
 import { pressureSensorDescriptor } from './entities/pressure-sensor';
 import { filterDescriptor } from './entities/filter';
 import { dosingPumpDescriptor } from './entities/dosing-pump';
+import { vfdDescriptor } from './entities/vfd';
 
 export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   tankDescriptor,
@@ -134,8 +148,23 @@ export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   pressureSensorDescriptor,
   filterDescriptor,
   dosingPumpDescriptor,
+  vfdDescriptor,
 ];
 
 export const NODE_REGISTRY: ReadonlyMap<string, NodeDescriptor> = new Map(
   ALL_DESCRIPTORS.map(d => [d.kind, d]),
 );
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type DispatchFlag = 'isPump' | 'isValve' | 'isFlowSensor' | 'isLevelSensor';
+
+/** Filter manifest nodes by a descriptor dispatch flag. */
+export function nodesWithFlag(
+  nodes: Array<{ kind: string; [k: string]: any }>,
+  flag: DispatchFlag,
+): Array<{ kind: string; [k: string]: any }> {
+  return nodes.filter(n => NODE_REGISTRY.get(n.kind)?.[flag]);
+}

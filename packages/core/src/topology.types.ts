@@ -29,6 +29,7 @@ import type { WaterSourceNode } from './entities/water-source';
 import type { PressureSensorNode } from './entities/pressure-sensor';
 import type { FilterNode } from './entities/filter';
 import type { DosingPumpNode } from './entities/dosing-pump';
+import type { VfdNode } from './entities/vfd';
 
 // ---------------------------------------------------------------------------
 // Node union
@@ -43,7 +44,8 @@ export type TopologyNode =
   | WaterSourceNode
   | PressureSensorNode
   | FilterNode
-  | DosingPumpNode;
+  | DosingPumpNode
+  | VfdNode;
 
 // ---------------------------------------------------------------------------
 // Pipes
@@ -94,6 +96,14 @@ export interface Automation {
 // Topology (top-level document)
 // ---------------------------------------------------------------------------
 
+export interface UartBus {
+  id: string;
+  tx_pin: string;
+  rx_pin: string;
+  de_pin?: string;
+  baud_rate: number;
+}
+
 export interface SystemTopology {
   schema: 8;
   device: {
@@ -101,6 +111,7 @@ export interface SystemTopology {
     friendly_name: string;
     board: string;
     directory?: string;
+    uart_buses: UartBus[];
   };
   nodes: TopologyNode[];
   pipes: PipeSegment[];

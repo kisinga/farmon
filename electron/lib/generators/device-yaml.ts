@@ -1,7 +1,7 @@
 import { stringify } from "yaml";
 import type { BoardDef } from "../board.js";
 import type { Manifest } from "../schema.js";
-import { nodesByKind } from "../schema.js";
+import { nodesByKind, nodesWithFlag } from "../schema.js";
 import { NODE_REGISTRY } from '@far-mon/core';
 
 /**
@@ -95,7 +95,7 @@ export function generateDeviceYaml(
   ].join("\n");
 
   const bootActions: unknown[] = [];
-  if (nodesByKind(m.nodes, 'pump').length > 0) bootActions.push({ "switch.turn_off": "pump_relay" });
+  if (nodesWithFlag(m.nodes, 'isPump').length > 0) bootActions.push({ "switch.turn_off": "pump_relay" });
   bootActions.push({ lambda: initVars });
 
   bootSteps.push({
@@ -143,6 +143,26 @@ export function generateDeviceYaml(
   lines.push("  control: !include packages/control.yaml");
   lines.push("");
 
+  // UART buses (for Modbus/RS485 devices)
+  const buses = m.device.uart_buses ?? [];
+  if (buses.length > 0) {
+    lines.push("uart:");
+    for (const bus of buses) {
+      lines.push(`  - id: ${bus.id}`);
+      lines.push(`    tx_pin: ${bus.tx_pin}`);
+      lines.push(`    rx_pin: ${bus.rx_pin}`);
+      if (bus.de_pin) lines.push(`    de_pin: ${bus.de_pin}`);
+      lines.push(`    baud_rate: ${bus.baud_rate}`);
+    }
+    lines.push("");
+    lines.push("modbus:");
+    for (const bus of buses) {
+      lines.push(`  - id: ${bus.id}_modbus`);
+      lines.push(`    uart_id: ${bus.id}`);
+    }
+    lines.push("");
+  }
+
   // ESPHome block
   lines.push("esphome:");
   lines.push(`  name: \${device_name}`);
@@ -178,7 +198,7 @@ function buildOledDisplay(board: BoardDef, m: Manifest): string {
   const resetPin = oled.reset_pin;
 
   // Generate tank level lines dynamically (up to 2 fit side-by-side on 128px OLED)
-  const displayTanks = nodesByKind(m.nodes, 'tank').filter((t) => t['level_pin']).slice(0, 2);
+  const displayTanks = nodesWithFlag(m.nodes, 'isLevelSensor').filter((t) => t['level_pin']).slice(0, 2);
   const tankLines = displayTanks.map((t, i) => {
     const x = i === 0 ? 0 : 64;
     const name = t['name'] as string;

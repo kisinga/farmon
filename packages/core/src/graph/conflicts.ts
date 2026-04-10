@@ -30,10 +30,10 @@ export interface ConflictManifest {
 
 // ── Detection ───────────────────────────────────────────────────────────────
 
-const SENSOR_KINDS = new Set(['flow_sensor', 'pressure_sensor']);
+import { NODE_REGISTRY } from '../entity-registry';
 
 function classifyResource(kind: string): 'sensor' | 'actuator' {
-  return SENSOR_KINDS.has(kind) ? 'sensor' : 'actuator';
+  return NODE_REGISTRY.get(kind)?.conflictClass ?? 'actuator';
 }
 
 export function detectConflicts(routes: Route[], graph: TopologyGraph): ConflictManifest {

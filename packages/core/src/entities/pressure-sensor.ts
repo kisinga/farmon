@@ -27,6 +27,7 @@ export type PressureSensorNode = z.infer<typeof PressureSensorNodeSchema>;
 export const pressureSensorDescriptor: NodeDescriptor = {
   kind: 'pressure_sensor',
   label: 'Pressure Sensor',
+  conflictClass: 'sensor',
   color: COLOR,
   size: { width: W, height: H },
   role: 'passthrough',

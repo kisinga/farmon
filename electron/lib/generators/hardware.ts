@@ -1,5 +1,5 @@
 import type { Manifest } from "../schema.js";
-import { nodesByKind } from "../schema.js";
+import { nodesByKind, nodesWithFlag } from "../schema.js";
 import { NODE_REGISTRY } from '@far-mon/core';
 
 export function generateHardware(m: Manifest): string {
@@ -15,7 +15,7 @@ export function generateHardware(m: Manifest): string {
   }
 
   // Valve covers — still specific to valves (covers are a distinct YAML section)
-  const valves = nodesByKind(m.nodes, 'valve');
+  const valves = nodesWithFlag(m.nodes, 'isValve');
   const coverBlocks = valves.map((v) => `\
   - platform: time_based
     id: ${v['id']}
@@ -27,7 +27,7 @@ export function generateHardware(m: Manifest): string {
     open_duration: \${valve_travel_time}
     close_duration: \${valve_travel_time}`);
 
-  const pump = nodesByKind(m.nodes, 'pump')[0];
+  const pump = nodesWithFlag(m.nodes, 'isPump')[0];
 
   return `\
 # =============================================================================

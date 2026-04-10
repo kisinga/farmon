@@ -34,6 +34,8 @@ export type PumpNode = z.infer<typeof PumpNodeSchema>;
 export const pumpDescriptor: NodeDescriptor = {
   kind: 'pump',
   label: 'Pump',
+  isPump: true,
+  conflictClass: 'actuator',
   color: COLOR,
   size: { width: S, height: S },
   role: 'passthrough',

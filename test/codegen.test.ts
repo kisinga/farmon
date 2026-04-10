@@ -276,6 +276,75 @@ for (const route of manifest.routes) {
   );
 }
 
+// =============================================================================
+// VFD Entity Tests — Modbus VFD pump replacing GPIO relay
+// =============================================================================
+
+console.log("\n\nVFD Entity Tests");
+console.log("================\n");
+
+const VFD_CONFIG_PATH = path.join(DEFAULTS, "configs/vfd-pump-controller.yaml");
+const vfdRawConfig = fs.readFileSync(VFD_CONFIG_PATH, "utf-8");
+const vfdTopology = parseTopology(parseYaml(vfdRawConfig));
+const vfdManifest = topologyToManifest(vfdTopology);
+const vfdFiles = generateAll(vfdManifest, board);
+const vfdFileMap = new Map(vfdFiles.map((f) => [f.relativePath, f.content]));
+
+function getVfdFile(suffix: string): string {
+  for (const [key, content] of vfdFileMap) {
+    if (key.endsWith(suffix)) return content;
+  }
+  throw new Error(`No VFD generated file ending with "${suffix}"`);
+}
+
+// --- Topology & routes ---
+
+console.log("Topology:");
+assert(vfdTopology.device.uart_buses.length === 1, "Has 1 UART bus");
+assert(vfdTopology.device.uart_buses[0].id === "uart_modbus", "UART bus id = uart_modbus");
+
+const vfdRoutes = vfdManifest.routes;
+assert(vfdRoutes.length === 1, `${vfdRoutes.length} route (tank1>tank2)`);
+assert(vfdRoutes[0].needs_pump, "Route needs_pump = true (VFD has isPump flag)");
+
+// --- Device YAML ---
+
+console.log("\nDevice YAML:");
+const vfdDeviceYaml = getVfdFile("vfd-pump-controller.yaml");
+assert(vfdDeviceYaml.includes("uart:"), "Has uart: section");
+assert(vfdDeviceYaml.includes("id: uart_modbus"), "UART bus id in output");
+assert(vfdDeviceYaml.includes("tx_pin: GPIO17"), "UART TX pin");
+assert(vfdDeviceYaml.includes("rx_pin: GPIO18"), "UART RX pin");
+assert(vfdDeviceYaml.includes("de_pin: GPIO19"), "UART DE pin");
+assert(vfdDeviceYaml.includes("baud_rate: 9600"), "UART baud rate");
+assert(vfdDeviceYaml.includes("modbus:"), "Has modbus: section");
+assert(vfdDeviceYaml.includes("id: uart_modbus_modbus"), "Modbus controller id");
+assert(vfdDeviceYaml.includes("switch.turn_off"), "Boot turns off pump_relay");
+
+// --- Hardware ---
+
+console.log("\nHardware:");
+const vfdHw = getVfdFile("hardware.yaml");
+assert(vfdHw.includes("pump_relay"), "Has pump_relay (from VFD codegen)");
+assert(vfdHw.includes("modbus_controller"), "Uses modbus_controller platform");
+assert(vfdHw.includes("uart_modbus_modbus"), "References modbus controller id");
+
+// --- Sensors ---
+
+console.log("\nSensors:");
+const vfdSensors = getVfdFile("sensors.yaml");
+assert(vfdSensors.includes("vfd1_power"), "Has VFD power sensor");
+assert(vfdSensors.includes("vfd1_frequency"), "Has VFD frequency sensor");
+
+// --- Routes.h ---
+
+console.log("\nRoutes.h:");
+const vfdRoutesH = getVfdFile("routes.h");
+assert(vfdRoutesH.includes("pump_ref_count"), "Has pump_ref_count (VFD is isPump)");
+// pump_relay is referenced in control.yaml, not routes.h — check control instead
+const vfdControl = getVfdFile("control.yaml");
+assert(vfdControl.includes("pump_relay"), "Control references pump_relay");
+
 // --- Summary ---
 
 console.log(`\n${"=".repeat(40)}`);
