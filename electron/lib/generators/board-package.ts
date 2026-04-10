@@ -22,18 +22,32 @@ export function generateBoardPackage(board: BoardDef): string {
   // --- Logger ---
   sections.push({ logger: { hardware_uart: "UART0" } });
 
-  // --- Networking (always present for WiFi-capable MCUs) ---
-  sections.push({
-    wifi: {
-      ssid: "!secret wifi_ssid",
-      password: "!secret wifi_password",
-      ap: {
-        ssid: "${friendly_name} Fallback",
-        password: "!secret fallback_password",
+  // --- Networking ---
+  if (board.peripherals.ethernet) {
+    const eth = board.peripherals.ethernet;
+    sections.push({
+      ethernet: {
+        type: eth.type,
+        mdc_pin: eth.mdc_pin,
+        mdio_pin: eth.mdio_pin,
+        clk_mode: eth.clk_mode,
+        phy_addr: eth.phy_addr,
+        ...(eth.power_pin && { power_pin: eth.power_pin }),
       },
-    },
-  });
-  sections.push({ captive_portal: null });
+    });
+  } else {
+    sections.push({
+      wifi: {
+        ssid: "!secret wifi_ssid",
+        password: "!secret wifi_password",
+        ap: {
+          ssid: "${friendly_name} Fallback",
+          password: "!secret fallback_password",
+        },
+      },
+    });
+    sections.push({ captive_portal: null });
+  }
   sections.push({
     api: { encryption: { key: "!secret api_key" } },
   });
@@ -54,6 +68,24 @@ export function generateBoardPackage(board: BoardDef): string {
       }
     }
     sections.push({ [busName]: busConfig });
+  }
+
+  // --- I2C GPIO Expanders ---
+  if (board.expanders && board.expanders.length > 0) {
+    // Group expanders by platform (pcf8574, pcf8575, mcp23017, etc.)
+    const byPlatform = new Map<string, unknown[]>();
+    for (const exp of board.expanders) {
+      const platform = exp.platform;
+      if (!byPlatform.has(platform)) byPlatform.set(platform, []);
+      byPlatform.get(platform)!.push({
+        id: exp.id,
+        address: `0x${exp.address.toString(16).padStart(2, '0')}`,
+        ...(exp.pcf8575 != null && { pcf8575: exp.pcf8575 }),
+      });
+    }
+    for (const [platform, entries] of byPlatform) {
+      sections.push({ [platform]: entries });
+    }
   }
 
   // --- Peripherals: switches, outputs, lights ---
@@ -180,12 +212,14 @@ export function generateBoardPackage(board: BoardDef): string {
     });
   }
 
-  sensors.push({
-    platform: "wifi_signal",
-    name: "WiFi Signal",
-    update_interval: "${update_interval}",
-    id: "wifi_dbm",
-  });
+  if (!board.peripherals.ethernet) {
+    sensors.push({
+      platform: "wifi_signal",
+      name: "WiFi Signal",
+      update_interval: "${update_interval}",
+      id: "wifi_dbm",
+    });
+  }
   sensors.push({
     platform: "uptime",
     name: "Uptime",
@@ -202,16 +236,18 @@ export function generateBoardPackage(board: BoardDef): string {
   sections.push({ sensor: sensors });
 
   // --- Text sensors (diagnostics) ---
-  sections.push({
-    text_sensor: [
-      {
-        platform: "wifi_info",
-        ip_address: { name: "IP Address", id: "ip_addr" },
-        ssid: { name: "Connected SSID" },
-        mac_address: { name: "MAC Address" },
-      },
-    ],
-  });
+  if (!board.peripherals.ethernet) {
+    sections.push({
+      text_sensor: [
+        {
+          platform: "wifi_info",
+          ip_address: { name: "IP Address", id: "ip_addr" },
+          ssid: { name: "Connected SSID" },
+          mac_address: { name: "MAC Address" },
+        },
+      ],
+    });
+  }
 
   // --- Battery ADC enable interval (only if battery present) ---
   if (board.peripherals.battery) {
@@ -244,6 +280,8 @@ export function generateBoardPackage(board: BoardDef): string {
     board.peripherals.vext ? "#   + Vext power gate" : null,
     board.peripherals.oled ? "#   + OLED fonts and images" : null,
     board.peripherals.lora ? "#   + LoRa SPI bus reservation" : null,
+    board.peripherals.ethernet ? "#   + Ethernet (LAN8720)" : null,
+    board.expanders?.length ? `#   + ${board.expanders.length}x I2C GPIO expanders` : null,
     "#",
     "# Requires substitutions: ${friendly_name}, ${update_interval}",
     board.peripherals.battery

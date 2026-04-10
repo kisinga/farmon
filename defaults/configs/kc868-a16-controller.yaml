@@ -1,0 +1,65 @@
+schema: 8
+device:
+  name: kc868-ctrl
+  friendly_name: KC868 Controller
+  board: kc868-a16
+  directory: kc868-controller
+
+nodes:
+  - kind: tank
+    id: tank1
+    name: Rain Tank
+    level_pin: GPIO36
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 100, y: 200 }
+
+  - kind: valve
+    id: valve1
+    name: Tank 1 Outlet
+    open_pin: OUT1
+    close_pin: OUT2
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 250, y: 200 }
+
+  - kind: pump
+    id: pump
+    name: Main Pump
+    pin: OUT3
+    ports:
+      - { id: in, label: Inlet, direction: inlet }
+      - { id: out, label: Outlet, direction: outlet }
+    position: { x: 400, y: 200 }
+
+  - kind: flow_sensor
+    id: flow1
+    name: Main Flow
+    pin: GPIO32
+    flow_cal: 450
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 550, y: 200 }
+
+  - kind: endpoint
+    id: house1
+    name: House 1
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+    position: { x: 700, y: 200 }
+
+pipes:
+  - { id: p1, from: "tank1:outlet", to: "valve1:inlet" }
+  - { id: p2, from: "valve1:outlet", to: "pump:in" }
+  - { id: p3, from: "pump:out", to: "flow1:inlet" }
+  - { id: p4, from: "flow1:outlet", to: "house1:inlet" }
+
+timing:
+  valve_travel_time: 15s
+  flow_watchdog_seconds: 30
+  flow_confirm_seconds: 15
+  api_watchdog_seconds: 300
+  update_interval: 5s

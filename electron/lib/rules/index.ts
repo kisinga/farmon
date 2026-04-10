@@ -27,6 +27,8 @@ import { gpioBudget } from "./manifest/gpio-budget.js";
 import { routeNames } from "./manifest/route-names.js";
 import { routeConcurrency } from "./manifest/route-concurrency.js";
 import { automationRouteRef } from "./manifest/automation-route-ref.js";
+import { routeCount } from "./manifest/route-count.js";
+import { timingSanity } from "./manifest/timing-sanity.js";
 
 // Entity-specific topology rules are registered on NodeDescriptor.rules
 // and collected by the runner via NODE_REGISTRY. No imports needed here.
@@ -39,6 +41,7 @@ export const ALL_MANIFEST_RULES: ManifestRule[] = [
   pinExposure,
   referenceIntegrity,
   valveMaskOverflow,
+  routeCount,
   uniqueIds,
   orphanedComponents,
   pinCapabilities,
@@ -46,6 +49,7 @@ export const ALL_MANIFEST_RULES: ManifestRule[] = [
   routeNames,
   routeConcurrency,
   automationRouteRef,
+  timingSanity,
 ];
 
 // Convenience wrappers with default rule sets

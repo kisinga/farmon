@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
+import { pumpSwitchId } from '../codegen-ids';
 
 const COLOR = '#dc2626'; // red
 const S = 60;
@@ -89,13 +90,15 @@ export const pumpDescriptor: NodeDescriptor = {
   // --- Codegen ---
 
   codegen: {
-    hardware: (node) => `\
+    hardware: (node, _idx, ctx) => {
+      const id = pumpSwitchId();
+      const pin = ctx?.resolvePin(node['pin'], { inverted: true }) ?? `number: ${node['pin']}\n      inverted: true`;
+      return `\
   # --- Pump relay ------------------------------------------------------------
   - platform: gpio
     pin:
-      number: \${pin_pump_relay}
-      inverted: true
-    id: pump_relay
+      ${pin}
+    id: ${id}
     name: "Pump Relay"
     icon: "mdi:water-pump"
     internal: true
@@ -105,9 +108,10 @@ export const pumpDescriptor: NodeDescriptor = {
           condition:
             lambda: 'return pump_ref_count() == 0;'
           then:
-            - switch.turn_off: pump_relay
-            - logger.log: {level: WARN, format: "BLOCKED: pump only runs when a pumped route is RUNNING"}`,
+            - switch.turn_off: ${id}
+            - logger.log: {level: WARN, format: "BLOCKED: pump only runs when a pumped route is RUNNING"}`;
+    },
 
-    substitutions: (node) => [`pin_pump_relay: "${node['pin']}"`],
+    substitutions: () => [],
   },
 };

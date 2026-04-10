@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId } from '../codegen-ids';
 
 const COLOR = '#16a34a'; // green
 const W = 50, H = 36;
@@ -66,12 +67,16 @@ export const flowSensorDescriptor: NodeDescriptor = {
   // --- Codegen ---
 
   codegen: {
-    sensors: (node, idx) => `\
+    sensors: (node, idx, ctx) => {
+      const sId = flowSensorId(node as { id: string });
+      const totalId = flowTotalId(node as { id: string });
+      const faultId = flowFaultCountId(node as { id: string });
+      const pin = ctx?.resolvePin(node['pin'], { mode: 'INPUT_PULLUP' }) ?? `number: ${node['pin']}\n      mode: INPUT_PULLUP`;
+      return `\
   - platform: pulse_counter
     pin:
-      number: \${pin_${node['id']}}
-      mode: INPUT_PULLUP
-    id: ${node['id']}
+      ${pin}
+    id: ${sId}
     name: "${node['name']}"
     unit_of_measurement: "L/min"
     icon: "mdi:water"
@@ -86,7 +91,7 @@ export const flowSensorDescriptor: NodeDescriptor = {
             if (ROUTES[slots[s].route_id].flow_sensor != SENSOR_IDX) continue;
             if (x > 0.5f) {
               slots[s].last_flow_time = millis();
-              id(${node['id']}_fault_count) = 0;
+              id(${faultId}) = 0;
               if (!slots[s].flow_confirmed) {
                 if (millis() - slots[s].run_start_time > (uint32_t)id(flow_confirm_ms).state) {
                   slots[s].flow_confirmed = true;
@@ -94,43 +99,50 @@ export const flowSensorDescriptor: NodeDescriptor = {
                 }
               }
             } else if (slots[s].flow_confirmed) {
-              id(${node['id']}_fault_count) += 1;
-              if (id(${node['id']}_fault_count) == 3) {
+              id(${faultId}) += 1;
+              if (id(${faultId}) == 3) {
                 ESP_LOGW("safety", "Sensor fault on ${node['id']} — 3 consecutive zero readings");
               }
             }
             // No break — multiple concurrent routes may share this sensor
           }
-          if (derived_system_state() == 0) id(${node['id']}_fault_count) = 0;
+          if (derived_system_state() == 0) id(${faultId}) = 0;
 
   - platform: integration
-    sensor: ${node['id']}
+    sensor: ${sId}
     name: "${(node['name'] as string).replace('Water Flow', 'Total Usage').replace('Flow', 'Total')}"
-    id: ${node['id']}_total
+    id: ${totalId}
     unit_of_measurement: "L"
     time_unit: min
     icon: "mdi:counter"
-    state_class: total_increasing`,
+    state_class: total_increasing`;
+    },
 
-    extraComponents: (node) => ({
-      binary_sensor: `\
+    extraComponents: (node) => {
+      const faultId = flowFaultCountId(node as { id: string });
+      const faultSensorId = flowFaultSensorId(node as { id: string });
+      return {
+        binary_sensor: `\
   - platform: template
-    id: ${node['id']}_sensor_fault
+    id: ${faultSensorId}
     name: "${node['name']} Sensor Fault"
     icon: "mdi:alert-decagram"
     device_class: problem
     entity_category: diagnostic
-    lambda: return id(${node['id']}_fault_count) >= 3;`,
-    }),
+    lambda: return id(${faultId}) >= 3;`,
+      };
+    },
 
     substitutions: (node) => [
-      `pin_${node['id']}: "${node['pin']}"`,
       `flow_cal_${node['id']}: "${node['flow_cal']}"`,
     ],
 
-    globals: (node) => `\
-  - id: ${node['id']}_fault_count
+    globals: (node) => {
+      const faultId = flowFaultCountId(node as { id: string });
+      return `\
+  - id: ${faultId}
     type: int
-    initial_value: '0'`,
+    initial_value: '0'`;
+    },
   },
 };

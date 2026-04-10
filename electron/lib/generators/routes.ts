@@ -1,5 +1,6 @@
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
+import { valveCoverId, valveTravelMsId, tankLevelId, flowSensorId } from '@far-mon/core';
 
 /** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
 export function parseDurationMs(s: string): number {
@@ -62,20 +63,21 @@ export function generateRoutes(m: Manifest): string {
   const flowComment = flowSensors.map((f, i) => `${i}=${f['id']}(${f['name']})`).join("  ");
 
   // Build dispatch functions (hardware-level, renamed with _hw suffix)
+  const nid = (node: Record<string, any>) => ({ id: String(node['id']) });
   const openCases = valves
-    .map((v, i) => `    case ${i}: id(${v['id']}).make_call().set_command_open().perform(); break;`)
+    .map((v, i) => `    case ${i}: id(${valveCoverId(nid(v))}).make_call().set_command_open().perform(); break;`)
     .join("\n");
   const closeCases = valves
-    .map((v, i) => `    case ${i}: id(${v['id']}).make_call().set_command_close().perform(); break;`)
+    .map((v, i) => `    case ${i}: id(${valveCoverId(nid(v))}).make_call().set_command_close().perform(); break;`)
     .join("\n");
   const tankCases = tanks
     .map((t, i) => {
       if (!t['level_pin']) return `    case ${i}: return -1.0f; // ${t['id']}: no level sensor`;
-      return `    case ${i}: return id(${t['id']}_level).state;`;
+      return `    case ${i}: return id(${tankLevelId(nid(t))}).state;`;
     })
     .join("\n");
   const flowCases = flowSensors
-    .map((f, i) => `    case ${i}: return id(${f['id']}).state;`)
+    .map((f, i) => `    case ${i}: return id(${flowSensorId(nid(f))}).state;`)
     .join("\n");
 
   const runtimeCases = m.routes
@@ -83,7 +85,7 @@ export function generateRoutes(m: Manifest): string {
     .join("\n");
 
   const valveTravelCases = valves
-    .map((v, i) => `    case ${i}: return (uint32_t)id(${v['id']}_travel_ms).state;`)
+    .map((v, i) => `    case ${i}: return (uint32_t)id(${valveTravelMsId(nid(v))}).state;`)
     .join("\n");
 
   return `\

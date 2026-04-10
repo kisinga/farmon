@@ -9,6 +9,7 @@ import { generateBoardPackage } from "./generators/board-package.js";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
 import { generateAutomations } from "./generators/automations.js";
+import { collectEntityCodegen } from "./generators/collect.js";
 import { LOGO_SVG } from '@far-mon/core';
 
 export interface GeneratedFile {
@@ -37,6 +38,9 @@ export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const deviceDir = `esphome/${dir}`;
 
+  // Single-pass codegen collection with board-aware pin resolution
+  const collected = collectEntityCodegen(m, board);
+
   const files: GeneratedFile[] = [
     {
       relativePath: `${deviceDir}/common/board.yaml`,
@@ -51,7 +55,7 @@ export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
     {
       relativePath: `${deviceDir}/${dir}.yaml`,
       description: "Device config (substitutions, boot, OLED display)",
-      content: generateDeviceYaml(board, m),
+      content: generateDeviceYaml(board, m, collected),
     },
     {
       relativePath: `${deviceDir}/secrets.yaml`,
@@ -71,12 +75,12 @@ export function generateAll(m: Manifest, board: BoardDef): GeneratedFile[] {
     {
       relativePath: `${deviceDir}/packages/hardware.yaml`,
       description: "Pump relay, valve switches + covers",
-      content: generateHardware(m),
+      content: generateHardware(m, collected),
     },
     {
       relativePath: `${deviceDir}/packages/sensors.yaml`,
       description: "Flow sensors, tank levels, calibration, state text",
-      content: generateSensors(m),
+      content: generateSensors(m, collected),
     },
     {
       relativePath: `config/homeassistant/dashboards/dashboard.yaml`,

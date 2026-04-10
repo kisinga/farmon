@@ -4,9 +4,9 @@
  */
 import { z } from 'zod';
 
-/** Valid GPIO pin reference: GPIO0–GPIO99, or empty string (not configured). */
+/** Valid pin reference: native GPIO (GPIO0–GPIO99), expander pin (OUT1, IN16), or empty string. */
 export const GpioPin = z.union([
-  z.string().regex(/^GPIO\d{1,2}$/, 'Must be GPIOnn format'),
+  z.string().regex(/^(GPIO\d{1,2}|[A-Z]+\d{1,2})$/, 'Must be GPIOnn or expander pin format'),
   z.literal(''),
 ]);
 

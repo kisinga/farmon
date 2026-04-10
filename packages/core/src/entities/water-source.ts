@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { waterSourcePressureId } from '../codegen-ids';
 
 function escXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -61,10 +62,12 @@ export const waterSourceDescriptor: NodeDescriptor = {
   codegen: {
     sensors: (node) => {
       if (!node['pressure_pin']) return '';
+      const sId = waterSourcePressureId(node as { id: string });
+      const pin = node['pressure_pin'] as string;
       return `\
   - platform: adc
-    pin: \${pin_${node['id']}_pressure}
-    id: ${node['id']}_pressure
+    pin: ${pin}
+    id: ${sId}
     name: "${node['name']} Pressure"
     unit_of_measurement: "bar"
     icon: "mdi:gauge"
@@ -73,13 +76,7 @@ export const waterSourceDescriptor: NodeDescriptor = {
     accuracy_decimals: 2`;
     },
 
-    substitutions: (node) => {
-      const lines: string[] = [];
-      if (node['pressure_pin']) {
-        lines.push(`pin_${node['id']}_pressure: "${node['pressure_pin']}"`);
-      }
-      return lines;
-    },
+    substitutions: () => [],
   },
 
   // --- Validation ---

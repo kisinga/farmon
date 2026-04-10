@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow, dialog, shell } from "electron";
-import { BoardDefSchema } from "./lib/board.js";
+import { BoardDefSchema, type BoardDef } from "./lib/board.js";
 import { parseTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
 import { generateAll } from "./lib/generate.js";
@@ -111,7 +111,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     "codegen:validate",
     async (_e, dataRaw: unknown, boardRaw: unknown) => {
-      const board = BoardDefSchema.parse(boardRaw);
+      const board = BoardDefSchema.parse(boardRaw) as BoardDef;
       const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
       return validateAll(topology, manifest, board);
     }
@@ -120,7 +120,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     "codegen:generate",
     async (_e, dataRaw: unknown, boardRaw: unknown) => {
-      const board = BoardDefSchema.parse(boardRaw);
+      const board = BoardDefSchema.parse(boardRaw) as BoardDef;
       const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
       const validation = validateAll(topology, manifest, board);
       if (!validation.ok) {

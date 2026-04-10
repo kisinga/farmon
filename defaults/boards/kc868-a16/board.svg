@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <rect x="10" y="10" width="380" height="280" rx="8" fill="#1a1a2e" stroke="#4a4a6a" stroke-width="2"/>
+  <text x="200" y="40" text-anchor="middle" fill="#e0e0e0" font-family="monospace" font-size="14" font-weight="bold">KC868-A16</text>
+  <text x="200" y="58" text-anchor="middle" fill="#888" font-family="monospace" font-size="10">Kincony Smart Controller</text>
+
+  <!-- Relay outputs (right side) -->
+  <text x="360" y="80" text-anchor="end" fill="#f97316" font-family="monospace" font-size="9">RELAYS</text>
+  <g fill="#f97316" font-family="monospace" font-size="8" text-anchor="end">
+    <text x="380" y="95">K1</text><text x="380" y="107">K2</text><text x="380" y="119">K3</text><text x="380" y="131">K4</text>
+    <text x="380" y="143">K5</text><text x="380" y="155">K6</text><text x="380" y="167">K7</text><text x="380" y="179">K8</text>
+    <text x="380" y="195">K9</text><text x="380" y="207">K10</text><text x="380" y="219">K11</text><text x="380" y="231">K12</text>
+    <text x="380" y="243">K13</text><text x="380" y="255">K14</text><text x="380" y="267">K15</text><text x="380" y="279">K16</text>
+  </g>
+
+  <!-- Digital inputs (left side) -->
+  <text x="40" y="80" text-anchor="start" fill="#3b82f6" font-family="monospace" font-size="9">INPUTS</text>
+  <g fill="#3b82f6" font-family="monospace" font-size="8">
+    <text x="20" y="95">X1</text><text x="20" y="107">X2</text><text x="20" y="119">X3</text><text x="20" y="131">X4</text>
+    <text x="20" y="143">X5</text><text x="20" y="155">X6</text><text x="20" y="167">X7</text><text x="20" y="179">X8</text>
+    <text x="20" y="195">X9</text><text x="20" y="207">X10</text><text x="20" y="219">X11</text><text x="20" y="231">X12</text>
+    <text x="20" y="243">X13</text><text x="20" y="255">X14</text><text x="20" y="267">X15</text><text x="20" y="279">X16</text>
+  </g>
+
+  <!-- ADC + sensor headers (bottom) -->
+  <g fill="#22c55e" font-family="monospace" font-size="8" text-anchor="middle">
+    <text x="120" y="290">A1</text><text x="160" y="290">A2</text><text x="200" y="290">A3</text><text x="240" y="290">A4</text>
+  </g>
+  <g fill="#a855f7" font-family="monospace" font-size="8" text-anchor="middle">
+    <text x="290" y="290">HT1</text><text x="320" y="290">HT2</text><text x="350" y="290">HT3</text>
+  </g>
+
+  <!-- ESP32 chip -->
+  <rect x="140" y="110" width="120" height="80" rx="4" fill="#2d2d4e" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="200" y="155" text-anchor="middle" fill="#a5b4fc" font-family="monospace" font-size="11">ESP32</text>
+
+  <!-- Ethernet -->
+  <rect x="160" y="200" width="80" height="30" rx="3" fill="#2d2d4e" stroke="#14b8a6" stroke-width="1"/>
+  <text x="200" y="219" text-anchor="middle" fill="#14b8a6" font-family="monospace" font-size="9">LAN8720</text>
+</svg>

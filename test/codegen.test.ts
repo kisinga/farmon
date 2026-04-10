@@ -350,6 +350,82 @@ assert(vfdRoutesH.includes("pump_ref_count"), "Has pump_ref_count (VFD is isPump
 const vfdControl = getVfdFile("control.yaml");
 assert(vfdControl.includes("pump_relay"), "Control references pump_relay");
 
+// =============================================================================
+// KC868-A16 Board Tests — PCF8574 expander pins + Ethernet
+// =============================================================================
+
+console.log("\n\nKC868-A16 Board Tests");
+console.log("====================\n");
+
+const KC_BOARD_DIR = path.join(DEFAULTS, "boards/kc868-a16");
+const KC_CONFIG_PATH = path.join(DEFAULTS, "configs/kc868-a16-controller.yaml");
+const kcBoard = loadBoard(KC_BOARD_DIR);
+const kcRawConfig = fs.readFileSync(KC_CONFIG_PATH, "utf-8");
+const kcTopology = parseTopology(parseYaml(kcRawConfig));
+const kcManifest = topologyToManifest(kcTopology);
+const kcFiles = generateAll(kcManifest, kcBoard);
+const kcFileMap = new Map(kcFiles.map((f) => [f.relativePath, f.content]));
+
+function getKcFile(suffix: string): string {
+  for (const [key, content] of kcFileMap) {
+    if (key.endsWith(suffix)) return content;
+  }
+  throw new Error(`No KC868 generated file ending with "${suffix}"`);
+}
+
+// --- Board definition ---
+
+console.log("Board definition:");
+assert(kcBoard.model === "kc868_a16", `Board model = ${kcBoard.model}`);
+assert(kcBoard.pins.length === 39, `${kcBoard.pins.length} pins (32 expander + 7 native)`);
+assert(kcBoard.expanders?.length === 4, "Has 4 PCF8574 expanders");
+assert(!!kcBoard.peripherals.ethernet, "Has Ethernet peripheral");
+assert(!kcBoard.peripherals.oled, "No OLED");
+assert(!kcBoard.peripherals.battery, "No battery");
+
+// --- Board package ---
+
+console.log("\nBoard package:");
+const kcBoardPkg = getKcFile("common/board.yaml");
+assert(kcBoardPkg.includes("esp32"), "MCU variant");
+assert(kcBoardPkg.includes("sda: GPIO4"), "I2C SDA");
+assert(kcBoardPkg.includes("scl: GPIO5"), "I2C SCL");
+assert(kcBoardPkg.includes("ethernet:"), "Has ethernet: section");
+assert(kcBoardPkg.includes("LAN8720"), "Ethernet type = LAN8720");
+assert(kcBoardPkg.includes("mdc_pin: GPIO23"), "Ethernet MDC pin");
+assert(!kcBoardPkg.includes("wifi:"), "No wifi: section");
+assert(!kcBoardPkg.includes("captive_portal"), "No captive_portal");
+assert(kcBoardPkg.includes("pcf8574:"), "Has pcf8574: expander declarations");
+assert(kcBoardPkg.includes("0x24"), "PCF8574 output expander 1 address");
+assert(kcBoardPkg.includes("0x25"), "PCF8574 output expander 2 address");
+assert(kcBoardPkg.includes("uptime_sec"), "Has uptime sensor");
+assert(!kcBoardPkg.includes("wifi_dbm"), "No WiFi signal sensor (ethernet board)");
+
+// --- Hardware (expander pin resolution) ---
+
+console.log("\nHardware:");
+const kcHw = getKcFile("hardware.yaml");
+assert(kcHw.includes("pump_relay"), "Has pump relay");
+assert(kcHw.includes("pcf8574: pcf8574_out_1"), "Pump pin resolved to PCF8574 expander");
+assert(kcHw.includes("valve1_open_pin"), "Valve open pin declared");
+assert(kcHw.includes("valve1_close_pin"), "Valve close pin declared");
+
+// --- Sensors ---
+
+console.log("\nSensors:");
+const kcSensors = getKcFile("sensors.yaml");
+assert(kcSensors.includes("id: flow1"), "Flow sensor defined");
+assert(kcSensors.includes("GPIO32"), "Flow sensor uses native GPIO32");
+assert(kcSensors.includes("id: tank1_level"), "Tank level sensor defined");
+assert(kcSensors.includes("GPIO36"), "Tank uses native GPIO36 for ADC");
+
+// --- Device YAML ---
+
+console.log("\nDevice YAML:");
+const kcDeviceYaml = getKcFile("kc868-controller.yaml");
+assert(kcDeviceYaml.includes("name: ${device_name}"), "ESPHome name sub");
+assert(!kcDeviceYaml.includes("display:"), "No OLED display (board has no OLED)");
+
 // --- Summary ---
 
 console.log(`\n${"=".repeat(40)}`);

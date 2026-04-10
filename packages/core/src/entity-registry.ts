@@ -28,12 +28,21 @@ export interface FieldDef {
 // Codegen — ESPHome YAML/C++ fragment generators per entity kind
 // ---------------------------------------------------------------------------
 
+/**
+ * Context passed to codegen functions. Provides pin resolution and
+ * other board-aware utilities without coupling entities to BoardDef.
+ */
+export interface CodegenContext {
+  /** Resolve a pin name to an ESPHome YAML pin block (indented for use inside `pin:`). */
+  resolvePin: (pin: string, opts?: { inverted?: boolean; mode?: string }) => string;
+}
+
 export interface EntityCodegen {
   /** YAML fragment for sensors.yaml sensor: section (ADC, pulse counter, template sensors). */
-  sensors?: (node: Record<string, any>, index: number) => string;
+  sensors?: (node: Record<string, any>, index: number, ctx?: CodegenContext) => string;
   /** YAML fragment for hardware.yaml switch: section (switches, relays). */
-  hardware?: (node: Record<string, any>, index: number) => string;
-  /** Substitution lines for device.yaml. */
+  hardware?: (node: Record<string, any>, index: number, ctx?: CodegenContext) => string;
+  /** Substitution lines for device.yaml (non-pin substitutions only). */
   substitutions?: (node: Record<string, any>) => string[];
   /** Dashboard card YAML fragment. */
   dashboard?: (node: Record<string, any>, deviceName: string) => string;
@@ -44,7 +53,7 @@ export interface EntityCodegen {
    * e.g. { number: "- platform: ...", cover: "- platform: ...", button: "- platform: ..." }
    * Each value is a YAML fragment (indented with 2 spaces) appended to that section.
    */
-  extraComponents?: (node: Record<string, any>, index: number) => Record<string, string>;
+  extraComponents?: (node: Record<string, any>, index: number, ctx?: CodegenContext) => Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------

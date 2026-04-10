@@ -26,11 +26,16 @@ export type PinCapability = PinCap;
 
 const GpioPin = z.string().regex(/^GPIO\d{1,2}$/);
 
+/** Matches native GPIO pins (GPIO0-GPIO99) and expander pin names (OUT1, IN16, etc.). */
+const PinRef = z.string().regex(/^(GPIO\d{1,2}|[A-Z]+\d{1,2})$/);
+
 const PinDefSchema = z.object({
-  gpio: GpioPin,
+  gpio: PinRef,
   connector: z.string(),
   edge: z.enum(["top", "bottom", "left", "right"]),
   caps: z.array(PinCapability),
+  expander: z.string().optional(),
+  number: z.number().int().min(0).optional(),
 });
 
 const McuSchema = z.object({
@@ -65,15 +70,32 @@ const BatterySchema = z.object({
 const LedSchema = z.object({ pin: GpioPin });
 const VextSchema = z.object({ pin: GpioPin });
 
+const EthernetSchema = z.object({
+  type: z.string(),
+  mdc_pin: z.string(),
+  mdio_pin: z.string(),
+  clk_mode: z.string(),
+  phy_addr: z.number().int().min(0),
+  power_pin: z.string().optional(),
+});
+
 const PeripheralsSchema = z.object({
   oled: OledSchema.optional(),
   lora: LoraSchema.optional(),
   battery: BatterySchema.optional(),
   led: LedSchema.optional(),
   vext: VextSchema.optional(),
+  ethernet: EthernetSchema.optional(),
 });
 
-const BusSchema = z.record(z.union([GpioPin, z.string(), z.number()]));
+const ExpanderSchema = z.object({
+  id: z.string(),
+  platform: z.string(),
+  address: z.number(),
+  pcf8575: z.boolean().optional(),
+});
+
+const BusSchema = z.record(z.union([z.string(), z.number()]));
 
 export const BoardDefSchema = z.object({
   schema: z.number().int().positive().optional(),
@@ -84,6 +106,7 @@ export const BoardDefSchema = z.object({
   peripherals: PeripheralsSchema,
   buses: z.record(BusSchema),
   pins: z.array(PinDefSchema),
+  expanders: z.array(ExpanderSchema).optional(),
 });
 
 export type BoardDef = z.infer<typeof BoardDefSchema>;

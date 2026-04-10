@@ -194,7 +194,7 @@ export class TopologySidebarComponent {
   protected overrideEntries = computed(() => {
     const t = this.editor.topology();
     if (!t) return [];
-    return Object.entries(t.route_overrides).map(([key, override]) => ({ key, override }));
+    return Object.entries(t.route_overrides ?? {}).map(([key, override]) => ({ key, override }));
   });
 
   // --- Helpers ---

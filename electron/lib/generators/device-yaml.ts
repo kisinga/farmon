@@ -1,8 +1,9 @@
 import { stringify } from "yaml";
 import type { BoardDef } from "../board.js";
 import type { Manifest } from "../schema.js";
-import { nodesByKind, nodesWithFlag } from "../schema.js";
-import { NODE_REGISTRY } from '@far-mon/core';
+import { nodesWithFlag } from "../schema.js";
+import { pumpSwitchId } from '@far-mon/core';
+import type { CollectedCodegen } from "./collect.js";
 
 /**
  * Generate the ESPHome device YAML from board definition + system manifest.
@@ -11,7 +12,8 @@ import { NODE_REGISTRY } from '@far-mon/core';
  */
 export function generateDeviceYaml(
   board: BoardDef,
-  m: Manifest
+  m: Manifest,
+  collected: CollectedCodegen,
 ): string {
   const dir = m.device.directory ?? m.device.name;
   const hasOled = !!board.peripherals.oled;
@@ -29,14 +31,9 @@ export function generateDeviceYaml(
     subs.battery_divider = String(board.peripherals.battery!.divider);
   }
 
-  // Collect substitutions from all entity codegen contributors
-  for (const node of m.nodes) {
-    const desc = NODE_REGISTRY.get(node.kind);
-    if (!desc?.codegen?.substitutions) continue;
-    for (const line of desc.codegen.substitutions(node)) {
-      const [key, ...rest] = line.split(': ');
-      if (key) subs[key.trim()] = rest.join(': ').trim();
-    }
+  // Entity substitutions (non-pin, pre-collected)
+  for (const [key, val] of Object.entries(collected.substitutions)) {
+    subs[key] = val;
   }
 
   // Timing
@@ -95,7 +92,7 @@ export function generateDeviceYaml(
   ].join("\n");
 
   const bootActions: unknown[] = [];
-  if (nodesWithFlag(m.nodes, 'isPump').length > 0) bootActions.push({ "switch.turn_off": "pump_relay" });
+  if (nodesWithFlag(m.nodes, 'isPump').length > 0) bootActions.push({ "switch.turn_off": pumpSwitchId() });
   bootActions.push({ lambda: initVars });
 
   bootSteps.push({

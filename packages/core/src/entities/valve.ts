@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema, parseDurationMs } from '../schemas';
+import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId } from '../codegen-ids';
 
 const COLOR = '#e11d48'; // rose
 const W = 50, H = 36;
@@ -60,42 +61,51 @@ export const valveDescriptor: NodeDescriptor = {
   // --- Codegen ---
 
   codegen: {
-    hardware: (node) => `\
+    hardware: (node, _idx, ctx) => {
+      const openId = valveOpenPinId(node as { id: string });
+      const closeId = valveClosePinId(node as { id: string });
+      const openPin = ctx?.resolvePin(node['open_pin'], { inverted: true }) ?? `number: ${node['open_pin']}\n      inverted: true`;
+      const closePin = ctx?.resolvePin(node['close_pin'], { inverted: true }) ?? `number: ${node['close_pin']}\n      inverted: true`;
+      return `\
   # --- ${node['name']} ---
   - platform: gpio
     pin:
-      number: \${pin_${node['id']}_o}
-      inverted: true
-    id: ${node['id']}_open_pin
+      ${openPin}
+    id: ${openId}
     internal: true
     restore_mode: ALWAYS_OFF
-    interlock: [${node['id']}_open_pin, ${node['id']}_close_pin]
+    interlock: [${openId}, ${closeId}]
     interlock_wait_time: 100ms
   - platform: gpio
     pin:
-      number: \${pin_${node['id']}_c}
-      inverted: true
-    id: ${node['id']}_close_pin
+      ${closePin}
+    id: ${closeId}
     internal: true
     restore_mode: ALWAYS_OFF
-    interlock: [${node['id']}_open_pin, ${node['id']}_close_pin]
-    interlock_wait_time: 100ms`,
+    interlock: [${openId}, ${closeId}]
+    interlock_wait_time: 100ms`;
+    },
 
-    extraComponents: (node) => ({
-      cover: `\
+    extraComponents: (node) => {
+      const coverId = valveCoverId(node as { id: string });
+      const openId = valveOpenPinId(node as { id: string });
+      const closeId = valveClosePinId(node as { id: string });
+      const travelId = valveTravelMsId(node as { id: string });
+      return {
+        cover: `\
   - platform: time_based
-    id: ${node['id']}
+    id: ${coverId}
     name: "${node['name']}"
 
-    open_action:  [{switch.turn_on: ${node['id']}_open_pin}]
-    close_action: [{switch.turn_on: ${node['id']}_close_pin}]
-    stop_action:  [{switch.turn_off: ${node['id']}_open_pin}, {switch.turn_off: ${node['id']}_close_pin}]
+    open_action:  [{switch.turn_on: ${openId}}]
+    close_action: [{switch.turn_on: ${closeId}}]
+    stop_action:  [{switch.turn_off: ${openId}}, {switch.turn_off: ${closeId}}]
     open_duration: \${valve_travel_time}
     close_duration: \${valve_travel_time}`,
-      number: `\
+        number: `\
   - platform: template
     name: "${node['name']} Travel Time (ms)"
-    id: ${node['id']}_travel_ms
+    id: ${travelId}
     icon: "mdi:timer-cog-outline"
     min_value: 1000
     max_value: 30000
@@ -104,11 +114,9 @@ export const valveDescriptor: NodeDescriptor = {
     optimistic: true
     restore_value: true
     entity_category: config`,
-    }),
+      };
+    },
 
-    substitutions: (node) => [
-      `pin_${node['id']}_o: "${node['open_pin']}"`,
-      `pin_${node['id']}_c: "${node['close_pin']}"`,
-    ],
+    substitutions: () => [],
   },
 };

@@ -16,9 +16,9 @@ export type {
 } from './topology.types';
 export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
-export type { BoardDef, PinDef, PinCap } from './board.types';
+export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
-export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule } from './entity-registry';
+export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext } from './entity-registry';
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
 
@@ -37,6 +37,15 @@ export { reservedPins, exposedPins, pinsWithCap } from './board.types';
 export { entityColor, UI_COLORS } from './colors';
 export { nodesByKind } from './manifest.types';
 export { getNodesByKind, getNodeByKind } from './topology.types';
+
+// --- Codegen IDs ---
+export {
+  pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId,
+  flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId,
+  tankLevelId, tankRawVoltageId, tankCalEmptyId, tankCalFullId,
+  pressureSensorId, waterSourcePressureId,
+  resolvePinYaml,
+} from './codegen-ids';
 
 // --- Static ---
 export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';

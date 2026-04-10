@@ -12,6 +12,29 @@ export interface PinDef {
   connector: string;
   edge: 'top' | 'bottom' | 'left' | 'right';
   caps: PinCap[];
+  /** For I2C GPIO expander pins: ID of the expander this pin belongs to. */
+  expander?: string;
+  /** For I2C GPIO expander pins: port number on the expander chip. */
+  number?: number;
+}
+
+export interface ExpanderDef {
+  id: string;
+  /** ESPHome component platform, e.g. 'pcf8574', 'pcf8575', 'mcp23017'. */
+  platform: string;
+  /** I2C address of the expander chip. */
+  address: number;
+  /** Set to true for PCF8575 (16-bit) when using the pcf8574 platform. */
+  pcf8575?: boolean;
+}
+
+export interface EthernetDef {
+  type: string;
+  mdc_pin: string;
+  mdio_pin: string;
+  clk_mode: string;
+  phy_addr: number;
+  power_pin?: string;
 }
 
 export interface BoardDef {
@@ -30,9 +53,12 @@ export interface BoardDef {
     battery?: { adc_pin: string; enable_pin: string; divider: number; calibration: [number, number][] };
     led?: { pin: string };
     vext?: { pin: string };
+    ethernet?: EthernetDef;
   };
   buses: Record<string, Record<string, string | number>>;
   pins: PinDef[];
+  /** I2C GPIO expander chips (PCF8574, PCF8575, MCP23017, etc.). */
+  expanders?: ExpanderDef[];
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +80,14 @@ export function reservedPins(board: BoardDef): Map<string, string> {
   }
   if (p.led) reserved.set(p.led.pin, 'onboard LED');
   if (p.vext) reserved.set(p.vext.pin, 'Vext gate');
+  if (p.ethernet) {
+    reserved.set(p.ethernet.mdc_pin, 'Ethernet MDC');
+    reserved.set(p.ethernet.mdio_pin, 'Ethernet MDIO');
+    if (p.ethernet.power_pin) reserved.set(p.ethernet.power_pin, 'Ethernet power');
+    // CLK mode pins (e.g. GPIO17_OUT) — extract the GPIO reference
+    const clkMatch = p.ethernet.clk_mode.match(/^(GPIO\d+)/);
+    if (clkMatch) reserved.set(clkMatch[1], 'Ethernet CLK');
+  }
   for (const [busName, busDef] of Object.entries(board.buses)) {
     for (const [fn, val] of Object.entries(busDef)) {
       if (typeof val === 'string' && /^GPIO\d+$/.test(val)) {

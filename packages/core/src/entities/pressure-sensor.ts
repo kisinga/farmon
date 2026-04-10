@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { pressureSensorId } from '../codegen-ids';
 
 const COLOR = '#8b5cf6'; // violet
 const W = 50, H = 36;
@@ -60,10 +61,13 @@ export const pressureSensorDescriptor: NodeDescriptor = {
   // --- Codegen (native — full support) ---
 
   codegen: {
-    sensors: (node) => `\
+    sensors: (node) => {
+      const sId = pressureSensorId(node as { id: string });
+      const pin = node['pin'] as string;
+      return `\
   - platform: adc
-    pin: \${pin_${node['id']}}
-    id: ${node['id']}_pressure
+    pin: ${pin}
+    id: ${sId}
     name: "${node['name']} Pressure"
     unit_of_measurement: "bar"
     icon: "mdi:gauge"
@@ -73,9 +77,10 @@ export const pressureSensorDescriptor: NodeDescriptor = {
     filters:
       - calibrate_linear:
           - 0.0 -> ${node['min_bar']}
-          - 3.3 -> ${node['max_bar']}`,
+          - 3.3 -> ${node['max_bar']}`;
+    },
 
-    substitutions: (node) => [`pin_${node['id']}: "${node['pin']}"`],
+    substitutions: () => [],
   },
 
   // --- Validation ---

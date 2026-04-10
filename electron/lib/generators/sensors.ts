@@ -1,38 +1,10 @@
 import type { Manifest } from "../schema.js";
-import { nodesByKind, nodesWithFlag } from "../schema.js";
-import { NODE_REGISTRY } from '@far-mon/core';
+import { nodesWithFlag } from "../schema.js";
+import { tankLevelId } from '@far-mon/core';
+import type { CollectedCodegen } from "./collect.js";
 
-
-export function generateSensors(m: Manifest): string {
-  // Collect sensor blocks from all entities that provide them
-  const sensorBlocks: string[] = [];
-  const globalBlocks: string[] = [];
-
-  const extraSections: Record<string, string[]> = {};
-
-  for (const node of m.nodes) {
-    const desc = NODE_REGISTRY.get(node.kind);
-    if (!desc?.codegen) continue;
-    const idx = nodesByKind(m.nodes, node.kind).indexOf(node);
-
-    if (desc.codegen.sensors) {
-      const block = desc.codegen.sensors(node, idx);
-      if (block) sensorBlocks.push(block);
-    }
-    if (desc.codegen.globals) {
-      const block = desc.codegen.globals(node);
-      if (block) globalBlocks.push(block);
-    }
-    if (desc.codegen.extraComponents) {
-      const sections = desc.codegen.extraComponents(node, idx);
-      // sensors.ts owns everything except 'cover' (which hardware.ts owns)
-      for (const [section, block] of Object.entries(sections)) {
-        if (section !== 'cover' && block) (extraSections[section] ??= []).push(block);
-      }
-    }
-  }
-
-  // Level sensors with pins (for OLED display and combined level)
+export function generateSensors(m: Manifest, collected: CollectedCodegen): string {
+  // Level sensors with pins (for combined level)
   const tanksWithLevel = nodesWithFlag(m.nodes, 'isLevelSensor').filter(t => t['level_pin']);
 
   // Route max-runtime numbers — adjustable from HA, persisted across reboots
@@ -67,6 +39,8 @@ export function generateSensors(m: Manifest): string {
     restore_value: true
     entity_category: config`);
 
+  const numberBlocks = [...runtimeBlocks, ...safetyBlocks, ...(collected.sections['number'] ?? [])];
+  const binarySensorBlocks = collected.sections['binary_sensor'] ?? [];
 
   return `\
 # =============================================================================
@@ -80,12 +54,12 @@ export function generateSensors(m: Manifest): string {
 # =============================================================================
 
 sensor:
-${sensorBlocks.join("\n\n")}
+${collected.sensors.join("\n\n")}
 
-${[...runtimeBlocks, ...safetyBlocks, ...(extraSections['number'] ?? [])].length > 0 ? `# --- Adjustable numbers (persisted, editable from HA) -------------------------
+${numberBlocks.length > 0 ? `# --- Adjustable numbers (persisted, editable from HA) -------------------------
 
 number:
-${[...runtimeBlocks, ...safetyBlocks, ...(extraSections['number'] ?? [])].join("\n\n")}` : ""}
+${numberBlocks.join("\n\n")}` : ""}
 
 # --- State exposure to HA ----------------------------------------------------
 
@@ -192,16 +166,16 @@ ${tanksWithLevel.length >= 2 ? `
     lambda: |-
       float sum = 0; int count = 0;
 ${tanksWithLevel.map(t => `\
-      { float v = id(${t['id']}_level).state; if (!std::isnan(v)) { sum += v; count++; } }`).join("\n")}
+      { float v = id(${tankLevelId({ id: String(t['id']) })}).state; if (!std::isnan(v)) { sum += v; count++; } }`).join("\n")}
       return count > 0 ? sum / (float)count : 0.0f;` : ""}
-${globalBlocks.length > 0 ? `
+${collected.globals.length > 0 ? `
 # --- Sensor fault detection --------------------------------------------------
 
 globals:
-${globalBlocks.join("\n")}` : ""}
-${(extraSections['binary_sensor'] ?? []).length > 0 || tanksWithLevel.length >= 2 ? `
+${collected.globals.join("\n")}` : ""}
+${binarySensorBlocks.length > 0 || tanksWithLevel.length >= 2 ? `
 binary_sensor:
-${(extraSections['binary_sensor'] ?? []).join("\n\n")}${tanksWithLevel.length >= 2 ? `
+${binarySensorBlocks.join("\n\n")}${tanksWithLevel.length >= 2 ? `
   - platform: template
     id: water_critical
     name: "Water Critical"
@@ -210,8 +184,8 @@ ${(extraSections['binary_sensor'] ?? []).join("\n\n")}${tanksWithLevel.length >=
     lambda: |-
       float c = id(combined_tank_level).state;
       return !std::isnan(c) && c < 35.0f;` : ""}` : ""}
-${Object.entries(extraSections)
-    .filter(([k]) => !['number', 'binary_sensor'].includes(k))
+${Object.entries(collected.sections)
+    .filter(([k]) => !['number', 'binary_sensor', 'cover'].includes(k))
     .map(([section, blocks]) => `\n${section}:\n${blocks.join("\n\n")}`)
     .join("\n")}
 `;

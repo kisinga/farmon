@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { pumpSwitchId } from '../codegen-ids';
 
 const COLOR = '#7c3aed'; // violet
 const S = 60;
@@ -81,12 +82,14 @@ export const vfdDescriptor: NodeDescriptor = {
   // --- Codegen ---
 
   codegen: {
-    hardware: (node) => `\
+    hardware: (node) => {
+      const id = pumpSwitchId();
+      return `\
   # --- VFD: ${node['name']} ---
-  # Modbus start/stop switch — same id (pump_relay) as GPIO pump for state machine compat
+  # Modbus start/stop switch — same id (${id}) as GPIO pump for state machine compat
   - platform: modbus_controller
     modbus_controller_id: ${node['bus']}_modbus
-    id: pump_relay
+    id: ${id}
     name: "${node['name']}"
     icon: "mdi:pump"
     register_type: holding
@@ -94,7 +97,8 @@ export const vfdDescriptor: NodeDescriptor = {
     bitmask: 1
     write_lambda: |-
       ESP_LOGI("vfd", "Pump %s via Modbus", x ? "START" : "STOP");
-      return x;`,
+      return x;`;
+    },
 
     sensors: (node) => {
       const parts: string[] = [];

@@ -1,5 +1,5 @@
 import type { Manifest } from "../schema.js";
-import { nodesWithFlag } from "../schema.js";
+import { nodesWithFlag, pumpSwitchId } from "../schema.js";
 
 function slug(s: string): string {
   return s
@@ -11,15 +11,16 @@ function slug(s: string): string {
 
 export function generateControl(m: Manifest): string {
   const hasPump = nodesWithFlag(m.nodes, 'isPump').length > 0;
+  const pumpId = pumpSwitchId();
 
   // Conditional pump management in the transition interval
   const pumpMgmt = hasPump ? `
           // --- Pump management ---
           bool need_pump = pump_ref_count() > 0;
-          if (need_pump && !id(pump_relay).state) id(pump_relay).turn_on();
-          else if (!need_pump && id(pump_relay).state) id(pump_relay).turn_off();` : "";
+          if (need_pump && !id(${pumpId}).state) id(${pumpId}).turn_on();
+          else if (!need_pump && id(${pumpId}).state) id(${pumpId}).turn_off();` : "";
 
-  const pumpOffBoot = hasPump ? `\n      - switch.turn_off: pump_relay` : "";
+  const pumpOffBoot = hasPump ? `\n      - switch.turn_off: ${pumpId}` : "";
 
   return `# =============================================================================
 # MajiFlow — Control Layer

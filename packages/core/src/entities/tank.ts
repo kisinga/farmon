@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { tankLevelId, tankRawVoltageId, tankCalEmptyId, tankCalFullId } from '../codegen-ids';
 
 function escXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -64,12 +65,18 @@ export const tankDescriptor: NodeDescriptor = {
   // --- Codegen ---
 
   codegen: {
-    sensors: (node, idx) => {
+    sensors: (node, idx, ctx) => {
       if (!node['level_pin']) return '';
+      const lvlId = tankLevelId(node as { id: string });
+      const rawId = tankRawVoltageId(node as { id: string });
+      const calEmpty = tankCalEmptyId(node as { id: string });
+      const calFull = tankCalFullId(node as { id: string });
+      const pin = node['level_pin'] as string;
+      // ADC pins are always native GPIO — use simple pin: value (no structured block)
       return `\
   - platform: adc
-    pin: \${pin_${node['id']}_level}
-    id: ${node['id']}_level
+    pin: ${pin}
+    id: ${lvlId}
     name: "${node['name']} Level"
     unit_of_measurement: "%"
     icon: "mdi:storage-tank"
@@ -77,9 +84,9 @@ export const tankDescriptor: NodeDescriptor = {
     attenuation: 12db
     filters:
       - lambda: |-
-          id(${node['id']}_raw_voltage).publish_state(x);
-          float v_empty = id(${node['id']}_cal_empty).state;
-          float v_full  = id(${node['id']}_cal_full).state;
+          id(${rawId}).publish_state(x);
+          float v_empty = id(${calEmpty}).state;
+          float v_full  = id(${calFull}).state;
           if (v_full <= v_empty) return 0.0f;
           float pct = (x - v_empty) / (v_full - v_empty) * 100.0f;
           return clamp(pct, 0.0f, 100.0f);
@@ -93,7 +100,7 @@ export const tankDescriptor: NodeDescriptor = {
           return x;
 
   - platform: template
-    id: ${node['id']}_raw_voltage
+    id: ${rawId}
     name: "${node['name']} Raw Voltage"
     unit_of_measurement: "V"
     icon: "mdi:flash-triangle"
@@ -103,11 +110,13 @@ export const tankDescriptor: NodeDescriptor = {
 
     extraComponents: (node): Record<string, string> => {
       if (!node['level_pin']) return {};
+      const calEmpty = tankCalEmptyId(node as { id: string });
+      const calFull = tankCalFullId(node as { id: string });
       return {
         number: `\
   - platform: template
     name: "${node['name']} Cal Empty (V)"
-    id: ${node['id']}_cal_empty
+    id: ${calEmpty}
     icon: "mdi:tune-vertical"
     min_value: 0.0
     max_value: 3.3
@@ -119,7 +128,7 @@ export const tankDescriptor: NodeDescriptor = {
 
   - platform: template
     name: "${node['name']} Cal Full (V)"
-    id: ${node['id']}_cal_full
+    id: ${calFull}
     icon: "mdi:tune-vertical"
     min_value: 0.0
     max_value: 3.3
@@ -131,13 +140,7 @@ export const tankDescriptor: NodeDescriptor = {
       };
     },
 
-    substitutions: (node) => {
-      const lines: string[] = [];
-      if (node['level_pin']) {
-        lines.push(`pin_${node['id']}_level: "${node['level_pin']}"`);
-      }
-      return lines;
-    },
+    substitutions: () => [],
   },
 
   // --- Validation ---
