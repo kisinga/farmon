@@ -25,7 +25,7 @@ const FIELDS: TimingField[] = [
   imports: [FormsModule],
   template: `
     @if (editor.topology(); as t) {
-      <div class="max-w-2xl space-y-6">
+      <div class="content-pane space-y-6">
         <div>
           <h2 class="text-lg font-semibold">Timing & Safety Constants</h2>
           <p class="text-sm text-base-content/50 mt-1">

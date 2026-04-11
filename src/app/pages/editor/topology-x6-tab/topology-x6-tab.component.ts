@@ -1,7 +1,7 @@
 import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, computed, signal, effect, Injector } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
-import type { SystemTopology, TopologyNode, PipeSegment } from '../../../core/models/topology.model';
+import type { SystemTopology, TopologyNode } from '../../../core/models/topology.model';
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
@@ -235,8 +235,9 @@ export class TopologyX6TabComponent {
         });
       },
       onPipeCreated: (from, to) => {
+        const pipeId = this.editor.nextPipeId();
         this.editor.updateTopology(t => {
-          t.pipes.push({ id: this.nextPipeId(t), from, to });
+          t.pipes.push({ id: pipeId, from, to });
         });
         this.renderAndSnapshot(this.editor.topology()!);
       },
@@ -287,10 +288,11 @@ export class TopologyX6TabComponent {
 
     const center = this.c.getViewportCenter();
 
+    // Generate site-wide unique ID before the topology update
+    const id = desc.singleton ? kind : this.editor.nextNodeId(kind);
+
     this.editor.updateTopology(t => {
-      const existing = t.nodes.filter(n => n.kind === kind).length;
-      const n = existing + 1;
-      const id = desc.singleton ? kind : `${kind}${n}`;
+      const n = t.nodes.filter(n => n.kind === kind).length + 1;
       t.nodes.push({
         kind,
         id,
@@ -414,10 +416,12 @@ export class TopologyX6TabComponent {
     if (!desc) return;
     if (desc.singleton && this.kindExists(kind)) return;
 
+    // Generate site-wide unique IDs before the topology update
+    const id = desc.singleton ? kind : this.editor.nextNodeId(kind);
+    const pipeId = this.editor.nextPipeId();
+
     this.editor.updateTopology(t => {
-      const existing = t.nodes.filter(n => n.kind === kind).length;
-      const n = existing + 1;
-      const id = desc.singleton ? kind : `${kind}${n}`;
+      const n = t.nodes.filter(n => n.kind === kind).length + 1;
       t.nodes.push({
         kind,
         id,
@@ -428,7 +432,7 @@ export class TopologyX6TabComponent {
 
       const inletPort = desc.defaultPorts.find(p => p.direction === 'inlet');
       if (inletPort) {
-        t.pipes.push({ id: this.nextPipeId(t), from: popup.from, to: `${id}:${inletPort.id}` });
+        t.pipes.push({ id: pipeId, from: popup.from, to: `${id}:${inletPort.id}` });
       }
     });
     this.renderAndSnapshot(this.editor.topology()!);
@@ -439,12 +443,4 @@ export class TopologyX6TabComponent {
   }
 
   // --- Helpers ---
-
-  private nextPipeId(t: { pipes: PipeSegment[] }): string {
-    const nums = t.pipes
-      .map(p => p.id.match(/^pipe(\d+)$/))
-      .filter(Boolean)
-      .map(m => parseInt(m![1], 10));
-    return `pipe${Math.max(0, ...nums) + 1}`;
-  }
 }

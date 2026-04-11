@@ -20,7 +20,7 @@ interface TerminalLine {
   standalone: true,
   imports: [ValidationPanelComponent],
   template: `
-    <div class="max-w-3xl space-y-4">
+    <div class="content-pane space-y-4">
 
       <!-- Validation summary -->
       <div class="bg-base-100 rounded-xl border border-base-300/40 px-5 py-3.5">

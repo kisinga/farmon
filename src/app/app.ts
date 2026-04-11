@@ -4,6 +4,9 @@ import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { ElectronService } from './core/services/electron.service';
 import { LibraryService } from './core/services/library.service';
 import { SiteLibraryService } from './core/services/site-library.service';
+import { WorkspaceService } from './core/services/workspace.service';
+import { SystemEditorService } from './core/services/system-editor.service';
+import { NavSidebarComponent } from './shared/nav-sidebar/nav-sidebar.component';
 import type { SeedChange } from './core/models/electron-api';
 import type { Site } from '@far-mon/core';
 import { filter } from 'rxjs';
@@ -37,7 +40,7 @@ const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/s
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink],
+  imports: [RouterOutlet, RouterLink, NavSidebarComponent],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -45,6 +48,8 @@ export class App implements OnInit {
   private electron = inject(ElectronService);
   private library = inject(LibraryService);
   private siteLibrary = inject(SiteLibraryService);
+  private workspace = inject(WorkspaceService);
+  private systemEditor = inject(SystemEditorService);
   private router = inject(Router);
   private sanitizer = inject(DomSanitizer);
 
@@ -53,17 +58,38 @@ export class App implements OnInit {
   protected applyingSeed = signal(false);
   private currentUrl = signal('/overview');
 
+  /** Show the right sidebar on site and editor routes. */
+  protected showSidebar = computed(() => {
+    const url = this.currentUrl();
+    return url.startsWith('/site/');
+  });
+
   protected breadcrumbs = computed(() => {
     const segments = this.currentUrl().split('/').filter(Boolean);
-    const crumbs: { label: string; link: string | null }[] = [];
+    const crumbs: { label: string; link: string | null; colorClass: string }[] = [];
 
     if (segments[0] === 'overview') {
-      crumbs.push({ label: 'Overview', link: null });
+      crumbs.push({ label: 'Overview', link: null, colorClass: 'nav-label-overview' });
     } else if (segments[0] === 'site' && segments[1]) {
-      crumbs.push({ label: 'Overview', link: '/overview' });
-      crumbs.push({ label: decodeURIComponent(segments[1]), link: segments.length > 2 ? `/site/${segments[1]}` : null });
-      if (segments[2] === 'system' && segments[3]) {
-        crumbs.push({ label: decodeURIComponent(segments[3]), link: null });
+      crumbs.push({ label: 'Overview', link: '/overview', colorClass: 'nav-label-overview' });
+
+      // Resolve site friendly name from loaded site or site library
+      const siteSlug = decodeURIComponent(segments[1]);
+      const siteFriendly = this.workspace.site()?.friendly_name
+        ?? this.siteLibrary.entries().find(e => e.name === siteSlug)?.friendlyName
+        ?? siteSlug;
+
+      const isOnSystem = segments[2] === 'system' && segments[3];
+      crumbs.push({ label: siteFriendly, link: isOnSystem ? `/site/${segments[1]}` : null, colorClass: 'nav-label-site' });
+
+      if (isOnSystem) {
+        // Resolve system friendly name from loaded topology
+        const configSlug = decodeURIComponent(segments[3]);
+        const systemFriendly = this.systemEditor.topology()?.device?.friendly_name
+          ?? this.workspace.systems().get(configSlug)?.topology?.device?.friendly_name
+          ?? configSlug;
+
+        crumbs.push({ label: systemFriendly, link: null, colorClass: 'nav-label-system' });
       }
     }
     return crumbs;

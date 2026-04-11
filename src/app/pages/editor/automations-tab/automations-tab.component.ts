@@ -12,7 +12,7 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
   imports: [FormsModule],
   template: `
     @if (editor.topology(); as t) {
-      <div class="max-w-2xl space-y-6">
+      <div class="content-pane space-y-6">
         <div>
           <h2 class="text-lg font-semibold">Timed Automations</h2>
           <p class="text-sm text-base-content/50 mt-1">

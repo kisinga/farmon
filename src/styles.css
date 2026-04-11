@@ -12,3 +12,31 @@
   --color-warning: #d97706;
   --color-error: #dc2626;
 }
+
+/* Layout tokens */
+:root {
+  --header-h: 56px;
+  --sidebar-w: 280px;
+  --sidebar-ear: 40px;
+  --content-max: 56rem; /* max-w-4xl */
+
+  /* Navigation layer colors — each depth gets a unique accent */
+  --nav-layer-overview: #6366f1; /* indigo — top level */
+  --nav-layer-site: #0284C7;    /* sky — site level */
+  --nav-layer-system: #059669;  /* emerald — system level */
+}
+
+/* Consistent content pane for form/workflow tabs */
+.content-pane {
+  @apply px-8 py-8 mx-auto w-full;
+  max-width: var(--content-max);
+}
+
+/* Composable nav label styling per layer depth */
+.nav-label-overview { color: var(--nav-layer-overview); }
+.nav-label-site    { color: var(--nav-layer-site); }
+.nav-label-system  { color: var(--nav-layer-system); }
+
+.nav-dot-overview { background-color: var(--nav-layer-overview); }
+.nav-dot-site    { background-color: var(--nav-layer-site); }
+.nav-dot-system  { background-color: var(--nav-layer-system); }

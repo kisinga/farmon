@@ -1,39 +1,47 @@
-import { Injectable, signal, computed } from '@angular/core';
-import type { BoardDef, PinDef, PinCap } from '../models/board.model';
+import { Injectable, inject, signal, computed } from '@angular/core';
+import type { PinDef, PinCap } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
 import type { SystemTopology } from '../models/topology.model';
 import { collectPins } from '@far-mon/core';
+import { WorkspaceService } from './workspace.service';
+
 @Injectable({ providedIn: 'root' })
 export class SystemEditorService {
+  private workspace = inject(WorkspaceService);
 
-  // --- Core state: topology is the source of truth ---
-  private _topology = signal<SystemTopology | null>(null);
-  private _board = signal<BoardDef | null>(null);
-  private _configName = signal<string | null>(null);
-  private _dirty = signal(false);
+  // --- Session-specific state (NOT in workspace) ---
   private _readonly = signal(false);
+  private _validation = signal<ValidationResult | null>(null);
+  private _generatedFiles = signal<GenerateResult | null>(null);
+  private _canvasSvg = signal<string | null>(null);
 
-  readonly topology = this._topology.asReadonly();
-  readonly board = this._board.asReadonly();
-  readonly configName = this._configName.asReadonly();
-  readonly dirty = this._dirty.asReadonly();
+  // --- Delegated reads from workspace ---
+  readonly topology = this.workspace.activeTopology;
+  readonly board = this.workspace.activeBoard;
+  readonly configName = this.workspace.activeConfig;
+
+  readonly dirty = computed(() => {
+    const config = this.workspace.activeConfig();
+    return config ? this.workspace.isSystemDirty(config) : false;
+  });
+
   readonly readonly = this._readonly.asReadonly();
 
-  // --- Derived: pin usage (computed from topology) ---
+  // --- Pin computeds (derived from delegated topology/board) ---
+
   readonly reservedPins = computed(() => {
-    const b = this._board();
+    const b = this.board();
     return b ? reservedPins(b) : new Map<string, string>();
   });
 
   readonly exposedPins = computed(() => {
-    const b = this._board();
+    const b = this.board();
     return b ? exposedPins(b) : new Set<string>();
   });
 
-
   readonly pinUsages = computed(() => {
-    const t = this._topology();
+    const t = this.topology();
     return t ? collectPins(t.nodes) : [];
   });
 
@@ -46,14 +54,10 @@ export class SystemEditorService {
   });
 
   readonly boardPins = computed(() => {
-    const b = this._board();
+    const b = this.board();
     return b ? b.pins : [];
   });
 
-  /**
-   * Returns non-reserved pins, optionally filtered by capability.
-   * Each pin is annotated with its current usage status.
-   */
   availablePins(cap?: PinCap): (PinDef & { usedBy?: string })[] {
     const pins = this.boardPins();
     const reserved = this.reservedPins();
@@ -71,12 +75,7 @@ export class SystemEditorService {
   });
 
   // --- Validation ---
-  private _validation = signal<ValidationResult | null>(null);
   readonly validation = this._validation.asReadonly();
-
-  // --- Generated output (populated after deploy) ---
-  private _generatedFiles = signal<GenerateResult | null>(null);
-  readonly generatedFiles = this._generatedFiles.asReadonly();
 
   readonly diagnostics = computed(() => {
     return this._validation()?.diagnostics ?? [];
@@ -93,26 +92,33 @@ export class SystemEditorService {
     return map;
   });
 
+  // --- Generated output ---
+  readonly generatedFiles = this._generatedFiles.asReadonly();
+  readonly documentationHtml = computed(() => this._generatedFiles()?.documentationHtml ?? null);
+
+  // --- Canvas snapshot ---
+  readonly canvasSvg = this._canvasSvg.asReadonly();
+
   // --- Actions ---
 
-  load(name: string, topology: SystemTopology, board: BoardDef, opts?: { readonly?: boolean }): void {
-    this._configName.set(name);
-    this._topology.set(structuredClone(topology));
-    this._board.set(board);
-    this._dirty.set(false);
+  /** Focus on a system for editing. Workspace must already have it loaded. */
+  focus(configName: string, opts?: { readonly?: boolean }): void {
+    this.workspace.focusSystem(configName);
     this._readonly.set(opts?.readonly ?? false);
     this._validation.set(null);
+    this._generatedFiles.set(null);
+    this._canvasSvg.set(null);
   }
 
-  /** Mutate topology via an updater function. Marks config as dirty. */
+  /** Kept for backward compatibility with existing load() call sites during migration. */
+  load(name: string, _topology: SystemTopology, _board: any, opts?: { readonly?: boolean }): void {
+    this.focus(name, opts);
+  }
+
+  /** Mutate the active system's topology. Marks it dirty in the workspace. */
   updateTopology(updater: (t: SystemTopology) => void): void {
     if (this._readonly()) return;
-    const t = this._topology();
-    if (!t) return;
-    const clone = structuredClone(t);
-    updater(clone);
-    this._topology.set(clone);
-    this._dirty.set(true);
+    this.workspace.updateActiveTopology(updater);
   }
 
   setValidation(result: ValidationResult): void {
@@ -120,33 +126,35 @@ export class SystemEditorService {
   }
 
   markSaved(): void {
-    this._dirty.set(false);
+    const config = this.workspace.activeConfig();
+    if (config) {
+      // Dirty flag is managed by workspace.saveSystem(), but clear it here for immediate UI update
+      this.workspace.saveSystem(config);
+    }
   }
-
-  // --- Canvas snapshot (captured from X6 design tab) ---
-  private _canvasSvg = signal<string | null>(null);
-  readonly canvasSvg = this._canvasSvg.asReadonly();
 
   setCanvasSvg(svg: string): void {
     if (svg && svg.includes('<svg')) {
       this._canvasSvg.set(svg);
-    } else {
-      console.warn('[MajiFlow] exportSvg produced invalid SVG, ignoring:', svg?.slice(0, 100));
     }
   }
-
-  // Documentation HTML comes from the Electron deploy result — single source of truth.
-  readonly documentationHtml = computed(() => this._generatedFiles()?.documentationHtml ?? null);
 
   setGenerateResult(result: GenerateResult): void {
     this._generatedFiles.set(result);
   }
 
+  /** Generate a globally unique node ID via workspace. */
+  nextNodeId(kind: string): string {
+    return this.workspace.nextNodeId(kind);
+  }
+
+  /** Generate a globally unique pipe ID via workspace. */
+  nextPipeId(): string {
+    return this.workspace.nextPipeId();
+  }
+
   clear(): void {
-    this._topology.set(null);
-    this._board.set(null);
-    this._configName.set(null);
-    this._dirty.set(false);
+    this.workspace.unfocusSystem();
     this._readonly.set(false);
     this._validation.set(null);
     this._generatedFiles.set(null);

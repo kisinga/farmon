@@ -1,16 +1,11 @@
 import { Component, inject, OnInit, OnDestroy, signal, effect, computed } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet, NavigationEnd } from '@angular/router';
+import { filter } from 'rxjs';
 import { SystemEditorService } from '../../core/services/system-editor.service';
+import { WorkspaceService } from '../../core/services/workspace.service';
 import { BoardService } from '../../core/services/board.service';
-import { LibraryService } from '../../core/services/library.service';
 import { ElectronService } from '../../core/services/electron.service';
-import { DeviceTabComponent } from './device-tab/device-tab.component';
-import { TimingTabComponent } from './timing-tab/timing-tab.component';
-import { AutomationsTabComponent } from './automations-tab/automations-tab.component';
 import { TopologyX6TabComponent } from './topology-x6-tab/topology-x6-tab.component';
-import { DeployTabComponent } from './deploy-tab/deploy-tab.component';
-import { DocsTabComponent } from './docs-tab/docs-tab.component';
-import type { SystemTopology } from '../../core/models/topology.model';
 
 type TabId = 'device' | 'design' | 'automations' | 'timing' | 'docs' | 'deploy';
 
@@ -27,12 +22,10 @@ const TAB_ICONS: Record<TabId, string> = {
   selector: 'app-editor',
   standalone: true,
   imports: [
-    DeviceTabComponent,
-    TimingTabComponent,
-    AutomationsTabComponent,
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
     TopologyX6TabComponent,
-    DeployTabComponent,
-    DocsTabComponent,
   ],
   host: {
     class: 'flex-1 min-h-0 flex flex-col overflow-hidden',
@@ -42,25 +35,20 @@ const TAB_ICONS: Record<TabId, string> = {
     <div class="flex flex-col flex-1 min-h-0">
       <!-- Header bar -->
       <div class="flex items-center justify-between px-6 py-3 bg-base-100 border-b border-base-300/50">
-        <div class="flex items-center gap-3">
-          <button class="btn btn-ghost btn-xs btn-square" (click)="goBack()">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div>
-            <h1 class="text-lg font-semibold leading-tight">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="min-w-0">
+            <h1 class="text-lg font-semibold leading-tight truncate nav-label-system">
               {{ editor.topology()?.device?.friendly_name ?? 'Loading...' }}
             </h1>
-            <p class="text-xs text-base-content/50 font-mono mt-0.5">{{ editor.topology()?.device?.name }}</p>
+            <p class="text-xs text-base-content/40 font-mono mt-0.5">{{ editor.topology()?.device?.name }}</p>
           </div>
           @if (isPreview()) {
-            <span class="badge badge-info badge-sm">Read-Only Preview</span>
+            <span class="badge badge-info badge-sm shrink-0">Read-Only Preview</span>
           } @else if (editor.dirty()) {
-            <span class="badge badge-warning badge-sm gap-1">Unsaved</span>
+            <span class="badge badge-warning badge-sm gap-1 shrink-0">Unsaved</span>
           }
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 shrink-0">
           @if (isPreview()) {
             <button class="btn btn-primary btn-sm gap-1.5" (click)="useTemplate()">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -82,17 +70,17 @@ const TAB_ICONS: Record<TabId, string> = {
       <div class="bg-base-100 border-b border-base-300/50 px-6">
         <div role="tablist" class="tabs tabs-bordered -mb-px">
           @for (tab of visibleTabs(); track tab.id) {
-            <button
+            <a
               role="tab"
               class="tab gap-2 text-sm"
-              [class.tab-active]="activeTab() === tab.id"
-              (click)="activeTab.set(tab.id)"
+              [routerLink]="tab.id"
+              routerLinkActive="tab-active"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                 <path stroke-linecap="round" stroke-linejoin="round" [attr.d]="tabIcon(tab.id)" />
               </svg>
               {{ tab.label }}
-            </button>
+            </a>
           }
         </div>
       </div>
@@ -101,21 +89,15 @@ const TAB_ICONS: Record<TabId, string> = {
       <div class="flex flex-1 min-h-0 overflow-hidden">
         <!-- Design tab: always alive, hidden via display:none to preserve X6 canvas state -->
         <main class="flex-1 min-h-0 min-w-0 flex flex-col"
-          [style.display]="activeTab() === 'design' ? 'flex' : 'none'">
+          [style.display]="isDesignTab() ? 'flex' : 'none'">
           <app-topology-x6-tab />
         </main>
 
-        <!-- Other tabs: created/destroyed on switch (lightweight, no canvas state to preserve) -->
-        @if (activeTab() !== 'design') {
-          <main class="flex-1 min-h-0 min-w-0 flex flex-col overflow-auto p-6">
-            <fieldset [disabled]="isPreview()">
-              @switch (activeTab()) {
-                @case ('device') { <app-device-tab /> }
-                @case ('automations') { <app-automations-tab /> }
-                @case ('timing') { <app-timing-tab /> }
-                @case ('docs') { <app-docs-tab /> }
-                @case ('deploy') { <app-deploy-tab /> }
-              }
+        <!-- Other tabs: routed via child routes -->
+        @if (!isDesignTab()) {
+          <main class="flex-1 min-h-0 min-w-0 flex flex-col overflow-auto">
+            <fieldset [disabled]="isPreview()" class="flex-1 flex flex-col min-h-0">
+              <router-outlet />
             </fieldset>
           </main>
         }
@@ -125,14 +107,20 @@ const TAB_ICONS: Record<TabId, string> = {
 })
 export class EditorComponent implements OnInit, OnDestroy {
   protected editor = inject(SystemEditorService);
+  private workspace = inject(WorkspaceService);
   private boards = inject(BoardService);
-  private library = inject(LibraryService);
   private electron = inject(ElectronService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
-  protected activeTab = signal<TabId>('device');
   protected isPreview = signal(false);
+
+  private currentUrl = signal(this.router.url);
+
+  protected isDesignTab = computed(() => {
+    const url = this.currentUrl();
+    return url.endsWith('/design');
+  });
 
   protected tabs: { id: TabId; label: string }[] = [
     { id: 'device', label: 'Device' },
@@ -151,6 +139,8 @@ export class EditorComponent implements OnInit, OnDestroy {
     return TAB_ICONS[id];
   }
 
+  private routerSub: any;
+
   constructor() {
     effect(() => {
       const t = this.editor.topology();
@@ -164,6 +154,10 @@ export class EditorComponent implements OnInit, OnDestroy {
     const config = this.route.snapshot.paramMap.get('config');
     this.siteName = this.route.snapshot.paramMap.get('name');
 
+    this.routerSub = this.router.events
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
+      .subscribe((e) => this.currentUrl.set(e.urlAfterRedirects));
+
     if (!config) {
       this.router.navigate(['/overview']);
       return;
@@ -172,34 +166,26 @@ export class EditorComponent implements OnInit, OnDestroy {
     const preview = this.route.snapshot.data['preview'] === true;
     this.isPreview.set(preview);
 
-    await Promise.all([this.boards.refresh(), this.library.refresh()]);
-
-    // Guard: templates are read-only unless in preview mode
-    const entry = this.library.entries().find(e => e.name === config);
-    if (entry?.library && !preview) {
-      console.warn(`Cannot edit template "${config}" directly.`);
-      this.navigateBack();
-      return;
+    // Ensure workspace is loaded (handles direct URL navigation)
+    if (!this.workspace.site() && this.siteName) {
+      await this.workspace.load(this.siteName);
     }
 
-    try {
-      const raw = await this.library.load(config);
-      const topology = raw as SystemTopology;
-      const board = await this.boards.load(topology.device.board);
-      this.editor.load(config, topology, board, { readonly: preview });
-    } catch (err) {
-      console.error('Failed to load config:', err);
-      this.navigateBack();
+    // Focus the system — workspace already has the data
+    this.editor.focus(config, { readonly: preview });
+
+    // Load board list (for the device tab dropdown) and active board SVG
+    await this.boards.refresh();
+    const topology = this.editor.topology();
+    if (topology) {
+      await this.boards.load(topology.device.board);
     }
   }
 
   ngOnDestroy() {
+    this.routerSub?.unsubscribe();
     this.editor.clear();
     this.boards.clear();
-  }
-
-  goBack() {
-    this.navigateBack();
   }
 
   useTemplate() {
@@ -215,11 +201,9 @@ export class EditorComponent implements OnInit, OnDestroy {
   }
 
   async save() {
-    const name = this.editor.configName();
-    const topology = this.editor.topology();
-    if (!name || !topology) return;
-    await this.library.save(name, topology);
-    this.editor.markSaved();
+    const config = this.editor.configName();
+    if (!config) return;
+    await this.workspace.saveSystem(config);
   }
 
   private validationGen = 0;
@@ -230,7 +214,6 @@ export class EditorComponent implements OnInit, OnDestroy {
     if (!topology || !board) return;
     const gen = ++this.validationGen;
     const result = await this.electron.validate(topology, board);
-    // Discard stale results — a newer topology change has already fired
     if (gen !== this.validationGen) return;
     this.editor.setValidation(result);
   }

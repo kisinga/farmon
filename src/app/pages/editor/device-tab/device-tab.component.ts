@@ -11,7 +11,7 @@ import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component
   imports: [FormsModule, BoardSvgComponent],
   template: `
     @if (editor.topology(); as t) {
-      <div class="max-w-2xl space-y-6">
+      <div class="content-pane space-y-6">
         <!-- Device identity -->
         <div class="card bg-base-100 shadow-sm border border-base-200">
           <div class="card-body gap-4">
