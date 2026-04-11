@@ -212,45 +212,9 @@ export class X6Canvas {
 
   /** Full reset — used only for initial load. */
   reset(topology: SystemTopology): void {
-    this.clear();
+    this.graph.clearCells();
     this.render(topology);
     this.fitContent();
-  }
-
-  // --- Composable primitives (used by site view to render system-by-system) ---
-
-  /** Remove all cells from the graph. */
-  clear(): void {
-    this.graph.clearCells();
-    this.nodeIds.clear();
-    this.disabledPipes.clear();
-  }
-
-  /** Add nodes from a topology to the graph. Registers their IDs for edge resolution. */
-  addNodes(nodes: TopologyNode[]): void {
-    this.rendering = true;
-    this.graph.startBatch('add-nodes');
-    for (const node of nodes) {
-      const cfg = this.toNodeConfig(node);
-      if (cfg) {
-        this.graph.addNode(cfg);
-        this.nodeIds.add(node.id);
-      }
-    }
-    this.graph.stopBatch('add-nodes');
-    this.rendering = false;
-  }
-
-  /** Add edges from a topology to the graph. Nodes must already be added. */
-  addEdges(pipes: PipeSegment[]): void {
-    this.rendering = true;
-    this.graph.startBatch('add-edges');
-    for (const pipe of pipes) {
-      const cfg = this.toEdgeConfig(pipe);
-      if (cfg) this.graph.addEdge(cfg);
-    }
-    this.graph.stopBatch('add-edges');
-    this.rendering = false;
   }
 
   /** Highlight routes through the selected entity. */
@@ -454,10 +418,8 @@ export class X6Canvas {
       const override = layout?.[p.id];
       if (override) {
         const x = group === 'inlet' ? 0 : desc.size.width;
-        console.log(`[X6] portLayout HIT: node=${node.id} port=${p.id} y=${override.y}`);
         return { id: p.id, group: `${group}-abs`, args: { x, y: override.y } };
       }
-      console.log(`[X6] portLayout MISS: node=${node.id} port=${p.id} kind=${node.kind} layoutKeys=${layout ? Object.keys(layout).join(',') : 'none'}`);
       return { id: p.id, group };
     });
     return buildNodeConfig(desc, node.id, extractNodeData(node), node.position.x, node.position.y, ports);

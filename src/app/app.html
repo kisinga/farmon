@@ -6,37 +6,34 @@
         <div class="w-7 h-7" [innerHTML]="logoSvg"></div>
         <span class="font-bold text-base tracking-tight text-base-content">MajiFlow</span>
       </a>
-      <!-- Breadcrumbs -->
-      <div class="breadcrumbs text-sm pl-2">
-        <ul>
-          @for (crumb of breadcrumbs(); track $index) {
-            <li>
-              @if (crumb.link) {
-                <a [routerLink]="crumb.link" class="hover:opacity-80 transition-opacity font-medium" [class]="crumb.colorClass">{{ crumb.label }}</a>
-              } @else {
-                <span class="font-semibold" [class]="crumb.colorClass">{{ crumb.label }}</span>
-              }
-            </li>
-          }
-        </ul>
-      </div>
+      <!-- Back link -->
+      @if (backLink(); as bl) {
+        <a [routerLink]="bl.link" class="flex items-center gap-1.5 text-sm font-medium hover:opacity-80 transition-opacity" [class]="bl.colorClass">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          {{ bl.label }}
+        </a>
+      }
     </div>
     <div class="navbar-end">
-      <!-- Reserved for future global actions -->
+      @if (navLevel() === 'editor') {
+        <app-context-strip />
+      }
     </div>
   </header>
 
-  <!-- Body: optional sidebar + main content -->
-  <div class="flex-1 flex overflow-hidden">
-    <!-- Left sidebar (visible on site & editor routes) -->
-    @if (showSidebar()) {
-      <app-nav-sidebar />
-    }
+  <!-- Editor/site rail (below navbar, above content) -->
+  @if (navLevel() === 'editor') {
+    <app-pipeline-rail (save)="onEditorSave()" />
+  } @else if (navLevel() === 'site') {
+    <app-site-rail />
+  }
 
-    <main class="flex-1 flex overflow-hidden min-w-0">
-      <router-outlet />
-    </main>
-  </div>
+  <!-- Main content -->
+  <main class="flex-1 flex overflow-hidden min-w-0">
+    <router-outlet />
+  </main>
 
   <!-- Seed-change prompt -->
   @if (seedChanges().length > 0) {

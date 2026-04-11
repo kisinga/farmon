@@ -6,7 +6,6 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { X6Canvas, type CanvasEvents } from '../editor/topology-x6-tab/x6-canvas';
 import { renderBoundaries } from '../../shared/canvas/boundary-renderer';
-import type { TopologyNode } from '../../core/models/topology.model';
 
 @Component({
   selector: 'app-site-view',
@@ -40,11 +39,12 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private canvas: X6Canvas | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private siteName: string | null = null;
 
   async ngOnInit() {
-    const siteName = this.route.snapshot.paramMap.get('name');
-    if (!siteName) { this.router.navigate(['/overview']); return; }
-    await this.workspace.load(siteName);
+    this.siteName = this.route.snapshot.paramMap.get('name');
+    if (!this.siteName) { this.router.navigate(['/overview']); return; }
+    await this.workspace.load(this.siteName);
     this.loading.set(false);
   }
 
@@ -79,12 +79,23 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.canvas = new X6Canvas(canvasEl, noopEvents);
     this.canvas.setReadonly(true);
 
-    // Resize to actual container before rendering (matches editor init order)
+    // Resize to actual container before rendering
     const w = canvasWrap.clientWidth;
     const h = canvasWrap.clientHeight;
     if (w > 0 && h > 0) this.canvas.resize(w, h);
 
     this.renderComposite();
+
+    // Navigate to device editor when clicking a system boundary
+    this.canvas.graphInstance.on('node:click', ({ node }: any) => {
+      const id: string = node.id;
+      if (id.startsWith('boundary-')) {
+        const config = id.replace('boundary-', '');
+        this.zone.run(() => {
+          this.router.navigate(['/site', this.siteName, 'system', config]);
+        });
+      }
+    });
 
     this.resizeObserver = new ResizeObserver(() => {
       this.canvas?.resize(canvasWrap.clientWidth, canvasWrap.clientHeight);
@@ -92,44 +103,16 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.resizeObserver.observe(canvasWrap);
   }
 
-  /**
-   * Render each system independently using X6Canvas primitives.
-   * For each system: add its nodes, then its edges.
-   * The manhattan router only sees that system's nodes (+ previously rendered systems)
-   * as obstacles, producing the same routing as the per-device editor.
-   */
   private renderComposite() {
-    if (!this.canvas) return;
-    const site = this.workspace.site();
-    const systems = this.workspace.systems();
-    if (!site || systems.size === 0) return;
+    const composite = this.workspace.compositeTopology();
+    if (!this.canvas || !composite || composite.nodes.length === 0) return;
 
-    this.canvas.clear();
+    this.canvas.reset(composite);
 
     const systemNodes = new Map<string, string[]>();
-
-    for (const sp of site.systems) {
-      const data = systems.get(sp.config);
-      if (!data) continue;
-
-      // Offset node positions for this system's placement
-      const offsetNodes: TopologyNode[] = data.topology.nodes.map(node => ({
-        ...node,
-        position: {
-          x: node.position.x + sp.position.x,
-          y: node.position.y + sp.position.y,
-        },
-      } as TopologyNode));
-
-      // Add this system's nodes, then its edges — router sees only
-      // this system's nodes (+ any previously added systems)
-      this.canvas.addNodes(offsetNodes);
-      this.canvas.addEdges(data.topology.pipes);
-
-      systemNodes.set(sp.config, data.topology.nodes.map(n => n.id));
+    for (const [config, { topology }] of this.workspace.systems()) {
+      systemNodes.set(config, topology.nodes.map(n => n.id));
     }
-
-    this.canvas.fitContent();
     renderBoundaries(this.canvas.graphInstance, systemNodes);
   }
 

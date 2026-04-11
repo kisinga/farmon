@@ -6,7 +6,9 @@ import { LibraryService } from './core/services/library.service';
 import { SiteLibraryService } from './core/services/site-library.service';
 import { WorkspaceService } from './core/services/workspace.service';
 import { SystemEditorService } from './core/services/system-editor.service';
-import { NavSidebarComponent } from './shared/nav-sidebar/nav-sidebar.component';
+import { ContextStripComponent } from './shared/context-strip/context-strip.component';
+import { PipelineRailComponent } from './shared/pipeline-rail/pipeline-rail.component';
+import { SiteRailComponent } from './shared/site-rail/site-rail.component';
 import type { SeedChange } from './core/models/electron-api';
 import type { Site } from '@far-mon/core';
 import { filter } from 'rxjs';
@@ -40,7 +42,7 @@ const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/s
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, NavSidebarComponent],
+  imports: [RouterOutlet, RouterLink, ContextStripComponent, PipelineRailComponent, SiteRailComponent],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -58,41 +60,29 @@ export class App implements OnInit {
   protected applyingSeed = signal(false);
   private currentUrl = signal('/overview');
 
-  /** Show the right sidebar on site and editor routes. */
-  protected showSidebar = computed(() => {
+  protected navLevel = computed<'overview' | 'site' | 'editor'>(() => {
     const url = this.currentUrl();
-    return url.startsWith('/site/');
+    if (/^\/site\/[^/]+\/system\//.test(url)) return 'editor';
+    if (url.startsWith('/site/')) return 'site';
+    return 'overview';
   });
 
-  protected breadcrumbs = computed(() => {
+  protected backLink = computed(() => {
     const segments = this.currentUrl().split('/').filter(Boolean);
-    const crumbs: { label: string; link: string | null; colorClass: string }[] = [];
 
-    if (segments[0] === 'overview') {
-      crumbs.push({ label: 'Overview', link: null, colorClass: 'nav-label-overview' });
-    } else if (segments[0] === 'site' && segments[1]) {
-      crumbs.push({ label: 'Overview', link: '/overview', colorClass: 'nav-label-overview' });
-
-      // Resolve site friendly name from loaded site or site library
+    if (segments[0] === 'site' && segments[1] && segments[2] === 'system') {
+      // Editor → back to site
       const siteSlug = decodeURIComponent(segments[1]);
       const siteFriendly = this.workspace.site()?.friendly_name
         ?? this.siteLibrary.entries().find(e => e.name === siteSlug)?.friendlyName
         ?? siteSlug;
-
-      const isOnSystem = segments[2] === 'system' && segments[3];
-      crumbs.push({ label: siteFriendly, link: isOnSystem ? `/site/${segments[1]}` : null, colorClass: 'nav-label-site' });
-
-      if (isOnSystem) {
-        // Resolve system friendly name from loaded topology
-        const configSlug = decodeURIComponent(segments[3]);
-        const systemFriendly = this.systemEditor.topology()?.device?.friendly_name
-          ?? this.workspace.systems().get(configSlug)?.topology?.device?.friendly_name
-          ?? configSlug;
-
-        crumbs.push({ label: systemFriendly, link: null, colorClass: 'nav-label-system' });
-      }
+      return { label: siteFriendly, link: `/site/${segments[1]}`, colorClass: 'nav-label-site' };
     }
-    return crumbs;
+    if (segments[0] === 'site' && segments[1]) {
+      // Site → back to overview
+      return { label: 'Overview', link: '/overview', colorClass: 'nav-label-overview' };
+    }
+    return null;
   });
 
   constructor() {
@@ -100,7 +90,7 @@ export class App implements OnInit {
   }
 
   async ngOnInit() {
-    // Track URL for breadcrumbs
+    // Track URL for navigation level detection
     this.currentUrl.set(this.router.url);
     this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
@@ -142,6 +132,11 @@ export class App implements OnInit {
       };
       await this.electron.siteSave(cfg.name, site);
     }
+  }
+
+  protected async onEditorSave() {
+    const config = this.systemEditor.configName();
+    if (config) await this.workspace.saveSystem(config);
   }
 
   protected async applyAllSeedChanges() {

@@ -1,4 +1,5 @@
 import type { Graph } from '@antv/x6';
+import { BOUNDARY_SHAPE } from '../../pages/editor/topology-x6-tab/x6-shapes';
 
 const BOUNDARY_COLORS = ['#0284C7', '#059669', '#D97706', '#DC2626', '#7C3AED', '#DB2777'];
 const BOUNDARY_PADDING = 30;
@@ -33,6 +34,7 @@ export function renderBoundaries(
 
     const color = BOUNDARY_COLORS[colorIdx % BOUNDARY_COLORS.length];
     graph.addNode({
+      shape: BOUNDARY_SHAPE,
       id: `boundary-${config}`,
       x: minX - BOUNDARY_PADDING,
       y: minY - BOUNDARY_PADDING - 20,
@@ -47,6 +49,7 @@ export function renderBoundaries(
           strokeDasharray: '6,3',
           rx: 8,
           ry: 8,
+          cursor: 'pointer',
         },
         label: {
           text: config,
@@ -56,6 +59,7 @@ export function renderBoundaries(
           refX: BOUNDARY_PADDING,
           refY: 12,
           textAnchor: 'start',
+          cursor: 'pointer',
         },
       },
     });

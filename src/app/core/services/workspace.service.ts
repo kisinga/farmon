@@ -80,6 +80,49 @@ export class WorkspaceService {
     return result;
   });
 
+  // --- Composite topology (flat merge for canvas rendering) ---
+
+  readonly compositeTopology = computed<SystemTopology | null>(() => {
+    const site = this._site();
+    const systems = this._systems();
+    if (!site || systems.size === 0) return null;
+
+    const allNodes: TopologyNode[] = [];
+    const allPipes: PipeSegment[] = [];
+
+    for (const sp of site.systems) {
+      const data = systems.get(sp.config);
+      if (!data) continue;
+
+      for (const node of data.topology.nodes) {
+        allNodes.push({
+          ...node,
+          position: {
+            x: node.position.x + sp.position.x,
+            y: node.position.y + sp.position.y,
+          },
+        } as TopologyNode);
+      }
+      allPipes.push(...data.topology.pipes);
+    }
+
+    return {
+      schema: 8,
+      device: { name: 'composite', friendly_name: 'Site', board: '' },
+      nodes: allNodes,
+      pipes: allPipes,
+      route_overrides: {},
+      timing: {
+        valve_travel_time: '0s',
+        flow_watchdog_seconds: 0,
+        flow_confirm_seconds: 0,
+        api_watchdog_seconds: 0,
+        update_interval: '0s',
+      },
+      automations: [],
+    };
+  });
+
   // --- Composite graph (for cross-system route derivation) ---
 
   readonly compositeGraph = computed<TopologyGraph | null>(() => {
