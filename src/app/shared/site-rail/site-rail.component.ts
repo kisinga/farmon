@@ -89,12 +89,15 @@ export class SiteRailComponent {
 
     // If this config is already in the site, duplicate it first
     if (inSite.has(configName)) {
-      const copyName = this.nextInstanceName(configName, inSite);
+      // Check both site configs AND all configs on disk to avoid name collisions
+      const allOnDisk = new Set(this.libraryService.entries().map(e => e.name));
+      const allExisting = new Set([...inSite, ...allOnDisk]);
+      const copyName = this.nextInstanceName(configName, allExisting);
       targetConfig = await this.libraryService.duplicate(configName, copyName);
     }
 
-    const offset = site?.systems.length ?? 0;
-    await this.workspace.addSystem(targetConfig, { x: (offset % 3) * 600, y: Math.floor(offset / 3) * 500 });
+    const position = this.workspace.nextSystemPosition();
+    await this.workspace.addSystem(targetConfig, position);
     this.showAddSystem.set(false);
   }
 
@@ -103,6 +106,7 @@ export class SiteRailComponent {
     const regex = new RegExp(`^${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)$`);
     let max = 1; // baseName itself counts as 1
     for (const name of existing) {
+      if (name === baseName) continue;
       const match = name.match(regex);
       if (match) max = Math.max(max, parseInt(match[1]));
     }

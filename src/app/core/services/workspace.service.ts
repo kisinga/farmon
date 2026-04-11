@@ -1,7 +1,6 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { ElectronService } from './electron.service';
 import { LibraryService } from './library.service';
-import { BoardService } from './board.service';
 import type {
   SystemTopology, BoardDef, Site, SiteLink, BoundaryPort, TopologyGraph, Route,
   TopologyNode, PipeSegment, RouteOverride,
@@ -174,7 +173,6 @@ export class WorkspaceService {
   constructor(
     private electron: ElectronService,
     private library: LibraryService,
-    private boardService: BoardService,
   ) {}
 
   // --- Load ---
@@ -260,6 +258,25 @@ export class WorkspaceService {
 
   removeLink(linkId: string): void {
     this.updateSite(s => { s.links = s.links.filter(l => l.id !== linkId); });
+  }
+
+  /** Compute a position below all existing systems so the new one doesn't overlap. */
+  nextSystemPosition(): { x: number; y: number } {
+    const site = this._site();
+    const systems = this._systems();
+    if (!site || systems.size === 0) return { x: 0, y: 0 };
+
+    let maxY = 0;
+    for (const sp of site.systems) {
+      const data = systems.get(sp.config);
+      if (!data) continue;
+      // Find the bottom edge of this system's nodes
+      for (const node of data.topology.nodes) {
+        const bottom = sp.position.y + node.position.y + 80; // 80 ≈ typical node height
+        maxY = Math.max(maxY, bottom);
+      }
+    }
+    return { x: 0, y: maxY + 40 };
   }
 
   async addSystem(configName: string, position: { x: number; y: number }): Promise<void> {
@@ -492,14 +509,16 @@ export class WorkspaceService {
       }
 
       // Remap route_overrides keys
-      const newOverrides: Record<string, RouteOverride> = {};
-      for (const [key, value] of Object.entries(topology.route_overrides)) {
-        newOverrides[remapRouteKey(key, remap)] = value;
+      if (topology.route_overrides) {
+        const newOverrides: Record<string, RouteOverride> = {};
+        for (const [key, value] of Object.entries(topology.route_overrides)) {
+          newOverrides[remapRouteKey(key, remap)] = value;
+        }
+        topology.route_overrides = newOverrides;
       }
-      topology.route_overrides = newOverrides;
 
       // Remap automations
-      for (const auto of topology.automations) {
+      for (const auto of (topology.automations ?? [])) {
         auto.route = remapRouteKey(auto.route, remap);
         if (auto.trigger.type === 'level' && (auto.trigger as any).node && remap.has((auto.trigger as any).node)) {
           (auto.trigger as any).node = remap.get((auto.trigger as any).node)!;
