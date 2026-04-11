@@ -312,6 +312,57 @@ export function registerIpcHandlers() {
     return { ok: true };
   });
 
+  // --- Sites ---
+
+  ipcMain.handle("site:list", async () => store.listSites());
+
+  ipcMain.handle("site:load", async (_e, name: string) =>
+    store.loadSite(name)
+  );
+
+  ipcMain.handle(
+    "site:save",
+    async (_e, name: string, data: unknown) => {
+      store.saveSite(name, data);
+      return { ok: true };
+    }
+  );
+
+  ipcMain.handle("site:delete", async (_e, name: string) => {
+    store.deleteSite(name);
+    return { ok: true };
+  });
+
+  ipcMain.handle(
+    "site:duplicate",
+    async (_e, sourceName: string, newName: string) => {
+      const savedName = store.duplicateSite(sourceName, newName);
+      return { ok: true, name: savedName };
+    }
+  );
+
+  ipcMain.handle("site:config-checksum", async (_e, configName: string) =>
+    store.computeConfigChecksum(configName)
+  );
+
+  // --- HA config files ---
+
+  ipcMain.handle("site:ha-list", async (_e, siteName: string) =>
+    store.listHaFiles(siteName)
+  );
+
+  ipcMain.handle("site:ha-load", async (_e, siteName: string, fileName: string) =>
+    store.loadHaFile(siteName, fileName)
+  );
+
+  ipcMain.handle(
+    "site:ha-save",
+    async (_e, siteName: string, fileName: string, content: string) => {
+      store.saveHaFile(siteName, fileName, content);
+      return { ok: true };
+    }
+  );
+
   // --- Generation history ---
 
   ipcMain.handle("generation:list", async (_e, configName: string) =>

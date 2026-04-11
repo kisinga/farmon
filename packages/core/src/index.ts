@@ -11,7 +11,7 @@ export type {
   SystemTopology, TopologyNode, PipeSegment, RouteOverride,
   Automation, AutomationTrigger,
   TankNode, PumpNode, EndpointNode, ValveNode,
-  FlowSensorNode, WaterSourceNode, PressureSensorNode, FilterNode, DosingPumpNode, VfdNode,
+  FlowSensorNode, WaterSourceNode, PressureSensorNode, FilterNode, DosingPumpNode, VfdNode, HandoffNode,
   Port, Position,
 } from './topology.types';
 export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
@@ -21,9 +21,12 @@ export type { ValidationResult, RuleDiagnostic, Severity } from './validation.ty
 export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext, TypedDescriptor } from './entity-registry';
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
+export type { Site, SystemPlacement, SiteLink, SiteListEntry } from './site.types';
+export type { BoundaryPort } from './graph/boundary-ports';
 
 // --- Schemas ---
 export { TopologySchema, parseTopology, parsePortRef, portRef, type Topology } from './topology-schema';
+export { SiteSchema, parseSite } from './site-schema';
 export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, UartBusSchema, parseDurationMs, escXml } from './schemas';
 
 // --- Registry ---
@@ -63,6 +66,9 @@ export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './g
 export { evaluateConstraints } from './graph/evaluate-constraints';
 export { detectConflicts, type ConflictManifest, type RouteConflict, type SharedResource } from './graph/conflicts';
 export { evaluateEscalations } from './graph/evaluate-escalations';
+export { boundaryPorts } from './graph/boundary-ports';
+export { buildCompositeGraph, type CompositeInput } from './graph/composite-graph';
+export { parseSiteLinkRef, siteLinkRef } from './site.types';
 
 // --- Generators ---
 export { generateTopologySvg } from './generators/topology-svg';

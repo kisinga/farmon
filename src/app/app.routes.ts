@@ -3,23 +3,22 @@ import { Routes } from '@angular/router';
 export const routes: Routes = [
   {
     path: '',
-    redirectTo: 'library',
+    redirectTo: 'overview',
     pathMatch: 'full',
   },
   {
-    path: 'library',
+    path: 'overview',
     loadComponent: () =>
-      import('./pages/library/library.component').then((m) => m.LibraryComponent),
+      import('./pages/overview/overview.component').then((m) => m.OverviewComponent),
   },
   {
-    path: 'editor/:name',
+    path: 'site/:name',
     loadComponent: () =>
-      import('./pages/editor/editor.component').then((m) => m.EditorComponent),
+      import('./pages/site/site-view.component').then((m) => m.SiteViewComponent),
   },
   {
-    path: 'preview/:name',
+    path: 'site/:name/system/:config',
     loadComponent: () =>
       import('./pages/editor/editor.component').then((m) => m.EditorComponent),
-    data: { preview: true },
   },
 ];

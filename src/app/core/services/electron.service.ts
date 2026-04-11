@@ -16,6 +16,7 @@ import type {
   SerialDevice,
   HealthReport,
   SeedChange,
+  SiteListEntry,
 } from '../models/electron-api';
 
 @Injectable({ providedIn: 'root' })
@@ -163,6 +164,38 @@ export class ElectronService {
   }
   dismissSeed(id: string): Promise<{ ok: boolean }> {
     return this.invoke(() => this.api!.dismissSeed(id));
+  }
+
+  // --- Sites ---
+  siteList(): Promise<SiteListEntry[]> {
+    return this.api?.siteList() ?? Promise.resolve([]);
+  }
+  siteLoad(name: string): Promise<unknown> {
+    return this.invoke(() => this.api!.siteLoad(name));
+  }
+  async siteSave(name: string, data: unknown): Promise<void> {
+    await this.invoke(() => this.api!.siteSave(name, data));
+  }
+  async siteDelete(name: string): Promise<void> {
+    await this.invoke(() => this.api!.siteDelete(name));
+  }
+  async siteDuplicate(sourceName: string, newName: string): Promise<string> {
+    const result = await this.invoke(() => this.api!.siteDuplicate(sourceName, newName));
+    return result.name;
+  }
+  siteConfigChecksum(configName: string): Promise<string> {
+    return this.invoke(() => this.api!.siteConfigChecksum(configName));
+  }
+
+  // --- HA config files ---
+  siteHaList(siteName: string): Promise<string[]> {
+    return this.api?.siteHaList(siteName) ?? Promise.resolve([]);
+  }
+  siteHaLoad(siteName: string, fileName: string): Promise<string> {
+    return this.invoke(() => this.api!.siteHaLoad(siteName, fileName));
+  }
+  async siteHaSave(siteName: string, fileName: string, content: string): Promise<void> {
+    await this.invoke(() => this.api!.siteHaSave(siteName, fileName, content));
   }
 
   // --- Generation history ---

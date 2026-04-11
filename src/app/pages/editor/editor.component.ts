@@ -158,10 +158,14 @@ export class EditorComponent implements OnInit, OnDestroy {
     });
   }
 
+  private siteName: string | null = null;
+
   async ngOnInit() {
-    const name = this.route.snapshot.paramMap.get('name');
-    if (!name) {
-      this.router.navigate(['/library']);
+    const config = this.route.snapshot.paramMap.get('config');
+    this.siteName = this.route.snapshot.paramMap.get('name');
+
+    if (!config) {
+      this.router.navigate(['/overview']);
       return;
     }
 
@@ -170,22 +174,22 @@ export class EditorComponent implements OnInit, OnDestroy {
 
     await Promise.all([this.boards.refresh(), this.library.refresh()]);
 
-    // Guard: templates are read-only — redirect to library unless in preview mode
-    const entry = this.library.entries().find(e => e.name === name);
+    // Guard: templates are read-only unless in preview mode
+    const entry = this.library.entries().find(e => e.name === config);
     if (entry?.library && !preview) {
-      console.warn(`Cannot edit template "${name}" directly. Redirecting to library.`);
-      this.router.navigate(['/library']);
+      console.warn(`Cannot edit template "${config}" directly.`);
+      this.navigateBack();
       return;
     }
 
     try {
-      const raw = await this.library.load(name);
+      const raw = await this.library.load(config);
       const topology = raw as SystemTopology;
       const board = await this.boards.load(topology.device.board);
-      this.editor.load(name, topology, board, { readonly: preview });
+      this.editor.load(config, topology, board, { readonly: preview });
     } catch (err) {
       console.error('Failed to load config:', err);
-      this.router.navigate(['/library']);
+      this.navigateBack();
     }
   }
 
@@ -195,11 +199,19 @@ export class EditorComponent implements OnInit, OnDestroy {
   }
 
   goBack() {
-    this.router.navigate(['/library']);
+    this.navigateBack();
   }
 
   useTemplate() {
-    this.router.navigate(['/library'], { queryParams: { use: this.editor.configName() } });
+    this.navigateBack();
+  }
+
+  private navigateBack() {
+    if (this.siteName) {
+      this.router.navigate(['/site', this.siteName]);
+    } else {
+      this.router.navigate(['/overview']);
+    }
   }
 
   async save() {

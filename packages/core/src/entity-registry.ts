@@ -81,7 +81,7 @@ export interface NodeDescriptor {
   role: 'terminal' | 'passthrough';
   routeSource?: boolean;
   /** Category for grouping in add-node menu. */
-  category?: 'source' | 'actuator' | 'sensor' | 'destination' | 'infrastructure';
+  category?: 'source' | 'actuator' | 'sensor' | 'destination' | 'infrastructure' | 'boundary';
   /** UI grouping key (e.g. 'pump' groups relay pump + dosing pump). Falls back to category. */
   group?: string;
   /** When true, shows experimental badge and marks codegen output. */
@@ -152,6 +152,7 @@ import { pressureSensorDescriptor } from './entities/pressure-sensor';
 import { filterDescriptor } from './entities/filter';
 import { dosingPumpDescriptor } from './entities/dosing-pump';
 import { vfdDescriptor } from './entities/vfd';
+import { handoffDescriptor } from './entities/handoff';
 
 export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   tankDescriptor,
@@ -164,6 +165,7 @@ export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   filterDescriptor,
   dosingPumpDescriptor,
   vfdDescriptor,
+  handoffDescriptor,
 ];
 
 export const NODE_REGISTRY: ReadonlyMap<string, NodeDescriptor> = new Map(

@@ -20,6 +20,7 @@ export type { PressureSensorNode } from './entities/pressure-sensor';
 export type { FilterNode } from './entities/filter';
 export type { DosingPumpNode } from './entities/dosing-pump';
 export type { VfdNode } from './entities/vfd';
+export type { HandoffNode } from './entities/handoff';
 
 import type { TankNode } from './entities/tank';
 import type { PumpNode } from './entities/pump';
@@ -31,6 +32,7 @@ import type { PressureSensorNode } from './entities/pressure-sensor';
 import type { FilterNode } from './entities/filter';
 import type { DosingPumpNode } from './entities/dosing-pump';
 import type { VfdNode } from './entities/vfd';
+import type { HandoffNode } from './entities/handoff';
 
 // ---------------------------------------------------------------------------
 // Node union
@@ -46,7 +48,8 @@ export type TopologyNode =
   | PressureSensorNode
   | FilterNode
   | DosingPumpNode
-  | VfdNode;
+  | VfdNode
+  | HandoffNode;
 
 // ---------------------------------------------------------------------------
 // Pipes

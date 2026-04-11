@@ -1,11 +1,14 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { ElectronService } from './core/services/electron.service';
-import type { HealthReport, SeedChange } from './core/models/electron-api';
+import { LibraryService } from './core/services/library.service';
+import { SiteLibraryService } from './core/services/site-library.service';
+import type { SeedChange } from './core/models/electron-api';
+import type { Site } from '@far-mon/core';
 import { filter } from 'rxjs';
 
-const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="width:100%;height:100%;display:block">
+const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
   <defs>
     <linearGradient id="sr1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22D3EE"/><stop offset="100%" stop-color="#0369A1"/></linearGradient>
     <linearGradient id="sr2" x1="1" y1="0.5" x2="0" y2="1"><stop offset="0%" stop-color="#38BDF8"/><stop offset="100%" stop-color="#0369A1"/></linearGradient>
@@ -40,73 +43,97 @@ const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/s
 })
 export class App implements OnInit {
   private electron = inject(ElectronService);
+  private library = inject(LibraryService);
+  private siteLibrary = inject(SiteLibraryService);
   private router = inject(Router);
   private sanitizer = inject(DomSanitizer);
 
   protected logoSvg: SafeHtml;
-  protected health = signal<HealthReport | null>(null);
-  protected showHealth = signal(false);
-  protected fixing = signal(false);
-  protected hasFixable = signal(false);
-  protected hasUnfixable = signal(false);
-  protected activeConfig = signal<string | null>(null);
   protected seedChanges = signal<SeedChange[]>([]);
   protected applyingSeed = signal(false);
-  private currentRoute = signal('library');
+  private currentUrl = signal('/overview');
+
+  protected breadcrumbs = computed(() => {
+    const segments = this.currentUrl().split('/').filter(Boolean);
+    const crumbs: { label: string; link: string | null }[] = [];
+
+    if (segments[0] === 'overview') {
+      crumbs.push({ label: 'Overview', link: null });
+    } else if (segments[0] === 'site' && segments[1]) {
+      crumbs.push({ label: 'Overview', link: '/overview' });
+      crumbs.push({ label: decodeURIComponent(segments[1]), link: segments.length > 2 ? `/site/${segments[1]}` : null });
+      if (segments[2] === 'system' && segments[3]) {
+        crumbs.push({ label: decodeURIComponent(segments[3]), link: null });
+      }
+    }
+    return crumbs;
+  });
 
   constructor() {
     this.logoSvg = this.sanitizer.bypassSecurityTrustHtml(LOGO_SVG);
   }
 
-  protected isRoute(prefix: string): boolean {
-    return this.currentRoute() === prefix;
-  }
-
   async ngOnInit() {
+    // Track URL for breadcrumbs
+    this.currentUrl.set(this.router.url);
+    this.router.events
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
+      .subscribe((e) => this.currentUrl.set(e.urlAfterRedirects));
+
     if (this.electron.isElectron) {
-      await this.refreshHealth();
       const changes = await this.electron.seedChanges();
       if (changes.length > 0) this.seedChanges.set(changes);
     }
 
-    this.updateFromUrl(this.router.url);
-    this.router.events
-      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
-      .subscribe((e) => this.updateFromUrl(e.urlAfterRedirects));
-  }
+    // Ensure library is loaded (needed for migration)
+    await this.library.refresh();
+    await this.siteLibrary.refresh();
 
-  private updateFromUrl(url: string) {
-    const segments = url.split('/').filter(Boolean);
-    this.currentRoute.set(segments[0] ?? 'library');
-
-    if (segments[0] === 'editor' && segments[1]) {
-      this.activeConfig.set(decodeURIComponent(segments[1]));
+    // Auto-migrate configs to sites if no sites exist
+    if (this.siteLibrary.entries().length === 0) {
+      await this.migrateConfigsToSites();
+      await this.siteLibrary.refresh();
     }
   }
 
-  private async refreshHealth() {
-    const h = await this.electron.healthCheck();
-    this.health.set(h);
-    this.hasFixable.set(!h.ok && h.checks.some((c) => c.status !== 'ok' && c.fixable));
-    this.hasUnfixable.set(!h.ok && h.checks.some((c) => c.status !== 'ok' && !c.fixable));
+  private async migrateConfigsToSites(): Promise<void> {
+    const userConfigs = this.library.entries().filter(c => !c.library);
+    if (userConfigs.length === 0) {
+      const site: Site = { schema: 1, name: 'my-site', friendly_name: 'My Site', systems: [], links: [] };
+      await this.electron.siteSave('my-site', site);
+      return;
+    }
+
+    for (const cfg of userConfigs) {
+      let checksum = '';
+      try { checksum = await this.electron.siteConfigChecksum(cfg.name); } catch {}
+      const site: Site = {
+        schema: 1,
+        name: cfg.name,
+        friendly_name: cfg.friendlyName,
+        systems: [{ config: cfg.name, position: { x: 0, y: 0 }, checksum }],
+        links: [],
+      };
+      await this.electron.siteSave(cfg.name, site);
+    }
   }
 
-  async fix() {
-    this.fixing.set(true);
-    await this.electron.healthFix();
-    await this.refreshHealth();
-    this.fixing.set(false);
-  }
-
-  async applyAllSeedChanges() {
+  protected async applyAllSeedChanges() {
     this.applyingSeed.set(true);
     await this.electron.applySeed();
     this.seedChanges.set([]);
     this.applyingSeed.set(false);
   }
 
-  async dismissSeedChange(id: string) {
+  protected async dismissSeedChange(id: string) {
     await this.electron.dismissSeed(id);
-    this.seedChanges.update((list) => list.filter((c) => c.id !== id));
+    this.seedChanges.update(list => list.filter(c => c.id !== id));
+  }
+
+  protected async dismissAllSeedChanges() {
+    for (const c of this.seedChanges()) {
+      await this.electron.dismissSeed(c.id);
+    }
+    this.seedChanges.set([]);
   }
 }

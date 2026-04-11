@@ -62,7 +62,10 @@ function ensureFlowStyles(): void {
 // --- Canvas class ---
 
 export class X6Canvas {
-  private graph: Graph;
+  private graph!: Graph;
+
+  /** Expose the underlying X6 graph for overlays (boundary rects, etc). */
+  get graphInstance(): Graph { return this.graph; }
   private history: History;
   private events: CanvasEvents;
 

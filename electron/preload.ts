@@ -117,6 +117,26 @@ contextBridge.exposeInMainWorld("electronAPI", {
   applySeed: (id?: string) => ipcRenderer.invoke("store:apply-seed", id),
   dismissSeed: (id: string) => ipcRenderer.invoke("store:dismiss-seed", id),
 
+  // Sites
+  siteList: () => ipcRenderer.invoke("site:list"),
+  siteLoad: (name: string) => ipcRenderer.invoke("site:load", name),
+  siteSave: (name: string, data: unknown) =>
+    ipcRenderer.invoke("site:save", name, data),
+  siteDelete: (name: string) =>
+    ipcRenderer.invoke("site:delete", name),
+  siteDuplicate: (sourceName: string, newName: string) =>
+    ipcRenderer.invoke("site:duplicate", sourceName, newName),
+  siteConfigChecksum: (configName: string) =>
+    ipcRenderer.invoke("site:config-checksum", configName),
+
+  // HA config files
+  siteHaList: (siteName: string) =>
+    ipcRenderer.invoke("site:ha-list", siteName),
+  siteHaLoad: (siteName: string, fileName: string) =>
+    ipcRenderer.invoke("site:ha-load", siteName, fileName),
+  siteHaSave: (siteName: string, fileName: string, content: string) =>
+    ipcRenderer.invoke("site:ha-save", siteName, fileName, content),
+
   // Generation history
   generationList: (configName: string) =>
     ipcRenderer.invoke("generation:list", configName),

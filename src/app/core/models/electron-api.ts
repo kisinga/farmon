@@ -114,6 +114,15 @@ export interface HealthCheck {
   fixable: boolean;
 }
 
+// --- Sites ---
+
+export interface SiteListEntry {
+  name: string;
+  friendlyName: string;
+  systemCount: number;
+  linkCount: number;
+}
+
 // --- Seed changes ---
 
 export interface SeedChange {
@@ -182,6 +191,19 @@ export interface ElectronAPI {
   seedChanges(): Promise<SeedChange[]>;
   applySeed(id?: string): Promise<{ ok: boolean }>;
   dismissSeed(id: string): Promise<{ ok: boolean }>;
+
+  // Sites
+  siteList(): Promise<SiteListEntry[]>;
+  siteLoad(name: string): Promise<unknown>;
+  siteSave(name: string, data: unknown): Promise<{ ok: boolean }>;
+  siteDelete(name: string): Promise<{ ok: boolean }>;
+  siteDuplicate(sourceName: string, newName: string): Promise<{ ok: boolean; name: string }>;
+  siteConfigChecksum(configName: string): Promise<string>;
+
+  // HA config files
+  siteHaList(siteName: string): Promise<string[]>;
+  siteHaLoad(siteName: string, fileName: string): Promise<string>;
+  siteHaSave(siteName: string, fileName: string, content: string): Promise<{ ok: boolean }>;
 
   // Generation history
   generationList(configName: string): Promise<GenerationMeta[]>;

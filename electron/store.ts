@@ -245,6 +245,7 @@ export function initStore(defaultsDir: string): void {
   fs.mkdirSync(boardsDir(), { recursive: true });
   fs.mkdirSync(configsDir(), { recursive: true });
   fs.mkdirSync(templatesDir(), { recursive: true });
+  fs.mkdirSync(sitesDir(), { recursive: true });
   seedDefaults();
 }
 
@@ -587,4 +588,121 @@ export function getOutputDir(): string {
   const dir = path.join(app.getPath("home"), ".majiflow", "output");
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+// ---------------------------------------------------------------------------
+// Sites
+// ---------------------------------------------------------------------------
+
+function sitesDir(): string {
+  return path.join(storeRoot(), "sites");
+}
+
+function siteDir(name: string): string {
+  return path.join(sitesDir(), name);
+}
+
+function siteYamlPath(name: string): string {
+  return path.join(siteDir(name), "site.yaml");
+}
+
+function siteHaDir(name: string): string {
+  return path.join(siteDir(name), "ha");
+}
+
+export interface SiteListEntry {
+  name: string;
+  friendlyName: string;
+  systemCount: number;
+  linkCount: number;
+}
+
+export function listSites(): SiteListEntry[] {
+  if (!fs.existsSync(sitesDir())) return [];
+
+  return fs.readdirSync(sitesDir(), { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => {
+      const yamlPath = siteYamlPath(d.name);
+      if (!fs.existsSync(yamlPath)) return null;
+      const raw = fs.readFileSync(yamlPath, "utf-8");
+      const parsed = parseYaml(raw) as Record<string, unknown>;
+      const systems = Array.isArray(parsed.systems) ? parsed.systems : [];
+      const links = Array.isArray(parsed.links) ? parsed.links : [];
+      return {
+        name: d.name,
+        friendlyName: (parsed.friendly_name as string) ?? d.name,
+        systemCount: systems.length,
+        linkCount: links.length,
+      };
+    })
+    .filter((x): x is SiteListEntry => x !== null);
+}
+
+export function loadSite(name: string): Record<string, unknown> {
+  const filePath = siteYamlPath(name);
+  if (!fs.existsSync(filePath)) throw new Error(`Site not found: ${name}`);
+  const raw = fs.readFileSync(filePath, "utf-8");
+  return parseYaml(raw) as Record<string, unknown>;
+}
+
+export function saveSite(name: string, data: unknown): void {
+  const dir = siteDir(name);
+  fs.mkdirSync(dir, { recursive: true });
+  const obj = data as Record<string, unknown>;
+  if (!obj.schema) obj.schema = 1;
+  const yaml = stringifyYaml(obj, { indent: 2, lineWidth: 0 });
+  fs.writeFileSync(siteYamlPath(name), yaml, "utf-8");
+}
+
+export function deleteSite(name: string): void {
+  const dir = siteDir(name);
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+}
+
+export function duplicateSite(sourceName: string, newName: string): string {
+  const data = loadSite(sourceName);
+  const finalName = uniqueName(newName, sitesDir(), "");
+  const destDir = siteDir(finalName);
+  if (fs.existsSync(destDir)) throw new Error(`Site "${finalName}" already exists.`);
+  // Copy entire site directory (includes ha/ files)
+  copyDirSync(siteDir(sourceName), destDir);
+  // Update the name fields in the copy
+  data.name = finalName;
+  data.friendly_name = `${data.friendly_name ?? sourceName} (copy)`;
+  const yaml = stringifyYaml(data, { indent: 2, lineWidth: 0 });
+  fs.writeFileSync(siteYamlPath(finalName), yaml, "utf-8");
+  return finalName;
+}
+
+/**
+ * Compute a SHA-256 checksum of a config's YAML content.
+ * Used by the site integrity system to detect topology changes.
+ */
+export function computeConfigChecksum(configName: string): string {
+  const filePath = path.join(configsDir(), `${configName}.yaml`);
+  if (!fs.existsSync(filePath)) throw new Error(`Config not found: ${configName}`);
+  return fileHash(filePath);
+}
+
+// ---------------------------------------------------------------------------
+// HA config files (per-site)
+// ---------------------------------------------------------------------------
+
+export function listHaFiles(siteName: string): string[] {
+  const dir = siteHaDir(siteName);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((f) => f.endsWith(".yaml"));
+}
+
+export function loadHaFile(siteName: string, fileName: string): string {
+  const filePath = path.join(siteHaDir(siteName), fileName);
+  if (!fs.existsSync(filePath)) throw new Error(`HA file not found: ${siteName}/ha/${fileName}`);
+  return fs.readFileSync(filePath, "utf-8");
+}
+
+export function saveHaFile(siteName: string, fileName: string, content: string): void {
+  const dir = siteHaDir(siteName);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, fileName), content, "utf-8");
 }
