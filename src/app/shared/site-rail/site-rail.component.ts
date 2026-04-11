@@ -83,10 +83,30 @@ export class SiteRailComponent {
   }
 
   protected async addSystem(configName: string) {
-    const offset = this.workspace.site()?.systems.length ?? 0;
-    await this.workspace.addSystem(configName, { x: (offset % 3) * 600, y: Math.floor(offset / 3) * 500 });
-    await this.refreshAvailableConfigs();
+    const site = this.workspace.site();
+    const inSite = new Set(site?.systems.map(s => s.config) ?? []);
+    let targetConfig = configName;
+
+    // If this config is already in the site, duplicate it first
+    if (inSite.has(configName)) {
+      const copyName = this.nextInstanceName(configName, inSite);
+      targetConfig = await this.libraryService.duplicate(configName, copyName);
+    }
+
+    const offset = site?.systems.length ?? 0;
+    await this.workspace.addSystem(targetConfig, { x: (offset % 3) * 600, y: Math.floor(offset / 3) * 500 });
     this.showAddSystem.set(false);
+  }
+
+  /** Generate a unique instance name using the same sequential pattern as node IDs. */
+  private nextInstanceName(baseName: string, existing: Set<string>): string {
+    const regex = new RegExp(`^${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)$`);
+    let max = 1; // baseName itself counts as 1
+    for (const name of existing) {
+      const match = name.match(regex);
+      if (match) max = Math.max(max, parseInt(match[1]));
+    }
+    return `${baseName}${max + 1}`;
   }
 
   protected async onAddClick() {
@@ -96,11 +116,8 @@ export class SiteRailComponent {
 
   private async refreshAvailableConfigs() {
     await this.libraryService.refresh();
-    const site = this.workspace.site();
-    const inSite = new Set(site?.systems.map(s => s.config) ?? []);
     this.availableConfigs.set(
       this.libraryService.entries()
-        .filter(e => !inSite.has(e.name))
         .map(e => ({ name: e.name, friendlyName: e.friendlyName, board: e.board }))
     );
   }
