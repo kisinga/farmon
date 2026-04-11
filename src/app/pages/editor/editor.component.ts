@@ -81,9 +81,11 @@ export class EditorComponent implements OnInit, OnDestroy {
     const preview = this.route.snapshot.data['preview'] === true;
     this.isPreview.set(preview);
 
-    // Ensure workspace is loaded (handles direct URL navigation)
-    if (!this.workspace.site() && this.siteName) {
-      await this.workspace.load(this.siteName);
+    // Ensure workspace is loaded with the correct site (handles direct URL navigation & stale state)
+    if (!this.workspace.site() || this.workspace.siteName() !== this.siteName) {
+      if (this.siteName) {
+        await this.workspace.load(this.siteName);
+      }
     }
 
     // Focus the system — workspace already has the data

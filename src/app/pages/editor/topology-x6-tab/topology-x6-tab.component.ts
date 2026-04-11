@@ -343,7 +343,7 @@ export class TopologyX6TabComponent {
         const tn = p.to.split(':')[0];
         return fn !== nodeId && tn !== nodeId;
       });
-      for (const key of Object.keys(t.route_overrides)) {
+      for (const key of Object.keys(t.route_overrides ?? {})) {
         if (key.includes(nodeId)) delete t.route_overrides[key];
       }
     });
@@ -401,7 +401,7 @@ export class TopologyX6TabComponent {
 
   updateMaxRuntime(key: string, value: number) {
     this.editor.updateTopology(t => {
-      if (t.route_overrides[key]) t.route_overrides[key].max_runtime_seconds = value;
+      if (t.route_overrides?.[key]) t.route_overrides[key].max_runtime_seconds = value;
     });
   }
 

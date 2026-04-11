@@ -1,11 +1,12 @@
-import { Component, inject, input, output, computed } from '@angular/core';
+import { Component, inject, input, output, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
+import { WorkspaceService } from '../../../core/services/workspace.service';
 import { ValidationPanelComponent } from '../../../shared/validation-panel/validation-panel.component';
 import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
-import { buildGraph, activeGraph, deriveRoutes } from '@far-mon/core';
+import { buildGraph, activeGraph, deriveRoutes, parseSiteLinkRef, siteLinkRef } from '@far-mon/core';
 import type { Selection } from './selection';
 export type { Selection };
 
@@ -59,6 +60,62 @@ export type { Selection };
             }
           }
         </div>
+
+        <!-- Handoff site link section -->
+        @if (sn.node.kind === 'handoff') {
+          <div class="mt-3 pt-3 border-t border-base-300/30">
+            <h4 class="sidebar-title">Site Link</h4>
+
+            <!-- Existing links -->
+            @for (hl of handoffLinks(); track hl.link.id) {
+              <div class="flex items-center gap-2 py-1 text-xs">
+                <span class="badge badge-xs" [class.badge-info]="hl.direction === 'outgoing'" [class.badge-success]="hl.direction === 'incoming'">
+                  {{ hl.direction === 'outgoing' ? '\u2192' : '\u2190' }}
+                </span>
+                <span class="font-medium truncate flex-1">{{ hl.remoteName }}</span>
+                <button class="btn btn-ghost btn-xs text-error" (click)="unlinkHandoff(hl.link.id)" title="Remove link">\u00d7</button>
+              </div>
+            }
+
+            @if (handoffLinks().length === 0) {
+              @if (otherSystems().length === 0) {
+                <div class="text-xs text-warning py-2">Add another system to this site before linking this handoff.</div>
+              } @else {
+                <div class="space-y-2">
+                  <select class="select select-xs select-bordered w-full"
+                    [ngModel]="linkTargetSystem()"
+                    (ngModelChange)="linkTargetSystem.set($event); linkTargetPort.set(null)">
+                    <option [ngValue]="null">Select target system...</option>
+                    @for (sys of otherSystems(); track sys.config) {
+                      <option [ngValue]="sys.config">{{ sys.friendlyName }}</option>
+                    }
+                  </select>
+
+                  @if (linkTargetSystem()) {
+                    @if (targetBoundaryPorts().length === 0) {
+                      <div class="text-xs text-warning">Target system has no available boundary ports. Add a handoff node to that system first.</div>
+                    } @else {
+                      <select class="select select-xs select-bordered w-full"
+                        [ngModel]="linkTargetPort()"
+                        (ngModelChange)="linkTargetPort.set($event)">
+                        <option [ngValue]="null">Select target port...</option>
+                        @for (port of targetBoundaryPorts(); track port.nodeId + ':' + port.portId) {
+                          <option [ngValue]="port.nodeId + ':' + port.portId">
+                            {{ port.nodeName }} ({{ port.portId }})
+                          </option>
+                        }
+                      </select>
+                      @if (linkTargetPort()) {
+                        <button class="btn btn-xs btn-primary w-full" (click)="createHandoffLink()">Create Link</button>
+                      }
+                    }
+                  }
+                </div>
+              }
+            }
+          </div>
+        }
+
         @if (!sn.desc.singleton) {
           <button class="btn btn-error btn-xs mt-3 w-full" (click)="deleteNode.emit(sn.node.id)">Delete {{ sn.desc.label }}</button>
         }
@@ -153,6 +210,7 @@ export type { Selection };
 })
 export class TopologySidebarComponent {
   protected editor = inject(SystemEditorService);
+  private workspace = inject(WorkspaceService);
 
   // --- Inputs ---
   selection = input<Selection | null>(null);
@@ -164,6 +222,10 @@ export class TopologySidebarComponent {
   updateMaxRuntime = output<{ key: string; value: number }>();
   selectRoute = output<{ route: DerivedRoute; sharedNodeIds?: string[] }>();
   selectNode = output<string>();
+
+  // --- Handoff link form state ---
+  protected linkTargetSystem = signal<string | null>(null);
+  protected linkTargetPort = signal<string | null>(null);
 
   // --- Computed ---
   protected selectedNodeData = computed(() => {
@@ -196,6 +258,82 @@ export class TopologySidebarComponent {
     if (!t) return [];
     return Object.entries(t.route_overrides ?? {}).map(([key, override]) => ({ key, override }));
   });
+
+  /** Links involving the currently selected handoff node */
+  protected handoffLinks = computed(() => {
+    const sn = this.selectedNodeData();
+    if (!sn || sn.node.kind !== 'handoff') return [];
+    const site = this.workspace.site();
+    const config = this.workspace.activeConfig();
+    if (!site || !config) return [];
+
+    const nodeId = sn.node.id;
+    return site.links.filter(link => {
+      try {
+        const from = parseSiteLinkRef(link.from);
+        const to = parseSiteLinkRef(link.to);
+        return (from.config === config && from.nodeId === nodeId)
+            || (to.config === config && to.nodeId === nodeId);
+      } catch { return false; }
+    }).map(link => {
+      const from = parseSiteLinkRef(link.from);
+      const to = parseSiteLinkRef(link.to);
+      const isSource = from.config === config && from.nodeId === nodeId;
+      const remote = isSource ? to : from;
+      const remoteSystem = this.workspace.systems().get(remote.config);
+      const remoteName = remoteSystem?.topology.device.friendly_name ?? remote.config;
+      return { link, remoteName, remoteNodeId: remote.nodeId, remotePortId: remote.portId, direction: isSource ? 'outgoing' : 'incoming' as const };
+    });
+  });
+
+  /** Other systems in the site (for the target dropdown) */
+  protected otherSystems = computed(() => {
+    const site = this.workspace.site();
+    const config = this.workspace.activeConfig();
+    const systems = this.workspace.systems();
+    if (!site || !config) return [];
+    return site.systems
+      .filter(sp => sp.config !== config)
+      .map(sp => ({
+        config: sp.config,
+        friendlyName: systems.get(sp.config)?.topology.device.friendly_name ?? sp.config,
+      }));
+  });
+
+  /** Boundary ports on the selected target system */
+  protected targetBoundaryPorts = computed(() => {
+    const target = this.linkTargetSystem();
+    if (!target) return [];
+    return this.workspace.boundaryPortsBySystem().get(target) ?? [];
+  });
+
+  // --- Handoff link actions ---
+
+  protected createHandoffLink() {
+    const sn = this.selectedNodeData();
+    const config = this.workspace.activeConfig();
+    const targetSystem = this.linkTargetSystem();
+    const targetPort = this.linkTargetPort();
+    if (!sn || !config || !targetSystem || !targetPort) return;
+
+    const handoffOutlet = sn.node.ports.find(p => p.direction === 'outlet');
+    const fromRef = siteLinkRef(config, sn.node.id, handoffOutlet?.id ?? 'outlet');
+    const [targetNodeId, targetPortId] = targetPort.split(':');
+    const toRef = siteLinkRef(targetSystem, targetNodeId, targetPortId);
+
+    this.workspace.addLink({
+      id: crypto.randomUUID(),
+      from: fromRef,
+      to: toRef,
+    });
+
+    this.linkTargetSystem.set(null);
+    this.linkTargetPort.set(null);
+  }
+
+  protected unlinkHandoff(linkId: string) {
+    this.workspace.removeLink(linkId);
+  }
 
   // --- Helpers ---
   routeDiagnostics(routeKey: string): RuleDiagnostic[] {

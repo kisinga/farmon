@@ -29,6 +29,7 @@ export class WorkspaceService {
   private _site = signal<Site | null>(null);
   private _siteName = signal<string | null>(null);
   private _stale = signal(false);
+  private _loading = signal(false);
 
   // --- All system data (single source of truth) ---
   private _systems = signal<Map<string, { topology: SystemTopology; board: BoardDef }>>(new Map());
@@ -46,6 +47,7 @@ export class WorkspaceService {
   readonly systems = this._systems.asReadonly();
   readonly activeConfig = this._activeConfig.asReadonly();
   readonly stale = this._stale.asReadonly();
+  readonly loading = this._loading.asReadonly();
 
   /** Overall dirty: any system or site structure has pending changes. */
   readonly dirty = computed(() => this._dirtyConfigs().size > 0 || this._siteDirty());
@@ -170,6 +172,32 @@ export class WorkspaceService {
     });
   });
 
+  readonly unlinkedHandoffs = computed<Array<{ config: string; nodeId: string; nodeName: string }>>(() => {
+    const site = this._site();
+    const systems = this._systems();
+    if (!site) return [];
+
+    const linkedNodeIds = new Set<string>();
+    for (const link of site.links) {
+      try {
+        const from = parseSiteLinkRef(link.from);
+        const to = parseSiteLinkRef(link.to);
+        linkedNodeIds.add(`${from.config}/${from.nodeId}`);
+        linkedNodeIds.add(`${to.config}/${to.nodeId}`);
+      } catch { /* skip invalid */ }
+    }
+
+    const result: Array<{ config: string; nodeId: string; nodeName: string }> = [];
+    for (const [config, { topology }] of systems) {
+      for (const node of topology.nodes) {
+        if (node.kind === 'handoff' && !linkedNodeIds.has(`${config}/${node.id}`)) {
+          result.push({ config, nodeId: node.id, nodeName: (node as any).name ?? node.id });
+        }
+      }
+    }
+    return result;
+  });
+
   constructor(
     private electron: ElectronService,
     private library: LibraryService,
@@ -178,37 +206,46 @@ export class WorkspaceService {
   // --- Load ---
 
   async load(siteName: string): Promise<void> {
-    const raw = await this.electron.siteLoad(siteName);
-    const site = parseSite(raw);
+    this.clear();
+    this._loading.set(true);
+    this._siteName.set(siteName); // set early so guards can check which site is loading
 
-    const systems = new Map<string, { topology: SystemTopology; board: BoardDef }>();
-    let stale = false;
+    try {
+      const raw = await this.electron.siteLoad(siteName);
+      const site = parseSite(raw);
 
-    for (const sp of site.systems) {
-      try {
-        const topoRaw = await this.library.load(sp.config) as SystemTopology;
-        const boardResult = await this.electron.boardLoad(topoRaw.device.board);
-        const board = boardResult.board as BoardDef;
-        systems.set(sp.config, { topology: topoRaw, board });
+      const systems = new Map<string, { topology: SystemTopology; board: BoardDef }>();
+      let stale = false;
 
-        const currentChecksum = await this.electron.siteConfigChecksum(sp.config);
-        if (currentChecksum !== sp.checksum) {
+      for (const sp of site.systems) {
+        try {
+          const topoRaw = await this.library.load(sp.config) as SystemTopology;
+          topoRaw.route_overrides ??= {};
+          topoRaw.automations ??= [];
+          const boardResult = await this.electron.boardLoad(topoRaw.device.board);
+          const board = boardResult.board as BoardDef;
+          systems.set(sp.config, { topology: topoRaw, board });
+
+          const currentChecksum = await this.electron.siteConfigChecksum(sp.config);
+          if (currentChecksum !== sp.checksum) {
+            stale = true;
+          }
+        } catch {
           stale = true;
         }
-      } catch {
-        stale = true;
       }
+
+      // Run ID collision migration
+      const { systems: migrated, dirtied } = this.migrateIds(systems, site);
+
+      this._site.set(site);
+      this._systems.set(migrated);
+      this._stale.set(stale);
+      this._dirtyConfigs.set(dirtied);
+      this._siteDirty.set(dirtied.size > 0);
+    } finally {
+      this._loading.set(false);
     }
-
-    // Run ID collision migration
-    const { systems: migrated, dirtied } = this.migrateIds(systems, site);
-
-    this._site.set(site);
-    this._siteName.set(siteName);
-    this._systems.set(migrated);
-    this._stale.set(stale);
-    this._dirtyConfigs.set(dirtied);
-    this._siteDirty.set(dirtied.size > 0);
   }
 
   // --- Focus ---
@@ -281,6 +318,8 @@ export class WorkspaceService {
 
   async addSystem(configName: string, position: { x: number; y: number }): Promise<void> {
     const topoRaw = await this.library.load(configName) as SystemTopology;
+    topoRaw.route_overrides ??= {};
+    topoRaw.automations ??= [];
     const boardResult = await this.electron.boardLoad(topoRaw.device.board);
     const board = boardResult.board as BoardDef;
     const checksum = await this.electron.siteConfigChecksum(configName);
@@ -393,6 +432,8 @@ export class WorkspaceService {
     for (const sp of site.systems) {
       try {
         const topoRaw = await this.library.load(sp.config) as SystemTopology;
+        topoRaw.route_overrides ??= {};
+        topoRaw.automations ??= [];
         const boardResult = await this.electron.boardLoad(topoRaw.device.board);
         const board = boardResult.board as BoardDef;
         systems.set(sp.config, { topology: topoRaw, board });

@@ -1,6 +1,6 @@
 import {
   Component, inject, OnInit, OnDestroy, signal,
-  ElementRef, ViewChild, AfterViewInit, NgZone,
+  ElementRef, ViewChild, AfterViewInit, NgZone, Injector, effect,
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { WorkspaceService } from '../../core/services/workspace.service';
@@ -20,6 +20,20 @@ import { renderBoundaries } from '../../shared/canvas/boundary-renderer';
         <button class="btn btn-ghost btn-xs btn-square" (click)="zoomOut()" title="Zoom out">&minus;</button>
         <button class="btn btn-ghost btn-xs" (click)="fit()" title="Fit content">Fit</button>
       </div>
+      @if (workspace.unlinkedHandoffs().length > 0) {
+        <div class="alert alert-warning text-xs mx-4 mt-2 py-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <div>
+            <span class="font-medium">Unlinked handoff{{ workspace.unlinkedHandoffs().length > 1 ? 's' : '' }}:</span>
+            @for (h of workspace.unlinkedHandoffs(); track h.nodeId) {
+              <span class="font-mono">{{ h.nodeName }} ({{ h.config }})</span>{{ !$last ? ', ' : '' }}
+            }
+            — open each system's designer to configure the link.
+          </div>
+        </div>
+      }
       <div class="flex-1 min-h-0 overflow-hidden" #canvasWrap>
         <div #canvasEl class="w-full h-full"></div>
       </div>
@@ -27,10 +41,11 @@ import { renderBoundaries } from '../../shared/canvas/boundary-renderer';
   `,
 })
 export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
-  private workspace = inject(WorkspaceService);
+  protected workspace = inject(WorkspaceService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private zone = inject(NgZone);
+  private injector = inject(Injector);
 
   @ViewChild('canvasEl') canvasElRef!: ElementRef<HTMLElement>;
   @ViewChild('canvasWrap') canvasWrapRef!: ElementRef<HTMLElement>;
@@ -50,7 +65,7 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngAfterViewInit() {
     const checkAndInit = () => {
-      if (!this.workspace.site() || !this.canvasElRef) {
+      if (!this.workspace.site() || !this.canvasElRef || this.workspace.siteName() !== this.siteName) {
         setTimeout(checkAndInit, 50);
         return;
       }
@@ -84,7 +99,10 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     const h = canvasWrap.clientHeight;
     if (w > 0 && h > 0) this.canvas.resize(w, h);
 
-    this.renderComposite();
+    // Reactively re-render when systems are added/removed/changed
+    effect(() => {
+      this.renderComposite();
+    }, { injector: this.injector });
 
     // Navigate to device editor when clicking a system boundary
     this.canvas.graphInstance.on('node:click', ({ node }: any) => {
@@ -110,10 +128,12 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.canvas.reset(composite);
 
     const systemNodes = new Map<string, string[]>();
+    const friendlyNames = new Map<string, string>();
     for (const [config, { topology }] of this.workspace.systems()) {
       systemNodes.set(config, topology.nodes.map(n => n.id));
+      friendlyNames.set(config, topology.device.friendly_name);
     }
-    renderBoundaries(this.canvas.graphInstance, systemNodes);
+    renderBoundaries(this.canvas.graphInstance, systemNodes, friendlyNames);
   }
 
   protected zoomIn() { this.canvas?.zoomIn(); }

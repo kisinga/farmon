@@ -14,6 +14,7 @@ const BOUNDARY_PADDING = 30;
 export function renderBoundaries(
   graph: Graph,
   systemNodes: Map<string, string[]>,
+  friendlyNames?: Map<string, string>,
 ): void {
   let colorIdx = 0;
   for (const [config, nodeIds] of systemNodes) {
@@ -52,7 +53,7 @@ export function renderBoundaries(
           cursor: 'pointer',
         },
         label: {
-          text: config,
+          text: friendlyNames?.get(config) ?? config,
           fill: color,
           fontSize: 11,
           fontWeight: 'bold',
