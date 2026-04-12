@@ -74,7 +74,8 @@ export class WorkspaceService {
     }
 
     // Compute non-overlapping vertical layout from actual node bounding boxes
-    const SYSTEM_GAP = 80;
+    // Gap = boundary padding (top + bottom) + label height + visual breathing room
+    const SYSTEM_GAP = 30 * 2 + 24 + 20; // BOUNDARY_PADDING*2 + LABEL_HEIGHT + spacing
     let nextY = 0;
     const systemOffsets = new Map<string, { x: number; y: number }>();
 

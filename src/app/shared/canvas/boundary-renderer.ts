@@ -2,7 +2,8 @@ import type { Graph } from '@antv/x6';
 import { BOUNDARY_SHAPE } from '../../pages/editor/topology-x6-tab/x6-shapes';
 
 export const BOUNDARY_COLORS = ['#0284C7', '#059669', '#D97706', '#DC2626', '#7C3AED', '#DB2777'];
-const BOUNDARY_PADDING = 30;
+export const BOUNDARY_PADDING = 30;
+export const LABEL_HEIGHT = 24;
 
 /**
  * Add semi-transparent boundary rectangles around each system's nodes in a composite graph.
@@ -38,9 +39,9 @@ export function renderBoundaries(
       shape: BOUNDARY_SHAPE,
       id: `boundary-${config}`,
       x: minX - BOUNDARY_PADDING,
-      y: minY - BOUNDARY_PADDING - 28,
+      y: minY - BOUNDARY_PADDING - LABEL_HEIGHT,
       width: maxX - minX + BOUNDARY_PADDING * 2,
-      height: maxY - minY + BOUNDARY_PADDING * 2 + 28,
+      height: maxY - minY + BOUNDARY_PADDING * 2 + LABEL_HEIGHT,
       zIndex: -1,
       attrs: {
         body: {
