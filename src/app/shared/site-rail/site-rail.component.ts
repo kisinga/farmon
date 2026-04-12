@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, computed } from '@angular/core';
 import { Router } from '@angular/router';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { ElectronService } from '../../core/services/electron.service';
@@ -28,12 +28,13 @@ import type { TemplateListEntry } from '../../core/models/electron-api';
               (click)="editingName.set(true)"
             >{{ site.friendlyName }}</span>
           }
-          <span class="text-xs text-base-content/50">
-            {{ workspace.systems().size }} controller{{ workspace.systems().size !== 1 ? 's' : '' }}
-          </span>
-          <span class="text-xs text-base-content/50">
-            {{ workspace.links().length }} link{{ workspace.links().length !== 1 ? 's' : '' }}
-          </span>
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span class="text-xs text-base-content/50">{{ workspace.systems().size }} controller{{ workspace.systems().size !== 1 ? 's' : '' }}</span>
+            <span class="text-[10px] text-base-content/30">·</span>
+            @for (stat of siteStats(); track stat.label) {
+              <span class="text-xs text-base-content/40">{{ stat.count }} {{ stat.label }}</span>
+            }
+          </div>
         }
       </div>
 
@@ -99,6 +100,32 @@ export class SiteRailComponent {
   protected editingName = signal(false);
   protected adding = signal(false);
   protected templates = signal<TemplateListEntry[]>([]);
+
+  protected nodeCounts = computed(() => {
+    const counts: Record<string, number> = {};
+    for (const [, { topology }] of this.workspace.systems()) {
+      for (const node of topology.nodes ?? []) {
+        const kind = (node as { kind?: string }).kind;
+        if (kind) counts[kind] = (counts[kind] ?? 0) + 1;
+      }
+    }
+    return counts;
+  });
+
+  protected siteStats = computed(() => {
+    const c = this.nodeCounts();
+    const show: [string, string][] = [
+      ['tank', 'tanks'],
+      ['water_source', 'sources'],
+      ['pump', 'pumps'],
+      ['endpoint', 'endpoints'],
+    ];
+    const stats: Array<{ label: string; count: number }> = [];
+    for (const [kind, label] of show) {
+      if (c[kind]) stats.push({ label, count: c[kind] });
+    }
+    return stats;
+  });
 
   protected async saveSite() {
     await this.workspace.save();

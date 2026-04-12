@@ -1,4 +1,4 @@
-schema: 8
+schema: 9
 device:
   name: kc868-ctrl
   friendly_name: KC868 Controller

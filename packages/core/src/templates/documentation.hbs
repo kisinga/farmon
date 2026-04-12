@@ -113,6 +113,129 @@
   </div>
 </div>
 
+<h3>State Machine</h3>
+<p>The ESP32 firmware operates a state machine for each route slot. All safety logic runs on-device — no server dependency.</p>
+<div class="state-diagram"><span class="hl">IDLE</span> ──→ <span class="hl">PREPARING</span> ──→ <span class="hl">RUNNING</span> ──→ <span class="hl">STOPPING</span> ──→ <span class="hl">IDLE</span>
+          │              │
+          └──→ <span class="fault">FAULT</span> ←───┘ ──→ <span class="hl">IDLE</span> (fault_reset)</div>
+
+<h4>Tank Sensor Suppression by State</h4>
+<p>Tank level readings are suppressed during pump operation because the pump creates pressure artifacts that corrupt readings. Levels are only trusted when the pump is off.</p>
+<table>
+  <thead><tr><th>State</th><th>Tank Readings</th><th>Reason</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-idle">IDLE (0)</span></td><td>Valid</td><td>Pump off, pressure settled</td></tr>
+    <tr><td><span class="badge badge-info">PREPARING (1)</span></td><td><strong>Suppressed</strong></td><td>Valves moving, minor transients</td></tr>
+    <tr><td><span class="badge badge-info">RUNNING (2)</span></td><td><strong>Suppressed</strong></td><td>Pump creates pressure artifacts</td></tr>
+    <tr><td><span class="badge badge-info">STOPPING (3)</span></td><td><strong>Suppressed</strong></td><td>Depressurizing, valves closing</td></tr>
+    <tr><td><span class="badge badge-fault">FAULT (4)</span></td><td>Valid</td><td>Pump off, valves closed</td></tr>
+  </tbody>
+</table>
+
+<h3>Pre-flight Checks</h3>
+<p>Before the pump starts, the ESP32 validates conditions while sensors are reliable (pump off, no pressure artifacts).</p>
+<table>
+  <thead><tr><th>Check</th><th>Threshold</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td>Source tank too low</td><td>&lt; 5%</td><td>Reject start (not a fault)</td></tr>
+    <tr><td>Dest tank already full</td><td>&gt; 95%</td><td>Reject start (not a fault)</td></tr>
+    <tr><td>System not IDLE</td><td>state ≠ 0</td><td>Reject start</td></tr>
+    <tr><td>Invalid route ID</td><td>Out of range</td><td>Reject start</td></tr>
+  </tbody>
+</table>
+
+<h3>Runtime Safety Checks</h3>
+<p>All checks run on the ESP32 every 2 seconds while in the RUNNING state.</p>
+<table>
+  <thead><tr><th>#</th><th>Check</th><th>Fault Code</th><th>Threshold</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Flow watchdog</td><td><span class="badge badge-fault">no_flow (1)</span></td><td>No pulses for {{timing.flow_watchdog_seconds}}s</td></tr>
+    <tr><td>2</td><td>Per-route max runtime</td><td><span class="badge badge-fault">max_runtime (2)</span></td><td>Route-specific <code>max_runtime_s</code> ceiling</td></tr>
+    <tr><td>3</td><td>API watchdog</td><td><span class="badge badge-fault">api_lost (3)</span></td><td>HA disconnected for {{timing.api_watchdog_seconds}}s</td></tr>
+  </tbody>
+</table>
+
+<h3>Stop Reasons</h3>
+<p>Persists across runs for display in Home Assistant.</p>
+<table>
+  <thead><tr><th>Code</th><th>Reason</th><th>Trigger</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>None</td><td>Initial state</td></tr>
+    <tr><td>1</td><td>Manual stop</td><td>User called <code>pump_stop</code></td></tr>
+    <tr><td>2</td><td>Tank full</td><td>Flow confirmed then stopped (backpressure)</td></tr>
+    <tr><td>3</td><td>No flow</td><td>Fault: no pulses after confirmation window</td></tr>
+    <tr><td>4</td><td>Max runtime</td><td>Fault: route exceeded time limit</td></tr>
+    <tr><td>5</td><td>API lost</td><td>Fault: HA connection lost</td></tr>
+  </tbody>
+</table>
+
+<h3>Fault vs Clean Stop</h3>
+<div class="safety-grid">
+  <div class="safety-card" style="border-left-color:#dc2626;">
+    <strong>Fault Response</strong>
+    <span>Kill pump → HA event (<code>esphome.pump_fault</code>) → Close all valves → <strong>FAULT</strong> (latched)<br>Requires <code>fault_reset</code> service call from HA to return to IDLE.</span>
+  </div>
+  <div class="safety-card" style="border-left-color:#16a34a;">
+    <strong>Clean Stop Response</strong>
+    <span>HA event (<code>esphome.pump_stopped</code>) → Kill pump → Depressurize 2s → Close all valves → <strong>IDLE</strong></span>
+  </div>
+</div>
+
+<h3>Tank-to-Tank Overflow Protection</h3>
+<p>For routes with a destination tank, flow-based "tank full" detection relies on backpressure stopping flow. Open tanks don't create backpressure, so layered mitigations apply:</p>
+<ol>
+  <li><strong>Pre-start check</strong>: dest tank &gt; 95% → reject start</li>
+  <li><strong>Per-route max_runtime_s</strong>: sized to tank capacity (hard fault if exceeded)</li>
+  <li><strong>Hardware float switch</strong> (REQUIRED): high-level switch on every destination tank — independent of ESP32 software</li>
+</ol>
+
+<h3>Responsibility Split</h3>
+<div class="resp-grid">
+  <div class="resp-col">
+    <strong>ESP32 (On-Device)</strong>
+    <ul>
+      <li>State machine + valve sequencing + pump relay</li>
+      <li>Flow watchdog (unconditional on every route)</li>
+      <li>Per-route max runtime + API watchdog</li>
+      <li>Pre-flight validation (source/dest levels)</li>
+      <li>Pump relay guard (blocks direct toggle)</li>
+      <li>Tank sensor suppression during pump operation</li>
+      <li>HA event notifications (pump_stopped, pump_fault)</li>
+    </ul>
+  </div>
+  <div class="resp-col">
+    <strong>Home Assistant (Server)</strong>
+    <ul>
+      <li>Operating mode selection</li>
+      <li>Active threshold resolution</li>
+      <li>Auto-refill trigger + conservation stop</li>
+      <li>Duration timer (user-configurable)</li>
+      <li>Dashboard, notifications, logging</li>
+    </ul>
+  </div>
+</div>
+
+<h3>HA Event Notifications</h3>
+<p>The ESP32 fires <code>esphome.pump_event</code> on every state transition:</p>
+<table>
+  <thead><tr><th>Event Type</th><th>Data Fields</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td><code>stopped</code></td><td>route, reason</td><td>Clean stop (manual, tank full)</td></tr>
+    <tr><td><code>fault</code></td><td>route, fault</td><td>Any fault condition</td></tr>
+  </tbody>
+</table>
+
+{{#if hasFlowSensors}}
+<h3>Sensor Fault Detection</h3>
+<p>Each flow sensor has built-in fault detection. When the pump is RUNNING and flow was previously confirmed (readings &gt; 0.5 L/min), the firmware counts consecutive zero readings:</p>
+<ul>
+  <li><strong>3 consecutive zeros</strong> (at {{timing.update_interval}} update interval) → <code>sensor_fault</code> binary sensor becomes <code>true</code> in HA</li>
+  <li>A single zero can occur due to air pockets, pulse counter timing, or electrical noise — 3 consecutive readings rules out transients</li>
+  <li>Counter resets to 0 on any non-zero reading or when the pump returns to IDLE</li>
+</ul>
+<p>This is distinct from the <strong>no_flow</strong> fault: no_flow fires when flow is <em>never established</em> after start. Sensor fault fires when flow <em>was confirmed then dropped to zero</em>, suggesting the sensor stopped reporting rather than flow actually stopping.</p>
+{{/if}}
+
 <h2>System Alerts</h2>
 <ul>
   <li>Fault notification on any route entering FAULT state</li>

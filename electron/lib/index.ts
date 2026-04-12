@@ -35,8 +35,12 @@ export {
 export {
   generateAll,
   generateEsphome,
-  generateHA,
+  generateSiteHA,
   generateDefaultSecrets,
   type GeneratedFile,
   type SecretsMap,
 } from "./generate.js";
+
+export {
+  type SiteDashboardSystem,
+} from "./generators/site-dashboard.js";

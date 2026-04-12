@@ -39,6 +39,15 @@ export interface GenerateResult {
   }>;
 }
 
+export interface GenerateHAResult {
+  outputDir: string;
+  files: Array<{
+    path: string;
+    description: string;
+    lines: number;
+  }>;
+}
+
 export interface GenerationMeta {
   id: number;
   version: string;
@@ -156,7 +165,8 @@ export interface ElectronAPI {
   // Codegen
   codegenDeriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>>;
   codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
-  codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown, genType?: GenerationType): Promise<GenerateResult>;
+  codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult>;
+  codegenGenerateHA(siteId: string): Promise<GenerateHAResult>;
   codegenGenerateSiteDocs(siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }>;
 
   // Toolchain

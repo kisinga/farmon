@@ -1,6 +1,10 @@
 import { stringify } from "yaml";
 import type { BoardDef } from "../board.js";
 
+/** ESP32 strapping pins that trigger ESPHome warnings if used without acknowledgement. */
+const ESP32_STRAPPING_PINS = new Set(['GPIO0', 'GPIO2', 'GPIO5', 'GPIO12', 'GPIO15']);
+const ESP32S3_STRAPPING_PINS = new Set(['GPIO0', 'GPIO3', 'GPIO45', 'GPIO46']);
+
 /**
  * Generate the ESPHome board package YAML from a board definition.
  * This replaces the hand-written heltec_board.yaml — every section is
@@ -30,7 +34,7 @@ export function generateBoardPackage(board: BoardDef): string {
         type: eth.type,
         mdc_pin: eth.mdc_pin,
         mdio_pin: eth.mdio_pin,
-        clk_mode: eth.clk_mode,
+        clk: { pin: eth.clk.pin, mode: eth.clk.mode },
         phy_addr: eth.phy_addr,
         ...(eth.power_pin && { power_pin: eth.power_pin }),
       },
@@ -56,13 +60,18 @@ export function generateBoardPackage(board: BoardDef): string {
   });
 
   // --- Buses ---
+  const strappingPins = board.mcu.variant === 'esp32s3'
+    ? ESP32S3_STRAPPING_PINS : ESP32_STRAPPING_PINS;
+
   for (const [busName, busDef] of Object.entries(board.buses)) {
     const busConfig: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(busDef)) {
+      const pinVal = typeof val === 'string' && /^GPIO\d+$/.test(val) ? val : null;
       if (busName === "spi") {
         busConfig[`${key}_pin`] = val;
-      } else if (busName === "i2c") {
-        busConfig[key] = val;
+      } else if (pinVal && strappingPins.has(pinVal)) {
+        // Strapping pins need structured block with ignore_strapping_warning
+        busConfig[key] = { number: pinVal, ignore_strapping_warning: true };
       } else {
         busConfig[key] = val;
       }

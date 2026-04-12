@@ -575,133 +575,70 @@ interface TerminalLine {
       @if (activeTab() === 'ha') {
         <div class="flex-1 flex flex-col min-h-0 overflow-auto">
           <div class="p-6 space-y-4">
-            @if (!selectedSystemId()) {
-              <div class="bg-base-100 rounded-xl border border-base-300/40 flex items-center justify-center py-16">
-                <p class="text-sm text-base-content/40">Select a controller above to manage HA config.</p>
-              </div>
-            }
-
-            @if (selectedSystemId()) {
-              <!-- Generate HA config -->
-              <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
-                <div class="flex items-center justify-between px-5 py-3.5">
-                  <div class="flex items-center gap-3">
-                    <div class="w-7 h-7 rounded-lg bg-info/10 flex items-center justify-center text-sm font-bold text-info/70">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h2 class="font-semibold text-sm">Home Assistant Config</h2>
-                      <p class="text-xs text-base-content/60 mt-0.5">Dashboard YAML + automations for this controller</p>
-                    </div>
+            <!-- Generate HA config (site-level) -->
+            <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
+              <div class="flex items-center justify-between px-5 py-3.5">
+                <div class="flex items-center gap-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                  <div>
+                    <h2 class="font-semibold text-sm">Home Assistant Config</h2>
+                    <p class="text-xs text-base-content/60 mt-0.5">
+                      Site dashboard (overview + per-controller tabs) and automations for all {{ systemEntries().length }} controllers
+                    </p>
                   </div>
-                  <button
-                    class="btn btn-primary btn-xs gap-1.5"
-                    (click)="generateHaConfig()"
-                    [disabled]="haGenerating()"
-                  >
-                    @if (haGenerating()) { <span class="loading loading-spinner loading-xs"></span> }
-                    {{ haFiles().length > 0 ? 'Regenerate' : 'Generate' }}
-                  </button>
                 </div>
-
-                @if (haFiles().length > 0) {
-                  <div class="border-t border-base-300/30 px-5 py-3 bg-base-200/30">
-                    <table class="table table-xs">
-                      <thead>
-                        <tr>
-                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">File</th>
-                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Description</th>
-                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold text-right">Lines</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (f of haFiles(); track f.path) {
-                          <tr class="hover cursor-pointer" (click)="openFile(f.path)">
-                            <td class="font-mono text-[11px] text-primary/70 underline decoration-primary/30">{{ f.path }}</td>
-                            <td class="text-[11px] text-base-content/50">{{ f.description }}</td>
-                            <td class="text-right text-[11px] tabular-nums text-base-content/60">{{ f.lines }}</td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                    @if (haOutputDir()) {
-                      <div class="flex items-center gap-2 mt-2">
-                        <span class="text-xs text-base-content/50 font-mono truncate flex-1">{{ haOutputDir() }}</span>
-                        <button class="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-base-content" (click)="openHaFolder()">
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-                          </svg>
-                          Open
-                        </button>
-                      </div>
-                    }
-                  </div>
-                }
+                <button
+                  class="btn btn-primary btn-xs gap-1.5"
+                  (click)="generateHaConfig()"
+                  [disabled]="haGenerating()"
+                >
+                  @if (haGenerating()) { <span class="loading loading-spinner loading-xs"></span> }
+                  {{ haFiles().length > 0 ? 'Regenerate' : 'Generate' }}
+                </button>
               </div>
 
-              <!-- HA Generation History -->
-              @if (haLastGeneration() || haFiles().length > 0) {
-                <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
-                  <div class="flex items-center justify-between px-5 py-3.5">
-                    <div class="flex items-center gap-3">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div>
-                        <h2 class="font-semibold text-sm">HA Generation History</h2>
-                        <p class="text-xs text-base-content/50 mt-0.5">
-                          @if (haLastGeneration(); as gen) {
-                            Latest: <span class="font-mono text-primary/70">{{ gen.version }}</span>
-                            · {{ formatDate(gen.createdAt) }}
-                            · {{ gen.fileCount }} files
-                          } @else {
-                            No previous generations
-                          }
-                        </p>
-                      </div>
-                    </div>
-                    <button class="btn btn-ghost btn-xs" (click)="toggleHaHistory()">
-                      {{ showHaHistory() ? 'Hide' : 'History' }}
-                    </button>
-                  </div>
-
-                  @if (showHaHistory()) {
-                    <div class="border-t border-base-300/30 px-5 py-3 bg-base-200/30 space-y-3">
-                      @if (haHistory().length > 0) {
-                        <table class="table table-xs">
-                          <thead>
-                            <tr>
-                              <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Version</th>
-                              <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Date</th>
-                              <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold text-right">Files</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            @for (gen of haHistory(); track gen.id) {
-                              <tr class="hover" [class.bg-primary/5]="gen.id === haLastGeneration()?.id">
-                                <td class="font-mono text-[11px] text-primary/70">{{ gen.version }}</td>
-                                <td class="text-[11px] text-base-content/60">{{ formatDate(gen.createdAt) }}</td>
-                                <td class="text-right text-[11px] tabular-nums text-base-content/60">{{ gen.fileCount }}</td>
-                              </tr>
-                            }
-                          </tbody>
-                        </table>
-                      } @else {
-                        <p class="text-xs text-base-content/40 italic py-2">No generation history</p>
+              @if (haFiles().length > 0) {
+                <div class="border-t border-base-300/30 px-5 py-3 bg-base-200/30">
+                  <table class="table table-xs">
+                    <thead>
+                      <tr>
+                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">File</th>
+                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Description</th>
+                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold text-right">Lines</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (f of haFiles(); track f.path) {
+                        <tr class="hover cursor-pointer" (click)="openFile(f.path)">
+                          <td class="font-mono text-[11px] text-primary/70 underline decoration-primary/30">{{ f.path }}</td>
+                          <td class="text-[11px] text-base-content/50">{{ f.description }}</td>
+                          <td class="text-right text-[11px] tabular-nums text-base-content/60">{{ f.lines }}</td>
+                        </tr>
                       }
+                    </tbody>
+                  </table>
+                  @if (haOutputDir()) {
+                    <div class="flex items-center gap-2 mt-2">
+                      <span class="text-xs text-base-content/50 font-mono truncate flex-1">{{ haOutputDir() }}</span>
+                      <button class="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-base-content" (click)="openHaFolder()">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                        </svg>
+                        Open
+                      </button>
                     </div>
                   }
                 </div>
               }
+            </div>
 
-              <!-- HA Errors -->
-              @if (haError()) {
-                <div class="alert alert-error py-2 text-sm rounded-xl">
-                  <span class="font-mono text-xs">{{ haError() }}</span>
-                </div>
-              }
+            <!-- HA Errors -->
+            @if (haError()) {
+              <div class="alert alert-error py-2 text-sm rounded-xl">
+                <span class="font-mono text-xs">{{ haError() }}</span>
+              </div>
             }
           </div>
         </div>
@@ -791,14 +728,11 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
       && s.fallback_password.length >= 8 && !!s.ota_password && this.secretsApiKeyValid();
   });
 
-  // HA state
+  // HA state (site-level)
   protected haFiles = signal<FileEntry[]>([]);
   protected haOutputDir = signal('');
   protected haGenerating = signal(false);
   protected haError = signal<string | null>(null);
-  protected haLastGeneration = signal<GenerationMeta | null>(null);
-  protected haHistory = signal<GenerationMeta[]>([]);
-  protected showHaHistory = signal(false);
 
   protected canBuild = computed(() =>
     !!this.toolchain()?.esphomePath && this.fwFiles().length > 0 && this.secretsValid()
@@ -1009,13 +943,6 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     this.fwLastGeneration.set(null);
     this.generationHistory.set([]);
     this.fwValidation.set(null);
-    // Reset HA state
-    this.haFiles.set([]);
-    this.haOutputDir.set('');
-    this.haError.set(null);
-    this.haLastGeneration.set(null);
-    this.haHistory.set([]);
-    this.showHaHistory.set(false);
     // Reset secrets
     this.secrets.set({ ...DeployPageComponent.DEFAULT_SECRETS });
 
@@ -1069,13 +996,6 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
       this.fwDeviceDir.set(fwLatest.systemId);
     }
 
-    // Restore latest HA generation
-    const haLatest = await this.electron.generationLatest(siteId, systemId, 'ha');
-    if (haLatest) {
-      this.haLastGeneration.set(haLatest);
-      this.haOutputDir.set(await this.electron.outputDir());
-    }
-
     // Stale guard for auto-generate
     if (this.selectedSystemId() !== systemId) return;
 
@@ -1097,7 +1017,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
       const board = this.boards.activeBoard();
       if (!board) throw new Error('No board loaded');
       const siteId = this.workspace.site()?.id ?? '';
-      const result = await this.electron.generate(siteId, systemId, sys.topology, board, 'esphome');
+      const result = await this.electron.generate(siteId, systemId, sys.topology, board);
       // Stale guard
       if (this.selectedSystemId() !== systemId) return;
       this.fwFiles.set(result.files);
@@ -1227,7 +1147,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     try {
       const siteId = this.workspace.site()?.id ?? '';
       const systemId = this.selectedSystemId();
-      const result = await this.electron.generate(siteId, systemId, topology, board, 'esphome');
+      const result = await this.electron.generate(siteId, systemId, topology, board);
       this.fwFiles.set(result.files);
       this.fwOutputDir.set(result.outputDir);
       this.fwDeviceDir.set(result.deviceDir);
@@ -1291,50 +1211,19 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   // === HA methods ===
 
   async generateHaConfig() {
-    const systemId = this.selectedSystemId();
-    if (!systemId) return;
-
-    const sys = this.workspace.systems().get(systemId);
-    if (!sys) return;
+    const siteId = this.workspace.site()?.id;
+    if (!siteId) return;
 
     this.haGenerating.set(true);
     this.haError.set(null);
     try {
-      const siteId = this.workspace.site()?.id ?? '';
-      const result = await this.electron.generate(siteId, systemId, sys.topology, null, 'ha');
-      if (this.selectedSystemId() !== systemId) return;
+      const result = await this.electron.generateSiteHA(siteId);
       this.haFiles.set(result.files);
       this.haOutputDir.set(result.outputDir);
-
-      this.haLastGeneration.set({
-        id: result.generationId,
-        version: result.version,
-        siteId,
-        systemId,
-        genType: 'ha',
-        schemaVersion: 0,
-        fileCount: result.files.length,
-        createdAt: new Date().toISOString(),
-      });
-
-      if (this.showHaHistory() && siteId) {
-        this.haHistory.set(await this.electron.generationList(siteId, systemId, 'ha'));
-      }
     } catch (err) {
       this.haError.set(String(err));
     } finally {
       this.haGenerating.set(false);
-    }
-  }
-
-  async toggleHaHistory() {
-    this.showHaHistory.update(v => !v);
-    if (this.showHaHistory() && this.haHistory().length === 0) {
-      const siteId = this.workspace.site()?.id;
-      const systemId = this.selectedSystemId();
-      if (siteId && systemId) {
-        this.haHistory.set(await this.electron.generationList(siteId, systemId, 'ha'));
-      }
     }
   }
 

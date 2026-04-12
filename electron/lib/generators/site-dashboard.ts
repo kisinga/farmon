@@ -1,0 +1,203 @@
+import { stringify } from "yaml";
+import type { Manifest, ManifestNode } from "../schema.js";
+import { nodesByKind } from "../schema.js";
+import {
+  buildStatusSection,
+  buildWaterSection,
+  buildRouteControlSection,
+  buildSettingsView,
+} from "./dashboard.js";
+
+function slug(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .replace(/_+/g, "_");
+}
+
+function entityId(domain: string, deviceName: string, name: string): string {
+  return `${domain}.${slug(deviceName)}_${slug(name)}`;
+}
+
+function n(node: ManifestNode, key: string): string {
+  return String(node[key] ?? '');
+}
+
+export interface SiteDashboardSystem {
+  systemId: string;
+  friendlyName: string;
+  manifest: Manifest;
+}
+
+/**
+ * Generate a single merged HA dashboard for the entire site.
+ *
+ * Tab 1: "Overview" — controller states, all tank levels, all flow sensors,
+ *         quick-action stop-all per controller, device health.
+ * Tab 2+: One tab per controller with full detail (status, water, routes,
+ *          hardware, settings) using the composable section builders.
+ */
+export function generateSiteDashboard(
+  siteName: string,
+  systems: SiteDashboardSystem[],
+): string {
+  const views: unknown[] = [];
+
+  // -----------------------------------------------------------------------
+  // Tab 1: Site Overview
+  // -----------------------------------------------------------------------
+  const overviewSections: unknown[] = [];
+
+  // Controllers glance — state + active routes per system
+  const statusEntities: Array<{ entity: string; name: string }> = [];
+  for (const s of systems) {
+    const dev = s.manifest.device.name;
+    statusEntities.push(
+      { entity: entityId("sensor", dev, "System State"), name: s.friendlyName },
+      { entity: entityId("sensor", dev, "Active Routes"), name: `${s.friendlyName} Routes` },
+    );
+  }
+  overviewSections.push({
+    type: "grid",
+    cards: [{
+      type: "entities", title: "Controllers", entities: statusEntities,
+      state_color: true, show_header_toggle: false, grid_options: { columns: "full" },
+    }],
+    column_span: 1,
+  });
+
+  // All tank levels across site
+  const tankGauges: unknown[] = [];
+  for (const s of systems) {
+    const tanks = nodesByKind(s.manifest.nodes, 'tank').filter(t => t['level_pin']);
+    for (const t of tanks) {
+      tankGauges.push({
+        type: "gauge",
+        entity: entityId("sensor", s.manifest.device.name, `${n(t, 'name')} Level`),
+        name: systems.length > 1 ? `${n(t, 'name')} (${s.friendlyName})` : n(t, 'name'),
+        min: 0, max: 100, severity: { red: 0, yellow: 25, green: 50 }, needle: true,
+      });
+    }
+  }
+  if (tankGauges.length > 0) {
+    overviewSections.push({
+      type: "grid",
+      cards: [
+        { type: "heading", heading: "Water Levels", heading_style: "title" },
+        { type: "horizontal-stack", cards: tankGauges, grid_options: { columns: "full", rows: "auto" } },
+      ],
+      column_span: 1,
+    });
+  }
+
+  // Flow sensors glance
+  const flowEntities: Array<{ entity: string; name: string }> = [];
+  for (const s of systems) {
+    for (const f of nodesByKind(s.manifest.nodes, 'flow_sensor')) {
+      const label = n(f, 'name').replace(" Water Flow", "").replace(" Flow", "");
+      flowEntities.push({
+        entity: entityId("sensor", s.manifest.device.name, n(f, 'name')),
+        name: systems.length > 1 ? `${label} (${s.friendlyName})` : label,
+      });
+    }
+  }
+  if (flowEntities.length > 0) {
+    overviewSections.push({
+      type: "grid",
+      cards: [{
+        type: "glance", title: "Flow Sensors", show_state: true,
+        entities: flowEntities, grid_options: { columns: "full" },
+      }],
+      column_span: 1,
+    });
+  }
+
+  // Quick actions — stop-all per controller
+  const actionCards: unknown[] = [];
+  for (const s of systems) {
+    const dev = slug(s.manifest.device.name);
+    actionCards.push({
+      show_name: true, show_icon: true, type: "button",
+      name: `Stop All — ${s.friendlyName}`, icon: "mdi:stop-circle",
+      tap_action: { action: "call-service", service: `esphome.${dev}_stop_all` },
+      show_state: false, color: "red",
+    });
+  }
+  if (actionCards.length > 0) {
+    overviewSections.push({
+      type: "grid",
+      cards: [
+        { type: "heading", heading: "Quick Actions", heading_style: "title" },
+        { type: "horizontal-stack", cards: actionCards, grid_options: { columns: "full" } },
+      ],
+      column_span: 1,
+    });
+  }
+
+  // Device health
+  const healthEntities: Array<{ entity: string; name: string }> = [];
+  for (const s of systems) {
+    const dev = s.manifest.device.name;
+    healthEntities.push(
+      { entity: entityId("sensor", dev, "WiFi Signal"), name: `${s.friendlyName} WiFi` },
+      { entity: entityId("sensor", dev, "Uptime"), name: `${s.friendlyName} Uptime` },
+    );
+  }
+  overviewSections.push({
+    type: "grid",
+    cards: [{
+      type: "glance", title: "Device Health", show_state: true,
+      entities: healthEntities, grid_options: { columns: "full" },
+    }],
+    column_span: 1,
+  });
+
+  views.push({
+    title: "Overview",
+    icon: "mdi:home-flood",
+    type: "sections",
+    subview: false,
+    sections: overviewSections,
+    badges: [],
+    cards: [],
+  });
+
+  // -----------------------------------------------------------------------
+  // Tab 2+: Per-controller detail tabs
+  // -----------------------------------------------------------------------
+  for (const s of systems) {
+    const routeControl = buildRouteControlSection(s.manifest) as { sections: unknown[] };
+
+    views.push({
+      title: s.friendlyName,
+      icon: "mdi:water-pump",
+      type: "sections",
+      subview: false,
+      sections: [
+        buildStatusSection(s.manifest),
+        buildWaterSection(s.manifest),
+        ...routeControl.sections,
+      ],
+      badges: [],
+      cards: [],
+    });
+
+    // Settings as a subview for this controller
+    views.push({
+      ...(buildSettingsView(s.manifest) as Record<string, unknown>),
+      title: `${s.friendlyName} Settings`,
+      path: `settings-${slug(s.systemId)}`,
+      subview: true,
+    });
+  }
+
+  const dashboard = { title: siteName, views };
+
+  return stringify(dashboard, {
+    indent: 2,
+    lineWidth: 0,
+    defaultStringType: "PLAIN",
+    defaultKeyType: "PLAIN",
+  });
+}

@@ -99,10 +99,14 @@ export function resolvePinYaml(
     if (!expander) {
       throw new Error(`Pin ${pinName} references unknown expander "${pinDef.expander}"`);
     }
+    // Infer direction: inverted implies output (relay/valve), explicit mode is
+    // passed through, otherwise default to input (safe for optocoupled inputs).
+    const isOutput = opts?.inverted || opts?.mode?.toUpperCase().includes('OUTPUT');
+    const mode = isOutput ? '{ output: true }' : '{ input: true }';
     const lines = [
       `${expander.platform}: ${pinDef.expander}`,
       `number: ${pinDef.number}`,
-      `mode: { output: true }`,
+      `mode: ${mode}`,
     ];
     if (opts?.inverted) lines.push(`inverted: true`);
     return lines.join('\n    ');

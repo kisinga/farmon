@@ -74,7 +74,7 @@ const EthernetSchema = z.object({
   type: z.string(),
   mdc_pin: z.string(),
   mdio_pin: z.string(),
-  clk_mode: z.string(),
+  clk: z.object({ pin: z.string(), mode: z.string() }),
   phy_addr: z.number().int().min(0),
   power_pin: z.string().optional(),
 });

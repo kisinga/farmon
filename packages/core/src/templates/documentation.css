@@ -83,6 +83,36 @@ tr:hover { background: var(--brand-light); }
 .safety-card strong { display: block; font-size: 12px; margin-bottom: 3px; color: var(--brand-dark); }
 .safety-card span { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
+/* --- State machine diagram --- */
+.state-diagram {
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 11px; line-height: 1.5; white-space: pre;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 18px; margin: 10px 0 16px; overflow-x: auto;
+  color: var(--text);
+}
+.state-diagram .hl { color: var(--brand); font-weight: 700; }
+.state-diagram .fault { color: #dc2626; font-weight: 700; }
+
+/* --- Responsibility split --- */
+.resp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0 16px; }
+.resp-col {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px;
+}
+.resp-col strong {
+  display: block; font-size: 12px; margin-bottom: 6px;
+  padding-bottom: 4px; border-bottom: 2px solid var(--brand-light);
+  color: var(--brand-dark);
+}
+.resp-col ul { margin: 4px 0; padding-left: 16px; }
+.resp-col li { font-size: 11px; color: var(--text-muted); margin: 2px 0; }
+
+/* --- Badge variants --- */
+.badge-fault { background: #FEE2E2; color: #991B1B; }
+.badge-idle { background: #D1FAE5; color: #065F46; }
+.badge-info { background: var(--brand-light); color: var(--brand-dark); }
+
 /* --- Lists --- */
 ul, ol { padding-left: 20px; margin: 8px 0; }
 li { margin: 4px 0; }

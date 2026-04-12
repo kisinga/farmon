@@ -1,4 +1,4 @@
-# MajiFlow Architecture
+# MajiFlow — Architecture
 
 ## Overview
 

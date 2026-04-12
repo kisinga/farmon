@@ -1,16 +1,4 @@
-# Adding Boards and Entities
-
-## What changed (April 2026)
-
-The codegen system was refactored to support boards with I2C GPIO expanders (like the KC868-A16) alongside direct-GPIO boards (like the Heltec V3). Key improvements:
-
-- **Pin resolution is board-aware**: entity codegen no longer hardcodes GPIO pin references. A `resolvePinYaml()` utility generates the correct ESPHome YAML for both native GPIO and expander pins.
-- **Shared codegen IDs**: component IDs (`pump_relay`, `valve1_open_pin`, etc.) are defined once in `codegen-ids.ts` and imported by both entity codegen and generators. No more string duplication.
-- **Codegen collector**: a single-pass `collectEntityCodegen()` replaces duplicate iteration in `hardware.ts` and `sensors.ts`, providing board context to all entity codegen functions.
-- **Ethernet support**: boards can declare `peripherals.ethernet` and the board-package generator emits Ethernet config instead of WiFi.
-- **I2C expander support**: boards declare `expanders` (PCF8574, PCF8575, MCP23017) and pins reference them. The board-package generator emits the expander component declarations.
-
----
+# MajiFlow — Adding Boards and Entities
 
 ## Adding a new board
 

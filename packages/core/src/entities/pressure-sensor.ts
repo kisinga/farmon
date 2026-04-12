@@ -95,6 +95,9 @@ export const pressureSensorDescriptor: NodeDescriptor = {
   constraints: [] satisfies FlowConstraint[],
 
   // --- Validation ---
+  // TODO: Redundant pin validation — this entity rule AND the generic pin check
+  // both fire for empty pin, producing a double error message. Deduplicate when
+  // adding more entity rules.
 
   rules: [{
     id: 'pressure-sensor-pin-required',

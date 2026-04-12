@@ -32,7 +32,7 @@ export interface EthernetDef {
   type: string;
   mdc_pin: string;
   mdio_pin: string;
-  clk_mode: string;
+  clk: { pin: string; mode: string };
   phy_addr: number;
   power_pin?: string;
 }
@@ -84,9 +84,7 @@ export function reservedPins(board: BoardDef): Map<string, string> {
     reserved.set(p.ethernet.mdc_pin, 'Ethernet MDC');
     reserved.set(p.ethernet.mdio_pin, 'Ethernet MDIO');
     if (p.ethernet.power_pin) reserved.set(p.ethernet.power_pin, 'Ethernet power');
-    // CLK mode pins (e.g. GPIO17_OUT) — extract the GPIO reference
-    const clkMatch = p.ethernet.clk_mode.match(/^(GPIO\d+)/);
-    if (clkMatch) reserved.set(clkMatch[1], 'Ethernet CLK');
+    reserved.set(p.ethernet.clk.pin, 'Ethernet CLK');
   }
   for (const [busName, busDef] of Object.entries(board.buses)) {
     for (const [fn, val] of Object.entries(busDef)) {

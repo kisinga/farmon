@@ -1,4 +1,4 @@
-schema: 8
+schema: 9
 device:
   name: treatment-loop
   friendly_name: Treatment Loop

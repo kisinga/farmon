@@ -1,4 +1,4 @@
-# Glossary
+# MajiFlow — Glossary
 
 Canonical definitions for the water system topology model. All code, config files, and UI must use these terms consistently.
 

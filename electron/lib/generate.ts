@@ -6,6 +6,7 @@ import { generateHardware } from "./generators/hardware.js";
 import { generateSensors } from "./generators/sensors.js";
 import { generateDashboard } from "./generators/dashboard.js";
 import { generateBoardPackage } from "./generators/board-package.js";
+import { generateSiteDashboard, type SiteDashboardSystem } from "./generators/site-dashboard.js";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
 import { generateAutomations } from "./generators/automations.js";
@@ -100,15 +101,45 @@ export function generateEsphome(m: Manifest, board: BoardDef, secrets?: SecretsM
   ];
 }
 
-export function generateHA(m: Manifest): GeneratedFile[] {
-  const dir = m.device.directory ?? m.device.name;
+export function generateSiteHA(
+  siteName: string,
+  systems: SiteDashboardSystem[],
+  manifests: Map<string, Manifest>,
+): GeneratedFile[] {
   const files: GeneratedFile[] = [
     {
-      relativePath: `config/homeassistant/dashboards/dashboard.yaml`,
-      description: "HA dashboard with gauges, controls, settings",
-      content: generateDashboard(m),
+      relativePath: `config/homeassistant/dashboards/site.yaml`,
+      description: `HA dashboard — ${systems.length} controllers (overview + per-device tabs)`,
+      content: generateSiteDashboard(siteName, systems),
     },
   ];
+
+  for (const s of systems) {
+    const m = manifests.get(s.systemId) ?? s.manifest;
+    const dir = m.device.directory ?? m.device.name;
+    const automationsContent = generateAutomations(m);
+    if (automationsContent) {
+      files.push({
+        relativePath: `config/homeassistant/automations/${dir}.yaml`,
+        description: `HA automations — ${s.friendlyName}`,
+        content: automationsContent,
+      });
+    }
+  }
+
+  return files;
+}
+
+/** Legacy single-system convenience for tests. Produces ESPHome + per-device HA files. */
+export function generateAll(m: Manifest, board: BoardDef, secrets?: SecretsMap): GeneratedFile[] {
+  const dir = m.device.directory ?? m.device.name;
+  const files = [...generateEsphome(m, board, secrets)];
+
+  files.push({
+    relativePath: `config/homeassistant/dashboards/dashboard.yaml`,
+    description: "HA dashboard with gauges, controls, settings",
+    content: generateDashboard(m),
+  });
 
   const automationsContent = generateAutomations(m);
   if (automationsContent) {
@@ -120,8 +151,4 @@ export function generateHA(m: Manifest): GeneratedFile[] {
   }
 
   return files;
-}
-
-export function generateAll(m: Manifest, board: BoardDef, secrets?: SecretsMap): GeneratedFile[] {
-  return [...generateEsphome(m, board, secrets), ...generateHA(m)];
 }

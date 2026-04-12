@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import { BoardDefSchema, type BoardDef } from "./lib/board.js";
 import { parseTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
-import { generateAll, generateEsphome, generateHA, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
+import { generateEsphome, generateSiteHA, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
 import { topologyToManifest } from "./lib/topology-to-manifest.js";
 import * as store from "./store.js";
 import * as db from "./db.js";
@@ -370,34 +370,27 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     "codegen:generate",
-    async (_e, siteId: string, systemId: string, dataRaw: unknown, boardRaw: unknown, genType: db.GenerationType = 'esphome') => {
+    async (_e, siteId: string, systemId: string, dataRaw: unknown, boardRaw: unknown) => {
+      const board = BoardDefSchema.parse(boardRaw) as BoardDef;
       const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
-
-      let files;
-      let board: BoardDef | null = null;
-
-      if (genType === 'esphome') {
-        board = BoardDefSchema.parse(boardRaw) as BoardDef;
-        const validation = validateAll(topology, manifest, board);
-        if (!validation.ok) {
-          const errors = validation.diagnostics
-            .filter(d => d.severity === 'error')
-            .map(d => d.message);
-          throw new Error(errors.join('\n'));
-        }
-        // Load secrets from DB, falling back to defaults
-        const savedSecrets = db.getSecrets(siteId, systemId);
-        const secrets: SecretsMap = {
-          ...generateDefaultSecrets(),
-          ...savedSecrets,
-        } as SecretsMap;
-        files = generateEsphome(manifest, board, secrets);
-      } else {
-        files = generateHA(manifest);
+      const validation = validateAll(topology, manifest, board);
+      if (!validation.ok) {
+        const errors = validation.diagnostics
+          .filter(d => d.severity === 'error')
+          .map(d => d.message);
+        throw new Error(errors.join('\n'));
       }
 
-      const gen = db.createGeneration(siteId, systemId, topology, board, genType);
-      const latestMeta = gen ? null : db.listGenerations(siteId, systemId, genType)[0] ?? null;
+      // Load secrets from DB, falling back to defaults
+      const savedSecrets = db.getSecrets(siteId, systemId);
+      const secrets: SecretsMap = {
+        ...generateDefaultSecrets(),
+        ...savedSecrets,
+      } as SecretsMap;
+      const files = generateEsphome(manifest, board, secrets);
+
+      const gen = db.createGeneration(siteId, systemId, topology, board, 'esphome');
+      const latestMeta = gen ? null : db.listGenerations(siteId, systemId, 'esphome')[0] ?? null;
       const version = gen?.version ?? latestMeta?.version ?? '';
       const deviceDir = manifest.device.directory ?? manifest.device.name;
 
@@ -406,7 +399,7 @@ export function registerIpcHandlers() {
 
       if (gen) {
         db.finalizeGeneration(gen.id, files.length);
-        db.pruneGenerations(siteId, systemId, 10, genType);
+        db.pruneGenerations(siteId, systemId, 10, 'esphome');
       }
 
       return {
@@ -414,6 +407,45 @@ export function registerIpcHandlers() {
         deviceDir,
         generationId: gen?.id ?? latestMeta?.id ?? 0,
         version,
+        files: files.map((f) => ({
+          path: f.relativePath,
+          description: f.description,
+          lines: f.content.split("\n").length,
+        })),
+      };
+    }
+  );
+
+  // =========================================================================
+  // Site-level HA config (dashboard + automations)
+  // =========================================================================
+
+  ipcMain.handle(
+    "codegen:generate-ha",
+    async (_e, siteId: string) => {
+      const site = db.loadSiteFull(siteId);
+      if (!site) throw new Error(`Site not found: ${siteId}`);
+
+      const systems: Array<{ systemId: string; friendlyName: string; manifest: import("./lib/schema.js").Manifest }> = [];
+      const manifests = new Map<string, import("./lib/schema.js").Manifest>();
+
+      for (const sp of site.systems) {
+        const fullTopology = reconstructTopology(
+          sp.deviceName || sp.id, sp.friendlyName, sp.board, sp.directory,
+          sp.topology as unknown as Record<string, unknown>,
+        );
+        const { manifest } = resolveTopologyAndManifest(fullTopology);
+        systems.push({ systemId: sp.id, friendlyName: sp.friendlyName, manifest });
+        manifests.set(sp.id, manifest);
+      }
+
+      const files = generateSiteHA(site.site.friendlyName, systems, manifests);
+
+      const outputDir = store.getOutputDir();
+      store.writeOutput(files, outputDir);
+
+      return {
+        outputDir,
         files: files.map((f) => ({
           path: f.relativePath,
           description: f.description,

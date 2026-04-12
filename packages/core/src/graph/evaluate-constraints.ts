@@ -10,6 +10,9 @@
 import type { TopologyGraph } from './topology-graph';
 import type { Route } from './routes';
 import type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './constraints';
+// TODO: This import couples constraint evaluation to the registry. conflicts.ts
+// is self-contained (reads conflictClass from graph attrs). Refactor if
+// constraints move to NodeAttrs so this can read them from the graph too.
 import { NODE_REGISTRY } from '../entity-registry';
 import type { RuleDiagnostic } from '../validation.types';
 
