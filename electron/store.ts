@@ -506,13 +506,19 @@ export function scanLegacyData(): LegacyImportResult {
           const device = migrated.device as Record<string, unknown> | undefined;
           const pos = sp.position as Record<string, number> | undefined;
 
+          // Rename legacy 'handoff' kind → 'interconnect'
+          const nodes = Array.isArray(migrated.nodes) ? migrated.nodes as Array<Record<string, unknown>> : [];
+          for (const node of nodes) {
+            if (node.kind === 'handoff') node.kind = 'interconnect';
+          }
+
           site.systems.push({
             id: configName,
             friendlyName: (device?.friendly_name as string) ?? configName,
             board: (device?.board as string) ?? "unknown",
             directory: (device?.directory as string) ?? null,
             topology: {
-              nodes: migrated.nodes ?? [],
+              nodes,
               pipes: migrated.pipes ?? [],
               route_overrides: migrated.route_overrides ?? {},
               timing: migrated.timing ?? {},
