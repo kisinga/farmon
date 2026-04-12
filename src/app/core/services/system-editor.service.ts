@@ -19,12 +19,9 @@ export class SystemEditorService {
   // --- Delegated reads from workspace ---
   readonly topology = this.workspace.activeTopology;
   readonly board = this.workspace.activeBoard;
-  readonly configName = this.workspace.activeConfig;
+  readonly systemId = this.workspace.activeSystemId;
 
-  readonly dirty = computed(() => {
-    const config = this.workspace.activeConfig();
-    return config ? this.workspace.isSystemDirty(config) : false;
-  });
+  readonly dirty = this.workspace.dirty;
 
   readonly readonly = this._readonly.asReadonly();
 
@@ -102,20 +99,15 @@ export class SystemEditorService {
   // --- Actions ---
 
   /** Focus on a system for editing. Workspace must already have it loaded. */
-  focus(configName: string, opts?: { readonly?: boolean }): void {
-    this.workspace.focusSystem(configName);
+  focus(systemId: string, opts?: { readonly?: boolean }): void {
+    this.workspace.focusSystem(systemId);
     this._readonly.set(opts?.readonly ?? false);
     this._validation.set(null);
     this._generatedFiles.set(null);
     this._canvasSvg.set(null);
   }
 
-  /** Kept for backward compatibility with existing load() call sites during migration. */
-  load(name: string, _topology: SystemTopology, _board: any, opts?: { readonly?: boolean }): void {
-    this.focus(name, opts);
-  }
-
-  /** Mutate the active system's topology. Marks it dirty in the workspace. */
+  /** Mutate the active system's topology. Marks workspace dirty. */
   updateTopology(updater: (t: SystemTopology) => void): void {
     if (this._readonly()) return;
     this.workspace.updateActiveTopology(updater);
@@ -125,12 +117,9 @@ export class SystemEditorService {
     this._validation.set(result);
   }
 
-  markSaved(): void {
-    const config = this.workspace.activeConfig();
-    if (config) {
-      // Dirty flag is managed by workspace.saveSystem(), but clear it here for immediate UI update
-      this.workspace.saveSystem(config);
-    }
+  /** Save entire site atomically. */
+  async save(): Promise<void> {
+    await this.workspace.save();
   }
 
   setCanvasSvg(svg: string): void {
@@ -143,12 +132,12 @@ export class SystemEditorService {
     this._generatedFiles.set(result);
   }
 
-  /** Generate a globally unique node ID via workspace. */
+  /** Generate a site-wide unique node ID via workspace. */
   nextNodeId(kind: string): string {
     return this.workspace.nextNodeId(kind);
   }
 
-  /** Generate a globally unique pipe ID via workspace. */
+  /** Generate a site-wide unique pipe ID via workspace. */
   nextPipeId(): string {
     return this.workspace.nextPipeId();
   }

@@ -6,7 +6,7 @@ import { ValidationPanelComponent } from '../../../shared/validation-panel/valid
 import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
-import { buildGraph, activeGraph, deriveRoutes, parseSiteLinkRef, siteLinkRef } from '@far-mon/core';
+import { buildGraph, activeGraph, deriveRoutes } from '@far-mon/core';
 import type { Selection } from './selection';
 export type { Selection };
 
@@ -263,40 +263,35 @@ export class TopologySidebarComponent {
   protected handoffLinks = computed(() => {
     const sn = this.selectedNodeData();
     if (!sn || sn.node.kind !== 'handoff') return [];
-    const site = this.workspace.site();
-    const config = this.workspace.activeConfig();
-    if (!site || !config) return [];
+    const systemId = this.workspace.activeSystemId();
+    const links = this.workspace.links();
+    if (!systemId) return [];
 
     const nodeId = sn.node.id;
-    return site.links.filter(link => {
-      try {
-        const from = parseSiteLinkRef(link.from);
-        const to = parseSiteLinkRef(link.to);
-        return (from.config === config && from.nodeId === nodeId)
-            || (to.config === config && to.nodeId === nodeId);
-      } catch { return false; }
-    }).map(link => {
-      const from = parseSiteLinkRef(link.from);
-      const to = parseSiteLinkRef(link.to);
-      const isSource = from.config === config && from.nodeId === nodeId;
-      const remote = isSource ? to : from;
-      const remoteSystem = this.workspace.systems().get(remote.config);
-      const remoteName = remoteSystem?.topology.device.friendly_name ?? remote.config;
-      return { link, remoteName, remoteNodeId: remote.nodeId, remotePortId: remote.portId, direction: isSource ? 'outgoing' : 'incoming' as const };
+    return links.filter(link =>
+      (link.fromSystem === systemId && link.fromNode === nodeId)
+      || (link.toSystem === systemId && link.toNode === nodeId)
+    ).map(link => {
+      const isSource = link.fromSystem === systemId && link.fromNode === nodeId;
+      const remoteSystemId = isSource ? link.toSystem : link.fromSystem;
+      const remoteNodeId = isSource ? link.toNode : link.fromNode;
+      const remotePortId = isSource ? link.toPort : link.fromPort;
+      const remoteSystem = this.workspace.systems().get(remoteSystemId);
+      const remoteName = remoteSystem?.topology.device.friendly_name ?? remoteSystemId;
+      return { link, remoteName, remoteNodeId, remotePortId, direction: isSource ? 'outgoing' : 'incoming' as const };
     });
   });
 
   /** Other systems in the site (for the target dropdown) */
   protected otherSystems = computed(() => {
-    const site = this.workspace.site();
-    const config = this.workspace.activeConfig();
+    const systemId = this.workspace.activeSystemId();
     const systems = this.workspace.systems();
-    if (!site || !config) return [];
-    return site.systems
-      .filter(sp => sp.config !== config)
-      .map(sp => ({
-        config: sp.config,
-        friendlyName: systems.get(sp.config)?.topology.device.friendly_name ?? sp.config,
+    if (!systemId) return [];
+    return [...systems.entries()]
+      .filter(([id]) => id !== systemId)
+      .map(([id, { topology }]) => ({
+        config: id,
+        friendlyName: topology.device.friendly_name ?? id,
       }));
   });
 
@@ -311,20 +306,22 @@ export class TopologySidebarComponent {
 
   protected createHandoffLink() {
     const sn = this.selectedNodeData();
-    const config = this.workspace.activeConfig();
+    const systemId = this.workspace.activeSystemId();
     const targetSystem = this.linkTargetSystem();
     const targetPort = this.linkTargetPort();
-    if (!sn || !config || !targetSystem || !targetPort) return;
+    if (!sn || !systemId || !targetSystem || !targetPort) return;
 
     const handoffOutlet = sn.node.ports.find(p => p.direction === 'outlet');
-    const fromRef = siteLinkRef(config, sn.node.id, handoffOutlet?.id ?? 'outlet');
     const [targetNodeId, targetPortId] = targetPort.split(':');
-    const toRef = siteLinkRef(targetSystem, targetNodeId, targetPortId);
 
     this.workspace.addLink({
       id: crypto.randomUUID(),
-      from: fromRef,
-      to: toRef,
+      fromSystem: systemId,
+      fromNode: sn.node.id,
+      fromPort: handoffOutlet?.id ?? 'outlet',
+      toSystem: targetSystem,
+      toNode: targetNodeId,
+      toPort: targetPortId,
     });
 
     this.linkTargetSystem.set(null);

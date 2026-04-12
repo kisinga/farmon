@@ -1,5 +1,6 @@
 import { Component, inject, OnInit, OnDestroy, signal, computed, ElementRef, ViewChild, AfterViewChecked } from '@angular/core';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
+import { WorkspaceService } from '../../../core/services/workspace.service';
 import { ElectronService } from '../../../core/services/electron.service';
 import { ValidationPanelComponent } from '../../../shared/validation-panel/validation-panel.component';
 import type { ToolchainInfo, SerialDevice, GenerationMeta } from '../../../core/models/electron-api';
@@ -382,6 +383,7 @@ interface TerminalLine {
 })
 export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
   protected editor = inject(SystemEditorService);
+  private workspace = inject(WorkspaceService);
   private electron = inject(ElectronService);
 
   @ViewChild('terminalEl') private terminalEl?: ElementRef<HTMLPreElement>;
@@ -445,12 +447,14 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
 
     // Restore latest generation state from DB
-    if (deviceName) {
-      const latest = await this.electron.generationLatest(deviceName);
+    const siteId = this.workspace.site()?.id;
+    const systemId = this.editor.systemId();
+    if (siteId && systemId) {
+      const latest = await this.electron.generationLatest(siteId, systemId);
       if (latest) {
         this.lastGeneration.set(latest);
         this.outputDir.set(await this.electron.outputDir());
-        this.deviceDir.set(latest.configName);
+        this.deviceDir.set(latest.systemId);
       }
     }
 
@@ -508,7 +512,9 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
       const topology = this.editor.topology();
       const board = this.editor.board();
       if (!topology || !board) throw new Error('No topology or board loaded');
-      const result = await this.electron.generate(topology, board);
+      const genSiteId = this.workspace.site()?.id ?? '';
+      const genSystemId = this.editor.systemId() ?? '';
+      const result = await this.electron.generate(genSiteId, genSystemId, topology, board);
       this.files.set(result.files);
       this.outputDir.set(result.outputDir);
       this.deviceDir.set(result.deviceDir);
@@ -518,17 +524,15 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.lastGeneration.set({
         id: result.generationId,
         version: result.version,
-        configName: topology.device?.name ?? '',
+        siteId: genSiteId,
+        systemId: genSystemId,
         schemaVersion: 0,
         fileCount: result.files.length,
         createdAt: new Date().toISOString(),
       });
       // Refresh history if panel is open
-      if (this.showHistory()) {
-        const configName = topology.device?.name;
-        if (configName) {
-          this.generationHistory.set(await this.electron.generationList(configName));
-        }
+      if (this.showHistory() && genSiteId && genSystemId) {
+        this.generationHistory.set(await this.electron.generationList(genSiteId, genSystemId));
       }
     } catch (err) {
       this.error.set(String(err));
@@ -630,9 +634,10 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
   async toggleHistory() {
     this.showHistory.update(v => !v);
     if (this.showHistory() && this.generationHistory().length === 0) {
-      const configName = this.editor.topology()?.device?.name;
-      if (configName) {
-        this.generationHistory.set(await this.electron.generationList(configName));
+      const hSiteId = this.workspace.site()?.id;
+      const hSystemId = this.editor.systemId();
+      if (hSiteId && hSystemId) {
+        this.generationHistory.set(await this.electron.generationList(hSiteId, hSystemId));
       }
     }
   }
@@ -646,15 +651,16 @@ export class DeployTabComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.error.set(null);
     this.compileSuccess.set(false);
     try {
-      const result = await this.electron.generate(topology, board);
+      const rSiteId = this.workspace.site()?.id ?? '';
+      const rSystemId = this.editor.systemId() ?? '';
+      const result = await this.electron.generate(rSiteId, rSystemId, topology, board);
       this.files.set(result.files);
       this.outputDir.set(result.outputDir);
       this.deviceDir.set(result.deviceDir);
       this.editor.setGenerateResult(result);
 
-      const configName = this.editor.topology()?.device?.name;
-      if (configName) {
-        this.generationHistory.set(await this.electron.generationList(configName));
+      if (rSiteId && rSystemId) {
+        this.generationHistory.set(await this.electron.generationList(rSiteId, rSystemId));
         this.lastGeneration.set(this.generationHistory()[0] ?? null);
       }
     } catch (err) {

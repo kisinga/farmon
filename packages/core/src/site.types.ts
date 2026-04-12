@@ -1,85 +1,92 @@
 /**
- * Site types — a composition layer that groups multiple systems
- * on a single canvas with inter-system links.
+ * Site types — the composition layer that groups site-scoped systems
+ * with inter-system links.
  *
- * Sites are purely for visualization and reasoning about the whole
- * water network. Each system remains independent (own config, board,
- * codegen, validation). HA handles orchestration between devices.
+ * Sites are the top-level workspace. Each system belongs to exactly one site.
+ * Templates are read-only blueprints instantiated into site-scoped systems.
  */
 
 // ---------------------------------------------------------------------------
-// Site document
+// Site metadata
 // ---------------------------------------------------------------------------
 
-export interface Site {
-  schema: 1;
-  name: string;
-  friendly_name: string;
-  systems: SystemPlacement[];
-  links: SiteLink[];
-}
-
-// ---------------------------------------------------------------------------
-// System placement — a reference to an existing system config
-// ---------------------------------------------------------------------------
-
-export interface SystemPlacement {
-  /** Name of the system config (references store/configs/{config}.yaml). */
-  config: string;
-  /** Position of the system group on the site canvas. */
-  position: { x: number; y: number };
-  /** SHA-256 checksum of the system topology at last site save. */
-  checksum: string;
-}
-
-// ---------------------------------------------------------------------------
-// Inter-system links
-// ---------------------------------------------------------------------------
-
-export interface SiteLink {
+export interface SiteMetadata {
   id: string;
-  /** Source port: "configName/nodeId:portId" */
-  from: string;
-  /** Target port: "configName/nodeId:portId" */
-  to: string;
-  /** Optional annotation (e.g., "50m PVC run"). */
-  label?: string;
+  friendlyName: string;
 }
 
 // ---------------------------------------------------------------------------
-// Store list entry
+// Inter-system links (explicit fields, no string parsing)
+// ---------------------------------------------------------------------------
+
+export interface LinkData {
+  id: string;
+  fromSystem: string;
+  fromNode: string;
+  fromPort: string;
+  toSystem: string;
+  toNode: string;
+  toPort: string;
+  label?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Stored topology (the JSON blob in the systems table)
+// ---------------------------------------------------------------------------
+
+import type { TopologyNode, PipeSegment, RouteOverride, Automation, UartBus } from './topology.types';
+
+export interface StoredTopology {
+  nodes: TopologyNode[];
+  pipes: PipeSegment[];
+  route_overrides: Record<string, RouteOverride>;
+  timing: {
+    valve_travel_time: string;
+    flow_watchdog_seconds: number;
+    flow_confirm_seconds: number;
+    api_watchdog_seconds: number;
+    update_interval: string;
+  };
+  automations: Automation[];
+  uart_buses?: UartBus[];
+}
+
+// ---------------------------------------------------------------------------
+// IPC payloads
+// ---------------------------------------------------------------------------
+
+export interface SystemPayload {
+  id: string;
+  friendlyName: string;
+  board: string;
+  directory: string | null;
+  topology: StoredTopology;
+  position: { x: number; y: number };
+}
+
+export interface SiteFullPayload {
+  site: SiteMetadata;
+  systems: SystemPayload[];
+  links: LinkData[];
+}
+
+export type SiteSavePayload = SiteFullPayload;
+
+// ---------------------------------------------------------------------------
+// List entries (for overview)
 // ---------------------------------------------------------------------------
 
 export interface SiteListEntry {
-  name: string;
+  id: string;
   friendlyName: string;
   systemCount: number;
   linkCount: number;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Parse a site link port reference: "configName/nodeId:portId"
- * Returns the config name, node ID, and port ID.
- */
-export function parseSiteLinkRef(ref: string): { config: string; nodeId: string; portId: string } {
-  const slashIdx = ref.indexOf('/');
-  if (slashIdx === -1) throw new Error(`Invalid site link ref: ${ref} (missing /)`);
-  const config = ref.slice(0, slashIdx);
-  const rest = ref.slice(slashIdx + 1);
-  const colonIdx = rest.indexOf(':');
-  if (colonIdx === -1) throw new Error(`Invalid site link ref: ${ref} (missing :)`);
-  return {
-    config,
-    nodeId: rest.slice(0, colonIdx),
-    portId: rest.slice(colonIdx + 1),
-  };
-}
-
-/** Build a site link port reference from parts. */
-export function siteLinkRef(config: string, nodeId: string, portId: string): string {
-  return `${config}/${nodeId}:${portId}`;
+export interface TemplateListEntry {
+  name: string;
+  friendlyName: string;
+  board: string;
+  tanks: number;
+  valves: number;
 }

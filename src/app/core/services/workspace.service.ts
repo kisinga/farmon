@@ -1,74 +1,46 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { ElectronService } from './electron.service';
-import { LibraryService } from './library.service';
 import type {
-  SystemTopology, BoardDef, Site, SiteLink, BoundaryPort, TopologyGraph, Route,
+  SystemTopology, BoardDef, TopologyGraph, Route,
   TopologyNode, PipeSegment, RouteOverride,
+  SiteMetadata, LinkData, StoredTopology, SiteSavePayload, SystemPayload,
 } from '@far-mon/core';
 import {
-  parseSite, boundaryPorts, buildCompositeGraph, deriveRoutes, activeGraph,
-  parseSiteLinkRef, siteLinkRef,
+  boundaryPorts, buildCompositeGraph, deriveRoutes, activeGraph,
 } from '@far-mon/core';
-
-// --- ID migration helpers ---
-
-function remapPortRef(ref: string, remap: Map<string, string>): string {
-  const [nodeId, portId] = ref.split(':');
-  const newNodeId = remap.get(nodeId) ?? nodeId;
-  return `${newNodeId}:${portId}`;
-}
-
-function remapRouteKey(key: string, remap: Map<string, string>): string {
-  return key.split('>').map(id => remap.get(id) ?? id).join('>');
-}
+import type { BoundaryPort } from '@far-mon/core';
 
 @Injectable({ providedIn: 'root' })
 export class WorkspaceService {
 
-  // --- Core site state ---
-  private _site = signal<Site | null>(null);
-  private _siteName = signal<string | null>(null);
-  private _stale = signal(false);
+  // --- Core state ---
+  private _site = signal<SiteMetadata | null>(null);
+  private _systems = signal<Map<string, { topology: SystemTopology; board: BoardDef; position: { x: number; y: number } }>>(new Map());
+  private _links = signal<LinkData[]>([]);
+  private _activeSystemId = signal<string | null>(null);
+  private _dirty = signal(false);
   private _loading = signal(false);
-
-  // --- All system data (single source of truth) ---
-  private _systems = signal<Map<string, { topology: SystemTopology; board: BoardDef }>>(new Map());
-
-  // --- Active system focus (which system is being edited) ---
-  private _activeConfig = signal<string | null>(null);
-
-  // --- Dirty tracking ---
-  private _dirtyConfigs = signal<Set<string>>(new Set());
-  private _siteDirty = signal(false);
 
   // --- Public readonly signals ---
   readonly site = this._site.asReadonly();
-  readonly siteName = this._siteName.asReadonly();
   readonly systems = this._systems.asReadonly();
-  readonly activeConfig = this._activeConfig.asReadonly();
-  readonly stale = this._stale.asReadonly();
+  readonly links = this._links.asReadonly();
+  readonly activeSystemId = this._activeSystemId.asReadonly();
+  readonly dirty = this._dirty.asReadonly();
   readonly loading = this._loading.asReadonly();
-
-  /** Overall dirty: any system or site structure has pending changes. */
-  readonly dirty = computed(() => this._dirtyConfigs().size > 0 || this._siteDirty());
-
-  /** Is a specific system dirty? */
-  isSystemDirty(config: string | null): boolean {
-    return config ? this._dirtyConfigs().has(config) : false;
-  }
 
   // --- Active system computed signals ---
 
   readonly activeTopology = computed<SystemTopology | null>(() => {
-    const config = this._activeConfig();
-    if (!config) return null;
-    return this._systems().get(config)?.topology ?? null;
+    const id = this._activeSystemId();
+    if (!id) return null;
+    return this._systems().get(id)?.topology ?? null;
   });
 
   readonly activeBoard = computed<BoardDef | null>(() => {
-    const config = this._activeConfig();
-    if (!config) return null;
-    return this._systems().get(config)?.board ?? null;
+    const id = this._activeSystemId();
+    if (!id) return null;
+    return this._systems().get(id)?.board ?? null;
   });
 
   // --- All nodes across all systems (for ID generation) ---
@@ -91,20 +63,28 @@ export class WorkspaceService {
     const allNodes: TopologyNode[] = [];
     const allPipes: PipeSegment[] = [];
 
-    for (const sp of site.systems) {
-      const data = systems.get(sp.config);
-      if (!data) continue;
-
-      for (const node of data.topology.nodes) {
+    for (const [systemId, { topology, position }] of systems) {
+      // Namespace node IDs to avoid collisions across systems
+      for (const node of topology.nodes) {
         allNodes.push({
           ...node,
+          id: `${systemId}/${node.id}`,
           position: {
-            x: node.position.x + sp.position.x,
-            y: node.position.y + sp.position.y,
+            x: node.position.x + position.x,
+            y: node.position.y + position.y,
           },
         } as TopologyNode);
       }
-      allPipes.push(...data.topology.pipes);
+      // Namespace pipe refs to match namespaced node IDs
+      for (const pipe of topology.pipes) {
+        const [fromNode, fromPort] = pipe.from.split(':');
+        const [toNode, toPort] = pipe.to.split(':');
+        allPipes.push({
+          id: `${systemId}/${pipe.id}`,
+          from: `${systemId}/${fromNode}:${fromPort}`,
+          to: `${systemId}/${toNode}:${toPort}`,
+        });
+      }
     }
 
     return {
@@ -129,16 +109,15 @@ export class WorkspaceService {
   readonly compositeGraph = computed<TopologyGraph | null>(() => {
     const site = this._site();
     const systems = this._systems();
+    const links = this._links();
     if (!site || systems.size === 0) return null;
 
-    const inputs = site.systems
-      .filter(sp => systems.has(sp.config))
-      .map(sp => ({
-        configName: sp.config,
-        topology: systems.get(sp.config)!.topology,
-      }));
+    const inputs = [...systems.entries()].map(([systemId, { topology }]) => ({
+      systemId,
+      topology,
+    }));
 
-    return buildCompositeGraph(inputs, site.links);
+    return buildCompositeGraph(inputs, links);
   });
 
   readonly compositeRoutes = computed<Route[]>(() => {
@@ -150,99 +129,72 @@ export class WorkspaceService {
   readonly boundaryPortsBySystem = computed<Map<string, BoundaryPort[]>>(() => {
     const systems = this._systems();
     const result = new Map<string, BoundaryPort[]>();
-    for (const [config, { topology }] of systems) {
-      result.set(config, boundaryPorts(topology));
+    for (const [systemId, { topology }] of systems) {
+      result.set(systemId, boundaryPorts(topology));
     }
     return result;
   });
 
-  readonly brokenLinks = computed<SiteLink[]>(() => {
-    const site = this._site();
+  readonly brokenLinks = computed<LinkData[]>(() => {
     const systems = this._systems();
-    if (!site) return [];
-
-    return site.links.filter(link => {
-      try {
-        const fromConfig = link.from.split('/')[0];
-        const toConfig = link.to.split('/')[0];
-        return !systems.has(fromConfig) || !systems.has(toConfig);
-      } catch {
-        return true;
-      }
-    });
+    const links = this._links();
+    return links.filter(link =>
+      !systems.has(link.fromSystem) || !systems.has(link.toSystem)
+    );
   });
 
-  readonly unlinkedHandoffs = computed<Array<{ config: string; nodeId: string; nodeName: string }>>(() => {
-    const site = this._site();
+  readonly unlinkedHandoffs = computed<Array<{ systemId: string; nodeId: string; nodeName: string }>>(() => {
     const systems = this._systems();
-    if (!site) return [];
+    const links = this._links();
 
     const linkedNodeIds = new Set<string>();
-    for (const link of site.links) {
-      try {
-        const from = parseSiteLinkRef(link.from);
-        const to = parseSiteLinkRef(link.to);
-        linkedNodeIds.add(`${from.config}/${from.nodeId}`);
-        linkedNodeIds.add(`${to.config}/${to.nodeId}`);
-      } catch { /* skip invalid */ }
+    for (const link of links) {
+      linkedNodeIds.add(`${link.fromSystem}/${link.fromNode}`);
+      linkedNodeIds.add(`${link.toSystem}/${link.toNode}`);
     }
 
-    const result: Array<{ config: string; nodeId: string; nodeName: string }> = [];
-    for (const [config, { topology }] of systems) {
+    const result: Array<{ systemId: string; nodeId: string; nodeName: string }> = [];
+    for (const [systemId, { topology }] of systems) {
       for (const node of topology.nodes) {
-        if (node.kind === 'handoff' && !linkedNodeIds.has(`${config}/${node.id}`)) {
-          result.push({ config, nodeId: node.id, nodeName: (node as any).name ?? node.id });
+        if (node.kind === 'handoff' && !linkedNodeIds.has(`${systemId}/${node.id}`)) {
+          result.push({ systemId, nodeId: node.id, nodeName: (node as any).name ?? node.id });
         }
       }
     }
     return result;
   });
 
-  constructor(
-    private electron: ElectronService,
-    private library: LibraryService,
-  ) {}
+  constructor(private electron: ElectronService) {}
 
   // --- Load ---
 
-  async load(siteName: string): Promise<void> {
+  async load(siteId: string): Promise<void> {
     this.clear();
     this._loading.set(true);
-    this._siteName.set(siteName); // set early so guards can check which site is loading
 
     try {
-      const raw = await this.electron.siteLoad(siteName);
-      const site = parseSite(raw);
+      const payload = await this.electron.siteLoad(siteId);
+      this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName });
 
-      const systems = new Map<string, { topology: SystemTopology; board: BoardDef }>();
-      let stale = false;
+      const systems = new Map<string, { topology: SystemTopology; board: BoardDef; position: { x: number; y: number } }>();
 
-      for (const sp of site.systems) {
+      for (const sp of payload.systems) {
         try {
-          const topoRaw = await this.library.load(sp.config) as SystemTopology;
-          topoRaw.route_overrides ??= {};
-          topoRaw.automations ??= [];
-          const boardResult = await this.electron.boardLoad(topoRaw.device.board);
-          const board = boardResult.board as BoardDef;
-          systems.set(sp.config, { topology: topoRaw, board });
+          // Reconstruct full SystemTopology from stored parts
+          const topology = this.reconstructTopology(sp);
 
-          const currentChecksum = await this.electron.siteConfigChecksum(sp.config);
-          if (currentChecksum !== sp.checksum) {
-            stale = true;
-          }
+          const boardResult = await this.electron.boardLoad(sp.board);
+          const board = boardResult.board as BoardDef;
+
+          systems.set(sp.id, { topology, board, position: sp.position });
         } catch {
-          stale = true;
+          // Skip systems with broken board references
         }
       }
 
-      // Run ID collision migration
-      const { systems: migrated, dirtied } = this.migrateIds(systems, site);
-
-      this._site.set(site);
-      this._systems.set(migrated);
-      this._stale.set(stale);
-      this._dirtyConfigs.set(dirtied);
-      this._siteDirty.set(dirtied.size > 0);
+      this._systems.set(systems);
+      this._links.set(payload.links);
+      this._dirty.set(false);
     } finally {
       this._loading.set(false);
     }
@@ -250,115 +202,105 @@ export class WorkspaceService {
 
   // --- Focus ---
 
-  focusSystem(config: string): void {
-    this._activeConfig.set(config);
+  focusSystem(systemId: string): void {
+    this._activeSystemId.set(systemId);
   }
 
   unfocusSystem(): void {
-    this._activeConfig.set(null);
+    this._activeSystemId.set(null);
   }
 
   // --- Topology mutations ---
 
   updateActiveTopology(updater: (t: SystemTopology) => void): void {
-    const config = this._activeConfig();
-    if (!config) return;
-    this.updateSystemTopology(config, updater);
+    const id = this._activeSystemId();
+    if (!id) return;
+    this.updateSystemTopology(id, updater);
   }
 
-  updateSystemTopology(config: string, updater: (t: SystemTopology) => void): void {
+  updateSystemTopology(systemId: string, updater: (t: SystemTopology) => void): void {
     const systems = this._systems();
-    const entry = systems.get(config);
+    const entry = systems.get(systemId);
     if (!entry) return;
     const clone = structuredClone(entry.topology);
     updater(clone);
     const newSystems = new Map(systems);
-    newSystems.set(config, { topology: clone, board: entry.board });
+    newSystems.set(systemId, { topology: clone, board: entry.board, position: entry.position });
     this._systems.set(newSystems);
-    this._dirtyConfigs.update(s => { const n = new Set(s); n.add(config); return n; });
+    this._dirty.set(true);
   }
 
-  // --- Site structure mutations ---
+  // --- Site metadata mutations ---
 
-  updateSite(updater: (site: Site) => void): void {
+  updateSiteName(friendlyName: string): void {
     const site = this._site();
     if (!site) return;
-    const copy = structuredClone(site);
-    updater(copy);
-    this._site.set(copy);
-    this._siteDirty.set(true);
+    this._site.set({ ...site, friendlyName });
+    this._dirty.set(true);
   }
 
-  addLink(link: SiteLink): void {
-    this.updateSite(s => s.links.push(link));
+  // --- Link mutations ---
+
+  addLink(link: LinkData): void {
+    this._links.update(links => [...links, link]);
+    this._dirty.set(true);
   }
 
   removeLink(linkId: string): void {
-    this.updateSite(s => { s.links = s.links.filter(l => l.id !== linkId); });
+    this._links.update(links => links.filter(l => l.id !== linkId));
+    this._dirty.set(true);
   }
 
-  /** Compute a position below all existing systems so the new one doesn't overlap. */
+  // --- System management ---
+
   nextSystemPosition(): { x: number; y: number } {
-    const site = this._site();
     const systems = this._systems();
-    if (!site || systems.size === 0) return { x: 0, y: 0 };
+    if (systems.size === 0) return { x: 0, y: 0 };
 
     let maxY = 0;
-    for (const sp of site.systems) {
-      const data = systems.get(sp.config);
-      if (!data) continue;
-      // Find the bottom edge of this system's nodes
-      for (const node of data.topology.nodes) {
-        const bottom = sp.position.y + node.position.y + 80; // 80 ≈ typical node height
+    for (const [, { topology, position }] of systems) {
+      for (const node of topology.nodes) {
+        const bottom = position.y + node.position.y + 80;
         maxY = Math.max(maxY, bottom);
       }
     }
     return { x: 0, y: maxY + 40 };
   }
 
-  async addSystem(configName: string, position: { x: number; y: number }): Promise<void> {
-    const topoRaw = await this.library.load(configName) as SystemTopology;
-    topoRaw.route_overrides ??= {};
-    topoRaw.automations ??= [];
-    const boardResult = await this.electron.boardLoad(topoRaw.device.board);
-    const board = boardResult.board as BoardDef;
-    const checksum = await this.electron.siteConfigChecksum(configName);
-
-    // Migrate IDs if the new system collides with existing
-    const tempSystems = new Map(this._systems());
-    tempSystems.set(configName, { topology: topoRaw, board });
+  async addSystemFromTemplate(templateName: string): Promise<string> {
     const site = this._site();
-    if (site) {
-      const { systems: migrated, dirtied } = this.migrateIds(tempSystems, site);
-      this._systems.set(migrated);
-      if (dirtied.size > 0) {
-        this._dirtyConfigs.update(s => { const n = new Set(s); for (const d of dirtied) n.add(d); return n; });
-      }
-    } else {
-      this._systems.set(tempSystems);
-    }
+    if (!site) throw new Error('No site loaded');
 
-    this.updateSite(s => {
-      s.systems.push({ config: configName, position, checksum });
-    });
+    const position = this.nextSystemPosition();
+    const systemPayload = await this.electron.systemAddFromTemplate(site.id, templateName, position);
+
+    // Load board for the new system
+    const boardResult = await this.electron.boardLoad(systemPayload.board);
+    const board = boardResult.board as BoardDef;
+    const topology = this.reconstructTopology(systemPayload);
+
+    const newSystems = new Map(this._systems());
+    newSystems.set(systemPayload.id, { topology, board, position: systemPayload.position });
+    this._systems.set(newSystems);
+    this._dirty.set(true);
+
+    return systemPayload.id;
   }
 
-  removeSystem(configName: string): void {
+  removeSystem(systemId: string): void {
     const systems = new Map(this._systems());
-    systems.delete(configName);
+    systems.delete(systemId);
     this._systems.set(systems);
 
-    this.updateSite(s => {
-      s.systems = s.systems.filter(sp => sp.config !== configName);
-      s.links = s.links.filter(l =>
-        !l.from.startsWith(`${configName}/`) && !l.to.startsWith(`${configName}/`)
-      );
-    });
+    // Remove links referencing this system
+    this._links.update(links =>
+      links.filter(l => l.fromSystem !== systemId && l.toSystem !== systemId)
+    );
 
-    this._dirtyConfigs.update(s => { const n = new Set(s); n.delete(configName); return n; });
+    this._dirty.set(true);
   }
 
-  // --- ID generation ---
+  // --- ID generation (site-wide unique) ---
 
   nextNodeId(kind: string): string {
     const allNodes = this.allNodes();
@@ -368,7 +310,6 @@ export class WorkspaceService {
       if (node.kind !== kind) continue;
       const match = node.id.match(regex);
       if (match) max = Math.max(max, parseInt(match[1]));
-      // Handle bare singleton IDs (e.g., 'water_source' counts as 1)
       if (node.id === kind) max = Math.max(max, 1);
     }
     return `${kind}${max + 1}`;
@@ -385,208 +326,76 @@ export class WorkspaceService {
     return `pipe${max + 1}`;
   }
 
-  // --- Save ---
+  // --- Save (atomic) ---
 
-  async saveSystem(config: string): Promise<void> {
-    const entry = this._systems().get(config);
-    if (!entry) return;
-    await this.library.save(config, entry.topology);
-    this._dirtyConfigs.update(s => { const n = new Set(s); n.delete(config); return n; });
-  }
-
-  async saveSite(): Promise<void> {
-    const site = this._site();
-    const name = this._siteName();
-    if (!site || !name) return;
-
-    // Save all dirty system topologies first
-    for (const config of this._dirtyConfigs()) {
-      const entry = this._systems().get(config);
-      if (entry) await this.library.save(config, entry.topology);
-    }
-
-    // Recompute checksums
-    for (const sp of site.systems) {
-      try {
-        sp.checksum = await this.electron.siteConfigChecksum(sp.config);
-      } catch {
-        sp.checksum = '';
-      }
-    }
-
-    await this.electron.siteSave(name, site);
-    this._dirtyConfigs.set(new Set());
-    this._siteDirty.set(false);
-    this._stale.set(false);
-  }
-
-  // --- Rebuild ---
-
-  async rebuild(): Promise<void> {
+  async save(): Promise<void> {
     const site = this._site();
     if (!site) return;
 
-    const systems = new Map<string, { topology: SystemTopology; board: BoardDef }>();
-    const validConfigs = new Set<string>();
-
-    for (const sp of site.systems) {
-      try {
-        const topoRaw = await this.library.load(sp.config) as SystemTopology;
-        topoRaw.route_overrides ??= {};
-        topoRaw.automations ??= [];
-        const boardResult = await this.electron.boardLoad(topoRaw.device.board);
-        const board = boardResult.board as BoardDef;
-        systems.set(sp.config, { topology: topoRaw, board });
-        validConfigs.add(sp.config);
-      } catch {
-        // System missing — will be removed
-      }
-    }
-
-    // Migrate IDs after reload
-    const { systems: migrated, dirtied } = this.migrateIds(systems, site);
-    this._systems.set(migrated);
-
-    this.updateSite(s => {
-      s.systems = s.systems.filter(sp => validConfigs.has(sp.config));
-      s.links = s.links.filter(l => {
-        const fromConfig = l.from.split('/')[0];
-        const toConfig = l.to.split('/')[0];
-        return validConfigs.has(fromConfig) && validConfigs.has(toConfig);
+    const systemPayloads: SiteSavePayload['systems'] = [];
+    for (const [systemId, { topology, position }] of this._systems()) {
+      systemPayloads.push({
+        id: systemId,
+        friendlyName: topology.device.friendly_name,
+        board: topology.device.board,
+        directory: topology.device.directory ?? null,
+        topology: {
+          nodes: topology.nodes,
+          pipes: topology.pipes,
+          route_overrides: topology.route_overrides,
+          timing: topology.timing,
+          automations: topology.automations,
+          uart_buses: topology.device.uart_buses,
+        },
+        position,
       });
-    });
-
-    // Recompute checksums
-    const site2 = this._site()!;
-    for (const sp of site2.systems) {
-      try {
-        sp.checksum = await this.electron.siteConfigChecksum(sp.config);
-      } catch {
-        sp.checksum = '';
-      }
     }
-    this._site.set(structuredClone(site2));
-    this._stale.set(false);
-    this._dirtyConfigs.set(dirtied);
-    this._siteDirty.set(true);
+
+    const payload: SiteSavePayload = {
+      site: { id: site.id, friendlyName: site.friendlyName },
+      systems: systemPayloads,
+      links: this._links(),
+    };
+
+    await this.electron.siteSave(payload);
+    this._dirty.set(false);
   }
 
   // --- Clear ---
 
   clear(): void {
     this._site.set(null);
-    this._siteName.set(null);
     this._systems.set(new Map());
-    this._activeConfig.set(null);
-    this._dirtyConfigs.set(new Set());
-    this._siteDirty.set(false);
-    this._stale.set(false);
+    this._links.set([]);
+    this._activeSystemId.set(null);
+    this._dirty.set(false);
+    this._loading.set(false);
   }
 
-  // --- ID collision migration ---
+  // --- Helpers ---
 
-  private migrateIds(
-    systems: Map<string, { topology: SystemTopology; board: BoardDef }>,
-    site: Site,
-  ): { systems: Map<string, { topology: SystemTopology; board: BoardDef }>; dirtied: Set<string> } {
-    const seen = new Map<string, string>(); // nodeId → config that owns it
-    const remaps = new Map<string, Map<string, string>>(); // config → oldId → newId
-    const dirtied = new Set<string>();
-
-    // Compute the max trailing number across all node IDs for each kind
-    const kindMax = new Map<string, number>();
-    for (const [, { topology }] of systems) {
-      for (const node of topology.nodes) {
-        const match = node.id.match(/^([a-z_]+?)(\d+)$/);
-        if (match) {
-          const kind = match[1];
-          const num = parseInt(match[2]);
-          kindMax.set(kind, Math.max(kindMax.get(kind) ?? 0, num));
-        }
-      }
-    }
-
-    // Detect collisions (first system to claim an ID keeps it)
-    for (const [config, { topology }] of systems) {
-      for (const node of topology.nodes) {
-        if (seen.has(node.id)) {
-          // Collision — renumber this node
-          const remap = remaps.get(config) ?? new Map();
-          const kind = node.kind;
-          const next = (kindMax.get(kind) ?? 0) + 1;
-          kindMax.set(kind, next);
-          remap.set(node.id, `${kind}${next}`);
-          remaps.set(config, remap);
-        } else {
-          seen.set(node.id, config);
-        }
-      }
-    }
-
-    if (remaps.size === 0) return { systems, dirtied };
-
-    // Apply remaps
-    const result = new Map<string, { topology: SystemTopology; board: BoardDef }>();
-    for (const [config, entry] of systems) {
-      const remap = remaps.get(config);
-      if (!remap || remap.size === 0) {
-        result.set(config, entry);
-        continue;
-      }
-
-      dirtied.add(config);
-      const topology = structuredClone(entry.topology);
-
-      // Remap node IDs
-      for (const node of topology.nodes) {
-        const newId = remap.get(node.id);
-        if (newId) node.id = newId;
-      }
-
-      // Remap pipe refs
-      for (const pipe of topology.pipes) {
-        pipe.from = remapPortRef(pipe.from, remap);
-        pipe.to = remapPortRef(pipe.to, remap);
-      }
-
-      // Remap route_overrides keys
-      if (topology.route_overrides) {
-        const newOverrides: Record<string, RouteOverride> = {};
-        for (const [key, value] of Object.entries(topology.route_overrides)) {
-          newOverrides[remapRouteKey(key, remap)] = value;
-        }
-        topology.route_overrides = newOverrides;
-      }
-
-      // Remap automations
-      for (const auto of (topology.automations ?? [])) {
-        auto.route = remapRouteKey(auto.route, remap);
-        if (auto.trigger.type === 'level' && (auto.trigger as any).node && remap.has((auto.trigger as any).node)) {
-          (auto.trigger as any).node = remap.get((auto.trigger as any).node)!;
-        }
-      }
-
-      result.set(config, { topology, board: entry.board });
-    }
-
-    // Remap site links
-    for (const link of site.links) {
-      try {
-        const from = parseSiteLinkRef(link.from);
-        const to = parseSiteLinkRef(link.to);
-        const fromRemap = remaps.get(from.config);
-        const toRemap = remaps.get(to.config);
-        if (fromRemap?.has(from.nodeId)) {
-          link.from = siteLinkRef(from.config, fromRemap.get(from.nodeId)!, from.portId);
-        }
-        if (toRemap?.has(to.nodeId)) {
-          link.to = siteLinkRef(to.config, toRemap.get(to.nodeId)!, to.portId);
-        }
-      } catch {
-        // Invalid link ref — skip
-      }
-    }
-
-    return { systems: result, dirtied };
+  private reconstructTopology(sp: SystemPayload): SystemTopology {
+    const topo = sp.topology;
+    return {
+      schema: 8,
+      device: {
+        name: sp.id,
+        friendly_name: sp.friendlyName,
+        board: sp.board,
+        directory: sp.directory ?? undefined,
+        uart_buses: topo.uart_buses,
+      },
+      nodes: topo.nodes ?? [],
+      pipes: topo.pipes ?? [],
+      route_overrides: topo.route_overrides ?? {},
+      timing: topo.timing ?? {
+        valve_travel_time: '2s',
+        flow_watchdog_seconds: 30,
+        flow_confirm_seconds: 5,
+        api_watchdog_seconds: 300,
+        update_interval: '10s',
+      },
+      automations: topo.automations ?? [],
+    };
   }
 }

@@ -54,7 +54,7 @@
           <div class="bg-base-200/50 rounded-lg divide-y divide-base-300/40">
             @for (c of seedChanges(); track c.id) {
               <div class="flex items-center gap-2 px-3 py-2 text-xs">
-                <span class="badge badge-xs" [class.badge-secondary]="c.kind === 'board'" [class.badge-accent]="c.kind === 'config'">{{ c.kind }}</span>
+                <span class="badge badge-xs badge-secondary">{{ c.kind }}</span>
                 <span class="flex-1 truncate font-medium">{{ c.label }}</span>
                 <button class="btn btn-ghost btn-xs opacity-40 hover:opacity-100" (click)="dismissSeedChange(c.id)">&#10005;</button>
               </div>

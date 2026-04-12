@@ -73,7 +73,7 @@ const STEPS: { id: StepId; label: string; icon: string }[] = [
       <!-- Device name + actions -->
       <div class="flex items-center gap-3 shrink-0 px-4 border-l border-base-300/30">
         <span class="text-xs text-base-content/40 font-mono truncate max-w-32 hidden md:inline">
-          {{ editor.configName() }}
+          {{ editor.systemId() }}
         </span>
         @if (editor.readonly()) {
           <span class="badge badge-info badge-sm">Preview</span>
@@ -122,19 +122,14 @@ export class PipelineRailComponent implements OnInit, OnDestroy {
     const t = this.editor.topology();
     const v = this.editor.validation();
     const gen = this.editor.generatedFiles();
-    const config = this.editor.configName();
-    const site = this.workspace.site();
     const active = this.activeStep();
-
-    const sp = site?.systems.find(s => s.config === config);
-    const deployed = sp && sp.checksum !== '';
 
     const states = new Map<StepId, StepState>();
     states.set('device', t?.device?.name && t?.device?.board ? 'complete' : 'untouched');
     states.set('design', (t?.nodes?.length ?? 0) > 0 && (t?.pipes?.length ?? 0) > 0 ? 'complete' : 'untouched');
     states.set('automations', (t?.automations?.length ?? 0) > 0 ? 'complete' : 'untouched');
     states.set('timing', 'complete');
-    states.set('deploy', v && !v.ok ? 'warning' : deployed ? 'complete' : 'untouched');
+    states.set('deploy', v && !v.ok ? 'warning' : 'untouched');
     states.set('docs', gen ? 'complete' : 'untouched');
 
     // Active step overrides

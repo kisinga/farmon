@@ -2,15 +2,12 @@ import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { ElectronService } from './core/services/electron.service';
-import { LibraryService } from './core/services/library.service';
-import { SiteLibraryService } from './core/services/site-library.service';
 import { WorkspaceService } from './core/services/workspace.service';
 import { SystemEditorService } from './core/services/system-editor.service';
 import { ContextStripComponent } from './shared/context-strip/context-strip.component';
 import { PipelineRailComponent } from './shared/pipeline-rail/pipeline-rail.component';
 import { SiteRailComponent } from './shared/site-rail/site-rail.component';
 import type { SeedChange } from './core/models/electron-api';
-import type { Site } from '@far-mon/core';
 import { filter } from 'rxjs';
 
 const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
@@ -48,8 +45,6 @@ const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/s
 })
 export class App implements OnInit {
   private electron = inject(ElectronService);
-  private library = inject(LibraryService);
-  private siteLibrary = inject(SiteLibraryService);
   private workspace = inject(WorkspaceService);
   private systemEditor = inject(SystemEditorService);
   private router = inject(Router);
@@ -71,15 +66,11 @@ export class App implements OnInit {
     const segments = this.currentUrl().split('/').filter(Boolean);
 
     if (segments[0] === 'site' && segments[1] && segments[2] === 'system') {
-      // Editor → back to site
       const siteSlug = decodeURIComponent(segments[1]);
-      const siteFriendly = this.workspace.site()?.friendly_name
-        ?? this.siteLibrary.entries().find(e => e.name === siteSlug)?.friendlyName
-        ?? siteSlug;
+      const siteFriendly = this.workspace.site()?.friendlyName ?? siteSlug;
       return { label: siteFriendly, link: `/site/${segments[1]}`, colorClass: 'nav-label-site' };
     }
     if (segments[0] === 'site' && segments[1]) {
-      // Site → back to overview
       return { label: 'Overview', link: '/overview', colorClass: 'nav-label-overview' };
     }
     return null;
@@ -90,7 +81,6 @@ export class App implements OnInit {
   }
 
   async ngOnInit() {
-    // Track URL for navigation level detection
     this.currentUrl.set(this.router.url);
     this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
@@ -100,43 +90,10 @@ export class App implements OnInit {
       const changes = await this.electron.seedChanges();
       if (changes.length > 0) this.seedChanges.set(changes);
     }
-
-    // Ensure library is loaded (needed for migration)
-    await this.library.refresh();
-    await this.siteLibrary.refresh();
-
-    // Auto-migrate configs to sites if no sites exist
-    if (this.siteLibrary.entries().length === 0) {
-      await this.migrateConfigsToSites();
-      await this.siteLibrary.refresh();
-    }
-  }
-
-  private async migrateConfigsToSites(): Promise<void> {
-    const userConfigs = this.library.entries().filter(c => !c.library);
-    if (userConfigs.length === 0) {
-      const site: Site = { schema: 1, name: 'my-site', friendly_name: 'My Site', systems: [], links: [] };
-      await this.electron.siteSave('my-site', site);
-      return;
-    }
-
-    for (const cfg of userConfigs) {
-      let checksum = '';
-      try { checksum = await this.electron.siteConfigChecksum(cfg.name); } catch {}
-      const site: Site = {
-        schema: 1,
-        name: cfg.name,
-        friendly_name: cfg.friendlyName,
-        systems: [{ config: cfg.name, position: { x: 0, y: 0 }, checksum }],
-        links: [],
-      };
-      await this.electron.siteSave(cfg.name, site);
-    }
   }
 
   protected async onEditorSave() {
-    const config = this.systemEditor.configName();
-    if (config) await this.workspace.saveSystem(config);
+    await this.workspace.save();
   }
 
   protected async applyAllSeedChanges() {

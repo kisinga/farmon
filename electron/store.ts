@@ -6,7 +6,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 
 // ---------------------------------------------------------------------------
-// Schema versioning
+// Schema versioning (for board YAML files)
 // ---------------------------------------------------------------------------
 
 export const SCHEMA_VERSION = 8;     // version this app writes
@@ -26,11 +26,8 @@ export class SchemaError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Migration chain
+// Migration chain (for topology YAML — only used when loading templates)
 // ---------------------------------------------------------------------------
-// Add migrations here when breaking structural changes are made.
-// Each function transforms data from version N to N+1.
-// New additive node kinds do NOT require a migration — only structural changes.
 
 type Migration = (data: Record<string, unknown>) => Record<string, unknown>;
 
@@ -38,7 +35,6 @@ const MIGRATIONS: Record<number, Migration> = {
   5: (data) => { data.schema = 6; data.automations = data.automations ?? []; return data; },
   6: (data) => {
     data.schema = 7;
-    // Move automation conditions to route_overrides (firmware-enforced)
     const overrides = (data.route_overrides ?? {}) as Record<string, Record<string, unknown>>;
     const automations = (data.automations ?? []) as Array<Record<string, unknown>>;
     for (const a of automations) {
@@ -60,8 +56,6 @@ const MIGRATIONS: Record<number, Migration> = {
     return data;
   },
   7: (data) => {
-    // Level triggers now support 'node' (topology ref) alongside 'entity' (raw HA).
-    // Existing 'entity' values are preserved — no auto-conversion needed.
     data.schema = 8;
     return data;
   },
@@ -80,12 +74,6 @@ function migrateIfNeeded(data: Record<string, unknown>, filePath: string): Recor
 
 // ---------------------------------------------------------------------------
 // Store paths
-//
-// defaults/ contains bundled seed data (boards + configs).
-// store/    is the single source of truth at runtime.
-//
-// On init, defaults are seeded into store (missing or stale entries replaced).
-// All reads and writes go through store/ only.
 // ---------------------------------------------------------------------------
 
 let _defaultsDir = "";
@@ -98,16 +86,16 @@ function boardsDir(): string {
   return path.join(storeRoot(), "boards");
 }
 
-function configsDir(): string {
-  return path.join(storeRoot(), "configs");
-}
-
 function defaultBoardsDir(): string {
   return path.join(_defaultsDir, "boards");
 }
 
 function defaultConfigsDir(): string {
   return path.join(_defaultsDir, "configs");
+}
+
+function templatesDir(): string {
+  return path.join(storeRoot(), "templates");
 }
 
 // ---------------------------------------------------------------------------
@@ -124,44 +112,23 @@ function copyDirSync(src: string, dest: string): void {
   }
 }
 
-/** True if the config name matches a bundled default. */
-function isLibraryConfig(name: string): boolean {
-  return fs.existsSync(path.join(defaultConfigsDir(), `${name}.yaml`));
-}
-
 /** True if the board model matches a bundled default. */
 function isLibraryBoard(model: string): boolean {
   return fs.existsSync(path.join(defaultBoardsDir(), model));
 }
 
-/** Generate a unique name that doesn't collide with existing store entries. */
-function uniqueName(base: string, dir: string, ext: string): string {
-  let candidate = `${base}-copy`;
-  let i = 1;
-  while (fs.existsSync(path.join(dir, `${candidate}${ext}`))) {
-    candidate = `${base}-copy-${++i}`;
-  }
-  return candidate;
-}
-
 // ---------------------------------------------------------------------------
-// Initialization — seed defaults into store, then store is the only source
+// Initialization
 // ---------------------------------------------------------------------------
-
-function templatesDir(): string {
-  return path.join(storeRoot(), "templates");
-}
 
 function hashesPath(): string {
   return path.join(storeRoot(), "seed-hashes.json");
 }
 
-/** SHA-256 hash of a file's contents. */
 function fileHash(filePath: string): string {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
-/** Recursively hash all files in a directory into a single digest. */
 function dirHash(dirPath: string): string {
   const hash = crypto.createHash("sha256");
   const entries = fs.readdirSync(dirPath, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
@@ -174,7 +141,7 @@ function dirHash(dirPath: string): string {
 }
 
 export interface SeedChange {
-  kind: "board" | "config";
+  kind: "board";
   id: string;
   label: string;
   action: "added" | "updated";
@@ -182,15 +149,10 @@ export interface SeedChange {
 
 let _pendingChanges: SeedChange[] = [];
 
-/** Returns pending default updates that require user confirmation. */
 export function getSeedChanges(): SeedChange[] {
   return _pendingChanges;
 }
 
-/**
- * Apply one or all pending seed changes (user confirmed the overwrite).
- * If no id is given, applies all pending changes.
- */
 export function applySeedChanges(id?: string): void {
   const hPath = hashesPath();
   const hashes: Record<string, string> = fs.existsSync(hPath)
@@ -200,29 +162,18 @@ export function applySeedChanges(id?: string): void {
   const toApply = id ? _pendingChanges.filter((c) => c.id === id) : [..._pendingChanges];
 
   for (const change of toApply) {
-    if (change.kind === "board") {
-      const srcDir = path.join(defaultBoardsDir(), change.id);
-      const destDir = path.join(boardsDir(), change.id);
-      copyDirSync(srcDir, destDir);
-      hashes[`board:${change.id}`] = dirHash(srcDir);
-    } else {
-      const srcPath = path.join(defaultConfigsDir(), `${change.id}.yaml`);
-      const destPath = path.join(configsDir(), `${change.id}.yaml`);
-      fs.copyFileSync(srcPath, destPath);
-      hashes[`config:${change.id}.yaml`] = fileHash(srcPath);
-    }
+    const srcDir = path.join(defaultBoardsDir(), change.id);
+    const destDir = path.join(boardsDir(), change.id);
+    copyDirSync(srcDir, destDir);
+    hashes[`board:${change.id}`] = dirHash(srcDir);
   }
 
   fs.writeFileSync(hPath, JSON.stringify(hashes, null, 2), "utf-8");
-
-  // Remove applied entries from pending list
   const appliedIds = new Set(toApply.map((c) => c.id));
   _pendingChanges = _pendingChanges.filter((c) => !appliedIds.has(c.id));
 }
 
-/** Dismiss a pending change without applying it. */
 export function dismissSeedChange(id: string): void {
-  // Update hash to current bundled version so it won't prompt again
   const hPath = hashesPath();
   const hashes: Record<string, string> = fs.existsSync(hPath)
     ? JSON.parse(fs.readFileSync(hPath, "utf-8"))
@@ -230,11 +181,7 @@ export function dismissSeedChange(id: string): void {
 
   const change = _pendingChanges.find((c) => c.id === id);
   if (change) {
-    if (change.kind === "board") {
-      hashes[`board:${change.id}`] = dirHash(path.join(defaultBoardsDir(), change.id));
-    } else {
-      hashes[`config:${change.id}.yaml`] = fileHash(path.join(defaultConfigsDir(), `${change.id}.yaml`));
-    }
+    hashes[`board:${change.id}`] = dirHash(path.join(defaultBoardsDir(), change.id));
     fs.writeFileSync(hPath, JSON.stringify(hashes, null, 2), "utf-8");
   }
   _pendingChanges = _pendingChanges.filter((c) => c.id !== id);
@@ -243,22 +190,12 @@ export function dismissSeedChange(id: string): void {
 export function initStore(defaultsDir: string): void {
   _defaultsDir = defaultsDir;
   fs.mkdirSync(boardsDir(), { recursive: true });
-  fs.mkdirSync(configsDir(), { recursive: true });
   fs.mkdirSync(templatesDir(), { recursive: true });
-  fs.mkdirSync(sitesDir(), { recursive: true });
   seedDefaults();
 }
 
-/**
- * Seed defaults into store.
- * - New entries (not yet in store) are copied automatically.
- * - Changed entries (hash mismatch) are queued as pending — the user
- *   must confirm before they overwrite the store copy.
- */
 function seedDefaults(): void {
   const pending: SeedChange[] = [];
-
-  // Load previous hashes
   const hPath = hashesPath();
   const prevHashes: Record<string, string> = fs.existsSync(hPath)
     ? JSON.parse(fs.readFileSync(hPath, "utf-8"))
@@ -276,7 +213,6 @@ function seedDefaults(): void {
       const existed = fs.existsSync(destDir);
 
       if (hash !== prevHashes[key]) {
-        // Read label from YAML for user-friendly notification
         const yamlPath = path.join(srcDir, "board.yaml");
         let label = d.name;
         if (fs.existsSync(yamlPath)) {
@@ -285,44 +221,88 @@ function seedDefaults(): void {
         }
 
         if (!existed) {
-          // New board — auto-seed, no prompt needed
           copyDirSync(srcDir, destDir);
           newHashes[key] = hash;
         } else {
-          // Changed board — queue for user confirmation
           pending.push({ kind: "board", id: d.name, label, action: "updated" });
         }
       }
     }
   }
 
-  // Seed configs
-  if (fs.existsSync(defaultConfigsDir())) {
-    for (const f of fs.readdirSync(defaultConfigsDir())) {
-      if (!f.endsWith(".yaml")) continue;
-      const srcPath = path.join(defaultConfigsDir(), f);
-      const destPath = path.join(configsDir(), f);
-      const key = `config:${f}`;
-      const hash = fileHash(srcPath);
-      const existed = fs.existsSync(destPath);
+  fs.writeFileSync(hPath, JSON.stringify(newHashes, null, 2), "utf-8");
+  _pendingChanges = pending;
+}
 
-      if (hash !== prevHashes[key]) {
-        const name = f.replace(".yaml", "");
-        if (!existed) {
-          // New config — auto-seed
-          fs.copyFileSync(srcPath, destPath);
-          newHashes[key] = hash;
-        } else {
-          // Changed config — queue for user confirmation
-          pending.push({ kind: "config", id: name, label: name, action: "updated" });
-        }
+// ---------------------------------------------------------------------------
+// Templates (read-only blueprints)
+// ---------------------------------------------------------------------------
+
+export interface TemplateListEntry {
+  name: string;
+  friendlyName: string;
+  board: string;
+  tanks: number;
+  valves: number;
+}
+
+/**
+ * List available templates. Reads from both bundled defaults and user templates dir.
+ */
+export function listTemplates(): TemplateListEntry[] {
+  const result: TemplateListEntry[] = [];
+  const seen = new Set<string>();
+
+  const dirs = [defaultConfigsDir(), templatesDir()];
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith(".yaml")) continue;
+      const name = f.replace(".yaml", "");
+      if (seen.has(name)) continue;
+      seen.add(name);
+
+      try {
+        const filePath = path.join(dir, f);
+        const raw = fs.readFileSync(filePath, "utf-8");
+        const parsed = parseYaml(raw) as Record<string, unknown>;
+        const device = parsed.device as Record<string, unknown> | undefined;
+        const nodes = Array.isArray(parsed.nodes)
+          ? (parsed.nodes as Array<Record<string, unknown>>)
+          : [];
+
+        result.push({
+          name,
+          friendlyName: (device?.friendly_name as string) ?? name,
+          board: (device?.board as string) ?? "unknown",
+          tanks: nodes.filter((n) => n.kind === "tank").length,
+          valves: nodes.filter((n) => n.kind === "valve").length,
+        });
+      } catch {
+        // Skip broken template files
       }
     }
   }
 
-  // Persist hashes (only for auto-seeded new entries)
-  fs.writeFileSync(hPath, JSON.stringify(newHashes, null, 2), "utf-8");
-  _pendingChanges = pending;
+  return result;
+}
+
+/**
+ * Load a template topology. Applies schema migrations if needed.
+ * Returns the full parsed topology data (device, nodes, pipes, etc.).
+ */
+export function loadTemplate(name: string): Record<string, unknown> {
+  // Check user templates first, then bundled defaults
+  const userPath = path.join(templatesDir(), `${name}.yaml`);
+  const defaultPath = path.join(defaultConfigsDir(), `${name}.yaml`);
+
+  const filePath = fs.existsSync(userPath) ? userPath : defaultPath;
+  if (!fs.existsSync(filePath)) throw new Error(`Template not found: ${name}`);
+
+  const raw = fs.readFileSync(filePath, "utf-8");
+  const data = parseYaml(raw) as Record<string, unknown>;
+  migrateIfNeeded(data, `templates/${name}.yaml`);
+  return data;
 }
 
 /**
@@ -364,17 +344,10 @@ export function listBoards(): BoardListEntry[] {
     .filter((x): x is BoardListEntry => x !== null);
 }
 
-/**
- * Resolve a board directory by ID (directory name) or model name.
- * First tries a direct directory match, then falls back to scanning
- * board directories for a matching `model` field in their YAML.
- */
 function resolveBoardDir(idOrModel: string): string {
-  // Direct match by directory name (the canonical ID)
   const dir = path.join(boardsDir(), idOrModel);
   if (fs.existsSync(dir)) return dir;
 
-  // Fallback: scan for a board whose YAML `model` field matches
   const base = boardsDir();
   if (fs.existsSync(base)) {
     for (const d of fs.readdirSync(base, { withFileTypes: true })) {
@@ -396,9 +369,7 @@ export function loadBoard(idOrModel: string): { board: Record<string, unknown>; 
   const yamlPath = path.join(dir, "board.yaml");
   const raw = fs.readFileSync(yamlPath, "utf-8");
   const board = parseYaml(raw) as Record<string, unknown>;
-  migrateIfNeeded(board, `boards/${id}/board.yaml`);
 
-  // Inject canonical directory ID so downstream code never guesses
   board.id = id;
 
   const svgField = (board.svg as string) ?? "board.svg";
@@ -414,7 +385,6 @@ export function importBoard(sourcePath: string): string {
 
   const raw = fs.readFileSync(yamlPath, "utf-8");
   const parsed = parseYaml(raw) as Record<string, unknown>;
-  migrateIfNeeded(parsed, yamlPath);
 
   const model = (parsed.model as string) ?? path.basename(sourcePath);
   const dest = path.join(boardsDir(), model);
@@ -423,142 +393,14 @@ export function importBoard(sourcePath: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Configs
-// ---------------------------------------------------------------------------
-
-export interface ConfigListEntry {
-  name: string;
-  deviceName: string;
-  friendlyName: string;
-  board: string;
-  tanks: number;
-  valves: number;
-  routes: number;
-  library: boolean;
-}
-
-export function listConfigs(): ConfigListEntry[] {
-  if (!fs.existsSync(configsDir())) return [];
-
-  return fs.readdirSync(configsDir())
-    .filter((f) => f.endsWith(".yaml"))
-    .map((f) => {
-      const name = f.replace(".yaml", "");
-      const filePath = path.join(configsDir(), f);
-      const raw = fs.readFileSync(filePath, "utf-8");
-      const parsed = parseYaml(raw) as Record<string, unknown>;
-      const device = parsed.device as Record<string, unknown> | undefined;
-      const nodes = Array.isArray(parsed.nodes)
-        ? (parsed.nodes as Array<Record<string, unknown>>)
-        : [];
-      const overrides =
-        typeof parsed.route_overrides === "object" && parsed.route_overrides !== null
-          ? (parsed.route_overrides as Record<string, unknown>)
-          : {};
-
-      return {
-        name,
-        deviceName: (device?.name as string) ?? name,
-        friendlyName: (device?.friendly_name as string) ?? name,
-        board: (device?.board as string) ?? "unknown",
-        tanks: nodes.filter((n) => n.kind === "tank").length,
-        valves: nodes.filter((n) => n.kind === "valve").length,
-        routes: Object.keys(overrides).length,
-        library: isLibraryConfig(name),
-      };
-    });
-}
-
-function resolveConfigPath(name: string): string {
-  const filePath = path.join(configsDir(), `${name}.yaml`);
-  if (fs.existsSync(filePath)) return filePath;
-  throw new Error(`Config not found: ${name}`);
-}
-
-export function loadConfig(name: string): Record<string, unknown> {
-  const filePath = resolveConfigPath(name);
-  const raw = fs.readFileSync(filePath, "utf-8");
-  const data = parseYaml(raw) as Record<string, unknown>;
-  migrateIfNeeded(data, `configs/${name}.yaml`);
-  return data;
-}
-
-/** Writes a user config to store. Throws if name is a bundled template. */
-export function saveConfig(name: string, data: unknown): void {
-  if (isLibraryConfig(name)) {
-    throw new Error(`Cannot overwrite template "${name}". Duplicate it first.`);
-  }
-  fs.mkdirSync(configsDir(), { recursive: true });
-
-  const filePath = path.join(configsDir(), `${name}.yaml`);
-  const obj = data as Record<string, unknown>;
-  if (!obj.schema) obj.schema = SCHEMA_VERSION;
-
-  const yaml = stringifyYaml(obj, { indent: 2, lineWidth: 0 });
-  fs.writeFileSync(filePath, yaml, "utf-8");
-}
-
-/** Copy a config (template or user) to a new user config name. Returns the saved name. */
-export function duplicateConfig(sourceName: string, newName: string): string {
-  const sourceData = loadConfig(sourceName);
-  const finalName = isLibraryConfig(newName)
-    ? uniqueName(newName, configsDir(), ".yaml")
-    : newName;
-
-  // Ensure the destination doesn't collide with an existing file
-  const destPath = path.join(configsDir(), `${finalName}.yaml`);
-  if (fs.existsSync(destPath) && !isLibraryConfig(finalName)) {
-    throw new Error(`Config "${finalName}" already exists.`);
-  }
-
-  const yaml = stringifyYaml(sourceData, { indent: 2, lineWidth: 0 });
-  fs.writeFileSync(destPath, yaml, "utf-8");
-  return finalName;
-}
-
-/** Deletes a user config. Throws if name is a bundled template. */
-export function deleteConfig(name: string): void {
-  if (isLibraryConfig(name)) {
-    throw new Error(`Cannot delete template "${name}". Templates are re-seeded on startup.`);
-  }
-  const filePath = path.join(configsDir(), `${name}.yaml`);
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-}
-
-export function importConfig(sourcePath: string): string {
-  const raw = fs.readFileSync(sourcePath, "utf-8");
-  const parsed = parseYaml(raw) as Record<string, unknown>;
-  migrateIfNeeded(parsed, sourcePath);
-
-  const device = parsed.device as Record<string, unknown> | undefined;
-  const boardId = device?.board as string | undefined;
-  if (boardId) {
-    try { resolveBoardDir(boardId); }
-    catch { throw new Error(`Board "${boardId}" not found. Import the board definition first.`); }
-  }
-
-  const name = path.basename(sourcePath, ".yaml");
-  const dest = path.join(configsDir(), `${name}.yaml`);
-  fs.copyFileSync(sourcePath, dest);
-  return name;
-}
-
-export function exportConfig(name: string, destPath: string): void {
-  const srcPath = resolveConfigPath(name);
-  fs.copyFileSync(srcPath, destPath);
-}
-
-// ---------------------------------------------------------------------------
 // Output
 // ---------------------------------------------------------------------------
 
-// Stale files to clean up from previous generator versions.
 const DEPRECATED_FILES = [
   "config/homeassistant/dashboards/pump.yaml",
 ];
 
 export function writeOutput(files: Array<{ relativePath: string; content: string }>, outputDir: string): void {
-  // Remove known stale files from previous generations
   for (const stale of DEPRECATED_FILES) {
     const stalePath = path.join(outputDir, stale);
     if (fs.existsSync(stalePath)) {
@@ -569,7 +411,6 @@ export function writeOutput(files: Array<{ relativePath: string; content: string
   for (const file of files) {
     const fullPath = path.join(outputDir, file.relativePath);
 
-    // Don't overwrite secrets if they already exist (preserves user credentials)
     if (file.relativePath.endsWith("secrets.yaml") && fs.existsSync(fullPath)) {
       continue;
     }
@@ -591,118 +432,161 @@ export function getOutputDir(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Sites
+// Legacy import (one-time: old YAML sites/configs → structured data for DB)
 // ---------------------------------------------------------------------------
 
-function sitesDir(): string {
-  return path.join(storeRoot(), "sites");
-}
-
-function siteDir(name: string): string {
-  return path.join(sitesDir(), name);
-}
-
-function siteYamlPath(name: string): string {
-  return path.join(siteDir(name), "site.yaml");
-}
-
-function siteHaDir(name: string): string {
-  return path.join(siteDir(name), "ha");
-}
-
-export interface SiteListEntry {
-  name: string;
-  friendlyName: string;
-  systemCount: number;
-  linkCount: number;
-}
-
-export function listSites(): SiteListEntry[] {
-  if (!fs.existsSync(sitesDir())) return [];
-
-  return fs.readdirSync(sitesDir(), { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => {
-      const yamlPath = siteYamlPath(d.name);
-      if (!fs.existsSync(yamlPath)) return null;
-      const raw = fs.readFileSync(yamlPath, "utf-8");
-      const parsed = parseYaml(raw) as Record<string, unknown>;
-      const systems = Array.isArray(parsed.systems) ? parsed.systems : [];
-      const links = Array.isArray(parsed.links) ? parsed.links : [];
-      return {
-        name: d.name,
-        friendlyName: (parsed.friendly_name as string) ?? d.name,
-        systemCount: systems.length,
-        linkCount: links.length,
-      };
-    })
-    .filter((x): x is SiteListEntry => x !== null);
-}
-
-export function loadSite(name: string): Record<string, unknown> {
-  const filePath = siteYamlPath(name);
-  if (!fs.existsSync(filePath)) throw new Error(`Site not found: ${name}`);
-  const raw = fs.readFileSync(filePath, "utf-8");
-  return parseYaml(raw) as Record<string, unknown>;
-}
-
-export function saveSite(name: string, data: unknown): void {
-  const dir = siteDir(name);
-  fs.mkdirSync(dir, { recursive: true });
-  const obj = data as Record<string, unknown>;
-  if (!obj.schema) obj.schema = 1;
-  const yaml = stringifyYaml(obj, { indent: 2, lineWidth: 0 });
-  fs.writeFileSync(siteYamlPath(name), yaml, "utf-8");
-}
-
-export function deleteSite(name: string): void {
-  const dir = siteDir(name);
-  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
-}
-
-export function duplicateSite(sourceName: string, newName: string): string {
-  const data = loadSite(sourceName);
-  const finalName = uniqueName(newName, sitesDir(), "");
-  const destDir = siteDir(finalName);
-  if (fs.existsSync(destDir)) throw new Error(`Site "${finalName}" already exists.`);
-  // Copy entire site directory (includes ha/ files)
-  copyDirSync(siteDir(sourceName), destDir);
-  // Update the name fields in the copy
-  data.name = finalName;
-  data.friendly_name = `${data.friendly_name ?? sourceName} (copy)`;
-  const yaml = stringifyYaml(data, { indent: 2, lineWidth: 0 });
-  fs.writeFileSync(siteYamlPath(finalName), yaml, "utf-8");
-  return finalName;
+export interface LegacyImportResult {
+  sites: Array<{
+    id: string;
+    friendlyName: string;
+    systems: Array<{
+      id: string;
+      friendlyName: string;
+      board: string;
+      directory: string | null;
+      topology: Record<string, unknown>;
+      position: { x: number; y: number };
+    }>;
+    links: Array<{
+      id: string;
+      fromSystem: string;
+      fromNode: string;
+      fromPort: string;
+      toSystem: string;
+      toNode: string;
+      toPort: string;
+      label: string | null;
+    }>;
+    haFiles: Array<{ filename: string; content: string }>;
+  }>;
 }
 
 /**
- * Compute a SHA-256 checksum of a config's YAML content.
- * Used by the site integrity system to detect topology changes.
+ * Scan old store/ directories for legacy YAML sites and configs.
+ * Returns structured data ready to insert into the DB.
+ * Does NOT modify anything — caller decides what to import.
  */
-export function computeConfigChecksum(configName: string): string {
-  const filePath = path.join(configsDir(), `${configName}.yaml`);
-  if (!fs.existsSync(filePath)) throw new Error(`Config not found: ${configName}`);
-  return fileHash(filePath);
+export function scanLegacyData(): LegacyImportResult {
+  const root = storeRoot();
+  const oldSitesDir = path.join(root, "sites");
+  const oldConfigsDir = path.join(root, "configs");
+  const result: LegacyImportResult = { sites: [] };
+
+  if (!fs.existsSync(oldSitesDir)) return result;
+
+  for (const entry of fs.readdirSync(oldSitesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const siteYamlPath = path.join(oldSitesDir, entry.name, "site.yaml");
+    if (!fs.existsSync(siteYamlPath)) continue;
+
+    try {
+      const raw = parseYaml(fs.readFileSync(siteYamlPath, "utf-8")) as Record<string, unknown>;
+      const siteId = entry.name;
+      const friendlyName = (raw.friendly_name as string) ?? entry.name;
+
+      const site: LegacyImportResult['sites'][0] = {
+        id: siteId,
+        friendlyName,
+        systems: [],
+        links: [],
+        haFiles: [],
+      };
+
+      // Load referenced systems
+      const placements = Array.isArray(raw.systems) ? raw.systems as Array<Record<string, unknown>> : [];
+      for (const sp of placements) {
+        const configName = sp.config as string;
+        if (!configName) continue;
+        const configPath = path.join(oldConfigsDir, `${configName}.yaml`);
+        if (!fs.existsSync(configPath)) continue;
+
+        try {
+          const topoRaw = parseYaml(fs.readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+          const migrated = migrateIfNeeded(topoRaw, configPath);
+          const device = migrated.device as Record<string, unknown> | undefined;
+          const pos = sp.position as Record<string, number> | undefined;
+
+          site.systems.push({
+            id: configName,
+            friendlyName: (device?.friendly_name as string) ?? configName,
+            board: (device?.board as string) ?? "unknown",
+            directory: (device?.directory as string) ?? null,
+            topology: {
+              nodes: migrated.nodes ?? [],
+              pipes: migrated.pipes ?? [],
+              route_overrides: migrated.route_overrides ?? {},
+              timing: migrated.timing ?? {},
+              automations: migrated.automations ?? [],
+              uart_buses: device?.uart_buses,
+            },
+            position: { x: pos?.x ?? 0, y: pos?.y ?? 0 },
+          });
+        } catch {
+          // Skip broken config
+        }
+      }
+
+      // Parse links
+      const oldLinks = Array.isArray(raw.links) ? raw.links as Array<Record<string, unknown>> : [];
+      for (const link of oldLinks) {
+        try {
+          const fromRef = link.from as string;
+          const toRef = link.to as string;
+          if (!fromRef || !toRef) continue;
+
+          const from = parseLegacyLinkRef(fromRef);
+          const to = parseLegacyLinkRef(toRef);
+          site.links.push({
+            id: (link.id as string) ?? crypto.randomBytes(4).toString("hex"),
+            fromSystem: from.config, fromNode: from.nodeId, fromPort: from.portId,
+            toSystem: to.config, toNode: to.nodeId, toPort: to.portId,
+            label: (link.label as string) ?? null,
+          });
+        } catch { /* skip broken link */ }
+      }
+
+      // HA files
+      const haDir = path.join(oldSitesDir, entry.name, "ha");
+      if (fs.existsSync(haDir)) {
+        for (const haFile of fs.readdirSync(haDir)) {
+          if (!haFile.endsWith(".yaml")) continue;
+          try {
+            site.haFiles.push({
+              filename: haFile,
+              content: fs.readFileSync(path.join(haDir, haFile), "utf-8"),
+            });
+          } catch { /* skip */ }
+        }
+      }
+
+      if (site.systems.length > 0) {
+        result.sites.push(site);
+      }
+    } catch {
+      // Skip broken site dir
+    }
+  }
+
+  return result;
 }
 
-// ---------------------------------------------------------------------------
-// HA config files (per-site)
-// ---------------------------------------------------------------------------
-
-export function listHaFiles(siteName: string): string[] {
-  const dir = siteHaDir(siteName);
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter((f) => f.endsWith(".yaml"));
+/** Parse old "configName/nodeId:portId" link ref format. */
+function parseLegacyLinkRef(ref: string): { config: string; nodeId: string; portId: string } {
+  const slashIdx = ref.indexOf("/");
+  if (slashIdx === -1) throw new Error(`Invalid legacy link ref: ${ref}`);
+  const config = ref.slice(0, slashIdx);
+  const rest = ref.slice(slashIdx + 1);
+  const colonIdx = rest.indexOf(":");
+  if (colonIdx === -1) throw new Error(`Invalid legacy link ref: ${ref}`);
+  return { config, nodeId: rest.slice(0, colonIdx), portId: rest.slice(colonIdx + 1) };
 }
 
-export function loadHaFile(siteName: string, fileName: string): string {
-  const filePath = path.join(siteHaDir(siteName), fileName);
-  if (!fs.existsSync(filePath)) throw new Error(`HA file not found: ${siteName}/ha/${fileName}`);
-  return fs.readFileSync(filePath, "utf-8");
-}
-
-export function saveHaFile(siteName: string, fileName: string, content: string): void {
-  const dir = siteHaDir(siteName);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, fileName), content, "utf-8");
+/**
+ * Check if legacy data exists in old store/ directories.
+ */
+export function hasLegacyData(): boolean {
+  const oldSitesDir = path.join(storeRoot(), "sites");
+  if (!fs.existsSync(oldSitesDir)) return false;
+  return fs.readdirSync(oldSitesDir, { withFileTypes: true })
+    .some(d => d.isDirectory() && fs.existsSync(path.join(oldSitesDir, d.name, "site.yaml")));
 }

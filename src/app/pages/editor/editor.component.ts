@@ -66,14 +66,14 @@ export class EditorComponent implements OnInit, OnDestroy {
   private siteName: string | null = null;
 
   async ngOnInit() {
-    const config = this.route.snapshot.paramMap.get('config');
+    const systemId = this.route.snapshot.paramMap.get('config');
     this.siteName = this.route.snapshot.paramMap.get('name');
 
     this.routerSub = this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe((e) => this.currentUrl.set(e.urlAfterRedirects));
 
-    if (!config) {
+    if (!systemId) {
       this.router.navigate(['/overview']);
       return;
     }
@@ -81,17 +81,17 @@ export class EditorComponent implements OnInit, OnDestroy {
     const preview = this.route.snapshot.data['preview'] === true;
     this.isPreview.set(preview);
 
-    // Ensure workspace is loaded with the correct site (handles direct URL navigation & stale state)
-    if (!this.workspace.site() || this.workspace.siteName() !== this.siteName) {
+    // Ensure workspace is loaded with correct site
+    if (!this.workspace.site() || this.workspace.site()?.id !== this.siteName) {
       if (this.siteName) {
         await this.workspace.load(this.siteName);
       }
     }
 
-    // Focus the system — workspace already has the data
-    this.editor.focus(config, { readonly: preview });
+    // Focus the system
+    this.editor.focus(systemId, { readonly: preview });
 
-    // Load board list (for the device tab dropdown) and active board SVG
+    // Load board list and active board SVG
     await this.boards.refresh();
     const topology = this.editor.topology();
     if (topology) {
@@ -105,22 +105,8 @@ export class EditorComponent implements OnInit, OnDestroy {
     this.boards.clear();
   }
 
-  useTemplate() {
-    this.navigateBack();
-  }
-
-  private navigateBack() {
-    if (this.siteName) {
-      this.router.navigate(['/site', this.siteName]);
-    } else {
-      this.router.navigate(['/overview']);
-    }
-  }
-
   async save() {
-    const config = this.editor.configName();
-    if (!config) return;
-    await this.workspace.saveSystem(config);
+    await this.workspace.save();
   }
 
   private validationGen = 0;

@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import type {
   ElectronAPI,
-  LibraryEntry,
   BoardListEntry,
   BoardLoadResult,
   GenerateResult,
@@ -17,6 +16,10 @@ import type {
   HealthReport,
   SeedChange,
   SiteListEntry,
+  SiteFullPayload,
+  SiteSavePayload,
+  SystemPayload,
+  TemplateListEntry,
 } from '../models/electron-api';
 
 @Injectable({ providedIn: 'root' })
@@ -29,22 +32,50 @@ export class ElectronService {
     return !!this.api;
   }
 
-  // --- Library ---
-  libraryList(): Promise<LibraryEntry[]> {
-    return this.api?.libraryList() ?? Promise.resolve([]);
+  // --- Sites ---
+  siteList(): Promise<SiteListEntry[]> {
+    return this.api?.siteList() ?? Promise.resolve([]);
   }
-  libraryLoad(name: string): Promise<unknown> {
-    return this.invoke(() => this.api!.libraryLoad(name));
+  siteLoad(id: string): Promise<SiteFullPayload> {
+    return this.invoke(() => this.api!.siteLoad(id));
   }
-  async librarySave(name: string, data: unknown): Promise<void> {
-    await this.invoke(() => this.api!.librarySave(name, data));
+  async siteSave(payload: SiteSavePayload): Promise<void> {
+    await this.invoke(() => this.api!.siteSave(payload));
   }
-  async libraryDuplicate(sourceName: string, newName: string): Promise<string> {
-    const result = await this.invoke(() => this.api!.libraryDuplicate(sourceName, newName));
-    return result.name;
+  async siteCreate(id: string, friendlyName: string): Promise<void> {
+    await this.invoke(() => this.api!.siteCreate(id, friendlyName));
   }
-  async libraryDelete(name: string): Promise<void> {
-    await this.invoke(() => this.api!.libraryDelete(name));
+  async siteDelete(id: string): Promise<void> {
+    await this.invoke(() => this.api!.siteDelete(id));
+  }
+  async siteDuplicate(sourceId: string, newId: string, newFriendlyName: string): Promise<string> {
+    const result = await this.invoke(() => this.api!.siteDuplicate(sourceId, newId, newFriendlyName));
+    return result.id;
+  }
+  async siteRename(id: string, friendlyName: string): Promise<void> {
+    await this.invoke(() => this.api!.siteRename(id, friendlyName));
+  }
+  siteExport(siteId: string): Promise<{ ok: boolean; path?: string }> {
+    return this.invoke(() => this.api!.siteExport(siteId));
+  }
+  siteImport(): Promise<{ ok: boolean; siteId?: string }> {
+    return this.invoke(() => this.api!.siteImport());
+  }
+
+  // --- Systems ---
+  systemAddFromTemplate(siteId: string, templateName: string, position: { x: number; y: number }): Promise<SystemPayload> {
+    return this.invoke(() => this.api!.systemAddFromTemplate(siteId, templateName, position));
+  }
+  async systemDelete(siteId: string, systemId: string): Promise<void> {
+    await this.invoke(() => this.api!.systemDelete(siteId, systemId));
+  }
+
+  // --- Templates ---
+  templateList(): Promise<TemplateListEntry[]> {
+    return this.api?.templateList() ?? Promise.resolve([]);
+  }
+  templateLoad(name: string): Promise<unknown> {
+    return this.invoke(() => this.api!.templateLoad(name));
   }
 
   // --- Boards ---
@@ -53,6 +84,9 @@ export class ElectronService {
   }
   boardLoad(model: string): Promise<BoardLoadResult> {
     return this.invoke(() => this.api!.boardLoad(model));
+  }
+  importBoard(dirPath: string): Promise<string> {
+    return this.invoke(() => this.api!.boardImport(dirPath));
   }
 
   // --- Codegen ---
@@ -64,8 +98,8 @@ export class ElectronService {
     if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false, diagnostics: [] });
     return this.api.codegenValidate(manifest, board);
   }
-  generate(manifest: unknown, board: unknown): Promise<GenerateResult> {
-    return this.invoke(() => this.api!.codegenGenerate(manifest, board));
+  generate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult> {
+    return this.invoke(() => this.api!.codegenGenerate(siteId, systemId, manifest, board));
   }
 
   // --- Toolchain ---
@@ -106,17 +140,6 @@ export class ElectronService {
   deviceListSerial(): Promise<SerialDevice[]> {
     if (!this.api) return Promise.resolve([]);
     return this.api.deviceListSerial();
-  }
-
-  // --- Import / Export ---
-  importConfig(filePath: string): Promise<string> {
-    return this.invoke(() => this.api!.libraryImport(filePath));
-  }
-  importBoard(dirPath: string): Promise<string> {
-    return this.invoke(() => this.api!.boardImport(dirPath));
-  }
-  exportConfig(name: string, destPath: string): Promise<{ ok: boolean }> {
-    return this.invoke(() => this.api!.libraryExport(name, destPath));
   }
 
   // --- File Dialogs ---
@@ -166,41 +189,32 @@ export class ElectronService {
     return this.invoke(() => this.api!.dismissSeed(id));
   }
 
-  // --- Sites ---
-  siteList(): Promise<SiteListEntry[]> {
-    return this.api?.siteList() ?? Promise.resolve([]);
+  // --- Legacy import ---
+  legacyHasData(): Promise<boolean> {
+    if (!this.api) return Promise.resolve(false);
+    return this.api.legacyHasData();
   }
-  siteLoad(name: string): Promise<unknown> {
-    return this.invoke(() => this.api!.siteLoad(name));
+  legacyScan(): Promise<{ sites: Array<{ id: string; friendlyName: string; systems: unknown[]; links: unknown[]; haFiles: unknown[] }> }> {
+    return this.invoke(() => this.api!.legacyScan());
   }
-  async siteSave(name: string, data: unknown): Promise<void> {
-    await this.invoke(() => this.api!.siteSave(name, data));
-  }
-  async siteDelete(name: string): Promise<void> {
-    await this.invoke(() => this.api!.siteDelete(name));
-  }
-  async siteDuplicate(sourceName: string, newName: string): Promise<string> {
-    const result = await this.invoke(() => this.api!.siteDuplicate(sourceName, newName));
-    return result.name;
-  }
-  siteConfigChecksum(configName: string): Promise<string> {
-    return this.invoke(() => this.api!.siteConfigChecksum(configName));
+  legacyImport(sites: unknown): Promise<{ imported: number }> {
+    return this.invoke(() => this.api!.legacyImport(sites));
   }
 
   // --- HA config files ---
-  siteHaList(siteName: string): Promise<string[]> {
-    return this.api?.siteHaList(siteName) ?? Promise.resolve([]);
+  siteHaList(siteId: string): Promise<string[]> {
+    return this.api?.siteHaList(siteId) ?? Promise.resolve([]);
   }
-  siteHaLoad(siteName: string, fileName: string): Promise<string> {
-    return this.invoke(() => this.api!.siteHaLoad(siteName, fileName));
+  siteHaLoad(siteId: string, filename: string): Promise<string> {
+    return this.invoke(() => this.api!.siteHaLoad(siteId, filename));
   }
-  async siteHaSave(siteName: string, fileName: string, content: string): Promise<void> {
-    await this.invoke(() => this.api!.siteHaSave(siteName, fileName, content));
+  async siteHaSave(siteId: string, filename: string, content: string): Promise<void> {
+    await this.invoke(() => this.api!.siteHaSave(siteId, filename, content));
   }
 
   // --- Generation history ---
-  generationList(configName: string): Promise<GenerationMeta[]> {
-    return this.api?.generationList(configName) ?? Promise.resolve([]);
+  generationList(siteId: string, systemId: string): Promise<GenerationMeta[]> {
+    return this.api?.generationList(siteId, systemId) ?? Promise.resolve([]);
   }
   generationLoad(id: number): Promise<GenerationSnapshot | null> {
     return this.invoke(() => this.api!.generationLoad(id));
@@ -208,8 +222,8 @@ export class ElectronService {
   generationFind(version: string): Promise<GenerationSnapshot | null> {
     return this.invoke(() => this.api!.generationFind(version));
   }
-  generationLatest(configName: string): Promise<GenerationMeta | null> {
-    return this.api?.generationLatest(configName) ?? Promise.resolve(null);
+  generationLatest(siteId: string, systemId: string): Promise<GenerationMeta | null> {
+    return this.api?.generationLatest(siteId, systemId) ?? Promise.resolve(null);
   }
 
   private invoke<T>(fn: () => Promise<T>): Promise<T> {

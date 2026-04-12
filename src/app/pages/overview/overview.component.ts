@@ -1,9 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { SiteLibraryService } from '../../core/services/site-library.service';
 import { ElectronService } from '../../core/services/electron.service';
 import type { SiteListEntry } from '../../core/models/electron-api';
-import type { Site } from '@far-mon/core';
 
 /** Generate a stable color from a string for site card visuals. */
 function siteColor(name: string): string {
@@ -21,6 +19,7 @@ function initials(name: string): string {
 @Component({
   selector: 'app-overview',
   standalone: true,
+  host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="flex-1 flex flex-col h-full overflow-auto">
       <div class="max-w-5xl mx-auto w-full px-8 py-8">
@@ -30,14 +29,32 @@ function initials(name: string): string {
           <p class="text-sm text-base-content/50 mt-1">Select a site to view its water network</p>
         </div>
 
-        @if (siteLibrary.loading()) {
+        <!-- Legacy import banner -->
+        @if (hasLegacy()) {
+          <div class="alert alert-info mb-6">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <div class="flex-1">
+              <div class="font-semibold text-sm">Legacy sites found</div>
+              <p class="text-xs opacity-70">Old YAML-based sites were found in your store. Import them into the new database.</p>
+            </div>
+            <button class="btn btn-sm btn-primary" [disabled]="importing()" (click)="importLegacy()">
+              @if (importing()) { <span class="loading loading-spinner loading-xs"></span> }
+              Import
+            </button>
+            <button class="btn btn-sm btn-ghost" (click)="hasLegacy.set(false)">Dismiss</button>
+          </div>
+        }
+
+        @if (loading()) {
           <div class="flex-1 flex items-center justify-center py-24">
             <span class="loading loading-spinner loading-lg"></span>
           </div>
         } @else {
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-            <!-- New site card (always first) -->
+            <!-- New site card -->
             <button
               class="card card-side bg-base-100/50 border-2 border-dashed border-base-300/60 hover:border-primary/40 hover:bg-base-100 transition-all cursor-pointer group min-h-[140px]"
               (click)="showCreate.set(true)"
@@ -55,27 +72,58 @@ function initials(name: string): string {
               </div>
             </button>
 
+            <!-- Import site card -->
+            <button
+              class="card card-side bg-base-100/50 border-2 border-dashed border-base-300/60 hover:border-primary/40 hover:bg-base-100 transition-all cursor-pointer group min-h-[140px]"
+              (click)="importSite()"
+            >
+              <div class="card-body flex-row items-center justify-center gap-4 p-6">
+                <div class="w-14 h-14 rounded-2xl bg-base-200/80 group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-base-content/30 group-hover:text-primary/60 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                </div>
+                <div class="text-left">
+                  <span class="text-base font-semibold text-base-content/40 group-hover:text-primary/70 transition-colors">Import Site</span>
+                  <p class="text-xs text-base-content/30 mt-0.5">Load a site from a .json file</p>
+                </div>
+              </div>
+            </button>
+
             <!-- Site cards -->
-            @for (site of siteLibrary.entries(); track site.name) {
+            @for (site of entries(); track site.id) {
               <div
                 class="card card-side bg-base-100 shadow-sm border border-base-300/50 hover:border-primary/30 hover:shadow-md transition-all cursor-pointer group min-h-[140px]"
-                (click)="openSite(site.name)"
+                (click)="openSite(site.id)"
               >
                 <!-- Visual: initials badge -->
                 <figure class="pl-6 flex items-center shrink-0">
                   <div
                     class="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-lg shadow-sm"
-                    [style.backgroundColor]="getColor(site.name)"
+                    [style.backgroundColor]="getColor(site.id)"
                   >
                     {{ getInitials(site.friendlyName) }}
                   </div>
                 </figure>
 
                 <div class="card-body p-5 gap-1 min-w-0">
-                  <h2 class="card-title text-base group-hover:text-primary transition-colors">
-                    {{ site.friendlyName }}
-                  </h2>
-                  <p class="text-xs text-base-content/40 font-mono truncate">{{ site.name }}</p>
+                  @if (renamingId() === site.id) {
+                    <input
+                      class="input input-sm input-bordered font-semibold text-base w-full"
+                      [value]="site.friendlyName"
+                      (keydown.enter)="confirmRename(site.id, $event)"
+                      (keydown.escape)="renamingId.set(null)"
+                      (blur)="confirmRename(site.id, $event)"
+                      (click)="$event.stopPropagation()"
+                      #renameInput
+                    />
+                  } @else {
+                    <h2
+                      class="card-title text-base group-hover:text-primary transition-colors cursor-text"
+                      (dblclick)="startRename(site.id, $event)"
+                    >{{ site.friendlyName }}</h2>
+                  }
+                  <p class="text-xs text-base-content/40 font-mono truncate">{{ site.id }}</p>
                   <div class="flex items-center gap-4 mt-2 text-xs text-base-content/50">
                     <div class="flex items-center gap-1.5">
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -92,8 +140,16 @@ function initials(name: string): string {
                   </div>
                   <div class="card-actions justify-end mt-1">
                     <button
+                      class="btn btn-ghost btn-xs text-base-content/30 opacity-0 group-hover:opacity-100 transition-opacity"
+                      (click)="startRename(site.id, $event)"
+                    >Rename</button>
+                    <button
+                      class="btn btn-ghost btn-xs text-base-content/30 opacity-0 group-hover:opacity-100 transition-opacity"
+                      (click)="exportSite(site.id, $event)"
+                    >Export</button>
+                    <button
                       class="btn btn-ghost btn-xs text-base-content/30 hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
-                      (click)="deleteSite(site.name, $event)"
+                      (click)="deleteSite(site.id, $event)"
                     >Delete</button>
                   </div>
                 </div>
@@ -101,7 +157,7 @@ function initials(name: string): string {
             }
           </div>
 
-          @if (siteLibrary.entries().length === 0) {
+          @if (entries().length === 0) {
             <div class="flex items-center justify-center py-12 text-base-content/30">
               <div class="text-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-4 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
@@ -142,13 +198,26 @@ function initials(name: string): string {
   `,
 })
 export class OverviewComponent implements OnInit {
-  protected siteLibrary = inject(SiteLibraryService);
   private electron = inject(ElectronService);
   private router = inject(Router);
+
+  protected entries = signal<SiteListEntry[]>([]);
+  protected loading = signal(true);
   protected showCreate = signal(false);
+  protected hasLegacy = signal(false);
+  protected importing = signal(false);
+  protected renamingId = signal<string | null>(null);
 
   async ngOnInit() {
-    await this.siteLibrary.refresh();
+    await this.refresh();
+    // Check for legacy data once
+    this.hasLegacy.set(await this.electron.legacyHasData());
+  }
+
+  private async refresh() {
+    this.loading.set(true);
+    this.entries.set(await this.electron.siteList());
+    this.loading.set(false);
   }
 
   protected getColor(name: string): string {
@@ -159,29 +228,69 @@ export class OverviewComponent implements OnInit {
     return initials(name);
   }
 
-  protected openSite(name: string): void {
-    this.router.navigate(['/site', name]);
+  protected openSite(id: string): void {
+    this.router.navigate(['/site', id]);
   }
 
   protected async createSite(friendlyName: string): Promise<void> {
     if (!friendlyName.trim()) return;
     const slug = friendlyName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const site: Site = {
-      schema: 1,
-      name: slug,
-      friendly_name: friendlyName.trim(),
-      systems: [],
-      links: [],
-    };
-    await this.electron.siteSave(slug, site);
-    await this.siteLibrary.refresh();
+    await this.electron.siteCreate(slug, friendlyName.trim());
+    await this.refresh();
     this.showCreate.set(false);
     this.router.navigate(['/site', slug]);
   }
 
-  protected async deleteSite(name: string, event: Event): Promise<void> {
+  protected startRename(id: string, event: Event): void {
     event.stopPropagation();
-    await this.electron.siteDelete(name);
-    await this.siteLibrary.refresh();
+    this.renamingId.set(id);
+  }
+
+  protected async confirmRename(id: string, event: Event): Promise<void> {
+    event.stopPropagation();
+    const input = event.target as HTMLInputElement;
+    const newName = input.value.trim();
+    if (newName) {
+      await this.electron.siteRename(id, newName);
+      await this.refresh();
+    }
+    this.renamingId.set(null);
+  }
+
+  protected async exportSite(id: string, event: Event): Promise<void> {
+    event.stopPropagation();
+    await this.electron.siteExport(id);
+  }
+
+  protected async importSite(): Promise<void> {
+    const result = await this.electron.siteImport();
+    if (result.ok) {
+      await this.refresh();
+      if (result.siteId) {
+        this.router.navigate(['/site', result.siteId]);
+      }
+    }
+  }
+
+  protected async deleteSite(id: string, event: Event): Promise<void> {
+    event.stopPropagation();
+    await this.electron.siteDelete(id);
+    await this.refresh();
+  }
+
+  protected async importLegacy(): Promise<void> {
+    this.importing.set(true);
+    try {
+      const scanned = await this.electron.legacyScan();
+      if (scanned.sites.length > 0) {
+        const result = await this.electron.legacyImport(scanned.sites);
+        if (result.imported > 0) {
+          await this.refresh();
+        }
+      }
+      this.hasLegacy.set(false);
+    } finally {
+      this.importing.set(false);
+    }
   }
 }

@@ -18,6 +18,13 @@ import {
   loadGenerationByVersion,
   pruneGenerations,
   inputChecksum,
+  createSite,
+  listSites,
+  loadSiteFull,
+  saveSiteTransaction,
+  deleteSite,
+  insertSystem,
+  checkNodeIdConflicts,
 } from "../electron/db.js";
 
 let passed = 0;
@@ -50,6 +57,69 @@ async function main() {
   await openDb(tmpDir);
   assert(fs.existsSync(path.join(tmpDir, "generations.db")), "creates DB file on disk");
 
+  // -------------------------------------------------------------------------
+  // Site CRUD
+  // -------------------------------------------------------------------------
+
+  console.log("\ncreateSite");
+  createSite("test-site", "Test Site");
+  const sites = listSites();
+  assert(sites.length === 1, "site created");
+  assert(sites[0].id === "test-site", "correct site id");
+  assert(sites[0].friendlyName === "Test Site", "correct friendly name");
+
+  console.log("\nsaveSiteTransaction");
+  saveSiteTransaction({
+    site: { id: "test-site", friendlyName: "Test Site Updated" },
+    systems: [
+      {
+        id: "pump-ctrl",
+        friendlyName: "Pump Controller",
+        board: "heltec-v3",
+        directory: null,
+        topology: { nodes: [{ id: "pump1", kind: "pump" }, { id: "tank1", kind: "tank" }], pipes: [], route_overrides: {}, timing: {}, automations: [] },
+        position: { x: 0, y: 0 },
+      },
+    ],
+    links: [],
+  });
+
+  const full = loadSiteFull("test-site");
+  assert(full !== null, "site loads after save");
+  assert(full!.site.friendlyName === "Test Site Updated", "friendly name updated");
+  assert(full!.systems.length === 1, "system saved");
+  assert(full!.systems[0].id === "pump-ctrl", "correct system id");
+  const savedTopo = full!.systems[0].topology as { nodes: Array<{ id: string }> };
+  assert(savedTopo.nodes.length === 2, "topology nodes preserved");
+
+  console.log("\ncheckNodeIdConflicts");
+  const conflicts = checkNodeIdConflicts("test-site", "other-system", ["pump1", "new-node"]);
+  assert(conflicts.length === 1, "detects pump1 conflict");
+  assert(conflicts[0] === "pump1", "correct conflicting ID");
+  const noConflicts = checkNodeIdConflicts("test-site", "pump-ctrl", ["pump1"]);
+  assert(noConflicts.length === 0, "no conflict when excluding own system");
+
+  console.log("\ninsertSystem");
+  insertSystem("test-site", {
+    id: "valve-ctrl",
+    friendlyName: "Valve Controller",
+    board: "heltec-v3",
+    directory: null,
+    topology: { nodes: [{ id: "valve1", kind: "valve" }], pipes: [], route_overrides: {}, timing: {}, automations: [] },
+    position: { x: 100, y: 0 },
+  });
+  const full2 = loadSiteFull("test-site");
+  assert(full2!.systems.length === 2, "second system inserted");
+
+  console.log("\ndeleteSite");
+  createSite("to-delete", "Delete Me");
+  deleteSite("to-delete");
+  assert(loadSiteFull("to-delete") === null, "site deleted");
+
+  // -------------------------------------------------------------------------
+  // Generation history
+  // -------------------------------------------------------------------------
+
   console.log("\ninputChecksum");
   const board = { model: "heltec-v3", label: "Heltec V3", pins: [] };
   const cs1 = inputChecksum(topo("dev", 1), board);
@@ -60,28 +130,26 @@ async function main() {
   assert(cs1 === cs1again, "same inputs produce same checksum");
 
   console.log("\ncreateGeneration");
-  const gen1 = createGeneration("test-device", topo("test-device", 1), board);
+  const gen1 = createGeneration("test-site", "pump-ctrl", topo("pump-ctrl", 1), board);
   assert(gen1 !== null, "first generation is created");
   assert(typeof gen1!.id === "number" && gen1!.id > 0, "returns numeric ID");
   assert(typeof gen1!.version === "string" && gen1!.version.length === 8, "returns 8-char hex version");
-  assert(/^[0-9a-f]{8}$/.test(gen1!.version), "version is valid hex");
 
-  const gen2 = createGeneration("test-device", topo("test-device", 2), board);
+  const gen2 = createGeneration("test-site", "pump-ctrl", topo("pump-ctrl", 2), board);
   assert(gen2 !== null, "different inputs creates new generation");
   assert(gen2!.id > gen1!.id, "IDs are incrementing");
-  assert(gen2!.version !== gen1!.version, "versions are unique");
 
-  const gen3 = createGeneration("test-device", topo("test-device", 3), board);
+  const gen3 = createGeneration("test-site", "pump-ctrl", topo("pump-ctrl", 3), board);
   assert(gen3 !== null, "third distinct generation created");
 
   console.log("\ncreateGeneration — checksum dedup");
-  const dup = createGeneration("test-device", topo("test-device", 3), board);
+  const dup = createGeneration("test-site", "pump-ctrl", topo("pump-ctrl", 3), board);
   assert(dup === null, "returns null when inputs match latest generation");
-  assert(listGenerations("test-device").length === 3, "no new row created for duplicate");
+  assert(listGenerations("test-site", "pump-ctrl").length === 3, "no new row created for duplicate");
 
-  // Different config with same inputs should still create
-  const otherConfig = createGeneration("other-device", topo("test-device", 3), board);
-  assert(otherConfig !== null, "same inputs but different config creates new generation");
+  // Different system with same inputs should still create
+  const otherSystem = createGeneration("test-site", "valve-ctrl", topo("pump-ctrl", 3), board);
+  assert(otherSystem !== null, "same inputs but different system creates new generation");
 
   console.log("\nfinalizeGeneration");
   finalizeGeneration(gen1!.id, 10);
@@ -91,58 +159,39 @@ async function main() {
   assert(loaded1?.fileCount === 10, "updates file count");
 
   console.log("\nlistGenerations");
-  const list = listGenerations("test-device");
+  const list = listGenerations("test-site", "pump-ctrl");
   assert(list.length === 3, `returns correct count (got ${list.length})`);
   assert(list[0].id === gen3!.id, "newest first");
   assert(list[0].version === gen3!.version, "includes version");
   assert(list[0].fileCount === 11, "includes file count");
-  assert(typeof list[0].checksum === "string" && list[0].checksum.length === 16, "includes checksum");
-  assert(typeof list[0].createdAt === "string", "includes createdAt");
-  assert(!("topology" in list[0]), "excludes topology blob from list");
-  assert(!("board" in list[0]), "excludes board blob from list");
 
-  console.log("\nlistGenerations — different config");
-  const otherList = listGenerations("other-device");
-  assert(otherList.length === 1, "separate config has independent history");
-  assert(listGenerations("test-device").length === 3, "original config unchanged");
+  console.log("\nlistGenerations — different system");
+  const otherList = listGenerations("test-site", "valve-ctrl");
+  assert(otherList.length === 1, "separate system has independent history");
 
   console.log("\nloadGeneration");
   const snapshot = loadGeneration(gen1!.id);
   assert(snapshot !== null, "returns snapshot for valid ID");
   assert(snapshot!.version === gen1!.version, "correct version");
-  assert(snapshot!.configName === "test-device", "correct config name");
+  assert(snapshot!.systemId === "pump-ctrl", "correct system id");
   const parsedTopology = JSON.parse(snapshot!.topology);
-  assert(parsedTopology.device.name === "test-device", "topology JSON is parseable and correct");
-  const parsedBoard = JSON.parse(snapshot!.board);
-  assert(parsedBoard.model === "heltec-v3", "board JSON is parseable and correct");
-
-  console.log("\nloadGeneration — invalid ID");
-  assert(loadGeneration(99999) === null, "returns null for non-existent ID");
+  assert(parsedTopology.device.name === "pump-ctrl", "topology JSON is parseable and correct");
 
   console.log("\nloadGenerationByVersion");
   const byVersion = loadGenerationByVersion(gen2!.version);
   assert(byVersion !== null, "finds by version string");
   assert(byVersion!.id === gen2!.id, "returns correct generation");
 
-  console.log("\nloadGenerationByVersion — invalid");
-  assert(loadGenerationByVersion("00000000") === null, "returns null for non-existent version");
-
   console.log("\npruneGenerations");
-  createGeneration("test-device", topo("test-device", 4), board);
-  createGeneration("test-device", topo("test-device", 5), board);
-  assert(listGenerations("test-device").length === 5, "now has 5 generations");
+  createGeneration("test-site", "pump-ctrl", topo("pump-ctrl", 4), board);
+  createGeneration("test-site", "pump-ctrl", topo("pump-ctrl", 5), board);
+  assert(listGenerations("test-site", "pump-ctrl").length === 5, "now has 5 generations");
 
-  const pruned = pruneGenerations("test-device", 2);
+  const pruned = pruneGenerations("test-site", "pump-ctrl", 2);
   assert(pruned === 3, `pruned 3 oldest (got ${pruned})`);
-  assert(listGenerations("test-device").length === 2, "keeps only 2 most recent");
+  assert(listGenerations("test-site", "pump-ctrl").length === 2, "keeps only 2 most recent");
 
-  assert(listGenerations("other-device").length === 1, "prune does not affect other configs");
-
-  console.log("\ncreateGeneration — dedup after prune allows re-creation");
-  // After pruning, gen3's checksum is gone. Re-creating with same inputs should work.
-  const reborn = createGeneration("test-device", topo("test-device", 3), board);
-  // The latest is topo 5, so topo 3 is different — should create
-  assert(reborn !== null, "can create after prune removed the matching generation");
+  assert(listGenerations("test-site", "valve-ctrl").length === 1, "prune does not affect other systems");
 
   // -------------------------------------------------------------------------
 

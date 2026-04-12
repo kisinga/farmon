@@ -1,39 +1,51 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("electronAPI", {
-  // Library CRUD
-  libraryList: () => ipcRenderer.invoke("library:list"),
-  libraryLoad: (name: string) => ipcRenderer.invoke("library:load", name),
-  librarySave: (name: string, data: unknown) =>
-    ipcRenderer.invoke("library:save", name, data),
-  libraryDelete: (name: string) =>
-    ipcRenderer.invoke("library:delete", name),
-  libraryDuplicate: (sourceName: string, newName: string) =>
-    ipcRenderer.invoke("library:duplicate", sourceName, newName),
-  libraryImport: (filePath: string) =>
-    ipcRenderer.invoke("library:import", filePath),
-  libraryExport: (name: string, destPath: string) =>
-    ipcRenderer.invoke("library:export", name, destPath),
+  // --- Sites ---
+  siteList: () => ipcRenderer.invoke("site:list"),
+  siteLoad: (id: string) => ipcRenderer.invoke("site:load", id),
+  siteSave: (payload: unknown) => ipcRenderer.invoke("site:save", payload),
+  siteCreate: (id: string, friendlyName: string) =>
+    ipcRenderer.invoke("site:create", id, friendlyName),
+  siteDelete: (id: string) => ipcRenderer.invoke("site:delete", id),
+  siteDuplicate: (sourceId: string, newId: string, newFriendlyName: string) =>
+    ipcRenderer.invoke("site:duplicate", sourceId, newId, newFriendlyName),
+  siteRename: (id: string, friendlyName: string) =>
+    ipcRenderer.invoke("site:rename", id, friendlyName),
+  siteExport: (siteId: string) =>
+    ipcRenderer.invoke("site:export", siteId),
+  siteImport: () =>
+    ipcRenderer.invoke("site:import"),
 
-  // Board definitions
+  // --- Systems ---
+  systemList: (siteId: string) => ipcRenderer.invoke("system:list", siteId),
+  systemAddFromTemplate: (siteId: string, templateName: string, position: { x: number; y: number }) =>
+    ipcRenderer.invoke("system:add-from-template", siteId, templateName, position),
+  systemDelete: (siteId: string, systemId: string) =>
+    ipcRenderer.invoke("system:delete", siteId, systemId),
+
+  // --- Templates ---
+  templateList: () => ipcRenderer.invoke("template:list"),
+  templateLoad: (name: string) => ipcRenderer.invoke("template:load", name),
+
+  // --- Board definitions ---
   boardList: () => ipcRenderer.invoke("board:list"),
   boardLoad: (model: string) => ipcRenderer.invoke("board:load", model),
-  boardImport: (dirPath: string) =>
-    ipcRenderer.invoke("board:import", dirPath),
+  boardImport: (dirPath: string) => ipcRenderer.invoke("board:import", dirPath),
 
-  // Codegen
+  // --- Codegen ---
   codegenDeriveRoutes: (topology: unknown) =>
     ipcRenderer.invoke("codegen:derive-routes", topology),
   codegenValidate: (manifest: unknown, board: unknown) =>
     ipcRenderer.invoke("codegen:validate", manifest, board),
-  codegenGenerate: (manifest: unknown, board: unknown) =>
-    ipcRenderer.invoke("codegen:generate", manifest, board),
+  codegenGenerate: (siteId: string, systemId: string, manifest: unknown, board: unknown) =>
+    ipcRenderer.invoke("codegen:generate", siteId, systemId, manifest, board),
 
-  // Toolchain
+  // --- Toolchain ---
   toolchainStatus: () => ipcRenderer.invoke("toolchain:status"),
   toolchainRefresh: () => ipcRenderer.invoke("toolchain:refresh"),
 
-  // ESPHome operations
+  // --- ESPHome operations ---
   esphomeCompile: (configName: string) =>
     ipcRenderer.invoke("esphome:compile", configName),
   esphomeFlash: (configName: string, device?: string) =>
@@ -43,7 +55,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   esphomeCancel: (processId: string) =>
     ipcRenderer.invoke("esphome:cancel", processId),
 
-  // ESPHome events (main → renderer)
+  // --- ESPHome events (main → renderer) ---
   onEsphomeStarted: (
     callback: (handle: {
       id: string;
@@ -84,14 +96,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener("esphome:done", listener);
   },
 
-  // Discovery
+  // --- Discovery ---
   deviceListSerial: () => ipcRenderer.invoke("device:list-serial"),
 
-  // Health
+  // --- Health ---
   healthCheck: () => ipcRenderer.invoke("health:check"),
   healthFix: () => ipcRenderer.invoke("health:fix"),
 
-  // File dialogs
+  // --- File dialogs ---
   pickFile: (options: {
     title?: string;
     filters?: Array<{ name: string; extensions: string[] }>;
@@ -104,46 +116,39 @@ contextBridge.exposeInMainWorld("electronAPI", {
     filters?: Array<{ name: string; extensions: string[] }>;
   }) => ipcRenderer.invoke("dialog:save-file", options),
 
-  // Shell
+  // --- Shell ---
   shellOpenPath: (fullPath: string) =>
     ipcRenderer.invoke("shell:open-path", fullPath),
   shellShowInFolder: (fullPath: string) =>
     ipcRenderer.invoke("shell:show-item-in-folder", fullPath),
 
-  // Store
+  // --- Store ---
   storePath: () => ipcRenderer.invoke("store:path"),
   outputDir: () => ipcRenderer.invoke("store:output-dir"),
   seedChanges: () => ipcRenderer.invoke("store:seed-changes"),
   applySeed: (id?: string) => ipcRenderer.invoke("store:apply-seed", id),
   dismissSeed: (id: string) => ipcRenderer.invoke("store:dismiss-seed", id),
 
-  // Sites
-  siteList: () => ipcRenderer.invoke("site:list"),
-  siteLoad: (name: string) => ipcRenderer.invoke("site:load", name),
-  siteSave: (name: string, data: unknown) =>
-    ipcRenderer.invoke("site:save", name, data),
-  siteDelete: (name: string) =>
-    ipcRenderer.invoke("site:delete", name),
-  siteDuplicate: (sourceName: string, newName: string) =>
-    ipcRenderer.invoke("site:duplicate", sourceName, newName),
-  siteConfigChecksum: (configName: string) =>
-    ipcRenderer.invoke("site:config-checksum", configName),
+  // --- HA config files ---
+  siteHaList: (siteId: string) =>
+    ipcRenderer.invoke("site:ha-list", siteId),
+  siteHaLoad: (siteId: string, filename: string) =>
+    ipcRenderer.invoke("site:ha-load", siteId, filename),
+  siteHaSave: (siteId: string, filename: string, content: string) =>
+    ipcRenderer.invoke("site:ha-save", siteId, filename, content),
 
-  // HA config files
-  siteHaList: (siteName: string) =>
-    ipcRenderer.invoke("site:ha-list", siteName),
-  siteHaLoad: (siteName: string, fileName: string) =>
-    ipcRenderer.invoke("site:ha-load", siteName, fileName),
-  siteHaSave: (siteName: string, fileName: string, content: string) =>
-    ipcRenderer.invoke("site:ha-save", siteName, fileName, content),
+  // --- Legacy import ---
+  legacyHasData: () => ipcRenderer.invoke("legacy:has-data"),
+  legacyScan: () => ipcRenderer.invoke("legacy:scan"),
+  legacyImport: (sites: unknown) => ipcRenderer.invoke("legacy:import", sites),
 
-  // Generation history
-  generationList: (configName: string) =>
-    ipcRenderer.invoke("generation:list", configName),
+  // --- Generation history ---
+  generationList: (siteId: string, systemId: string) =>
+    ipcRenderer.invoke("generation:list", siteId, systemId),
   generationLoad: (id: number) =>
     ipcRenderer.invoke("generation:load", id),
   generationFind: (version: string) =>
     ipcRenderer.invoke("generation:find", version),
-  generationLatest: (configName: string) =>
-    ipcRenderer.invoke("generation:latest", configName),
+  generationLatest: (siteId: string, systemId: string) =>
+    ipcRenderer.invoke("generation:latest", siteId, systemId),
 });

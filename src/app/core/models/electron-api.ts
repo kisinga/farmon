@@ -1,15 +1,15 @@
 /** Type-safe interface for the Electron IPC bridge exposed via preload. */
 
-export interface LibraryEntry {
-  name: string;
-  deviceName: string;
-  friendlyName: string;
-  board: string;
-  tanks: number;
-  valves: number;
-  routes: number;
-  library: boolean;
-}
+import type { ValidationResult, RuleDiagnostic } from '@far-mon/core';
+import type {
+  SiteListEntry, SiteFullPayload, SiteSavePayload,
+  LinkData, SystemPayload, TemplateListEntry,
+} from '@far-mon/core';
+
+export type { ValidationResult, RuleDiagnostic };
+export type { SiteListEntry, SiteFullPayload, SiteSavePayload, LinkData, SystemPayload, TemplateListEntry };
+
+// --- Boards ---
 
 export interface BoardListEntry {
   id: string;
@@ -22,6 +22,8 @@ export interface BoardLoadResult {
   board: unknown;
   svg: string | null;
 }
+
+// --- Generation ---
 
 export interface GenerateResult {
   outputDir: string;
@@ -39,7 +41,8 @@ export interface GenerateResult {
 export interface GenerationMeta {
   id: number;
   version: string;
-  configName: string;
+  siteId: string;
+  systemId: string;
   schemaVersion: number;
   fileCount: number;
   createdAt: string;
@@ -49,9 +52,6 @@ export interface GenerationSnapshot extends GenerationMeta {
   topology: string;
   board: string;
 }
-
-import type { ValidationResult, RuleDiagnostic } from '@far-mon/core';
-export type { ValidationResult, RuleDiagnostic };
 
 // --- Toolchain ---
 
@@ -114,19 +114,10 @@ export interface HealthCheck {
   fixable: boolean;
 }
 
-// --- Sites ---
-
-export interface SiteListEntry {
-  name: string;
-  friendlyName: string;
-  systemCount: number;
-  linkCount: number;
-}
-
 // --- Seed changes ---
 
 export interface SeedChange {
-  kind: "board" | "config";
+  kind: "board";
   id: string;
   label: string;
   action: "added" | "updated";
@@ -135,14 +126,25 @@ export interface SeedChange {
 // --- ElectronAPI ---
 
 export interface ElectronAPI {
-  // Library
-  libraryList(): Promise<LibraryEntry[]>;
-  libraryLoad(name: string): Promise<unknown>;
-  librarySave(name: string, data: unknown): Promise<{ ok: boolean }>;
-  libraryDelete(name: string): Promise<{ ok: boolean }>;
-  libraryDuplicate(sourceName: string, newName: string): Promise<{ ok: boolean; name: string }>;
-  libraryImport(filePath: string): Promise<string>;
-  libraryExport(name: string, destPath: string): Promise<{ ok: boolean }>;
+  // Sites
+  siteList(): Promise<SiteListEntry[]>;
+  siteLoad(id: string): Promise<SiteFullPayload>;
+  siteSave(payload: SiteSavePayload): Promise<{ ok: boolean }>;
+  siteCreate(id: string, friendlyName: string): Promise<{ ok: boolean }>;
+  siteDelete(id: string): Promise<{ ok: boolean }>;
+  siteDuplicate(sourceId: string, newId: string, newFriendlyName: string): Promise<{ ok: boolean; id: string }>;
+  siteRename(id: string, friendlyName: string): Promise<{ ok: boolean }>;
+  siteExport(siteId: string): Promise<{ ok: boolean; path?: string }>;
+  siteImport(): Promise<{ ok: boolean; siteId?: string }>;
+
+  // Systems
+  systemList(siteId: string): Promise<Array<{ id: string; friendlyName: string; board: string; nodeCount: number }>>;
+  systemAddFromTemplate(siteId: string, templateName: string, position: { x: number; y: number }): Promise<SystemPayload>;
+  systemDelete(siteId: string, systemId: string): Promise<{ ok: boolean }>;
+
+  // Templates
+  templateList(): Promise<TemplateListEntry[]>;
+  templateLoad(name: string): Promise<unknown>;
 
   // Boards
   boardList(): Promise<BoardListEntry[]>;
@@ -152,7 +154,7 @@ export interface ElectronAPI {
   // Codegen
   codegenDeriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>>;
   codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
-  codegenGenerate(manifest: unknown, board: unknown): Promise<GenerateResult>;
+  codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult>;
 
   // Toolchain
   toolchainStatus(): Promise<ToolchainInfo>;
@@ -192,24 +194,21 @@ export interface ElectronAPI {
   applySeed(id?: string): Promise<{ ok: boolean }>;
   dismissSeed(id: string): Promise<{ ok: boolean }>;
 
-  // Sites
-  siteList(): Promise<SiteListEntry[]>;
-  siteLoad(name: string): Promise<unknown>;
-  siteSave(name: string, data: unknown): Promise<{ ok: boolean }>;
-  siteDelete(name: string): Promise<{ ok: boolean }>;
-  siteDuplicate(sourceName: string, newName: string): Promise<{ ok: boolean; name: string }>;
-  siteConfigChecksum(configName: string): Promise<string>;
-
   // HA config files
-  siteHaList(siteName: string): Promise<string[]>;
-  siteHaLoad(siteName: string, fileName: string): Promise<string>;
-  siteHaSave(siteName: string, fileName: string, content: string): Promise<{ ok: boolean }>;
+  siteHaList(siteId: string): Promise<string[]>;
+  siteHaLoad(siteId: string, filename: string): Promise<string>;
+  siteHaSave(siteId: string, filename: string, content: string): Promise<{ ok: boolean }>;
+
+  // Legacy import
+  legacyHasData(): Promise<boolean>;
+  legacyScan(): Promise<{ sites: Array<{ id: string; friendlyName: string; systems: unknown[]; links: unknown[]; haFiles: unknown[] }> }>;
+  legacyImport(sites: unknown): Promise<{ imported: number }>;
 
   // Generation history
-  generationList(configName: string): Promise<GenerationMeta[]>;
+  generationList(siteId: string, systemId: string): Promise<GenerationMeta[]>;
   generationLoad(id: number): Promise<GenerationSnapshot | null>;
   generationFind(version: string): Promise<GenerationSnapshot | null>;
-  generationLatest(configName: string): Promise<GenerationMeta | null>;
+  generationLatest(siteId: string, systemId: string): Promise<GenerationMeta | null>;
 }
 
 declare global {
