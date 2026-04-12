@@ -139,7 +139,7 @@ export interface ElectronAPI {
 
   // Systems
   systemList(siteId: string): Promise<Array<{ id: string; friendlyName: string; board: string; nodeCount: number }>>;
-  systemAddFromTemplate(siteId: string, templateName: string, position: { x: number; y: number }): Promise<SystemPayload>;
+  systemAddFromTemplate(siteId: string, templateName: string): Promise<SystemPayload>;
   systemDelete(siteId: string, systemId: string): Promise<{ ok: boolean }>;
 
   // Templates

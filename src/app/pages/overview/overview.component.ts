@@ -1,6 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ElectronService } from '../../core/services/electron.service';
+import { ConfirmService } from '../../core/services/confirm.service';
 import type { SiteListEntry } from '../../core/models/electron-api';
 
 /** Generate a stable color from a string for site card visuals. */
@@ -149,7 +150,7 @@ function initials(name: string): string {
                     >Export</button>
                     <button
                       class="btn btn-ghost btn-xs text-base-content/30 hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
-                      (click)="deleteSite(site.id, $event)"
+                      (click)="deleteSite(site.id, site.friendlyName, $event)"
                     >Delete</button>
                   </div>
                 </div>
@@ -200,6 +201,7 @@ function initials(name: string): string {
 export class OverviewComponent implements OnInit {
   private electron = inject(ElectronService);
   private router = inject(Router);
+  private confirmService = inject(ConfirmService);
 
   protected entries = signal<SiteListEntry[]>([]);
   protected loading = signal(true);
@@ -272,8 +274,13 @@ export class OverviewComponent implements OnInit {
     }
   }
 
-  protected async deleteSite(id: string, event: Event): Promise<void> {
+  protected async deleteSite(id: string, name: string, event: Event): Promise<void> {
     event.stopPropagation();
+    const confirmed = await this.confirmService.confirm({
+      title: 'Delete Site',
+      message: `Delete "${name}"? All systems and links in this site will be permanently removed.`,
+    });
+    if (!confirmed) return;
     await this.electron.siteDelete(id);
     await this.refresh();
   }

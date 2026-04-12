@@ -109,7 +109,7 @@ export interface UartBus {
 }
 
 export interface SystemTopology {
-  schema: 8;
+  schema: 9;
   device: {
     name: string;
     friendly_name: string;

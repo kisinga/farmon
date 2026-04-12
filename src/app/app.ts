@@ -7,6 +7,7 @@ import { SystemEditorService } from './core/services/system-editor.service';
 import { ContextStripComponent } from './shared/context-strip/context-strip.component';
 import { PipelineRailComponent } from './shared/pipeline-rail/pipeline-rail.component';
 import { SiteRailComponent } from './shared/site-rail/site-rail.component';
+import { ConfirmDialogComponent } from './shared/confirm-dialog/confirm-dialog.component';
 import type { SeedChange } from './core/models/electron-api';
 import { filter } from 'rxjs';
 
@@ -39,7 +40,7 @@ const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/s
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, ContextStripComponent, PipelineRailComponent, SiteRailComponent],
+  imports: [RouterOutlet, RouterLink, ContextStripComponent, PipelineRailComponent, SiteRailComponent, ConfirmDialogComponent],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })

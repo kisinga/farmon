@@ -63,8 +63,8 @@ export class ElectronService {
   }
 
   // --- Systems ---
-  systemAddFromTemplate(siteId: string, templateName: string, position: { x: number; y: number }): Promise<SystemPayload> {
-    return this.invoke(() => this.api!.systemAddFromTemplate(siteId, templateName, position));
+  systemAddFromTemplate(siteId: string, templateName: string): Promise<SystemPayload> {
+    return this.invoke(() => this.api!.systemAddFromTemplate(siteId, templateName));
   }
   async systemDelete(siteId: string, systemId: string): Promise<void> {
     await this.invoke(() => this.api!.systemDelete(siteId, systemId));

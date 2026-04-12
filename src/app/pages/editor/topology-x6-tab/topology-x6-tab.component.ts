@@ -268,6 +268,13 @@ export class TopologyX6TabComponent {
       this.canvas.setReadonly(true);
     }
 
+    // Re-render ghost edges when nodes are dragged so they track position
+    let ghostEdgeTimer: ReturnType<typeof setTimeout> | null = null;
+    this.c.graphInstance.on('node:change:position', () => {
+      if (ghostEdgeTimer) clearTimeout(ghostEdgeTimer);
+      ghostEdgeTimer = setTimeout(() => this.renderInterconnectLabels(), 50);
+    });
+
     this.destroyRef.onDestroy(() => this.c.destroy());
 
     const syncSize = () => {

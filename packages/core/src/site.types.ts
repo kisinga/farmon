@@ -61,7 +61,7 @@ export interface SystemPayload {
   board: string;
   directory: string | null;
   topology: StoredTopology;
-  position: { x: number; y: number };
+  deviceName: string;
 }
 
 export interface SiteFullPayload {

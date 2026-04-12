@@ -77,11 +77,14 @@ export type { Selection };
               </div>
             }
 
-            @if (interconnectLinks().length === 0) {
+            @if (linkDirection()) {
               @if (otherSystems().length === 0) {
                 <div class="text-xs text-warning py-2">Add another system to this site before linking this interconnect.</div>
               } @else {
                 <div class="space-y-2">
+                  <div class="text-[10px] text-base-content/40 mb-1">
+                    {{ linkDirection() === 'outgoing' ? 'Link to (outlet \u2192 inlet)' : 'Link from (outlet \u2192 inlet)' }}
+                  </div>
                   <select class="select select-xs select-bordered w-full"
                     [ngModel]="linkTargetSystem()"
                     (ngModelChange)="linkTargetSystem.set($event); linkTargetPort.set(null)">
@@ -167,6 +170,17 @@ export type { Selection };
 
     @if (!selection()) {
       <div class="sidebar-section">
+        <h3 class="sidebar-title">Device Settings</h3>
+        <div class="sidebar-fields">
+          <label class="sidebar-label">Device Name</label>
+          <input class="input input-xs input-bordered w-full font-mono"
+            [ngModel]="deviceName()"
+            (ngModelChange)="updateDeviceName($event)"
+            placeholder="ESPHome hostname" />
+          <span class="text-[10px] text-base-content/40 col-span-2">Used as ESPHome device hostname. Independent of system ID.</span>
+        </div>
+      </div>
+      <div class="sidebar-section">
         <h3 class="sidebar-title">Route Overrides</h3>
         @if (overrideEntries().length === 0) {
           <div class="text-base-content/40 text-center py-4 text-xs">No overrides defined.</div>
@@ -231,6 +245,18 @@ export class TopologySidebarComponent {
   // --- Interconnect link form state ---
   protected linkTargetSystem = signal<string | null>(null);
   protected linkTargetPort = signal<string | null>(null);
+
+  // --- Device name ---
+  protected deviceName = computed(() => {
+    const t = this.editor.topology();
+    return t?.device.name ?? '';
+  });
+
+  protected updateDeviceName(value: string) {
+    this.editor.updateTopology(t => {
+      t.device.name = value;
+    });
+  }
 
   // --- Computed ---
   protected selectedNodeData = computed(() => {
@@ -300,12 +326,28 @@ export class TopologySidebarComponent {
       }));
   });
 
-  /** Interconnect inlet ports on the target system (outlet connects to inlet only) */
+  /** Whether the current interconnect links as outgoing (outlet→inlet) or incoming (inlet←outlet). */
+  protected linkDirection = computed<'outgoing' | 'incoming' | null>(() => {
+    const sn = this.selectedNodeData();
+    const systemId = this.workspace.activeSystemId();
+    const links = this.workspace.links();
+    if (!sn || sn.node.kind !== 'interconnect' || !systemId) return null;
+    const outUsed = links.some(l => l.fromSystem === systemId && l.fromNode === sn.node.id);
+    const inUsed = links.some(l => l.toSystem === systemId && l.toNode === sn.node.id);
+    if (!outUsed) return 'outgoing';
+    if (!inUsed) return 'incoming';
+    return null; // both ports linked
+  });
+
+  /** Boundary ports on the target system, filtered by link direction. */
   protected targetBoundaryPorts = computed(() => {
     const target = this.linkTargetSystem();
-    if (!target) return [];
+    const dir = this.linkDirection();
+    if (!target || !dir) return [];
     const all = this.workspace.boundaryPortsBySystem().get(target) ?? [];
-    return all.filter(p => p.nodeKind === 'interconnect' && p.direction === 'inlet');
+    // Outgoing: current outlet → target inlet. Incoming: target outlet → current inlet.
+    const wantDir = dir === 'outgoing' ? 'inlet' : 'outlet';
+    return all.filter(p => p.nodeKind === 'interconnect' && p.direction === wantDir);
   });
 
   // --- Interconnect link actions ---
@@ -315,20 +357,36 @@ export class TopologySidebarComponent {
     const systemId = this.workspace.activeSystemId();
     const targetSystem = this.linkTargetSystem();
     const targetPort = this.linkTargetPort();
-    if (!sn || !systemId || !targetSystem || !targetPort) return;
+    const dir = this.linkDirection();
+    if (!sn || !systemId || !targetSystem || !targetPort || !dir) return;
 
-    const interconnectOutlet = sn.node.ports.find(p => p.direction === 'outlet');
     const [targetNodeId, targetPortId] = targetPort.split(':');
 
-    this.workspace.addLink({
-      id: crypto.randomUUID(),
-      fromSystem: systemId,
-      fromNode: sn.node.id,
-      fromPort: interconnectOutlet?.id ?? 'outlet',
-      toSystem: targetSystem,
-      toNode: targetNodeId,
-      toPort: targetPortId,
-    });
+    if (dir === 'outgoing') {
+      // Current outlet → target inlet
+      const outletPort = sn.node.ports.find(p => p.direction === 'outlet');
+      this.workspace.addLink({
+        id: crypto.randomUUID(),
+        fromSystem: systemId,
+        fromNode: sn.node.id,
+        fromPort: outletPort?.id ?? 'outlet',
+        toSystem: targetSystem,
+        toNode: targetNodeId,
+        toPort: targetPortId,
+      });
+    } else {
+      // Target outlet → current inlet
+      const inletPort = sn.node.ports.find(p => p.direction === 'inlet');
+      this.workspace.addLink({
+        id: crypto.randomUUID(),
+        fromSystem: targetSystem,
+        fromNode: targetNodeId,
+        fromPort: targetPortId,
+        toSystem: systemId,
+        toNode: sn.node.id,
+        toPort: inletPort?.id ?? 'inlet',
+      });
+    }
 
     this.linkTargetSystem.set(null);
     this.linkTargetPort.set(null);

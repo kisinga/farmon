@@ -35,6 +35,9 @@
     <router-outlet />
   </main>
 
+  <!-- Confirm dialog (global) -->
+  <app-confirm-dialog />
+
   <!-- Seed-change prompt -->
   @if (seedChanges().length > 0) {
     <div class="toast toast-end toast-bottom z-50">

@@ -15,10 +15,11 @@ export class WorkspaceService {
 
   // --- Core state ---
   private _site = signal<SiteMetadata | null>(null);
-  private _systems = signal<Map<string, { topology: SystemTopology; board: BoardDef; position: { x: number; y: number } }>>(new Map());
+  private _systems = signal<Map<string, { topology: SystemTopology; board: BoardDef }>>(new Map());
   private _links = signal<LinkData[]>([]);
   private _activeSystemId = signal<string | null>(null);
   private _dirty = signal(false);
+  private _dirtySystemIds = signal<Set<string>>(new Set());
   private _loading = signal(false);
 
   // --- Public readonly signals ---
@@ -27,6 +28,7 @@ export class WorkspaceService {
   readonly links = this._links.asReadonly();
   readonly activeSystemId = this._activeSystemId.asReadonly();
   readonly dirty = this._dirty.asReadonly();
+  readonly dirtySystemIds = this._dirtySystemIds.asReadonly();
   readonly loading = this._loading.asReadonly();
 
   // --- Active system computed signals ---
@@ -138,7 +140,7 @@ export class WorkspaceService {
     }
 
     return {
-      schema: 8,
+      schema: 9,
       device: { name: 'composite', friendly_name: 'Site', board: '' },
       nodes: allNodes,
       pipes: allPipes,
@@ -226,7 +228,7 @@ export class WorkspaceService {
       const payload = await this.electron.siteLoad(siteId);
       this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName });
 
-      const systems = new Map<string, { topology: SystemTopology; board: BoardDef; position: { x: number; y: number } }>();
+      const systems = new Map<string, { topology: SystemTopology; board: BoardDef }>();
 
       for (const sp of payload.systems) {
         try {
@@ -236,7 +238,7 @@ export class WorkspaceService {
           const boardResult = await this.electron.boardLoad(sp.board);
           const board = boardResult.board as BoardDef;
 
-          systems.set(sp.id, { topology, board, position: sp.position });
+          systems.set(sp.id, { topology, board });
         } catch {
           // Skip systems with broken board references
         }
@@ -275,8 +277,9 @@ export class WorkspaceService {
     const clone = structuredClone(entry.topology);
     updater(clone);
     const newSystems = new Map(systems);
-    newSystems.set(systemId, { topology: clone, board: entry.board, position: entry.position });
+    newSystems.set(systemId, { topology: clone, board: entry.board });
     this._systems.set(newSystems);
+    this._dirtySystemIds.update(s => new Set(s).add(systemId));
     this._dirty.set(true);
   }
 
@@ -293,36 +296,26 @@ export class WorkspaceService {
 
   addLink(link: LinkData): void {
     this._links.update(links => [...links, link]);
+    this._dirtySystemIds.update(s => { const n = new Set(s); n.add(link.fromSystem); n.add(link.toSystem); return n; });
     this._dirty.set(true);
   }
 
   removeLink(linkId: string): void {
+    const link = this._links().find(l => l.id === linkId);
     this._links.update(links => links.filter(l => l.id !== linkId));
+    if (link) {
+      this._dirtySystemIds.update(s => { const n = new Set(s); n.add(link.fromSystem); n.add(link.toSystem); return n; });
+    }
     this._dirty.set(true);
   }
 
   // --- System management ---
 
-  nextSystemPosition(): { x: number; y: number } {
-    const systems = this._systems();
-    if (systems.size === 0) return { x: 0, y: 0 };
-
-    let maxY = 0;
-    for (const [, { topology, position }] of systems) {
-      for (const node of topology.nodes) {
-        const bottom = position.y + node.position.y + 80;
-        maxY = Math.max(maxY, bottom);
-      }
-    }
-    return { x: 0, y: maxY + 40 };
-  }
-
   async addSystemFromTemplate(templateName: string): Promise<string> {
     const site = this._site();
     if (!site) throw new Error('No site loaded');
 
-    const position = this.nextSystemPosition();
-    const systemPayload = await this.electron.systemAddFromTemplate(site.id, templateName, position);
+    const systemPayload = await this.electron.systemAddFromTemplate(site.id, templateName);
 
     // Load board for the new system
     const boardResult = await this.electron.boardLoad(systemPayload.board);
@@ -330,8 +323,9 @@ export class WorkspaceService {
     const topology = this.reconstructTopology(systemPayload);
 
     const newSystems = new Map(this._systems());
-    newSystems.set(systemPayload.id, { topology, board, position: systemPayload.position });
+    newSystems.set(systemPayload.id, { topology, board });
     this._systems.set(newSystems);
+    this._dirtySystemIds.update(s => new Set(s).add(systemPayload.id));
     this._dirty.set(true);
 
     return systemPayload.id;
@@ -346,6 +340,8 @@ export class WorkspaceService {
     this._links.update(links =>
       links.filter(l => l.fromSystem !== systemId && l.toSystem !== systemId)
     );
+
+    this._dirtySystemIds.update(s => { const n = new Set(s); n.delete(systemId); return n; });
 
     this._dirty.set(true);
   }
@@ -383,7 +379,7 @@ export class WorkspaceService {
     if (!site) return;
 
     const systemPayloads: SiteSavePayload['systems'] = [];
-    for (const [systemId, { topology, position }] of this._systems()) {
+    for (const [systemId, { topology }] of this._systems()) {
       systemPayloads.push({
         id: systemId,
         friendlyName: topology.device.friendly_name,
@@ -397,7 +393,7 @@ export class WorkspaceService {
           automations: topology.automations,
           uart_buses: topology.device.uart_buses,
         },
-        position,
+        deviceName: topology.device.name,
       });
     }
 
@@ -409,6 +405,7 @@ export class WorkspaceService {
 
     await this.electron.siteSave(payload);
     this._dirty.set(false);
+    this._dirtySystemIds.set(new Set());
   }
 
   // --- Clear ---
@@ -418,6 +415,7 @@ export class WorkspaceService {
     this._systems.set(new Map());
     this._links.set([]);
     this._activeSystemId.set(null);
+    this._dirtySystemIds.set(new Set());
     this._dirty.set(false);
     this._loading.set(false);
   }
@@ -427,9 +425,9 @@ export class WorkspaceService {
   private reconstructTopology(sp: SystemPayload): SystemTopology {
     const topo = sp.topology;
     return {
-      schema: 8,
+      schema: 9,
       device: {
-        name: sp.id,
+        name: sp.deviceName || sp.id,
         friendly_name: sp.friendlyName,
         board: sp.board,
         directory: sp.directory ?? undefined,

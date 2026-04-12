@@ -4,6 +4,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { WorkspaceService } from '../../core/services/workspace.service';
+import { ConfirmService } from '../../core/services/confirm.service';
 import { X6Canvas, type CanvasEvents } from '../editor/topology-x6-tab/x6-canvas';
 import { renderBoundaries, BOUNDARY_COLORS } from '../../shared/canvas/boundary-renderer';
 
@@ -17,16 +18,32 @@ import { renderBoundaries, BOUNDARY_COLORS } from '../../shared/canvas/boundary-
       <div class="px-3 py-2 text-xs font-semibold text-base-content/50 border-b border-base-300/20">Systems</div>
       <div class="flex-1 overflow-auto">
         @for (entry of systemEntries(); track entry.id) {
-          <button
-            class="w-full text-left px-3 py-2 text-sm hover:bg-base-200/60 transition-colors border-b border-base-300/10 group"
+          <div
+            class="w-full text-left px-3 py-2 text-sm hover:bg-base-200/60 transition-colors border-b border-base-300/10 group flex items-center cursor-pointer"
             (click)="navigateToSystem(entry.id)"
           >
-            <div class="font-medium truncate">{{ entry.friendlyName }}</div>
-            <div class="flex items-center gap-2 mt-0.5">
-              <span class="text-[10px] text-base-content/40 font-mono">{{ entry.board }}</span>
-              <span class="text-[10px] text-base-content/30">{{ entry.nodeCount }} nodes</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span class="font-medium truncate">{{ entry.friendlyName }}</span>
+                @if (workspace.dirtySystemIds().has(entry.id)) {
+                  <span class="badge badge-warning badge-xs shrink-0" title="Unsaved changes">modified</span>
+                }
+              </div>
+              <div class="flex items-center gap-2 mt-0.5">
+                <span class="text-[10px] text-base-content/40 font-mono">{{ entry.board }}</span>
+                <span class="text-[10px] text-base-content/30">{{ entry.nodeCount }} nodes</span>
+              </div>
             </div>
-          </button>
+            <button
+              class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
+              (click)="deleteSystem(entry.id, entry.friendlyName, $event)"
+              title="Delete system"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
         }
         @if (systemEntries().length === 0) {
           <div class="px-3 py-6 text-xs text-base-content/30 text-center">
@@ -113,6 +130,7 @@ import { renderBoundaries, BOUNDARY_COLORS } from '../../shared/canvas/boundary-
 })
 export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
   protected workspace = inject(WorkspaceService);
+  private confirmService = inject(ConfirmService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private zone = inject(NgZone);
@@ -217,6 +235,20 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
       });
     }
     this.systemEntries.set(entries);
+  }
+
+  protected async deleteSystem(systemId: string, friendlyName: string, event: Event) {
+    event.stopPropagation();
+    const confirmed = await this.confirmService.confirm({
+      title: 'Delete System',
+      message: `Delete "${friendlyName}"? All links to/from this system will also be removed.`,
+    });
+    if (!confirmed) return;
+    if (this.workspace.activeSystemId() === systemId) {
+      this.workspace.unfocusSystem();
+    }
+    this.workspace.removeSystem(systemId);
+    this.updateSystemEntries();
   }
 
   protected navigateToSystem(systemId: string) {

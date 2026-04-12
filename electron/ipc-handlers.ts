@@ -121,7 +121,7 @@ export function registerIpcHandlers() {
       content: db.loadHaFile(siteId, filename) ?? '',
     }));
 
-    const exportData = { ...payload, haFiles };
+    const exportData = { exportVersion: 1, ...payload, haFiles };
     const json = JSON.stringify(exportData, null, 2);
 
     const win = winFromEvent(event);
@@ -147,8 +147,14 @@ export function registerIpcHandlers() {
 
     const raw = fs.readFileSync(result.filePaths[0], "utf-8");
     const data = JSON.parse(raw) as db.SiteFullPayload & {
+      exportVersion?: number;
       haFiles?: Array<{ filename: string; content: string }>;
     };
+
+    const exportVersion = data.exportVersion ?? 0;
+    if (exportVersion > 1) {
+      throw new Error(`This file was exported with a newer format (v${exportVersion}). Update the app to import it.`);
+    }
 
     if (!data.site?.id || !data.site?.friendlyName) {
       throw new Error("Invalid site file: missing site.id or site.friendlyName");
@@ -161,9 +167,15 @@ export function registerIpcHandlers() {
     }
     data.site.id = siteId;
 
+    // Backfill deviceName for legacy exports (v0) that don't have it
+    const systems = data.systems.map(s => ({
+      ...s,
+      deviceName: (s as any).deviceName || s.id,
+    }));
+
     db.saveSiteTransaction({
       site: data.site,
-      systems: data.systems,
+      systems,
       links: data.links,
     });
 
@@ -189,7 +201,7 @@ export function registerIpcHandlers() {
    */
   ipcMain.handle(
     "system:add-from-template",
-    async (_e, siteId: string, templateName: string, position: { x: number; y: number }) => {
+    async (_e, siteId: string, templateName: string) => {
       const templateData = store.loadTemplate(templateName);
       const device = templateData.device as Record<string, unknown> | undefined;
       const nodes = Array.isArray(templateData.nodes)
@@ -299,7 +311,7 @@ export function registerIpcHandlers() {
         board: (device?.board as string) ?? "unknown",
         directory: (device?.directory as string) ?? null,
         topology,
-        position,
+        deviceName: (device?.name as string) ?? systemId,
       };
 
       db.insertSystem(siteId, system);
@@ -589,7 +601,7 @@ export function registerIpcHandlers() {
           board: s.board,
           directory: s.directory,
           topology: s.topology,
-          position: s.position,
+          deviceName: s.id,
         })),
         links: site.links,
       });

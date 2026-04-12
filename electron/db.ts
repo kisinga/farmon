@@ -40,8 +40,8 @@ export interface SystemRow {
   board: string;
   directory: string | null;
   topology: string; // JSON
-  positionX: number;
-  positionY: number;
+  deviceName: string;
+  sortOrder: number;
 }
 
 export interface SiteFullPayload {
@@ -52,7 +52,7 @@ export interface SiteFullPayload {
     board: string;
     directory: string | null;
     topology: unknown; // parsed JSON
-    position: { x: number; y: number };
+    deviceName: string;
   }>;
   links: LinkRow[];
 }
@@ -65,7 +65,7 @@ export interface SiteSavePayload {
     board: string;
     directory: string | null;
     topology: unknown; // will be JSON.stringify'd
-    position: { x: number; y: number };
+    deviceName: string;
   }>;
   links: Array<{
     id: string;
@@ -99,7 +99,7 @@ export interface GenerationSnapshot extends GenerationMeta {
 // DB versioning & migrations
 // ---------------------------------------------------------------------------
 
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const MIGRATIONS: Record<number, string> = {
   0: `
@@ -173,29 +173,37 @@ const MIGRATIONS: Record<number, string> = {
       PRIMARY KEY (site_id, filename)
     );
 
-    -- Recreate generations table with new FK structure
-    CREATE TABLE generations_v2 (
+    -- Drop old generations table (no backward compat, clean slate)
+    DROP TABLE IF EXISTS generations;
+
+    -- Recreate with proper FK constraints
+    CREATE TABLE generations (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       version        TEXT    NOT NULL UNIQUE,
-      site_id        TEXT    NOT NULL DEFAULT '',
-      system_id      TEXT    NOT NULL DEFAULT '',
+      site_id        TEXT    NOT NULL,
+      system_id      TEXT    NOT NULL,
       schema_version INTEGER NOT NULL,
       topology       TEXT    NOT NULL,
       board          TEXT    NOT NULL,
       file_count     INTEGER NOT NULL DEFAULT 0,
       checksum       TEXT    NOT NULL DEFAULT '',
-      created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      FOREIGN KEY (system_id, site_id) REFERENCES systems(id, site_id) ON DELETE CASCADE
     );
 
-    -- Copy existing generation data (config_name maps to system_id; site_id filled during data migration)
-    INSERT INTO generations_v2 (id, version, system_id, schema_version, topology, board, file_count, checksum, created_at)
-    SELECT id, version, config_name, schema_version, topology, board, file_count, checksum, created_at
-    FROM generations;
-
-    DROP TABLE generations;
-    ALTER TABLE generations_v2 RENAME TO generations;
-
     CREATE INDEX idx_generations_system ON generations (site_id, system_id, id DESC);
+  `,
+  2: `
+    -- Drop unused position columns
+    ALTER TABLE systems DROP COLUMN position_x;
+    ALTER TABLE systems DROP COLUMN position_y;
+
+    -- Add device_name (ESPHome hostname, decoupled from system ID)
+    ALTER TABLE systems ADD COLUMN device_name TEXT NOT NULL DEFAULT '';
+    UPDATE systems SET device_name = id;
+
+    -- Add sort_order for explicit system ordering
+    ALTER TABLE systems ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
   `,
 };
 
@@ -340,14 +348,14 @@ export function duplicateSite(sourceId: string, newId: string, newFriendlyName: 
 
     // Copy systems
     const systems = queryAll<SystemRow>(
-      "SELECT id, friendly_name, board, directory, topology, position_x, position_y FROM systems WHERE site_id = ?",
+      "SELECT id, friendly_name, board, directory, topology, device_name, sort_order FROM systems WHERE site_id = ?",
       [sourceId],
     );
     for (const sys of systems) {
       db.run(
-        `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, position_x, position_y)
+        `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, device_name, sort_order)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [sys.id, newId, sys.friendlyName, sys.board, sys.directory, sys.topology, sys.positionX, sys.positionY],
+        [sys.id, newId, sys.friendlyName, sys.board, sys.directory, sys.topology, sys.deviceName, sys.sortOrder],
       );
     }
 
@@ -408,10 +416,10 @@ export function loadSiteFull(id: string): SiteFullPayload | null {
 
   const systems = queryAll<{
     id: string; friendly_name: string; board: string; directory: string | null;
-    topology: string; position_x: number; position_y: number;
+    topology: string; device_name: string; sort_order: number;
   }>(
-    `SELECT id, friendly_name, board, directory, topology, position_x, position_y
-     FROM systems WHERE site_id = ? ORDER BY id`,
+    `SELECT id, friendly_name, board, directory, topology, device_name, sort_order
+     FROM systems WHERE site_id = ? ORDER BY sort_order, id`,
     [id],
   );
 
@@ -432,7 +440,7 @@ export function loadSiteFull(id: string): SiteFullPayload | null {
       board: s.board,
       directory: s.directory,
       topology: JSON.parse(s.topology),
-      position: { x: s.position_x, y: s.position_y },
+      deviceName: s.device_name,
     })),
     links: links.map(l => ({
       id: l.id,
@@ -481,18 +489,17 @@ export function saveSiteTransaction(payload: SiteSavePayload): void {
     for (const sys of payload.systems) {
       const topologyJson = JSON.stringify(sys.topology);
       db.run(
-        `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, position_x, position_y)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, device_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id, site_id) DO UPDATE SET
            friendly_name = excluded.friendly_name,
            board = excluded.board,
            directory = excluded.directory,
            topology = excluded.topology,
-           position_x = excluded.position_x,
-           position_y = excluded.position_y,
+           device_name = excluded.device_name,
            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
         [sys.id, siteId, sys.friendlyName, sys.board, sys.directory ?? null,
-         topologyJson, sys.position.x, sys.position.y],
+         topologyJson, sys.deviceName],
       );
     }
 
@@ -592,7 +599,7 @@ export function insertSystem(
     board: string;
     directory: string | null;
     topology: unknown;
-    position: { x: number; y: number };
+    deviceName: string;
   },
 ): void {
   const db = getDb();
@@ -601,10 +608,10 @@ export function insertSystem(
   db.run("BEGIN TRANSACTION");
   try {
     db.run(
-      `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, position_x, position_y)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, device_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [system.id, siteId, system.friendlyName, system.board, system.directory,
-       topologyJson, system.position.x, system.position.y],
+       topologyJson, system.deviceName],
     );
 
     // Register node IDs
