@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("codegen:validate", manifest, board),
   codegenGenerate: (siteId: string, systemId: string, manifest: unknown, board: unknown) =>
     ipcRenderer.invoke("codegen:generate", siteId, systemId, manifest, board),
+  codegenGenerateSiteDocs: (siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]) =>
+    ipcRenderer.invoke("codegen:generate-site-docs", siteId, compositeSvg, systems, links, routes),
 
   // --- Toolchain ---
   toolchainStatus: () => ipcRenderer.invoke("toolchain:status"),

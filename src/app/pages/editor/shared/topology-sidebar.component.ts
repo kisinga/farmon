@@ -79,7 +79,7 @@ export type { Selection };
 
             @if (linkDirection()) {
               @if (otherSystems().length === 0) {
-                <div class="text-xs text-warning py-2">Add another system to this site before linking this interconnect.</div>
+                <div class="text-xs text-warning py-2">Add another controller to this site before linking this interconnect.</div>
               } @else {
                 <div class="space-y-2">
                   <div class="text-[10px] text-base-content/40 mb-1">
@@ -88,7 +88,7 @@ export type { Selection };
                   <select class="select select-xs select-bordered w-full"
                     [ngModel]="linkTargetSystem()"
                     (ngModelChange)="linkTargetSystem.set($event); linkTargetPort.set(null)">
-                    <option [ngValue]="null">Select target system...</option>
+                    <option [ngValue]="null">Select target controller...</option>
                     @for (sys of otherSystems(); track sys.config) {
                       <option [ngValue]="sys.config">{{ sys.friendlyName }}</option>
                     }
@@ -97,7 +97,7 @@ export type { Selection };
                   @if (linkTargetSystem()) {
                     @if (targetBoundaryPorts().length === 0) {
                       <div class="space-y-2">
-                        <div class="text-xs text-base-content/50">No interconnects in target system.</div>
+                        <div class="text-xs text-base-content/50">No interconnects in target controller.</div>
                         <button class="btn btn-xs btn-outline btn-primary w-full" (click)="createInterconnectInTarget()">
                           + Create Interconnect
                         </button>
@@ -177,7 +177,7 @@ export type { Selection };
             [ngModel]="deviceName()"
             (ngModelChange)="updateDeviceName($event)"
             placeholder="ESPHome hostname" />
-          <span class="text-[10px] text-base-content/40 col-span-2">Used as ESPHome device hostname. Independent of system ID.</span>
+          <span class="text-[10px] text-base-content/40 col-span-2">Used as ESPHome device hostname. Independent of controller ID.</span>
         </div>
       </div>
       <div class="sidebar-section">

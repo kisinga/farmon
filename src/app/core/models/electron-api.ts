@@ -155,6 +155,7 @@ export interface ElectronAPI {
   codegenDeriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>>;
   codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
   codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult>;
+  codegenGenerateSiteDocs(siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }>;
 
   // Toolchain
   toolchainStatus(): Promise<ToolchainInfo>;

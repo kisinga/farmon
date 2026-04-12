@@ -101,6 +101,9 @@ export class ElectronService {
   generate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult> {
     return this.invoke(() => this.api!.codegenGenerate(siteId, systemId, manifest, board));
   }
+  generateSiteDocs(siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }> {
+    return this.invoke(() => this.api!.codegenGenerateSiteDocs(siteId, compositeSvg, systems, links, routes));
+  }
 
   // --- Toolchain ---
   toolchainStatus(): Promise<ToolchainInfo> {

@@ -28,7 +28,7 @@ import type { TemplateListEntry } from '../../core/models/electron-api';
             >{{ site.friendlyName }}</span>
           }
           <span class="text-xs text-base-content/50">
-            {{ workspace.systems().size }} system{{ workspace.systems().size !== 1 ? 's' : '' }}
+            {{ workspace.systems().size }} controller{{ workspace.systems().size !== 1 ? 's' : '' }}
           </span>
           <span class="text-xs text-base-content/50">
             {{ workspace.links().length }} link{{ workspace.links().length !== 1 ? 's' : '' }}
@@ -42,7 +42,7 @@ import type { TemplateListEntry } from '../../core/models/electron-api';
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
           </svg>
-          Add System
+          Add Controller
         </button>
         @if (workspace.dirty()) {
           <button class="btn btn-sm btn-primary" (click)="saveSite()">Save Site</button>
@@ -54,12 +54,12 @@ import type { TemplateListEntry } from '../../core/models/electron-api';
     @if (showAddSystem()) {
       <dialog class="modal modal-open" style="position: fixed;">
         <div class="modal-box max-w-md">
-          <h3 class="font-bold text-lg mb-4">Add System from Template</h3>
+          <h3 class="font-bold text-lg mb-4">Add Controller from Template</h3>
 
           @if (templates().length === 0) {
             <p class="text-sm text-base-content/40 py-6 text-center">No templates available.</p>
           } @else {
-            <p class="text-xs text-base-content/40 mb-2">Create a site-scoped system from a template.</p>
+            <p class="text-xs text-base-content/40 mb-2">Create a controller from a template.</p>
             <div class="space-y-1 max-h-60 overflow-auto">
               @for (entry of templates(); track entry.name) {
                 <button

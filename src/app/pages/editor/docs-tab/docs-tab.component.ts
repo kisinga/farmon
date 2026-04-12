@@ -128,12 +128,12 @@ function fileIcon(path: string): string {
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <p class="text-sm font-medium">No generated files yet</p>
-          <p class="text-xs mt-1 text-base-content/30">Generate firmware from the Deploy tab first.</p>
+          <p class="text-xs mt-1 text-base-content/30">Generate firmware from the Firmware tab first.</p>
           <button class="btn btn-primary btn-sm mt-4 gap-1.5" (click)="goToDeploy()">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            Go to Deploy
+            Go to Firmware
           </button>
         </div>
       </div>

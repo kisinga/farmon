@@ -130,7 +130,7 @@ function initials(name: string): string {
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
                       </svg>
-                      {{ site.systemCount }} system{{ site.systemCount !== 1 ? 's' : '' }}
+                      {{ site.systemCount }} controller{{ site.systemCount !== 1 ? 's' : '' }}
                     </div>
                     <div class="flex items-center gap-1.5">
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -278,7 +278,7 @@ export class OverviewComponent implements OnInit {
     event.stopPropagation();
     const confirmed = await this.confirmService.confirm({
       title: 'Delete Site',
-      message: `Delete "${name}"? All systems and links in this site will be permanently removed.`,
+      message: `Delete "${name}"? All controllers and links in this site will be permanently removed.`,
     });
     if (!confirmed) return;
     await this.electron.siteDelete(id);

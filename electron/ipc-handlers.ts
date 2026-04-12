@@ -11,6 +11,7 @@ import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
 import { generateDocumentation } from "./lib/generators/readme.js";
 import { generateTopologySvg, collectPins, reservedPins, computePinOverlays } from '@far-mon/core';
+import { generateSiteDocumentation } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
 import { listSerialPorts } from "./discovery.js";
@@ -433,6 +434,51 @@ export function registerIpcHandlers() {
         documentationHtml: docFile?.content ?? null,
       };
     }
+  );
+
+  // =========================================================================
+  // Site-level documentation
+  // =========================================================================
+
+  ipcMain.handle(
+    "codegen:generate-site-docs",
+    async (
+      _e,
+      siteId: string,
+      compositeSvg: string,
+      systemsRaw: Array<{ systemId: string; friendlyName: string; board: string; deviceName: string; topology: unknown }>,
+      linksRaw: Array<{ id: string; fromSystem: string; fromNode: string; fromPort: string; toSystem: string; toNode: string; toPort: string; label?: string | null }>,
+      routesRaw: unknown[],
+    ) => {
+      // Derive manifests for each system
+      const systems = systemsRaw.map(s => {
+        const { manifest } = resolveTopologyAndManifest(s.topology);
+        return {
+          systemId: s.systemId,
+          friendlyName: s.friendlyName,
+          board: s.board,
+          deviceName: s.deviceName,
+          manifest,
+        };
+      });
+
+      const html = generateSiteDocumentation(
+        db.loadSiteFull(siteId)?.site.friendlyName ?? siteId,
+        systems,
+        linksRaw,
+        compositeSvg,
+        routesRaw as any[],
+      );
+
+      // Write to output dir
+      const outputDir = store.getOutputDir();
+      const filePath = `site-documentation.html`;
+      const fullPath = require('node:path').join(outputDir, filePath);
+      require('node:fs').mkdirSync(outputDir, { recursive: true });
+      require('node:fs').writeFileSync(fullPath, html, 'utf-8');
+
+      return { html, outputPath: fullPath };
+    },
   );
 
   // =========================================================================

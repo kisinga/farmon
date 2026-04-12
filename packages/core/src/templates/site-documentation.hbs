@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MajiFlow — {{siteName}} — Site Documentation</title>
+<style>{{{css}}}</style>
+<style>
+.badge-cross { background: #EDE9FE; color: #5B21B6; }
+.badge-local { background: #DBEAFE; color: #1E40AF; }
+.system-header {
+  display: flex; align-items: center; gap: 8px; margin: 18px 0 8px;
+  padding: 6px 10px; border-radius: 6px; background: var(--bg-subtle);
+}
+.system-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.link-arrow { color: var(--brand); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- Header with branding -->
+<div class="doc-header">
+  <div class="logo">{{{logoSvg}}}</div>
+  <div>
+    <h1>MajiFlow</h1>
+    <div class="subtitle">{{siteName}} — Site Documentation</div>
+    <div class="pills">
+        <span class="pill">{{systemCount}} controller{{#unless singleSystem}}s{{/unless}}</span>
+        {{#each componentPills}}<span class="pill">{{this.label}}</span>
+        {{/each}}
+    </div>
+  </div>
+</div>
+
+<h2>Site Topology</h2>
+<div class="diagram">
+{{{compositeTopologySvg}}}
+</div>
+
+<h2>Controllers</h2>
+<table>
+  <thead>
+    <tr><th>Controller</th><th>Board</th><th>Device Name</th><th>Tanks</th><th>Pumps</th><th>Valves</th><th>Routes</th></tr>
+  </thead>
+  <tbody>
+{{#each systems}}
+    <tr>
+      <td><strong>{{this.friendlyName}}</strong></td>
+      <td><code>{{this.board}}</code></td>
+      <td><code>{{this.deviceName}}</code></td>
+      <td>{{this.tankCount}}</td>
+      <td>{{this.pumpCount}}</td>
+      <td>{{this.valveCount}}</td>
+      <td>{{this.routeCount}}</td>
+    </tr>
+{{/each}}
+  </tbody>
+</table>
+
+{{#if hasLinks}}
+<h2>Inter-Controller Links</h2>
+<table>
+  <thead>
+    <tr><th>From Controller</th><th>From Node</th><th></th><th>To Controller</th><th>To Node</th></tr>
+  </thead>
+  <tbody>
+{{#each links}}
+    <tr>
+      <td>{{this.fromSystemName}}</td>
+      <td><code>{{this.fromNode}}</code></td>
+      <td class="link-arrow">&rarr;</td>
+      <td>{{this.toSystemName}}</td>
+      <td><code>{{this.toNode}}</code></td>
+    </tr>
+{{/each}}
+  </tbody>
+</table>
+{{/if}}
+
+<h2>Routes</h2>
+{{#each routeGroups}}
+<div class="system-header">
+  <div class="system-dot" style="background:{{this.color}}"></div>
+  <strong>{{this.friendlyName}}</strong>
+  <span style="color:var(--text-muted);font-size:11px;">{{this.routes.length}} route{{#unless this.singleRoute}}s{{/unless}}</span>
+</div>
+<table>
+  <thead>
+    <tr><th>Route</th><th>Type</th><th>Source Min</th><th>Dest Max</th><th>Max Runtime</th><th>Scope</th></tr>
+  </thead>
+  <tbody>
+{{#each this.routes}}
+    <tr>
+      <td>{{this.name}}</td>
+      <td><span class="badge {{#if this.needsPump}}badge-pump{{else}}badge-gravity{{/if}}">{{#if this.needsPump}}Pumped{{else}}Gravity{{/if}}</span></td>
+      <td>{{this.sourceMin}}</td>
+      <td>{{this.destMax}}</td>
+      <td>{{this.runtime}}</td>
+      <td><span class="badge {{#if this.crossSystem}}badge-cross{{else}}badge-local{{/if}}">{{#if this.crossSystem}}Cross-system{{else}}Local{{/if}}</span></td>
+    </tr>
+{{/each}}
+  </tbody>
+</table>
+{{/each}}
+
+{{#if hasAutomations}}
+<h2>Automations</h2>
+{{#each automationGroups}}
+<div class="system-header">
+  <div class="system-dot" style="background:{{this.color}}"></div>
+  <strong>{{this.friendlyName}}</strong>
+</div>
+<table>
+  <thead>
+    <tr><th>Name</th><th>Trigger</th><th>Schedule</th><th>Route</th></tr>
+  </thead>
+  <tbody>
+{{#each this.automations}}
+    <tr>
+      <td>{{this.name}}</td>
+      <td>{{this.trigger}}</td>
+      <td>{{this.days}}</td>
+      <td>{{this.routeName}}</td>
+    </tr>
+{{/each}}
+  </tbody>
+</table>
+{{/each}}
+{{/if}}
+
+<div class="footer">
+  <div class="brand">{{{logoSvgSmall}}} MajiFlow</div>
+  <div>{{siteName}} · {{systemCount}} controllers · Generated {{genDate}}</div>
+</div>
+
+</body>
+</html>
