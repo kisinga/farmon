@@ -1,4 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { ElectronService } from '../../core/services/electron.service';
 import type { TemplateListEntry } from '../../core/models/electron-api';
@@ -44,6 +45,12 @@ import type { TemplateListEntry } from '../../core/models/electron-api';
           </svg>
           Add Controller
         </button>
+        <button class="btn btn-sm btn-ghost gap-1.5" (click)="goToDeploy()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          Deploy
+        </button>
         @if (workspace.dirty()) {
           <button class="btn btn-sm btn-primary" (click)="saveSite()">Save Site</button>
         }
@@ -86,6 +93,7 @@ import type { TemplateListEntry } from '../../core/models/electron-api';
 export class SiteRailComponent {
   protected workspace = inject(WorkspaceService);
   private electron = inject(ElectronService);
+  private router = inject(Router);
 
   protected showAddSystem = signal(false);
   protected editingName = signal(false);
@@ -109,6 +117,11 @@ export class SiteRailComponent {
   protected async onAddClick() {
     this.templates.set(await this.electron.templateList());
     this.showAddSystem.set(true);
+  }
+
+  protected goToDeploy() {
+    const siteId = this.workspace.site()?.id;
+    if (siteId) this.router.navigate(['/site', siteId, 'deploy']);
   }
 
   protected saveName(event: Event) {

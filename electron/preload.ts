@@ -38,8 +38,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("codegen:derive-routes", topology),
   codegenValidate: (manifest: unknown, board: unknown) =>
     ipcRenderer.invoke("codegen:validate", manifest, board),
-  codegenGenerate: (siteId: string, systemId: string, manifest: unknown, board: unknown) =>
-    ipcRenderer.invoke("codegen:generate", siteId, systemId, manifest, board),
+  codegenGenerate: (siteId: string, systemId: string, manifest: unknown, board: unknown, genType?: string) =>
+    ipcRenderer.invoke("codegen:generate", siteId, systemId, manifest, board, genType),
   codegenGenerateSiteDocs: (siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]) =>
     ipcRenderer.invoke("codegen:generate-site-docs", siteId, compositeSvg, systems, links, routes),
 
@@ -145,12 +145,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
   legacyImport: (sites: unknown) => ipcRenderer.invoke("legacy:import", sites),
 
   // --- Generation history ---
-  generationList: (siteId: string, systemId: string) =>
-    ipcRenderer.invoke("generation:list", siteId, systemId),
+  generationList: (siteId: string, systemId: string, genType?: string) =>
+    ipcRenderer.invoke("generation:list", siteId, systemId, genType),
   generationLoad: (id: number) =>
     ipcRenderer.invoke("generation:load", id),
   generationFind: (version: string) =>
     ipcRenderer.invoke("generation:find", version),
-  generationLatest: (siteId: string, systemId: string) =>
-    ipcRenderer.invoke("generation:latest", siteId, systemId),
+  generationLatest: (siteId: string, systemId: string, genType?: string) =>
+    ipcRenderer.invoke("generation:latest", siteId, systemId, genType),
+
+  // --- System secrets ---
+  secretsGet: (siteId: string, systemId: string) =>
+    ipcRenderer.invoke("secrets:get", siteId, systemId),
+  secretsSet: (siteId: string, systemId: string, secrets: Record<string, string>) =>
+    ipcRenderer.invoke("secrets:set", siteId, systemId, secrets),
 });

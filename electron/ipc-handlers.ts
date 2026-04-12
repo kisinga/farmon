@@ -3,14 +3,13 @@ import * as fs from "node:fs";
 import { BoardDefSchema, type BoardDef } from "./lib/board.js";
 import { parseTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
-import { generateAll } from "./lib/generate.js";
+import { generateAll, generateEsphome, generateHA, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
 import { topologyToManifest } from "./lib/topology-to-manifest.js";
 import * as store from "./store.js";
 import * as db from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
-import { generateDocumentation } from "./lib/generators/readme.js";
-import { generateTopologySvg, collectPins, reservedPins, computePinOverlays } from '@far-mon/core';
+import { collectPins, reservedPins, computePinOverlays } from '@far-mon/core';
 import { generateSiteDocumentation } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
@@ -371,56 +370,45 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     "codegen:generate",
-    async (_e, siteId: string, systemId: string, dataRaw: unknown, boardRaw: unknown) => {
-      const board = BoardDefSchema.parse(boardRaw) as BoardDef;
+    async (_e, siteId: string, systemId: string, dataRaw: unknown, boardRaw: unknown, genType: db.GenerationType = 'esphome') => {
       const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
-      const validation = validateAll(topology, manifest, board);
-      if (!validation.ok) {
-        const errors = validation.diagnostics
-          .filter(d => d.severity === 'error')
-          .map(d => d.message);
-        throw new Error(errors.join('\n'));
+
+      let files;
+      let board: BoardDef | null = null;
+
+      if (genType === 'esphome') {
+        board = BoardDefSchema.parse(boardRaw) as BoardDef;
+        const validation = validateAll(topology, manifest, board);
+        if (!validation.ok) {
+          const errors = validation.diagnostics
+            .filter(d => d.severity === 'error')
+            .map(d => d.message);
+          throw new Error(errors.join('\n'));
+        }
+        // Load secrets from DB, falling back to defaults
+        const savedSecrets = db.getSecrets(siteId, systemId);
+        const secrets: SecretsMap = {
+          ...generateDefaultSecrets(),
+          ...savedSecrets,
+        } as SecretsMap;
+        files = generateEsphome(manifest, board, secrets);
+      } else {
+        files = generateHA(manifest);
       }
 
-      const gen = db.createGeneration(siteId, systemId, topology, board);
-      const latestMeta = gen ? null : db.listGenerations(siteId, systemId)[0] ?? null;
-
+      const gen = db.createGeneration(siteId, systemId, topology, board, genType);
+      const latestMeta = gen ? null : db.listGenerations(siteId, systemId, genType)[0] ?? null;
       const version = gen?.version ?? latestMeta?.version ?? '';
-      const createdAt = gen ? new Date().toISOString() : (latestMeta?.createdAt ?? '');
-
-      const files = generateAll(manifest, board);
-
-      // Documentation
       const deviceDir = manifest.device.directory ?? manifest.device.name;
-      const topologySvg = generateTopologySvg(topology);
-      if (topologySvg) {
-        const boardSvg = store.loadBoard(board.id ?? board.model).svg;
-        const usedPins = new Map(
-          collectPins(topology.nodes).map(u => [u.pin, u.owner])
-        );
-        const reserved = reservedPins(board);
-        const pinOverlays = computePinOverlays(board, usedPins, reserved);
-
-        files.push({
-          relativePath: `esphome/${deviceDir}/documentation.html`,
-          description: "System documentation (print to PDF from browser)",
-          content: generateDocumentation(manifest, topologySvg, {
-            generation: version ? { version, createdAt } : undefined,
-            boardSvg: boardSvg ?? undefined,
-            pinOverlays,
-          }),
-        });
-      }
 
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);
 
       if (gen) {
         db.finalizeGeneration(gen.id, files.length);
-        db.pruneGenerations(siteId, systemId, 10);
+        db.pruneGenerations(siteId, systemId, 10, genType);
       }
 
-      const docFile = files.find(f => f.relativePath.endsWith('documentation.html'));
       return {
         outputDir,
         deviceDir,
@@ -431,7 +419,6 @@ export function registerIpcHandlers() {
           description: f.description,
           lines: f.content.split("\n").length,
         })),
-        documentationHtml: docFile?.content ?? null,
       };
     }
   );
@@ -450,15 +437,32 @@ export function registerIpcHandlers() {
       linksRaw: Array<{ id: string; fromSystem: string; fromNode: string; fromPort: string; toSystem: string; toNode: string; toPort: string; label?: string | null }>,
       routesRaw: unknown[],
     ) => {
-      // Derive manifests for each system
+      // Derive manifests and board data for each system
       const systems = systemsRaw.map(s => {
-        const { manifest } = resolveTopologyAndManifest(s.topology);
+        const { topology, manifest } = resolveTopologyAndManifest(s.topology);
+        // Load board SVG and compute pin overlays for per-device sections
+        let boardSvg: string | undefined;
+        let pinOverlays: ReturnType<typeof computePinOverlays> | undefined;
+        try {
+          const boardData = store.loadBoard(s.board);
+          if (boardData?.svg && boardData?.board) {
+            boardSvg = boardData.svg;
+            const board = boardData.board as unknown as BoardDef;
+            const usedPins = new Map(
+              collectPins(topology.nodes).map(u => [u.pin, u.owner])
+            );
+            const reserved = reservedPins(board);
+            pinOverlays = computePinOverlays(board, usedPins, reserved);
+          }
+        } catch { /* board not available, skip pinout */ }
         return {
           systemId: s.systemId,
           friendlyName: s.friendlyName,
           board: s.board,
           deviceName: s.deviceName,
           manifest,
+          boardSvg,
+          pinOverlays,
         };
       });
 
@@ -665,8 +669,8 @@ export function registerIpcHandlers() {
   // Generation history
   // =========================================================================
 
-  ipcMain.handle("generation:list", async (_e, siteId: string, systemId: string) =>
-    db.listGenerations(siteId, systemId)
+  ipcMain.handle("generation:list", async (_e, siteId: string, systemId: string, genType?: db.GenerationType) =>
+    db.listGenerations(siteId, systemId, genType)
   );
 
   ipcMain.handle("generation:load", async (_e, id: number) =>
@@ -677,9 +681,21 @@ export function registerIpcHandlers() {
     db.loadGenerationByVersion(version)
   );
 
-  ipcMain.handle("generation:latest", async (_e, siteId: string, systemId: string) => {
-    const all = db.listGenerations(siteId, systemId);
+  ipcMain.handle("generation:latest", async (_e, siteId: string, systemId: string, genType?: db.GenerationType) => {
+    const all = db.listGenerations(siteId, systemId, genType);
     return all[0] ?? null;
+  });
+
+  // =========================================================================
+  // System secrets
+  // =========================================================================
+
+  ipcMain.handle("secrets:get", async (_e, siteId: string, systemId: string) =>
+    db.getSecrets(siteId, systemId)
+  );
+
+  ipcMain.handle("secrets:set", async (_e, siteId: string, systemId: string, secrets: Record<string, string>) => {
+    db.setSecrets(siteId, systemId, secrets);
   });
 }
 

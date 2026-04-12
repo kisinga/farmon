@@ -25,6 +25,8 @@ export interface BoardLoadResult {
 
 // --- Generation ---
 
+export type GenerationType = 'esphome' | 'ha';
+
 export interface GenerateResult {
   outputDir: string;
   deviceDir: string;
@@ -35,7 +37,6 @@ export interface GenerateResult {
     description: string;
     lines: number;
   }>;
-  documentationHtml: string | null;
 }
 
 export interface GenerationMeta {
@@ -43,6 +44,7 @@ export interface GenerationMeta {
   version: string;
   siteId: string;
   systemId: string;
+  genType: GenerationType;
   schemaVersion: number;
   fileCount: number;
   createdAt: string;
@@ -154,7 +156,7 @@ export interface ElectronAPI {
   // Codegen
   codegenDeriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>>;
   codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
-  codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult>;
+  codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown, genType?: GenerationType): Promise<GenerateResult>;
   codegenGenerateSiteDocs(siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }>;
 
   // Toolchain
@@ -206,10 +208,14 @@ export interface ElectronAPI {
   legacyImport(sites: unknown): Promise<{ imported: number }>;
 
   // Generation history
-  generationList(siteId: string, systemId: string): Promise<GenerationMeta[]>;
+  generationList(siteId: string, systemId: string, genType?: GenerationType): Promise<GenerationMeta[]>;
   generationLoad(id: number): Promise<GenerationSnapshot | null>;
   generationFind(version: string): Promise<GenerationSnapshot | null>;
-  generationLatest(siteId: string, systemId: string): Promise<GenerationMeta | null>;
+  generationLatest(siteId: string, systemId: string, genType?: GenerationType): Promise<GenerationMeta | null>;
+
+  // System secrets
+  secretsGet(siteId: string, systemId: string): Promise<Record<string, string>>;
+  secretsSet(siteId: string, systemId: string, secrets: Record<string, string>): Promise<void>;
 }
 
 declare global {

@@ -4,6 +4,7 @@ import type {
   BoardListEntry,
   BoardLoadResult,
   GenerateResult,
+  GenerationType,
   GenerationMeta,
   GenerationSnapshot,
   ValidationResult,
@@ -98,8 +99,8 @@ export class ElectronService {
     if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false, diagnostics: [] });
     return this.api.codegenValidate(manifest, board);
   }
-  generate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult> {
-    return this.invoke(() => this.api!.codegenGenerate(siteId, systemId, manifest, board));
+  generate(siteId: string, systemId: string, manifest: unknown, board: unknown, genType?: GenerationType): Promise<GenerateResult> {
+    return this.invoke(() => this.api!.codegenGenerate(siteId, systemId, manifest, board, genType));
   }
   generateSiteDocs(siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }> {
     return this.invoke(() => this.api!.codegenGenerateSiteDocs(siteId, compositeSvg, systems, links, routes));
@@ -216,8 +217,8 @@ export class ElectronService {
   }
 
   // --- Generation history ---
-  generationList(siteId: string, systemId: string): Promise<GenerationMeta[]> {
-    return this.api?.generationList(siteId, systemId) ?? Promise.resolve([]);
+  generationList(siteId: string, systemId: string, genType?: GenerationType): Promise<GenerationMeta[]> {
+    return this.api?.generationList(siteId, systemId, genType) ?? Promise.resolve([]);
   }
   generationLoad(id: number): Promise<GenerationSnapshot | null> {
     return this.invoke(() => this.api!.generationLoad(id));
@@ -225,8 +226,16 @@ export class ElectronService {
   generationFind(version: string): Promise<GenerationSnapshot | null> {
     return this.invoke(() => this.api!.generationFind(version));
   }
-  generationLatest(siteId: string, systemId: string): Promise<GenerationMeta | null> {
-    return this.api?.generationLatest(siteId, systemId) ?? Promise.resolve(null);
+  generationLatest(siteId: string, systemId: string, genType?: GenerationType): Promise<GenerationMeta | null> {
+    return this.api?.generationLatest(siteId, systemId, genType) ?? Promise.resolve(null);
+  }
+
+  // --- System secrets ---
+  secretsGet(siteId: string, systemId: string): Promise<Record<string, string>> {
+    return this.api?.secretsGet(siteId, systemId) ?? Promise.resolve({});
+  }
+  async secretsSet(siteId: string, systemId: string, secrets: Record<string, string>): Promise<void> {
+    await this.invoke(() => this.api!.secretsSet(siteId, systemId, secrets));
   }
 
   private invoke<T>(fn: () => Promise<T>): Promise<T> {

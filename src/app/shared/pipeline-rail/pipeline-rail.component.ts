@@ -2,18 +2,14 @@ import { Component, inject, signal, computed, OnInit, OnDestroy, output } from '
 import { Router, RouterLink, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs';
 import { SystemEditorService } from '../../core/services/system-editor.service';
-import { WorkspaceService } from '../../core/services/workspace.service';
 
-type StepId = 'device' | 'design' | 'automations' | 'timing' | 'deploy' | 'docs';
+type StepId = 'design' | 'config' | 'automations';
 type StepState = 'complete' | 'active' | 'untouched' | 'warning';
 
 const STEPS: { id: StepId; label: string; icon: string }[] = [
-  { id: 'device',      label: 'Device',  icon: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z' },
-  { id: 'design',      label: 'Design',  icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
-  { id: 'automations', label: 'Auto',    icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
-  { id: 'timing',      label: 'Timing',  icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
-  { id: 'deploy',      label: 'Firmware', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
-  { id: 'docs',        label: 'Docs',    icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+  { id: 'design',      label: 'Design',       icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
+  { id: 'config',      label: 'Config',       icon: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z' },
+  { id: 'automations', label: 'Automations',  icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
 ];
 
 @Component({
@@ -86,7 +82,6 @@ const STEPS: { id: StepId; label: string; icon: string }[] = [
 })
 export class PipelineRailComponent implements OnInit, OnDestroy {
   protected editor = inject(SystemEditorService);
-  private workspace = inject(WorkspaceService);
   private router = inject(Router);
 
   save = output<void>();
@@ -111,26 +106,19 @@ export class PipelineRailComponent implements OnInit, OnDestroy {
     for (const s of STEPS) {
       if (url.endsWith('/' + s.id)) return s.id;
     }
-    return 'device' as StepId;
+    return 'design' as StepId;
   });
 
-  protected visibleSteps = computed(() =>
-    this.editor.readonly() ? STEPS.filter(s => s.id !== 'deploy') : STEPS
-  );
+  protected visibleSteps = computed(() => STEPS);
 
   private stepStates = computed(() => {
     const t = this.editor.topology();
-    const v = this.editor.validation();
-    const gen = this.editor.generatedFiles();
     const active = this.activeStep();
 
     const states = new Map<StepId, StepState>();
-    states.set('device', t?.device?.name && t?.device?.board ? 'complete' : 'untouched');
     states.set('design', (t?.nodes?.length ?? 0) > 0 && (t?.pipes?.length ?? 0) > 0 ? 'complete' : 'untouched');
+    states.set('config', t?.device?.name && t?.device?.board ? 'complete' : 'untouched');
     states.set('automations', (t?.automations?.length ?? 0) > 0 ? 'complete' : 'untouched');
-    states.set('timing', 'complete');
-    states.set('deploy', v && !v.ok ? 'warning' : 'untouched');
-    states.set('docs', gen ? 'complete' : 'untouched');
 
     // Active step overrides
     states.set(active, 'active');

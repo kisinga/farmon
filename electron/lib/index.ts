@@ -32,4 +32,11 @@ export {
   type ManifestRule,
 } from "./validate.js";
 
-export { generateAll, type GeneratedFile } from "./generate.js";
+export {
+  generateAll,
+  generateEsphome,
+  generateHA,
+  generateDefaultSecrets,
+  type GeneratedFile,
+  type SecretsMap,
+} from "./generate.js";

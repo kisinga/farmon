@@ -71,6 +71,11 @@ export class App implements OnInit {
       const siteFriendly = this.workspace.site()?.friendlyName ?? siteSlug;
       return { label: siteFriendly, link: `/site/${segments[1]}`, colorClass: 'nav-label-site' };
     }
+    if (segments[0] === 'site' && segments[1] && segments[2] === 'deploy') {
+      const siteSlug = decodeURIComponent(segments[1]);
+      const siteFriendly = this.workspace.site()?.friendlyName ?? siteSlug;
+      return { label: siteFriendly, link: `/site/${segments[1]}`, colorClass: 'nav-label-site' };
+    }
     if (segments[0] === 'site' && segments[1]) {
       return { label: 'Overview', link: '/overview', colorClass: 'nav-label-overview' };
     }

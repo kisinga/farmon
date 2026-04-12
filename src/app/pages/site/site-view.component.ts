@@ -5,7 +5,6 @@ import {
 import { ActivatedRoute, Router } from '@angular/router';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { ConfirmService } from '../../core/services/confirm.service';
-import { ElectronService } from '../../core/services/electron.service';
 import { X6Canvas, type CanvasEvents } from '../editor/topology-x6-tab/x6-canvas';
 import { renderBoundaries, BOUNDARY_COLORS } from '../../shared/canvas/boundary-renderer';
 
@@ -59,20 +58,6 @@ import { renderBoundaries, BOUNDARY_COLORS } from '../../shared/canvas/boundary-
       <!-- Toolbar -->
       <div class="flex items-center gap-2 px-4 py-2 bg-base-100 border-b border-base-300/50 shrink-0">
         <span class="text-xs text-base-content/50 flex-1">Site topology</span>
-        @if (siteDocHtml()) {
-          <button class="btn btn-ghost btn-xs gap-1" (click)="showingDocs.set(!showingDocs())"
-            [class.btn-active]="showingDocs()">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-            </svg>
-            Docs
-          </button>
-        }
-        <button class="btn btn-ghost btn-xs gap-1" (click)="generateSiteDocs()" [disabled]="generatingDocs()">
-          @if (generatingDocs()) { <span class="loading loading-spinner loading-xs"></span> }
-          Generate Docs
-        </button>
-        <div class="divider divider-horizontal mx-0 h-4"></div>
         <button class="btn btn-ghost btn-xs btn-square" (click)="zoomIn()" title="Zoom in">+</button>
         <button class="btn btn-ghost btn-xs btn-square" (click)="zoomOut()" title="Zoom out">&minus;</button>
         <button class="btn btn-ghost btn-xs" (click)="fit()" title="Fit content">Fit</button>
@@ -91,15 +76,9 @@ import { renderBoundaries, BOUNDARY_COLORS } from '../../shared/canvas/boundary-
           </div>
         </div>
       }
-      @if (showingDocs() && siteDocHtml()) {
-        <div class="flex-1 min-h-0 overflow-hidden">
-          <iframe [srcdoc]="siteDocHtml()" class="w-full h-full border-0"></iframe>
-        </div>
-      } @else {
-        <div class="flex-1 min-h-0 overflow-hidden" #canvasWrap>
-          <div #canvasEl class="w-full h-full"></div>
-        </div>
-      }
+      <div class="flex-1 min-h-0 overflow-hidden" #canvasWrap>
+        <div #canvasEl class="w-full h-full"></div>
+      </div>
     </div>
 
     <!-- Right pane: derived routes grouped by system -->
@@ -152,7 +131,6 @@ import { renderBoundaries, BOUNDARY_COLORS } from '../../shared/canvas/boundary-
 export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
   protected workspace = inject(WorkspaceService);
   private confirmService = inject(ConfirmService);
-  private electron = inject(ElectronService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private zone = inject(NgZone);
@@ -162,9 +140,6 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('canvasWrap') canvasWrapRef!: ElementRef<HTMLElement>;
 
   protected loading = signal(true);
-  protected generatingDocs = signal(false);
-  protected siteDocHtml = signal<string | null>(null);
-  protected showingDocs = signal(false);
 
   private canvas: X6Canvas | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -362,36 +337,6 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
         const size = cell.getSize();
         if (size.height < 66) cell.resize(size.width, 66);
       }
-    }
-  }
-
-  protected async generateSiteDocs() {
-    if (!this.canvas || !this.workspace.site()) return;
-    this.generatingDocs.set(true);
-    try {
-      const compositeSvg = await this.canvas.exportSvg();
-      const siteId = this.workspace.site()!.id;
-
-      // Build system data for the IPC call
-      const systems: Array<{ systemId: string; friendlyName: string; board: string; deviceName: string; topology: unknown }> = [];
-      for (const [id, { topology }] of this.workspace.systems()) {
-        systems.push({
-          systemId: id,
-          friendlyName: topology.device.friendly_name,
-          board: topology.device.board,
-          deviceName: topology.device.name,
-          topology,
-        });
-      }
-
-      const links = this.workspace.links();
-      const routes = this.workspace.compositeRoutes();
-
-      const result = await this.electron.generateSiteDocs(siteId, compositeSvg, systems, links, routes);
-      this.siteDocHtml.set(result.html);
-      this.showingDocs.set(true);
-    } finally {
-      this.generatingDocs.set(false);
     }
   }
 

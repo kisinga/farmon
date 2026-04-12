@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import Handlebars from 'handlebars';
-import { nodesByKind, type Manifest, type LinkData, type Route, LOGO_SVG_SMALL } from '@far-mon/core';
+import { nodesByKind, type Manifest, type LinkData, type Route, type PinOverlayData, LOGO_SVG_SMALL } from '@far-mon/core';
 
 const TEMPLATES_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'packages', 'core', 'src', 'templates');
 
@@ -14,6 +14,8 @@ export interface SiteDocSystem {
   board: string;
   deviceName: string;
   manifest: Manifest;
+  boardSvg?: string;
+  pinOverlays?: PinOverlayData[];
 }
 
 export interface SiteDocOptions {
@@ -135,6 +137,69 @@ export function generateSiteDocumentation(
         })),
     }));
 
+  // Per-controller detail sections
+  const controllerDetails = systems.map((s, i) => {
+    const tanks = nodesByKind(s.manifest.nodes, 'tank');
+    const tanksWithLevel = tanks.filter(t => t['level_pin']);
+
+    let boardPinoutSection = '';
+    if (s.boardSvg && s.pinOverlays?.length) {
+      const pinJson = JSON.stringify(s.pinOverlays);
+      boardPinoutSection = `
+<h3>Board Pinout</h3>
+<div class="diagram" style="text-align:center;">
+  <div class="board-pinout" id="board-pinout-${i}">${s.boardSvg}</div>
+</div>
+<script>
+(function(){
+  function render(){
+    var c=document.getElementById('board-pinout-${i}');
+    if(!c)return;
+    var svg=c.querySelector('svg');
+    if(!svg)return;
+    var cr=c.getBoundingClientRect();
+    var pins=${pinJson};
+    for(var j=0;j<pins.length;j++){
+      var p=pins[j];
+      var el=svg.querySelector('[id*="'+p.connector+'"]');
+      if(!el)continue;
+      var r=el.getBoundingClientRect();
+      var d=document.createElement('div');
+      d.className='pin-label';
+      d.style.left=(r.left-cr.left+r.width/2)+'px';
+      d.style.top=(r.top-cr.top+r.height/2)+'px';
+      d.style.backgroundColor=p.color;
+      d.title=p.tooltip;
+      d.textContent=p.label;
+      c.appendChild(d);
+    }
+  }
+  if(document.readyState==='complete')requestAnimationFrame(function(){requestAnimationFrame(render)});
+  else window.addEventListener('load',function(){requestAnimationFrame(function(){requestAnimationFrame(render)})});
+})();
+</script>`;
+    }
+
+    return {
+      friendlyName: s.friendlyName,
+      board: s.board,
+      deviceName: s.deviceName,
+      color: systemColor.get(s.systemId) ?? '#666',
+      boardPinoutSection,
+      timing: s.manifest.timing,
+      routeEntities: s.manifest.routes.map((r, ri) => ({ index: ri, name: r.name })),
+      tankCalEntities: tanksWithLevel.map(t => ({ id: t['id'], name: t['name'] })),
+    };
+  });
+
+  // Aggregate flags for installation guidelines
+  let hasFlowSensors = false, hasValves = false, hasTanks = false;
+  for (const s of systems) {
+    if (nodesByKind(s.manifest.nodes, 'flow_sensor').length > 0) hasFlowSensors = true;
+    if (nodesByKind(s.manifest.nodes, 'valve').length > 0) hasValves = true;
+    if (nodesByKind(s.manifest.nodes, 'tank').length > 0) hasTanks = true;
+  }
+
   return compiledSiteTemplate({
     css: DOCUMENTATION_CSS,
     logoSvg: LOGO_SVG_SMALL,
@@ -150,6 +215,10 @@ export function generateSiteDocumentation(
     routeGroups,
     hasAutomations: automationGroups.length > 0,
     automationGroups,
+    controllerDetails,
+    hasFlowSensors,
+    hasValves,
+    hasTanks,
     genDate: opts?.genDate ?? new Date().toISOString().split('T')[0],
   });
 }

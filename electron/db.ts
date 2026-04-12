@@ -79,11 +79,14 @@ export interface SiteSavePayload {
   }>;
 }
 
+export type GenerationType = 'esphome' | 'ha';
+
 export interface GenerationMeta {
   id: number;
   version: string;
   siteId: string;
   systemId: string;
+  genType: GenerationType;
   schemaVersion: number;
   fileCount: number;
   checksum: string;
@@ -99,7 +102,7 @@ export interface GenerationSnapshot extends GenerationMeta {
 // DB versioning & migrations
 // ---------------------------------------------------------------------------
 
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 const MIGRATIONS: Record<number, string> = {
   0: `
@@ -205,6 +208,21 @@ const MIGRATIONS: Record<number, string> = {
     -- Add sort_order for explicit system ordering
     ALTER TABLE systems ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
   `,
+  3: `
+    -- Generation type: esphome or ha
+    ALTER TABLE generations ADD COLUMN gen_type TEXT NOT NULL DEFAULT 'esphome';
+    CREATE INDEX idx_generations_type ON generations (site_id, system_id, gen_type, id DESC);
+
+    -- Per-system secrets (WiFi, API key, OTA password, etc.)
+    CREATE TABLE system_secrets (
+      site_id    TEXT NOT NULL,
+      system_id  TEXT NOT NULL,
+      key        TEXT NOT NULL,
+      value      TEXT NOT NULL,
+      PRIMARY KEY (site_id, system_id, key),
+      FOREIGN KEY (system_id, site_id) REFERENCES systems(id, site_id) ON DELETE CASCADE
+    );
+  `,
 };
 
 // ---------------------------------------------------------------------------
@@ -292,10 +310,10 @@ function queryOne<T>(sql: string, params: unknown[] = []): T | null {
 // ---------------------------------------------------------------------------
 
 /** SHA-256 hex digest of the topology + board JSON (deterministic input hash). */
-export function inputChecksum(topology: unknown, board: unknown): string {
+export function inputChecksum(topology: unknown, board: unknown | null): string {
   const hash = crypto.createHash("sha256");
   hash.update(JSON.stringify(topology));
-  hash.update(JSON.stringify(board));
+  if (board != null) hash.update(JSON.stringify(board));
   return hash.digest("hex").slice(0, 16);
 }
 
@@ -705,14 +723,15 @@ export function createGeneration(
   siteId: string,
   systemId: string,
   topology: unknown,
-  board: unknown,
+  board: unknown | null,
+  genType: GenerationType = 'esphome',
 ): { version: string; id: number } | null {
   const db = getDb();
   const checksum = inputChecksum(topology, board);
 
   const latest = queryOne<{ checksum: string }>(
-    `SELECT checksum FROM generations WHERE site_id = ? AND system_id = ? ORDER BY id DESC LIMIT 1`,
-    [siteId, systemId],
+    `SELECT checksum FROM generations WHERE site_id = ? AND system_id = ? AND gen_type = ? ORDER BY id DESC LIMIT 1`,
+    [siteId, systemId, genType],
   );
   if (latest && latest.checksum === checksum) return null;
 
@@ -720,9 +739,9 @@ export function createGeneration(
   const topologyJson = JSON.stringify(topology);
   const boardJson = JSON.stringify(board);
   db.run(
-    `INSERT INTO generations (version, site_id, system_id, schema_version, topology, board, checksum)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [version, siteId, systemId, DB_VERSION, topologyJson, boardJson, checksum],
+    `INSERT INTO generations (version, site_id, system_id, schema_version, topology, board, checksum, gen_type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [version, siteId, systemId, DB_VERSION, topologyJson, boardJson, checksum, genType],
   );
 
   const row = db.exec("SELECT last_insert_rowid() AS id");
@@ -736,21 +755,26 @@ export function finalizeGeneration(id: number, fileCount: number): void {
   persist();
 }
 
-export function listGenerations(siteId: string, systemId: string): GenerationMeta[] {
+export function listGenerations(siteId: string, systemId: string, genType?: GenerationType): GenerationMeta[] {
+  const typeClause = genType ? ' AND gen_type = ?' : '';
+  const params: unknown[] = [siteId, systemId];
+  if (genType) params.push(genType);
+
   return queryAll<{
-    id: number; version: string; site_id: string; system_id: string;
+    id: number; version: string; site_id: string; system_id: string; gen_type: string;
     schema_version: number; file_count: number; checksum: string; created_at: string;
   }>(
-    `SELECT id, version, site_id, system_id, schema_version, file_count, checksum, created_at
+    `SELECT id, version, site_id, system_id, gen_type, schema_version, file_count, checksum, created_at
      FROM generations
-     WHERE site_id = ? AND system_id = ?
+     WHERE site_id = ? AND system_id = ?${typeClause}
      ORDER BY id DESC`,
-    [siteId, systemId],
+    params,
   ).map(r => ({
     id: r.id,
     version: r.version,
     siteId: r.site_id,
     systemId: r.system_id,
+    genType: r.gen_type as GenerationType,
     schemaVersion: r.schema_version,
     fileCount: r.file_count,
     checksum: r.checksum,
@@ -758,22 +782,17 @@ export function listGenerations(siteId: string, systemId: string): GenerationMet
   }));
 }
 
-export function loadGeneration(id: number): GenerationSnapshot | null {
-  const row = queryOne<{
-    id: number; version: string; site_id: string; system_id: string;
-    schema_version: number; file_count: number; checksum: string; created_at: string;
-    topology: string; board: string;
-  }>(
-    `SELECT id, version, site_id, system_id, schema_version, file_count, checksum, created_at, topology, board
-     FROM generations WHERE id = ?`,
-    [id],
-  );
-  if (!row) return null;
+function mapGenerationSnapshot(row: {
+  id: number; version: string; site_id: string; system_id: string; gen_type: string;
+  schema_version: number; file_count: number; checksum: string; created_at: string;
+  topology: string; board: string;
+}): GenerationSnapshot {
   return {
     id: row.id,
     version: row.version,
     siteId: row.site_id,
     systemId: row.system_id,
+    genType: row.gen_type as GenerationType,
     schemaVersion: row.schema_version,
     fileCount: row.file_count,
     checksum: row.checksum,
@@ -781,57 +800,94 @@ export function loadGeneration(id: number): GenerationSnapshot | null {
     topology: row.topology,
     board: row.board,
   };
+}
+
+export function loadGeneration(id: number): GenerationSnapshot | null {
+  const row = queryOne<{
+    id: number; version: string; site_id: string; system_id: string; gen_type: string;
+    schema_version: number; file_count: number; checksum: string; created_at: string;
+    topology: string; board: string;
+  }>(
+    `SELECT id, version, site_id, system_id, gen_type, schema_version, file_count, checksum, created_at, topology, board
+     FROM generations WHERE id = ?`,
+    [id],
+  );
+  return row ? mapGenerationSnapshot(row) : null;
 }
 
 export function loadGenerationByVersion(version: string): GenerationSnapshot | null {
   const row = queryOne<{
-    id: number; version: string; site_id: string; system_id: string;
+    id: number; version: string; site_id: string; system_id: string; gen_type: string;
     schema_version: number; file_count: number; checksum: string; created_at: string;
     topology: string; board: string;
   }>(
-    `SELECT id, version, site_id, system_id, schema_version, file_count, checksum, created_at, topology, board
+    `SELECT id, version, site_id, system_id, gen_type, schema_version, file_count, checksum, created_at, topology, board
      FROM generations WHERE version = ?`,
     [version],
   );
-  if (!row) return null;
-  return {
-    id: row.id,
-    version: row.version,
-    siteId: row.site_id,
-    systemId: row.system_id,
-    schemaVersion: row.schema_version,
-    fileCount: row.file_count,
-    checksum: row.checksum,
-    createdAt: row.created_at,
-    topology: row.topology,
-    board: row.board,
-  };
+  return row ? mapGenerationSnapshot(row) : null;
 }
 
-export function pruneGenerations(siteId: string, systemId: string, keepCount: number = 10): number {
+export function pruneGenerations(siteId: string, systemId: string, keepCount: number = 10, genType?: GenerationType): number {
   const db = getDb();
+  const typeClause = genType ? ' AND gen_type = ?' : '';
+  const baseParams: unknown[] = [siteId, systemId];
+  if (genType) baseParams.push(genType);
+
   const before = queryAll<{ id: number }>(
-    "SELECT id FROM generations WHERE site_id = ? AND system_id = ?",
-    [siteId, systemId],
+    `SELECT id FROM generations WHERE site_id = ? AND system_id = ?${typeClause}`,
+    baseParams,
   ).length;
+
+  const deleteParams: unknown[] = [siteId, systemId];
+  if (genType) deleteParams.push(genType);
+  deleteParams.push(siteId, systemId);
+  if (genType) deleteParams.push(genType);
+  deleteParams.push(keepCount);
 
   db.run(
     `DELETE FROM generations
-     WHERE site_id = ? AND system_id = ?
+     WHERE site_id = ? AND system_id = ?${typeClause}
        AND id NOT IN (
          SELECT id FROM generations
-         WHERE site_id = ? AND system_id = ?
+         WHERE site_id = ? AND system_id = ?${typeClause}
          ORDER BY id DESC
          LIMIT ?
        )`,
-    [siteId, systemId, siteId, systemId, keepCount],
+    deleteParams as (string | number)[],
   );
 
   const after = queryAll<{ id: number }>(
-    "SELECT id FROM generations WHERE site_id = ? AND system_id = ?",
-    [siteId, systemId],
+    `SELECT id FROM generations WHERE site_id = ? AND system_id = ?${typeClause}`,
+    baseParams as (string | number)[],
   ).length;
 
   persist();
   return before - after;
+}
+
+// ---------------------------------------------------------------------------
+// System secrets
+// ---------------------------------------------------------------------------
+
+export function getSecrets(siteId: string, systemId: string): Record<string, string> {
+  const rows = queryAll<{ key: string; value: string }>(
+    `SELECT key, value FROM system_secrets WHERE site_id = ? AND system_id = ?`,
+    [siteId, systemId],
+  );
+  const result: Record<string, string> = {};
+  for (const r of rows) result[r.key] = r.value;
+  return result;
+}
+
+export function setSecrets(siteId: string, systemId: string, secrets: Record<string, string>): void {
+  const db = getDb();
+  for (const [key, value] of Object.entries(secrets)) {
+    db.run(
+      `INSERT INTO system_secrets (site_id, system_id, key, value) VALUES (?, ?, ?, ?)
+       ON CONFLICT(site_id, system_id, key) DO UPDATE SET value = excluded.value`,
+      [siteId, systemId, key, value],
+    );
+  }
+  persist();
 }

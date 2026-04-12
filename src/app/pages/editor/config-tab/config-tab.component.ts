@@ -5,8 +5,25 @@ import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
 
+interface TimingField {
+  key: string;
+  label: string;
+  description: string;
+  unit: string;
+  default: string | number;
+  group: string;
+}
+
+const TIMING_FIELDS: TimingField[] = [
+  { key: 'valve_travel_time', label: 'Valve Travel Time', description: 'Time for motorized ball valves to fully open or close', unit: 'duration', default: '15s', group: 'Mechanical' },
+  { key: 'flow_watchdog_seconds', label: 'Flow Watchdog Timeout', description: 'If no flow detected within this window, fault is raised', unit: 'seconds', default: 30, group: 'Safety' },
+  { key: 'flow_confirm_seconds', label: 'Flow Confirmation Time', description: 'Sustained flow duration before marking flow as "confirmed"', unit: 'seconds', default: 15, group: 'Safety' },
+  { key: 'api_watchdog_seconds', label: 'API Watchdog Timeout', description: 'Fault if Home Assistant disconnected for this long', unit: 'seconds', default: 300, group: 'Safety' },
+  { key: 'update_interval', label: 'Sensor Update Interval', description: 'How often ADC and diagnostic sensors are read', unit: 'duration', default: '5s', group: 'Calibration' },
+];
+
 @Component({
-  selector: 'app-device-tab',
+  selector: 'app-config-tab',
   standalone: true,
   imports: [FormsModule, BoardSvgComponent],
   template: `
@@ -23,7 +40,7 @@ import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component
                   type="text"
                   class="input input-bordered input-sm"
                   [ngModel]="t.device.friendly_name"
-                  (ngModelChange)="update('friendly_name', $event)"
+                  (ngModelChange)="updateDevice('friendly_name', $event)"
                 />
               </label>
               <label class="form-control">
@@ -32,7 +49,7 @@ import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component
                   type="text"
                   class="input input-bordered input-sm font-mono"
                   [ngModel]="t.device.name"
-                  (ngModelChange)="update('name', $event)"
+                  (ngModelChange)="updateDevice('name', $event)"
                 />
                 <div class="label"><span class="label-text-alt text-base-content/60">Lowercase, no spaces. Used in ESPHome config.</span></div>
               </label>
@@ -102,13 +119,51 @@ import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component
             }
           </div>
         </div>
+
+        <!-- Timing & Safety Constants -->
+        <div>
+          <h2 class="text-lg font-semibold">Timing & Safety Constants</h2>
+          <p class="text-sm text-base-content/50 mt-1">
+            Defaults are tuned for motorized ball valves and typical residential plumbing. Adjust only if your hardware differs.
+          </p>
+        </div>
+
+        @for (group of timingGroups; track group) {
+          <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card-body gap-3">
+              <h3 class="font-semibold text-sm text-base-content/60 uppercase tracking-wider">{{ group }}</h3>
+              <div class="divide-y divide-base-200">
+                @for (field of fieldsByGroup(group); track field.key) {
+                  <div class="flex items-center gap-4 py-3">
+                    <div class="flex-1 min-w-0">
+                      <div class="font-medium text-sm">{{ field.label }}</div>
+                      <div class="text-xs text-base-content/60 mt-0.5">{{ field.description }}</div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                      <input
+                        type="text"
+                        class="input input-bordered input-sm w-24 text-right font-mono"
+                        [ngModel]="getTimingValue(t, field)"
+                        (ngModelChange)="updateTiming(field.key, $event)"
+                        [placeholder]="'' + field.default"
+                      />
+                      <span class="text-xs text-base-content/60 w-16">{{ field.unit }}</span>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+        }
       </div>
     }
   `,
 })
-export class DeviceTabComponent {
+export class ConfigTabComponent {
   protected editor = inject(SystemEditorService);
   protected boards = inject(BoardService);
+
+  protected timingGroups = [...new Set(TIMING_FIELDS.map((f) => f.group))];
 
   protected peripherals = computed(() => {
     const board = this.editor.board();
@@ -123,12 +178,27 @@ export class DeviceTabComponent {
       }));
   });
 
-  update(field: 'name' | 'friendly_name', value: string) {
+  updateDevice(field: 'name' | 'friendly_name', value: string) {
     this.editor.updateTopology((t) => { t.device[field] = value; });
   }
 
   async changeBoard(boardId: string) {
     await this.boards.load(boardId);
     this.editor.updateTopology((t) => { t.device.board = boardId; });
+  }
+
+  protected getTimingValue(t: { timing: Record<string, string | number> }, field: TimingField): string | number {
+    return field.key in t.timing ? t.timing[field.key] : field.default;
+  }
+
+  protected fieldsByGroup(group: string): TimingField[] {
+    return TIMING_FIELDS.filter((f) => f.group === group);
+  }
+
+  updateTiming(key: string, value: string) {
+    this.editor.updateTopology((t) => {
+      const num = Number(value);
+      (t.timing as Record<string, string | number>)[key] = isNaN(num) ? value : num;
+    });
   }
 }

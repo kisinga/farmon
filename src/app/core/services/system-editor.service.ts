@@ -91,7 +91,6 @@ export class SystemEditorService {
 
   // --- Generated output ---
   readonly generatedFiles = this._generatedFiles.asReadonly();
-  readonly documentationHtml = computed(() => this._generatedFiles()?.documentationHtml ?? null);
 
   // --- Canvas snapshot ---
   readonly canvasSvg = this._canvasSvg.asReadonly();
