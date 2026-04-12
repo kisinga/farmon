@@ -1,11 +1,11 @@
 import {
-  Component, inject, OnInit, OnDestroy, signal,
+  Component, inject, OnInit, OnDestroy, signal, computed,
   ElementRef, ViewChild, AfterViewInit, NgZone, Injector, effect,
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { X6Canvas, type CanvasEvents } from '../editor/topology-x6-tab/x6-canvas';
-import { renderBoundaries } from '../../shared/canvas/boundary-renderer';
+import { renderBoundaries, BOUNDARY_COLORS } from '../../shared/canvas/boundary-renderer';
 
 @Component({
   selector: 'app-site-view',
@@ -45,14 +45,14 @@ import { renderBoundaries } from '../../shared/canvas/boundary-renderer';
         <button class="btn btn-ghost btn-xs btn-square" (click)="zoomOut()" title="Zoom out">&minus;</button>
         <button class="btn btn-ghost btn-xs" (click)="fit()" title="Fit content">Fit</button>
       </div>
-      @if (workspace.unlinkedHandoffs().length > 0) {
+      @if (workspace.unlinkedInterconnects().length > 0) {
         <div class="alert alert-warning text-xs mx-4 mt-2 py-2">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
           <div>
-            <span class="font-medium">Unlinked handoff{{ workspace.unlinkedHandoffs().length > 1 ? 's' : '' }}:</span>
-            @for (h of workspace.unlinkedHandoffs(); track h.nodeId) {
+            <span class="font-medium">Unlinked interconnect{{ workspace.unlinkedInterconnects().length > 1 ? 's' : '' }}:</span>
+            @for (h of workspace.unlinkedInterconnects(); track h.nodeId) {
               <span class="font-mono">{{ h.nodeName }} ({{ h.systemId }})</span>{{ !$last ? ', ' : '' }}
             }
             — open each system's designer to configure the link.
@@ -64,27 +64,43 @@ import { renderBoundaries } from '../../shared/canvas/boundary-renderer';
       </div>
     </div>
 
-    <!-- Right pane: derived routes -->
-    <div class="w-64 shrink-0 bg-base-100 border-l border-base-300/30 flex flex-col overflow-hidden">
+    <!-- Right pane: derived routes grouped by system -->
+    <div class="w-72 shrink-0 bg-base-100 border-l border-base-300/30 flex flex-col overflow-hidden">
       <div class="px-3 py-2 text-xs font-semibold text-base-content/50 border-b border-base-300/20">
         Routes ({{ workspace.compositeRoutes().length }})
       </div>
       <div class="flex-1 overflow-auto">
-        @for (route of workspace.compositeRoutes(); track route.key) {
-          <div class="px-3 py-2 text-xs border-b border-base-300/10 hover:bg-base-200/40 transition-colors">
-            <div class="font-mono font-medium truncate" title="{{ route.key }}">
-              {{ route.key }}
-            </div>
-            <div class="flex items-center gap-2 mt-0.5 text-[10px] text-base-content/40">
-              <span>{{ route.valves.length }} valve{{ route.valves.length !== 1 ? 's' : '' }}</span>
-              @if (route.crossesPump) {
-                <span class="badge badge-ghost badge-xs">pump</span>
-              }
-              @if (!route.valid) {
-                <span class="badge badge-error badge-xs">no sensor</span>
-              }
-            </div>
+        @for (group of routeGroups(); track group.systemId) {
+          <!-- System group header -->
+          <div class="px-3 py-1.5 flex items-center gap-2 border-b border-base-300/20 sticky top-0 bg-base-100 z-10">
+            <div class="w-2.5 h-2.5 rounded-full shrink-0" [style.backgroundColor]="group.color"></div>
+            <span class="text-[11px] font-semibold truncate" [style.color]="group.color">{{ group.friendlyName }}</span>
+            <span class="text-[10px] text-base-content/30 ml-auto">{{ group.routes.length }}</span>
           </div>
+          <!-- Routes in this system -->
+          @for (route of group.routes; track route.key) {
+            <div class="pl-6 pr-3 py-1.5 text-xs border-b border-base-300/10 hover:bg-base-200/40 transition-colors"
+                 [style.borderLeftColor]="group.color"
+                 style="border-left-width: 2px;">
+              <div class="font-mono text-[11px] leading-snug break-all" [style.color]="group.color">
+                {{ route.displaySource }}
+                <span class="text-base-content/30">&rsaquo;</span>
+                {{ route.displayDest }}
+              </div>
+              @if (route.crossSystem) {
+                <div class="text-[10px] text-base-content/30 italic">via {{ route.destSystem }}</div>
+              }
+              <div class="flex items-center gap-2 mt-0.5 text-[10px] text-base-content/40">
+                <span>{{ route.valveCount }} valve{{ route.valveCount !== 1 ? 's' : '' }}</span>
+                @if (route.hasPump) {
+                  <span class="badge badge-ghost badge-xs">pump</span>
+                }
+                @if (!route.valid) {
+                  <span class="badge badge-error badge-xs">no sensor</span>
+                }
+              </div>
+            </div>
+          }
         }
         @if (workspace.compositeRoutes().length === 0) {
           <div class="px-3 py-6 text-xs text-base-content/30 text-center">
@@ -112,6 +128,59 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
   private siteName: string | null = null;
 
   protected systemEntries = signal<Array<{ id: string; friendlyName: string; board: string; nodeCount: number }>>([]);
+
+  /** Routes grouped by source system, with boundary colors and clean display names. */
+  protected routeGroups = computed(() => {
+    const routes = this.workspace.compositeRoutes();
+    const systems = this.workspace.systems();
+
+    // Build system ID → color + friendly name map (same order as boundary renderer)
+    const systemIds = [...systems.keys()];
+    const systemColor = new Map<string, string>();
+    const systemFriendly = new Map<string, string>();
+    systemIds.forEach((id, i) => {
+      systemColor.set(id, BOUNDARY_COLORS[i % BOUNDARY_COLORS.length]);
+      systemFriendly.set(id, systems.get(id)?.topology.device.friendly_name ?? id);
+    });
+
+    // Group routes by source system
+    const groups = new Map<string, Array<{
+      key: string; displaySource: string; displayDest: string;
+      crossSystem: boolean; destSystem: string;
+      valveCount: number; hasPump: boolean; valid: boolean;
+    }>>();
+
+    for (const route of routes) {
+      const srcSystem = route.source.split('/')[0];
+      const destSystem = route.destination.split('/')[0];
+      const srcNode = route.source.split('/').slice(1).join('/');
+      const destNode = route.destination.split('/').slice(1).join('/');
+
+      const entry = {
+        key: route.key,
+        displaySource: srcNode,
+        displayDest: destNode,
+        crossSystem: srcSystem !== destSystem,
+        destSystem: systemFriendly.get(destSystem) ?? destSystem,
+        valveCount: route.valves.length,
+        hasPump: route.crossesPump,
+        valid: route.valid,
+      };
+
+      const arr = groups.get(srcSystem) ?? [];
+      arr.push(entry);
+      groups.set(srcSystem, arr);
+    }
+
+    return systemIds
+      .filter(id => groups.has(id))
+      .map(id => ({
+        systemId: id,
+        friendlyName: systemFriendly.get(id) ?? id,
+        color: systemColor.get(id) ?? '#666',
+        routes: groups.get(id)!,
+      }));
+  });
 
   async ngOnInit() {
     this.siteName = this.route.snapshot.paramMap.get('name');
@@ -200,13 +269,43 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.canvas.reset(composite);
 
+    const graph = this.canvas.graphInstance;
+    const systems = this.workspace.systems();
+    const links = this.workspace.links();
+
+    // Build boundary groups
     const systemNodes = new Map<string, string[]>();
     const friendlyNames = new Map<string, string>();
-    for (const [systemId, { topology }] of this.workspace.systems()) {
+    for (const [systemId, { topology }] of systems) {
       systemNodes.set(systemId, topology.nodes.map(n => `${systemId}/${n.id}`));
       friendlyNames.set(systemId, topology.device.friendly_name);
     }
-    renderBoundaries(this.canvas.graphInstance, systemNodes, friendlyNames);
+    renderBoundaries(graph, systemNodes, friendlyNames);
+
+    // Style inter-system link edges as dashed
+    for (const link of links) {
+      const edge = graph.getCellById(`pipe-link-${link.id}`);
+      if (edge?.isEdge()) {
+        edge.setAttrs({
+          line: {
+            stroke: '#8b5cf6',
+            strokeWidth: 2,
+            strokeDasharray: '8,4',
+            targetMarker: { name: 'classic', size: 8 },
+          },
+        });
+      }
+    }
+
+    // Resize interconnect nodes that have connection labels (compositeTopology injects _connectionLabel)
+    for (const node of composite.nodes) {
+      if (node.kind !== 'interconnect' || !(node as any)._connectionLabel) continue;
+      const cell = graph.getCellById(`node-${node.id}`);
+      if (cell?.isNode()) {
+        const size = cell.getSize();
+        if (size.height < 66) cell.resize(size.width, 66);
+      }
+    }
   }
 
   protected zoomIn() { this.canvas?.zoomIn(); }

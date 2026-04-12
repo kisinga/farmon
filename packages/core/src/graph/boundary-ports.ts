@@ -2,7 +2,7 @@
  * Boundary port detection — identifies unconnected ports on terminal nodes.
  *
  * A boundary port is an exposed inlet/outlet that can be linked to another
- * system at the site level. Handoff entities are the primary boundary nodes,
+ * system at the site level. Interconnect entities are the primary boundary nodes,
  * but any terminal with an unconnected port qualifies.
  */
 import type { SystemTopology } from '../topology.types';

@@ -11,7 +11,7 @@ export type {
   SystemTopology, TopologyNode, PipeSegment, RouteOverride,
   Automation, AutomationTrigger, UartBus,
   TankNode, PumpNode, EndpointNode, ValveNode,
-  FlowSensorNode, WaterSourceNode, PressureSensorNode, FilterNode, DosingPumpNode, VfdNode, HandoffNode,
+  FlowSensorNode, WaterSourceNode, PressureSensorNode, FilterNode, DosingPumpNode, VfdNode, InterconnectNode,
   Port, Position,
 } from './topology.types';
 export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';

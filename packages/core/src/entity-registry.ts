@@ -152,7 +152,7 @@ import { pressureSensorDescriptor } from './entities/pressure-sensor';
 import { filterDescriptor } from './entities/filter';
 import { dosingPumpDescriptor } from './entities/dosing-pump';
 import { vfdDescriptor } from './entities/vfd';
-import { handoffDescriptor } from './entities/handoff';
+import { interconnectDescriptor } from './entities/interconnect';
 
 export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   tankDescriptor,
@@ -165,7 +165,7 @@ export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   filterDescriptor,
   dosingPumpDescriptor,
   vfdDescriptor,
-  handoffDescriptor,
+  interconnectDescriptor,
 ];
 
 export const NODE_REGISTRY: ReadonlyMap<string, NodeDescriptor> = new Map(

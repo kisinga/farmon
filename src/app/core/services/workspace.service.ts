@@ -63,19 +63,59 @@ export class WorkspaceService {
     const allNodes: TopologyNode[] = [];
     const allPipes: PipeSegment[] = [];
 
-    for (const [systemId, { topology, position }] of systems) {
-      // Namespace node IDs to avoid collisions across systems
+    // Build interconnect connection map: "systemId/nodeId" → { label, dir }
+    const links = this._links();
+    const interconnectConn = new Map<string, { label: string; dir: 'out' | 'in' }>();
+    for (const link of links) {
+      const toName = systems.get(link.toSystem)?.topology.device.friendly_name ?? link.toSystem;
+      const fromName = systems.get(link.fromSystem)?.topology.device.friendly_name ?? link.fromSystem;
+      interconnectConn.set(`${link.fromSystem}/${link.fromNode}`, { label: toName, dir: 'out' });
+      interconnectConn.set(`${link.toSystem}/${link.toNode}`, { label: fromName, dir: 'in' });
+    }
+
+    // Compute non-overlapping vertical layout from actual node bounding boxes
+    const SYSTEM_GAP = 80;
+    let nextY = 0;
+    const systemOffsets = new Map<string, { x: number; y: number }>();
+
+    for (const [systemId, { topology }] of systems) {
+      if (topology.nodes.length === 0) {
+        systemOffsets.set(systemId, { x: 0, y: nextY });
+        nextY += SYSTEM_GAP;
+        continue;
+      }
+
+      // Find bounding box of nodes within this system
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const node of topology.nodes) {
+        minX = Math.min(minX, node.position.x);
+        minY = Math.min(minY, node.position.y);
+        maxX = Math.max(maxX, node.position.x + 120); // approximate node width
+        maxY = Math.max(maxY, node.position.y + 60);  // approximate node height
+      }
+
+      // Offset so system's top-left starts at (0, nextY), normalized
+      const offsetX = -minX;
+      const offsetY = nextY - minY;
+      systemOffsets.set(systemId, { x: offsetX, y: offsetY });
+      nextY += (maxY - minY) + SYSTEM_GAP;
+    }
+
+    for (const [systemId, { topology }] of systems) {
+      const offset = systemOffsets.get(systemId)!;
+      for (const node of topology.nodes) {
+        const nsId = `${systemId}/${node.id}`;
+        const conn = node.kind === 'interconnect' ? interconnectConn.get(nsId) : undefined;
         allNodes.push({
           ...node,
-          id: `${systemId}/${node.id}`,
+          id: nsId,
           position: {
-            x: node.position.x + position.x,
-            y: node.position.y + position.y,
+            x: node.position.x + offset.x,
+            y: node.position.y + offset.y,
           },
+          ...(conn ? { _connectionLabel: conn.label, _connectionDir: conn.dir } : {}),
         } as TopologyNode);
       }
-      // Namespace pipe refs to match namespaced node IDs
       for (const pipe of topology.pipes) {
         const [fromNode, fromPort] = pipe.from.split(':');
         const [toNode, toPort] = pipe.to.split(':');
@@ -85,6 +125,15 @@ export class WorkspaceService {
           to: `${systemId}/${toNode}:${toPort}`,
         });
       }
+    }
+
+    // Add inter-system links as pipes
+    for (const link of this._links()) {
+      allPipes.push({
+        id: `link-${link.id}`,
+        from: `${link.fromSystem}/${link.fromNode}:${link.fromPort}`,
+        to: `${link.toSystem}/${link.toNode}:${link.toPort}`,
+      });
     }
 
     return {
@@ -143,7 +192,7 @@ export class WorkspaceService {
     );
   });
 
-  readonly unlinkedHandoffs = computed<Array<{ systemId: string; nodeId: string; nodeName: string }>>(() => {
+  readonly unlinkedInterconnects = computed<Array<{ systemId: string; nodeId: string; nodeName: string }>>(() => {
     const systems = this._systems();
     const links = this._links();
 
@@ -156,7 +205,7 @@ export class WorkspaceService {
     const result: Array<{ systemId: string; nodeId: string; nodeName: string }> = [];
     for (const [systemId, { topology }] of systems) {
       for (const node of topology.nodes) {
-        if (node.kind === 'handoff' && !linkedNodeIds.has(`${systemId}/${node.id}`)) {
+        if (node.kind === 'interconnect' && !linkedNodeIds.has(`${systemId}/${node.id}`)) {
           result.push({ systemId, nodeId: node.id, nodeName: (node as any).name ?? node.id });
         }
       }
