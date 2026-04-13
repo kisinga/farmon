@@ -30,8 +30,8 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   // --- Networking ---
   const manualIp = network?.mode === 'static' && network.static_ip ? {
     static_ip: network.static_ip,
-    gateway: network.gateway ?? '192.168.1.1',
-    subnet: network.subnet ?? '255.255.255.0',
+    gateway: network.gateway || '192.168.1.1',
+    subnet: network.subnet || '255.255.255.0',
     ...(network.dns1 && { dns1: network.dns1 }),
     ...(network.dns2 && { dns2: network.dns2 }),
   } : undefined;

@@ -34,27 +34,6 @@ interface TerminalLine {
   host: { class: 'flex-1 flex flex-col overflow-hidden' },
   template: `
     <div class="flex-1 flex flex-col min-h-0">
-      <!-- Shared controller selector -->
-      <div class="flex items-center gap-3 bg-base-200/40 border-b border-base-300/30 px-6 py-3 shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-        </svg>
-        <span class="text-xs font-medium text-base-content/50 shrink-0">Controller</span>
-        <select
-          class="select select-bordered select-sm flex-1 max-w-xs"
-          [value]="selectedSystemId()"
-          (change)="selectSystem(toInputValue($event))"
-        >
-          <option value="">Select controller...</option>
-          @for (entry of systemEntries(); track entry.id) {
-            <option [value]="entry.id">{{ entry.friendlyName }} ({{ entry.board }})</option>
-          }
-        </select>
-        @if (selectedSystemId()) {
-          <span class="badge badge-ghost badge-sm font-mono text-[10px]">{{ selectedBoardId() }}</span>
-        }
-      </div>
-
       <!-- Tab bar -->
       <div class="flex items-center gap-0 bg-base-100 border-b border-base-300/30 px-6 shrink-0">
         <button
@@ -146,9 +125,30 @@ interface TerminalLine {
       @if (activeTab() === 'firmware') {
         <div class="flex-1 flex flex-col min-h-0 overflow-auto">
           <div class="p-6 space-y-4">
+            <!-- Controller selector -->
+            <div class="flex items-center gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+              </svg>
+              <span class="text-xs font-medium text-base-content/50 shrink-0">Controller</span>
+              <select
+                class="select select-bordered select-sm flex-1 max-w-xs"
+                [value]="selectedSystemId()"
+                (change)="selectSystem(toInputValue($event))"
+              >
+                <option value="">Select controller...</option>
+                @for (entry of systemEntries(); track entry.id) {
+                  <option [value]="entry.id">{{ entry.friendlyName }} ({{ entry.board }})</option>
+                }
+              </select>
+              @if (selectedSystemId()) {
+                <span class="badge badge-ghost badge-sm font-mono text-[10px]">{{ selectedBoardId() }}</span>
+              }
+            </div>
+
             @if (!selectedSystemId()) {
               <div class="bg-base-100 rounded-xl border border-base-300/40 flex items-center justify-center py-16">
-                <p class="text-sm text-base-content/40">Select a controller above to manage firmware.</p>
+                <p class="text-sm text-base-content/40">Select a controller to manage firmware.</p>
               </div>
             }
 

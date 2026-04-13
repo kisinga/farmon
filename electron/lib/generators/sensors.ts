@@ -9,17 +9,17 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
 
   // Route max-runtime numbers — adjustable from HA, persisted across reboots
   const runtimeBlocks = m.routes.map((r, i) => `\
-  - platform: template
-    name: "Route: ${r.name} Max Runtime (s)"
-    id: route_${i}_max_runtime
-    icon: "mdi:timer-outline"
-    min_value: 60
-    max_value: 7200
-    step: 60
-    initial_value: ${r.max_runtime_seconds}
-    optimistic: true
-    restore_value: true
-    entity_category: config`);
+- platform: template
+  name: "Route: ${r.name} Max Runtime (s)"
+  id: route_${i}_max_runtime
+  icon: "mdi:timer-outline"
+  min_value: 60
+  max_value: 7200
+  step: 60
+  initial_value: ${r.max_runtime_seconds}
+  optimistic: true
+  restore_value: true
+  entity_category: config`);
 
   // Global safety timing — adjustable from HA
   const safetyBlocks = [
@@ -27,17 +27,17 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
     { name: 'Flow Confirm', id: 'flow_confirm_ms', icon: 'mdi:check-decagram-outline', min: 3000, max: 60000, step: 1000, initial: m.timing.flow_confirm_seconds * 1000 },
     { name: 'API Watchdog', id: 'api_watchdog_ms', icon: 'mdi:api', min: 30000, max: 600000, step: 10000, initial: m.timing.api_watchdog_seconds * 1000 },
   ].map((p) => `\
-  - platform: template
-    name: "${p.name} (ms)"
-    id: ${p.id}
-    icon: "${p.icon}"
-    min_value: ${p.min}
-    max_value: ${p.max}
-    step: ${p.step}
-    initial_value: ${p.initial}
-    optimistic: true
-    restore_value: true
-    entity_category: config`);
+- platform: template
+  name: "${p.name} (ms)"
+  id: ${p.id}
+  icon: "${p.icon}"
+  min_value: ${p.min}
+  max_value: ${p.max}
+  step: ${p.step}
+  initial_value: ${p.initial}
+  optimistic: true
+  restore_value: true
+  entity_category: config`);
 
   const numberBlocks = [...runtimeBlocks, ...safetyBlocks, ...(collected.sections['number'] ?? [])];
   const binarySensorBlocks = collected.sections['binary_sensor'] ?? [];
@@ -54,7 +54,21 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
 # =============================================================================
 
 sensor:
-${joinYamlItems(collected.sensors)}
+${joinYamlItems(collected.sensors)}${tanksWithLevel.length >= 2 ? `
+  # --- Combined level (auto-derived from ${tanksWithLevel.length} tanks) ------
+
+  - platform: template
+    id: combined_tank_level
+    name: "Combined Tank Level"
+    unit_of_measurement: "%"
+    icon: "mdi:water-percent"
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      float sum = 0; int count = 0;
+${tanksWithLevel.map(t => `\
+      { float v = id(${tankLevelId({ id: String(t['id']) })}).state; if (!std::isnan(v)) { sum += v; count++; } }`).join("\n")}
+      return count > 0 ? sum / (float)count : 0.0f;` : ""}
 
 ${numberBlocks.length > 0 ? `# --- Adjustable numbers (persisted, editable from HA) -------------------------
 
@@ -153,21 +167,6 @@ ${m.routes.map((r, i) => `\
       if (s < 0) return std::string("Idle");
       const char* st[] = {"Idle","Preparing","Running","Stopping","Fault"};
       return std::string((slots[s].state >= 0 && slots[s].state <= 4) ? st[slots[s].state] : "Unknown");`).join("\n\n")}
-${tanksWithLevel.length >= 2 ? `
-  # --- Combined level (auto-derived from ${tanksWithLevel.length} tanks) ------
-
-  - platform: template
-    id: combined_tank_level
-    name: "Combined Tank Level"
-    unit_of_measurement: "%"
-    icon: "mdi:water-percent"
-    accuracy_decimals: 0
-    update_interval: 5s
-    lambda: |-
-      float sum = 0; int count = 0;
-${tanksWithLevel.map(t => `\
-      { float v = id(${tankLevelId({ id: String(t['id']) })}).state; if (!std::isnan(v)) { sum += v; count++; } }`).join("\n")}
-      return count > 0 ? sum / (float)count : 0.0f;` : ""}
 ${collected.globals.length > 0 ? `
 # --- Sensor fault detection --------------------------------------------------
 

@@ -425,10 +425,6 @@ export function writeOutput(files: Array<{ relativePath: string; content: string
   for (const file of files) {
     const fullPath = path.join(outputDir, file.relativePath);
 
-    if (file.relativePath.endsWith("secrets.yaml") && fs.existsSync(fullPath)) {
-      continue;
-    }
-
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(fullPath, file.content, "utf-8");
