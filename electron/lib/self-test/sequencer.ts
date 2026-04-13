@@ -81,6 +81,8 @@ namespace selftest {
   static char log_buf[512];
   static int log_len = 0;
   static bool auto_start_pending = true;
+  static Phase last_published_phase = IDLE;
+  static int last_published_tests = -1;
   ${stateBlock}
 
   // --- Phase name ---
@@ -129,14 +131,20 @@ ${phaseNameCases}
     phase_start = millis();
   }
 
-  // --- Update HA entities ---
+  // --- Update HA entities (only on state change) ---
   void update_ha() {
+    if (phase == last_published_phase && tests_done == last_published_tests) return;
+    last_published_phase = phase;
+    last_published_tests = tests_done;
+
     int pct = (TOTAL_TESTS > 0) ? (tests_done * 100 / TOTAL_TESTS) : 0;
     id(st_progress).publish_state(pct);
     id(st_phase).publish_state(phase_name(phase));
     id(st_log).publish_state(log_buf);
     if (phase == DONE) {
       id(st_overall).publish_state(all_passed);
+      ESP_LOGI("selftest", "======== SUMMARY: %d/%d PASSED ========", all_passed ? TOTAL_TESTS : tests_done, TOTAL_TESTS);
+      ESP_LOGI("selftest", "%s", log_buf);
     }
   }
 ${helpersBlock}
@@ -156,9 +164,9 @@ ${tickFunctions}
       break;
 ${dispatchCases}
     case DONE:
-      // Cycle indefinitely — restart after 5s pause
-      if (millis() - step_timer >= 5000) {
-        ESP_LOGI("selftest", "--- Cycle complete. Restarting in 5s... ---");
+      // Cycle indefinitely — restart after 10s pause
+      if (millis() - step_timer >= 10000) {
+        ESP_LOGI("selftest", "--- Restarting self-test cycle ---");
         start();
       }
       break;

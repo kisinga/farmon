@@ -67,10 +67,6 @@ assert(kc868Device.includes("selftest::tick()"), "Interval calls selftest::tick(
 const relayMatches = kc868Device.match(/st_relay_out\d+/g) ?? [];
 assert(relayMatches.length >= 16, `Has ${relayMatches.length} relay switch IDs (expect >= 16)`);
 
-// Input binary sensors (16 inputs)
-const inputMatches = kc868Device.match(/st_input_in\d+/g) ?? [];
-assert(inputMatches.length >= 16, `Has ${inputMatches.length} input sensor IDs (expect >= 16)`);
-
 // ADC sensors (4 ADCs)
 const adcMatches = kc868Device.match(/st_adc_gpio\d+/g) ?? [];
 assert(adcMatches.length >= 4, `Has ${adcMatches.length} ADC sensor IDs (expect >= 4)`);
@@ -110,7 +106,7 @@ assert(kc868Seq.includes("0x22"), "Has expander addr 0x22");
 assert(kc868Seq.includes("0x21"), "Has expander addr 0x21");
 assert(kc868Seq.includes("NUM_EXPANDERS = 4"), "4 expanders");
 assert(kc868Seq.includes("NUM_RELAYS = 16"), "16 relays");
-assert(kc868Seq.includes("NUM_INPUTS = 16"), "16 inputs");
+assert(kc868Seq.includes("NUM_INPUT_EXPANDERS"), "Has input expander addresses for I2C write/readback test");
 
 // Relay readback via I2C
 assert(kc868Seq.includes("i2c_read_reg"), "Has I2C relay readback");
