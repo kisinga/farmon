@@ -33,7 +33,7 @@ export interface ProcessDoneEvent {
 
 interface TrackedProcess {
   proc: ChildProcess;
-  handle: ProcessHandle;
+  handle: ProcessHandle | SerialHandle;
 }
 
 const active = new Map<string, TrackedProcess>();
@@ -107,6 +107,81 @@ export function killProcess(id: string): boolean {
     }
   }, 5000);
   return true;
+}
+
+// --- Serial monitor types & spawn ---
+
+export interface SerialHandle {
+  id: string;
+  port: string;
+  baudRate: number;
+  pid: number | undefined;
+}
+
+export interface SerialOutputEvent {
+  id: string;
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
+export interface SerialDoneEvent {
+  id: string;
+  code: number | null;
+  signal: string | null;
+}
+
+/**
+ * Spawn a serial monitor process, stream output to the window, return result.
+ */
+export function spawnSerial(
+  win: BrowserWindow,
+  cmd: string,
+  args: string[],
+  port: string,
+  baudRate: number
+): { handle: SerialHandle; result: Promise<ProcessResult> } {
+  const id = randomUUID();
+
+  const proc = spawn(cmd, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  const handle: SerialHandle = { id, port, baudRate, pid: proc.pid };
+  active.set(id, { proc, handle });
+
+  win.webContents.send("serial:started", handle);
+
+  proc.stdout!.on("data", (chunk: Buffer) => {
+    win.webContents.send("serial:output", {
+      id,
+      stream: "stdout",
+      text: chunk.toString("utf-8"),
+    } satisfies SerialOutputEvent);
+  });
+
+  proc.stderr!.on("data", (chunk: Buffer) => {
+    win.webContents.send("serial:output", {
+      id,
+      stream: "stderr",
+      text: chunk.toString("utf-8"),
+    } satisfies SerialOutputEvent);
+  });
+
+  const result = new Promise<ProcessResult>((resolve, reject) => {
+    proc.on("close", (code, signal) => {
+      active.delete(id);
+      const event: SerialDoneEvent = { id, code, signal };
+      win.webContents.send("serial:done", event);
+      resolve({ id, code, signal });
+    });
+
+    proc.on("error", (err) => {
+      active.delete(id);
+      reject(new Error(`Failed to start serial monitor: ${err.message}`));
+    });
+  });
+
+  return { handle, result };
 }
 
 /** Kill all running processes (app quit cleanup). */

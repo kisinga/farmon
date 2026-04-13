@@ -10,7 +10,8 @@
 
 import * as path from "node:path";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
-import { generateSelfTest, type GeneratedFile } from "../electron/lib/generate.js";
+import { generateSelfTest } from "../electron/lib/self-test/index.js";
+import type { GeneratedFile } from "../electron/lib/generate.js";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
 
@@ -112,8 +113,8 @@ assert(kc868Seq.includes("NUM_RELAYS = 16"), "16 relays");
 assert(kc868Seq.includes("NUM_INPUTS = 16"), "16 inputs");
 
 // Relay readback via I2C
-assert(kc868Seq.includes("Wire.requestFrom"), "Has I2C relay readback");
-assert(kc868Seq.includes("Wire.beginTransmission"), "Has I2C bus scan");
+assert(kc868Seq.includes("i2c_read_reg"), "Has I2C relay readback");
+assert(kc868Seq.includes("i2c_probe"), "Has I2C bus scan");
 
 // --- Dashboard ---
 const kc868Dash = getFile(kc868Files, "selftest-kc868-a16.yaml");

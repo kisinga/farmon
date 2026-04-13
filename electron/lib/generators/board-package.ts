@@ -1,6 +1,14 @@
-import { stringify } from "yaml";
+import { stringify, Scalar } from "yaml";
 import type { BoardDef } from "../board.js";
 import type { NetworkConfig } from "@far-mon/core";
+
+/** Create a YAML !secret tagged scalar — serializes as `!secret name` (unquoted). */
+function secret(name: string): Scalar {
+  const s = new Scalar(name);
+  s.tag = '!secret';
+  return s;
+}
+
 
 /** ESP32 strapping pins that trigger ESPHome warnings if used without acknowledgement. */
 const ESP32_STRAPPING_PINS = new Set(['GPIO0', 'GPIO2', 'GPIO5', 'GPIO12', 'GPIO15']);
@@ -52,22 +60,22 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   } else {
     sections.push({
       wifi: {
-        ssid: "!secret wifi_ssid",
-        password: "!secret wifi_password",
+        ssid: secret('wifi_ssid'),
+        password: secret('wifi_password'),
         ...(manualIp && { manual_ip: manualIp }),
         ap: {
           ssid: "${friendly_name} Fallback",
-          password: "!secret fallback_password",
+          password: secret('fallback_password'),
         },
       },
     });
     sections.push({ captive_portal: null });
   }
   sections.push({
-    api: { encryption: { key: "!secret api_key" } },
+    api: { encryption: { key: secret('api_key') } },
   });
   sections.push({
-    ota: [{ platform: "esphome", password: "!secret ota_password" }],
+    ota: [{ platform: "esphome", password: secret('ota_password') }],
   });
 
   // --- Buses ---
@@ -75,7 +83,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
     ? ESP32S3_STRAPPING_PINS : ESP32_STRAPPING_PINS;
 
   for (const [busName, busDef] of Object.entries(board.buses)) {
-    const busConfig: Record<string, unknown> = {};
+    const busConfig: Record<string, unknown> = { id: `${busName}_bus` };
     for (const [key, val] of Object.entries(busDef)) {
       const pinVal = typeof val === 'string' && /^GPIO\d+$/.test(val) ? val : null;
       if (busName === "spi") {
@@ -325,6 +333,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
     lineWidth: 0,
     defaultStringType: "PLAIN",
   });
+
 
   return header + body;
 }

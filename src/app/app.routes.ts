@@ -12,6 +12,11 @@ export const routes: Routes = [
       import('./pages/overview/overview.component').then((m) => m.OverviewComponent),
   },
   {
+    path: 'boards',
+    loadComponent: () =>
+      import('./pages/boards/boards-page.component').then((m) => m.BoardsPageComponent),
+  },
+  {
     path: 'site/:name',
     loadComponent: () =>
       import('./pages/site/site-view.component').then((m) => m.SiteViewComponent),

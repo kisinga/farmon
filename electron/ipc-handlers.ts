@@ -3,7 +3,8 @@ import * as fs from "node:fs";
 import { BoardDefSchema, type BoardDef } from "./lib/board.js";
 import { parseTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
-import { generateEsphome, generateSiteHA, generateSelfTest, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
+import { generateEsphome, generateSiteHA, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
+import { generateSelfTest } from "./lib/self-test/index.js";
 import { topologyToManifest } from "./lib/topology-to-manifest.js";
 import * as store from "./store.js";
 import * as db from "./db.js";
@@ -14,6 +15,7 @@ import { generateSiteDocumentation } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
 import { listSerialPorts } from "./discovery.js";
+import { serialMonitor } from "./serial-monitor.js";
 
 
 // ---------------------------------------------------------------------------
@@ -462,10 +464,14 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     "codegen:generate-selftest",
-    async (_e, boardModel: string) => {
+    async (_e, boardModel: string, secretsRaw: Record<string, string>) => {
       const boardData = store.loadBoard(boardModel);
       const board = BoardDefSchema.parse(boardData.board) as BoardDef;
-      const secrets: SecretsMap = generateDefaultSecrets();
+      const { wifi_ssid, wifi_password, fallback_password, api_key, ota_password } = secretsRaw;
+      if (!api_key || !ota_password || !fallback_password) {
+        throw new Error('Missing required secrets (api_key, ota_password, fallback_password)');
+      }
+      const secrets: SecretsMap = { wifi_ssid: wifi_ssid ?? '', wifi_password: wifi_password ?? '', fallback_password, api_key, ota_password };
       const files = generateSelfTest(board, secrets);
       const model = board.model.replace('_', '-');
       const deviceDir = `selftest-${model}`;
@@ -604,6 +610,18 @@ export function registerIpcHandlers() {
   ipcMain.handle("esphome:cancel", async (_e, processId: string) => ({
     cancelled: killProcess(processId),
   }));
+
+  // =========================================================================
+  // Serial monitor
+  // =========================================================================
+
+  ipcMain.handle(
+    "serial:monitor",
+    async (event, port: string, baudRate: number) => {
+      const { result } = serialMonitor(winFromEvent(event), port, baudRate);
+      return result;
+    }
+  );
 
   // =========================================================================
   // Discovery

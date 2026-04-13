@@ -42,8 +42,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("codegen:generate", siteId, systemId, manifest, board),
   codegenGenerateHA: (siteId: string) =>
     ipcRenderer.invoke("codegen:generate-ha", siteId),
-  codegenGenerateSelfTest: (boardModel: string) =>
-    ipcRenderer.invoke("codegen:generate-selftest", boardModel),
+  codegenGenerateSelfTest: (boardModel: string, secrets: Record<string, string>) =>
+    ipcRenderer.invoke("codegen:generate-selftest", boardModel, secrets),
   codegenGenerateSiteDocs: (siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]) =>
     ipcRenderer.invoke("codegen:generate-site-docs", siteId, compositeSvg, systems, links, routes),
 
@@ -100,6 +100,49 @@ contextBridge.exposeInMainWorld("electronAPI", {
       callback(data);
     ipcRenderer.on("esphome:done", listener);
     return () => ipcRenderer.removeListener("esphome:done", listener);
+  },
+
+  // --- Serial monitor ---
+  serialMonitor: (port: string, baudRate: number) =>
+    ipcRenderer.invoke("serial:monitor", port, baudRate),
+  serialCancel: (processId: string) =>
+    ipcRenderer.invoke("esphome:cancel", processId),
+  onSerialStarted: (
+    callback: (handle: {
+      id: string;
+      port: string;
+      baudRate: number;
+      pid: number | undefined;
+    }) => void
+  ) => {
+    const listener = (_event: unknown, handle: Parameters<typeof callback>[0]) =>
+      callback(handle);
+    ipcRenderer.on("serial:started", listener);
+    return () => ipcRenderer.removeListener("serial:started", listener);
+  },
+  onSerialOutput: (
+    callback: (data: {
+      id: string;
+      stream: string;
+      text: string;
+    }) => void
+  ) => {
+    const listener = (_event: unknown, data: Parameters<typeof callback>[0]) =>
+      callback(data);
+    ipcRenderer.on("serial:output", listener);
+    return () => ipcRenderer.removeListener("serial:output", listener);
+  },
+  onSerialDone: (
+    callback: (data: {
+      id: string;
+      code: number | null;
+      signal: string | null;
+    }) => void
+  ) => {
+    const listener = (_event: unknown, data: Parameters<typeof callback>[0]) =>
+      callback(data);
+    ipcRenderer.on("serial:done", listener);
+    return () => ipcRenderer.removeListener("serial:done", listener);
   },
 
   // --- Discovery ---

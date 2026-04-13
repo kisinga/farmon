@@ -103,6 +103,27 @@ export interface ProcessDoneEvent {
   signal: string | null;
 }
 
+// --- Serial monitor ---
+
+export interface SerialHandle {
+  id: string;
+  port: string;
+  baudRate: number;
+  pid: number | undefined;
+}
+
+export interface SerialOutputEvent {
+  id: string;
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
+export interface SerialDoneEvent {
+  id: string;
+  code: number | null;
+  signal: string | null;
+}
+
 // --- Discovery ---
 
 export interface SerialDevice {
@@ -167,7 +188,7 @@ export interface ElectronAPI {
   codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
   codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult>;
   codegenGenerateHA(siteId: string): Promise<GenerateHAResult>;
-  codegenGenerateSelfTest(boardModel: string): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }>;
+  codegenGenerateSelfTest(boardModel: string, secrets: Record<string, string>): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }>;
   codegenGenerateSiteDocs(siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }>;
 
   // Toolchain
@@ -184,6 +205,13 @@ export interface ElectronAPI {
   onEsphomeStarted(callback: (handle: ProcessHandle) => void): () => void;
   onEsphomeOutput(callback: (data: ProcessOutputEvent) => void): () => void;
   onEsphomeDone(callback: (data: ProcessDoneEvent) => void): () => void;
+
+  // Serial monitor
+  serialMonitor(port: string, baudRate: number): Promise<ProcessResult>;
+  serialCancel(processId: string): Promise<{ cancelled: boolean }>;
+  onSerialStarted(callback: (handle: SerialHandle) => void): () => void;
+  onSerialOutput(callback: (data: SerialOutputEvent) => void): () => void;
+  onSerialDone(callback: (data: SerialDoneEvent) => void): () => void;
 
   // Discovery
   deviceListSerial(): Promise<SerialDevice[]>;

@@ -11,7 +11,6 @@ import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
 import { generateAutomations } from "./generators/automations.js";
 import { collectEntityCodegen } from "./generators/collect.js";
-import { generateSelfTest as generateSelfTestImpl } from "./self-test/index.js";
 import { LOGO_SVG } from '@far-mon/core';
 
 export interface GeneratedFile {
@@ -129,11 +128,6 @@ export function generateSiteHA(
   }
 
   return files;
-}
-
-/** Generate self-test firmware for a board (no manifest/topology needed). */
-export function generateSelfTest(board: BoardDef, secrets?: SecretsMap): GeneratedFile[] {
-  return generateSelfTestImpl(board, secrets);
 }
 
 /** Legacy single-system convenience for tests. Produces ESPHome + per-device HA files. */

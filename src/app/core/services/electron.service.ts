@@ -14,6 +14,9 @@ import type {
   ProcessOutputEvent,
   ProcessDoneEvent,
   SerialDevice,
+  SerialHandle,
+  SerialOutputEvent,
+  SerialDoneEvent,
   HealthReport,
   SeedChange,
   SiteListEntry,
@@ -108,8 +111,8 @@ export class ElectronService {
   generateSiteDocs(siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }> {
     return this.invoke(() => this.api!.codegenGenerateSiteDocs(siteId, compositeSvg, systems, links, routes));
   }
-  generateSelfTest(boardModel: string): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }> {
-    return this.invoke(() => this.api!.codegenGenerateSelfTest(boardModel));
+  generateSelfTest(boardModel: string, secrets: Record<string, string>): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }> {
+    return this.invoke(() => this.api!.codegenGenerateSelfTest(boardModel, secrets));
   }
 
   // --- Toolchain ---
@@ -144,6 +147,23 @@ export class ElectronService {
   }
   onEsphomeDone(callback: (data: ProcessDoneEvent) => void): () => void {
     return this.api?.onEsphomeDone(callback) ?? (() => {});
+  }
+
+  // --- Serial monitor ---
+  serialMonitor(port: string, baudRate: number): Promise<ProcessResult> {
+    return this.invoke(() => this.api!.serialMonitor(port, baudRate));
+  }
+  serialCancel(processId: string): Promise<{ cancelled: boolean }> {
+    return this.invoke(() => this.api!.serialCancel(processId));
+  }
+  onSerialStarted(callback: (handle: SerialHandle) => void): () => void {
+    return this.api?.onSerialStarted(callback) ?? (() => {});
+  }
+  onSerialOutput(callback: (data: SerialOutputEvent) => void): () => void {
+    return this.api?.onSerialOutput(callback) ?? (() => {});
+  }
+  onSerialDone(callback: (data: SerialDoneEvent) => void): () => void {
+    return this.api?.onSerialDone(callback) ?? (() => {});
   }
 
   // --- Discovery ---

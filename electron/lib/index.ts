@@ -36,11 +36,14 @@ export {
   generateAll,
   generateEsphome,
   generateSiteHA,
-  generateSelfTest,
   generateDefaultSecrets,
   type GeneratedFile,
   type SecretsMap,
 } from "./generate.js";
+
+export {
+  generateSelfTest,
+} from "./self-test/index.js";
 
 export {
   type SiteDashboardSystem,

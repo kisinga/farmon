@@ -36,13 +36,9 @@ export const relayCycleProbe: TestProbe = {
       const idx = relays.indexOf(relay);
       const addr = addrMap.get(relay.expander!) ?? 0;
       readbackCases.push(`      case ${idx}: {
-        Wire.requestFrom((uint8_t)0x${addr.toString(16)}, (uint8_t)1);
-        if (Wire.available()) {
-          uint8_t reg = Wire.read();
-          bool bit_low = !(reg & (1 << ${relay.number}));
-          return bit_low;
-        }
-        return false;
+        uint8_t reg = i2c_read_reg(0x${addr.toString(16)});
+        bool bit_low = !(reg & (1 << ${relay.number}));
+        return bit_low;
       }`);
     }
 

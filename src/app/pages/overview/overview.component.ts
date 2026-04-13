@@ -91,6 +91,24 @@ function initials(name: string): string {
               </div>
             </button>
 
+            <!-- Boards card -->
+            <button
+              class="card card-side bg-base-100/50 border-2 border-dashed border-base-300/60 hover:border-primary/40 hover:bg-base-100 transition-all cursor-pointer group min-h-[140px]"
+              (click)="openBoards()"
+            >
+              <div class="card-body flex-row items-center justify-center gap-4 p-6">
+                <div class="w-14 h-14 rounded-2xl bg-base-200/80 group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-base-content/30 group-hover:text-primary/60 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                  </svg>
+                </div>
+                <div class="text-left">
+                  <span class="text-base font-semibold text-base-content/40 group-hover:text-primary/70 transition-colors">Boards</span>
+                  <p class="text-xs text-base-content/30 mt-0.5">Manage boards and run hardware self-tests</p>
+                </div>
+              </div>
+            </button>
+
             <!-- Site cards -->
             @for (site of entries(); track site.id) {
               <div
@@ -232,6 +250,10 @@ export class OverviewComponent implements OnInit {
 
   protected openSite(id: string): void {
     this.router.navigate(['/site', id]);
+  }
+
+  protected openBoards(): void {
+    this.router.navigate(['/boards']);
   }
 
   protected async createSite(friendlyName: string): Promise<void> {

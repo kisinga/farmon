@@ -31,9 +31,7 @@ export const i2cScanProbe: TestProbe = {
       char detail[64] = "";
       int dlen = 0;
       for (int i = 0; i < NUM_EXPANDERS; i++) {
-        Wire.beginTransmission(EXPANDER_ADDRS[i]);
-        uint8_t err = Wire.endTransmission();
-        bool ok = (err == 0);
+        bool ok = i2c_probe(EXPANDER_ADDRS[i]);
         if (!ok) all_ok = false;
         dlen += snprintf(detail + dlen, sizeof(detail) - dlen,
           "0x%02X:%s ", EXPANDER_ADDRS[i], ok ? "OK" : "FAIL");

@@ -21,9 +21,7 @@ export const oledDisplayProbe: TestProbe = {
     if (sub_step == 0) {
       ESP_LOGI("selftest", "=== OLED Display Test ===");
       // Probe I2C address to verify chip responds
-      Wire.beginTransmission(0x${addr.toString(16).padStart(2, '0')});
-      uint8_t err = Wire.endTransmission();
-      bool ok = (err == 0);
+      bool ok = i2c_probe(0x${addr.toString(16).padStart(2, '0')});
       // Also trigger a display update via ESPHome component
       if (ok) {
         id(oled).show_page(id(page_splash));

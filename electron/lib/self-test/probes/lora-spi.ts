@@ -28,19 +28,19 @@ export const loraSpiProbe: TestProbe = {
     if (sub_step == 0) {
       ESP_LOGI("selftest", "=== LoRa SPI (${lora.chip}) ===");
       // Reset the ${lora.chip} and verify BUSY pin response
-      pinMode(LORA_RST_PIN, OUTPUT);
-      pinMode(LORA_BUSY_PIN, INPUT);
-      digitalWrite(LORA_RST_PIN, LOW);
+      gpio_set_direction((gpio_num_t)LORA_RST_PIN, GPIO_MODE_OUTPUT);
+      gpio_set_direction((gpio_num_t)LORA_BUSY_PIN, GPIO_MODE_INPUT);
+      gpio_set_level((gpio_num_t)LORA_RST_PIN, 0);
       step_timer = millis();
       sub_step = 1;
     } else if (sub_step == 1 && millis() - step_timer >= 2) {
       // Release reset
-      digitalWrite(LORA_RST_PIN, HIGH);
+      gpio_set_level((gpio_num_t)LORA_RST_PIN, 1);
       step_timer = millis();
       sub_step = 2;
     } else if (sub_step == 2) {
       // Wait for BUSY to go LOW (chip ready) — timeout 50ms
-      bool busy = digitalRead(LORA_BUSY_PIN);
+      bool busy = gpio_get_level((gpio_num_t)LORA_BUSY_PIN);
       if (!busy) {
         char detail[64];
         snprintf(detail, sizeof(detail), "${lora.chip} BUSY=LOW after reset (chip alive)");

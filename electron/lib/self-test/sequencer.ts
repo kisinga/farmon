@@ -8,7 +8,6 @@
 
 import type { BoardDef } from '../board.js';
 import type { TestProbe } from './probe.js';
-import { resultId, detailId } from './probe.js';
 
 export function generateSequencer(board: BoardDef, probes: TestProbe[]): string {
   const phaseEnum = ['IDLE', ...probes.map(p => p.id.toUpperCase()), 'DONE'].join(', ');
@@ -61,7 +60,7 @@ export function generateSequencer(board: BoardDef, probes: TestProbe[]): string 
 
 #pragma once
 #include "esphome.h"
-#include <Wire.h>
+#include "driver/gpio.h"
 ${needsWifi ? '#include "esp_wifi.h"\n' : ''}\
 
 namespace selftest {
@@ -92,6 +91,23 @@ ${phaseNameCases}
     case DONE: return "Done";
     default: return "Unknown";
     }
+  }
+
+  // Forward declarations
+  void start();
+
+  // --- I2C helpers using ESPHome's I2C bus component (id: i2c_bus) ---
+  bool i2c_probe(uint8_t addr) {
+    auto &bus = id(i2c_bus);
+    i2c::ErrorCode err = bus.write(addr, nullptr, 0, true);
+    return err == i2c::ERROR_OK;
+  }
+
+  uint8_t i2c_read_reg(uint8_t addr) {
+    auto &bus = id(i2c_bus);
+    uint8_t data = 0xFF;
+    bus.read(addr, &data, 1);
+    return data;
   }
 
   // --- Record result ---
@@ -140,6 +156,11 @@ ${tickFunctions}
       break;
 ${dispatchCases}
     case DONE:
+      // Cycle indefinitely — restart after 5s pause
+      if (millis() - step_timer >= 5000) {
+        ESP_LOGI("selftest", "--- Cycle complete. Restarting in 5s... ---");
+        start();
+      }
       break;
     }
     update_ha();
