@@ -9,7 +9,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 // Schema versioning (for board YAML files)
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 9;     // version this app writes
+export const SCHEMA_VERSION = 10;    // version this app writes
 
 export class SchemaError extends Error {
   constructor(
@@ -66,6 +66,11 @@ const MIGRATIONS: Record<number, Migration> = {
     for (const n of nodes) {
       if (n.kind === 'handoff') n.kind = 'interconnect';
     }
+    return data;
+  },
+  9: (data) => {
+    data.schema = 10;
+    // network config is optional — no data transform needed
     return data;
   },
 };

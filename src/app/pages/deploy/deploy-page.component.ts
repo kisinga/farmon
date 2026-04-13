@@ -153,95 +153,151 @@ interface TerminalLine {
             }
 
             @if (selectedSystemId()) {
-              <!-- Secrets -->
+              <!-- Network & Credentials — unified card -->
               <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
-                <div class="flex items-center justify-between px-5 py-3.5">
-                  <div class="flex items-center gap-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                    </svg>
-                    <div>
-                      <h2 class="font-semibold text-sm">Device Secrets</h2>
-                      <p class="text-xs text-base-content/50 mt-0.5">WiFi credentials and encryption keys for this controller</p>
-                    </div>
-                  </div>
-                  @if (secretsHasPlaceholders()) {
-                    <span class="badge badge-warning badge-sm gap-1">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                <!-- WiFi -->
+                <div class="px-5 py-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0" />
                       </svg>
-                      WiFi not configured
-                    </span>
-                  }
-                </div>
-                <div class="border-t border-base-300/30 px-5 py-4 bg-base-200/30 space-y-3">
+                      <h2 class="font-semibold text-sm">WiFi</h2>
+                    </div>
+                    @if (secretsHasPlaceholders()) {
+                      <span class="badge badge-warning badge-sm gap-1">Not configured</span>
+                    }
+                  </div>
                   <div class="grid grid-cols-2 gap-4">
-                    <label class="form-control">
-                      <div class="label py-0.5"><span class="label-text text-xs font-medium">WiFi SSID</span></div>
-                      <input type="text" class="input input-bordered input-sm"
+                    <div class="flex flex-col gap-1">
+                      <span class="text-xs font-medium">SSID</span>
+                      <input type="text" class="input input-bordered input-sm w-full"
                         [class.input-warning]="!secrets().wifi_ssid"
                         [ngModel]="secrets().wifi_ssid"
-                        (ngModelChange)="updateSecret('wifi_ssid', $event)" />
-                      @if (!secrets().wifi_ssid) {
-                        <div class="label py-0.5"><span class="label-text-alt text-warning text-[10px]">Required</span></div>
-                      }
-                    </label>
-                    <label class="form-control">
-                      <div class="label py-0.5"><span class="label-text text-xs font-medium">WiFi Password</span></div>
-                      <input type="password" class="input input-bordered input-sm"
+                        (ngModelChange)="updateSecret('wifi_ssid', $event)"
+                        placeholder="Network name" />
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <span class="text-xs font-medium">Password</span>
+                      <input type="password" class="input input-bordered input-sm w-full"
                         [class.input-warning]="!secrets().wifi_password || secrets().wifi_password.length < 8"
                         [ngModel]="secrets().wifi_password"
-                        (ngModelChange)="updateSecret('wifi_password', $event)" />
-                      @if (secrets().wifi_password && secrets().wifi_password.length < 8) {
-                        <div class="label py-0.5"><span class="label-text-alt text-warning text-[10px]">Min 8 characters (WPA2)</span></div>
-                      } @else if (!secrets().wifi_password) {
-                        <div class="label py-0.5"><span class="label-text-alt text-warning text-[10px]">Required</span></div>
+                        (ngModelChange)="updateSecret('wifi_password', $event)"
+                        placeholder="Min 8 characters" />
+                      @if (secrets().wifi_password && secrets().wifi_password.length > 0 && secrets().wifi_password.length < 8) {
+                        <span class="text-warning text-[10px]">Min 8 characters (WPA2)</span>
                       }
-                    </label>
-                  </div>
-                  <div class="grid grid-cols-2 gap-4">
-                    <label class="form-control">
-                      <div class="label py-0.5"><span class="label-text text-xs font-medium">Fallback AP Password</span></div>
-                      <input type="text" class="input input-bordered input-sm font-mono text-xs"
-                        [class.input-warning]="secrets().fallback_password.length < 8"
-                        [ngModel]="secrets().fallback_password"
-                        (ngModelChange)="updateSecret('fallback_password', $event)" />
-                      @if (secrets().fallback_password.length < 8) {
-                        <div class="label py-0.5"><span class="label-text-alt text-warning text-[10px]">Min 8 characters</span></div>
-                      }
-                    </label>
-                    <label class="form-control">
-                      <div class="label py-0.5"><span class="label-text text-xs font-medium">OTA Password</span></div>
-                      <div class="join w-full">
-                        <input type="text" class="input input-bordered input-sm font-mono text-xs join-item flex-1"
-                          [class.input-warning]="!secrets().ota_password"
-                          [ngModel]="secrets().ota_password"
-                          (ngModelChange)="updateSecret('ota_password', $event)" />
-                        <button class="btn btn-ghost btn-sm join-item border border-base-300" (click)="regenerateKey('ota_password')" title="Regenerate">
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd" />
-                          </svg>
-                        </button>
-                      </div>
-                    </label>
-                  </div>
-                  <label class="form-control">
-                    <div class="label py-0.5"><span class="label-text text-xs font-medium">API Encryption Key</span></div>
-                    <div class="join w-full">
-                      <input type="text" class="input input-bordered input-sm font-mono text-xs join-item flex-1"
-                        [class.input-warning]="!secretsApiKeyValid()"
-                        [ngModel]="secrets().api_key"
-                        (ngModelChange)="updateSecret('api_key', $event)" />
-                      <button class="btn btn-ghost btn-sm join-item border border-base-300" (click)="regenerateKey('api_key')" title="Regenerate">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd" />
-                        </svg>
-                      </button>
                     </div>
-                    @if (!secretsApiKeyValid()) {
-                      <div class="label py-0.5"><span class="label-text-alt text-warning text-[10px]">Must be valid base64 (32 bytes)</span></div>
-                    }
-                  </label>
+                  </div>
+                </div>
+
+                <!-- IP Configuration -->
+                <div class="border-t border-base-300/30 px-5 py-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">IP Configuration</span>
+                    <div class="flex items-center gap-1 bg-base-200/60 rounded-lg p-0.5">
+                      <button class="btn btn-xs border-0 rounded-md"
+                        [class.btn-primary]="(selectedNetwork()?.mode ?? 'dhcp') === 'dhcp'"
+                        [class.btn-ghost]="selectedNetwork()?.mode === 'static'"
+                        (click)="updateNetworkMode('dhcp')">DHCP</button>
+                      <button class="btn btn-xs border-0 rounded-md"
+                        [class.btn-primary]="selectedNetwork()?.mode === 'static'"
+                        [class.btn-ghost]="(selectedNetwork()?.mode ?? 'dhcp') === 'dhcp'"
+                        (click)="updateNetworkMode('static')">Static</button>
+                    </div>
+                  </div>
+                  @if (selectedNetwork()?.mode === 'static') {
+                    <div class="grid grid-cols-2 gap-3">
+                      <div class="flex flex-col gap-1">
+                        <span class="text-xs font-medium">IP Address</span>
+                        <input type="text" class="input input-bordered input-sm font-mono w-full"
+                          [ngModel]="selectedNetwork()?.static_ip ?? ''"
+                          (ngModelChange)="updateNetworkField('static_ip', $event)"
+                          placeholder="192.168.1.100" />
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <span class="text-xs font-medium">Gateway</span>
+                        <input type="text" class="input input-bordered input-sm font-mono w-full"
+                          [ngModel]="selectedNetwork()?.gateway ?? ''"
+                          (ngModelChange)="updateNetworkField('gateway', $event)"
+                          placeholder="192.168.1.1" />
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <span class="text-xs font-medium">Subnet</span>
+                        <input type="text" class="input input-bordered input-sm font-mono w-full"
+                          [ngModel]="selectedNetwork()?.subnet ?? ''"
+                          (ngModelChange)="updateNetworkField('subnet', $event)"
+                          placeholder="255.255.255.0" />
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <span class="text-xs font-medium">DNS</span>
+                        <input type="text" class="input input-bordered input-sm font-mono w-full"
+                          [ngModel]="selectedNetwork()?.dns1 ?? ''"
+                          (ngModelChange)="updateNetworkField('dns1', $event)"
+                          placeholder="8.8.8.8" />
+                      </div>
+                    </div>
+                  } @else {
+                    <p class="text-xs text-base-content/40">IP address assigned automatically by router.</p>
+                  }
+                </div>
+
+                <!-- Security Keys (collapsible) -->
+                <div class="border-t border-base-300/30">
+                  <button class="flex items-center justify-between w-full px-5 py-3 text-left hover:bg-base-200/30 transition-colors"
+                    (click)="showSecurityKeys.set(!showSecurityKeys())">
+                    <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Security Keys</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-base-content/40 transition-transform"
+                      [class.rotate-180]="showSecurityKeys()" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  @if (showSecurityKeys()) {
+                    <div class="px-5 pb-4 space-y-3">
+                      <div class="flex flex-col gap-1">
+                        <span class="text-xs font-medium">Fallback AP Password</span>
+                        <div class="join w-full">
+                          <input type="text" class="input input-bordered input-sm font-mono text-sm join-item flex-1"
+                            [ngModel]="secrets().fallback_password"
+                            (ngModelChange)="updateSecret('fallback_password', $event)" />
+                          <button class="btn btn-ghost btn-sm join-item border border-base-300" (click)="regenerateKey('fallback_password')" title="Regenerate">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <span class="text-xs font-medium">OTA Password</span>
+                        <div class="join w-full">
+                          <input type="text" class="input input-bordered input-sm font-mono text-sm join-item flex-1"
+                            [ngModel]="secrets().ota_password"
+                            (ngModelChange)="updateSecret('ota_password', $event)" />
+                          <button class="btn btn-ghost btn-sm join-item border border-base-300" (click)="regenerateKey('ota_password')" title="Regenerate">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <span class="text-xs font-medium">API Encryption Key</span>
+                        <div class="join w-full">
+                          <input type="text" class="input input-bordered input-sm font-mono text-sm join-item flex-1"
+                            [ngModel]="secrets().api_key"
+                            (ngModelChange)="updateSecret('api_key', $event)" />
+                          <button class="btn btn-ghost btn-sm join-item border border-base-300" (click)="regenerateKey('api_key')" title="Regenerate">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd" />
+                            </svg>
+                          </button>
+                        </div>
+                        @if (!secretsApiKeyValid()) {
+                          <span class="text-warning text-[10px]">Must be valid base64 (32 bytes)</span>
+                        }
+                      </div>
+                    </div>
+                  }
                 </div>
               </div>
               <!-- Validation summary -->
@@ -705,6 +761,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   protected showHistory = signal(false);
 
   // Secrets
+  protected showSecurityKeys = signal(false);
   private static readonly DEFAULT_SECRETS = { wifi_ssid: '', wifi_password: '', fallback_password: '', api_key: '', ota_password: '' };
   protected secrets = signal<{ wifi_ssid: string; wifi_password: string; fallback_password: string; api_key: string; ota_password: string }>(
     { ...DeployPageComponent.DEFAULT_SECRETS }
@@ -746,6 +803,33 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     const sys = this.workspace.systems().get(id);
     return sys?.topology.device.board ?? '';
   });
+
+  protected selectedNetwork = computed(() => {
+    const id = this.selectedSystemId();
+    if (!id) return undefined;
+    return this.workspace.systems().get(id)?.topology.device.network;
+  });
+
+  protected updateNetworkMode(mode: 'dhcp' | 'static') {
+    const id = this.selectedSystemId();
+    if (!id) return;
+    this.workspace.updateSystemTopology(id, (t) => {
+      if (mode === 'dhcp') {
+        t.device.network = undefined;
+      } else {
+        t.device.network = { mode: 'static', static_ip: '', gateway: '', subnet: '', dns1: '' };
+      }
+    });
+  }
+
+  protected updateNetworkField(field: 'static_ip' | 'gateway' | 'subnet' | 'dns1' | 'dns2', value: string) {
+    const id = this.selectedSystemId();
+    if (!id) return;
+    this.workspace.updateSystemTopology(id, (t) => {
+      if (!t.device.network) t.device.network = { mode: 'static' };
+      (t.device.network as any)[field] = value;
+    });
+  }
 
   protected trustedSiteDocHtml = computed(() => {
     const html = this.siteDocHtml();
@@ -1172,12 +1256,15 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     this.secretsSaveTimer = setTimeout(() => this.saveSecrets(), 500);
   }
 
-  protected async regenerateKey(key: 'api_key' | 'ota_password') {
+  protected async regenerateKey(key: 'api_key' | 'ota_password' | 'fallback_password') {
+    const messages: Record<string, string> = {
+      api_key: 'Regenerating the API encryption key will invalidate existing device pairing. The device will need to be re-adopted in Home Assistant.',
+      ota_password: 'Regenerating the OTA password will require updating any existing OTA configuration.',
+      fallback_password: 'Regenerating the fallback AP password will change the password used when the device enters AP mode.',
+    };
     const confirmed = await this.confirmService.confirm({
       title: 'Regenerate Key',
-      message: key === 'api_key'
-        ? 'Regenerating the API encryption key will invalidate existing device pairing. The device will need to be re-adopted in Home Assistant.'
-        : 'Regenerating the OTA password will require updating any existing OTA configuration.',
+      message: messages[key],
       confirmLabel: 'Regenerate',
       variant: 'warning',
     });

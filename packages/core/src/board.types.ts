@@ -49,7 +49,7 @@ export interface BoardDef {
   };
   peripherals: {
     oled?: { platform: string; model: string; bus: string; address: number; reset_pin: string; width: number; height: number };
-    lora?: { chip: string; spi_pins: Record<string, string> };
+    lora?: { chip: string; spi_pins: Record<string, string>; control_pins?: Record<string, string> };
     battery?: { adc_pin: string; enable_pin: string; divider: number; calibration: [number, number][] };
     led?: { pin: string };
     vext?: { pin: string };
@@ -72,6 +72,11 @@ export function reservedPins(board: BoardDef): Map<string, string> {
   if (p.lora) {
     for (const [fn, pin] of Object.entries(p.lora.spi_pins)) {
       reserved.set(pin, `LoRa SPI ${fn}`);
+    }
+    if (p.lora.control_pins) {
+      for (const [fn, pin] of Object.entries(p.lora.control_pins)) {
+        reserved.set(pin, `LoRa ${fn}`);
+      }
     }
   }
   if (p.battery) {

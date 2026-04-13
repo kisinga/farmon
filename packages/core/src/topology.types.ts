@@ -108,14 +108,24 @@ export interface UartBus {
   baud_rate: number;
 }
 
+export interface NetworkConfig {
+  mode: 'dhcp' | 'static';
+  static_ip?: string;
+  gateway?: string;
+  subnet?: string;
+  dns1?: string;
+  dns2?: string;
+}
+
 export interface SystemTopology {
-  schema: 9;
+  schema: 10;
   device: {
     name: string;
     friendly_name: string;
     board: string;
     directory?: string;
     uart_buses?: UartBus[];
+    network?: NetworkConfig;
   };
   nodes: TopologyNode[];
   pipes: PipeSegment[];

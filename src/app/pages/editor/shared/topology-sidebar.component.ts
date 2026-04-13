@@ -170,17 +170,6 @@ export type { Selection };
 
     @if (!selection()) {
       <div class="sidebar-section">
-        <h3 class="sidebar-title">Device Settings</h3>
-        <div class="sidebar-fields">
-          <label class="sidebar-label">Device Name</label>
-          <input class="input input-xs input-bordered w-full font-mono"
-            [ngModel]="deviceName()"
-            (ngModelChange)="updateDeviceName($event)"
-            placeholder="ESPHome hostname" />
-          <span class="text-[10px] text-base-content/40 col-span-2">Used as ESPHome device hostname. Independent of controller ID.</span>
-        </div>
-      </div>
-      <div class="sidebar-section">
         <h3 class="sidebar-title">Route Overrides</h3>
         @if (overrideEntries().length === 0) {
           <div class="text-base-content/40 text-center py-4 text-xs">No overrides defined.</div>
@@ -245,18 +234,6 @@ export class TopologySidebarComponent {
   // --- Interconnect link form state ---
   protected linkTargetSystem = signal<string | null>(null);
   protected linkTargetPort = signal<string | null>(null);
-
-  // --- Device name ---
-  protected deviceName = computed(() => {
-    const t = this.editor.topology();
-    return t?.device.name ?? '';
-  });
-
-  protected updateDeviceName(value: string) {
-    this.editor.updateTopology(t => {
-      t.device.name = value;
-    });
-  }
 
   // --- Computed ---
   protected selectedNodeData = computed(() => {

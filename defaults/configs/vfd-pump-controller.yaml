@@ -1,4 +1,4 @@
-schema: 9
+schema: 10
 device:
   name: vfd-ctrl
   friendly_name: VFD Controller

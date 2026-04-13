@@ -310,10 +310,16 @@ function queryOne<T>(sql: string, params: unknown[] = []): T | null {
 // ---------------------------------------------------------------------------
 
 /** SHA-256 hex digest of the topology + board JSON (deterministic input hash). */
-export function inputChecksum(topology: unknown, board: unknown | null): string {
+export function inputChecksum(topology: unknown, board: unknown | null, secrets?: Record<string, string>): string {
   const hash = crypto.createHash("sha256");
   hash.update(JSON.stringify(topology));
   if (board != null) hash.update(JSON.stringify(board));
+  if (secrets) {
+    for (const key of Object.keys(secrets).sort()) {
+      hash.update(key);
+      hash.update(secrets[key]);
+    }
+  }
   return hash.digest("hex").slice(0, 16);
 }
 
@@ -725,9 +731,10 @@ export function createGeneration(
   topology: unknown,
   board: unknown | null,
   genType: GenerationType = 'esphome',
+  secrets?: Record<string, string>,
 ): { version: string; id: number } | null {
   const db = getDb();
-  const checksum = inputChecksum(topology, board);
+  const checksum = inputChecksum(topology, board, secrets);
 
   const latest = queryOne<{ checksum: string }>(
     `SELECT checksum FROM generations WHERE site_id = ? AND system_id = ? AND gen_type = ? ORDER BY id DESC LIMIT 1`,

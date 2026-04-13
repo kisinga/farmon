@@ -58,6 +58,7 @@ const OledSchema = z.object({
 const LoraSchema = z.object({
   chip: z.string(),
   spi_pins: z.record(GpioPin),
+  control_pins: z.record(GpioPin).optional(),
 });
 
 const BatterySchema = z.object({

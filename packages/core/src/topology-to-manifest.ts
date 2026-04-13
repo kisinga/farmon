@@ -1,6 +1,7 @@
 import type { Manifest, ManifestNode, ManifestAutomation, Route as ManifestRoute } from "./manifest.types";
 import type { SystemTopology } from "./topology.types";
 import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
+import { slug } from "./slug";
 
 // ---------------------------------------------------------------------------
 // Main conversion
@@ -90,7 +91,7 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
     });
 
   return {
-    device: { ...topology.device },
+    device: { ...topology.device, name: slug(topology.device.friendly_name) },
     nodes,
     routes: manifestRoutes,
     timing: { ...topology.timing },

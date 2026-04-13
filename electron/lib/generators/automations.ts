@@ -1,14 +1,6 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestAutomation } from "../schema.js";
-import { nodesByKind } from "../schema.js";
-
-function slug(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_|_$/g, "")
-    .replace(/_+/g, "_");
-}
+import { nodesByKind, slug } from "../schema.js";
 
 function entityId(domain: string, deviceName: string, name: string): string {
   return `${domain}.${slug(deviceName)}_${slug(name)}`;

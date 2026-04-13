@@ -1,5 +1,6 @@
 import { stringify } from "yaml";
 import type { BoardDef } from "../board.js";
+import type { NetworkConfig } from "@far-mon/core";
 
 /** ESP32 strapping pins that trigger ESPHome warnings if used without acknowledgement. */
 const ESP32_STRAPPING_PINS = new Set(['GPIO0', 'GPIO2', 'GPIO5', 'GPIO12', 'GPIO15']);
@@ -10,7 +11,7 @@ const ESP32S3_STRAPPING_PINS = new Set(['GPIO0', 'GPIO3', 'GPIO45', 'GPIO46']);
  * This replaces the hand-written heltec_board.yaml — every section is
  * driven by the board's declared peripherals and buses.
  */
-export function generateBoardPackage(board: BoardDef): string {
+export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): string {
   const sections: Record<string, unknown>[] = [];
 
   // --- MCU ---
@@ -27,6 +28,14 @@ export function generateBoardPackage(board: BoardDef): string {
   sections.push({ logger: { hardware_uart: "UART0" } });
 
   // --- Networking ---
+  const manualIp = network?.mode === 'static' && network.static_ip ? {
+    static_ip: network.static_ip,
+    gateway: network.gateway ?? '192.168.1.1',
+    subnet: network.subnet ?? '255.255.255.0',
+    ...(network.dns1 && { dns1: network.dns1 }),
+    ...(network.dns2 && { dns2: network.dns2 }),
+  } : undefined;
+
   if (board.peripherals.ethernet) {
     const eth = board.peripherals.ethernet;
     sections.push({
@@ -37,6 +46,7 @@ export function generateBoardPackage(board: BoardDef): string {
         clk: { pin: eth.clk.pin, mode: eth.clk.mode },
         phy_addr: eth.phy_addr,
         ...(eth.power_pin && { power_pin: eth.power_pin }),
+        ...(manualIp && { manual_ip: manualIp }),
       },
     });
   } else {
@@ -44,6 +54,7 @@ export function generateBoardPackage(board: BoardDef): string {
       wifi: {
         ssid: "!secret wifi_ssid",
         password: "!secret wifi_password",
+        ...(manualIp && { manual_ip: manualIp }),
         ap: {
           ssid: "${friendly_name} Fallback",
           password: "!secret fallback_password",

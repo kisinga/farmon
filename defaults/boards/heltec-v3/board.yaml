@@ -39,6 +39,11 @@ peripherals:
       clk: GPIO9
       mosi: GPIO10
       miso: GPIO11
+    control_pins:
+      cs: GPIO8
+      rst: GPIO12
+      busy: GPIO13
+      dio1: GPIO14
 
   battery:
     adc_pin: GPIO1
@@ -80,7 +85,7 @@ pins:
   - { gpio: GPIO5,  connector: connector31pin, edge: bottom, caps: [digital, adc, pwm, pulse_counter] }
   - { gpio: GPIO6,  connector: connector30pin, edge: bottom, caps: [digital, adc, pwm, pulse_counter] }
   - { gpio: GPIO7,  connector: connector29pin, edge: bottom, caps: [digital, adc, pwm, pulse_counter] }
-  - { gpio: GPIO8,  connector: connector28pin, edge: bottom, caps: [digital, pwm, pulse_counter] }
+  # GPIO8 reserved for LoRa SPI CS (SX1262) — see peripherals.lora.control_pins
   - { gpio: GPIO19, connector: connector19pin, edge: bottom, caps: [digital, adc, pwm, pulse_counter] }
   - { gpio: GPIO20, connector: connector18pin, edge: bottom, caps: [digital, adc, pwm, pulse_counter] }
   - { gpio: GPIO45, connector: connector17pin, edge: bottom, caps: [digital, pulse_counter] }

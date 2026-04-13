@@ -9,7 +9,7 @@ import * as store from "./store.js";
 import * as db from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
-import { collectPins, reservedPins, computePinOverlays } from '@far-mon/core';
+import { collectPins, reservedPins, computePinOverlays, slug } from '@far-mon/core';
 import { generateSiteDocumentation } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
@@ -53,6 +53,7 @@ function reconstructTopology(
       board,
       directory: directory ?? undefined,
       uart_buses: storedTopology.uart_buses,
+      network: storedTopology.network as any,
     },
     nodes: storedTopology.nodes ?? [],
     pipes: storedTopology.pipes ?? [],
@@ -311,7 +312,7 @@ export function registerIpcHandlers() {
         board: (device?.board as string) ?? "unknown",
         directory: (device?.directory as string) ?? null,
         topology,
-        deviceName: (device?.name as string) ?? systemId,
+        deviceName: slug((device?.friendly_name as string) ?? templateName),
       };
 
       db.insertSystem(siteId, system);
@@ -389,7 +390,7 @@ export function registerIpcHandlers() {
       } as SecretsMap;
       const files = generateEsphome(manifest, board, secrets);
 
-      const gen = db.createGeneration(siteId, systemId, topology, board, 'esphome');
+      const gen = db.createGeneration(siteId, systemId, topology, board, 'esphome', { ...secrets });
       const latestMeta = gen ? null : db.listGenerations(siteId, systemId, 'esphome')[0] ?? null;
       const version = gen?.version ?? latestMeta?.version ?? '';
       const deviceDir = manifest.device.directory ?? manifest.device.name;

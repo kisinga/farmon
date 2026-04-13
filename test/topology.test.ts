@@ -35,7 +35,7 @@ function assert(condition: boolean, name: string, detail?: string) {
 console.log("Loading topology config...");
 const raw = parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
 const topology = TopologySchema.parse(raw);
-assert(topology.schema === 8, "Schema version is 8");
+assert(topology.schema === 10, "Schema version is 10");
 
 // ---------------------------------------------------------------------------
 // Node structure
@@ -82,7 +82,7 @@ assert(
 console.log("\nManifest derivation:");
 const manifest = topologyToManifest(topology);
 
-assert(manifest.device.name === "pump-ctrl", "Device name preserved");
+assert(manifest.device.name === "pump_ctrl", "Device name derived from friendly_name");
 assert(manifest.device.board === "heltec-v3", "Board preserved");
 
 const manifestPumps = nodesByKind(manifest.nodes, 'pump');

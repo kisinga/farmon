@@ -1,13 +1,5 @@
 import type { Manifest } from "../schema.js";
-import { nodesWithFlag, pumpSwitchId } from "../schema.js";
-
-function slug(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_|_$/g, "")
-    .replace(/_+/g, "_");
-}
+import { nodesWithFlag, pumpSwitchId, slug } from "../schema.js";
 
 export function generateControl(m: Manifest): string {
   const hasPump = nodesWithFlag(m.nodes, 'isPump').length > 0;

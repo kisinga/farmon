@@ -39,12 +39,22 @@ export const UartBusSchema = z.object({
   baud_rate: z.number().default(9600),
 });
 
+export const NetworkConfigSchema = z.object({
+  mode: z.enum(['dhcp', 'static']).default('dhcp'),
+  static_ip: z.string().optional(),
+  gateway: z.string().optional(),
+  subnet: z.string().optional(),
+  dns1: z.string().optional(),
+  dns2: z.string().optional(),
+});
+
 export const DeviceSchema = z.object({
   name: z.string().min(1),
   friendly_name: z.string().min(1),
   board: z.string().min(1),
   directory: z.string().optional(),
   uart_buses: z.array(UartBusSchema).default([]),
+  network: NetworkConfigSchema.optional(),
 });
 
 export const TimingSchema = z.object({

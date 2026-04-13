@@ -45,7 +45,7 @@ const RouteOverrideSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const TopologySchema = z.object({
-  schema: z.literal(9),
+  schema: z.literal(10),
   device: DeviceSchema,
   nodes: z.array(TopologyNodeSchema).min(1),
   pipes: z.array(PipeSegmentSchema).default([]),

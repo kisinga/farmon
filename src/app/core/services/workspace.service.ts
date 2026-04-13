@@ -140,7 +140,7 @@ export class WorkspaceService {
     }
 
     return {
-      schema: 9,
+      schema: 10,
       device: { name: 'composite', friendly_name: 'Site', board: '' },
       nodes: allNodes,
       pipes: allPipes,
@@ -392,6 +392,7 @@ export class WorkspaceService {
           timing: topology.timing,
           automations: topology.automations,
           uart_buses: topology.device.uart_buses,
+          network: topology.device.network,
         },
         deviceName: topology.device.name,
       });
@@ -425,13 +426,14 @@ export class WorkspaceService {
   private reconstructTopology(sp: SystemPayload): SystemTopology {
     const topo = sp.topology;
     return {
-      schema: 9,
+      schema: 10,
       device: {
         name: sp.deviceName || sp.id,
         friendly_name: sp.friendlyName,
         board: sp.board,
         directory: sp.directory ?? undefined,
         uart_buses: topo.uart_buses,
+        network: topo.network,
       },
       nodes: topo.nodes ?? [],
       pipes: topo.pipes ?? [],

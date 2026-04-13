@@ -9,7 +9,7 @@
 // --- Types ---
 export type {
   SystemTopology, TopologyNode, PipeSegment, RouteOverride,
-  Automation, AutomationTrigger, UartBus,
+  Automation, AutomationTrigger, UartBus, NetworkConfig,
   TankNode, PumpNode, EndpointNode, ValveNode,
   FlowSensorNode, WaterSourceNode, PressureSensorNode, FilterNode, DosingPumpNode, VfdNode, InterconnectNode,
   Port, Position,
@@ -29,10 +29,13 @@ export type { BoundaryPort } from './graph/boundary-ports';
 
 // --- Schemas ---
 export { TopologySchema, parseTopology, parsePortRef, portRef, type Topology } from './topology-schema';
-export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, UartBusSchema, parseDurationMs, escXml } from './schemas';
+export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, UartBusSchema, NetworkConfigSchema, parseDurationMs, escXml } from './schemas';
 
 // --- Registry ---
 export { NODE_REGISTRY, ALL_DESCRIPTORS, REGISTRY_RULES, legendSvgFor, nodesWithFlag, getTypedDescriptor } from './entity-registry';
+
+// --- Slug / naming ---
+export { slug } from './slug';
 
 // --- Conversion & utilities ---
 export { topologyToManifest } from './topology-to-manifest';

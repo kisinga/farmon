@@ -4,6 +4,7 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
+import { slug } from '@far-mon/core';
 
 interface TimingField {
   key: string;
@@ -33,27 +34,16 @@ const TIMING_FIELDS: TimingField[] = [
         <div class="card bg-base-100 shadow-sm border border-base-200">
           <div class="card-body gap-4">
             <h2 class="card-title text-base">Device Identity</h2>
-            <div class="grid grid-cols-2 gap-4">
-              <label class="form-control">
-                <div class="label"><span class="label-text font-medium">Friendly Name</span></div>
-                <input
-                  type="text"
-                  class="input input-bordered input-sm"
-                  [ngModel]="t.device.friendly_name"
-                  (ngModelChange)="updateDevice('friendly_name', $event)"
-                />
-              </label>
-              <label class="form-control">
-                <div class="label"><span class="label-text font-medium">Device ID</span></div>
-                <input
-                  type="text"
-                  class="input input-bordered input-sm font-mono"
-                  [ngModel]="t.device.name"
-                  (ngModelChange)="updateDevice('name', $event)"
-                />
-                <div class="label"><span class="label-text-alt text-base-content/60">Lowercase, no spaces. Used in ESPHome config.</span></div>
-              </label>
-            </div>
+            <label class="form-control">
+              <div class="label"><span class="label-text font-medium">Friendly Name</span></div>
+              <input
+                type="text"
+                class="input input-bordered input-sm"
+                [ngModel]="t.device.friendly_name"
+                (ngModelChange)="updateFriendlyName($event)"
+              />
+              <div class="label"><span class="label-text-alt text-base-content/60 font-mono">ESPHome ID: {{ t.device.name }}</span></div>
+            </label>
           </div>
         </div>
 
@@ -178,8 +168,11 @@ export class ConfigTabComponent {
       }));
   });
 
-  updateDevice(field: 'name' | 'friendly_name', value: string) {
-    this.editor.updateTopology((t) => { t.device[field] = value; });
+  updateFriendlyName(value: string) {
+    this.editor.updateTopology((t) => {
+      t.device.friendly_name = value;
+      t.device.name = slug(value);
+    });
   }
 
   async changeBoard(boardId: string) {

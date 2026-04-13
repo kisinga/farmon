@@ -61,7 +61,7 @@ export function generateEsphome(m: Manifest, board: BoardDef, secrets?: SecretsM
     {
       relativePath: `${deviceDir}/common/board.yaml`,
       description: `${board.label} board package (buses, battery, LED, diagnostics)`,
-      content: generateBoardPackage(board),
+      content: generateBoardPackage(board, m.device.network),
     },
     {
       relativePath: `${deviceDir}/common/images/logo.svg`,
