@@ -18,6 +18,7 @@
     "test:db": "npx tsx test/db.test.ts",
     "test:limits": "npx tsx test/limits.test.ts",
     "test:topology": "npx tsx test/topology.test.ts",
+    "test:selftest": "npx tsx test/selftest-codegen.test.ts",
     "postinstall": "electron-builder install-app-deps"
   },
   "private": true,

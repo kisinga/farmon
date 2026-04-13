@@ -36,6 +36,7 @@ export {
   generateAll,
   generateEsphome,
   generateSiteHA,
+  generateSelfTest,
   generateDefaultSecrets,
   type GeneratedFile,
   type SecretsMap,

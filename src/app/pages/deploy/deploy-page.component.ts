@@ -366,6 +366,52 @@ interface TerminalLine {
                 }
               </div>
 
+              <!-- Self-Test Firmware -->
+              <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
+                <div class="flex items-center justify-between px-5 py-3.5">
+                  <div class="flex items-center gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    <div>
+                      <h2 class="font-semibold text-sm">Board Self-Test</h2>
+                      <p class="text-xs text-base-content/60 mt-0.5">Generate test firmware that cycles through all hardware features without wiring</p>
+                    </div>
+                  </div>
+                  <button
+                    class="btn btn-ghost btn-xs gap-1.5 border border-base-300/50"
+                    (click)="generateSelfTest()"
+                    [disabled]="generatingSelfTest()"
+                  >
+                    @if (generatingSelfTest()) { <span class="loading loading-spinner loading-xs"></span> }
+                    Generate Self-Test
+                  </button>
+                </div>
+                @if (selfTestFiles().length > 0) {
+                  <div class="border-t border-base-300/30 px-5 py-3 bg-base-200/30">
+                    <table class="table table-xs">
+                      <thead>
+                        <tr>
+                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">File</th>
+                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Description</th>
+                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold text-right">Lines</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (f of selfTestFiles(); track f.path) {
+                          <tr class="hover cursor-pointer" (click)="openFile(f.path)">
+                            <td class="font-mono text-[11px] text-primary/70 underline decoration-primary/30">{{ f.path }}</td>
+                            <td class="text-[11px] text-base-content/50">{{ f.description }}</td>
+                            <td class="text-right text-[11px] tabular-nums text-base-content/60">{{ f.lines }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                    <p class="text-xs text-base-content/40 mt-2">Use Compile &amp; Flash below with config <span class="font-mono text-primary/70">{{ selfTestDeviceDir() }}</span></p>
+                  </div>
+                }
+              </div>
+
               <!-- Generation History -->
               @if (fwLastGeneration() || fwFiles().length > 0) {
                 <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
@@ -760,6 +806,11 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   protected generationHistory = signal<GenerationMeta[]>([]);
   protected showHistory = signal(false);
 
+  // Self-test
+  protected generatingSelfTest = signal(false);
+  protected selfTestFiles = signal<FileEntry[]>([]);
+  protected selfTestDeviceDir = signal('');
+
   // Secrets
   protected showSecurityKeys = signal(false);
   private static readonly DEFAULT_SECRETS = { wifi_ssid: '', wifi_password: '', fallback_password: '', api_key: '', ota_password: '' };
@@ -1126,6 +1177,25 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
       this.fwError.set(String(err));
     } finally {
       this.generating.set(false);
+    }
+  }
+
+  async generateSelfTest() {
+    const boardId = this.selectedBoardId();
+    if (!boardId) return;
+    this.generatingSelfTest.set(true);
+    this.fwError.set(null);
+    try {
+      const result = await this.electron.generateSelfTest(boardId);
+      this.selfTestFiles.set(result.files);
+      this.selfTestDeviceDir.set(result.deviceDir);
+      this.fwOutputDir.set(result.outputDir);
+      // Set deviceDir so compile/flash targets self-test firmware
+      this.fwDeviceDir.set(result.deviceDir);
+    } catch (err) {
+      this.fwError.set(String(err));
+    } finally {
+      this.generatingSelfTest.set(false);
     }
   }
 

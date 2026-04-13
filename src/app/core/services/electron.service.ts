@@ -108,6 +108,9 @@ export class ElectronService {
   generateSiteDocs(siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }> {
     return this.invoke(() => this.api!.codegenGenerateSiteDocs(siteId, compositeSvg, systems, links, routes));
   }
+  generateSelfTest(boardModel: string): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }> {
+    return this.invoke(() => this.api!.codegenGenerateSelfTest(boardModel));
+  }
 
   // --- Toolchain ---
   toolchainStatus(): Promise<ToolchainInfo> {

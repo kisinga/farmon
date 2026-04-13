@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import { BoardDefSchema, type BoardDef } from "./lib/board.js";
 import { parseTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
-import { generateEsphome, generateSiteHA, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
+import { generateEsphome, generateSiteHA, generateSelfTest, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
 import { topologyToManifest } from "./lib/topology-to-manifest.js";
 import * as store from "./store.js";
 import * as db from "./db.js";
@@ -447,6 +447,35 @@ export function registerIpcHandlers() {
 
       return {
         outputDir,
+        files: files.map((f) => ({
+          path: f.relativePath,
+          description: f.description,
+          lines: f.content.split("\n").length,
+        })),
+      };
+    }
+  );
+
+  // =========================================================================
+  // Self-test firmware generation
+  // =========================================================================
+
+  ipcMain.handle(
+    "codegen:generate-selftest",
+    async (_e, boardModel: string) => {
+      const boardData = store.loadBoard(boardModel);
+      const board = BoardDefSchema.parse(boardData.board) as BoardDef;
+      const secrets: SecretsMap = generateDefaultSecrets();
+      const files = generateSelfTest(board, secrets);
+      const model = board.model.replace('_', '-');
+      const deviceDir = `selftest-${model}`;
+
+      const outputDir = store.getOutputDir();
+      store.writeOutput(files, outputDir);
+
+      return {
+        outputDir,
+        deviceDir,
         files: files.map((f) => ({
           path: f.relativePath,
           description: f.description,

@@ -1,0 +1,170 @@
+/**
+ * Composes C++ self-test header from active probes.
+ *
+ * The framework provides: namespace, phase enum, state machine plumbing
+ * (record, next_phase, update_ha, tick dispatcher, init, start).
+ * Each probe contributes: constants, state, helpers, tick function body.
+ */
+
+import type { BoardDef } from '../board.js';
+import type { TestProbe } from './probe.js';
+import { resultId, detailId } from './probe.js';
+
+export function generateSequencer(board: BoardDef, probes: TestProbe[]): string {
+  const phaseEnum = ['IDLE', ...probes.map(p => p.id.toUpperCase()), 'DONE'].join(', ');
+  const totalTests = probes.length;
+
+  // Collect phase name cases
+  const phaseNameCases = probes.map(p =>
+    `    case ${p.id.toUpperCase()}: return "${p.label}";`
+  ).join('\n');
+
+  // Collect contributions from each probe
+  const constantsBlock = probes
+    .map(p => p.constants(board))
+    .filter(Boolean)
+    .join('\n  ');
+
+  const stateBlock = probes
+    .map(p => p.state())
+    .filter(Boolean)
+    .join('\n  ');
+
+  const helpersBlock = probes
+    .map(p => p.helpers(board))
+    .filter(Boolean)
+    .join('\n');
+
+  // Generate tick functions — one per probe
+  const tickFunctions = probes.map(p => {
+    const funcName = `tick_${p.id}`;
+    const body = p.tick(board);
+    return `  void ${funcName}() {${body}
+  }`;
+  }).join('\n\n');
+
+  // Generate tick dispatcher
+  const dispatchCases = probes.map(p =>
+    `    case ${p.id.toUpperCase()}: tick_${p.id}(); break;`
+  ).join('\n');
+
+  // WiFi scan needs esp_wifi.h
+  const needsWifi = probes.some(p => p.id === 'wifi_scan');
+
+  return `\
+// =============================================================================
+// ${board.label} — Self-Test Sequencer
+// =============================================================================
+// AUTO-GENERATED from board definition + ${probes.length} active probes.
+// Non-blocking state machine driven by ESPHome interval (100ms tick).
+// =============================================================================
+
+#pragma once
+#include "esphome.h"
+#include <Wire.h>
+${needsWifi ? '#include "esp_wifi.h"\n' : ''}\
+
+namespace selftest {
+
+  enum Phase { ${phaseEnum} };
+
+  // --- Board constants (from probes) ---
+  ${constantsBlock}
+  static const int TOTAL_TESTS = ${totalTests};
+
+  // --- State ---
+  static Phase phase = IDLE;
+  static int sub_step = 0;
+  static uint32_t step_timer = 0;
+  static uint32_t phase_start = 0;
+  static int tests_done = 0;
+  static bool all_passed = true;
+  static char log_buf[512];
+  static int log_len = 0;
+  static bool auto_start_pending = true;
+  ${stateBlock}
+
+  // --- Phase name ---
+  const char* phase_name(Phase p) {
+    switch (p) {
+    case IDLE: return "Idle";
+${phaseNameCases}
+    case DONE: return "Done";
+    default: return "Unknown";
+    }
+  }
+
+  // --- Record result ---
+  void record(const char* name, bool pass, const char* detail) {
+    tests_done++;
+    if (!pass) all_passed = false;
+    uint32_t ms = millis() - phase_start;
+    int wrote = snprintf(log_buf + log_len, sizeof(log_buf) - log_len,
+      "%s: %s (%ums) %s\\n", name, pass ? "PASS" : "FAIL", ms, detail);
+    if (wrote > 0 && log_len + wrote < (int)sizeof(log_buf)) log_len += wrote;
+    ESP_LOGI("selftest", "%s: %s (%ums) %s", name, pass ? "PASS" : "FAIL", ms, detail);
+  }
+
+  // --- Advance to next phase ---
+  void next_phase() {
+    phase = static_cast<Phase>(static_cast<int>(phase) + 1);
+    sub_step = 0;
+    step_timer = millis();
+    phase_start = millis();
+  }
+
+  // --- Update HA entities ---
+  void update_ha() {
+    int pct = (TOTAL_TESTS > 0) ? (tests_done * 100 / TOTAL_TESTS) : 0;
+    id(st_progress).publish_state(pct);
+    id(st_phase).publish_state(phase_name(phase));
+    id(st_log).publish_state(log_buf);
+    if (phase == DONE) {
+      id(st_overall).publish_state(all_passed);
+    }
+  }
+${helpersBlock}
+
+  // --- Probe tick functions ---
+
+${tickFunctions}
+
+  // --- Main tick (100ms interval) ---
+  void tick() {
+    switch (phase) {
+    case IDLE:
+      if (auto_start_pending && millis() > 3000) {
+        start();
+        auto_start_pending = false;
+      }
+      break;
+${dispatchCases}
+    case DONE:
+      break;
+    }
+    update_ha();
+  }
+
+  void init() {
+    phase = IDLE;
+    log_buf[0] = '\\0';
+    log_len = 0;
+    ESP_LOGI("selftest", "${board.label} self-test ready. Auto-start in 3s...");
+  }
+
+  void start() {
+    phase = static_cast<Phase>(1);
+    sub_step = 0;
+    step_timer = millis();
+    phase_start = millis();
+    tests_done = 0;
+    all_passed = true;
+    log_buf[0] = '\\0';
+    log_len = 0;
+    id(st_overall).publish_state(false);
+    ESP_LOGI("selftest", "=== Starting ${board.label} Self-Test (%d tests) ===", TOTAL_TESTS);
+  }
+
+} // namespace selftest
+`;
+}
