@@ -2,7 +2,8 @@ import { Component, inject, signal, effect, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { ElectronService } from '../../../core/services/electron.service';
-import type { Automation, AutomationTrigger } from '../../../core/models/topology.model';
+import type { Automation, AutomationTrigger, RouteOverride } from '../../../core/models/topology.model';
+import { routeLevelInfo, type RouteLevelInfo } from '../shared/route-level-info';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
 
@@ -149,10 +150,40 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                 </div>
               </div>
 
-              <!-- Safety thresholds are on the route (Route Overrides), not the automation -->
-              <p class="text-xs text-base-content/40 italic">
-                Source/dest level thresholds are enforced by firmware via Route Overrides.
-              </p>
+              <!-- Firmware safety thresholds (stored in route_overrides) -->
+              @if (routeLevels().get(auto.route); as levels) {
+                @if (levels.sourceHasLevel || levels.destHasLevel) {
+                  <div class="grid grid-cols-2 gap-4">
+                    @if (levels.sourceHasLevel) {
+                      <div class="form-control">
+                        <label class="label pb-1"><span class="label-text text-xs">Source Min Level (%)</span></label>
+                        <input
+                          type="number"
+                          class="input input-bordered input-sm"
+                          [ngModel]="getOverride(auto.route, 'source_min_level') ?? ''"
+                          (ngModelChange)="updateOverride(auto.route, 'source_min_level', $event === '' ? undefined : +$event)"
+                          min="0" max="100" placeholder="e.g. 20"
+                        />
+                      </div>
+                    }
+                    @if (levels.destHasLevel) {
+                      <div class="form-control">
+                        <label class="label pb-1"><span class="label-text text-xs">Dest Max Level (%)</span></label>
+                        <input
+                          type="number"
+                          class="input input-bordered input-sm"
+                          [ngModel]="getOverride(auto.route, 'dest_max_level') ?? ''"
+                          (ngModelChange)="updateOverride(auto.route, 'dest_max_level', $event === '' ? undefined : +$event)"
+                          min="0" max="100" placeholder="e.g. 90"
+                        />
+                      </div>
+                    }
+                  </div>
+                  <p class="text-xs text-base-content/40 italic">
+                    Firmware enforces these thresholds — prevents pump start if source too low or dest too high.
+                  </p>
+                }
+              }
             </div>
           </div>
         }
@@ -181,6 +212,19 @@ export class AutomationsTabComponent {
     return t.nodes
       .filter(n => n.kind === 'tank' && (n as any).level_pin)
       .map(n => ({ id: n.id, name: (n as any).name ?? n.id }));
+  });
+
+  /** Precomputed level-sensor info for each route referenced by automations. */
+  protected routeLevels = computed(() => {
+    const t = this.editor.topology();
+    if (!t) return new Map<string, RouteLevelInfo>();
+    const result = new Map<string, RouteLevelInfo>();
+    for (const auto of t.automations ?? []) {
+      if (auto.route && !result.has(auto.route)) {
+        result.set(auto.route, routeLevelInfo(auto.route, t.nodes));
+      }
+    }
+    return result;
   });
 
   constructor() {
@@ -236,6 +280,19 @@ export class AutomationsTabComponent {
       const trigger = t.automations[index].trigger;
       // Rebuild trigger to stay type-safe
       t.automations[index].trigger = { ...trigger, [field]: value } as typeof trigger;
+    });
+  }
+
+  protected getOverride(routeKey: string, field: keyof RouteOverride): number | undefined {
+    const t = this.editor.topology();
+    return t?.route_overrides?.[routeKey]?.[field];
+  }
+
+  protected updateOverride(routeKey: string, field: keyof RouteOverride, value: number | undefined) {
+    this.editor.updateTopology(t => {
+      if (!t.route_overrides) t.route_overrides = {};
+      if (!t.route_overrides[routeKey]) t.route_overrides[routeKey] = {};
+      t.route_overrides[routeKey][field] = value;
     });
   }
 

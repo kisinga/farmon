@@ -7,6 +7,8 @@ import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
 import { buildGraph, activeGraph, deriveRoutes } from '@far-mon/core';
+import type { RouteOverride } from '../../../core/models/topology.model';
+import { routeLevelInfo } from './route-level-info';
 import type { Selection } from './selection';
 export type { Selection };
 
@@ -182,9 +184,29 @@ export type { Selection };
                   <label class="text-[10px] text-base-content/50">Max Runtime</label>
                   <input type="number" class="input input-xs input-bordered w-20 font-mono"
                     [ngModel]="entry.override.max_runtime_seconds ?? 1800"
-                    (ngModelChange)="updateMaxRuntime.emit({ key: entry.key, value: $event })" min="0" step="60" />
+                    (ngModelChange)="updateRouteOverride.emit({ key: entry.key, field: 'max_runtime_seconds', value: $event })" min="0" step="60" />
                   <span class="text-[10px] text-base-content/50">s</span>
                 </div>
+                @if (entry.sourceHasLevel) {
+                  <div class="flex items-center gap-2">
+                    <label class="text-[10px] text-base-content/50">Source Min</label>
+                    <input type="number" class="input input-xs input-bordered w-16 font-mono"
+                      [ngModel]="entry.override.source_min_level ?? ''"
+                      (ngModelChange)="updateRouteOverride.emit({ key: entry.key, field: 'source_min_level', value: $event === '' ? undefined : +$event })"
+                      min="0" max="100" placeholder="—" />
+                    <span class="text-[10px] text-base-content/50">%</span>
+                  </div>
+                }
+                @if (entry.destHasLevel) {
+                  <div class="flex items-center gap-2">
+                    <label class="text-[10px] text-base-content/50">Dest Max</label>
+                    <input type="number" class="input input-xs input-bordered w-16 font-mono"
+                      [ngModel]="entry.override.dest_max_level ?? ''"
+                      (ngModelChange)="updateRouteOverride.emit({ key: entry.key, field: 'dest_max_level', value: $event === '' ? undefined : +$event })"
+                      min="0" max="100" placeholder="—" />
+                    <span class="text-[10px] text-base-content/50">%</span>
+                  </div>
+                }
               </div>
             </div>
           }
@@ -227,7 +249,7 @@ export class TopologySidebarComponent {
   deleteNode = output<string>();
   deletePipe = output<string>();
   updateField = output<{ nodeId: string; field: string; value: any }>();
-  updateMaxRuntime = output<{ key: string; value: number }>();
+  updateRouteOverride = output<{ key: string; field: keyof RouteOverride; value: number | undefined }>();
   selectRoute = output<{ route: DerivedRoute; sharedNodeIds?: string[] }>();
   selectNode = output<string>();
 
@@ -264,7 +286,11 @@ export class TopologySidebarComponent {
   protected overrideEntries = computed(() => {
     const t = this.editor.topology();
     if (!t) return [];
-    return Object.entries(t.route_overrides ?? {}).map(([key, override]) => ({ key, override }));
+    return Object.entries(t.route_overrides ?? {}).map(([key, override]) => ({
+      key,
+      override,
+      ...routeLevelInfo(key, t.nodes),
+    }));
   });
 
   /** Links involving the currently selected interconnect node */
@@ -405,6 +431,7 @@ export class TopologySidebarComponent {
   }
 
   // --- Helpers ---
+
   routeDiagnostics(routeKey: string): RuleDiagnostic[] {
     return this.editor.diagnosticsByTarget().get(routeKey) ?? [];
   }

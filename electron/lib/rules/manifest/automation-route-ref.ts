@@ -78,14 +78,18 @@ export const automationRouteRef: ManifestRule = {
       }
 
       // Warn if automated route has no firmware-level source conservation
+      // (only meaningful when the source tank actually has a level sensor)
       const route = manifest.routes[auto.route_index];
       if (route && route.source_type === 'tank' && route.source_min_pct === 0) {
-        diagnostics.push({
-          ruleId: "automation-route-ref",
-          severity: "warning",
-          message: `Automation "${auto.name}": route has no source_min_level — firmware won't prevent source tank from draining empty`,
-          target: auto.route_key,
-        });
+        const srcNode = manifest.nodes.find(n => n.id === route.source);
+        if (srcNode && srcNode['level_pin']) {
+          diagnostics.push({
+            ruleId: "automation-route-ref",
+            severity: "warning",
+            message: `Automation "${auto.name}": route has no source_min_level — firmware won't prevent source tank from draining empty`,
+            target: auto.route_key,
+          });
+        }
       }
     }
 

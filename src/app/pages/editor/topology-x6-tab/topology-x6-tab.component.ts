@@ -2,7 +2,7 @@ import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, 
 import { DomSanitizer } from '@angular/platform-browser';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
-import type { SystemTopology, TopologyNode } from '../../../core/models/topology.model';
+import type { SystemTopology, TopologyNode, RouteOverride } from '../../../core/models/topology.model';
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
 import { svgDataUri } from './scada-shape';
@@ -92,7 +92,7 @@ import { buildGraph, activeGraph, downstreamNodes } from '@far-mon/core';
           (deleteNode)="deleteNode($event)"
           (deletePipe)="deletePipe($event)"
           (updateField)="updateNodeField($event.nodeId, $event.field, $event.value)"
-          (updateMaxRuntime)="updateMaxRuntime($event.key, $event.value)"
+          (updateRouteOverride)="updateRouteOverride($event.key, $event.field, $event.value)"
           (selectRoute)="onRouteSelected($event)"
           (selectNode)="onNodeSelected($event)"
         />
@@ -412,9 +412,11 @@ export class TopologyX6TabComponent {
 
   // --- Route overrides ---
 
-  updateMaxRuntime(key: string, value: number) {
+  updateRouteOverride(key: string, field: keyof RouteOverride, value: number | undefined) {
     this.editor.updateTopology(t => {
-      if (t.route_overrides?.[key]) t.route_overrides[key].max_runtime_seconds = value;
+      if (!t.route_overrides) t.route_overrides = {};
+      if (!t.route_overrides[key]) t.route_overrides[key] = {};
+      t.route_overrides[key][field] = value;
     });
   }
 
