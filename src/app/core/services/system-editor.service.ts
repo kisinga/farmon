@@ -3,7 +3,7 @@ import type { PinDef, PinCap } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
 import type { SystemTopology } from '../models/topology.model';
-import { collectPins } from '@far-mon/core';
+import { collectPins, NODE_REGISTRY } from '@far-mon/core';
 import { WorkspaceService } from './workspace.service';
 
 @Injectable({ providedIn: 'root' })
@@ -139,6 +139,20 @@ export class SystemEditorService {
   /** Generate a site-wide unique pipe ID via workspace. */
   nextPipeId(): string {
     return this.workspace.nextPipeId();
+  }
+
+  /** Clear all pin assignments across every node in the topology. */
+  clearAllPins(): void {
+    this.updateTopology((t) => {
+      for (const node of t.nodes) {
+        const desc = NODE_REGISTRY.get(node.kind);
+        if (!desc) continue;
+        for (const field of desc.sidebarFields) {
+          if (field.type !== 'pin') continue;
+          (node as unknown as Record<string, unknown>)[field.key] = '';
+        }
+      }
+    });
   }
 
   clear(): void {
