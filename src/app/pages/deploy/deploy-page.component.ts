@@ -1053,14 +1053,13 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     const sys = this.workspace.systems().get(systemId);
     if (!sys) return;
 
-    // Load board for validation
+    // Load board SVG for display, use workspace board for validation
     await this.boards.refresh();
     await this.boards.load(sys.topology.device.board);
 
     // Run validation
-    const board = this.boards.activeBoard();
-    if (board) {
-      const result = await this.electron.validate(sys.topology, board);
+    if (sys.board) {
+      const result = await this.electron.validate(sys.topology, sys.board);
       this.fwValidation.set(result);
     }
 
@@ -1116,10 +1115,9 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     this.fwError.set(null);
     this.compileSuccess.set(false);
     try {
-      const board = this.boards.activeBoard();
-      if (!board) throw new Error('No board loaded');
+      if (!sys.board) throw new Error('No board loaded');
       const siteId = this.workspace.site()?.id ?? '';
-      const result = await this.electron.generate(siteId, systemId, sys.topology, board);
+      const result = await this.electron.generate(siteId, systemId, sys.topology, sys.board);
       // Stale guard
       if (this.selectedSystemId() !== systemId) return;
       this.fwFiles.set(result.files);

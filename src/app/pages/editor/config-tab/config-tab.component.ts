@@ -112,7 +112,7 @@ const TIMING_FIELDS: TimingField[] = [
               @if (boards.activeSvg()) {
                 <div class="mt-3">
                   <app-board-svg
-                    [board]="boards.activeBoard()"
+                    [board]="editor.board()"
                     [svgContent]="boards.activeSvg()"
                     [usedPins]="editor.usedPins()"
                   />
@@ -192,8 +192,8 @@ export class ConfigTabComponent {
   }
 
   async changeBoard(boardId: string) {
-    await this.boards.load(boardId);
-    this.editor.updateTopology((t) => { t.device.board = boardId; });
+    const board = await this.boards.load(boardId);
+    this.editor.changeBoard(board);
   }
 
   protected getTimingValue(t: { timing: Record<string, string | number> }, field: TimingField): string | number {

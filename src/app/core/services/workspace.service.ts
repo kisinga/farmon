@@ -270,6 +270,22 @@ export class WorkspaceService {
     this.updateSystemTopology(id, updater);
   }
 
+  /** Atomically swap the board for the active system, updating both the BoardDef and topology.device.board. */
+  changeActiveBoard(board: BoardDef): void {
+    const id = this._activeSystemId();
+    if (!id) return;
+    const systems = this._systems();
+    const entry = systems.get(id);
+    if (!entry) return;
+    const clone = structuredClone(entry.topology);
+    clone.device.board = board.model;
+    const newSystems = new Map(systems);
+    newSystems.set(id, { topology: clone, board });
+    this._systems.set(newSystems);
+    this._dirtySystemIds.update(s => new Set(s).add(id));
+    this._dirty.set(true);
+  }
+
   updateSystemTopology(systemId: string, updater: (t: SystemTopology) => void): void {
     const systems = this._systems();
     const entry = systems.get(systemId);

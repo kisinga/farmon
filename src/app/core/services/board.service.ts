@@ -6,11 +6,9 @@ import type { BoardListEntry } from '../models/electron-api';
 @Injectable({ providedIn: 'root' })
 export class BoardService {
   private _boards = signal<BoardListEntry[]>([]);
-  private _activeBoard = signal<BoardDef | null>(null);
   private _activeSvg = signal<string | null>(null);
 
   readonly boards = this._boards.asReadonly();
-  readonly activeBoard = this._activeBoard.asReadonly();
   readonly activeSvg = this._activeSvg.asReadonly();
 
   constructor(private electron: ElectronService) {}
@@ -19,16 +17,14 @@ export class BoardService {
     this._boards.set(await this.electron.boardList());
   }
 
+  /** Fetch board from electron. Stores SVG for display, returns BoardDef for the caller. */
   async load(model: string): Promise<BoardDef> {
     const result = await this.electron.boardLoad(model);
-    const board = result.board as BoardDef;
-    this._activeBoard.set(board);
     this._activeSvg.set(result.svg);
-    return board;
+    return result.board as BoardDef;
   }
 
   clear(): void {
-    this._activeBoard.set(null);
     this._activeSvg.set(null);
   }
 }

@@ -1,5 +1,5 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import type { PinDef, PinCap } from '../models/board.model';
+import type { PinDef, PinCap, BoardDef } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
 import type { SystemTopology } from '../models/topology.model';
@@ -110,6 +110,12 @@ export class SystemEditorService {
   updateTopology(updater: (t: SystemTopology) => void): void {
     if (this._readonly()) return;
     this.workspace.updateActiveTopology(updater);
+  }
+
+  /** Atomically swap the board for the active system. */
+  changeBoard(board: BoardDef): void {
+    if (this._readonly()) return;
+    this.workspace.changeActiveBoard(board);
   }
 
   setValidation(result: ValidationResult): void {
