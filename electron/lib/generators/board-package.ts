@@ -83,6 +83,9 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
     ? ESP32S3_STRAPPING_PINS : ESP32_STRAPPING_PINS;
 
   for (const [busName, busDef] of Object.entries(board.buses)) {
+    // UART buses are user-configured per-topology (device-yaml.ts), not in the board package.
+    // The bus entry still reserves the pins via reservedPins().
+    if (busName === 'uart') continue;
     const busConfig: Record<string, unknown> = { id: `${busName}_bus` };
     for (const [key, val] of Object.entries(busDef)) {
       const pinVal = typeof val === 'string' && /^GPIO\d+$/.test(val) ? val : null;
@@ -264,7 +267,16 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   sections.push({ sensor: sensors });
 
   // --- Text sensors (diagnostics) ---
-  if (!board.peripherals.ethernet) {
+  if (board.peripherals.ethernet) {
+    sections.push({
+      text_sensor: [
+        {
+          platform: "ethernet_info",
+          ip_address: { name: "IP Address", id: "ip_addr" },
+        },
+      ],
+    });
+  } else {
     sections.push({
       text_sensor: [
         {

@@ -30,9 +30,17 @@ export const pinCapabilities: ManifestRule = {
 
         const validPins = getPins(field.pinCap);
         if (!validPins.has(pin)) {
+          // Expander pins (PCF8574 etc.) physically cannot do pulse counting — hard error.
+          // Native GPIO pins without pulse_counter in caps may still work — warning.
+          const pinDef = board.pins.find(p => p.gpio === pin);
+          const isExpanderPin = !!pinDef?.expander;
+          const severity = (field.pinCap === 'pulse_counter' && !isExpanderPin) ? 'warning' : 'error';
+          const detail = isExpanderPin && field.pinCap === 'pulse_counter'
+            ? ` (I2C expander ${pinDef!.expander} cannot do hardware pulse counting — use a native GPIO pin)`
+            : '';
           diagnostics.push({
-            severity: field.pinCap === 'pulse_counter' ? 'warning' : 'error',
-            message: `${desc.label} "${node['id']}": ${pin} does not have ${field.pinCap} capability on ${board.label}`,
+            severity,
+            message: `${desc.label} "${node['id']}": ${pin} does not have ${field.pinCap} capability on ${board.label}${detail}`,
             target: String(node['id']),
             ruleId: this.id,
           });

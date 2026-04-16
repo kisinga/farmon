@@ -15,8 +15,11 @@ const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "def
 const board: BoardDef = loadBoard(path.join(DEFAULTS, "boards/heltec-v3"));
 
 // --- GPIO pin pool (free pins on Heltec V3) ---
+// Must match board.yaml exposed pins — excludes reserved pins
+// (LoRa: GPIO8/9/10/11/12/13/14, OLED: GPIO21, I2C: GPIO17/18,
+//  Battery: GPIO1/37, LED: GPIO35, Vext: GPIO36)
 const FREE_PINS = [
-  2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 19, 20, 22, 23, 24, 25,
+  2, 3, 4, 5, 6, 7, 19, 20, 26, 33, 34,
   38, 39, 40, 41, 42, 45, 46, 47, 48,
 ];
 
@@ -246,16 +249,214 @@ run("valve_mask overflow (uint16_t = 16 bits)", [
   ["17 valves", { tanks: 2, valves: 17, flows: 1, routes: 3 }],
 ]);
 
+// =============================================================================
+// KC868-A16 — Segregated pin pools (expander outputs, native ADC, native pulse)
+// =============================================================================
+
+console.log("\n\n" + "\u2501".repeat(50));
+console.log("KC868-A16 Scaling Tests");
+console.log("\u2501".repeat(50));
+
+const kcBoard: BoardDef = loadBoard(path.join(DEFAULTS, "boards/kc868-a16"));
+
+// KC868 pin pools
+const KC_OUT_PINS = Array.from({ length: 16 }, (_, i) => `OUT${i + 1}`);
+const KC_ADC_PINS = ["GPIO36", "GPIO34", "GPIO35", "GPIO39"];
+const KC_PULSE_PINS = ["GPIO32", "GPIO33", "GPIO14"];
+
+function kcPin(pool: string[], i: number): string {
+  if (i < pool.length) return pool[i];
+  return `VIRTUAL${i}`; // validator will catch
+}
+
+interface KcScaleParams {
+  tanks: number;
+  valves: number;
+  flows: number;
+  routes: number;
+  pumps?: number; // defaults to 1
+}
+
+function buildKcManifest(p: KcScaleParams): Manifest {
+  const numPumps = p.pumps ?? 1;
+  let outIdx = 0;
+
+  // Pumps use OUT pins
+  const pumps = Array.from({ length: numPumps }, (_, i) => ({
+    kind: 'pump' as const,
+    id: `pump${i + 1}`,
+    name: `Pump ${i + 1}`,
+    pin: kcPin(KC_OUT_PINS, outIdx++),
+  }));
+
+  // Each valve uses 2 OUT pins
+  const valves = Array.from({ length: p.valves }, (_, i) => ({
+    kind: 'valve' as const,
+    id: `valve${i + 1}`,
+    name: `Valve ${i + 1}`,
+    open_pin: kcPin(KC_OUT_PINS, outIdx++),
+    close_pin: kcPin(KC_OUT_PINS, outIdx++),
+  }));
+
+  // Tanks use ADC pins
+  const tanks = Array.from({ length: p.tanks }, (_, i) => ({
+    kind: 'tank' as const,
+    id: `tank${i + 1}`,
+    name: `Tank ${i + 1}`,
+    level_pin: kcPin(KC_ADC_PINS, i),
+  }));
+
+  // Flow sensors use pulse counter pins
+  const flowCount = Math.max(p.flows, 1);
+  const flows = Array.from({ length: flowCount }, (_, i) => ({
+    kind: 'flow_sensor' as const,
+    id: `flow${i + 1}`,
+    name: `Flow ${i + 1}`,
+    pin: kcPin(KC_PULSE_PINS, i),
+    flow_cal: 450,
+  }));
+
+  const nodes = [...pumps, ...tanks, ...valves, ...flows];
+
+  const routes: Manifest["routes"] = [];
+  for (let r = 0; r < p.routes && routes.length < p.routes; r++) {
+    const srcIdx = r % p.tanks;
+    const v1Idx = r % p.valves;
+    const v2Idx = (r + 1) % p.valves;
+    const isRefill = r % 3 === 0 && p.tanks > 1;
+    const dstIdx = isRefill ? (srcIdx + 1) % p.tanks : undefined;
+    if (dstIdx === srcIdx) continue;
+
+    const routeValves = v1Idx === v2Idx
+      ? [`valve${v1Idx + 1}`]
+      : [`valve${v1Idx + 1}`, `valve${v2Idx + 1}`];
+
+    routes.push({
+      key: isRefill ? `tank${srcIdx + 1}>tank${dstIdx! + 1}` : `tank${srcIdx + 1}>endpoint`,
+      name: isRefill ? `R${r}:T${srcIdx + 1}>T${dstIdx! + 1}` : `R${r}:T${srcIdx + 1}>E`,
+      source: `tank${srcIdx + 1}`,
+      source_type: "tank" as const,
+      ...(isRefill ? { destination: `tank${dstIdx! + 1}` } : {}),
+      valves: routeValves,
+      flow_sensor: `flow${(r % flowCount) + 1}`,
+      max_runtime_seconds: isRefill ? 600 : 1800,
+      needs_pump: true,
+      nodeSequence: [],
+    } as Manifest["routes"][number]);
+  }
+
+  const defaultRoute: Manifest["routes"][number] = {
+    key: "tank1>endpoint", name: "R0", source: "tank1", source_type: "tank" as const,
+    valves: ["valve1"], flow_sensor: "flow1", max_runtime_seconds: 1800,
+    needs_pump: true, nodeSequence: ["tank1", "valve1", "pump1", "flow1", "endpoint"],
+  };
+
+  return {
+    device: { name: "kc-limit-test", friendly_name: "KC Limit Test", board: "kc868-a16" },
+    nodes,
+    routes: routes.length > 0 ? routes : [defaultRoute],
+    timing: {
+      valve_travel_time: "15s",
+      flow_watchdog_seconds: 30,
+      flow_confirm_seconds: 15,
+      api_watchdog_seconds: 300,
+      update_interval: "5s",
+    },
+    automations: [],
+  };
+}
+
+function runKcTest(label: string, p: KcScaleParams): TestResult {
+  const numPumps = p.pumps ?? 1;
+  const flowCount = Math.max(p.flows, 1);
+  const manifest = buildKcManifest(p);
+  const result: TestResult = {
+    label,
+    pins: numPumps + p.tanks + p.valves * 2 + flowCount,
+    routes: manifest.routes.length,
+    parseOk: true,
+    validateOk: false,
+    generateOk: false,
+    errors: [],
+    warnings: [],
+  };
+
+  const v = runManifestRules(manifest, kcBoard, undefined, { loose: true });
+  result.validateOk = v.ok;
+  result.warnings = v.warnings;
+  result.errors = v.errors;
+  if (!v.ok) return result;
+
+  try {
+    const files = generateAll(manifest, kcBoard);
+    result.generateOk = true;
+    const rh = files.find((f) => f.relativePath.endsWith("routes.h"));
+    if (rh) result.routesHLines = rh.content.split("\n").length;
+  } catch (err) {
+    result.errors.push(String(err));
+  }
+
+  return result;
+}
+
+function runKc(name: string, configs: Array<[string, KcScaleParams]>) {
+  const results = configs.map(([label, p]) => runKcTest(label, p));
+  suite(name, results);
+  totalPass += results.filter((r) => r.generateOk).length;
+  totalFail += results.filter((r) => !r.generateOk).length;
+}
+
+runKc("KC868 Valves (2 tanks, 1 flow, 1 pump)", [
+  ["1 valve", { tanks: 2, valves: 1, flows: 1, routes: 2 }],
+  ["4 valves", { tanks: 2, valves: 4, flows: 1, routes: 4 }],
+  ["7 valves", { tanks: 2, valves: 7, flows: 1, routes: 4 }],
+  ["8 valves (OUT overflow)", { tanks: 2, valves: 8, flows: 1, routes: 4 }],
+]);
+
+runKc("KC868 Valves no pump (2 tanks, 1 flow, VFD)", [
+  ["7 valves", { tanks: 2, valves: 7, flows: 1, routes: 4, pumps: 0 }],
+  ["8 valves", { tanks: 2, valves: 8, flows: 1, routes: 4, pumps: 0 }],
+  ["9 valves (OUT overflow)", { tanks: 2, valves: 9, flows: 1, routes: 4, pumps: 0 }],
+]);
+
+runKc("KC868 Tanks (4 valves, 1 flow)", [
+  ["1 tank", { tanks: 1, valves: 4, flows: 1, routes: 2 }],
+  ["2 tanks", { tanks: 2, valves: 4, flows: 1, routes: 4 }],
+  ["4 tanks", { tanks: 4, valves: 4, flows: 1, routes: 8 }],
+  ["5 tanks (ADC overflow)", { tanks: 5, valves: 4, flows: 1, routes: 10 }],
+]);
+
+runKc("KC868 Flow sensors (2 tanks, 4 valves)", [
+  ["1 flow", { tanks: 2, valves: 4, flows: 1, routes: 4 }],
+  ["2 flows", { tanks: 2, valves: 4, flows: 2, routes: 4 }],
+  ["3 flows", { tanks: 2, valves: 4, flows: 3, routes: 4 }],
+  ["4 flows (pulse overflow)", { tanks: 2, valves: 4, flows: 4, routes: 4 }],
+]);
+
+runKc("KC868 Max config (4 tanks, 7 valves, 3 flows, 1 pump)", [
+  ["N=2 (2T 4V 2F)", { tanks: 2, valves: 4, flows: 2, routes: 4 }],
+  ["N=3 (3T 6V 3F)", { tanks: 3, valves: 6, flows: 3, routes: 9 }],
+  ["N=4 max (4T 7V 3F)", { tanks: 4, valves: 7, flows: 3, routes: 12 }],
+  ["Over max (5T 8V 4F)", { tanks: 5, valves: 8, flows: 4, routes: 16 }],
+]);
+
 // --- Summary ---
 
 console.log(`\n${"\u2501".repeat(50)}`);
-console.log("Hard limits:");
+console.log("Hard limits (Heltec V3):");
 console.log("  valve_mask      uint16_t       \u2192 max 16 valves/controller");
 console.log("  ADC pins        ESP32-S3       \u2192 max ~10 native tank sensors");
 console.log("  Pulse counter   native GPIO    \u2192 max ~6 flow sensors");
 console.log("  GPIO budget     Heltec V3      \u2192 ~17 free (expandable via I2C)");
 console.log("  Routes          flash memory   \u2192 practically unlimited");
 console.log("  Flow sensors    1 per route    \u2192 every route requires a flow sensor");
+console.log("");
+console.log("Hard limits (KC868-A16):");
+console.log("  Relay outputs   16x PCF8574    \u2192 max 7 valves + 1 pump (or 8 valves with VFD)");
+console.log("  ADC inputs      4x native      \u2192 max 4 tanks with level sensors");
+console.log("  Pulse counter   3x native      \u2192 max 3 flow sensors");
+console.log("  valve_mask      uint16_t       \u2192 max 16 valves (but relay-limited to 7-8)");
+console.log("  Routes          flash memory   \u2192 max 16 (conflict_mask limit)");
 
 console.log(`\n${totalPass} passed, ${totalFail} expected failures`);
 process.exit(0);

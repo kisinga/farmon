@@ -45,6 +45,9 @@ buses:
     sda: GPIO4
     scl: GPIO5
     frequency: 100kHz
+  uart:
+    tx: GPIO13
+    rx: GPIO16
 
 expanders:
   - id: pcf8574_out_1

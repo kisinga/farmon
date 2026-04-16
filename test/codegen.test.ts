@@ -8,7 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifest } from "@far-mon/core";
+import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifest, reservedPins } from "@far-mon/core";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
 import { validateAll } from "../electron/lib/validate.js";
 import { generateAll, type GeneratedFile } from "../electron/lib/generate.js";
@@ -70,7 +70,7 @@ const waterSources = nodesByKind(manifest.nodes, 'water_source');
 
 console.log("Board definition:");
 assert(board.model === "heltec_v3", `Board model = ${board.model}`);
-assert(board.pins.length === 21, `${board.pins.length} exposed pins`);
+assert(board.pins.length === 20, `${board.pins.length} exposed pins`);
 assert(!!board.peripherals.oled, "Has OLED peripheral");
 assert(!!board.peripherals.battery, "Has battery peripheral");
 assert(!!board.peripherals.lora, "Has LoRa peripheral");
@@ -405,6 +405,15 @@ assert(kcBoardPkg.includes("0x24"), "PCF8574 output expander 1 address");
 assert(kcBoardPkg.includes("0x25"), "PCF8574 output expander 2 address");
 assert(kcBoardPkg.includes("uptime_sec"), "Has uptime sensor");
 assert(!kcBoardPkg.includes("wifi_dbm"), "No WiFi signal sensor (ethernet board)");
+assert(kcBoardPkg.includes("ethernet_info"), "Has ethernet_info text sensor for IP address");
+assert(kcBoardPkg.includes("ip_addr"), "Has IP address entity");
+assert(!kcBoardPkg.includes("\nuart:"), "No uart: section in board package (user-configured per topology)");
+
+// RS485 bus pin reservation
+console.log("\nRS485 pin reservation:");
+const kcReserved = reservedPins(kcBoard);
+assert(kcReserved.has("GPIO13"), `GPIO13 reserved for ${kcReserved.get("GPIO13")}`);
+assert(kcReserved.has("GPIO16"), `GPIO16 reserved for ${kcReserved.get("GPIO16")}`);
 
 // --- Hardware (expander pin resolution) ---
 

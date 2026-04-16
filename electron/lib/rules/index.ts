@@ -29,6 +29,7 @@ import { routeConcurrency } from "./manifest/route-concurrency.js";
 import { automationRouteRef } from "./manifest/automation-route-ref.js";
 import { routeCount } from "./manifest/route-count.js";
 import { timingSanity } from "./manifest/timing-sanity.js";
+import { boardCapacity } from "./manifest/board-capacity.js";
 
 // Entity-specific topology rules are registered on NodeDescriptor.rules
 // and collected by the runner via NODE_REGISTRY. No imports needed here.
@@ -50,6 +51,7 @@ export const ALL_MANIFEST_RULES: ManifestRule[] = [
   routeConcurrency,
   automationRouteRef,
   timingSanity,
+  boardCapacity,
 ];
 
 // Convenience wrappers with default rule sets
