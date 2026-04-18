@@ -1,6 +1,6 @@
 import type { TestProbe } from '../probe.js';
 import { resultId, detailId, relayId, relayPins } from '../probe.js';
-import { resolvePinYaml } from '@far-mon/core';
+import { createBoardDriver } from '@far-mon/core';
 
 export const relayCycleProbe: TestProbe = {
   id: 'relay_cycle',
@@ -105,13 +105,13 @@ ${readbackCases.join('\n')}
   },
 
   yaml: (board) => {
+    const driver = createBoardDriver(board);
     const relays = relayPins(board);
     const blocks = relays.map(pin => {
-      const pinYaml = resolvePinYaml(pin.gpio, board, { inverted: true });
-      const indentedPin = pinYaml.split('\n').map(l => `      ${l.trim()}`).join('\n');
-      return `  - platform: gpio
-    pin:
-${indentedPin}
+      const ch = driver.resolve(pin.gpio, { purpose: 'digital_out', inverted: true });
+      const header = `- platform: ${ch.platform}\n  ${ch.config}`;
+      const indented = header.split('\n').map(l => `  ${l}`).join('\n');
+      return `${indented}
     id: ${relayId(pin)}
     name: "Relay ${pin.gpio}"
     internal: true

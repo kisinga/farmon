@@ -36,6 +36,10 @@ export function createBoardDriver(board: BoardDef): IoProviderDriver {
         case 'digital_out':
         case 'digital_in':
           return { platform: 'gpio', config: `pin:\n    ${pinYaml}` };
+        default: {
+          const _exhaustive: never = usage.purpose;
+          throw new Error(`Unknown channel purpose: ${_exhaustive}`);
+        }
       }
     },
   };

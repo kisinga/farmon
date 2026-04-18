@@ -17,6 +17,7 @@ export type {
 export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
+export type { IoProviderDef } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
 export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext, TypedDescriptor } from './entity-registry';
 export type { ChannelUsage, ResolvedChannel, IoChannel, IoProviderDriver } from './io-provider.types';
@@ -30,7 +31,7 @@ export type { BoundaryPort } from './graph/boundary-ports';
 
 // --- Schemas ---
 export { TopologySchema, parseTopology, parsePortRef, portRef, type Topology } from './topology-schema';
-export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, UartBusSchema, NetworkConfigSchema, parseDurationMs, escXml } from './schemas';
+export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, parseDurationMs, escXml } from './schemas';
 
 // --- Registry ---
 export { NODE_REGISTRY, ALL_DESCRIPTORS, REGISTRY_RULES, legendSvgFor, nodesWithFlag, getTypedDescriptor } from './entity-registry';
@@ -57,12 +58,13 @@ export {
   tankLevelId, tankRawVoltageId, tankCalEmptyId, tankCalFullId,
   pressureSensorId, waterSourcePressureId,
   dosingPumpSwitchId, filterInletPressureId, filterOutletPressureId, filterDeltaPressureId,
-  resolvePinYaml,
 } from './codegen-ids';
 
 // --- I/O Providers ---
 export { createBoardDriver } from './io-providers/board-driver';
 export { buildResolveChannel, resolveComponentHeader } from './io-providers/resolve-channel';
+export { createModbusControllerDriver } from './io-providers/modbus-controller-driver';
+export { createProviderDriver } from './io-providers/provider-factory';
 
 // --- Static ---
 export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';

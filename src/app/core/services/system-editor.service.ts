@@ -3,7 +3,8 @@ import type { PinDef, PinCap, BoardDef } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
 import type { SystemTopology } from '../models/topology.model';
-import { collectPins, NODE_REGISTRY } from '@far-mon/core';
+import { collectPins, NODE_REGISTRY, createBoardDriver, createProviderDriver } from '@far-mon/core';
+import type { IoProviderDriver, IoProviderDef } from '@far-mon/core';
 import { WorkspaceService } from './workspace.service';
 
 @Injectable({ providedIn: 'root' })
@@ -25,11 +26,41 @@ export class SystemEditorService {
 
   readonly readonly = this._readonly.asReadonly();
 
-  // --- Pin computeds (derived from delegated topology/board) ---
+  // --- Transport-agnostic channel computeds ---
+
+  /** All driver instances — board is just another driver. */
+  private readonly drivers = computed(() => {
+    const board = this.board();
+    const topology = this.topology();
+    if (!board) return [];
+
+    const result: Array<{ id: string; label: string; driver: IoProviderDriver }> = [
+      { id: 'board', label: 'Board', driver: createBoardDriver(board) },
+    ];
+
+    for (const provDef of topology?.device.io_providers ?? []) {
+      try {
+        result.push({
+          id: provDef.id,
+          label: `${provDef.id} (${provDef.type})`,
+          driver: createProviderDriver(provDef),
+        });
+      } catch { /* skip unknown types */ }
+    }
+    return result;
+  });
 
   readonly reservedPins = computed(() => {
     const b = this.board();
-    return b ? reservedPins(b) : new Map<string, string>();
+    const reserved = b ? reservedPins(b) : new Map<string, string>();
+    // Add pins consumed by I/O provider infrastructure
+    for (const { id, driver } of this.drivers()) {
+      if (id === 'board') continue;
+      for (const pin of driver.consumedPins?.() ?? []) {
+        reserved.set(pin, `${id} infrastructure`);
+      }
+    }
+    return reserved;
   });
 
   readonly exposedPins = computed(() => {
@@ -55,6 +86,7 @@ export class SystemEditorService {
     return b ? b.pins : [];
   });
 
+  /** @deprecated Use availableChannels() — this wrapper exists for backward compat. */
   availablePins(cap?: PinCap): (PinDef & { usedBy?: string })[] {
     const pins = this.boardPins();
     const reserved = this.reservedPins();
@@ -63,6 +95,52 @@ export class SystemEditorService {
       .filter(p => !reserved.has(p.gpio))
       .filter(p => !cap || p.caps.includes(cap))
       .map(p => ({ ...p, usedBy: used.get(p.gpio) }));
+  }
+
+  /** Enumerate channels from ALL drivers (board + providers), filtered by capability. */
+  availableChannels(cap?: PinCap): Array<{
+    id: string; label: string; caps: PinCap[];
+    provider: string; providerLabel: string; usedBy?: string;
+  }> {
+    const reserved = this.reservedPins();
+    const used = this.usedPins();
+    const result: Array<{
+      id: string; label: string; caps: PinCap[];
+      provider: string; providerLabel: string; usedBy?: string;
+    }> = [];
+
+    for (const { id, label, driver } of this.drivers()) {
+      for (const ch of driver.enumerate()) {
+        if (reserved.has(ch.fqid)) continue;
+        if (cap && !ch.caps.includes(cap)) continue;
+        result.push({
+          id: ch.fqid, label: ch.label, caps: ch.caps,
+          provider: id, providerLabel: label,
+          usedBy: used.get(ch.fqid),
+        });
+      }
+    }
+    return result;
+  }
+
+  /** Group channels by provider for optgroup rendering. */
+  channelGroups(cap?: PinCap): Array<{ provider: string; label: string; channels: Array<{
+    id: string; label: string; caps: PinCap[]; usedBy?: string;
+  }> }> {
+    const channels = this.availableChannels(cap);
+    const groups = new Map<string, { provider: string; label: string; channels: typeof channels }>();
+    for (const ch of channels) {
+      let group = groups.get(ch.provider);
+      if (!group) { group = { provider: ch.provider, label: ch.providerLabel, channels: [] }; groups.set(ch.provider, group); }
+      group.channels.push(ch);
+    }
+    return [...groups.values()];
+  }
+
+  /** List available I/O providers, optionally filtered by type. */
+  availableProviders(type?: string): IoProviderDef[] {
+    const providers = this.topology()?.device.io_providers ?? [];
+    return type ? providers.filter(p => p.type === type) : [...providers];
   }
 
   readonly gpioUsage = computed(() => {

@@ -4,7 +4,7 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
-import { slug } from '@far-mon/core';
+import { slug, NODE_REGISTRY } from '@far-mon/core';
 
 interface TimingField {
   key: string;
@@ -122,6 +122,58 @@ const TIMING_FIELDS: TimingField[] = [
           </div>
         </div>
 
+        <!-- I/O Providers -->
+        <div class="card bg-base-100 shadow-sm border border-base-200">
+          <div class="card-body gap-4">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-base">I/O Providers</h2>
+              <button class="btn btn-sm btn-primary" (click)="addProvider()">+ Add</button>
+            </div>
+            @for (prov of t.device.io_providers ?? []; track prov.id) {
+              <div class="border border-base-200 rounded-lg p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <input class="input input-xs input-bordered font-mono w-28"
+                      [ngModel]="prov.id"
+                      (ngModelChange)="updateProviderId(prov.id, $event)" />
+                    <select class="select select-xs select-bordered"
+                      [ngModel]="prov.type"
+                      (ngModelChange)="updateProviderType(prov.id, $event)">
+                      <option value="modbus_controller">Modbus Controller</option>
+                    </select>
+                  </div>
+                  <button class="btn btn-ghost btn-xs text-error" (click)="removeProvider(prov.id)">Remove</button>
+                </div>
+                @if (prov.type === 'modbus_controller') {
+                  <div class="grid grid-cols-2 gap-2">
+                    <label class="form-control">
+                      <span class="label-text text-xs">UART Bus</span>
+                      <select class="select select-xs select-bordered font-mono"
+                        [ngModel]="$any(prov.config)['bus']"
+                        (ngModelChange)="updateProviderConfig(prov.id, 'bus', $event)">
+                        <option value="">--</option>
+                        @for (bus of t.device.uart_buses ?? []; track bus.id) {
+                          <option [value]="bus.id">{{ bus.id }}</option>
+                        }
+                      </select>
+                    </label>
+                    <label class="form-control">
+                      <span class="label-text text-xs">Address</span>
+                      <input type="number" class="input input-xs input-bordered font-mono"
+                        [ngModel]="$any(prov.config)['address']"
+                        (ngModelChange)="updateProviderConfig(prov.id, 'address', +$event)"
+                        min="1" max="247" />
+                    </label>
+                  </div>
+                }
+              </div>
+            }
+            @if (!(t.device.io_providers ?? []).length) {
+              <p class="text-sm text-base-content/50">No I/O providers configured.</p>
+            }
+          </div>
+        </div>
+
         <!-- Timing & Safety Constants -->
         <div>
           <h2 class="text-lg font-semibold">Timing & Safety Constants</h2>
@@ -202,6 +254,58 @@ export class ConfigTabComponent {
 
   protected fieldsByGroup(group: string): TimingField[] {
     return TIMING_FIELDS.filter((f) => f.group === group);
+  }
+
+  addProvider() {
+    this.editor.updateTopology(t => {
+      if (!t.device.io_providers) t.device.io_providers = [];
+      const n = t.device.io_providers.length + 1;
+      t.device.io_providers.push({
+        id: `provider_${n}`,
+        type: 'modbus_controller',
+        config: { bus: '', address: 1 },
+      });
+    });
+  }
+
+  removeProvider(id: string) {
+    this.editor.updateTopology(t => {
+      t.device.io_providers = (t.device.io_providers ?? []).filter(p => p.id !== id);
+    });
+  }
+
+  updateProviderId(oldId: string, newId: string) {
+    if (!newId || oldId === newId) return;
+    this.editor.updateTopology(t => {
+      const prov = (t.device.io_providers ?? []).find(p => p.id === oldId);
+      if (!prov) return;
+      prov.id = newId;
+      // Cascade: update all node fields that reference this provider
+      for (const node of t.nodes) {
+        const desc = NODE_REGISTRY.get(node.kind);
+        if (!desc) continue;
+        for (const field of desc.sidebarFields) {
+          if (field.type !== 'provider') continue;
+          if ((node as Record<string, unknown>)[field.key] === oldId) {
+            (node as Record<string, unknown>)[field.key] = newId;
+          }
+        }
+      }
+    });
+  }
+
+  updateProviderType(id: string, type: string) {
+    this.editor.updateTopology(t => {
+      const prov = (t.device.io_providers ?? []).find(p => p.id === id);
+      if (prov) { prov.type = type; prov.config = {}; }
+    });
+  }
+
+  updateProviderConfig(id: string, key: string, value: unknown) {
+    this.editor.updateTopology(t => {
+      const prov = (t.device.io_providers ?? []).find(p => p.id === id);
+      if (prov) (prov.config as Record<string, unknown>)[key] = value;
+    });
   }
 
   updateTiming(key: string, value: string) {

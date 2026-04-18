@@ -55,6 +55,7 @@ function reconstructTopology(
       board,
       directory: directory ?? undefined,
       uart_buses: storedTopology.uart_buses,
+      io_providers: storedTopology.io_providers,
       network: storedTopology.network as any,
     },
     nodes: storedTopology.nodes ?? [],
@@ -306,6 +307,7 @@ export function registerIpcHandlers() {
         },
         automations: templateData.automations ?? [],
         uart_buses: (device as Record<string, unknown>)?.uart_buses,
+        io_providers: (device as Record<string, unknown>)?.io_providers,
       };
 
       const system = {

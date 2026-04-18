@@ -19,10 +19,12 @@ import type { FlowConstraint } from './graph/constraints';
 export interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'pin' | 'toggle';
+  type: 'text' | 'number' | 'pin' | 'toggle' | 'provider';
   placeholder?: string;
-  /** Pin capability required for this field, e.g. 'adc'. Filters pin selection and drives validation. */
+  /** Channel capability required for this field, e.g. 'adc'. Filters channel selection and drives validation. */
   pinCap?: PinCap;
+  /** For type: 'provider' — filter available providers by this type (e.g. 'modbus_controller'). */
+  providerType?: string;
 }
 
 // ---------------------------------------------------------------------------

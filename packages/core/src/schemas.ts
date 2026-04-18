@@ -50,12 +50,19 @@ export const NetworkConfigSchema = z.object({
   dns2: z.string().optional(),
 });
 
+export const IoProviderDefSchema = z.object({
+  id: ComponentId,
+  type: z.string().min(1),
+  config: z.record(z.unknown()),
+});
+
 export const DeviceSchema = z.object({
   name: z.string().min(1),
   friendly_name: z.string().min(1),
   board: z.string().min(1),
   directory: z.string().optional(),
   uart_buses: z.array(UartBusSchema).default([]),
+  io_providers: z.array(IoProviderDefSchema).default([]),
   network: NetworkConfigSchema.optional(),
 });
 

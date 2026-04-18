@@ -28,16 +28,18 @@ export interface ResolvedChannel {
   /**
    * Pre-indented YAML config fragment at 2-space level (under `- platform:`).
    *
-   * resolvePinYaml's internal `\n    ` (4-space) joiner composes correctly
-   * when placed after `pin:\n    ` — the indentation nests naturally.
-   *
    * Examples:
    *   Native ADC:  "pin:\n    number: GPIO36\n  attenuation: 12db"
    *   Expander:    "pin:\n    pcf8574: exp1\n    number: 2\n    mode: ...\n    inverted: true"
-   *   Modbus ADC:  "modbus_controller_id: exp1\n  address: 0x0002\n  register_type: input\n  value_type: U_WORD"
-   *   Analog MUX:  "number: 3\n  sensor: mux1_adc\n  cd74hc4067_id: mux1"
+   *   Modbus:      "modbus_controller_id: uart_modbus_modbus"
    */
   config: string;
+  /**
+   * ESPHome component ID for use in C++ lambdas (e.g., `id(controllerId)`).
+   * Set by transport drivers that expose a referenceable ESPHome component.
+   * Board driver: undefined. Modbus: the modbus component ID.
+   */
+  controllerId?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -108,6 +108,12 @@ export interface UartBus {
   baud_rate: number;
 }
 
+export interface IoProviderDef {
+  id: string;
+  type: string;
+  config: Record<string, unknown>;
+}
+
 export interface NetworkConfig {
   mode: 'dhcp' | 'static';
   static_ip?: string;
@@ -125,6 +131,7 @@ export interface SystemTopology {
     board: string;
     directory?: string;
     uart_buses?: UartBus[];
+    io_providers?: IoProviderDef[];
     network?: NetworkConfig;
   };
   nodes: TopologyNode[];

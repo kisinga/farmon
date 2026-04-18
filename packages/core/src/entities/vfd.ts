@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { pumpSwitchId } from '../codegen-ids';
+import { resolveComponentHeader } from '../io-providers/resolve-channel';
 
 const COLOR = '#7c3aed'; // violet
 const S = 60;
@@ -13,8 +14,7 @@ export const VfdNodeSchema = z.object({
   kind: z.literal('vfd'),
   id: ComponentId,
   name: z.string().default('VFD Pump'),
-  bus: ComponentId,
-  modbus_address: z.number().min(1).max(247),
+  controller: ComponentId,
   start_register: z.number().default(0x0001),
   speed_register: z.number().optional(),
   max_frequency: z.number().default(50),
@@ -54,7 +54,7 @@ export const vfdDescriptor: NodeDescriptor = {
     { id: 'in', label: 'Inlet', direction: 'inlet' },
     { id: 'out', label: 'Outlet', direction: 'outlet' },
   ],
-  defaultData: () => ({ name: 'VFD Pump', bus: '', modbus_address: 1, max_frequency: 50 }),
+  defaultData: () => ({ name: 'VFD Pump', controller: '', max_frequency: 50 }),
 
   renderSvg: (_data) => {
     const cx = S / 2, cy = S / 2, r = S / 2 - 5;
@@ -68,8 +68,7 @@ export const vfdDescriptor: NodeDescriptor = {
   },
 
   sidebarFields: [
-    { key: 'bus', label: 'UART Bus', type: 'text', placeholder: 'uart_modbus' },
-    { key: 'modbus_address', label: 'Modbus Address', type: 'number' },
+    { key: 'controller', label: 'Controller', type: 'provider', providerType: 'modbus_controller' },
     { key: 'start_register', label: 'Start Register', type: 'number' },
     { key: 'speed_register', label: 'Speed Register', type: 'number' },
     { key: 'max_frequency', label: 'Max Frequency (Hz)', type: 'number' },
@@ -82,13 +81,13 @@ export const vfdDescriptor: NodeDescriptor = {
   // --- Codegen ---
 
   codegen: {
-    hardware: (node: VfdNode) => {
+    hardware: (node: VfdNode, _idx, ctx) => {
       const id = pumpSwitchId();
+      const header = resolveComponentHeader(ctx, node.controller, { purpose: 'digital_out' });
       return `\
 # --- VFD: ${node.name} ---
 # Modbus start/stop switch — same id (${id}) as GPIO pump for state machine compat
-- platform: modbus_controller
-  modbus_controller_id: ${node.bus}_modbus
+${header}
   id: ${id}
   name: "${node.name}"
   icon: "mdi:pump"
@@ -100,12 +99,12 @@ export const vfdDescriptor: NodeDescriptor = {
     return x;`;
     },
 
-    sensors: (node: VfdNode) => {
+    sensors: (node: VfdNode, _idx, ctx) => {
       const parts: string[] = [];
       if (node.power_register != null) {
+        const header = resolveComponentHeader(ctx, node.controller, { purpose: 'adc' });
         parts.push(`\
-- platform: modbus_controller
-  modbus_controller_id: ${node.bus}_modbus
+${header}
   id: ${node.id}_power
   name: "${node.name} Power"
   register_type: holding
@@ -116,9 +115,9 @@ export const vfdDescriptor: NodeDescriptor = {
   accuracy_decimals: 1`);
       }
       if (node.frequency_register != null) {
+        const header = resolveComponentHeader(ctx, node.controller, { purpose: 'adc' });
         parts.push(`\
-- platform: modbus_controller
-  modbus_controller_id: ${node.bus}_modbus
+${header}
   id: ${node.id}_frequency
   name: "${node.name} Frequency"
   register_type: holding
@@ -129,9 +128,9 @@ export const vfdDescriptor: NodeDescriptor = {
   accuracy_decimals: 1`);
       }
       if (node.fault_register != null) {
+        const header = resolveComponentHeader(ctx, node.controller, { purpose: 'adc' });
         parts.push(`\
-- platform: modbus_controller
-  modbus_controller_id: ${node.bus}_modbus
+${header}
   id: ${node.id}_fault_code
   name: "${node.name} Fault Code"
   register_type: holding
@@ -143,12 +142,12 @@ export const vfdDescriptor: NodeDescriptor = {
       return parts.join('\n');
     },
 
-    extraComponents: (node: VfdNode) => {
+    extraComponents: (node: VfdNode, _idx, ctx) => {
       const sections: Record<string, string> = {};
       if (node.speed_register != null) {
+        const header = resolveComponentHeader(ctx, node.controller, { purpose: 'digital_out' });
         sections['number'] = `\
-- platform: modbus_controller
-  modbus_controller_id: ${node.bus}_modbus
+${header}
   id: ${node.id}_speed_setpoint
   name: "${node.name} Speed Setpoint"
   register_type: holding
@@ -160,6 +159,10 @@ export const vfdDescriptor: NodeDescriptor = {
   value_type: U_WORD`;
       }
       if (node.fault_reset_register != null) {
+        // Template button — uses controllerId for raw Modbus write in C++ lambda
+        const ch = ctx.resolveChannel(node.controller, { purpose: 'digital_out' });
+        if (!ch.controllerId) throw new Error(`Provider "${node.controller}" did not return controllerId for fault reset lambda`);
+        const modbusRef = ch.controllerId;
         sections['button'] = `\
 - platform: template
   id: ${node.id}_fault_reset
@@ -167,7 +170,7 @@ export const vfdDescriptor: NodeDescriptor = {
   icon: "mdi:restart"
   on_press:
     - lambda: |-
-        auto call = id(${node.bus}_modbus).make_set_holding_call();
+        auto call = id(${modbusRef}).make_set_holding_call();
         call.set_address(${node.fault_reset_register});
         call.set_value(1);
         call.perform();

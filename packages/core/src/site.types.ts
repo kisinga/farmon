@@ -34,7 +34,7 @@ export interface LinkData {
 // Stored topology (the JSON blob in the systems table)
 // ---------------------------------------------------------------------------
 
-import type { TopologyNode, PipeSegment, RouteOverride, Automation, UartBus, NetworkConfig } from './topology.types';
+import type { TopologyNode, PipeSegment, RouteOverride, Automation, UartBus, IoProviderDef, NetworkConfig } from './topology.types';
 
 export interface StoredTopology {
   nodes: TopologyNode[];
@@ -49,6 +49,7 @@ export interface StoredTopology {
   };
   automations: Automation[];
   uart_buses?: UartBus[];
+  io_providers?: IoProviderDef[];
   network?: NetworkConfig;
 }
 

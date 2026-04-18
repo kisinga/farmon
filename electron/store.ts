@@ -534,6 +534,7 @@ export function scanLegacyData(): LegacyImportResult {
               timing: migrated.timing ?? {},
               automations: migrated.automations ?? [],
               uart_buses: device?.uart_buses,
+              io_providers: device?.io_providers,
             },
             position: { x: pos?.x ?? 0, y: pos?.y ?? 0 },
           });

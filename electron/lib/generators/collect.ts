@@ -1,6 +1,6 @@
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
-import { nodesByKind, NODE_REGISTRY, buildResolveChannel } from '@far-mon/core';
+import { nodesByKind, NODE_REGISTRY, buildResolveChannel, createProviderDriver } from '@far-mon/core';
 import type { CodegenContext } from '@far-mon/core';
 
 // ---------------------------------------------------------------------------
@@ -21,8 +21,13 @@ export interface CollectedCodegen {
 // ---------------------------------------------------------------------------
 
 export function collectEntityCodegen(m: Manifest, board: BoardDef): CollectedCodegen {
+  const providers = (m.device.io_providers ?? []).map(def => ({
+    id: def.id,
+    driver: createProviderDriver(def),
+  }));
+
   const ctx: CodegenContext = {
-    resolveChannel: buildResolveChannel(board),
+    resolveChannel: buildResolveChannel(board, providers),
   };
 
   const result: CollectedCodegen = {

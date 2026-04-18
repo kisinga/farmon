@@ -10,6 +10,12 @@ device:
       rx_pin: GPIO18
       de_pin: GPIO19
       baud_rate: 9600
+  io_providers:
+    - id: vfd1_ctrl
+      type: modbus_controller
+      config:
+        bus: uart_modbus
+        address: 1
 nodes:
   - kind: tank
     id: tank1
@@ -30,8 +36,7 @@ nodes:
   - kind: vfd
     id: vfd1
     name: Main VFD
-    bus: uart_modbus
-    modbus_address: 1
+    controller: vfd1_ctrl
     start_register: 1
     speed_register: 2
     max_frequency: 50

@@ -45,10 +45,24 @@ export type { Selection };
                 [ngModel]="$any(sn.node)[field.key]"
                 (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })">
                 <option value="">-- select --</option>
-                @for (pin of editor.availablePins(field.pinCap); track pin.gpio) {
-                  <option [value]="pin.gpio" [disabled]="!!pin.usedBy">
-                    {{ pin.gpio }} [{{ pin.caps.join(', ') }}]{{ pin.usedBy ? ' (' + pin.usedBy + ')' : '' }}
-                  </option>
+                @for (group of editor.channelGroups(field.pinCap); track group.provider) {
+                  <optgroup [label]="group.label">
+                    @for (ch of group.channels; track ch.id) {
+                      <option [value]="ch.id" [disabled]="!!ch.usedBy">
+                        {{ ch.label }} [{{ ch.caps.join(', ') }}]{{ ch.usedBy ? ' (' + ch.usedBy + ')' : '' }}
+                      </option>
+                    }
+                  </optgroup>
+                }
+              </select>
+            } @else if (field.type === 'provider') {
+              <select class="select select-xs select-bordered flex-1 font-mono"
+                [class.select-warning]="!$any(sn.node)[field.key]"
+                [ngModel]="$any(sn.node)[field.key]"
+                (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })">
+                <option value="">-- select --</option>
+                @for (prov of editor.availableProviders(field.providerType); track prov.id) {
+                  <option [value]="prov.id">{{ prov.id }}</option>
                 }
               </select>
             } @else if (field.type === 'number') {

@@ -6,27 +6,36 @@
  *   resolveComponentHeader()  — composition utility, called by every entity
  */
 
-import type { ChannelUsage, ResolvedChannel } from '../io-provider.types';
+import type { ChannelUsage, ResolvedChannel, IoProviderDriver } from '../io-provider.types';
 import type { BoardDef } from '../board.types';
 import type { CodegenContext } from '../entity-registry';
 import { createBoardDriver } from './board-driver';
 
 /**
  * Factory — builds the resolveChannel function for a given board
- * (and future io_providers). Called once by collect.ts.
+ * and optional I/O providers. Called once by collect.ts.
  */
 export function buildResolveChannel(
   board: BoardDef,
-  // Future: providers?: Array<{ id: string; driver: IoProviderDriver }>
+  providers?: Array<{ id: string; driver: IoProviderDriver }>,
 ): (channelId: string, usage: ChannelUsage) => ResolvedChannel {
   const boardDrv = createBoardDriver(board);
-  // Future: build a Map<string, IoProviderDriver> from providers param
+  const providerMap = new Map(providers?.map(p => [p.id, p.driver]) ?? []);
 
   return (channelId: string, usage: ChannelUsage): ResolvedChannel => {
-    // Future: if channelId contains ':', split on first ':' and look up provider driver
-    // const colonIdx = channelId.indexOf(':');
-    // if (colonIdx > 0) { ... look up driver ... }
-
+    // Channel on a provider: "mux1:CH3" → split, dispatch to provider
+    const colonIdx = channelId.indexOf(':');
+    if (colonIdx > 0) {
+      const providerId = channelId.slice(0, colonIdx);
+      const channel = channelId.slice(colonIdx + 1);
+      const driver = providerMap.get(providerId);
+      if (!driver) throw new Error(`Unknown I/O provider "${providerId}" in channel "${channelId}"`);
+      return driver.resolve(channel, usage);
+    }
+    // Direct provider reference (transport endpoint): "vfd1_ctrl"
+    const directDriver = providerMap.get(channelId);
+    if (directDriver) return directDriver.resolve('', usage);
+    // Board pin: "GPIO36", "OUT1"
     return boardDrv.resolve(channelId, usage);
   };
 }
