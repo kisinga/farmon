@@ -194,13 +194,13 @@ function buildOledDisplay(board: BoardDef, m: Manifest): string {
   const oled = board.peripherals.oled!;
   const resetPin = oled.reset_pin;
 
-  // Generate tank level lines dynamically (up to 2 fit side-by-side on 128px OLED)
-  const displayTanks = nodesWithFlag(m.nodes, 'isLevelSensor').filter((t) => t['level_pin']).slice(0, 2);
-  const tankLines = displayTanks.map((t, i) => {
+  // Generate level sensor lines dynamically (up to 2 fit side-by-side on 128px OLED)
+  const displayLevelSensors = nodesWithFlag(m.nodes, 'isLevelSensor').slice(0, 2);
+  const tankLines = displayLevelSensors.map((ls, i) => {
     const x = i === 0 ? 0 : 64;
-    const name = t['name'] as string;
-    const id = t['id'] as string;
-    const label = name.length > 4 ? `T${i + 1}` : name;
+    const name = ls['name'] as string;
+    const id = ls['id'] as string;
+    const label = name.length > 4 ? `L${i + 1}` : name;
     return `          if (id(${id}_level).has_state() && !std::isnan(id(${id}_level).state))
             it.printf(${x}, 39, id(font_body), "${label}: %.0f%%", id(${id}_level).state);`;
   }).join("\n");

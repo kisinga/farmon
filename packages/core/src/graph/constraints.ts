@@ -3,12 +3,15 @@
  * evaluated per-route by the constraint evaluator.
  */
 
+import type { EntityKind } from '../entity-registry';
+
 /** A required entity kind must exist upstream/downstream of the declaring entity. */
 export interface PresenceConstraint {
   type: 'presence';
   id: string;
   description: string;
-  requiredKind: string;
+  /** Any of these kinds in the search range satisfies the constraint. */
+  requiredKind: EntityKind[];
   position: 'upstream' | 'downstream' | 'anywhere';
   baseSeverity: 'error' | 'warning';
 }

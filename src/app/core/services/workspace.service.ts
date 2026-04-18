@@ -140,7 +140,7 @@ export class WorkspaceService {
     }
 
     return {
-      schema: 10,
+      schema: 11,
       device: { name: 'composite', friendly_name: 'Site', board: '' },
       nodes: allNodes,
       pipes: allPipes,
@@ -443,7 +443,7 @@ export class WorkspaceService {
   private reconstructTopology(sp: SystemPayload): SystemTopology {
     const topo = sp.topology;
     return {
-      schema: 10,
+      schema: 11,
       device: {
         name: sp.deviceName || sp.id,
         friendly_name: sp.friendlyName,

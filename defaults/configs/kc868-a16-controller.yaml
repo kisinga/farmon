@@ -1,4 +1,4 @@
-schema: 10
+schema: 11
 device:
   name: kc868-ctrl
   friendly_name: KC868 Controller
@@ -9,11 +9,19 @@ nodes:
   - kind: tank
     id: tank1
     name: Rain Tank
-    level_pin: GPIO36
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
     position: { x: 100, y: 200 }
+
+  - kind: level_sensor
+    id: ls1
+    name: Rain Tank Level
+    pin: GPIO36
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 170, y: 230 }
 
   - kind: valve
     id: valve1
@@ -52,7 +60,8 @@ nodes:
     position: { x: 700, y: 200 }
 
 pipes:
-  - { id: p1, from: "tank1:outlet", to: "valve1:inlet" }
+  - { id: p_ls1, from: "tank1:outlet", to: "ls1:inlet" }
+  - { id: p1, from: "ls1:outlet", to: "valve1:inlet" }
   - { id: p2, from: "valve1:outlet", to: "pump:in" }
   - { id: p3, from: "pump:out", to: "flow1:inlet" }
   - { id: p4, from: "flow1:outlet", to: "house1:inlet" }

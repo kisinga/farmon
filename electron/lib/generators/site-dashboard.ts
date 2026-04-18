@@ -1,6 +1,6 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
-import { nodesByKind, slug } from "../schema.js";
+import { nodesByKind, nodesWithFlag, slug } from "../schema.js";
 import {
   buildStatusSection,
   buildWaterSection,
@@ -62,8 +62,8 @@ export function generateSiteDashboard(
   // All tank levels across site
   const tankGauges: unknown[] = [];
   for (const s of systems) {
-    const tanks = nodesByKind(s.manifest.nodes, 'tank').filter(t => t['level_pin']);
-    for (const t of tanks) {
+    const ls = nodesWithFlag(s.manifest.nodes, 'isLevelSensor');
+    for (const t of ls) {
       tankGauges.push({
         type: "gauge",
         entity: entityId("sensor", s.manifest.device.name, `${n(t, 'name')} Level`),

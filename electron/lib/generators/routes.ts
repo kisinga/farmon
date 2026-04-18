@@ -1,6 +1,6 @@
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
-import { valveCoverId, valveTravelMsId, tankLevelId, flowSensorId } from '@far-mon/core';
+import { valveCoverId, valveTravelMsId, levelSensorLevelId, flowSensorId } from '@far-mon/core';
 
 /** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
 export function parseDurationMs(s: string): number {
@@ -12,7 +12,8 @@ export function parseDurationMs(s: string): number {
 }
 
 export function generateRoutes(m: Manifest): string {
-  const tanks = nodesWithFlag(m.nodes, 'isLevelSensor');
+  const tanks = nodesByKind(m.nodes, 'tank');
+  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
   const valves = nodesWithFlag(m.nodes, 'isValve');
   const flowSensors = nodesWithFlag(m.nodes, 'isFlowSensor');
   const waterSources = nodesByKind(m.nodes, 'water_source');
@@ -70,10 +71,14 @@ export function generateRoutes(m: Manifest): string {
   const closeCases = valves
     .map((v, i) => `    case ${i}: id(${valveCoverId(nid(v))}).make_call().set_command_close().perform(); break;`)
     .join("\n");
+  // Map each tank to its associated level_sensor (set by topology-to-manifest)
   const tankCases = tanks
     .map((t, i) => {
-      if (!t['level_pin']) return `    case ${i}: return -1.0f; // ${t['id']}: no level sensor`;
-      return `    case ${i}: return id(${tankLevelId(nid(t))}).state;`;
+      const lsId = t['level_sensor'] as string | undefined;
+      if (!lsId) return `    case ${i}: return -1.0f; // ${t['id']}: no level sensor`;
+      const ls = levelSensors.find(s => s['id'] === lsId);
+      if (!ls) return `    case ${i}: return -1.0f; // ${t['id']}: level sensor ${lsId} not found`;
+      return `    case ${i}: return id(${levelSensorLevelId(nid(ls))}).state;`;
     })
     .join("\n");
   const flowCases = flowSensors

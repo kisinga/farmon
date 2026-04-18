@@ -61,7 +61,7 @@ export const dosingPumpDescriptor: NodeDescriptor = {
   ],
 
   constraints: [
-    { type: 'presence', id: 'dosing-downstream-flow', requiredKind: 'flow_sensor',
+    { type: 'presence', id: 'dosing-downstream-flow', requiredKind: ['flow_sensor'],
       position: 'downstream', baseSeverity: 'warning',
       description: 'Flow sensor recommended downstream of dosing pump for injection verification' },
   ] satisfies FlowConstraint[],

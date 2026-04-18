@@ -29,14 +29,22 @@ function checkPresence(
 
   if (c.position === 'upstream') {
     searchRange = seq.slice(0, nodeIdx);
+    // Terminal at route start: no upstream in route, check graph in-neighbors
+    if (searchRange.length === 0 && nodeIdx === 0) {
+      searchRange = graph.inNeighbors(seq[0]);
+    }
   } else if (c.position === 'downstream') {
     searchRange = seq.slice(nodeIdx + 1);
+    // Terminal at route end: no downstream in route, check graph out-neighbors
+    if (searchRange.length === 0 && nodeIdx === seq.length - 1) {
+      searchRange = graph.outNeighbors(seq[nodeIdx]);
+    }
   } else {
     // 'anywhere' — everything except the declaring node itself
     searchRange = [...seq.slice(0, nodeIdx), ...seq.slice(nodeIdx + 1)];
   }
 
-  return searchRange.some(id => graph.getNodeAttribute(id, 'kind') === c.requiredKind);
+  return searchRange.some(id => (c.requiredKind as string[]).includes(graph.getNodeAttribute(id, 'kind')));
 }
 
 function checkOrdering(

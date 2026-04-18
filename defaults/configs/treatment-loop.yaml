@@ -1,4 +1,4 @@
-schema: 10
+schema: 11
 device:
   name: treatment-loop
   friendly_name: Treatment Loop
@@ -67,11 +67,19 @@ nodes:
   - kind: tank
     id: tank1
     name: Storage Tank
-    level_pin: GPIO19
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
     position: { x: 950, y: 200 }
+
+  - kind: level_sensor
+    id: ls1
+    name: Storage Tank Level
+    pin: GPIO19
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 1020, y: 230 }
 
 pipes:
   - { id: p1, from: "mains:outlet",   to: "valve1:inlet" }
@@ -80,6 +88,7 @@ pipes:
   - { id: p4, from: "doser1:outlet",  to: "ps1:inlet" }
   - { id: p5, from: "ps1:outlet",     to: "flow1:inlet" }
   - { id: p6, from: "flow1:outlet",   to: "tank1:inlet" }
+  - { id: p_ls1, from: "tank1:outlet", to: "ls1:inlet" }
 
 timing:
   valve_travel_time: 15s

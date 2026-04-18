@@ -61,7 +61,7 @@ export const filterDescriptor: NodeDescriptor = {
   ],
 
   constraints: [
-    { type: 'presence', id: 'filter-upstream-valve', requiredKind: 'valve',
+    { type: 'presence', id: 'filter-upstream-valve', requiredKind: ['valve'],
       position: 'upstream', baseSeverity: 'error',
       description: 'Isolation valve required before filter for maintenance bypass' },
   ] satisfies FlowConstraint[],

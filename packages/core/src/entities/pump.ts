@@ -77,10 +77,10 @@ export const pumpDescriptor: NodeDescriptor = {
   ],
 
   constraints: [
-    { type: 'presence', id: 'pump-inlet-valve', requiredKind: 'valve',
+    { type: 'presence', id: 'pump-inlet-valve', requiredKind: ['valve'],
       position: 'upstream', baseSeverity: 'error',
       description: 'Isolation valve required before pump inlet' },
-    { type: 'presence', id: 'pump-downstream-flow', requiredKind: 'flow_sensor',
+    { type: 'presence', id: 'pump-downstream-flow', requiredKind: ['flow_sensor'],
       position: 'downstream', baseSeverity: 'warning',
       description: 'Flow sensor recommended downstream for dry-run protection' },
     { type: 'ordering', id: 'pump-outlet-ordering', segment: 'downstream',

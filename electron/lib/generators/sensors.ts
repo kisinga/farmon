@@ -1,11 +1,11 @@
 import type { Manifest } from "../schema.js";
 import { nodesWithFlag } from "../schema.js";
-import { tankLevelId, joinYamlItems } from '@far-mon/core';
+import { levelSensorLevelId, joinYamlItems } from '@far-mon/core';
 import type { CollectedCodegen } from "./collect.js";
 
 export function generateSensors(m: Manifest, collected: CollectedCodegen): string {
-  // Level sensors with pins (for combined level)
-  const tanksWithLevel = nodesWithFlag(m.nodes, 'isLevelSensor').filter(t => t['level_pin']);
+  // Level sensor entities (standalone, decoupled from tanks)
+  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
 
   // Route max-runtime numbers — adjustable from HA, persisted across reboots
   const runtimeBlocks = m.routes.map((r, i) => `\
@@ -54,8 +54,8 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
 # =============================================================================
 
 sensor:
-${joinYamlItems(collected.sensors)}${tanksWithLevel.length >= 2 ? `
-  # --- Combined level (auto-derived from ${tanksWithLevel.length} tanks) ------
+${joinYamlItems(collected.sensors)}${levelSensors.length >= 2 ? `
+  # --- Combined level (auto-derived from ${levelSensors.length} level sensors) ------
 
   - platform: template
     id: combined_tank_level
@@ -66,8 +66,8 @@ ${joinYamlItems(collected.sensors)}${tanksWithLevel.length >= 2 ? `
     update_interval: 5s
     lambda: |-
       float sum = 0; int count = 0;
-${tanksWithLevel.map(t => `\
-      { float v = id(${tankLevelId({ id: String(t['id']) })}).state; if (!std::isnan(v)) { sum += v; count++; } }`).join("\n")}
+${levelSensors.map(t => `\
+      { float v = id(${levelSensorLevelId({ id: String(t['id']) })}).state; if (!std::isnan(v)) { sum += v; count++; } }`).join("\n")}
       return count > 0 ? sum / (float)count : 0.0f;` : ""}
 
 ${numberBlocks.length > 0 ? `# --- Adjustable numbers (persisted, editable from HA) -------------------------
@@ -172,9 +172,9 @@ ${collected.globals.length > 0 ? `
 
 globals:
 ${joinYamlItems(collected.globals)}` : ""}
-${binarySensorBlocks.length > 0 || tanksWithLevel.length >= 2 ? `
+${binarySensorBlocks.length > 0 || levelSensors.length >= 2 ? `
 binary_sensor:
-${joinYamlItems(binarySensorBlocks)}${tanksWithLevel.length >= 2 ? `
+${joinYamlItems(binarySensorBlocks)}${levelSensors.length >= 2 ? `
   - platform: template
     id: water_critical
     name: "Water Critical"

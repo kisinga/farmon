@@ -4,6 +4,32 @@ import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
 import { slug } from "./slug";
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * For each tank, find the first downstream level_sensor in the active graph.
+ * Returns a map: tankId → levelSensorId.
+ */
+function resolveTankLevelSensors(
+  graph: ReturnType<typeof buildGraph>,
+  nodeMap: Map<string, { kind: string; [k: string]: any }>,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const [id, node] of nodeMap) {
+    if (node.kind !== 'tank' || !graph.hasNode(id)) continue;
+    // Check direct downstream neighbors for a level_sensor
+    for (const neighbor of graph.outNeighbors(id)) {
+      if (graph.hasNode(neighbor) && graph.getNodeAttribute(neighbor, 'kind') === 'level_sensor') {
+        result.set(id, neighbor);
+        break;
+      }
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Main conversion
 // ---------------------------------------------------------------------------
 
@@ -19,14 +45,25 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
     connected.add(pipe.to.split(':')[0]);
   }
 
+  const nodeMap = new Map(topology.nodes.map(n => [n.id, n]));
+
+  // Resolve tank → level_sensor associations from graph topology
+  const tankLevelSensors = resolveTankLevelSensors(active, nodeMap);
+
   // Strip layout fields (ports, position) — generators don't need them.
+  // Annotate tanks with their associated level_sensor ID.
   const nodes: ManifestNode[] = topology.nodes
     .filter(n => connected.has(n.id) && !n.disabled)
-    .map(({ ports, position, ...data }) => data as ManifestNode);
+    .map(({ ports, position, ...data }) => {
+      const node = data as ManifestNode;
+      if (node.kind === 'tank') {
+        const lsId = tankLevelSensors.get(node.id);
+        if (lsId) node['level_sensor'] = lsId;
+      }
+      return node;
+    });
 
   // --- Route mapping ---
-
-  const nodeMap = new Map(topology.nodes.map(n => [n.id, n]));
 
   const manifestRoutes: ManifestRoute[] = routes
     .filter(r => r.valid) // only routes with a flow sensor
@@ -37,14 +74,19 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
       const srcLabel = (srcNode as any)?.name ?? r.source;
       const dstLabel = (dstNode as any)?.name ?? r.destination;
 
-      // Determine if runtime level checks are reliable for this route
+      // Determine if runtime level checks are reliable for this route.
+      // Check pump_rated on the level_sensor connected to source/dest tanks.
       const runtimeLevelOk = !r.crossesPump || (() => {
-        // If route crosses pump, check if source/dest tank sensors are pump-rated
-        const srcNode = nodeMap.get(r.source);
-        const dstNode = nodeMap.get(r.destination);
-        const srcOk = !srcNode || srcNode.kind !== 'tank' || !!(srcNode as any).pump_rated;
-        const dstOk = !dstNode || dstNode.kind !== 'tank' || !!(dstNode as any).pump_rated;
-        return srcOk && dstOk;
+        const checkTank = (tankId: string | undefined) => {
+          if (!tankId) return true;
+          const tank = nodeMap.get(tankId);
+          if (!tank || tank.kind !== 'tank') return true;
+          const lsId = tankLevelSensors.get(tankId);
+          if (!lsId) return true; // no sensor = no level data = skip check
+          const ls = nodeMap.get(lsId);
+          return !ls || !!(ls as any).pump_rated;
+        };
+        return checkTank(r.source) && checkTank(r.destination);
       })();
 
       return {

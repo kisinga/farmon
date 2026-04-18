@@ -13,6 +13,15 @@ import type { PinCap } from './board.types';
 import type { FlowConstraint } from './graph/constraints';
 
 // ---------------------------------------------------------------------------
+// Entity kind — compile-time registry of all known node kinds
+// ---------------------------------------------------------------------------
+
+export type EntityKind =
+  | 'tank' | 'pump' | 'endpoint' | 'valve' | 'flow_sensor'
+  | 'water_source' | 'pressure_sensor' | 'filter' | 'dosing_pump'
+  | 'vfd' | 'interconnect' | 'level_sensor';
+
+// ---------------------------------------------------------------------------
 // Field definition (drives sidebar forms)
 // ---------------------------------------------------------------------------
 
@@ -76,7 +85,7 @@ export interface EntityRule {
 // ---------------------------------------------------------------------------
 
 export interface NodeDescriptor {
-  kind: string;
+  kind: EntityKind;
   label: string;
   color: string;
   size: { width: number; height: number };
@@ -156,6 +165,7 @@ import { filterDescriptor } from './entities/filter';
 import { dosingPumpDescriptor } from './entities/dosing-pump';
 import { vfdDescriptor } from './entities/vfd';
 import { interconnectDescriptor } from './entities/interconnect';
+import { levelSensorDescriptor } from './entities/level-sensor';
 
 export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   tankDescriptor,
@@ -165,6 +175,7 @@ export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   flowSensorDescriptor,
   waterSourceDescriptor,
   pressureSensorDescriptor,
+  levelSensorDescriptor,
   filterDescriptor,
   dosingPumpDescriptor,
   vfdDescriptor,
@@ -235,9 +246,9 @@ export function getTypedDescriptor<T extends Record<string, any>>(
 }
 
 /** Filter manifest nodes by a descriptor dispatch flag. */
-export function nodesWithFlag(
-  nodes: Array<{ kind: string; [k: string]: any }>,
+export function nodesWithFlag<T extends { kind: string; [k: string]: any }>(
+  nodes: T[],
   flag: DispatchFlag,
-): Array<{ kind: string; [k: string]: any }> {
+): T[] {
   return nodes.filter(n => NODE_REGISTRY.get(n.kind)?.[flag]);
 }

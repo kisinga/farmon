@@ -34,13 +34,13 @@ export const flowFaultCountId = (node: { id: string }) => `${node.id}_fault_coun
 export const flowFaultSensorId = (node: { id: string }) => `${node.id}_sensor_fault`;
 
 // ---------------------------------------------------------------------------
-// Component IDs — tank
+// Component IDs — level sensor
 // ---------------------------------------------------------------------------
 
-export const tankLevelId = (node: { id: string }) => `${node.id}_level`;
-export const tankRawVoltageId = (node: { id: string }) => `${node.id}_raw_voltage`;
-export const tankCalEmptyId = (node: { id: string }) => `${node.id}_cal_empty`;
-export const tankCalFullId = (node: { id: string }) => `${node.id}_cal_full`;
+export const levelSensorLevelId = (node: { id: string }) => `${node.id}_level`;
+export const levelSensorRawVoltageId = (node: { id: string }) => `${node.id}_raw_voltage`;
+export const levelSensorCalEmptyId = (node: { id: string }) => `${node.id}_cal_empty`;
+export const levelSensorCalFullId = (node: { id: string }) => `${node.id}_cal_full`;
 
 // ---------------------------------------------------------------------------
 // Component IDs — pressure sensor

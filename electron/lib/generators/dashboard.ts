@@ -1,6 +1,6 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
-import { nodesByKind, slug } from "../schema.js";
+import { nodesByKind, nodesWithFlag, slug } from "../schema.js";
 
 function entityId(domain: string, deviceName: string, name: string): string {
   return `${domain}.${slug(deviceName)}_${slug(name)}`;
@@ -18,10 +18,10 @@ function n(node: ManifestNode, key: string): string {
 function deviceEntities(m: Manifest) {
   const dev = m.device.name;
   return {
-    tankSensor: (t: ManifestNode) => entityId("sensor", dev, `${n(t, 'name')} Level`),
-    tankCalEmpty: (t: ManifestNode) => entityId("number", dev, `${n(t, 'name')} Cal Empty V`),
-    tankCalFull: (t: ManifestNode) => entityId("number", dev, `${n(t, 'name')} Cal Full V`),
-    tankRawVoltage: (t: ManifestNode) => entityId("sensor", dev, `${n(t, 'name')} Raw Voltage`),
+    levelSensor: (ls: ManifestNode) => entityId("sensor", dev, `${n(ls, 'name')} Level`),
+    levelCalEmpty: (ls: ManifestNode) => entityId("number", dev, `${n(ls, 'name')} Cal Empty V`),
+    levelCalFull: (ls: ManifestNode) => entityId("number", dev, `${n(ls, 'name')} Cal Full V`),
+    levelRawVoltage: (ls: ManifestNode) => entityId("sensor", dev, `${n(ls, 'name')} Raw Voltage`),
     flowSensor: (f: ManifestNode) => entityId("sensor", dev, n(f, 'name')),
     flowTotal: (f: ManifestNode) => {
       const totalName = n(f, 'name').replace("Water Flow", "Total Usage").replace("Flow", "Total");
@@ -93,8 +93,9 @@ export function buildWaterSection(m: Manifest): unknown {
   const pressureSensors = nodesByKind(m.nodes, 'pressure_sensor');
   const filters = nodesByKind(m.nodes, 'filter');
 
-  const tankGauges = tanks.filter(t => t['level_pin']).map(t => ({
-    type: "gauge", entity: e.tankSensor(t), name: n(t, 'name'),
+  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
+  const levelGauges = levelSensors.map(ls => ({
+    type: "gauge", entity: e.levelSensor(ls), name: n(ls, 'name'),
     min: 0, max: 100, severity: { red: 0, yellow: 25, green: 50 }, needle: true,
   }));
 
@@ -139,15 +140,15 @@ export function buildWaterSection(m: Manifest): unknown {
     type: "grid",
     cards: [
       { type: "heading", heading: "Water levels", heading_style: "title",
-        ...(tanks.filter(t => t['level_pin']).length >= 2
+        ...(levelSensors.length >= 2
           ? { badges: [{ type: "entity", show_state: true, show_icon: true, entity: e.combinedLevel }] }
           : {}),
       },
-      ...(tanks.filter(t => t['level_pin']).length >= 2
+      ...(levelSensors.length >= 2
         ? [{ type: "entities", entities: [{ entity: e.waterCritical, name: "Water Critical" }], grid_options: { columns: "full" } }]
         : []),
-      ...(tankGauges.length > 0
-        ? [{ type: "horizontal-stack", cards: tankGauges, grid_options: { columns: "full", rows: "auto" } }]
+      ...(levelGauges.length > 0
+        ? [{ type: "horizontal-stack", cards: levelGauges, grid_options: { columns: "full", rows: "auto" } }]
         : []),
       ...(wsPressureGauges.length > 0
         ? [{ type: "horizontal-stack", cards: wsPressureGauges, grid_options: { columns: "full", rows: "auto" } }]
@@ -264,13 +265,13 @@ export function buildRouteControlSection(m: Manifest): unknown {
 
 export function buildSettingsView(m: Manifest): unknown {
   const e = deviceEntities(m);
-  const tanks = nodesByKind(m.nodes, 'tank');
+  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
   const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
 
-  const calEntities = tanks.filter(t => t['level_pin']).flatMap(t => [
-    { entity: e.tankRawVoltage(t), name: `${n(t, 'name')} Raw V` },
-    { entity: e.tankCalEmpty(t), name: `${n(t, 'name')} Empty` },
-    { entity: e.tankCalFull(t), name: `${n(t, 'name')} Full` },
+  const calEntities = levelSensors.flatMap(ls => [
+    { entity: e.levelRawVoltage(ls), name: `${n(ls, 'name')} Raw V` },
+    { entity: e.levelCalEmpty(ls), name: `${n(ls, 'name')} Empty` },
+    { entity: e.levelCalFull(ls), name: `${n(ls, 'name')} Full` },
   ]);
 
   return {

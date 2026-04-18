@@ -63,7 +63,7 @@ fileMap = new Map(files.map((f) => [f.relativePath, f.content]));
 // Helper arrays
 const valves = nodesByKind(manifest.nodes, 'valve');
 const flowSensors = nodesByKind(manifest.nodes, 'flow_sensor');
-const tanks = nodesByKind(manifest.nodes, 'tank');
+const levelSensors = nodesByKind(manifest.nodes, 'level_sensor');
 const waterSources = nodesByKind(manifest.nodes, 'water_source');
 
 // --- Board definition ---
@@ -191,14 +191,12 @@ for (const f of flowSensors) {
   assert(sensors.includes(`id: ${n(f, 'id')}`), `Flow ${n(f, 'id')} defined`);
   assert(sensors.includes(`\${flow_cal_${n(f, 'id')}}`), `Flow ${n(f, 'id')} uses per-sensor cal`);
 }
-for (const t of tanks) {
-  if (t['level_pin']) {
-    assert(sensors.includes(`id: ${n(t, 'id')}_level`), `Tank ${n(t, 'id')} level`);
-    assert(sensors.includes(`id: ${n(t, 'id')}_cal_empty`), `Tank ${n(t, 'id')} cal`);
-  }
+for (const ls of levelSensors) {
+  assert(sensors.includes(`id: ${n(ls, 'id')}_level`), `Level sensor ${n(ls, 'id')} level`);
+  assert(sensors.includes(`id: ${n(ls, 'id')}_cal_empty`), `Level sensor ${n(ls, 'id')} cal`);
 }
-// Tank suppression: iterates slots, checks source AND dest
-assert(sensors.includes("r.source_tank == TANK_IDX || r.dest_tank == TANK_IDX"), "Suppresses source AND dest tanks");
+// Level sensor suppression: iterates slots, checks source AND dest
+assert(sensors.includes("r.source_tank == LEVEL_SENSOR_IDX || r.dest_tank == LEVEL_SENSOR_IDX"), "Suppresses source AND dest level sensors");
 assert(sensors.includes("MAX_CONCURRENT_ROUTES"), "Tank suppression iterates slots");
 // Fault/stop text: no old codes
 assert(!sensors.includes("No level rise"), "No 'level rise' in fault/stop text");
@@ -233,13 +231,11 @@ assert(!control.includes("id(active_route)"), "No active_route global reference"
 // --- Cross-file consistency ---
 
 console.log("\nCross-file consistency:");
-for (const t of tanks) {
-  if (t['level_pin']) {
-    assert(
-      sensors.includes(`id: ${n(t, 'id')}_level`) && routesH.includes(`id(${n(t, 'id')}_level)`),
-      `Tank ${n(t, 'id')}: sensors \u2194 routes.h`
-    );
-  }
+for (const ls of levelSensors) {
+  assert(
+    sensors.includes(`id: ${n(ls, 'id')}_level`) && routesH.includes(`id(${n(ls, 'id')}_level)`),
+    `Level sensor ${n(ls, 'id')}: sensors \u2194 routes.h`
+  );
 }
 for (const f of flowSensors) {
   assert(
@@ -430,8 +426,8 @@ console.log("\nSensors:");
 const kcSensors = getKcFile("sensors.yaml");
 assert(kcSensors.includes("id: flow1"), "Flow sensor defined");
 assert(kcSensors.includes("GPIO32"), "Flow sensor uses native GPIO32");
-assert(kcSensors.includes("id: tank1_level"), "Tank level sensor defined");
-assert(kcSensors.includes("GPIO36"), "Tank uses native GPIO36 for ADC");
+assert(kcSensors.includes("id: ls1_level"), "Level sensor defined");
+assert(kcSensors.includes("GPIO36"), "Level sensor uses native GPIO36 for ADC");
 
 // --- Device YAML ---
 

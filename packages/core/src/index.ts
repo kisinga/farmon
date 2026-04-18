@@ -11,7 +11,7 @@ export type {
   SystemTopology, TopologyNode, PipeSegment, RouteOverride,
   Automation, AutomationTrigger, UartBus, NetworkConfig,
   TankNode, PumpNode, EndpointNode, ValveNode,
-  FlowSensorNode, WaterSourceNode, PressureSensorNode, FilterNode, DosingPumpNode, VfdNode, InterconnectNode,
+  FlowSensorNode, WaterSourceNode, PressureSensorNode, LevelSensorNode, FilterNode, DosingPumpNode, VfdNode, InterconnectNode,
   Port, Position,
 } from './topology.types';
 export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
@@ -19,7 +19,7 @@ export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
 export type { IoProviderDef } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
-export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext, TypedDescriptor } from './entity-registry';
+export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext, TypedDescriptor, EntityKind } from './entity-registry';
 export type { ChannelUsage, ResolvedChannel, IoChannel, IoProviderDriver } from './io-provider.types';
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
@@ -55,7 +55,7 @@ export { indent, joinYamlItems } from './yaml-fragment';
 export {
   pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId,
   flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId,
-  tankLevelId, tankRawVoltageId, tankCalEmptyId, tankCalFullId,
+  levelSensorLevelId, levelSensorRawVoltageId, levelSensorCalEmptyId, levelSensorCalFullId,
   pressureSensorId, waterSourcePressureId,
   dosingPumpSwitchId, filterInletPressureId, filterOutletPressureId, filterDeltaPressureId,
 } from './codegen-ids';

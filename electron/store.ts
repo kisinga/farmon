@@ -9,7 +9,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 // Schema versioning (for board YAML files)
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 10;    // version this app writes
+export const SCHEMA_VERSION = 11;    // version this app writes
 
 export class SchemaError extends Error {
   constructor(
@@ -71,6 +71,18 @@ const MIGRATIONS: Record<number, Migration> = {
   9: (data) => {
     data.schema = 10;
     // network config is optional — no data transform needed
+    return data;
+  },
+  10: (data) => {
+    data.schema = 11;
+    // Level sensing decoupled from tank — strip level_pin and pump_rated from tank nodes.
+    const nodes = (data.nodes ?? []) as Array<Record<string, unknown>>;
+    for (const n of nodes) {
+      if (n.kind === 'tank') {
+        delete n.level_pin;
+        delete n.pump_rated;
+      }
+    }
     return data;
   },
 };

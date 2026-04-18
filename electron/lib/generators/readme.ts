@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import Handlebars from 'handlebars';
-import { nodesByKind, NODE_REGISTRY, legendSvgFor, LOGO_SVG_SMALL, type Manifest, type PinOverlayData } from '@far-mon/core';
+import { nodesByKind, nodesWithFlag, NODE_REGISTRY, legendSvgFor, LOGO_SVG_SMALL, type Manifest, type PinOverlayData } from '@far-mon/core';
 
 const TEMPLATES_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'packages', 'core', 'src', 'templates');
 
@@ -28,7 +28,7 @@ const compiledTemplate = hbs.compile(templateSrc);
 
 export function generateDocumentation(m: Manifest, topologySvg: string, opts?: DocOptions): string {
   const tanks = nodesByKind(m.nodes, 'tank');
-  const tanksWithLevel = tanks.filter(t => t['level_pin']);
+  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
   const pumps = nodesByKind(m.nodes, 'pump');
   const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
   const valves = nodesByKind(m.nodes, 'valve');
@@ -122,9 +122,9 @@ export function generateDocumentation(m: Manifest, topologySvg: string, opts?: D
     automations,
     hasAutomations: automations.length > 0,
     routeEntities: m.routes.map((r, i) => ({ index: i, name: r.name })),
-    tankCalEntities: tanksWithLevel.map(t => ({ id: t['id'], name: t['name'] })),
+    tankCalEntities: levelSensors.map(t => ({ id: t['id'], name: t['name'] })),
     timing: m.timing,
-    hasMultipleLevelTanks: tanksWithLevel.length >= 2,
+    hasMultipleLevelTanks: levelSensors.length >= 2,
     hasFlowSensors: flowSensors.length > 0,
     hasValves: valves.length > 0,
     hasTanks: tanks.length > 0,

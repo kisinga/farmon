@@ -21,6 +21,7 @@ export type { FilterNode } from './entities/filter';
 export type { DosingPumpNode } from './entities/dosing-pump';
 export type { VfdNode } from './entities/vfd';
 export type { InterconnectNode } from './entities/interconnect';
+export type { LevelSensorNode } from './entities/level-sensor';
 
 import type { TankNode } from './entities/tank';
 import type { PumpNode } from './entities/pump';
@@ -33,6 +34,7 @@ import type { FilterNode } from './entities/filter';
 import type { DosingPumpNode } from './entities/dosing-pump';
 import type { VfdNode } from './entities/vfd';
 import type { InterconnectNode } from './entities/interconnect';
+import type { LevelSensorNode } from './entities/level-sensor';
 
 // ---------------------------------------------------------------------------
 // Node union
@@ -46,6 +48,7 @@ export type TopologyNode =
   | FlowSensorNode
   | WaterSourceNode
   | PressureSensorNode
+  | LevelSensorNode
   | FilterNode
   | DosingPumpNode
   | VfdNode
@@ -124,7 +127,7 @@ export interface NetworkConfig {
 }
 
 export interface SystemTopology {
-  schema: 10;
+  schema: 11;
   device: {
     name: string;
     friendly_name: string;

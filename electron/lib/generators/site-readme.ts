@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import Handlebars from 'handlebars';
-import { nodesByKind, type Manifest, type LinkData, type Route, type PinOverlayData, LOGO_SVG_SMALL } from '@far-mon/core';
+import { nodesByKind, nodesWithFlag, type Manifest, type LinkData, type Route, type PinOverlayData, LOGO_SVG_SMALL } from '@far-mon/core';
 
 const TEMPLATES_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'packages', 'core', 'src', 'templates');
 
@@ -140,7 +140,7 @@ export function generateSiteDocumentation(
   // Per-controller detail sections
   const controllerDetails = systems.map((s, i) => {
     const tanks = nodesByKind(s.manifest.nodes, 'tank');
-    const tanksWithLevel = tanks.filter(t => t['level_pin']);
+    const levelSensors = nodesWithFlag(s.manifest.nodes, 'isLevelSensor');
 
     let boardPinoutSection = '';
     if (s.boardSvg && s.pinOverlays?.length) {
@@ -188,7 +188,7 @@ export function generateSiteDocumentation(
       boardPinoutSection,
       timing: s.manifest.timing,
       routeEntities: s.manifest.routes.map((r, ri) => ({ index: ri, name: r.name })),
-      tankCalEntities: tanksWithLevel.map(t => ({ id: t['id'], name: t['name'] })),
+      tankCalEntities: levelSensors.map(t => ({ id: t['id'], name: t['name'] })),
     };
   });
 

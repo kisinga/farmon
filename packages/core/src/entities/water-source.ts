@@ -76,7 +76,7 @@ ${header}
   },
 
   constraints: [
-    { type: 'presence', id: 'source-downstream-valve', requiredKind: 'valve',
+    { type: 'presence', id: 'source-downstream-valve', requiredKind: ['valve'],
       position: 'downstream', baseSeverity: 'error',
       description: 'Isolation valve required downstream of water source' },
   ] satisfies FlowConstraint[],

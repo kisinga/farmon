@@ -1,6 +1,6 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestAutomation } from "../schema.js";
-import { nodesByKind, slug } from "../schema.js";
+import { nodesByKind, nodesWithFlag, slug } from "../schema.js";
 
 function entityId(domain: string, deviceName: string, name: string): string {
   return `${domain}.${slug(deviceName)}_${slug(name)}`;
@@ -18,7 +18,7 @@ function entityId(domain: string, deviceName: string, name: string): string {
 export function generateAutomations(m: Manifest): string | null {
   const dev = slug(m.device.name);
   const tanks = nodesByKind(m.nodes, 'tank');
-  const tanksWithLevel = tanks.filter(t => t['level_pin']);
+  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
   const tankIdx = new Map(tanks.map((t, i) => [t['id'], i]));
 
   const automations = m.automations
@@ -116,11 +116,11 @@ export function generateAutomations(m: Manifest): string | null {
     });
   }
 
-  // Water critical — when 2+ tanks with level sensors
-  if (tanksWithLevel.length >= 2) {
+  // Water critical — when 2+ level sensors
+  if (levelSensors.length >= 2) {
     const waterCritical = entityId("binary_sensor", m.device.name, "Water Critical");
-    const levelMessages = tanksWithLevel.map(t =>
-      `${t['name']}: {{ states('${entityId("sensor", m.device.name, `${t['name']} Level`)}') }}%`
+    const levelMessages = levelSensors.map(ls =>
+      `${ls['name']}: {{ states('${entityId("sensor", m.device.name, `${ls['name']} Level`)}') }}%`
     ).join(", ");
     systemAutomations.push({
       alias: "Water Critical Alert",

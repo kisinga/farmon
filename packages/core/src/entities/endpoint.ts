@@ -49,7 +49,7 @@ export const endpointDescriptor: NodeDescriptor = {
   sidebarFields: [],
 
   constraints: [
-    { type: 'presence', id: 'endpoint-flow-sensor', requiredKind: 'flow_sensor',
+    { type: 'presence', id: 'endpoint-flow-sensor', requiredKind: ['flow_sensor'],
       position: 'upstream', baseSeverity: 'warning',
       description: 'Flow sensor recommended for usage tracking' },
   ] satisfies FlowConstraint[],

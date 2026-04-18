@@ -47,7 +47,6 @@ function buildManifest(p: ScaleParams): Manifest {
   const tanks = Array.from({ length: p.tanks }, (_, i) => ({
     name: `Tank ${i + 1}`,
     id: `tank${i + 1}`,
-    level_pin: pin(pinIdx++),
   }));
 
   const valves = Array.from({ length: p.valves }, (_, i) => ({
@@ -261,7 +260,6 @@ const kcBoard: BoardDef = loadBoard(path.join(DEFAULTS, "boards/kc868-a16"));
 
 // KC868 pin pools
 const KC_OUT_PINS = Array.from({ length: 16 }, (_, i) => `OUT${i + 1}`);
-const KC_ADC_PINS = ["GPIO36", "GPIO34", "GPIO35", "GPIO39"];
 const KC_PULSE_PINS = ["GPIO32", "GPIO33", "GPIO14"];
 
 function kcPin(pool: string[], i: number): string {
@@ -298,12 +296,11 @@ function buildKcManifest(p: KcScaleParams): Manifest {
     close_pin: kcPin(KC_OUT_PINS, outIdx++),
   }));
 
-  // Tanks use ADC pins
+  // Tanks (no level pins — level sensing is on level_sensor entities)
   const tanks = Array.from({ length: p.tanks }, (_, i) => ({
     kind: 'tank' as const,
     id: `tank${i + 1}`,
     name: `Tank ${i + 1}`,
-    level_pin: kcPin(KC_ADC_PINS, i),
   }));
 
   // Flow sensors use pulse counter pins

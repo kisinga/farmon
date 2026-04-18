@@ -1,4 +1,4 @@
-schema: 10
+schema: 11
 device:
   name: pump-ctrl
   friendly_name: Pump-ctrl
@@ -8,7 +8,6 @@ nodes:
   - kind: tank
     id: tank1
     name: Rain Tank
-    level_pin: GPIO19
     ports:
       - id: inlet
         label: Inlet
@@ -19,10 +18,19 @@ nodes:
     position:
       x: 100
       y: 250
+  - kind: level_sensor
+    id: ls1
+    name: Rain Tank Level
+    pin: GPIO19
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position:
+      x: 170
+      y: 280
   - kind: tank
     id: tank2
     name: Storage Tank
-    level_pin: GPIO20
     ports:
       - id: inlet
         label: Inlet
@@ -33,6 +41,16 @@ nodes:
     position:
       x: 800
       y: 150
+  - kind: level_sensor
+    id: ls2
+    name: Storage Tank Level
+    pin: GPIO20
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position:
+      x: 870
+      y: 180
   - kind: pump
     id: pump
     pin: GPIO42
@@ -147,14 +165,20 @@ nodes:
       x: 680
       y: 450
 pipes:
-  - id: pipe1
+  - id: pipe_ls1
     from: tank1:outlet
+    to: ls1:inlet
+  - id: pipe1
+    from: ls1:outlet
     to: valve1:inlet
   - id: pipe2
     from: valve1:outlet
     to: pump:in
-  - id: pipe3
+  - id: pipe_ls2
     from: tank2:outlet
+    to: ls2:inlet
+  - id: pipe3
+    from: ls2:outlet
     to: valve2:inlet
   - id: pipe4
     from: valve2:outlet

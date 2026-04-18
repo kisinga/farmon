@@ -303,7 +303,7 @@ export class TopologySidebarComponent {
     return Object.entries(t.route_overrides ?? {}).map(([key, override]) => ({
       key,
       override,
-      ...routeLevelInfo(key, t.nodes),
+      ...routeLevelInfo(key, t.nodes, t.pipes),
     }));
   });
 

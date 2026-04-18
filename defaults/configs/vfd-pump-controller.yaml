@@ -1,4 +1,4 @@
-schema: 10
+schema: 11
 device:
   name: vfd-ctrl
   friendly_name: VFD Controller
@@ -20,19 +20,33 @@ nodes:
   - kind: tank
     id: tank1
     name: Rain Tank
-    level_pin: GPIO20
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
     position: { x: 100, y: 250 }
+  - kind: level_sensor
+    id: ls1
+    name: Rain Tank Level
+    pin: GPIO20
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 170, y: 280 }
   - kind: tank
     id: tank2
     name: Storage Tank
-    level_pin: GPIO21
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
     position: { x: 800, y: 150 }
+  - kind: level_sensor
+    id: ls2
+    name: Storage Tank Level
+    pin: GPIO21
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 870, y: 180 }
   - kind: vfd
     id: vfd1
     name: Main VFD
@@ -75,7 +89,8 @@ nodes:
       - { id: outlet, label: Outlet, direction: outlet }
     position: { x: 700, y: 200 }
 pipes:
-  - { id: p1, from: "tank1:outlet", to: "valve1:inlet" }
+  - { id: p_ls1, from: "tank1:outlet", to: "ls1:inlet" }
+  - { id: p1, from: "ls1:outlet", to: "valve1:inlet" }
   - { id: p2, from: "valve1:outlet", to: "vfd1:in" }
   - { id: p3, from: "vfd1:out", to: "valve2:inlet" }
   - { id: p4, from: "valve2:outlet", to: "flow1:inlet" }

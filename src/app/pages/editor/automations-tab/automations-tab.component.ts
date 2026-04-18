@@ -210,7 +210,7 @@ export class AutomationsTabComponent {
     const t = this.editor.topology();
     if (!t) return [];
     return t.nodes
-      .filter(n => n.kind === 'tank' && (n as any).level_pin)
+      .filter(n => n.kind === 'level_sensor')
       .map(n => ({ id: n.id, name: (n as any).name ?? n.id }));
   });
 
@@ -221,7 +221,7 @@ export class AutomationsTabComponent {
     const result = new Map<string, RouteLevelInfo>();
     for (const auto of t.automations ?? []) {
       if (auto.route && !result.has(auto.route)) {
-        result.set(auto.route, routeLevelInfo(auto.route, t.nodes));
+        result.set(auto.route, routeLevelInfo(auto.route, t.nodes, t.pipes));
       }
     }
     return result;
