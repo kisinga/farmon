@@ -5,7 +5,7 @@
  * No runtime dependencies. Pure interfaces and helper functions.
  */
 
-export type PinCap = 'digital' | 'adc' | 'pwm' | 'pulse_counter' | 'i2c' | 'uart' | 'dac';
+export type PinCap = 'digital' | 'adc' | 'pwm' | 'pulse_counter' | 'i2c' | 'uart' | 'dac' | 'modbus';
 
 export interface PinDef {
   gpio: string;

@@ -28,12 +28,10 @@ export type EntityKind =
 export interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'pin' | 'toggle' | 'provider';
+  type: 'text' | 'number' | 'pin' | 'toggle';
   placeholder?: string;
-  /** Channel capability required for this field, e.g. 'adc'. Filters channel selection and drives validation. */
+  /** Channel capability required for this field, e.g. 'adc', 'digital', 'modbus'. Filters channel selection. */
   pinCap?: PinCap;
-  /** For type: 'provider' — filter available providers by this type (e.g. 'modbus_controller'). */
-  providerType?: string;
 }
 
 // ---------------------------------------------------------------------------

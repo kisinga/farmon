@@ -56,7 +56,7 @@ export const dosingPumpDescriptor: NodeDescriptor = {
   },
 
   sidebarFields: [
-    { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42' },
+    { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42', pinCap: 'digital' },
     { key: 'flow_rate_ml_min', label: 'Rate (mL/min)', type: 'number' },
   ],
 

@@ -5,8 +5,8 @@ import { NODE_REGISTRY } from '@far-mon/core';
 
 /**
  * Validates I/O provider references:
- * - Entity fields of type 'provider' must reference a declared io_provider
- * - Declared io_providers with no referencing entity get a warning
+ * - Pin fields referencing a provider (direct or provider:channel) must match a declared io_provider
+ * - Declared io_providers with no referencing entity get an info hint
  */
 export const providerReferences: ManifestRule = {
   id: "provider-references",
@@ -19,19 +19,26 @@ export const providerReferences: ManifestRule = {
     );
     const referencedProviders = new Set<string>();
 
-    // Check all entity 'provider' fields reference a declared provider
     for (const node of m.nodes) {
       const desc = NODE_REGISTRY.get(node['kind']);
       if (!desc) continue;
       for (const field of desc.sidebarFields) {
-        if (field.type !== 'provider') continue;
+        if (field.type !== 'pin') continue;
         const value = node[field.key];
         if (typeof value !== 'string' || !value) continue;
-        referencedProviders.add(value);
-        if (!declaredProviders.has(value)) {
+
+        // Extract provider ID: "vfd1_ctrl" (direct) or "mux1:CH3" (channel)
+        const colonIdx = value.indexOf(':');
+        const providerId = colonIdx > 0 ? value.slice(0, colonIdx) : value;
+
+        // Skip board pins (no provider reference)
+        if (!declaredProviders.has(providerId) && colonIdx <= 0) continue;
+
+        referencedProviders.add(providerId);
+        if (!declaredProviders.has(providerId)) {
           diagnostics.push({
             severity: "error",
-            message: `${desc.label} "${node['id']}": references unknown I/O provider "${value}"`,
+            message: `${desc.label} "${node['id']}": references unknown I/O provider "${providerId}"`,
             target: String(node['id']),
             ruleId: this.id,
           });

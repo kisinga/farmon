@@ -9,6 +9,7 @@
  */
 
 import type { IoProviderDriver, ResolvedChannel, ChannelUsage, IoChannel } from '../io-provider.types';
+import type { PinCap } from '../board.types';
 
 interface ModbusControllerConfig {
   bus: string;       // UART bus ID (e.g., 'uart_modbus')
@@ -20,9 +21,14 @@ export function createModbusControllerDriver(config: ModbusControllerConfig): Io
 
   return {
     enumerate(): IoChannel[] {
-      // Transport endpoint — no selectable channels.
-      // Entities reference this provider directly for register-level access.
-      return [];
+      // Transport endpoint — enumerates itself as a single channel.
+      // Provider ID becomes the channel ID via direct provider dispatch.
+      return [{
+        fqid: '',
+        label: `Modbus @${config.address}`,
+        caps: ['modbus'] as PinCap[],
+        provider: '',
+      }];
     },
 
     resolve(_channelId: string, _usage: ChannelUsage): ResolvedChannel {

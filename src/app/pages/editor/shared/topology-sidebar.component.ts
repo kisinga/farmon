@@ -7,6 +7,7 @@ import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
 import { buildGraph, activeGraph, deriveRoutes } from '@far-mon/core';
+import type { PinCap } from '@far-mon/core';
 import type { RouteOverride } from '../../../core/models/topology.model';
 import { routeLevelInfo } from './route-level-info';
 import type { Selection } from './selection';
@@ -40,31 +41,32 @@ export type { Selection };
           @for (field of sn.desc.sidebarFields; track field.key) {
             <label class="sidebar-label">{{ field.label }}</label>
             @if (field.type === 'pin') {
-              <select class="select select-xs select-bordered flex-1 font-mono"
-                [class.select-warning]="!$any(sn.node)[field.key]"
-                [ngModel]="$any(sn.node)[field.key]"
-                (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })">
-                <option value="">-- select --</option>
-                @for (group of editor.channelGroups(field.pinCap); track group.provider) {
-                  <optgroup [label]="group.label">
-                    @for (ch of group.channels; track ch.id) {
-                      <option [value]="ch.id" [disabled]="!!ch.usedBy">
-                        {{ ch.label }} [{{ ch.caps.join(', ') }}]{{ ch.usedBy ? ' (' + ch.usedBy + ')' : '' }}
-                      </option>
-                    }
-                  </optgroup>
+              <!-- Two-step channel selector: transport group → channel -->
+              <div class="flex gap-1 flex-1">
+                <select class="select select-xs select-bordered flex-1 font-mono"
+                  [class.select-warning]="!$any(sn.node)[field.key]"
+                  [ngModel]="activeGroup(sn.node.id, field.key, $any(sn.node)[field.key] ?? '', field.pinCap)"
+                  (ngModelChange)="onTransportChange(sn.node.id, field.key, $event, field.pinCap)">
+                  <option value="">-- transport --</option>
+                  @for (group of editor.channelGroups(field.pinCap); track group.provider) {
+                    <option [value]="group.provider">{{ group.label }}</option>
+                  }
+                </select>
+                @if (activeGroupChannels(sn.node.id, field.key, $any(sn.node)[field.key] ?? '', field.pinCap); as channels) {
+                  @if (channels.length > 1) {
+                    <select class="select select-xs select-bordered flex-1 font-mono"
+                      [ngModel]="$any(sn.node)[field.key]"
+                      (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })">
+                      <option value="">-- channel --</option>
+                      @for (ch of channels; track ch.id) {
+                        <option [value]="ch.id" [disabled]="!!ch.usedBy">
+                          {{ ch.label }}{{ ch.usedBy ? ' (' + ch.usedBy + ')' : '' }}
+                        </option>
+                      }
+                    </select>
+                  }
                 }
-              </select>
-            } @else if (field.type === 'provider') {
-              <select class="select select-xs select-bordered flex-1 font-mono"
-                [class.select-warning]="!$any(sn.node)[field.key]"
-                [ngModel]="$any(sn.node)[field.key]"
-                (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })">
-                <option value="">-- select --</option>
-                @for (prov of editor.availableProviders(field.providerType); track prov.id) {
-                  <option [value]="prov.id">{{ prov.id }}</option>
-                }
-              </select>
+              </div>
             } @else if (field.type === 'number') {
               <input type="number" class="input input-xs input-bordered w-full font-mono"
                 [ngModel]="$any(sn.node)[field.key]"
@@ -444,7 +446,49 @@ export class TopologySidebarComponent {
     this.workspace.removeLink(linkId);
   }
 
-  // --- Helpers ---
+  // --- Two-step channel selector helpers ---
+
+  /** Tracks user's transport group selection per field (survives value clearing). */
+  private selectedGroups = new Map<string, string>();
+
+  /** Resolve active group: explicit selection > derived from value > empty. */
+  protected activeGroup(nodeId: string, fieldKey: string, currentValue: string, cap?: PinCap): string {
+    const key = `${nodeId}:${fieldKey}`;
+    const explicit = this.selectedGroups.get(key);
+    if (explicit) return explicit;
+    if (!currentValue) return '';
+    const groups = this.editor.channelGroups(cap);
+    for (const g of groups) {
+      if (g.channels.some(ch => ch.id === currentValue)) return g.provider;
+    }
+    return '';
+  }
+
+  /** Channels in the active group for step 2. */
+  protected activeGroupChannels(nodeId: string, fieldKey: string, currentValue: string, cap?: PinCap): Array<{ id: string; label: string; caps: PinCap[]; usedBy?: string }> {
+    const groupId = this.activeGroup(nodeId, fieldKey, currentValue, cap);
+    if (!groupId) return [];
+    const groups = this.editor.channelGroups(cap);
+    const group = groups.find(g => g.provider === groupId);
+    return group?.channels ?? [];
+  }
+
+  /** When transport group changes, auto-select if single channel or clear. */
+  protected onTransportChange(nodeId: string, field: string, groupId: string, cap?: PinCap) {
+    const key = `${nodeId}:${field}`;
+    this.selectedGroups.set(key, groupId);
+    if (!groupId) { this.updateField.emit({ nodeId, field, value: '' }); return; }
+    const groups = this.editor.channelGroups(cap);
+    const group = groups.find(g => g.provider === groupId);
+    if (!group) { this.updateField.emit({ nodeId, field, value: '' }); return; }
+    if (group.channels.length === 1) {
+      this.updateField.emit({ nodeId, field, value: group.channels[0].id });
+    } else {
+      this.updateField.emit({ nodeId, field, value: '' });
+    }
+  }
+
+  // --- Route & validation helpers ---
 
   routeDiagnostics(routeKey: string): RuleDiagnostic[] {
     return this.editor.diagnosticsByTarget().get(routeKey) ?? [];

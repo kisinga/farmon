@@ -4,7 +4,7 @@ import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
 import type { SystemTopology } from '../models/topology.model';
 import { collectPins, NODE_REGISTRY, createBoardDriver, createProviderDriver } from '@far-mon/core';
-import type { IoProviderDriver, IoProviderDef } from '@far-mon/core';
+import type { IoProviderDriver } from '@far-mon/core';
 import { WorkspaceService } from './workspace.service';
 
 @Injectable({ providedIn: 'root' })
@@ -109,21 +109,26 @@ export class SystemEditorService {
       provider: string; providerLabel: string; usedBy?: string;
     }> = [];
 
-    for (const { id, label, driver } of this.drivers()) {
+    for (const { id: providerId, label, driver } of this.drivers()) {
       for (const ch of driver.enumerate()) {
-        if (reserved.has(ch.fqid)) continue;
+        // Channel ID: board uses fqid directly, providers prefix with "providerId:",
+        // transport endpoints (fqid empty) use providerId as the channel ID.
+        const channelId = providerId === 'board' ? ch.fqid
+          : ch.fqid ? `${providerId}:${ch.fqid}`
+          : providerId;
+        if (reserved.has(channelId)) continue;
         if (cap && !ch.caps.includes(cap)) continue;
         result.push({
-          id: ch.fqid, label: ch.label, caps: ch.caps,
-          provider: id, providerLabel: label,
-          usedBy: used.get(ch.fqid),
+          id: channelId, label: ch.label || channelId, caps: ch.caps,
+          provider: providerId, providerLabel: label,
+          usedBy: used.get(channelId),
         });
       }
     }
     return result;
   }
 
-  /** Group channels by provider for optgroup rendering. */
+  /** Group channels by provider for two-step selector. */
   channelGroups(cap?: PinCap): Array<{ provider: string; label: string; channels: Array<{
     id: string; label: string; caps: PinCap[]; usedBy?: string;
   }> }> {
@@ -135,12 +140,6 @@ export class SystemEditorService {
       group.channels.push(ch);
     }
     return [...groups.values()];
-  }
-
-  /** List available I/O providers, optionally filtered by type. */
-  availableProviders(type?: string): IoProviderDef[] {
-    const providers = this.topology()?.device.io_providers ?? [];
-    return type ? providers.filter(p => p.type === type) : [...providers];
   }
 
   readonly gpioUsage = computed(() => {

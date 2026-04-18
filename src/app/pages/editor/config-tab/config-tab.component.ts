@@ -280,14 +280,15 @@ export class ConfigTabComponent {
       const prov = (t.device.io_providers ?? []).find(p => p.id === oldId);
       if (!prov) return;
       prov.id = newId;
-      // Cascade: update all node fields that reference this provider
+      // Cascade: update all node fields that reference this provider by value
       for (const node of t.nodes) {
         const desc = NODE_REGISTRY.get(node.kind);
         if (!desc) continue;
         for (const field of desc.sidebarFields) {
-          if (field.type !== 'provider') continue;
-          if ((node as Record<string, unknown>)[field.key] === oldId) {
-            (node as Record<string, unknown>)[field.key] = newId;
+          if (field.type !== 'pin') continue;
+          const val = (node as Record<string, unknown>)[field.key];
+          if (val === oldId || (typeof val === 'string' && val.startsWith(oldId + ':'))) {
+            (node as Record<string, unknown>)[field.key] = val === oldId ? newId : newId + val.slice(oldId.length);
           }
         }
       }

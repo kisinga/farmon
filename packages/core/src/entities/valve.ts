@@ -54,8 +54,8 @@ export const valveDescriptor: NodeDescriptor = {
   },
 
   sidebarFields: [
-    { key: 'open_pin', label: 'Open Pin', type: 'pin', placeholder: 'GPIO4' },
-    { key: 'close_pin', label: 'Close Pin', type: 'pin', placeholder: 'GPIO5' },
+    { key: 'open_pin', label: 'Open Pin', type: 'pin', placeholder: 'GPIO4', pinCap: 'digital' },
+    { key: 'close_pin', label: 'Close Pin', type: 'pin', placeholder: 'GPIO5', pinCap: 'digital' },
     { key: 'travel_time', label: 'Travel Time', type: 'text', placeholder: '15s' },
   ],
 

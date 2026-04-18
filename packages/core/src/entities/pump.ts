@@ -73,7 +73,7 @@ export const pumpDescriptor: NodeDescriptor = {
   },
 
   sidebarFields: [
-    { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42' },
+    { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42', pinCap: 'digital' },
   ],
 
   constraints: [
