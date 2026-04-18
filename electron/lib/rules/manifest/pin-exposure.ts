@@ -15,6 +15,8 @@ export const pinExposure: ManifestRule = {
     const allPins = collectAllPins(m);
 
     for (const { pin, owner, nodeId } of allPins) {
+      // Provider channels (e.g., mux1:CH3) are managed by their provider, not the board
+      if (pin.includes(':')) continue;
       if (!exposed.has(pin) && !reserved.has(pin)) {
         diagnostics.push({
           severity: "warning",

@@ -1,6 +1,6 @@
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
-import { nodesByKind, NODE_REGISTRY, resolvePinYaml } from '@far-mon/core';
+import { nodesByKind, NODE_REGISTRY, buildResolveChannel } from '@far-mon/core';
 import type { CodegenContext } from '@far-mon/core';
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ export interface CollectedCodegen {
 
 export function collectEntityCodegen(m: Manifest, board: BoardDef): CollectedCodegen {
   const ctx: CodegenContext = {
-    resolvePin: (pin, opts) => resolvePinYaml(pin, board, opts),
+    resolveChannel: buildResolveChannel(board),
   };
 
   const result: CollectedCodegen = {

@@ -19,6 +19,7 @@ export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
 export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext, TypedDescriptor } from './entity-registry';
+export type { ChannelUsage, ResolvedChannel, IoChannel, IoProviderDriver } from './io-provider.types';
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
 export type {
@@ -58,6 +59,10 @@ export {
   dosingPumpSwitchId, filterInletPressureId, filterOutletPressureId, filterDeltaPressureId,
   resolvePinYaml,
 } from './codegen-ids';
+
+// --- I/O Providers ---
+export { createBoardDriver } from './io-providers/board-driver';
+export { buildResolveChannel, resolveComponentHeader } from './io-providers/resolve-channel';
 
 // --- Static ---
 export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';

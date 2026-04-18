@@ -28,6 +28,9 @@ export const pinCapabilities: ManifestRule = {
         const pin = node[field.key];
         if (typeof pin !== 'string' || !pin) continue;
 
+        // Provider channels (e.g., mux1:CH3) are validated by their provider, not the board
+        if (pin.includes(':')) continue;
+
         const validPins = getPins(field.pinCap);
         if (!validPins.has(pin)) {
           // Expander pins (PCF8574 etc.) physically cannot do pulse counting — hard error.

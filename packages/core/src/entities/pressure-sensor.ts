@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { pressureSensorId } from '../codegen-ids';
+import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
 
 const COLOR = '#8b5cf6'; // violet
@@ -65,17 +66,14 @@ export const pressureSensorDescriptor: NodeDescriptor = {
   codegen: {
     sensors: (node: PressureSensorNode, _idx, ctx) => {
       const sId = pressureSensorId(node);
-      const pin = ctx?.resolvePin(node.pin) ?? `number: ${node.pin}`;
+      const header = resolveComponentHeader(ctx, node.pin, { purpose: 'adc' });
       return `\
-- platform: adc
-  pin:
-    ${pin}
+${header}
   id: ${sId}
   name: "${node.name} Pressure"
   unit_of_measurement: "bar"
   icon: "mdi:gauge"
   update_interval: \${update_interval}
-  attenuation: 12db
   accuracy_decimals: 2
   filters:
     - median:

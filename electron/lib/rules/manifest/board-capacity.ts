@@ -26,7 +26,8 @@ export const boardCapacity: ManifestRule = {
       for (const field of desc.sidebarFields) {
         if (field.type !== 'pin' || !field.pinCap) continue;
         const pin = node[field.key];
-        if (typeof pin === 'string' && pin) {
+        if (typeof pin === 'string' && pin && !pin.includes(':')) {
+          // Only count board pins — provider channels are managed by their provider
           demandByCapability.set(field.pinCap, (demandByCapability.get(field.pinCap) ?? 0) + 1);
         }
       }

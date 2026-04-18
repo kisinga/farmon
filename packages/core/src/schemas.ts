@@ -4,9 +4,11 @@
  */
 import { z } from 'zod';
 
-/** Valid pin reference: native GPIO (GPIO0–GPIO99), expander pin (OUT1, IN16), or empty string. */
+/** Valid pin/channel reference: native GPIO (GPIO0–GPIO99), expander pin (OUT1, IN16),
+ *  provider channel (mux1:CH3, io_exp1:DO5), or empty string. */
 export const GpioPin = z.union([
   z.string().regex(/^(GPIO\d{1,2}|[A-Z]+\d{1,2})$/, 'Must be GPIOnn or expander pin format'),
+  z.string().regex(/^[a-z_][a-z0-9_]*:[A-Z]+[0-9]+$/, 'Must be provider:CHANNEL format (e.g., mux1:CH3)'),
   z.literal(''),
 ]);
 

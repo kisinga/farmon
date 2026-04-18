@@ -8,6 +8,7 @@
  */
 
 import type { z } from 'zod';
+import type { ChannelUsage, ResolvedChannel } from './io-provider.types';
 import type { PinCap } from './board.types';
 import type { FlowConstraint } from './graph/constraints';
 
@@ -29,19 +30,19 @@ export interface FieldDef {
 // ---------------------------------------------------------------------------
 
 /**
- * Context passed to codegen functions. Provides pin resolution and
- * other board-aware utilities without coupling entities to BoardDef.
+ * Context passed to codegen functions. Provides channel resolution
+ * without coupling entities to BoardDef or transport details.
  */
 export interface CodegenContext {
-  /** Resolve a pin name to an ESPHome YAML pin block (indented for use inside `pin:`). */
-  resolvePin: (pin: string, opts?: { inverted?: boolean; mode?: string }) => string;
+  /** Resolve a channel ID + usage to an ESPHome platform + config block. */
+  resolveChannel: (channelId: string, usage: ChannelUsage) => ResolvedChannel;
 }
 
 export interface EntityCodegen<T extends Record<string, any> = Record<string, any>> {
   /** YAML fragment for sensors.yaml sensor: section (ADC, pulse counter, template sensors). */
-  sensors?: (node: T, index: number, ctx?: CodegenContext) => string;
+  sensors?: (node: T, index: number, ctx: CodegenContext) => string;
   /** YAML fragment for hardware.yaml switch: section (switches, relays). */
-  hardware?: (node: T, index: number, ctx?: CodegenContext) => string;
+  hardware?: (node: T, index: number, ctx: CodegenContext) => string;
   /** Substitution lines for device.yaml (non-pin substitutions only). */
   substitutions?: (node: T) => string[];
   /** Additional globals for control.yaml. */
@@ -51,7 +52,7 @@ export interface EntityCodegen<T extends Record<string, any> = Record<string, an
    * e.g. { number: "- platform: ...", cover: "- platform: ...", button: "- platform: ..." }
    * Each value is a YAML fragment (indented with 2 spaces) appended to that section.
    */
-  extraComponents?: (node: T, index: number, ctx?: CodegenContext) => Record<string, string>;
+  extraComponents?: (node: T, index: number, ctx: CodegenContext) => Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------

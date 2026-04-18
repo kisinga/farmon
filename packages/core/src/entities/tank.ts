@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema, escXml } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { tankLevelId, tankRawVoltageId, tankCalEmptyId, tankCalFullId } from '../codegen-ids';
+import { resolveComponentHeader } from '../io-providers/resolve-channel';
 
 const COLOR = '#14b8a6'; // teal
 const W = 120, H = 70;
@@ -67,17 +68,14 @@ export const tankDescriptor: NodeDescriptor = {
       const rawId = tankRawVoltageId(node);
       const calEmpty = tankCalEmptyId(node);
       const calFull = tankCalFullId(node);
-      const pin = ctx?.resolvePin(node.level_pin) ?? `number: ${node.level_pin}`;
+      const header = resolveComponentHeader(ctx, node.level_pin, { purpose: 'adc' });
       return `\
-- platform: adc
-  pin:
-    ${pin}
+${header}
   id: ${lvlId}
   name: "${node.name} Level"
   unit_of_measurement: "%"
   icon: "mdi:storage-tank"
   update_interval: \${update_interval}
-  attenuation: 12db
   filters:
     - lambda: |-
         id(${rawId}).publish_state(x);

@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId } from '../codegen-ids';
+import { resolveComponentHeader } from '../io-providers/resolve-channel';
 
 const COLOR = '#16a34a'; // green
 const W = 50, H = 36;
@@ -71,11 +72,9 @@ export const flowSensorDescriptor: NodeDescriptor = {
       const sId = flowSensorId(node);
       const totalId = flowTotalId(node);
       const faultId = flowFaultCountId(node);
-      const pin = ctx?.resolvePin(node.pin, { mode: 'INPUT_PULLUP' }) ?? `number: ${node.pin}\n    mode: INPUT_PULLUP`;
+      const header = resolveComponentHeader(ctx, node.pin, { purpose: 'pulse_counter', mode: 'INPUT_PULLUP' });
       return `\
-- platform: pulse_counter
-  pin:
-    ${pin}
+${header}
   id: ${sId}
   name: "${node.name}"
   unit_of_measurement: "L/min"

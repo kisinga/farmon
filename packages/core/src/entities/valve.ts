@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema, parseDurationMs } from '../schemas';
 import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId } from '../codegen-ids';
+import { resolveComponentHeader } from '../io-providers/resolve-channel';
 
 const COLOR = '#e11d48'; // rose
 const W = 50, H = 36;
@@ -64,21 +65,17 @@ export const valveDescriptor: NodeDescriptor = {
     hardware: (node: ValveNode, _idx, ctx) => {
       const openId = valveOpenPinId(node);
       const closeId = valveClosePinId(node);
-      const openPin = ctx?.resolvePin(node.open_pin, { inverted: true }) ?? `number: ${node.open_pin}\n    inverted: true`;
-      const closePin = ctx?.resolvePin(node.close_pin, { inverted: true }) ?? `number: ${node.close_pin}\n    inverted: true`;
+      const openHeader = resolveComponentHeader(ctx, node.open_pin, { purpose: 'digital_out', inverted: true });
+      const closeHeader = resolveComponentHeader(ctx, node.close_pin, { purpose: 'digital_out', inverted: true });
       return `\
 # --- ${node['name']} ---
-- platform: gpio
-  pin:
-    ${openPin}
+${openHeader}
   id: ${openId}
   internal: true
   restore_mode: ALWAYS_OFF
   interlock: [${openId}, ${closeId}]
   interlock_wait_time: 100ms
-- platform: gpio
-  pin:
-    ${closePin}
+${closeHeader}
   id: ${closeId}
   internal: true
   restore_mode: ALWAYS_OFF

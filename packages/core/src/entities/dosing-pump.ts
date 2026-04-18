@@ -4,6 +4,7 @@ import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { dosingPumpSwitchId } from '../codegen-ids';
+import { resolveComponentHeader } from '../io-providers/resolve-channel';
 
 const COLOR = '#ea580c'; // orange
 const S = 50;
@@ -70,12 +71,10 @@ export const dosingPumpDescriptor: NodeDescriptor = {
   codegen: {
     hardware: (node: DosingPumpNode, _idx, ctx) => {
       const id = dosingPumpSwitchId(node);
-      const pin = ctx?.resolvePin(node.pin, { inverted: true }) ?? `number: ${node.pin}\n    inverted: true`;
+      const header = resolveComponentHeader(ctx, node.pin, { purpose: 'digital_out', inverted: true });
       return `\
 # --- ${node.name} ---
-- platform: gpio
-  pin:
-    ${pin}
+${header}
   id: ${id}
   name: "${node.name} Relay"
   icon: "mdi:pump"

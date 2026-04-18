@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema, escXml } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { waterSourcePressureId } from '../codegen-ids';
+import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
 
 const COLOR = '#0ea5e9'; // sky blue
@@ -60,17 +61,14 @@ export const waterSourceDescriptor: NodeDescriptor = {
     sensors: (node: WaterSourceNode, _idx, ctx) => {
       if (!node.pressure_pin) return '';
       const sId = waterSourcePressureId(node);
-      const pin = ctx?.resolvePin(node.pressure_pin) ?? `number: ${node.pressure_pin}`;
+      const header = resolveComponentHeader(ctx, node.pressure_pin, { purpose: 'adc' });
       return `\
-- platform: adc
-  pin:
-    ${pin}
+${header}
   id: ${sId}
   name: "${node.name} Pressure"
   unit_of_measurement: "bar"
   icon: "mdi:gauge"
   update_interval: \${update_interval}
-  attenuation: 12db
   accuracy_decimals: 2`;
     },
 

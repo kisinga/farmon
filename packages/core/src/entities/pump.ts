@@ -4,6 +4,7 @@ import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { pumpSwitchId } from '../codegen-ids';
+import { resolveComponentHeader } from '../io-providers/resolve-channel';
 
 const COLOR = '#dc2626'; // red
 const S = 60;
@@ -92,12 +93,10 @@ export const pumpDescriptor: NodeDescriptor = {
   codegen: {
     hardware: (node: PumpNode, _idx, ctx) => {
       const id = pumpSwitchId();
-      const pin = ctx?.resolvePin(node.pin, { inverted: true }) ?? `number: ${node.pin}\n    inverted: true`;
+      const header = resolveComponentHeader(ctx, node.pin, { purpose: 'digital_out', inverted: true });
       return `\
 # --- Pump relay ------------------------------------------------------------
-- platform: gpio
-  pin:
-    ${pin}
+${header}
   id: ${id}
   name: "Pump Relay"
   icon: "mdi:water-pump"
