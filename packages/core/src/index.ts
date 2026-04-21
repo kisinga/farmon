@@ -31,7 +31,7 @@ export type { BoundaryPort } from './graph/boundary-ports';
 
 // --- Schemas ---
 export { TopologySchema, parseTopology, parsePortRef, portRef, type Topology } from './topology-schema';
-export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, parseDurationMs, escXml } from './schemas';
+export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, parseDurationMs, escXml } from './schemas';
 
 // --- Registry ---
 export { NODE_REGISTRY, ALL_DESCRIPTORS, REGISTRY_RULES, legendSvgFor, nodesWithFlag, getTypedDescriptor } from './entity-registry';
@@ -81,5 +81,5 @@ export { evaluateEscalations } from './graph/evaluate-escalations';
 export { boundaryPorts } from './graph/boundary-ports';
 export { buildCompositeGraph, type CompositeInput } from './graph/composite-graph';
 
-// --- Generators ---
-export { generateTopologySvg } from './generators/topology-svg';
+// --- Topology enrichment (interconnect labels) ---
+export { enrichPerSystemInterconnects, enrichCompositeInterconnects, type InterconnectContext } from './enrich-interconnects';

@@ -6,7 +6,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { X6Canvas, type CanvasEvents } from '../editor/topology-x6-tab/x6-canvas';
-import { renderBoundaries, BOUNDARY_COLORS } from '../../shared/canvas/boundary-renderer';
+import { BOUNDARY_COLORS } from '../../shared/canvas/boundary-renderer';
+import { renderCompositeOverlays } from '../../shared/canvas/topology-overlays';
 
 @Component({
   selector: 'app-site-view',
@@ -300,44 +301,10 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.canvas || !composite || composite.nodes.length === 0) return;
 
     this.canvas.reset(composite);
-
-    const graph = this.canvas.graphInstance;
-    const systems = this.workspace.systems();
-    const links = this.workspace.links();
-
-    // Build boundary groups
-    const systemNodes = new Map<string, string[]>();
-    const friendlyNames = new Map<string, string>();
-    for (const [systemId, { topology }] of systems) {
-      systemNodes.set(systemId, topology.nodes.map(n => `${systemId}/${n.id}`));
-      friendlyNames.set(systemId, topology.device.friendly_name);
-    }
-    renderBoundaries(graph, systemNodes, friendlyNames);
-
-    // Style inter-system link edges as dashed
-    for (const link of links) {
-      const edge = graph.getCellById(`pipe-link-${link.id}`);
-      if (edge?.isEdge()) {
-        edge.setAttrs({
-          line: {
-            stroke: '#8b5cf6',
-            strokeWidth: 2,
-            strokeDasharray: '8,4',
-            targetMarker: { name: 'classic', size: 8 },
-          },
-        });
-      }
-    }
-
-    // Resize interconnect nodes that have connection labels (compositeTopology injects _connectionLabel)
-    for (const node of composite.nodes) {
-      if (node.kind !== 'interconnect' || !(node as any)._connectionLabel) continue;
-      const cell = graph.getCellById(`node-${node.id}`);
-      if (cell?.isNode()) {
-        const size = cell.getSize();
-        if (size.height < 66) cell.resize(size.width, 66);
-      }
-    }
+    renderCompositeOverlays(this.canvas.graphInstance, composite, {
+      systems: this.workspace.systems(),
+      links: this.workspace.links(),
+    });
   }
 
   protected zoomIn() { this.canvas?.zoomIn(); }

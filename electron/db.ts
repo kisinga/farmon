@@ -300,6 +300,29 @@ function queryAll<T>(sql: string, params: unknown[] = []): T[] {
 }
 
 /** Run a query and return the first row or null. */
+/**
+ * Recursively strip keys beginning with `_` from a plain object/array tree.
+ * Used at the save boundary so rendering-only fields (e.g. `_connectionLabel`
+ * on enriched interconnect nodes) can't leak into the stored topology JSON.
+ * Primitives, Dates, etc. are returned unchanged.
+ */
+function stripPrivateFields<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(v => stripPrivateFields(v)) as unknown as T;
+  if (value && typeof value === 'object' && value.constructor === Object) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (k.startsWith('_')) continue;
+      out[k] = stripPrivateFields(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+function serializeTopology(topology: unknown): string {
+  return JSON.stringify(stripPrivateFields(topology));
+}
+
 function queryOne<T>(sql: string, params: unknown[] = []): T | null {
   const rows = queryAll<T>(sql, params);
   return rows[0] ?? null;
@@ -511,7 +534,7 @@ export function saveSiteTransaction(payload: SiteSavePayload): void {
 
     // Upsert systems
     for (const sys of payload.systems) {
-      const topologyJson = JSON.stringify(sys.topology);
+      const topologyJson = serializeTopology(sys.topology);
       db.run(
         `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, device_name)
          VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -627,7 +650,7 @@ export function insertSystem(
   },
 ): void {
   const db = getDb();
-  const topologyJson = JSON.stringify(system.topology);
+  const topologyJson = serializeTopology(system.topology);
 
   db.run("BEGIN TRANSACTION");
   try {
@@ -743,7 +766,7 @@ export function createGeneration(
   if (latest && latest.checksum === checksum) return null;
 
   const version = crypto.randomBytes(4).toString("hex");
-  const topologyJson = JSON.stringify(topology);
+  const topologyJson = serializeTopology(topology);
   const boardJson = JSON.stringify(board);
   db.run(
     `INSERT INTO generations (version, site_id, system_id, schema_version, topology, board, checksum, gen_type)

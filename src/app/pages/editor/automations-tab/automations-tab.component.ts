@@ -4,13 +4,16 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 import { ElectronService } from '../../../core/services/electron.service';
 import type { Automation, AutomationTrigger, RouteOverride } from '../../../core/models/topology.model';
 import { routeLevelInfo, type RouteLevelInfo } from '../shared/route-level-info';
+import { AutomationTriggerSchema } from '@far-mon/core';
+import { ZodFieldDirective } from '../../../core/utils/field-validation';
+import { FieldErrorComponent } from '../../../shared/field-error/field-error.component';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
 
 @Component({
   selector: 'app-automations-tab',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, ZodFieldDirective, FieldErrorComponent],
   template: `
     @if (editor.topology(); as t) {
       <div class="content-pane space-y-6">
@@ -93,9 +96,14 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                     <input
                       type="time"
                       class="input input-bordered input-sm"
+                      [name]="'at-' + auto.id"
+                      [ngModelOptions]="{ standalone: true }"
+                      [zodField]="{ schema: triggerTimeSchema, key: 'at' }"
+                      #atCtrl="ngModel"
                       [ngModel]="auto.trigger.at ?? '06:00'"
                       (ngModelChange)="updateTrigger(i, 'at', $event)"
                     />
+                    <app-field-error [control]="atCtrl" />
                   </div>
                 }
                 @if (auto.trigger.type === 'level') {
@@ -117,20 +125,30 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                     <input
                       type="number"
                       class="input input-bordered input-sm"
+                      [name]="'below-' + auto.id"
+                      [ngModelOptions]="{ standalone: true }"
+                      [zodField]="{ schema: triggerLevelSchema, key: 'below' }"
+                      #belowCtrl="ngModel"
                       [ngModel]="auto.trigger.below ?? ''"
                       (ngModelChange)="updateTrigger(i, 'below', $event === '' ? undefined : +$event)"
                       min="0" max="100" placeholder="e.g. 80"
                     />
+                    <app-field-error [control]="belowCtrl" />
                   </div>
                   <div class="form-control">
                     <label class="label pb-1"><span class="label-text text-xs">Hold (min)</span></label>
                     <input
                       type="number"
                       class="input input-bordered input-sm"
+                      [name]="'for-' + auto.id"
+                      [ngModelOptions]="{ standalone: true }"
+                      [zodField]="{ schema: triggerLevelSchema, key: 'for_minutes' }"
+                      #forCtrl="ngModel"
                       [ngModel]="auto.trigger.for_minutes ?? ''"
                       (ngModelChange)="updateTrigger(i, 'for_minutes', $event === '' ? undefined : +$event)"
                       min="0" max="60" placeholder="e.g. 1"
                     />
+                    <app-field-error [control]="forCtrl" />
                   </div>
                 }
               </div>
@@ -204,6 +222,8 @@ export class AutomationsTabComponent {
 
   protected days = DAYS;
   protected derivedRoutes = signal<Array<{ key: string; name: string }>>([]);
+  protected triggerTimeSchema = AutomationTriggerSchema.optionsMap.get('time')!;
+  protected triggerLevelSchema = AutomationTriggerSchema.optionsMap.get('level')!;
 
   /** Nodes that can be used as level trigger sources (tanks with level sensors). */
   protected levelNodes = computed(() => {

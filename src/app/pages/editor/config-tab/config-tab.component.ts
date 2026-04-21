@@ -4,7 +4,9 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
-import { slug, NODE_REGISTRY } from '@far-mon/core';
+import { slug, NODE_REGISTRY, TimingSchema } from '@far-mon/core';
+import { ZodFieldDirective } from '../../../core/utils/field-validation';
+import { FieldErrorComponent } from '../../../shared/field-error/field-error.component';
 
 interface TimingField {
   key: string;
@@ -26,7 +28,7 @@ const TIMING_FIELDS: TimingField[] = [
 @Component({
   selector: 'app-config-tab',
   standalone: true,
-  imports: [FormsModule, BoardSvgComponent],
+  imports: [FormsModule, BoardSvgComponent, ZodFieldDirective, FieldErrorComponent],
   template: `
     @if (editor.topology(); as t) {
       <div class="content-pane space-y-6">
@@ -193,16 +195,23 @@ const TIMING_FIELDS: TimingField[] = [
                       <div class="font-medium text-sm">{{ field.label }}</div>
                       <div class="text-xs text-base-content/60 mt-0.5">{{ field.description }}</div>
                     </div>
-                    <div class="flex items-center gap-2 shrink-0">
-                      <input
-                        type="number"
-                        min="2"
-                        class="input input-bordered input-sm w-24 text-right font-mono"
-                        [ngModel]="getTimingValue(t, field)"
-                        (ngModelChange)="updateTiming(field.key, +$event)"
-                        [placeholder]="'' + field.default"
-                      />
-                      <span class="text-xs text-base-content/60 w-16">{{ field.unit }}</span>
+                    <div class="flex flex-col items-end gap-1 shrink-0">
+                      <div class="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="2"
+                          class="input input-bordered input-sm w-24 text-right font-mono"
+                          [name]="'timing-' + field.key"
+                          [ngModelOptions]="{ standalone: true }"
+                          [zodField]="{ schema: timingSchema, key: field.key }"
+                          #timingCtrl="ngModel"
+                          [ngModel]="getTimingValue(t, field)"
+                          (ngModelChange)="updateTiming(field.key, +$event)"
+                          [placeholder]="'' + field.default"
+                        />
+                        <span class="text-xs text-base-content/60 w-16">{{ field.unit }}</span>
+                      </div>
+                      <app-field-error [control]="timingCtrl" />
                     </div>
                   </div>
                 }
@@ -219,6 +228,7 @@ export class ConfigTabComponent {
   protected boards = inject(BoardService);
 
   protected timingGroups = [...new Set(TIMING_FIELDS.map((f) => f.group))];
+  protected timingSchema = TimingSchema;
 
   protected peripherals = computed(() => {
     const board = this.editor.board();

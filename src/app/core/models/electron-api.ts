@@ -189,7 +189,7 @@ export interface ElectronAPI {
   codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult>;
   codegenGenerateHA(siteId: string): Promise<GenerateHAResult>;
   codegenGenerateSelfTest(boardModel: string, secrets: Record<string, string>): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }>;
-  codegenGenerateSiteDocs(siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }>;
+  codegenGenerateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }>;
 
   // Toolchain
   toolchainStatus(): Promise<ToolchainInfo>;

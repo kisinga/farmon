@@ -9,8 +9,9 @@ import { ElectronService } from '../../core/services/electron.service';
 import { BoardService } from '../../core/services/board.service';
 import { ValidationPanelComponent } from '../../shared/validation-panel/validation-panel.component';
 import { SerialMonitorComponent } from '../../shared/serial-monitor/serial-monitor.component';
-import { X6Canvas, type CanvasEvents } from '../editor/topology-x6-tab/x6-canvas';
-import { renderBoundaries, BOUNDARY_COLORS } from '../../shared/canvas/boundary-renderer';
+import { TopologyRenderer } from '../../shared/canvas/topology-renderer';
+import { renderCompositeOverlays, renderPerSystemOverlays } from '../../shared/canvas/topology-overlays';
+import { enrichPerSystemInterconnects } from '@far-mon/core';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { FormsModule } from '@angular/forms';
 import type { ToolchainInfo, SerialDevice, GenerationMeta, GenerationType } from '../../core/models/electron-api';
@@ -738,7 +739,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   // === Docs state ===
   protected generatingDocs = signal(false);
   protected siteDocHtml = signal<string | null>(null);
-  private hiddenCanvas: X6Canvas | null = null;
+  private topologyRenderer: TopologyRenderer | null = null;
 
   // === Firmware state ===
   protected selectedSystemId = signal('');
@@ -908,8 +909,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   }
 
   ngAfterViewInit() {
-    // Initialize hidden canvas for composite SVG export
-    this.initHiddenCanvas();
+    this.initTopologyRenderer();
   }
 
   ngAfterViewChecked() {
@@ -923,7 +923,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     this.unsubStarted?.();
     this.unsubOutput?.();
     this.unsubDone?.();
-    this.hiddenCanvas?.destroy();
+    this.topologyRenderer?.destroy();
   }
 
   private updateSystemEntries() {
@@ -938,50 +938,9 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     this.systemEntries.set(entries);
   }
 
-  private initHiddenCanvas() {
+  private initTopologyRenderer() {
     if (!this.hiddenCanvasRef) return;
-    const noopEvents: CanvasEvents = {
-      onNodesMoved: () => {},
-      onPipeCreated: () => {},
-      onPipeDeleted: () => {},
-      onSelected: () => {},
-      onDanglingPipe: () => {},
-    };
-    this.hiddenCanvas = new X6Canvas(this.hiddenCanvasRef.nativeElement, noopEvents);
-    this.hiddenCanvas.setReadonly(true);
-    this.hiddenCanvas.resize(1200, 800);
-  }
-
-  private renderCompositeOnHiddenCanvas() {
-    const composite = this.workspace.compositeTopology();
-    if (!this.hiddenCanvas || !composite || composite.nodes.length === 0) return;
-
-    this.hiddenCanvas.reset(composite);
-    const graph = this.hiddenCanvas.graphInstance;
-    const systems = this.workspace.systems();
-    const links = this.workspace.links();
-
-    const systemNodes = new Map<string, string[]>();
-    const friendlyNames = new Map<string, string>();
-    for (const [systemId, { topology }] of systems) {
-      systemNodes.set(systemId, topology.nodes.map(n => `${systemId}/${n.id}`));
-      friendlyNames.set(systemId, topology.device.friendly_name);
-    }
-    renderBoundaries(graph, systemNodes, friendlyNames);
-
-    for (const link of links) {
-      const edge = graph.getCellById(`pipe-link-${link.id}`);
-      if (edge?.isEdge()) {
-        edge.setAttrs({
-          line: {
-            stroke: '#8b5cf6',
-            strokeWidth: 2,
-            strokeDasharray: '8,4',
-            targetMarker: { name: 'classic', size: 8 },
-          },
-        });
-      }
-    }
+    this.topologyRenderer = new TopologyRenderer(this.hiddenCanvasRef.nativeElement);
   }
 
   // === Docs methods ===
@@ -989,19 +948,31 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   async generateSiteDocs() {
     if (!this.workspace.site()) return;
 
-    // Ensure hidden canvas exists
-    if (!this.hiddenCanvas && this.hiddenCanvasRef) {
-      this.initHiddenCanvas();
-    }
+    if (!this.topologyRenderer && this.hiddenCanvasRef) this.initTopologyRenderer();
+    const renderer = this.topologyRenderer;
+    const composite = this.workspace.compositeTopology();
+    if (!renderer || !composite || composite.nodes.length === 0) return;
 
     this.generatingDocs.set(true);
     try {
-      this.renderCompositeOnHiddenCanvas();
-      const compositeSvg = this.hiddenCanvas ? await this.hiddenCanvas.exportSvg() : '';
-      const siteId = this.workspace.site()!.id;
+      const systemsMap = this.workspace.systems();
+      const linksData = this.workspace.links();
+      const overlayCtx = { systems: systemsMap, links: linksData };
+
+      const compositeSvg = await renderer.export(composite, [
+        (canvas, topology) => renderCompositeOverlays(canvas.graphInstance, topology, overlayCtx),
+      ]);
+
+      const perSystemSvgs: Record<string, string> = {};
+      for (const [id, { topology }] of systemsMap) {
+        const enriched = enrichPerSystemInterconnects(topology, id, overlayCtx);
+        perSystemSvgs[id] = await renderer.export(enriched, [
+          (canvas, t) => renderPerSystemOverlays(canvas.graphInstance, t),
+        ]);
+      }
 
       const systems: Array<{ systemId: string; friendlyName: string; board: string; deviceName: string; topology: unknown }> = [];
-      for (const [id, { topology }] of this.workspace.systems()) {
+      for (const [id, { topology }] of systemsMap) {
         systems.push({
           systemId: id,
           friendlyName: topology.device.friendly_name,
@@ -1011,10 +982,9 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
         });
       }
 
-      const linksData = this.workspace.links();
+      const siteId = this.workspace.site()!.id;
       const routesData = this.workspace.compositeRoutes();
-
-      const result = await this.electron.generateSiteDocs(siteId, compositeSvg, systems, linksData, routesData);
+      const result = await this.electron.generateSiteDocs(siteId, compositeSvg, perSystemSvgs, systems, linksData, routesData);
       this.siteDocHtml.set(result.html);
     } finally {
       this.generatingDocs.set(false);

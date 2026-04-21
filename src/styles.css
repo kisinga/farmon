@@ -40,3 +40,13 @@
 .nav-dot-overview { background-color: var(--nav-layer-overview); }
 .nav-dot-site    { background-color: var(--nav-layer-site); }
 .nav-dot-system  { background-color: var(--nav-layer-system); }
+
+/* Angular form state → DaisyUI error styling.
+   Angular applies .ng-touched and .ng-invalid automatically; we let them
+   drive the visual error state so per-template class bindings aren't needed. */
+.input.ng-touched.ng-invalid { @apply input-error; }
+.select.ng-touched.ng-invalid { @apply select-error; }
+
+/* Pin fields have a two-step selector; the validated control is a hidden
+   input. We mirror its invalid state onto the visible selects via a wrapper. */
+.pin-invalid .select { @apply select-error; }

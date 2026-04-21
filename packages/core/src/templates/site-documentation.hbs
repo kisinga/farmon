@@ -24,7 +24,7 @@
   <div class="logo">{{{logoSvg}}}</div>
   <div>
     <h1>MajiFlow</h1>
-    <div class="subtitle">{{siteName}} — Site Documentation</div>
+    <div class="subtitle">{{docSubtitle}}</div>
     <div class="pills">
         <span class="pill">{{systemCount}} controller{{#unless singleSystem}}s{{/unless}}</span>
         {{#each componentPills}}<span class="pill">{{this.label}}</span>
@@ -33,8 +33,9 @@
   </div>
 </div>
 
+{{#unless singleSystem}}
 <h2>Site Topology</h2>
-<div class="diagram">
+<div class="diagram topology">
 {{{compositeTopologySvg}}}
 </div>
 
@@ -57,6 +58,7 @@
 {{/each}}
   </tbody>
 </table>
+{{/unless}}
 
 {{#if hasLinks}}
 <h2>Inter-Controller Links</h2>
@@ -80,11 +82,13 @@
 
 <h2>Routes</h2>
 {{#each routeGroups}}
+{{#unless ../singleSystem}}
 <div class="system-header">
   <div class="system-dot" style="background:{{this.color}}"></div>
   <strong>{{this.friendlyName}}</strong>
   <span style="color:var(--text-muted);font-size:11px;">{{this.routes.length}} route{{#unless this.singleRoute}}s{{/unless}}</span>
 </div>
+{{/unless}}
 <table>
   <thead>
     <tr><th>Route</th><th>Type</th><th>Source Min</th><th>Dest Max</th><th>Max Runtime</th><th>Scope</th></tr>
@@ -107,10 +111,12 @@
 {{#if hasAutomations}}
 <h2>Automations</h2>
 {{#each automationGroups}}
+{{#unless ../singleSystem}}
 <div class="system-header">
   <div class="system-dot" style="background:{{this.color}}"></div>
   <strong>{{this.friendlyName}}</strong>
 </div>
+{{/unless}}
 <table>
   <thead>
     <tr><th>Name</th><th>Trigger</th><th>Schedule</th><th>Route</th></tr>
@@ -129,13 +135,22 @@
 {{/each}}
 {{/if}}
 
-<h2>Controller Details</h2>
+{{#unless singleSystem}}<h2>Controller Details</h2>{{/unless}}
 {{#each controllerDetails}}
+{{#unless ../singleSystem}}
 <div class="system-header">
   <div class="system-dot" style="background:{{this.color}}"></div>
   <strong>{{this.friendlyName}}</strong>
   <span style="color:var(--text-muted);font-size:11px;">Board: <code>{{this.board}}</code> · Device: <code>{{this.deviceName}}</code></span>
 </div>
+{{/unless}}
+
+{{#if this.topologySvg}}
+<h3>Topology</h3>
+<div class="diagram topology">
+{{{this.topologySvg}}}
+</div>
+{{/if}}
 
 {{{this.boardPinoutSection}}}
 

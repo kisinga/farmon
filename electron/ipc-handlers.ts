@@ -503,6 +503,7 @@ export function registerIpcHandlers() {
       _e,
       siteId: string,
       compositeSvg: string,
+      perSystemSvgs: Record<string, string>,
       systemsRaw: Array<{ systemId: string; friendlyName: string; board: string; deviceName: string; topology: unknown }>,
       linksRaw: Array<{ id: string; fromSystem: string; fromNode: string; fromPort: string; toSystem: string; toNode: string; toPort: string; label?: string | null }>,
       routesRaw: unknown[],
@@ -533,6 +534,7 @@ export function registerIpcHandlers() {
           manifest,
           boardSvg,
           pinOverlays,
+          topologySvg: perSystemSvgs[s.systemId] ?? '',
         };
       });
 

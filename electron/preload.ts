@@ -44,8 +44,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("codegen:generate-ha", siteId),
   codegenGenerateSelfTest: (boardModel: string, secrets: Record<string, string>) =>
     ipcRenderer.invoke("codegen:generate-selftest", boardModel, secrets),
-  codegenGenerateSiteDocs: (siteId: string, compositeSvg: string, systems: unknown[], links: unknown[], routes: unknown[]) =>
-    ipcRenderer.invoke("codegen:generate-site-docs", siteId, compositeSvg, systems, links, routes),
+  codegenGenerateSiteDocs: (siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, systems: unknown[], links: unknown[], routes: unknown[]) =>
+    ipcRenderer.invoke("codegen:generate-site-docs", siteId, compositeSvg, perSystemSvgs, systems, links, routes),
 
   // --- Toolchain ---
   toolchainStatus: () => ipcRenderer.invoke("toolchain:status"),

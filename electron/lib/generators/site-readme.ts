@@ -16,6 +16,8 @@ export interface SiteDocSystem {
   manifest: Manifest;
   boardSvg?: string;
   pinOverlays?: PinOverlayData[];
+  /** SVG of this system's topology (rendered with per-system overlays). */
+  topologySvg?: string;
 }
 
 export interface SiteDocOptions {
@@ -186,6 +188,7 @@ export function generateSiteDocumentation(
       deviceName: s.deviceName,
       color: systemColor.get(s.systemId) ?? '#666',
       boardPinoutSection,
+      topologySvg: s.topologySvg ?? '',
       timing: s.manifest.timing,
       routeEntities: s.manifest.routes.map((r, ri) => ({ index: ri, name: r.name })),
       tankCalEntities: levelSensors.map(t => ({ id: t['id'], name: t['name'] })),
@@ -200,13 +203,19 @@ export function generateSiteDocumentation(
     if (nodesByKind(s.manifest.nodes, 'tank').length > 0) hasTanks = true;
   }
 
+  const singleSystem = systems.length === 1;
+  const docSubtitle = singleSystem
+    ? `${systems[0].friendlyName} — Documentation`
+    : `${siteName} — Site Documentation`;
+
   return compiledSiteTemplate({
     css: DOCUMENTATION_CSS,
     logoSvg: LOGO_SVG_SMALL,
     logoSvgSmall: LOGO_SVG_SMALL.replace('width="36" height="36"', 'width="18" height="18"'),
     siteName,
+    docSubtitle,
     systemCount: systems.length,
-    singleSystem: systems.length === 1,
+    singleSystem,
     componentPills,
     compositeTopologySvg,
     systems: systemsTable,

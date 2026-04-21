@@ -5,9 +5,9 @@ import { WorkspaceService } from '../../../core/services/workspace.service';
 import type { SystemTopology, TopologyNode, RouteOverride } from '../../../core/models/topology.model';
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
-import { svgDataUri } from './scada-shape';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
-import { buildGraph, activeGraph, downstreamNodes } from '@far-mon/core';
+import { buildGraph, activeGraph, downstreamNodes, enrichPerSystemInterconnects } from '@far-mon/core';
+import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlays';
 
 @Component({
   selector: 'app-topology-x6-tab',
@@ -184,28 +184,43 @@ export class TopologyX6TabComponent {
     });
   }
 
-  /** Render and capture PNG snapshot for documentation. */
+  /** Enrich topology with interconnect labels based on the active system context. */
+  private enrich(topology: SystemTopology): SystemTopology {
+    const systemId = this.workspace.activeSystemId();
+    if (!systemId) return topology;
+    return enrichPerSystemInterconnects(topology, systemId, {
+      systems: this.workspace.systems(),
+      links: this.workspace.links(),
+    });
+  }
+
+  /**
+   * Render the topology on the live canvas and capture its SVG for docs.
+   * `reset: true` clears cells (use on initial load or full topology swap);
+   * `reset: false` performs incremental reconciliation (use on granular edits).
+   */
+  private renderToCanvas(topology: SystemTopology, opts: { reset: boolean }) {
+    const enriched = this.enrich(topology);
+    if (opts.reset) this.c.reset(enriched); else this.c.render(enriched);
+    renderPerSystemOverlays(this.c.graphInstance, enriched);
+    requestAnimationFrame(() =>
+      this.c.exportSvg()
+        .then(svg => this.editor.setCanvasSvg(svg))
+        .catch(e => console.error('[MajiFlow] SVG export failed:', e)),
+    );
+  }
+
   private renderAndSnapshot(topology: SystemTopology) {
-    this.c.render(topology);
-    this.renderInterconnectLabels();
-    // Defer snapshot to next frame so X6 finishes layout
-    requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)).catch(e => console.error('[MajiFlow] SVG export failed:', e)));
+    this.renderToCanvas(topology, { reset: false });
   }
 
   private doInitialRender() {
     const t = this.editor.topology();
-    if (t) {
-      this.c.reset(t);
-      this.renderInterconnectLabels();
-      requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)).catch(e => console.error('[MajiFlow] SVG export failed:', e)));
-      return;
-    }
+    if (t) { this.renderToCanvas(t, { reset: true }); return; }
     const stop = effect(() => {
       const t = this.editor.topology();
       if (t) {
-        this.c.reset(t);
-        this.renderInterconnectLabels();
-        requestAnimationFrame(() => this.c.exportSvg().then(svg => this.editor.setCanvasSvg(svg)).catch(e => console.error('[MajiFlow] SVG export failed:', e)));
+        this.renderToCanvas(t, { reset: true });
         queueMicrotask(() => stop.destroy());
       }
     }, { injector: this.injector });
@@ -272,7 +287,10 @@ export class TopologyX6TabComponent {
     let ghostEdgeTimer: ReturnType<typeof setTimeout> | null = null;
     this.c.graphInstance.on('node:change:position', () => {
       if (ghostEdgeTimer) clearTimeout(ghostEdgeTimer);
-      ghostEdgeTimer = setTimeout(() => this.renderInterconnectLabels(), 50);
+      ghostEdgeTimer = setTimeout(() => {
+        const t = this.editor.topology();
+        if (t) renderPerSystemOverlays(this.c.graphInstance, this.enrich(t));
+      }, 50);
     });
 
     this.destroyRef.onDestroy(() => this.c.destroy());
@@ -457,118 +475,4 @@ export class TopologyX6TabComponent {
     this.nodePopup.set(null);
   }
 
-  // --- Interconnect connection labels ---
-
-  /**
-   * Inject _connectionLabel into interconnect node data so renderSvg shows the
-   * connected system name inside the node SVG itself.
-   * Same pattern as compositeTopology uses for the site canvas.
-   */
-  private renderInterconnectLabels() {
-    const systemId = this.workspace.activeSystemId();
-    const links = this.workspace.links();
-    const systems = this.workspace.systems();
-    const topology = this.editor.topology();
-    if (!systemId || !topology) return;
-
-    // Build nodeId → connection info map
-    const connMap = new Map<string, { label: string; dir: 'out' | 'in' }>();
-    for (const link of links) {
-      if (link.fromSystem === systemId) {
-        const remoteName = systems.get(link.toSystem)?.topology.device.friendly_name ?? link.toSystem;
-        connMap.set(link.fromNode, { label: remoteName, dir: 'out' });
-      }
-      if (link.toSystem === systemId) {
-        const remoteName = systems.get(link.fromSystem)?.topology.device.friendly_name ?? link.fromSystem;
-        connMap.set(link.toNode, { label: remoteName, dir: 'in' });
-      }
-    }
-
-    if (connMap.size === 0) return;
-
-    const graph = this.c.graphInstance;
-
-    // Remove old ghost edges
-    for (const cell of [...graph.getCells()]) {
-      if (String(cell.id).startsWith('interconnect-ghost-')) cell.remove();
-    }
-
-    // Find nodes connected to interconnects via pipes
-    // interconnectOutlets: interconnect outlet → node inlet (outgoing interconnect feeds into a node)
-    // interconnectInlets: node outlet → interconnect inlet (node feeds into incoming interconnect)
-    const nodesFromInterconnect = new Map<string, { interconnectId: string; dir: 'out' | 'in' }>();
-    for (const pipe of topology.pipes) {
-      const [fromNode] = pipe.from.split(':');
-      const [toNode] = pipe.to.split(':');
-      const fromConn = connMap.get(fromNode);
-      const toConn = connMap.get(toNode);
-      // Outgoing interconnect's outlet connects to a downstream node's inlet
-      if (fromConn?.dir === 'out') {
-        nodesFromInterconnect.set(toNode, { interconnectId: fromNode, dir: 'in' });
-      }
-      // A node's outlet connects to incoming interconnect's inlet
-      if (toConn?.dir === 'in') {
-        nodesFromInterconnect.set(fromNode, { interconnectId: toNode, dir: 'out' });
-      }
-    }
-
-    // Re-render interconnect nodes with connection data + add ghost edges
-    for (const node of topology.nodes) {
-      if (node.kind !== 'interconnect') continue;
-      const conn = connMap.get(node.id);
-      if (!conn) continue;
-
-      const cell = graph.getCellById(`node-${node.id}`);
-      if (!cell?.isNode()) continue;
-
-      // Update SVG with connection label
-      const enriched = { ...node, _connectionLabel: conn.label, _connectionDir: conn.dir };
-      cell.setAttrByPath('image/xlinkHref', svgDataUri('interconnect', enriched));
-      cell.resize(cell.getSize().width, 66);
-
-      // Ghost edge on outlet side for outgoing interconnects
-      if (conn.dir === 'out') {
-        this.addGhostEdge(graph, cell, 'out', node.id);
-      }
-      // Ghost edge on inlet side for incoming interconnects
-      if (conn.dir === 'in') {
-        this.addGhostEdge(graph, cell, 'in', node.id);
-      }
-    }
-
-    // Add ghost edges on nodes connected to interconnects
-    for (const [nodeId, { interconnectId, dir }] of nodesFromInterconnect) {
-      const cell = graph.getCellById(`node-${nodeId}`);
-      if (!cell?.isNode()) continue;
-      this.addGhostEdge(graph, cell, dir, `${nodeId}-from-${interconnectId}`);
-    }
-  }
-
-  private addGhostEdge(graph: any, cell: any, side: 'in' | 'out', idSuffix: string) {
-    const pos = cell.getPosition();
-    const size = cell.getSize();
-    const midY = pos.y + Math.min(size.height, 50) / 2; // use base height for port alignment
-
-    if (side === 'out') {
-      const startX = pos.x + size.width + 8;
-      graph.addEdge({
-        id: `interconnect-ghost-out-${idSuffix}`,
-        source: { x: startX, y: midY },
-        target: { x: startX + 60, y: midY },
-        attrs: {
-          line: { stroke: '#8b5cf6', strokeWidth: 2.5, strokeDasharray: '6,4', strokeOpacity: 0.4, targetMarker: null, sourceMarker: null },
-        },
-      });
-    } else {
-      const endX = pos.x - 8;
-      graph.addEdge({
-        id: `interconnect-ghost-in-${idSuffix}`,
-        source: { x: endX - 60, y: midY },
-        target: { x: endX, y: midY },
-        attrs: {
-          line: { stroke: '#0891b2', strokeWidth: 2.5, strokeDasharray: '6,4', strokeOpacity: 0.4, targetMarker: null, sourceMarker: null },
-        },
-      });
-    }
-  }
 }

@@ -76,7 +76,7 @@ export class X6Canvas {
   private highlightedNodes = new Set<string>();
   private disabledPipes = new Set<string>();
 
-  constructor(container: HTMLElement, events: CanvasEvents) {
+  constructor(container: HTMLElement, events: CanvasEvents, options?: { async?: boolean; grid?: boolean; background?: boolean }) {
     this.events = events;
     ensureFlowStyles();
 
@@ -84,8 +84,13 @@ export class X6Canvas {
       container,
       width: 800,
       height: 600,
-      grid: { visible: true, type: 'dot', args: [{ color: '#e2e8f0' }] },
-      background: { color: '#fafbfc' },
+      async: options?.async ?? true,
+      grid: options?.grid === false
+        ? { visible: false }
+        : { visible: true, type: 'dot', args: [{ color: '#e2e8f0' }] },
+      background: options?.background === false
+        ? false
+        : { color: '#fafbfc' },
       panning: { enabled: true, eventTypes: ['leftMouseDown'], modifiers: [] },
       mousewheel: { enabled: true, factor: 1.1, minScale: 0.2, maxScale: 3 },
       connecting: {

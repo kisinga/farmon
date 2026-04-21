@@ -11,12 +11,14 @@ import type { PinCap } from '@far-mon/core';
 import type { RouteOverride } from '../../../core/models/topology.model';
 import { routeLevelInfo } from './route-level-info';
 import type { Selection } from './selection';
+import { ZodFieldDirective } from '../../../core/utils/field-validation';
+import { FieldErrorComponent } from '../../../shared/field-error/field-error.component';
 export type { Selection };
 
 @Component({
   selector: 'app-topology-sidebar',
   standalone: true,
-  imports: [FormsModule, ValidationPanelComponent],
+  imports: [FormsModule, ValidationPanelComponent, ZodFieldDirective, FieldErrorComponent],
   template: `
     <!-- Node properties (data-driven) -->
     @if (selectedNodeData(); as sn) {
@@ -40,44 +42,72 @@ export type { Selection };
           <!-- Entity-specific fields -->
           @for (field of sn.desc.sidebarFields; track field.key) {
             <label class="sidebar-label">{{ field.label }}</label>
-            @if (field.type === 'pin') {
-              <!-- Two-step channel selector: transport group → channel -->
-              <div class="flex gap-1 flex-1">
-                <select class="select select-xs select-bordered flex-1 font-mono"
-                  [class.select-warning]="!$any(sn.node)[field.key]"
-                  [ngModel]="activeGroup(sn.node.id, field.key, $any(sn.node)[field.key] ?? '', field.pinCap)"
-                  (ngModelChange)="onTransportChange(sn.node.id, field.key, $event, field.pinCap)">
-                  <option value="">-- transport --</option>
-                  @for (group of editor.channelGroups(field.pinCap); track group.provider) {
-                    <option [value]="group.provider">{{ group.label }}</option>
+            <div class="sidebar-control">
+              @if (field.type === 'pin') {
+                <!-- Hidden mirror control: holds the real pin value, carries the validator -->
+                <input type="hidden"
+                  [name]="'pin-' + sn.node.id + '-' + field.key"
+                  [ngModelOptions]="{ standalone: true }"
+                  [zodField]="{ schema: sn.desc.schema, key: field.key }"
+                  #pinCtrl="ngModel"
+                  [ngModel]="$any(sn.node)[field.key] ?? ''"
+                  (ngModelChange)="$event" />
+                <!-- Two-step channel selector: transport group → channel -->
+                <div class="flex gap-1"
+                  [class.pin-invalid]="pinCtrl.touched && pinCtrl.invalid">
+                  <select class="select select-xs select-bordered flex-1 font-mono min-w-0"
+                    [class.select-warning]="!(pinCtrl.touched && pinCtrl.invalid) && !$any(sn.node)[field.key]"
+                    [ngModel]="activeGroup(sn.node.id, field.key, $any(sn.node)[field.key] ?? '', field.pinCap)"
+                    [ngModelOptions]="{ standalone: true }"
+                    [name]="'grp-' + sn.node.id + '-' + field.key"
+                    (ngModelChange)="onTransportChange(sn.node.id, field.key, $event, field.pinCap)"
+                    (blur)="pinCtrl.control.markAsTouched()">
+                    <option value="">-- transport --</option>
+                    @for (group of editor.channelGroups(field.pinCap); track group.provider) {
+                      <option [value]="group.provider">{{ group.label }}</option>
+                    }
+                  </select>
+                  @if (activeGroupChannels(sn.node.id, field.key, $any(sn.node)[field.key] ?? '', field.pinCap); as channels) {
+                    @if (channels.length > 1) {
+                      <select class="select select-xs select-bordered flex-1 font-mono min-w-0"
+                        [name]="'ch-' + sn.node.id + '-' + field.key"
+                        [ngModelOptions]="{ standalone: true }"
+                        [ngModel]="$any(sn.node)[field.key]"
+                        (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })"
+                        (blur)="pinCtrl.control.markAsTouched()">
+                        <option value="">-- channel --</option>
+                        @for (ch of channels; track ch.id) {
+                          <option [value]="ch.id" [disabled]="!!ch.usedBy">
+                            {{ ch.label }}{{ ch.usedBy ? ' (' + ch.usedBy + ')' : '' }}
+                          </option>
+                        }
+                      </select>
+                    }
                   }
-                </select>
-                @if (activeGroupChannels(sn.node.id, field.key, $any(sn.node)[field.key] ?? '', field.pinCap); as channels) {
-                  @if (channels.length > 1) {
-                    <select class="select select-xs select-bordered flex-1 font-mono"
-                      [ngModel]="$any(sn.node)[field.key]"
-                      (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })">
-                      <option value="">-- channel --</option>
-                      @for (ch of channels; track ch.id) {
-                        <option [value]="ch.id" [disabled]="!!ch.usedBy">
-                          {{ ch.label }}{{ ch.usedBy ? ' (' + ch.usedBy + ')' : '' }}
-                        </option>
-                      }
-                    </select>
-                  }
-                }
-              </div>
-            } @else if (field.type === 'number') {
-              <input type="number" class="input input-xs input-bordered w-full font-mono"
-                [ngModel]="$any(sn.node)[field.key]"
-                [placeholder]="field.placeholder ?? ''"
-                (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: +$event })" min="0" />
-            } @else {
-              <input class="input input-xs input-bordered w-full font-mono"
-                [ngModel]="$any(sn.node)[field.key]"
-                [placeholder]="field.placeholder ?? ''"
-                (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })" />
-            }
+                </div>
+                <app-field-error [control]="pinCtrl" />
+              } @else if (field.type === 'number') {
+                <input type="number" class="input input-xs input-bordered w-full font-mono"
+                  [name]="'num-' + sn.node.id + '-' + field.key"
+                  [ngModelOptions]="{ standalone: true }"
+                  [zodField]="{ schema: sn.desc.schema, key: field.key }"
+                  #numCtrl="ngModel"
+                  [ngModel]="$any(sn.node)[field.key]"
+                  [placeholder]="field.placeholder ?? ''"
+                  (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: +$event })" min="0" />
+                <app-field-error [control]="numCtrl" />
+              } @else {
+                <input class="input input-xs input-bordered w-full font-mono"
+                  [name]="'txt-' + sn.node.id + '-' + field.key"
+                  [ngModelOptions]="{ standalone: true }"
+                  [zodField]="{ schema: sn.desc.schema, key: field.key }"
+                  #txtCtrl="ngModel"
+                  [ngModel]="$any(sn.node)[field.key]"
+                  [placeholder]="field.placeholder ?? ''"
+                  (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })" />
+                <app-field-error [control]="txtCtrl" />
+              }
+            </div>
           }
         </div>
 
@@ -252,8 +282,9 @@ export type { Selection };
       font-size: 10px; font-weight: 600; text-transform: uppercase;
       letter-spacing: 0.05em; color: oklch(var(--bc) / 0.5); margin-bottom: 8px;
     }
-    .sidebar-fields { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; }
-    .sidebar-label { font-size: 10px; color: oklch(var(--bc) / 0.5); white-space: nowrap; }
+    .sidebar-fields { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: start; }
+    .sidebar-label { font-size: 10px; color: oklch(var(--bc) / 0.5); white-space: nowrap; padding-top: 4px; }
+    .sidebar-control { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   `],
 })
 export class TopologySidebarComponent {
