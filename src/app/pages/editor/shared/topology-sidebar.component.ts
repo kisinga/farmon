@@ -70,10 +70,12 @@ export type { Selection };
             } @else if (field.type === 'number') {
               <input type="number" class="input input-xs input-bordered w-full font-mono"
                 [ngModel]="$any(sn.node)[field.key]"
+                [placeholder]="field.placeholder ?? ''"
                 (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: +$event })" min="0" />
             } @else {
               <input class="input input-xs input-bordered w-full font-mono"
                 [ngModel]="$any(sn.node)[field.key]"
+                [placeholder]="field.placeholder ?? ''"
                 (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })" />
             }
           }

@@ -41,11 +41,11 @@ export interface StoredTopology {
   pipes: PipeSegment[];
   route_overrides: Record<string, RouteOverride>;
   timing: {
-    valve_travel_time: string;
-    flow_watchdog_seconds: number;
-    flow_confirm_seconds: number;
-    api_watchdog_seconds: number;
-    update_interval: string;
+    valve_travel_time: number;
+    flow_watchdog: number;
+    flow_confirm: number;
+    api_watchdog: number;
+    update_interval: number;
   };
   automations: Automation[];
   uart_buses?: UartBus[];

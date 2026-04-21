@@ -11,16 +11,16 @@ interface TimingField {
   label: string;
   description: string;
   unit: string;
-  default: string | number;
+  default: number;
   group: string;
 }
 
 const TIMING_FIELDS: TimingField[] = [
-  { key: 'valve_travel_time', label: 'Valve Travel Time', description: 'Time for motorized ball valves to fully open or close', unit: 'duration', default: '15s', group: 'Mechanical' },
-  { key: 'flow_watchdog_seconds', label: 'Flow Watchdog Timeout', description: 'If no flow detected within this window, fault is raised', unit: 'seconds', default: 30, group: 'Safety' },
-  { key: 'flow_confirm_seconds', label: 'Flow Confirmation Time', description: 'Sustained flow duration before marking flow as "confirmed"', unit: 'seconds', default: 15, group: 'Safety' },
-  { key: 'api_watchdog_seconds', label: 'API Watchdog Timeout', description: 'Fault if Home Assistant disconnected for this long', unit: 'seconds', default: 300, group: 'Safety' },
-  { key: 'update_interval', label: 'Sensor Update Interval', description: 'How often ADC and diagnostic sensors are read', unit: 'duration', default: '5s', group: 'Calibration' },
+  { key: 'valve_travel_time', label: 'Valve Travel Time', description: 'Time for motorized ball valves to fully open or close', unit: 'seconds', default: 15, group: 'Mechanical' },
+  { key: 'flow_watchdog', label: 'Flow Watchdog Timeout', description: 'If no flow detected within this window, fault is raised', unit: 'seconds', default: 30, group: 'Safety' },
+  { key: 'flow_confirm', label: 'Flow Confirmation Time', description: 'Sustained flow duration before marking flow as "confirmed"', unit: 'seconds', default: 15, group: 'Safety' },
+  { key: 'api_watchdog', label: 'API Watchdog Timeout', description: 'Fault if Home Assistant disconnected for this long', unit: 'seconds', default: 300, group: 'Safety' },
+  { key: 'update_interval', label: 'Sensor Update Interval', description: 'How often ADC and diagnostic sensors are read', unit: 'seconds', default: 5, group: 'Calibration' },
 ];
 
 @Component({
@@ -195,10 +195,11 @@ const TIMING_FIELDS: TimingField[] = [
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                       <input
-                        type="text"
+                        type="number"
+                        min="2"
                         class="input input-bordered input-sm w-24 text-right font-mono"
                         [ngModel]="getTimingValue(t, field)"
-                        (ngModelChange)="updateTiming(field.key, $event)"
+                        (ngModelChange)="updateTiming(field.key, +$event)"
                         [placeholder]="'' + field.default"
                       />
                       <span class="text-xs text-base-content/60 w-16">{{ field.unit }}</span>
@@ -248,8 +249,8 @@ export class ConfigTabComponent {
     this.editor.changeBoard(board);
   }
 
-  protected getTimingValue(t: { timing: Record<string, string | number> }, field: TimingField): string | number {
-    return field.key in t.timing ? t.timing[field.key] : field.default;
+  protected getTimingValue(t: { timing: Record<string, number> }, field: TimingField): number {
+    return field.key in t.timing ? t.timing[field.key] : (field.default as number);
   }
 
   protected fieldsByGroup(group: string): TimingField[] {
@@ -309,10 +310,9 @@ export class ConfigTabComponent {
     });
   }
 
-  updateTiming(key: string, value: string) {
+  updateTiming(key: string, value: number) {
     this.editor.updateTopology((t) => {
-      const num = Number(value);
-      (t.timing as Record<string, string | number>)[key] = isNaN(num) ? value : num;
+      (t.timing as Record<string, number>)[key] = value;
     });
   }
 }

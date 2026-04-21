@@ -23,7 +23,7 @@ export function generateDeviceYaml(
   const subs: Record<string, string> = {
     device_name: m.device.name,
     friendly_name: m.device.friendly_name,
-    update_interval: m.timing.update_interval,
+    update_interval: `${m.timing.update_interval}s`,
   };
 
   if (hasBattery) {
@@ -37,10 +37,10 @@ export function generateDeviceYaml(
   }
 
   // Timing
-  subs.valve_travel_time = `"${m.timing.valve_travel_time}"`;
-  subs.flow_watchdog_seconds = `"${m.timing.flow_watchdog_seconds}"`;
-  subs.flow_confirm_seconds = `"${m.timing.flow_confirm_seconds}"`;
-  subs.api_watchdog_seconds = `"${m.timing.api_watchdog_seconds}"`;
+  subs.valve_travel_time = `${m.timing.valve_travel_time}s`;
+  subs.flow_watchdog = `"${m.timing.flow_watchdog}"`;
+  subs.flow_confirm = `"${m.timing.flow_confirm}"`;
+  subs.api_watchdog = `"${m.timing.api_watchdog}"`;
 
   // --- On-boot sequence ---
   const bootSteps: unknown[] = [];

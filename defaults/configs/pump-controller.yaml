@@ -211,11 +211,11 @@ route_overrides:
   tank2>h2:
     max_runtime_seconds: 1800
 timing:
-  valve_travel_time: 15s
-  flow_watchdog_seconds: 30
-  flow_confirm_seconds: 15
-  api_watchdog_seconds: 300
-  update_interval: 5s
+  valve_travel_time: 15
+  flow_watchdog: 30
+  flow_confirm: 15
+  api_watchdog: 300
+  update_interval: 5
 automations:
   - id: daily_refill
     name: Daily Refill

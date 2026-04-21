@@ -67,11 +67,11 @@ export const DeviceSchema = z.object({
 });
 
 export const TimingSchema = z.object({
-  valve_travel_time: z.string().default("15s"),
-  flow_watchdog_seconds: z.number().default(30),
-  flow_confirm_seconds: z.number().default(15),
-  api_watchdog_seconds: z.number().default(300),
-  update_interval: z.string().default("5s"),
+  valve_travel_time: z.number().gt(1).default(15),
+  flow_watchdog: z.number().gt(1).default(30),
+  flow_confirm: z.number().gt(1).default(15),
+  api_watchdog: z.number().gt(1).default(300),
+  update_interval: z.number().gt(1).default(5),
 });
 
 export const AutomationTriggerSchema = z.discriminatedUnion("type", [
@@ -82,7 +82,7 @@ export const AutomationTriggerSchema = z.discriminatedUnion("type", [
     entity: z.string().optional(),
     below: z.number().optional(),
     above: z.number().optional(),
-    for_minutes: z.number().min(0).optional(),
+    for_minutes: z.number().gt(1).optional(),
   }),
 ]);
 

@@ -9,10 +9,10 @@ export const timingSanity: ManifestRule = {
   evaluate(m: Manifest, _board: BoardDef): RuleDiagnostic[] {
     const diagnostics: RuleDiagnostic[] = [];
 
-    if (m.timing.flow_watchdog_seconds <= m.timing.flow_confirm_seconds) {
+    if (m.timing.flow_watchdog <= m.timing.flow_confirm) {
       diagnostics.push({
         severity: "error",
-        message: `flow_watchdog_seconds (${m.timing.flow_watchdog_seconds}) must be greater than flow_confirm_seconds (${m.timing.flow_confirm_seconds})`,
+        message: `flow_watchdog (${m.timing.flow_watchdog}s) must be greater than flow_confirm (${m.timing.flow_confirm}s)`,
         ruleId: this.id,
       });
     }

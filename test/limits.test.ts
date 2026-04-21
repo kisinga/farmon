@@ -112,11 +112,11 @@ function buildManifest(p: ScaleParams): Manifest {
       ? (routes as Manifest["routes"]).map(r => ({ ...r, key: `${r.source}>${r.destination ?? 'endpoint'}`, needs_pump: true, nodeSequence: [] }))
       : [defaultRoute],
     timing: {
-      valve_travel_time: "15s",
-      flow_watchdog_seconds: 30,
-      flow_confirm_seconds: 15,
-      api_watchdog_seconds: 300,
-      update_interval: "5s",
+      valve_travel_time: 15,
+      flow_watchdog: 30,
+      flow_confirm: 15,
+      api_watchdog: 300,
+      update_interval: 5,
     },
     automations: [],
   };
@@ -353,11 +353,11 @@ function buildKcManifest(p: KcScaleParams): Manifest {
     nodes,
     routes: routes.length > 0 ? routes : [defaultRoute],
     timing: {
-      valve_travel_time: "15s",
-      flow_watchdog_seconds: 30,
-      flow_confirm_seconds: 15,
-      api_watchdog_seconds: 300,
-      update_interval: "5s",
+      valve_travel_time: 15,
+      flow_watchdog: 30,
+      flow_confirm: 15,
+      api_watchdog: 300,
+      update_interval: 5,
     },
     automations: [],
   };

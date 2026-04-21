@@ -67,8 +67,8 @@ pipes:
   - { id: p4, from: "flow1:outlet", to: "house1:inlet" }
 
 timing:
-  valve_travel_time: 15s
-  flow_watchdog_seconds: 30
-  flow_confirm_seconds: 15
-  api_watchdog_seconds: 300
-  update_interval: 5s
+  valve_travel_time: 15
+  flow_watchdog: 30
+  flow_confirm: 15
+  api_watchdog: 300
+  update_interval: 5

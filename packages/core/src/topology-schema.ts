@@ -6,7 +6,7 @@
  */
 import { z } from 'zod';
 import { NODE_REGISTRY } from './entity-registry';
-import { DeviceSchema, TimingSchema, AutomationSchema } from './schemas';
+import { DeviceSchema, TimingSchema, AutomationSchema, parseDurationMs } from './schemas';
 
 // ---------------------------------------------------------------------------
 // Node discriminated union — driven by the registry
@@ -35,7 +35,7 @@ const PipeSegmentSchema = z.object({
 // ---------------------------------------------------------------------------
 
 const RouteOverrideSchema = z.object({
-  max_runtime_seconds: z.number().optional(),
+  max_runtime_seconds: z.number().gt(1).optional(),
   source_min_level: z.number().min(0).max(100).optional(),
   dest_max_level: z.number().min(0).max(100).optional(),
 });
@@ -64,12 +64,74 @@ import type { SystemTopology } from './topology.types';
 export type Topology = z.infer<typeof TopologySchema>;
 
 /**
+ * Migrate legacy topology shape to current schema:
+ * - Renames `flow_watchdog_seconds` etc. to current keys
+ * - Converts string durations ("15s"/"2000ms") to numeric seconds
+ */
+function migrateTiming(data: unknown): unknown {
+  if (!data || typeof data !== 'object') return data;
+  const d = data as Record<string, unknown>;
+  let changed = false;
+
+  // --- Timing block ---
+  const timing = d['timing'] as Record<string, unknown> | undefined;
+  let migratedTiming = timing;
+  if (timing && typeof timing === 'object') {
+    const t = { ...timing };
+    const renames: Array<[string, string]> = [
+      ['flow_watchdog_seconds', 'flow_watchdog'],
+      ['flow_confirm_seconds', 'flow_confirm'],
+      ['api_watchdog_seconds', 'api_watchdog'],
+    ];
+    for (const [oldKey, newKey] of renames) {
+      if (oldKey in t && !(newKey in t)) {
+        t[newKey] = t[oldKey];
+        delete t[oldKey];
+        changed = true;
+      }
+    }
+    // String-duration → seconds
+    for (const key of ['valve_travel_time', 'update_interval']) {
+      const v = t[key];
+      if (typeof v === 'string') {
+        t[key] = Math.round(parseDurationMs(v) / 1000);
+        changed = true;
+      }
+    }
+    migratedTiming = t;
+  }
+
+  // --- Valve nodes' travel_time (string → seconds) ---
+  const nodes = d['nodes'];
+  let migratedNodes = nodes;
+  if (Array.isArray(nodes)) {
+    let nodesChanged = false;
+    const n = nodes.map((raw) => {
+      if (!raw || typeof raw !== 'object') return raw;
+      const node = raw as Record<string, unknown>;
+      if (node['kind'] === 'valve' && typeof node['travel_time'] === 'string') {
+        nodesChanged = true;
+        return { ...node, travel_time: Math.round(parseDurationMs(node['travel_time'] as string) / 1000) };
+      }
+      return node;
+    });
+    if (nodesChanged) {
+      migratedNodes = n;
+      changed = true;
+    }
+  }
+
+  return changed ? { ...d, timing: migratedTiming, nodes: migratedNodes } : data;
+}
+
+/**
  * Parse and validate a raw topology document.
  * Returns a properly typed SystemTopology — the Zod schema guarantees
  * the structure matches because entity schemas are the source of truth.
+ * Applies legacy-key migration before validation.
  */
 export function parseTopology(data: unknown): SystemTopology {
-  return TopologySchema.parse(data) as SystemTopology;
+  return TopologySchema.parse(migrateTiming(data)) as SystemTopology;
 }
 
 // ---------------------------------------------------------------------------

@@ -146,11 +146,11 @@ export class WorkspaceService {
       pipes: allPipes,
       route_overrides: {},
       timing: {
-        valve_travel_time: '0s',
-        flow_watchdog_seconds: 0,
-        flow_confirm_seconds: 0,
-        api_watchdog_seconds: 0,
-        update_interval: '0s',
+        valve_travel_time: 0,
+        flow_watchdog: 0,
+        flow_confirm: 0,
+        api_watchdog: 0,
+        update_interval: 0,
       },
       automations: [],
     };
@@ -457,11 +457,11 @@ export class WorkspaceService {
       pipes: topo.pipes ?? [],
       route_overrides: topo.route_overrides ?? {},
       timing: topo.timing ?? {
-        valve_travel_time: '2s',
-        flow_watchdog_seconds: 30,
-        flow_confirm_seconds: 5,
-        api_watchdog_seconds: 300,
-        update_interval: '10s',
+        valve_travel_time: 2,
+        flow_watchdog: 30,
+        flow_confirm: 5,
+        api_watchdog: 300,
+        update_interval: 10,
       },
       automations: topo.automations ?? [],
     };

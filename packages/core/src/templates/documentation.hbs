@@ -85,11 +85,11 @@
 <table>
   <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td>Valve travel time</td><td><strong>{{timing.valve_travel_time}}</strong></td><td>Time allowed for valves to fully open/close</td></tr>
-    <tr><td>Flow watchdog</td><td><strong>{{timing.flow_watchdog_seconds}}s</strong></td><td>No-flow duration before fault/tank-full detection</td></tr>
-    <tr><td>Flow confirm</td><td><strong>{{timing.flow_confirm_seconds}}s</strong></td><td>Time to confirm flow is established after start</td></tr>
-    <tr><td>API watchdog</td><td><strong>{{timing.api_watchdog_seconds}}s</strong></td><td>HA disconnect duration before route is faulted</td></tr>
-    <tr><td>Sensor update</td><td><strong>{{timing.update_interval}}</strong></td><td>ADC/sensor polling interval</td></tr>
+    <tr><td>Valve travel time</td><td><strong>{{timing.valve_travel_time}}s</strong></td><td>Time allowed for valves to fully open/close</td></tr>
+    <tr><td>Flow watchdog</td><td><strong>{{timing.flow_watchdog}}s</strong></td><td>No-flow duration before fault/tank-full detection</td></tr>
+    <tr><td>Flow confirm</td><td><strong>{{timing.flow_confirm}}s</strong></td><td>Time to confirm flow is established after start</td></tr>
+    <tr><td>API watchdog</td><td><strong>{{timing.api_watchdog}}s</strong></td><td>HA disconnect duration before route is faulted</td></tr>
+    <tr><td>Sensor update</td><td><strong>{{timing.update_interval}}s</strong></td><td>ADC/sensor polling interval</td></tr>
   </tbody>
 </table>
 
@@ -101,7 +101,7 @@
   </div>
   <div class="safety-card">
     <strong>Flow watchdog</strong>
-    <span>No-flow fault after {{timing.flow_watchdog_seconds}}s · Flow confirmed within {{timing.flow_confirm_seconds}}s</span>
+    <span>No-flow fault after {{timing.flow_watchdog}}s · Flow confirmed within {{timing.flow_confirm}}s</span>
   </div>
   <div class="safety-card">
     <strong>Runtime level</strong>
@@ -109,7 +109,7 @@
   </div>
   <div class="safety-card">
     <strong>API watchdog</strong>
-    <span>Route faulted if HA disconnects for {{timing.api_watchdog_seconds}}s</span>
+    <span>Route faulted if HA disconnects for {{timing.api_watchdog}}s</span>
   </div>
 </div>
 
@@ -149,9 +149,9 @@
 <table>
   <thead><tr><th>#</th><th>Check</th><th>Fault Code</th><th>Threshold</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>Flow watchdog</td><td><span class="badge badge-fault">no_flow (1)</span></td><td>No pulses for {{timing.flow_watchdog_seconds}}s</td></tr>
+    <tr><td>1</td><td>Flow watchdog</td><td><span class="badge badge-fault">no_flow (1)</span></td><td>No pulses for {{timing.flow_watchdog}}s</td></tr>
     <tr><td>2</td><td>Per-route max runtime</td><td><span class="badge badge-fault">max_runtime (2)</span></td><td>Route-specific <code>max_runtime_s</code> ceiling</td></tr>
-    <tr><td>3</td><td>API watchdog</td><td><span class="badge badge-fault">api_lost (3)</span></td><td>HA disconnected for {{timing.api_watchdog_seconds}}s</td></tr>
+    <tr><td>3</td><td>API watchdog</td><td><span class="badge badge-fault">api_lost (3)</span></td><td>HA disconnected for {{timing.api_watchdog}}s</td></tr>
   </tbody>
 </table>
 
@@ -229,7 +229,7 @@
 <h3>Sensor Fault Detection</h3>
 <p>Each flow sensor has built-in fault detection. When the pump is RUNNING and flow was previously confirmed (readings &gt; 0.5 L/min), the firmware counts consecutive zero readings:</p>
 <ul>
-  <li><strong>3 consecutive zeros</strong> (at {{timing.update_interval}} update interval) → <code>sensor_fault</code> binary sensor becomes <code>true</code> in HA</li>
+  <li><strong>3 consecutive zeros</strong> (at {{timing.update_interval}}s update interval) → <code>sensor_fault</code> binary sensor becomes <code>true</code> in HA</li>
   <li>A single zero can occur due to air pockets, pulse counter timing, or electrical noise — 3 consecutive readings rules out transients</li>
   <li>Counter resets to 0 on any non-zero reading or when the pump returns to IDLE</li>
 </ul>

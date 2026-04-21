@@ -24,7 +24,7 @@ export function generateRoutes(m: Manifest): string {
   const wsIdx = new Map(waterSources.map((ws, i) => [ws['id'], i]));
 
   // Timing constants
-  const valveTravelMs = parseDurationMs(m.timing.valve_travel_time);
+  const valveTravelMs = m.timing.valve_travel_time * 1000;
 
   // Compute conflict masks — routes conflict when they share a flow sensor
   // but go to different destinations (ambiguous readings).
