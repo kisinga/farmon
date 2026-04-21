@@ -297,14 +297,22 @@ export class X6Canvas {
     };
   }
 
-  /** Export the current canvas as a self-contained SVG string with all images inlined. */
-  exportSvg(): Promise<string> {
+  /**
+   * Export the current canvas as a self-contained SVG string with all images inlined.
+   *
+   * `viewBox` overrides X6's default `getContentBBox()`-derived viewBox. Pass it
+   * when the default misses content — e.g. Manhattan-router intermediate points
+   * live in the DOM but not in X6's cell model, so callers can measure the live
+   * stage via `getBBox()` and pass the result here.
+   */
+  exportSvg(viewBox?: { x: number; y: number; width: number; height: number }): Promise<string> {
     return new Promise((resolve) => {
       this.graph.toSVG((svg: string) => {
         resolve(svg);
       }, {
         preserveDimensions: false,
         copyStyles: false,
+        ...(viewBox ? { viewBox } : {}),
         beforeSerialize: (_svg: SVGSVGElement) => {
           // X6 renders nodes as <image xlink:href="data:image/svg+xml;charset=utf-8,...">
           // The export plugin's serializeImages skips data URIs, so these survive as-is.

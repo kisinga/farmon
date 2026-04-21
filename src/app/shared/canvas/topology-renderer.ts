@@ -56,7 +56,7 @@ export class TopologyRenderer {
     // One extra frame: X6 flushes any router/edge-geometry recomputations that
     // were queued during synchronous cell mounting.
     await nextPaint();
-    return this.canvas.exportSvg();
+    return this.canvas.exportSvg(measureStageViewBox(graph));
   }
 
   destroy(): void {
@@ -79,6 +79,20 @@ function canvasSizeFor(topology: SystemTopology): { width: number; height: numbe
     width: Math.max(MIN_CANVAS_SIZE, maxX + CANVAS_PADDING),
     height: Math.max(MIN_CANVAS_SIZE, maxY + CANVAS_PADDING),
   };
+}
+
+/**
+ * Measure the live stage group's bbox (includes router-generated path geometry
+ * that `graph.getContentBBox()` misses). Returns `undefined` for empty stages
+ * so callers fall back to X6's default viewBox logic.
+ */
+function measureStageViewBox(graph: { container: HTMLElement }): { x: number; y: number; width: number; height: number } | undefined {
+  const stage = graph.container.querySelector('.x6-graph-svg-stage') as SVGGraphicsElement | null;
+  if (!stage) return undefined;
+  const bb = stage.getBBox();
+  if (bb.width === 0 || bb.height === 0) return undefined;
+  const PAD = 8;
+  return { x: bb.x - PAD, y: bb.y - PAD, width: bb.width + PAD * 2, height: bb.height + PAD * 2 };
 }
 
 /**
