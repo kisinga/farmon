@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "MajiFlow — water orchestration configurator",
   "main": "dist-electron/electron/main.js",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
@@ -22,6 +24,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "dependencies": {
     "@angular/common": "^21.2.7",
     "@angular/compiler": "^21.2.7",
