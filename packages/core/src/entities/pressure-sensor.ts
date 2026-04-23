@@ -5,6 +5,7 @@ import { UI_COLORS } from '../colors';
 import { pressureSensorId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
+import { HaNodeFields } from '../ha';
 
 const COLOR = '#8b5cf6'; // violet
 const W = 50, H = 36;
@@ -21,6 +22,7 @@ export const PressureSensorNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
+  ...HaNodeFields,
 });
 
 export type PressureSensorNode = z.infer<typeof PressureSensorNodeSchema>;
@@ -38,6 +40,9 @@ export const pressureSensorDescriptor: NodeDescriptor = {
   category: 'sensor',
   group: 'sensor',
   schema: PressureSensorNodeSchema,
+  haDomain: 'sensor',
+  defaultHaActions: [{ id: 'more-info', label: 'More info' }],
+  defaultBinds: { label: 'state|format:number:2' },
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },

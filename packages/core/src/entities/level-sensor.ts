@@ -5,6 +5,7 @@ import { UI_COLORS } from '../colors';
 import { levelSensorLevelId, levelSensorRawVoltageId, levelSensorCalEmptyId, levelSensorCalFullId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
+import { HaNodeFields } from '../ha';
 
 const COLOR = '#0ea5e9'; // sky blue
 const W = 50, H = 36;
@@ -21,6 +22,7 @@ export const LevelSensorNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
+  ...HaNodeFields,
 });
 
 export type LevelSensorNode = z.infer<typeof LevelSensorNodeSchema>;
@@ -38,6 +40,9 @@ export const levelSensorDescriptor: NodeDescriptor = {
   category: 'sensor',
   group: 'sensor',
   schema: LevelSensorNodeSchema,
+  haDomain: 'sensor',
+  defaultHaActions: [{ id: 'more-info', label: 'More info' }],
+  defaultBinds: { label: 'state|format:percent' },
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },

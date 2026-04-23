@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, PortSchema, PositionSchema, escXml } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
+import { HaNodeFields } from '../ha';
 
 const COLOR = '#14b8a6'; // teal
 const W = 120, H = 70;
@@ -16,6 +17,7 @@ export const TankNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
+  ...HaNodeFields,
 });
 
 export type TankNode = z.infer<typeof TankNodeSchema>;
@@ -31,6 +33,15 @@ export const tankDescriptor: NodeDescriptor = {
   routeSource: true,
   category: 'source',
   schema: TankNodeSchema,
+  haDomain: 'sensor',
+  defaultHaActions: [
+    { id: 'more-info', label: 'More info' },
+  ],
+  slots: {
+    label: { x: W / 2, y: H + 14, textAnchor: 'middle', cls: 'label-primary' },
+    value: { x: W / 2, y: H + 28, textAnchor: 'middle', cls: 'label-secondary' },
+  },
+  defaultBinds: { value: 'state|format:percent' },
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },

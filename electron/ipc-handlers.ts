@@ -558,6 +558,33 @@ export function registerIpcHandlers() {
   );
 
   // =========================================================================
+  // SCADA artifacts (SVG + meta sidecar) — consumed by farm-scada-card on HA
+  // =========================================================================
+
+  ipcMain.handle(
+    "codegen:write-scada-artifacts",
+    async (
+      _e,
+      siteId: string,
+      artifacts: Array<{ name: string; svg: string; meta: unknown }>,
+    ) => {
+      if (!db.loadSiteFull(siteId)) throw new Error(`Site not found: ${siteId}`);
+      const outputDir = store.getOutputDir();
+      const files: Array<{ relativePath: string; content: string }> = [];
+      for (const a of artifacts) {
+        const base = `config/homeassistant/www/farm/${a.name}`;
+        files.push({ relativePath: `${base}.svg`, content: a.svg });
+        files.push({ relativePath: `${base}.meta.json`, content: JSON.stringify(a.meta, null, 2) });
+      }
+      store.writeOutput(files, outputDir);
+      return {
+        outputDir,
+        files: files.map(f => ({ path: f.relativePath, bytes: f.content.length })),
+      };
+    },
+  );
+
+  // =========================================================================
   // HA config files (per-site, DB-backed)
   // =========================================================================
 

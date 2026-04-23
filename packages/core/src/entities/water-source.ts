@@ -5,6 +5,7 @@ import { UI_COLORS } from '../colors';
 import { waterSourcePressureId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
+import { HaNodeFields } from '../ha';
 
 const COLOR = '#0ea5e9'; // sky blue
 const W = 120, H = 50;
@@ -19,6 +20,7 @@ export const WaterSourceNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
+  ...HaNodeFields,
 });
 
 export type WaterSourceNode = z.infer<typeof WaterSourceNodeSchema>;
@@ -35,6 +37,9 @@ export const waterSourceDescriptor: NodeDescriptor = {
   category: 'source',
   helpUrl: 'docs/installation-guidelines.md#pressure-sensors',
   schema: WaterSourceNodeSchema,
+  haDomain: 'sensor',
+  defaultHaActions: [{ id: 'more-info', label: 'More info' }],
+  defaultBinds: { label: 'state|format:number:2' },
   defaultPorts: [
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],

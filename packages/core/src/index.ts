@@ -51,6 +51,17 @@ export { getNodesByKind, getNodeByKind } from './topology.types';
 // --- YAML fragment utilities ---
 export { indent, joinYamlItems } from './yaml-fragment';
 
+// --- Home Assistant integration ---
+export {
+  HA_SCHEMA_VERSION, HA_ENTITY_ID_RE, HA_SERVICE_RE, HaActionSpecSchema, HaNodeFields,
+  defaultStateBucket, isValidBindExpr, parseFlowPredicate,
+} from './ha';
+export type {
+  HaActionSpec, StateBucket, HaSlotSpec, HaMetaNode, HaMetaPipe, HaMeta, ParsedFlowPredicate,
+} from './ha';
+export { buildHaMeta } from './ha-meta';
+export type { BuildHaMetaOptions } from './ha-meta';
+
 // --- Codegen IDs ---
 export {
   pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId,

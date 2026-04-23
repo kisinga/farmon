@@ -15,6 +15,7 @@ import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER 
 import type { TopologyGraph } from '../shared/derive-routes';
 import { pipesFromSource, pipesToDestination, connectedPipes } from '@far-mon/core';
 import type { Selection } from '../shared/selection';
+import { decorateScadaSvg } from './scada-decorator';
 
 export type { Selection };
 
@@ -24,6 +25,8 @@ export interface CanvasEvents {
   onPipeDeleted(pipeId: string): void;
   onSelected(selection: Selection | null): void;
   onDanglingPipe(from: string, graphPos: { x: number; y: number }, clientPos: { x: number; y: number }): void;
+  /** Right-click / long-press on a node. `clientPos` is in viewport coords for menu placement. */
+  onNodeContextMenu?(nodeId: string, clientPos: { x: number; y: number }): void;
 }
 
 // --- Helpers ---
@@ -149,8 +152,9 @@ export class X6Canvas {
       }
     }
 
+    const nodesById = new Map<string, TopologyNode>(topology.nodes.map(n => [n.id, n]));
     for (const pipe of topology.pipes) {
-      const cfg = this.toEdgeConfig(pipe);
+      const cfg = this.toEdgeConfig(pipe, nodesById);
       if (cfg) desiredEdges.set(String(cfg['id']), cfg);
     }
 
@@ -191,6 +195,8 @@ export class X6Canvas {
       const existing = this.graph.getCellById(id);
       if (!existing) {
         this.graph.addEdge(cfg);
+      } else if (existing.isEdge() && cfg['data']) {
+        existing.setData(cfg['data'], { overwrite: true });
       }
     }
     // Track and style pipes touching disabled nodes
@@ -304,8 +310,14 @@ export class X6Canvas {
    * when the default misses content — e.g. Manhattan-router intermediate points
    * live in the DOM but not in X6's cell model, so callers can measure the live
    * stage via `getBBox()` and pass the result here.
+   *
+   * `scada: true` decorates the SVG with SCADA identity attributes, hit rects,
+   * label slots, and a state/flow <style> block for consumption by
+   * `farm-scada-card` on Home Assistant. Off by default — docs exports remain
+   * byte-compatible with prior behavior.
    */
-  exportSvg(viewBox?: { x: number; y: number; width: number; height: number }): Promise<string> {
+  exportSvg(viewBox?: { x: number; y: number; width: number; height: number }, opts?: { scada?: boolean }): Promise<string> {
+    const scada = opts?.scada === true;
     return new Promise((resolve) => {
       this.graph.toSVG((svg: string) => {
         resolve(svg);
@@ -356,6 +368,17 @@ export class X6Canvas {
 
             img.parentNode!.replaceChild(g, img);
           }
+
+          if (scada) {
+            decorateScadaSvg(_svg, {
+              getCellData: (cellId: string) => {
+                const cell = this.graph.getCellById(cellId);
+                if (!cell) return null;
+                const d = cell.getData() as Record<string, unknown> | undefined;
+                return d ?? null;
+              },
+            });
+          }
           return _svg;
         },
       });
@@ -382,6 +405,15 @@ export class X6Canvas {
 
     this.graph.on('blank:click', () => {
       this.events.onSelected(null);
+    });
+
+    this.graph.on('node:contextmenu', ({ node, e }) => {
+      const data = getNodeData(node);
+      if (!data) return;
+      this.events.onNodeContextMenu?.(data.nodeId, {
+        x: Math.round(e.clientX),
+        y: Math.round(e.clientY),
+      });
     });
 
     this.graph.on('node:moved', () => {
@@ -438,12 +470,15 @@ export class X6Canvas {
     return buildNodeConfig(desc, node.id, extractNodeData(node), node.position.x, node.position.y, ports);
   }
 
-  private toEdgeConfig(pipe: PipeSegment): X6Edge.Metadata | null {
+  private toEdgeConfig(pipe: PipeSegment, nodesById?: Map<string, TopologyNode>): X6Edge.Metadata | null {
     const [fromNode, fromPort] = pipe.from.split(':');
     const [toNode, toPort] = pipe.to.split(':');
     if (!fromNode || !fromPort || !toNode || !toPort) return null;
     if (!this.nodeIds.has(fromNode) || !this.nodeIds.has(toNode)) return null;
-    return buildEdgeConfig(`pipe-${pipe.id}`, `node-${fromNode}`, fromPort, `node-${toNode}`, toPort);
+    const fromEntity = (nodesById?.get(fromNode) as { entityId?: string } | undefined)?.entityId;
+    const toEntity = (nodesById?.get(toNode) as { entityId?: string } | undefined)?.entityId;
+    const data = (fromEntity || toEntity) ? { pipeId: pipe.id, fromEntity, toEntity } : undefined;
+    return buildEdgeConfig(`pipe-${pipe.id}`, `node-${fromNode}`, fromPort, `node-${toNode}`, toPort, data);
   }
 
   private persistNodePositions(): void {

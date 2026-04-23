@@ -100,12 +100,20 @@ export function buildNodeConfig(
 
 // --- Edge config ---
 
+export interface EdgeHaData {
+  pipeId: string;
+  fromEntity?: string;
+  toEntity?: string;
+  flowWhen?: string;
+}
+
 export function buildEdgeConfig(
   id: string,
   sourceCell: string,
   sourcePort: string,
   targetCell: string,
   targetPort: string,
+  data?: EdgeHaData,
 ): Edge.Metadata {
   return {
     id,
@@ -121,6 +129,7 @@ export function buildEdgeConfig(
     },
     router: MANHATTAN_ROUTER,
     connector: { name: 'rounded' },
+    ...(data ? { data } : {}),
   };
 }
 

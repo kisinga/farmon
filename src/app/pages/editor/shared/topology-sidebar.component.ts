@@ -111,6 +111,23 @@ export type { Selection };
           }
         </div>
 
+        <!-- Home Assistant entity mapping (SCADA export) -->
+        @if (sn.desc.haDomain) {
+          <div class="mt-3 pt-3 border-t border-base-300/30">
+            <h4 class="sidebar-title">Home Assistant</h4>
+            <div class="sidebar-fields">
+              <label class="sidebar-label" title="HA entity ID: domain.object_id">Entity</label>
+              <input class="input input-xs input-bordered w-full font-mono"
+                [ngModel]="$any(sn.node).entityId ?? ''"
+                [placeholder]="sn.desc.haDomain + '.'"
+                (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'entityId', value: $event || undefined })" />
+            </div>
+            <div class="text-[10px] text-base-content/40 mt-1">
+              Leave blank to exclude from SCADA view. Format: <code>{{ sn.desc.haDomain }}.name</code>
+            </div>
+          </div>
+        }
+
         <!-- Interconnect site link section -->
         @if (sn.node.kind === 'interconnect') {
           <div class="mt-3 pt-3 border-t border-base-300/30">

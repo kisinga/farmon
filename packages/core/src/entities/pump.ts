@@ -5,6 +5,7 @@ import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
+import { HaNodeFields } from '../ha';
 
 const COLOR = '#dc2626'; // red
 const S = 60;
@@ -27,6 +28,7 @@ export const PumpNodeSchema = z.object({
       { message: 'Pump must have exactly one inlet and one outlet port' },
     ),
   position: PositionSchema,
+  ...HaNodeFields,
 });
 
 export type PumpNode = z.infer<typeof PumpNodeSchema>;
@@ -44,6 +46,12 @@ export const pumpDescriptor: NodeDescriptor = {
   category: 'actuator',
   group: 'pump',
   schema: PumpNodeSchema,
+  haDomain: 'switch',
+  defaultHaActions: [
+    { id: 'more-info', label: 'More info' },
+    { id: 'toggle', label: 'Toggle', service: 'switch.toggle' },
+  ],
+  defaultBinds: { label: 'state' },
   defaultPorts: [
     { id: 'in', label: 'Inlet', direction: 'inlet' },
     { id: 'out', label: 'Outlet', direction: 'outlet' },

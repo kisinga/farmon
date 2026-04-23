@@ -11,6 +11,7 @@ import type { z } from 'zod';
 import type { ChannelUsage, ResolvedChannel } from './io-provider.types';
 import type { PinCap } from './board.types';
 import type { FlowConstraint } from './graph/constraints';
+import type { HaActionSpec, HaSlotSpec } from './ha';
 
 // ---------------------------------------------------------------------------
 // Entity kind — compile-time registry of all known node kinds
@@ -117,6 +118,31 @@ export interface NodeDescriptor {
 
   /** Flow constraints this entity declares on routes it appears in. */
   constraints?: FlowConstraint[];
+
+  // --- Home Assistant integration (consumed by TopologyRenderer.exportHa + farm-scada-card) ---
+
+  /**
+   * Default HA domain for this kind, used to suggest entity IDs and pick
+   * fallback services (e.g. `switch` → `switch.toggle`).
+   */
+  haDomain?: string;
+  /**
+   * Default action list for this kind. Resolved at export time; a node's
+   * `haActions` overrides these. Each action becomes a menu item in the card.
+   */
+  defaultHaActions?: HaActionSpec[];
+  /**
+   * Declared slots this entity's rendered SVG exposes. The exporter injects
+   * a `<text data-slot="<name>">` at the given local-coord position for any
+   * node that has a matching `binds` entry. Omit to accept the default label
+   * slot below the node.
+   */
+  slots?: Record<string, HaSlotSpec>;
+  /**
+   * Default bind expressions to apply when a node sets `entityId` but does
+   * not specify bindings. Keys must match `slots` keys (or 'label' default).
+   */
+  defaultBinds?: Record<string, string>;
 
   // --- Dispatch flags — tell the graph layer and generators what this entity does ---
 

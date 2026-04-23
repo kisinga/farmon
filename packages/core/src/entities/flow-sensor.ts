@@ -4,6 +4,7 @@ import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
+import { HaNodeFields } from '../ha';
 
 const COLOR = '#16a34a'; // green
 const W = 50, H = 36;
@@ -19,6 +20,7 @@ export const FlowSensorNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
+  ...HaNodeFields,
 });
 
 export type FlowSensorNode = z.infer<typeof FlowSensorNodeSchema>;
@@ -37,6 +39,9 @@ export const flowSensorDescriptor: NodeDescriptor = {
   group: 'sensor',
   helpUrl: 'docs/installation-guidelines.md#flow-sensors',
   schema: FlowSensorNodeSchema,
+  haDomain: 'sensor',
+  defaultHaActions: [{ id: 'more-info', label: 'More info' }],
+  defaultBinds: { label: 'state|format:number:1' },
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },

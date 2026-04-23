@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
+import { HaNodeFields } from '../ha';
 
 const COLOR = '#e11d48'; // rose
 const W = 50, H = 36;
@@ -19,6 +20,7 @@ export const ValveNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
+  ...HaNodeFields,
 });
 
 export type ValveNode = z.infer<typeof ValveNodeSchema>;
@@ -36,6 +38,14 @@ export const valveDescriptor: NodeDescriptor = {
   category: 'actuator',
   helpUrl: 'docs/installation-guidelines.md#valves',
   schema: ValveNodeSchema,
+  haDomain: 'cover',
+  defaultHaActions: [
+    { id: 'more-info', label: 'More info' },
+    { id: 'open', label: 'Open', service: 'cover.open_cover' },
+    { id: 'close', label: 'Close', service: 'cover.close_cover' },
+    { id: 'stop', label: 'Stop', service: 'cover.stop_cover' },
+  ],
+  defaultBinds: { label: 'state' },
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },

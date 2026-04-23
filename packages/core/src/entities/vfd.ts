@@ -4,6 +4,7 @@ import { ComponentId, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
+import { HaNodeFields } from '../ha';
 
 const COLOR = '#7c3aed'; // violet
 const S = 60;
@@ -33,6 +34,7 @@ export const VfdNodeSchema = z.object({
       { message: 'VFD must have exactly one inlet and one outlet port' },
     ),
   position: PositionSchema,
+  ...HaNodeFields,
 });
 
 export type VfdNode = z.infer<typeof VfdNodeSchema>;
@@ -50,6 +52,12 @@ export const vfdDescriptor: NodeDescriptor = {
   category: 'actuator',
   group: 'pump',
   schema: VfdNodeSchema,
+  haDomain: 'switch',
+  defaultHaActions: [
+    { id: 'more-info', label: 'More info' },
+    { id: 'toggle', label: 'Toggle', service: 'switch.toggle' },
+  ],
+  defaultBinds: { label: 'state' },
   defaultPorts: [
     { id: 'in', label: 'Inlet', direction: 'inlet' },
     { id: 'out', label: 'Outlet', direction: 'outlet' },

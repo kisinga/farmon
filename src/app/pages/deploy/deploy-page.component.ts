@@ -1293,6 +1293,24 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
       const result = await this.electron.generateSiteHA(siteId);
       this.haFiles.set(result.files);
       this.haOutputDir.set(result.outputDir);
+
+      // Also render SCADA artifacts (SVG + meta) for farm-scada-card on HA.
+      // Failure here is non-fatal — the YAML already landed.
+      try {
+        if (!this.topologyRenderer && this.hiddenCanvasRef) this.initTopologyRenderer();
+        const renderer = this.topologyRenderer;
+        const systemsMap = this.workspace.systems();
+        if (renderer && systemsMap.size > 0) {
+          const artifacts: Array<{ name: string; svg: string; meta: unknown }> = [];
+          for (const [, { topology }] of systemsMap) {
+            const { svg, meta } = await renderer.exportHa(topology);
+            artifacts.push({ name: topology.device.name, svg, meta });
+          }
+          if (artifacts.length) await this.electron.writeScadaArtifacts(siteId, artifacts);
+        }
+      } catch (scadaErr) {
+        console.warn('SCADA artifact generation failed:', scadaErr);
+      }
     } catch (err) {
       this.haError.set(String(err));
     } finally {

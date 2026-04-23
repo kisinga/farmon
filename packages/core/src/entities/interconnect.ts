@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, PortSchema, PositionSchema, escXml } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { HaNodeFields } from '../ha';
 
 const COLOR = '#8b5cf6'; // violet
 const CONNECTED_COLOR = '#0891b2'; // cyan for incoming
@@ -17,6 +18,7 @@ export const InterconnectNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
+  ...HaNodeFields,
 });
 
 export type InterconnectNode = z.infer<typeof InterconnectNodeSchema>;

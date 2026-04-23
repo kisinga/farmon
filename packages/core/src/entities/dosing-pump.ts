@@ -5,6 +5,7 @@ import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { dosingPumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
+import { HaNodeFields } from '../ha';
 
 const COLOR = '#ea580c'; // orange
 const S = 50;
@@ -20,6 +21,7 @@ export const DosingPumpNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
+  ...HaNodeFields,
 });
 
 export type DosingPumpNode = z.infer<typeof DosingPumpNodeSchema>;
@@ -40,6 +42,12 @@ export const dosingPumpDescriptor: NodeDescriptor = {
   group: 'pump',
   experimental: true,
   schema: DosingPumpNodeSchema,
+  haDomain: 'switch',
+  defaultHaActions: [
+    { id: 'more-info', label: 'More info' },
+    { id: 'toggle', label: 'Toggle', service: 'switch.toggle' },
+  ],
+  defaultBinds: { label: 'state' },
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
