@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MajiFlow — Test Site — Site Documentation</title>
+<style>:root {
+  --brand: #0EA5E9;
+  --brand-dark: #0C4A6E;
+  --brand-light: #E0F2FE;
+  --text: #1a1a1a;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
+  --bg-subtle: #f9fafb;
+  --bg-card: #f8f9fa;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text); max-width: 900px; margin: 0 auto; padding: 32px 40px;
+  font-size: 13px; line-height: 1.6;
+}
+
+/* --- Header / Branding --- */
+.doc-header {
+  display: flex; align-items: center; gap: 16px;
+  padding-bottom: 20px; margin-bottom: 24px;
+  border-bottom: 3px solid var(--brand);
+}
+.doc-header .logo { flex-shrink: 0; }
+.doc-header h1 { font-size: 22px; font-weight: 700; color: var(--brand-dark); margin-bottom: 2px; }
+.doc-header .subtitle { color: var(--text-muted); font-size: 12px; }
+.doc-header .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+.pill {
+  display: inline-block; padding: 2px 10px; border-radius: 12px;
+  font-size: 11px; font-weight: 500;
+  background: var(--brand-light); color: var(--brand-dark);
+}
+
+/* --- Sections --- */
+h2 {
+  font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--brand-dark); margin: 28px 0 10px;
+  padding-bottom: 6px; border-bottom: 2px solid var(--brand-light);
+}
+h3 { font-size: 13px; font-weight: 600; margin: 16px 0 6px; color: var(--text); }
+h4 { font-size: 12px; font-weight: 600; margin: 12px 0 4px; color: var(--text-muted); }
+
+/* --- Tables --- */
+table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 12px; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th {
+  background: var(--brand-dark); color: white;
+  font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+tr:nth-child(even) { background: var(--bg-subtle); }
+tr:hover { background: var(--brand-light); }
+
+/* --- Badges --- */
+.badge {
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+}
+.badge-pump { background: #FEF3C7; color: #92400E; }
+.badge-gravity { background: #D1FAE5; color: #065F46; }
+
+/* --- Diagram --- */
+.diagram { margin: 12px 0; text-align: center; }
+.diagram svg {
+  max-width: 100%; height: auto;
+  border: 1px solid var(--border); border-radius: 8px; background: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+/* Topology exports stay within the body's content column so their width
+   matches the rest of the doc (tables, prose, board pinouts). The X6 viewBox
+   is authoritative — the browser preserves aspect ratio from it, so wide
+   topologies scale down rather than overflowing. If a specific topology is
+   too dense to read at this width, the X6 exporter is the right place to
+   adjust (e.g. tighter node spacing), not the doc-side CSS. */
+.diagram.topology {
+  margin: 12px 0;
+  max-width: 100%;
+}
+.diagram.topology svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  margin: 0 auto;
+}
+.legend {
+  margin: 10px 0 20px; font-size: 12px; color: var(--text-muted);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0;
+}
+.legend-item {
+  display: inline-flex; align-items: center; gap: 4px; margin-right: 16px;
+}
+
+/* --- Safety cards --- */
+.safety-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
+.safety-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; border-left: 3px solid var(--brand);
+}
+.safety-card strong { display: block; font-size: 12px; margin-bottom: 3px; color: var(--brand-dark); }
+.safety-card span { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+/* --- State machine diagram --- */
+.state-diagram {
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 11px; line-height: 1.5; white-space: pre;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 18px; margin: 10px 0 16px; overflow-x: auto;
+  color: var(--text);
+}
+.state-diagram .hl { color: var(--brand); font-weight: 700; }
+.state-diagram .fault { color: #dc2626; font-weight: 700; }
+
+/* --- Responsibility split --- */
+.resp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0 16px; }
+.resp-col {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px;
+}
+.resp-col strong {
+  display: block; font-size: 12px; margin-bottom: 6px;
+  padding-bottom: 4px; border-bottom: 2px solid var(--brand-light);
+  color: var(--brand-dark);
+}
+.resp-col ul { margin: 4px 0; padding-left: 16px; }
+.resp-col li { font-size: 11px; color: var(--text-muted); margin: 2px 0; }
+
+/* --- Badge variants --- */
+.badge-fault { background: #FEE2E2; color: #991B1B; }
+.badge-idle { background: #D1FAE5; color: #065F46; }
+.badge-info { background: var(--brand-light); color: var(--brand-dark); }
+
+/* --- Lists --- */
+ul, ol { padding-left: 20px; margin: 8px 0; }
+li { margin: 4px 0; }
+p { margin: 6px 0; }
+code {
+  background: var(--bg-subtle); border: 1px solid var(--border);
+  padding: 1px 5px; border-radius: 3px; font-size: 11px;
+  font-family: ui-monospace, 'SF Mono', monospace;
+}
+
+/* --- Board Pinout ---
+   `.board-pinout` must have a determinate width so its child SVG can render.
+   Some board SVGs (e.g. kc868-a16) have only a `viewBox` and no explicit
+   width/height attrs; on an `inline-block` parent those collapse to 0×0,
+   which silently sinks the board image AND mispositions the pin-label
+   overlays the inline script creates. Block layout with a max-width fixes
+   both and keeps centering via `margin: 0 auto` inside the centered .diagram. */
+.board-pinout {
+  position: relative; display: block;
+  width: 100%; max-width: 720px;
+  margin: 12px auto;
+}
+.board-pinout svg { width: 100%; height: auto; display: block; }
+.pin-label {
+  position: absolute; font-size: 9px; font-weight: 700; color: white;
+  padding: 1px 4px; border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  transform: translate(-50%, -50%); white-space: nowrap; pointer-events: auto;
+  cursor: default; line-height: 1.3;
+}
+
+/* --- Installation --- */
+.installation {
+  margin-top: 28px; padding-top: 16px;
+  border-top: 3px solid var(--brand-light);
+}
+
+/* --- Footer --- */
+.footer {
+  margin-top: 40px; padding: 16px 0;
+  border-top: 2px solid var(--brand-light);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 10px; color: var(--text-muted);
+}
+.footer .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--brand-dark); }
+
+/* --- Print --- */
+@media print {
+  body { padding: 0; max-width: none; }
+  .diagram svg { border: none; box-shadow: none; }
+  h2 { page-break-after: avoid; }
+  table { page-break-inside: avoid; }
+  tr:hover { background: inherit; }
+  .footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 8px 40px; }
+}
+</style>
+<style>
+.badge-cross { background: #EDE9FE; color: #5B21B6; }
+.badge-local { background: #DBEAFE; color: #1E40AF; }
+.system-header {
+  display: flex; align-items: center; gap: 8px; margin: 18px 0 8px;
+  padding: 6px 10px; border-radius: 6px; background: var(--bg-subtle);
+}
+.system-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.link-arrow { color: var(--brand); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- Header with branding -->
+<div class="doc-header">
+  <div class="logo"><svg viewBox="-90 -90 180 180" width="36" height="36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <linearGradient id="sr1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#0369A1"/>
+    </linearGradient>
+    <linearGradient id="sr2" x1="1" y1="0.5" x2="0" y2="1">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#0369A1"/>
+    </linearGradient>
+    <linearGradient id="sr3" x1="0" y1="1" x2="0.5" y2="0">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#0284C7"/>
+    </linearGradient>
+  </defs>
+  <g transform="rotate(-30)">
+    <path d="M-78,0 C-55,-10 -28,10 -10,0 C-2,-3 2,0 5,0" fill="none" stroke="url(#sr1)" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+    <path d="M-74,9 C-50,-1 -26,18 -8,9 C2,4 5,8 7,6" fill="none" stroke="url(#sr1)" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+    <path d="M-70,20 C-48,10 -22,28 -4,20 C6,16 8,20 10,16" fill="none" stroke="url(#sr1)" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+  </g>
+  <g transform="rotate(90)">
+    <path d="M-78,0 C-55,-10 -28,10 -10,0 C-2,-3 2,0 5,0" fill="none" stroke="url(#sr2)" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+    <path d="M-74,9 C-50,-1 -26,18 -8,9 C2,4 5,8 7,6" fill="none" stroke="url(#sr2)" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+    <path d="M-70,20 C-48,10 -22,28 -4,20 C6,16 8,20 10,16" fill="none" stroke="url(#sr2)" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+  </g>
+  <g transform="rotate(210)">
+    <path d="M-78,0 C-55,-10 -28,10 -10,0 C-2,-3 2,0 5,0" fill="none" stroke="url(#sr3)" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+    <path d="M-74,9 C-50,-1 -26,18 -8,9 C2,4 5,8 7,6" fill="none" stroke="url(#sr3)" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+    <path d="M-70,20 C-48,10 -22,28 -4,20 C6,16 8,20 10,16" fill="none" stroke="url(#sr3)" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+  </g>
+  <circle cx="0" cy="0" r="8" fill="#0C4A6E"/>
+  <circle cx="0" cy="0" r="4.5" fill="#0EA5E9"/>
+  <circle cx="0" cy="0" r="2" fill="#E0F2FE"/>
+</svg></div>
+  <div>
+    <h1>MajiFlow</h1>
+    <div class="subtitle">Test System — Documentation</div>
+    <div class="pills">
+        <span class="pill">1 controller</span>
+        <span class="pill">1 tank</span>
+<span class="pill">1 pump</span>
+<span class="pill">2 valves</span>
+<span class="pill">1 flow sensor</span>
+<span class="pill">1 route</span>
+    </div>
+  </div>
+</div>
+
+
+
+<h2>Routes</h2>
+<table>
+  <thead>
+    <tr><th>Route</th><th>Type</th><th>Source Min</th><th>Dest Max</th><th>Max Runtime</th><th>Scope</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>tank_main &gt; valve_a</td>
+      <td><span class="badge badge-pump">Pumped</span></td>
+      <td>—</td>
+      <td>—</td>
+      <td>30m</td>
+      <td><span class="badge badge-local">Local</span></td>
+    </tr>
+  </tbody>
+</table>
+
+
+
+
+<h3>Topology</h3>
+<div class="diagram topology">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><rect width="200" height="100" fill="#eef"/><text x="10" y="55">topology</text></svg>
+</div>
+
+
+
+<h3>Timing Parameters</h3>
+<table>
+  <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>Valve travel time</td><td><strong>5s</strong></td><td>Time allowed for valves to fully open/close</td></tr>
+    <tr><td>Flow watchdog</td><td><strong>30s</strong></td><td>No-flow duration before fault/tank-full detection</td></tr>
+    <tr><td>Flow confirm</td><td><strong>3s</strong></td><td>Time to confirm flow is established after start</td></tr>
+    <tr><td>API watchdog</td><td><strong>60s</strong></td><td>HA disconnect duration before route is faulted</td></tr>
+    <tr><td>Sensor update</td><td><strong>1s</strong></td><td>ADC/sensor polling interval</td></tr>
+  </tbody>
+</table>
+
+<h3>Home Assistant Entities</h3>
+<table>
+  <thead><tr><th>Entity</th><th>Type</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>button.…_start_0</code></td><td>Button</td><td>Start route: Tank → Valve A</td></tr>
+    <tr><td><code>button.…_stop_0</code></td><td>Button</td><td>Stop route: Tank → Valve A</td></tr>
+    <tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Bypass pre-start level checks (use with caution)</td></tr>
+  </tbody>
+</table>
+
+<h3>Firmware Safety</h3>
+<div class="safety-grid">
+  <div class="safety-card"><strong>Pre-start checks</strong><span>Source/dest level thresholds enforced before every start</span></div>
+  <div class="safety-card"><strong>Flow watchdog</strong><span>No-flow fault after 30s · Flow confirmed within 3s</span></div>
+  <div class="safety-card"><strong>Runtime level</strong><span>Active on routes with pump-rated sensors · Clean stop on threshold breach</span></div>
+  <div class="safety-card"><strong>API watchdog</strong><span>Route faulted if HA disconnects for 60s</span></div>
+</div>
+
+<h2>Firmware Safety Model</h2>
+<p>All safety logic runs on the ESP32 — no server dependency. Each controller operates independently with the same state machine and watchdog behavior.</p>
+
+<h3>State Machine</h3>
+<div class="state-diagram"><span class="hl">IDLE</span> ──→ <span class="hl">PREPARING</span> ──→ <span class="hl">RUNNING</span> ──→ <span class="hl">STOPPING</span> ──→ <span class="hl">IDLE</span>
+          │              │
+          └──→ <span class="fault">FAULT</span> ←───┘ ──→ <span class="hl">IDLE</span> (fault_reset)</div>
+
+<h4>Tank Sensor Suppression by State</h4>
+<table>
+  <thead><tr><th>State</th><th>Tank Readings</th><th>Reason</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-idle">IDLE (0)</span></td><td>Valid</td><td>Pump off, pressure settled</td></tr>
+    <tr><td><span class="badge badge-info">PREPARING (1)</span></td><td><strong>Suppressed</strong></td><td>Valves moving, minor transients</td></tr>
+    <tr><td><span class="badge badge-info">RUNNING (2)</span></td><td><strong>Suppressed</strong></td><td>Pump creates pressure artifacts</td></tr>
+    <tr><td><span class="badge badge-info">STOPPING (3)</span></td><td><strong>Suppressed</strong></td><td>Depressurizing, valves closing</td></tr>
+    <tr><td><span class="badge badge-fault">FAULT (4)</span></td><td>Valid</td><td>Pump off, valves closed</td></tr>
+  </tbody>
+</table>
+
+<h3>Pre-flight Checks</h3>
+<table>
+  <thead><tr><th>Check</th><th>Threshold</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td>Source tank too low</td><td>&lt; 5%</td><td>Reject start (not a fault)</td></tr>
+    <tr><td>Dest tank already full</td><td>&gt; 95%</td><td>Reject start (not a fault)</td></tr>
+    <tr><td>System not IDLE</td><td>state ≠ 0</td><td>Reject start</td></tr>
+    <tr><td>Invalid route ID</td><td>Out of range</td><td>Reject start</td></tr>
+  </tbody>
+</table>
+
+<h3>Runtime Safety Checks</h3>
+<table>
+  <thead><tr><th>#</th><th>Check</th><th>Fault Code</th><th>Threshold</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Flow watchdog</td><td><span class="badge badge-fault">no_flow (1)</span></td><td>No pulses for flow_watchdog</td></tr>
+    <tr><td>2</td><td>Per-route max runtime</td><td><span class="badge badge-fault">max_runtime (2)</span></td><td>Route-specific max_runtime_s ceiling</td></tr>
+    <tr><td>3</td><td>API watchdog</td><td><span class="badge badge-fault">api_lost (3)</span></td><td>HA disconnected for api_watchdog</td></tr>
+  </tbody>
+</table>
+
+<h3>Stop Reasons</h3>
+<table>
+  <thead><tr><th>Code</th><th>Reason</th><th>Trigger</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>None</td><td>Initial state</td></tr>
+    <tr><td>1</td><td>Manual stop</td><td>User called pump_stop</td></tr>
+    <tr><td>2</td><td>Tank full</td><td>Flow confirmed then stopped (backpressure)</td></tr>
+    <tr><td>3</td><td>No flow</td><td>Fault: no pulses after confirmation window</td></tr>
+    <tr><td>4</td><td>Max runtime</td><td>Fault: route exceeded time limit</td></tr>
+    <tr><td>5</td><td>API lost</td><td>Fault: HA connection lost</td></tr>
+  </tbody>
+</table>
+
+<h3>Fault vs Clean Stop</h3>
+<div class="safety-grid">
+  <div class="safety-card" style="border-left-color:#dc2626;">
+    <strong>Fault Response</strong>
+    <span>Kill pump → HA event (<code>esphome.pump_fault</code>) → Close all valves → <strong>FAULT</strong> (latched)<br>Requires <code>fault_reset</code> service call from HA to return to IDLE.</span>
+  </div>
+  <div class="safety-card" style="border-left-color:#16a34a;">
+    <strong>Clean Stop Response</strong>
+    <span>HA event (<code>esphome.pump_stopped</code>) → Kill pump → Depressurize 2s → Close all valves → <strong>IDLE</strong></span>
+  </div>
+</div>
+
+<h3>Tank-to-Tank Overflow Protection</h3>
+<ol>
+  <li><strong>Pre-start check</strong>: dest tank &gt; 95% → reject start</li>
+  <li><strong>Per-route max_runtime_s</strong>: sized to tank capacity (hard fault if exceeded)</li>
+  <li><strong>Hardware float switch</strong> (REQUIRED): high-level switch on every destination tank — independent of ESP32 software</li>
+</ol>
+
+<h3>Responsibility Split</h3>
+<div class="resp-grid">
+  <div class="resp-col">
+    <strong>ESP32 (On-Device)</strong>
+    <ul>
+      <li>State machine + valve sequencing + pump relay</li>
+      <li>Flow watchdog (unconditional on every route)</li>
+      <li>Per-route max runtime + API watchdog</li>
+      <li>Pre-flight validation (source/dest levels)</li>
+      <li>Pump relay guard (blocks direct toggle)</li>
+      <li>Tank sensor suppression during pump operation</li>
+      <li>HA event notifications (pump_stopped, pump_fault)</li>
+    </ul>
+  </div>
+  <div class="resp-col">
+    <strong>Home Assistant (Server)</strong>
+    <ul>
+      <li>Operating mode selection</li>
+      <li>Active threshold resolution</li>
+      <li>Auto-refill trigger + conservation stop</li>
+      <li>Duration timer (user-configurable)</li>
+      <li>Dashboard, notifications, logging</li>
+    </ul>
+  </div>
+</div>
+
+<h3>HA Event Notifications</h3>
+<table>
+  <thead><tr><th>Event Type</th><th>Data Fields</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td><code>stopped</code></td><td>route, reason</td><td>Clean stop (manual, tank full)</td></tr>
+    <tr><td><code>fault</code></td><td>route, fault</td><td>Any fault condition</td></tr>
+  </tbody>
+</table>
+
+<h3>Sensor Fault Detection</h3>
+<p>Each flow sensor has built-in fault detection. When the pump is RUNNING and flow was previously confirmed (&gt; 0.5 L/min), 3 consecutive zero readings trigger a <code>sensor_fault</code> binary sensor in HA. This is distinct from no_flow (never established) — sensor fault means flow was confirmed then the sensor stopped reporting.</p>
+
+<div class="installation">
+<h2>Installation Guidelines</h2>
+
+<h3>Flow Sensors</h3>
+<h4>Placement — The 10D/5D Rule</h4>
+<p>Flow sensors require straight, undisturbed pipe upstream and downstream for accurate readings:</p>
+<ul>
+  <li><strong>10D upstream</strong>: 10 pipe diameters of straight pipe before the sensor</li>
+  <li><strong>5D downstream</strong>: 5 pipe diameters of straight pipe after the sensor</li>
+</ul>
+<p>For a 1" (25mm) pipe: 250mm straight before, 125mm straight after.</p>
+
+<h4>Float Valve Requirement</h4>
+<p>A float valve <strong>must</strong> be installed upstream of each flow sensor on routes filling a destination tank. When the tank is full, the float valve closes and flow drops to zero — this is how MajiFlow detects tank-full and triggers a clean stop via the flow watchdog.</p>
+
+<h4>Mounting &amp; Electrical</h4>
+<ul>
+  <li>Mount <strong>horizontally</strong> with the impeller axis vertical; arrow matches flow direction</li>
+  <li>Use shielded cable for runs &gt; 2m · Pull-up resistor (10kΩ to 3.3V) recommended</li>
+</ul>
+
+<h3>Valves</h3>
+<ul>
+  <li>Mount <strong>horizontally</strong> or with the actuator <strong>above</strong> the pipe</li>
+  <li>Default travel time: <strong>15 seconds</strong></li>
+  <li>2-wire control: one wire for OPEN, one for CLOSE. <strong>Never energize both simultaneously</strong> — ESPHome interlocks prevent this</li>
+  <li>Wire gauge: 18 AWG minimum for runs up to 15m; 16 AWG for longer runs</li>
+</ul>
+
+<h3>Tank Level Sensors</h3>
+<p>Analog pressure sensors at the tank bottom measure water column height. Mount at the <strong>lowest point</strong> of the tank.</p>
+<p>Calibrate via Home Assistant: set <strong>Cal Empty (V)</strong> and <strong>Cal Full (V)</strong> number entities.</p>
+<p>Tank readings are <strong>suppressed during pump operation</strong> to avoid pressure artifacts.</p>
+
+<h3>General Notes</h3>
+<ul>
+  <li><strong>Pipe sizing</strong>: Match pipe diameter to expected flow rates</li>
+  <li><strong>Pressure regulators</strong>: Install upstream if mains pressure exceeds 6 bar</li>
+  <li><strong>Check valves</strong>: Non-return valves on tank inlet lines</li>
+  <li><strong>Strainers</strong>: Install upstream of flow sensors to prevent debris fouling</li>
+  <li><strong>Float switches</strong>: Required on every destination tank as hardware safety interlock</li>
+</ul>
+
+</div>
+
+<div class="installation">
+<h2>Power &amp; Wiring</h2>
+
+<h2>At a glance</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Spec</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>DC supply</td>
+<td>12 V / 2 A regulated, 24 W (e.g. Mean Well RS-25-12) — sized for MajiFlow&#39;s default 2-wire motorized valves; direct-wired DC solenoid valves hold ~0.6 A each and need 12 V / 5 A</td>
+</tr>
+<tr>
+<td>Mains supply</td>
+<td>220–240 VAC, 1φ, sized to pump</td>
+</tr>
+<tr>
+<td>Pump switching</td>
+<td>Controller relay → contactor coil → pump</td>
+</tr>
+<tr>
+<td>Pump scale via relays</td>
+<td>Up to 1.5 HP, 1φ, direct-on-line (DOL)</td>
+</tr>
+<tr>
+<td>Larger / 3φ pumps</td>
+<td>VFD via RS485/Modbus — separate path, no relay</td>
+</tr>
+<tr>
+<td>Solenoid valves</td>
+<td>12 V DC only</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>Anything outside these envelopes (3φ pumps without a VFD, mixed valve voltages, &gt; 2 HP DOL) is <strong>expert-level</strong> and beyond the scope of this guide. The parameter tables below still apply; sizing the install becomes the electrician&#39;s call.</p>
+</blockquote>
+
+
+<h2>DC power supply (12 V rail)</h2>
+<p>The KC868-A16 board, every 12 V DC solenoid valve, and every sensor draw from one 12 V supply.</p>
+<h3>Sizing</h3>
+<p>MajiFlow&#39;s default valve type is a <strong>2-wire motorized valve</strong>: the controller energizes an OPEN or CLOSE motor for ~15 s of travel, then the valve mechanically latches and draws zero current. Steady-state load is essentially just the board.</p>
+<p>Concurrent valve activations are firmware-capped at 2 (briefly 3 during a route handoff). With motorized valves, worst-case demand is short and modest:</p>
+<table>
+<thead>
+<tr>
+<th>Installation</th>
+<th>Steady (no valves moving)</th>
+<th>Peak (handoff: pump on + 2 motors traveling)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Any size, 1–8 valves</td>
+<td>~0.25 A</td>
+<td>~1.0 A for ~15 s</td>
+</tr>
+</tbody></table>
+<p><strong>One-line rule:</strong> <em>A 12 V / 2 A regulated supply (24 W) covers any single-controller install with motorized valves. <strong>Direct-wired DC solenoid valves are different — each holds ~0.6 A continuously while open, so an install with those needs 12 V / 5 A (60 W) instead.</strong></em></p>
+<h4>Per-device current budget (for the curious)</h4>
+<table>
+<thead>
+<tr>
+<th>Load</th>
+<th>Draw</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>KC868-A16 — board idle, Ethernet active, OLED on</td>
+<td>~0.20 A</td>
+</tr>
+<tr>
+<td>KC868-A16 — same, plus all 16 relay coils energized (worst-case transient)</td>
+<td>~0.75 A</td>
+</tr>
+<tr>
+<td>Motorized 2-wire valve — during ~15 s travel</td>
+<td>~0.4 A</td>
+</tr>
+<tr>
+<td>Motorized 2-wire valve — at rest (open or closed, mechanically latched)</td>
+<td>0 A</td>
+</tr>
+<tr>
+<td>Direct-wired DC solenoid valve — holding</td>
+<td>~0.6 A <em>(continuous while open — drives the 5 A spec)</em></td>
+</tr>
+<tr>
+<td>Hall-effect flow sensor</td>
+<td>~10 mA each</td>
+</tr>
+<tr>
+<td>Tank level sensor (op-amp conditioned)</td>
+<td>~20 mA each</td>
+</tr>
+</tbody></table>
+<p>Use a <strong>regulated</strong> supply (SMPS), not an unregulated wall-wart. Motor start and any solenoid inrush will sag an unregulated 12 V brick below the ESP32&#39;s brown-out threshold.</p>
+
+
+<h2>DC cable runs</h2>
+<p>For 12 V DC, <strong>voltage drop is the binding constraint</strong> — not current capacity. A 12 V solenoid pulls in at ≈ 10.2 V (85 % of nominal); during inrush, end-of-cable voltage must stay above this.</p>
+<p>All lengths assume <strong>copper conductor at 20 °C</strong>, one-way distance from controller to load, sized for the inrush moment (the worst case).</p>
+<h3>Controller → valve</h3>
+<p>One pair (live + return) per valve. Don&#39;t daisy-chain.</p>
+<table>
+<thead>
+<tr>
+<th>Cable size</th>
+<th>AWG (≈)</th>
+<th>Max one-way length</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0.5 mm²</td>
+<td>20</td>
+<td><strong>15 m</strong></td>
+</tr>
+<tr>
+<td>0.75 mm²</td>
+<td>18</td>
+<td><strong>25 m</strong></td>
+</tr>
+<tr>
+<td>1.0 mm²</td>
+<td>17</td>
+<td><strong>35 m</strong></td>
+</tr>
+<tr>
+<td>1.5 mm²</td>
+<td>15</td>
+<td><strong>50 m</strong></td>
+</tr>
+<tr>
+<td>2.5 mm²</td>
+<td>13</td>
+<td><strong>85 m</strong></td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>If two valves <em>must</em> share a common return wire, size the return one step up.</p>
+</blockquote>
+<h3>PSU → controller</h3>
+<p>The PSU normally lives in the same enclosure as the controller (&lt; 1 m). If remote-mounted, size for full peak draw (~4 A worst case):</p>
+<table>
+<thead>
+<tr>
+<th>Cable size</th>
+<th>Max one-way length</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1.5 mm²</td>
+<td><strong>5 m</strong></td>
+</tr>
+<tr>
+<td>2.5 mm²</td>
+<td><strong>8 m</strong></td>
+</tr>
+<tr>
+<td>4.0 mm²</td>
+<td><strong>13 m</strong></td>
+</tr>
+</tbody></table>
+<p>Beyond 5 m, <strong>mount the PSU next to the controller</strong> and run mains the long distance instead. Mains tolerates voltage drop better than 12 V DC.</p>
+<h3>Sensor cables</h3>
+<p>Use <strong>shielded twisted pair</strong>. Ground the shield at the controller end only.</p>
+<table>
+<thead>
+<tr>
+<th>Sensor</th>
+<th>Signal</th>
+<th>Cable</th>
+<th>Max length</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Flow sensor (Hall pulse)</td>
+<td>digital pulse, 5–12 V</td>
+<td>shielded 2-pair, 0.34 mm²</td>
+<td><strong>30 m</strong></td>
+</tr>
+<tr>
+<td>Tank level (0–5 V analog)</td>
+<td>analog</td>
+<td>shielded twisted pair, 0.34 mm²</td>
+<td><strong>20 m</strong></td>
+</tr>
+<tr>
+<td>DS18B20 temperature</td>
+<td>1-Wire</td>
+<td>shielded, 0.34 mm²</td>
+<td><strong>15 m</strong></td>
+</tr>
+</tbody></table>
+<p>Beyond these distances pulse counts get noisy and ADC readings drift. Mount the controller closer, or deploy a second KC868-A16 as a remote node linked over Ethernet.</p>
+
+
+<h2>Mains and the pump (separate from the DC rail)</h2>
+<p>The KC868-A16 relay does <strong>not</strong> carry pump current. It switches a <strong>contactor coil</strong>; the contactor switches the pump. This is true even for small pumps where the relay rating is technically sufficient — the contactor is the field-replaceable wear part.</p>
+<h3>Contactor / VFD threshold</h3>
+<table>
+<thead>
+<tr>
+<th>Pump size</th>
+<th>Switching</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>≤ 0.5 HP</td>
+<td>Relay direct <em>permitted</em>, contactor still preferred</td>
+<td>LRA ~12–15 A, within 10 A relay rating but degrading</td>
+</tr>
+<tr>
+<td>&gt; 0.5 HP</td>
+<td><strong>Contactor required</strong></td>
+<td>LRA exceeds relay rating</td>
+</tr>
+<tr>
+<td>≥ 1.5 HP</td>
+<td>Contactor + soft-starter, <em>or</em> VFD</td>
+<td>DOL inrush stresses pump and supply</td>
+</tr>
+<tr>
+<td>≥ 2 HP, or any 3φ</td>
+<td><strong>VFD via RS485/Modbus</strong> — no relay</td>
+<td>Outside the relay path entirely</td>
+</tr>
+</tbody></table>
+<h3>Pump branch sizing (single-phase, 220–240 VAC)</h3>
+<p>Cable size assumes ≤ 20 m run. For longer runs, step up one size, or compute voltage drop (&gt; 3 % at FLA = upsize).</p>
+<table>
+<thead>
+<tr>
+<th>Pump</th>
+<th>Run FLA</th>
+<th>LRA (DOL inrush)</th>
+<th>Breaker</th>
+<th>Cable (Cu)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0.25 HP / 0.18 kW</td>
+<td>~1.5 A</td>
+<td>~8 A</td>
+<td>6 A C</td>
+<td>1.5 mm²</td>
+</tr>
+<tr>
+<td>0.5 HP / 0.37 kW</td>
+<td>~2.5 A</td>
+<td>~12–15 A</td>
+<td>10 A C</td>
+<td>1.5 mm²</td>
+</tr>
+<tr>
+<td>0.75 HP / 0.55 kW</td>
+<td>~3.5 A</td>
+<td>~18–22 A</td>
+<td>16 A C</td>
+<td>2.5 mm²</td>
+</tr>
+<tr>
+<td>1 HP / 0.75 kW</td>
+<td>~4.8 A</td>
+<td>~25–30 A</td>
+<td>16 A C</td>
+<td>2.5 mm²</td>
+</tr>
+<tr>
+<td>1.5 HP / 1.1 kW</td>
+<td>~7 A</td>
+<td>~35–42 A</td>
+<td>20 A C/D</td>
+<td>4 mm²</td>
+</tr>
+</tbody></table>
+<p>Notes:</p>
+<ul>
+<li>D-curve breakers tolerate motor inrush without nuisance-tripping; C-curve is fine up to ~1 HP.</li>
+<li>Submersible-pump nameplates often understate LRA — use the upper end of the inrush column for sizing.</li>
+<li>A VFD or soft-starter collapses inrush to ~1.2–1.5 × FLA, making the LRA column irrelevant.</li>
+</ul>
+<h3>Always include</h3>
+<ul>
+<li><strong>Thermal overload</strong> alongside the contactor — protects the pump motor.</li>
+<li><strong>Dry-run / no-load protection</strong> on the pump itself — saves submersibles.</li>
+<li><strong>Earth bonding</strong> of pump body, contactor enclosure, and controller DIN rail.</li>
+</ul>
+
+
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Sharing the pump&#39;s earth return through the DC rail.</strong> Don&#39;t. Star-ground separately at a single bonding point.</li>
+<li><strong>Daisy-chaining valve power.</strong> Each valve gets its own pair from the controller — daisy-chained valves brown each other out during inrush.</li>
+<li><strong>Skipping the contactor &quot;because the relay is rated 10 A&quot;.</strong> Inductive inrush is what kills relays; welded contacts mean the pump won&#39;t stop on command.</li>
+<li><strong>Running sensor cables alongside mains in the same conduit.</strong> Induced noise wrecks pulse counts. Keep ≥ 10 cm separation, or use separate conduit.</li>
+<li><strong>Unregulated 12 V wall-warts.</strong> They sag under solenoid inrush and brown-out the ESP32. Use a regulated SMPS.</li>
+</ul>
+
+</div>
+
+<div class="footer">
+  <div class="brand"><svg viewBox="-90 -90 180 180" width="18" height="18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <linearGradient id="sr1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#0369A1"/>
+    </linearGradient>
+    <linearGradient id="sr2" x1="1" y1="0.5" x2="0" y2="1">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#0369A1"/>
+    </linearGradient>
+    <linearGradient id="sr3" x1="0" y1="1" x2="0.5" y2="0">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#0284C7"/>
+    </linearGradient>
+  </defs>
+  <g transform="rotate(-30)">
+    <path d="M-78,0 C-55,-10 -28,10 -10,0 C-2,-3 2,0 5,0" fill="none" stroke="url(#sr1)" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+    <path d="M-74,9 C-50,-1 -26,18 -8,9 C2,4 5,8 7,6" fill="none" stroke="url(#sr1)" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+    <path d="M-70,20 C-48,10 -22,28 -4,20 C6,16 8,20 10,16" fill="none" stroke="url(#sr1)" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+  </g>
+  <g transform="rotate(90)">
+    <path d="M-78,0 C-55,-10 -28,10 -10,0 C-2,-3 2,0 5,0" fill="none" stroke="url(#sr2)" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+    <path d="M-74,9 C-50,-1 -26,18 -8,9 C2,4 5,8 7,6" fill="none" stroke="url(#sr2)" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+    <path d="M-70,20 C-48,10 -22,28 -4,20 C6,16 8,20 10,16" fill="none" stroke="url(#sr2)" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+  </g>
+  <g transform="rotate(210)">
+    <path d="M-78,0 C-55,-10 -28,10 -10,0 C-2,-3 2,0 5,0" fill="none" stroke="url(#sr3)" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+    <path d="M-74,9 C-50,-1 -26,18 -8,9 C2,4 5,8 7,6" fill="none" stroke="url(#sr3)" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+    <path d="M-70,20 C-48,10 -22,28 -4,20 C6,16 8,20 10,16" fill="none" stroke="url(#sr3)" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+  </g>
+  <circle cx="0" cy="0" r="8" fill="#0C4A6E"/>
+  <circle cx="0" cy="0" r="4.5" fill="#0EA5E9"/>
+  <circle cx="0" cy="0" r="2" fill="#E0F2FE"/>
+</svg> MajiFlow</div>
+  <div>Test Site · 1 controllers · Generated 2026-01-01</div>
+</div>
+
+</body>
+</html>

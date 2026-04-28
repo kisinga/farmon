@@ -22,6 +22,9 @@
     "test:topology": "npx tsx test/topology.test.ts",
     "test:ha": "npx tsx test/ha-export.test.ts",
     "test:selftest": "npx tsx test/selftest-codegen.test.ts",
+    "test:site-doc": "npm run build:electron && npx tsx test/site-doc-snapshot.test.ts",
+    "docs:build": "npx tsx scripts/docs-build.ts",
+    "docs:check": "npm run docs:build && git diff --exit-code docs/",
     "postinstall": "electron-builder install-app-deps"
   },
   "private": true,
@@ -40,6 +43,7 @@
     "@antv/x6-plugin-selection": "^2.2.2",
     "@antv/x6-plugin-snapline": "^2.1.7",
     "handlebars": "^4.7.9",
+    "marked": "^14.1.3",
     "rxjs": "~7.8.0",
     "sql.js": "^1.14.1",
     "tslib": "^2.3.0",

@@ -1,0 +1,151 @@
+# Kincony KC868-A16 — Board Guide
+
+The KC868-A16 is MajiFlow's primary recommended board for farm irrigation controllers. It provides 16 relay outputs, 16 optocoupled digital inputs, 4 analog inputs, 3 sensor headers, Ethernet connectivity, and RS485/Modbus — all on a DIN-rail-mountable ESP32 module.
+
+**References**:
+- [Kincony product page](https://www.kincony.com/esp32-board-16-channel-relay-hardware.html)
+- [ESPHome device page](https://devices.esphome.io/devices/kincony-kc868-a16/)
+- [GitHub: hzkincony/kc868-a16](https://github.com/hzkincony/kc868-a16)
+
+> For PSU sizing, cable lengths, contactor thresholds, and pump-branch wiring, see the [Power and Wiring Guide](power-and-wiring.md).
+>
+> For board-author / codegen detail (pin reservations, schema, op-amp chain), see [Adding boards and entities](../development/adding-boards-and-entities.md).
+
+---
+
+## Pin Architecture
+
+The KC868-A16 has **segregated pin pools** — unlike boards with general-purpose GPIOs, each pin pool serves a specific function and cannot be reassigned.
+
+| Pool | Pins | Count | Capability | Used For |
+|------|------|-------|------------|----------|
+| **Relay outputs** | OUT1–OUT16 | 16 | `digital` (via PCF8574) | Valves (2 pins each), pumps (1 pin each) |
+| **ADC inputs** | GPIO36, GPIO34, GPIO35, GPIO39 | 4 | `digital`, `adc` | Tank level sensors (0–5V, op-amp conditioned) |
+| **Sensor headers** | GPIO32, GPIO33, GPIO14 | 3 | `digital`, `pulse_counter` | Flow sensors, DS18B20 temperature probes |
+| **Digital inputs** | IN1–IN16 | 16 | `digital` (via PCF8574) | Future: float switches, dry contacts |
+| **RS485** | GPIO13 (TX), GPIO16 (RX) | 2 | Reserved | VFD/Modbus devices (MAX13487E transceiver) |
+| **I2C bus** | GPIO4 (SDA), GPIO5 (SCL) | 2 | Reserved | Internal: PCF8574 expander communication |
+| **Ethernet** | GPIO23 (MDC), GPIO18 (MDIO), GPIO17 (CLK) | 3 | Reserved | LAN8720 PHY |
+
+**Total exposed**: 39 user-assignable pins (16 OUT + 16 IN + 4 ADC + 3 sensor headers)
+**Total reserved**: 7 pins (I2C + Ethernet + RS485 are auto-reserved by MajiFlow)
+
+---
+
+## Maximum Capacity
+
+### Theoretical maximums (single controller)
+
+| Component | Max Count | Reasoning |
+|-----------|-----------|-----------|
+| **Valves** (with 1 relay pump) | **7** | 7 valves × 2 OUT pins = 14 + 1 pump = 15 of 16 OUT pins |
+| **Valves** (with VFD pump) | **8** | 8 valves × 2 OUT pins = 16 OUT pins (VFD uses RS485, no OUT pin) |
+| **Tanks** (with level sensor) | **4** | 4 native ADC pins (GPIO36/34/35/39) |
+| **Flow sensors** | **3** | 3 native pulse counter pins (GPIO32/33/14) |
+| **Relay pumps** | **1** | Shares OUT pin pool with valves |
+| **VFD pumps** (Modbus) | **1+** | Uses RS485 bus — no GPIO needed per VFD |
+| **Routes** | **16** | `conflict_mask` is `uint16_t` (firmware limit) |
+| **Concurrent routes** | **2** | Firmware slot limit (hardcoded) |
+| **Queue depth** | **4** | Deferred route starts |
+
+### Realistic configurations
+
+**Small farm** (typical hobby/small plot):
+- 1 pump, 3 valves, 2 tanks, 1 flow sensor
+- Uses 8 of 16 OUT pins, 2 of 4 ADC, 1 of 3 pulse counter
+- Room to grow
+
+**Medium farm** (semi-commercial):
+- 1 pump, 6 valves, 4 tanks, 3 flow sensors
+- Uses 14 of 16 OUT pins, 4 of 4 ADC, 3 of 3 pulse counter
+- Near maximum — 1 spare OUT pin
+
+**Maxed out** (every pin utilized):
+- 1 pump, 7 valves, 4 tanks, 3 flow sensors
+- Uses 15 of 16 OUT pins, 4 of 4 ADC, 3 of 3 pulse counter
+- No spare capacity on any pool
+
+**Beyond one controller**:
+For installations exceeding these limits, deploy multiple KC868-A16 controllers and connect them via MajiFlow's multi-system site feature with inter-system links.
+
+---
+
+## ADC Voltage Range
+
+The KC868-A16's 4 ADC inputs accept **0–5V** from external sensors. An onboard **LM324 op-amp** scales this to 0–3.3V for the ESP32's ADC.
+
+**Calibration in MajiFlow**: The `Cal Empty V` and `Cal Full V` values represent the **ESP32-side voltage** (0–3.3V range), not the original sensor output (0–5V). Calibrate by:
+
+1. Fill the tank to empty → note the raw voltage reading in Home Assistant
+2. Fill the tank to full → note the raw voltage reading
+3. Enter these values as Cal Empty and Cal Full
+
+The `Raw Voltage` diagnostic sensor is exposed to HA to assist with calibration.
+
+---
+
+## Ethernet
+
+The KC868-A16 uses a **LAN8720 Ethernet PHY** — no WiFi credentials are needed. This provides more reliable connectivity than WiFi for permanent installations.
+
+- **Default**: DHCP (automatic IP assignment from your router)
+- **Static IP**: Configurable in MajiFlow's device settings
+- **IP Address**: Exposed as a text sensor in Home Assistant via `ethernet_info`
+
+No fallback AP or captive portal is generated for Ethernet boards.
+
+---
+
+## RS485 / Modbus
+
+GPIO13 (TX) and GPIO16 (RX) are reserved for RS485 communication via the onboard **MAX13487E** transceiver. This transceiver handles direction control automatically (no DE pin needed).
+
+**Usage**: Add a VFD (Variable Frequency Drive) entity in the MajiFlow topology designer to control a pump via Modbus. The UART bus is configured per-topology when a VFD entity is present.
+
+**Baud rate**: Configurable per device (typically 9600 or 19200 for VFDs).
+
+---
+
+## Digital Inputs (IN1–IN16)
+
+The 16 optocoupled digital inputs accept **6–24V** signals and are isolated from the ESP32. These are currently reserved for future entity types:
+
+- Float switch / dry contact binary sensors
+- External trigger inputs
+- Alarm/fault inputs from external equipment
+
+The pins are defined in the board YAML with `caps: [digital]` and are ready for use when the corresponding entity types are implemented.
+
+---
+
+## I2C Expanders
+
+The KC868-A16 uses **4× PCF8574** I2C GPIO expanders:
+
+| ID | Address | Function |
+|----|---------|----------|
+| `pcf8574_out_1` | 0x24 | Relay outputs K1–K8 (OUT1–OUT8) |
+| `pcf8574_out_2` | 0x25 | Relay outputs K9–K16 (OUT9–OUT16) |
+| `pcf8574_in_1` | 0x22 | Digital inputs X1–X8 (IN1–IN8) |
+| `pcf8574_in_2` | 0x21 | Digital inputs X9–X16 (IN9–IN16) |
+
+**Important**: Expander pins **cannot** do hardware pulse counting, PWM, or ADC. They are strictly digital I/O. MajiFlow enforces this — assigning a flow sensor to an expander pin (e.g., IN5) produces a validation error.
+
+All relays are **active-low** (inverted in ESPHome). Valve open/close interlocking and pump guards are generated automatically.
+
+---
+
+## Self-Test
+
+The KC868-A16 self-test firmware includes these probes:
+
+| Probe | What it checks |
+|-------|----------------|
+| I2C Scan | All 4 PCF8574 addresses respond (0x24, 0x25, 0x22, 0x21) |
+| Relay Cycle | Each of 16 relays activates and readback confirms state |
+| Digital Inputs | All 16 optocoupled inputs readable |
+| ADC Baseline | All 4 ADC channels return valid voltage |
+| Sensor Headers | GPIO32, GPIO33, GPIO14 responsive |
+| Ethernet PHY | LAN8720 link detected |
+
+Probes not applicable to this board (OLED, LoRa, WiFi, battery) are automatically excluded.

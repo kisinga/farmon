@@ -35,7 +35,7 @@ export const waterSourceDescriptor: NodeDescriptor = {
   role: 'terminal',
   routeSource: true,
   category: 'source',
-  helpUrl: 'docs/installation-guidelines.md#pressure-sensors',
+  helpUrl: 'docs/installation/power-and-wiring.md',
   schema: WaterSourceNodeSchema,
   haDomain: 'sensor',
   defaultHaActions: [{ id: 'more-info', label: 'More info' }],

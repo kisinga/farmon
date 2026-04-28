@@ -36,7 +36,7 @@ export const valveDescriptor: NodeDescriptor = {
   size: { width: W, height: H },
   role: 'passthrough',
   category: 'actuator',
-  helpUrl: 'docs/installation-guidelines.md#valves',
+  helpUrl: 'docs/installation/power-and-wiring.md',
   schema: ValveNodeSchema,
   haDomain: 'cover',
   defaultHaActions: [

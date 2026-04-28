@@ -37,7 +37,7 @@ export const flowSensorDescriptor: NodeDescriptor = {
   role: 'passthrough',
   category: 'sensor',
   group: 'sensor',
-  helpUrl: 'docs/installation-guidelines.md#flow-sensors',
+  helpUrl: 'docs/installation/power-and-wiring.md#sensor-cables',
   schema: FlowSensorNodeSchema,
   haDomain: 'sensor',
   defaultHaActions: [{ id: 'more-info', label: 'More info' }],

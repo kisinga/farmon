@@ -353,13 +353,20 @@
   <li><strong>Float switches</strong>: Required on every destination tank as hardware safety interlock</li>
 </ul>
 
-<h3>Electrical Notes</h3>
-<ul>
-  <li>Relay board must handle total inrush current of all simultaneously energized actuators</li>
-  <li>12V or 24V DC for valve motors; 3.3V logic for ESP32 GPIOs</li>
-  <li>Ensure all metallic pipes and the relay board share a common ground</li>
-  <li>Keep signal wires separated from power wires to reduce interference</li>
-</ul>
+</div>
+
+<div class="installation">
+<h2>Power &amp; Wiring</h2>
+
+{{md "wiring/at-a-glance"}}
+
+{{md "wiring/dc-power-supply"}}
+
+{{md "wiring/dc-cable-runs"}}
+
+{{md "wiring/pump-branch"}}
+
+{{md "wiring/common-mistakes"}}
 </div>
 
 <div class="footer">

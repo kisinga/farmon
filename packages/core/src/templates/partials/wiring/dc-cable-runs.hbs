@@ -1,0 +1,43 @@
+## DC cable runs
+
+For 12 V DC, **voltage drop is the binding constraint** — not current capacity. A 12 V solenoid pulls in at ≈ 10.2 V (85 % of nominal); during inrush, end-of-cable voltage must stay above this.
+
+All lengths assume **copper conductor at 20 °C**, one-way distance from controller to load, sized for the inrush moment (the worst case).
+
+### Controller → valve
+
+One pair (live + return) per valve. Don't daisy-chain.
+
+| Cable size | AWG (≈) | Max one-way length |
+|---|---|---|
+| 0.5 mm² | 20 | **15 m** |
+| 0.75 mm² | 18 | **25 m** |
+| 1.0 mm² | 17 | **35 m** |
+| 1.5 mm² | 15 | **50 m** |
+| 2.5 mm² | 13 | **85 m** |
+
+> If two valves *must* share a common return wire, size the return one step up.
+
+### PSU → controller
+
+The PSU normally lives in the same enclosure as the controller (< 1 m). If remote-mounted, size for full peak draw (~4 A worst case):
+
+| Cable size | Max one-way length |
+|---|---|
+| 1.5 mm² | **5 m** |
+| 2.5 mm² | **8 m** |
+| 4.0 mm² | **13 m** |
+
+Beyond 5 m, **mount the PSU next to the controller** and run mains the long distance instead. Mains tolerates voltage drop better than 12 V DC.
+
+### Sensor cables
+
+Use **shielded twisted pair**. Ground the shield at the controller end only.
+
+| Sensor | Signal | Cable | Max length |
+|---|---|---|---|
+| Flow sensor (Hall pulse) | digital pulse, 5–12 V | shielded 2-pair, 0.34 mm² | **30 m** |
+| Tank level (0–5 V analog) | analog | shielded twisted pair, 0.34 mm² | **20 m** |
+| DS18B20 temperature | 1-Wire | shielded, 0.34 mm² | **15 m** |
+
+Beyond these distances pulse counts get noisy and ADC readings drift. Mount the controller closer, or deploy a second KC868-A16 as a remote node linked over Ethernet.

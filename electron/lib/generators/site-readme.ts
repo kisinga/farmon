@@ -1,9 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import Handlebars from 'handlebars';
 import { nodesByKind, nodesWithFlag, type Manifest, type LinkData, type Route, type PinOverlayData, LOGO_SVG_SMALL } from '@far-mon/core';
-
-const TEMPLATES_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'packages', 'core', 'src', 'templates');
+import { TEMPLATES_DIR, compileFile } from '../../../packages/core/src/templates/hbs.js';
 
 // Boundary colors — same cycle as canvas boundary-renderer
 const BOUNDARY_COLORS = ['#0284C7', '#059669', '#D97706', '#DC2626', '#7C3AED', '#DB2777'];
@@ -24,16 +22,9 @@ export interface SiteDocOptions {
   genDate?: string;
 }
 
-// Load and compile templates once
-const hbs = Handlebars.create();
-hbs.registerHelper('eq', function (this: unknown, a: unknown, b: unknown, options: Handlebars.HelperOptions) {
-  return a === b ? options.fn(this) : options.inverse(this);
-});
-hbs.registerHelper('unless', Handlebars.helpers['unless']); // passthrough
-
-const siteTemplateSrc = fs.readFileSync(path.join(TEMPLATES_DIR, 'site-documentation.hbs'), 'utf-8');
+// Template + CSS — compiled lazily, cached by hbs.ts
 const DOCUMENTATION_CSS = fs.readFileSync(path.join(TEMPLATES_DIR, 'documentation.css'), 'utf-8');
-const compiledSiteTemplate = hbs.compile(siteTemplateSrc);
+const compiledSiteTemplate = compileFile(path.join(TEMPLATES_DIR, 'site-documentation.hbs'));
 
 export function generateSiteDocumentation(
   siteName: string,

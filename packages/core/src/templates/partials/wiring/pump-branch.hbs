@@ -1,0 +1,35 @@
+## Mains and the pump (separate from the DC rail)
+
+The KC868-A16 relay does **not** carry pump current. It switches a **contactor coil**; the contactor switches the pump. This is true even for small pumps where the relay rating is technically sufficient — the contactor is the field-replaceable wear part.
+
+### Contactor / VFD threshold
+
+| Pump size | Switching | Why |
+|---|---|---|
+| ≤ 0.5 HP | Relay direct *permitted*, contactor still preferred | LRA ~12–15 A, within 10 A relay rating but degrading |
+| > 0.5 HP | **Contactor required** | LRA exceeds relay rating |
+| ≥ 1.5 HP | Contactor + soft-starter, *or* VFD | DOL inrush stresses pump and supply |
+| ≥ 2 HP, or any 3φ | **VFD via RS485/Modbus** — no relay | Outside the relay path entirely |
+
+### Pump branch sizing (single-phase, 220–240 VAC)
+
+Cable size assumes ≤ 20 m run. For longer runs, step up one size, or compute voltage drop (> 3 % at FLA = upsize).
+
+| Pump | Run FLA | LRA (DOL inrush) | Breaker | Cable (Cu) |
+|---|---|---|---|---|
+| 0.25 HP / 0.18 kW | ~1.5 A | ~8 A | 6 A C | 1.5 mm² |
+| 0.5 HP / 0.37 kW | ~2.5 A | ~12–15 A | 10 A C | 1.5 mm² |
+| 0.75 HP / 0.55 kW | ~3.5 A | ~18–22 A | 16 A C | 2.5 mm² |
+| 1 HP / 0.75 kW | ~4.8 A | ~25–30 A | 16 A C | 2.5 mm² |
+| 1.5 HP / 1.1 kW | ~7 A | ~35–42 A | 20 A C/D | 4 mm² |
+
+Notes:
+- D-curve breakers tolerate motor inrush without nuisance-tripping; C-curve is fine up to ~1 HP.
+- Submersible-pump nameplates often understate LRA — use the upper end of the inrush column for sizing.
+- A VFD or soft-starter collapses inrush to ~1.2–1.5 × FLA, making the LRA column irrelevant.
+
+### Always include
+
+- **Thermal overload** alongside the contactor — protects the pump motor.
+- **Dry-run / no-load protection** on the pump itself — saves submersibles.
+- **Earth bonding** of pump body, contactor enclosure, and controller DIN rail.

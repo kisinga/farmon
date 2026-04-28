@@ -66,18 +66,15 @@ tr:hover { background: var(--brand-light); }
   border: 1px solid var(--border); border-radius: 8px; background: white;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
-/* Topology exports break out of the body's 900px max-width so they fill the
-   full iframe/viewport width. Without this, wide topologies get shrunk to fit
-   the narrow text column and detail becomes unreadable. The negative-margin
-   trick extends the container to full viewport; the inner svg then uses
-   width:100% + height:auto to scale responsively while preserving the
-   viewBox aspect ratio (X6 exports with preserveDimensions:false, so the
-   viewBox is authoritative and the browser derives height from it). */
+/* Topology exports stay within the body's content column so their width
+   matches the rest of the doc (tables, prose, board pinouts). The X6 viewBox
+   is authoritative — the browser preserves aspect ratio from it, so wide
+   topologies scale down rather than overflowing. If a specific topology is
+   too dense to read at this width, the X6 exporter is the right place to
+   adjust (e.g. tighter node spacing), not the doc-side CSS. */
 .diagram.topology {
-  margin-left: calc(-50vw + 50%);
-  margin-right: calc(-50vw + 50%);
-  max-width: 100vw;
-  padding: 0 16px;
+  margin: 12px 0;
+  max-width: 100%;
 }
 .diagram.topology svg {
   display: block;

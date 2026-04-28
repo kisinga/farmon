@@ -1,0 +1,12 @@
+## At a glance
+
+| Item | Spec |
+|---|---|
+| DC supply | 12 V / 2 A regulated, 24 W (e.g. Mean Well RS-25-12) — sized for MajiFlow's default 2-wire motorized valves; direct-wired DC solenoid valves hold ~0.6 A each and need 12 V / 5 A |
+| Mains supply | 220–240 VAC, 1φ, sized to pump |
+| Pump switching | Controller relay → contactor coil → pump |
+| Pump scale via relays | Up to 1.5 HP, 1φ, direct-on-line (DOL) |
+| Larger / 3φ pumps | VFD via RS485/Modbus — separate path, no relay |
+| Solenoid valves | 12 V DC only |
+
+> Anything outside these envelopes (3φ pumps without a VFD, mixed valve voltages, > 2 HP DOL) is **expert-level** and beyond the scope of this guide. The parameter tables below still apply; sizing the install becomes the electrician's call.

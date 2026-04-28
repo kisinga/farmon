@@ -5,7 +5,8 @@
       "Bash(node -e \"const t = require\\('graphology-traversal'\\); console.log\\(Object.keys\\(t\\)\\)\")",
       "Bash(node -e \"const s = require\\('graphology-simple-path'\\); console.log\\(Object.keys\\(s\\)\\)\")",
       "Bash(node -e \"const o = require\\('graphology-operators'\\); console.log\\(Object.keys\\(o\\)\\)\")",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(UPDATE_SNAPSHOTS=1 npm run test:site-doc)"
     ]
   }
 }
