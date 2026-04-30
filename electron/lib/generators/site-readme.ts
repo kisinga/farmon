@@ -11,8 +11,12 @@ export interface PinTableRow {
   connector?: string;
   /** Pin reference as stored on the node (e.g. "GPIO4", "OUT1", "mux1:CH3"). */
   pin: string;
-  /** Human-readable owner, e.g. 'valve "valve_1" open pin'. */
-  owner: string;
+  /** User-facing entity name (e.g. "Tank 1 outlet"). */
+  entity: string;
+  /** Entity-kind label (e.g. "Valve"). */
+  typeLabel: string;
+  /** Field label (e.g. "Open Pin"). */
+  fieldLabel: string;
   /** Capabilities of this pin (e.g. ["digital", "pwm"]), if known. */
   caps?: string;
 }

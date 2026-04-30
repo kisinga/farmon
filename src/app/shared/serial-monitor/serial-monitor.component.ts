@@ -134,23 +134,21 @@ export class SerialMonitorComponent implements OnInit, OnDestroy, AfterViewCheck
   private processId = signal<string | null>(null);
   private autoScroll = true;
 
-  private unsubStarted: (() => void) | null = null;
   private unsubOutput: (() => void) | null = null;
   private unsubDone: (() => void) | null = null;
 
   async ngOnInit() {
     this.scanPorts();
 
-    this.unsubStarted = this.electron.onSerialStarted((handle) => {
-      this.processId.set(handle.id);
-    });
     this.unsubOutput = this.electron.onSerialOutput((data) => {
+      if (data.id !== this.processId()) return;
       this.lines.update((l) => [
         ...l,
         { text: data.text, stream: data.stream as 'stdout' | 'stderr' },
       ]);
     });
     this.unsubDone = this.electron.onSerialDone((data) => {
+      if (data.id !== this.processId()) return;
       const cancelled = data.signal === 'SIGTERM';
       const msg = cancelled
         ? '--- Disconnected ---\n'
@@ -163,7 +161,6 @@ export class SerialMonitorComponent implements OnInit, OnDestroy, AfterViewCheck
   }
 
   ngOnDestroy() {
-    this.unsubStarted?.();
     this.unsubOutput?.();
     this.unsubDone?.();
   }
@@ -178,22 +175,23 @@ export class SerialMonitorComponent implements OnInit, OnDestroy, AfterViewCheck
   async connect() {
     const port = this.selectedPort();
     if (!port) return;
-    this.running.set(true);
-    this.status.set('running');
     this.lines.set([]);
     this.autoScroll = true;
     try {
-      await this.electron.serialMonitor(port, this.baudRate());
+      const handle = await this.electron.serialMonitor(port, this.baudRate());
+      this.processId.set(handle.id);
+      this.running.set(true);
+      this.status.set('running');
     } catch (err) {
       this.lines.update((l) => [...l, { text: `Error: ${err}\n`, stream: 'system' }]);
-      this.running.set(false);
       this.status.set('error');
     }
   }
 
   async disconnect() {
     const id = this.processId();
-    if (id) await this.electron.serialCancel(id);
+    if (!id) return;
+    await this.electron.serialCancel(id);
   }
 
   clear() {

@@ -19,6 +19,8 @@
 </head>
 <body>
 
+<button class="print-button" type="button" onclick="window.print()" title="Use the print dialog's &quot;Save as PDF&quot; destination">Save as PDF</button>
+
 <!-- Header with branding -->
 <div class="doc-header">
   <div class="logo">{{{logoSvg}}}</div>
@@ -158,13 +160,15 @@
 <h3>Pin Connections</h3>
 <p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Wire each entity to the listed connector. Capabilities indicate what the pin supports — e.g. only ADC pins can be used for level sensors.</p>
 <table>
-  <thead><tr><th>Connector</th><th>Pin</th><th>Connected to</th><th>Capabilities</th></tr></thead>
+  <thead><tr><th>Connector</th><th>Pin</th><th>Entity</th><th>Type</th><th>Field</th><th>Capabilities</th></tr></thead>
   <tbody>
 {{#each this.pinTable}}
     <tr>
       <td><code>{{#if this.connector}}{{this.connector}}{{else}}&mdash;{{/if}}</code></td>
       <td><code>{{this.pin}}</code></td>
-      <td>{{this.owner}}</td>
+      <td>{{this.entity}}</td>
+      <td>{{this.typeLabel}}</td>
+      <td>{{this.fieldLabel}}</td>
       <td>{{#if this.caps}}<code>{{this.caps}}</code>{{else}}&mdash;{{/if}}</td>
     </tr>
 {{/each}}

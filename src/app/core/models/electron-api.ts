@@ -208,9 +208,8 @@ export interface ElectronAPI {
   onEsphomeDone(callback: (data: ProcessDoneEvent) => void): () => void;
 
   // Serial monitor
-  serialMonitor(port: string, baudRate: number): Promise<ProcessResult>;
+  serialMonitor(port: string, baudRate: number): Promise<SerialHandle>;
   serialCancel(processId: string): Promise<{ cancelled: boolean }>;
-  onSerialStarted(callback: (handle: SerialHandle) => void): () => void;
   onSerialOutput(callback: (data: SerialOutputEvent) => void): () => void;
   onSerialDone(callback: (data: SerialDoneEvent) => void): () => void;
 

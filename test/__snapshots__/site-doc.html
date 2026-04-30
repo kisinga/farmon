@@ -180,6 +180,15 @@ code {
 }
 .footer .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--brand-dark); }
 
+/* --- Print button (screen only; uses browser's "Save as PDF" destination) --- */
+.print-button {
+  position: fixed; top: 16px; right: 16px; z-index: 1000;
+  padding: 8px 14px; border: 1px solid var(--brand); border-radius: 6px;
+  background: var(--brand); color: #fff; font-size: 13px; font-weight: 600;
+  cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+.print-button:hover { background: var(--brand-dark); border-color: var(--brand-dark); }
+
 /* --- Print --- */
 @media print {
   body { padding: 0; max-width: none; }
@@ -188,6 +197,7 @@ code {
   table { page-break-inside: avoid; }
   tr:hover { background: inherit; }
   .footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 8px 40px; }
+  .print-button { display: none; }
 }
 </style>
 <style>
@@ -204,6 +214,8 @@ code {
 </style>
 </head>
 <body>
+
+<button class="print-button" type="button" onclick="window.print()" title="Use the print dialog's &quot;Save as PDF&quot; destination">Save as PDF</button>
 
 <!-- Header with branding -->
 <div class="doc-header">

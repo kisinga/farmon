@@ -149,8 +149,6 @@ export function spawnSerial(
   const handle: SerialHandle = { id, port, baudRate, pid: proc.pid };
   active.set(id, { proc, handle });
 
-  win.webContents.send("serial:started", handle);
-
   proc.stdout!.on("data", (chunk: Buffer) => {
     win.webContents.send("serial:output", {
       id,

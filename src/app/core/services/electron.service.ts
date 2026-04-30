@@ -153,14 +153,11 @@ export class ElectronService {
   }
 
   // --- Serial monitor ---
-  serialMonitor(port: string, baudRate: number): Promise<ProcessResult> {
+  serialMonitor(port: string, baudRate: number): Promise<SerialHandle> {
     return this.invoke(() => this.api!.serialMonitor(port, baudRate));
   }
   serialCancel(processId: string): Promise<{ cancelled: boolean }> {
     return this.invoke(() => this.api!.serialCancel(processId));
-  }
-  onSerialStarted(callback: (handle: SerialHandle) => void): () => void {
-    return this.api?.onSerialStarted(callback) ?? (() => {});
   }
   onSerialOutput(callback: (data: SerialOutputEvent) => void): () => void {
     return this.api?.onSerialOutput(callback) ?? (() => {});

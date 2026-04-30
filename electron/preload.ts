@@ -108,20 +108,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   serialMonitor: (port: string, baudRate: number) =>
     ipcRenderer.invoke("serial:monitor", port, baudRate),
   serialCancel: (processId: string) =>
-    ipcRenderer.invoke("esphome:cancel", processId),
-  onSerialStarted: (
-    callback: (handle: {
-      id: string;
-      port: string;
-      baudRate: number;
-      pid: number | undefined;
-    }) => void
-  ) => {
-    const listener = (_event: unknown, handle: Parameters<typeof callback>[0]) =>
-      callback(handle);
-    ipcRenderer.on("serial:started", listener);
-    return () => ipcRenderer.removeListener("serial:started", listener);
-  },
+    ipcRenderer.invoke("serial:cancel", processId),
   onSerialOutput: (
     callback: (data: {
       id: string;

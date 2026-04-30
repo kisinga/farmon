@@ -550,7 +550,9 @@ export function registerIpcHandlers() {
                 return {
                   connector: def?.connector,
                   pin: u.pin,
-                  owner: u.owner,
+                  entity: u.nodeName,
+                  typeLabel: u.typeLabel,
+                  fieldLabel: u.fieldLabel,
                   caps: def?.caps?.join(', '),
                 };
               })
@@ -560,7 +562,12 @@ export function registerIpcHandlers() {
         if (!pinTable && usages.length) {
           // Board metadata unavailable — still surface the table without connector/caps.
           pinTable = usages
-            .map((u): PinTableRow => ({ pin: u.pin, owner: u.owner }))
+            .map((u): PinTableRow => ({
+              pin: u.pin,
+              entity: u.nodeName,
+              typeLabel: u.typeLabel,
+              fieldLabel: u.fieldLabel,
+            }))
             .sort(comparePinRows);
         }
         return {
@@ -687,10 +694,14 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     "serial:monitor",
     async (event, port: string, baudRate: number) => {
-      const { result } = serialMonitor(winFromEvent(event), port, baudRate);
-      return result;
+      const { handle } = serialMonitor(winFromEvent(event), port, baudRate);
+      return handle;
     }
   );
+
+  ipcMain.handle("serial:cancel", async (_e, processId: string) => ({
+    cancelled: killProcess(processId),
+  }));
 
   // =========================================================================
   // Discovery
