@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
+import { GpioPin, ComponentId, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
 import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields } from '../ha';
@@ -16,6 +16,7 @@ export const ValveNodeSchema = z.object({
   name: z.string().min(1),
   open_pin: GpioPin,
   close_pin: GpioPin,
+  coil_polarity: RelayPolaritySchema,
   travel_time: z.number().gt(1).default(15),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
@@ -50,7 +51,7 @@ export const valveDescriptor: NodeDescriptor = {
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
-  defaultData: (n) => ({ name: `Valve ${n}`, open_pin: '', close_pin: '', travel_time: 15 }),
+  defaultData: (n) => ({ name: `Valve ${n}`, open_pin: '', close_pin: '', coil_polarity: 'active_low', travel_time: 15 }),
 
   renderSvg: (_data) => {
     const cx = W / 2, cy = H / 2;
@@ -64,8 +65,12 @@ export const valveDescriptor: NodeDescriptor = {
   },
 
   sidebarFields: [
-    { key: 'open_pin', label: 'Open Pin', type: 'pin', placeholder: 'GPIO4', pinCap: 'digital' },
-    { key: 'close_pin', label: 'Close Pin', type: 'pin', placeholder: 'GPIO5', pinCap: 'digital' },
+    { key: 'open_pin', label: 'Open Pin', type: 'pin', placeholder: 'GPIO4', pinCap: 'digital', polarityKey: 'coil_polarity' },
+    { key: 'close_pin', label: 'Close Pin', type: 'pin', placeholder: 'GPIO5', pinCap: 'digital', polarityKey: 'coil_polarity' },
+    { key: 'coil_polarity', label: 'Coil polarity', type: 'select', options: [
+      { value: 'active_low', label: 'Active-low (default)' },
+      { value: 'active_high', label: 'Active-high' },
+    ] },
     { key: 'travel_time', label: 'Travel Time (s)', type: 'number' },
   ],
 
@@ -75,8 +80,9 @@ export const valveDescriptor: NodeDescriptor = {
     hardware: (node: ValveNode, _idx, ctx) => {
       const openId = valveOpenPinId(node);
       const closeId = valveClosePinId(node);
-      const openHeader = resolveComponentHeader(ctx, node.open_pin, { purpose: 'digital_out', inverted: true });
-      const closeHeader = resolveComponentHeader(ctx, node.close_pin, { purpose: 'digital_out', inverted: true });
+      const inverted = node.coil_polarity !== 'active_high';
+      const openHeader = resolveComponentHeader(ctx, node.open_pin, { purpose: 'digital_out', inverted });
+      const closeHeader = resolveComponentHeader(ctx, node.close_pin, { purpose: 'digital_out', inverted });
       return `\
 # --- ${node['name']} ---
 ${openHeader}
@@ -126,4 +132,39 @@ ${closeHeader}
 
     substitutions: () => [],
   },
+
+  rules: [
+    {
+      id: 'valve-pin-required',
+      severity: 'error',
+      evaluate: (nodes) => {
+        const out: Array<{ message: string; target?: string }> = [];
+        for (const n of nodes) {
+          if (!n['open_pin']) {
+            out.push({
+              message: `Valve "${n['name'] ?? n['id']}": Open Pin not configured`,
+              target: String(n['id']),
+            });
+          }
+          if (!n['close_pin']) {
+            out.push({
+              message: `Valve "${n['name'] ?? n['id']}": Close Pin not configured`,
+              target: String(n['id']),
+            });
+          }
+        }
+        return out;
+      },
+    },
+    {
+      id: 'valve-active-high-wiring-hint',
+      severity: 'warning',
+      evaluate: (nodes) => nodes
+        .filter(n => n['coil_polarity'] === 'active_high')
+        .map(n => ({
+          message: `Valve "${n['name'] ?? n['id']}": active-high coil polarity selected — verify the relay module's NC contact is wired to the coil, otherwise the coil will be energized at MCU power-off (boot, reset, brown-out).`,
+          target: String(n['id']),
+        })),
+    },
+  ],
 };

@@ -30,6 +30,19 @@ export const PortSchema = z.object({
   direction: z.enum(['inlet', 'outlet']),
 });
 
+/**
+ * Relay polarity per output: chooses which electrical level holds the relay OFF.
+ * `active_low` (default) — relay turns ON when GPIO is LOW (most opto-isolated modules).
+ * `active_high` — relay turns ON when GPIO is HIGH.
+ * Pick whichever matches the relay module so the load is OFF whenever the MCU is
+ * not actively driving the line (boot, reset, brown-out, crash).
+ */
+export const RelayPolaritySchema = z
+  .enum(['active_low', 'active_high'])
+  .default('active_low');
+
+export type RelayPolarity = z.infer<typeof RelayPolaritySchema>;
+
 export const PositionSchema = z.object({ x: z.number(), y: z.number() });
 
 export type Port = z.infer<typeof PortSchema>;

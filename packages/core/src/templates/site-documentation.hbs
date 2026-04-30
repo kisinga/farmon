@@ -158,9 +158,9 @@
 
 {{#if this.hasPinTable}}
 <h3>Pin Connections</h3>
-<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Wire each entity to the listed connector. Capabilities indicate what the pin supports — e.g. only ADC pins can be used for level sensors.</p>
+<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Wire each entity to the listed connector. Capabilities indicate what the pin supports — e.g. only ADC pins can be used for level sensors. Polarity (when shown) is the configured relay drive level: pick the value that holds the load OFF when the MCU is unpowered.</p>
 <table>
-  <thead><tr><th>Connector</th><th>Pin</th><th>Entity</th><th>Type</th><th>Field</th><th>Capabilities</th></tr></thead>
+  <thead><tr><th>Connector</th><th>Pin</th><th>Entity</th><th>Type</th><th>Field</th><th>Capabilities</th><th>Polarity</th></tr></thead>
   <tbody>
 {{#each this.pinTable}}
     <tr>
@@ -170,6 +170,7 @@
       <td>{{this.typeLabel}}</td>
       <td>{{this.fieldLabel}}</td>
       <td>{{#if this.caps}}<code>{{this.caps}}</code>{{else}}&mdash;{{/if}}</td>
+      <td>{{#if this.polarity}}<code>{{this.polarity}}</code>{{else}}&mdash;{{/if}}</td>
     </tr>
 {{/each}}
   </tbody>

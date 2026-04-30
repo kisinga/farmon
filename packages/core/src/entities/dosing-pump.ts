@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
+import { GpioPin, ComponentId, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { dosingPumpSwitchId } from '../codegen-ids';
@@ -17,6 +17,7 @@ export const DosingPumpNodeSchema = z.object({
   id: ComponentId,
   name: z.string().min(1),
   pin: GpioPin,
+  relay_polarity: RelayPolaritySchema,
   flow_rate_ml_min: z.number().default(100),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
@@ -52,7 +53,7 @@ export const dosingPumpDescriptor: NodeDescriptor = {
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
-  defaultData: (n) => ({ name: `Doser ${n}`, pin: '', flow_rate_ml_min: 100 }),
+  defaultData: (n) => ({ name: `Doser ${n}`, pin: '', relay_polarity: 'active_low', flow_rate_ml_min: 100 }),
 
   renderSvg: (_data) => {
     const cx = S / 2, cy = S / 2, r = S / 2 - 5;
@@ -64,7 +65,11 @@ export const dosingPumpDescriptor: NodeDescriptor = {
   },
 
   sidebarFields: [
-    { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42', pinCap: 'digital' },
+    { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42', pinCap: 'digital', polarityKey: 'relay_polarity' },
+    { key: 'relay_polarity', label: 'Relay polarity', type: 'select', options: [
+      { value: 'active_low', label: 'Active-low (default)' },
+      { value: 'active_high', label: 'Active-high' },
+    ] },
     { key: 'flow_rate_ml_min', label: 'Rate (mL/min)', type: 'number' },
   ],
 
@@ -79,7 +84,8 @@ export const dosingPumpDescriptor: NodeDescriptor = {
   codegen: {
     hardware: (node: DosingPumpNode, _idx, ctx) => {
       const id = dosingPumpSwitchId(node);
-      const header = resolveComponentHeader(ctx, node.pin, { purpose: 'digital_out', inverted: true });
+      const inverted = node.relay_polarity !== 'active_high';
+      const header = resolveComponentHeader(ctx, node.pin, { purpose: 'digital_out', inverted });
       return `\
 # --- ${node.name} ---
 ${header}
@@ -92,4 +98,27 @@ ${header}
 
     substitutions: () => [],
   },
+
+  rules: [
+    {
+      id: 'dosing-pump-pin-required',
+      severity: 'error',
+      evaluate: (nodes) => nodes
+        .filter(n => !n['pin'])
+        .map(n => ({
+          message: `Dosing pump "${n['name'] ?? n['id']}": Relay Pin not configured`,
+          target: String(n['id']),
+        })),
+    },
+    {
+      id: 'dosing-pump-active-high-wiring-hint',
+      severity: 'warning',
+      evaluate: (nodes) => nodes
+        .filter(n => n['relay_polarity'] === 'active_high')
+        .map(n => ({
+          message: `Dosing pump "${n['name'] ?? n['id']}": active-high polarity selected — verify the relay module's NC contact is wired to the load, otherwise the load will be energized at MCU power-off (boot, reset, brown-out).`,
+          target: String(n['id']),
+        })),
+    },
+  ],
 };

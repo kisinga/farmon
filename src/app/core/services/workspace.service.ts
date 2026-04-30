@@ -6,7 +6,7 @@ import type {
   SiteMetadata, LinkData, StoredTopology, SiteSavePayload, SystemPayload,
 } from '@far-mon/core';
 import {
-  boundaryPorts, buildCompositeGraph, deriveRoutes, activeGraph,
+  boundaryPorts, buildCompositeGraph, deriveRoutes, activeGraph, parseTopology,
 } from '@far-mon/core';
 import type { BoundaryPort } from '@far-mon/core';
 
@@ -442,7 +442,7 @@ export class WorkspaceService {
 
   private reconstructTopology(sp: SystemPayload): SystemTopology {
     const topo = sp.topology;
-    return {
+    return parseTopology({
       schema: 11,
       device: {
         name: sp.deviceName || sp.id,
@@ -453,17 +453,11 @@ export class WorkspaceService {
         io_providers: topo.io_providers,
         network: topo.network,
       },
-      nodes: topo.nodes ?? [],
-      pipes: topo.pipes ?? [],
-      route_overrides: topo.route_overrides ?? {},
-      timing: topo.timing ?? {
-        valve_travel_time: 2,
-        flow_watchdog: 30,
-        flow_confirm: 5,
-        api_watchdog: 300,
-        update_interval: 10,
-      },
-      automations: topo.automations ?? [],
-    };
+      nodes: topo.nodes,
+      pipes: topo.pipes,
+      route_overrides: topo.route_overrides,
+      timing: topo.timing,
+      automations: topo.automations,
+    });
   }
 }

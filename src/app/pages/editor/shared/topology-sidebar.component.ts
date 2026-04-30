@@ -99,6 +99,27 @@ export type { Selection };
                   [min]="0"
                   [value]="$any(sn.node)[field.key]"
                   (valueChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })" />
+              } @else if (field.type === 'select') {
+                <select class="select select-xs select-bordered w-full font-mono"
+                  [name]="'sel-' + sn.node.id + '-' + field.key"
+                  [ngModelOptions]="{ standalone: true }"
+                  [ngModel]="$any(sn.node)[field.key]"
+                  (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })">
+                  @for (opt of field.options ?? []; track opt.value) {
+                    <option [value]="opt.value">{{ opt.label }}</option>
+                  }
+                </select>
+                @if (field.key === 'relay_polarity' || field.key === 'coil_polarity') {
+                  <div class="text-[10px] text-base-content/40 mt-1">
+                    Active-low: relay turns ON when GPIO is LOW (most opto-isolated modules). Active-high: turns ON when GPIO is HIGH. Pick whichever matches your module so the load is OFF at MCU power-off.
+                  </div>
+                }
+              } @else if (field.type === 'toggle') {
+                <input type="checkbox" class="toggle toggle-xs toggle-success"
+                  [name]="'tog-' + sn.node.id + '-' + field.key"
+                  [ngModelOptions]="{ standalone: true }"
+                  [ngModel]="!!$any(sn.node)[field.key]"
+                  (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })" />
               } @else {
                 <app-zod-input
                   [schema]="sn.desc.schema"

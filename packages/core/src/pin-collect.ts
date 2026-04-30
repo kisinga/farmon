@@ -18,7 +18,14 @@ export interface PinUsage {
   fieldLabel: string;
   /** Human-readable sentence form, e.g. 'Valve "Tank 1 outlet" Open Pin'. */
   owner: string;
+  /** Display label for the relay polarity governing this pin, when the field declares a `polarityKey`. */
+  polarity?: string;
 }
+
+const POLARITY_LABELS: Record<string, string> = {
+  active_low: 'Active-low',
+  active_high: 'Active-high',
+};
 
 /**
  * Walk every node's registered sidebar fields, collect all pin assignments.
@@ -33,8 +40,14 @@ export function collectPins(nodes: TopologyNode[]): PinUsage[] {
     const nodeName = ((node as unknown as { name?: string }).name) || node.id;
     for (const field of desc.sidebarFields) {
       if (field.type !== 'pin') continue;
-      const value = (node as unknown as Record<string, unknown>)[field.key];
+      const nodeRecord = node as unknown as Record<string, unknown>;
+      const value = nodeRecord[field.key];
       if (typeof value === 'string' && value) {
+        let polarity: string | undefined;
+        if (field.polarityKey) {
+          const raw = nodeRecord[field.polarityKey];
+          if (typeof raw === 'string') polarity = POLARITY_LABELS[raw] ?? raw;
+        }
         result.push({
           pin: value,
           nodeId: node.id,
@@ -43,6 +56,7 @@ export function collectPins(nodes: TopologyNode[]): PinUsage[] {
           fieldKey: field.key,
           fieldLabel: field.label,
           owner: `${desc.label} "${nodeName}" ${field.label}`,
+          polarity,
         });
       }
     }

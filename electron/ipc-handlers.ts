@@ -554,6 +554,7 @@ export function registerIpcHandlers() {
                   typeLabel: u.typeLabel,
                   fieldLabel: u.fieldLabel,
                   caps: def?.caps?.join(', '),
+                  polarity: u.polarity,
                 };
               })
               .sort(comparePinRows);
@@ -567,6 +568,7 @@ export function registerIpcHandlers() {
               entity: u.nodeName,
               typeLabel: u.typeLabel,
               fieldLabel: u.fieldLabel,
+              polarity: u.polarity,
             }))
             .sort(comparePinRows);
         }

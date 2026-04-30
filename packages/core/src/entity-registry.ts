@@ -30,12 +30,17 @@ export type EntityKind =
 export interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'pin' | 'toggle';
+  type: 'text' | 'number' | 'pin' | 'toggle' | 'select';
   placeholder?: string;
   /** Channel capability required for this field, e.g. 'adc', 'digital', 'modbus'. Filters channel selection. */
   pinCap?: PinCap;
   /** Optional input-time char filter. Applied via [charFilter] in the sidebar template. */
   inputPolicy?: InputPolicy;
+  /** Choices for `type: 'select'`. */
+  options?: ReadonlyArray<{ value: string; label: string }>;
+  /** On a `pin` field, names the sibling field that holds the relay polarity for this pin.
+   *  Lets pin-collect attach polarity to the doc table without string-munging field keys. */
+  polarityKey?: string;
 }
 
 // ---------------------------------------------------------------------------

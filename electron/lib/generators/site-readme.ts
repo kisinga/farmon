@@ -19,6 +19,8 @@ export interface PinTableRow {
   fieldLabel: string;
   /** Capabilities of this pin (e.g. ["digital", "pwm"]), if known. */
   caps?: string;
+  /** Relay polarity label for this pin (e.g. "Active-low"), if the entity declares one. */
+  polarity?: string;
 }
 
 export interface SiteDocSystem {
