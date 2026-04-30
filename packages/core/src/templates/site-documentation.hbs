@@ -154,6 +154,24 @@
 
 {{{this.boardPinoutSection}}}
 
+{{#if this.hasPinTable}}
+<h3>Pin Connections</h3>
+<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Wire each entity to the listed connector. Capabilities indicate what the pin supports — e.g. only ADC pins can be used for level sensors.</p>
+<table>
+  <thead><tr><th>Connector</th><th>Pin</th><th>Connected to</th><th>Capabilities</th></tr></thead>
+  <tbody>
+{{#each this.pinTable}}
+    <tr>
+      <td><code>{{#if this.connector}}{{this.connector}}{{else}}&mdash;{{/if}}</code></td>
+      <td><code>{{this.pin}}</code></td>
+      <td>{{this.owner}}</td>
+      <td>{{#if this.caps}}<code>{{this.caps}}</code>{{else}}&mdash;{{/if}}</td>
+    </tr>
+{{/each}}
+  </tbody>
+</table>
+{{/if}}
+
 <h3>Timing Parameters</h3>
 <table>
   <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>

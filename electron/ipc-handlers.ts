@@ -11,7 +11,7 @@ import * as db from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
 import { collectPins, reservedPins, computePinOverlays, slug } from '@far-mon/core';
-import { generateSiteDocumentation } from './lib/generators/site-readme.js';
+import { generateSiteDocumentation, type PinTableRow } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
 import { listSerialPorts } from "./discovery.js";
@@ -26,6 +26,23 @@ function winFromEvent(event: Electron.IpcMainInvokeEvent): BrowserWindow {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) throw new Error("No window");
   return win;
+}
+
+/**
+ * Pin sort: native GPIOs (numeric), then expander pins (prefix then number),
+ * then provider channels (alphabetic). Keeps the doc table readable for wirers.
+ */
+function comparePinRows(a: PinTableRow, b: PinTableRow): number {
+  const rank = (p: string): [number, string, number] => {
+    const gpio = /^GPIO(\d+)$/.exec(p);
+    if (gpio) return [0, '', parseInt(gpio[1], 10)];
+    const exp = /^([A-Z]+)(\d+)$/.exec(p);
+    if (exp) return [1, exp[1], parseInt(exp[2], 10)];
+    return [2, p, 0];
+  };
+  const [ar, ap, an] = rank(a.pin);
+  const [br, bp, bn] = rank(b.pin);
+  return ar - br || ap.localeCompare(bp) || an - bn;
 }
 
 /** Parse topology and derive manifest (activeGraph filtering happens inside topologyToManifest). */
@@ -511,21 +528,41 @@ export function registerIpcHandlers() {
       // Derive manifests and board data for each system
       const systems = systemsRaw.map(s => {
         const { topology, manifest } = resolveTopologyAndManifest(s.topology);
+        const usages = collectPins(topology.nodes);
         // Load board SVG and compute pin overlays for per-device sections
         let boardSvg: string | undefined;
         let pinOverlays: ReturnType<typeof computePinOverlays> | undefined;
+        let pinTable: PinTableRow[] | undefined;
         try {
           const boardData = store.loadBoard(s.board);
           if (boardData?.svg && boardData?.board) {
             boardSvg = boardData.svg;
             const board = boardData.board as unknown as BoardDef;
-            const usedPins = new Map(
-              collectPins(topology.nodes).map(u => [u.pin, u.owner])
-            );
+            const usedPins = new Map(usages.map(u => [u.pin, u.owner]));
             const reserved = reservedPins(board);
             pinOverlays = computePinOverlays(board, usedPins, reserved);
+            // Build installation-facing pin connection table by joining usages
+            // against the board's pin defs to surface silkscreen + capability info.
+            const byGpio = new Map(board.pins.map(p => [p.gpio, p]));
+            pinTable = usages
+              .map((u): PinTableRow => {
+                const def = byGpio.get(u.pin);
+                return {
+                  connector: def?.connector,
+                  pin: u.pin,
+                  owner: u.owner,
+                  caps: def?.caps?.join(', '),
+                };
+              })
+              .sort(comparePinRows);
           }
         } catch { /* board not available, skip pinout */ }
+        if (!pinTable && usages.length) {
+          // Board metadata unavailable — still surface the table without connector/caps.
+          pinTable = usages
+            .map((u): PinTableRow => ({ pin: u.pin, owner: u.owner }))
+            .sort(comparePinRows);
+        }
         return {
           systemId: s.systemId,
           friendlyName: s.friendlyName,
@@ -534,6 +571,7 @@ export function registerIpcHandlers() {
           manifest,
           boardSvg,
           pinOverlays,
+          pinTable,
           topologySvg: perSystemSvgs[s.systemId] ?? '',
         };
       });

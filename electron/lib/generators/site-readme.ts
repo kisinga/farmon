@@ -6,6 +6,17 @@ import { TEMPLATES_DIR, compileFile } from '../../../packages/core/src/templates
 // Boundary colors — same cycle as canvas boundary-renderer
 const BOUNDARY_COLORS = ['#0284C7', '#059669', '#D97706', '#DC2626', '#7C3AED', '#DB2777'];
 
+export interface PinTableRow {
+  /** Silkscreen connector label (e.g. "J3-7"), if known. */
+  connector?: string;
+  /** Pin reference as stored on the node (e.g. "GPIO4", "OUT1", "mux1:CH3"). */
+  pin: string;
+  /** Human-readable owner, e.g. 'valve "valve_1" open pin'. */
+  owner: string;
+  /** Capabilities of this pin (e.g. ["digital", "pwm"]), if known. */
+  caps?: string;
+}
+
 export interface SiteDocSystem {
   systemId: string;
   friendlyName: string;
@@ -14,6 +25,8 @@ export interface SiteDocSystem {
   manifest: Manifest;
   boardSvg?: string;
   pinOverlays?: PinOverlayData[];
+  /** Tabular pin connection list — installation-facing companion to the pinout SVG. */
+  pinTable?: PinTableRow[];
   /** SVG of this system's topology (rendered with per-system overlays). */
   topologySvg?: string;
 }
@@ -179,6 +192,8 @@ export function generateSiteDocumentation(
       deviceName: s.deviceName,
       color: systemColor.get(s.systemId) ?? '#666',
       boardPinoutSection,
+      pinTable: s.pinTable ?? [],
+      hasPinTable: (s.pinTable?.length ?? 0) > 0,
       topologySvg: s.topologySvg ?? '',
       timing: s.manifest.timing,
       routeEntities: s.manifest.routes.map((r, ri) => ({ index: ri, name: r.name })),
