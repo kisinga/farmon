@@ -1,6 +1,11 @@
 import { stringify, Scalar } from "yaml";
 import type { BoardDef } from "../board.js";
-import type { NetworkConfig } from "@far-mon/core";
+import { effectiveTransport, type NetworkConfig } from "@far-mon/core";
+import {
+  emitConnectionProfile,
+  emitTransportSignalSensor,
+  emitTransportInfoTextSensor,
+} from "./networking.js";
 
 /** Create a YAML !secret tagged scalar — serializes as `!secret name` (unquoted). */
 function secret(name: string): Scalar {
@@ -35,42 +40,12 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   // --- Logger ---
   sections.push({ logger: { hardware_uart: "UART0" } });
 
-  // --- Networking ---
-  const manualIp = network?.mode === 'static' && network.static_ip ? {
-    static_ip: network.static_ip,
-    gateway: network.gateway || '192.168.1.1',
-    subnet: network.subnet || '255.255.255.0',
-    ...(network.dns1 && { dns1: network.dns1 }),
-    ...(network.dns2 && { dns2: network.dns2 }),
-  } : undefined;
+  // --- Connection (transport + IP + dashboard) ---
+  // Compute transport once and reuse for diagnostic sensors so they always
+  // match the active transport (ethernet_info / wifi_info / wifi_signal).
+  const transport = effectiveTransport(network, !!board.peripherals.ethernet);
+  sections.push(...emitConnectionProfile(board, network));
 
-  if (board.peripherals.ethernet) {
-    const eth = board.peripherals.ethernet;
-    sections.push({
-      ethernet: {
-        type: eth.type,
-        mdc_pin: eth.mdc_pin,
-        mdio_pin: eth.mdio_pin,
-        clk: { pin: eth.clk.pin, mode: eth.clk.mode },
-        phy_addr: eth.phy_addr,
-        ...(eth.power_pin && { power_pin: eth.power_pin }),
-        ...(manualIp && { manual_ip: manualIp }),
-      },
-    });
-  } else {
-    sections.push({
-      wifi: {
-        ssid: secret('wifi_ssid'),
-        password: secret('wifi_password'),
-        ...(manualIp && { manual_ip: manualIp }),
-        ap: {
-          ssid: "${friendly_name} Fallback",
-          password: secret('fallback_password'),
-        },
-      },
-    });
-    sections.push({ captive_portal: null });
-  }
   sections.push({
     api: { encryption: { key: secret('api_key') } },
   });
@@ -243,14 +218,8 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
     });
   }
 
-  if (!board.peripherals.ethernet) {
-    sensors.push({
-      platform: "wifi_signal",
-      name: "WiFi Signal",
-      update_interval: "${update_interval}",
-      id: "wifi_dbm",
-    });
-  }
+  const signalSensor = emitTransportSignalSensor(transport);
+  if (signalSensor) sensors.push(signalSensor);
   sensors.push({
     platform: "uptime",
     name: "Uptime",
@@ -267,27 +236,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   sections.push({ sensor: sensors });
 
   // --- Text sensors (diagnostics) ---
-  if (board.peripherals.ethernet) {
-    sections.push({
-      text_sensor: [
-        {
-          platform: "ethernet_info",
-          ip_address: { name: "IP Address", id: "ip_addr" },
-        },
-      ],
-    });
-  } else {
-    sections.push({
-      text_sensor: [
-        {
-          platform: "wifi_info",
-          ip_address: { name: "IP Address", id: "ip_addr" },
-          ssid: { name: "Connected SSID" },
-          mac_address: { name: "MAC Address" },
-        },
-      ],
-    });
-  }
+  sections.push(emitTransportInfoTextSensor(transport));
 
   // --- Battery ADC enable interval (only if battery present) ---
   if (board.peripherals.battery) {

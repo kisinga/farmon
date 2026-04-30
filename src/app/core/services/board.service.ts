@@ -7,9 +7,11 @@ import type { BoardListEntry } from '../models/electron-api';
 export class BoardService {
   private _boards = signal<BoardListEntry[]>([]);
   private _activeSvg = signal<string | null>(null);
+  private _activeBoard = signal<BoardDef | null>(null);
 
   readonly boards = this._boards.asReadonly();
   readonly activeSvg = this._activeSvg.asReadonly();
+  readonly activeBoard = this._activeBoard.asReadonly();
 
   constructor(private electron: ElectronService) {}
 
@@ -17,14 +19,17 @@ export class BoardService {
     this._boards.set(await this.electron.boardList());
   }
 
-  /** Fetch board from electron. Stores SVG for display, returns BoardDef for the caller. */
+  /** Fetch board from electron. Caches BoardDef + SVG and returns the BoardDef. */
   async load(model: string): Promise<BoardDef> {
     const result = await this.electron.boardLoad(model);
+    const board = result.board as BoardDef;
     this._activeSvg.set(result.svg);
-    return result.board as BoardDef;
+    this._activeBoard.set(board);
+    return board;
   }
 
   clear(): void {
     this._activeSvg.set(null);
+    this._activeBoard.set(null);
   }
 }

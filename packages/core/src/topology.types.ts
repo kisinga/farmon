@@ -117,13 +117,25 @@ export interface IoProviderDef {
   config: Record<string, unknown>;
 }
 
+export type NetworkTransport = 'ethernet' | 'wifi';
+
 export interface NetworkConfig {
+  transport?: NetworkTransport;
   mode: 'dhcp' | 'static';
   static_ip?: string;
   gateway?: string;
   subnet?: string;
   dns1?: string;
   dns2?: string;
+}
+
+/** Single source of truth for which transport a device actually uses. */
+export function effectiveTransport(
+  network: NetworkConfig | undefined,
+  boardHasEthernet: boolean,
+): NetworkTransport {
+  if (!boardHasEthernet) return 'wifi';
+  return network?.transport ?? 'ethernet';
 }
 
 export interface SystemTopology {

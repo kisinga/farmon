@@ -25,6 +25,7 @@ import type {
   SystemPayload,
   TemplateListEntry,
 } from '../models/electron-api';
+import type { NetworkConfig } from '@far-mon/core';
 
 @Injectable({ providedIn: 'root' })
 export class ElectronService {
@@ -114,8 +115,8 @@ export class ElectronService {
   writeScadaArtifacts(siteId: string, artifacts: Array<{ name: string; svg: string; meta: unknown }>): Promise<{ outputDir: string; files: Array<{ path: string; bytes: number }> }> {
     return this.invoke(() => this.api!.codegenWriteScadaArtifacts(siteId, artifacts));
   }
-  generateSelfTest(boardModel: string, secrets: Record<string, string>): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }> {
-    return this.invoke(() => this.api!.codegenGenerateSelfTest(boardModel, secrets));
+  generateSelfTest(boardModel: string, secrets: Record<string, string>, network?: NetworkConfig): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }> {
+    return this.invoke(() => this.api!.codegenGenerateSelfTest(boardModel, secrets, network));
   }
 
   // --- Toolchain ---

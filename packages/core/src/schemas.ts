@@ -61,6 +61,8 @@ export const UartBusSchema = z.object({
 });
 
 export const NetworkConfigSchema = z.object({
+  // Undefined → auto (ethernet for ethernet-capable boards, wifi otherwise).
+  transport: z.enum(['ethernet', 'wifi']).optional(),
   mode: z.enum(['dhcp', 'static']).default('dhcp'),
   static_ip: z.string().optional(),
   gateway: z.string().optional(),

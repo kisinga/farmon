@@ -53,7 +53,9 @@ assert(kc868Files.length === 5, `Generates ${kc868Files.length} files (expected 
 const kc868BoardPkg = getFile(kc868Files, "common/board.yaml");
 assert(kc868BoardPkg.includes("esp32"), "Board package has ESP32 MCU");
 assert(kc868BoardPkg.includes("ethernet"), "Board package has Ethernet");
-assert(!kc868BoardPkg.includes("wifi:"), "Board package has no WiFi");
+assert(!kc868BoardPkg.includes("wifi:"), "Board package has no WiFi (ethernet board, default)");
+assert(!kc868BoardPkg.includes("captive_portal"), "No captive_portal (no wifi)");
+assert(kc868BoardPkg.includes("web_server:"), "Board package has web_server: dashboard");
 assert(kc868BoardPkg.includes("pcf8574"), "Board package has PCF8574 expanders");
 
 // --- Device YAML ---

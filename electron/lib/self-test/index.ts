@@ -7,6 +7,7 @@
 
 import type { BoardDef } from '../board.js';
 import type { GeneratedFile, SecretsMap } from '../generate.js';
+import type { NetworkConfig } from '@far-mon/core';
 import type { TestProbe } from './probe.js';
 import { generateBoardPackage } from '../generators/board-package.js';
 import { generateSequencer } from './sequencer.js';
@@ -70,7 +71,7 @@ function generateSecrets(secrets?: SecretsMap): string {
 }
 
 /** Generate all files for self-test firmware. */
-export function generateSelfTest(board: BoardDef, secrets?: SecretsMap): GeneratedFile[] {
+export function generateSelfTest(board: BoardDef, secrets?: SecretsMap, network?: NetworkConfig): GeneratedFile[] {
   const model = board.model.replace('_', '-');
   const dir = `selftest-${model}`;
   const probes = activeProbes(board);
@@ -79,7 +80,7 @@ export function generateSelfTest(board: BoardDef, secrets?: SecretsMap): Generat
     {
       relativePath: `esphome/${dir}/common/board.yaml`,
       description: `${board.label} board package (buses, networking, diagnostics)`,
-      content: generateBoardPackage(board),
+      content: generateBoardPackage(board, network),
     },
     {
       relativePath: `esphome/${dir}/${dir}.yaml`,

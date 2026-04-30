@@ -42,8 +42,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("codegen:generate", siteId, systemId, manifest, board),
   codegenGenerateHA: (siteId: string) =>
     ipcRenderer.invoke("codegen:generate-ha", siteId),
-  codegenGenerateSelfTest: (boardModel: string, secrets: Record<string, string>) =>
-    ipcRenderer.invoke("codegen:generate-selftest", boardModel, secrets),
+  codegenGenerateSelfTest: (boardModel: string, secrets: Record<string, string>, network?: unknown) =>
+    ipcRenderer.invoke("codegen:generate-selftest", boardModel, secrets, network),
   codegenGenerateSiteDocs: (siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, systems: unknown[], links: unknown[], routes: unknown[]) =>
     ipcRenderer.invoke("codegen:generate-site-docs", siteId, compositeSvg, perSystemSvgs, systems, links, routes),
   codegenWriteScadaArtifacts: (siteId: string, artifacts: Array<{ name: string; svg: string; meta: unknown }>) =>

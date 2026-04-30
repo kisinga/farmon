@@ -9,12 +9,14 @@ import { ElectronService } from '../../core/services/electron.service';
 import { BoardService } from '../../core/services/board.service';
 import { ValidationPanelComponent } from '../../shared/validation-panel/validation-panel.component';
 import { SerialMonitorComponent } from '../../shared/serial-monitor/serial-monitor.component';
+import { ConnectivityConfigComponent } from '../../shared/connectivity-config/connectivity-config.component';
 import { TopologyRenderer } from '../../shared/canvas/topology-renderer';
 import { renderCompositeOverlays, renderPerSystemOverlays } from '../../shared/canvas/topology-overlays';
 import { enrichPerSystemInterconnects } from '@far-mon/core';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { FormsModule } from '@angular/forms';
 import type { ToolchainInfo, SerialDevice, GenerationMeta, GenerationType } from '../../core/models/electron-api';
+import { effectiveTransport, type NetworkConfig } from '@far-mon/core';
 
 type ActiveTab = 'docs' | 'firmware' | 'ha' | 'serial';
 
@@ -32,7 +34,7 @@ interface TerminalLine {
 @Component({
   selector: 'app-deploy-page',
   standalone: true,
-  imports: [ValidationPanelComponent, SerialMonitorComponent, FormsModule],
+  imports: [ValidationPanelComponent, SerialMonitorComponent, ConnectivityConfigComponent, FormsModule],
   host: { class: 'flex-1 flex flex-col overflow-hidden' },
   template: `
     <div class="flex-1 flex flex-col min-h-0">
@@ -164,94 +166,16 @@ interface TerminalLine {
 
             @if (selectedSystemId()) {
               <!-- Network & Credentials — unified card -->
+              <app-connectivity-config
+                [ssid]="secrets().wifi_ssid"
+                [password]="secrets().wifi_password"
+                [network]="selectedNetwork()"
+                [boardHasEthernet]="boardHasEthernet()"
+                (ssidChange)="updateSecret('wifi_ssid', $event)"
+                (passwordChange)="updateSecret('wifi_password', $event)"
+                (networkChange)="updateNetwork($event)"
+              />
               <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
-                <!-- WiFi -->
-                <div class="px-5 py-4">
-                  <div class="flex items-center justify-between mb-3">
-                    <div class="flex items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0" />
-                      </svg>
-                      <h2 class="font-semibold text-sm">WiFi</h2>
-                    </div>
-                    @if (secretsHasPlaceholders()) {
-                      <span class="badge badge-warning badge-sm gap-1">Not configured</span>
-                    }
-                  </div>
-                  <div class="grid grid-cols-2 gap-4">
-                    <div class="flex flex-col gap-1">
-                      <span class="text-xs font-medium">SSID</span>
-                      <input type="text" class="input input-bordered input-sm w-full"
-                        [class.input-warning]="!secrets().wifi_ssid"
-                        [ngModel]="secrets().wifi_ssid"
-                        (ngModelChange)="updateSecret('wifi_ssid', $event)"
-                        placeholder="Network name" />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                      <span class="text-xs font-medium">Password</span>
-                      <input type="password" class="input input-bordered input-sm w-full"
-                        [class.input-warning]="!secrets().wifi_password || secrets().wifi_password.length < 8"
-                        [ngModel]="secrets().wifi_password"
-                        (ngModelChange)="updateSecret('wifi_password', $event)"
-                        placeholder="Min 8 characters" />
-                      @if (secrets().wifi_password && secrets().wifi_password.length > 0 && secrets().wifi_password.length < 8) {
-                        <span class="text-warning text-[10px]">Min 8 characters (WPA2)</span>
-                      }
-                    </div>
-                  </div>
-                </div>
-
-                <!-- IP Configuration -->
-                <div class="border-t border-base-300/30 px-5 py-4">
-                  <div class="flex items-center justify-between mb-3">
-                    <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">IP Configuration</span>
-                    <div class="flex items-center gap-1 bg-base-200/60 rounded-lg p-0.5">
-                      <button class="btn btn-xs border-0 rounded-md"
-                        [class.btn-primary]="(selectedNetwork()?.mode ?? 'dhcp') === 'dhcp'"
-                        [class.btn-ghost]="selectedNetwork()?.mode === 'static'"
-                        (click)="updateNetworkMode('dhcp')">DHCP</button>
-                      <button class="btn btn-xs border-0 rounded-md"
-                        [class.btn-primary]="selectedNetwork()?.mode === 'static'"
-                        [class.btn-ghost]="(selectedNetwork()?.mode ?? 'dhcp') === 'dhcp'"
-                        (click)="updateNetworkMode('static')">Static</button>
-                    </div>
-                  </div>
-                  @if (selectedNetwork()?.mode === 'static') {
-                    <div class="grid grid-cols-2 gap-3">
-                      <div class="flex flex-col gap-1">
-                        <span class="text-xs font-medium">IP Address</span>
-                        <input type="text" class="input input-bordered input-sm font-mono w-full"
-                          [ngModel]="selectedNetwork()?.static_ip ?? ''"
-                          (ngModelChange)="updateNetworkField('static_ip', $event)"
-                          placeholder="192.168.1.100" />
-                      </div>
-                      <div class="flex flex-col gap-1">
-                        <span class="text-xs font-medium">Gateway</span>
-                        <input type="text" class="input input-bordered input-sm font-mono w-full"
-                          [ngModel]="selectedNetwork()?.gateway ?? ''"
-                          (ngModelChange)="updateNetworkField('gateway', $event)"
-                          placeholder="192.168.1.1" />
-                      </div>
-                      <div class="flex flex-col gap-1">
-                        <span class="text-xs font-medium">Subnet</span>
-                        <input type="text" class="input input-bordered input-sm font-mono w-full"
-                          [ngModel]="selectedNetwork()?.subnet ?? ''"
-                          (ngModelChange)="updateNetworkField('subnet', $event)"
-                          placeholder="255.255.255.0" />
-                      </div>
-                      <div class="flex flex-col gap-1">
-                        <span class="text-xs font-medium">DNS</span>
-                        <input type="text" class="input input-bordered input-sm font-mono w-full"
-                          [ngModel]="selectedNetwork()?.dns1 ?? ''"
-                          (ngModelChange)="updateNetworkField('dns1', $event)"
-                          placeholder="8.8.8.8" />
-                      </div>
-                    </div>
-                  } @else {
-                    <p class="text-xs text-base-content/40">IP address assigned automatically by router.</p>
-                  }
-                </div>
-
                 <!-- Security Keys (collapsible) -->
                 <div class="border-t border-base-300/30">
                   <button class="flex items-center justify-between w-full px-5 py-3 text-left hover:bg-base-200/30 transition-colors"
@@ -785,7 +709,12 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   );
   private secretsSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
+  protected transport = computed(() =>
+    effectiveTransport(this.selectedNetwork(), this.boardHasEthernet())
+  );
+
   protected secretsHasPlaceholders = computed(() => {
+    if (this.transport() !== 'wifi') return false;
     const s = this.secrets();
     return !s.wifi_ssid || !s.wifi_password;
   });
@@ -798,8 +727,8 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
 
   protected secretsValid = computed(() => {
     const s = this.secrets();
-    return !!s.wifi_ssid && !!s.wifi_password && s.wifi_password.length >= 8
-      && s.fallback_password.length >= 8 && !!s.ota_password && this.secretsApiKeyValid();
+    const wifiOk = this.transport() !== 'wifi' || (!!s.wifi_ssid && !!s.wifi_password && s.wifi_password.length >= 8);
+    return wifiOk && s.fallback_password.length >= 8 && !!s.ota_password && this.secretsApiKeyValid();
   });
 
   // HA state (site-level)
@@ -828,24 +757,16 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     return this.workspace.systems().get(id)?.topology.device.network;
   });
 
-  protected updateNetworkMode(mode: 'dhcp' | 'static') {
-    const id = this.selectedSystemId();
-    if (!id) return;
-    this.workspace.updateSystemTopology(id, (t) => {
-      if (mode === 'dhcp') {
-        t.device.network = undefined;
-      } else {
-        t.device.network = { mode: 'static', static_ip: '', gateway: '', subnet: '', dns1: '' };
-      }
-    });
-  }
+  protected boardHasEthernet = computed(() => {
+    const board = this.boards.activeBoard();
+    return !!board?.peripherals?.ethernet;
+  });
 
-  protected updateNetworkField(field: 'static_ip' | 'gateway' | 'subnet' | 'dns1' | 'dns2', value: string) {
+  protected updateNetwork(network: NetworkConfig) {
     const id = this.selectedSystemId();
     if (!id) return;
     this.workspace.updateSystemTopology(id, (t) => {
-      if (!t.device.network) t.device.network = { mode: 'static' };
-      (t.device.network as any)[field] = value;
+      t.device.network = network;
     });
   }
 

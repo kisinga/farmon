@@ -53,7 +53,8 @@ function resolveTopologyAndManifest(dataRaw: unknown) {
 }
 
 /**
- * Reconstruct a full SystemTopology object from stored parts.
+ * Reconstruct a full SystemTopology object from stored parts and hydrate
+ * through parseTopology so every Zod `.default()` is applied at the boundary.
  * The DB stores topology as a JSON blob (nodes, pipes, etc.) separate from
  * controller-level fields (name, board, etc.). This merges them back.
  */
@@ -63,8 +64,8 @@ function reconstructTopology(
   board: string,
   directory: string | null,
   storedTopology: Record<string, unknown>,
-): Record<string, unknown> {
-  return {
+) {
+  return parseTopology({
     schema: store.SCHEMA_VERSION,
     device: {
       name: systemId,
@@ -73,20 +74,14 @@ function reconstructTopology(
       directory: directory ?? undefined,
       uart_buses: storedTopology.uart_buses,
       io_providers: storedTopology.io_providers,
-      network: storedTopology.network as any,
+      network: storedTopology.network,
     },
-    nodes: storedTopology.nodes ?? [],
-    pipes: storedTopology.pipes ?? [],
-    route_overrides: storedTopology.route_overrides ?? {},
-    timing: storedTopology.timing ?? {
-      valve_travel_time: 2,
-      flow_watchdog: 30,
-      flow_confirm: 5,
-      api_watchdog: 300,
-      update_interval: 10,
-    },
-    automations: storedTopology.automations ?? [],
-  };
+    nodes: storedTopology.nodes,
+    pipes: storedTopology.pipes,
+    route_overrides: storedTopology.route_overrides,
+    timing: storedTopology.timing,
+    automations: storedTopology.automations,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -456,7 +451,7 @@ export function registerIpcHandlers() {
           sp.deviceName || sp.id, sp.friendlyName, sp.board, sp.directory,
           sp.topology as unknown as Record<string, unknown>,
         );
-        const { manifest } = resolveTopologyAndManifest(fullTopology);
+        const manifest = topologyToManifest(fullTopology);
         systems.push({ systemId: sp.id, friendlyName: sp.friendlyName, manifest });
         manifests.set(sp.id, manifest);
       }
@@ -483,7 +478,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     "codegen:generate-selftest",
-    async (_e, boardModel: string, secretsRaw: Record<string, string>) => {
+    async (_e, boardModel: string, secretsRaw: Record<string, string>, network?: import('@far-mon/core').NetworkConfig) => {
       const boardData = store.loadBoard(boardModel);
       const board = BoardDefSchema.parse(boardData.board) as BoardDef;
       const { wifi_ssid, wifi_password, fallback_password, api_key, ota_password } = secretsRaw;
@@ -491,7 +486,7 @@ export function registerIpcHandlers() {
         throw new Error('Missing required secrets (api_key, ota_password, fallback_password)');
       }
       const secrets: SecretsMap = { wifi_ssid: wifi_ssid ?? '', wifi_password: wifi_password ?? '', fallback_password, api_key, ota_password };
-      const files = generateSelfTest(board, secrets);
+      const files = generateSelfTest(board, secrets, network);
       const model = board.model.replace('_', '-');
       const deviceDir = `selftest-${model}`;
 

@@ -12,6 +12,7 @@ import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyT
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
 import { validateAll } from "../electron/lib/validate.js";
 import { generateAll, type GeneratedFile } from "../electron/lib/generate.js";
+import { generateBoardPackage } from "../electron/lib/generators/board-package.js";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
 const CONFIG_PATH = path.join(DEFAULTS, "configs/pump-controller.yaml");
@@ -393,8 +394,9 @@ assert(kcBoardPkg.includes("mdc_pin: GPIO23"), "Ethernet MDC pin");
 assert(kcBoardPkg.includes("pin: GPIO17"), "Ethernet CLK pin (structured)");
 assert(kcBoardPkg.includes("mode: CLK_OUT"), "Ethernet CLK mode (structured)");
 assert(!kcBoardPkg.includes("clk_mode"), "No deprecated clk_mode key");
-assert(!kcBoardPkg.includes("wifi:"), "No wifi: section");
-assert(!kcBoardPkg.includes("captive_portal"), "No captive_portal");
+assert(!kcBoardPkg.includes("wifi:"), "No wifi: section (ethernet board, default transport)");
+assert(!kcBoardPkg.includes("captive_portal"), "No captive_portal (no wifi)");
+assert(kcBoardPkg.includes("web_server:"), "Has web_server: dashboard for in-browser control");
 assert(kcBoardPkg.includes("pcf8574:"), "Has pcf8574: expander declarations");
 assert(kcBoardPkg.includes("pcf8575: false"), "Explicit pcf8575: false on expanders");
 assert(kcBoardPkg.includes("0x24"), "PCF8574 output expander 1 address");
@@ -404,6 +406,23 @@ assert(!kcBoardPkg.includes("wifi_dbm"), "No WiFi signal sensor (ethernet board)
 assert(kcBoardPkg.includes("ethernet_info"), "Has ethernet_info text sensor for IP address");
 assert(kcBoardPkg.includes("ip_addr"), "Has IP address entity");
 assert(!kcBoardPkg.includes("\nuart:"), "No uart: section in board package (user-configured per topology)");
+
+// --- Transport selector ---
+const kcBoardPkgWifi = generateBoardPackage(kcBoard, { mode: 'dhcp', transport: 'wifi' });
+assert(!kcBoardPkgWifi.includes("ethernet:"), "transport=wifi: no ethernet: section");
+assert(kcBoardPkgWifi.includes("wifi:"), "transport=wifi: has wifi: section");
+assert(kcBoardPkgWifi.includes("captive_portal"), "transport=wifi: has captive_portal");
+assert(kcBoardPkgWifi.includes("web_server:"), "transport=wifi: has web_server");
+// Diagnostic sensors must follow the active transport, not board capability:
+assert(!kcBoardPkgWifi.includes("ethernet_info"), "transport=wifi on ethernet board: no ethernet_info text_sensor");
+assert(kcBoardPkgWifi.includes("wifi_info"), "transport=wifi: has wifi_info text_sensor");
+assert(kcBoardPkgWifi.includes("wifi_dbm"), "transport=wifi: has wifi_signal sensor");
+
+const kcBoardPkgEth = generateBoardPackage(kcBoard, { mode: 'dhcp', transport: 'ethernet' });
+assert(kcBoardPkgEth.includes("ethernet:"), "transport=ethernet: ethernet present");
+assert(!kcBoardPkgEth.includes("wifi:"), "transport=ethernet: no wifi");
+assert(kcBoardPkgEth.includes("ethernet_info"), "transport=ethernet: has ethernet_info text_sensor");
+assert(!kcBoardPkgEth.includes("wifi_dbm"), "transport=ethernet: no wifi_signal sensor");
 
 // RS485 bus pin reservation
 console.log("\nRS485 pin reservation:");

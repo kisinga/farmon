@@ -6,9 +6,11 @@ import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ElectronService } from '../../core/services/electron.service';
 import { SerialMonitorComponent } from '../../shared/serial-monitor/serial-monitor.component';
+import { ConnectivityConfigComponent } from '../../shared/connectivity-config/connectivity-config.component';
 import type {
   BoardListEntry, ToolchainInfo, SerialDevice,
 } from '../../core/models/electron-api';
+import { effectiveTransport, type NetworkConfig } from '@far-mon/core';
 
 interface FileEntry {
   path: string;
@@ -24,7 +26,7 @@ interface TerminalLine {
 @Component({
   selector: 'app-boards-page',
   standalone: true,
-  imports: [FormsModule, SerialMonitorComponent],
+  imports: [FormsModule, SerialMonitorComponent, ConnectivityConfigComponent],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="flex-1 flex flex-col h-full overflow-auto">
@@ -75,35 +77,16 @@ interface TerminalLine {
           <div class="space-y-4">
             <h2 class="text-lg font-semibold">Self-Test: {{ selectedBoardLabel() }}</h2>
 
-            <!-- Network config (WiFi boards only) -->
-            @if (needsWifi()) {
-              <div class="bg-base-100 rounded-xl border border-base-300/40 px-5 py-4">
-                <h3 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-3">WiFi</h3>
-                <div class="grid grid-cols-2 gap-4">
-                  <div class="flex flex-col gap-1">
-                    <span class="text-xs font-medium">SSID</span>
-                    <input type="text" class="input input-bordered input-sm w-full"
-                      [ngModel]="secrets()['wifi_ssid']"
-                      (ngModelChange)="updateSecret('wifi_ssid', $event)"
-                      placeholder="Network name" />
-                  </div>
-                  <div class="flex flex-col gap-1">
-                    <span class="text-xs font-medium">Password</span>
-                    <input type="password" class="input input-bordered input-sm w-full"
-                      [ngModel]="secrets()['wifi_password']"
-                      (ngModelChange)="updateSecret('wifi_password', $event)"
-                      placeholder="Min 8 characters" />
-                  </div>
-                </div>
-              </div>
-            } @else {
-              <div class="bg-base-100 rounded-xl border border-base-300/40 px-5 py-3.5">
-                <div class="flex items-center gap-2">
-                  <span class="badge badge-success badge-sm">Ethernet</span>
-                  <span class="text-xs text-base-content/50">No WiFi configuration needed</span>
-                </div>
-              </div>
-            }
+            <!-- Connectivity -->
+            <app-connectivity-config
+              [ssid]="secrets()['wifi_ssid']"
+              [password]="secrets()['wifi_password']"
+              [network]="network()"
+              [boardHasEthernet]="boardHasEthernet()"
+              (ssidChange)="updateSecret('wifi_ssid', $event)"
+              (passwordChange)="updateSecret('wifi_password', $event)"
+              (networkChange)="network.set($event)"
+            />
 
             <!-- Generate -->
             <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
@@ -115,7 +98,7 @@ interface TerminalLine {
                 <button
                   class="btn btn-primary btn-xs gap-1.5"
                   (click)="generate()"
-                  [disabled]="generating() || (needsWifi() && !secrets()['wifi_ssid'])"
+                  [disabled]="generating() || (transport() === 'wifi' && !secrets()['wifi_ssid'])"
                 >
                   @if (generating()) { <span class="loading loading-spinner loading-xs"></span> }
                   {{ files().length > 0 ? 'Regenerate' : 'Generate' }}
@@ -261,6 +244,9 @@ export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked 
     fallback_password: '', api_key: '', ota_password: '',
   });
 
+  // Self-test connectivity (in-memory only — board self-tests are throwaway)
+  protected network = signal<NetworkConfig>({ mode: 'dhcp' });
+
   // Build state
   protected toolchain = signal<ToolchainInfo | null>(null);
   protected running = signal(false);
@@ -283,15 +269,19 @@ export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked 
     return this.boards().find(b => b.id === id)?.label ?? '';
   });
 
-  protected needsWifi = computed(() => {
+  protected boardHasEthernet = computed(() => {
     const id = this.selectedBoard();
-    if (!id) return true;
+    if (!id) return false;
     const def = this.boardDefs.get(id);
-    if (!def) return true;
+    if (!def) return false;
     const b = def.board as Record<string, unknown>;
     const periphs = b['peripherals'] as Record<string, unknown> | undefined;
-    return !periphs?.['ethernet'];
+    return !!periphs?.['ethernet'];
   });
+
+  protected transport = computed(() =>
+    effectiveTransport(this.network(), this.boardHasEthernet())
+  );
 
   protected boardFeatures = computed(() => {
     const id = this.selectedBoard();
@@ -400,7 +390,7 @@ export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked 
     this.error.set(null);
     this.compileSuccess.set(false);
     try {
-      const result = await this.electron.generateSelfTest(boardId, this.secrets());
+      const result = await this.electron.generateSelfTest(boardId, this.secrets(), this.network());
       this.files.set(result.files);
       this.deviceDir.set(result.deviceDir);
     } catch (err) {

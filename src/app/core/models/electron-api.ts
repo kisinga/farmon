@@ -1,6 +1,6 @@
 /** Type-safe interface for the Electron IPC bridge exposed via preload. */
 
-import type { ValidationResult, RuleDiagnostic } from '@far-mon/core';
+import type { ValidationResult, RuleDiagnostic, NetworkConfig } from '@far-mon/core';
 import type {
   SiteListEntry, SiteFullPayload, SiteSavePayload,
   LinkData, SystemPayload, TemplateListEntry,
@@ -188,7 +188,7 @@ export interface ElectronAPI {
   codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
   codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult>;
   codegenGenerateHA(siteId: string): Promise<GenerateHAResult>;
-  codegenGenerateSelfTest(boardModel: string, secrets: Record<string, string>): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }>;
+  codegenGenerateSelfTest(boardModel: string, secrets: Record<string, string>, network?: NetworkConfig): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }>;
   codegenGenerateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }>;
   codegenWriteScadaArtifacts(siteId: string, artifacts: Array<{ name: string; svg: string; meta: unknown }>): Promise<{ outputDir: string; files: Array<{ path: string; bytes: number }> }>;
 

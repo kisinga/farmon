@@ -9,11 +9,12 @@
 // --- Types ---
 export type {
   SystemTopology, TopologyNode, PipeSegment, RouteOverride,
-  Automation, AutomationTrigger, UartBus, NetworkConfig,
+  Automation, AutomationTrigger, UartBus, NetworkConfig, NetworkTransport,
   TankNode, PumpNode, EndpointNode, ValveNode,
   FlowSensorNode, WaterSourceNode, PressureSensorNode, LevelSensorNode, FilterNode, DosingPumpNode, VfdNode, InterconnectNode,
   Port, Position,
 } from './topology.types';
+export { effectiveTransport } from './topology.types';
 export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
