@@ -1,5 +1,4 @@
-import { Directive, ElementRef, HostListener, Input, Optional } from '@angular/core';
-import { NgModel } from '@angular/forms';
+import { Directive, ElementRef, HostListener, Input, OnDestroy, OnInit } from '@angular/core';
 import type { InputPolicy } from '@far-mon/core';
 
 /**
@@ -12,22 +11,32 @@ import type { InputPolicy } from '@far-mon/core';
  * policyString) is passed here, so the keystroke filter and the validator can
  * never disagree about what's legal.
  *
- * Handles paste/drop/cut/autofill/IME-commit (all dispatch the `input` event).
+ * Capture-phase listener: we mutate input.value BEFORE Angular's
+ * DefaultValueAccessor reads it on the bubble phase. That guarantees the form
+ * control (and therefore the model signal, and any downstream effects like
+ * codegen:validate) only ever sees the filtered value — no transient raw
+ * keystroke leaks through.
+ *
  * Skips filtering during IME composition so non-Latin keyboards work.
  */
 @Directive({ selector: '[charFilter]', standalone: true })
-export class CharFilterDirective {
+export class CharFilterDirective implements OnInit, OnDestroy {
   @Input('charFilter') policy: InputPolicy | undefined;
   private composing = false;
+  private readonly captureInput = (_e: Event) => { if (!this.composing) this.apply(); };
 
-  constructor(
-    private el: ElementRef<HTMLInputElement>,
-    @Optional() private ngModel: NgModel,
-  ) {}
+  constructor(private el: ElementRef<HTMLInputElement>) {}
+
+  ngOnInit(): void {
+    this.el.nativeElement.addEventListener('input', this.captureInput, { capture: true });
+  }
+
+  ngOnDestroy(): void {
+    this.el.nativeElement.removeEventListener('input', this.captureInput, { capture: true } as EventListenerOptions);
+  }
 
   @HostListener('compositionstart') onCompositionStart() { this.composing = true; }
   @HostListener('compositionend')   onCompositionEnd()   { this.composing = false; this.apply(); }
-  @HostListener('input')             onInput()           { if (!this.composing) this.apply(); }
 
   private apply(): void {
     if (!this.policy) return;
@@ -39,16 +48,8 @@ export class CharFilterDirective {
 
     const caret = input.selectionStart ?? filtered.length;
     const dropped = raw.length - filtered.length;
-
-    if (this.ngModel) {
-      this.ngModel.control.setValue(filtered);
-    } else {
-      input.value = filtered;
-    }
-
-    queueMicrotask(() => {
-      const pos = Math.max(0, caret - dropped);
-      try { input.setSelectionRange(pos, pos); } catch { /* not all input types support selection */ }
-    });
+    input.value = filtered;
+    const pos = Math.max(0, caret - dropped);
+    try { input.setSelectionRange(pos, pos); } catch { /* not all input types support selection */ }
   }
 }
