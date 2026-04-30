@@ -170,3 +170,15 @@ Shared library with no Angular dependency. Key exports:
 - **Graph algorithms:** `buildGraph`, `activeGraph`, `deriveRoutes`, `buildCompositeGraph`
 - **Validation:** `parseTopology`, `parseSite` (Zod schemas)
 - **Codegen:** `topologyToManifest` — converts topology to deployment manifest
+
+---
+
+## Safety Override (firmware)
+
+Generated firmware exposes a single template switch `safety_override` ([electron/lib/generators/control.ts](../../../../../../../electron/lib/generators/control.ts)) wired into the runtime as a global bypass:
+
+- **Pre-start gates** — guarded inline in `try_route_start` ([electron/lib/generators/routes.ts](../../../../../../../electron/lib/generators/routes.ts)): `if (!id(safety_override).state && …) return FAULT;` for source-low and dest-full.
+- **2 s safety monitor** — the per-slot watchdog loop in `control.ts` short-circuits with `if (id(safety_override).state) return;` at the top, so flow watchdog, runtime level stops, per-route max runtime, and API watchdog are all suppressed for as long as the switch is ON.
+- **Default-safe** — declared `restore_mode: ALWAYS_OFF`; never persists across reboots.
+
+When adding a new safety check, decide explicitly whether it sits inside the monitor loop (override-bypassable) or outside it (always-on, e.g. hardware float-switch interlocks). Document the choice on the new entity/automation.

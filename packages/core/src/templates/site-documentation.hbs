@@ -178,7 +178,7 @@
     <tr><td><code>number.…_{{this.id}}_cal_empty</code></td><td>Number</td><td>{{this.name}} empty voltage calibration</td></tr>
     <tr><td><code>number.…_{{this.id}}_cal_full</code></td><td>Number</td><td>{{this.name}} full voltage calibration</td></tr>
 {{/each}}
-    <tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Bypass pre-start level checks (use with caution)</td></tr>
+    <tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Disables <strong>all</strong> runtime safety checks while ON: pre-start level gates, flow watchdog, runtime level stops, max-runtime, API watchdog. Reverts to OFF on reboot. Use only for commissioning or manual recovery.</td></tr>
   </tbody>
 </table>
 
@@ -188,6 +188,7 @@
   <div class="safety-card"><strong>Flow watchdog</strong><span>No-flow fault after {{this.timing.flow_watchdog}}s · Flow confirmed within {{this.timing.flow_confirm}}s</span></div>
   <div class="safety-card"><strong>Runtime level</strong><span>Active on routes with pump-rated sensors · Clean stop on threshold breach</span></div>
   <div class="safety-card"><strong>API watchdog</strong><span>Route faulted if HA disconnects for {{this.timing.api_watchdog}}s</span></div>
+  <div class="safety-card" style="border-left-color:#dc2626;"><strong>Safety Override</strong><span>While <code>switch.…_safety_override</code> is ON, every check above is skipped. Switch reverts to OFF on reboot.</span></div>
 </div>
 {{/each}}
 
