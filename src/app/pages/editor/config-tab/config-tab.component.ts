@@ -5,9 +5,7 @@ import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
 import { slug, NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY } from '@far-mon/core';
-import { ZodFieldDirective } from '../../../core/utils/field-validation';
-import { CharFilterDirective } from '../../../core/utils/char-filter.directive';
-import { FieldErrorComponent } from '../../../shared/field-error/field-error.component';
+import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
 
 interface TimingField {
   key: string;
@@ -29,7 +27,7 @@ const TIMING_FIELDS: TimingField[] = [
 @Component({
   selector: 'app-config-tab',
   standalone: true,
-  imports: [FormsModule, BoardSvgComponent, ZodFieldDirective, CharFilterDirective, FieldErrorComponent],
+  imports: [FormsModule, BoardSvgComponent, ZodInputComponent],
   template: `
     @if (editor.topology(); as t) {
       <div class="content-pane space-y-6">
@@ -39,17 +37,12 @@ const TIMING_FIELDS: TimingField[] = [
             <h2 class="card-title text-base">Device Identity</h2>
             <label class="form-control">
               <div class="label"><span class="label-text font-medium">Friendly Name</span></div>
-              <input
-                type="text"
-                class="input input-bordered input-sm"
-                name="device-friendly-name"
-                [ngModelOptions]="{ standalone: true }"
-                [zodField]="{ schema: deviceSchema, key: 'friendly_name' }"
-                #fnCtrl="ngModel"
-                [ngModel]="t.device.friendly_name"
-                (ngModelChange)="updateFriendlyName($event)"
-              />
-              <app-field-error [control]="fnCtrl" />
+              <app-zod-input
+                [schema]="deviceSchema"
+                fieldKey="friendly_name"
+                size="sm"
+                [value]="t.device.friendly_name"
+                (valueChange)="updateFriendlyName($any($event))" />
               <div class="label"><span class="label-text-alt text-base-content/60 font-mono">ESPHome ID: {{ t.device.name }}</span></div>
             </label>
           </div>
@@ -141,18 +134,13 @@ const TIMING_FIELDS: TimingField[] = [
               <div class="border border-base-200 rounded-lg p-3 space-y-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
-                    <div class="flex flex-col">
-                      <input class="input input-xs input-bordered font-mono w-28"
-                        [name]="'prov-id-' + prov.id"
-                        [ngModelOptions]="{ standalone: true }"
-                        [zodField]="{ schema: providerSchema, key: 'id' }"
-                        [charFilter]="componentIdPolicy"
-                        #provIdCtrl="ngModel"
-                        [ngModel]="prov.id"
-                        (ngModelChange)="updateProviderId(prov.id, $event)" />
-                      <app-field-error [control]="provIdCtrl" />
-                      <span class="text-[10px] text-base-content/40">{{ componentIdPolicy.hint }}</span>
-                    </div>
+                    <app-zod-input
+                      [schema]="providerSchema"
+                      fieldKey="id"
+                      inputClass="font-mono w-28"
+                      [policy]="componentIdPolicy"
+                      [value]="prov.id"
+                      (valueChange)="updateProviderId(prov.id, $any($event))" />
                     <select class="select select-xs select-bordered"
                       [ngModel]="prov.type"
                       (ngModelChange)="updateProviderType(prov.id, $event)">
@@ -212,21 +200,18 @@ const TIMING_FIELDS: TimingField[] = [
                     </div>
                     <div class="flex flex-col items-end gap-1 shrink-0">
                       <div class="flex items-center gap-2">
-                        <input
+                        <app-zod-input
+                          [schema]="timingSchema"
+                          [fieldKey]="field.key"
                           type="number"
-                          min="2"
-                          class="input input-bordered input-sm w-24 text-right font-mono"
-                          [name]="'timing-' + field.key"
-                          [ngModelOptions]="{ standalone: true }"
-                          [zodField]="{ schema: timingSchema, key: field.key }"
-                          #timingCtrl="ngModel"
-                          [ngModel]="getTimingValue(t, field)"
-                          (ngModelChange)="updateTiming(field.key, +$event)"
+                          size="sm"
+                          inputClass="w-24 text-right font-mono"
                           [placeholder]="'' + field.default"
-                        />
+                          [min]="2"
+                          [value]="getTimingValue(t, field)"
+                          (valueChange)="updateTiming(field.key, $any($event))" />
                         <span class="text-xs text-base-content/60 w-16">{{ field.unit }}</span>
                       </div>
-                      <app-field-error [control]="timingCtrl" />
                     </div>
                   </div>
                 }

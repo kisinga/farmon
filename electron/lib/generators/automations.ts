@@ -1,10 +1,6 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestAutomation } from "../schema.js";
-import { nodesByKind, nodesWithFlag, slug } from "../schema.js";
-
-function entityId(domain: string, deviceName: string, name: string): string {
-  return `${domain}.${slug(deviceName)}_${slug(name)}`;
-}
+import { nodesByKind, nodesWithFlag, slug, deriveHaEntityId as entityId } from "../schema.js";
 
 /**
  * Generate Home Assistant automation YAML — user-configured schedule automations

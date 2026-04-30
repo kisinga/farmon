@@ -1,16 +1,12 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
-import { nodesByKind, nodesWithFlag, slug } from "../schema.js";
+import { nodesByKind, nodesWithFlag, slug, deriveHaEntityId as entityId } from "../schema.js";
 import {
   buildStatusSection,
   buildWaterSection,
   buildRouteControlSection,
   buildSettingsView,
 } from "./dashboard.js";
-
-function entityId(domain: string, deviceName: string, name: string): string {
-  return `${domain}.${slug(deviceName)}_${slug(name)}`;
-}
 
 function n(node: ManifestNode, key: string): string {
   return String(node[key] ?? '');

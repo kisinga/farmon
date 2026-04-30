@@ -19,7 +19,7 @@ export interface HaActionSpec {
 }
 
 export interface HaMetaNode {
-  entityId?: string;
+  entityId: string;
   kind: string;
   binds?: Record<string, string>;
   actions?: HaActionSpec[];

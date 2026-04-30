@@ -2,7 +2,7 @@
  * Home Assistant integration types and schemas.
  *
  * Shared by:
- *  - entity Zod schemas (optional `entityId` + `haActions` fields on topology nodes)
+ *  - entity Zod schemas (optional `haActions` field on topology nodes)
  *  - TopologyRenderer.exportHa() (meta sidecar shape)
  *  - farm-scada-card (runtime contract)
  *
@@ -11,20 +11,28 @@
 
 import { z } from 'zod';
 import { type InputPolicy, policyString } from './input-policy';
+import { slug } from './slug';
+
+/**
+ * Canonical HA entity_id for a node. Mirrors ESPHome's auto-derivation:
+ *   `<haDomain>.<slug(deviceName)>_<slug(nodeName)>`
+ *
+ * Single source of truth shared by:
+ *  - SCADA meta sidecar (ha-meta.ts)
+ *  - dashboard / automations / site-dashboard generators
+ *  - sidebar read-only display
+ */
+export function deriveHaEntityId(domain: string, deviceName: string, nodeName: string): string {
+  return `${domain}.${slug(deviceName)}_${slug(nodeName)}`;
+}
 
 /** Version of the decorated SVG + meta sidecar contract. Bump on breaking changes. */
 export const HA_SCHEMA_VERSION = 1;
 
 // ---------------------------------------------------------------------------
-// Input policies — single source of truth for HA entity_id and service shapes
+// Input policy for HA service references (e.g. `cover.open_cover`).
+// Entity IDs are no longer user-input — they're derived via deriveHaEntityId().
 // ---------------------------------------------------------------------------
-
-export const HA_ENTITY_ID_POLICY: InputPolicy = {
-  pattern: /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/,
-  allow: /[a-z0-9_.]/g,
-  lowercase: true,
-  hint: 'Use lowercase letters, digits, underscores, and one dot — e.g. cover.rain_tank',
-};
 
 export const HA_SERVICE_POLICY: InputPolicy = {
   pattern: /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/,
@@ -60,10 +68,10 @@ export type HaActionSpec = z.infer<typeof HaActionSpecSchema>;
 
 /**
  * Fields every entity schema spreads in to allow optional HA mapping.
- * Keeping them optional means existing topologies parse unchanged.
+ * `entityId` is intentionally absent — it's derived from name+device+haDomain
+ * via deriveHaEntityId(), not user-input.
  */
 export const HaNodeFields = {
-  entityId: policyString(HA_ENTITY_ID_POLICY).optional(),
   haActions: z.array(HaActionSpecSchema).optional(),
 } as const;
 
@@ -104,7 +112,7 @@ export interface HaSlotSpec {
 }
 
 export interface HaMetaNode {
-  entityId?: string;
+  entityId: string;
   kind: string;
   /** Map of slot name → bind expression (e.g. 'state', 'attributes.level|format:percent'). */
   binds?: Record<string, string>;

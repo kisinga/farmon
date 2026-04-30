@@ -4,16 +4,15 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 import { ElectronService } from '../../../core/services/electron.service';
 import type { Automation, AutomationTrigger, RouteOverride } from '../../../core/models/topology.model';
 import { routeLevelInfo, type RouteLevelInfo } from '../shared/route-level-info';
-import { AutomationTriggerSchema } from '@far-mon/core';
-import { ZodFieldDirective } from '../../../core/utils/field-validation';
-import { FieldErrorComponent } from '../../../shared/field-error/field-error.component';
+import { AutomationTriggerSchema, AutomationSchema, RouteOverrideSchema } from '@far-mon/core';
+import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
 
 @Component({
   selector: 'app-automations-tab',
   standalone: true,
-  imports: [FormsModule, ZodFieldDirective, FieldErrorComponent],
+  imports: [FormsModule, ZodInputComponent],
   template: `
     @if (editor.topology(); as t) {
       <div class="content-pane space-y-6">
@@ -52,13 +51,13 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                 <!-- Name -->
                 <div class="form-control">
                   <label class="label pb-1"><span class="label-text text-xs">Name</span></label>
-                  <input
-                    type="text"
-                    class="input input-bordered input-sm"
-                    [ngModel]="auto.name"
-                    (ngModelChange)="updateField(i, 'name', $event)"
+                  <app-zod-input
+                    [schema]="automationSchema"
+                    fieldKey="name"
+                    size="sm"
                     placeholder="e.g. Daily Refill"
-                  />
+                    [value]="auto.name"
+                    (valueChange)="updateField(i, 'name', $any($event))" />
                 </div>
 
                 <!-- Route -->
@@ -93,17 +92,13 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                 @if (auto.trigger.type === 'time') {
                   <div class="form-control">
                     <label class="label pb-1"><span class="label-text text-xs">Time (HH:MM)</span></label>
-                    <input
+                    <app-zod-input
+                      [schema]="triggerTimeSchema"
+                      fieldKey="at"
                       type="time"
-                      class="input input-bordered input-sm"
-                      [name]="'at-' + auto.id"
-                      [ngModelOptions]="{ standalone: true }"
-                      [zodField]="{ schema: triggerTimeSchema, key: 'at' }"
-                      #atCtrl="ngModel"
-                      [ngModel]="auto.trigger.at ?? '06:00'"
-                      (ngModelChange)="updateTrigger(i, 'at', $event)"
-                    />
-                    <app-field-error [control]="atCtrl" />
+                      size="sm"
+                      [value]="auto.trigger.at ?? '06:00'"
+                      (valueChange)="updateTrigger(i, 'at', $any($event))" />
                   </div>
                 }
                 @if (auto.trigger.type === 'level') {
@@ -122,33 +117,29 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                   </div>
                   <div class="form-control">
                     <label class="label pb-1"><span class="label-text text-xs">Below (%)</span></label>
-                    <input
+                    <app-zod-input
+                      [schema]="triggerLevelSchema"
+                      fieldKey="below"
                       type="number"
-                      class="input input-bordered input-sm"
-                      [name]="'below-' + auto.id"
-                      [ngModelOptions]="{ standalone: true }"
-                      [zodField]="{ schema: triggerLevelSchema, key: 'below' }"
-                      #belowCtrl="ngModel"
-                      [ngModel]="auto.trigger.below ?? ''"
-                      (ngModelChange)="updateTrigger(i, 'below', $event === '' ? undefined : +$event)"
-                      min="0" max="100" placeholder="e.g. 80"
-                    />
-                    <app-field-error [control]="belowCtrl" />
+                      size="sm"
+                      placeholder="e.g. 80"
+                      [min]="0"
+                      [max]="100"
+                      [value]="auto.trigger.below"
+                      (valueChange)="updateTrigger(i, 'below', $event)" />
                   </div>
                   <div class="form-control">
                     <label class="label pb-1"><span class="label-text text-xs">Hold (min)</span></label>
-                    <input
+                    <app-zod-input
+                      [schema]="triggerLevelSchema"
+                      fieldKey="for_minutes"
                       type="number"
-                      class="input input-bordered input-sm"
-                      [name]="'for-' + auto.id"
-                      [ngModelOptions]="{ standalone: true }"
-                      [zodField]="{ schema: triggerLevelSchema, key: 'for_minutes' }"
-                      #forCtrl="ngModel"
-                      [ngModel]="auto.trigger.for_minutes ?? ''"
-                      (ngModelChange)="updateTrigger(i, 'for_minutes', $event === '' ? undefined : +$event)"
-                      min="0" max="60" placeholder="e.g. 1"
-                    />
-                    <app-field-error [control]="forCtrl" />
+                      size="sm"
+                      placeholder="e.g. 1"
+                      [min]="0"
+                      [max]="60"
+                      [value]="auto.trigger.for_minutes"
+                      (valueChange)="updateTrigger(i, 'for_minutes', $event)" />
                   </div>
                 }
               </div>
@@ -175,25 +166,31 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                     @if (levels.sourceHasLevel) {
                       <div class="form-control">
                         <label class="label pb-1"><span class="label-text text-xs">Source Min Level (%)</span></label>
-                        <input
+                        <app-zod-input
+                          [schema]="routeOverrideSchema"
+                          fieldKey="source_min_level"
                           type="number"
-                          class="input input-bordered input-sm"
-                          [ngModel]="getOverride(auto.route, 'source_min_level') ?? ''"
-                          (ngModelChange)="updateOverride(auto.route, 'source_min_level', $event === '' ? undefined : +$event)"
-                          min="0" max="100" placeholder="e.g. 20"
-                        />
+                          size="sm"
+                          placeholder="e.g. 20"
+                          [min]="0"
+                          [max]="100"
+                          [value]="getOverride(auto.route, 'source_min_level')"
+                          (valueChange)="updateOverride(auto.route, 'source_min_level', $any($event))" />
                       </div>
                     }
                     @if (levels.destHasLevel) {
                       <div class="form-control">
                         <label class="label pb-1"><span class="label-text text-xs">Dest Max Level (%)</span></label>
-                        <input
+                        <app-zod-input
+                          [schema]="routeOverrideSchema"
+                          fieldKey="dest_max_level"
                           type="number"
-                          class="input input-bordered input-sm"
-                          [ngModel]="getOverride(auto.route, 'dest_max_level') ?? ''"
-                          (ngModelChange)="updateOverride(auto.route, 'dest_max_level', $event === '' ? undefined : +$event)"
-                          min="0" max="100" placeholder="e.g. 90"
-                        />
+                          size="sm"
+                          placeholder="e.g. 90"
+                          [min]="0"
+                          [max]="100"
+                          [value]="getOverride(auto.route, 'dest_max_level')"
+                          (valueChange)="updateOverride(auto.route, 'dest_max_level', $any($event))" />
                       </div>
                     }
                   </div>
@@ -224,6 +221,8 @@ export class AutomationsTabComponent {
   protected derivedRoutes = signal<Array<{ key: string; name: string }>>([]);
   protected triggerTimeSchema = AutomationTriggerSchema.optionsMap.get('time')!;
   protected triggerLevelSchema = AutomationTriggerSchema.optionsMap.get('level')!;
+  protected automationSchema = AutomationSchema;
+  protected routeOverrideSchema = RouteOverrideSchema;
 
   /** Nodes that can be used as level trigger sources (tanks with level sensors). */
   protected levelNodes = computed(() => {

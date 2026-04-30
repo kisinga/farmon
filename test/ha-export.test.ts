@@ -59,7 +59,6 @@ function fixture(): SystemTopology {
           { id: 'outlet', label: 'Outlet', direction: 'outlet' },
         ],
         position: { x: 100, y: 100 },
-        entityId: 'sensor.tank_main_level',
       } as any,
       {
         kind: 'pump', id: 'pump_1', name: 'Pump 1', pin: 'GPIO42',
@@ -68,7 +67,6 @@ function fixture(): SystemTopology {
           { id: 'out', label: 'Outlet', direction: 'outlet' },
         ],
         position: { x: 250, y: 100 },
-        entityId: 'switch.pump_1',
       } as any,
       {
         kind: 'valve', id: 'valve_a', name: 'Valve A',
@@ -78,7 +76,6 @@ function fixture(): SystemTopology {
           { id: 'outlet', label: 'Outlet', direction: 'outlet' },
         ],
         position: { x: 400, y: 100 },
-        // No entityId — should still appear in meta (for visual state) without actions
       } as any,
     ],
     pipes: [
@@ -113,7 +110,7 @@ assert(meta.labelTiers.primary > 0 && meta.labelTiers.secondary > meta.labelTier
 
 console.log('\nNode resolution:');
 assert(!!meta.nodes['pump_1'], 'pump_1 present');
-assert(meta.nodes['pump_1'].entityId === 'switch.pump_1', 'pump_1 carries entityId');
+assert(meta.nodes['pump_1'].entityId === 'switch.greenhouse_pump_1', 'pump_1 carries derived entityId');
 assert(meta.nodes['pump_1'].kind === 'pump', 'pump_1 carries kind');
 
 const pumpActions = meta.nodes['pump_1'].actions ?? [];
@@ -123,19 +120,18 @@ assert(pumpActions.some(a => a.id === 'toggle' && a.service === 'switch.toggle')
 assert(!!meta.nodes['tank_main'].binds, 'tank carries default binds');
 assert(meta.nodes['tank_main'].binds?.['value'] === 'state|format:percent', 'tank default bind is percent on value slot');
 
-assert(!!meta.nodes['valve_a'], 'valve present without entityId');
-assert(meta.nodes['valve_a'].entityId === undefined, 'valve_a has no entityId');
-assert((meta.nodes['valve_a'].actions ?? []).length > 0, 'valve_a still has default actions');
+assert(!!meta.nodes['valve_a'], 'valve present');
+assert(meta.nodes['valve_a'].entityId === 'cover.greenhouse_valve_a', 'valve_a carries derived entityId');
+assert((meta.nodes['valve_a'].actions ?? []).length > 0, 'valve_a has default actions');
 
 // --- Pipe flow predicates ---
 
 console.log('\nPipes:');
-assert(meta.pipes['p1']?.fromEntity === 'sensor.tank_main_level', 'p1 fromEntity wired');
-assert(meta.pipes['p1']?.toEntity === 'switch.pump_1', 'p1 toEntity wired');
+assert(meta.pipes['p1']?.fromEntity === 'sensor.greenhouse_main_tank', 'p1 fromEntity wired');
+assert(meta.pipes['p1']?.toEntity === 'switch.greenhouse_pump_1', 'p1 toEntity wired');
 assert(meta.pipes['p1']?.flowWhen === `fromEntity.state == 'on'`, 'p1 default flowWhen set');
-// p2: pump_1 -> valve_a (no entityId on valve). fromEntity exists, so pipe emitted.
-assert(meta.pipes['p2']?.fromEntity === 'switch.pump_1', 'p2 fromEntity set');
-assert(meta.pipes['p2']?.toEntity === undefined, 'p2 has no toEntity (valve unmapped)');
+assert(meta.pipes['p2']?.fromEntity === 'switch.greenhouse_pump_1', 'p2 fromEntity set');
+assert(meta.pipes['p2']?.toEntity === 'cover.greenhouse_valve_a', 'p2 toEntity set');
 
 // --- Determinism: 3 runs produce identical JSON ---
 

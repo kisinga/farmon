@@ -16,7 +16,7 @@ export const ValveNodeSchema = z.object({
   name: z.string().min(1),
   open_pin: GpioPin,
   close_pin: GpioPin,
-  travel_time: z.number().gt(1).optional(),
+  travel_time: z.number().gt(1).default(15),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
@@ -50,7 +50,7 @@ export const valveDescriptor: NodeDescriptor = {
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
-  defaultData: (n) => ({ name: `Valve ${n}`, open_pin: '', close_pin: '' }),
+  defaultData: (n) => ({ name: `Valve ${n}`, open_pin: '', close_pin: '', travel_time: 15 }),
 
   renderSvg: (_data) => {
     const cx = W / 2, cy = H / 2;
@@ -66,7 +66,7 @@ export const valveDescriptor: NodeDescriptor = {
   sidebarFields: [
     { key: 'open_pin', label: 'Open Pin', type: 'pin', placeholder: 'GPIO4', pinCap: 'digital' },
     { key: 'close_pin', label: 'Close Pin', type: 'pin', placeholder: 'GPIO5', pinCap: 'digital' },
-    { key: 'travel_time', label: 'Travel Time (s)', type: 'number', placeholder: '15' },
+    { key: 'travel_time', label: 'Travel Time (s)', type: 'number' },
   ],
 
   // --- Codegen ---
@@ -117,7 +117,7 @@ ${closeHeader}
   min_value: 1000
   max_value: 30000
   step: 1000
-  initial_value: ${(node.travel_time ?? 15) * 1000}
+  initial_value: ${node.travel_time * 1000}
   optimistic: true
   restore_value: true
   entity_category: config`,

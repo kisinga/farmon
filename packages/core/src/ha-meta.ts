@@ -6,7 +6,7 @@
  */
 import type { SystemTopology } from './topology.types';
 import type { HaMeta, HaMetaNode, HaMetaPipe, HaActionSpec } from './ha';
-import { HA_SCHEMA_VERSION, isValidBindExpr } from './ha';
+import { HA_SCHEMA_VERSION, isValidBindExpr, deriveHaEntityId } from './ha';
 import { NODE_REGISTRY } from './entity-registry';
 
 export interface BuildHaMetaOptions {
@@ -16,22 +16,25 @@ export interface BuildHaMetaOptions {
 }
 
 export function buildHaMeta(topology: SystemTopology, opts: BuildHaMetaOptions): HaMeta {
-  const nodesById = new Map<string, { entityId?: string }>();
+  const nodesById = new Map<string, { entityId: string }>();
   const nodes: Record<string, HaMetaNode> = {};
+  const deviceName = topology.device.name;
 
   const sortedNodes = [...topology.nodes].sort((a, b) => a.id.localeCompare(b.id));
   for (const n of sortedNodes) {
-    const entityId = (n as { entityId?: string }).entityId;
-    nodesById.set(n.id, { entityId });
     const desc = NODE_REGISTRY.get(n.kind);
     if (!desc) continue;
+
+    if (!desc.haDomain) continue;
+    const entityId = deriveHaEntityId(desc.haDomain, deviceName, (n as { name: string }).name);
+    nodesById.set(n.id, { entityId });
 
     const binds = resolveBinds(desc.defaultBinds, n as { binds?: Record<string, string> });
     const actions = resolveActions(desc.defaultHaActions, (n as { haActions?: HaActionSpec[] }).haActions);
 
     nodes[n.id] = {
       kind: n.kind,
-      ...(entityId ? { entityId } : {}),
+      entityId,
       ...(binds ? { binds } : {}),
       ...(actions && actions.length ? { actions } : {}),
     };

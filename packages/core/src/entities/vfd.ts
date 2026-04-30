@@ -62,7 +62,7 @@ export const vfdDescriptor: NodeDescriptor = {
     { id: 'in', label: 'Inlet', direction: 'inlet' },
     { id: 'out', label: 'Outlet', direction: 'outlet' },
   ],
-  defaultData: () => ({ name: 'VFD Pump', controller: '', max_frequency: 50 }),
+  defaultData: () => ({ name: 'VFD Pump', controller: '', start_register: 0x0001, max_frequency: 50 }),
 
   renderSvg: (_data) => {
     const cx = S / 2, cy = S / 2, r = S / 2 - 5;

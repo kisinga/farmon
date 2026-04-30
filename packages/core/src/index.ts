@@ -54,8 +54,8 @@ export { indent, joinYamlItems } from './yaml-fragment';
 
 // --- Home Assistant integration ---
 export {
-  HA_SCHEMA_VERSION, HA_ENTITY_ID_POLICY, HA_SERVICE_POLICY, HaActionSpecSchema, HaNodeFields,
-  defaultStateBucket, isValidBindExpr, parseFlowPredicate,
+  HA_SCHEMA_VERSION, HA_SERVICE_POLICY, HaActionSpecSchema, HaNodeFields,
+  defaultStateBucket, isValidBindExpr, parseFlowPredicate, deriveHaEntityId,
 } from './ha';
 export type {
   HaActionSpec, StateBucket, HaSlotSpec, HaMetaNode, HaMetaPipe, HaMeta, ParsedFlowPredicate,

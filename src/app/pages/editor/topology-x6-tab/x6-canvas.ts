@@ -13,7 +13,7 @@ import { UI_COLORS } from '../../../core/models/colors.model';
 import type { SystemTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
 import type { TopologyGraph } from '../shared/derive-routes';
-import { pipesFromSource, pipesToDestination, connectedPipes } from '@far-mon/core';
+import { pipesFromSource, pipesToDestination, connectedPipes, deriveHaEntityId } from '@far-mon/core';
 import type { Selection } from '../shared/selection';
 import { decorateScadaSvg } from './scada-decorator';
 
@@ -152,9 +152,16 @@ export class X6Canvas {
       }
     }
 
-    const nodesById = new Map<string, TopologyNode>(topology.nodes.map(n => [n.id, n]));
+    const deviceName = topology.device.name;
+    const entityById = new Map<string, string>();
+    for (const n of topology.nodes) {
+      const desc = NODE_REGISTRY.get(n.kind);
+      if (desc?.haDomain) {
+        entityById.set(n.id, deriveHaEntityId(desc.haDomain, deviceName, (n as { name: string }).name));
+      }
+    }
     for (const pipe of topology.pipes) {
-      const cfg = this.toEdgeConfig(pipe, nodesById);
+      const cfg = this.toEdgeConfig(pipe, entityById);
       if (cfg) desiredEdges.set(String(cfg['id']), cfg);
     }
 
@@ -470,13 +477,13 @@ export class X6Canvas {
     return buildNodeConfig(desc, node.id, extractNodeData(node), node.position.x, node.position.y, ports);
   }
 
-  private toEdgeConfig(pipe: PipeSegment, nodesById?: Map<string, TopologyNode>): X6Edge.Metadata | null {
+  private toEdgeConfig(pipe: PipeSegment, entityById?: Map<string, string>): X6Edge.Metadata | null {
     const [fromNode, fromPort] = pipe.from.split(':');
     const [toNode, toPort] = pipe.to.split(':');
     if (!fromNode || !fromPort || !toNode || !toPort) return null;
     if (!this.nodeIds.has(fromNode) || !this.nodeIds.has(toNode)) return null;
-    const fromEntity = (nodesById?.get(fromNode) as { entityId?: string } | undefined)?.entityId;
-    const toEntity = (nodesById?.get(toNode) as { entityId?: string } | undefined)?.entityId;
+    const fromEntity = entityById?.get(fromNode);
+    const toEntity = entityById?.get(toNode);
     const data = (fromEntity || toEntity) ? { pipeId: pipe.id, fromEntity, toEntity } : undefined;
     return buildEdgeConfig(`pipe-${pipe.id}`, `node-${fromNode}`, fromPort, `node-${toNode}`, toPort, data);
   }
