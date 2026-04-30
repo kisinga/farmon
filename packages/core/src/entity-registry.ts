@@ -12,6 +12,7 @@ import type { ChannelUsage, ResolvedChannel } from './io-provider.types';
 import type { PinCap } from './board.types';
 import type { FlowConstraint } from './graph/constraints';
 import type { HaActionSpec, HaSlotSpec } from './ha';
+import type { InputPolicy } from './input-policy';
 
 // ---------------------------------------------------------------------------
 // Entity kind — compile-time registry of all known node kinds
@@ -33,6 +34,8 @@ export interface FieldDef {
   placeholder?: string;
   /** Channel capability required for this field, e.g. 'adc', 'digital', 'modbus'. Filters channel selection. */
   pinCap?: PinCap;
+  /** Optional input-time char filter. Applied via [charFilter] in the sidebar template. */
+  inputPolicy?: InputPolicy;
 }
 
 // ---------------------------------------------------------------------------

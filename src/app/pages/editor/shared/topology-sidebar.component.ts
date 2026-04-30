@@ -6,19 +6,20 @@ import { ValidationPanelComponent } from '../../../shared/validation-panel/valid
 import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
-import { buildGraph, activeGraph, deriveRoutes } from '@far-mon/core';
+import { buildGraph, activeGraph, deriveRoutes, RouteOverrideSchema, HA_ENTITY_ID_POLICY } from '@far-mon/core';
 import type { PinCap } from '@far-mon/core';
 import type { RouteOverride } from '../../../core/models/topology.model';
 import { routeLevelInfo } from './route-level-info';
 import type { Selection } from './selection';
 import { ZodFieldDirective } from '../../../core/utils/field-validation';
+import { CharFilterDirective } from '../../../core/utils/char-filter.directive';
 import { FieldErrorComponent } from '../../../shared/field-error/field-error.component';
 export type { Selection };
 
 @Component({
   selector: 'app-topology-sidebar',
   standalone: true,
-  imports: [FormsModule, ValidationPanelComponent, ZodFieldDirective, FieldErrorComponent],
+  imports: [FormsModule, ValidationPanelComponent, ZodFieldDirective, CharFilterDirective, FieldErrorComponent],
   template: `
     <!-- Node properties (data-driven) -->
     @if (selectedNodeData(); as sn) {
@@ -29,9 +30,16 @@ export type { Selection };
         <div class="sidebar-fields">
           <!-- Standard fields: Name + ID (all entities) -->
           <label class="sidebar-label">Name</label>
-          <input class="input input-xs input-bordered w-full font-mono"
-            [ngModel]="$any(sn.node).name"
-            (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'name', value: $event })" />
+          <div class="sidebar-control">
+            <input class="input input-xs input-bordered w-full font-mono"
+              [name]="'name-' + sn.node.id"
+              [ngModelOptions]="{ standalone: true }"
+              [zodField]="{ schema: sn.desc.schema, key: 'name' }"
+              #nameCtrl="ngModel"
+              [ngModel]="$any(sn.node).name"
+              (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'name', value: $event })" />
+            <app-field-error [control]="nameCtrl" />
+          </div>
           <label class="sidebar-label">ID</label>
           <input class="input input-xs input-bordered w-full font-mono text-base-content/50"
             [ngModel]="sn.node.id" readonly />
@@ -101,6 +109,7 @@ export type { Selection };
                   [name]="'txt-' + sn.node.id + '-' + field.key"
                   [ngModelOptions]="{ standalone: true }"
                   [zodField]="{ schema: sn.desc.schema, key: field.key }"
+                  [charFilter]="field.inputPolicy"
                   #txtCtrl="ngModel"
                   [ngModel]="$any(sn.node)[field.key]"
                   [placeholder]="field.placeholder ?? ''"
@@ -117,13 +126,21 @@ export type { Selection };
             <h4 class="sidebar-title">Home Assistant</h4>
             <div class="sidebar-fields">
               <label class="sidebar-label" title="HA entity ID: domain.object_id">Entity</label>
-              <input class="input input-xs input-bordered w-full font-mono"
-                [ngModel]="$any(sn.node).entityId ?? ''"
-                [placeholder]="sn.desc.haDomain + '.'"
-                (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'entityId', value: $event || undefined })" />
+              <div class="sidebar-control">
+                <input class="input input-xs input-bordered w-full font-mono"
+                  [name]="'entity-' + sn.node.id"
+                  [ngModelOptions]="{ standalone: true }"
+                  [zodField]="{ schema: sn.desc.schema, key: 'entityId' }"
+                  [charFilter]="haEntityIdPolicy"
+                  #entityCtrl="ngModel"
+                  [ngModel]="$any(sn.node).entityId ?? ''"
+                  [placeholder]="sn.desc.haDomain + '.'"
+                  (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'entityId', value: $event || undefined })" />
+                <app-field-error [control]="entityCtrl" />
+              </div>
             </div>
             <div class="text-[10px] text-base-content/40 mt-1">
-              Leave blank to exclude from SCADA view. Format: <code>{{ sn.desc.haDomain }}.name</code>
+              Leave blank to exclude from SCADA view. {{ haEntityIdPolicy.hint }}
             </div>
           </div>
         }
@@ -247,28 +264,49 @@ export type { Selection };
                 <span class="font-mono font-semibold text-xs">{{ entry.key }}</span>
                 <div class="flex items-center gap-2">
                   <label class="text-[10px] text-base-content/50">Max Runtime</label>
-                  <input type="number" class="input input-xs input-bordered w-20 font-mono"
-                    [ngModel]="entry.override.max_runtime_seconds ?? 1800"
-                    (ngModelChange)="updateRouteOverride.emit({ key: entry.key, field: 'max_runtime_seconds', value: $event })" min="0" step="60" />
+                  <div class="flex flex-col">
+                    <input type="number" class="input input-xs input-bordered w-20 font-mono"
+                      [name]="'ovr-runtime-' + entry.key"
+                      [ngModelOptions]="{ standalone: true }"
+                      [zodField]="{ schema: routeOverrideSchema, key: 'max_runtime_seconds' }"
+                      #runtimeCtrl="ngModel"
+                      [ngModel]="entry.override.max_runtime_seconds ?? 1800"
+                      (ngModelChange)="updateRouteOverride.emit({ key: entry.key, field: 'max_runtime_seconds', value: $event === '' ? undefined : +$event })" min="0" step="60" />
+                    <app-field-error [control]="runtimeCtrl" />
+                  </div>
                   <span class="text-[10px] text-base-content/50">s</span>
                 </div>
                 @if (entry.sourceHasLevel) {
                   <div class="flex items-center gap-2">
                     <label class="text-[10px] text-base-content/50">Source Min</label>
-                    <input type="number" class="input input-xs input-bordered w-16 font-mono"
-                      [ngModel]="entry.override.source_min_level ?? ''"
-                      (ngModelChange)="updateRouteOverride.emit({ key: entry.key, field: 'source_min_level', value: $event === '' ? undefined : +$event })"
-                      min="0" max="100" placeholder="—" />
+                    <div class="flex flex-col">
+                      <input type="number" class="input input-xs input-bordered w-16 font-mono"
+                        [name]="'ovr-src-' + entry.key"
+                        [ngModelOptions]="{ standalone: true }"
+                        [zodField]="{ schema: routeOverrideSchema, key: 'source_min_level' }"
+                        #srcCtrl="ngModel"
+                        [ngModel]="entry.override.source_min_level ?? ''"
+                        (ngModelChange)="updateRouteOverride.emit({ key: entry.key, field: 'source_min_level', value: $event === '' ? undefined : +$event })"
+                        min="0" max="100" placeholder="—" />
+                      <app-field-error [control]="srcCtrl" />
+                    </div>
                     <span class="text-[10px] text-base-content/50">%</span>
                   </div>
                 }
                 @if (entry.destHasLevel) {
                   <div class="flex items-center gap-2">
                     <label class="text-[10px] text-base-content/50">Dest Max</label>
-                    <input type="number" class="input input-xs input-bordered w-16 font-mono"
-                      [ngModel]="entry.override.dest_max_level ?? ''"
-                      (ngModelChange)="updateRouteOverride.emit({ key: entry.key, field: 'dest_max_level', value: $event === '' ? undefined : +$event })"
-                      min="0" max="100" placeholder="—" />
+                    <div class="flex flex-col">
+                      <input type="number" class="input input-xs input-bordered w-16 font-mono"
+                        [name]="'ovr-dst-' + entry.key"
+                        [ngModelOptions]="{ standalone: true }"
+                        [zodField]="{ schema: routeOverrideSchema, key: 'dest_max_level' }"
+                        #dstCtrl="ngModel"
+                        [ngModel]="entry.override.dest_max_level ?? ''"
+                        (ngModelChange)="updateRouteOverride.emit({ key: entry.key, field: 'dest_max_level', value: $event === '' ? undefined : +$event })"
+                        min="0" max="100" placeholder="—" />
+                      <app-field-error [control]="dstCtrl" />
+                    </div>
                     <span class="text-[10px] text-base-content/50">%</span>
                   </div>
                 }
@@ -307,6 +345,8 @@ export type { Selection };
 export class TopologySidebarComponent {
   protected editor = inject(SystemEditorService);
   private workspace = inject(WorkspaceService);
+  protected routeOverrideSchema = RouteOverrideSchema;
+  protected haEntityIdPolicy = HA_ENTITY_ID_POLICY;
 
   // --- Inputs ---
   selection = input<Selection | null>(null);

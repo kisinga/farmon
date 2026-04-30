@@ -30,8 +30,9 @@ export type {
 export type { BoundaryPort } from './graph/boundary-ports';
 
 // --- Schemas ---
-export { TopologySchema, parseTopology, parsePortRef, portRef, type Topology } from './topology-schema';
-export { GpioPin, ComponentId, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, parseDurationMs, escXml } from './schemas';
+export { TopologySchema, RouteOverrideSchema, parseTopology, parsePortRef, portRef, type Topology } from './topology-schema';
+export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, parseDurationMs, escXml } from './schemas';
+export { type InputPolicy, policyString } from './input-policy';
 
 // --- Registry ---
 export { NODE_REGISTRY, ALL_DESCRIPTORS, REGISTRY_RULES, legendSvgFor, nodesWithFlag, getTypedDescriptor } from './entity-registry';
@@ -53,7 +54,7 @@ export { indent, joinYamlItems } from './yaml-fragment';
 
 // --- Home Assistant integration ---
 export {
-  HA_SCHEMA_VERSION, HA_ENTITY_ID_RE, HA_SERVICE_RE, HaActionSpecSchema, HaNodeFields,
+  HA_SCHEMA_VERSION, HA_ENTITY_ID_POLICY, HA_SERVICE_POLICY, HaActionSpecSchema, HaNodeFields,
   defaultStateBucket, isValidBindExpr, parseFlowPredicate,
 } from './ha';
 export type {

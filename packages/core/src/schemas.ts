@@ -3,6 +3,7 @@
  * Single source of truth for validation patterns.
  */
 import { z } from 'zod';
+import { type InputPolicy, policyString } from './input-policy';
 
 /** Valid pin/channel reference: native GPIO (GPIO0–GPIO99), expander pin (OUT1, IN16),
  *  provider channel (mux1:CH3, io_exp1:DO5), or empty string. */
@@ -12,11 +13,16 @@ export const GpioPin = z.union([
   z.literal(''),
 ]);
 
-/** Valid ESPHome/C++ identifier: lowercase letters, digits, underscores. */
-export const ComponentId = z.string().regex(
-  /^[a-z][a-z0-9_]*$/,
-  'Must be a valid identifier (lowercase letters, digits, underscores; must start with a letter)',
-);
+/** Policy for ESPHome/C++ identifiers: lowercase letters, digits, underscores. */
+export const COMPONENT_ID_POLICY: InputPolicy = {
+  pattern: /^[a-z][a-z0-9_]*$/,
+  allow: /[a-z0-9_]/g,
+  lowercase: true,
+  hint: 'Lowercase letters, digits, underscores; must start with a letter — e.g. modbus_bus_1',
+};
+
+/** Valid ESPHome/C++ identifier. */
+export const ComponentId = policyString(COMPONENT_ID_POLICY);
 
 export const PortSchema = z.object({
   id: z.string().min(1),

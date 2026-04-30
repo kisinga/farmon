@@ -10,19 +10,32 @@
  */
 
 import { z } from 'zod';
+import { type InputPolicy, policyString } from './input-policy';
 
 /** Version of the decorated SVG + meta sidecar contract. Bump on breaking changes. */
 export const HA_SCHEMA_VERSION = 1;
 
 // ---------------------------------------------------------------------------
-// HaActionSpec — per-node action entry (menu item in the card)
+// Input policies — single source of truth for HA entity_id and service shapes
 // ---------------------------------------------------------------------------
 
-/** Pattern for a HA entity_id: `<domain>.<object_id>`. */
-export const HA_ENTITY_ID_RE = /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/;
+export const HA_ENTITY_ID_POLICY: InputPolicy = {
+  pattern: /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/,
+  allow: /[a-z0-9_.]/g,
+  lowercase: true,
+  hint: 'Use lowercase letters, digits, underscores, and one dot — e.g. cover.rain_tank',
+};
 
-/** Pattern for a HA service: `<domain>.<service>`. */
-export const HA_SERVICE_RE = /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/;
+export const HA_SERVICE_POLICY: InputPolicy = {
+  pattern: /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/,
+  allow: /[a-z0-9_.]/g,
+  lowercase: true,
+  hint: 'Use lowercase letters, digits, underscores, and one dot — e.g. cover.open_cover',
+};
+
+// ---------------------------------------------------------------------------
+// HaActionSpec — per-node action entry (menu item in the card)
+// ---------------------------------------------------------------------------
 
 /**
  * A single action available on a node's context menu.
@@ -34,7 +47,7 @@ export const HA_SERVICE_RE = /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/;
 export const HaActionSpecSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
-  service: z.string().regex(HA_SERVICE_RE, 'Service must be domain.service').optional(),
+  service: policyString(HA_SERVICE_POLICY).optional(),
   data: z.record(z.unknown()).optional(),
   confirm: z.boolean().optional(),
 });
@@ -50,7 +63,7 @@ export type HaActionSpec = z.infer<typeof HaActionSpecSchema>;
  * Keeping them optional means existing topologies parse unchanged.
  */
 export const HaNodeFields = {
-  entityId: z.string().regex(HA_ENTITY_ID_RE, 'Must be domain.object_id').optional(),
+  entityId: policyString(HA_ENTITY_ID_POLICY).optional(),
   haActions: z.array(HaActionSpecSchema).optional(),
 } as const;
 

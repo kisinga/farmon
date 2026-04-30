@@ -4,8 +4,9 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
-import { slug, NODE_REGISTRY, TimingSchema } from '@far-mon/core';
+import { slug, NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY } from '@far-mon/core';
 import { ZodFieldDirective } from '../../../core/utils/field-validation';
+import { CharFilterDirective } from '../../../core/utils/char-filter.directive';
 import { FieldErrorComponent } from '../../../shared/field-error/field-error.component';
 
 interface TimingField {
@@ -28,7 +29,7 @@ const TIMING_FIELDS: TimingField[] = [
 @Component({
   selector: 'app-config-tab',
   standalone: true,
-  imports: [FormsModule, BoardSvgComponent, ZodFieldDirective, FieldErrorComponent],
+  imports: [FormsModule, BoardSvgComponent, ZodFieldDirective, CharFilterDirective, FieldErrorComponent],
   template: `
     @if (editor.topology(); as t) {
       <div class="content-pane space-y-6">
@@ -41,9 +42,14 @@ const TIMING_FIELDS: TimingField[] = [
               <input
                 type="text"
                 class="input input-bordered input-sm"
+                name="device-friendly-name"
+                [ngModelOptions]="{ standalone: true }"
+                [zodField]="{ schema: deviceSchema, key: 'friendly_name' }"
+                #fnCtrl="ngModel"
                 [ngModel]="t.device.friendly_name"
                 (ngModelChange)="updateFriendlyName($event)"
               />
+              <app-field-error [control]="fnCtrl" />
               <div class="label"><span class="label-text-alt text-base-content/60 font-mono">ESPHome ID: {{ t.device.name }}</span></div>
             </label>
           </div>
@@ -135,9 +141,18 @@ const TIMING_FIELDS: TimingField[] = [
               <div class="border border-base-200 rounded-lg p-3 space-y-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
-                    <input class="input input-xs input-bordered font-mono w-28"
-                      [ngModel]="prov.id"
-                      (ngModelChange)="updateProviderId(prov.id, $event)" />
+                    <div class="flex flex-col">
+                      <input class="input input-xs input-bordered font-mono w-28"
+                        [name]="'prov-id-' + prov.id"
+                        [ngModelOptions]="{ standalone: true }"
+                        [zodField]="{ schema: providerSchema, key: 'id' }"
+                        [charFilter]="componentIdPolicy"
+                        #provIdCtrl="ngModel"
+                        [ngModel]="prov.id"
+                        (ngModelChange)="updateProviderId(prov.id, $event)" />
+                      <app-field-error [control]="provIdCtrl" />
+                      <span class="text-[10px] text-base-content/40">{{ componentIdPolicy.hint }}</span>
+                    </div>
                     <select class="select select-xs select-bordered"
                       [ngModel]="prov.type"
                       (ngModelChange)="updateProviderType(prov.id, $event)">
@@ -229,6 +244,9 @@ export class ConfigTabComponent {
 
   protected timingGroups = [...new Set(TIMING_FIELDS.map((f) => f.group))];
   protected timingSchema = TimingSchema;
+  protected deviceSchema = DeviceSchema;
+  protected providerSchema = IoProviderDefSchema;
+  protected componentIdPolicy = COMPONENT_ID_POLICY;
 
   protected peripherals = computed(() => {
     const board = this.editor.board();

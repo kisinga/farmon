@@ -34,7 +34,7 @@ const PipeSegmentSchema = z.object({
 // Route overrides
 // ---------------------------------------------------------------------------
 
-const RouteOverrideSchema = z.object({
+export const RouteOverrideSchema = z.object({
   max_runtime_seconds: z.number().gt(1).optional(),
   source_min_level: z.number().min(0).max(100).optional(),
   dest_max_level: z.number().min(0).max(100).optional(),

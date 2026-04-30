@@ -35,7 +35,15 @@ export function zodFieldValidator(schema: z.ZodTypeAny, key: string): ValidatorF
       }
       return null;
     }
-    const result = fieldSchema.safeParse(control.value);
+    // An optional field with an empty control value should validate as undefined,
+    // not as the literal empty string / NaN that input value accessors emit. Without
+    // this, e.g. `z.string().regex(...).optional()` flashes "invalid" on an empty
+    // input even though blank means "unset" at the model level.
+    const v = control.value;
+    if (fieldSchema.isOptional() && (v === undefined || v === null || v === '' || (typeof v === 'number' && Number.isNaN(v)))) {
+      return null;
+    }
+    const result = fieldSchema.safeParse(v);
     return result.success ? null : { zod: result.error.errors[0]?.message ?? 'Invalid value' };
   };
 }
