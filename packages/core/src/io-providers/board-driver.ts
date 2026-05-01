@@ -23,9 +23,13 @@ export function createBoardDriver(board: BoardDef): IoProviderDriver {
     },
 
     resolve(channelId: string, usage: ChannelUsage): ResolvedChannel {
+      // Direction must follow purpose, not be inferred from `inverted`.
+      // active-high relay drives have inverted=false but still need OUTPUT mode.
+      const mode = usage.mode
+        ?? (usage.purpose === 'digital_out' ? 'OUTPUT' : undefined);
       const pinYaml = resolvePinYaml(channelId, board, {
         inverted: usage.inverted,
-        mode: usage.mode,
+        mode,
       });
 
       switch (usage.purpose) {
