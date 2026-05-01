@@ -188,19 +188,9 @@ interface TerminalLine {
                   </button>
                   @if (showSecurityKeys()) {
                     <div class="px-5 pb-4 space-y-3">
-                      <div class="flex flex-col gap-1">
-                        <span class="text-xs font-medium">Fallback AP Password</span>
-                        <div class="join w-full">
-                          <input type="text" class="input input-bordered input-sm font-mono text-sm join-item flex-1"
-                            [ngModel]="secrets().fallback_password"
-                            (ngModelChange)="updateSecret('fallback_password', $event)" />
-                          <button class="btn btn-ghost btn-sm join-item border border-base-300" (click)="regenerateKey('fallback_password')" title="Regenerate">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
+                      <p class="text-[11px] text-base-content/50">
+                        The fallback AP <span class="font-mono">&lt;device&gt; Fallback</span> reuses your WiFi password. When the device cannot reach its network, connect to this AP and visit <span class="font-mono">192.168.4.1</span> for full controls.
+                      </p>
                       <div class="flex flex-col gap-1">
                         <span class="text-xs font-medium">OTA Password</span>
                         <div class="join w-full">
@@ -703,8 +693,8 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
 
   // Secrets
   protected showSecurityKeys = signal(false);
-  private static readonly DEFAULT_SECRETS = { wifi_ssid: '', wifi_password: '', fallback_password: '', api_key: '', ota_password: '' };
-  protected secrets = signal<{ wifi_ssid: string; wifi_password: string; fallback_password: string; api_key: string; ota_password: string }>(
+  private static readonly DEFAULT_SECRETS = { wifi_ssid: '', wifi_password: '', api_key: '', ota_password: '' };
+  protected secrets = signal<{ wifi_ssid: string; wifi_password: string; api_key: string; ota_password: string }>(
     { ...DeployPageComponent.DEFAULT_SECRETS }
   );
   private secretsSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -728,7 +718,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   protected secretsValid = computed(() => {
     const s = this.secrets();
     const wifiOk = this.transport() !== 'wifi' || (!!s.wifi_ssid && !!s.wifi_password && s.wifi_password.length >= 8);
-    return wifiOk && s.fallback_password.length >= 8 && !!s.ota_password && this.secretsApiKeyValid();
+    return wifiOk && !!s.ota_password && this.secretsApiKeyValid();
   });
 
   // HA state (site-level)
@@ -966,14 +956,12 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
       this.secrets.set({
         wifi_ssid: saved['wifi_ssid'] ?? '',
         wifi_password: saved['wifi_password'] ?? '',
-        fallback_password: saved['fallback_password'] ?? '',
         api_key: saved['api_key'] ?? '',
         ota_password: saved['ota_password'] ?? '',
       });
     } else {
       // First time: auto-generate crypto fields, save to DB
       const fresh = { ...DeployPageComponent.DEFAULT_SECRETS };
-      fresh.fallback_password = this.randomHex(16);
       fresh.api_key = this.randomBase64(32);
       fresh.ota_password = this.randomHex(16);
       this.secrets.set(fresh);
@@ -1163,11 +1151,10 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     this.secretsSaveTimer = setTimeout(() => this.saveSecrets(), 500);
   }
 
-  protected async regenerateKey(key: 'api_key' | 'ota_password' | 'fallback_password') {
+  protected async regenerateKey(key: 'api_key' | 'ota_password') {
     const messages: Record<string, string> = {
       api_key: 'Regenerating the API encryption key will invalidate existing device pairing. The device will need to be re-adopted in Home Assistant.',
       ota_password: 'Regenerating the OTA password will require updating any existing OTA configuration.',
-      fallback_password: 'Regenerating the fallback AP password will change the password used when the device enters AP mode.',
     };
     const confirmed = await this.confirmService.confirm({
       title: 'Regenerate Key',

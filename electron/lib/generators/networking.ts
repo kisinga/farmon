@@ -44,6 +44,9 @@ function emitEthernet(eth: EthernetDef, manualIp?: ManualIp): Record<string, unk
 }
 
 function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
+  // The SoftAP reuses the user's wifi password — one credential for both
+  // the home network and the fallback hotspot. Reachable at 192.168.4.1
+  // when the device cannot reach its configured network.
   return [
     {
       wifi: {
@@ -52,7 +55,7 @@ function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
         ...(manualIp && { manual_ip: manualIp }),
         ap: {
           ssid: "${friendly_name} Fallback",
-          password: secret('fallback_password'),
+          password: secret('wifi_password'),
         },
       },
     },

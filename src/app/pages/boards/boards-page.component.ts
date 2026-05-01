@@ -241,7 +241,7 @@ export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked 
   // Secrets (board-scoped)
   protected secrets = signal<Record<string, string>>({
     wifi_ssid: '', wifi_password: '',
-    fallback_password: '', api_key: '', ota_password: '',
+    api_key: '', ota_password: '',
   });
 
   // Self-test connectivity (in-memory only — board self-tests are throwaway)
@@ -367,7 +367,6 @@ export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked 
       // Generate fresh crypto keys, keep wifi empty
       const fresh: Record<string, string> = {
         wifi_ssid: '', wifi_password: '',
-        fallback_password: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
         api_key: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))),
         ota_password: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
       };

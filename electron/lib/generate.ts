@@ -22,7 +22,6 @@ export interface GeneratedFile {
 export interface SecretsMap {
   wifi_ssid: string;
   wifi_password: string;
-  fallback_password: string;
   api_key: string;
   ota_password: string;
 }
@@ -31,7 +30,6 @@ export function generateDefaultSecrets(): SecretsMap {
   return {
     wifi_ssid: '',
     wifi_password: '',
-    fallback_password: crypto.randomBytes(16).toString("hex"),
     api_key: crypto.randomBytes(32).toString("base64"),
     ota_password: crypto.randomBytes(16).toString("hex"),
   };
@@ -45,7 +43,6 @@ function generateSecretsYaml(m: Manifest, secrets?: SecretsMap): string {
     ``,
     `wifi_ssid: "${s.wifi_ssid}"`,
     `wifi_password: "${s.wifi_password}"`,
-    `fallback_password: "${s.fallback_password}"`,
     `api_key: "${s.api_key}"`,
     `ota_password: "${s.ota_password}"`,
     ``,

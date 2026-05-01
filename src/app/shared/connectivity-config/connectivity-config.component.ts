@@ -57,6 +57,13 @@ import { effectiveTransport, type NetworkConfig, type NetworkTransport } from '@
               </div>
             </button>
           </div>
+          <p class="text-[11px] text-base-content/50 mt-2">
+            @if (transport() === 'ethernet') {
+              No on-device recovery if the cable drops — switch transport &amp; re-flash to regain access.
+            } @else {
+              Fallback AP <span class="font-mono">&lt;device&gt; Fallback</span> at <span class="font-mono">192.168.4.1</span> when the network is unreachable. Same password as WiFi.
+            }
+          </p>
         </div>
       }
 

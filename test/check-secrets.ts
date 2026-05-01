@@ -6,7 +6,6 @@ import { generateSelfTest } from "../electron/lib/self-test/index.js";
 const board = loadBoard(path.resolve("defaults/boards/kc868-a16"));
 const secrets = {
   wifi_ssid: "SAF", wifi_password: "wahenganawahenguzi",
-  fallback_password: "fc996dec5262b7433f1634ff4682ec24",
   api_key: "ujd3y58DwlY73ncaH4uvhjneXoK5Yl7lfjCCcwkhTKA=",
   ota_password: "fbf9b5033954a3716ecb8a34ddcbc85c",
 };

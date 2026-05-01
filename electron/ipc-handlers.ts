@@ -481,11 +481,11 @@ export function registerIpcHandlers() {
     async (_e, boardModel: string, secretsRaw: Record<string, string>, network?: import('@far-mon/core').NetworkConfig) => {
       const boardData = store.loadBoard(boardModel);
       const board = BoardDefSchema.parse(boardData.board) as BoardDef;
-      const { wifi_ssid, wifi_password, fallback_password, api_key, ota_password } = secretsRaw;
-      if (!api_key || !ota_password || !fallback_password) {
-        throw new Error('Missing required secrets (api_key, ota_password, fallback_password)');
+      const { wifi_ssid, wifi_password, api_key, ota_password } = secretsRaw;
+      if (!api_key || !ota_password) {
+        throw new Error('Missing required secrets (api_key, ota_password)');
       }
-      const secrets: SecretsMap = { wifi_ssid: wifi_ssid ?? '', wifi_password: wifi_password ?? '', fallback_password, api_key, ota_password };
+      const secrets: SecretsMap = { wifi_ssid: wifi_ssid ?? '', wifi_password: wifi_password ?? '', api_key, ota_password };
       const files = generateSelfTest(board, secrets, network);
       const model = board.model.replace('_', '-');
       const deviceDir = `selftest-${model}`;

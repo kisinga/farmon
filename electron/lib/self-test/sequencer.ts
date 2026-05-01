@@ -164,11 +164,10 @@ ${tickFunctions}
       break;
 ${dispatchCases}
     case DONE:
-      // Cycle indefinitely — restart after 10s pause
-      if (millis() - step_timer >= 10000) {
-        ESP_LOGI("selftest", "--- Restarting self-test cycle ---");
-        start();
-      }
+      // Single-shot. After the cycle finishes, idle so the user can toggle
+      // every entity from the web dashboard (the device's IP on the home
+      // network, or 192.168.4.1 on the fallback AP). The "Run Tests" button
+      // in the dashboard re-triggers the cycle.
       break;
     }
     update_ha();

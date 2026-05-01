@@ -53,7 +53,6 @@ function generateSecrets(secrets?: SecretsMap): string {
   const s = secrets ?? {
     wifi_ssid: '',
     wifi_password: '',
-    fallback_password: crypto.randomBytes(16).toString('hex'),
     api_key: crypto.randomBytes(32).toString('base64'),
     ota_password: crypto.randomBytes(16).toString('hex'),
   };
@@ -63,7 +62,6 @@ function generateSecrets(secrets?: SecretsMap): string {
     ``,
     `wifi_ssid: "${s.wifi_ssid}"`,
     `wifi_password: "${s.wifi_password}"`,
-    `fallback_password: "${s.fallback_password}"`,
     `api_key: "${s.api_key}"`,
     `ota_password: "${s.ota_password}"`,
     ``,

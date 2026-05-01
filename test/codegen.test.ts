@@ -413,6 +413,11 @@ assert(!kcBoardPkgWifi.includes("ethernet:"), "transport=wifi: no ethernet: sect
 assert(kcBoardPkgWifi.includes("wifi:"), "transport=wifi: has wifi: section");
 assert(kcBoardPkgWifi.includes("captive_portal"), "transport=wifi: has captive_portal");
 assert(kcBoardPkgWifi.includes("web_server:"), "transport=wifi: has web_server");
+// SoftAP password reuses the wifi station password — single credential UX.
+// Reachable at 192.168.4.1 when the station fails to associate.
+assert(!kcBoardPkgWifi.includes("fallback_password"), "transport=wifi: no fallback_password (reuses wifi_password)");
+const apMatches = kcBoardPkgWifi.match(/!secret wifi_password/g) ?? [];
+assert(apMatches.length === 2, `transport=wifi: !secret wifi_password used twice (sta + ap), got ${apMatches.length}`);
 // Diagnostic sensors must follow the active transport, not board capability:
 assert(!kcBoardPkgWifi.includes("ethernet_info"), "transport=wifi on ethernet board: no ethernet_info text_sensor");
 assert(kcBoardPkgWifi.includes("wifi_info"), "transport=wifi: has wifi_info text_sensor");
