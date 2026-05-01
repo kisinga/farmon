@@ -6,6 +6,38 @@ import { TEMPLATES_DIR, PARTIALS_DIR, compileFile } from '../../../packages/core
 // Boundary colors — same cycle as canvas boundary-renderer
 const BOUNDARY_COLORS = ['#0284C7', '#059669', '#D97706', '#DC2626', '#7C3AED', '#DB2777'];
 
+/**
+ * Stable display order for board concerns in the Advanced section. Files
+ * present in `partials/boards/<model>/` but absent from this list still
+ * appear, alphabetically after the listed entries. Order is install-time
+ * priority: how to reach it → how to power it → how it's wired → limits.
+ */
+const CONCERN_ORDER: string[] = [
+  'network',
+  'power',
+  'pin-architecture',
+  'peripherals',
+  'capacity',
+  'adc-range',
+  'digital-inputs',
+  'self-test',
+];
+
+const CONCERN_LABELS: Record<string, string> = {
+  'network':           'Network & Recovery',
+  'power':             'Power Requirements',
+  'pin-architecture':  'Pin Architecture',
+  'peripherals':       'On-Board Peripherals',
+  'capacity':          'Maximum Capacity',
+  'adc-range':         'ADC Voltage Range',
+  'digital-inputs':    'Digital Inputs',
+  'self-test':         'Bench Self-Test',
+};
+
+function concernLabel(concern: string): string {
+  return CONCERN_LABELS[concern] ?? concern.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 export interface PinTableRow {
   /** Silkscreen connector label (e.g. "J3-7"), if known. */
   connector?: string;
@@ -224,20 +256,30 @@ export function generateSiteDocumentation(
     };
   });
 
-  // Device Reference: one entry per unique board model used in the site.
-  // Boards without a `boards/<model>/network.hbs` partial gracefully drop out.
-  const seen = new Set<string>();
-  const deviceReferences = systems.flatMap(s => {
-    if (seen.has(s.board)) return [];
-    seen.add(s.board);
-    const partial = `boards/${s.board}/network`;
-    const partialPath = path.join(PARTIALS_DIR, `${partial}.hbs`);
-    if (!fs.existsSync(partialPath)) return [];
-    return [{
-      board: s.board,
-      boardLabel: s.boardLabel ?? s.board,
-      partial,
-    }];
+  // Advanced section: one disclosure per (unique board × concern partial).
+  // For each unique board model, enumerate every `partials/boards/<model>/*.hbs`
+  // and emit a flat disclosure. Boards with no partials directory drop out.
+  //
+  // Dedup is keyed on the normalized kebab-case slug — three controllers
+  // using the same physical board produce ONE set of disclosures, not three,
+  // even if their topologies stored the board id with different casing
+  // (`kc868_a16` vs `kc868-a16`).
+  const seenSlugs = new Set<string>();
+  const advancedSections = systems.flatMap(s => {
+    const slug = s.board.replace(/_/g, '-');
+    if (seenSlugs.has(slug)) return [];
+    seenSlugs.add(slug);
+    const dir = path.join(PARTIALS_DIR, 'boards', slug);
+    if (!fs.existsSync(dir)) return [];
+    const concerns = fs.readdirSync(dir)
+      .filter(name => name.endsWith('.hbs'))
+      .map(name => name.replace(/\.hbs$/, ''))
+      .sort((a, b) => CONCERN_ORDER.indexOf(a) - CONCERN_ORDER.indexOf(b));
+    return concerns.map(concern => ({
+      boardLabel: s.boardLabel ?? slug,
+      concernLabel: concernLabel(concern),
+      partial: `boards/${slug}/${concern}`,
+    }));
   });
 
   // Aggregate flags for installation guidelines
@@ -270,8 +312,8 @@ export function generateSiteDocumentation(
     hasAutomations: automationGroups.length > 0,
     automationGroups,
     controllerDetails,
-    deviceReferences,
-    hasDeviceReferences: deviceReferences.length > 0,
+    advancedSections,
+    hasAdvancedSections: advancedSections.length > 0,
     hasFlowSensors,
     hasValves,
     hasTanks,

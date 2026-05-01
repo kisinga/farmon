@@ -24,6 +24,25 @@
   border-radius: 6px; font-weight: 600;
 }
 .device-ref[open] summary { margin-bottom: 8px; }
+
+/* Print / PDF: force every <details> open and style <summary> as a heading
+   so the Advanced section is fully readable in the saved PDF. Browsers
+   (Chrome/Edge/Firefox) collapse <details> in print by default — this
+   overrides that behavior. */
+@media print {
+  details { page-break-inside: auto; }
+  details > summary {
+    list-style: none;
+    cursor: default;
+    /* Mimic an h3 — readable hierarchy on paper without `details` chrome. */
+    font-size: 14px; font-weight: 700; padding: 4px 0;
+    background: transparent; border-radius: 0;
+    margin: 12px 0 4px;
+  }
+  details > summary::-webkit-details-marker,
+  details > summary::marker { display: none; }
+  details > *:not(summary) { display: revert !important; }
+}
 </style>
 </head>
 <body>
@@ -226,12 +245,12 @@
 </div>
 {{/each}}
 
-{{#if hasDeviceReferences}}
+{{#if hasAdvancedSections}}
 <h2>Advanced</h2>
-<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Per-board operational reference. Expand for connection options, recovery procedures, and how to reach the device when the network is down. One entry per unique board model used in this site.</p>
-{{#each deviceReferences}}
+<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Per-board operational reference. Each disclosure covers one concern of one board model — connection &amp; recovery, power, peripherals, pinout, etc. Deduped: each unique board appears once regardless of how many controllers use it.</p>
+{{#each advancedSections}}
 <details class="device-ref">
-  <summary>{{this.boardLabel}} — Network &amp; Recovery</summary>
+  <summary>{{this.boardLabel}} — {{this.concernLabel}}</summary>
   {{{md this.partial}}}
 </details>
 {{/each}}

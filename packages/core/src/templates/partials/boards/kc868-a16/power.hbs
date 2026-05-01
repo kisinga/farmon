@@ -1,0 +1,15 @@
+The KC868-A16 board, every 12 V solenoid valve, and every 4–20 mA / 0–10 V sensor draw from one **12 V DC supply** wired to the green DC input terminal block.
+
+| Load | Typical | Notes |
+|---|---|---|
+| Board idle (Ethernet up, OLED off) | ~120 mA @ 12 V | Datasheet figure |
+| All 16 relay coils energized | +320 mA @ 12 V | Worst-case transient — never sustained in practice |
+| 24 V solenoid valves | external supply | Use the dry contact across the relay; do **not** wire 24 V into the board |
+| 4–20 mA sensor (loop powered) | ~25 mA @ 12 V each | Series with sensor + 250 Ω burden |
+| 0–10 V sensor | ~10 mA @ 12 V each | Through the 100 kΩ divider to the ADC pin |
+
+**Sizing rule of thumb**: `0.15 A × controllers + 0.5 A × valves on simultaneously + 0.05 A × sensors`, then add 30% headroom. A 5 A regulated 12 V brick is comfortable for the largest single-board deployment.
+
+**Brown-out**: the ESP32 brown-out detector trips around 2.7 V on the 3.3 V rail. If you see random reboots when relays click in, the supply is sagging — either too small or the wiring is too thin (use ≥ 0.75 mm² for runs longer than 1 m).
+
+**Fuse**: a 5 A inline fuse on the +12 V input is mandatory if your supply is unfused.

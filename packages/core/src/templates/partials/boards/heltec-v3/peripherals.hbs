@@ -1,0 +1,31 @@
+### OLED display
+
+128×64 SSD1306 over I²C. Wired to **SDA: GPIO17, SCL: GPIO18, RESET: GPIO21**, address `0x3C`. ESPHome's display component renders text + graphics. The board package emits a default splash and renders status fields whenever the topology declares an OLED-bearing system.
+
+**Power**: the OLED is on the Vext rail (GPIO36). On battery profiles, MajiFlow toggles Vext only during periodic refresh.
+
+### LoRa radio (SX1262)
+
+The SX1262 chip on the board is wired over SPI:
+
+| Function | GPIO |
+|---|---|
+| SCK | GPIO9 |
+| MOSI | GPIO10 |
+| MISO | GPIO11 |
+| NSS (CS) | GPIO8 |
+| BUSY | GPIO13 |
+| DIO1 | GPIO14 |
+| RESET | GPIO12 |
+
+These pins are reserved by the board package — do not assign topology entities to them. Use the LoRa transport at the **entity** level (e.g. cross-system links over LoRa) — this is independent of the ESPHome `wifi:` / `ethernet:` transport for HA connectivity.
+
+**Antenna**: the board ships with a 868/915 MHz spring antenna. For range &gt; 50 m through walls, swap to a 1/4-wave whip on the IPEX (U.FL) connector.
+
+### Battery monitoring
+
+A divider on **GPIO1** (ADC1_CH0) reads the Li-Po voltage. The board package emits `sensor.battery_voltage` and a `sensor.battery_percent` derived via per-board calibration tables (linear interpolation between voltage→percent datapoints in `peripherals.battery.calibration`).
+
+### LED
+
+A single white LED on **GPIO35**. Used by self-test for blink probe, but free for topology use (e.g. heartbeat indicator).

@@ -1,0 +1,23 @@
+### Theoretical maximums (single controller)
+
+| Component | Max Count | Reasoning |
+|-----------|-----------|-----------|
+| **Valves** (with 1 relay pump) | **7** | 7 valves × 2 OUT pins = 14 + 1 pump = 15 of 16 OUT pins |
+| **Valves** (with VFD pump) | **8** | 8 valves × 2 OUT pins = 16 OUT pins (VFD uses RS485, no OUT pin) |
+| **Tanks** (with level sensor) | **4** | 4 native ADC pins (GPIO36/34/35/39) |
+| **Flow sensors** | **3** | 3 native pulse counter pins (GPIO32/33/14) |
+| **Relay pumps** | **1** | Shares OUT pin pool with valves |
+| **VFD pumps** (Modbus) | **1+** | Uses RS485 bus — no GPIO needed per VFD |
+| **Routes** | **16** | `conflict_mask` is `uint16_t` (firmware limit) |
+| **Concurrent routes** | **2** | Firmware slot limit (hardcoded) |
+| **Queue depth** | **4** | Deferred route starts |
+
+### Realistic configurations
+
+**Small farm** (typical hobby/small plot): 1 pump, 3 valves, 2 tanks, 1 flow sensor — uses 8/16 OUT, 2/4 ADC, 1/3 pulse counter. Room to grow.
+
+**Medium farm** (semi-commercial): 1 pump, 6 valves, 4 tanks, 3 flow sensors — uses 14/16 OUT, 4/4 ADC, 3/3 pulse counter. Near maximum: 1 spare OUT pin.
+
+**Maxed out** (every pin utilized): 1 pump, 7 valves, 4 tanks, 3 flow sensors — uses 15/16 OUT, 4/4 ADC, 3/3 pulse counter. No spare capacity on any pool.
+
+**Beyond one controller**: for installations exceeding these limits, deploy multiple KC868-A16 controllers and connect them via MajiFlow's multi-system site feature with inter-system links.

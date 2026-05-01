@@ -125,6 +125,41 @@ function reportDiff(actual: string, expected: string): void {
   console.log(`    actual:   ...${ctx(actual)}...`);
 }
 
+// ---------------------------------------------------------------------------
+// Dedup guard — three controllers on the same physical board (with mixed
+// snake/kebab casing) must produce ONE set of Advanced disclosures, not three.
+// Expected disclosure count is derived from the on-disk partials directory so
+// adding/removing a concern doesn't break the test.
+// ---------------------------------------------------------------------------
+{
+  const tripleSystems: SiteDocSystem[] = [
+    { systemId: "a", friendlyName: "Pump A",   board: "kc868-a16", boardLabel: "KC868-A16", activeTransport: "ethernet", deviceName: "pump_a", manifest, topologySvg: TOPOLOGY_SVG },
+    { systemId: "b", friendlyName: "Pump B",   board: "kc868_a16", boardLabel: "KC868-A16", activeTransport: "ethernet", deviceName: "pump_b", manifest, topologySvg: TOPOLOGY_SVG },
+    { systemId: "c", friendlyName: "Pump C",   board: "kc868-a16", boardLabel: "KC868-A16", activeTransport: "ethernet", deviceName: "pump_c", manifest, topologySvg: TOPOLOGY_SVG },
+  ];
+  const dedupHtml = generateSiteDocumentation(
+    "Triple Site",
+    tripleSystems,
+    [],
+    TOPOLOGY_SVG,
+    compositeRoutes as unknown as Parameters<typeof generateSiteDocumentation>[4],
+    { genDate: "2026-01-01" },
+  );
+  const expectedConcerns = fs
+    .readdirSync(path.join(TEST_DIR, "packages/core/src/templates/partials/boards/kc868-a16"))
+    .filter((f: string) => f.endsWith(".hbs"))
+    .length;
+  const advancedHeaderCount = (dedupHtml.match(/<h2>Advanced<\/h2>/g) ?? []).length;
+  const detailsCount = (dedupHtml.match(/<details class="device-ref">/g) ?? []).length;
+  if (advancedHeaderCount === 1 && detailsCount === expectedConcerns) {
+    console.log(`  ✓ Advanced section deduped (1 <h2>, ${detailsCount} disclosures for 1 board × ${expectedConcerns} concerns across 3 controllers)`);
+    passed++;
+  } else {
+    console.log(`  ✗ Advanced section dedup FAILED: ${advancedHeaderCount} <h2>Advanced</h2>, ${detailsCount} <details> (expected 1 and ${expectedConcerns})`);
+    failed++;
+  }
+}
+
 if (UPDATE || !fs.existsSync(SNAPSHOT_PATH)) {
   fs.mkdirSync(path.dirname(SNAPSHOT_PATH), { recursive: true });
   const existed = fs.existsSync(SNAPSHOT_PATH);

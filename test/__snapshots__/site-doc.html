@@ -220,6 +220,25 @@ code {
   border-radius: 6px; font-weight: 600;
 }
 .device-ref[open] summary { margin-bottom: 8px; }
+
+/* Print / PDF: force every <details> open and style <summary> as a heading
+   so the Advanced section is fully readable in the saved PDF. Browsers
+   (Chrome/Edge/Firefox) collapse <details> in print by default — this
+   overrides that behavior. */
+@media print {
+  details { page-break-inside: auto; }
+  details > summary {
+    list-style: none;
+    cursor: default;
+    /* Mimic an h3 — readable hierarchy on paper without `details` chrome. */
+    font-size: 14px; font-weight: 700; padding: 4px 0;
+    background: transparent; border-radius: 0;
+    margin: 12px 0 4px;
+  }
+  details > summary::-webkit-details-marker,
+  details > summary::marker { display: none; }
+  details > *:not(summary) { display: revert !important; }
+}
 </style>
 </head>
 <body>
@@ -340,7 +359,7 @@ code {
 </div>
 
 <h2>Advanced</h2>
-<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Per-board operational reference. Expand for connection options, recovery procedures, and how to reach the device when the network is down. One entry per unique board model used in this site.</p>
+<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Per-board operational reference. Each disclosure covers one concern of one board model — connection &amp; recovery, power, peripherals, pinout, etc. Deduped: each unique board appears once regardless of how many controllers use it.</p>
 <details class="device-ref">
   <summary>KC868-A16 — Network &amp; Recovery</summary>
   <p>The KC868-A16 supports both <strong>Ethernet (LAN8720 PHY)</strong> and <strong>WiFi</strong>. ESPHome enforces XOR — exactly one transport is active per device. Pick one in MajiFlow&#39;s <em>Connection</em> panel; the choice is baked into the firmware at flash time.</p>
@@ -404,6 +423,295 @@ code {
 <li><code>http://192.168.4.1/</code> on the fallback AP — <strong>WiFi transport only</strong>.</li>
 </ul>
 <p>Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control — nothing extra to configure.</p>
+
+</details>
+<details class="device-ref">
+  <summary>KC868-A16 — Power Requirements</summary>
+  <p>The KC868-A16 board, every 12 V solenoid valve, and every 4–20 mA / 0–10 V sensor draw from one <strong>12 V DC supply</strong> wired to the green DC input terminal block.</p>
+<table>
+<thead>
+<tr>
+<th>Load</th>
+<th>Typical</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Board idle (Ethernet up, OLED off)</td>
+<td>~120 mA @ 12 V</td>
+<td>Datasheet figure</td>
+</tr>
+<tr>
+<td>All 16 relay coils energized</td>
+<td>+320 mA @ 12 V</td>
+<td>Worst-case transient — never sustained in practice</td>
+</tr>
+<tr>
+<td>24 V solenoid valves</td>
+<td>external supply</td>
+<td>Use the dry contact across the relay; do <strong>not</strong> wire 24 V into the board</td>
+</tr>
+<tr>
+<td>4–20 mA sensor (loop powered)</td>
+<td>~25 mA @ 12 V each</td>
+<td>Series with sensor + 250 Ω burden</td>
+</tr>
+<tr>
+<td>0–10 V sensor</td>
+<td>~10 mA @ 12 V each</td>
+<td>Through the 100 kΩ divider to the ADC pin</td>
+</tr>
+</tbody></table>
+<p><strong>Sizing rule of thumb</strong>: <code>0.15 A × controllers + 0.5 A × valves on simultaneously + 0.05 A × sensors</code>, then add 30% headroom. A 5 A regulated 12 V brick is comfortable for the largest single-board deployment.</p>
+<p><strong>Brown-out</strong>: the ESP32 brown-out detector trips around 2.7 V on the 3.3 V rail. If you see random reboots when relays click in, the supply is sagging — either too small or the wiring is too thin (use ≥ 0.75 mm² for runs longer than 1 m).</p>
+<p><strong>Fuse</strong>: a 5 A inline fuse on the +12 V input is mandatory if your supply is unfused.</p>
+
+</details>
+<details class="device-ref">
+  <summary>KC868-A16 — Pin Architecture</summary>
+  <p>The KC868-A16 has <strong>segregated pin pools</strong> — unlike boards with general-purpose GPIOs, each pin pool serves a specific function and cannot be reassigned.</p>
+<table>
+<thead>
+<tr>
+<th>Pool</th>
+<th>Pins</th>
+<th>Count</th>
+<th>Capability</th>
+<th>Used For</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Relay outputs</strong></td>
+<td>OUT1–OUT16</td>
+<td>16</td>
+<td><code>digital</code> (via PCF8574)</td>
+<td>Valves (2 pins each), pumps (1 pin each)</td>
+</tr>
+<tr>
+<td><strong>ADC inputs</strong></td>
+<td>GPIO36, GPIO34, GPIO35, GPIO39</td>
+<td>4</td>
+<td><code>digital</code>, <code>adc</code></td>
+<td>Tank level sensors (0–5V, op-amp conditioned)</td>
+</tr>
+<tr>
+<td><strong>Sensor headers</strong></td>
+<td>GPIO32, GPIO33, GPIO14</td>
+<td>3</td>
+<td><code>digital</code>, <code>pulse_counter</code></td>
+<td>Flow sensors, DS18B20 temperature probes</td>
+</tr>
+<tr>
+<td><strong>Digital inputs</strong></td>
+<td>IN1–IN16</td>
+<td>16</td>
+<td><code>digital</code> (via PCF8574)</td>
+<td>Future: float switches, dry contacts</td>
+</tr>
+<tr>
+<td><strong>RS485</strong></td>
+<td>GPIO13 (TX), GPIO16 (RX)</td>
+<td>2</td>
+<td>Reserved</td>
+<td>VFD/Modbus devices (MAX13487E transceiver)</td>
+</tr>
+<tr>
+<td><strong>I2C bus</strong></td>
+<td>GPIO4 (SDA), GPIO5 (SCL)</td>
+<td>2</td>
+<td>Reserved</td>
+<td>Internal: PCF8574 expander communication</td>
+</tr>
+<tr>
+<td><strong>Ethernet</strong></td>
+<td>GPIO23 (MDC), GPIO18 (MDIO), GPIO17 (CLK)</td>
+<td>3</td>
+<td>Reserved</td>
+<td>LAN8720 PHY</td>
+</tr>
+</tbody></table>
+<p><strong>Total exposed</strong>: 39 user-assignable pins (16 OUT + 16 IN + 4 ADC + 3 sensor headers).
+<strong>Total reserved</strong>: 7 pins (I2C + Ethernet + RS485 are auto-reserved by MajiFlow).</p>
+<h3>Boot-strapping pins (avoid for inputs)</h3>
+<p>GPIO0, GPIO2, GPIO12, GPIO15 are ESP32 strapping pins. The board package marks them reserved — assigning a topology entity to one surfaces a validation error before flash.</p>
+<h3>Polarity</h3>
+<p>All onboard relays are <strong>active-low</strong> (the PCF8574 sinks current to energize the coil). MajiFlow defaults to <code>Active-low</code> polarity on entity wiring — keep that unless you&#39;ve modified the board.</p>
+
+</details>
+<details class="device-ref">
+  <summary>KC868-A16 — On-Board Peripherals</summary>
+  <h3>I²C bus &amp; expanders</h3>
+<p>The KC868-A16 reaches its <strong>16 relays + 16 inputs</strong> through four PCF8574 I²C GPIO expanders behind a single onboard I²C bus on <strong>GPIO4 (SDA) / GPIO5 (SCL)</strong>. Pull-ups are populated on the board — you don&#39;t need to add your own on the board&#39;s bus.</p>
+<table>
+<thead>
+<tr>
+<th>Address</th>
+<th>Role</th>
+<th>Pin labels</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0x24</td>
+<td>Relay outputs 1–8</td>
+<td>OUT1…OUT8 (active-low coil drivers)</td>
+</tr>
+<tr>
+<td>0x25</td>
+<td>Relay outputs 9–16</td>
+<td>OUT9…OUT16</td>
+</tr>
+<tr>
+<td>0x21</td>
+<td>Digital inputs 1–8</td>
+<td>IN1…IN8 (optocoupled, pull to GND to assert)</td>
+</tr>
+<tr>
+<td>0x22</td>
+<td>Digital inputs 9–16</td>
+<td>IN9…IN16</td>
+</tr>
+</tbody></table>
+<p><strong>External I²C devices</strong> (extra expanders, OLEDs, sensors): bring SDA/SCL out of the J6 header. Stay under the standard fast-mode budget — total bus capacitance &lt; 400 pF, total length under ~1 m for reliable 100 kHz.</p>
+<p><strong>Address conflicts</strong>: never assign a new device to 0x21, 0x22, 0x24, 0x25.</p>
+<h3>Sensor headers (3× analog)</h3>
+<p>J3, J4, J5 are 3-pin headers (signal, +12 V, GND) wired to <strong>GPIO32, GPIO33, GPIO35</strong> through a 100 kΩ / 10 kΩ divider. Inputs accept <strong>0–12 V</strong>, scaled into the ESP32&#39;s 0–3.3 V ADC.</p>
+<ul>
+<li>Use J3 (GPIO32) and J4 (GPIO33) for <strong>pulse counters</strong> (flow meters) — these GPIOs support pulse counter peripheral. GPIO35 is ADC-only.</li>
+<li>Calibration is done in the MajiFlow level-sensor entity — exposes <code>number.…_cal_empty</code> / <code>number.…_cal_full</code> HA entities.</li>
+</ul>
+<h3>RS485 / Modbus (MAX13487E transceiver)</h3>
+<p>GPIO13 (TX), GPIO16 (RX) are reserved for RS485 via the onboard half-duplex transceiver. Direction is auto-controlled — no DE/RE pin needed.</p>
+<ul>
+<li>A/B terminals on the green DC block. Daisy-chain to VFDs / Modbus sensors. Terminate with 120 Ω at each end of the trunk.</li>
+<li>Common ground between board and Modbus device is required if they don&#39;t share the same power supply.</li>
+</ul>
+
+</details>
+<details class="device-ref">
+  <summary>KC868-A16 — Maximum Capacity</summary>
+  <h3>Theoretical maximums (single controller)</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Max Count</th>
+<th>Reasoning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Valves</strong> (with 1 relay pump)</td>
+<td><strong>7</strong></td>
+<td>7 valves × 2 OUT pins = 14 + 1 pump = 15 of 16 OUT pins</td>
+</tr>
+<tr>
+<td><strong>Valves</strong> (with VFD pump)</td>
+<td><strong>8</strong></td>
+<td>8 valves × 2 OUT pins = 16 OUT pins (VFD uses RS485, no OUT pin)</td>
+</tr>
+<tr>
+<td><strong>Tanks</strong> (with level sensor)</td>
+<td><strong>4</strong></td>
+<td>4 native ADC pins (GPIO36/34/35/39)</td>
+</tr>
+<tr>
+<td><strong>Flow sensors</strong></td>
+<td><strong>3</strong></td>
+<td>3 native pulse counter pins (GPIO32/33/14)</td>
+</tr>
+<tr>
+<td><strong>Relay pumps</strong></td>
+<td><strong>1</strong></td>
+<td>Shares OUT pin pool with valves</td>
+</tr>
+<tr>
+<td><strong>VFD pumps</strong> (Modbus)</td>
+<td><strong>1+</strong></td>
+<td>Uses RS485 bus — no GPIO needed per VFD</td>
+</tr>
+<tr>
+<td><strong>Routes</strong></td>
+<td><strong>16</strong></td>
+<td><code>conflict_mask</code> is <code>uint16_t</code> (firmware limit)</td>
+</tr>
+<tr>
+<td><strong>Concurrent routes</strong></td>
+<td><strong>2</strong></td>
+<td>Firmware slot limit (hardcoded)</td>
+</tr>
+<tr>
+<td><strong>Queue depth</strong></td>
+<td><strong>4</strong></td>
+<td>Deferred route starts</td>
+</tr>
+</tbody></table>
+<h3>Realistic configurations</h3>
+<p><strong>Small farm</strong> (typical hobby/small plot): 1 pump, 3 valves, 2 tanks, 1 flow sensor — uses 8/16 OUT, 2/4 ADC, 1/3 pulse counter. Room to grow.</p>
+<p><strong>Medium farm</strong> (semi-commercial): 1 pump, 6 valves, 4 tanks, 3 flow sensors — uses 14/16 OUT, 4/4 ADC, 3/3 pulse counter. Near maximum: 1 spare OUT pin.</p>
+<p><strong>Maxed out</strong> (every pin utilized): 1 pump, 7 valves, 4 tanks, 3 flow sensors — uses 15/16 OUT, 4/4 ADC, 3/3 pulse counter. No spare capacity on any pool.</p>
+<p><strong>Beyond one controller</strong>: for installations exceeding these limits, deploy multiple KC868-A16 controllers and connect them via MajiFlow&#39;s multi-system site feature with inter-system links.</p>
+
+</details>
+<details class="device-ref">
+  <summary>KC868-A16 — ADC Voltage Range</summary>
+  <p>The KC868-A16&#39;s 4 ADC inputs accept <strong>0–5 V</strong> from external sensors. An onboard <strong>LM324 op-amp</strong> scales this to 0–3.3 V for the ESP32&#39;s ADC.</p>
+<p><strong>Calibration in MajiFlow</strong>: the <code>Cal Empty V</code> and <code>Cal Full V</code> values represent the <strong>ESP32-side voltage</strong> (0–3.3 V range), not the original sensor output (0–5 V). Calibrate by:</p>
+<ol>
+<li>Drain the tank to empty → note the raw voltage reading in Home Assistant.</li>
+<li>Fill the tank to full → note the raw voltage reading.</li>
+<li>Enter these values as <code>Cal Empty</code> and <code>Cal Full</code>.</li>
+</ol>
+<p>The <code>Raw Voltage</code> diagnostic sensor is exposed to HA to assist with calibration.</p>
+
+</details>
+<details class="device-ref">
+  <summary>KC868-A16 — Digital Inputs</summary>
+  <p>The 16 optocoupled digital inputs (IN1–IN16) accept <strong>6–24 V</strong> signals and are isolated from the ESP32 — ground loops on field wiring won&#39;t reach the MCU. Pull-down to GND via the field signal asserts the input.</p>
+<p>These pins are currently <strong>reserved for future entity types</strong>:</p>
+<ul>
+<li>Float switch / dry contact binary sensors</li>
+<li>External trigger inputs</li>
+<li>Alarm / fault inputs from external equipment</li>
+</ul>
+<p>The pins are defined in the board YAML with <code>caps: [digital]</code> and ready for use when the corresponding entity types ship in MajiFlow.</p>
+<p><strong>Wiring tip</strong>: use ≥ 1 kΩ in series with the field signal to clamp the optocoupler current. The board&#39;s onboard resistor handles up to 24 V cleanly; higher voltages will saturate the LED.</p>
+
+</details>
+<details class="device-ref">
+  <summary>KC868-A16 — Bench Self-Test</summary>
+  <p>The KC868-A16 self-test firmware exercises every onboard subsystem in one bench cycle. Probes that don&#39;t apply (OLED, LoRa, WiFi-only diagnostics, battery) are excluded automatically by the codegen.</p>
+<table>
+<thead>
+<tr>
+<th>Probe</th>
+<th>What it checks</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>I²C scan</td>
+<td>All 4 PCF8574 addresses respond (0x24, 0x25, 0x22, 0x21)</td>
+</tr>
+<tr>
+<td>Relay cycle</td>
+<td>Each of 16 relays activates; readback confirms state</td>
+</tr>
+<tr>
+<td>Digital inputs</td>
+<td>All 16 optocoupled inputs readable</td>
+</tr>
+<tr>
+<td>ADC baseline</td>
+<td>All 4 ADC channels return valid voltage</td>
+</tr>
+<tr>
+<td>Sensor headers</td>
+<td>GPIO32, GPIO33, GPIO14 responsive</td>
+</tr>
+<tr>
+<td>Ethernet PHY</td>
+<td>LAN8720 link detected</td>
+</tr>
+</tbody></table>
+<p>The test runs once on boot, then idles — the device exposes every entity for <strong>manual control</strong> via the web dashboard (192.168.4.1 on the fallback AP, or the device&#39;s home-network IP). Press the <em>Run Tests</em> button on the dashboard to re-trigger a cycle.</p>
 
 </details>
 

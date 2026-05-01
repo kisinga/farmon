@@ -1,0 +1,31 @@
+The Heltec WiFi LoRa 32 V3 is a **WiFi-only** board — no ethernet PHY. ESPHome's transport selector in MajiFlow is locked on WiFi.
+
+| Property | Value |
+|---|---|
+| Default for this board | WiFi (forced) |
+| Credentials needed | SSID + password |
+| Diagnostic sensors | `wifi_info` (IP, SSID, MAC) + `wifi_signal` (dBm) |
+| Static IP support | ✓ via *Connection → IP Configuration* |
+| Fallback when network is down | SoftAP starts automatically |
+
+### Recovery path
+
+When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot:
+
+- **SoftAP SSID**: `<friendly_name> Fallback` — the device's friendly name from MajiFlow.
+- **SoftAP password**: identical to your `wifi_password` — one credential to remember.
+- **Default gateway**: **`192.168.4.1`** — visit `http://192.168.4.1/` in a browser for the full web dashboard.
+- Phones and laptops auto-popup ESPHome's captive portal where you can rotate WiFi credentials without re-flashing.
+
+### Web dashboard
+
+Reachable at:
+
+- `http://<device-ip>/` on the home network — IP shown in `wifi_info`.
+- `http://192.168.4.1/` on the fallback AP.
+
+Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control.
+
+### Range note
+
+The Heltec's WiFi antenna is the chip antenna on the board edge. For installations behind metal enclosures or far from the access point, plan a WiFi repeater or use the LoRa transport instead (entity-level — not the ESPHome network transport).
