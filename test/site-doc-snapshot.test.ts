@@ -78,6 +78,8 @@ const systems: SiteDocSystem[] = [
     systemId: "sysA",
     friendlyName: "Test System",
     board: "kc868-a16",
+    boardLabel: "KC868-A16",
+    activeTransport: "ethernet",
     deviceName: "test_device",
     manifest,
     topologySvg: TOPOLOGY_SVG,

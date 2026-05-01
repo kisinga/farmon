@@ -10,7 +10,7 @@ import { ConnectivityConfigComponent } from '../../shared/connectivity-config/co
 import type {
   BoardListEntry, ToolchainInfo, SerialDevice,
 } from '../../core/models/electron-api';
-import { effectiveTransport, type NetworkConfig } from '@far-mon/core';
+import { effectiveTransport, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
 
 interface FileEntry {
   path: string;
@@ -82,7 +82,7 @@ interface TerminalLine {
               [ssid]="secrets()['wifi_ssid']"
               [password]="secrets()['wifi_password']"
               [network]="network()"
-              [boardHasEthernet]="boardHasEthernet()"
+              [supportedTransports]="supportedTransports()"
               (ssidChange)="updateSecret('wifi_ssid', $event)"
               (passwordChange)="updateSecret('wifi_password', $event)"
               (networkChange)="network.set($event)"
@@ -269,18 +269,18 @@ export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked 
     return this.boards().find(b => b.id === id)?.label ?? '';
   });
 
-  protected boardHasEthernet = computed(() => {
+  protected supportedTransports = computed<readonly NetworkTransport[]>(() => {
     const id = this.selectedBoard();
-    if (!id) return false;
+    if (!id) return ['wifi'];
     const def = this.boardDefs.get(id);
-    if (!def) return false;
+    if (!def) return ['wifi'];
     const b = def.board as Record<string, unknown>;
     const periphs = b['peripherals'] as Record<string, unknown> | undefined;
-    return !!periphs?.['ethernet'];
+    return periphs?.['ethernet'] ? ['ethernet', 'wifi'] : ['wifi'];
   });
 
   protected transport = computed(() =>
-    effectiveTransport(this.network(), this.boardHasEthernet())
+    effectiveTransport(this.network(), this.supportedTransports())
   );
 
   protected boardFeatures = computed(() => {

@@ -10,7 +10,7 @@ import * as store from "./store.js";
 import * as db from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
-import { collectPins, reservedPins, computePinOverlays, slug } from '@far-mon/core';
+import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport } from '@far-mon/core';
 import { generateSiteDocumentation, type PinTableRow } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
@@ -528,11 +528,15 @@ export function registerIpcHandlers() {
         let boardSvg: string | undefined;
         let pinOverlays: ReturnType<typeof computePinOverlays> | undefined;
         let pinTable: PinTableRow[] | undefined;
+        let boardLabel: string | undefined;
+        let activeTransport: ReturnType<typeof effectiveTransport> | undefined;
         try {
           const boardData = store.loadBoard(s.board);
           if (boardData?.svg && boardData?.board) {
             boardSvg = boardData.svg;
             const board = boardData.board as unknown as BoardDef;
+            boardLabel = board.label;
+            activeTransport = effectiveTransport(manifest.device.network, boardSupportedTransports(board));
             const usedPins = new Map(usages.map(u => [u.pin, u.owner]));
             const reserved = reservedPins(board);
             pinOverlays = computePinOverlays(board, usedPins, reserved);
@@ -571,6 +575,8 @@ export function registerIpcHandlers() {
           systemId: s.systemId,
           friendlyName: s.friendlyName,
           board: s.board,
+          boardLabel,
+          activeTransport,
           deviceName: s.deviceName,
           manifest,
           boardSvg,

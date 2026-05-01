@@ -18,7 +18,7 @@ import { effectiveTransport, type NetworkConfig, type NetworkTransport } from '@
   template: `
     <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
       <!-- Transport selector -->
-      @if (boardHasEthernet()) {
+      @if (hasChoice()) {
         <div class="px-5 py-4 border-b border-base-300/30">
           <span class="block text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-2">Connection</span>
           <div class="grid grid-cols-2 gap-2">
@@ -158,13 +158,16 @@ export class ConnectivityConfigComponent {
   readonly ssid = input.required<string>();
   readonly password = input.required<string>();
   readonly network = input<NetworkConfig | undefined>(undefined);
-  readonly boardHasEthernet = input(false);
+  /** Network transports the board supports (e.g. `['wifi']` or `['ethernet','wifi']`). */
+  readonly supportedTransports = input<readonly NetworkTransport[]>(['wifi']);
 
   readonly ssidChange = output<string>();
   readonly passwordChange = output<string>();
   readonly networkChange = output<NetworkConfig>();
 
-  protected transport = computed(() => effectiveTransport(this.network(), this.boardHasEthernet()));
+  /** True when the board has more than one transport — i.e. the user has a real choice. */
+  protected hasChoice = computed(() => this.supportedTransports().length > 1);
+  protected transport = computed(() => effectiveTransport(this.network(), this.supportedTransports()));
   protected mode = computed(() => this.network()?.mode ?? 'dhcp');
 
   protected select(transport: NetworkTransport) {

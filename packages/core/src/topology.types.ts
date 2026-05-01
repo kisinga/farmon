@@ -129,12 +129,19 @@ export interface NetworkConfig {
   dns2?: string;
 }
 
-/** Single source of truth for which transport a device actually uses. */
+/**
+ * Resolve which transport a device actually uses, given:
+ *  - the user's choice on `network.transport` (may be undefined → use default)
+ *  - the set of transports the board supports.
+ *
+ * Single source of truth shared by firmware codegen, the deploy/boards UI,
+ * and the doc generator.
+ */
 export function effectiveTransport(
   network: NetworkConfig | undefined,
-  boardHasEthernet: boolean,
+  supportedTransports: readonly NetworkTransport[],
 ): NetworkTransport {
-  if (!boardHasEthernet) return 'wifi';
+  if (!supportedTransports.includes('ethernet')) return 'wifi';
   return network?.transport ?? 'ethernet';
 }
 

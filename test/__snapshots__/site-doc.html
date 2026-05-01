@@ -211,6 +211,15 @@ code {
   width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
 }
 .link-arrow { color: var(--brand); font-weight: 700; }
+.active-connection {
+  color: var(--text-muted); font-size: 12px; margin: -4px 0 12px;
+}
+.device-ref { margin: 8px 0; }
+.device-ref summary {
+  cursor: pointer; padding: 8px 12px; background: var(--bg-subtle);
+  border-radius: 6px; font-weight: 600;
+}
+.device-ref[open] summary { margin-bottom: 8px; }
 </style>
 </head>
 <body>
@@ -289,6 +298,8 @@ code {
 
 
 
+<p class="active-connection">Active connection: Ethernet · No on-device recovery if the cable drops — see Advanced for options.</p>
+
 <h3>Topology</h3>
 <div class="diagram topology">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><rect width="200" height="100" fill="#eef"/><text x="10" y="55">topology</text></svg>
@@ -327,6 +338,74 @@ code {
   <div class="safety-card"><strong>API watchdog</strong><span>Route faulted if HA disconnects for 60s</span></div>
   <div class="safety-card" style="border-left-color:#dc2626;"><strong>Safety Override</strong><span>While <code>switch.…_safety_override</code> is ON, every check above is skipped. Switch reverts to OFF on reboot.</span></div>
 </div>
+
+<h2>Advanced</h2>
+<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Per-board operational reference. Expand for connection options, recovery procedures, and how to reach the device when the network is down. One entry per unique board model used in this site.</p>
+<details class="device-ref">
+  <summary>KC868-A16 — Network &amp; Recovery</summary>
+  <p>The KC868-A16 supports both <strong>Ethernet (LAN8720 PHY)</strong> and <strong>WiFi</strong>. ESPHome enforces XOR — exactly one transport is active per device. Pick one in MajiFlow&#39;s <em>Connection</em> panel; the choice is baked into the firmware at flash time.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Ethernet</th>
+<th>WiFi</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Default for this board</strong></td>
+<td>✓</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>Speed / reliability</strong></td>
+<td>Wired, deterministic</td>
+<td>Depends on RF environment</td>
+</tr>
+<tr>
+<td><strong>Credentials needed</strong></td>
+<td>None</td>
+<td>SSID + password</td>
+</tr>
+<tr>
+<td><strong>Diagnostic sensor</strong></td>
+<td><code>ethernet_info</code> (IP)</td>
+<td><code>wifi_info</code> (IP, SSID, MAC) + <code>wifi_signal</code> (dBm)</td>
+</tr>
+<tr>
+<td><strong>Static IP support</strong></td>
+<td>✓ via <em>Connection → IP Configuration</em></td>
+<td>✓ same panel</td>
+</tr>
+<tr>
+<td><strong>Fallback when network is down</strong></td>
+<td><strong>None</strong> — device is unreachable until cable is replugged</td>
+<td>SoftAP starts automatically</td>
+</tr>
+</tbody></table>
+<h3>Recovery path on WiFi transport</h3>
+<p>When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot:</p>
+<ul>
+<li><strong>SoftAP SSID</strong>: <code>&lt;friendly_name&gt; Fallback</code> — derived from the device&#39;s friendly name in MajiFlow. For example, a device named <em>Pump Controller</em> broadcasts as <code>Pump Controller Fallback</code>.</li>
+<li><strong>SoftAP password</strong>: identical to your <code>wifi_password</code> — one credential to remember.</li>
+<li><strong>Default gateway</strong>: <strong><code>192.168.4.1</code></strong> — visit <code>http://192.168.4.1/</code> in a browser for the full web dashboard.</li>
+<li>Phones and laptops also auto-popup ESPHome&#39;s captive portal at this address, where you can rotate WiFi credentials without re-flashing.</li>
+</ul>
+<h3>Recovery path on Ethernet transport</h3>
+<p>There is no on-device recovery. Options:</p>
+<ol>
+<li>Plug the cable back in.</li>
+<li>Switch transport to WiFi in MajiFlow → re-flash → use the WiFi fallback above.</li>
+</ol>
+<h3>Web dashboard</h3>
+<p>Always emitted alongside the chosen transport. Reachable at:</p>
+<ul>
+<li><code>http://&lt;device-ip&gt;/</code> on the home network — the IP shown in <code>ethernet_info</code> or <code>wifi_info</code>.</li>
+<li><code>http://192.168.4.1/</code> on the fallback AP — <strong>WiFi transport only</strong>.</li>
+</ul>
+<p>Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control — nothing extra to configure.</p>
+
+</details>
 
 <h2>Firmware Safety Model</h2>
 <p>All safety logic runs on the ESP32 — no server dependency. Each controller operates independently with the same state machine and watchdog behavior.</p>

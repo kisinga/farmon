@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { nodesByKind, nodesWithFlag, type Manifest, type LinkData, type Route, type PinOverlayData, LOGO_SVG_SMALL } from '@far-mon/core';
-import { TEMPLATES_DIR, compileFile } from '../../../packages/core/src/templates/hbs.js';
+import { nodesByKind, nodesWithFlag, type Manifest, type LinkData, type NetworkTransport, type Route, type PinOverlayData, LOGO_SVG_SMALL } from '@far-mon/core';
+import { TEMPLATES_DIR, PARTIALS_DIR, compileFile } from '../../../packages/core/src/templates/hbs.js';
 
 // Boundary colors — same cycle as canvas boundary-renderer
 const BOUNDARY_COLORS = ['#0284C7', '#059669', '#D97706', '#DC2626', '#7C3AED', '#DB2777'];
@@ -26,7 +26,16 @@ export interface PinTableRow {
 export interface SiteDocSystem {
   systemId: string;
   friendlyName: string;
+  /** Board model id, kebab-case (matches the board directory and partial path). */
   board: string;
+  /** Human-readable label for the board (e.g. "KC868-A16"). Falls back to `board` if absent. */
+  boardLabel?: string;
+  /**
+   * Resolved network transport this controller is using. Computed once at the
+   * IPC boundary from `effectiveTransport(network, boardSupportedTransports(board))`
+   * — the doc generator never re-derives it.
+   */
+  activeTransport?: NetworkTransport;
   deviceName: string;
   manifest: Manifest;
   boardSvg?: string;
@@ -192,6 +201,13 @@ export function generateSiteDocumentation(
 </script>`;
     }
 
+    // Resolved transport is provided by the IPC layer (see SiteDocSystem.activeTransport).
+    const activeConnection = s.activeTransport === 'wifi'
+      ? `Active connection: WiFi · Fallback: ${s.friendlyName} Fallback at 192.168.4.1 (password = WiFi password).`
+      : s.activeTransport === 'ethernet'
+        ? 'Active connection: Ethernet · No on-device recovery if the cable drops — see Advanced for options.'
+        : '';
+
     return {
       friendlyName: s.friendlyName,
       board: s.board,
@@ -204,7 +220,24 @@ export function generateSiteDocumentation(
       timing: s.manifest.timing,
       routeEntities: s.manifest.routes.map((r, ri) => ({ index: ri, name: r.name })),
       tankCalEntities: levelSensors.map(t => ({ id: t['id'], name: t['name'] })),
+      activeConnection,
     };
+  });
+
+  // Device Reference: one entry per unique board model used in the site.
+  // Boards without a `boards/<model>/network.hbs` partial gracefully drop out.
+  const seen = new Set<string>();
+  const deviceReferences = systems.flatMap(s => {
+    if (seen.has(s.board)) return [];
+    seen.add(s.board);
+    const partial = `boards/${s.board}/network`;
+    const partialPath = path.join(PARTIALS_DIR, `${partial}.hbs`);
+    if (!fs.existsSync(partialPath)) return [];
+    return [{
+      board: s.board,
+      boardLabel: s.boardLabel ?? s.board,
+      partial,
+    }];
   });
 
   // Aggregate flags for installation guidelines
@@ -237,6 +270,8 @@ export function generateSiteDocumentation(
     hasAutomations: automationGroups.length > 0,
     automationGroups,
     controllerDetails,
+    deviceReferences,
+    hasDeviceReferences: deviceReferences.length > 0,
     hasFlowSensors,
     hasValves,
     hasTanks,

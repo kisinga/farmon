@@ -16,7 +16,7 @@ import { enrichPerSystemInterconnects } from '@far-mon/core';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { FormsModule } from '@angular/forms';
 import type { ToolchainInfo, SerialDevice, GenerationMeta, GenerationType } from '../../core/models/electron-api';
-import { effectiveTransport, type NetworkConfig } from '@far-mon/core';
+import { boardSupportedTransports, effectiveTransport, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
 
 type ActiveTab = 'docs' | 'firmware' | 'ha' | 'serial';
 
@@ -170,7 +170,7 @@ interface TerminalLine {
                 [ssid]="secrets().wifi_ssid"
                 [password]="secrets().wifi_password"
                 [network]="selectedNetwork()"
-                [boardHasEthernet]="boardHasEthernet()"
+                [supportedTransports]="supportedTransports()"
                 (ssidChange)="updateSecret('wifi_ssid', $event)"
                 (passwordChange)="updateSecret('wifi_password', $event)"
                 (networkChange)="updateNetwork($event)"
@@ -700,7 +700,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   private secretsSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected transport = computed(() =>
-    effectiveTransport(this.selectedNetwork(), this.boardHasEthernet())
+    effectiveTransport(this.selectedNetwork(), this.supportedTransports())
   );
 
   protected secretsHasPlaceholders = computed(() => {
@@ -747,9 +747,9 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     return this.workspace.systems().get(id)?.topology.device.network;
   });
 
-  protected boardHasEthernet = computed(() => {
+  protected supportedTransports = computed<readonly NetworkTransport[]>(() => {
     const board = this.boards.activeBoard();
-    return !!board?.peripherals?.ethernet;
+    return board ? boardSupportedTransports(board) : ['wifi'];
   });
 
   protected updateNetwork(network: NetworkConfig) {

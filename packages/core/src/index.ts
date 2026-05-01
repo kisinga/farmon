@@ -18,6 +18,7 @@ export { effectiveTransport } from './topology.types';
 export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
+export { boardSupportedTransports } from './board.types';
 export type { IoProviderDef } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
 export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext, TypedDescriptor, EntityKind } from './entity-registry';

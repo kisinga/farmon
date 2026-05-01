@@ -429,6 +429,17 @@ assert(!kcBoardPkgEth.includes("wifi:"), "transport=ethernet: no wifi");
 assert(kcBoardPkgEth.includes("ethernet_info"), "transport=ethernet: has ethernet_info text_sensor");
 assert(!kcBoardPkgEth.includes("wifi_dbm"), "transport=ethernet: no wifi_signal sensor");
 
+// Self-describing introspection sensors so HA/web_server can show the device's
+// network model without inferring from the YAML.
+assert(kcBoardPkg.includes("transport_supported"), "Has transport_supported template text_sensor");
+assert(kcBoardPkg.includes("transport_active"), "Has transport_active template text_sensor");
+assert(kcBoardPkg.includes('std::string("ethernet,wifi")'), "transport_supported reports both capabilities for ethernet board");
+assert(kcBoardPkg.includes('std::string("ethernet")'), "transport_active reports the active transport (ethernet by default)");
+assert(kcBoardPkgWifi.includes('std::string("wifi")'), "transport_active reports wifi when forced");
+// Single text_sensor: block per device — guards against the YAML key collision regression.
+const ethTextSensorBlocks = (kcBoardPkg.match(/^text_sensor:/gm) ?? []).length;
+assert(ethTextSensorBlocks === 1, `Single text_sensor: top-level block (got ${ethTextSensorBlocks})`);
+
 // RS485 bus pin reservation
 console.log("\nRS485 pin reservation:");
 const kcReserved = reservedPins(kcBoard);

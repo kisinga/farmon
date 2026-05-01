@@ -15,6 +15,15 @@
   width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
 }
 .link-arrow { color: var(--brand); font-weight: 700; }
+.active-connection {
+  color: var(--text-muted); font-size: 12px; margin: -4px 0 12px;
+}
+.device-ref { margin: 8px 0; }
+.device-ref summary {
+  cursor: pointer; padding: 8px 12px; background: var(--bg-subtle);
+  border-radius: 6px; font-weight: 600;
+}
+.device-ref[open] summary { margin-bottom: 8px; }
 </style>
 </head>
 <body>
@@ -147,6 +156,8 @@
 </div>
 {{/unless}}
 
+{{#if this.activeConnection}}<p class="active-connection">{{this.activeConnection}}</p>{{/if}}
+
 {{#if this.topologySvg}}
 <h3>Topology</h3>
 <div class="diagram topology">
@@ -214,6 +225,17 @@
   <div class="safety-card" style="border-left-color:#dc2626;"><strong>Safety Override</strong><span>While <code>switch.…_safety_override</code> is ON, every check above is skipped. Switch reverts to OFF on reboot.</span></div>
 </div>
 {{/each}}
+
+{{#if hasDeviceReferences}}
+<h2>Advanced</h2>
+<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Per-board operational reference. Expand for connection options, recovery procedures, and how to reach the device when the network is down. One entry per unique board model used in this site.</p>
+{{#each deviceReferences}}
+<details class="device-ref">
+  <summary>{{this.boardLabel}} — Network &amp; Recovery</summary>
+  {{{md this.partial}}}
+</details>
+{{/each}}
+{{/if}}
 
 <h2>Firmware Safety Model</h2>
 <p>All safety logic runs on the ESP32 — no server dependency. Each controller operates independently with the same state machine and watchdog behavior.</p>

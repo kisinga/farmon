@@ -1,0 +1,35 @@
+The KC868-A16 supports both **Ethernet (LAN8720 PHY)** and **WiFi**. ESPHome enforces XOR — exactly one transport is active per device. Pick one in MajiFlow's *Connection* panel; the choice is baked into the firmware at flash time.
+
+| | Ethernet | WiFi |
+|---|---|---|
+| **Default for this board** | ✓ | |
+| **Speed / reliability** | Wired, deterministic | Depends on RF environment |
+| **Credentials needed** | None | SSID + password |
+| **Diagnostic sensor** | `ethernet_info` (IP) | `wifi_info` (IP, SSID, MAC) + `wifi_signal` (dBm) |
+| **Static IP support** | ✓ via *Connection → IP Configuration* | ✓ same panel |
+| **Fallback when network is down** | **None** — device is unreachable until cable is replugged | SoftAP starts automatically |
+
+### Recovery path on WiFi transport
+
+When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot:
+
+- **SoftAP SSID**: `<friendly_name> Fallback` — derived from the device's friendly name in MajiFlow. For example, a device named *Pump Controller* broadcasts as `Pump Controller Fallback`.
+- **SoftAP password**: identical to your `wifi_password` — one credential to remember.
+- **Default gateway**: **`192.168.4.1`** — visit `http://192.168.4.1/` in a browser for the full web dashboard.
+- Phones and laptops also auto-popup ESPHome's captive portal at this address, where you can rotate WiFi credentials without re-flashing.
+
+### Recovery path on Ethernet transport
+
+There is no on-device recovery. Options:
+
+1. Plug the cable back in.
+2. Switch transport to WiFi in MajiFlow → re-flash → use the WiFi fallback above.
+
+### Web dashboard
+
+Always emitted alongside the chosen transport. Reachable at:
+
+- `http://<device-ip>/` on the home network — the IP shown in `ethernet_info` or `wifi_info`.
+- `http://192.168.4.1/` on the fallback AP — **WiFi transport only**.
+
+Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control — nothing extra to configure.

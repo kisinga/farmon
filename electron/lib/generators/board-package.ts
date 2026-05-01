@@ -1,10 +1,9 @@
 import { stringify, Scalar } from "yaml";
 import type { BoardDef } from "../board.js";
-import { effectiveTransport, type NetworkConfig } from "@far-mon/core";
+import { boardSupportedTransports, effectiveTransport, type NetworkConfig } from "@far-mon/core";
 import {
   emitConnectionProfile,
   emitTransportSignalSensor,
-  emitTransportInfoTextSensor,
 } from "./networking.js";
 
 /** Create a YAML !secret tagged scalar — serializes as `!secret name` (unquoted). */
@@ -43,7 +42,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   // --- Connection (transport + IP + dashboard) ---
   // Compute transport once and reuse for diagnostic sensors so they always
   // match the active transport (ethernet_info / wifi_info / wifi_signal).
-  const transport = effectiveTransport(network, !!board.peripherals.ethernet);
+  const transport = effectiveTransport(network, boardSupportedTransports(board));
   sections.push(...emitConnectionProfile(board, network));
 
   sections.push({
@@ -235,8 +234,8 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
 
   sections.push({ sensor: sensors });
 
-  // --- Text sensors (diagnostics) ---
-  sections.push(emitTransportInfoTextSensor(transport));
+  // Text-sensor diagnostics are emitted by emitConnectionProfile alongside
+  // the transport block — keeps networking concerns in one place.
 
   // --- Battery ADC enable interval (only if battery present) ---
   if (board.peripherals.battery) {

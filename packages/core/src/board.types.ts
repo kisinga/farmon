@@ -65,6 +65,17 @@ export interface BoardDef {
 // Helpers
 // ---------------------------------------------------------------------------
 
+import type { NetworkTransport } from './topology.types';
+
+/**
+ * Network transports the board's hardware supports. Wifi is always available
+ * on ESP32; ethernet only when an ethernet PHY is configured. Returned in
+ * stable order — useful directly as a YAML/UI/diagnostic list.
+ */
+export function boardSupportedTransports(board: BoardDef): NetworkTransport[] {
+  return board.peripherals.ethernet ? ['ethernet', 'wifi'] : ['wifi'];
+}
+
 export function reservedPins(board: BoardDef): Map<string, string> {
   const reserved = new Map<string, string>();
   const p = board.peripherals;
