@@ -63,7 +63,7 @@ import { isApiKeyValid } from '../../core/models/firmware-secrets';
             @if (transport() === 'ethernet') {
               No on-device recovery if the cable drops — switch transport &amp; re-flash to regain access.
             } @else {
-              Fallback AP <span class="font-mono">&lt;device&gt; Fallback</span> (same password as WiFi) exposes the captive portal at <span class="font-mono">192.168.4.1</span> for re-entering credentials and OTA updates. The entity dashboard is served only on the home network at <span class="font-mono">http://&lt;device&gt;.local/</span>.
+              Fallback AP <span class="font-mono">&lt;device&gt; Fallback</span> (same password as WiFi) starts after ~1 min of failed STA. Connect your phone to that SSID — the captive portal pops automatically for WiFi credential reset and OTA upload. Entity dashboard at <span class="font-mono">http://&lt;device&gt;.local/</span> on the home network (entities don't actuate while in fallback mode).
             }
           </p>
         </div>
@@ -172,7 +172,7 @@ import { isApiKeyValid } from '../../core/models/firmware-secrets';
         @if (showSecurityKeys()) {
           <div class="px-5 pb-4 space-y-3">
             <p class="text-[11px] text-base-content/50">
-              The fallback AP <span class="font-mono">&lt;device&gt; Fallback</span> reuses your WiFi password. The captive portal at <span class="font-mono">192.168.4.1</span> only re-collects WiFi credentials &amp; accepts OTA uploads — the entity dashboard is reachable only on the home network.
+              The fallback AP <span class="font-mono">&lt;device&gt; Fallback</span> reuses your WiFi password. Connecting a phone to that SSID auto-pops the captive portal at <span class="font-mono">192.168.4.1</span> for WiFi credential reset + OTA upload.
             </p>
             <div class="flex flex-col gap-1">
               <span class="text-xs font-medium">OTA Password</span>

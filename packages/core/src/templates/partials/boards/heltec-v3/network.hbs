@@ -10,18 +10,18 @@ The Heltec WiFi LoRa 32 V3 is a **WiFi-only** board — no ethernet PHY. ESPHome
 
 ### Recovery path
 
-When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot:
+When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot after **~90 seconds** of failed station association ([`wifi.ap_timeout`](https://esphome.io/components/wifi.html) default). MajiFlow does not currently override this — if you need faster recovery during commissioning, edit the generated YAML to add `wifi.ap_timeout: 30s` before flashing.
 
 - **SoftAP SSID**: `<friendly_name> Fallback` — the device's friendly name from MajiFlow.
 - **SoftAP password**: identical to your `wifi_password` — one credential to remember.
-- **Default gateway**: **`192.168.4.1`** — phones and laptops auto-popup ESPHome's captive portal here. Use it to **re-enter WiFi credentials** or **push an OTA firmware update**; the entity dashboard is *not* served on the SoftAP (ESPHome's `web_server` binds to the STA interface only — see [esphome-core#4333](https://github.com/esphome/esphome/issues/4333)). The dashboard returns once the device successfully rejoins the home network.
+- **Default gateway**: **`192.168.4.1`** — connect your phone/laptop to the SoftAP first, then the OS pops the captive-portal page automatically. Use it to **re-enter WiFi credentials** (`/wifisave`) or **push an OTA firmware update** (`/update`). Typing `http://192.168.4.1/` directly may land on the entity dashboard instead of the wifi-recovery page (known ESPHome ordering quirk — [#11132](https://github.com/esphome/esphome/issues/11132), [#14856](https://github.com/esphome/esphome/issues/14856)); the captive-portal *routes* still work, just navigate via the OS popup.
 
 ### Web dashboard
 
-**STA-only** — ESPHome's `web_server` binds to the home-network interface, not to the SoftAP. Reachable at:
+Emitted on **port 80**. Reachable at:
 
 - `http://<device-ip>/` on the home network — IP shown in `wifi_info`.
-- *Not* available at `192.168.4.1`. The fallback AP serves only the captive portal (WiFi setup + OTA upload).
+- `http://192.168.4.1/` on the fallback AP — but entity controls won't function without STA (no time, no API). Use the captive-portal popup for credential reset; return to the home-network IP once the device reconnects.
 
 Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control.
 

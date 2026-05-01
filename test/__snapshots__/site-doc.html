@@ -403,11 +403,11 @@ a.xref:hover { border-bottom-style: solid; }
 </tr>
 </tbody></table>
 <h3>Recovery path on WiFi transport</h3>
-<p>When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot:</p>
+<p>When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot after <strong>~90 seconds</strong> of failed station association (<a href="https://esphome.io/components/wifi.html"><code>wifi.ap_timeout</code></a> default). MajiFlow does not currently override this — if you need faster recovery during commissioning, edit the generated YAML to add <code>wifi.ap_timeout: 30s</code> before flashing.</p>
 <ul>
 <li><strong>SoftAP SSID</strong>: <code>&lt;friendly_name&gt; Fallback</code> — derived from the device&#39;s friendly name in MajiFlow. For example, a device named <em>Pump Controller</em> broadcasts as <code>Pump Controller Fallback</code>.</li>
 <li><strong>SoftAP password</strong>: identical to your <code>wifi_password</code> — one credential to remember.</li>
-<li><strong>Default gateway</strong>: <strong><code>192.168.4.1</code></strong> — phones and laptops auto-popup ESPHome&#39;s captive portal here. Use it to <strong>re-enter WiFi credentials</strong> or <strong>push an OTA firmware update</strong>; the entity dashboard is <em>not</em> served on the SoftAP (ESPHome&#39;s <code>web_server</code> binds to the STA interface only — see <a href="https://github.com/esphome/esphome/issues/4333">esphome-core#4333</a>). The dashboard returns once the device successfully rejoins the home network.</li>
+<li><strong>Default gateway</strong>: <strong><code>192.168.4.1</code></strong> — connect your phone/laptop to the SoftAP first, then the OS pops the captive-portal page automatically (Android/iOS detect it via <code>/generate_204</code>, <code>/hotspot-detect.html</code>, etc.). Use it to <strong>re-enter WiFi credentials</strong> (<code>/wifisave</code>) or <strong>push an OTA firmware update</strong> (<code>/update</code>). Note: typing <code>http://192.168.4.1/</code> directly may land on the entity dashboard instead of the wifi-recovery page — this is a known ESPHome ordering quirk (<a href="https://github.com/esphome/esphome/issues/11132">#11132</a>, <a href="https://github.com/esphome/esphome/issues/14856">#14856</a>) where <code>web_server</code>&#39;s catch-all shadows the captive-portal index. The captive-portal <em>routes</em> still work; just navigate via the OS popup.</li>
 </ul>
 <h3>Recovery path on Ethernet transport</h3>
 <p>There is no on-device recovery. Options:</p>
@@ -416,10 +416,10 @@ a.xref:hover { border-bottom-style: solid; }
 <li>Switch transport to WiFi in MajiFlow → re-flash → use the WiFi fallback above.</li>
 </ol>
 <h3>Web dashboard</h3>
-<p>Always emitted alongside the chosen transport, but <strong>STA-only</strong> — ESPHome&#39;s <code>web_server</code> binds to the home-network interface, not to the SoftAP. Reachable at:</p>
+<p>Always emitted on <strong>port 80</strong> alongside the chosen transport. Reachable at:</p>
 <ul>
 <li><code>http://&lt;device-ip&gt;/</code> on the home network — the IP shown in <code>ethernet_info</code> or <code>wifi_info</code>.</li>
-<li><em>Not</em> available at <code>192.168.4.1</code>. The fallback AP serves only the captive portal (WiFi setup + OTA upload), not the entity dashboard.</li>
+<li><code>http://192.168.4.1/</code> on the fallback AP — but entity controls won&#39;t function until WiFi rejoins (no STA = no time, no MQTT, no API). Use the captive-portal popup for credential reset; come back to the dashboard at the home-network IP after the device reconnects.</li>
 </ul>
 <p>Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control — nothing extra to configure.</p>
 
@@ -697,7 +697,7 @@ a.xref:hover { border-bottom-style: solid; }
 <td>LAN8720 link detected</td>
 </tr>
 </tbody></table>
-<p>The test runs once on boot, then idles — the device exposes every entity for <strong>manual control</strong> via the web dashboard at the device&#39;s home-network IP. Press the <em>Run Tests</em> button on the dashboard to re-trigger a cycle. (The dashboard is STA-only; if the device drops to the fallback AP at <code>192.168.4.1</code>, only the captive portal is reachable — fix WiFi credentials there and rejoin the home network to regain dashboard access.)</p>
+<p>The test runs once on boot, then idles — the device exposes every entity for <strong>manual control</strong> via the web dashboard at the device&#39;s home-network IP (or <code>192.168.4.1</code> in fallback AP mode, though entities won&#39;t actuate without STA). Press the <em>Run Tests</em> button on the dashboard to re-trigger a cycle.</p>
 
 
 <h2>Troubleshooting &amp; Recovery</h2>

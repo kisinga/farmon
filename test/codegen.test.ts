@@ -397,6 +397,11 @@ assert(!kcBoardPkg.includes("clk_mode"), "No deprecated clk_mode key");
 assert(!kcBoardPkg.includes("wifi:"), "No wifi: section (ethernet board, default transport)");
 assert(!kcBoardPkg.includes("captive_portal"), "No captive_portal (no wifi)");
 assert(kcBoardPkg.includes("web_server:"), "Has web_server: dashboard for in-browser control");
+// web_server MUST stay on port 80: ESPHome's web_server_base is a singleton
+// AsyncWebServer shared with captive_portal. Moving it to another port
+// removes any HTTP listener from 192.168.4.1:80 → fallback AP captive
+// portal silently breaks. (See networking.ts emitWebServer comment.)
+assert(kcBoardPkg.includes("port: 80"), "web_server pinned to port 80 — required for fallback AP captive portal");
 assert(kcBoardPkg.includes("pcf8574:"), "Has pcf8574: expander declarations");
 assert(kcBoardPkg.includes("pcf8575: false"), "Explicit pcf8575: false on expanders");
 assert(kcBoardPkg.includes("0x24"), "PCF8574 output expander 1 address");

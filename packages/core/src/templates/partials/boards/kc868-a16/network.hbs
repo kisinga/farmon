@@ -11,11 +11,11 @@ The KC868-A16 supports both **Ethernet (LAN8720 PHY)** and **WiFi**. ESPHome enf
 
 ### Recovery path on WiFi transport
 
-When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot:
+When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot after **~90 seconds** of failed station association ([`wifi.ap_timeout`](https://esphome.io/components/wifi.html) default). MajiFlow does not currently override this — if you need faster recovery during commissioning, edit the generated YAML to add `wifi.ap_timeout: 30s` before flashing.
 
 - **SoftAP SSID**: `<friendly_name> Fallback` — derived from the device's friendly name in MajiFlow. For example, a device named *Pump Controller* broadcasts as `Pump Controller Fallback`.
 - **SoftAP password**: identical to your `wifi_password` — one credential to remember.
-- **Default gateway**: **`192.168.4.1`** — phones and laptops auto-popup ESPHome's captive portal here. Use it to **re-enter WiFi credentials** or **push an OTA firmware update**; the entity dashboard is *not* served on the SoftAP (ESPHome's `web_server` binds to the STA interface only — see [esphome-core#4333](https://github.com/esphome/esphome/issues/4333)). The dashboard returns once the device successfully rejoins the home network.
+- **Default gateway**: **`192.168.4.1`** — connect your phone/laptop to the SoftAP first, then the OS pops the captive-portal page automatically (Android/iOS detect it via `/generate_204`, `/hotspot-detect.html`, etc.). Use it to **re-enter WiFi credentials** (`/wifisave`) or **push an OTA firmware update** (`/update`). Note: typing `http://192.168.4.1/` directly may land on the entity dashboard instead of the wifi-recovery page — this is a known ESPHome ordering quirk ([#11132](https://github.com/esphome/esphome/issues/11132), [#14856](https://github.com/esphome/esphome/issues/14856)) where `web_server`'s catch-all shadows the captive-portal index. The captive-portal *routes* still work; just navigate via the OS popup.
 
 ### Recovery path on Ethernet transport
 
@@ -26,9 +26,9 @@ There is no on-device recovery. Options:
 
 ### Web dashboard
 
-Always emitted alongside the chosen transport, but **STA-only** — ESPHome's `web_server` binds to the home-network interface, not to the SoftAP. Reachable at:
+Always emitted on **port 80** alongside the chosen transport. Reachable at:
 
 - `http://<device-ip>/` on the home network — the IP shown in `ethernet_info` or `wifi_info`.
-- *Not* available at `192.168.4.1`. The fallback AP serves only the captive portal (WiFi setup + OTA upload), not the entity dashboard.
+- `http://192.168.4.1/` on the fallback AP — but entity controls won't function until WiFi rejoins (no STA = no time, no MQTT, no API). Use the captive-portal popup for credential reset; come back to the dashboard at the home-network IP after the device reconnects.
 
 Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control — nothing extra to configure.

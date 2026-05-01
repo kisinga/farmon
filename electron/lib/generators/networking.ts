@@ -44,11 +44,9 @@ function emitEthernet(eth: EthernetDef, manualIp?: ManualIp): Record<string, unk
 }
 
 function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
-  // The SoftAP reuses the user's wifi password — one credential for both
-  // the home network and the fallback hotspot. The captive portal at
-  // 192.168.4.1 only serves WiFi setup + OTA upload (ESPHome's web_server
-  // is bound to STA, not the SoftAP — see esphome-core#4333). The entity
-  // dashboard is reachable only at the device's STA IP on the home network.
+  // SoftAP reuses the WiFi password (one credential to remember). When
+  // STA fails for ~1 min, ESPHome activates the AP at 192.168.4.1 and
+  // serves the captive portal there for re-entering creds + OTA upload.
   return [
     {
       wifi: {
@@ -65,6 +63,21 @@ function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
   ];
 }
 
+// `web_server_base` is a SINGLETON in ESPHome — one AsyncWebServer
+// instance shared by web_server + captive_portal. Setting `port:` here
+// changes the singleton's port; it does NOT spawn a second base. So
+// keep this on 80, otherwise nothing listens on 192.168.4.1:80 in
+// fallback AP mode and the OS captive-portal popup never fires.
+//
+// Known cosmetic issue (esphome#11132, #14856 — open, unresolved):
+// in AP mode `http://192.168.4.1/` shows web_server's entity index
+// instead of the wifi-recovery page because web_server's catch-all
+// handler beats captive_portal's `/`. The OS-level captive-portal
+// detection routes (`/generate_204`, `/hotspot-detect.html`, …) are
+// still owned by captive_portal::canHandle, so phones DO auto-popup
+// the recovery page; `/wifisave` and `/update` still work for manual
+// credential reset + OTA. Acceptable trade-off for keeping the entity
+// dashboard available on STA at port 80.
 function emitWebServer(): Record<string, unknown> {
   return { web_server: { port: 80, version: 3 } };
 }
