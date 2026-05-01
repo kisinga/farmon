@@ -1,6 +1,6 @@
 import {
   Component, inject, OnInit, OnDestroy, signal, computed,
-  ElementRef, ViewChild, AfterViewChecked, NgZone, Injector, effect, AfterViewInit,
+  ElementRef, ViewChild, NgZone, Injector, AfterViewInit,
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DomSanitizer } from '@angular/platform-browser';
@@ -10,12 +10,16 @@ import { BoardService } from '../../core/services/board.service';
 import { ValidationPanelComponent } from '../../shared/validation-panel/validation-panel.component';
 import { SerialMonitorComponent } from '../../shared/serial-monitor/serial-monitor.component';
 import { ConnectivityConfigComponent } from '../../shared/connectivity-config/connectivity-config.component';
+import { FirmwareFilesTableComponent } from '../../shared/firmware-files-table/firmware-files-table.component';
+import { FirmwareBuildPanelComponent } from '../../shared/firmware-build-panel/firmware-build-panel.component';
 import { TopologyRenderer } from '../../shared/canvas/topology-renderer';
 import { renderCompositeOverlays, renderPerSystemOverlays } from '../../shared/canvas/topology-overlays';
 import { enrichPerSystemInterconnects } from '@far-mon/core';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { FormsModule } from '@angular/forms';
-import type { ToolchainInfo, SerialDevice, GenerationMeta, GenerationType } from '../../core/models/electron-api';
+import type { ToolchainInfo, GenerationMeta } from '../../core/models/electron-api';
+import { type FirmwareSecrets, EMPTY_FIRMWARE_SECRETS, isApiKeyValid } from '../../core/models/firmware-secrets';
+import { randomBase64, randomHex } from '../../core/util/random-keys';
 import { boardSupportedTransports, effectiveTransport, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
 
 type ActiveTab = 'docs' | 'firmware' | 'ha' | 'serial';
@@ -26,15 +30,17 @@ interface FileEntry {
   lines: number;
 }
 
-interface TerminalLine {
-  text: string;
-  stream: 'stdout' | 'stderr' | 'system';
-}
-
 @Component({
   selector: 'app-deploy-page',
   standalone: true,
-  imports: [ValidationPanelComponent, SerialMonitorComponent, ConnectivityConfigComponent, FormsModule],
+  imports: [
+    ValidationPanelComponent,
+    SerialMonitorComponent,
+    ConnectivityConfigComponent,
+    FirmwareFilesTableComponent,
+    FirmwareBuildPanelComponent,
+    FormsModule,
+  ],
   host: { class: 'flex-1 flex flex-col overflow-hidden' },
   template: `
     <div class="flex-1 flex flex-col min-h-0">
@@ -165,65 +171,22 @@ interface TerminalLine {
             }
 
             @if (selectedSystemId()) {
-              <!-- Network & Credentials — unified card -->
+              <!-- Network, credentials, security keys — single card -->
               <app-connectivity-config
                 [ssid]="secrets().wifi_ssid"
                 [password]="secrets().wifi_password"
                 [network]="selectedNetwork()"
                 [supportedTransports]="supportedTransports()"
+                [apiKey]="secrets().api_key"
+                [otaPassword]="secrets().ota_password"
                 (ssidChange)="updateSecret('wifi_ssid', $event)"
                 (passwordChange)="updateSecret('wifi_password', $event)"
                 (networkChange)="updateNetwork($event)"
+                (apiKeyChange)="updateSecret('api_key', $event)"
+                (otaPasswordChange)="updateSecret('ota_password', $event)"
+                (regenerateApiKey)="regenerateKey('api_key')"
+                (regenerateOtaPassword)="regenerateKey('ota_password')"
               />
-              <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
-                <!-- Security Keys (collapsible) -->
-                <div class="border-t border-base-300/30">
-                  <button class="flex items-center justify-between w-full px-5 py-3 text-left hover:bg-base-200/30 transition-colors"
-                    (click)="showSecurityKeys.set(!showSecurityKeys())">
-                    <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Security Keys</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-base-content/40 transition-transform"
-                      [class.rotate-180]="showSecurityKeys()" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  @if (showSecurityKeys()) {
-                    <div class="px-5 pb-4 space-y-3">
-                      <p class="text-[11px] text-base-content/50">
-                        The fallback AP <span class="font-mono">&lt;device&gt; Fallback</span> reuses your WiFi password. When the device cannot reach its network, connect to this AP and visit <span class="font-mono">192.168.4.1</span> for full controls.
-                      </p>
-                      <div class="flex flex-col gap-1">
-                        <span class="text-xs font-medium">OTA Password</span>
-                        <div class="join w-full">
-                          <input type="text" class="input input-bordered input-sm font-mono text-sm join-item flex-1"
-                            [ngModel]="secrets().ota_password"
-                            (ngModelChange)="updateSecret('ota_password', $event)" />
-                          <button class="btn btn-ghost btn-sm join-item border border-base-300" (click)="regenerateKey('ota_password')" title="Regenerate">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      <div class="flex flex-col gap-1">
-                        <span class="text-xs font-medium">API Encryption Key</span>
-                        <div class="join w-full">
-                          <input type="text" class="input input-bordered input-sm font-mono text-sm join-item flex-1"
-                            [ngModel]="secrets().api_key"
-                            (ngModelChange)="updateSecret('api_key', $event)" />
-                          <button class="btn btn-ghost btn-sm join-item border border-base-300" (click)="regenerateKey('api_key')" title="Regenerate">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd" />
-                            </svg>
-                          </button>
-                        </div>
-                        @if (!secretsApiKeyValid()) {
-                          <span class="text-warning text-[10px]">Must be valid base64 (32 bytes)</span>
-                        }
-                      </div>
-                    </div>
-                  }
-                </div>
-              </div>
               <!-- Validation summary -->
               <div class="bg-base-100 rounded-xl border border-base-300/40 px-5 py-3.5">
                 <h3 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider mb-3">Validation</h3>
@@ -256,37 +219,12 @@ interface TerminalLine {
                 </div>
 
                 @if (fwFiles().length > 0) {
-                  <div class="border-t border-base-300/30 px-5 py-3 bg-base-200/30">
-                    <table class="table table-xs">
-                      <thead>
-                        <tr>
-                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">File</th>
-                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Description</th>
-                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold text-right">Lines</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (f of fwFiles(); track f.path) {
-                          <tr class="hover cursor-pointer" (click)="openFile(f.path)">
-                            <td class="font-mono text-[11px] text-primary/70 underline decoration-primary/30">{{ f.path }}</td>
-                            <td class="text-[11px] text-base-content/50">{{ f.description }}</td>
-                            <td class="text-right text-[11px] tabular-nums text-base-content/60">{{ f.lines }}</td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                    @if (fwOutputDir()) {
-                      <div class="flex items-center gap-2 mt-2">
-                        <span class="text-xs text-base-content/50 font-mono truncate flex-1">{{ fwOutputDir() }}</span>
-                        <button class="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-base-content" (click)="openOutputFolder()">
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-                          </svg>
-                          Open
-                        </button>
-                      </div>
-                    }
-                  </div>
+                  <app-firmware-files-table
+                    [files]="fwFiles()"
+                    [outputDir]="fwOutputDir()"
+                    (fileClick)="openFile($event)"
+                    (openFolder)="openOutputFolder()"
+                  />
                 }
               </div>
 
@@ -354,191 +292,17 @@ interface TerminalLine {
               }
 
               <!-- Build & Deploy -->
-              <div
-                class="bg-base-100 rounded-xl border overflow-hidden transition-opacity"
-                [class.border-base-300/40]="canBuild()"
-                [class.border-warning/30]="!canBuild()"
-                [class.opacity-50]="!canBuild()"
-                [class.pointer-events-none]="!canBuild()"
-              >
-                <div class="flex items-center justify-between px-5 py-3.5">
-                  <div class="flex items-center gap-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    <div>
-                      <h2 class="font-semibold text-sm">Build & Deploy</h2>
-                      @if (!toolchain()?.esphomePath) {
-                        <p class="text-xs text-warning mt-0.5">ESPHome not found on PATH</p>
-                      } @else if (secretsHasPlaceholders()) {
-                        <p class="text-xs text-warning mt-0.5">Configure WiFi secrets above before compiling</p>
-                      } @else if (!secretsValid()) {
-                        <p class="text-xs text-warning mt-0.5">Fix secret validation errors above</p>
-                      } @else {
-                        <p class="text-xs text-base-content/60 mt-0.5">Compile firmware and flash to device</p>
-                      }
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    @if (running() && activeAction()) {
-                      <button class="btn btn-error btn-xs gap-1" (click)="cancel()">Cancel</button>
-                    }
-                    <button
-                      class="btn btn-ghost btn-xs gap-1.5 border border-base-300/50"
-                      (click)="compile()"
-                      [disabled]="!canBuild() || running()"
-                    >
-                      @if (running() && activeAction() === 'compile') {
-                        <span class="loading loading-spinner loading-xs"></span>
-                      }
-                      Compile
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Post-compile actions -->
-                @if (compileSuccess()) {
-                  <div class="border-t border-base-300/30 px-5 py-3.5 bg-base-200/30">
-                    <div class="flex items-center gap-2 mb-3">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-success" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                      </svg>
-                      <span class="text-sm font-medium text-success">Build succeeded</span>
-                    </div>
-
-                    <div class="flex flex-wrap gap-2">
-                      <!-- Flash USB -->
-                      <div class="dropdown dropdown-top">
-                        <div tabindex="0" role="button" class="btn btn-primary btn-xs gap-1" [class.btn-disabled]="running()">
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" />
-                          </svg>
-                          Flash USB
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-60" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                          </svg>
-                        </div>
-                        <div tabindex="0" class="dropdown-content bg-base-100 rounded-lg shadow-lg border border-base-300/50 p-3 w-72 mb-2 z-10">
-                          <div class="flex items-center gap-2">
-                            <select
-                              class="select select-bordered select-xs flex-1 font-mono"
-                              [disabled]="running() || serialPorts().length === 0"
-                              [value]="selectedPort()"
-                              (change)="selectedPort.set(toInputValue($event))"
-                            >
-                              @if (serialPorts().length === 0) {
-                                <option value="">No ports found</option>
-                              }
-                              @for (p of serialPorts(); track p.port) {
-                                <option [value]="p.port">{{ p.port }} -- {{ p.description }}</option>
-                              }
-                            </select>
-                            <button
-                              class="btn btn-ghost btn-xs border border-base-300/50"
-                              (click)="scanPorts()"
-                              [disabled]="scanningPorts()"
-                              title="Refresh ports"
-                            >
-                              @if (scanningPorts()) {
-                                <span class="loading loading-spinner loading-xs"></span>
-                              } @else {
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                                  <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
-                                </svg>
-                              }
-                            </button>
-                          </div>
-                          <button
-                            class="btn btn-primary btn-xs w-full mt-2"
-                            (click)="flash(selectedPort())"
-                            [disabled]="running() || !selectedPort()"
-                          >Flash</button>
-                        </div>
-                      </div>
-
-                      <!-- Flash OTA -->
-                      @if (!showOtaInput()) {
-                        <button
-                          class="btn btn-ghost btn-xs gap-1 border border-base-300/50"
-                          (click)="showOtaInput.set(true)"
-                          [disabled]="running()"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M17.778 8.222c-4.296-4.296-11.26-4.296-15.556 0A1 1 0 01.808 6.808c5.076-5.076 13.308-5.076 18.384 0a1 1 0 01-1.414 1.414zM14.95 11.05a7 7 0 00-9.9 0 1 1 0 01-1.414-1.414 9 9 0 0112.728 0 1 1 0 01-1.414 1.414zM12.12 13.88a3 3 0 00-4.242 0 1 1 0 01-1.414-1.414 5 5 0 017.07 0 1 1 0 01-1.414 1.414zM10 16a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-                          </svg>
-                          Flash OTA
-                        </button>
-                      } @else {
-                        <div class="flex items-center gap-1.5">
-                          <input
-                            type="text"
-                            class="input input-bordered input-xs w-48 font-mono"
-                            placeholder="device.local or 192.168.1.x"
-                            [value]="otaAddress()"
-                            (input)="otaAddress.set(toInputValue($event))"
-                          />
-                          <button class="btn btn-primary btn-xs" (click)="flash(otaAddress())" [disabled]="running() || !otaAddress()">Flash</button>
-                          <button class="btn btn-ghost btn-xs" (click)="showOtaInput.set(false)">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                            </svg>
-                          </button>
-                        </div>
-                      }
-
-                      <!-- Open Files -->
-                      <button class="btn btn-ghost btn-xs gap-1 border border-base-300/50" (click)="openDeviceFolder()">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-                        </svg>
-                        Open Files
-                      </button>
-                    </div>
-                  </div>
-                }
-              </div>
-
-              <!-- Terminal output -->
-              @if (terminalLines().length > 0 || running()) {
-                <div class="rounded-xl overflow-hidden border border-neutral/80">
-                  <div class="flex items-center justify-between px-4 py-2 bg-neutral">
-                    <div class="flex items-center gap-2">
-                      @if (running()) {
-                        <span class="loading loading-spinner loading-xs text-neutral-content/60"></span>
-                        <span class="text-[10px] font-mono text-neutral-content/60 uppercase tracking-wider">
-                          {{ activeAction() === 'compile' ? 'Compiling' : activeAction() === 'flash' ? 'Flashing' : 'Running' }}...
-                        </span>
-                      } @else if (terminalStatus() === 'success') {
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-success" viewBox="0 0 20 20" fill="currentColor">
-                          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                        </svg>
-                        <span class="text-[10px] font-mono text-success/80 uppercase tracking-wider">Done</span>
-                      } @else if (terminalStatus() === 'error') {
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-error" viewBox="0 0 20 20" fill="currentColor">
-                          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                        </svg>
-                        <span class="text-[10px] font-mono text-error/80 uppercase tracking-wider">Failed</span>
-                      } @else {
-                        <span class="text-[10px] font-mono text-neutral-content/40 uppercase tracking-wider">Output</span>
-                      }
-                    </div>
-                    <div class="flex items-center gap-1">
-                      @if (running()) {
-                        <button class="btn btn-ghost btn-xs text-neutral-content/40 hover:text-error" (click)="cancel()">Cancel</button>
-                      }
-                      @if (terminalLines().length > 0) {
-                        <button class="btn btn-ghost btn-xs text-neutral-content/40 hover:text-neutral-content" (click)="clearTerminal()">Clear</button>
-                      }
-                    </div>
-                  </div>
-                  <pre
-                    #terminalEl
-                    class="px-4 py-3 text-[11px] font-mono bg-neutral overflow-auto max-h-72 leading-relaxed"
-                  >@for (line of terminalLines(); track $index) {<span
-                      [class]="line.stream === 'stderr' ? 'text-warning/80' : line.stream === 'system' ? 'text-info/60 italic' : 'text-neutral-content/80'"
-                    >{{ line.text }}</span>}@if (terminalLines().length === 0 && running()) {<span class="text-neutral-content/30 italic">Waiting for output...</span>}</pre>
-                </div>
-              }
+              <app-firmware-build-panel
+                [deviceDir]="fwDeviceDir()"
+                [toolchain]="toolchain()"
+                [canBuild]="canBuild()"
+                [canBuildReason]="buildBlockedReason()"
+                [showOta]="true"
+                [showOpenFiles]="true"
+                [initialOtaAddress]="otaAddress()"
+                (errorOccurred)="fwError.set($event)"
+                (openFiles)="openDeviceFolder()"
+              />
 
               <!-- Errors -->
               @if (fwError()) {
@@ -580,37 +344,12 @@ interface TerminalLine {
               </div>
 
               @if (haFiles().length > 0) {
-                <div class="border-t border-base-300/30 px-5 py-3 bg-base-200/30">
-                  <table class="table table-xs">
-                    <thead>
-                      <tr>
-                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">File</th>
-                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Description</th>
-                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold text-right">Lines</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (f of haFiles(); track f.path) {
-                        <tr class="hover cursor-pointer" (click)="openFile(f.path)">
-                          <td class="font-mono text-[11px] text-primary/70 underline decoration-primary/30">{{ f.path }}</td>
-                          <td class="text-[11px] text-base-content/50">{{ f.description }}</td>
-                          <td class="text-right text-[11px] tabular-nums text-base-content/60">{{ f.lines }}</td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                  @if (haOutputDir()) {
-                    <div class="flex items-center gap-2 mt-2">
-                      <span class="text-xs text-base-content/50 font-mono truncate flex-1">{{ haOutputDir() }}</span>
-                      <button class="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-base-content" (click)="openHaFolder()">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-                        </svg>
-                        Open
-                      </button>
-                    </div>
-                  }
-                </div>
+                <app-firmware-files-table
+                  [files]="haFiles()"
+                  [outputDir]="haOutputDir()"
+                  (fileClick)="openFile($event)"
+                  (openFolder)="openHaFolder()"
+                />
               }
             </div>
 
@@ -633,7 +372,7 @@ interface TerminalLine {
     </div>
   `,
 })
-export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, AfterViewChecked {
+export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   protected workspace = inject(WorkspaceService);
   private electron = inject(ElectronService);
   private boards = inject(BoardService);
@@ -644,7 +383,6 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   private injector = inject(Injector);
   private sanitizer = inject(DomSanitizer);
 
-  @ViewChild('terminalEl') private terminalEl?: ElementRef<HTMLPreElement>;
   @ViewChild('hiddenCanvas') private hiddenCanvasRef?: ElementRef<HTMLElement>;
 
   protected activeTab = signal<ActiveTab>('docs');
@@ -667,24 +405,10 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   protected fwValidation = signal<any>(null);
   protected fwError = signal<string | null>(null);
 
-  // Build & Deploy
-  protected running = signal(false);
-  protected activeAction = signal<'compile' | 'flash' | null>(null);
-  protected compileSuccess = signal(false);
+  // Build state owned by the embedded panel; deploy keeps just the toolchain
+  // (used for canBuild) and the OTA address (per-system seed).
   protected toolchain = signal<ToolchainInfo | null>(null);
-
-  // Terminal
-  protected terminalLines = signal<TerminalLine[]>([]);
-  protected terminalStatus = signal<'idle' | 'running' | 'success' | 'error'>('idle');
-  private shouldAutoScroll = true;
-
-  // Flash
-  protected serialPorts = signal<SerialDevice[]>([]);
-  protected selectedPort = signal('');
-  protected scanningPorts = signal(false);
   protected otaAddress = signal('');
-  protected showOtaInput = signal(false);
-  private activeProcessId = signal<string | null>(null);
 
   // Firmware generation history
   protected fwLastGeneration = signal<GenerationMeta | null>(null);
@@ -692,11 +416,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   protected showHistory = signal(false);
 
   // Secrets
-  protected showSecurityKeys = signal(false);
-  private static readonly DEFAULT_SECRETS = { wifi_ssid: '', wifi_password: '', api_key: '', ota_password: '' };
-  protected secrets = signal<{ wifi_ssid: string; wifi_password: string; api_key: string; ota_password: string }>(
-    { ...DeployPageComponent.DEFAULT_SECRETS }
-  );
+  protected secrets = signal<FirmwareSecrets>({ ...EMPTY_FIRMWARE_SECRETS });
   private secretsSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected transport = computed(() =>
@@ -709,16 +429,10 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     return !s.wifi_ssid || !s.wifi_password;
   });
 
-  protected secretsApiKeyValid = computed(() => {
-    const key = this.secrets().api_key;
-    if (!key) return false;
-    try { return atob(key).length === 32; } catch { return false; }
-  });
-
   protected secretsValid = computed(() => {
     const s = this.secrets();
     const wifiOk = this.transport() !== 'wifi' || (!!s.wifi_ssid && !!s.wifi_password && s.wifi_password.length >= 8);
-    return wifiOk && !!s.ota_password && this.secretsApiKeyValid();
+    return wifiOk && !!s.ota_password && isApiKeyValid(s.api_key);
   });
 
   // HA state (site-level)
@@ -731,6 +445,12 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
   protected canBuild = computed(() =>
     !!this.toolchain()?.esphomePath && this.fwFiles().length > 0 && this.secretsValid()
   );
+
+  protected buildBlockedReason = computed(() => {
+    if (this.secretsHasPlaceholders()) return 'Configure WiFi secrets above before compiling';
+    if (!this.secretsValid()) return 'Fix secret validation errors above';
+    return '';
+  });
 
   protected filteredHistory = computed(() => this.generationHistory());
 
@@ -765,10 +485,6 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     return html ? this.sanitizer.bypassSecurityTrustHtml(html) : '';
   });
 
-  private unsubStarted: (() => void) | null = null;
-  private unsubOutput: (() => void) | null = null;
-  private unsubDone: (() => void) | null = null;
-
   async ngOnInit() {
     this.siteName = this.route.snapshot.paramMap.get('name');
     if (!this.siteName) { this.router.navigate(['/overview']); return; }
@@ -779,61 +495,13 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
 
     this.updateSystemEntries();
     this.toolchain.set(await this.electron.toolchainStatus());
-
-    if (this.toolchain()?.esphomePath) {
-      this.scanPorts();
-    }
-
-    // ESPHome process listeners
-    this.unsubStarted = this.electron.onEsphomeStarted((handle) => {
-      this.activeProcessId.set(handle.id);
-    });
-    this.unsubOutput = this.electron.onEsphomeOutput((data) => {
-      this.terminalLines.update((lines) => [
-        ...lines,
-        { text: data.text, stream: data.stream as 'stdout' | 'stderr' },
-      ]);
-    });
-    this.unsubDone = this.electron.onEsphomeDone((data) => {
-      const cancelled = data.signal === 'SIGTERM';
-      const success = data.code === 0;
-      const msg = cancelled
-        ? '--- Cancelled ---\n'
-        : success
-          ? '--- Done ---\n'
-          : `--- Exited with code ${data.code} ---\n`;
-      this.terminalLines.update((lines) => [...lines, { text: msg, stream: 'system' }]);
-      this.running.set(false);
-      this.activeAction.set(null);
-      this.activeProcessId.set(null);
-
-      if (data.operation === 'compile' && success && !cancelled) {
-        this.compileSuccess.set(true);
-        this.terminalStatus.set('success');
-      } else if (cancelled) {
-        this.terminalStatus.set('idle');
-      } else {
-        this.terminalStatus.set('error');
-      }
-    });
-
   }
 
   ngAfterViewInit() {
     this.initTopologyRenderer();
   }
 
-  ngAfterViewChecked() {
-    if (this.shouldAutoScroll && this.terminalEl) {
-      const el = this.terminalEl.nativeElement;
-      el.scrollTop = el.scrollHeight;
-    }
-  }
-
   ngOnDestroy() {
-    this.unsubStarted?.();
-    this.unsubOutput?.();
-    this.unsubDone?.();
     this.topologyRenderer?.destroy();
   }
 
@@ -919,15 +587,12 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     this.fwOutputDir.set('');
     this.fwDeviceDir.set('');
     this.fwError.set(null);
-    this.compileSuccess.set(false);
-    this.terminalLines.set([]);
-    this.terminalStatus.set('idle');
     this.showHistory.set(false);
     this.fwLastGeneration.set(null);
     this.generationHistory.set([]);
     this.fwValidation.set(null);
     // Reset secrets
-    this.secrets.set({ ...DeployPageComponent.DEFAULT_SECRETS });
+    this.secrets.set({ ...EMPTY_FIRMWARE_SECRETS });
 
     if (!systemId) return;
 
@@ -961,9 +626,9 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
       });
     } else {
       // First time: auto-generate crypto fields, save to DB
-      const fresh = { ...DeployPageComponent.DEFAULT_SECRETS };
-      fresh.api_key = this.randomBase64(32);
-      fresh.ota_password = this.randomHex(16);
+      const fresh = { ...EMPTY_FIRMWARE_SECRETS };
+      fresh.api_key = randomBase64(32);
+      fresh.ota_password = randomHex(16);
       this.secrets.set(fresh);
       await this.electron.secretsSet(siteId, systemId, fresh);
     }
@@ -992,7 +657,6 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
 
     this.generating.set(true);
     this.fwError.set(null);
-    this.compileSuccess.set(false);
     try {
       if (!sys.board) throw new Error('No board loaded');
       const siteId = this.workspace.site()?.id ?? '';
@@ -1024,56 +688,6 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     }
   }
 
-  async compile() {
-    const dir = this.fwDeviceDir();
-    if (!dir) return;
-    this.running.set(true);
-    this.activeAction.set('compile');
-    this.compileSuccess.set(false);
-    this.terminalLines.set([]);
-    this.terminalStatus.set('running');
-    this.fwError.set(null);
-    this.shouldAutoScroll = true;
-    try {
-      await this.electron.esphomeCompile(dir);
-    } catch (err) {
-      this.fwError.set(String(err));
-      this.running.set(false);
-      this.activeAction.set(null);
-      this.terminalStatus.set('error');
-    }
-  }
-
-  async flash(device?: string) {
-    if (!device) return;
-    const dir = this.fwDeviceDir();
-    if (!dir) return;
-    this.running.set(true);
-    this.activeAction.set('flash');
-    this.terminalLines.set([]);
-    this.terminalStatus.set('running');
-    this.fwError.set(null);
-    this.shouldAutoScroll = true;
-    try {
-      await this.electron.esphomeFlash(dir, device);
-    } catch (err) {
-      this.fwError.set(String(err));
-      this.running.set(false);
-      this.activeAction.set(null);
-      this.terminalStatus.set('error');
-    }
-  }
-
-  async cancel() {
-    const id = this.activeProcessId();
-    if (id) await this.electron.esphomeCancel(id);
-  }
-
-  clearTerminal() {
-    this.terminalLines.set([]);
-    this.terminalStatus.set('idle');
-  }
-
   async openFile(relativePath: string) {
     const dir = this.fwOutputDir() || this.haOutputDir();
     if (dir) await this.electron.shellOpenPath(`${dir}/${relativePath}`);
@@ -1088,20 +702,6 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     const dir = this.fwOutputDir();
     const device = this.fwDeviceDir();
     if (dir && device) await this.electron.shellShowInFolder(`${dir}/esphome/${device}`);
-  }
-
-  async scanPorts() {
-    this.scanningPorts.set(true);
-    try {
-      const ports = await this.electron.deviceListSerial();
-      this.serialPorts.set(ports);
-      if (ports.length > 0 && !ports.some(p => p.port === this.selectedPort())) {
-        this.selectedPort.set(ports[0].port);
-      }
-      if (ports.length === 0) this.selectedPort.set('');
-    } finally {
-      this.scanningPorts.set(false);
-    }
   }
 
   async toggleHistory() {
@@ -1122,7 +722,6 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     const board = JSON.parse(snapshot.board);
     this.generating.set(true);
     this.fwError.set(null);
-    this.compileSuccess.set(false);
     try {
       const siteId = this.workspace.site()?.id ?? '';
       const systemId = this.selectedSystemId();
@@ -1164,7 +763,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     });
     if (!confirmed) return;
 
-    const value = key === 'api_key' ? this.randomBase64(32) : this.randomHex(16);
+    const value = key === 'api_key' ? randomBase64(32) : randomHex(16);
     this.secrets.update(s => ({ ...s, [key]: value }));
     this.saveSecrets();
   }
@@ -1175,18 +774,6 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit, Af
     if (siteId && systemId) {
       await this.electron.secretsSet(siteId, systemId, this.secrets());
     }
-  }
-
-  private randomHex(bytes: number): string {
-    const arr = new Uint8Array(bytes);
-    crypto.getRandomValues(arr);
-    return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  private randomBase64(bytes: number): string {
-    const arr = new Uint8Array(bytes);
-    crypto.getRandomValues(arr);
-    return btoa(String.fromCharCode(...arr));
   }
 
   // === HA methods ===

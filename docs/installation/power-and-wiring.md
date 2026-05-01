@@ -138,7 +138,7 @@ Notes:
 
 ---
 
-## Bill of materials — typical small farm (6 valves, 1 HP pump)
+## Bill of materials — typical compact installation (6 valves, 1 HP pump)
 
 | Item | Spec | Qty |
 |---|---|---|

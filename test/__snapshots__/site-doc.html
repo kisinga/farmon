@@ -214,30 +214,24 @@ code {
 .active-connection {
   color: var(--text-muted); font-size: 12px; margin: -4px 0 12px;
 }
-.device-ref { margin: 8px 0; }
-.device-ref summary {
-  cursor: pointer; padding: 8px 12px; background: var(--bg-subtle);
-  border-radius: 6px; font-weight: 600;
+/* Handbook chapter intro paragraph — sits under each <h2> chapter and names
+   the intended reader. Subtle, but orients people landing mid-document. */
+.chapter-intro {
+  color: var(--text-muted); font-size: 12px; font-style: italic;
+  margin: -6px 0 16px; max-width: 60ch;
 }
-.device-ref[open] summary { margin-bottom: 8px; }
-
-/* Print / PDF: force every <details> open and style <summary> as a heading
-   so the Advanced section is fully readable in the saved PDF. Browsers
-   (Chrome/Edge/Firefox) collapse <details> in print by default — this
-   overrides that behavior. */
+/* In-document anchors. Plain on screen, semantic on paper (no underline,
+   no color in print — the link target name is the location reference). */
+a.xref { color: var(--brand); text-decoration: none; border-bottom: 1px dotted currentColor; }
+a.xref:hover { border-bottom-style: solid; }
 @media print {
-  details { page-break-inside: auto; }
-  details > summary {
-    list-style: none;
-    cursor: default;
-    /* Mimic an h3 — readable hierarchy on paper without `details` chrome. */
-    font-size: 14px; font-weight: 700; padding: 4px 0;
-    background: transparent; border-radius: 0;
-    margin: 12px 0 4px;
-  }
-  details > summary::-webkit-details-marker,
-  details > summary::marker { display: none; }
-  details > *:not(summary) { display: revert !important; }
+  a.xref { color: inherit; border-bottom: none; font-style: italic; }
+}
+/* Encourage chapter-level page breaks when printing. */
+@media print {
+  h2 { page-break-before: auto; break-before: auto; }
+  h2 + p, h2 + .chapter-intro { page-break-after: avoid; }
+  h3, h4 { page-break-after: avoid; }
 }
 </style>
 </head>
@@ -295,9 +289,12 @@ code {
   </div>
 </div>
 
+<h2>Overview</h2>
+<p class="chapter-intro">For everyone — what was built, where the controllers live, and how routes connect tanks to outlets.</p>
 
 
-<h2>Routes</h2>
+
+<h3>Routes</h3>
 <table>
   <thead>
     <tr><th>Route</th><th>Type</th><th>Source Min</th><th>Dest Max</th><th>Max Runtime</th><th>Scope</th></tr>
@@ -315,11 +312,14 @@ code {
 </table>
 
 
+<h2>Operation</h2>
+<p class="chapter-intro">For the site operator and Home Assistant user — what each controller does day-to-day, the entities you'll see in Home Assistant, and the safety rules that protect your equipment. Applies regardless of the application context (irrigation, hotel, greenhouse, commercial water plant).</p>
 
+<h3>Test System</h3>
 
-<p class="active-connection">Active connection: Ethernet · No on-device recovery if the cable drops — see Advanced for options.</p>
+<p class="active-connection">Active connection: Ethernet · No on-device recovery if the cable drops. <a class="xref" href="#device-kc868-a16-network">See Device Reference → Network &amp; Recovery →</a></p>
 
-<h3>Topology</h3>
+<h4>Topology</h4>
 <div class="diagram topology">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><rect width="200" height="100" fill="#eef"/><text x="10" y="55">topology</text></svg>
 </div>
@@ -327,7 +327,17 @@ code {
 
 
 
-<h3>Timing Parameters</h3>
+<h4>Home Assistant Entities</h4>
+<table>
+  <thead><tr><th>Entity</th><th>Type</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>button.…_start_0</code></td><td>Button</td><td>Start route: Tank → Valve A</td></tr>
+    <tr><td><code>button.…_stop_0</code></td><td>Button</td><td>Stop route: Tank → Valve A</td></tr>
+    <tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Disables <strong>all</strong> runtime safety checks while ON: pre-start level gates, flow watchdog, runtime level stops, max-runtime, API watchdog. Reverts to OFF on reboot. Use only for commissioning or manual recovery.</td></tr>
+  </tbody>
+</table>
+
+<h4>Timing Parameters</h4>
 <table>
   <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>
   <tbody>
@@ -339,17 +349,7 @@ code {
   </tbody>
 </table>
 
-<h3>Home Assistant Entities</h3>
-<table>
-  <thead><tr><th>Entity</th><th>Type</th><th>Purpose</th></tr></thead>
-  <tbody>
-    <tr><td><code>button.…_start_0</code></td><td>Button</td><td>Start route: Tank → Valve A</td></tr>
-    <tr><td><code>button.…_stop_0</code></td><td>Button</td><td>Stop route: Tank → Valve A</td></tr>
-    <tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Disables <strong>all</strong> runtime safety checks while ON: pre-start level gates, flow watchdog, runtime level stops, max-runtime, API watchdog. Reverts to OFF on reboot. Use only for commissioning or manual recovery.</td></tr>
-  </tbody>
-</table>
-
-<h3>Firmware Safety</h3>
+<h4>Safety at a glance</h4>
 <div class="safety-grid">
   <div class="safety-card"><strong>Pre-start checks</strong><span>Source/dest level thresholds enforced before every start</span></div>
   <div class="safety-card"><strong>Flow watchdog</strong><span>No-flow fault after 30s · Flow confirmed within 3s</span></div>
@@ -358,11 +358,11 @@ code {
   <div class="safety-card" style="border-left-color:#dc2626;"><strong>Safety Override</strong><span>While <code>switch.…_safety_override</code> is ON, every check above is skipped. Switch reverts to OFF on reboot.</span></div>
 </div>
 
-<h2>Advanced</h2>
-<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Per-board operational reference. Each disclosure covers one concern of one board model — connection &amp; recovery, power, peripherals, pinout, etc. Deduped: each unique board appears once regardless of how many controllers use it.</p>
-<details class="device-ref">
-  <summary>KC868-A16 — Network &amp; Recovery</summary>
-  <p>The KC868-A16 supports both <strong>Ethernet (LAN8720 PHY)</strong> and <strong>WiFi</strong>. ESPHome enforces XOR — exactly one transport is active per device. Pick one in MajiFlow&#39;s <em>Connection</em> panel; the choice is baked into the firmware at flash time.</p>
+<h2>Device Reference</h2>
+<p class="chapter-intro">For installers and maintenance technicians — per-board specifications, recovery procedures, and wiring constraints. Each unique board model appears once regardless of how many controllers use it; the per-controller pinout above tells you which physical pin holds which entity.</p>
+<h3 id="device-kc868-a16">KC868-A16</h3>
+<h4 id="device-kc868-a16-network">Network &amp; Recovery</h4>
+<p>The KC868-A16 supports both <strong>Ethernet (LAN8720 PHY)</strong> and <strong>WiFi</strong>. ESPHome enforces XOR — exactly one transport is active per device. Pick one in MajiFlow&#39;s <em>Connection</em> panel; the choice is baked into the firmware at flash time.</p>
 <table>
 <thead>
 <tr>
@@ -407,8 +407,7 @@ code {
 <ul>
 <li><strong>SoftAP SSID</strong>: <code>&lt;friendly_name&gt; Fallback</code> — derived from the device&#39;s friendly name in MajiFlow. For example, a device named <em>Pump Controller</em> broadcasts as <code>Pump Controller Fallback</code>.</li>
 <li><strong>SoftAP password</strong>: identical to your <code>wifi_password</code> — one credential to remember.</li>
-<li><strong>Default gateway</strong>: <strong><code>192.168.4.1</code></strong> — visit <code>http://192.168.4.1/</code> in a browser for the full web dashboard.</li>
-<li>Phones and laptops also auto-popup ESPHome&#39;s captive portal at this address, where you can rotate WiFi credentials without re-flashing.</li>
+<li><strong>Default gateway</strong>: <strong><code>192.168.4.1</code></strong> — phones and laptops auto-popup ESPHome&#39;s captive portal here. Use it to <strong>re-enter WiFi credentials</strong> or <strong>push an OTA firmware update</strong>; the entity dashboard is <em>not</em> served on the SoftAP (ESPHome&#39;s <code>web_server</code> binds to the STA interface only — see <a href="https://github.com/esphome/esphome/issues/4333">esphome-core#4333</a>). The dashboard returns once the device successfully rejoins the home network.</li>
 </ul>
 <h3>Recovery path on Ethernet transport</h3>
 <p>There is no on-device recovery. Options:</p>
@@ -417,17 +416,15 @@ code {
 <li>Switch transport to WiFi in MajiFlow → re-flash → use the WiFi fallback above.</li>
 </ol>
 <h3>Web dashboard</h3>
-<p>Always emitted alongside the chosen transport. Reachable at:</p>
+<p>Always emitted alongside the chosen transport, but <strong>STA-only</strong> — ESPHome&#39;s <code>web_server</code> binds to the home-network interface, not to the SoftAP. Reachable at:</p>
 <ul>
 <li><code>http://&lt;device-ip&gt;/</code> on the home network — the IP shown in <code>ethernet_info</code> or <code>wifi_info</code>.</li>
-<li><code>http://192.168.4.1/</code> on the fallback AP — <strong>WiFi transport only</strong>.</li>
+<li><em>Not</em> available at <code>192.168.4.1</code>. The fallback AP serves only the captive portal (WiFi setup + OTA upload), not the entity dashboard.</li>
 </ul>
 <p>Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control — nothing extra to configure.</p>
 
-</details>
-<details class="device-ref">
-  <summary>KC868-A16 — Power Requirements</summary>
-  <p>The KC868-A16 board, every 12 V solenoid valve, and every 4–20 mA / 0–10 V sensor draw from one <strong>12 V DC supply</strong> wired to the green DC input terminal block.</p>
+<h4 id="device-kc868-a16-power">Power Requirements</h4>
+<p>The KC868-A16 board, every 12 V solenoid valve, and every 4–20 mA / 0–10 V sensor draw from one <strong>12 V DC supply</strong> wired to the green DC input terminal block.</p>
 <table>
 <thead>
 <tr>
@@ -466,10 +463,8 @@ code {
 <p><strong>Brown-out</strong>: the ESP32 brown-out detector trips around 2.7 V on the 3.3 V rail. If you see random reboots when relays click in, the supply is sagging — either too small or the wiring is too thin (use ≥ 0.75 mm² for runs longer than 1 m).</p>
 <p><strong>Fuse</strong>: a 5 A inline fuse on the +12 V input is mandatory if your supply is unfused.</p>
 
-</details>
-<details class="device-ref">
-  <summary>KC868-A16 — Pin Architecture</summary>
-  <p>The KC868-A16 has <strong>segregated pin pools</strong> — unlike boards with general-purpose GPIOs, each pin pool serves a specific function and cannot be reassigned.</p>
+<h4 id="device-kc868-a16-pin-architecture">Pin Architecture</h4>
+<p>The KC868-A16 has <strong>segregated pin pools</strong> — unlike boards with general-purpose GPIOs, each pin pool serves a specific function and cannot be reassigned.</p>
 <table>
 <thead>
 <tr>
@@ -537,10 +532,8 @@ code {
 <h3>Polarity</h3>
 <p>All onboard relays are <strong>active-low</strong> (the PCF8574 sinks current to energize the coil). MajiFlow defaults to <code>Active-low</code> polarity on entity wiring — keep that unless you&#39;ve modified the board.</p>
 
-</details>
-<details class="device-ref">
-  <summary>KC868-A16 — On-Board Peripherals</summary>
-  <h3>I²C bus &amp; expanders</h3>
+<h4 id="device-kc868-a16-peripherals">On-Board Peripherals</h4>
+<h3>I²C bus &amp; expanders</h3>
 <p>The KC868-A16 reaches its <strong>16 relays + 16 inputs</strong> through four PCF8574 I²C GPIO expanders behind a single onboard I²C bus on <strong>GPIO4 (SDA) / GPIO5 (SCL)</strong>. Pull-ups are populated on the board — you don&#39;t need to add your own on the board&#39;s bus.</p>
 <table>
 <thead>
@@ -586,10 +579,8 @@ code {
 <li>Common ground between board and Modbus device is required if they don&#39;t share the same power supply.</li>
 </ul>
 
-</details>
-<details class="device-ref">
-  <summary>KC868-A16 — Maximum Capacity</summary>
-  <h3>Theoretical maximums (single controller)</h3>
+<h4 id="device-kc868-a16-capacity">Maximum Capacity</h4>
+<h3>Theoretical maximums (single controller)</h3>
 <table>
 <thead>
 <tr>
@@ -645,15 +636,14 @@ code {
 </tr>
 </tbody></table>
 <h3>Realistic configurations</h3>
-<p><strong>Small farm</strong> (typical hobby/small plot): 1 pump, 3 valves, 2 tanks, 1 flow sensor — uses 8/16 OUT, 2/4 ADC, 1/3 pulse counter. Room to grow.</p>
-<p><strong>Medium farm</strong> (semi-commercial): 1 pump, 6 valves, 4 tanks, 3 flow sensors — uses 14/16 OUT, 4/4 ADC, 3/3 pulse counter. Near maximum: 1 spare OUT pin.</p>
+<p>Sizing tiers below are agnostic to the application — a small irrigation plot, a hotel rooftop tank set, a greenhouse zone head, and a small distribution manifold all map to the same controller footprint when the valve / tank / flow-sensor counts match.</p>
+<p><strong>Compact</strong> (e.g. small plot, single rooftop, one-zone greenhouse): 1 pump, 3 valves, 2 tanks, 1 flow sensor — uses 8/16 OUT, 2/4 ADC, 1/3 pulse counter. Room to grow.</p>
+<p><strong>Medium</strong> (e.g. multi-zone irrigation, hotel back-of-house ring, mid-size greenhouse): 1 pump, 6 valves, 4 tanks, 3 flow sensors — uses 14/16 OUT, 4/4 ADC, 3/3 pulse counter. Near maximum: 1 spare OUT pin.</p>
 <p><strong>Maxed out</strong> (every pin utilized): 1 pump, 7 valves, 4 tanks, 3 flow sensors — uses 15/16 OUT, 4/4 ADC, 3/3 pulse counter. No spare capacity on any pool.</p>
 <p><strong>Beyond one controller</strong>: for installations exceeding these limits, deploy multiple KC868-A16 controllers and connect them via MajiFlow&#39;s multi-system site feature with inter-system links.</p>
 
-</details>
-<details class="device-ref">
-  <summary>KC868-A16 — ADC Voltage Range</summary>
-  <p>The KC868-A16&#39;s 4 ADC inputs accept <strong>0–5 V</strong> from external sensors. An onboard <strong>LM324 op-amp</strong> scales this to 0–3.3 V for the ESP32&#39;s ADC.</p>
+<h4 id="device-kc868-a16-adc-range">ADC Voltage Range</h4>
+<p>The KC868-A16&#39;s 4 ADC inputs accept <strong>0–5 V</strong> from external sensors. An onboard <strong>LM324 op-amp</strong> scales this to 0–3.3 V for the ESP32&#39;s ADC.</p>
 <p><strong>Calibration in MajiFlow</strong>: the <code>Cal Empty V</code> and <code>Cal Full V</code> values represent the <strong>ESP32-side voltage</strong> (0–3.3 V range), not the original sensor output (0–5 V). Calibrate by:</p>
 <ol>
 <li>Drain the tank to empty → note the raw voltage reading in Home Assistant.</li>
@@ -662,10 +652,8 @@ code {
 </ol>
 <p>The <code>Raw Voltage</code> diagnostic sensor is exposed to HA to assist with calibration.</p>
 
-</details>
-<details class="device-ref">
-  <summary>KC868-A16 — Digital Inputs</summary>
-  <p>The 16 optocoupled digital inputs (IN1–IN16) accept <strong>6–24 V</strong> signals and are isolated from the ESP32 — ground loops on field wiring won&#39;t reach the MCU. Pull-down to GND via the field signal asserts the input.</p>
+<h4 id="device-kc868-a16-digital-inputs">Digital Inputs</h4>
+<p>The 16 optocoupled digital inputs (IN1–IN16) accept <strong>6–24 V</strong> signals and are isolated from the ESP32 — ground loops on field wiring won&#39;t reach the MCU. Pull-down to GND via the field signal asserts the input.</p>
 <p>These pins are currently <strong>reserved for future entity types</strong>:</p>
 <ul>
 <li>Float switch / dry contact binary sensors</li>
@@ -675,10 +663,8 @@ code {
 <p>The pins are defined in the board YAML with <code>caps: [digital]</code> and ready for use when the corresponding entity types ship in MajiFlow.</p>
 <p><strong>Wiring tip</strong>: use ≥ 1 kΩ in series with the field signal to clamp the optocoupler current. The board&#39;s onboard resistor handles up to 24 V cleanly; higher voltages will saturate the LED.</p>
 
-</details>
-<details class="device-ref">
-  <summary>KC868-A16 — Bench Self-Test</summary>
-  <p>The KC868-A16 self-test firmware exercises every onboard subsystem in one bench cycle. Probes that don&#39;t apply (OLED, LoRa, WiFi-only diagnostics, battery) are excluded automatically by the codegen.</p>
+<h4 id="device-kc868-a16-self-test">Bench Self-Test</h4>
+<p>The KC868-A16 self-test firmware exercises every onboard subsystem in one bench cycle. Probes that don&#39;t apply (OLED, LoRa, WiFi-only diagnostics, battery) are excluded automatically by the codegen.</p>
 <table>
 <thead>
 <tr>
@@ -711,12 +697,11 @@ code {
 <td>LAN8720 link detected</td>
 </tr>
 </tbody></table>
-<p>The test runs once on boot, then idles — the device exposes every entity for <strong>manual control</strong> via the web dashboard (192.168.4.1 on the fallback AP, or the device&#39;s home-network IP). Press the <em>Run Tests</em> button on the dashboard to re-trigger a cycle.</p>
+<p>The test runs once on boot, then idles — the device exposes every entity for <strong>manual control</strong> via the web dashboard at the device&#39;s home-network IP. Press the <em>Run Tests</em> button on the dashboard to re-trigger a cycle. (The dashboard is STA-only; if the device drops to the fallback AP at <code>192.168.4.1</code>, only the captive portal is reachable — fix WiFi credentials there and rejoin the home network to regain dashboard access.)</p>
 
-</details>
 
-<h2>Firmware Safety Model</h2>
-<p>All safety logic runs on the ESP32 — no server dependency. Each controller operates independently with the same state machine and watchdog behavior.</p>
+<h2>Troubleshooting &amp; Recovery</h2>
+<p class="chapter-intro">For maintenance technicians — how the firmware decides to stop a route, how faults are surfaced to HA, and how to recover when things go wrong. All safety logic runs on the ESP32 — no server dependency. Each controller operates independently with the same state machine and watchdog behavior.</p>
 
 <h3>State Machine</h3>
 <div class="state-diagram"><span class="hl">IDLE</span> ──→ <span class="hl">PREPARING</span> ──→ <span class="hl">RUNNING</span> ──→ <span class="hl">STOPPING</span> ──→ <span class="hl">IDLE</span>
@@ -827,9 +812,12 @@ code {
 <p>Each flow sensor has built-in fault detection. When the pump is RUNNING and flow was previously confirmed (&gt; 0.5 L/min), 3 consecutive zero readings trigger a <code>sensor_fault</code> binary sensor in HA. This is distinct from no_flow (never established) — sensor fault means flow was confirmed then the sensor stopped reporting.</p>
 
 <div class="installation">
-<h2>Installation Guidelines</h2>
+<h2>Installation</h2>
+<p class="chapter-intro">For installers and electricians at the job site — sensor placement, valve mounting, tank-sensor calibration, and PSU + cable specs. Board-specific power and pinout details live under Device Reference; this chapter covers the field side of the wiring.</p>
 
-<h3>Flow Sensors</h3>
+<h3>Installation Guidelines</h3>
+
+<h4>Flow Sensors</h4>
 <h4>Placement — The 10D/5D Rule</h4>
 <p>Flow sensors require straight, undisturbed pipe upstream and downstream for accurate readings:</p>
 <ul>
@@ -847,7 +835,7 @@ code {
   <li>Use shielded cable for runs &gt; 2m · Pull-up resistor (10kΩ to 3.3V) recommended</li>
 </ul>
 
-<h3>Valves</h3>
+<h4>Valves</h4>
 <ul>
   <li>Mount <strong>horizontally</strong> or with the actuator <strong>above</strong> the pipe</li>
   <li>Default travel time: <strong>15 seconds</strong></li>
@@ -855,12 +843,12 @@ code {
   <li>Wire gauge: 18 AWG minimum for runs up to 15m; 16 AWG for longer runs</li>
 </ul>
 
-<h3>Tank Level Sensors</h3>
+<h4>Tank Level Sensors</h4>
 <p>Analog pressure sensors at the tank bottom measure water column height. Mount at the <strong>lowest point</strong> of the tank.</p>
 <p>Calibrate via Home Assistant: set <strong>Cal Empty (V)</strong> and <strong>Cal Full (V)</strong> number entities.</p>
 <p>Tank readings are <strong>suppressed during pump operation</strong> to avoid pressure artifacts.</p>
 
-<h3>General Notes</h3>
+<h4>General Notes</h4>
 <ul>
   <li><strong>Pipe sizing</strong>: Match pipe diameter to expected flow rates</li>
   <li><strong>Pressure regulators</strong>: Install upstream if mains pressure exceeds 6 bar</li>
@@ -869,10 +857,7 @@ code {
   <li><strong>Float switches</strong>: Required on every destination tank as hardware safety interlock</li>
 </ul>
 
-</div>
-
-<div class="installation">
-<h2>Power &amp; Wiring</h2>
+<h3>Power &amp; Wiring</h3>
 
 <h2>At a glance</h2>
 <table>

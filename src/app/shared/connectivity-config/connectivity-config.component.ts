@@ -1,10 +1,12 @@
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { effectiveTransport, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
+import { isApiKeyValid } from '../../core/models/firmware-secrets';
 
 /**
- * Transport selector + (conditional) WiFi credentials + IP configuration.
- * Presentational only — caller owns state and persists via outputs.
+ * Transport selector + (conditional) WiFi credentials + IP configuration +
+ * security keys (OTA password, API encryption key). Presentational only —
+ * caller owns state and persists via outputs, including the regenerate flow.
  *
  * ESPHome treats ethernet and wifi as XOR per device. The selector reflects
  * the effective transport (board capability + stored choice). Wifi-only
@@ -61,7 +63,7 @@ import { effectiveTransport, type NetworkConfig, type NetworkTransport } from '@
             @if (transport() === 'ethernet') {
               No on-device recovery if the cable drops — switch transport &amp; re-flash to regain access.
             } @else {
-              Fallback AP <span class="font-mono">&lt;device&gt; Fallback</span> at <span class="font-mono">192.168.4.1</span> when the network is unreachable. Same password as WiFi.
+              Fallback AP <span class="font-mono">&lt;device&gt; Fallback</span> (same password as WiFi) exposes the captive portal at <span class="font-mono">192.168.4.1</span> for re-entering credentials and OTA updates. The entity dashboard is served only on the home network at <span class="font-mono">http://&lt;device&gt;.local/</span>.
             }
           </p>
         </div>
@@ -151,6 +153,65 @@ import { effectiveTransport, type NetworkConfig, type NetworkTransport } from '@
           <p class="text-xs text-base-content/40">IP address assigned automatically by router.</p>
         }
       </div>
+
+      <!-- Security Keys (collapsible) -->
+      <div class="border-t border-base-300/30">
+        <button
+          type="button"
+          class="flex items-center justify-between w-full px-5 py-3 text-left hover:bg-base-200/30 transition-colors"
+          (click)="showSecurityKeys.set(!showSecurityKeys())"
+        >
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">Security Keys</span>
+          <svg xmlns="http://www.w3.org/2000/svg"
+            class="h-3.5 w-3.5 text-base-content/40 transition-transform"
+            [class.rotate-180]="showSecurityKeys()"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        @if (showSecurityKeys()) {
+          <div class="px-5 pb-4 space-y-3">
+            <p class="text-[11px] text-base-content/50">
+              The fallback AP <span class="font-mono">&lt;device&gt; Fallback</span> reuses your WiFi password. The captive portal at <span class="font-mono">192.168.4.1</span> only re-collects WiFi credentials &amp; accepts OTA uploads — the entity dashboard is reachable only on the home network.
+            </p>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-medium">OTA Password</span>
+              <div class="join w-full">
+                <input type="text" class="input input-bordered input-sm font-mono text-sm join-item flex-1"
+                  [ngModel]="otaPassword()"
+                  (ngModelChange)="otaPasswordChange.emit($event)" />
+                <button type="button"
+                  class="btn btn-ghost btn-sm join-item border border-base-300"
+                  (click)="regenerateOtaPassword.emit()"
+                  title="Regenerate">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-medium">API Encryption Key</span>
+              <div class="join w-full">
+                <input type="text" class="input input-bordered input-sm font-mono text-sm join-item flex-1"
+                  [ngModel]="apiKey()"
+                  (ngModelChange)="apiKeyChange.emit($event)" />
+                <button type="button"
+                  class="btn btn-ghost btn-sm join-item border border-base-300"
+                  (click)="regenerateApiKey.emit()"
+                  title="Regenerate">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+              @if (!apiKeyValid()) {
+                <span class="text-warning text-[10px]">Must be valid base64 (32 bytes)</span>
+              }
+            </div>
+          </div>
+        }
+      </div>
     </div>
   `,
 })
@@ -160,15 +221,24 @@ export class ConnectivityConfigComponent {
   readonly network = input<NetworkConfig | undefined>(undefined);
   /** Network transports the board supports (e.g. `['wifi']` or `['ethernet','wifi']`). */
   readonly supportedTransports = input<readonly NetworkTransport[]>(['wifi']);
+  readonly apiKey = input.required<string>();
+  readonly otaPassword = input.required<string>();
 
   readonly ssidChange = output<string>();
   readonly passwordChange = output<string>();
   readonly networkChange = output<NetworkConfig>();
+  readonly apiKeyChange = output<string>();
+  readonly otaPasswordChange = output<string>();
+  readonly regenerateApiKey = output<void>();
+  readonly regenerateOtaPassword = output<void>();
+
+  protected showSecurityKeys = signal(false);
 
   /** True when the board has more than one transport — i.e. the user has a real choice. */
   protected hasChoice = computed(() => this.supportedTransports().length > 1);
   protected transport = computed(() => effectiveTransport(this.network(), this.supportedTransports()));
   protected mode = computed(() => this.network()?.mode ?? 'dhcp');
+  protected apiKeyValid = computed(() => isApiKeyValid(this.apiKey()));
 
   protected select(transport: NetworkTransport) {
     this.networkChange.emit({ ...(this.network() ?? { mode: 'dhcp' }), transport });

@@ -149,13 +149,25 @@ function reportDiff(actual: string, expected: string): void {
     .readdirSync(path.join(TEST_DIR, "packages/core/src/templates/partials/boards/kc868-a16"))
     .filter((f: string) => f.endsWith(".hbs"))
     .length;
-  const advancedHeaderCount = (dedupHtml.match(/<h2>Advanced<\/h2>/g) ?? []).length;
-  const detailsCount = (dedupHtml.match(/<details class="device-ref">/g) ?? []).length;
-  if (advancedHeaderCount === 1 && detailsCount === expectedConcerns) {
-    console.log(`  ✓ Advanced section deduped (1 <h2>, ${detailsCount} disclosures for 1 board × ${expectedConcerns} concerns across 3 controllers)`);
+
+  // Handbook structure: <h2>Device Reference</h2> appears exactly once,
+  // <h3 id="device-…"> appears once per unique board, and <h4 id="device-…-…">
+  // appears once per (board × concern). No <details> anywhere.
+  const chapterHeaderCount = (dedupHtml.match(/<h2>Device Reference<\/h2>/g) ?? []).length;
+  const boardSubheadingCount = (dedupHtml.match(/<h3 id="device-[a-z0-9-]+">/g) ?? []).length;
+  const concernSubheadingCount = (dedupHtml.match(/<h4 id="device-[a-z0-9-]+-[a-z0-9-]+">/g) ?? []).length;
+  const detailsLeftover = (dedupHtml.match(/<details/g) ?? []).length;
+
+  const ok =
+    chapterHeaderCount === 1 &&
+    boardSubheadingCount === 1 &&
+    concernSubheadingCount === expectedConcerns &&
+    detailsLeftover === 0;
+  if (ok) {
+    console.log(`  ✓ Device Reference deduped (1 <h2>, 1 <h3>, ${concernSubheadingCount} <h4>s for 1 board × ${expectedConcerns} concerns across 3 controllers; 0 <details>)`);
     passed++;
   } else {
-    console.log(`  ✗ Advanced section dedup FAILED: ${advancedHeaderCount} <h2>Advanced</h2>, ${detailsCount} <details> (expected 1 and ${expectedConcerns})`);
+    console.log(`  ✗ Device Reference structure FAILED: chapter=${chapterHeaderCount} (expect 1), boards=${boardSubheadingCount} (expect 1), concerns=${concernSubheadingCount} (expect ${expectedConcerns}), details=${detailsLeftover} (expect 0)`);
     failed++;
   }
 }

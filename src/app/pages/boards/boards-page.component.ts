@@ -1,15 +1,13 @@
-import {
-  Component, inject, OnInit, OnDestroy, signal, computed,
-  ElementRef, ViewChild, AfterViewChecked,
-} from '@angular/core';
-import { Router } from '@angular/router';
+import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ElectronService } from '../../core/services/electron.service';
 import { SerialMonitorComponent } from '../../shared/serial-monitor/serial-monitor.component';
 import { ConnectivityConfigComponent } from '../../shared/connectivity-config/connectivity-config.component';
-import type {
-  BoardListEntry, ToolchainInfo, SerialDevice,
-} from '../../core/models/electron-api';
+import { FirmwareFilesTableComponent } from '../../shared/firmware-files-table/firmware-files-table.component';
+import { FirmwareBuildPanelComponent } from '../../shared/firmware-build-panel/firmware-build-panel.component';
+import type { BoardListEntry, ToolchainInfo } from '../../core/models/electron-api';
+import { type FirmwareSecrets, EMPTY_FIRMWARE_SECRETS } from '../../core/models/firmware-secrets';
+import { randomBase64, randomHex } from '../../core/util/random-keys';
 import { effectiveTransport, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
 
 interface FileEntry {
@@ -18,15 +16,16 @@ interface FileEntry {
   lines: number;
 }
 
-interface TerminalLine {
-  text: string;
-  stream: 'stdout' | 'stderr' | 'system';
-}
-
 @Component({
   selector: 'app-boards-page',
   standalone: true,
-  imports: [FormsModule, SerialMonitorComponent, ConnectivityConfigComponent],
+  imports: [
+    FormsModule,
+    SerialMonitorComponent,
+    ConnectivityConfigComponent,
+    FirmwareFilesTableComponent,
+    FirmwareBuildPanelComponent,
+  ],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="flex-1 flex flex-col h-full overflow-auto">
@@ -79,13 +78,19 @@ interface TerminalLine {
 
             <!-- Connectivity -->
             <app-connectivity-config
-              [ssid]="secrets()['wifi_ssid']"
-              [password]="secrets()['wifi_password']"
+              [ssid]="secrets().wifi_ssid"
+              [password]="secrets().wifi_password"
               [network]="network()"
               [supportedTransports]="supportedTransports()"
+              [apiKey]="secrets().api_key"
+              [otaPassword]="secrets().ota_password"
               (ssidChange)="updateSecret('wifi_ssid', $event)"
               (passwordChange)="updateSecret('wifi_password', $event)"
               (networkChange)="network.set($event)"
+              (apiKeyChange)="updateSecret('api_key', $event)"
+              (otaPasswordChange)="updateSecret('ota_password', $event)"
+              (regenerateApiKey)="regenerateKey('api_key')"
+              (regenerateOtaPassword)="regenerateKey('ota_password')"
             />
 
             <!-- Generate -->
@@ -106,104 +111,24 @@ interface TerminalLine {
               </div>
 
               @if (files().length > 0) {
-                <div class="border-t border-base-300/30 px-5 py-3 bg-base-200/30">
-                  <table class="table table-xs">
-                    <thead>
-                      <tr>
-                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">File</th>
-                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Description</th>
-                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold text-right">Lines</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (f of files(); track f.path) {
-                        <tr class="hover">
-                          <td class="font-mono text-[11px] text-primary/70">{{ f.path }}</td>
-                          <td class="text-[11px] text-base-content/50">{{ f.description }}</td>
-                          <td class="text-right text-[11px] tabular-nums text-base-content/60">{{ f.lines }}</td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
+                <app-firmware-files-table
+                  [files]="files()"
+                  [outputDir]="outputDir()"
+                  (fileClick)="openFile($event)"
+                  (openFolder)="openOutputFolder()"
+                />
               }
             </div>
 
             <!-- Compile & Flash -->
             @if (files().length > 0) {
-              <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
-                <div class="flex items-center justify-between px-5 py-3.5">
-                  <div>
-                    <h3 class="font-semibold text-sm">Build & Flash</h3>
-                    @if (!toolchain()?.esphomePath) {
-                      <p class="text-xs text-warning mt-0.5">ESPHome not found on PATH</p>
-                    } @else {
-                      <p class="text-xs text-base-content/60 mt-0.5">Compile and flash self-test firmware</p>
-                    }
-                  </div>
-                  <div class="flex items-center gap-2">
-                    @if (running()) {
-                      <button class="btn btn-error btn-xs" (click)="cancel()">Cancel</button>
-                    }
-                    <button
-                      class="btn btn-ghost btn-xs gap-1.5 border border-base-300/50"
-                      (click)="compile()"
-                      [disabled]="!toolchain()?.esphomePath || running()"
-                    >
-                      @if (running() && activeAction() === 'compile') {
-                        <span class="loading loading-spinner loading-xs"></span>
-                      }
-                      Compile
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Post-compile: flash options -->
-                @if (compileSuccess()) {
-                  <div class="border-t border-base-300/30 px-5 py-3.5 bg-base-200/30">
-                    <div class="flex items-center gap-3">
-                      <select
-                        class="select select-bordered select-xs flex-1 max-w-xs"
-                        [ngModel]="selectedPort()"
-                        (ngModelChange)="selectedPort.set($event)"
-                      >
-                        <option value="">Select USB port...</option>
-                        @for (port of serialPorts(); track port.port) {
-                          <option [value]="port.port">{{ port.port }} — {{ port.description }}</option>
-                        }
-                      </select>
-                      <button class="btn btn-ghost btn-xs" (click)="scanPorts()">
-                        @if (scanningPorts()) { <span class="loading loading-spinner loading-xs"></span> }
-                        Scan
-                      </button>
-                      <button
-                        class="btn btn-primary btn-xs"
-                        (click)="flash()"
-                        [disabled]="!selectedPort() || running()"
-                      >
-                        @if (running() && activeAction() === 'flash') {
-                          <span class="loading loading-spinner loading-xs"></span>
-                        }
-                        Flash USB
-                      </button>
-                    </div>
-                  </div>
-                }
-
-                <!-- Terminal -->
-                @if (terminalLines().length > 0) {
-                  <div class="border-t border-base-300/30">
-                    <pre
-                      #terminalEl
-                      class="bg-neutral text-neutral-content text-xs font-mono p-4 max-h-[300px] overflow-auto whitespace-pre-wrap"
-                    >@for (line of terminalLines(); track $index) {<span
-                      [class.text-error]="line.stream === 'stderr'"
-                      [class.text-info]="line.stream === 'system'"
-                    >{{ line.text }}</span>}
-                    </pre>
-                  </div>
-                }
-              </div>
+              <app-firmware-build-panel
+                heading="Build & Flash"
+                subheading="Compile and flash self-test firmware"
+                [deviceDir]="deviceDir()"
+                [toolchain]="toolchain()"
+                (errorOccurred)="error.set($event)"
+              />
             }
 
             <!-- Error -->
@@ -221,49 +146,25 @@ interface TerminalLine {
     </div>
   `,
 })
-export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked {
+export class BoardsPageComponent implements OnInit {
   private electron = inject(ElectronService);
-  private router = inject(Router);
 
-  @ViewChild('terminalEl') private terminalEl?: ElementRef<HTMLPreElement>;
-
-  // Board list
   protected boards = signal<BoardListEntry[]>([]);
   protected selectedBoard = signal<string | null>(null);
   private boardDefs = new Map<string, { board: unknown; svg: string | null }>();
 
-  // Self-test state
   protected generating = signal(false);
   protected files = signal<FileEntry[]>([]);
+  protected outputDir = signal('');
   protected deviceDir = signal('');
   protected error = signal<string | null>(null);
 
-  // Secrets (board-scoped)
-  protected secrets = signal<Record<string, string>>({
-    wifi_ssid: '', wifi_password: '',
-    api_key: '', ota_password: '',
-  });
+  protected secrets = signal<FirmwareSecrets>({ ...EMPTY_FIRMWARE_SECRETS });
 
-  // Self-test connectivity (in-memory only — board self-tests are throwaway)
   protected network = signal<NetworkConfig>({ mode: 'dhcp' });
 
-  // Build state
   protected toolchain = signal<ToolchainInfo | null>(null);
-  protected running = signal(false);
-  protected activeAction = signal<'compile' | 'flash' | null>(null);
-  protected compileSuccess = signal(false);
-  protected terminalLines = signal<TerminalLine[]>([]);
-  protected serialPorts = signal<SerialDevice[]>([]);
-  protected selectedPort = signal('');
-  protected scanningPorts = signal(false);
-  private activeProcessId = signal<string | null>(null);
-  private shouldAutoScroll = true;
 
-  private unsubStarted: (() => void) | null = null;
-  private unsubOutput: (() => void) | null = null;
-  private unsubDone: (() => void) | null = null;
-
-  // Computed
   protected selectedBoardLabel = computed(() => {
     const id = this.selectedBoard();
     return this.boards().find(b => b.id === id)?.label ?? '';
@@ -306,52 +207,13 @@ export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked 
   async ngOnInit() {
     this.boards.set(await this.electron.boardList());
     this.toolchain.set(await this.electron.toolchainStatus());
-
-    // ESPHome process listeners
-    this.unsubStarted = this.electron.onEsphomeStarted((handle) => {
-      this.activeProcessId.set(handle.id);
-    });
-    this.unsubOutput = this.electron.onEsphomeOutput((data) => {
-      this.terminalLines.update(lines => [
-        ...lines,
-        { text: data.text, stream: data.stream as 'stdout' | 'stderr' },
-      ]);
-    });
-    this.unsubDone = this.electron.onEsphomeDone((data) => {
-      const cancelled = data.signal === 'SIGTERM';
-      const success = data.code === 0;
-      const msg = cancelled ? '--- Cancelled ---\n'
-        : success ? '--- Done ---\n'
-        : `--- Exited with code ${data.code} ---\n`;
-      this.terminalLines.update(lines => [...lines, { text: msg, stream: 'system' }]);
-      this.running.set(false);
-      this.activeAction.set(null);
-      this.activeProcessId.set(null);
-      if (data.operation === 'compile' && success && !cancelled) {
-        this.compileSuccess.set(true);
-        this.scanPorts();
-      }
-    });
-  }
-
-  ngOnDestroy() {
-    this.unsubStarted?.();
-    this.unsubOutput?.();
-    this.unsubDone?.();
-  }
-
-  ngAfterViewChecked() {
-    if (this.shouldAutoScroll && this.terminalEl) {
-      const el = this.terminalEl.nativeElement;
-      el.scrollTop = el.scrollHeight;
-    }
   }
 
   async selectBoard(id: string) {
     this.selectedBoard.set(id);
     this.files.set([]);
-    this.compileSuccess.set(false);
-    this.terminalLines.set([]);
+    this.outputDir.set('');
+    this.deviceDir.set('');
     this.error.set(null);
 
     if (!this.boardDefs.has(id)) {
@@ -359,27 +221,36 @@ export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked 
       this.boardDefs.set(id, data);
     }
 
-    // Load persisted secrets for this board's self-test
     const saved = await this.electron.secretsGet('__selftest__', id);
     if (saved && Object.keys(saved).length > 0) {
-      this.secrets.set(saved);
+      this.secrets.set({
+        wifi_ssid: saved['wifi_ssid'] ?? '',
+        wifi_password: saved['wifi_password'] ?? '',
+        api_key: saved['api_key'] ?? '',
+        ota_password: saved['ota_password'] ?? '',
+      });
     } else {
-      // Generate fresh crypto keys, keep wifi empty
-      const fresh: Record<string, string> = {
-        wifi_ssid: '', wifi_password: '',
-        api_key: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))),
-        ota_password: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+      const fresh: FirmwareSecrets = {
+        ...EMPTY_FIRMWARE_SECRETS,
+        api_key: randomBase64(32),
+        ota_password: randomHex(16),
       };
       this.secrets.set(fresh);
       await this.electron.secretsSet('__selftest__', id, fresh);
     }
   }
 
-  updateSecret(key: string, value: string) {
-    const s = { ...this.secrets(), [key]: value };
+  updateSecret(key: keyof FirmwareSecrets, value: string) {
+    const s: FirmwareSecrets = { ...this.secrets(), [key]: value };
     this.secrets.set(s);
     const id = this.selectedBoard();
     if (id) this.electron.secretsSet('__selftest__', id, s);
+  }
+
+  regenerateKey(key: 'api_key' | 'ota_password') {
+    // Self-test firmware is throwaway — regenerate immediately, no confirm needed.
+    const value = key === 'api_key' ? randomBase64(32) : randomHex(16);
+    this.updateSecret(key, value);
   }
 
   async generate() {
@@ -387,10 +258,10 @@ export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked 
     if (!boardId) return;
     this.generating.set(true);
     this.error.set(null);
-    this.compileSuccess.set(false);
     try {
       const result = await this.electron.generateSelfTest(boardId, this.secrets(), this.network());
       this.files.set(result.files);
+      this.outputDir.set(result.outputDir);
       this.deviceDir.set(result.deviceDir);
     } catch (err) {
       this.error.set(String(err));
@@ -399,53 +270,13 @@ export class BoardsPageComponent implements OnInit, OnDestroy, AfterViewChecked 
     }
   }
 
-  async compile() {
-    const dir = this.deviceDir();
-    if (!dir) return;
-    this.running.set(true);
-    this.activeAction.set('compile');
-    this.compileSuccess.set(false);
-    this.terminalLines.set([]);
-    this.shouldAutoScroll = true;
-    this.error.set(null);
-    try {
-      await this.electron.esphomeCompile(dir);
-    } catch (err) {
-      this.error.set(String(err));
-      this.running.set(false);
-      this.activeAction.set(null);
-    }
+  async openFile(relativePath: string) {
+    const dir = this.outputDir();
+    if (dir) await this.electron.shellOpenPath(`${dir}/${relativePath}`);
   }
 
-  async flash() {
-    const dir = this.deviceDir();
-    const port = this.selectedPort();
-    if (!dir || !port) return;
-    this.running.set(true);
-    this.activeAction.set('flash');
-    this.terminalLines.set([]);
-    this.shouldAutoScroll = true;
-    this.error.set(null);
-    try {
-      await this.electron.esphomeFlash(dir, port);
-    } catch (err) {
-      this.error.set(String(err));
-      this.running.set(false);
-      this.activeAction.set(null);
-    }
-  }
-
-  async cancel() {
-    const pid = this.activeProcessId();
-    if (pid) await this.electron.esphomeCancel(pid);
-  }
-
-  async scanPorts() {
-    this.scanningPorts.set(true);
-    try {
-      this.serialPorts.set(await this.electron.deviceListSerial());
-    } finally {
-      this.scanningPorts.set(false);
-    }
+  async openOutputFolder() {
+    const dir = this.outputDir();
+    if (dir) await this.electron.shellShowInFolder(dir);
   }
 }

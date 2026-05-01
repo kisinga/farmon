@@ -9,4 +9,4 @@ The KC868-A16 self-test firmware exercises every onboard subsystem in one bench 
 | Sensor headers | GPIO32, GPIO33, GPIO14 responsive |
 | Ethernet PHY | LAN8720 link detected |
 
-The test runs once on boot, then idles — the device exposes every entity for **manual control** via the web dashboard (192.168.4.1 on the fallback AP, or the device's home-network IP). Press the *Run Tests* button on the dashboard to re-trigger a cycle.
+The test runs once on boot, then idles — the device exposes every entity for **manual control** via the web dashboard at the device's home-network IP. Press the *Run Tests* button on the dashboard to re-trigger a cycle. (The dashboard is STA-only; if the device drops to the fallback AP at `192.168.4.1`, only the captive portal is reachable — fix WiFi credentials there and rejoin the home network to regain dashboard access.)

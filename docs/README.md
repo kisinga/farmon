@@ -1,11 +1,13 @@
 <!-- generated from packages/core/src/templates/pages/docs/README.hbs — do not edit -->
 # MajiFlow documentation
 
+MajiFlow is a water-orchestration platform for any installation that pumps, stores, or distributes water — irrigation systems, hospitality (hotels, resorts, lodges), greenhouses and nurseries, commercial buildings, livestock and aquaculture operations, schools and campuses, anywhere reliable water flow is critical. The same topology model, codegen pipeline, and Home Assistant integration apply across all of them; only the named tanks, valves, and routes change.
+
 Three audiences, three folders. One shared glossary.
 
-## [installation/](installation/) — installers, electricians, farm operators
+## [installation/](installation/) — installers, electricians, site operators
 
-You're putting MajiFlow on a farm.
+You're putting MajiFlow on site — a farm, a hotel rooftop, a greenhouse, a commercial water-storage room.
 
 - [power-and-wiring.md](installation/power-and-wiring.md) — PSU sizing, DC cable lengths, pump branch, BOM
 - [kc868-a16.md](installation/kc868-a16.md) — board capacity, calibration, Ethernet & RS485 usage

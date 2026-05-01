@@ -233,11 +233,17 @@ export function generateSiteDocumentation(
 </script>`;
     }
 
+    // Anchors used by the per-controller cross-references into Device Reference.
+    const boardSlug = s.board.replace(/_/g, '-');
+    const boardAnchor = `device-${boardSlug}`;
+    const networkAnchor = `${boardAnchor}-network`;
+    const pinAnchor = `${boardAnchor}-pin-architecture`;
+
     // Resolved transport is provided by the IPC layer (see SiteDocSystem.activeTransport).
     const activeConnection = s.activeTransport === 'wifi'
       ? `Active connection: WiFi · Fallback: ${s.friendlyName} Fallback at 192.168.4.1 (password = WiFi password).`
       : s.activeTransport === 'ethernet'
-        ? 'Active connection: Ethernet · No on-device recovery if the cable drops — see Advanced for options.'
+        ? 'Active connection: Ethernet · No on-device recovery if the cable drops.'
         : '';
 
     return {
@@ -253,19 +259,21 @@ export function generateSiteDocumentation(
       routeEntities: s.manifest.routes.map((r, ri) => ({ index: ri, name: r.name })),
       tankCalEntities: levelSensors.map(t => ({ id: t['id'], name: t['name'] })),
       activeConnection,
+      networkAnchor,
+      pinAnchor,
     };
   });
 
-  // Advanced section: one disclosure per (unique board × concern partial).
-  // For each unique board model, enumerate every `partials/boards/<model>/*.hbs`
-  // and emit a flat disclosure. Boards with no partials directory drop out.
+  // Device Reference chapter: per-board grouped reference content.
+  // For each unique board model used in the site, list every
+  // `partials/boards/<model>/<concern>.hbs` as a sub-section. Boards without
+  // a partials directory silently drop out.
   //
   // Dedup is keyed on the normalized kebab-case slug — three controllers
-  // using the same physical board produce ONE set of disclosures, not three,
-  // even if their topologies stored the board id with different casing
-  // (`kc868_a16` vs `kc868-a16`).
+  // using the same physical board produce ONE per-board section, even if
+  // their stored board ids mix casing (`kc868_a16` vs `kc868-a16`).
   const seenSlugs = new Set<string>();
-  const advancedSections = systems.flatMap(s => {
+  const deviceReference = systems.flatMap(s => {
     const slug = s.board.replace(/_/g, '-');
     if (seenSlugs.has(slug)) return [];
     seenSlugs.add(slug);
@@ -275,11 +283,17 @@ export function generateSiteDocumentation(
       .filter(name => name.endsWith('.hbs'))
       .map(name => name.replace(/\.hbs$/, ''))
       .sort((a, b) => CONCERN_ORDER.indexOf(a) - CONCERN_ORDER.indexOf(b));
-    return concerns.map(concern => ({
+    return [{
+      boardSlug: slug,
       boardLabel: s.boardLabel ?? slug,
-      concernLabel: concernLabel(concern),
-      partial: `boards/${slug}/${concern}`,
-    }));
+      anchor: `device-${slug}`,
+      concerns: concerns.map(concern => ({
+        concern,
+        concernLabel: concernLabel(concern),
+        partial: `boards/${slug}/${concern}`,
+        anchor: `device-${slug}-${concern}`,
+      })),
+    }];
   });
 
   // Aggregate flags for installation guidelines
@@ -312,8 +326,8 @@ export function generateSiteDocumentation(
     hasAutomations: automationGroups.length > 0,
     automationGroups,
     controllerDetails,
-    advancedSections,
-    hasAdvancedSections: advancedSections.length > 0,
+    deviceReference,
+    hasDeviceReference: deviceReference.length > 0,
     hasFlowSensors,
     hasValves,
     hasTanks,

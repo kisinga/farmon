@@ -18,30 +18,24 @@
 .active-connection {
   color: var(--text-muted); font-size: 12px; margin: -4px 0 12px;
 }
-.device-ref { margin: 8px 0; }
-.device-ref summary {
-  cursor: pointer; padding: 8px 12px; background: var(--bg-subtle);
-  border-radius: 6px; font-weight: 600;
+/* Handbook chapter intro paragraph — sits under each <h2> chapter and names
+   the intended reader. Subtle, but orients people landing mid-document. */
+.chapter-intro {
+  color: var(--text-muted); font-size: 12px; font-style: italic;
+  margin: -6px 0 16px; max-width: 60ch;
 }
-.device-ref[open] summary { margin-bottom: 8px; }
-
-/* Print / PDF: force every <details> open and style <summary> as a heading
-   so the Advanced section is fully readable in the saved PDF. Browsers
-   (Chrome/Edge/Firefox) collapse <details> in print by default — this
-   overrides that behavior. */
+/* In-document anchors. Plain on screen, semantic on paper (no underline,
+   no color in print — the link target name is the location reference). */
+a.xref { color: var(--brand); text-decoration: none; border-bottom: 1px dotted currentColor; }
+a.xref:hover { border-bottom-style: solid; }
 @media print {
-  details { page-break-inside: auto; }
-  details > summary {
-    list-style: none;
-    cursor: default;
-    /* Mimic an h3 — readable hierarchy on paper without `details` chrome. */
-    font-size: 14px; font-weight: 700; padding: 4px 0;
-    background: transparent; border-radius: 0;
-    margin: 12px 0 4px;
-  }
-  details > summary::-webkit-details-marker,
-  details > summary::marker { display: none; }
-  details > *:not(summary) { display: revert !important; }
+  a.xref { color: inherit; border-bottom: none; font-style: italic; }
+}
+/* Encourage chapter-level page breaks when printing. */
+@media print {
+  h2 { page-break-before: auto; break-before: auto; }
+  h2 + p, h2 + .chapter-intro { page-break-after: avoid; }
+  h3, h4 { page-break-after: avoid; }
 }
 </style>
 </head>
@@ -63,13 +57,16 @@
   </div>
 </div>
 
+<h2>Overview</h2>
+<p class="chapter-intro">For everyone — what was built, where the controllers live, and how routes connect tanks to outlets.</p>
+
 {{#unless singleSystem}}
-<h2>Site Topology</h2>
+<h3>Site Topology</h3>
 <div class="diagram topology">
 {{{compositeTopologySvg}}}
 </div>
 
-<h2>Controllers</h2>
+<h3>Controllers</h3>
 <table>
   <thead>
     <tr><th>Controller</th><th>Board</th><th>Device Name</th><th>Tanks</th><th>Pumps</th><th>Valves</th><th>Routes</th></tr>
@@ -91,7 +88,7 @@
 {{/unless}}
 
 {{#if hasLinks}}
-<h2>Inter-Controller Links</h2>
+<h3>Inter-Controller Links</h3>
 <table>
   <thead>
     <tr><th>From Controller</th><th>From Node</th><th></th><th>To Controller</th><th>To Node</th></tr>
@@ -110,7 +107,7 @@
 </table>
 {{/if}}
 
-<h2>Routes</h2>
+<h3>Routes</h3>
 {{#each routeGroups}}
 {{#unless ../singleSystem}}
 <div class="system-header">
@@ -139,7 +136,7 @@
 {{/each}}
 
 {{#if hasAutomations}}
-<h2>Automations</h2>
+<h3>Automations</h3>
 {{#each automationGroups}}
 {{#unless ../singleSystem}}
 <div class="system-header">
@@ -165,20 +162,18 @@
 {{/each}}
 {{/if}}
 
-{{#unless singleSystem}}<h2>Controller Details</h2>{{/unless}}
+<h2>Operation</h2>
+<p class="chapter-intro">For the site operator and Home Assistant user — what each controller does day-to-day, the entities you'll see in Home Assistant, and the safety rules that protect your equipment. Applies regardless of the application context (irrigation, hotel, greenhouse, commercial water plant).</p>
 {{#each controllerDetails}}
-{{#unless ../singleSystem}}
-<div class="system-header">
-  <div class="system-dot" style="background:{{this.color}}"></div>
-  <strong>{{this.friendlyName}}</strong>
-  <span style="color:var(--text-muted);font-size:11px;">Board: <code>{{this.board}}</code> · Device: <code>{{this.deviceName}}</code></span>
-</div>
-{{/unless}}
 
-{{#if this.activeConnection}}<p class="active-connection">{{this.activeConnection}}</p>{{/if}}
+<h3>{{this.friendlyName}}{{#unless ../singleSystem}} <span style="color:var(--text-muted);font-size:60%;font-weight:400;">— Board: <code>{{this.board}}</code> · Device: <code>{{this.deviceName}}</code></span>{{/unless}}</h3>
+
+{{#if this.activeConnection}}
+<p class="active-connection">{{this.activeConnection}} <a class="xref" href="#{{this.networkAnchor}}">See Device Reference → Network &amp; Recovery →</a></p>
+{{/if}}
 
 {{#if this.topologySvg}}
-<h3>Topology</h3>
+<h4>Topology</h4>
 <div class="diagram topology">
 {{{this.topologySvg}}}
 </div>
@@ -187,8 +182,8 @@
 {{{this.boardPinoutSection}}}
 
 {{#if this.hasPinTable}}
-<h3>Pin Connections</h3>
-<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Wire each entity to the listed connector. Capabilities indicate what the pin supports — e.g. only ADC pins can be used for level sensors. Polarity (when shown) is the configured relay drive level: pick the value that holds the load OFF when the MCU is unpowered.</p>
+<h4>Pin Connections</h4>
+<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Wire each entity to the listed connector. Capabilities indicate what the pin supports — e.g. only ADC pins can be used for level sensors. Polarity (when shown) is the configured relay drive level: pick the value that holds the load OFF when the MCU is unpowered. <a class="xref" href="#{{this.pinAnchor}}">See Device Reference → Pin Architecture →</a></p>
 <table>
   <thead><tr><th>Connector</th><th>Pin</th><th>Entity</th><th>Type</th><th>Field</th><th>Capabilities</th><th>Polarity</th></tr></thead>
   <tbody>
@@ -207,19 +202,7 @@
 </table>
 {{/if}}
 
-<h3>Timing Parameters</h3>
-<table>
-  <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr><td>Valve travel time</td><td><strong>{{this.timing.valve_travel_time}}s</strong></td><td>Time allowed for valves to fully open/close</td></tr>
-    <tr><td>Flow watchdog</td><td><strong>{{this.timing.flow_watchdog}}s</strong></td><td>No-flow duration before fault/tank-full detection</td></tr>
-    <tr><td>Flow confirm</td><td><strong>{{this.timing.flow_confirm}}s</strong></td><td>Time to confirm flow is established after start</td></tr>
-    <tr><td>API watchdog</td><td><strong>{{this.timing.api_watchdog}}s</strong></td><td>HA disconnect duration before route is faulted</td></tr>
-    <tr><td>Sensor update</td><td><strong>{{this.timing.update_interval}}s</strong></td><td>ADC/sensor polling interval</td></tr>
-  </tbody>
-</table>
-
-<h3>Home Assistant Entities</h3>
+<h4>Home Assistant Entities</h4>
 <table>
   <thead><tr><th>Entity</th><th>Type</th><th>Purpose</th></tr></thead>
   <tbody>
@@ -235,7 +218,19 @@
   </tbody>
 </table>
 
-<h3>Firmware Safety</h3>
+<h4>Timing Parameters</h4>
+<table>
+  <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>Valve travel time</td><td><strong>{{this.timing.valve_travel_time}}s</strong></td><td>Time allowed for valves to fully open/close</td></tr>
+    <tr><td>Flow watchdog</td><td><strong>{{this.timing.flow_watchdog}}s</strong></td><td>No-flow duration before fault/tank-full detection</td></tr>
+    <tr><td>Flow confirm</td><td><strong>{{this.timing.flow_confirm}}s</strong></td><td>Time to confirm flow is established after start</td></tr>
+    <tr><td>API watchdog</td><td><strong>{{this.timing.api_watchdog}}s</strong></td><td>HA disconnect duration before route is faulted</td></tr>
+    <tr><td>Sensor update</td><td><strong>{{this.timing.update_interval}}s</strong></td><td>ADC/sensor polling interval</td></tr>
+  </tbody>
+</table>
+
+<h4>Safety at a glance</h4>
 <div class="safety-grid">
   <div class="safety-card"><strong>Pre-start checks</strong><span>Source/dest level thresholds enforced before every start</span></div>
   <div class="safety-card"><strong>Flow watchdog</strong><span>No-flow fault after {{this.timing.flow_watchdog}}s · Flow confirmed within {{this.timing.flow_confirm}}s</span></div>
@@ -245,19 +240,20 @@
 </div>
 {{/each}}
 
-{{#if hasAdvancedSections}}
-<h2>Advanced</h2>
-<p style="color:var(--text-muted);font-size:12px;margin-top:-4px;">Per-board operational reference. Each disclosure covers one concern of one board model — connection &amp; recovery, power, peripherals, pinout, etc. Deduped: each unique board appears once regardless of how many controllers use it.</p>
-{{#each advancedSections}}
-<details class="device-ref">
-  <summary>{{this.boardLabel}} — {{this.concernLabel}}</summary>
-  {{{md this.partial}}}
-</details>
+{{#if hasDeviceReference}}
+<h2>Device Reference</h2>
+<p class="chapter-intro">For installers and maintenance technicians — per-board specifications, recovery procedures, and wiring constraints. Each unique board model appears once regardless of how many controllers use it; the per-controller pinout above tells you which physical pin holds which entity.</p>
+{{#each deviceReference}}
+<h3 id="{{this.anchor}}">{{this.boardLabel}}</h3>
+{{#each this.concerns}}
+<h4 id="{{this.anchor}}">{{this.concernLabel}}</h4>
+{{{md this.partial}}}
+{{/each}}
 {{/each}}
 {{/if}}
 
-<h2>Firmware Safety Model</h2>
-<p>All safety logic runs on the ESP32 — no server dependency. Each controller operates independently with the same state machine and watchdog behavior.</p>
+<h2>Troubleshooting &amp; Recovery</h2>
+<p class="chapter-intro">For maintenance technicians — how the firmware decides to stop a route, how faults are surfaced to HA, and how to recover when things go wrong. All safety logic runs on the ESP32 — no server dependency. Each controller operates independently with the same state machine and watchdog behavior.</p>
 
 <h3>State Machine</h3>
 <div class="state-diagram"><span class="hl">IDLE</span> ──→ <span class="hl">PREPARING</span> ──→ <span class="hl">RUNNING</span> ──→ <span class="hl">STOPPING</span> ──→ <span class="hl">IDLE</span>
@@ -370,10 +366,13 @@
 {{/if}}
 
 <div class="installation">
-<h2>Installation Guidelines</h2>
+<h2>Installation</h2>
+<p class="chapter-intro">For installers and electricians at the job site — sensor placement, valve mounting, tank-sensor calibration, and PSU + cable specs. Board-specific power and pinout details live under Device Reference; this chapter covers the field side of the wiring.</p>
+
+<h3>Installation Guidelines</h3>
 
 {{#if hasFlowSensors}}
-<h3>Flow Sensors</h3>
+<h4>Flow Sensors</h4>
 <h4>Placement — The 10D/5D Rule</h4>
 <p>Flow sensors require straight, undisturbed pipe upstream and downstream for accurate readings:</p>
 <ul>
@@ -393,7 +392,7 @@
 {{/if}}
 
 {{#if hasValves}}
-<h3>Valves</h3>
+<h4>Valves</h4>
 <ul>
   <li>Mount <strong>horizontally</strong> or with the actuator <strong>above</strong> the pipe</li>
   <li>Default travel time: <strong>15 seconds</strong></li>
@@ -403,13 +402,13 @@
 {{/if}}
 
 {{#if hasTanks}}
-<h3>Tank Level Sensors</h3>
+<h4>Tank Level Sensors</h4>
 <p>Analog pressure sensors at the tank bottom measure water column height. Mount at the <strong>lowest point</strong> of the tank.</p>
 <p>Calibrate via Home Assistant: set <strong>Cal Empty (V)</strong> and <strong>Cal Full (V)</strong> number entities.</p>
 <p>Tank readings are <strong>suppressed during pump operation</strong> to avoid pressure artifacts.</p>
 {{/if}}
 
-<h3>General Notes</h3>
+<h4>General Notes</h4>
 <ul>
   <li><strong>Pipe sizing</strong>: Match pipe diameter to expected flow rates</li>
   <li><strong>Pressure regulators</strong>: Install upstream if mains pressure exceeds 6 bar</li>
@@ -418,10 +417,7 @@
   <li><strong>Float switches</strong>: Required on every destination tank as hardware safety interlock</li>
 </ul>
 
-</div>
-
-<div class="installation">
-<h2>Power &amp; Wiring</h2>
+<h3>Power &amp; Wiring</h3>
 
 {{md "wiring/at-a-glance"}}
 

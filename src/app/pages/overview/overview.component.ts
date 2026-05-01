@@ -200,7 +200,7 @@ function initials(name: string): string {
               <input
                 type="text"
                 class="input input-bordered w-full"
-                placeholder="My Farm"
+                placeholder="My Site"
                 #newName
                 (keydown.enter)="createSite(newName.value)"
               />

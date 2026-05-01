@@ -14,15 +14,14 @@ When the configured WiFi network is unreachable, ESPHome activates a fallback ho
 
 - **SoftAP SSID**: `<friendly_name> Fallback` — the device's friendly name from MajiFlow.
 - **SoftAP password**: identical to your `wifi_password` — one credential to remember.
-- **Default gateway**: **`192.168.4.1`** — visit `http://192.168.4.1/` in a browser for the full web dashboard.
-- Phones and laptops auto-popup ESPHome's captive portal where you can rotate WiFi credentials without re-flashing.
+- **Default gateway**: **`192.168.4.1`** — phones and laptops auto-popup ESPHome's captive portal here. Use it to **re-enter WiFi credentials** or **push an OTA firmware update**; the entity dashboard is *not* served on the SoftAP (ESPHome's `web_server` binds to the STA interface only — see [esphome-core#4333](https://github.com/esphome/esphome/issues/4333)). The dashboard returns once the device successfully rejoins the home network.
 
 ### Web dashboard
 
-Reachable at:
+**STA-only** — ESPHome's `web_server` binds to the home-network interface, not to the SoftAP. Reachable at:
 
 - `http://<device-ip>/` on the home network — IP shown in `wifi_info`.
-- `http://192.168.4.1/` on the fallback AP.
+- *Not* available at `192.168.4.1`. The fallback AP serves only the captive portal (WiFi setup + OTA upload).
 
 Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control.
 

@@ -14,9 +14,11 @@
 
 ### Realistic configurations
 
-**Small farm** (typical hobby/small plot): 1 pump, 3 valves, 2 tanks, 1 flow sensor — uses 8/16 OUT, 2/4 ADC, 1/3 pulse counter. Room to grow.
+Sizing tiers below are agnostic to the application — a small irrigation plot, a hotel rooftop tank set, a greenhouse zone head, and a small distribution manifold all map to the same controller footprint when the valve / tank / flow-sensor counts match.
 
-**Medium farm** (semi-commercial): 1 pump, 6 valves, 4 tanks, 3 flow sensors — uses 14/16 OUT, 4/4 ADC, 3/3 pulse counter. Near maximum: 1 spare OUT pin.
+**Compact** (e.g. small plot, single rooftop, one-zone greenhouse): 1 pump, 3 valves, 2 tanks, 1 flow sensor — uses 8/16 OUT, 2/4 ADC, 1/3 pulse counter. Room to grow.
+
+**Medium** (e.g. multi-zone irrigation, hotel back-of-house ring, mid-size greenhouse): 1 pump, 6 valves, 4 tanks, 3 flow sensors — uses 14/16 OUT, 4/4 ADC, 3/3 pulse counter. Near maximum: 1 spare OUT pin.
 
 **Maxed out** (every pin utilized): 1 pump, 7 valves, 4 tanks, 3 flow sensors — uses 15/16 OUT, 4/4 ADC, 3/3 pulse counter. No spare capacity on any pool.
 

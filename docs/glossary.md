@@ -11,7 +11,7 @@ Canonical definitions for the water system topology model. All code, config file
 
 **Pump** — Single relay-controlled water pump. Has exactly one inlet and one outlet. All pressurized (non-gravity) paths traverse the pump.
 
-**Endpoint** — A non-tank destination such as a house or irrigation zone. Has inlet port(s) but no level sensor. Unlike tanks, endpoints consume water — they are terminal nodes in the graph.
+**Endpoint** — A non-tank destination such as a building, irrigation zone, hose bib, or distribution manifold. Has inlet port(s) but no level sensor. Unlike tanks, endpoints consume water — they are terminal nodes in the graph.
 
 ## Connections
 

@@ -4,7 +4,7 @@
 
 ## Overview
 
-This document chronicles the real-world experience of implementing firmware for Heltec LoRa devices in the farm monitoring system. It serves as a cautionary tale and learning resource for future development decisions.
+This document chronicles the real-world experience of implementing firmware for Heltec LoRa devices in MajiFlow — historically a rural water-monitoring system, now a generic water-orchestration platform applicable across irrigation, hospitality, greenhouses, and other water-intensive installations. It serves as a cautionary tale and learning resource for future development decisions.
 
 ## The Challenge
 
@@ -309,7 +309,7 @@ Almost nothing as code. Everything as lessons:
 
 - The firmware taught us LoRaWAN, binary protocols, embedded constraints, and that commodity problems deserve commodity solutions.
 - The backend taught us PocketBase, workflow engines, codec design, and that being the only person who understands the system is a liability, not an asset.
-- The frontend taught us Angular, real-time IoT dashboards, and that community dashboards with drag-and-drop are what farmers actually want.
+- The frontend taught us Angular, real-time IoT dashboards, and that community dashboards with drag-and-drop are what end-users actually want.
 - The dev journal taught us to document decisions honestly, including the wrong ones.
 
 ### Lessons

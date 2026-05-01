@@ -2,6 +2,8 @@
 
 Last updated: 2026-04-04
 
+> **Positioning note (2026-05):** MajiFlow has broadened from "farm-only" to a generic water-orchestration platform applicable wherever water is pumped, stored, or distributed — irrigation systems, hospitality (hotels, resorts, lodges), greenhouses and nurseries, commercial buildings, livestock and aquaculture operations, schools and campuses. The market segments and competitors named below are factual references to the original entry market (rural irrigation pump control); the platform now competes in additional adjacent segments. Updates to this doc lag the product — treat the rural-irrigation framing below as one of several go-to-market lanes.
+
 ## What We Built
 
 ESP32 (Heltec V3) controlling 1 pump + 4 motorized valves, 2 tank level sensors, 2 flow sensors, 3 configurable routes. On-device state machine with 6 fault codes. OLED display. HA integration via ESPHome. All safety logic runs locally — no server dependency.
@@ -141,7 +143,7 @@ No product in any market combines:
 | Tier | Contents | Price | Margin | Target |
 |------|----------|-------|--------|--------|
 | DIY Kit | PCB + firmware guide, no peripherals | $99-129 | 60-70% | HA makers |
-| Controller Unit | Assembled + enclosure + OLED, pre-flashed | $179-229 | 55-65% | Prosumer, small farm |
+| Controller Unit | Assembled + enclosure + OLED, pre-flashed | $179-229 | 55-65% | Prosumer, compact installation |
 | Complete System | Controller + 4 valves + 2 level + 2 flow + wiring | $449-549 | 45-55% | Turnkey buyers |
 | Pro / Custom | Complete + install consultation + custom routes | $699-899 | 50-60% | Rural properties |
 
