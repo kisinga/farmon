@@ -317,7 +317,7 @@ a.xref:hover { border-bottom-style: solid; }
 
 <h3>Test System</h3>
 
-<p class="active-connection">Active connection: Ethernet · No on-device recovery if the cable drops. <a class="xref" href="#device-kc868-a16-network">See Device Reference → Network &amp; Recovery →</a></p>
+<p class="active-connection">Active connection: Ethernet · DHCP (dashboard at the IP your router assigns) · No on-device recovery if the cable drops — replug or direct-connect to a laptop. <a class="xref" href="#device-kc868-a16-network">See Device Reference → Network &amp; Recovery →</a></p>
 
 <h4>Topology</h4>
 <div class="diagram topology">
@@ -397,31 +397,40 @@ a.xref:hover { border-bottom-style: solid; }
 <td>✓ same panel</td>
 </tr>
 <tr>
-<td><strong>Fallback when network is down</strong></td>
-<td><strong>None</strong> — device is unreachable until cable is replugged</td>
-<td>SoftAP starts automatically</td>
+<td><strong>Recovery if the network goes down</strong></td>
+<td>None — replug the cable, or direct-connect to a laptop (see below)</td>
+<td>Improv or join the fallback AP</td>
 </tr>
 </tbody></table>
-<h3>Recovery path on WiFi transport</h3>
-<p>When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot after <strong>~90 seconds</strong> of failed station association (<a href="https://esphome.io/components/wifi.html"><code>wifi.ap_timeout</code></a> default). MajiFlow does not currently override this — if you need faster recovery during commissioning, edit the generated YAML to add <code>wifi.ap_timeout: 30s</code> before flashing.</p>
+<h3>Where the dashboard lives</h3>
+<p>The entity dashboard only serves on the device&#39;s <strong>station</strong> IP — i.e. the IP it gets from your home network (DHCP) or whatever you set as <code>manual_ip</code>. It does <strong>not</strong> serve at <code>192.168.4.1</code> (the fallback-AP gateway address). This is an ESPHome limitation: <code>web_server</code> doesn&#39;t bind the SoftAP interface (<a href="https://github.com/esphome/issues/issues/4333">esphome/issues#4333</a>), so when wifi is down there is no entity-control surface.</p>
+<p>To control the device, it must be reachable on a network — either the home wifi, or via ethernet.</p>
+<h3>Recovery on WiFi transport</h3>
+<p>When the configured wifi credentials stop working (network changed, password rotated, etc.), use one of these to push new credentials. Neither restores the dashboard until wifi rejoins.</p>
+<p><strong>1. Improv Wi-Fi</strong> — recommended. Open standard from the Home Assistant ecosystem (open-source, github.com/improv-wifi). Two flavours, both compiled in:</p>
 <ul>
-<li><strong>SoftAP SSID</strong>: <code>&lt;friendly_name&gt; Fallback</code> — derived from the device&#39;s friendly name in MajiFlow. For example, a device named <em>Pump Controller</em> broadcasts as <code>Pump Controller Fallback</code>.</li>
-<li><strong>SoftAP password</strong>: identical to your <code>wifi_password</code> — one credential to remember.</li>
-<li><strong>Default gateway</strong>: <strong><code>192.168.4.1</code></strong> — connect your phone/laptop to the SoftAP first, then the OS pops the captive-portal page automatically (Android/iOS detect it via <code>/generate_204</code>, <code>/hotspot-detect.html</code>, etc.). Use it to <strong>re-enter WiFi credentials</strong> (<code>/wifisave</code>) or <strong>push an OTA firmware update</strong> (<code>/update</code>). Note: typing <code>http://192.168.4.1/</code> directly may land on the entity dashboard instead of the wifi-recovery page — this is a known ESPHome ordering quirk (<a href="https://github.com/esphome/esphome/issues/11132">#11132</a>, <a href="https://github.com/esphome/esphome/issues/14856">#14856</a>) where <code>web_server</code>&#39;s catch-all shadows the captive-portal index. The captive-portal <em>routes</em> still work; just navigate via the OS popup.</li>
+<li><strong>BLE</strong> (<code>esp32_improv</code>): pair from any Chromium-based browser at <a href="https://www.improv-wifi.com/">improv-wifi.com</a> (or the ESPHome / HA companion app). The page uses WebBluetooth to talk <strong>directly</strong> to the device — no server roundtrip, no account.</li>
+<li><strong>Serial</strong> (<code>improv_serial</code>): same page, but over USB via WebSerial. Useful when BLE is unreachable or the device is bench-bound.</li>
 </ul>
-<h3>Recovery path on Ethernet transport</h3>
-<p>There is no on-device recovery. Options:</p>
+<p><strong>2. Fallback AP + captive portal</strong> — works without a Chromium browser, but degraded UX.</p>
+<ul>
+<li>After ~90 s of failed wifi association, the device broadcasts <code>&lt;friendly_name&gt; Fallback</code> (password = your wifi password).</li>
+<li>Joining the AP triggers your phone/laptop&#39;s captive-portal popup automatically.</li>
+<li>Use that popup&#39;s <strong>Configure WiFi</strong> form to enter new credentials.</li>
+<li>On ESPHome 2025.2.0+, the popup may render blank. If so, the credential-save endpoint still works — paste your new SSID/password using the form fields the OS shows, or use Improv instead.</li>
+<li>The 192.168.4.1 address itself shows no useful page; don&#39;t bother typing it directly.</li>
+</ul>
+<h3>Recovery on Ethernet transport</h3>
+<p>If the cable drops the device is unreachable until it&#39;s replugged. There&#39;s no on-device recovery surface for ethernet (no AP, no Improv-over-cable).</p>
+<h3>Direct-to-laptop debug (no router)</h3>
+<p>Useful for bench testing. Plug an ethernet cable from your laptop straight into the KC868-A16 (the LAN8720 PHY does auto-MDIX). On the laptop:</p>
 <ol>
-<li>Plug the cable back in.</li>
-<li>Switch transport to WiFi in MajiFlow → re-flash → use the WiFi fallback above.</li>
+<li>Set the wired interface to a manual IP in the same subnet as the device — e.g. device <code>192.168.150.142</code>, laptop <code>192.168.150.100</code>, mask <code>255.255.255.0</code>.</li>
+<li>Open <code>http://&lt;device-static-ip&gt;/</code> — full dashboard, no router involved.</li>
 </ol>
+<p>Requires a static IP on the device (set in <em>Connection → IP Configuration</em>).</p>
 <h3>Web dashboard</h3>
-<p>Always emitted on <strong>port 80</strong> alongside the chosen transport. Reachable at:</p>
-<ul>
-<li><code>http://&lt;device-ip&gt;/</code> on the home network — the IP shown in <code>ethernet_info</code> or <code>wifi_info</code>.</li>
-<li><code>http://192.168.4.1/</code> on the fallback AP — but entity controls won&#39;t function until WiFi rejoins (no STA = no time, no MQTT, no API). Use the captive-portal popup for credential reset; come back to the dashboard at the home-network IP after the device reconnects.</li>
-</ul>
-<p>Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control — nothing extra to configure.</p>
+<p>Always emitted on <strong>port 80</strong>. Reachable at the device&#39;s IP (home-network or direct-cable). Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control — nothing extra to configure.</p>
 
 <h4 id="device-kc868-a16-power">Power Requirements</h4>
 <p>The KC868-A16 board, every 12 V solenoid valve, and every 4–20 mA / 0–10 V sensor draw from one <strong>12 V DC supply</strong> wired to the green DC input terminal block.</p>

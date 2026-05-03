@@ -68,6 +68,16 @@ export interface SiteDocSystem {
    * — the doc generator never re-derives it.
    */
   activeTransport?: NetworkTransport;
+  /**
+   * Per-device WiFi creds embedded in this controller's recovery doc so
+   * field installers see the literal SoftAP credentials for THIS device
+   * (the SoftAP password reuses wifi_password — see networking.ts).
+   * Only set for wifi-transport devices; ethernet has no AP fallback.
+   */
+  wifiSsid?: string;
+  wifiPassword?: string;
+  /** Static IP if `manual_ip` is configured for this device. */
+  staticIp?: string;
   deviceName: string;
   manifest: Manifest;
   boardSvg?: string;
@@ -240,11 +250,32 @@ export function generateSiteDocumentation(
     const pinAnchor = `${boardAnchor}-pin-architecture`;
 
     // Resolved transport is provided by the IPC layer (see SiteDocSystem.activeTransport).
-    const activeConnection = s.activeTransport === 'wifi'
-      ? `Active connection: WiFi · Fallback: ${s.friendlyName} Fallback at 192.168.4.1 (password = WiFi password).`
-      : s.activeTransport === 'ethernet'
-        ? 'Active connection: Ethernet · No on-device recovery if the cable drops.'
-        : '';
+    // Wifi devices get the literal AP creds + static-IP (if any) inline, so a
+    // field installer reading the printed doc has every recovery fact for THIS
+    // device without cross-referencing secrets.yaml.
+    // Per-device "Active connection" line. The dashboard only serves at
+    // the STA / ethernet IP — never at 192.168.4.1 (esphome/issues#4333).
+    // The fallback AP is documented as a credential-recovery hatch, not
+    // a control surface, so we surface its SSID + password but do not
+    // imply the dashboard lives there.
+    let activeConnection = '';
+    if (s.activeTransport === 'wifi') {
+      const apSsid = `${s.friendlyName} Fallback`;
+      const ipPart = s.staticIp
+        ? `static IP \`${s.staticIp}\` (dashboard at \`http://${s.staticIp}/\`)`
+        : 'DHCP (dashboard at the IP your router assigns)';
+      const parts = [
+        `Active connection: WiFi (SSID \`${s.wifiSsid ?? '—'}\`)`,
+        ipPart,
+        `Recovery: pair with this device at [improv-wifi.com](https://www.improv-wifi.com/) (BLE or USB) to rotate credentials, or join the fallback AP \`${apSsid}\` (password = WiFi password \`${s.wifiPassword ?? '—'}\`) and use the OS captive-portal popup.`,
+      ];
+      activeConnection = parts.join(' · ');
+    } else if (s.activeTransport === 'ethernet') {
+      const ipPart = s.staticIp
+        ? `static IP \`${s.staticIp}\` (dashboard at \`http://${s.staticIp}/\`)`
+        : 'DHCP (dashboard at the IP your router assigns)';
+      activeConnection = `Active connection: Ethernet · ${ipPart} · No on-device recovery if the cable drops — replug or direct-connect to a laptop.`;
+    }
 
     return {
       friendlyName: s.friendlyName,

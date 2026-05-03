@@ -416,7 +416,15 @@ assert(!kcBoardPkg.includes("\nuart:"), "No uart: section in board package (user
 const kcBoardPkgWifi = generateBoardPackage(kcBoard, { mode: 'dhcp', transport: 'wifi' });
 assert(!kcBoardPkgWifi.includes("ethernet:"), "transport=wifi: no ethernet: section");
 assert(kcBoardPkgWifi.includes("wifi:"), "transport=wifi: has wifi: section");
-assert(kcBoardPkgWifi.includes("captive_portal"), "transport=wifi: has captive_portal");
+// captive_portal IS emitted: it's the only ESPHome component that binds
+// the SoftAP interface for HTTP. Without it, 192.168.4.1 has no page
+// (esphome/issues#4333). The dashboard never serves on the AP, so AP +
+// captive_portal exist solely as a credential-recovery hatch alongside
+// Improv (which is the preferred modern path).
+assert(kcBoardPkgWifi.includes("captive_portal"), "transport=wifi: has captive_portal (only AP-mode HTTP surface)");
+assert(kcBoardPkgWifi.includes("esp32_improv"), "transport=wifi: has esp32_improv (BLE recovery)");
+assert(kcBoardPkgWifi.includes("improv_serial"), "transport=wifi: has improv_serial (USB recovery)");
+assert(kcBoardPkgWifi.includes("ap:"), "transport=wifi: has ap: fallback hotspot");
 assert(kcBoardPkgWifi.includes("web_server:"), "transport=wifi: has web_server");
 // SoftAP password reuses the wifi station password — single credential UX.
 // Reachable at 192.168.4.1 when the station fails to associate.

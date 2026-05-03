@@ -6,24 +6,34 @@ The Heltec WiFi LoRa 32 V3 is a **WiFi-only** board — no ethernet PHY. ESPHome
 | Credentials needed | SSID + password |
 | Diagnostic sensors | `wifi_info` (IP, SSID, MAC) + `wifi_signal` (dBm) |
 | Static IP support | ✓ via *Connection → IP Configuration* |
-| Fallback when network is down | SoftAP starts automatically |
+| Recovery if wifi goes down | Improv or join the fallback AP (see below) |
 
-### Recovery path
+### Where the dashboard lives
 
-When the configured WiFi network is unreachable, ESPHome activates a fallback hotspot after **~90 seconds** of failed station association ([`wifi.ap_timeout`](https://esphome.io/components/wifi.html) default). MajiFlow does not currently override this — if you need faster recovery during commissioning, edit the generated YAML to add `wifi.ap_timeout: 30s` before flashing.
+The entity dashboard only serves on the device's **wifi-station** IP — the IP your router assigns it, or whatever you set as `manual_ip`. It does **not** serve at `192.168.4.1` (the fallback-AP gateway). ESPHome's `web_server` doesn't bind the SoftAP interface ([esphome/issues#4333](https://github.com/esphome/issues/issues/4333)), so when wifi is down there is no entity-control surface.
 
-- **SoftAP SSID**: `<friendly_name> Fallback` — the device's friendly name from MajiFlow.
-- **SoftAP password**: identical to your `wifi_password` — one credential to remember.
-- **Default gateway**: **`192.168.4.1`** — connect your phone/laptop to the SoftAP first, then the OS pops the captive-portal page automatically. Use it to **re-enter WiFi credentials** (`/wifisave`) or **push an OTA firmware update** (`/update`). Typing `http://192.168.4.1/` directly may land on the entity dashboard instead of the wifi-recovery page (known ESPHome ordering quirk — [#11132](https://github.com/esphome/esphome/issues/11132), [#14856](https://github.com/esphome/esphome/issues/14856)); the captive-portal *routes* still work, just navigate via the OS popup.
+To control the device, it must be on a wifi network the laptop can also reach.
+
+### Recovery
+
+When wifi credentials need changing, use one of these. Neither restores the dashboard until wifi rejoins.
+
+**1. Improv Wi-Fi** — recommended. Open standard from the Home Assistant ecosystem (github.com/improv-wifi). Two flavours, both compiled in:
+
+- **BLE** (`esp32_improv`): pair from any Chromium-based browser at [improv-wifi.com](https://www.improv-wifi.com/). WebBluetooth talks **directly** to the device — no server, no account.
+- **Serial** (`improv_serial`): same page, but over USB via WebSerial.
+
+**2. Fallback AP + captive portal** — works without a Chromium browser.
+
+- After ~90 s of failed wifi association, the device broadcasts `<friendly_name> Fallback` (password = your wifi password).
+- Joining the AP triggers the OS captive-portal popup automatically.
+- Use that popup's **Configure WiFi** form to enter new credentials.
+- On ESPHome 2025.2.0+ the popup may render blank — the credential-save endpoint still works behind the scenes, but if so prefer Improv.
+- Typing `http://192.168.4.1/` directly shows nothing useful; don't bother.
 
 ### Web dashboard
 
-Emitted on **port 80**. Reachable at:
-
-- `http://<device-ip>/` on the home network — IP shown in `wifi_info`.
-- `http://192.168.4.1/` on the fallback AP — but entity controls won't function without STA (no time, no API). Use the captive-portal popup for credential reset; return to the home-network IP once the device reconnects.
-
-Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control.
+Emitted on **port 80**, reachable at the device's wifi IP. Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control.
 
 ### Range note
 

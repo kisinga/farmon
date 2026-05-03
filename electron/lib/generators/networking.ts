@@ -44,9 +44,25 @@ function emitEthernet(eth: EthernetDef, manualIp?: ManualIp): Record<string, unk
 }
 
 function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
-  // SoftAP reuses the WiFi password (one credential to remember). When
-  // STA fails for ~1 min, ESPHome activates the AP at 192.168.4.1 and
-  // serves the captive portal there for re-entering creds + OTA upload.
+  // Both `ap:` and `captive_portal:` are emitted.
+  //
+  // Why: web_server does NOT bind the AP interface (esphome/issues#4333,
+  // confirmed empirically — nothing ever serves at 192.168.4.1 unless
+  // captive_portal is present). The entity dashboard only works at the
+  // device's STA IP on the home network. AP fallback exists solely for
+  // wifi-credential recovery, and captive_portal is the only ESPHome
+  // component that serves HTTP on the AP interface.
+  //
+  // Known degradation: on ESPHome 2025.2.0+ the captive_portal index
+  // page renders blank when wifi creds live in YAML (esphome/issues#6784).
+  // The OS captive-detect popup still fires (/generate_204 etc.) and
+  // POST /wifisave still works, so credential reset is still reachable
+  // — just with degraded UX. Accepted because it's the only AP-mode
+  // HTTP surface ESPHome ships.
+  //
+  // Improv (emitImprov below) is the preferred modern recovery path.
+  // The AP+captive_portal pair is the zero-dependency fallback for
+  // users without a Chromium browser handy.
   return [
     {
       wifi: {
@@ -54,7 +70,7 @@ function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
         password: secret('wifi_password'),
         ...(manualIp && { manual_ip: manualIp }),
         ap: {
-          ssid: "${friendly_name} Fallback",
+          ssid: '${friendly_name} Fallback',
           password: secret('wifi_password'),
         },
       },
@@ -63,21 +79,33 @@ function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
   ];
 }
 
-// `web_server_base` is a SINGLETON in ESPHome — one AsyncWebServer
-// instance shared by web_server + captive_portal. Setting `port:` here
-// changes the singleton's port; it does NOT spawn a second base. So
-// keep this on 80, otherwise nothing listens on 192.168.4.1:80 in
-// fallback AP mode and the OS captive-portal popup never fires.
+// Improv = upstream-supported credential-recovery flow that bypasses
+// the broken captive_portal. Two transports, both emitted together:
 //
-// Known cosmetic issue (esphome#11132, #14856 — open, unresolved):
-// in AP mode `http://192.168.4.1/` shows web_server's entity index
-// instead of the wifi-recovery page because web_server's catch-all
-// handler beats captive_portal's `/`. The OS-level captive-portal
-// detection routes (`/generate_204`, `/hotspot-detect.html`, …) are
-// still owned by captive_portal::canHandle, so phones DO auto-popup
-// the recovery page; `/wifisave` and `/update` still work for manual
-// credential reset + OTA. Acceptable trade-off for keeping the entity
-// dashboard available on STA at port 80.
+//   esp32_improv  — provisioning over BLE (any ESP32 has BLE radio).
+//                   User opens improv-wifi.com on a Chromium browser
+//                   (or the ESPHome / HA companion app), pairs over
+//                   BLE, sends SSID + password. Works without USB.
+//   improv_serial — provisioning over the USB-UART. User opens
+//                   improv-wifi.com via WebSerial and provisions over
+//                   the same cable used for flashing. Works even when
+//                   BLE is disabled or the device is bench-bound.
+//
+// Both require `wifi:` configured. authorizer: none = no physical
+// button required to accept new creds (we don't expose a dedicated
+// provisioning button on either board); change to `pin:` if a board
+// gains one in future.
+function emitImprov(board: BoardDef): Record<string, unknown>[] {
+  const sections: Record<string, unknown>[] = [];
+  // esp32_improv depends on the ESP32 BLE stack — only emit on ESP32 family.
+  if (board.mcu.variant.startsWith('esp32')) {
+    sections.push({ esp32_improv: { authorizer: 'none' } });
+  }
+  // improv_serial is MCU-agnostic (UART-only), always safe to emit.
+  sections.push({ improv_serial: null });
+  return sections;
+}
+
 function emitWebServer(): Record<string, unknown> {
   return { web_server: { port: 80, version: 3 } };
 }
@@ -146,7 +174,7 @@ export function emitConnectionProfile(
   const sections =
     transport === 'ethernet'
       ? [emitEthernet(board.peripherals.ethernet!, manualIp)]
-      : emitWifi(manualIp);
+      : [...emitWifi(manualIp), ...emitImprov(board)];
   sections.push(emitWebServer());
   sections.push(emitTransportTextSensors(supported, transport));
   return sections;

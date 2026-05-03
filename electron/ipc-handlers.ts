@@ -571,12 +571,27 @@ export function registerIpcHandlers() {
             }))
             .sort(comparePinRows);
         }
+        // Per-system secrets (wifi creds embedded in the recovery doc so a
+        // field installer can read literal SSID + password without opening
+        // secrets.yaml). Pulled per-(siteId, systemId) — never shared across
+        // devices, never synthesised. Missing secrets → fields stay undefined,
+        // and the doc renders an em-dash placeholder.
+        const sysSecrets = (db.getSecrets(siteId, s.systemId) ?? {}) as Record<string, string>;
+        const wifiSsid = activeTransport === 'wifi' ? sysSecrets.wifi_ssid : undefined;
+        const wifiPassword = activeTransport === 'wifi' ? sysSecrets.wifi_password : undefined;
+        const staticIp = manifest.device.network?.mode === 'static'
+          ? manifest.device.network?.static_ip
+          : undefined;
+
         return {
           systemId: s.systemId,
           friendlyName: s.friendlyName,
           board: s.board,
           boardLabel,
           activeTransport,
+          wifiSsid,
+          wifiPassword,
+          staticIp,
           deviceName: s.deviceName,
           manifest,
           boardSvg,

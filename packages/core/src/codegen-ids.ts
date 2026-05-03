@@ -99,8 +99,12 @@ export function resolvePinYaml(
     if (!expander) {
       throw new Error(`Pin ${pinName} references unknown expander "${pinDef.expander}"`);
     }
+    // Match the canonical KC868/PCF8574 ESPHome examples: `mode: OUTPUT` /
+    // `mode: INPUT` (string form). ESPHome accepts both string and structured
+    // (`{ output: true }`) forms identically; using the string form makes our
+    // YAML byte-identical to every published reference config for these chips.
     const isOutput = opts?.mode?.toUpperCase().includes('OUTPUT');
-    const mode = isOutput ? '{ output: true }' : '{ input: true }';
+    const mode = isOutput ? 'OUTPUT' : 'INPUT';
     const lines = [
       `${expander.platform}: ${pinDef.expander}`,
       `number: ${pinDef.number}`,
