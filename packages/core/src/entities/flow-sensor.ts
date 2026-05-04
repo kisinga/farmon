@@ -104,7 +104,7 @@ ${header}
         for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
           if (slots[s].state != 2 || slots[s].route_id < 0) continue;
           if (ROUTES[slots[s].route_id].flow_sensor != SENSOR_IDX) continue;
-          if (x > 0.5f) {
+          if (x > id(flow_threshold_l_min).state) {
             slots[s].last_flow_time = millis();
             id(${faultId}) = 0;
             if (!slots[s].flow_confirmed) {
@@ -116,7 +116,7 @@ ${header}
           } else if (slots[s].flow_confirmed) {
             id(${faultId}) += 1;
             if (id(${faultId}) == 3) {
-              ESP_LOGW("safety", "Sensor fault on ${node.id} — 3 consecutive zero readings");
+              ESP_LOGW("safety", "Sensor fault on ${node.id} — 3 consecutive below-threshold readings");
             }
           }
           // No break — multiple concurrent routes may share this sensor

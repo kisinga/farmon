@@ -63,12 +63,16 @@ import type { SystemTopology } from './topology.types';
 /** Raw Zod-inferred type (loose due to registry-driven union). */
 export type Topology = z.infer<typeof TopologySchema>;
 
+const PSI_PER_BAR = 14.5037738;
+
 /**
  * Migrate legacy topology shape to current schema:
  * - Renames `flow_watchdog_seconds` etc. to current keys
  * - Converts string durations ("15s"/"2000ms") to numeric seconds
+ * - Converts legacy pressure sensor `min_bar` / `max_bar` fields to the
+ *   current psi-based model.
  */
-function migrateTiming(data: unknown): unknown {
+function migrateLegacyTopology(data: unknown): unknown {
   if (!data || typeof data !== 'object') return data;
   const d = data as Record<string, unknown>;
   let changed = false;
@@ -109,6 +113,19 @@ function migrateTiming(data: unknown): unknown {
     const n = nodes.map((raw) => {
       if (!raw || typeof raw !== 'object') return raw;
       const node = raw as Record<string, unknown>;
+      if (node['kind'] === 'pressure_sensor') {
+        const migrated = { ...node };
+        if (migrated['sensor_max_psi'] == null && typeof migrated['max_bar'] === 'number') {
+          migrated['sensor_max_psi'] = Number((migrated['max_bar'] * PSI_PER_BAR).toFixed(2));
+          nodesChanged = true;
+        }
+        if ('min_bar' in migrated || 'max_bar' in migrated) {
+          delete migrated['min_bar'];
+          delete migrated['max_bar'];
+          nodesChanged = true;
+        }
+        return migrated;
+      }
       if (node['kind'] === 'valve' && typeof node['travel_time'] === 'string') {
         nodesChanged = true;
         return { ...node, travel_time: Math.round(parseDurationMs(node['travel_time'] as string) / 1000) };
@@ -131,7 +148,7 @@ function migrateTiming(data: unknown): unknown {
  * Applies legacy-key migration before validation.
  */
 export function parseTopology(data: unknown): SystemTopology {
-  return TopologySchema.parse(migrateTiming(data)) as SystemTopology;
+  return TopologySchema.parse(migrateLegacyTopology(data)) as SystemTopology;
 }
 
 // ---------------------------------------------------------------------------

@@ -78,6 +78,22 @@ The Manual tab is a separate Lovelace view per controller (`<friendly_name> Manu
 
 ---
 
+## Float valves at every tank inlet
+
+A mechanical float valve at every tank inlet is a hard requirement, not an optional accessory. The controller's tank-full detection assumes one is present. Three reasons:
+
+1. **Passive overflow protection.** The valve closes regardless of controller state. If the controller crashes, a sensor mis-reads, or a route command misfires, the float still stops the inflow before the tank overflows. No firmware path can replace this — it is the safety layer of last resort.
+
+2. **Tank-full signal via flow differential.** When a destination tank fills, its float closes and the source flow rate drops. The flow watchdog and the per-route `dest_max_pct` level threshold both depend on this behaviour to detect "destination full." Without a float, upstream flow cannot distinguish "destination full" from any other back-pressure cause (a partly closed valve, a kinked hose, a stuck pump check valve), so the controller would either keep filling forever or false-trigger on unrelated flow loss.
+
+3. **Safe parallel filling.** A single pump can serve multiple tanks at once. When one tank fills first, its float closes and water naturally redirects to the others. The differential flow rate the controller observes — total demand minus the share absorbed by closed-float tanks — gives a usable approximation of which tanks are still drawing.
+
+**Selection guidance.** The float valve must close fully against the pump's shut-off head (not just static head); use the pump curve when sizing. Match the valve to the inlet pipe size; under-sized valves cavitate and chatter. Mount the float at the desired maximum fill level with enough swing arm clearance that surface ripples do not cause it to oscillate.
+
+See also: [Pressure sensor calibration](pressure-sensor-calibration.md) for the level-sensing companion to this overflow protection, and the flow watchdog in `electron/lib/generators/control.ts` for the firmware that consumes the differential-flow signal.
+
+---
+
 ## Common deploy patterns
 
 | Change | Regenerate | Flash | Reload HA |

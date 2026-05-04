@@ -71,11 +71,14 @@ export function buildWaterSection(m: Manifest): unknown {
     min: 0, max: 10, severity: { red: 0, yellow: 1, green: 2 }, needle: true,
   }));
 
-  const pressureGauges = pressureSensors.map(ps => ({
-    type: "gauge", entity: haIds(ps, dev).pressure!, name: n(ps, 'name'),
-    min: Number(ps['min_bar'] ?? 0), max: Number(ps['max_bar'] ?? 10),
-    severity: { red: 0, yellow: 1, green: 2 }, needle: true,
-  }));
+  const pressureGauges = pressureSensors.map(ps => {
+    const max = Number(ps['sensor_max_psi'] ?? 15);
+    return {
+      type: "gauge", entity: haIds(ps, dev).pressure!, name: n(ps, 'name'),
+      min: 0, max,
+      severity: { red: 0, yellow: max * 0.1, green: max * 0.2 }, needle: true,
+    };
+  });
 
   const filterEntities = filters
     .filter(f => f['inlet_pressure_pin'] && f['outlet_pressure_pin'])
@@ -250,6 +253,7 @@ export function buildConfigurationView(m: Manifest, board: BoardDef): unknown {
   const timingEntities: Array<{ entity: string; name: string }> = [
     { entity: sys.flowWatchdogMs, name: "Flow Watchdog" },
     { entity: sys.flowConfirmMs,  name: "Flow Confirm" },
+    { entity: sys.flowThreshold,  name: "Flow Threshold" },
     { entity: sys.apiWatchdogMs,  name: "API Watchdog" },
     ...m.routes.map((r, i) => ({ entity: sys.routes[i].maxRuntime, name: `${r.name} Max Runtime` })),
   ];
@@ -301,7 +305,7 @@ export function buildConfigurationView(m: Manifest, board: BoardDef): unknown {
         type: "entities", title: "Level Sensor Calibration (voltage)", entities: levelCalEntities,
       }] : []),
       ...(pressureCalEntities.length > 0 ? [{
-        type: "entities", title: "Pressure Sensor Calibration (bar)", entities: pressureCalEntities,
+        type: "entities", title: "Pressure Sensor Calibration (psi)", entities: pressureCalEntities,
       }] : []),
       { type: "glance", title: "Device Health", show_state: true, entities: healthEntities },
       ...(flowSensors.length > 0 ? [{

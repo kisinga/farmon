@@ -107,6 +107,7 @@ export const SYSTEM_ENTITY_NAMES = {
   // number (sensors.ts safety blocks)
   flowWatchdogMs:     { domain: 'number', name: 'Flow Watchdog (ms)' },
   flowConfirmMs:      { domain: 'number', name: 'Flow Confirm (ms)' },
+  flowThreshold:      { domain: 'number', name: 'Flow Threshold (L/min)' },
   apiWatchdogMs:      { domain: 'number', name: 'API Watchdog (ms)' },
 
   // switch (control.ts)

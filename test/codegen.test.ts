@@ -92,6 +92,7 @@ const expectedSuffixes = [
   "hardware.yaml",
   "sensors.yaml",
   "control.yaml",
+  "dashboard.yaml",
 ];
 for (const suffix of expectedSuffixes) {
   const found = [...fileMap.keys()].some((k) => k.endsWith(suffix));
@@ -251,6 +252,10 @@ for (const f of flowSensors) {
   assert(sensors.includes(`id: ${n(f, 'id')}`), `Flow ${n(f, 'id')} defined`);
   assert(sensors.includes(`\${flow_cal_${n(f, 'id')}}`), `Flow ${n(f, 'id')} uses per-sensor cal`);
 }
+assert(sensors.includes('id: flow_threshold_l_min'), "Has HA-tunable flow threshold number");
+assert(sensors.includes('name: "Flow Threshold (L/min)"'), "Flow threshold number has HA name");
+assert(sensors.includes('id(flow_threshold_l_min).state'), "Flow logic uses tunable threshold");
+assert(!sensors.includes('x > 0.5f'), "Flow logic does not hardcode 0.5 L/min");
 for (const ls of levelSensors) {
   assert(sensors.includes(`id: ${n(ls, 'id')}_level`), `Level sensor ${n(ls, 'id')} level`);
   assert(sensors.includes(`id: ${n(ls, 'id')}_cal_empty`), `Level sensor ${n(ls, 'id')} cal`);
@@ -297,6 +302,16 @@ assert(control.includes("try_route_start"), "Delegates to try_route_start (which
 assert(!control.includes("close_all_valves"), "No close_all_valves script");
 assert(!control.includes("do_prepare_and_run"), "No do_prepare_and_run script");
 assert(!control.includes("id(active_route)"), "No active_route global reference");
+
+// --- dashboard.yaml ---
+
+console.log("\ndashboard.yaml:");
+const dashboard = getFile("dashboard.yaml");
+assert(dashboard.includes("name: Stop All"), "Dashboard has Stop All recovery button");
+assert(dashboard.includes("name: Reset Faults"), "Dashboard has Reset Faults recovery button");
+assert(dashboard.includes("name: Clear Queue"), "Dashboard has Clear Queue recovery button");
+assert(dashboard.includes("show_header_toggle: false"), "Manual valve cards disable header toggle");
+assert(dashboard.includes("Flow Threshold"), "Configuration dashboard includes Flow Threshold");
 
 // --- Cross-file consistency ---
 

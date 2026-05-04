@@ -225,6 +225,7 @@ a.xref:hover { border-bottom-style: solid; }
     <tr><td>Valve travel time</td><td><strong>{{this.timing.valve_travel_time}}s</strong></td><td>Time allowed for valves to fully open/close</td></tr>
     <tr><td>Flow watchdog</td><td><strong>{{this.timing.flow_watchdog}}s</strong></td><td>No-flow duration before fault/tank-full detection</td></tr>
     <tr><td>Flow confirm</td><td><strong>{{this.timing.flow_confirm}}s</strong></td><td>Time to confirm flow is established after start</td></tr>
+    <tr><td>Flow threshold</td><td><strong>{{this.timing.flow_threshold}} L/min</strong></td><td>Minimum measured rate that counts as active flow</td></tr>
     <tr><td>API watchdog</td><td><strong>{{this.timing.api_watchdog}}s</strong></td><td>HA disconnect duration before route is faulted</td></tr>
     <tr><td>Sensor update</td><td><strong>{{this.timing.update_interval}}s</strong></td><td>ADC/sensor polling interval</td></tr>
   </tbody>
@@ -362,7 +363,7 @@ a.xref:hover { border-bottom-style: solid; }
 
 {{#if hasFlowSensors}}
 <h3>Sensor Fault Detection</h3>
-<p>Each flow sensor has built-in fault detection. When the pump is RUNNING and flow was previously confirmed (&gt; 0.5 L/min), 3 consecutive zero readings trigger a <code>sensor_fault</code> binary sensor in HA. This is distinct from no_flow (never established) — sensor fault means flow was confirmed then the sensor stopped reporting.</p>
+<p>Each flow sensor has built-in fault detection. When the pump is RUNNING and flow was previously confirmed above the configured flow threshold, 3 consecutive below-threshold readings trigger a <code>sensor_fault</code> binary sensor in HA. This is distinct from no_flow (never established) — sensor fault means flow was confirmed then the sensor stopped reporting.</p>
 {{/if}}
 
 <div class="installation">

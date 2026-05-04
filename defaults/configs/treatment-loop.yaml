@@ -47,8 +47,7 @@ nodes:
     id: ps1
     name: Line Pressure
     pin: GPIO7
-    min_bar: 0
-    max_bar: 10
+    sensor_max_psi: 145
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
@@ -94,5 +93,6 @@ timing:
   valve_travel_time: 15
   flow_watchdog: 30
   flow_confirm: 15
+  flow_threshold: 0.5
   api_watchdog: 300
   update_interval: 5

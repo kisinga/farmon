@@ -149,6 +149,7 @@ export class WorkspaceService {
         valve_travel_time: 0,
         flow_watchdog: 0,
         flow_confirm: 0,
+        flow_threshold: 0,
         api_watchdog: 0,
         update_interval: 0,
       },

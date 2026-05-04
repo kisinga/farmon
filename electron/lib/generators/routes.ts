@@ -198,7 +198,7 @@ struct RouteSlot {
   int      state;            // 0=IDLE 1=PREPARING 2=RUNNING 3=STOPPING 4=FAULT
   uint32_t start_time;       // millis() when PREPARING began
   uint32_t run_start_time;   // millis() when RUNNING began (for watchdogs)
-  uint32_t last_flow_time;   // millis() of last flow > 0.5 L/min
+  uint32_t last_flow_time;   // millis() of last flow above configured threshold
   uint32_t stop_time;        // millis() when STOPPING/FAULT began
   int      fault_code;
   int      stop_reason;

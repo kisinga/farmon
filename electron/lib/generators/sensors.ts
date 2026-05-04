@@ -27,6 +27,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   const safetyBlocks = [
     { name: SYS.flowWatchdogMs.name, id: 'flow_watchdog_ms', icon: 'mdi:waves-arrow-up', min: 5000, max: 120000, step: 1000, initial: m.timing.flow_watchdog * 1000 },
     { name: SYS.flowConfirmMs.name,  id: 'flow_confirm_ms',  icon: 'mdi:check-decagram-outline', min: 3000, max: 60000, step: 1000, initial: m.timing.flow_confirm * 1000 },
+    { name: SYS.flowThreshold.name,  id: 'flow_threshold_l_min', icon: 'mdi:waves', min: 0.1, max: 20, step: 0.1, initial: m.timing.flow_threshold },
     { name: SYS.apiWatchdogMs.name,  id: 'api_watchdog_ms',  icon: 'mdi:api', min: 30000, max: 600000, step: 10000, initial: m.timing.api_watchdog * 1000 },
   ].map((p) => `\
 - platform: template

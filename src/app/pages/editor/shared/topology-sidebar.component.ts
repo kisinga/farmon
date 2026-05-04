@@ -6,7 +6,7 @@ import { ValidationPanelComponent } from '../../../shared/validation-panel/valid
 import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
-import { buildGraph, activeGraph, deriveRoutes, RouteOverrideSchema, deriveHaEntityId } from '@far-mon/core';
+import { buildGraph, activeGraph, deriveRoutes, RouteOverrideSchema, deriveHaEntityId, deriveTankCalibration, recommendSensorMaxPsi } from '@far-mon/core';
 import type { PinCap } from '@far-mon/core';
 import type { RouteOverride } from '../../../core/models/topology.model';
 import { routeLevelInfo } from './route-level-info';
@@ -133,6 +133,46 @@ export type { Selection };
             </div>
           }
         </div>
+
+        <!-- Pressure sensor: derived calibration readout (read-only, computed from inputs). -->
+        @if (sn.node.kind === 'pressure_sensor') {
+          @if (pressureSensorReadout(sn.node); as r) {
+            <div class="mt-3 pt-3 border-t border-base-300/30">
+              <h4 class="sidebar-title">Derived Calibration</h4>
+              @if (r.cal) {
+                <div class="sidebar-fields">
+                  <span class="sidebar-label">P empty</span>
+                  <span class="text-xs font-mono">{{ r.cal.p_empty_psi.toFixed(2) }} psi</span>
+                  <span class="sidebar-label">P full</span>
+                  <span class="text-xs font-mono">{{ r.cal.p_full_psi.toFixed(2) }} psi</span>
+                  <span class="sidebar-label">Working span</span>
+                  <span class="text-xs font-mono">{{ r.cal.working_span_psi.toFixed(2) }} psi</span>
+                  <span class="sidebar-label">Recommended max</span>
+                  <span class="text-xs font-mono">≥ {{ r.recommended }} psi</span>
+                  <span class="sidebar-label">Sensor utilisation</span>
+                  <span class="text-xs font-mono">
+                    swing {{ r.swingPct.toFixed(0) }}%
+                    <span [class.text-warning]="r.swingPct < 30">
+                      @if (r.swingPct < 30) { (low resolution) }
+                    </span>
+                  </span>
+                  <span class="sidebar-label">Headroom</span>
+                  <span class="text-xs font-mono">
+                    {{ r.headroomPct.toFixed(0) }}%
+                    <span [class.text-warning]="r.headroomPct < 30" [class.text-error]="r.headroomPct < 0">
+                      @if (r.headroomPct < 0) { (over range) }
+                      @else if (r.headroomPct < 30) { (tight) }
+                    </span>
+                  </span>
+                </div>
+              } @else {
+                <div class="text-[10px] text-base-content/50">
+                  Enter tank height to derive calibration. Without it, this sensor measures line pressure only — Cal Empty / Cal Full must be set manually in Home Assistant.
+                </div>
+              }
+            </div>
+          }
+        }
 
         <!-- Home Assistant entity mapping (SCADA export) — derived, not editable. -->
         @if (sn.desc.haDomain && device(); as dev) {
@@ -577,6 +617,36 @@ export class TopologySidebarComponent {
     } else {
       this.updateField.emit({ nodeId, field, value: '' });
     }
+  }
+
+  // --- Pressure-sensor derived readout ---
+
+  /**
+   * Compute the derived calibration panel for a pressure-sensor node. Returns
+   * null when sensor_max_psi is missing (impossible after schema validation,
+   * but the form lets fields be cleared transiently); returns `cal: null`
+   * when tank geometry is absent (line-pressure mode).
+   */
+  protected pressureSensorReadout(node: any): {
+    cal: { p_empty_psi: number; p_full_psi: number; working_span_psi: number } | null;
+    recommended: number;
+    swingPct: number;
+    headroomPct: number;
+  } | null {
+    const sensorMax = Number(node.sensor_max_psi);
+    if (!Number.isFinite(sensorMax) || sensorMax <= 0) return null;
+    const tankHeight = Number(node.tank_height_m);
+    if (!Number.isFinite(tankHeight) || tankHeight <= 0) {
+      return { cal: null, recommended: 0, swingPct: 0, headroomPct: 0 };
+    }
+    const elevation = Number(node.elevation_m ?? 0);
+    const cal = deriveTankCalibration(tankHeight, Number.isFinite(elevation) ? elevation : 0);
+    return {
+      cal,
+      recommended: recommendSensorMaxPsi(cal.p_full_psi),
+      swingPct: (cal.working_span_psi / sensorMax) * 100,
+      headroomPct: ((sensorMax - cal.p_full_psi) / sensorMax) * 100,
+    };
   }
 
   // --- Route & validation helpers ---

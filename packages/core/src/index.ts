@@ -92,6 +92,12 @@ export { createProviderDriver } from './io-providers/provider-factory';
 // --- Static ---
 export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';
 
+// --- Units ---
+export {
+  PSI_PER_M, STANDARD_PSI, recommendSensorMaxPsi, deriveTankCalibration,
+} from './units';
+export type { TankCalibration } from './units';
+
 // --- Graph ---
 export { buildGraph, type TopologyGraph, type NodeAttrs, type EdgeAttrs } from './graph/topology-graph';
 export { activeGraph, isNodeActive } from './graph/active-graph';

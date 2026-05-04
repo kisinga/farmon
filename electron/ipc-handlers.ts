@@ -314,6 +314,7 @@ export function registerIpcHandlers() {
           valve_travel_time: 2,
           flow_watchdog: 30,
           flow_confirm: 5,
+          flow_threshold: 0.5,
           api_watchdog: 300,
           update_interval: 10,
         },

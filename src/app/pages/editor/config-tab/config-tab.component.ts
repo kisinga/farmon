@@ -16,12 +16,15 @@ interface TimingField {
   unit: string;
   default: number;
   group: string;
+  min?: number;
+  step?: number;
 }
 
 const TIMING_FIELDS: TimingField[] = [
   { key: 'valve_travel_time', label: 'Valve Travel Time', description: 'Time for motorized ball valves to fully open or close', unit: 'seconds', default: 15, group: 'Mechanical' },
   { key: 'flow_watchdog', label: 'Flow Watchdog Timeout', description: 'If no flow detected within this window, fault is raised', unit: 'seconds', default: 30, group: 'Safety' },
   { key: 'flow_confirm', label: 'Flow Confirmation Time', description: 'Sustained flow duration before marking flow as "confirmed"', unit: 'seconds', default: 15, group: 'Safety' },
+  { key: 'flow_threshold', label: 'Flow Threshold', description: 'Minimum measured rate that counts as active flow', unit: 'L/min', default: 0.5, group: 'Safety', min: 0.1, step: 0.1 },
   { key: 'api_watchdog', label: 'API Watchdog Timeout', description: 'Fault if Home Assistant disconnected for this long', unit: 'seconds', default: 300, group: 'Safety' },
   { key: 'update_interval', label: 'Sensor Update Interval', description: 'How often ADC and diagnostic sensors are read', unit: 'seconds', default: 5, group: 'Calibration' },
 ];
@@ -228,7 +231,8 @@ const TIMING_FIELDS: TimingField[] = [
                           size="sm"
                           inputClass="w-24 text-right font-mono"
                           [placeholder]="'' + field.default"
-                          [min]="2"
+                          [min]="field.min ?? 2"
+                          [step]="field.step ?? 1"
                           [value]="getTimingValue(t, field)"
                           (valueChange)="updateTiming(field.key, $any($event))" />
                         <span class="text-xs text-base-content/60 w-16">{{ field.unit }}</span>

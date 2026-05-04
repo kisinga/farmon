@@ -13,23 +13,39 @@ import {
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
+import { deriveTankCalibration, recommendSensorMaxPsi } from '../units';
 
 const COLOR = '#8b5cf6'; // violet
 const W = 50, H = 36;
 
 // --- Schema ---
+//
+// When the sensor is plumbed to a tank's outlet, calibration is derived from
+// tank geometry (PSI_PER_M · h). Tank fields are optional because the same
+// sensor part can also be used standalone for line-pressure monitoring,
+// where there's no tank to calibrate against — only sensor_max_psi matters.
 
 export const PressureSensorNodeSchema = z.object({
   kind: z.literal('pressure_sensor'),
   id: ComponentId,
   name: EntityName,
   pin: GpioPin,
-  /** Initial sensor electrical range (bar). Seeds the runtime-tunable
-   *  Sensor Min / Sensor Max HA entities; not baked into firmware. */
-  min_bar: z.number().default(0),
-  max_bar: z.number().default(10),
-  /** True if the sensor is rated for reliable readings during pump operation.
-   *  Pressure transducers generally are; defaults to true. */
+  /**
+   * Vertical span of water column inside the tank, metres. Required when
+   * using this sensor as a tank-level source; omit for line-pressure use.
+   */
+  tank_height_m: z.number().positive().optional(),
+  /** Tank usable capacity, litres. Drives the volume readout. */
+  tank_capacity_l: z.number().positive().optional(),
+  /**
+   * Vertical drop from the tank's bottom outlet down to the sensor location,
+   * metres. Stays full of water once the system is primed, so it shifts the
+   * empty-tank reading by PSI_PER_M · elevation_m.
+   */
+  elevation_m: z.number().nonnegative().default(0),
+  /** Sensor's full-scale rating, psi (datasheet value, e.g. 5/10/15/30). */
+  sensor_max_psi: z.number().positive(),
+  /** True if the sensor is rated for reliable readings during pump operation. */
   pump_rated: z.boolean().default(true),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
@@ -44,10 +60,10 @@ export type PressureSensorNode = z.infer<typeof PressureSensorNodeSchema>;
 // side (codegen.haEntityIds) read from this — they cannot drift.
 const haNames = (node: PressureSensorNode) => ({
   pressure: `${node.name} Pressure`,
-  rangeMin: `${node.name} Sensor Min (bar)`,
-  rangeMax: `${node.name} Sensor Max (bar)`,
-  calEmpty: `${node.name} Cal Empty (bar)`,
-  calFull:  `${node.name} Cal Full (bar)`,
+  rangeMin: `${node.name} Sensor Min (psi)`,
+  rangeMax: `${node.name} Sensor Max (psi)`,
+  calEmpty: `${node.name} Cal Empty (psi)`,
+  calFull:  `${node.name} Cal Full (psi)`,
   level:    `${node.name} Level`,
 });
 
@@ -71,7 +87,13 @@ export const pressureSensorDescriptor: NodeDescriptor = {
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
-  defaultData: (n) => ({ name: `Pressure ${n}`, pin: '', min_bar: 0, max_bar: 10, pump_rated: true }),
+  defaultData: (n) => ({
+    name: `Pressure ${n}`,
+    pin: '',
+    elevation_m: 0,
+    sensor_max_psi: 15,
+    pump_rated: true,
+  }),
 
   renderSvg: (_data) => {
     const cx = W / 2, cy = H / 2, r = 14;
@@ -85,8 +107,10 @@ export const pressureSensorDescriptor: NodeDescriptor = {
 
   sidebarFields: [
     { key: 'pin', label: 'Pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc' },
-    { key: 'min_bar', label: 'Sensor min (bar, seed)', type: 'number' },
-    { key: 'max_bar', label: 'Sensor max (bar, seed)', type: 'number' },
+    { key: 'tank_height_m', label: 'Tank height (m)', type: 'number' },
+    { key: 'tank_capacity_l', label: 'Tank capacity (L)', type: 'number' },
+    { key: 'elevation_m', label: 'Sensor drop below tank (m)', type: 'number' },
+    { key: 'sensor_max_psi', label: 'Sensor max (psi)', type: 'number' },
     { key: 'pump_rated', label: 'Pump-rated sensor', type: 'toggle' },
   ],
 
@@ -106,7 +130,7 @@ export const pressureSensorDescriptor: NodeDescriptor = {
 ${header}
   id: ${sId}
   name: "${names.pressure}"
-  unit_of_measurement: "bar"
+  unit_of_measurement: "psi"
   icon: "mdi:gauge"
   update_interval: \${update_interval}
   accuracy_decimals: 2
@@ -145,6 +169,13 @@ ${header}
       const calEmpty = pressureSensorCalEmptyId(node);
       const calFull  = pressureSensorCalFullId(node);
       const names    = haNames(node);
+      // When tank geometry is omitted (line-pressure use), seed Cal Empty / Full
+      // with a span of 0 → sensor_max_psi so the level entity stays inert until
+      // the installer enters real values via the HA tunables.
+      const cal = node.tank_height_m != null
+        ? deriveTankCalibration(node.tank_height_m, node.elevation_m)
+        : { p_empty_psi: 0, p_full_psi: node.sensor_max_psi, working_span_psi: node.sensor_max_psi };
+      const fmt = (v: number) => v.toFixed(2);
       return {
         number: `\
 - platform: template
@@ -152,9 +183,9 @@ ${header}
   id: ${rangeMin}
   icon: "mdi:tune-vertical"
   min_value: 0
-  max_value: 30
+  max_value: 200
   step: 0.1
-  initial_value: ${node.min_bar}
+  initial_value: 0
   optimistic: true
   restore_value: true
   entity_category: config
@@ -164,9 +195,9 @@ ${header}
   id: ${rangeMax}
   icon: "mdi:tune-vertical"
   min_value: 0
-  max_value: 30
+  max_value: 200
   step: 0.1
-  initial_value: ${node.max_bar}
+  initial_value: ${node.sensor_max_psi}
   optimistic: true
   restore_value: true
   entity_category: config
@@ -176,9 +207,9 @@ ${header}
   id: ${calEmpty}
   icon: "mdi:tune-vertical"
   min_value: 0
-  max_value: 30
-  step: 0.01
-  initial_value: 0
+  max_value: 200
+  step: 0.1
+  initial_value: ${fmt(cal.p_empty_psi)}
   optimistic: true
   restore_value: true
   entity_category: config
@@ -188,9 +219,9 @@ ${header}
   id: ${calFull}
   icon: "mdi:tune-vertical"
   min_value: 0
-  max_value: 30
-  step: 0.01
-  initial_value: ${node.max_bar}
+  max_value: 200
+  step: 0.1
+  initial_value: ${fmt(cal.p_full_psi)}
   optimistic: true
   restore_value: true
   entity_category: config`,
@@ -215,18 +246,37 @@ ${header}
   constraints: [] satisfies FlowConstraint[],
 
   // --- Validation ---
-  // TODO: Redundant pin validation — this entity rule AND the generic pin check
-  // both fire for empty pin, producing a double error message. Deduplicate when
-  // adding more entity rules.
 
-  rules: [{
-    id: 'pressure-sensor-pin-required',
-    severity: 'error',
-    evaluate: (nodes) => nodes
-      .filter(n => !n['pin'])
-      .map(n => ({
-        message: `Pressure sensor "${n['name']}": no pin assigned. Standalone pressure sensors require an ADC pin.`,
-        target: String(n['id']),
-      })),
-  }],
+  rules: [
+    {
+      id: 'pressure-sensor-pin-required',
+      severity: 'error',
+      evaluate: (nodes) => nodes
+        .filter(n => !n['pin'])
+        .map(n => ({
+          message: `Pressure sensor "${n['name']}": no pin assigned. Standalone pressure sensors require an ADC pin.`,
+          target: String(n['id']),
+        })),
+    },
+    {
+      id: 'pressure-sensor-undersized',
+      severity: 'warning',
+      evaluate: (nodes) => nodes
+        .filter(n => typeof n['sensor_max_psi'] === 'number' && typeof n['tank_height_m'] === 'number')
+        .flatMap(n => {
+          const tankHeight = Number(n['tank_height_m']);
+          const elevation = Number(n['elevation_m'] ?? 0);
+          const sensorMax = Number(n['sensor_max_psi']);
+          const cal = deriveTankCalibration(tankHeight, elevation);
+          const recommended = recommendSensorMaxPsi(cal.p_full_psi);
+          if (sensorMax < recommended) {
+            return [{
+              message: `Pressure sensor "${n['name']}": ${sensorMax} psi is below the recommended ${recommended} psi (1.5× full-tank pressure of ${cal.p_full_psi.toFixed(2)} psi). Consider a larger sensor for headroom.`,
+              target: String(n['id']),
+            }];
+          }
+          return [];
+        }),
+    },
+  ],
 };
