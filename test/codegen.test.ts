@@ -256,6 +256,7 @@ assert(routesH.includes("DEFAULT_FLOW_THRESHOLD_L_MIN"), "Has manifest-derived f
 assert(routesH.includes("DEFAULT_FLOW_WATCHDOG_MS"), "Has manifest-derived flow watchdog firmware constant");
 assert(routesH.includes("ROUTES[0].max_runtime_s"), "Max runtime dispatch falls back to route table when HA number is not ready");
 assert(routesH.includes("flow_active_since"), "Route slot tracks sustained flow confirmation window");
+assert(routesH.includes("api_lost_since"), "Route slot tracks API loss per running slot");
 
 // --- Reconciler claim semantics (P4.8) ---
 // valve_claim_mask must hold the route's mask during PREPARING/RUNNING and
@@ -373,6 +374,9 @@ assert(control.includes("flow_confirmed = true"), "Safety loop confirms sustaine
 assert(control.includes(": DEFAULT_FLOW_WATCHDOG_MS"), "Safety loop uses firmware SSOT when timing numbers are not ready");
 assert(control.includes(": DEFAULT_FLOW_THRESHOLD_L_MIN"), "Safety loop uses firmware SSOT when flow threshold is not ready");
 assert(!control.includes("flowThresholdFallback"), "Control generator does not duplicate flow-threshold formatting");
+assert(control.includes("api_client_count"), "Tracks active API client count");
+assert(control.includes("slots[s].api_lost_since"), "API watchdog is per-slot, not a stale global timestamp");
+assert(!control.includes("api_lost_time"), "No stale global API disconnect timestamp");
 assert(!control.includes("safe_close_mask"), "Edge-driven safe_close_mask removed");
 assert(!control.includes("valves_closing"), "valves_closing edge flag removed");
 assert(control.includes("try_route_start"), "Delegates to try_route_start (which queues on conflict)");

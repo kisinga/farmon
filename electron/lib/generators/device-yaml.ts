@@ -84,7 +84,7 @@ export function generateDeviceYaml(
     "for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) init_slot(i);",
     "queue_head = 0; queue_count = 0;",
     "id(system_state) = 0;",
-    "id(api_lost_time) = 0;",
+    "id(api_client_count) = 0;",
     "id(active_slot) = -1;",
     "for (int i = 0; i < NUM_VALVES; i++) close_valve_hw(i);",
     "// time_based covers default to restore_mode: NO_RESTORE — they boot at",

@@ -46,8 +46,8 @@ globals:
     # Derived from slots — highest priority state across all slots.
     # 0=IDLE, 1=PREPARING, 2=RUNNING, 3=STOPPING, 4=FAULT
 
-  - id: api_lost_time
-    type: uint32_t
+  - id: api_client_count
+    type: int
     initial_value: "0"
 
   - id: stop_reason
@@ -67,9 +67,13 @@ api:
   encryption:
     key: !secret api_key
   on_client_connected:
-    - lambda: 'id(api_lost_time) = 0;'
+    - lambda: |-
+        id(api_client_count)++;
+        ESP_LOGI("api", "API client connected (%d active)", id(api_client_count));
   on_client_disconnected:
-    - lambda: 'id(api_lost_time) = millis();'
+    - lambda: |-
+        if (id(api_client_count) > 0) id(api_client_count)--;
+        ESP_LOGW("api", "API client disconnected (%d active)", id(api_client_count));
   services:
     - service: route_start
       variables:
@@ -202,6 +206,7 @@ interval:
               if (now - slots[s].start_time > get_route_travel_ms(rid) + 1000) {
                 slots[s].state = 2;
                 slots[s].run_start_time = now;
+                slots[s].api_lost_since = (id(api_client_count) == 0) ? now : 0;
                 slots[s].flow_active_since = 0;
                 slots[s].last_flow_time = now;
                 slots[s].flow_confirmed = false;
@@ -347,11 +352,17 @@ ${pumpMgmt}
             }
 
             // --- API WATCHDOG ---
-            if (slots[s].fault_code == 0 && id(api_lost_time) > 0) {
-              uint32_t age = now - id(api_lost_time);
-              if (age > api_watchdog) {
-                ESP_LOGE("safety", "API lost %us — faulting slot %d", age / 1000, s);
-                slots[s].fault_code = FAULT_API_LOST;
+            if (slots[s].fault_code == 0) {
+              if (id(api_client_count) > 0) {
+                slots[s].api_lost_since = 0;
+              } else {
+                if (slots[s].api_lost_since == 0) slots[s].api_lost_since = now;
+                uint32_t age = now - slots[s].api_lost_since;
+                if (age > api_watchdog) {
+                  ESP_LOGE("safety", "API lost %us during slot %d route [%s]",
+                           age / 1000, s, r.name);
+                  slots[s].fault_code = FAULT_API_LOST;
+                }
               }
             }
 
