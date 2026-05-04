@@ -1,6 +1,8 @@
 import { Scalar } from "yaml";
 import type { BoardDef } from "../board.js";
-import { boardSupportedTransports, effectiveTransport, type NetworkConfig, type NetworkTransport } from "@far-mon/core";
+import { boardSupportedTransports, effectiveTransport, SYSTEM_ENTITY_NAMES, type NetworkConfig, type NetworkTransport } from "@far-mon/core";
+
+const SYS = SYSTEM_ENTITY_NAMES;
 
 type EthernetDef = NonNullable<BoardDef["peripherals"]["ethernet"]>;
 
@@ -125,27 +127,27 @@ function emitTransportTextSensors(
   const ipInfo = activeTransport === 'ethernet'
     ? {
         platform: 'ethernet_info',
-        ip_address: { name: 'IP Address', id: 'ip_addr' },
+        ip_address: { name: SYS.ipAddress.name, id: 'ip_addr' },
       }
     : {
         platform: 'wifi_info',
-        ip_address: { name: 'IP Address', id: 'ip_addr' },
-        ssid: { name: 'Connected SSID' },
-        mac_address: { name: 'MAC Address' },
+        ip_address: { name: SYS.ipAddress.name, id: 'ip_addr' },
+        ssid: { name: SYS.connectedSsid.name },
+        mac_address: { name: SYS.macAddress.name },
       };
 
   return {
     text_sensor: [
       {
         platform: 'template',
-        name: 'Transport (supported)',
+        name: SYS.transportSupported.name,
         id: 'transport_supported',
         update_interval: 'never',
         lambda: `return std::string("${supportedTransports.join(',')}");`,
       },
       {
         platform: 'template',
-        name: 'Transport (active)',
+        name: SYS.transportActive.name,
         id: 'transport_active',
         update_interval: 'never',
         lambda: `return std::string("${activeTransport}");`,
@@ -190,7 +192,7 @@ export function emitTransportSignalSensor(
   if (transport === 'ethernet') return null;
   return {
     platform: "wifi_signal",
-    name: "WiFi Signal",
+    name: SYS.wifiSignal.name,
     update_interval: "${update_interval}",
     id: "wifi_dbm",
   };

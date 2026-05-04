@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import { type InputPolicy, policyString } from './input-policy';
+import { slug } from './slug';
 
 /** Valid pin/channel reference: native GPIO (GPIO0–GPIO99), expander pin (OUT1, IN16),
  *  provider channel (mux1:CH3, io_exp1:DO5), or empty string. */
@@ -23,6 +24,20 @@ export const COMPONENT_ID_POLICY: InputPolicy = {
 
 /** Valid ESPHome/C++ identifier. */
 export const ComponentId = policyString(COMPONENT_ID_POLICY);
+
+/**
+ * A user-facing name that must produce a non-empty slug — i.e. contain at
+ * least one ASCII alphanumeric character. Required because the slug becomes
+ * part of HA entity_ids (`<domain>.<friendly_name_slug>_<name_slug>`).
+ * Without this, an all-emoji or all-Cyrillic name slugs to empty and silently
+ * collides with other empty-slug entities in HA.
+ */
+export const EntityName = z
+  .string()
+  .min(1)
+  .refine((s) => slug(s).length > 0, {
+    message: 'Name must contain at least one ASCII letter or digit (used to derive HA entity_id)',
+  });
 
 export const PortSchema = z.object({
   id: z.string().min(1),
@@ -79,7 +94,9 @@ export const IoProviderDefSchema = z.object({
 
 export const DeviceSchema = z.object({
   name: z.string().min(1),
-  friendly_name: z.string().min(1),
+  // friendly_name's slug becomes the HA entity_id prefix for every entity on
+  // the device — must contain at least one ASCII alphanumeric character.
+  friendly_name: EntityName,
   board: z.string().min(1),
   directory: z.string().optional(),
   uart_buses: z.array(UartBusSchema).default([]),

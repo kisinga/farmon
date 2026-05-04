@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
+import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
 import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields } from '../ha';
+import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#e11d48'; // rose
 const W = 50, H = 36;
@@ -13,7 +13,7 @@ const W = 50, H = 36;
 export const ValveNodeSchema = z.object({
   kind: z.literal('valve'),
   id: ComponentId,
-  name: z.string().min(1),
+  name: EntityName,
   open_pin: GpioPin,
   close_pin: GpioPin,
   coil_polarity: RelayPolaritySchema,
@@ -25,6 +25,16 @@ export const ValveNodeSchema = z.object({
 });
 
 export type ValveNode = z.infer<typeof ValveNodeSchema>;
+
+// Single source of truth for valve HA entity names. Both the firmware-emit
+// side (codegen.hardware / codegen.extraComponents) and the HA-reference side
+// (codegen.haEntityIds) read from this — they cannot drift.
+const haNames = (node: ValveNode) => ({
+  openCoil:   `${node.name} Open Coil`,
+  closeCoil:  `${node.name} Close Coil`,
+  cover:      node.name,
+  travelTime: `${node.name} Travel Time (ms)`,
+});
 
 // --- Descriptor ---
 
@@ -83,17 +93,20 @@ export const valveDescriptor: NodeDescriptor = {
       const inverted = node.coil_polarity !== 'active_high';
       const openHeader = resolveComponentHeader(ctx, node.open_pin, { purpose: 'digital_out', inverted });
       const closeHeader = resolveComponentHeader(ctx, node.close_pin, { purpose: 'digital_out', inverted });
+      const names = haNames(node);
       return `\
 # --- ${node['name']} ---
 ${openHeader}
   id: ${openId}
-  internal: true
+  name: "${names.openCoil}"
+  entity_category: config
   restore_mode: ALWAYS_OFF
   interlock: [${openId}, ${closeId}]
   interlock_wait_time: 100ms
 ${closeHeader}
   id: ${closeId}
-  internal: true
+  name: "${names.closeCoil}"
+  entity_category: config
   restore_mode: ALWAYS_OFF
   interlock: [${openId}, ${closeId}]
   interlock_wait_time: 100ms`;
@@ -104,11 +117,12 @@ ${closeHeader}
       const openId = valveOpenPinId(node);
       const closeId = valveClosePinId(node);
       const travelId = valveTravelMsId(node);
+      const names = haNames(node);
       return {
         cover: `\
 - platform: time_based
   id: ${coverId}
-  name: "${node.name}"
+  name: "${names.cover}"
 
   open_action:  [{switch.turn_on: ${openId}}]
   close_action: [{switch.turn_on: ${closeId}}]
@@ -117,7 +131,7 @@ ${closeHeader}
   close_duration: \${valve_travel_time}`,
         number: `\
 - platform: template
-  name: "${node.name} Travel Time (ms)"
+  name: "${names.travelTime}"
   id: ${travelId}
   icon: "mdi:timer-cog-outline"
   min_value: 1000
@@ -131,6 +145,16 @@ ${closeHeader}
     },
 
     substitutions: () => [],
+
+    haEntityIds: (node: ValveNode, device) => {
+      const n = haNames(node);
+      return {
+        cover:      deriveHaEntityId('cover',  device, n.cover),
+        openCoil:   deriveHaEntityId('switch', device, n.openCoil),
+        closeCoil:  deriveHaEntityId('switch', device, n.closeCoil),
+        travelTime: deriveHaEntityId('number', device, n.travelTime),
+      };
+    },
   },
 
   rules: [

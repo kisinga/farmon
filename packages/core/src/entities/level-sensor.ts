@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
+import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { levelSensorLevelId, levelSensorRawVoltageId, levelSensorCalEmptyId, levelSensorCalFullId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
-import { HaNodeFields } from '../ha';
+import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#0ea5e9'; // sky blue
 const W = 50, H = 36;
@@ -15,7 +15,7 @@ const W = 50, H = 36;
 export const LevelSensorNodeSchema = z.object({
   kind: z.literal('level_sensor'),
   id: ComponentId,
-  name: z.string().min(1),
+  name: EntityName,
   pin: GpioPin,
   /** True if sensor is rated for reliable readings during pump operation (e.g., pressure transducer). */
   pump_rated: z.boolean().default(false),
@@ -26,6 +26,16 @@ export const LevelSensorNodeSchema = z.object({
 });
 
 export type LevelSensorNode = z.infer<typeof LevelSensorNodeSchema>;
+
+// Single source of truth for level sensor HA entity names. Both firmware
+// emit (codegen.sensors / extraComponents) and HA reference
+// (codegen.haEntityIds) read from this — they cannot drift.
+const haNames = (node: LevelSensorNode) => ({
+  level:      `${node.name} Level`,
+  rawVoltage: `${node.name} Raw Voltage`,
+  calEmpty:   `${node.name} Cal Empty V`,
+  calFull:    `${node.name} Cal Full V`,
+});
 
 // --- Descriptor ---
 
@@ -74,10 +84,11 @@ export const levelSensorDescriptor: NodeDescriptor = {
       const calEmpty = levelSensorCalEmptyId(node);
       const calFull = levelSensorCalFullId(node);
       const header = resolveComponentHeader(ctx, node.pin, { purpose: 'adc' });
+      const names = haNames(node);
       return `\
 ${header}
   id: ${lvlId}
-  name: "${node.name} Level"
+  name: "${names.level}"
   unit_of_measurement: "%"
   icon: "mdi:storage-tank"
   update_interval: \${update_interval}
@@ -108,7 +119,7 @@ ${header}
 
 - platform: template
   id: ${rawId}
-  name: "${node.name} Raw Voltage"
+  name: "${names.rawVoltage}"
   unit_of_measurement: "V"
   icon: "mdi:flash-triangle"
   accuracy_decimals: 3
@@ -118,10 +129,11 @@ ${header}
     extraComponents: (node: LevelSensorNode): Record<string, string> => {
       const calEmpty = levelSensorCalEmptyId(node);
       const calFull = levelSensorCalFullId(node);
+      const names = haNames(node);
       return {
         number: `\
 - platform: template
-  name: "${node.name} Cal Empty V"
+  name: "${names.calEmpty}"
   id: ${calEmpty}
   icon: "mdi:tune-vertical"
   min_value: 0.0
@@ -133,7 +145,7 @@ ${header}
   entity_category: config
 
 - platform: template
-  name: "${node.name} Cal Full V"
+  name: "${names.calFull}"
   id: ${calFull}
   icon: "mdi:tune-vertical"
   min_value: 0.0
@@ -147,6 +159,16 @@ ${header}
     },
 
     substitutions: () => [],
+
+    haEntityIds: (node: LevelSensorNode, device) => {
+      const n = haNames(node);
+      return {
+        level:      deriveHaEntityId('sensor', device, n.level),
+        rawVoltage: deriveHaEntityId('sensor', device, n.rawVoltage),
+        calEmpty:   deriveHaEntityId('number', device, n.calEmpty),
+        calFull:    deriveHaEntityId('number', device, n.calFull),
+      };
+    },
   },
 
   constraints: [] satisfies FlowConstraint[],

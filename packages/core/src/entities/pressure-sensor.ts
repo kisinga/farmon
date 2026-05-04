@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
+import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { pressureSensorId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
-import { HaNodeFields } from '../ha';
+import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#8b5cf6'; // violet
 const W = 50, H = 36;
@@ -15,7 +15,7 @@ const W = 50, H = 36;
 export const PressureSensorNodeSchema = z.object({
   kind: z.literal('pressure_sensor'),
   id: ComponentId,
-  name: z.string().min(1),
+  name: EntityName,
   pin: GpioPin,
   min_bar: z.number().default(0),
   max_bar: z.number().default(10),
@@ -26,6 +26,11 @@ export const PressureSensorNodeSchema = z.object({
 });
 
 export type PressureSensorNode = z.infer<typeof PressureSensorNodeSchema>;
+
+// Single source of truth for pressure sensor HA entity names.
+const haNames = (node: PressureSensorNode) => ({
+  pressure: `${node.name} Pressure`,
+});
 
 // --- Descriptor ---
 
@@ -75,7 +80,7 @@ export const pressureSensorDescriptor: NodeDescriptor = {
       return `\
 ${header}
   id: ${sId}
-  name: "${node.name} Pressure"
+  name: "${haNames(node).pressure}"
   unit_of_measurement: "bar"
   icon: "mdi:gauge"
   update_interval: \${update_interval}
@@ -93,6 +98,10 @@ ${header}
     },
 
     substitutions: () => [],
+
+    haEntityIds: (node: PressureSensorNode, device) => ({
+      pressure: deriveHaEntityId('sensor', device, haNames(node).pressure),
+    }),
   },
 
   constraints: [] satisfies FlowConstraint[],

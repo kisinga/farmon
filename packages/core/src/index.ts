@@ -57,10 +57,13 @@ export { indent, joinYamlItems } from './yaml-fragment';
 // --- Home Assistant integration ---
 export {
   HA_SCHEMA_VERSION, HA_SERVICE_POLICY, HaActionSpecSchema, HaNodeFields,
-  defaultStateBucket, isValidBindExpr, parseFlowPredicate, deriveHaEntityId,
+  defaultStateBucket, isValidBindExpr, parseFlowPredicate,
+  deriveHaEntityId, esphomeServicePrefix,
+  SYSTEM_ENTITY_NAMES, ESPHOME_SERVICES, routeEntityNames, systemHaEntityIds,
 } from './ha';
 export type {
   HaActionSpec, StateBucket, HaSlotSpec, HaMetaNode, HaMetaPipe, HaMeta, ParsedFlowPredicate,
+  SystemEntitySpec, SystemEntityKey, SystemHaEntityIds, EsphomeServiceName,
 } from './ha';
 export { buildHaMeta } from './ha-meta';
 export type { BuildHaMetaOptions } from './ha-meta';

@@ -135,7 +135,7 @@ export type { Selection };
         </div>
 
         <!-- Home Assistant entity mapping (SCADA export) — derived, not editable. -->
-        @if (sn.desc.haDomain && deviceName(); as dev) {
+        @if (sn.desc.haDomain && device(); as dev) {
           <div class="mt-3 pt-3 border-t border-base-300/30">
             <h4 class="sidebar-title">Home Assistant</h4>
             <div class="sidebar-fields">
@@ -143,7 +143,7 @@ export type { Selection };
               <code class="text-xs font-mono text-base-content/70 select-all break-all">{{ deriveHaEntityId(sn.desc.haDomain, dev, $any(sn.node).name) }}</code>
             </div>
             <div class="text-[10px] text-base-content/40 mt-1">
-              Auto-derived from name. Edit the entity's name to change.
+              Auto-derived from friendly name. Edit the entity's name to change.
             </div>
           </div>
         }
@@ -347,7 +347,7 @@ export class TopologySidebarComponent {
   private workspace = inject(WorkspaceService);
   protected routeOverrideSchema = RouteOverrideSchema;
   protected deriveHaEntityId = deriveHaEntityId;
-  protected deviceName = computed(() => this.editor.topology()?.device.name ?? '');
+  protected device = computed(() => this.editor.topology()?.device ?? null);
 
   // --- Inputs ---
   selection = input<Selection | null>(null);

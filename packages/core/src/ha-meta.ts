@@ -18,7 +18,6 @@ export interface BuildHaMetaOptions {
 export function buildHaMeta(topology: SystemTopology, opts: BuildHaMetaOptions): HaMeta {
   const nodesById = new Map<string, { entityId: string }>();
   const nodes: Record<string, HaMetaNode> = {};
-  const deviceName = topology.device.name;
 
   const sortedNodes = [...topology.nodes].sort((a, b) => a.id.localeCompare(b.id));
   for (const n of sortedNodes) {
@@ -26,7 +25,12 @@ export function buildHaMeta(topology: SystemTopology, opts: BuildHaMetaOptions):
     if (!desc) continue;
 
     if (!desc.haDomain) continue;
-    const entityId = deriveHaEntityId(desc.haDomain, deviceName, (n as { name: string }).name);
+    // Prefer the descriptor's declared HA entity_ids — single source of truth
+    // shared with firmware emit. Fall back to the legacy derivation only for
+    // descriptors that have not yet declared `codegen.haEntityIds`.
+    const declared = desc.codegen?.haEntityIds?.(n, topology.device);
+    const entityId = pickCanonicalEntityId(declared, desc.haDomain)
+      ?? deriveHaEntityId(desc.haDomain, topology.device, (n as { name: string }).name);
     nodesById.set(n.id, { entityId });
 
     const binds = resolveBinds(desc.defaultBinds, n as { binds?: Record<string, string> });
@@ -67,6 +71,24 @@ export function buildHaMeta(topology: SystemTopology, opts: BuildHaMetaOptions):
   };
   assertSlotBindSymmetry(meta);
   return meta;
+}
+
+/**
+ * Pick the canonical entity from a descriptor's declared `haEntityIds`. The
+ * canonical entity is the one whose domain matches `desc.haDomain`. If
+ * multiple entries share the domain, the first non-undefined wins (this only
+ * happens for descriptors with multiple same-domain sub-entities; in practice
+ * the canonical one is always the first declared).
+ */
+function pickCanonicalEntityId(
+  declared: Record<string, string | undefined> | undefined,
+  haDomain: string,
+): string | undefined {
+  if (!declared) return undefined;
+  for (const id of Object.values(declared)) {
+    if (id?.startsWith(`${haDomain}.`)) return id;
+  }
+  return undefined;
 }
 
 function resolveBinds(

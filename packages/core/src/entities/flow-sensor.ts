@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
+import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields } from '../ha';
+import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#16a34a'; // green
 const W = 50, H = 36;
@@ -14,7 +14,7 @@ const W = 50, H = 36;
 export const FlowSensorNodeSchema = z.object({
   kind: z.literal('flow_sensor'),
   id: ComponentId,
-  name: z.string().min(1),
+  name: EntityName,
   pin: GpioPin,
   flow_cal: z.number().default(450.0),
   disabled: z.boolean().optional(),
@@ -24,6 +24,16 @@ export const FlowSensorNodeSchema = z.object({
 });
 
 export type FlowSensorNode = z.infer<typeof FlowSensorNodeSchema>;
+
+// Single source of truth for flow sensor HA entity names. Both firmware emit
+// (codegen.sensors / extraComponents) and HA reference (codegen.haEntityIds)
+// read from this — including the Water Flow → Total Usage rename rule, which
+// previously lived independently in dashboard.ts and drifted from this file.
+const haNames = (node: FlowSensorNode) => ({
+  flow:        node.name,
+  total:       node.name.replace('Water Flow', 'Total Usage').replace('Flow', 'Total'),
+  sensorFault: `${node.name} Sensor Fault`,
+});
 
 // --- Descriptor ---
 
@@ -78,10 +88,11 @@ export const flowSensorDescriptor: NodeDescriptor = {
       const totalId = flowTotalId(node);
       const faultId = flowFaultCountId(node);
       const header = resolveComponentHeader(ctx, node.pin, { purpose: 'pulse_counter', mode: 'INPUT_PULLUP' });
+      const names = haNames(node);
       return `\
 ${header}
   id: ${sId}
-  name: "${node.name}"
+  name: "${names.flow}"
   unit_of_measurement: "L/min"
   icon: "mdi:water"
   update_interval: \${update_interval}
@@ -114,7 +125,7 @@ ${header}
 
 - platform: integration
   sensor: ${sId}
-  name: "${node.name.replace('Water Flow', 'Total Usage').replace('Flow', 'Total')}"
+  name: "${names.total}"
   id: ${totalId}
   unit_of_measurement: "L"
   time_unit: min
@@ -129,7 +140,7 @@ ${header}
         binary_sensor: `\
 - platform: template
   id: ${faultSensorId}
-  name: "${node.name} Sensor Fault"
+  name: "${haNames(node).sensorFault}"
   icon: "mdi:alert-decagram"
   device_class: problem
   entity_category: diagnostic
@@ -147,6 +158,15 @@ ${header}
 - id: ${faultId}
   type: int
   initial_value: '0'`;
+    },
+
+    haEntityIds: (node: FlowSensorNode, device) => {
+      const n = haNames(node);
+      return {
+        flow:        deriveHaEntityId('sensor',        device, n.flow),
+        total:       deriveHaEntityId('sensor',        device, n.total),
+        sensorFault: deriveHaEntityId('binary_sensor', device, n.sensorFault),
+      };
     },
   },
 };

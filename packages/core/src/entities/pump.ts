@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
+import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields } from '../ha';
+import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#dc2626'; // red
 const S = 60;
@@ -15,7 +15,7 @@ const S = 60;
 export const PumpNodeSchema = z.object({
   kind: z.literal('pump'),
   id: ComponentId,
-  name: z.string().default('Pump'),
+  name: EntityName.default('Pump'),
   pin: GpioPin,
   relay_polarity: RelayPolaritySchema,
   disabled: z.boolean().optional(),
@@ -33,6 +33,13 @@ export const PumpNodeSchema = z.object({
 });
 
 export type PumpNode = z.infer<typeof PumpNodeSchema>;
+
+// Single source of truth for pump HA entity names. Both the firmware-emit
+// side (codegen.hardware) and the HA-reference side (codegen.haEntityIds)
+// read from this — they cannot drift.
+const haNames = (_node: PumpNode) => ({
+  relay: 'Pump Relay',
+});
 
 // --- Descriptor ---
 
@@ -112,9 +119,9 @@ export const pumpDescriptor: NodeDescriptor = {
 # --- Pump relay ------------------------------------------------------------
 ${header}
   id: ${id}
-  name: "Pump Relay"
+  name: "${haNames(node).relay}"
   icon: "mdi:water-pump"
-  internal: true
+  entity_category: config
   restore_mode: ALWAYS_OFF
   on_turn_on:
     - if:
@@ -126,6 +133,10 @@ ${header}
     },
 
     substitutions: () => [],
+
+    haEntityIds: (node: PumpNode, device) => ({
+      relay: deriveHaEntityId('switch', device, haNames(node).relay),
+    }),
   },
 
   rules: [

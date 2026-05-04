@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { ComponentId, PortSchema, PositionSchema } from '../schemas';
+import { ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields } from '../ha';
+import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#7c3aed'; // violet
 const S = 60;
@@ -14,7 +14,7 @@ const S = 60;
 export const VfdNodeSchema = z.object({
   kind: z.literal('vfd'),
   id: ComponentId,
-  name: z.string().default('VFD Pump'),
+  name: EntityName.default('VFD Pump'),
   controller: ComponentId,
   start_register: z.number().default(0x0001),
   speed_register: z.number().optional(),
@@ -38,6 +38,18 @@ export const VfdNodeSchema = z.object({
 });
 
 export type VfdNode = z.infer<typeof VfdNodeSchema>;
+
+// Single source of truth for VFD HA entity names. Each sub-entity is gated
+// on its corresponding Modbus register being configured; both firmware emit
+// and HA reference apply the same gate.
+const haNames = (node: VfdNode) => ({
+  switch:        node.name,
+  power:         `${node.name} Power`,
+  frequency:     `${node.name} Frequency`,
+  faultCode:     `${node.name} Fault Code`,
+  speedSetpoint: `${node.name} Speed Setpoint`,
+  faultReset:    `${node.name} Fault Reset`,
+});
 
 // --- Descriptor ---
 
@@ -97,7 +109,7 @@ export const vfdDescriptor: NodeDescriptor = {
 # Modbus start/stop switch — same id (${id}) as GPIO pump for state machine compat
 ${header}
   id: ${id}
-  name: "${node.name}"
+  name: "${haNames(node).switch}"
   icon: "mdi:pump"
   register_type: holding
   address: ${node.start_register}
@@ -109,12 +121,13 @@ ${header}
 
     sensors: (node: VfdNode, _idx, ctx) => {
       const parts: string[] = [];
+      const names = haNames(node);
       if (node.power_register != null) {
         const header = resolveComponentHeader(ctx, node.controller, { purpose: 'adc' });
         parts.push(`\
 ${header}
   id: ${node.id}_power
-  name: "${node.name} Power"
+  name: "${names.power}"
   register_type: holding
   address: ${node.power_register}
   unit_of_measurement: "kW"
@@ -127,7 +140,7 @@ ${header}
         parts.push(`\
 ${header}
   id: ${node.id}_frequency
-  name: "${node.name} Frequency"
+  name: "${names.frequency}"
   register_type: holding
   address: ${node.frequency_register}
   unit_of_measurement: "Hz"
@@ -140,7 +153,7 @@ ${header}
         parts.push(`\
 ${header}
   id: ${node.id}_fault_code
-  name: "${node.name} Fault Code"
+  name: "${names.faultCode}"
   register_type: holding
   address: ${node.fault_register}
   icon: "mdi:alert-octagon"
@@ -152,12 +165,13 @@ ${header}
 
     extraComponents: (node: VfdNode, _idx, ctx) => {
       const sections: Record<string, string> = {};
+      const names = haNames(node);
       if (node.speed_register != null) {
         const header = resolveComponentHeader(ctx, node.controller, { purpose: 'digital_out' });
         sections['number'] = `\
 ${header}
   id: ${node.id}_speed_setpoint
-  name: "${node.name} Speed Setpoint"
+  name: "${names.speedSetpoint}"
   register_type: holding
   address: ${node.speed_register}
   min_value: 0
@@ -174,7 +188,7 @@ ${header}
         sections['button'] = `\
 - platform: template
   id: ${node.id}_fault_reset
-  name: "${node.name} Fault Reset"
+  name: "${names.faultReset}"
   icon: "mdi:restart"
   on_press:
     - lambda: |-
@@ -188,5 +202,22 @@ ${header}
     },
 
     substitutions: () => [],
+
+    haEntityIds: (node: VfdNode, device) => {
+      const n = haNames(node);
+      return {
+        switch:        deriveHaEntityId('switch', device, n.switch),
+        power:         node.power_register != null
+          ? deriveHaEntityId('sensor', device, n.power) : undefined,
+        frequency:     node.frequency_register != null
+          ? deriveHaEntityId('sensor', device, n.frequency) : undefined,
+        faultCode:     node.fault_register != null
+          ? deriveHaEntityId('sensor', device, n.faultCode) : undefined,
+        speedSetpoint: node.speed_register != null
+          ? deriveHaEntityId('number', device, n.speedSetpoint) : undefined,
+        faultReset:    node.fault_reset_register != null
+          ? deriveHaEntityId('button', device, n.faultReset) : undefined,
+      };
+    },
   },
 };

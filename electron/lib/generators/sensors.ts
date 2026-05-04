@@ -1,7 +1,9 @@
 import type { Manifest } from "../schema.js";
 import { nodesWithFlag } from "../schema.js";
-import { levelSensorLevelId, joinYamlItems } from '@far-mon/core';
+import { levelSensorLevelId, joinYamlItems, SYSTEM_ENTITY_NAMES, routeEntityNames } from '@far-mon/core';
 import type { CollectedCodegen } from "./collect.js";
+
+const SYS = SYSTEM_ENTITY_NAMES;
 
 export function generateSensors(m: Manifest, collected: CollectedCodegen): string {
   // Level sensor entities (standalone, decoupled from tanks)
@@ -10,7 +12,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   // Route max-runtime numbers — adjustable from HA, persisted across reboots
   const runtimeBlocks = m.routes.map((r, i) => `\
 - platform: template
-  name: "Route: ${r.name} Max Runtime (s)"
+  name: "${routeEntityNames(r).maxRuntime.name}"
   id: route_${i}_max_runtime
   icon: "mdi:timer-outline"
   min_value: 60
@@ -23,12 +25,12 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
 
   // Global safety timing — adjustable from HA
   const safetyBlocks = [
-    { name: 'Flow Watchdog', id: 'flow_watchdog_ms', icon: 'mdi:waves-arrow-up', min: 5000, max: 120000, step: 1000, initial: m.timing.flow_watchdog * 1000 },
-    { name: 'Flow Confirm', id: 'flow_confirm_ms', icon: 'mdi:check-decagram-outline', min: 3000, max: 60000, step: 1000, initial: m.timing.flow_confirm * 1000 },
-    { name: 'API Watchdog', id: 'api_watchdog_ms', icon: 'mdi:api', min: 30000, max: 600000, step: 10000, initial: m.timing.api_watchdog * 1000 },
+    { name: SYS.flowWatchdogMs.name, id: 'flow_watchdog_ms', icon: 'mdi:waves-arrow-up', min: 5000, max: 120000, step: 1000, initial: m.timing.flow_watchdog * 1000 },
+    { name: SYS.flowConfirmMs.name,  id: 'flow_confirm_ms',  icon: 'mdi:check-decagram-outline', min: 3000, max: 60000, step: 1000, initial: m.timing.flow_confirm * 1000 },
+    { name: SYS.apiWatchdogMs.name,  id: 'api_watchdog_ms',  icon: 'mdi:api', min: 30000, max: 600000, step: 10000, initial: m.timing.api_watchdog * 1000 },
   ].map((p) => `\
 - platform: template
-  name: "${p.name} (ms)"
+  name: "${p.name}"
   id: ${p.id}
   icon: "${p.icon}"
   min_value: ${p.min}
@@ -59,7 +61,7 @@ ${joinYamlItems(collected.sensors)}${levelSensors.length >= 2 ? `
 
   - platform: template
     id: combined_tank_level
-    name: "Combined Tank Level"
+    name: "${SYS.combinedTankLevel.name}"
     unit_of_measurement: "%"
     icon: "mdi:water-percent"
     accuracy_decimals: 0
@@ -80,7 +82,7 @@ ${joinYamlItems(numberBlocks)}` : ""}
 text_sensor:
   - platform: template
     id: system_state_text
-    name: "System State"
+    name: "${SYS.systemState.name}"
     icon: "mdi:state-machine"
     update_interval: 2s
     lambda: |-
@@ -90,7 +92,7 @@ text_sensor:
 
   - platform: template
     id: fault_text
-    name: "System Fault"
+    name: "${SYS.systemFault.name}"
     icon: "mdi:alert-circle"
     update_interval: 2s
     lambda: |-
@@ -109,7 +111,7 @@ text_sensor:
 
   - platform: template
     id: last_stop_reason_text
-    name: "Last Stop Reason"
+    name: "${SYS.lastStopReason.name}"
     icon: "mdi:alert-octagon-outline"
     update_interval: 2s
     lambda: |-
@@ -127,7 +129,7 @@ text_sensor:
 
   - platform: template
     id: active_routes_text
-    name: "Active Routes"
+    name: "${SYS.activeRoutes.name}"
     icon: "mdi:routes"
     update_interval: 2s
     lambda: |-
@@ -142,7 +144,7 @@ text_sensor:
 
   - platform: template
     id: route_queue_text
-    name: "Route Queue"
+    name: "${SYS.routeQueue.name}"
     icon: "mdi:tray-full"
     update_interval: 2s
     lambda: |-
@@ -159,7 +161,7 @@ text_sensor:
 ${m.routes.map((r, i) => `\
   - platform: template
     id: route_${i}_status
-    name: "Route: ${r.name}"
+    name: "${routeEntityNames(r).status.name}"
     icon: "mdi:routes"
     update_interval: 2s
     lambda: |-
@@ -177,7 +179,7 @@ binary_sensor:
 ${joinYamlItems(binarySensorBlocks)}${levelSensors.length >= 2 ? `
   - platform: template
     id: water_critical
-    name: "Water Critical"
+    name: "${SYS.waterCritical.name}"
     icon: "mdi:water-alert"
     device_class: problem
     lambda: |-

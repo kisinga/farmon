@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema, escXml } from '../schemas';
+import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { waterSourcePressureId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
-import { HaNodeFields } from '../ha';
+import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#0ea5e9'; // sky blue
 const W = 120, H = 50;
@@ -15,7 +15,7 @@ const W = 120, H = 50;
 export const WaterSourceNodeSchema = z.object({
   kind: z.literal('water_source'),
   id: ComponentId,
-  name: z.string().min(1),
+  name: EntityName,
   pressure_pin: GpioPin.optional(),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
@@ -24,6 +24,13 @@ export const WaterSourceNodeSchema = z.object({
 });
 
 export type WaterSourceNode = z.infer<typeof WaterSourceNodeSchema>;
+
+// Single source of truth for water source HA entity names. The pressure
+// entity is conditional on `pressure_pin`; both firmware emit and HA
+// reference gate it identically.
+const haNames = (node: WaterSourceNode) => ({
+  pressure: `${node.name} Pressure`,
+});
 
 // --- Descriptor ---
 
@@ -70,7 +77,7 @@ export const waterSourceDescriptor: NodeDescriptor = {
       return `\
 ${header}
   id: ${sId}
-  name: "${node.name} Pressure"
+  name: "${haNames(node).pressure}"
   unit_of_measurement: "bar"
   icon: "mdi:gauge"
   update_interval: \${update_interval}
@@ -78,6 +85,12 @@ ${header}
     },
 
     substitutions: () => [],
+
+    haEntityIds: (node: WaterSourceNode, device) => ({
+      pressure: node.pressure_pin
+        ? deriveHaEntityId('sensor', device, haNames(node).pressure)
+        : undefined,
+    }),
   },
 
   constraints: [

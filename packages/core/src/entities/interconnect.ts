@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { ComponentId, PortSchema, PositionSchema, escXml } from '../schemas';
+import { ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { HaNodeFields } from '../ha';
 
@@ -13,7 +13,7 @@ const W = 120, H_BASE = 50, H_CONNECTED = 66;
 export const InterconnectNodeSchema = z.object({
   kind: z.literal('interconnect'),
   id: ComponentId,
-  name: z.string().min(1),
+  name: EntityName,
   notes: z.string().optional(),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),

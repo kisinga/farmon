@@ -1,10 +1,12 @@
 import { stringify, Scalar } from "yaml";
 import type { BoardDef } from "../board.js";
-import { boardSupportedTransports, effectiveTransport, type NetworkConfig } from "@far-mon/core";
+import { boardSupportedTransports, effectiveTransport, SYSTEM_ENTITY_NAMES, type NetworkConfig } from "@far-mon/core";
 import {
   emitConnectionProfile,
   emitTransportSignalSensor,
 } from "./networking.js";
+
+const SYS = SYSTEM_ENTITY_NAMES;
 
 /** Create a YAML !secret tagged scalar — serializes as `!secret name` (unquoted). */
 function secret(name: string): Scalar {
@@ -103,7 +105,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
       platform: "gpio",
       pin: board.peripherals.vext.pin,
       id: "vext",
-      name: "Vext Control",
+      name: SYS.vextControl.name,
       inverted: true,
       restore_mode: "ALWAYS_ON",
     });
@@ -117,7 +119,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
     });
     lights.push({
       platform: "binary",
-      name: "Onboard LED",
+      name: SYS.onboardLed.name,
       output: "led_output",
     });
   }
@@ -184,7 +186,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
       platform: "adc",
       pin: "${pin_battery_adc}",
       id: "battery_voltage",
-      name: "Battery Voltage",
+      name: SYS.batteryVoltage.name,
       unit_of_measurement: "V",
       icon: "mdi:battery",
       accuracy_decimals: 2,
@@ -199,7 +201,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
       platform: "copy",
       source_id: "battery_voltage",
       id: "battery_percent",
-      name: "Battery Percent",
+      name: SYS.batteryPercent.name,
       unit_of_measurement: "%",
       icon: "mdi:battery",
       accuracy_decimals: 0,
@@ -221,13 +223,13 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   if (signalSensor) sensors.push(signalSensor);
   sensors.push({
     platform: "uptime",
-    name: "Uptime",
+    name: SYS.uptime.name,
     update_interval: "${update_interval}",
     id: "uptime_sec",
   });
   sensors.push({
     platform: "internal_temperature",
-    name: "ESP32 Temperature",
+    name: SYS.esp32Temperature.name,
     update_interval: "${update_interval}",
     id: "esp_temp",
   });

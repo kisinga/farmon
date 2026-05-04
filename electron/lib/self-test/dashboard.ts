@@ -5,16 +5,18 @@
 import { stringify } from 'yaml';
 import type { BoardDef } from '../board.js';
 import type { TestProbe } from './probe.js';
-import { slug } from '@far-mon/core';
+import { deriveHaEntityId, SYSTEM_ENTITY_NAMES } from '@far-mon/core';
 
-function entityId(domain: string, deviceName: string, name: string): string {
-  return `${domain}.${slug(deviceName)}_${slug(name)}`;
-}
+const SYS = SYSTEM_ENTITY_NAMES;
 
 export function generateDashboard(board: BoardDef, probes: TestProbe[]): string {
+  // Mirrors self-test/device-yaml.ts: name = `selftest-<model>`, friendly_name = `<label> Self-Test`.
+  // HA derives entity_ids from friendly_name; we pass the same device shape here.
   const model = board.model.replace('_', '-');
-  const deviceName = `selftest-${model}`;
-  const e = (domain: string, name: string) => entityId(domain, deviceName, name);
+  const device = { name: `selftest-${model}`, friendly_name: `${board.label} Self-Test` };
+  const e = (domain: string, name: string) => deriveHaEntityId(domain, device, name);
+  // Diagnostics shared with the main system live in SYSTEM_ENTITY_NAMES.
+  const sys = (key: keyof typeof SYS) => deriveHaEntityId(SYS[key].domain, device, SYS[key].name);
 
   const overviewSection = {
     type: 'grid',
@@ -74,12 +76,12 @@ export function generateDashboard(board: BoardDef, probes: TestProbe[]): string 
   };
 
   const healthEntities: Array<{ entity: string; name: string }> = [];
-  if (!board.peripherals.ethernet) healthEntities.push({ entity: e('sensor', 'WiFi Signal'), name: 'WiFi' });
+  if (!board.peripherals.ethernet) healthEntities.push({ entity: sys('wifiSignal'), name: 'WiFi' });
   healthEntities.push(
-    { entity: e('sensor', 'ESP32 Temperature'), name: 'Temp' },
-    { entity: e('sensor', 'Uptime'), name: 'Uptime' },
+    { entity: sys('esp32Temperature'), name: 'Temp' },
+    { entity: sys('uptime'), name: 'Uptime' },
   );
-  if (board.peripherals.battery) healthEntities.push({ entity: e('sensor', 'Battery Percent'), name: 'Battery' });
+  if (board.peripherals.battery) healthEntities.push({ entity: sys('batteryPercent'), name: 'Battery' });
 
   const healthSection = {
     type: 'grid',

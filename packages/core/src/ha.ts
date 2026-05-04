@@ -14,16 +14,154 @@ import { type InputPolicy, policyString } from './input-policy';
 import { slug } from './slug';
 
 /**
- * Canonical HA entity_id for a node. Mirrors ESPHome's auto-derivation:
- *   `<haDomain>.<slug(deviceName)>_<slug(nodeName)>`
+ * Canonical HA entity_id for a node. Mirrors what HA actually creates from
+ * an ESPHome device: when `friendly_name:` is set (always, in our generator),
+ * HA derives the entity_id prefix from `friendly_name`, not from `name`.
+ *
+ *   `<haDomain>.<slug(device.friendly_name)>_<slug(nodeName)>`
  *
  * Single source of truth shared by:
  *  - SCADA meta sidecar (ha-meta.ts)
  *  - dashboard / automations / site-dashboard generators
  *  - sidebar read-only display
+ *
+ * For ESPHome service calls (`esphome.<name>_stop_all`) — which use the mDNS
+ * `name:` field — use `esphomeServicePrefix(device)` instead.
  */
-export function deriveHaEntityId(domain: string, deviceName: string, nodeName: string): string {
-  return `${domain}.${slug(deviceName)}_${slug(nodeName)}`;
+export function deriveHaEntityId(
+  domain: string,
+  device: { friendly_name: string },
+  nodeName: string,
+): string {
+  return `${domain}.${slug(device.friendly_name)}_${slug(nodeName)}`;
+}
+
+/**
+ * Prefix for ESPHome's HA-exposed services (`esphome.<prefix>_stop_all`, etc.).
+ * Bound to the ESPHome `name:` field (mDNS hostname / API node identifier),
+ * which is independent of `friendly_name`.
+ */
+export function esphomeServicePrefix(device: { name: string }): string {
+  return slug(device.name);
+}
+
+// ---------------------------------------------------------------------------
+// System entity catalog — single source of truth for non-per-node entities.
+//
+// Every system entity the firmware emits (System State, route start/stop
+// buttons, device health, etc.) is declared here exactly once. Both sides
+// read from this catalog:
+//
+//  - Firmware emit (sensors.ts, control.ts, board-package.ts, networking.ts)
+//    reads `name` for the YAML `name: "..."` literal.
+//  - HA reference (dashboard.ts, site-dashboard.ts, automations.ts,
+//    ha-meta.ts) reads pre-resolved entity_ids via `systemHaEntityIds()`.
+//
+// Per-node entities (one set per pump / valve / level sensor / etc.) are
+// declared on each entity descriptor instead — see
+// `EntityCodegen.haEntityIds` in entity-registry.ts.
+// ---------------------------------------------------------------------------
+
+export interface SystemEntitySpec {
+  /** HA domain that the firmware platform produces (sensor, switch, button, etc.). */
+  domain: string;
+  /** The literal `name:` value emitted into ESPHome YAML. */
+  name: string;
+}
+
+/**
+ * Fixed system entities — emitted unconditionally or gated only by board
+ * capability (battery presence, wifi vs ethernet). Per-route entities are
+ * defined separately via `routeEntityNames()`.
+ */
+export const SYSTEM_ENTITY_NAMES = {
+  // text_sensor (sensors.ts) — surface as `sensor.*` in HA
+  systemState:        { domain: 'sensor', name: 'System State' },
+  systemFault:        { domain: 'sensor', name: 'System Fault' },
+  lastStopReason:     { domain: 'sensor', name: 'Last Stop Reason' },
+  activeRoutes:       { domain: 'sensor', name: 'Active Routes' },
+  routeQueue:         { domain: 'sensor', name: 'Route Queue' },
+
+  // sensor / binary_sensor (sensors.ts)
+  combinedTankLevel:  { domain: 'sensor',        name: 'Combined Tank Level' },
+  waterCritical:      { domain: 'binary_sensor', name: 'Water Critical' },
+
+  // number (sensors.ts safety blocks)
+  flowWatchdogMs:     { domain: 'number', name: 'Flow Watchdog (ms)' },
+  flowConfirmMs:      { domain: 'number', name: 'Flow Confirm (ms)' },
+  apiWatchdogMs:      { domain: 'number', name: 'API Watchdog (ms)' },
+
+  // switch (control.ts)
+  safetyOverride:     { domain: 'switch', name: 'Safety Override' },
+
+  // device health (board-package.ts)
+  batteryVoltage:     { domain: 'sensor', name: 'Battery Voltage' },
+  batteryPercent:     { domain: 'sensor', name: 'Battery Percent' },
+  uptime:             { domain: 'sensor', name: 'Uptime' },
+  esp32Temperature:   { domain: 'sensor', name: 'ESP32 Temperature' },
+  vextControl:        { domain: 'switch', name: 'Vext Control' },
+  onboardLed:         { domain: 'light',  name: 'Onboard LED' },
+
+  // networking (networking.ts) — text_sensor surfaces as `sensor.*` in HA
+  wifiSignal:         { domain: 'sensor', name: 'WiFi Signal' },
+  ipAddress:          { domain: 'sensor', name: 'IP Address' },
+  connectedSsid:      { domain: 'sensor', name: 'Connected SSID' },
+  macAddress:         { domain: 'sensor', name: 'MAC Address' },
+  transportSupported: { domain: 'sensor', name: 'Transport (supported)' },
+  transportActive:    { domain: 'sensor', name: 'Transport (active)' },
+} as const satisfies Record<string, SystemEntitySpec>;
+
+export type SystemEntityKey = keyof typeof SYSTEM_ENTITY_NAMES;
+
+/** Names of the per-route entities the firmware emits (one set per route). */
+export function routeEntityNames(route: { name: string }): {
+  status: SystemEntitySpec;
+  start: SystemEntitySpec;
+  stop: SystemEntitySpec;
+  maxRuntime: SystemEntitySpec;
+} {
+  return {
+    status:     { domain: 'sensor', name: `Route: ${route.name}` },
+    start:      { domain: 'button', name: `Start: ${route.name}` },
+    stop:       { domain: 'button', name: `Stop: ${route.name}` },
+    maxRuntime: { domain: 'number', name: `Route: ${route.name} Max Runtime (s)` },
+  };
+}
+
+/** ESPHome services exposed via `esphome.<esphomeServicePrefix(device)>_<name>`. */
+export const ESPHOME_SERVICES = ['stop_all', 'fault_reset_all', 'queue_clear'] as const;
+export type EsphomeServiceName = typeof ESPHOME_SERVICES[number];
+
+/**
+ * Pre-resolve every system entity_id for a device. Generators consuming HA
+ * references should use these values directly and never call
+ * `deriveHaEntityId` themselves for system entities.
+ */
+export interface SystemHaEntityIds extends Record<SystemEntityKey, string> {
+  routes: Array<{ status: string; start: string; stop: string; maxRuntime: string }>;
+}
+
+export function systemHaEntityIds(
+  device: { friendly_name: string },
+  routes: { name: string }[],
+): SystemHaEntityIds {
+  const fixed = Object.fromEntries(
+    (Object.entries(SYSTEM_ENTITY_NAMES) as [SystemEntityKey, SystemEntitySpec][])
+      .map(([key, spec]) => [key, deriveHaEntityId(spec.domain, device, spec.name)]),
+  ) as Record<SystemEntityKey, string>;
+
+  return {
+    ...fixed,
+    routes: routes.map(r => {
+      const n = routeEntityNames(r);
+      return {
+        status:     deriveHaEntityId(n.status.domain,     device, n.status.name),
+        start:      deriveHaEntityId(n.start.domain,      device, n.start.name),
+        stop:       deriveHaEntityId(n.stop.domain,       device, n.stop.name),
+        maxRuntime: deriveHaEntityId(n.maxRuntime.domain, device, n.maxRuntime.name),
+      };
+    }),
+  };
 }
 
 /** Version of the decorated SVG + meta sidecar contract. Bump on breaking changes. */

@@ -152,12 +152,11 @@ export class X6Canvas {
       }
     }
 
-    const deviceName = topology.device.name;
     const entityById = new Map<string, string>();
     for (const n of topology.nodes) {
       const desc = NODE_REGISTRY.get(n.kind);
       if (desc?.haDomain) {
-        entityById.set(n.id, deriveHaEntityId(desc.haDomain, deviceName, (n as { name: string }).name));
+        entityById.set(n.id, deriveHaEntityId(desc.haDomain, topology.device, (n as { name: string }).name));
       }
     }
     for (const pipe of topology.pipes) {

@@ -11,7 +11,7 @@
  * Usage: npx tsx test/ha-export.test.ts
  */
 
-import { buildHaMeta, HA_SCHEMA_VERSION, type SystemTopology } from '@far-mon/core';
+import { buildHaMeta, HA_SCHEMA_VERSION, deriveHaEntityId, esphomeServicePrefix, type SystemTopology } from '@far-mon/core';
 
 let passed = 0;
 let failed = 0;
@@ -48,9 +48,12 @@ function assertThrows(fn: () => unknown, name: string, match?: RegExp) {
 const FIXED_TIME = '2026-01-01T00:00:00.000Z';
 
 function fixture(): SystemTopology {
+  // Intentionally divergent: slug(name) = 'gh_1' but slug(friendly_name) = 'greenhouse'.
+  // HA derives entity_ids from friendly_name; ESPHome services use name. Both must be testable
+  // independently, so the fixture forces them apart.
   return {
     schema: 11,
-    device: { name: 'greenhouse', friendly_name: 'Greenhouse', board: 'heltec_v3' },
+    device: { name: 'gh-1', friendly_name: 'Greenhouse', board: 'heltec_v3' },
     nodes: [
       {
         kind: 'tank', id: 'tank_main', name: 'Main Tank',
@@ -110,7 +113,11 @@ assert(meta.labelTiers.primary > 0 && meta.labelTiers.secondary > meta.labelTier
 
 console.log('\nNode resolution:');
 assert(!!meta.nodes['pump_1'], 'pump_1 present');
-assert(meta.nodes['pump_1'].entityId === 'switch.greenhouse_pump_1', 'pump_1 carries derived entityId');
+// The pump's firmware-emitted switch is named "Pump Relay" (not the node's
+// `name`), so the canonical HA entity_id reflects that — single source of
+// truth via descriptor.codegen.haEntityIds. Previously this asserted the
+// node's name, which never matched what HA actually saw.
+assert(meta.nodes['pump_1'].entityId === 'switch.greenhouse_pump_relay', 'pump_1 carries firmware-emitted entityId');
 assert(meta.nodes['pump_1'].kind === 'pump', 'pump_1 carries kind');
 
 const pumpActions = meta.nodes['pump_1'].actions ?? [];
@@ -128,9 +135,9 @@ assert((meta.nodes['valve_a'].actions ?? []).length > 0, 'valve_a has default ac
 
 console.log('\nPipes:');
 assert(meta.pipes['p1']?.fromEntity === 'sensor.greenhouse_main_tank', 'p1 fromEntity wired');
-assert(meta.pipes['p1']?.toEntity === 'switch.greenhouse_pump_1', 'p1 toEntity wired');
+assert(meta.pipes['p1']?.toEntity === 'switch.greenhouse_pump_relay', 'p1 toEntity wired');
 assert(meta.pipes['p1']?.flowWhen === `fromEntity.state == 'on'`, 'p1 default flowWhen set');
-assert(meta.pipes['p2']?.fromEntity === 'switch.greenhouse_pump_1', 'p2 fromEntity set');
+assert(meta.pipes['p2']?.fromEntity === 'switch.greenhouse_pump_relay', 'p2 fromEntity set');
 assert(meta.pipes['p2']?.toEntity === 'cover.greenhouse_valve_a', 'p2 toEntity set');
 
 // --- Determinism: 3 runs produce identical JSON ---
@@ -181,6 +188,27 @@ assertThrows(
   },
   'throws on malformed bind expression',
   /Invalid bind expression/,
+);
+
+// --- Entity ID derivation contract ---
+//
+// Pinning the SSOT: HA prefix comes from friendly_name; ESPHome service prefix
+// comes from name. The two are deliberately divergent in the fixture to ensure
+// neither helper silently falls back to the other field.
+
+console.log('\nEntity ID derivation:');
+const dev = { name: 'gh-1', friendly_name: 'Greenhouse' };
+assert(
+  deriveHaEntityId('sensor', dev, 'System State') === 'sensor.greenhouse_system_state',
+  'deriveHaEntityId uses slug(friendly_name) prefix',
+);
+assert(
+  esphomeServicePrefix(dev) === 'gh_1',
+  'esphomeServicePrefix uses slug(name)',
+);
+assert(
+  deriveHaEntityId('sensor', dev, 'System State') !== `sensor.${esphomeServicePrefix(dev)}_system_state`,
+  'HA entity prefix and ESPHome service prefix are independent (regression guard)',
 );
 
 // --- Summary ---

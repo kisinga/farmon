@@ -71,6 +71,24 @@ export interface EntityCodegen<T extends Record<string, any> = Record<string, an
    * Each value is a YAML fragment (indented with 2 spaces) appended to that section.
    */
   extraComponents?: (node: T, index: number, ctx: CodegenContext) => Record<string, string>;
+  /**
+   * The HA entity_ids this entity contributes, keyed by a stable role name
+   * (e.g. `level`, `rawVoltage`, `calEmpty`, `calFull` for a level sensor).
+   *
+   * Single source of truth for HA references: dashboard / automations /
+   * site-dashboard / ha-meta consume these instead of reconstructing entity_id
+   * strings. Each implementation must reuse the same name strings its
+   * `sensors` / `extraComponents` / `hardware` functions emit, so a rename
+   * is impossible to forget on either side.
+   *
+   * Returned record's keys may include conditional entries that resolve to
+   * `undefined` when the entity-feature isn't configured (e.g. VFD power
+   * sensor only exists if `power_register` is set).
+   */
+  haEntityIds?: (
+    node: T,
+    device: { friendly_name: string },
+  ) => Record<string, string | undefined>;
 }
 
 // ---------------------------------------------------------------------------

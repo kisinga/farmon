@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema } from '../schemas';
+import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { filterInletPressureId, filterOutletPressureId, filterDeltaPressureId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields } from '../ha';
+import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#78716c'; // stone
 const W = 50, H = 36;
@@ -15,7 +15,7 @@ const W = 50, H = 36;
 export const FilterNodeSchema = z.object({
   kind: z.literal('filter'),
   id: ComponentId,
-  name: z.string().min(1),
+  name: EntityName,
   inlet_pressure_pin: GpioPin.optional(),
   outlet_pressure_pin: GpioPin.optional(),
   disabled: z.boolean().optional(),
@@ -25,6 +25,15 @@ export const FilterNodeSchema = z.object({
 });
 
 export type FilterNode = z.infer<typeof FilterNodeSchema>;
+
+// Single source of truth for filter HA entity names. Each entry is conditional
+// on the corresponding pressure pin being configured; both firmware emit and
+// HA reference gate identically.
+const haNames = (node: FilterNode) => ({
+  inletPressure:  `${node.name} Inlet Pressure`,
+  outletPressure: `${node.name} Outlet Pressure`,
+  deltaPressure:  `${node.name} Differential Pressure`,
+});
 
 // --- Descriptor ---
 
@@ -73,13 +82,14 @@ export const filterDescriptor: NodeDescriptor = {
   codegen: {
     sensors: (node: FilterNode, _idx, ctx) => {
       const parts: string[] = [];
+      const names = haNames(node);
       if (node.inlet_pressure_pin) {
         const id = filterInletPressureId(node);
         const header = resolveComponentHeader(ctx, node.inlet_pressure_pin, { purpose: 'adc' });
         parts.push(`\
 ${header}
   id: ${id}
-  name: "${node.name} Inlet Pressure"
+  name: "${names.inletPressure}"
   unit_of_measurement: "bar"
   icon: "mdi:gauge"
   update_interval: \${update_interval}
@@ -91,7 +101,7 @@ ${header}
         parts.push(`\
 ${header}
   id: ${id}
-  name: "${node.name} Outlet Pressure"
+  name: "${names.outletPressure}"
   unit_of_measurement: "bar"
   icon: "mdi:gauge"
   update_interval: \${update_interval}
@@ -104,7 +114,7 @@ ${header}
         parts.push(`\
 - platform: template
   id: ${deltaId}
-  name: "${node.name} Differential Pressure"
+  name: "${names.deltaPressure}"
   unit_of_measurement: "bar"
   icon: "mdi:delta"
   accuracy_decimals: 2
@@ -119,6 +129,18 @@ ${header}
     },
 
     substitutions: () => [],
+
+    haEntityIds: (node: FilterNode, device) => {
+      const n = haNames(node);
+      return {
+        inletPressure:  node.inlet_pressure_pin
+          ? deriveHaEntityId('sensor', device, n.inletPressure) : undefined,
+        outletPressure: node.outlet_pressure_pin
+          ? deriveHaEntityId('sensor', device, n.outletPressure) : undefined,
+        deltaPressure:  (node.inlet_pressure_pin && node.outlet_pressure_pin)
+          ? deriveHaEntityId('sensor', device, n.deltaPressure) : undefined,
+      };
+    },
   },
 
   rules: [{

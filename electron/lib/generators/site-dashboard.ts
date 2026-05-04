@@ -1,6 +1,7 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
-import { nodesByKind, nodesWithFlag, slug, deriveHaEntityId as entityId } from "../schema.js";
+import { nodesByKind, nodesWithFlag, slug, esphomeServicePrefix } from "../schema.js";
+import { NODE_REGISTRY, systemHaEntityIds } from '@far-mon/core';
 import {
   buildStatusSection,
   buildWaterSection,
@@ -10,6 +11,10 @@ import {
 
 function n(node: ManifestNode, key: string): string {
   return String(node[key] ?? '');
+}
+
+function haIds(node: ManifestNode, device: { friendly_name: string }): Record<string, string | undefined> {
+  return NODE_REGISTRY.get(node.kind)?.codegen?.haEntityIds?.(node, device) ?? {};
 }
 
 export interface SiteDashboardSystem {
@@ -40,10 +45,10 @@ export function generateSiteDashboard(
   // Controllers glance — state + active routes per system
   const statusEntities: Array<{ entity: string; name: string }> = [];
   for (const s of systems) {
-    const dev = s.manifest.device.name;
+    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes);
     statusEntities.push(
-      { entity: entityId("sensor", dev, "System State"), name: s.friendlyName },
-      { entity: entityId("sensor", dev, "Active Routes"), name: `${s.friendlyName} Routes` },
+      { entity: sys.systemState, name: s.friendlyName },
+      { entity: sys.activeRoutes, name: `${s.friendlyName} Routes` },
     );
   }
   overviewSections.push({
@@ -62,7 +67,7 @@ export function generateSiteDashboard(
     for (const t of ls) {
       tankGauges.push({
         type: "gauge",
-        entity: entityId("sensor", s.manifest.device.name, `${n(t, 'name')} Level`),
+        entity: haIds(t, s.manifest.device).level!,
         name: systems.length > 1 ? `${n(t, 'name')} (${s.friendlyName})` : n(t, 'name'),
         min: 0, max: 100, severity: { red: 0, yellow: 25, green: 50 }, needle: true,
       });
@@ -85,7 +90,7 @@ export function generateSiteDashboard(
     for (const f of nodesByKind(s.manifest.nodes, 'flow_sensor')) {
       const label = n(f, 'name').replace(" Water Flow", "").replace(" Flow", "");
       flowEntities.push({
-        entity: entityId("sensor", s.manifest.device.name, n(f, 'name')),
+        entity: haIds(f, s.manifest.device).flow!,
         name: systems.length > 1 ? `${label} (${s.friendlyName})` : label,
       });
     }
@@ -104,11 +109,11 @@ export function generateSiteDashboard(
   // Quick actions — stop-all per controller
   const actionCards: unknown[] = [];
   for (const s of systems) {
-    const dev = slug(s.manifest.device.name);
+    const servicePrefix = esphomeServicePrefix(s.manifest.device);
     actionCards.push({
       show_name: true, show_icon: true, type: "button",
       name: `Stop All — ${s.friendlyName}`, icon: "mdi:stop-circle",
-      tap_action: { action: "call-service", service: `esphome.${dev}_stop_all` },
+      tap_action: { action: "call-service", service: `esphome.${servicePrefix}_stop_all` },
       show_state: false, color: "red",
     });
   }
@@ -126,10 +131,10 @@ export function generateSiteDashboard(
   // Device health
   const healthEntities: Array<{ entity: string; name: string }> = [];
   for (const s of systems) {
-    const dev = s.manifest.device.name;
+    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes);
     healthEntities.push(
-      { entity: entityId("sensor", dev, "WiFi Signal"), name: `${s.friendlyName} WiFi` },
-      { entity: entityId("sensor", dev, "Uptime"), name: `${s.friendlyName} Uptime` },
+      { entity: sys.wifiSignal, name: `${s.friendlyName} WiFi` },
+      { entity: sys.uptime,     name: `${s.friendlyName} Uptime` },
     );
   }
   overviewSections.push({

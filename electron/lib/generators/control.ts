@@ -1,5 +1,8 @@
 import type { Manifest } from "../schema.js";
 import { nodesWithFlag, pumpSwitchId, slug } from "../schema.js";
+import { SYSTEM_ENTITY_NAMES, routeEntityNames } from '@far-mon/core';
+
+const SYS = SYSTEM_ENTITY_NAMES;
 
 export function generateControl(m: Manifest): string {
   const hasPump = nodesWithFlag(m.nodes, 'isPump').length > 0;
@@ -136,7 +139,7 @@ api:
 
 switch:
   - platform: template
-    name: "Safety Override"
+    name: "${SYS.safetyOverride.name}"
     id: safety_override
     optimistic: true
     restore_mode: ALWAYS_OFF
@@ -148,7 +151,7 @@ switch:
 button:
 ${m.routes.map((r, i) => `\
   - platform: template
-    name: "Start: ${r.name}"
+    name: "${routeEntityNames(r).start.name}"
     id: route_${i}_start
     icon: "mdi:play-circle"
     on_press:
@@ -157,7 +160,7 @@ ${m.routes.map((r, i) => `\
           int rc = try_route_start(${i});
           ESP_LOGI("btn", "Route ${i} [${r.name}] start: %s", res[rc]);
   - platform: template
-    name: "Stop: ${r.name}"
+    name: "${routeEntityNames(r).stop.name}"
     id: route_${i}_stop
     icon: "mdi:stop-circle"
     on_press:

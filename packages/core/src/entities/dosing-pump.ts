@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
-import { GpioPin, ComponentId, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
+import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { dosingPumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields } from '../ha';
+import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#ea580c'; // orange
 const S = 50;
@@ -15,7 +15,7 @@ const S = 50;
 export const DosingPumpNodeSchema = z.object({
   kind: z.literal('dosing_pump'),
   id: ComponentId,
-  name: z.string().min(1),
+  name: EntityName,
   pin: GpioPin,
   relay_polarity: RelayPolaritySchema,
   flow_rate_ml_min: z.number().default(100),
@@ -26,6 +26,15 @@ export const DosingPumpNodeSchema = z.object({
 });
 
 export type DosingPumpNode = z.infer<typeof DosingPumpNodeSchema>;
+
+// Single source of truth for dosing pump HA entity names. Note: the
+// firmware-emitted switch is currently `internal: true`, which suppresses
+// HA discovery. The dashboard references this entity_id anyway — that
+// pre-existing inconsistency will be surfaced by the cross-validation test
+// as a real bug to fix outside this refactor.
+const haNames = (node: DosingPumpNode) => ({
+  relay: `${node.name} Relay`,
+});
 
 // --- Descriptor ---
 
@@ -90,13 +99,17 @@ export const dosingPumpDescriptor: NodeDescriptor = {
 # --- ${node.name} ---
 ${header}
   id: ${id}
-  name: "${node.name} Relay"
+  name: "${haNames(node).relay}"
   icon: "mdi:pump"
   internal: true
   restore_mode: ALWAYS_OFF`;
     },
 
     substitutions: () => [],
+
+    haEntityIds: (node: DosingPumpNode, device) => ({
+      relay: deriveHaEntityId('switch', device, haNames(node).relay),
+    }),
   },
 
   rules: [
