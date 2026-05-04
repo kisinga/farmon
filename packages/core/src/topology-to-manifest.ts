@@ -1,4 +1,4 @@
-import type { Manifest, ManifestNode, ManifestAutomation, Route as ManifestRoute } from "./manifest.types";
+import type { Manifest, ManifestNode, ManifestAutomation, Route as ManifestRoute, TankLevelSource } from "./manifest.types";
 import type { SystemTopology } from "./topology.types";
 import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
 import { slug } from "./slug";
@@ -8,20 +8,32 @@ import { slug } from "./slug";
 // ---------------------------------------------------------------------------
 
 /**
- * For each tank, find the first downstream level_sensor in the active graph.
- * Returns a map: tankId → levelSensorId.
+ * For each tank, find the first downstream level source (level_sensor or
+ * pressure_sensor) in the active graph. If both kinds are present, the first
+ * one encountered in the iteration order wins; level sensors are preferred
+ * by checking them in priority order.
+ *
+ * Returns a map: tankId → { id, kind }.
  */
-function resolveTankLevelSensors(
+function resolveTankLevelSources(
   graph: ReturnType<typeof buildGraph>,
   nodeMap: Map<string, { kind: string; [k: string]: any }>,
-): Map<string, string> {
-  const result = new Map<string, string>();
+): Map<string, TankLevelSource> {
+  const LEVEL_SOURCE_KINDS = ['level_sensor', 'pressure_sensor'] as const;
+  const result = new Map<string, TankLevelSource>();
   for (const [id, node] of nodeMap) {
     if (node.kind !== 'tank' || !graph.hasNode(id)) continue;
-    // Check direct downstream neighbors for a level_sensor
-    for (const neighbor of graph.outNeighbors(id)) {
-      if (graph.hasNode(neighbor) && graph.getNodeAttribute(neighbor, 'kind') === 'level_sensor') {
-        result.set(id, neighbor);
+    // Prefer a direct level sensor; fall back to a pressure sensor.
+    for (const wantedKind of LEVEL_SOURCE_KINDS) {
+      let found: string | undefined;
+      for (const neighbor of graph.outNeighbors(id)) {
+        if (graph.hasNode(neighbor) && graph.getNodeAttribute(neighbor, 'kind') === wantedKind) {
+          found = neighbor;
+          break;
+        }
+      }
+      if (found) {
+        result.set(id, { id: found, kind: wantedKind });
         break;
       }
     }
@@ -47,18 +59,18 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
 
   const nodeMap = new Map(topology.nodes.map(n => [n.id, n]));
 
-  // Resolve tank → level_sensor associations from graph topology
-  const tankLevelSensors = resolveTankLevelSensors(active, nodeMap);
+  // Resolve tank → level-source associations from graph topology
+  const tankLevelSources = resolveTankLevelSources(active, nodeMap);
 
   // Strip layout fields (ports, position) — generators don't need them.
-  // Annotate tanks with their associated level_sensor ID.
+  // Annotate tanks with their associated level source.
   const nodes: ManifestNode[] = topology.nodes
     .filter(n => connected.has(n.id) && !n.disabled)
     .map(({ ports, position, ...data }) => {
       const node = data as ManifestNode;
       if (node.kind === 'tank') {
-        const lsId = tankLevelSensors.get(node.id);
-        if (lsId) node['level_sensor'] = lsId;
+        const src = tankLevelSources.get(node.id);
+        if (src) node['level_source'] = src;
       }
       return node;
     });
@@ -75,16 +87,17 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
       const dstLabel = (dstNode as any)?.name ?? r.destination;
 
       // Determine if runtime level checks are reliable for this route.
-      // Check pump_rated on the level_sensor connected to source/dest tanks.
+      // Check pump_rated on whichever sensor (level or pressure) supplies
+      // the source/dest tanks' level reading.
       const runtimeLevelOk = !r.crossesPump || (() => {
         const checkTank = (tankId: string | undefined) => {
           if (!tankId) return true;
           const tank = nodeMap.get(tankId);
           if (!tank || tank.kind !== 'tank') return true;
-          const lsId = tankLevelSensors.get(tankId);
-          if (!lsId) return true; // no sensor = no level data = skip check
-          const ls = nodeMap.get(lsId);
-          return !ls || !!(ls as any).pump_rated;
+          const src = tankLevelSources.get(tankId);
+          if (!src) return true; // no sensor = no level data = skip check
+          const sensor = nodeMap.get(src.id);
+          return !sensor || !!(sensor as any).pump_rated;
         };
         return checkTank(r.source) && checkTank(r.destination);
       })();

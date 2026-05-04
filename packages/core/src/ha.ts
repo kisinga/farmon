@@ -12,6 +12,9 @@
 import { z } from 'zod';
 import { type InputPolicy, policyString } from './input-policy';
 import { slug } from './slug';
+import type { BoardDef } from './board.types';
+import { boardSupportedTransports } from './board.types';
+import { effectiveTransport, type NetworkConfig } from './topology.types';
 
 /**
  * Canonical HA entity_id for a node. Mirrors what HA actually creates from
@@ -128,30 +131,86 @@ export function routeEntityNames(route: { name: string }): {
   };
 }
 
+/**
+ * HA-derived automation entity_id. HA computes this from the automation's
+ * `alias:` field (slugged), not from any user-controllable id. The alias we
+ * emit is `${name}: ${route_name}` (see automations.ts), so the entity_id is:
+ *
+ *   `automation.<slug(alias)>`
+ *
+ * Single source of truth shared by:
+ *  - automations.ts (writes the alias literal)
+ *  - dashboard.ts (references the entity_id)
+ */
+export function automationHaEntityId(alias: string): string {
+  return `automation.${slug(alias)}`;
+}
+
+/** Build the canonical alias for a user-defined route automation. */
+export function routeAutomationAlias(a: { name: string; route_name: string }): string {
+  return `${a.name}: ${a.route_name}`;
+}
+
 /** ESPHome services exposed via `esphome.<esphomeServicePrefix(device)>_<name>`. */
 export const ESPHOME_SERVICES = ['stop_all', 'fault_reset_all', 'queue_clear'] as const;
 export type EsphomeServiceName = typeof ESPHOME_SERVICES[number];
 
 /**
+ * Capability flags governing which optional system entities the firmware
+ * actually emits. Mirrors the conditional emit logic in board-package.ts /
+ * networking.ts so dashboard and meta consumers don't reference entities the
+ * firmware never created.
+ */
+export interface SystemCapabilities {
+  /** True when `effectiveTransport(network, supportedTransports) === 'wifi'`. */
+  hasWifi: boolean;
+  /** True when the board declares a battery peripheral. */
+  hasBattery: boolean;
+}
+
+/** Compute capabilities from board + network config — same logic as firmware emit. */
+export function systemCapabilities(board: BoardDef, network?: NetworkConfig): SystemCapabilities {
+  const transport = effectiveTransport(network, boardSupportedTransports(board));
+  return {
+    hasWifi: transport === 'wifi',
+    hasBattery: !!board.peripherals.battery,
+  };
+}
+
+/**
  * Pre-resolve every system entity_id for a device. Generators consuming HA
  * references should use these values directly and never call
  * `deriveHaEntityId` themselves for system entities.
+ *
+ * Capability-gated entities (`wifiSignal`, `batteryPercent`) are `undefined`
+ * when the corresponding capability is absent — callers must check before use.
+ * When `caps` is omitted, both default to present (legacy behavior).
  */
-export interface SystemHaEntityIds extends Record<SystemEntityKey, string> {
+export type SystemHaEntityIds = {
+  [K in SystemEntityKey]: K extends 'wifiSignal' | 'batteryPercent' ? string | undefined : string;
+} & {
   routes: Array<{ status: string; start: string; stop: string; maxRuntime: string }>;
-}
+};
 
 export function systemHaEntityIds(
   device: { friendly_name: string },
   routes: { name: string }[],
+  caps?: SystemCapabilities,
 ): SystemHaEntityIds {
+  const hasWifi = caps?.hasWifi ?? true;
+  const hasBattery = caps?.hasBattery ?? true;
+
   const fixed = Object.fromEntries(
     (Object.entries(SYSTEM_ENTITY_NAMES) as [SystemEntityKey, SystemEntitySpec][])
-      .map(([key, spec]) => [key, deriveHaEntityId(spec.domain, device, spec.name)]),
-  ) as Record<SystemEntityKey, string>;
+      .map(([key, spec]) => {
+        if (key === 'wifiSignal' && !hasWifi) return [key, undefined];
+        if (key === 'batteryPercent' && !hasBattery) return [key, undefined];
+        return [key, deriveHaEntityId(spec.domain, device, spec.name)];
+      }),
+  ) as Record<SystemEntityKey, string | undefined>;
 
   return {
-    ...fixed,
+    ...(fixed as Record<SystemEntityKey, string>),
     routes: routes.map(r => {
       const n = routeEntityNames(r);
       return {
@@ -161,7 +220,7 @@ export function systemHaEntityIds(
         maxRuntime: deriveHaEntityId(n.maxRuntime.domain, device, n.maxRuntime.name),
       };
     }),
-  };
+  } as SystemHaEntityIds;
 }
 
 /** Version of the decorated SVG + meta sidecar contract. Bump on breaking changes. */

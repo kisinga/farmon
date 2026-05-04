@@ -7,6 +7,7 @@ import { generateSensors } from "./generators/sensors.js";
 import { generateDashboard } from "./generators/dashboard.js";
 import { generateBoardPackage } from "./generators/board-package.js";
 import { generateSiteDashboard, type SiteDashboardSystem } from "./generators/site-dashboard.js";
+import { systemCapabilities } from "@far-mon/core";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
 import { generateAutomations } from "./generators/automations.js";
@@ -135,7 +136,7 @@ export function generateAll(m: Manifest, board: BoardDef, secrets?: SecretsMap):
   files.push({
     relativePath: `config/homeassistant/dashboards/dashboard.yaml`,
     description: "HA dashboard with gauges, controls, settings",
-    content: generateDashboard(m),
+    content: generateDashboard(m, systemCapabilities(board, m.device.network)),
   });
 
   const automationsContent = generateAutomations(m);

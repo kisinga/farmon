@@ -46,7 +46,12 @@ export const levelSensorCalFullId = (node: { id: string }) => `${node.id}_cal_fu
 // Component IDs — pressure sensor
 // ---------------------------------------------------------------------------
 
-export const pressureSensorId = (node: { id: string }) => `${node.id}_pressure`;
+export const pressureSensorId         = (n: { id: string }) => `${n.id}_pressure`;
+export const pressureSensorRangeMinId = (n: { id: string }) => `${n.id}_range_min`;
+export const pressureSensorRangeMaxId = (n: { id: string }) => `${n.id}_range_max`;
+export const pressureSensorCalEmptyId = (n: { id: string }) => `${n.id}_cal_empty`;
+export const pressureSensorCalFullId  = (n: { id: string }) => `${n.id}_cal_full`;
+export const pressureSensorLevelId    = (n: { id: string }) => `${n.id}_level`;
 
 // ---------------------------------------------------------------------------
 // Component IDs — water source

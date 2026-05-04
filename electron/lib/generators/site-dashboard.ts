@@ -1,12 +1,13 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag, slug, esphomeServicePrefix } from "../schema.js";
-import { NODE_REGISTRY, systemHaEntityIds } from '@far-mon/core';
+import { NODE_REGISTRY, systemHaEntityIds, type SystemCapabilities } from '@far-mon/core';
 import {
   buildStatusSection,
   buildWaterSection,
   buildRouteControlSection,
-  buildSettingsView,
+  buildConfigurationView,
+  buildManualView,
 } from "./dashboard.js";
 
 function n(node: ManifestNode, key: string): string {
@@ -21,6 +22,8 @@ export interface SiteDashboardSystem {
   systemId: string;
   friendlyName: string;
   manifest: Manifest;
+  /** Optional board/network capabilities — gates wifi/battery references. */
+  capabilities?: SystemCapabilities;
 }
 
 /**
@@ -45,7 +48,7 @@ export function generateSiteDashboard(
   // Controllers glance — state + active routes per system
   const statusEntities: Array<{ entity: string; name: string }> = [];
   for (const s of systems) {
-    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes);
+    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes, s.capabilities);
     statusEntities.push(
       { entity: sys.systemState, name: s.friendlyName },
       { entity: sys.activeRoutes, name: `${s.friendlyName} Routes` },
@@ -131,11 +134,9 @@ export function generateSiteDashboard(
   // Device health
   const healthEntities: Array<{ entity: string; name: string }> = [];
   for (const s of systems) {
-    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes);
-    healthEntities.push(
-      { entity: sys.wifiSignal, name: `${s.friendlyName} WiFi` },
-      { entity: sys.uptime,     name: `${s.friendlyName} Uptime` },
-    );
+    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes, s.capabilities);
+    if (sys.wifiSignal) healthEntities.push({ entity: sys.wifiSignal, name: `${s.friendlyName} WiFi` });
+    healthEntities.push({ entity: sys.uptime, name: `${s.friendlyName} Uptime` });
   }
   overviewSections.push({
     type: "grid",
@@ -176,11 +177,19 @@ export function generateSiteDashboard(
       cards: [],
     });
 
-    // Settings as a subview for this controller
+    // Configuration as a subview for this controller
     views.push({
-      ...(buildSettingsView(s.manifest) as Record<string, unknown>),
-      title: `${s.friendlyName} Settings`,
-      path: `settings-${slug(s.systemId)}`,
+      ...(buildConfigurationView(s.manifest, s.capabilities) as Record<string, unknown>),
+      title: `${s.friendlyName} Configuration`,
+      path: `configuration-${slug(s.systemId)}`,
+      subview: true,
+    });
+
+    // Manual control as a subview for this controller
+    views.push({
+      ...(buildManualView(s.manifest) as Record<string, unknown>),
+      title: `${s.friendlyName} Manual`,
+      path: `manual-${slug(s.systemId)}`,
       subview: true,
     });
   }

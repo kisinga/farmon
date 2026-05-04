@@ -5,9 +5,7 @@
 import { stringify } from 'yaml';
 import type { BoardDef } from '../board.js';
 import type { TestProbe } from './probe.js';
-import { deriveHaEntityId, SYSTEM_ENTITY_NAMES } from '@far-mon/core';
-
-const SYS = SYSTEM_ENTITY_NAMES;
+import { deriveHaEntityId, systemHaEntityIds, systemCapabilities } from '@far-mon/core';
 
 export function generateDashboard(board: BoardDef, probes: TestProbe[]): string {
   // Mirrors self-test/device-yaml.ts: name = `selftest-<model>`, friendly_name = `<label> Self-Test`.
@@ -15,8 +13,9 @@ export function generateDashboard(board: BoardDef, probes: TestProbe[]): string 
   const model = board.model.replace('_', '-');
   const device = { name: `selftest-${model}`, friendly_name: `${board.label} Self-Test` };
   const e = (domain: string, name: string) => deriveHaEntityId(domain, device, name);
-  // Diagnostics shared with the main system live in SYSTEM_ENTITY_NAMES.
-  const sys = (key: keyof typeof SYS) => deriveHaEntityId(SYS[key].domain, device, SYS[key].name);
+  // Diagnostics gated by board capabilities — SSOT with main system dashboards.
+  const caps = systemCapabilities(board);
+  const sys = systemHaEntityIds(device, [], caps);
 
   const overviewSection = {
     type: 'grid',
@@ -76,12 +75,12 @@ export function generateDashboard(board: BoardDef, probes: TestProbe[]): string 
   };
 
   const healthEntities: Array<{ entity: string; name: string }> = [];
-  if (!board.peripherals.ethernet) healthEntities.push({ entity: sys('wifiSignal'), name: 'WiFi' });
+  if (sys.wifiSignal) healthEntities.push({ entity: sys.wifiSignal, name: 'WiFi' });
   healthEntities.push(
-    { entity: sys('esp32Temperature'), name: 'Temp' },
-    { entity: sys('uptime'), name: 'Uptime' },
+    { entity: sys.esp32Temperature, name: 'Temp' },
+    { entity: sys.uptime, name: 'Uptime' },
   );
-  if (board.peripherals.battery) healthEntities.push({ entity: sys('batteryPercent'), name: 'Battery' });
+  if (sys.batteryPercent) healthEntities.push({ entity: sys.batteryPercent, name: 'Battery' });
 
   const healthSection = {
     type: 'grid',

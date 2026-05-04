@@ -333,7 +333,7 @@ a.xref:hover { border-bottom-style: solid; }
   <tbody>
     <tr><td><code>button.…_start_0</code></td><td>Button</td><td>Start route: Tank → Valve A</td></tr>
     <tr><td><code>button.…_stop_0</code></td><td>Button</td><td>Stop route: Tank → Valve A</td></tr>
-    <tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Disables <strong>all</strong> runtime safety checks while ON: pre-start level gates, flow watchdog, runtime level stops, max-runtime, API watchdog. Reverts to OFF on reboot. Use only for commissioning or manual recovery.</td></tr>
+    <tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Disables <strong>all</strong> runtime safety checks while ON: pre-start level gates, flow watchdog, runtime level stops, max-runtime, API watchdog. Also lets the pump run without an owning route (commissioning / bench testing). Reverts to OFF on reboot. Use only for commissioning or manual recovery.</td></tr>
   </tbody>
 </table>
 
@@ -355,7 +355,7 @@ a.xref:hover { border-bottom-style: solid; }
   <div class="safety-card"><strong>Flow watchdog</strong><span>No-flow fault after 30s · Flow confirmed within 3s</span></div>
   <div class="safety-card"><strong>Runtime level</strong><span>Active on routes with pump-rated sensors · Clean stop on threshold breach</span></div>
   <div class="safety-card"><strong>API watchdog</strong><span>Route faulted if HA disconnects for 60s</span></div>
-  <div class="safety-card" style="border-left-color:#dc2626;"><strong>Safety Override</strong><span>While <code>switch.…_safety_override</code> is ON, every check above is skipped. Switch reverts to OFF on reboot.</span></div>
+  <div class="safety-card" style="border-left-color:#dc2626;"><strong>Safety Override</strong><span>While <code>switch.…_safety_override</code> is ON, every check above is skipped and the pump may be run without an owning route. Switch reverts to OFF on reboot.</span></div>
 </div>
 
 <h2>Device Reference</h2>

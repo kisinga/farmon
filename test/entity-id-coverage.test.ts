@@ -139,10 +139,6 @@ const HA_DOMAINS = new Set([
 interface FixtureCheck {
   configFile: string;
   boardDir: string;
-  /** Entity_ids that the generator references but the firmware deliberately
-   *  doesn't emit on this board. Each one is a real bug to fix later — listed
-   *  here so the test fails loudly if we unintentionally introduce more. */
-  knownGaps: string[];
 }
 
 function check(fixture: FixtureCheck) {
@@ -191,17 +187,13 @@ function check(fixture: FixtureCheck) {
     filteredRefs.add(ref);
   }
 
-  // --- Assert: every reference exists in firmware (or is a known gap) ---
+  // --- Assert: every reference exists in firmware. No exemptions.
   const caps = boardCapabilities(board);
   const missing: string[] = [];
   for (const ref of filteredRefs) {
     if (firmwareIds.has(ref)) continue;
-    if (fixture.knownGaps.includes(ref)) continue;
     missing.push(ref);
   }
-
-  // --- Assert: every documented gap is actually missing (so the list stays honest) ---
-  const stalGaps = fixture.knownGaps.filter(g => firmwareIds.has(g));
 
   console.log(`\n${fixture.configFile}:`);
   console.log(`  device.friendly_name = "${manifest.device.friendly_name}"`);
@@ -213,88 +205,20 @@ function check(fixture: FixtureCheck) {
     `every dashboard/automation reference has a matching firmware entity`,
     missing.length > 0 ? `missing: ${missing.join(', ')}` : undefined,
   );
-
-  assert(
-    stalGaps.length === 0,
-    `documented "known gap" entries are still actually missing`,
-    stalGaps.length > 0 ? `now present, remove from knownGaps: ${stalGaps.join(', ')}` : undefined,
-  );
 }
 
 console.log('Entity ID coverage — dashboard refs vs firmware emits');
 console.log('=====================================================');
 
-// Documented pre-existing drift bugs the SSOT refactor exposed but does not
-// fix. Each entry is a real "entity not found" in HA. Listed here so the
-// test is green for the refactor itself but fails the moment any *new* drift
-// appears.
-//
-// Ongoing follow-up work:
-//
-//  - Tank phantom IDs (`sensor.<f>_<tank_name>`): tank descriptors set
-//    `haDomain: 'sensor'` but have no codegen — ha-meta.ts derives an entity
-//    from the tank's `name` for the SCADA card pipe wiring, but the firmware
-//    never emits it. Real fix: tanks in ha-meta should reference their
-//    associated level_sensor's level entity (already resolved in
-//    topology-to-manifest's `tankLevelSensors` map).
-//
-//  - Water-source phantom IDs (`sensor.<f>_<source_name>` when no
-//    pressure_pin): water_source has `haDomain: 'sensor'` but only emits a
-//    pressure entity when `pressure_pin` is set. Without a pin, ha-meta
-//    still references the source via fallback derivation.
-//
-//  - Disconnected level sensors (`sensor.<f>_<ls>_level`): ha-meta iterates
-//    topology.nodes (every node) but firmware iterates manifest.nodes (pipe-
-//    connected only). Disconnected level sensors get a dashboard reference
-//    with no firmware match.
-//
-//  - Internal-only dosing pump switch: dosing pumps emit with `internal:
-//    true`, suppressing HA discovery, but the dashboard still references
-//    `switch.<f>_<doser>_relay`.
-//
-//  - WiFi Signal / Battery Percent on incapable boards: dashboard references
-//    them unconditionally; firmware emits only with the corresponding board
-//    peripheral.
+// Strict gate: every dashboard / automation / SCADA-meta reference MUST
+// resolve to a firmware-emitted entity for every fixture. No exemptions.
+// Drift fails the build at codegen time, before HA ever sees a broken card.
 
-check({
-  configFile: 'configs/pump-controller.yaml',
-  boardDir: 'boards/heltec-v3',
-  knownGaps: [
-    'sensor.pump_ctrl_rain_tank',     // tank phantom (no codegen)
-    'sensor.pump_ctrl_storage_tank',  // tank phantom (no codegen)
-  ],
-});
-
-check({
-  configFile: 'configs/vfd-pump-controller.yaml',
-  boardDir: 'boards/heltec-v3',
-  knownGaps: [
-    'sensor.vfd_controller_rain_tank',                  // tank phantom
-    'sensor.vfd_controller_storage_tank',               // tank phantom
-    'sensor.vfd_controller_storage_tank_level_level',   // disconnected level sensor (ls2)
-  ],
-});
-
-check({
-  configFile: 'configs/treatment-loop.yaml',
-  boardDir: 'boards/heltec-v3',
-  knownGaps: [
-    'sensor.treatment_loop_storage_tank',          // tank phantom
-    'sensor.treatment_loop_mains_supply',          // water_source phantom (no pressure_pin)
-    'switch.treatment_loop_chlorine_doser_relay',  // dosing pump emits internal: true
-  ],
-});
-
-// KC868-A16 has ethernet (no WiFi) and no battery.
-check({
-  configFile: 'configs/kc868-a16-controller.yaml',
-  boardDir: 'boards/kc868-a16',
-  knownGaps: [
-    'sensor.kc868_controller_wifi_signal',     // ethernet board, no wifi sensor
-    'sensor.kc868_controller_battery_percent', // no battery peripheral
-    'sensor.kc868_controller_rain_tank',       // tank phantom
-  ],
-});
+check({ configFile: 'configs/pump-controller.yaml',     boardDir: 'boards/heltec-v3' });
+check({ configFile: 'configs/vfd-pump-controller.yaml', boardDir: 'boards/heltec-v3' });
+check({ configFile: 'configs/treatment-loop.yaml',      boardDir: 'boards/heltec-v3' });
+// KC868-A16 has ethernet (no WiFi) and no battery — capability gating handled by the generators.
+check({ configFile: 'configs/kc868-a16-controller.yaml', boardDir: 'boards/kc868-a16' });
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

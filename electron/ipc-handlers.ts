@@ -10,7 +10,7 @@ import * as store from "./store.js";
 import * as db from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
-import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport } from '@far-mon/core';
+import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport, systemCapabilities } from '@far-mon/core';
 import { generateSiteDocumentation, type PinTableRow } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
@@ -443,7 +443,7 @@ export function registerIpcHandlers() {
       const site = db.loadSiteFull(siteId);
       if (!site) throw new Error(`Site not found: ${siteId}`);
 
-      const systems: Array<{ systemId: string; friendlyName: string; manifest: import("./lib/schema.js").Manifest }> = [];
+      const systems: Array<import("./lib/generators/site-dashboard.js").SiteDashboardSystem> = [];
       const manifests = new Map<string, import("./lib/schema.js").Manifest>();
 
       for (const sp of site.systems) {
@@ -452,7 +452,11 @@ export function registerIpcHandlers() {
           sp.topology as unknown as Record<string, unknown>,
         );
         const manifest = topologyToManifest(fullTopology);
-        systems.push({ systemId: sp.id, friendlyName: sp.friendlyName, manifest });
+        const boardData = store.loadBoard(sp.board);
+        const capabilities = boardData?.board
+          ? systemCapabilities(boardData.board as unknown as BoardDef, manifest.device.network)
+          : undefined;
+        systems.push({ systemId: sp.id, friendlyName: sp.friendlyName, manifest, capabilities });
         manifests.set(sp.id, manifest);
       }
 

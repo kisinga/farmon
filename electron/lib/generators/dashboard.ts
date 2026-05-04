@@ -1,7 +1,7 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
-import { NODE_REGISTRY, systemHaEntityIds, esphomeServicePrefix } from '@far-mon/core';
+import { NODE_REGISTRY, systemHaEntityIds, esphomeServicePrefix, automationHaEntityId, routeAutomationAlias, type SystemCapabilities } from '@far-mon/core';
 
 /** Shorthand for accessing ManifestNode string fields. */
 function n(node: ManifestNode, key: string): string {
@@ -35,7 +35,6 @@ export function buildStatusSection(m: Manifest): unknown {
           { entity: sys.routeQueue, name: "Queue" },
           { entity: sys.systemFault, name: "Fault" },
           { entity: sys.lastStopReason, name: "Last Stop Reason" },
-          { entity: sys.safetyOverride },
         ],
         grid_options: { columns: "full" },
       },
@@ -57,6 +56,15 @@ export function buildWaterSection(m: Manifest): unknown {
     type: "gauge", entity: haIds(ls, dev).level!, name: n(ls, 'name'),
     min: 0, max: 100, severity: { red: 0, yellow: 25, green: 50 }, needle: true,
   }));
+
+  // Pressure sensors that act as tank-level sources contribute their derived
+  // level% to the same row of tank-fill gauges as the level sensors.
+  const pressureLevelGauges = pressureSensors.map(ps => ({
+    type: "gauge", entity: haIds(ps, dev).level!, name: `${n(ps, 'name')} Level`,
+    min: 0, max: 100, severity: { red: 0, yellow: 25, green: 50 }, needle: true,
+  }));
+
+  const tankLevelGauges = [...levelGauges, ...pressureLevelGauges];
 
   const wsPressureGauges = waterSources.filter(ws => ws['pressure_pin']).map(ws => ({
     type: "gauge", entity: haIds(ws, dev).pressure!, name: `${n(ws, 'name')} Pressure`,
@@ -109,8 +117,8 @@ export function buildWaterSection(m: Manifest): unknown {
       ...(levelSensors.length >= 2
         ? [{ type: "entities", entities: [{ entity: sys.waterCritical, name: "Water Critical" }], grid_options: { columns: "full" } }]
         : []),
-      ...(levelGauges.length > 0
-        ? [{ type: "horizontal-stack", cards: levelGauges, grid_options: { columns: "full", rows: "auto" } }]
+      ...(tankLevelGauges.length > 0
+        ? [{ type: "horizontal-stack", cards: tankLevelGauges, grid_options: { columns: "full", rows: "auto" } }]
         : []),
       ...(wsPressureGauges.length > 0
         ? [{ type: "horizontal-stack", cards: wsPressureGauges, grid_options: { columns: "full", rows: "auto" } }]
@@ -169,9 +177,10 @@ export function buildRouteControlSection(m: Manifest): unknown {
     type: "grid",
     cards: [{
       type: "entities", title: "Automations",
-      entities: m.automations.map(a => ({
-        entity: `automation.majiflow_${a.id}`, name: `${a.name}: ${a.route_name}`, icon: "mdi:calendar-clock",
-      })),
+      entities: m.automations.map(a => {
+        const alias = routeAutomationAlias(a);
+        return { entity: automationHaEntityId(alias), name: alias, icon: "mdi:calendar-clock" };
+      }),
       grid_options: { columns: "full" },
     }],
     column_span: 1,
@@ -228,13 +237,29 @@ export function buildRouteControlSection(m: Manifest): unknown {
   };
 }
 
-export function buildSettingsView(m: Manifest): unknown {
+export function buildConfigurationView(m: Manifest, caps?: SystemCapabilities): unknown {
   const dev = m.device;
-  const sys = systemHaEntityIds(dev, m.routes);
+  const sys = systemHaEntityIds(dev, m.routes, caps);
   const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
+  const pressureSensors = nodesWithFlag(m.nodes, 'isPressureSensor');
+  const valves = nodesWithFlag(m.nodes, 'isValve');
   const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
 
-  const calEntities = levelSensors.flatMap(ls => {
+  // Watchdogs / timeouts — global safety timing + per-route max runtime.
+  const timingEntities: Array<{ entity: string; name: string }> = [
+    { entity: sys.flowWatchdogMs, name: "Flow Watchdog" },
+    { entity: sys.flowConfirmMs,  name: "Flow Confirm" },
+    { entity: sys.apiWatchdogMs,  name: "API Watchdog" },
+    ...m.routes.map((r, i) => ({ entity: sys.routes[i].maxRuntime, name: `${r.name} Max Runtime` })),
+  ];
+
+  // Valve travel times — per-valve, set at commissioning.
+  const valveTravelEntities = valves.map(v => ({
+    entity: haIds(v, dev).travelTime!, name: `${n(v, 'name')} Travel Time`,
+  }));
+
+  // Level sensor calibration (existing pattern).
+  const levelCalEntities = levelSensors.flatMap(ls => {
     const ids = haIds(ls, dev);
     return [
       { entity: ids.rawVoltage!, name: `${n(ls, 'name')} Raw V` },
@@ -243,21 +268,41 @@ export function buildSettingsView(m: Manifest): unknown {
     ];
   });
 
+  // Pressure sensor calibration — sensor electrical range + tank operating range.
+  const pressureCalEntities = pressureSensors.flatMap(ps => {
+    const ids = haIds(ps, dev);
+    return [
+      { entity: ids.rangeMin!, name: `${n(ps, 'name')} Sensor Min` },
+      { entity: ids.rangeMax!, name: `${n(ps, 'name')} Sensor Max` },
+      { entity: ids.calEmpty!, name: `${n(ps, 'name')} Cal Empty` },
+      { entity: ids.calFull!,  name: `${n(ps, 'name')} Cal Full` },
+    ];
+  });
+
+  const healthEntities: Array<{ entity: string; name: string }> = [];
+  if (sys.batteryPercent) healthEntities.push({ entity: sys.batteryPercent, name: "Battery" });
+  if (sys.wifiSignal)     healthEntities.push({ entity: sys.wifiSignal,     name: "WiFi" });
+  healthEntities.push(
+    { entity: sys.esp32Temperature, name: "Temp" },
+    { entity: sys.uptime,           name: "Uptime" },
+  );
+
   return {
-    title: "Settings",
-    path: "settings",
+    title: "Configuration",
+    path: "configuration",
     icon: "mdi:cog",
     cards: [
-      { type: "entities", title: "Sensor Calibration (voltage)", entities: calEntities },
-      {
-        type: "glance", title: "Device Health", show_state: true,
-        entities: [
-          { entity: sys.batteryPercent,   name: "Battery" },
-          { entity: sys.wifiSignal,       name: "WiFi" },
-          { entity: sys.esp32Temperature, name: "Temp" },
-          { entity: sys.uptime,           name: "Uptime" },
-        ],
-      },
+      { type: "entities", title: "Watchdogs & Runtimes", entities: timingEntities },
+      ...(valveTravelEntities.length > 0 ? [{
+        type: "entities", title: "Valve Travel Times", entities: valveTravelEntities,
+      }] : []),
+      ...(levelCalEntities.length > 0 ? [{
+        type: "entities", title: "Level Sensor Calibration (voltage)", entities: levelCalEntities,
+      }] : []),
+      ...(pressureCalEntities.length > 0 ? [{
+        type: "entities", title: "Pressure Sensor Calibration (bar)", entities: pressureCalEntities,
+      }] : []),
+      { type: "glance", title: "Device Health", show_state: true, entities: healthEntities },
       ...(flowSensors.length > 0 ? [{
         type: "entities", title: "Sensor Diagnostics",
         entities: flowSensors.map(f => ({ entity: haIds(f, dev).sensorFault!, name: `${n(f, 'name')} Fault` })),
@@ -266,11 +311,79 @@ export function buildSettingsView(m: Manifest): unknown {
   };
 }
 
+export function buildManualView(m: Manifest): unknown {
+  const dev = m.device;
+  const sys = systemHaEntityIds(dev, m.routes);
+  const pumps = nodesByKind(m.nodes, 'pump');
+  const valves = nodesWithFlag(m.nodes, 'isValve');
+
+  const overrideCard = {
+    type: "entities",
+    title: "Operator Override",
+    entities: [
+      { entity: sys.safetyOverride, name: "Safety Override" },
+    ],
+  };
+
+  // Pump direct control. Without an owning route, the pump only runs when
+  // safety_override is ON (firmware-enforced).
+  const pumpEntities = pumps.map(p => ({ entity: haIds(p, dev).relay!, name: n(p, 'name') }));
+  const pumpCard = pumpEntities.length > 0 ? [{
+    type: "entities", title: "Pump", entities: pumpEntities,
+  }] : [];
+
+  // Per-valve manual: cover (timer-bounded), open coil, close coil (raw).
+  // Coils are interlocked at firmware level (only one can be ON at a time).
+  const valveCards = valves.map(v => {
+    const ids = haIds(v, dev);
+    return {
+      type: "entities",
+      title: n(v, 'name'),
+      entities: [
+        { entity: ids.cover!,     name: "Cover (timer)" },
+        { entity: ids.openCoil!,  name: "Open Coil (raw)" },
+        { entity: ids.closeCoil!, name: "Close Coil (raw)" },
+      ],
+    };
+  });
+
+  // Route start/stop buttons — same as Overview, kept here for one-stop manual ops.
+  const routeStartButtons = m.routes.map((r, i) => ({
+    show_name: true, show_icon: true, type: "button", name: r.name, icon: "mdi:water-sync",
+    tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.routes[i].start } },
+    show_state: false,
+  }));
+  const routeStopButtons = m.routes.map((r, i) => ({
+    show_name: true, show_icon: true, type: "button", name: `Stop ${r.name}`, icon: "mdi:stop-circle-outline",
+    tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.routes[i].stop } },
+    show_state: false, color: "red",
+  }));
+  const routeCard = m.routes.length > 0 ? [{
+    type: "vertical-stack",
+    cards: [
+      { type: "horizontal-stack", cards: routeStartButtons },
+      { type: "horizontal-stack", cards: routeStopButtons },
+    ],
+  }] : [];
+
+  return {
+    title: "Manual",
+    path: "manual",
+    icon: "mdi:hand-back-right",
+    cards: [
+      overrideCard,
+      ...pumpCard,
+      ...valveCards,
+      ...routeCard,
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Single-system dashboard (convenience wrapper)
 // ---------------------------------------------------------------------------
 
-export function generateDashboard(m: Manifest): string {
+export function generateDashboard(m: Manifest, caps?: SystemCapabilities): string {
   const routeControl = buildRouteControlSection(m) as { sections: unknown[] };
 
   const dashboard = {
@@ -289,7 +402,8 @@ export function generateDashboard(m: Manifest): string {
         ],
         badges: [],
       },
-      buildSettingsView(m),
+      buildConfigurationView(m, caps),
+      buildManualView(m),
     ],
   };
 

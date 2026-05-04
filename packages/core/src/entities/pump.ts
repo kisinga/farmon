@@ -121,15 +121,14 @@ ${header}
   id: ${id}
   name: "${haNames(node).relay}"
   icon: "mdi:water-pump"
-  entity_category: config
   restore_mode: ALWAYS_OFF
   on_turn_on:
     - if:
         condition:
-          lambda: 'return pump_ref_count() == 0;'
+          lambda: 'return pump_ref_count() == 0 && !id(safety_override).state;'
         then:
           - switch.turn_off: ${id}
-          - logger.log: {level: WARN, format: "BLOCKED: pump only runs when a pumped route is RUNNING"}`;
+          - logger.log: {level: WARN, format: "BLOCKED: pump only runs during a route or when safety_override is ON"}`;
     },
 
     substitutions: () => [],

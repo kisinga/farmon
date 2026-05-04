@@ -99,14 +99,12 @@ export const valveDescriptor: NodeDescriptor = {
 ${openHeader}
   id: ${openId}
   name: "${names.openCoil}"
-  entity_category: config
   restore_mode: ALWAYS_OFF
   interlock: [${openId}, ${closeId}]
   interlock_wait_time: 100ms
 ${closeHeader}
   id: ${closeId}
   name: "${names.closeCoil}"
-  entity_category: config
   restore_mode: ALWAYS_OFF
   interlock: [${openId}, ${closeId}]
   interlock_wait_time: 100ms`;

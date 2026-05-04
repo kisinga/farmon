@@ -101,7 +101,6 @@ ${header}
   id: ${id}
   name: "${haNames(node).relay}"
   icon: "mdi:pump"
-  internal: true
   restore_mode: ALWAYS_OFF`;
     },
 

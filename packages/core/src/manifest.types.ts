@@ -22,6 +22,15 @@ export type ManifestNode = Record<string, any> & {
   id: string;
 };
 
+/** Annotation written onto tank manifest nodes by topologyToManifest:
+ *  identifies the downstream sensor that supplies this tank's level reading.
+ *  May be a level_sensor (direct % reading) or a pressure_sensor (% derived
+ *  from pressure-vs-calibration). Generators dispatch on `kind`. */
+export type TankLevelSource = {
+  id: string;
+  kind: 'level_sensor' | 'pressure_sensor';
+};
+
 export interface ManifestAutomation {
   id: string;
   name: string;

@@ -1,0 +1,87 @@
+<!-- generated from packages/core/src/templates/pages/docs/installation/deployment.hbs — do not edit -->
+# Deployment
+
+When the in-app context provides a diff (`diff.*`), only the steps that apply to *this* change are rendered. When rendered as standalone documentation (no diff), every section is shown as a reference guide.
+
+
+## 1. Regenerate
+
+```sh
+npm run generate
+```
+
+This refreshes the ESPHome firmware YAML *and* the Home Assistant dashboards / automations from the current topology. Always run this after any manifest change.
+
+
+
+## 2. Flash firmware
+
+
+Required when any pin assignment, board, peripheral, route, automation logic, or substitution changes. Skip when only HA-side files (dashboard.yaml, automations/*.yaml) changed.
+
+```sh
+esphome run esphome/<device>/<device>.yaml
+```
+
+> First flash **must** be over USB. Subsequent flashes can be OTA via the ESPHome dashboard or `esphome run --device <ip>`.
+
+## 3. Copy HA files
+
+```sh
+cp -r config/homeassistant/* /path/to/homeassistant/
+```
+
+Then reload Home Assistant (Developer Tools → YAML → "All YAML configuration") or restart the HA service.
+
+## 4. Verify
+
+- Open the dashboard. Every entity card should resolve (no "entity not found").
+- The cross-validation test (`npm run test:entity-coverage`) is the codegen-time guard — failures here mean the dashboard would show broken cards, so fix before deploying.
+
+---
+
+
+## First-time pairing (when device is new to HA)
+
+After the first flash:
+
+1. Power-cycle the controller.
+2. In HA, **Settings → Devices & Services → Add Integration → ESPHome**.
+3. Enter the device's IP or hostname. The API key is in `secrets.yaml`.
+4. Entities appear via autodiscovery; no manual entity registration is needed.
+
+
+## ⚠️ Friendly name changes — entity_id stickiness
+
+If you change a controller's friendly name, the firmware emits entities under a new prefix (`<domain>.<slug(new_name)>_*`), but Home Assistant does **not** rename the existing entity_ids in its registry. Result: the new dashboards reference the new prefix; the old entities go to "unavailable"; you see "entity not found" everywhere.
+
+**Two ways out:**
+
+1. **Adopt the new name:** delete and re-pair the device in HA (Settings → Devices & Services → ESPHome). Autodiscovery creates the new entities; remove the old ones from the entity registry.
+2. **Revert:** set the friendly name back to whatever HA already has (visible in HA's entity registry) and redeploy.
+
+The editor's config tab shows a warning banner when a friendly-name change is detected — follow the link there to this section.
+
+
+## Renamed nodes
+
+When you rename a node (level sensor, valve, pump, etc.), the firmware emits its entity under a new entity_id. HA's old entry persists as "unavailable" until manually removed via the entity registry.
+
+---
+
+## Common deploy patterns
+
+| Change | Regenerate | Flash | Reload HA |
+|--------|:---:|:---:|:---:|
+| Pin reassignment, new sensor, new route | ✓ | ✓ | ✓ |
+| Dashboard layout, automation schedule | ✓ |   | ✓ |
+| Friendly-name change | ✓ | ✓ | ✓ + entity registry cleanup |
+| Adding a new controller | ✓ | ✓ (USB) | ✓ + ESPHome integration pairing |
+
+---
+
+## See also
+
+- [Power and wiring](power-and-wiring.md)
+- [KC868-A16 board guide](kc868-a16.md)
+- [Glossary](../glossary.md)

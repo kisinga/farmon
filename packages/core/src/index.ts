@@ -15,7 +15,7 @@ export type {
   Port, Position,
 } from './topology.types';
 export { effectiveTransport } from './topology.types';
-export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
+export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing, TankLevelSource } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
 export { boardSupportedTransports } from './board.types';
@@ -60,10 +60,13 @@ export {
   defaultStateBucket, isValidBindExpr, parseFlowPredicate,
   deriveHaEntityId, esphomeServicePrefix,
   SYSTEM_ENTITY_NAMES, ESPHOME_SERVICES, routeEntityNames, systemHaEntityIds,
+  automationHaEntityId, routeAutomationAlias,
+  systemCapabilities,
 } from './ha';
 export type {
   HaActionSpec, StateBucket, HaSlotSpec, HaMetaNode, HaMetaPipe, HaMeta, ParsedFlowPredicate,
   SystemEntitySpec, SystemEntityKey, SystemHaEntityIds, EsphomeServiceName,
+  SystemCapabilities,
 } from './ha';
 export { buildHaMeta } from './ha-meta';
 export type { BuildHaMetaOptions } from './ha-meta';
@@ -73,7 +76,9 @@ export {
   pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId,
   flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId,
   levelSensorLevelId, levelSensorRawVoltageId, levelSensorCalEmptyId, levelSensorCalFullId,
-  pressureSensorId, waterSourcePressureId,
+  pressureSensorId, pressureSensorRangeMinId, pressureSensorRangeMaxId,
+  pressureSensorCalEmptyId, pressureSensorCalFullId, pressureSensorLevelId,
+  waterSourcePressureId,
   dosingPumpSwitchId, filterInletPressureId, filterOutletPressureId, filterDeltaPressureId,
 } from './codegen-ids';
 

@@ -1,6 +1,6 @@
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
-import { valveCoverId, valveTravelMsId, levelSensorLevelId, flowSensorId } from '@far-mon/core';
+import { valveCoverId, valveTravelMsId, levelSensorLevelId, pressureSensorLevelId, flowSensorId } from '@far-mon/core';
 
 /** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
 export function parseDurationMs(s: string): number {
@@ -14,6 +14,7 @@ export function parseDurationMs(s: string): number {
 export function generateRoutes(m: Manifest): string {
   const tanks = nodesByKind(m.nodes, 'tank');
   const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
+  const pressureSensors = nodesWithFlag(m.nodes, 'isPressureSensor');
   const valves = nodesWithFlag(m.nodes, 'isValve');
   const flowSensors = nodesWithFlag(m.nodes, 'isFlowSensor');
   const waterSources = nodesByKind(m.nodes, 'water_source');
@@ -71,14 +72,21 @@ export function generateRoutes(m: Manifest): string {
   const closeCases = valves
     .map((v, i) => `    case ${i}: id(${valveCoverId(nid(v))}).make_call().set_command_close().perform(); break;`)
     .join("\n");
-  // Map each tank to its associated level_sensor (set by topology-to-manifest)
+  // Map each tank to its associated level source (set by topology-to-manifest).
+  // Source may be a level_sensor (direct %) or a pressure_sensor (% derived
+  // from pressure-vs-calibration). Dispatch on kind to the right codegen ID.
   const tankCases = tanks
     .map((t, i) => {
-      const lsId = t['level_sensor'] as string | undefined;
-      if (!lsId) return `    case ${i}: return -1.0f; // ${t['id']}: no level sensor`;
-      const ls = levelSensors.find(s => s['id'] === lsId);
-      if (!ls) return `    case ${i}: return -1.0f; // ${t['id']}: level sensor ${lsId} not found`;
-      return `    case ${i}: return id(${levelSensorLevelId(nid(ls))}).state;`;
+      const src = t['level_source'] as { id: string; kind: 'level_sensor' | 'pressure_sensor' } | undefined;
+      if (!src) return `    case ${i}: return -1.0f; // ${t['id']}: no level source`;
+      if (src.kind === 'level_sensor') {
+        const ls = levelSensors.find(s => s['id'] === src.id);
+        if (!ls) return `    case ${i}: return -1.0f; // ${t['id']}: level_sensor ${src.id} not found`;
+        return `    case ${i}: return id(${levelSensorLevelId(nid(ls))}).state;`;
+      }
+      const ps = pressureSensors.find(s => s['id'] === src.id);
+      if (!ps) return `    case ${i}: return -1.0f; // ${t['id']}: pressure_sensor ${src.id} not found`;
+      return `    case ${i}: return id(${pressureSensorLevelId(nid(ps))}).state;`;
     })
     .join("\n");
   const flowCases = flowSensors
