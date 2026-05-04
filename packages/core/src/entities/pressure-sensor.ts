@@ -17,6 +17,7 @@ import { deriveTankCalibration, recommendSensorMaxPsi } from '../units';
 
 const COLOR = '#8b5cf6'; // violet
 const W = 50, H = 36;
+const POOR_PRESSURE_SPAN_PCT = 15;
 
 // --- Schema ---
 //
@@ -272,6 +273,31 @@ ${header}
           if (sensorMax < recommended) {
             return [{
               message: `Pressure sensor "${n['name']}": ${sensorMax} psi is below the recommended ${recommended} psi (1.5× full-tank pressure of ${cal.p_full_psi.toFixed(2)} psi). Consider a larger sensor for headroom.`,
+              target: String(n['id']),
+            }];
+          }
+          return [];
+        }),
+    },
+    {
+      id: 'pressure-sensor-elevated-low-resolution',
+      severity: 'warning',
+      evaluate: (nodes) => nodes
+        .filter(n => typeof n['sensor_max_psi'] === 'number' && typeof n['tank_height_m'] === 'number')
+        .flatMap(n => {
+          const tankHeight = Number(n['tank_height_m']);
+          const elevation = Number(n['elevation_m'] ?? 0);
+          const sensorMax = Number(n['sensor_max_psi']);
+          if (tankHeight <= 0 || elevation <= 0 || sensorMax <= 0) return [];
+
+          const cal = deriveTankCalibration(tankHeight, elevation);
+          const recommended = recommendSensorMaxPsi(cal.p_full_psi);
+          if (sensorMax < recommended) return [];
+
+          const spanPct = (cal.working_span_psi / sensorMax) * 100;
+          if (spanPct < POOR_PRESSURE_SPAN_PCT) {
+            return [{
+              message: `Pressure sensor "${n['name']}": tank level uses only ${spanPct.toFixed(0)}% of the ${sensorMax} psi sensor range because empty pressure starts at ${cal.p_empty_psi.toFixed(2)} psi. Resolution may be poor on this elevated tank. Prefer reducing static head at the sensing point, using a lower-range protected sensor, or adding a pressure reducing/regulating arrangement that preserves the tank-level pressure swing.`,
               target: String(n['id']),
             }];
           }

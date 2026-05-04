@@ -232,6 +232,42 @@ assert(undersizedRule.severity === 'warning', 'severity is warning');
 }
 
 // ---------------------------------------------------------------------------
+// Elevated tank low-resolution rule
+// ---------------------------------------------------------------------------
+
+console.log('\nValidation rule: pressure-sensor-elevated-low-resolution');
+
+const elevatedLowResolutionRule = pressureSensorDescriptor.rules!.find(r => r.id === 'pressure-sensor-elevated-low-resolution')!;
+assert(elevatedLowResolutionRule !== undefined, 'pressure-sensor-elevated-low-resolution rule registered');
+assert(elevatedLowResolutionRule.severity === 'warning', 'severity is warning');
+
+{
+  // 2 m tank, 20 m elevation, 50 psi sensor → range/headroom is adequate,
+  // but the useful tank swing is only ≈2.84 psi, about 6% of sensor range.
+  const nodes = [{ ...fullNode, tank_height_m: 2, elevation_m: 20, sensor_max_psi: 50 }];
+  const results = elevatedLowResolutionRule.evaluate(nodes, nodes);
+  assert(results.length === 1, 'fires for elevated tank with poor working-span utilisation');
+  assert(results[0].message.includes('Resolution may be poor'), 'message explains resolution risk');
+  assert(results[0].message.includes('pressure reducing/regulating'), 'message mentions pressure regulation option');
+}
+
+{
+  // Same geometry, but 30 psi is undersized for headroom, so the undersized
+  // rule owns the diagnostic rather than emitting two competing warnings.
+  const nodes = [{ ...fullNode, tank_height_m: 2, elevation_m: 20, sensor_max_psi: 30 }];
+  const results = elevatedLowResolutionRule.evaluate(nodes, nodes);
+  assert(results.length === 0, 'does not fire when the sensor is already undersized');
+}
+
+{
+  // Low utilisation can happen without elevation too, but this PRV-oriented
+  // rule is specifically about elevated tanks with high empty pressure.
+  const nodes = [{ ...fullNode, tank_height_m: 1, elevation_m: 0, sensor_max_psi: 10 }];
+  const results = elevatedLowResolutionRule.evaluate(nodes, nodes);
+  assert(results.length === 0, 'does not fire without elevation offset');
+}
+
+// ---------------------------------------------------------------------------
 
 console.log(`\n${'='.repeat(40)}`);
 console.log(`${passed} passed, ${failed} failed`);

@@ -57,6 +57,27 @@ A 5 m tall tank stands on a 2 m platform; the sensor sits at the pump near groun
 - **Recommended sensor max** ≥ 1.5 × 9.96 ≈ 14.9 psi → **15 psi** is the smallest standard size that fits
 - A 15 psi sensor uses 7.11 / 15 ≈ **47%** of its range for the tank fill, with **34%** headroom above full — comfortable on both axes.
 
+## Elevated tanks and resolution
+
+For elevated tanks, the empty-tank pressure can be high while the useful tank-level pressure swing stays small. The sensor then spends most of its range measuring static elevation head instead of tank level.
+
+Example: a 2 m tank whose bottom is 20 m above the sensor reads about **28.45 psi** when empty and **31.29 psi** when full. A 50 psi sensor has enough range and headroom, but the tank level only uses **2.84 psi**, about **6%** of the sensor range. That is safe, but it may be noisy or coarse as a level reading.
+
+Practical utilisation bands:
+
+| Tank-level swing as % of sensor range | Guidance |
+| --- | --- |
+| ≥ 30% | Good resolution for typical analog installs |
+| 15-30% | Usually usable, but calibration, ADC noise, and filtering matter |
+| < 15% | Poor resolution; consider changing the sensing arrangement |
+
+Mitigations:
+
+1. **Prefer a lower-range pressure sensor** when the full-tank pressure and transient headroom still fit.
+2. **Move the sensing point** closer to the tank outlet if the installation allows it.
+3. **Use a protected lower-range sensor or pressure reducing/regulating arrangement** when the static head is high. A pressure reducing valve can help only if it is installed so the sensor still sees the tank-level pressure swing; if it flattens that swing, it will make level measurement worse.
+4. **Use a direct level sensor** if the hydraulic arrangement cannot preserve a clean pressure delta.
+
 ## Tank-shape assumption
 
 Pressure-derived level is linear **only when the tank's horizontal cross-section is constant with height**. Tanks that satisfy this:

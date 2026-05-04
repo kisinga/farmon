@@ -405,7 +405,8 @@ a.xref:hover { border-bottom-style: solid; }
 {{#if hasTanks}}
 <h4>Tank Level Sensors</h4>
 <p>Analog pressure sensors at the tank bottom measure water column height. Mount at the <strong>lowest point</strong> of the tank.</p>
-<p>Calibrate via Home Assistant: set <strong>Cal Empty (V)</strong> and <strong>Cal Full (V)</strong> number entities.</p>
+<p>Calibrate via Home Assistant: set <strong>Cal Empty (psi)</strong> and <strong>Cal Full (psi)</strong> number entities.</p>
+<p>For elevated tanks, check sensor utilisation: high empty pressure with a small tank-height swing can produce poor resolution even when the sensor range is safe. Use a lower-range protected sensor, move the sensing point, or add pressure reduction/regulation only if the sensor still sees the tank-level pressure swing.</p>
 <p>Tank readings are <strong>suppressed during pump operation</strong> to avoid pressure artifacts.</p>
 {{/if}}
 
