@@ -46,7 +46,7 @@ export const PressureSensorNodeSchema = z.object({
   /** Sensor's full-scale rating, psi (datasheet value, e.g. 5/10/15/30). */
   sensor_max_psi: z.number().positive(),
   /** True if the sensor is rated for reliable readings during pump operation. */
-  pump_rated: z.boolean().default(true),
+  pump_rated: z.boolean().default(false),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
@@ -92,7 +92,7 @@ export const pressureSensorDescriptor: NodeDescriptor = {
     pin: '',
     elevation_m: 0,
     sensor_max_psi: 15,
-    pump_rated: true,
+    pump_rated: false,
   }),
 
   renderSvg: (_data) => {

@@ -13,6 +13,7 @@ import { loadBoard, type BoardDef } from "../electron/lib/board.js";
 import { validateAll } from "../electron/lib/validate.js";
 import { generateAll, type GeneratedFile } from "../electron/lib/generate.js";
 import { generateBoardPackage } from "../electron/lib/generators/board-package.js";
+import { generateRoutes } from "../electron/lib/generators/routes.js";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
 const CONFIG_PATH = path.join(DEFAULTS, "configs/pump-controller.yaml");
@@ -46,6 +47,72 @@ function getFile(suffix: string): string {
 /** Shorthand for ManifestNode string field access. */
 function n(node: ManifestNode, key: string): string {
   return String(node[key] ?? '');
+}
+
+function pumpedPressureTopology(sourcePumpRated: boolean, destPumpRated: boolean) {
+  return parseTopology({
+    schema: 11,
+    device: { name: 'pressure-runtime', friendly_name: 'Pressure Runtime', board: 'heltec-v3' },
+    nodes: [
+      {
+        kind: 'tank', id: 'source_tank', name: 'Source Tank',
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 0, y: 0 },
+      },
+      {
+        kind: 'pressure_sensor', id: 'source_pressure', name: 'Source Pressure', pin: 'GPIO1',
+        sensor_max_psi: 15, pump_rated: sourcePumpRated,
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 100, y: 0 },
+      },
+      {
+        kind: 'valve', id: 'route_valve', name: 'Route Valve', open_pin: 'GPIO2', close_pin: 'GPIO3',
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 200, y: 0 },
+      },
+      {
+        kind: 'pump', id: 'pump', pin: 'GPIO4',
+        ports: [{ id: 'in', label: 'Inlet', direction: 'inlet' }, { id: 'out', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 300, y: 0 },
+      },
+      {
+        kind: 'flow_sensor', id: 'route_flow', name: 'Route Flow', pin: 'GPIO5', flow_cal: 450,
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 400, y: 0 },
+      },
+      {
+        kind: 'tank', id: 'dest_tank', name: 'Destination Tank',
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 500, y: 0 },
+      },
+      {
+        kind: 'pressure_sensor', id: 'dest_pressure', name: 'Destination Pressure', pin: 'GPIO6',
+        sensor_max_psi: 15, pump_rated: destPumpRated,
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 600, y: 0 },
+      },
+    ],
+    pipes: [
+      { id: 'p1', from: 'source_tank:outlet', to: 'source_pressure:inlet' },
+      { id: 'p2', from: 'source_pressure:outlet', to: 'route_valve:inlet' },
+      { id: 'p3', from: 'route_valve:outlet', to: 'pump:in' },
+      { id: 'p4', from: 'pump:out', to: 'route_flow:inlet' },
+      { id: 'p5', from: 'route_flow:outlet', to: 'dest_tank:inlet' },
+      { id: 'p6', from: 'dest_tank:outlet', to: 'dest_pressure:inlet' },
+    ],
+    route_overrides: {
+      'source_tank>dest_tank': { source_min_level: 20, dest_max_level: 90 },
+    },
+    timing: {
+      valve_travel_time: 15,
+      flow_watchdog: 30,
+      flow_confirm: 15,
+      flow_threshold: 0.5,
+      api_watchdog: 300,
+      update_interval: 5,
+    },
+    automations: [],
+  });
 }
 
 // --- Setup ---
@@ -185,6 +252,10 @@ assert(
 assert(routesH.includes("get_valve_travel_ms"), "Has per-valve travel time dispatch");
 assert(routesH.includes("get_route_travel_ms"), "Has per-route travel time dispatch");
 assert(routesH.includes("get_max_runtime_s"), "Has per-route max runtime dispatch");
+assert(routesH.includes("DEFAULT_FLOW_THRESHOLD_L_MIN"), "Has manifest-derived flow threshold firmware constant");
+assert(routesH.includes("DEFAULT_FLOW_WATCHDOG_MS"), "Has manifest-derived flow watchdog firmware constant");
+assert(routesH.includes("ROUTES[0].max_runtime_s"), "Max runtime dispatch falls back to route table when HA number is not ready");
+assert(routesH.includes("flow_active_since"), "Route slot tracks sustained flow confirmation window");
 
 // --- Reconciler claim semantics (P4.8) ---
 // valve_claim_mask must hold the route's mask during PREPARING/RUNNING and
@@ -256,6 +327,7 @@ assert(sensors.includes('id: flow_threshold_l_min'), "Has HA-tunable flow thresh
 assert(sensors.includes('name: "Flow Threshold (L/min)"'), "Flow threshold number has HA name");
 assert(sensors.includes('id(flow_threshold_l_min).state'), "Flow logic uses tunable threshold");
 assert(!sensors.includes('x > 0.5f'), "Flow logic does not hardcode 0.5 L/min");
+assert(sensors.includes('unit_of_measurement: "s"'), "Route max-runtime numbers show seconds unit");
 for (const ls of levelSensors) {
   assert(sensors.includes(`id: ${n(ls, 'id')}_level`), `Level sensor ${n(ls, 'id')} level`);
   assert(sensors.includes(`id: ${n(ls, 'id')}_cal_empty`), `Level sensor ${n(ls, 'id')} cal`);
@@ -296,6 +368,11 @@ assert(control.includes("find_slot_by_route"), "Uses slot-based route lookup");
 assert(control.includes("has_conflict"), "Checks conflicts before starting");
 assert(control.includes("reconcile_valves()"), "Calls valve reconciler in 1s interval");
 assert(control.includes("stop_valve_hw"), "Issues stop_cover on fault entry (cover-state resync)");
+assert(control.includes("get_flow_rate(r.flow_sensor)"), "Safety loop samples live route flow");
+assert(control.includes("flow_confirmed = true"), "Safety loop confirms sustained flow before tank-full classification");
+assert(control.includes(": DEFAULT_FLOW_WATCHDOG_MS"), "Safety loop uses firmware SSOT when timing numbers are not ready");
+assert(control.includes(": DEFAULT_FLOW_THRESHOLD_L_MIN"), "Safety loop uses firmware SSOT when flow threshold is not ready");
+assert(!control.includes("flowThresholdFallback"), "Control generator does not duplicate flow-threshold formatting");
 assert(!control.includes("safe_close_mask"), "Edge-driven safe_close_mask removed");
 assert(!control.includes("valves_closing"), "valves_closing edge flag removed");
 assert(control.includes("try_route_start"), "Delegates to try_route_start (which queues on conflict)");
@@ -343,6 +420,25 @@ for (const route of manifest.routes) {
   const mask = route.valves.reduce((acc, v) => acc | (1 << valveIdx.get(v)!), 0);
   const maskBin = `0b${mask.toString(2).padStart(valves.length, "0")}`;
   assert(routesH.includes(maskBin), `Route "${route.name}" valve_mask = ${maskBin}`);
+}
+
+const pressureRuntimeCases = [
+  { sourcePumpRated: false, destPumpRated: true, expected: false, label: 'source pressure sensor is not pump-rated' },
+  { sourcePumpRated: true, destPumpRated: false, expected: false, label: 'destination pressure sensor is not pump-rated' },
+  { sourcePumpRated: true, destPumpRated: true, expected: true, label: 'both pressure sensors are pump-rated' },
+];
+for (const c of pressureRuntimeCases) {
+  const pressureManifest = topologyToManifest(pumpedPressureTopology(c.sourcePumpRated, c.destPumpRated));
+  const pressureRoutesH = generateRoutes(pressureManifest);
+  const pressureRoute = pressureManifest.routes.find(r => r.key === 'source_tank>dest_tank');
+  assert(
+    pressureRoute?.runtime_level_ok === c.expected,
+    `Pressure runtime level checks ${c.expected ? 'enabled' : 'disabled'} when ${c.label}`,
+  );
+  assert(
+    pressureRoutesH.includes(`true, 20, 90, ${c.expected ? 'true' : 'false'}, "Source Tank > Destination Tank"`),
+    `Generated route table writes runtime_level_ok=${c.expected} when ${c.label}`,
+  );
 }
 
 // Every route has per-route max_runtime and name in the table

@@ -15,6 +15,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   name: "${routeEntityNames(r).maxRuntime.name}"
   id: route_${i}_max_runtime
   icon: "mdi:timer-outline"
+  unit_of_measurement: "s"
   min_value: 60
   max_value: 7200
   step: 60

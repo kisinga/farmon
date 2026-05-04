@@ -26,6 +26,9 @@ export function generateRoutes(m: Manifest): string {
 
   // Timing constants
   const valveTravelMs = m.timing.valve_travel_time * 1000;
+  const flowWatchdogMs = m.timing.flow_watchdog * 1000;
+  const flowConfirmMs = m.timing.flow_confirm * 1000;
+  const apiWatchdogMs = m.timing.api_watchdog * 1000;
 
   // Compute conflict masks — routes conflict when they share a flow sensor
   // but go to different destinations (ambiguous readings).
@@ -97,11 +100,17 @@ export function generateRoutes(m: Manifest): string {
     .join("\n");
 
   const runtimeCases = m.routes
-    .map((_, i) => `    case ${i}: return (uint16_t)id(route_${i}_max_runtime).state;`)
+    .map((_, i) => `    case ${i}: {
+      float v = id(route_${i}_max_runtime).state;
+      return (!std::isnan(v) && v >= 10.0f) ? (uint16_t)v : ROUTES[${i}].max_runtime_s;
+    }`)
     .join("\n");
 
   const valveTravelCases = valves
-    .map((v, i) => `    case ${i}: return (uint32_t)id(${valveTravelMsId(nid(v))}).state;`)
+    .map((v, i) => `    case ${i}: {
+      float v = id(${valveTravelMsId(nid(v))}).state;
+      return (!std::isnan(v) && v >= 1000.0f) ? (uint32_t)v : DEFAULT_VALVE_TRAVEL_MS;
+    }`)
     .join("\n");
 
   return `\
@@ -132,6 +141,15 @@ export function generateRoutes(m: Manifest): string {
 static const int MAX_CONCURRENT_ROUTES = 2;
 static const int MAX_QUEUE_SIZE        = 4;
 static const uint32_t DEPRESSURIZE_MS  = 2000;
+
+// Manifest-derived firmware defaults. HA number entities are editable and
+// persisted, but these constants remain the boot-safe source of truth whenever
+// an editable number has not published a sane state yet.
+static const uint32_t DEFAULT_VALVE_TRAVEL_MS        = ${valveTravelMs}U;
+static const uint32_t DEFAULT_FLOW_WATCHDOG_MS       = ${flowWatchdogMs}U;
+static const uint32_t DEFAULT_FLOW_CONFIRM_MS        = ${flowConfirmMs}U;
+static const float    DEFAULT_FLOW_THRESHOLD_L_MIN   = ${m.timing.flow_threshold};
+static const uint32_t DEFAULT_API_WATCHDOG_MS        = ${apiWatchdogMs}U;
 
 // --- Component counts --------------------------------------------------------
 
@@ -198,6 +216,7 @@ struct RouteSlot {
   int      state;            // 0=IDLE 1=PREPARING 2=RUNNING 3=STOPPING 4=FAULT
   uint32_t start_time;       // millis() when PREPARING began
   uint32_t run_start_time;   // millis() when RUNNING began (for watchdogs)
+  uint32_t flow_active_since;// millis() when current above-threshold flow began
   uint32_t last_flow_time;   // millis() of last flow above configured threshold
   uint32_t stop_time;        // millis() when STOPPING/FAULT began
   int      fault_code;

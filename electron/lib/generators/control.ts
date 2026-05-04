@@ -202,6 +202,7 @@ interval:
               if (now - slots[s].start_time > get_route_travel_ms(rid) + 1000) {
                 slots[s].state = 2;
                 slots[s].run_start_time = now;
+                slots[s].flow_active_since = 0;
                 slots[s].last_flow_time = now;
                 slots[s].flow_confirmed = false;
                 ESP_LOGI("ctrl", "RUNNING slot %d route %d [%s]", s, rid, ROUTES[rid].name);
@@ -259,6 +260,18 @@ ${pumpMgmt}
       - lambda: |-
           if (id(safety_override).state) return;
           uint32_t now = millis();
+          float flow_watchdog_state = id(flow_watchdog_ms).state;
+          float flow_confirm_state = id(flow_confirm_ms).state;
+          float flow_threshold_state = id(flow_threshold_l_min).state;
+          float api_watchdog_state = id(api_watchdog_ms).state;
+          uint32_t flow_watchdog = (!std::isnan(flow_watchdog_state) && flow_watchdog_state >= 5000.0f)
+            ? (uint32_t)flow_watchdog_state : DEFAULT_FLOW_WATCHDOG_MS;
+          uint32_t flow_confirm = (!std::isnan(flow_confirm_state) && flow_confirm_state >= 3000.0f)
+            ? (uint32_t)flow_confirm_state : DEFAULT_FLOW_CONFIRM_MS;
+          float flow_threshold = (!std::isnan(flow_threshold_state) && flow_threshold_state >= 0.1f)
+            ? flow_threshold_state : DEFAULT_FLOW_THRESHOLD_L_MIN;
+          uint32_t api_watchdog = (!std::isnan(api_watchdog_state) && api_watchdog_state >= 30000.0f)
+            ? (uint32_t)api_watchdog_state : DEFAULT_API_WATCHDOG_MS;
 
           for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
             if (slots[s].state != 2) continue;
@@ -267,10 +280,24 @@ ${pumpMgmt}
             const Route& r = ROUTES[rid];
             uint32_t runtime = now - slots[s].run_start_time;
 
+            // --- FLOW SAMPLING ---
+            float flow = get_flow_rate(r.flow_sensor);
+            if (!std::isnan(flow) && flow >= flow_threshold) {
+              if (slots[s].flow_active_since == 0) slots[s].flow_active_since = now;
+              slots[s].last_flow_time = now;
+              if (!slots[s].flow_confirmed && now - slots[s].flow_active_since >= flow_confirm) {
+                slots[s].flow_confirmed = true;
+                ESP_LOGI("safety", "Flow confirmed on slot %d route [%s]: %.2f L/min",
+                         s, r.name, flow);
+              }
+            } else {
+              slots[s].flow_active_since = 0;
+            }
+
             // --- FLOW WATCHDOG ---
-            if (slots[s].fault_code == 0 && runtime > (uint32_t)id(flow_watchdog_ms).state) {
+            if (slots[s].fault_code == 0 && runtime > flow_watchdog) {
               uint32_t age = now - slots[s].last_flow_time;
-              if (age > (uint32_t)id(flow_watchdog_ms).state) {
+              if (age > flow_watchdog) {
                 if (slots[s].flow_confirmed) {
                   // Flow was established then stopped → tank full
                   ESP_LOGI("safety", "Tank full on slot %d route [%s]: flow stopped %us ago",
@@ -322,7 +349,7 @@ ${pumpMgmt}
             // --- API WATCHDOG ---
             if (slots[s].fault_code == 0 && id(api_lost_time) > 0) {
               uint32_t age = now - id(api_lost_time);
-              if (age > (uint32_t)id(api_watchdog_ms).state) {
+              if (age > api_watchdog) {
                 ESP_LOGE("safety", "API lost %us — faulting slot %d", age / 1000, s);
                 slots[s].fault_code = FAULT_API_LOST;
               }
