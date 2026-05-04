@@ -157,7 +157,7 @@ function runTest(label: string, p: ScaleParams): TestResult {
   if (!v.ok) return result;
 
   try {
-    const files = generateAll(manifest, board);
+    const files = generateAll(manifest, board, 'test-site');
     result.generateOk = true;
     const rh = files.find((f) => f.relativePath.endsWith("routes.h"));
     if (rh) result.routesHLines = rh.content.split("\n").length;
@@ -385,7 +385,7 @@ function runKcTest(label: string, p: KcScaleParams): TestResult {
   if (!v.ok) return result;
 
   try {
-    const files = generateAll(manifest, kcBoard);
+    const files = generateAll(manifest, kcBoard, 'test-site');
     result.generateOk = true;
     const rh = files.find((f) => f.relativePath.endsWith("routes.h"));
     if (rh) result.routesHLines = rh.content.split("\n").length;

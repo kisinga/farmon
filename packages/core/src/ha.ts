@@ -73,9 +73,24 @@ export interface SystemEntitySpec {
 }
 
 /**
- * Fixed system entities — emitted unconditionally or gated only by board
- * capability (battery presence, wifi vs ethernet). Per-route entities are
- * defined separately via `routeEntityNames()`.
+ * Fixed system entities — always emitted by the firmware regardless of board.
+ * Per-route entities are defined separately via `routeEntityNames()`.
+ *
+ * Capability-gated entities live in their own catalogs:
+ *   - `NETWORK_ENTITY_NAMES` for transport-gated (wifi-only) entities
+ *   - `BATTERY_ENTITY_NAMES` for battery-peripheral-gated entities
+ *
+ * Each catalog has its own resolver (`networkHaEntityIds`, `batteryHaEntityIds`)
+ * that returns either the resolved object or `null` when the capability is
+ * absent. The split mirrors the firmware-emit gating exactly so neither side
+ * can drift from the other.
+ *
+ * Note: `vextControl` and `onboardLed` are peripheral-dependent (gated on
+ * `board.peripherals.vext` / `board.peripherals.led` in board-package.ts).
+ * No dashboard currently references them, so a separate gated catalog isn't
+ * needed yet — firmware just emits or skips them based on the board. If a
+ * dashboard starts referencing these, extract into a `PERIPHERAL_ENTITY_NAMES`
+ * catalog with its own resolver, mirroring the network/battery split.
  */
 export const SYSTEM_ENTITY_NAMES = {
   // text_sensor (sensors.ts) — surface as `sensor.*` in HA
@@ -97,24 +112,47 @@ export const SYSTEM_ENTITY_NAMES = {
   // switch (control.ts)
   safetyOverride:     { domain: 'switch', name: 'Safety Override' },
 
-  // device health (board-package.ts)
-  batteryVoltage:     { domain: 'sensor', name: 'Battery Voltage' },
-  batteryPercent:     { domain: 'sensor', name: 'Battery Percent' },
+  // device health (board-package.ts) — uptime + ESP32 temp are unconditional;
+  // vextControl/onboardLed are peripheral-dependent but emitted unconditionally
+  // today (see header note).
   uptime:             { domain: 'sensor', name: 'Uptime' },
   esp32Temperature:   { domain: 'sensor', name: 'ESP32 Temperature' },
   vextControl:        { domain: 'switch', name: 'Vext Control' },
   onboardLed:         { domain: 'light',  name: 'Onboard LED' },
 
-  // networking (networking.ts) — text_sensor surfaces as `sensor.*` in HA
-  wifiSignal:         { domain: 'sensor', name: 'WiFi Signal' },
+  // networking (networking.ts) — emitted on every transport. Wifi-only fields
+  // live in NETWORK_ENTITY_NAMES instead.
   ipAddress:          { domain: 'sensor', name: 'IP Address' },
-  connectedSsid:      { domain: 'sensor', name: 'Connected SSID' },
-  macAddress:         { domain: 'sensor', name: 'MAC Address' },
   transportSupported: { domain: 'sensor', name: 'Transport (supported)' },
   transportActive:    { domain: 'sensor', name: 'Transport (active)' },
 } as const satisfies Record<string, SystemEntitySpec>;
 
 export type SystemEntityKey = keyof typeof SYSTEM_ENTITY_NAMES;
+
+/**
+ * Network entities emitted by the firmware only when the active transport is
+ * wifi (see `effectiveTransport`). Resolved via `networkHaEntityIds()`, which
+ * returns `null` on ethernet boards.
+ */
+export const NETWORK_ENTITY_NAMES = {
+  wifiSignal:    { domain: 'sensor', name: 'WiFi Signal' },
+  connectedSsid: { domain: 'sensor', name: 'Connected SSID' },
+  macAddress:    { domain: 'sensor', name: 'MAC Address' },
+} as const satisfies Record<string, SystemEntitySpec>;
+
+export type NetworkEntityKey = keyof typeof NETWORK_ENTITY_NAMES;
+
+/**
+ * Battery entities emitted by the firmware only when the board declares a
+ * battery peripheral. Resolved via `batteryHaEntityIds()`, which returns
+ * `null` on boards without a battery.
+ */
+export const BATTERY_ENTITY_NAMES = {
+  batteryVoltage: { domain: 'sensor', name: 'Battery Voltage' },
+  batteryPercent: { domain: 'sensor', name: 'Battery Percent' },
+} as const satisfies Record<string, SystemEntitySpec>;
+
+export type BatteryEntityKey = keyof typeof BATTERY_ENTITY_NAMES;
 
 /** Names of the per-route entities the firmware emits (one set per route). */
 export function routeEntityNames(route: { name: string }): {
@@ -156,38 +194,16 @@ export const ESPHOME_SERVICES = ['stop_all', 'fault_reset_all', 'queue_clear'] a
 export type EsphomeServiceName = typeof ESPHOME_SERVICES[number];
 
 /**
- * Capability flags governing which optional system entities the firmware
- * actually emits. Mirrors the conditional emit logic in board-package.ts /
- * networking.ts so dashboard and meta consumers don't reference entities the
- * firmware never created.
- */
-export interface SystemCapabilities {
-  /** True when `effectiveTransport(network, supportedTransports) === 'wifi'`. */
-  hasWifi: boolean;
-  /** True when the board declares a battery peripheral. */
-  hasBattery: boolean;
-}
-
-/** Compute capabilities from board + network config — same logic as firmware emit. */
-export function systemCapabilities(board: BoardDef, network?: NetworkConfig): SystemCapabilities {
-  const transport = effectiveTransport(network, boardSupportedTransports(board));
-  return {
-    hasWifi: transport === 'wifi',
-    hasBattery: !!board.peripherals.battery,
-  };
-}
-
-/**
- * Pre-resolve every system entity_id for a device. Generators consuming HA
- * references should use these values directly and never call
- * `deriveHaEntityId` themselves for system entities.
+ * Pre-resolve every system entity_id for a device. Every field is present
+ * unconditionally — capability-gated entities live in `networkHaEntityIds()`
+ * and `batteryHaEntityIds()` instead, which return `null` when the gate is
+ * closed. This function never returns `undefined` fields.
  *
- * Capability-gated entities (`wifiSignal`, `batteryPercent`) are `undefined`
- * when the corresponding capability is absent — callers must check before use.
- * When `caps` is omitted, both default to present (legacy behavior).
+ * Generators consuming HA references should use these values directly and
+ * never call `deriveHaEntityId` themselves for system entities.
  */
 export type SystemHaEntityIds = {
-  [K in SystemEntityKey]: K extends 'wifiSignal' | 'batteryPercent' ? string | undefined : string;
+  [K in SystemEntityKey]: string;
 } & {
   routes: Array<{ status: string; start: string; stop: string; maxRuntime: string }>;
 };
@@ -195,22 +211,14 @@ export type SystemHaEntityIds = {
 export function systemHaEntityIds(
   device: { friendly_name: string },
   routes: { name: string }[],
-  caps?: SystemCapabilities,
 ): SystemHaEntityIds {
-  const hasWifi = caps?.hasWifi ?? true;
-  const hasBattery = caps?.hasBattery ?? true;
-
   const fixed = Object.fromEntries(
     (Object.entries(SYSTEM_ENTITY_NAMES) as [SystemEntityKey, SystemEntitySpec][])
-      .map(([key, spec]) => {
-        if (key === 'wifiSignal' && !hasWifi) return [key, undefined];
-        if (key === 'batteryPercent' && !hasBattery) return [key, undefined];
-        return [key, deriveHaEntityId(spec.domain, device, spec.name)];
-      }),
-  ) as Record<SystemEntityKey, string | undefined>;
+      .map(([key, spec]) => [key, deriveHaEntityId(spec.domain, device, spec.name)]),
+  ) as Record<SystemEntityKey, string>;
 
   return {
-    ...(fixed as Record<SystemEntityKey, string>),
+    ...fixed,
     routes: routes.map(r => {
       const n = routeEntityNames(r);
       return {
@@ -220,7 +228,45 @@ export function systemHaEntityIds(
         maxRuntime: deriveHaEntityId(n.maxRuntime.domain, device, n.maxRuntime.name),
       };
     }),
-  } as SystemHaEntityIds;
+  };
+}
+
+export type NetworkHaEntityIds = { [K in NetworkEntityKey]: string };
+export type BatteryHaEntityIds = { [K in BatteryEntityKey]: string };
+
+/**
+ * Resolve network entity_ids when (and only when) the device's active
+ * transport is wifi. Same gating predicate as `networking.ts` uses for emit.
+ * Returns `null` on ethernet — caller should treat absence at this level, not
+ * by checking individual fields.
+ */
+export function networkHaEntityIds(
+  device: { friendly_name: string },
+  network: NetworkConfig | undefined,
+  board: BoardDef,
+): NetworkHaEntityIds | null {
+  const transport = effectiveTransport(network, boardSupportedTransports(board));
+  if (transport !== 'wifi') return null;
+  return Object.fromEntries(
+    (Object.entries(NETWORK_ENTITY_NAMES) as [NetworkEntityKey, SystemEntitySpec][])
+      .map(([key, spec]) => [key, deriveHaEntityId(spec.domain, device, spec.name)]),
+  ) as NetworkHaEntityIds;
+}
+
+/**
+ * Resolve battery entity_ids when (and only when) the board declares a
+ * battery peripheral. Same gating predicate as `board-package.ts` uses for
+ * emit. Returns `null` on boards without a battery.
+ */
+export function batteryHaEntityIds(
+  device: { friendly_name: string },
+  board: BoardDef,
+): BatteryHaEntityIds | null {
+  if (!board.peripherals.battery) return null;
+  return Object.fromEntries(
+    (Object.entries(BATTERY_ENTITY_NAMES) as [BatteryEntityKey, SystemEntitySpec][])
+      .map(([key, spec]) => [key, deriveHaEntityId(spec.domain, device, spec.name)]),
+  ) as BatteryHaEntityIds;
 }
 
 /** Version of the decorated SVG + meta sidecar contract. Bump on breaking changes. */

@@ -7,7 +7,6 @@ import { generateSensors } from "./generators/sensors.js";
 import { generateDashboard } from "./generators/dashboard.js";
 import { generateBoardPackage } from "./generators/board-package.js";
 import { generateSiteDashboard, type SiteDashboardSystem } from "./generators/site-dashboard.js";
-import { systemCapabilities } from "@far-mon/core";
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
 import { generateAutomations } from "./generators/automations.js";
@@ -50,9 +49,31 @@ function generateSecretsYaml(m: Manifest, secrets?: SecretsMap): string {
   ].join("\n");
 }
 
-export function generateEsphome(m: Manifest, board: BoardDef, secrets?: SecretsMap): GeneratedFile[] {
+/**
+ * Returns the relative path prefix for everything a site generates.
+ * `sites/{siteId}/...` is the single root for site-scoped artifacts:
+ *   - `esphome/{deviceDir}/...`     — ESPHome firmware
+ *   - `homeassistant/dashboards/{siteId}.yaml`        — site dashboard
+ *   - `homeassistant/dashboards/dashboard.yaml`       — single-system convenience (tests)
+ *   - `homeassistant/automations/{deviceDir}.yaml`    — per-device automations
+ *   - `homeassistant/www/farm/{name}.{svg,meta.json}` — SCADA artifacts
+ *   - `site-documentation.html`                       — generated docs
+ *
+ * Self-test artifacts live in a separate `selftest/{model}/` tree and bypass
+ * this prefix entirely — they are not site-scoped.
+ */
+export function siteRoot(siteId: string): string {
+  return `sites/${siteId}`;
+}
+
+export function generateEsphome(
+  m: Manifest,
+  board: BoardDef,
+  siteId: string,
+  secrets?: SecretsMap,
+): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
-  const deviceDir = `esphome/${dir}`;
+  const deviceDir = `${siteRoot(siteId)}/esphome/${dir}`;
   const collected = collectEntityCodegen(m, board);
 
   return [
@@ -100,13 +121,15 @@ export function generateEsphome(m: Manifest, board: BoardDef, secrets?: SecretsM
 }
 
 export function generateSiteHA(
+  siteId: string,
   siteName: string,
   systems: SiteDashboardSystem[],
   manifests: Map<string, Manifest>,
 ): GeneratedFile[] {
+  const haRoot = `${siteRoot(siteId)}/homeassistant`;
   const files: GeneratedFile[] = [
     {
-      relativePath: `config/homeassistant/dashboards/site.yaml`,
+      relativePath: `${haRoot}/dashboards/${siteId}.yaml`,
       description: `HA dashboard — ${systems.length} controllers (overview + per-device tabs)`,
       content: generateSiteDashboard(siteName, systems),
     },
@@ -118,7 +141,7 @@ export function generateSiteHA(
     const automationsContent = generateAutomations(m);
     if (automationsContent) {
       files.push({
-        relativePath: `config/homeassistant/automations/${dir}.yaml`,
+        relativePath: `${haRoot}/automations/${dir}.yaml`,
         description: `HA automations — ${s.friendlyName}`,
         content: automationsContent,
       });
@@ -128,21 +151,27 @@ export function generateSiteHA(
   return files;
 }
 
-/** Legacy single-system convenience for tests. Produces ESPHome + per-device HA files. */
-export function generateAll(m: Manifest, board: BoardDef, secrets?: SecretsMap): GeneratedFile[] {
+/** Single-system convenience for tests. Produces ESPHome + per-device HA files. */
+export function generateAll(
+  m: Manifest,
+  board: BoardDef,
+  siteId: string,
+  secrets?: SecretsMap,
+): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
-  const files = [...generateEsphome(m, board, secrets)];
+  const haRoot = `${siteRoot(siteId)}/homeassistant`;
+  const files = [...generateEsphome(m, board, siteId, secrets)];
 
   files.push({
-    relativePath: `config/homeassistant/dashboards/dashboard.yaml`,
+    relativePath: `${haRoot}/dashboards/dashboard.yaml`,
     description: "HA dashboard with gauges, controls, settings",
-    content: generateDashboard(m, systemCapabilities(board, m.device.network)),
+    content: generateDashboard(m, board),
   });
 
   const automationsContent = generateAutomations(m);
   if (automationsContent) {
     files.push({
-      relativePath: `config/homeassistant/automations/${dir}.yaml`,
+      relativePath: `${haRoot}/automations/${dir}.yaml`,
       description: "HA automations + system notifications",
       content: automationsContent,
     });

@@ -80,7 +80,6 @@ interface FileEntry {
         >Serial</button>
       </div>
 
-      <!-- Docs tab -->
       @if (activeTab() === 'docs') {
         <div class="flex-1 flex flex-col min-h-0 overflow-auto">
           <div class="p-6 space-y-4">
@@ -353,6 +352,41 @@ interface FileEntry {
               }
             </div>
 
+            <!-- Integration Steps -->
+            <div class="bg-base-100 rounded-xl border border-base-300/40 px-5 py-4">
+              <div class="flex items-center gap-3 mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                <h2 class="font-semibold text-sm">After generating</h2>
+              </div>
+              <ol class="list-decimal list-inside text-sm text-base-content/80 space-y-2">
+                <li>
+                  Copy the generated files into your Home Assistant config directory.
+                  @if (haFiles().length > 0) {
+                    <button class="btn btn-ghost btn-xs ml-1 align-baseline" (click)="openHaFolder()">Open folder</button>
+                  }
+                </li>
+                <li>
+                  Pair each controller in HA: <em>Settings → Devices &amp; Services → Add Integration → ESPHome</em>.
+                  @if (systemEntries().length > 0) {
+                    <ul class="list-disc list-inside ml-6 mt-1 text-xs text-base-content/60 space-y-0.5">
+                      @for (entry of systemEntries(); track entry.id) {
+                        <li>
+                          <span class="font-medium text-base-content/80">{{ entry.friendlyName }}</span>
+                          <span class="opacity-60"> — </span>
+                          <code class="font-mono text-[11px]">{{ entry.deviceName }}.local</code>
+                        </li>
+                      }
+                    </ul>
+                  }
+                  <p class="text-xs text-base-content/50 mt-1 ml-6">API key for each controller is in its <code class="font-mono">secrets.yaml</code>.</p>
+                </li>
+                <li>Reload Home Assistant — <em>Developer Tools → YAML → All YAML configuration</em>, or restart the service.</li>
+                <li>Open the dashboard. Every entity card should resolve (no &ldquo;entity not found&rdquo;).</li>
+              </ol>
+            </div>
+
             <!-- HA Errors -->
             @if (haError()) {
               <div class="alert alert-error py-2 text-sm rounded-xl">
@@ -385,7 +419,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
 
   @ViewChild('hiddenCanvas') private hiddenCanvasRef?: ElementRef<HTMLElement>;
 
-  protected activeTab = signal<ActiveTab>('docs');
+  protected activeTab = signal<ActiveTab>('firmware');
   private siteName: string | null = null;
 
   // === Docs state ===
@@ -395,7 +429,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
 
   // === Firmware state ===
   protected selectedSystemId = signal('');
-  protected systemEntries = signal<Array<{ id: string; friendlyName: string; board: string }>>([]);
+  protected systemEntries = signal<Array<{ id: string; friendlyName: string; board: string; deviceName: string }>>([]);
 
   // Generate
   protected fwFiles = signal<FileEntry[]>([]);
@@ -506,12 +540,13 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   private updateSystemEntries() {
-    const entries: Array<{ id: string; friendlyName: string; board: string }> = [];
+    const entries: Array<{ id: string; friendlyName: string; board: string; deviceName: string }> = [];
     for (const [id, { topology }] of this.workspace.systems()) {
       entries.push({
         id,
         friendlyName: topology.device.friendly_name,
         board: topology.device.board,
+        deviceName: topology.device.name,
       });
     }
     this.systemEntries.set(entries);
@@ -701,7 +736,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   async openDeviceFolder() {
     const dir = this.fwOutputDir();
     const device = this.fwDeviceDir();
-    if (dir && device) await this.electron.shellShowInFolder(`${dir}/esphome/${device}`);
+    if (dir && device) await this.electron.shellShowInFolder(`${dir}/${device}`);
   }
 
   async toggleHistory() {
@@ -815,7 +850,9 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
 
   async openHaFolder() {
     const dir = this.haOutputDir();
-    if (dir) await this.electron.shellShowInFolder(`${dir}/config/homeassistant`);
+    const siteId = this.workspace.site()?.id;
+    if (!dir || !siteId) return;
+    await this.electron.shellShowInFolder(`${dir}/sites/${siteId}/homeassistant`);
   }
 
   formatDate(iso: string): string {

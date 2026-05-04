@@ -1,7 +1,7 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
-import { NODE_REGISTRY, systemHaEntityIds, esphomeServicePrefix, automationHaEntityId, routeAutomationAlias, type SystemCapabilities } from '@far-mon/core';
+import { NODE_REGISTRY, systemHaEntityIds, networkHaEntityIds, batteryHaEntityIds, esphomeServicePrefix, automationHaEntityId, routeAutomationAlias, type BoardDef } from '@far-mon/core';
 
 /** Shorthand for accessing ManifestNode string fields. */
 function n(node: ManifestNode, key: string): string {
@@ -237,9 +237,11 @@ export function buildRouteControlSection(m: Manifest): unknown {
   };
 }
 
-export function buildConfigurationView(m: Manifest, caps?: SystemCapabilities): unknown {
+export function buildConfigurationView(m: Manifest, board: BoardDef): unknown {
   const dev = m.device;
-  const sys = systemHaEntityIds(dev, m.routes, caps);
+  const sys = systemHaEntityIds(dev, m.routes);
+  const net = networkHaEntityIds(dev, dev.network, board);
+  const bat = batteryHaEntityIds(dev, board);
   const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
   const pressureSensors = nodesWithFlag(m.nodes, 'isPressureSensor');
   const valves = nodesWithFlag(m.nodes, 'isValve');
@@ -280,8 +282,8 @@ export function buildConfigurationView(m: Manifest, caps?: SystemCapabilities): 
   });
 
   const healthEntities: Array<{ entity: string; name: string }> = [];
-  if (sys.batteryPercent) healthEntities.push({ entity: sys.batteryPercent, name: "Battery" });
-  if (sys.wifiSignal)     healthEntities.push({ entity: sys.wifiSignal,     name: "WiFi" });
+  if (bat) healthEntities.push({ entity: bat.batteryPercent, name: "Battery" });
+  if (net) healthEntities.push({ entity: net.wifiSignal,     name: "WiFi" });
   healthEntities.push(
     { entity: sys.esp32Temperature, name: "Temp" },
     { entity: sys.uptime,           name: "Uptime" },
@@ -383,7 +385,7 @@ export function buildManualView(m: Manifest): unknown {
 // Single-system dashboard (convenience wrapper)
 // ---------------------------------------------------------------------------
 
-export function generateDashboard(m: Manifest, caps?: SystemCapabilities): string {
+export function generateDashboard(m: Manifest, board: BoardDef): string {
   const routeControl = buildRouteControlSection(m) as { sections: unknown[] };
 
   const dashboard = {
@@ -402,7 +404,7 @@ export function generateDashboard(m: Manifest, caps?: SystemCapabilities): strin
         ],
         badges: [],
       },
-      buildConfigurationView(m, caps),
+      buildConfigurationView(m, board),
       buildManualView(m),
     ],
   };

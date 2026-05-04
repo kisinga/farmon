@@ -10,7 +10,7 @@ import * as store from "./store.js";
 import * as db from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
-import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport, systemCapabilities } from '@far-mon/core';
+import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport } from '@far-mon/core';
 import { generateSiteDocumentation, type PinTableRow } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
@@ -404,12 +404,14 @@ export function registerIpcHandlers() {
         ...generateDefaultSecrets(),
         ...savedSecrets,
       } as SecretsMap;
-      const files = generateEsphome(manifest, board, secrets);
+      const files = generateEsphome(manifest, board, siteId, secrets);
 
       const gen = db.createGeneration(siteId, systemId, topology, board, 'esphome', { ...secrets });
       const latestMeta = gen ? null : db.listGenerations(siteId, systemId, 'esphome')[0] ?? null;
       const version = gen?.version ?? latestMeta?.version ?? '';
-      const deviceDir = manifest.device.directory ?? manifest.device.name;
+      const deviceFolder = manifest.device.directory ?? manifest.device.name;
+      // Full path from outputDir to the device folder (used by Deploy panel to open it).
+      const deviceDir = `sites/${siteId}/esphome/${deviceFolder}`;
 
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);
@@ -453,14 +455,15 @@ export function registerIpcHandlers() {
         );
         const manifest = topologyToManifest(fullTopology);
         const boardData = store.loadBoard(sp.board);
-        const capabilities = boardData?.board
-          ? systemCapabilities(boardData.board as unknown as BoardDef, manifest.device.network)
-          : undefined;
-        systems.push({ systemId: sp.id, friendlyName: sp.friendlyName, manifest, capabilities });
+        if (!boardData?.board) {
+          throw new Error(`Board not found for system "${sp.friendlyName}" (${sp.id}): ${sp.board}`);
+        }
+        const board = boardData.board as unknown as BoardDef;
+        systems.push({ systemId: sp.id, friendlyName: sp.friendlyName, manifest, board });
         manifests.set(sp.id, manifest);
       }
 
-      const files = generateSiteHA(site.site.friendlyName, systems, manifests);
+      const files = generateSiteHA(siteId, site.site.friendlyName, systems, manifests);
 
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);
@@ -492,7 +495,8 @@ export function registerIpcHandlers() {
       const secrets: SecretsMap = { wifi_ssid: wifi_ssid ?? '', wifi_password: wifi_password ?? '', api_key, ota_password };
       const files = generateSelfTest(board, secrets, network);
       const model = board.model.replace('_', '-');
-      const deviceDir = `selftest-${model}`;
+      // Full path from outputDir to the self-test device folder.
+      const deviceDir = `selftest/${model}/esphome/selftest-${model}`;
 
       const outputDir = store.getOutputDir();
       store.writeOutput(files, outputDir);
@@ -613,11 +617,11 @@ export function registerIpcHandlers() {
         routesRaw as any[],
       );
 
-      // Write to output dir
+      // Write to output dir, scoped under the site's tree.
       const outputDir = store.getOutputDir();
-      const filePath = `site-documentation.html`;
+      const filePath = `sites/${siteId}/site-documentation.html`;
       const fullPath = require('node:path').join(outputDir, filePath);
-      require('node:fs').mkdirSync(outputDir, { recursive: true });
+      require('node:fs').mkdirSync(require('node:path').dirname(fullPath), { recursive: true });
       require('node:fs').writeFileSync(fullPath, html, 'utf-8');
 
       return { html, outputPath: fullPath };
@@ -639,7 +643,7 @@ export function registerIpcHandlers() {
       const outputDir = store.getOutputDir();
       const files: Array<{ relativePath: string; content: string }> = [];
       for (const a of artifacts) {
-        const base = `config/homeassistant/www/farm/${a.name}`;
+        const base = `sites/${siteId}/homeassistant/www/farm/${a.name}`;
         files.push({ relativePath: `${base}.svg`, content: a.svg });
         files.push({ relativePath: `${base}.meta.json`, content: JSON.stringify(a.meta, null, 2) });
       }
@@ -867,6 +871,7 @@ export function registerIpcHandlers() {
     const all = db.listGenerations(siteId, systemId, genType);
     return all[0] ?? null;
   });
+
 
   // =========================================================================
   // System secrets

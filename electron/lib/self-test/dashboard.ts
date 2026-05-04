@@ -5,7 +5,7 @@
 import { stringify } from 'yaml';
 import type { BoardDef } from '../board.js';
 import type { TestProbe } from './probe.js';
-import { deriveHaEntityId, systemHaEntityIds, systemCapabilities } from '@far-mon/core';
+import { deriveHaEntityId, systemHaEntityIds, networkHaEntityIds, batteryHaEntityIds } from '@far-mon/core';
 
 export function generateDashboard(board: BoardDef, probes: TestProbe[]): string {
   // Mirrors self-test/device-yaml.ts: name = `selftest-<model>`, friendly_name = `<label> Self-Test`.
@@ -14,8 +14,10 @@ export function generateDashboard(board: BoardDef, probes: TestProbe[]): string 
   const device = { name: `selftest-${model}`, friendly_name: `${board.label} Self-Test` };
   const e = (domain: string, name: string) => deriveHaEntityId(domain, device, name);
   // Diagnostics gated by board capabilities — SSOT with main system dashboards.
-  const caps = systemCapabilities(board);
-  const sys = systemHaEntityIds(device, [], caps);
+  // Self-test runs without a network config, so transport defaults follow board support.
+  const sys = systemHaEntityIds(device, []);
+  const net = networkHaEntityIds(device, undefined, board);
+  const bat = batteryHaEntityIds(device, board);
 
   const overviewSection = {
     type: 'grid',
@@ -75,12 +77,12 @@ export function generateDashboard(board: BoardDef, probes: TestProbe[]): string 
   };
 
   const healthEntities: Array<{ entity: string; name: string }> = [];
-  if (sys.wifiSignal) healthEntities.push({ entity: sys.wifiSignal, name: 'WiFi' });
+  if (net) healthEntities.push({ entity: net.wifiSignal, name: 'WiFi' });
   healthEntities.push(
     { entity: sys.esp32Temperature, name: 'Temp' },
     { entity: sys.uptime, name: 'Uptime' },
   );
-  if (sys.batteryPercent) healthEntities.push({ entity: sys.batteryPercent, name: 'Battery' });
+  if (bat) healthEntities.push({ entity: bat.batteryPercent, name: 'Battery' });
 
   const healthSection = {
     type: 'grid',

@@ -1,9 +1,6 @@
 <!-- generated from packages/core/src/templates/pages/docs/installation/deployment.hbs — do not edit -->
 # Deployment
 
-When the in-app context provides a diff (`diff.*`), only the steps that apply to *this* change are rendered. When rendered as standalone documentation (no diff), every section is shown as a reference guide.
-
-
 ## 1. Regenerate
 
 ```sh
@@ -12,10 +9,7 @@ npm run generate
 
 This refreshes the ESPHome firmware YAML *and* the Home Assistant dashboards / automations from the current topology. Always run this after any manifest change.
 
-
-
 ## 2. Flash firmware
-
 
 Required when any pin assignment, board, peripheral, route, automation logic, or substitution changes. Skip when only HA-side files (dashboard.yaml, automations/*.yaml) changed.
 
@@ -40,7 +34,6 @@ Then reload Home Assistant (Developer Tools → YAML → "All YAML configuration
 
 ---
 
-
 ## First-time pairing (when device is new to HA)
 
 After the first flash:
@@ -49,7 +42,6 @@ After the first flash:
 2. In HA, **Settings → Devices & Services → Add Integration → ESPHome**.
 3. Enter the device's IP or hostname. The API key is in `secrets.yaml`.
 4. Entities appear via autodiscovery; no manual entity registration is needed.
-
 
 ## ⚠️ Friendly name changes — entity_id stickiness
 
@@ -61,7 +53,6 @@ If you change a controller's friendly name, the firmware emits entities under a 
 2. **Revert:** set the friendly name back to whatever HA already has (visible in HA's entity registry) and redeploy.
 
 The editor's config tab shows a warning banner when a friendly-name change is detected — follow the link there to this section.
-
 
 ## Renamed nodes
 

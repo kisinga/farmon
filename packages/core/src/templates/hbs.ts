@@ -151,6 +151,21 @@ export function compileFile(absPath: string): HandlebarsTemplateDelegate {
 }
 
 /**
+ * Render a registered partial by name with a context, returning the markdown
+ * output. Used by the in-app Deploy panel to render the same `.hbs` partial
+ * the static docs use, but with a runtime-computed diff context. Partials are
+ * auto-registered on first call.
+ */
+export function renderPartial(name: string, context: unknown): string {
+  registerAllPartials();
+  const src = (hbs.partials as Record<string, string>)[name];
+  if (typeof src !== "string") {
+    throw new Error(`[hbs] renderPartial("${name}"): partial not found in ${PARTIALS_DIR}`);
+  }
+  return hbs.compile(src)(context);
+}
+
+/**
  * Compile a markdown-source template (page or partial) by absolute path,
  * pre-processing fenced code blocks so their `{{ }}` content is treated
  * literally by HBS instead of parsed as expressions.

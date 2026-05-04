@@ -1,7 +1,7 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag, slug, esphomeServicePrefix } from "../schema.js";
-import { NODE_REGISTRY, systemHaEntityIds, type SystemCapabilities } from '@far-mon/core';
+import { NODE_REGISTRY, systemHaEntityIds, networkHaEntityIds, type BoardDef } from '@far-mon/core';
 import {
   buildStatusSection,
   buildWaterSection,
@@ -22,8 +22,8 @@ export interface SiteDashboardSystem {
   systemId: string;
   friendlyName: string;
   manifest: Manifest;
-  /** Optional board/network capabilities — gates wifi/battery references. */
-  capabilities?: SystemCapabilities;
+  /** Board definition — used to gate wifi/battery dashboard references. */
+  board: BoardDef;
 }
 
 /**
@@ -48,7 +48,7 @@ export function generateSiteDashboard(
   // Controllers glance — state + active routes per system
   const statusEntities: Array<{ entity: string; name: string }> = [];
   for (const s of systems) {
-    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes, s.capabilities);
+    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes);
     statusEntities.push(
       { entity: sys.systemState, name: s.friendlyName },
       { entity: sys.activeRoutes, name: `${s.friendlyName} Routes` },
@@ -134,8 +134,9 @@ export function generateSiteDashboard(
   // Device health
   const healthEntities: Array<{ entity: string; name: string }> = [];
   for (const s of systems) {
-    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes, s.capabilities);
-    if (sys.wifiSignal) healthEntities.push({ entity: sys.wifiSignal, name: `${s.friendlyName} WiFi` });
+    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes);
+    const net = networkHaEntityIds(s.manifest.device, s.manifest.device.network, s.board);
+    if (net) healthEntities.push({ entity: net.wifiSignal, name: `${s.friendlyName} WiFi` });
     healthEntities.push({ entity: sys.uptime, name: `${s.friendlyName} Uptime` });
   }
   overviewSections.push({
@@ -179,7 +180,7 @@ export function generateSiteDashboard(
 
     // Configuration as a subview for this controller
     views.push({
-      ...(buildConfigurationView(s.manifest, s.capabilities) as Record<string, unknown>),
+      ...(buildConfigurationView(s.manifest, s.board) as Record<string, unknown>),
       title: `${s.friendlyName} Configuration`,
       path: `configuration-${slug(s.systemId)}`,
       subview: true,

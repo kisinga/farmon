@@ -1,12 +1,13 @@
 import { stringify, Scalar } from "yaml";
 import type { BoardDef } from "../board.js";
-import { boardSupportedTransports, effectiveTransport, SYSTEM_ENTITY_NAMES, type NetworkConfig } from "@far-mon/core";
+import { boardSupportedTransports, effectiveTransport, SYSTEM_ENTITY_NAMES, BATTERY_ENTITY_NAMES, type NetworkConfig } from "@far-mon/core";
 import {
   emitConnectionProfile,
   emitTransportSignalSensor,
 } from "./networking.js";
 
 const SYS = SYSTEM_ENTITY_NAMES;
+const BAT = BATTERY_ENTITY_NAMES;
 
 /** Create a YAML !secret tagged scalar — serializes as `!secret name` (unquoted). */
 function secret(name: string): Scalar {
@@ -186,7 +187,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
       platform: "adc",
       pin: "${pin_battery_adc}",
       id: "battery_voltage",
-      name: SYS.batteryVoltage.name,
+      name: BAT.batteryVoltage.name,
       unit_of_measurement: "V",
       icon: "mdi:battery",
       accuracy_decimals: 2,
@@ -201,7 +202,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
       platform: "copy",
       source_id: "battery_voltage",
       id: "battery_percent",
-      name: SYS.batteryPercent.name,
+      name: BAT.batteryPercent.name,
       unit_of_measurement: "%",
       icon: "mdi:battery",
       accuracy_decimals: 0,

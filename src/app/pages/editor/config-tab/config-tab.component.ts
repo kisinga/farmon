@@ -1,7 +1,9 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, inject, computed, signal, OnInit, effect } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { BoardService } from '../../../core/services/board.service';
+import { ElectronService } from '../../../core/services/electron.service';
+import { WorkspaceService } from '../../../core/services/workspace.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
 import { slug, NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY } from '@far-mon/core';
@@ -45,6 +47,25 @@ const TIMING_FIELDS: TimingField[] = [
                 (valueChange)="updateFriendlyName($any($event))" />
               <div class="label"><span class="label-text-alt text-base-content/60 font-mono">ESPHome ID: {{ t.device.name }}</span></div>
             </label>
+
+            @if (friendlyNameWarning(); as w) {
+              <div class="alert alert-warning text-xs items-start py-3" role="alert">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.74-2.99l-7.07-12.25a2 2 0 00-3.48 0L3.19 16.01A2 2 0 004.93 19z"/>
+                </svg>
+                <div class="space-y-1">
+                  <div class="font-semibold">Friendly name changed since last deploy</div>
+                  <div class="opacity-90">
+                    HA derives entity_ids from this name. Existing entities under
+                    <code>{{ w.oldDomain }}</code> will become "unavailable" after deploy;
+                    new entities appear under <code>{{ w.newDomain }}</code>.
+                  </div>
+                  <div>
+                    See <strong>Deploy → Steps</strong> for the full handover procedure (revert vs re-pair in HA).
+                  </div>
+                </div>
+              </div>
+            }
           </div>
         </div>
 
@@ -223,15 +244,69 @@ const TIMING_FIELDS: TimingField[] = [
     }
   `,
 })
-export class ConfigTabComponent {
+export class ConfigTabComponent implements OnInit {
   protected editor = inject(SystemEditorService);
   protected boards = inject(BoardService);
+  private electron = inject(ElectronService);
+  private workspace = inject(WorkspaceService);
 
   protected timingGroups = [...new Set(TIMING_FIELDS.map((f) => f.group))];
   protected timingSchema = TimingSchema;
   protected deviceSchema = DeviceSchema;
   protected providerSchema = IoProviderDefSchema;
   protected componentIdPolicy = COMPONENT_ID_POLICY;
+
+  /** friendly_name of the most recent successful firmware generation. null = never deployed. */
+  private lastDeployedFriendlyName = signal<string | null>(null);
+
+  protected friendlyNameWarning = computed(() => {
+    const t = this.editor.topology();
+    const last = this.lastDeployedFriendlyName();
+    if (!t || !last) return null;
+    const oldSlug = slug(last);
+    const newSlug = slug(t.device.friendly_name);
+    if (oldSlug === newSlug) return null;
+    return {
+      oldDomain: `<domain>.${oldSlug}_*`,
+      newDomain: `<domain>.${newSlug}_*`,
+    };
+  });
+
+  // Re-fetch the last-deployed friendly_name whenever the active system
+  // changes, so the warning banner reflects the system the user is editing.
+  private readonly _trackSystem = effect(() => {
+    this.editor.systemId();
+    void this.refreshLastDeployed();
+  });
+
+  ngOnInit() {
+    void this.refreshLastDeployed();
+  }
+
+  private async refreshLastDeployed(): Promise<void> {
+    const site = this.workspace.site();
+    const systemId = this.editor.systemId();
+    if (!site || !systemId) {
+      this.lastDeployedFriendlyName.set(null);
+      return;
+    }
+    try {
+      const latest = await this.electron.generationLatest(site.id, systemId, 'esphome');
+      if (!latest) {
+        this.lastDeployedFriendlyName.set(null);
+        return;
+      }
+      const snap = await this.electron.generationLoad(latest.id);
+      if (!snap) {
+        this.lastDeployedFriendlyName.set(null);
+        return;
+      }
+      const topo = JSON.parse(snap.topology) as { device?: { friendly_name?: string } };
+      this.lastDeployedFriendlyName.set(topo.device?.friendly_name ?? null);
+    } catch {
+      this.lastDeployedFriendlyName.set(null);
+    }
+  }
 
   protected peripherals = computed(() => {
     const board = this.editor.board();

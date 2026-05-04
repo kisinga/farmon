@@ -30,7 +30,7 @@ import {
   deriveHaEntityId,
   type Manifest,
 } from '@far-mon/core';
-import { loadBoard, type BoardDef } from '../electron/lib/board.js';
+import { loadBoard } from '../electron/lib/board.js';
 import { generateEsphome, generateAll } from '../electron/lib/generate.js';
 
 const DEFAULTS = path.resolve(new URL('.', import.meta.url).pathname, '..', 'defaults');
@@ -47,24 +47,6 @@ const HA_PLATFORMS: Record<string, string> = {
   text_sensor:   'sensor',  // ESPHome text_sensor surfaces as `sensor.*` in HA
   light:         'light',
 };
-
-// Entities the dashboard references unconditionally even though firmware
-// only emits them on capable boards. Tracked here as a known gap, surfaced
-// by the test rather than silently skipped — the long-term fix is to gate
-// the dashboard refs on board capability.
-interface BoardCapability {
-  hasWifi: boolean;
-  hasBattery: boolean;
-}
-
-function boardCapabilities(board: BoardDef): BoardCapability {
-  // WiFi-only sensor is gated on transport in networking.ts.
-  // Battery sensors are gated on board.peripherals.battery in board-package.ts.
-  return {
-    hasWifi:    !board.peripherals.ethernet,
-    hasBattery: !!board.peripherals.battery,
-  };
-}
 
 let passed = 0;
 let failed = 0;
@@ -151,7 +133,7 @@ function check(fixture: FixtureCheck) {
   const firmwareIds = new Set<string>();
 
   // ESPHome firmware files (board package, control, hardware, sensors).
-  for (const f of generateEsphome(manifest, board)) {
+  for (const f of generateEsphome(manifest, board, 'test-site')) {
     if (!f.relativePath.endsWith('.yaml')) continue;
     if (f.relativePath.endsWith('secrets.yaml')) continue;
     const found = collectFirmwareEntityIds(f.content, manifest.device);
@@ -161,8 +143,8 @@ function check(fixture: FixtureCheck) {
   // --- Generator references ---
   const referencedIds = new Set<string>();
 
-  for (const f of generateAll(manifest, board)) {
-    if (!f.relativePath.startsWith('config/homeassistant/')) continue;
+  for (const f of generateAll(manifest, board, 'test-site')) {
+    if (!f.relativePath.includes('/homeassistant/')) continue;
     const docs = parseAllDocuments(f.content).map(d => d.toJS());
     for (const doc of docs) collectEntityIdReferences(doc, referencedIds);
   }
@@ -188,7 +170,6 @@ function check(fixture: FixtureCheck) {
   }
 
   // --- Assert: every reference exists in firmware. No exemptions.
-  const caps = boardCapabilities(board);
   const missing: string[] = [];
   for (const ref of filteredRefs) {
     if (firmwareIds.has(ref)) continue;
@@ -198,7 +179,6 @@ function check(fixture: FixtureCheck) {
   console.log(`\n${fixture.configFile}:`);
   console.log(`  device.friendly_name = "${manifest.device.friendly_name}"`);
   console.log(`  firmware emits ${firmwareIds.size} entities, dashboards reference ${filteredRefs.size}`);
-  console.log(`  board capabilities: wifi=${caps.hasWifi} battery=${caps.hasBattery}`);
 
   assert(
     missing.length === 0,

@@ -422,8 +422,18 @@ export function importBoard(sourcePath: string): string {
 // Output
 // ---------------------------------------------------------------------------
 
+// One-time pruning of stale paths from before the multi-site repath. Layout
+// is now `sites/{siteId}/...` and `selftest/{model}/...`; these legacy roots
+// are no longer written and should be removed when encountered.
 const DEPRECATED_FILES = [
   "config/homeassistant/dashboards/pump.yaml",
+  "config/homeassistant/dashboards/site.yaml",
+  "config/homeassistant/dashboards/dashboard.yaml",
+  "site-documentation.html",
+];
+const DEPRECATED_DIRS = [
+  "config/homeassistant",
+  "esphome",
 ];
 
 export function writeOutput(files: Array<{ relativePath: string; content: string }>, outputDir: string): void {
@@ -431,6 +441,12 @@ export function writeOutput(files: Array<{ relativePath: string; content: string
     const stalePath = path.join(outputDir, stale);
     if (fs.existsSync(stalePath)) {
       fs.unlinkSync(stalePath);
+    }
+  }
+  for (const staleDir of DEPRECATED_DIRS) {
+    const stalePath = path.join(outputDir, staleDir);
+    if (fs.existsSync(stalePath) && fs.statSync(stalePath).isDirectory()) {
+      fs.rmSync(stalePath, { recursive: true, force: true });
     }
   }
 

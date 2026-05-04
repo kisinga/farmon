@@ -8,41 +8,47 @@ import {
 } from "./process-manager.js";
 import * as store from "./store.js";
 
-/** Resolve ESPHome config YAML path from a config name. */
-function resolveConfigPath(configName: string): string {
+/**
+ * Resolve ESPHome config YAML path from a deviceDir (relative to the output
+ * dir). Site-scoped layout is `sites/{siteId}/esphome/{deviceFolder}`;
+ * self-test layout is `selftest/{model}/esphome/{deviceFolder}`. Either way
+ * the YAML filename is `{basename(deviceDir)}.yaml`.
+ */
+function resolveConfigPath(deviceDir: string): string {
   const outputDir = store.getOutputDir();
-  return path.join(outputDir, "esphome", configName, `${configName}.yaml`);
+  const folder = path.basename(deviceDir);
+  return path.join(outputDir, deviceDir, `${folder}.yaml`);
 }
 
 export function compile(
   win: BrowserWindow,
-  configName: string
+  deviceDir: string
 ): { handle: ProcessHandle; result: Promise<ProcessResult> } {
   const bin = requireEsphome();
-  const configPath = resolveConfigPath(configName);
-  return spawnEsphome(win, bin, ["compile", configPath], "compile", configName);
+  const configPath = resolveConfigPath(deviceDir);
+  return spawnEsphome(win, bin, ["compile", configPath], "compile", path.basename(deviceDir));
 }
 
 export function flash(
   win: BrowserWindow,
-  configName: string,
+  deviceDir: string,
   device?: string
 ): { handle: ProcessHandle; result: Promise<ProcessResult> } {
   const bin = requireEsphome();
-  const configPath = resolveConfigPath(configName);
+  const configPath = resolveConfigPath(deviceDir);
   const args = ["run", configPath];
   if (device) args.push("--device", device);
-  return spawnEsphome(win, bin, args, "flash", configName);
+  return spawnEsphome(win, bin, args, "flash", path.basename(deviceDir));
 }
 
 export function logs(
   win: BrowserWindow,
-  configName: string,
+  deviceDir: string,
   device?: string
 ): { handle: ProcessHandle; result: Promise<ProcessResult> } {
   const bin = requireEsphome();
-  const configPath = resolveConfigPath(configName);
+  const configPath = resolveConfigPath(deviceDir);
   const args = ["logs", configPath];
   if (device) args.push("--device", device);
-  return spawnEsphome(win, bin, args, "logs", configName);
+  return spawnEsphome(win, bin, args, "logs", path.basename(deviceDir));
 }

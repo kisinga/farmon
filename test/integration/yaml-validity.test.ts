@@ -54,7 +54,7 @@ for (const configFile of configFiles) {
   const board = loadBoard(path.join(BOARDS_DIR, boardName));
   const topology = parseTopology(parsed);
   const manifest = topologyToManifest(topology);
-  const files = generateAll(manifest, board);
+  const files = generateAll(manifest, board, 'test-site');
 
   assert(files.length > 0, 'Pipeline produces at least one file');
 

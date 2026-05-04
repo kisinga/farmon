@@ -1,8 +1,9 @@
 import { Scalar } from "yaml";
 import type { BoardDef } from "../board.js";
-import { boardSupportedTransports, effectiveTransport, SYSTEM_ENTITY_NAMES, type NetworkConfig, type NetworkTransport } from "@far-mon/core";
+import { boardSupportedTransports, effectiveTransport, SYSTEM_ENTITY_NAMES, NETWORK_ENTITY_NAMES, type NetworkConfig, type NetworkTransport } from "@far-mon/core";
 
 const SYS = SYSTEM_ENTITY_NAMES;
+const NET = NETWORK_ENTITY_NAMES;
 
 type EthernetDef = NonNullable<BoardDef["peripherals"]["ethernet"]>;
 
@@ -132,8 +133,8 @@ function emitTransportTextSensors(
     : {
         platform: 'wifi_info',
         ip_address: { name: SYS.ipAddress.name, id: 'ip_addr' },
-        ssid: { name: SYS.connectedSsid.name },
-        mac_address: { name: SYS.macAddress.name },
+        ssid: { name: NET.connectedSsid.name },
+        mac_address: { name: NET.macAddress.name },
       };
 
   return {
@@ -192,7 +193,7 @@ export function emitTransportSignalSensor(
   if (transport === 'ethernet') return null;
   return {
     platform: "wifi_signal",
-    name: SYS.wifiSignal.name,
+    name: NET.wifiSignal.name,
     update_interval: "${update_interval}",
     id: "wifi_dbm",
   };

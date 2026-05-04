@@ -58,7 +58,7 @@ const rawConfig = fs.readFileSync(CONFIG_PATH, "utf-8");
 const topology = parseTopology(parseYaml(rawConfig));
 manifest = topologyToManifest(topology);
 const validation = validateAll(topology, manifest, board);
-files = generateAll(manifest, board);
+files = generateAll(manifest, board, 'test-site');
 fileMap = new Map(files.map((f) => [f.relativePath, f.content]));
 
 // Helper arrays
@@ -284,7 +284,7 @@ const VFD_CONFIG_PATH = path.join(DEFAULTS, "configs/vfd-pump-controller.yaml");
 const vfdRawConfig = fs.readFileSync(VFD_CONFIG_PATH, "utf-8");
 const vfdTopology = parseTopology(parseYaml(vfdRawConfig));
 const vfdManifest = topologyToManifest(vfdTopology);
-const vfdFiles = generateAll(vfdManifest, board);
+const vfdFiles = generateAll(vfdManifest, board, 'test-site');
 const vfdFileMap = new Map(vfdFiles.map((f) => [f.relativePath, f.content]));
 
 function getVfdFile(suffix: string): string {
@@ -360,7 +360,7 @@ const kcBoard = loadBoard(KC_BOARD_DIR);
 const kcRawConfig = fs.readFileSync(KC_CONFIG_PATH, "utf-8");
 const kcTopology = parseTopology(parseYaml(kcRawConfig));
 const kcManifest = topologyToManifest(kcTopology);
-const kcFiles = generateAll(kcManifest, kcBoard);
+const kcFiles = generateAll(kcManifest, kcBoard, 'test-site');
 const kcFileMap = new Map(kcFiles.map((f) => [f.relativePath, f.content]));
 
 function getKcFile(suffix: string): string {

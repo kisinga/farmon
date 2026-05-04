@@ -68,35 +68,42 @@ function generateSecrets(secrets?: SecretsMap): string {
   ].join('\n');
 }
 
-/** Generate all files for self-test firmware. */
+/**
+ * Generate all files for self-test firmware.
+ *
+ * Self-test artifacts live under `selftest/{model}/` — a sibling of the
+ * site-scoped `sites/{siteId}/` tree. Self-test is per-board and not
+ * site-scoped (it's an ad-hoc factory verification, not a deployable system).
+ */
 export function generateSelfTest(board: BoardDef, secrets?: SecretsMap, network?: NetworkConfig): GeneratedFile[] {
   const model = board.model.replace('_', '-');
   const dir = `selftest-${model}`;
+  const root = `selftest/${model}`;
   const probes = activeProbes(board);
 
   return [
     {
-      relativePath: `esphome/${dir}/common/board.yaml`,
+      relativePath: `${root}/esphome/${dir}/common/board.yaml`,
       description: `${board.label} board package (buses, networking, diagnostics)`,
       content: generateBoardPackage(board, network),
     },
     {
-      relativePath: `esphome/${dir}/${dir}.yaml`,
+      relativePath: `${root}/esphome/${dir}/${dir}.yaml`,
       description: `Self-test device config (${probes.length} probes)`,
       content: generateDeviceYaml(board, probes),
     },
     {
-      relativePath: `esphome/${dir}/packages/self-test.h`,
+      relativePath: `${root}/esphome/${dir}/packages/self-test.h`,
       description: `C++ test sequencer (${probes.length} test phases)`,
       content: generateSequencer(board, probes),
     },
     {
-      relativePath: `esphome/${dir}/secrets.yaml`,
+      relativePath: `${root}/esphome/${dir}/secrets.yaml`,
       description: 'WiFi + API credentials',
       content: generateSecrets(secrets),
     },
     {
-      relativePath: `config/homeassistant/dashboards/${dir}.yaml`,
+      relativePath: `${root}/homeassistant/dashboards/${dir}.yaml`,
       description: `HA dashboard for self-test results`,
       content: generateDashboard(board, probes),
     },
