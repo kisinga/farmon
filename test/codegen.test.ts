@@ -165,13 +165,72 @@ assert(routesH.includes("queue_pop"), "Has queue_pop function");
 assert(routesH.includes("pump_ref_count"), "Has pump_ref_count function");
 assert(routesH.includes("has_conflict"), "Has conflict detection");
 assert(routesH.includes("conflict_mask"), "Has conflict mask in Route struct");
-assert(routesH.includes("safe_close_mask"), "Has valve refcount for safe close");
 assert(routesH.includes("derived_system_state"), "Has derived_system_state function");
 assert(routesH.includes("open_valve_hw"), "Valve dispatch renamed to _hw");
 assert(routesH.includes("close_valve_hw"), "Valve close dispatch renamed to _hw");
+assert(routesH.includes("stop_valve_hw"), "Has cover.stop dispatch for fault resync");
+assert(routesH.includes("commanded_valve_mask"), "Has commanded_valve_mask global");
+assert(routesH.includes("valve_claim_mask"), "Has per-slot valve claim helper");
+assert(routesH.includes("desired_valve_mask"), "Has desired-valve-mask aggregator");
+assert(routesH.includes("reconcile_valves"), "Has level-triggered valve reconciler");
+assert(!routesH.includes("safe_close_mask"), "safe_close_mask removed (replaced by reconciler)");
+assert(!routesH.includes("active_valve_mask"), "active_valve_mask removed (was unused)");
+assert(!routesH.includes("valves_closing"), "valves_closing field removed");
+// Stop on FAULT must be rejected — fault stays registered until fault_reset.
+assert(
+  /state == 0 \|\| slots\[s\]\.state == 3 \|\| slots\[s\]\.state == 4/.test(routesH),
+  "try_route_stop rejects state==4 (FAULT)",
+);
 assert(routesH.includes("get_valve_travel_ms"), "Has per-valve travel time dispatch");
 assert(routesH.includes("get_route_travel_ms"), "Has per-route travel time dispatch");
 assert(routesH.includes("get_max_runtime_s"), "Has per-route max runtime dispatch");
+
+// --- Reconciler claim semantics (P4.8) ---
+// valve_claim_mask must hold the route's mask during PREPARING/RUNNING and
+// also during STOPPING/FAULT within the depressurize window. This ensures
+// concurrent slots in different states with overlapping valve_masks correctly
+// keep shared valves open until the last claim drops.
+assert(
+  /st == 1 \|\| st == 2/.test(routesH) ||
+  /state == 1 \|\| slots\[s\]\.state == 2/.test(routesH),
+  "valve_claim_mask returns valve_mask in PREPARING/RUNNING",
+);
+assert(
+  /st == 3 \|\| st == 4/.test(routesH) ||
+  /state == 3 \|\| slots\[s\]\.state == 4/.test(routesH),
+  "valve_claim_mask considers STOPPING/FAULT",
+);
+assert(
+  /\(\s*millis\(\)\s*-\s*slots\[s\]\.stop_time\s*\)\s*<\s*DEPRESSURIZE_MS/.test(routesH),
+  "valve_claim_mask gates STOPPING/FAULT branch on depressurize window",
+);
+// desired_valve_mask must union across all slots — verifies multi-slot
+// concurrency (e.g., FAULTed slot's depressurize window OR'd with another
+// slot's RUNNING claim keeps shared valves open).
+assert(
+  /desired_valve_mask[\s\S]{0,200}MAX_CONCURRENT_ROUTES[\s\S]{0,200}\|=\s*valve_claim_mask/.test(routesH),
+  "desired_valve_mask is union of valve_claim_mask across slots",
+);
+// reconcile_valves must diff against commanded and only act on changes —
+// the idempotency property that prevents periodic reissue.
+assert(
+  /uint16_t\s+diff\s*=\s*desired\s*\^\s*commanded_valve_mask/.test(routesH),
+  "reconcile_valves diffs desired ^ commanded (idempotent in steady state)",
+);
+
+// --- Boot-init reboot safety (P4.7, P4.9) ---
+// At boot, slots are reinitialized to IDLE, valves driven closed, and
+// commanded_valve_mask reset to 0 — all in the same boot script. The
+// reconciler's first tick after boot then sees desired = 0, commanded = 0,
+// diff = 0 and emits no phantom commands.
+assert(
+  /init_slot[\s\S]{0,500}close_valve_hw[\s\S]{0,500}commanded_valve_mask\s*=\s*0/.test(deviceYaml),
+  "Boot init: slots reinitialized, valves closed, then commanded_valve_mask = 0",
+);
+assert(
+  /restore_mode\s*[:=]\s*NO_RESTORE|time_based covers default to restore_mode: NO_RESTORE/.test(deviceYaml),
+  "Boot path documents the time_based NO_RESTORE assumption",
+);
 
 // --- hardware.yaml ---
 
@@ -223,7 +282,10 @@ assert(control.includes("interval: 1s"), "Has 1s transition interval");
 assert(control.includes("interval: 2s"), "Has 2s safety interval");
 assert(control.includes("find_slot_by_route"), "Uses slot-based route lookup");
 assert(control.includes("has_conflict"), "Checks conflicts before starting");
-assert(control.includes("safe_close_mask"), "Uses valve refcount on stop");
+assert(control.includes("reconcile_valves()"), "Calls valve reconciler in 1s interval");
+assert(control.includes("stop_valve_hw"), "Issues stop_cover on fault entry (cover-state resync)");
+assert(!control.includes("safe_close_mask"), "Edge-driven safe_close_mask removed");
+assert(!control.includes("valves_closing"), "valves_closing edge flag removed");
 assert(control.includes("try_route_start"), "Delegates to try_route_start (which queues on conflict)");
 assert(!control.includes("close_all_valves"), "No close_all_valves script");
 assert(!control.includes("do_prepare_and_run"), "No do_prepare_and_run script");

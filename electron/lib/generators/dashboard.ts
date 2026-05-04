@@ -319,6 +319,18 @@ export function buildManualView(m: Manifest): unknown {
   const pumps = nodesByKind(m.nodes, 'pump');
   const valves = nodesWithFlag(m.nodes, 'isValve');
 
+  const explainerCard = {
+    type: "markdown",
+    content: [
+      "**Manual control** — direct access to the pump, valves, and the operator override.",
+      "",
+      "- **Safety Override**: bypasses pre-start gates (source-low / dest-full), runtime watchdogs (flow, max runtime, API), and lets the pump run without an owning route. Use only for commissioning or recovery.",
+      "- **Cover** is the safe way to operate a valve — timer-bounded, used by the routing layer.",
+      "- **Open / Close coils** are diagnostic. They bypass the cover's position estimate; firing one during a route can desync state. After firing a coil, call `cover.stop_cover` on the same valve to resync.",
+      "- Closing a cover *during* a running route does not stop the route — the flow watchdog will eventually fault it. Use the route Stop button instead.",
+    ].join("\n"),
+  };
+
   const overrideCard = {
     type: "entities",
     title: "Operator Override",
@@ -373,6 +385,7 @@ export function buildManualView(m: Manifest): unknown {
     path: "manual",
     icon: "mdi:hand-back-right",
     cards: [
+      explainerCard,
       overrideCard,
       ...pumpCard,
       ...valveCards,

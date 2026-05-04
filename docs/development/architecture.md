@@ -183,3 +183,29 @@ Generated firmware exposes a single template switch `safety_override` ([electron
 - **Default-safe** — declared `restore_mode: ALWAYS_OFF`; never persists across reboots.
 
 When adding a new safety check, decide explicitly whether it sits inside the monitor loop (override-bypassable) or outside it (always-on, e.g. hardware float-switch interlocks). Document the choice on the new entity/automation.
+
+---
+
+## Valve actuation (firmware)
+
+Valves are operated through ESPHome `time_based` cover entities — one cover per valve, with `open_action` and `close_action` firing the corresponding coil switch. The coil pair is hardware-interlocked (`interlock:` block in [packages/core/src/entities/valve.ts](../../../../../../../packages/core/src/entities/valve.ts)) so both coils can never be energised simultaneously.
+
+The route layer drives covers via a **level-triggered reconciler**, not edge-driven open/close calls. Every 1 s tick, `reconcile_valves` ([electron/lib/generators/routes.ts](../../../../../../../electron/lib/generators/routes.ts)):
+
+1. Computes `desired_valve_mask` = union of `valve_claim_mask(s)` across all slots. A slot's claim is its route's `valve_mask` while it is `PREPARING` / `RUNNING`, or while it is `STOPPING` / `FAULT` and within `DEPRESSURIZE_MS` of its `stop_time`. Outside those windows the claim is 0.
+2. Diffs `desired ^ commanded_valve_mask`. `commanded_valve_mask` is updated only by the reconciler itself, so it stays a faithful proxy for ESPHome's cover state as long as nothing else drives the covers.
+3. For each bit in the diff, calls `open_valve_hw(i)` or `close_valve_hw(i)` (which invoke `cover.open_cover` / `cover.close_cover` on the time-based cover). No periodic reissue — steady state is silent.
+
+This expresses valve refcounting as a mask union: a valve stays open as long as **any** active slot claims it, and closes only when the last claim drops. The previous edge-driven model used an explicit `safe_close_mask` / `valves_closing` flag pair; the union form is simpler and harder to get wrong.
+
+**PREPARING → RUNNING timing** waits `travel_time + 1 s` from `start_time` ([electron/lib/generators/control.ts](../../../../../../../electron/lib/generators/control.ts)). Only on entry to RUNNING does the slot stamp `run_start_time = now` and clear `flow_confirmed`; the `flow_confirm_ms` window ([packages/core/src/entities/flow-sensor.ts](../../../../../../../packages/core/src/entities/flow-sensor.ts)) is measured from that stamp, not from command issue. So the total budget before a missing-flow fault trips is `travel_time + 1 s + flow_confirm_ms` — the confirm window stacks on top of valve travel, it does not overlap it.
+
+**STOPPING → IDLE timing** waits `DEPRESSURIZE_MS + travel_time + 1 s` from `stop_time` ([electron/lib/generators/control.ts](../../../../../../../electron/lib/generators/control.ts)). That window covers depressurise + the actual close travel + a small safety margin, so the slot only declares itself idle once the valves have physically had time to close. The reconciler handles the close itself once the slot's claim drops at the depressurise boundary.
+
+**FAULT path uses `stop_valve_hw`** ([routes.ts:361-365](../../../../../../../electron/lib/generators/routes.ts#L361-L365)) — `cover.stop_cover` — on every valve in the faulted route, immediately on FAULT entry. This force-resyncs ESPHome's internal cover position estimate before the depressurise window expires; without it, the close that follows can be filtered as a no-op when the cover already thinks it is at position 0.
+
+**External cover writes are silent.** The reconciler never reads cover state, only writes it. If something else (a user via the HA UI, a stray automation) closes a cover during a running route, `commanded_valve_mask` does not update, the diff stays at 0, and the reconciler does not react. The route loses flow and faults via the flow watchdog after `flow_watchdog_ms`. This is the same blind spot the edge-driven model had, and it is the reason manual cover close is *not* a substitute for route-stop.
+
+**Raw coil writes bypass the cover.** The cover's position estimate updates only when its own `open_action` / `close_action` fires; toggling `<valve> Open Coil` or `<valve> Close Coil` directly drives the coil but leaves the cover unaware. The HA Manual tab exposes coils for diagnostics; after firing one, call `cover.stop_cover` on the same valve to resync.
+
+When adding a new actuator (dosing pump, VFD, etc.), decide whether it fits the same level-triggered pattern (compute desired mask each tick, diff vs. last commanded, emit only on change) or whether it needs explicit edge handling. Prefer the reconciler model — it composes with multi-slot concurrency without per-slot tracking.

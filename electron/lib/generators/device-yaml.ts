@@ -87,6 +87,10 @@ export function generateDeviceYaml(
     "id(api_lost_time) = 0;",
     "id(active_slot) = -1;",
     "for (int i = 0; i < NUM_VALVES; i++) close_valve_hw(i);",
+    "// time_based covers default to restore_mode: NO_RESTORE — they boot at",
+    "// position UNKNOWN, so the close above always fires the close coil for the",
+    "// full close_duration. No stop_valve_hw resync needed here.",
+    "commanded_valve_mask = 0;  // matches the boot-closed state above",
     '// stop_reason intentionally NOT reset — survives reboot',
     `ESP_LOGI("ctrl", "Boot complete — IDLE (%d routes, %d slots)", NUM_ROUTES, MAX_CONCURRENT_ROUTES);`,
   ].join("\n");

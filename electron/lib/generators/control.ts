@@ -102,7 +102,6 @@ api:
                 slots[s].stop_reason = STOP_MANUAL;
                 slots[s].state = 3;
                 slots[s].stop_time = millis();
-                slots[s].valves_closing = false;
               }
             }
             queue_head = 0; queue_count = 0;
@@ -170,8 +169,12 @@ ${m.routes.map((r, i) => `\
           ESP_LOGI("btn", "Route ${i} [${r.name}] stop: %s", res[rc]);`).join("\n")}
 
 # --- 1s Transition Interval --------------------------------------------------
-# Handles: PREPARING→RUNNING, STOPPING→IDLE, FAULT valve close,
-#          pump management, queue drain, derived state update.
+# Handles: PREPARING→RUNNING, STOPPING→IDLE, pump management, queue drain,
+#          derived state update, valve reconciliation.
+#
+# Valve actuation is level-triggered: reconcile_valves() runs at the end of
+# each tick and emits open/close commands for any valve whose desired state
+# (derived from active slot claims) doesn't match what was last commanded.
 
 interval:
   - interval: 1s
@@ -194,19 +197,10 @@ interval:
               }
             }
 
-            // STOPPING/FAULT → close valves after depressurize
-            // Only close valves not needed by other active routes (actuator refcount).
-            if ((slots[s].state == 3 || slots[s].state == 4) && !slots[s].valves_closing) {
-              if (now - slots[s].stop_time > DEPRESSURIZE_MS) {
-                uint16_t to_close = safe_close_mask(s);
-                for (int i = 0; i < NUM_VALVES; i++)
-                  if (to_close & (1 << i)) close_valve_hw(i);
-                slots[s].valves_closing = true;
-              }
-            }
-
-            // STOPPING → IDLE (valve close complete)
-            if (slots[s].state == 3 && slots[s].valves_closing) {
+            // STOPPING → IDLE (depressurize + valve close travel complete)
+            // Valve close itself happens via the reconciler once the slot's
+            // claim drops at end of depressurize.
+            if (slots[s].state == 3) {
               if (now - slots[s].stop_time > DEPRESSURIZE_MS + get_route_travel_ms(rid) + 1000) {
                 id(stop_reason) = slots[s].stop_reason;
                 ESP_LOGI("ctrl", "IDLE slot %d (reason=%d)", s, slots[s].stop_reason);
@@ -214,7 +208,8 @@ interval:
               }
             }
 
-            // Note: FAULT slots stay in FAULT with valves closed until fault_reset
+            // FAULT slots stay in FAULT until fault_reset. Valves close via
+            // the reconciler once the depressurize window elapses.
           }
 ${pumpMgmt}
 
@@ -230,9 +225,7 @@ ${pumpMgmt}
             slots[slot].route_id = next;
             slots[slot].state = 1;
             slots[slot].start_time = millis();
-            uint16_t mask = ROUTES[next].valve_mask;
-            for (int i = 0; i < NUM_VALVES; i++)
-              if (mask & (1 << i)) open_valve_hw(i);
+            // Valves open via the reconciler at the end of this tick.
             ESP_LOGI("ctrl", "Queue -> slot %d route %d [%s]", slot, next, ROUTES[next].name);
           }
 
@@ -243,6 +236,9 @@ ${pumpMgmt}
           id(active_slot) = -1;
           for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++)
             if (slots[s].state >= 1 && slots[s].state <= 3) { id(active_slot) = s; break; }
+
+          // --- Valve reconciliation (level-triggered, last step) ---
+          reconcile_valves();
 
   # --- 2s Safety Monitor -------------------------------------------------------
   # Per-slot watchdogs: flow, max runtime, API loss.
@@ -286,7 +282,6 @@ ${pumpMgmt}
                   slots[s].stop_reason = STOP_SOURCE_LOW;
                   slots[s].state = 3;
                   slots[s].stop_time = now;
-                  slots[s].valves_closing = false;
                   ESP_LOGI("safety", "Source low (%.0f%% < %u%%) — clean stop slot %d route [%s]",
                            src, r.source_min_pct, s, r.name);
                 }
@@ -297,7 +292,6 @@ ${pumpMgmt}
                   slots[s].stop_reason = STOP_TANK_FULL;
                   slots[s].state = 3;
                   slots[s].stop_time = now;
-                  slots[s].valves_closing = false;
                   ESP_LOGI("safety", "Dest full (%.0f%% >= %u%%) — clean stop slot %d route [%s]",
                            dst, r.dest_max_pct, s, r.name);
                 }
@@ -325,10 +319,16 @@ ${pumpMgmt}
 
             // --- Act on fault ---
             if (slots[s].fault_code != 0) {
+              // Force ESPHome's cover to resync its internal position estimate
+              // by issuing stop_cover for every valve in this route. Without
+              // this, the close that follows depressurize can be filtered as
+              // a no-op if ESPHome already thinks the cover is at position 0.
+              uint16_t fmask = ROUTES[rid].valve_mask;
+              for (int i = 0; i < NUM_VALVES; i++)
+                if (fmask & (1 << i)) stop_valve_hw(i);
               slots[s].stop_reason = slots[s].fault_code + FAULT_TO_STOP_OFFSET;
               slots[s].state = 4;  // FAULT
               slots[s].stop_time = now;
-              slots[s].valves_closing = false;
               ESP_LOGE("ctrl", "FAULT %d on slot %d route [%s]", slots[s].fault_code, s, r.name);
             }
 
@@ -337,7 +337,6 @@ ${pumpMgmt}
               slots[s].stop_reason = STOP_TANK_FULL;
               slots[s].state = 3;  // STOPPING
               slots[s].stop_time = now;
-              slots[s].valves_closing = false;
               slots[s].tank_full_detected = false;
               ESP_LOGI("ctrl", "Tank full — clean stop slot %d route [%s]", s, r.name);
             }

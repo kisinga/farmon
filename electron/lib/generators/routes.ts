@@ -72,6 +72,9 @@ export function generateRoutes(m: Manifest): string {
   const closeCases = valves
     .map((v, i) => `    case ${i}: id(${valveCoverId(nid(v))}).make_call().set_command_close().perform(); break;`)
     .join("\n");
+  const stopCases = valves
+    .map((v, i) => `    case ${i}: id(${valveCoverId(nid(v))}).make_call().set_command_stop().perform(); break;`)
+    .join("\n");
   // Map each tank to its associated level source (set by topology-to-manifest).
   // Source may be a level_sensor (direct %) or a pressure_sensor (% derived
   // from pressure-vs-calibration). Dispatch on kind to the right codegen ID.
@@ -201,7 +204,6 @@ struct RouteSlot {
   int      stop_reason;
   bool     flow_confirmed;
   bool     tank_full_detected;
-  bool     valves_closing;   // true after depressurize, close commands issued
 };
 
 static RouteSlot slots[MAX_CONCURRENT_ROUTES];
@@ -229,26 +231,8 @@ inline int find_slot_by_route(int rid) {
 //
 // Actuators (valves, pump) can be shared — multiple routes may need them ON.
 // Sensors (flow) cannot — readings are ambiguous when shared.
-// Concurrency is gated on sensor conflicts only; actuators are refcounted.
-
-// Returns bitmask of valves used by PREPARING or RUNNING slots.
-inline uint16_t active_valve_mask() {
-  uint16_t mask = 0;
-  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++)
-    if ((slots[i].state == 1 || slots[i].state == 2) && slots[i].route_id >= 0)
-      mask |= ROUTES[slots[i].route_id].valve_mask;
-  return mask;
-}
-
-// Valves safe to close for a stopping slot — excludes valves still needed
-// by other PREPARING/RUNNING slots (actuator refcounting).
-inline uint16_t safe_close_mask(int stopping_slot) {
-  uint16_t other = 0;
-  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++)
-    if (i != stopping_slot && (slots[i].state == 1 || slots[i].state == 2) && slots[i].route_id >= 0)
-      other |= ROUTES[slots[i].route_id].valve_mask;
-  return ROUTES[slots[stopping_slot].route_id].valve_mask & ~other;
-}
+// Concurrency is gated on sensor conflicts only; actuators are refcounted
+// implicitly via the level-triggered valve reconciler below.
 
 // True if any PREPARING/RUNNING slot conflicts with route rid.
 // Conflict = shared sensor + different destination (computed at codegen time).
@@ -280,6 +264,59 @@ inline int derived_system_state() {
     if (slots[i].state > h) h = slots[i].state;
   }
   return h;
+}
+
+// --- Valve reconciliation ----------------------------------------------------
+//
+// Valves are level-triggered: every 1s tick the reconciler computes which
+// valves should be open (from active slots) and emits commands for any that
+// disagree with what was last commanded. Replaces the previous edge-driven
+// open-on-start / close-on-stop model.
+//
+// The invariant: valve i is open iff some slot is "claiming" it. A slot
+// claims its valve_mask while PREPARING/RUNNING, and during the depressurize
+// window after entering STOPPING/FAULT.
+
+// Forward declarations — definitions below in "Hardware dispatch".
+inline void open_valve_hw(int idx);
+inline void close_valve_hw(int idx);
+
+// Bit i = "we last told valve i to be open". Updated only by reconcile_valves
+// and at boot. Stays a faithful proxy for ESPHome's cover state as long as
+// nothing else drives the covers.
+static uint16_t commanded_valve_mask = 0;
+
+// Valves slot s is claiming right now (open during depressurize, dropped after).
+inline uint16_t valve_claim_mask(int s) {
+  if (slots[s].route_id < 0) return 0;
+  int st = slots[s].state;
+  if (st == 1 || st == 2) return ROUTES[slots[s].route_id].valve_mask;
+  if (st == 3 || st == 4) {
+    if ((millis() - slots[s].stop_time) < DEPRESSURIZE_MS)
+      return ROUTES[slots[s].route_id].valve_mask;
+  }
+  return 0;
+}
+
+// Union of claims across all slots — the desired open-mask.
+inline uint16_t desired_valve_mask() {
+  uint16_t m = 0;
+  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) m |= valve_claim_mask(i);
+  return m;
+}
+
+// Diff vs commanded; emit cover commands only for valves whose desired state
+// changed. No periodic reissue — steady state is silent.
+inline void reconcile_valves() {
+  uint16_t desired = desired_valve_mask();
+  uint16_t diff = desired ^ commanded_valve_mask;
+  if (!diff) return;
+  for (int i = 0; i < NUM_VALVES; i++) {
+    if (!(diff & (1 << i))) continue;
+    if (desired & (1 << i)) open_valve_hw(i);
+    else close_valve_hw(i);
+  }
+  commanded_valve_mask = desired;
 }
 
 // --- Queue (circular buffer) -------------------------------------------------
@@ -319,6 +356,15 @@ ${openCases}
 inline void close_valve_hw(int idx) {
   switch (idx) {
 ${closeCases}
+  }
+}
+
+// cover.stop_cover for valve idx. Used to force-resync ESPHome's internal
+// position estimate when a slot enters FAULT — without this, a subsequent
+// close call may be filtered as a no-op if the cover already thinks it's closed.
+inline void stop_valve_hw(int idx) {
+  switch (idx) {
+${stopCases}
   }
 }
 
@@ -393,22 +439,22 @@ inline int try_route_start(int route_id) {
   slots[slot].route_id = route_id;
   slots[slot].state = 1;  // PREPARING
   slots[slot].start_time = millis();
-  for (int i = 0; i < NUM_VALVES; i++)
-    if (r.valve_mask & (1 << i)) open_valve_hw(i);
+  // Valves open via the reconciler on the next 1s tick.
   if (id(active_slot) == -1) id(active_slot) = slot;
   id(system_state) = derived_system_state();
   return 0;
 }
 
-// Returns: 0=stopping, 1=not active, 2=already stopping/idle
+// Returns: 0=stopping, 1=not active, 2=already stopping/idle/faulted
+// FAULT (state==4) is rejected — only fault_reset clears a fault, so the
+// per-route fault registration isn't silently overwritten by a Stop press.
 inline int try_route_stop(int route_id) {
   int s = find_slot_by_route(route_id);
   if (s < 0) return 1;
-  if (slots[s].state == 0 || slots[s].state == 3) return 2;
+  if (slots[s].state == 0 || slots[s].state == 3 || slots[s].state == 4) return 2;
   slots[s].stop_reason = STOP_MANUAL;
   slots[s].state = 3;  // STOPPING
   slots[s].stop_time = millis();
-  slots[s].valves_closing = false;
   id(system_state) = derived_system_state();
   return 0;
 }

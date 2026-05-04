@@ -178,20 +178,18 @@ export function generateSiteDashboard(
       cards: [],
     });
 
-    // Configuration as a subview for this controller
+    // Configuration tab for this controller
     views.push({
       ...(buildConfigurationView(s.manifest, s.board) as Record<string, unknown>),
       title: `${s.friendlyName} Configuration`,
       path: `configuration-${slug(s.systemId)}`,
-      subview: true,
     });
 
-    // Manual control as a subview for this controller
+    // Manual control tab for this controller
     views.push({
       ...(buildManualView(s.manifest) as Record<string, unknown>),
       title: `${s.friendlyName} Manual`,
       path: `manual-${slug(s.systemId)}`,
-      subview: true,
     });
   }
 

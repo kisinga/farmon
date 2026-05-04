@@ -60,6 +60,24 @@ When you rename a node (level sensor, valve, pump, etc.), the firmware emits its
 
 ---
 
+## Manual control (HA "Manual" tab)
+
+Each controller's Home Assistant dashboard has a **Manual** tab exposing the operator-facing controls: `Safety Override`, the pump switch, per-valve `Cover` + `Open Coil` + `Close Coil`, and per-route Start / Stop buttons. The semantics:
+
+- **Safety Override** — single global bypass. While ON, pre-start gates (source-low, dest-full) are skipped, the runtime watchdog (flow, max-runtime, API) is suppressed, and the pump can be turned on without an owning route. Reverts to OFF on reboot. Use for commissioning and recovery only.
+
+- **Cover** — the safe way to operate a valve manually. Timer-bounded, the same path the routing layer uses. You can open or close any valve at any time, with or without an active route — the route-level reconciler does not fight manual cover writes for valves it isn't claiming.
+
+  Closing a cover *during* a running route does **not** stop the route. The reconciler does not read cover state, only writes it; an externally-driven close goes unnoticed and the route loses flow until the flow watchdog faults it after `flow_watchdog_ms`. **Use the route Stop button to halt a running route**, not manual cover close.
+
+- **Open / Close coils** — diagnostic. They drive the coil GPIO directly, bypassing the cover's `open_action` / `close_action`, so the cover's internal position estimate does not update. The hardware interlock prevents both coils from being energised simultaneously, but no firmware gate prevents firing during a route. Use coils only for bench tests and stuck-valve recovery; after firing one, call `cover.stop_cover` on the same valve to resync the cover's position.
+
+- **Pump** — direct on/off. Without an owning route, the pump's `on_turn_on` handler immediately turns it back off — unless `Safety Override` is ON. This means there is no way to spin up the pump alone for testing without flipping the override first; that is intentional.
+
+The Manual tab is a separate Lovelace view per controller (`<friendly_name> Manual`) and is generated automatically from the topology. There is also a **Configuration** tab per controller exposing all `number:` config entities (watchdogs, route max runtimes, valve travel times, level/pressure calibration).
+
+---
+
 ## Common deploy patterns
 
 | Change | Regenerate | Flash | Reload HA |
