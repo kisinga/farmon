@@ -1,6 +1,6 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
-import { nodesByKind, nodesWithFlag, slug, esphomeServicePrefix } from "../schema.js";
+import { nodesByKind, nodesWithFlag, slug } from "../schema.js";
 import { NODE_REGISTRY, systemHaEntityIds, networkHaEntityIds, type BoardDef } from '@far-mon/core';
 import {
   buildStatusSection,
@@ -112,11 +112,11 @@ export function generateSiteDashboard(
   // Quick actions — stop-all per controller
   const actionCards: unknown[] = [];
   for (const s of systems) {
-    const servicePrefix = esphomeServicePrefix(s.manifest.device);
+    const sys = systemHaEntityIds(s.manifest.device, s.manifest.routes);
     actionCards.push({
       show_name: true, show_icon: true, type: "button",
       name: `Stop All — ${s.friendlyName}`, icon: "mdi:stop-circle",
-      tap_action: { action: "call-service", service: `esphome.${servicePrefix}_stop_all` },
+      tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.stopAll } },
       show_state: false, color: "red",
     });
   }

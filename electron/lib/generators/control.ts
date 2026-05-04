@@ -94,20 +94,6 @@ api:
             int r = try_route_stop(route_id);
             ESP_LOGI("ctrl", "API stop route %d: %s", route_id, (r >= 0 && r <= 2) ? results[r] : "?");
 
-    - service: stop_all
-      then:
-        - lambda: |-
-            for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
-              if (slots[s].state >= 1 && slots[s].state <= 2) {
-                slots[s].stop_reason = STOP_MANUAL;
-                slots[s].state = 3;
-                slots[s].stop_time = millis();
-              }
-            }
-            queue_head = 0; queue_count = 0;
-            id(system_state) = derived_system_state();
-            ESP_LOGI("ctrl", "Stop all requested");
-
     - service: fault_reset
       variables:
         route_id: int
@@ -119,21 +105,6 @@ api:
             id(system_state) = derived_system_state();
             ESP_LOGI("ctrl", "Fault cleared for route %d → slot %d free", route_id, s);
 
-    - service: fault_reset_all
-      then:
-        - lambda: |-
-            for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
-              if (slots[s].state == 4) init_slot(s);
-            }
-            id(system_state) = derived_system_state();
-            ESP_LOGI("ctrl", "All faults cleared");
-
-    - service: queue_clear
-      then:
-        - lambda: |-
-            queue_head = 0; queue_count = 0;
-            ESP_LOGI("ctrl", "Queue cleared");
-
 # --- Safety override ---------------------------------------------------------
 
 switch:
@@ -143,11 +114,51 @@ switch:
     optimistic: true
     restore_mode: ALWAYS_OFF
 
-# --- Per-route button entities -----------------------------------------------
-# Each route gets a Start and Stop button — first-class HA entities that are
-# trivially automatable. All actions go through the state machine.
+# --- Button entities ---------------------------------------------------------
+# Per-route Start/Stop and parameterless system-wide control actions.
+# All first-class HA entities, trivially automatable. Parameterized actions
+# (route_start, route_stop, fault_reset taking route_id) stay as api services
+# above because buttons can't accept arguments.
 
 button:
+  - platform: template
+    name: "${SYS.stopAll.name}"
+    id: btn_stop_all
+    icon: "mdi:stop-circle"
+    on_press:
+      - lambda: |-
+          for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
+            if (slots[s].state >= 1 && slots[s].state <= 2) {
+              slots[s].stop_reason = STOP_MANUAL;
+              slots[s].state = 3;
+              slots[s].stop_time = millis();
+            }
+          }
+          queue_head = 0; queue_count = 0;
+          id(system_state) = derived_system_state();
+          ESP_LOGI("ctrl", "Stop all requested");
+
+  - platform: template
+    name: "${SYS.resetFaults.name}"
+    id: btn_reset_faults
+    icon: "mdi:alert-circle-check"
+    on_press:
+      - lambda: |-
+          for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
+            if (slots[s].state == 4) init_slot(s);
+          }
+          id(system_state) = derived_system_state();
+          ESP_LOGI("ctrl", "All faults cleared");
+
+  - platform: template
+    name: "${SYS.clearQueue.name}"
+    id: btn_clear_queue
+    icon: "mdi:tray-remove"
+    on_press:
+      - lambda: |-
+          queue_head = 0; queue_count = 0;
+          ESP_LOGI("ctrl", "Queue cleared");
+
 ${m.routes.map((r, i) => `\
   - platform: template
     name: "${routeEntityNames(r).start.name}"

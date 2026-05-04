@@ -273,11 +273,18 @@ assert(sensors.includes("queue_count"), "Queue text references queue_count");
 
 console.log("\ncontrol.yaml:");
 const control = getFile("control.yaml");
+// Parameterized actions stay as api services (need route_id argument).
 assert(control.includes("service: route_start"), "Has route_start service");
 assert(control.includes("service: route_stop"), "Has route_stop service");
-assert(control.includes("service: stop_all"), "Has stop_all service");
-assert(control.includes("service: fault_reset_all"), "Has fault_reset_all service");
-assert(control.includes("service: queue_clear"), "Has queue_clear service");
+assert(control.includes("service: fault_reset"), "Has parameterized fault_reset service");
+// Parameterless system actions are template buttons (auto-discoverable HA entities).
+assert(control.includes("id: btn_stop_all"), "Has Stop All template button");
+assert(control.includes("id: btn_reset_faults"), "Has Reset Faults template button");
+assert(control.includes("id: btn_clear_queue"), "Has Clear Queue template button");
+// The old api: services: entries for the parameterless actions are gone.
+assert(!control.includes("service: stop_all"), "stop_all service removed (now button)");
+assert(!control.includes("service: fault_reset_all"), "fault_reset_all service removed (now button)");
+assert(!control.includes("service: queue_clear"), "queue_clear service removed (now button)");
 assert(control.includes("interval: 1s"), "Has 1s transition interval");
 assert(control.includes("interval: 2s"), "Has 2s safety interval");
 assert(control.includes("find_slot_by_route"), "Uses slot-based route lookup");

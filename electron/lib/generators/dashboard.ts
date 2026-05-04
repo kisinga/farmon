@@ -1,7 +1,7 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
-import { NODE_REGISTRY, systemHaEntityIds, networkHaEntityIds, batteryHaEntityIds, esphomeServicePrefix, automationHaEntityId, routeAutomationAlias, type BoardDef } from '@far-mon/core';
+import { NODE_REGISTRY, systemHaEntityIds, networkHaEntityIds, batteryHaEntityIds, automationHaEntityId, routeAutomationAlias, type BoardDef } from '@far-mon/core';
 
 /** Shorthand for accessing ManifestNode string fields. */
 function n(node: ManifestNode, key: string): string {
@@ -140,7 +140,6 @@ export function buildWaterSection(m: Manifest): unknown {
 export function buildRouteControlSection(m: Manifest): unknown {
   const dev = m.device;
   const sys = systemHaEntityIds(dev, m.routes);
-  const servicePrefix = esphomeServicePrefix(dev);
   const valves = nodesByKind(m.nodes, 'valve');
   const dosingPumps = nodesByKind(m.nodes, 'dosing_pump');
   const vfds = nodesByKind(m.nodes, 'vfd');
@@ -202,17 +201,17 @@ export function buildRouteControlSection(m: Manifest): unknown {
                 cards: [
                   {
                     show_name: true, show_icon: true, type: "button", name: "Stop All", icon: "mdi:stop-circle",
-                    tap_action: { action: "call-service", service: `esphome.${servicePrefix}_stop_all` },
+                    tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.stopAll } },
                     show_state: false, color: "red",
                   },
                   {
                     show_name: true, show_icon: true, type: "button", name: "Reset Faults", icon: "mdi:alert-circle-check",
-                    tap_action: { action: "call-service", service: `esphome.${servicePrefix}_fault_reset_all` },
+                    tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.resetFaults } },
                     show_state: false, color: "accent",
                   },
                   {
                     show_name: true, show_icon: true, type: "button", name: "Clear Queue", icon: "mdi:tray-remove",
-                    tap_action: { action: "call-service", service: `esphome.${servicePrefix}_queue_clear` },
+                    tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.clearQueue } },
                     show_state: false, color: "grey",
                   },
                 ],
@@ -380,6 +379,29 @@ export function buildManualView(m: Manifest): unknown {
     ],
   }] : [];
 
+  // Recovery controls — site-wide stop, fault clearing, queue clearing.
+  // Each presses a parameterless template button defined in control.ts.
+  const recoveryCard = {
+    type: "horizontal-stack",
+    cards: [
+      {
+        show_name: true, show_icon: true, type: "button", name: "Stop All", icon: "mdi:stop-circle",
+        tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.stopAll } },
+        show_state: false, color: "red",
+      },
+      {
+        show_name: true, show_icon: true, type: "button", name: "Reset Faults", icon: "mdi:alert-circle-check",
+        tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.resetFaults } },
+        show_state: false, color: "accent",
+      },
+      {
+        show_name: true, show_icon: true, type: "button", name: "Clear Queue", icon: "mdi:tray-remove",
+        tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.clearQueue } },
+        show_state: false, color: "grey",
+      },
+    ],
+  };
+
   return {
     title: "Manual",
     path: "manual",
@@ -387,6 +409,7 @@ export function buildManualView(m: Manifest): unknown {
     cards: [
       explainerCard,
       overrideCard,
+      recoveryCard,
       ...pumpCard,
       ...valveCards,
       ...routeCard,

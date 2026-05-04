@@ -112,6 +112,13 @@ export const SYSTEM_ENTITY_NAMES = {
   // switch (control.ts)
   safetyOverride:     { domain: 'switch', name: 'Safety Override' },
 
+  // button (control.ts) — parameterless system-wide control actions.
+  // Parameterized counterparts (route_start/route_stop/fault_reset) stay as
+  // api services because buttons can't accept arguments.
+  stopAll:            { domain: 'button', name: 'Stop All' },
+  resetFaults:        { domain: 'button', name: 'Reset Faults' },
+  clearQueue:         { domain: 'button', name: 'Clear Queue' },
+
   // device health (board-package.ts) — uptime + ESP32 temp are unconditional;
   // vextControl/onboardLed are peripheral-dependent but emitted unconditionally
   // today (see header note).
@@ -189,9 +196,6 @@ export function routeAutomationAlias(a: { name: string; route_name: string }): s
   return `${a.name}: ${a.route_name}`;
 }
 
-/** ESPHome services exposed via `esphome.<esphomeServicePrefix(device)>_<name>`. */
-export const ESPHOME_SERVICES = ['stop_all', 'fault_reset_all', 'queue_clear'] as const;
-export type EsphomeServiceName = typeof ESPHOME_SERVICES[number];
 
 /**
  * Pre-resolve every system entity_id for a device. Every field is present

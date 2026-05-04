@@ -60,14 +60,14 @@ export {
   defaultStateBucket, isValidBindExpr, parseFlowPredicate,
   deriveHaEntityId, esphomeServicePrefix,
   SYSTEM_ENTITY_NAMES, NETWORK_ENTITY_NAMES, BATTERY_ENTITY_NAMES,
-  ESPHOME_SERVICES, routeEntityNames,
+  routeEntityNames,
   systemHaEntityIds, networkHaEntityIds, batteryHaEntityIds,
   automationHaEntityId, routeAutomationAlias,
 } from './ha';
 export type {
   HaActionSpec, StateBucket, HaSlotSpec, HaMetaNode, HaMetaPipe, HaMeta, ParsedFlowPredicate,
   SystemEntitySpec, SystemEntityKey, NetworkEntityKey, BatteryEntityKey,
-  SystemHaEntityIds, NetworkHaEntityIds, BatteryHaEntityIds, EsphomeServiceName,
+  SystemHaEntityIds, NetworkHaEntityIds, BatteryHaEntityIds,
 } from './ha';
 export { buildHaMeta } from './ha-meta';
 export type { BuildHaMetaOptions } from './ha-meta';
