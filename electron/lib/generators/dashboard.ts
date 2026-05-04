@@ -347,11 +347,16 @@ export function buildManualView(m: Manifest): unknown {
 
   // Per-valve manual: cover (timer-bounded), open coil, close coil (raw).
   // Coils are interlocked at firmware level (only one can be ON at a time).
+  // show_header_toggle: false suppresses HA's default "master switch" in the
+  // card header — for this card a master toggle would try to fire BOTH coils,
+  // which the firmware interlock blocks but still results in one coil briefly
+  // energizing without timer protection.
   const valveCards = valves.map(v => {
     const ids = haIds(v, dev);
     return {
       type: "entities",
       title: n(v, 'name'),
+      show_header_toggle: false,
       entities: [
         { entity: ids.cover!,     name: "Cover (timer)" },
         { entity: ids.openCoil!,  name: "Open Coil (raw)" },
