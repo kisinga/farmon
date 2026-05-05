@@ -1,45 +1,8 @@
-import type { Manifest, ManifestNode, ManifestAutomation, Route as ManifestRoute, TankLevelSource } from "./manifest.types";
+import type { Manifest, ManifestNode, ManifestAutomation, Route as ManifestRoute } from "./manifest.types";
 import type { SystemTopology } from "./topology.types";
 import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
+import { resolveTankLevelSources } from "./tank-level";
 import { slug } from "./slug";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * For each tank, find the first downstream level source (level_sensor or
- * pressure_sensor) in the active graph. If both kinds are present, the first
- * one encountered in the iteration order wins; level sensors are preferred
- * by checking them in priority order.
- *
- * Returns a map: tankId → { id, kind }.
- */
-function resolveTankLevelSources(
-  graph: ReturnType<typeof buildGraph>,
-  nodeMap: Map<string, { kind: string; [k: string]: any }>,
-): Map<string, TankLevelSource> {
-  const LEVEL_SOURCE_KINDS = ['level_sensor', 'pressure_sensor'] as const;
-  const result = new Map<string, TankLevelSource>();
-  for (const [id, node] of nodeMap) {
-    if (node.kind !== 'tank' || !graph.hasNode(id)) continue;
-    // Prefer a direct level sensor; fall back to a pressure sensor.
-    for (const wantedKind of LEVEL_SOURCE_KINDS) {
-      let found: string | undefined;
-      for (const neighbor of graph.outNeighbors(id)) {
-        if (graph.hasNode(neighbor) && graph.getNodeAttribute(neighbor, 'kind') === wantedKind) {
-          found = neighbor;
-          break;
-        }
-      }
-      if (found) {
-        result.set(id, { id: found, kind: wantedKind });
-        break;
-      }
-    }
-  }
-  return result;
-}
 
 // ---------------------------------------------------------------------------
 // Main conversion
@@ -58,9 +21,10 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
   }
 
   const nodeMap = new Map(topology.nodes.map(n => [n.id, n]));
+  const nodeKindById = new Map(topology.nodes.map(n => [n.id, n.kind]));
 
   // Resolve tank → level-source associations from graph topology
-  const tankLevelSources = resolveTankLevelSources(active, nodeMap);
+  const tankLevelSources = resolveTankLevelSources(active, nodeKindById);
 
   // Strip layout fields (ports, position) — generators don't need them.
   // Annotate tanks with their associated level source.
@@ -111,7 +75,8 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
         valves: r.valves,
         flow_sensor: r.flowSensors[0],
         max_runtime_seconds: override.max_runtime_seconds ?? 1800,
-        needs_pump: r.crossesPump,
+        crossesPump: r.crossesPump,
+        pumpIndex: r.pumpIndex,
         nodeSequence: r.nodeSequence,
         source_min_pct: override.source_min_level ?? 0,
         dest_max_pct: override.dest_max_level ?? 0,

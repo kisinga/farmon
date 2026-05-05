@@ -1,6 +1,6 @@
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
-import { valveCoverId, valveTravelMsId, levelSensorLevelId, pressureSensorLevelId, flowSensorId } from '@far-mon/core';
+import { valveCoverId, valveTravelMsId, levelSensorLevelId, pressureSensorLevelId, flowSensorId, parseRouteKey } from '@far-mon/core';
 
 /** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
 export function parseDurationMs(s: string): number {
@@ -33,7 +33,7 @@ export function generateRoutes(m: Manifest): string {
   // Compute conflict masks — routes conflict when they share a flow sensor
   // but go to different destinations (ambiguous readings).
   // Same sensor + same destination = safe to run concurrently.
-  const destOf = (r: typeof m.routes[number]) => r.key.split('>')[1];
+  const destOf = (r: typeof m.routes[number]) => parseRouteKey(r.key).destination;
   const conflictMasks = m.routes.map((r, i) => {
     let mask = 0;
     for (let j = 0; j < m.routes.length; j++) {
@@ -54,7 +54,7 @@ export function generateRoutes(m: Manifest): string {
     const flow = flowIdx.get(r.flow_sensor)!;
     const maskBin = mask.toString(2).padStart(valves.length, "0");
     const conflictBin = conflictMasks[i].toString(2).padStart(m.routes.length, "0");
-    const pump = r.needs_pump ? "true" : "false";
+    const pump = r.crossesPump ? "true" : "false";
     const srcMin = r.source_min_pct ?? 0;
     const dstMax = r.dest_max_pct ?? 0;
     const rtLvl = r.runtime_level_ok ? "true" : "false";

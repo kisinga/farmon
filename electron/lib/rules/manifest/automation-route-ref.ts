@@ -1,6 +1,7 @@
 import type { Manifest } from "../../schema.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
 import type { BoardDef } from "../../board.js";
+import { findRouteAutomationSensor, type TankLevelSource } from '@far-mon/core';
 
 export const automationRouteRef: ManifestRule = {
   id: "automation-route-ref",
@@ -10,6 +11,16 @@ export const automationRouteRef: ManifestRule = {
     const diagnostics: RuleDiagnostic[] = [];
     const routeKeys = new Set(manifest.routes.map(r => r.key));
     const seenIds = new Set<string>();
+
+    // Lookups for level-trigger automatability check.
+    const tankLevelSourceById = new Map<string, TankLevelSource>();
+    const nodeKindById = new Map<string, string>();
+    for (const n of manifest.nodes) {
+      nodeKindById.set(n['id'] as string, n.kind);
+      if (n.kind === 'tank' && n['level_source']) {
+        tankLevelSourceById.set(n['id'] as string, n['level_source'] as TankLevelSource);
+      }
+    }
 
     for (const auto of manifest.automations) {
       // Incomplete automation (draft state — name or route not yet filled in)
@@ -71,6 +82,30 @@ export const automationRouteRef: ManifestRule = {
               ruleId: "automation-route-ref",
               severity: "error",
               message: `Automation "${auto.name}" has out-of-range time "${auto.trigger.at}"`,
+              target: auto.id,
+            });
+          }
+        }
+      }
+
+      // Level trigger requires the route to have an automatable sensor and a
+      // non-zero source_min_pct (which doubles as the trigger threshold).
+      if (auto.trigger.type === 'level') {
+        const route = manifest.routes[auto.route_index];
+        if (route) {
+          const found = findRouteAutomationSensor(route, tankLevelSourceById, nodeKindById);
+          if (!found) {
+            diagnostics.push({
+              ruleId: "automation-route-ref",
+              severity: "error",
+              message: `Automation "${auto.name}" uses a level trigger, but route "${route.name}" has no source tank with a level sensor.`,
+              target: auto.id,
+            });
+          } else if (!route.source_min_pct) {
+            diagnostics.push({
+              ruleId: "automation-route-ref",
+              severity: "error",
+              message: `Automation "${auto.name}" uses a level trigger, but route "${route.name}" has no Source Min Level set. The trigger fires when the source tank rises above this value.`,
               target: auto.id,
             });
           }

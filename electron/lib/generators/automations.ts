@@ -1,7 +1,7 @@
 import { stringify } from "yaml";
-import type { Manifest, ManifestAutomation, ManifestNode } from "../schema.js";
-import { nodesByKind, nodesWithFlag } from "../schema.js";
-import { NODE_REGISTRY, systemHaEntityIds, routeAutomationAlias } from '@far-mon/core';
+import type { Manifest, ManifestNode } from "../schema.js";
+import { nodesWithFlag } from "../schema.js";
+import { NODE_REGISTRY, systemHaEntityIds, routeAutomationAlias, findRouteAutomationSensor, type TankLevelSource } from '@far-mon/core';
 
 function haIds(node: ManifestNode, device: { friendly_name: string }): Record<string, string | undefined> {
   return NODE_REGISTRY.get(node.kind)?.codegen?.haEntityIds?.(node, device) ?? {};
@@ -17,10 +17,19 @@ function haIds(node: ManifestNode, device: { friendly_name: string }): Record<st
  * Returns null only when no automations of any kind are applicable.
  */
 export function generateAutomations(m: Manifest): string | null {
-  const tanks = nodesByKind(m.nodes, 'tank');
   const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
-  const tankIdx = new Map(tanks.map((t, i) => [t['id'], i]));
   const sys = systemHaEntityIds(m.device, m.routes);
+
+  // Build the tank → level source lookup the helper expects, reading from
+  // tank annotations attached during topologyToManifest.
+  const tankLevelSourceById = new Map<string, TankLevelSource>();
+  const nodeKindById = new Map<string, string>();
+  for (const n of m.nodes) {
+    nodeKindById.set(n['id'] as string, n.kind);
+    if (n.kind === 'tank' && n['level_source']) {
+      tankLevelSourceById.set(n['id'] as string, n['level_source'] as TankLevelSource);
+    }
+  }
 
   const automations = m.automations
     .filter(a => a.name && a.route_key && a.route_index >= 0 && a.route_index < m.routes.length)
@@ -35,28 +44,27 @@ export function generateAutomations(m: Manifest): string | null {
         at: `${a.trigger.at}:00`,
       });
     } else if (a.trigger.type === "level") {
-      const lt = a.trigger;
-      // Resolve node reference to HA entity ID, or use raw entity as fallback.
-      // For level-sensor nodes, pull the level entity_id from the descriptor
-      // (single source of truth) rather than reconstructing the name string.
-      let resolvedEntity: string;
-      if (lt.node) {
-        const node = m.nodes.find(n => n['id'] === lt.node);
-        resolvedEntity = node ? (haIds(node, m.device).level ?? '') : '';
-      } else if (lt.entity) {
-        resolvedEntity = lt.entity;
-      } else {
-        resolvedEntity = "";
+      const route = m.routes[a.route_index];
+      const found = findRouteAutomationSensor(route, tankLevelSourceById, nodeKindById);
+      if (!found) {
+        throw new Error(`Automation "${a.name}" uses a level trigger, but route "${route.name}" has no source tank with a level sensor positioned before its first valve/pump. Change the trigger to time-based, or add a level sensor to the source tank.`);
+      }
+      if (!route.source_min_pct) {
+        throw new Error(`Automation "${a.name}" uses a level trigger, but route "${route.name}" has no Source Min Level set. The trigger fires when the source tank rises above this value, so it must be > 0.`);
+      }
+      const sensorNode = m.nodes.find(n => n['id'] === found.sensorId);
+      const entityId = sensorNode ? haIds(sensorNode, m.device).level : undefined;
+      if (!entityId) {
+        throw new Error(`Automation "${a.name}": resolved sensor "${found.sensorId}" exposes no level entity_id.`);
       }
 
       const levelTrigger: Record<string, unknown> = {
         trigger: "numeric_state",
-        entity_id: resolvedEntity,
+        entity_id: entityId,
+        above: route.source_min_pct,
       };
-      if (lt.below !== undefined) levelTrigger.below = lt.below;
-      if (lt.above !== undefined) levelTrigger.above = lt.above;
-      if (lt.for_minutes) {
-        const mins = Math.floor(lt.for_minutes);
+      if (a.trigger.for_minutes) {
+        const mins = Math.floor(a.trigger.for_minutes);
         levelTrigger.for = `00:${String(mins).padStart(2, '0')}:00`;
       }
       trigger.push(levelTrigger);

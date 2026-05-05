@@ -1,6 +1,7 @@
 import type { Manifest, Route } from "../../schema.js";
 import type { BoardDef } from "../../board.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
+import { parseRouteKey } from '@far-mon/core';
 
 export const routeConcurrency: ManifestRule = {
   id: "route-concurrency",
@@ -9,7 +10,7 @@ export const routeConcurrency: ManifestRule = {
   evaluate(m: Manifest, _board: BoardDef): RuleDiagnostic[] {
     const diagnostics: RuleDiagnostic[] = [];
     const nodeName = new Map(m.nodes.map(n => [n['id'] as string, (n['name'] as string) || n['id']]));
-    const destOf = (r: Route) => r.key.split('>')[1];
+    const destOf = (r: Route) => parseRouteKey(r.key).destination;
 
     // Group routes by flow sensor
     const byFlowSensor = new Map<string, Route[]>();

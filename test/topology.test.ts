@@ -8,7 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { TopologySchema, type Topology } from "../electron/lib/topology.js";
+import { TopologySchema, parseTopology, type Topology } from "../electron/lib/topology.js";
 import { topologyToManifest } from "../electron/lib/topology-to-manifest.js";
 import { nodesByKind } from "../electron/lib/schema.js";
 
@@ -34,8 +34,8 @@ function assert(condition: boolean, name: string, detail?: string) {
 
 console.log("Loading topology config...");
 const raw = parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
-const topology = TopologySchema.parse(raw);
-assert(topology.schema === 11, "Schema version is 11");
+const topology = parseTopology(raw);
+assert(topology.schema === 13, "Schema version is 13");
 
 // ---------------------------------------------------------------------------
 // Node structure

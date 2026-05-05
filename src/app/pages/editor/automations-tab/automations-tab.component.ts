@@ -4,7 +4,16 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 import { ElectronService } from '../../../core/services/electron.service';
 import type { Automation, AutomationTrigger, RouteOverride } from '../../../core/models/topology.model';
 import { routeLevelInfo, type RouteLevelInfo } from '../shared/route-level-info';
-import { AutomationTriggerSchema, AutomationSchema, RouteOverrideSchema } from '@far-mon/core';
+import {
+  AutomationTriggerSchema,
+  AutomationSchema,
+  RouteOverrideSchema,
+  buildGraph,
+  activeGraph,
+  deriveRoutes,
+  findRouteAutomationSensor,
+  resolveTankLevelSources,
+} from '@far-mon/core';
 import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
@@ -102,31 +111,14 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                   </div>
                 }
                 @if (auto.trigger.type === 'level') {
-                  <div class="form-control">
-                    <label class="label pb-1"><span class="label-text text-xs">Tank / Sensor</span></label>
-                    <select
-                      class="select select-bordered select-sm"
-                      [ngModel]="auto.trigger.node ?? ''"
-                      (ngModelChange)="updateTrigger(i, 'node', $event)"
-                    >
-                      <option value="">Select node...</option>
-                      @for (node of levelNodes(); track node.id) {
-                        <option [value]="node.id">{{ node.name }}</option>
-                      }
-                    </select>
-                  </div>
-                  <div class="form-control">
-                    <label class="label pb-1"><span class="label-text text-xs">Below (%)</span></label>
-                    <app-zod-input
-                      [schema]="triggerLevelSchema"
-                      fieldKey="below"
-                      type="number"
-                      size="sm"
-                      placeholder="e.g. 80"
-                      [min]="0"
-                      [max]="100"
-                      [value]="auto.trigger.below"
-                      (valueChange)="updateTrigger(i, 'below', $event)" />
+                  <div class="form-control col-span-2">
+                    <label class="label pb-1"><span class="label-text text-xs">Sensor (auto-derived)</span></label>
+                    @if (autoSensors().get(auto.route); as info) {
+                      <p class="text-sm">{{ info.tankName }} <span class="text-xs text-base-content/50">via {{ info.sensorName }}</span></p>
+                      <p class="text-xs text-base-content/50 mt-1">Fires when the source tank rises above the Source Min Level set below.</p>
+                    } @else {
+                      <p class="text-xs text-warning">This route's source tank has no level sensor before its first valve. Pick a different route or change trigger to time-based.</p>
+                    }
                   </div>
                   <div class="form-control">
                     <label class="label pb-1"><span class="label-text text-xs">Hold (min)</span></label>
@@ -159,7 +151,9 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                 </div>
               </div>
 
-              <!-- Firmware safety thresholds (stored in route_overrides) -->
+              <!-- Firmware safety thresholds (stored in route_overrides).
+                   For level triggers, Source Min Level doubles as the trigger
+                   threshold — fires when source rises above this value. -->
               @if (routeLevels().get(auto.route); as levels) {
                 @if (levels.sourceHasLevel || levels.destHasLevel) {
                   <div class="grid grid-cols-2 gap-4">
@@ -176,6 +170,9 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                           [max]="100"
                           [value]="getOverride(auto.route, 'source_min_level')"
                           (valueChange)="updateOverride(auto.route, 'source_min_level', $any($event))" />
+                        @if (auto.trigger.type === 'level') {
+                          <p class="text-xs text-base-content/50 mt-1 italic">Also the trigger threshold for this automation.</p>
+                        }
                       </div>
                     }
                     @if (levels.destHasLevel) {
@@ -224,13 +221,29 @@ export class AutomationsTabComponent {
   protected automationSchema = AutomationSchema;
   protected routeOverrideSchema = RouteOverrideSchema;
 
-  /** Nodes that can be used as level trigger sources (tanks with level sensors). */
-  protected levelNodes = computed(() => {
+  /**
+   * Per-route auto-derived trigger sensor info, keyed by route key.
+   * Routes with no eligible tank/sensor produce no entry — UI shows a warning.
+   */
+  protected autoSensors = computed(() => {
     const t = this.editor.topology();
-    if (!t) return [];
-    return t.nodes
-      .filter(n => n.kind === 'level_sensor')
-      .map(n => ({ id: n.id, name: (n as any).name ?? n.id }));
+    const result = new Map<string, { tankName: string; sensorName: string }>();
+    if (!t) return result;
+    const graph = buildGraph(t.nodes, t.pipes);
+    const active = activeGraph(graph);
+    const nodeKindById = new Map(t.nodes.map(n => [n.id, n.kind]));
+    const tankLevelSources = resolveTankLevelSources(active, nodeKindById);
+    const nameById = new Map(t.nodes.map(n => [n.id, (n as { name?: string }).name ?? n.id]));
+    for (const route of deriveRoutes(active)) {
+      const found = findRouteAutomationSensor(route, tankLevelSources, nodeKindById);
+      if (found) {
+        result.set(route.key, {
+          tankName: nameById.get(found.tankId) ?? found.tankId,
+          sensorName: nameById.get(found.sensorId) ?? found.sensorId,
+        });
+      }
+    }
+    return result;
   });
 
   /** Precomputed level-sensor info for each route referenced by automations. */
@@ -289,7 +302,7 @@ export class AutomationsTabComponent {
       if (type === 'time') {
         t.automations[index].trigger = { type: 'time', at: '06:00' };
       } else {
-        t.automations[index].trigger = { type: 'level', entity: '' };
+        t.automations[index].trigger = { type: 'level' };
       }
     });
   }

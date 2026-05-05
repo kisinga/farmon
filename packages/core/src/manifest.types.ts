@@ -22,14 +22,6 @@ export type ManifestNode = Record<string, any> & {
   id: string;
 };
 
-/** Annotation written onto tank manifest nodes by topologyToManifest:
- *  identifies the downstream sensor that supplies this tank's level reading.
- *  May be a level_sensor (direct % reading) or a pressure_sensor (% derived
- *  from pressure-vs-calibration). Generators dispatch on `kind`. */
-export type TankLevelSource = {
-  id: string;
-  kind: 'level_sensor' | 'pressure_sensor';
-};
 
 export interface ManifestAutomation {
   id: string;
@@ -37,7 +29,7 @@ export interface ManifestAutomation {
   route_index: number;      // resolved index into routes[]
   route_key: string;        // original key for display
   route_name: string;       // human-readable route name
-  trigger: { type: 'time'; at: string } | { type: 'level'; node?: string; entity?: string; below?: number; above?: number; for_minutes?: number };
+  trigger: { type: 'time'; at: string } | { type: 'level'; for_minutes?: number };
   days_of_week: string[];
   enabled: boolean;
 }
@@ -51,7 +43,7 @@ export interface Manifest {
 }
 
 export interface Route {
-  key: string;             // stable ID: "sourceId>destId" (matches DerivedRoute.key)
+  key: string;             // stable ID: "sourceId>destId#valve1+valve2" — see graph/routes.ts
   name: string;
   source: string;
   source_type: 'tank' | 'water_source';
@@ -59,7 +51,10 @@ export interface Route {
   valves: string[];
   flow_sensor: string;
   max_runtime_seconds: number;
-  needs_pump: boolean;
+  /** Whether this route crosses a pump. */
+  crossesPump: boolean;
+  /** Index of the pump in nodeSequence, or -1 if `crossesPump` is false. */
+  pumpIndex: number;
   /** Ordered node IDs from source to destination (inclusive). */
   nodeSequence: string[];
   /** Firmware pre-start: reject if source tank below this %. 0 = no check. */

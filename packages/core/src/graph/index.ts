@@ -3,7 +3,7 @@ export { buildGraph, type TopologyGraph, type NodeAttrs, type EdgeAttrs } from '
 export { activeGraph } from './active-graph';
 
 // Route derivation
-export { deriveRoutes, type Route } from './routes';
+export { deriveRoutes, parseRouteKey, type Route } from './routes';
 
 // Highlighting
 export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes } from './highlight';

@@ -434,7 +434,7 @@ const pressureRuntimeCases = [
 for (const c of pressureRuntimeCases) {
   const pressureManifest = topologyToManifest(pumpedPressureTopology(c.sourcePumpRated, c.destPumpRated));
   const pressureRoutesH = generateRoutes(pressureManifest);
-  const pressureRoute = pressureManifest.routes.find(r => r.key === 'source_tank>dest_tank');
+  const pressureRoute = pressureManifest.routes.find(r => r.source === 'source_tank' && r.destination === 'dest_tank');
   assert(
     pressureRoute?.runtime_level_ok === c.expected,
     `Pressure runtime level checks ${c.expected ? 'enabled' : 'disabled'} when ${c.label}`,
@@ -486,7 +486,7 @@ assert(vfdTopology.device.uart_buses?.[0].id === "uart_modbus", "UART bus id = u
 
 const vfdRoutes = vfdManifest.routes;
 assert(vfdRoutes.length === 1, `${vfdRoutes.length} route (tank1>tank2)`);
-assert(vfdRoutes[0].needs_pump, "Route needs_pump = true (VFD has isPump flag)");
+assert(vfdRoutes[0].crossesPump, "Route crossesPump = true (VFD has isPump flag)");
 
 // --- Device YAML ---
 

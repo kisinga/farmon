@@ -15,7 +15,7 @@ export type {
   Port, Position,
 } from './topology.types';
 export { effectiveTransport } from './topology.types';
-export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing, TankLevelSource } from './manifest.types';
+export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
 export { boardSupportedTransports } from './board.types';
@@ -32,7 +32,7 @@ export type {
 export type { BoundaryPort } from './graph/boundary-ports';
 
 // --- Schemas ---
-export { TopologySchema, RouteOverrideSchema, parseTopology, parsePortRef, portRef, type Topology } from './topology-schema';
+export { TopologySchema, RouteOverrideSchema, parseTopology, parsePortRef, portRef, migrateTopology, CURRENT_SCHEMA_VERSION, type Topology } from './topology-schema';
 export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, parseDurationMs, escXml } from './schemas';
 export { type InputPolicy, policyString } from './input-policy';
 
@@ -101,7 +101,8 @@ export type { TankCalibration } from './units';
 // --- Graph ---
 export { buildGraph, type TopologyGraph, type NodeAttrs, type EdgeAttrs } from './graph/topology-graph';
 export { activeGraph, isNodeActive } from './graph/active-graph';
-export { deriveRoutes, type Route } from './graph/routes';
+export { deriveRoutes, parseRouteKey, type Route } from './graph/routes';
+export { resolveTankLevelSources, findRouteAutomationSensor, type TankLevelSource, type RouteAutomationSensor } from './tank-level';
 export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes } from './graph/highlight';
 export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './graph/constraints';
 export { evaluateConstraints } from './graph/evaluate-constraints';

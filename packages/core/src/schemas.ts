@@ -117,10 +117,6 @@ export const AutomationTriggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("time"), at: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:MM format') }),
   z.object({
     type: z.literal("level"),
-    node: z.string().optional(),
-    entity: z.string().optional(),
-    below: z.number().optional(),
-    above: z.number().optional(),
     for_minutes: z.number().gt(1).optional(),
   }),
 ]);

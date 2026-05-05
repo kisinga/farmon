@@ -3,13 +3,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { migrateTopology, CURRENT_SCHEMA_VERSION } from "@far-mon/core";
 
 
 // ---------------------------------------------------------------------------
 // Schema versioning (for board YAML files)
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 11;    // version this app writes
+export const SCHEMA_VERSION = CURRENT_SCHEMA_VERSION;    // version this app writes
 
 export class SchemaError extends Error {
   constructor(
@@ -26,75 +27,14 @@ export class SchemaError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Migration chain (for topology YAML — only used when loading templates)
+// Migration (delegates to core; throws if the resulting version isn't current)
 // ---------------------------------------------------------------------------
 
-type Migration = (data: Record<string, unknown>) => Record<string, unknown>;
-
-const MIGRATIONS: Record<number, Migration> = {
-  5: (data) => { data.schema = 6; data.automations = data.automations ?? []; return data; },
-  6: (data) => {
-    data.schema = 7;
-    const overrides = (data.route_overrides ?? {}) as Record<string, Record<string, unknown>>;
-    const automations = (data.automations ?? []) as Array<Record<string, unknown>>;
-    for (const a of automations) {
-      const cond = a.conditions as Record<string, unknown> | undefined;
-      if (!cond) continue;
-      const routeKey = a.route as string;
-      if (!routeKey) continue;
-      const ov = overrides[routeKey] ?? {};
-      if (cond.source_min_level != null && ov.source_min_level == null) {
-        ov.source_min_level = cond.source_min_level;
-      }
-      if (cond.dest_max_level != null && ov.dest_max_level == null) {
-        ov.dest_max_level = cond.dest_max_level;
-      }
-      overrides[routeKey] = ov;
-      delete a.conditions;
-    }
-    data.route_overrides = overrides;
-    return data;
-  },
-  7: (data) => {
-    data.schema = 8;
-    return data;
-  },
-  8: (data) => {
-    data.schema = 9;
-    // Rename handoff → interconnect
-    const nodes = (data.nodes ?? []) as Array<Record<string, unknown>>;
-    for (const n of nodes) {
-      if (n.kind === 'handoff') n.kind = 'interconnect';
-    }
-    return data;
-  },
-  9: (data) => {
-    data.schema = 10;
-    // network config is optional — no data transform needed
-    return data;
-  },
-  10: (data) => {
-    data.schema = 11;
-    // Level sensing decoupled from tank — strip level_pin and pump_rated from tank nodes.
-    const nodes = (data.nodes ?? []) as Array<Record<string, unknown>>;
-    for (const n of nodes) {
-      if (n.kind === 'tank') {
-        delete n.level_pin;
-        delete n.pump_rated;
-      }
-    }
-    return data;
-  },
-};
-
 function migrateIfNeeded(data: Record<string, unknown>, filePath: string): Record<string, unknown> {
-  let v = typeof data.schema === "number" ? data.schema : 0;
-  while (MIGRATIONS[v]) {
-    data = MIGRATIONS[v](data);
-    v = typeof data.schema === "number" ? data.schema : v + 1;
-  }
+  const migrated = migrateTopology(data) as Record<string, unknown>;
+  const v = typeof migrated.schema === "number" ? migrated.schema : 0;
   if (v !== SCHEMA_VERSION) throw new SchemaError(filePath, v);
-  return data;
+  return migrated;
 }
 
 

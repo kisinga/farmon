@@ -98,16 +98,24 @@ export function buildWaterSection(m: Manifest): unknown {
           type: "statistics-graph", entities: [ids.total!],
           stat_types: ["change"], chart_type: "bar", period: "week", days_to_show: 56,
         },
-        {
-          type: "horizontal-stack",
-          cards: [
-            { type: "statistic", entity: ids.total!, stat_type: "change", period: { calendar: { period: "month" } }, name: "Month" },
-            { type: "statistic", entity: ids.total!, stat_type: "change", period: { calendar: { period: "year" } }, name: "Year" },
-          ],
-        },
       ],
     };
   });
+
+  // Section-level Month/Year totals — one row per period instead of all stats
+  // in a single row. With N flows, each card gets section-width / N instead
+  // of section-width / (2N), which is what truncated labels to "M..." / "Y...".
+  const flowLabels = flowSensors.map(f =>
+    n(f, 'name').replace(" Water Flow", "").replace(" Flow", "")
+  );
+  const flowMonthCards = flowSensors.map((f, i) => ({
+    type: "statistic", entity: haIds(f, dev).total!, stat_type: "change",
+    period: { calendar: { period: "month" } }, name: `${flowLabels[i]} Month`,
+  }));
+  const flowYearCards = flowSensors.map((f, i) => ({
+    type: "statistic", entity: haIds(f, dev).total!, stat_type: "change",
+    period: { calendar: { period: "year" } }, name: `${flowLabels[i]} Year`,
+  }));
 
   return {
     type: "grid",
@@ -135,6 +143,12 @@ export function buildWaterSection(m: Manifest): unknown {
       ...(flowColumns.length > 0
         ? [{ type: "horizontal-stack", cards: flowColumns, grid_options: { columns: "full" } }]
         : []),
+      ...(flowMonthCards.length > 0
+        ? [{ type: "horizontal-stack", cards: flowMonthCards, grid_options: { columns: "full" } }]
+        : []),
+      ...(flowYearCards.length > 0
+        ? [{ type: "horizontal-stack", cards: flowYearCards, grid_options: { columns: "full" } }]
+        : []),
     ],
     column_span: 1,
   };
@@ -149,19 +163,30 @@ export function buildRouteControlSection(m: Manifest): unknown {
 
   const routeColors = ["purple", "deep-purple", "indigo", "blue", "teal", "cyan", "light-blue", "green"];
 
-  const routeStartButtons = m.routes.map((r, i) => ({
-    show_name: true, show_icon: true, type: "button", name: r.name, icon: "mdi:water-sync",
-    tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.routes[i].start } },
-    show_state: false, color: routeColors[i % routeColors.length],
+  // Display-only label: "A > B" → "A → B". Arrow is narrower and reads as
+  // direction-of-flow; shaves a couple chars so names fit narrow columns.
+  const displayName = (s: string) => s.replace(/\s*>\s*/g, " → ");
+
+  // One column per route — start button on top, stop button below.
+  // Replaces two parallel rows of N buttons each, which squeezed labels
+  // to <100px on phones.
+  const routeButtonColumns = m.routes.map((r, i) => ({
+    type: "vertical-stack",
+    cards: [
+      {
+        show_name: true, show_icon: true, type: "button", name: displayName(r.name), icon: "mdi:water-sync",
+        tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.routes[i].start } },
+        show_state: false, color: routeColors[i % routeColors.length],
+      },
+      {
+        show_name: true, show_icon: true, type: "button", name: "Stop", icon: "mdi:stop-circle-outline",
+        tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.routes[i].stop } },
+        show_state: false, color: "red",
+      },
+    ],
   }));
 
-  const routeStopButtons = m.routes.map((r, i) => ({
-    show_name: true, show_icon: true, type: "button", name: `Stop ${r.name}`, icon: "mdi:stop-circle-outline",
-    tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.routes[i].stop } },
-    show_state: false, color: "red",
-  }));
-
-  const routeStatusEntities = m.routes.map((r, i) => ({ entity: sys.routes[i].status, name: r.name }));
+  const routeStatusEntities = m.routes.map((r, i) => ({ entity: sys.routes[i].status, name: displayName(r.name) }));
   const valveEntities = valves.map((v, i) => ({ entity: haIds(v, dev).cover!, name: `V${i + 1}` }));
   const dosingEntities = dosingPumps.map(dp => ({ entity: haIds(dp, dev).relay!, name: n(dp, 'name') }));
   const vfdEntities = vfds.flatMap(v => {
@@ -197,8 +222,7 @@ export function buildRouteControlSection(m: Manifest): unknown {
             type: "vertical-stack",
             cards: [
               { type: "entities", title: "Route Status", entities: routeStatusEntities, state_color: true, show_header_toggle: false },
-              { type: "horizontal-stack", cards: routeStartButtons },
-              { type: "horizontal-stack", cards: routeStopButtons },
+              { type: "horizontal-stack", cards: routeButtonColumns },
               {
                 type: "horizontal-stack",
                 cards: [

@@ -14,7 +14,16 @@ import type { TopologyGraph } from './topology-graph';
 // ── Unified Route ───────────────────────────────────────────────────────────
 
 export interface Route {
-  /** Stable key: "sourceId>destId" */
+  /**
+   * Stable key uniquely identifying a path between two endpoints.
+   *
+   * Format: `"<sourceId>><destId>#<valveA>+<valveB>+..."` where valve ids are
+   * sorted lexicographically. The suffix disambiguates parallel paths between
+   * the same endpoints — by topology invariant, parallel routes never share
+   * the same valve set.
+   *
+   * Routes with zero valves omit the `#` suffix entirely.
+   */
   key: string;
   source: string;
   sourceKind: string;
@@ -50,9 +59,10 @@ function analyzePathSequence(graph: TopologyGraph, path: string[]): Route {
 
   const source = path[0];
   const destination = path[path.length - 1];
+  const suffix = valves.length ? `#${[...valves].sort().join('+')}` : '';
 
   return {
-    key: `${source}>${destination}`,
+    key: `${source}>${destination}${suffix}`,
     source,
     sourceKind: graph.getNodeAttribute(source, 'kind'),
     destination,
@@ -64,6 +74,19 @@ function analyzePathSequence(graph: TopologyGraph, path: string[]): Route {
     pumpIndex,
     valid: flowSensors.length > 0,
   };
+}
+
+/**
+ * Parse a Route.key into its component parts.
+ *
+ * Accepts both new format (`src>dst#valveA+valveB`) and legacy bare format
+ * (`src>dst`). Suffix may be empty.
+ */
+export function parseRouteKey(key: string): { source: string; destination: string; valves: string[] } {
+  const [endpoints, suffix] = key.split('#', 2);
+  const [source, destination] = endpoints.split('>', 2);
+  const valves = suffix ? suffix.split('+').filter(Boolean) : [];
+  return { source, destination, valves };
 }
 
 export function deriveRoutes(graph: TopologyGraph): Route[] {
