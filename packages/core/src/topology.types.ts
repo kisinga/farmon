@@ -142,7 +142,7 @@ export function effectiveTransport(
 }
 
 export interface SystemTopology {
-  schema: 13;
+  schema: 14;
   device: {
     name: string;
     friendly_name: string;

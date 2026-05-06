@@ -46,7 +46,7 @@ export const RouteOverrideSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const TopologySchema = z.object({
-  schema: z.literal(13),
+  schema: z.literal(14),
   device: DeviceSchema,
   nodes: z.array(TopologyNodeSchema).min(1),
   pipes: z.array(PipeSegmentSchema).default([]),
@@ -146,7 +146,7 @@ function migrateLegacyTopology(data: unknown): unknown {
 // Schema-version migration chain
 // ---------------------------------------------------------------------------
 
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 type SchemaMigration = (data: Record<string, unknown>) => Record<string, unknown>;
 
@@ -274,6 +274,46 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
       delete trigger['above'];
     }
     data['route_overrides'] = overrides;
+    return data;
+  },
+  13: (data) => {
+    data['schema'] = 14;
+    // Level sensors are intrinsically tank-mounted → always pump-safe.
+    // The `pump_rated` flag was meaningless on them; strip it.
+    // Also lift tank dimensions (`tank_height_m`, `tank_capacity_l`) from
+    // pressure sensors onto their upstream tank — single source of truth.
+    const nodes = (data['nodes'] ?? []) as Array<Record<string, unknown>>;
+    const pipes = (data['pipes'] ?? []) as Array<{ from: string; to: string }>;
+    const portRef = (s: string): string => s.split(':')[0];
+
+    for (const node of nodes) {
+      if (node['kind'] === 'level_sensor') delete node['pump_rated'];
+    }
+
+    // For each tank, find its first downstream pressure_sensor and lift
+    // tank_height_m / tank_capacity_l onto the tank if not already set.
+    const nodeById = new Map(nodes.map(n => [n['id'] as string, n] as const));
+    for (const node of nodes) {
+      if (node['kind'] !== 'tank') continue;
+      const tankId = node['id'] as string;
+      const downstream: string[] = [];
+      for (const p of pipes) if (portRef(p.from) === tankId) downstream.push(portRef(p.to));
+      const press = downstream.map(id => nodeById.get(id)).find(n => n && n['kind'] === 'pressure_sensor');
+      if (!press) continue;
+      const h = press['tank_height_m'];
+      const c = press['tank_capacity_l'];
+      if (h != null && node['height_m'] == null) node['height_m'] = h;
+      if (c != null && node['capacity_l'] == null) node['capacity_l'] = c;
+    }
+
+    // Strip the (now redundant) tank_height_m / tank_capacity_l from every
+    // pressure_sensor — they live on the tank now, resolved per-manifest.
+    for (const node of nodes) {
+      if (node['kind'] !== 'pressure_sensor') continue;
+      delete node['tank_height_m'];
+      delete node['tank_capacity_l'];
+    }
+
     return data;
   },
 };

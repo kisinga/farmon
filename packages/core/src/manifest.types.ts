@@ -63,6 +63,13 @@ export interface Route {
   dest_max_pct: number;
   /** True if level sensors on this route are reliable during pump operation. */
   runtime_level_ok: boolean;
+  /**
+   * Pressure-sensor IDs that lie on this route's path (in traversal order).
+   * Derived metadata — exposed for downstream consumers (HA dashboards, site
+   * docs) that want to surface "this route involves these sensors". Firmware
+   * does not consume this list.
+   */
+  inline_pressure_sensors: string[];
 }
 
 // ---------------------------------------------------------------------------

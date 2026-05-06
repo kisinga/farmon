@@ -86,7 +86,7 @@ import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlay
       }
 
       <!-- Sidebar -->
-      <aside class="sidebar w-64 border-l border-base-300/30 bg-base-100 overflow-y-auto shrink-0">
+      <aside class="sidebar w-80 border-l border-base-300/30 bg-base-100 overflow-y-auto shrink-0">
         <app-topology-sidebar
           [selection]="selection()"
           (deleteNode)="deleteNode($event)"

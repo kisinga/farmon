@@ -14,6 +14,14 @@ export const TankNodeSchema = z.object({
   kind: z.literal('tank'),
   id: ComponentId,
   name: EntityName,
+  /**
+   * Vertical span of water column inside the tank, metres. Drives
+   * pressure-sensor calibration when a downstream pressure sensor is used
+   * as the tank's level source.
+   */
+  height_m: z.number().positive().optional(),
+  /** Tank usable capacity in litres. Drives volume readouts. */
+  capacity_l: z.number().positive().optional(),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
@@ -58,7 +66,10 @@ export const tankDescriptor: NodeDescriptor = {
     </svg>`;
   },
 
-  sidebarFields: [],
+  sidebarFields: [
+    { key: 'height_m', label: 'Tank height (m)', type: 'number', hint: 'Drives pressure-sensor calibration when a downstream pressure sensor reads this tank.' },
+    { key: 'capacity_l', label: 'Tank capacity (L)', type: 'number' },
+  ],
 
   constraints: [
     { type: 'presence', id: 'tank-downstream-sensor',

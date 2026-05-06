@@ -12,13 +12,14 @@ const W = 50, H = 36;
 
 // --- Schema ---
 
+// Level sensors are intrinsically tank-mounted: they read static fluid level
+// from a tank, so pump operation cannot disturb the reading. They are
+// therefore unconditionally pump-safe and carry no pump_rated flag.
 export const LevelSensorNodeSchema = z.object({
   kind: z.literal('level_sensor'),
   id: ComponentId,
   name: EntityName,
   pin: GpioPin,
-  /** True if sensor is rated for reliable readings during pump operation (e.g., pressure transducer). */
-  pump_rated: z.boolean().default(false),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
@@ -57,7 +58,7 @@ export const levelSensorDescriptor: NodeDescriptor = {
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
-  defaultData: (n) => ({ name: `Level ${n}`, pin: '', pump_rated: false }),
+  defaultData: (n) => ({ name: `Level ${n}`, pin: '' }),
 
   renderSvg: (_data) => {
     const cx = W / 2, cy = H / 2, r = 14;
@@ -72,7 +73,6 @@ export const levelSensorDescriptor: NodeDescriptor = {
 
   sidebarFields: [
     { key: 'pin', label: 'Pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc' },
-    { key: 'pump_rated', label: 'Pump-rated sensor', type: 'toggle' },
   ],
 
   // --- Codegen ---

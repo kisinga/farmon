@@ -21,23 +21,19 @@ const POOR_PRESSURE_SPAN_PCT = 15;
 
 // --- Schema ---
 //
-// When the sensor is plumbed to a tank's outlet, calibration is derived from
-// tank geometry (PSI_PER_M · h). Tank fields are optional because the same
-// sensor part can also be used standalone for line-pressure monitoring,
-// where there's no tank to calibrate against — only sensor_max_psi matters.
+// Tank geometry (height, capacity) lives on the tank node, not on the sensor:
+// the tank is the single source of truth for its own dimensions. When a
+// pressure sensor sits downstream of a tank, the manifest pass annotates this
+// node with the resolved `tank_height_m` / `tank_capacity_l` so codegen and
+// validation continue to see them in the same shape. Pressure sensors used
+// for plain line-pressure monitoring (no upstream tank) carry no tank dims —
+// only `sensor_max_psi` matters.
 
 export const PressureSensorNodeSchema = z.object({
   kind: z.literal('pressure_sensor'),
   id: ComponentId,
   name: EntityName,
   pin: GpioPin,
-  /**
-   * Vertical span of water column inside the tank, metres. Required when
-   * using this sensor as a tank-level source; omit for line-pressure use.
-   */
-  tank_height_m: z.number().positive().optional(),
-  /** Tank usable capacity, litres. Drives the volume readout. */
-  tank_capacity_l: z.number().positive().optional(),
   /**
    * Vertical drop from the tank's bottom outlet down to the sensor location,
    * metres. Stays full of water once the system is primed, so it shifts the
@@ -108,11 +104,14 @@ export const pressureSensorDescriptor: NodeDescriptor = {
 
   sidebarFields: [
     { key: 'pin', label: 'Pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc' },
-    { key: 'tank_height_m', label: 'Tank height (m)', type: 'number' },
-    { key: 'tank_capacity_l', label: 'Tank capacity (L)', type: 'number' },
-    { key: 'elevation_m', label: 'Sensor drop below tank (m)', type: 'number' },
-    { key: 'sensor_max_psi', label: 'Sensor max (psi)', type: 'number' },
-    { key: 'pump_rated', label: 'Pump-rated sensor', type: 'toggle' },
+    { key: 'elevation_m', label: 'Sensor drop below tank (m)', type: 'number', hint: 'Vertical drop from tank outlet down to sensor. Stays full of water — shifts the empty-tank reading.' },
+    { key: 'sensor_max_psi', label: 'Sensor max (psi)', type: 'number', hint: 'Datasheet full-scale value, e.g. 5 / 10 / 15 / 30 psi.' },
+    {
+      key: 'pump_rated',
+      label: 'Reading reliable while pump runs',
+      type: 'toggle',
+      hint: 'Tank-mounted sensors read static head and stay reliable during pump operation. Sensors plumbed inline on the line near a pump are disturbed by flow — leave this off for those.',
+    },
   ],
 
   // --- Codegen (native — full support) ---
@@ -170,11 +169,14 @@ ${header}
       const calEmpty = pressureSensorCalEmptyId(node);
       const calFull  = pressureSensorCalFullId(node);
       const names    = haNames(node);
-      // When tank geometry is omitted (line-pressure use), seed Cal Empty / Full
+      // When tank geometry is absent (line-pressure use), seed Cal Empty / Full
       // with a span of 0 → sensor_max_psi so the level entity stays inert until
-      // the installer enters real values via the HA tunables.
-      const cal = node.tank_height_m != null
-        ? deriveTankCalibration(node.tank_height_m, node.elevation_m)
+      // the installer enters real values via the HA tunables. `tank_height_m`
+      // and `tank_capacity_l` are not on the schema — the manifest pass
+      // annotates them onto this node from the parent tank when applicable.
+      const tankHeight = (node as { tank_height_m?: number }).tank_height_m;
+      const cal = tankHeight != null
+        ? deriveTankCalibration(tankHeight, node.elevation_m)
         : { p_empty_psi: 0, p_full_psi: node.sensor_max_psi, working_span_psi: node.sensor_max_psi };
       const fmt = (v: number) => v.toFixed(2);
       return {

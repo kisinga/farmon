@@ -26,8 +26,26 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
   // Resolve tank → level-source associations from graph topology
   const tankLevelSources = resolveTankLevelSources(active, nodeKindById);
 
+  // Inverse map: pressure-sensor id → its parent tank id (when the sensor is
+  // that tank's level source). Used to annotate the sensor with the tank's
+  // height_m / capacity_l so codegen and validation see calibration inputs
+  // in their original shape (`tank_height_m` / `tank_capacity_l`) without
+  // each having to walk the graph.
+  const pressureSensorToTank = new Map<string, string>();
+  for (const [tankId, src] of tankLevelSources) {
+    if (src.kind === 'pressure_sensor') pressureSensorToTank.set(src.id, tankId);
+  }
+
+  // All pressure-sensor node ids — used to derive per-route lists below.
+  const pressureSensorIds = new Set(
+    topology.nodes.filter(n => n.kind === 'pressure_sensor').map(n => n.id),
+  );
+
   // Strip layout fields (ports, position) — generators don't need them.
-  // Annotate tanks with their associated level source.
+  // Annotate tanks with their associated level source. Annotate pressure
+  // sensors with their parent tank's dimensions when they are a tank-level
+  // source — keeping calibration inputs co-located with the sensor for
+  // backward-compatible codegen.
   const nodes: ManifestNode[] = topology.nodes
     .filter(n => connected.has(n.id) && !n.disabled)
     .map(({ ports, position, ...data }) => {
@@ -35,6 +53,16 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
       if (node.kind === 'tank') {
         const src = tankLevelSources.get(node.id);
         if (src) node['level_source'] = src;
+      }
+      if (node.kind === 'pressure_sensor') {
+        const parentTankId = pressureSensorToTank.get(node.id);
+        if (parentTankId) {
+          const tank = nodeMap.get(parentTankId) as Record<string, unknown> | undefined;
+          const h = tank?.['height_m'];
+          const c = tank?.['capacity_l'];
+          if (typeof h === 'number') node['tank_height_m'] = h;
+          if (typeof c === 'number') node['tank_capacity_l'] = c;
+        }
       }
       return node;
     });
@@ -51,8 +79,10 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
       const dstLabel = (dstNode as any)?.name ?? r.destination;
 
       // Determine if runtime level checks are reliable for this route.
-      // Check pump_rated on whichever sensor (level or pressure) supplies
-      // the source/dest tanks' level reading.
+      // Level sensors are intrinsically tank-mounted → always pump-safe, no
+      // flag to consult. Pressure sensors carry the pump_rated flag because
+      // they can be plumbed inline near a pump where pump operation
+      // disturbs the reading.
       const runtimeLevelOk = !r.crossesPump || (() => {
         const checkTank = (tankId: string | undefined) => {
           if (!tankId) return true;
@@ -60,11 +90,16 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
           if (!tank || tank.kind !== 'tank') return true;
           const src = tankLevelSources.get(tankId);
           if (!src) return true; // no sensor = no level data = skip check
+          if (src.kind === 'level_sensor') return true; // level sensors are pump-safe by construction
           const sensor = nodeMap.get(src.id);
           return !sensor || !!(sensor as any).pump_rated;
         };
         return checkTank(r.source) && checkTank(r.destination);
       })();
+
+      // Pressure sensors that lie on this route's path. Pure metadata for
+      // downstream consumers — the firmware doesn't read it.
+      const inlinePressureSensors = r.nodeSequence.filter(id => pressureSensorIds.has(id));
 
       return {
         key: r.key,
@@ -81,6 +116,7 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
         source_min_pct: override.source_min_level ?? 0,
         dest_max_pct: override.dest_max_level ?? 0,
         runtime_level_ok: runtimeLevelOk,
+        inline_pressure_sensors: inlinePressureSensors,
       };
     });
 

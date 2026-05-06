@@ -131,6 +131,9 @@ export type { Selection };
                   (valueChange)="updateField.emit({ nodeId: sn.node.id, field: field.key, value: $event })" />
               }
             </div>
+            @if (field.hint) {
+              <div class="sidebar-hint">{{ field.hint }}</div>
+            }
           }
         </div>
 
@@ -380,6 +383,12 @@ export type { Selection };
     .sidebar-fields { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: start; }
     .sidebar-label { font-size: 10px; color: oklch(var(--bc) / 0.5); white-space: nowrap; padding-top: 4px; }
     .sidebar-control { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .sidebar-hint {
+      grid-column: 1 / -1;
+      font-size: 10px; line-height: 1.35;
+      color: oklch(var(--bc) / 0.45);
+      margin: 2px 0 6px;
+    }
   `],
 })
 export class TopologySidebarComponent {
@@ -625,7 +634,10 @@ export class TopologySidebarComponent {
    * Compute the derived calibration panel for a pressure-sensor node. Returns
    * null when sensor_max_psi is missing (impossible after schema validation,
    * but the form lets fields be cleared transiently); returns `cal: null`
-   * when tank geometry is absent (line-pressure mode).
+   * when no upstream tank with `height_m` is connected (line-pressure mode).
+   *
+   * Tank dimensions live on the tank node — walk one hop upstream in the
+   * topology graph from the sensor to find the parent tank's `height_m`.
    */
   protected pressureSensorReadout(node: any): {
     cal: { p_empty_psi: number; p_full_psi: number; working_span_psi: number } | null;
@@ -635,8 +647,8 @@ export class TopologySidebarComponent {
   } | null {
     const sensorMax = Number(node.sensor_max_psi);
     if (!Number.isFinite(sensorMax) || sensorMax <= 0) return null;
-    const tankHeight = Number(node.tank_height_m);
-    if (!Number.isFinite(tankHeight) || tankHeight <= 0) {
+    const tankHeight = this.upstreamTankHeight(node.id);
+    if (tankHeight == null || tankHeight <= 0) {
       return { cal: null, recommended: 0, swingPct: 0, headroomPct: 0 };
     }
     const elevation = Number(node.elevation_m ?? 0);
@@ -647,6 +659,26 @@ export class TopologySidebarComponent {
       swingPct: (cal.working_span_psi / sensorMax) * 100,
       headroomPct: ((sensorMax - cal.p_full_psi) / sensorMax) * 100,
     };
+  }
+
+  /**
+   * Find the `height_m` of the first tank one graph-hop upstream of `nodeId`.
+   * Returns `undefined` if no upstream tank is connected or no height is set.
+   */
+  private upstreamTankHeight(nodeId: string): number | undefined {
+    const t = this.editor.topology();
+    if (!t) return undefined;
+    for (const pipe of t.pipes) {
+      const toId = pipe.to.split(':')[0];
+      if (toId !== nodeId) continue;
+      const fromId = pipe.from.split(':')[0];
+      const upstream = t.nodes.find(n => n.id === fromId);
+      if (upstream && upstream.kind === 'tank') {
+        const h = (upstream as { height_m?: number }).height_m;
+        return typeof h === 'number' ? h : undefined;
+      }
+    }
+    return undefined;
   }
 
   // --- Route & validation helpers ---

@@ -32,6 +32,8 @@ export interface FieldDef {
   label: string;
   type: 'text' | 'number' | 'pin' | 'toggle' | 'select';
   placeholder?: string;
+  /** Optional one-line help text shown beneath the field. Use plain language. */
+  hint?: string;
   /** Channel capability required for this field, e.g. 'adc', 'digital', 'modbus'. Filters channel selection. */
   pinCap?: PinCap;
   /** Optional input-time char filter. Applied via [charFilter] in the sidebar template. */
