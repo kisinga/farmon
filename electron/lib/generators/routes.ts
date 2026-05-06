@@ -106,6 +106,26 @@ export function generateRoutes(m: Manifest): string {
     }`)
     .join("\n");
 
+  // Pre-start safety thresholds — read from HA tunables when present, fall
+  // back to the manifest-baked Route struct value otherwise.
+  const sourceMinCases = m.routes
+    .map((r, i) => r.source_has_level
+      ? `    case ${i}: {
+      float v = id(route_${i}_source_min_pct).state;
+      return (!std::isnan(v) && v >= 0.0f && v <= 100.0f) ? (uint8_t)v : ROUTES[${i}].source_min_pct;
+    }`
+      : `    case ${i}: return ROUTES[${i}].source_min_pct;`)
+    .join("\n");
+
+  const destMaxCases = m.routes
+    .map((r, i) => r.dest_has_level
+      ? `    case ${i}: {
+      float v = id(route_${i}_dest_max_pct).state;
+      return (!std::isnan(v) && v >= 0.0f && v <= 100.0f) ? (uint8_t)v : ROUTES[${i}].dest_max_pct;
+    }`
+      : `    case ${i}: return ROUTES[${i}].dest_max_pct;`)
+    .join("\n");
+
   const valveTravelCases = valves
     .map((v, i) => `    case ${i}: {
       float v = id(${valveTravelMsId(nid(v))}).state;
@@ -411,6 +431,24 @@ ${runtimeCases}
   }
 }
 
+// Source-min and dest-max thresholds — read from HA number entities (adjustable,
+// persisted) for routes whose tank endpoint has a level reading. Routes without
+// a level reading fall back to the manifest-baked Route struct value (typically
+// 0 = "skip this check"). 0 disables the corresponding pre-start guard.
+inline uint8_t get_route_source_min_pct(int route_id) {
+  switch (route_id) {
+${sourceMinCases}
+    default: return 0;
+  }
+}
+
+inline uint8_t get_route_dest_max_pct(int route_id) {
+  switch (route_id) {
+${destMaxCases}
+    default: return 0;
+  }
+}
+
 // Per-valve travel time — reads from HA number entities (adjustable, persisted).
 inline uint32_t get_valve_travel_ms(int idx) {
   switch (idx) {
@@ -445,13 +483,15 @@ inline int try_route_start(int route_id) {
   }
 
   const Route& r = ROUTES[route_id];
-  if (r.source_tank != 0xFF && r.source_min_pct > 0) {
+  uint8_t src_min = get_route_source_min_pct(route_id);
+  uint8_t dst_max = get_route_dest_max_pct(route_id);
+  if (r.source_tank != 0xFF && src_min > 0) {
     float src = get_tank_level(r.source_tank);
-    if (!id(safety_override).state && (std::isnan(src) || src < (float)r.source_min_pct)) return 3;
+    if (!id(safety_override).state && (std::isnan(src) || src < (float)src_min)) return 3;
   }
-  if (r.dest_tank != 0xFF && r.dest_max_pct > 0) {
+  if (r.dest_tank != 0xFF && dst_max > 0) {
     float dst = get_tank_level(r.dest_tank);
-    if (!id(safety_override).state && !std::isnan(dst) && dst > (float)r.dest_max_pct) return 4;
+    if (!id(safety_override).state && !std::isnan(dst) && dst > (float)dst_max) return 4;
   }
 
   int slot = find_free_slot();

@@ -168,12 +168,16 @@ export function routeEntityNames(route: { name: string }): {
   start: SystemEntitySpec;
   stop: SystemEntitySpec;
   maxRuntime: SystemEntitySpec;
+  sourceMinLevel: SystemEntitySpec;
+  destMaxLevel: SystemEntitySpec;
 } {
   return {
-    status:     { domain: 'sensor', name: `Route: ${route.name}` },
-    start:      { domain: 'button', name: `Start: ${route.name}` },
-    stop:       { domain: 'button', name: `Stop: ${route.name}` },
-    maxRuntime: { domain: 'number', name: `Route: ${route.name} Max Runtime (s)` },
+    status:         { domain: 'sensor', name: `Route: ${route.name}` },
+    start:          { domain: 'button', name: `Start: ${route.name}` },
+    stop:           { domain: 'button', name: `Stop: ${route.name}` },
+    maxRuntime:     { domain: 'number', name: `Route: ${route.name} Max Runtime (s)` },
+    sourceMinLevel: { domain: 'number', name: `Route: ${route.name} Source Min (%)` },
+    destMaxLevel:   { domain: 'number', name: `Route: ${route.name} Dest Max (%)` },
   };
 }
 
@@ -210,7 +214,14 @@ export function routeAutomationAlias(a: { name: string; route_name: string }): s
 export type SystemHaEntityIds = {
   [K in SystemEntityKey]: string;
 } & {
-  routes: Array<{ status: string; start: string; stop: string; maxRuntime: string }>;
+  routes: Array<{
+    status: string;
+    start: string;
+    stop: string;
+    maxRuntime: string;
+    sourceMinLevel: string;
+    destMaxLevel: string;
+  }>;
 };
 
 export function systemHaEntityIds(
@@ -227,10 +238,12 @@ export function systemHaEntityIds(
     routes: routes.map(r => {
       const n = routeEntityNames(r);
       return {
-        status:     deriveHaEntityId(n.status.domain,     device, n.status.name),
-        start:      deriveHaEntityId(n.start.domain,      device, n.start.name),
-        stop:       deriveHaEntityId(n.stop.domain,       device, n.stop.name),
-        maxRuntime: deriveHaEntityId(n.maxRuntime.domain, device, n.maxRuntime.name),
+        status:         deriveHaEntityId(n.status.domain,         device, n.status.name),
+        start:          deriveHaEntityId(n.start.domain,          device, n.start.name),
+        stop:           deriveHaEntityId(n.stop.domain,           device, n.stop.name),
+        maxRuntime:     deriveHaEntityId(n.maxRuntime.domain,     device, n.maxRuntime.name),
+        sourceMinLevel: deriveHaEntityId(n.sourceMinLevel.domain, device, n.sourceMinLevel.name),
+        destMaxLevel:   deriveHaEntityId(n.destMaxLevel.domain,   device, n.destMaxLevel.name),
       };
     }),
   };

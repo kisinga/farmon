@@ -101,6 +101,12 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
       // downstream consumers — the firmware doesn't read it.
       const inlinePressureSensors = r.nodeSequence.filter(id => pressureSensorIds.has(id));
 
+      // Drop level-safety overrides whose tank has no level source — firmware
+      // can't read what doesn't exist, so the value would be dead weight that
+      // also misleads the user into thinking a check is active.
+      const sourceHasLevel = r.sourceKind === 'tank' && tankLevelSources.has(r.source);
+      const destHasLevel = r.destKind === 'tank' && tankLevelSources.has(r.destination);
+
       return {
         key: r.key,
         name: `${srcLabel} > ${dstLabel}`,
@@ -113,8 +119,10 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
         crossesPump: r.crossesPump,
         pumpIndex: r.pumpIndex,
         nodeSequence: r.nodeSequence,
-        source_min_pct: override.source_min_level ?? 0,
-        dest_max_pct: override.dest_max_level ?? 0,
+        source_min_pct: sourceHasLevel ? (override.source_min_level ?? 0) : 0,
+        dest_max_pct: destHasLevel ? (override.dest_max_level ?? 0) : 0,
+        source_has_level: sourceHasLevel,
+        dest_has_level: destHasLevel,
         runtime_level_ok: runtimeLevelOk,
         inline_pressure_sensors: inlinePressureSensors,
       };

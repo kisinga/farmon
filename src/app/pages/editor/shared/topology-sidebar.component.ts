@@ -309,7 +309,7 @@ export type { Selection };
               <div class="card-body p-2 gap-1">
                 <span class="font-mono font-semibold text-xs">{{ entry.key }}</span>
                 <div class="flex items-center gap-2">
-                  <label class="text-[10px] text-base-content/50">Max Runtime</label>
+                  <label class="text-[10px] text-base-content/50">Default Max Runtime</label>
                   <app-zod-input
                     [schema]="routeOverrideSchema"
                     fieldKey="max_runtime_seconds"
@@ -323,7 +323,7 @@ export type { Selection };
                 </div>
                 @if (entry.sourceHasLevel) {
                   <div class="flex items-center gap-2">
-                    <label class="text-[10px] text-base-content/50">Source Min</label>
+                    <label class="text-[10px] text-base-content/50">Default Source Min</label>
                     <app-zod-input
                       [schema]="routeOverrideSchema"
                       fieldKey="source_min_level"
@@ -339,7 +339,7 @@ export type { Selection };
                 }
                 @if (entry.destHasLevel) {
                   <div class="flex items-center gap-2">
-                    <label class="text-[10px] text-base-content/50">Dest Max</label>
+                    <label class="text-[10px] text-base-content/50">Default Dest Max</label>
                     <app-zod-input
                       [schema]="routeOverrideSchema"
                       fieldKey="dest_max_level"
@@ -353,6 +353,9 @@ export type { Selection };
                     <span class="text-[10px] text-base-content/50">%</span>
                   </div>
                 }
+                <div class="text-[10px] text-base-content/45 mt-1 leading-snug">
+                  Initial values — adjust live in Home Assistant.
+                </div>
               </div>
             </div>
           }
@@ -662,21 +665,34 @@ export class TopologySidebarComponent {
   }
 
   /**
-   * Find the `height_m` of the first tank one graph-hop upstream of `nodeId`.
-   * Returns `undefined` if no upstream tank is connected or no height is set.
+   * Walk upstream from `nodeId` through pass-through nodes (valves, inline
+   * sensors, filters …) until we hit a tank, and return its `height_m`.
+   *
+   * A pump or VFD encountered along the way decouples the sensor from the
+   * tank's static column — return `undefined` in that case. Likewise
+   * `undefined` if we reach a non-tank terminal (water source, endpoint) or
+   * run out of pipes.
    */
   private upstreamTankHeight(nodeId: string): number | undefined {
     const t = this.editor.topology();
     if (!t) return undefined;
-    for (const pipe of t.pipes) {
-      const toId = pipe.to.split(':')[0];
-      if (toId !== nodeId) continue;
-      const fromId = pipe.from.split(':')[0];
-      const upstream = t.nodes.find(n => n.id === fromId);
-      if (upstream && upstream.kind === 'tank') {
+    const visited = new Set<string>();
+    let currentId: string | undefined = nodeId;
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      const inbound = t.pipes.find(p => p.to.split(':')[0] === currentId);
+      if (!inbound) return undefined;
+      const upstreamId = inbound.from.split(':')[0];
+      const upstream = t.nodes.find(n => n.id === upstreamId);
+      if (!upstream) return undefined;
+      if (upstream.kind === 'tank') {
         const h = (upstream as { height_m?: number }).height_m;
         return typeof h === 'number' ? h : undefined;
       }
+      // Pumps / VFDs sit between the tank and the sensor and break the
+      // hydraulic column — sensor below them doesn't read tank head.
+      if (upstream.kind === 'pump' || upstream.kind === 'vfd') return undefined;
+      currentId = upstreamId;
     }
     return undefined;
   }

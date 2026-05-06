@@ -317,26 +317,35 @@ ${pumpMgmt}
               }
             }
 
-            // --- RUNTIME LEVEL CHECKS (only when sensors are pump-rated) ---
-            if (slots[s].fault_code == 0 && r.runtime_level_ok) {
-              if (r.source_min_pct > 0 && r.source_tank != 0xFF) {
+            // --- RUNTIME LEVEL CHECKS ---
+            // Level sensors are intrinsically tank-mounted and unconditionally
+            // pump-safe. Pressure sensors carry a placement flag, so this
+            // block only runs when r.runtime_level_ok says the route's
+            // pressure-derived readings are reliable during pump operation.
+            // Thresholds come from HA-tunable getters; 0 means "skip the
+            // check". safety_override bypasses the runtime stops the same
+            // way it bypasses the pre-start guards in try_route_start.
+            if (slots[s].fault_code == 0 && r.runtime_level_ok && !id(safety_override).state) {
+              uint8_t src_min = get_route_source_min_pct(slots[s].route_id);
+              uint8_t dst_max = get_route_dest_max_pct(slots[s].route_id);
+              if (src_min > 0 && r.source_tank != 0xFF) {
                 float src = get_tank_level(r.source_tank);
-                if (!std::isnan(src) && src < (float)r.source_min_pct) {
+                if (!std::isnan(src) && src < (float)src_min) {
                   slots[s].stop_reason = STOP_SOURCE_LOW;
                   slots[s].state = 3;
                   slots[s].stop_time = now;
                   ESP_LOGI("safety", "Source low (%.0f%% < %u%%) — clean stop slot %d route [%s]",
-                           src, r.source_min_pct, s, r.name);
+                           src, src_min, s, r.name);
                 }
               }
-              if (slots[s].state == 2 && r.dest_max_pct > 0 && r.dest_tank != 0xFF) {
+              if (slots[s].state == 2 && dst_max > 0 && r.dest_tank != 0xFF) {
                 float dst = get_tank_level(r.dest_tank);
-                if (!std::isnan(dst) && dst >= (float)r.dest_max_pct) {
+                if (!std::isnan(dst) && dst >= (float)dst_max) {
                   slots[s].stop_reason = STOP_TANK_FULL;
                   slots[s].state = 3;
                   slots[s].stop_time = now;
                   ESP_LOGI("safety", "Dest full (%.0f%% >= %u%%) — clean stop slot %d route [%s]",
-                           dst, r.dest_max_pct, s, r.name);
+                           dst, dst_max, s, r.name);
                 }
               }
             }

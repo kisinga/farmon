@@ -61,6 +61,18 @@ export interface Route {
   source_min_pct: number;
   /** Firmware pre-start: reject if dest tank above this %. 0 = no check. */
   dest_max_pct: number;
+  /**
+   * True when the source endpoint is a tank with a resolvable level source.
+   * Drives whether the firmware emits a runtime-tunable Source Min number
+   * entity for this route.
+   */
+  source_has_level: boolean;
+  /**
+   * True when the destination endpoint is a tank with a resolvable level
+   * source. Drives whether the firmware emits a runtime-tunable Dest Max
+   * number entity for this route.
+   */
+  dest_has_level: boolean;
   /** True if level sensors on this route are reliable during pump operation. */
   runtime_level_ok: boolean;
   /**

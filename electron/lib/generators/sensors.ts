@@ -24,6 +24,44 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   restore_value: true
   entity_category: config`);
 
+  // Per-route safety thresholds — adjustable from HA, persisted across reboots.
+  // Emitted only when the route's tank endpoint actually has a level reading;
+  // otherwise the entity would be dead UI. A value of 0 means "skip this check".
+  const safetyThresholdBlocks: string[] = [];
+  m.routes.forEach((r, i) => {
+    const names = routeEntityNames(r);
+    if (r.source_has_level) {
+      safetyThresholdBlocks.push(`\
+- platform: template
+  name: "${names.sourceMinLevel.name}"
+  id: route_${i}_source_min_pct
+  icon: "mdi:water-minus"
+  unit_of_measurement: "%"
+  min_value: 0
+  max_value: 100
+  step: 1
+  initial_value: ${r.source_min_pct}
+  optimistic: true
+  restore_value: true
+  entity_category: config`);
+    }
+    if (r.dest_has_level) {
+      safetyThresholdBlocks.push(`\
+- platform: template
+  name: "${names.destMaxLevel.name}"
+  id: route_${i}_dest_max_pct
+  icon: "mdi:water-plus"
+  unit_of_measurement: "%"
+  min_value: 0
+  max_value: 100
+  step: 1
+  initial_value: ${r.dest_max_pct}
+  optimistic: true
+  restore_value: true
+  entity_category: config`);
+    }
+  });
+
   // Global safety timing — adjustable from HA
   const safetyBlocks = [
     { name: SYS.flowWatchdogMs.name, id: 'flow_watchdog_ms', icon: 'mdi:waves-arrow-up', min: 5000, max: 120000, step: 1000, initial: m.timing.flow_watchdog * 1000 },
@@ -43,7 +81,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   restore_value: true
   entity_category: config`);
 
-  const numberBlocks = [...runtimeBlocks, ...safetyBlocks, ...(collected.sections['number'] ?? [])];
+  const numberBlocks = [...runtimeBlocks, ...safetyThresholdBlocks, ...safetyBlocks, ...(collected.sections['number'] ?? [])];
   const binarySensorBlocks = collected.sections['binary_sensor'] ?? [];
 
   return `\

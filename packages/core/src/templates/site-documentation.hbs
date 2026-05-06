@@ -214,9 +214,22 @@ a.xref:hover { border-bottom-style: solid; }
     <tr><td><code>number.…_{{this.id}}_cal_empty</code></td><td>Number</td><td>{{this.name}} empty voltage calibration</td></tr>
     <tr><td><code>number.…_{{this.id}}_cal_full</code></td><td>Number</td><td>{{this.name}} full voltage calibration</td></tr>
 {{/each}}
-    <tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Disables <strong>all</strong> runtime safety checks while ON: pre-start level gates, flow watchdog, runtime level stops, max-runtime, API watchdog. Also lets the pump run without an owning route (commissioning / bench testing). Reverts to OFF on reboot. Use only for commissioning or manual recovery.</td></tr>
+<tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Disables <strong>all</strong> runtime safety checks while ON: pre-start level gates, flow watchdog, runtime level stops, max-runtime, API watchdog. Also lets the pump run without an owning route (commissioning / bench testing). Reverts to OFF on reboot. Use only for commissioning or manual recovery.</td></tr>
   </tbody>
 </table>
+
+{{#if this.hasRoutePathSensors}}
+<h4>Route Path Sensors</h4>
+<p style="font-size:11px;color:var(--text-muted);margin:0 0 8px;">Inline pressure sensors that lie on each route's path. Their reading reflects pump activity while the route is running, so they are useful for monitoring rather than tank-level inference.</p>
+<table>
+  <thead><tr><th>Route</th><th>Sensors on path</th></tr></thead>
+  <tbody>
+{{#each this.routePathSensors}}
+    <tr><td>{{this.name}}</td><td>{{this.sensors}}</td></tr>
+{{/each}}
+  </tbody>
+</table>
+{{/if}}
 
 <h4>Timing Parameters</h4>
 <table>

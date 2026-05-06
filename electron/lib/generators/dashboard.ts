@@ -282,6 +282,19 @@ export function buildConfigurationView(m: Manifest, board: BoardDef): unknown {
     ...m.routes.map((r, i) => ({ entity: sys.routes[i].maxRuntime, name: `${r.name} Max Runtime` })),
   ];
 
+  // Per-route safety thresholds — only emitted when the route's tank endpoint
+  // has a level reading (firmware skips emit otherwise; entity_id resolves but
+  // no entity exists, so guard with the manifest flag).
+  const safetyThresholdEntities: Array<{ entity: string; name: string }> = [];
+  m.routes.forEach((r, i) => {
+    if (r.source_has_level) {
+      safetyThresholdEntities.push({ entity: sys.routes[i].sourceMinLevel, name: `${r.name} Source Min` });
+    }
+    if (r.dest_has_level) {
+      safetyThresholdEntities.push({ entity: sys.routes[i].destMaxLevel, name: `${r.name} Dest Max` });
+    }
+  });
+
   // Valve travel times — per-valve, set at commissioning.
   const valveTravelEntities = valves.map(v => ({
     entity: haIds(v, dev).travelTime!, name: `${n(v, 'name')} Travel Time`,
@@ -322,6 +335,9 @@ export function buildConfigurationView(m: Manifest, board: BoardDef): unknown {
     icon: "mdi:cog",
     cards: [
       { type: "entities", title: "Watchdogs & Runtimes", entities: timingEntities },
+      ...(safetyThresholdEntities.length > 0 ? [{
+        type: "entities", title: "Route Safety Thresholds", entities: safetyThresholdEntities,
+      }] : []),
       ...(valveTravelEntities.length > 0 ? [{
         type: "entities", title: "Valve Travel Times", entities: valveTravelEntities,
       }] : []),
