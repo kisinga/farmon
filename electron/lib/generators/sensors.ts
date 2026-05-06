@@ -9,17 +9,20 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   // Level sensor entities (standalone, decoupled from tanks)
   const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
 
-  // Route max-runtime numbers — adjustable from HA, persisted across reboots
+  // Route max-runtime numbers — adjustable from HA, persisted across reboots.
+  // Surfaced in minutes (operator-facing); firmware multiplies by 60 to get
+  // seconds when consuming. Manifest's max_runtime_seconds remains the seconds
+  // source of truth; we round when seeding the entity.
   const runtimeBlocks = m.routes.map((r, i) => `\
 - platform: template
   name: "${routeEntityNames(r).maxRuntime.name}"
   id: route_${i}_max_runtime
   icon: "mdi:timer-outline"
-  unit_of_measurement: "s"
-  min_value: 60
-  max_value: 7200
-  step: 60
-  initial_value: ${r.max_runtime_seconds}
+  unit_of_measurement: "min"
+  min_value: 1
+  max_value: 120
+  step: 1
+  initial_value: ${Math.max(1, Math.round(r.max_runtime_seconds / 60))}
   optimistic: true
   restore_value: true
   entity_category: config`);
@@ -62,17 +65,20 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
     }
   });
 
-  // Global safety timing — adjustable from HA
+  // Global safety timing — adjustable from HA. Values are operator-facing
+  // units (seconds, L/min); firmware converts to its internal representation
+  // (ms for time-based fields) at read time.
   const safetyBlocks = [
-    { name: SYS.flowWatchdogMs.name, id: 'flow_watchdog_ms', icon: 'mdi:waves-arrow-up', min: 5000, max: 120000, step: 1000, initial: m.timing.flow_watchdog * 1000 },
-    { name: SYS.flowConfirmMs.name,  id: 'flow_confirm_ms',  icon: 'mdi:check-decagram-outline', min: 3000, max: 60000, step: 1000, initial: m.timing.flow_confirm * 1000 },
-    { name: SYS.flowThreshold.name,  id: 'flow_threshold_l_min', icon: 'mdi:waves', min: 0.1, max: 20, step: 0.1, initial: m.timing.flow_threshold },
-    { name: SYS.apiWatchdogMs.name,  id: 'api_watchdog_ms',  icon: 'mdi:api', min: 30000, max: 600000, step: 10000, initial: m.timing.api_watchdog * 1000 },
+    { name: SYS.flowWatchdog.name,  id: 'flow_watchdog_s',     icon: 'mdi:waves-arrow-up',         unit: 's',     min: 5,   max: 120, step: 1,   initial: m.timing.flow_watchdog },
+    { name: SYS.flowConfirm.name,   id: 'flow_confirm_s',      icon: 'mdi:check-decagram-outline', unit: 's',     min: 3,   max: 60,  step: 1,   initial: m.timing.flow_confirm },
+    { name: SYS.flowThreshold.name, id: 'flow_threshold_l_min',icon: 'mdi:waves',                  unit: 'L/min', min: 0.1, max: 20,  step: 0.1, initial: m.timing.flow_threshold },
+    { name: SYS.apiWatchdog.name,   id: 'api_watchdog_s',      icon: 'mdi:api',                    unit: 's',     min: 30,  max: 600, step: 10,  initial: m.timing.api_watchdog },
   ].map((p) => `\
 - platform: template
   name: "${p.name}"
   id: ${p.id}
   icon: "${p.icon}"
+  unit_of_measurement: "${p.unit}"
   min_value: ${p.min}
   max_value: ${p.max}
   step: ${p.step}

@@ -310,16 +310,16 @@ export type { Selection };
                 <span class="font-mono font-semibold text-xs">{{ entry.key }}</span>
                 <div class="flex items-center gap-2">
                   <label class="text-[10px] text-base-content/50">Default Max Runtime</label>
-                  <app-zod-input
-                    [schema]="routeOverrideSchema"
-                    fieldKey="max_runtime_seconds"
-                    type="number"
-                    inputClass="w-20 font-mono"
-                    [min]="0"
-                    [step]="60"
-                    [value]="entry.override.max_runtime_seconds ?? 1800"
-                    (valueChange)="updateRouteOverride.emit({ key: entry.key, field: 'max_runtime_seconds', value: $any($event) })" />
-                  <span class="text-[10px] text-base-content/50">s</span>
+                  <!-- Operator-facing unit is minutes; storage stays in seconds
+                       (max_runtime_seconds) so the manifest and firmware are
+                       unchanged. View → seconds happens in onMaxRuntimeChange. -->
+                  <input type="number" class="input input-xs input-bordered w-20 font-mono"
+                    min="1" max="120" step="1"
+                    [name]="'rt-' + entry.key"
+                    [ngModelOptions]="{ standalone: true }"
+                    [ngModel]="maxRuntimeMinutes(entry.override.max_runtime_seconds)"
+                    (ngModelChange)="onMaxRuntimeMinutesChange(entry.key, $event)" />
+                  <span class="text-[10px] text-base-content/50">min</span>
                 </div>
                 @if (entry.sourceHasLevel) {
                   <div class="flex items-center gap-2">
@@ -695,6 +695,20 @@ export class TopologySidebarComponent {
       currentId = upstreamId;
     }
     return undefined;
+  }
+
+  // --- Route override unit conversion ---
+
+  /** Display value (minutes) for a stored max_runtime_seconds. */
+  protected maxRuntimeMinutes(seconds: number | undefined): number {
+    return Math.max(1, Math.round((seconds ?? 1800) / 60));
+  }
+
+  /** Persist a minutes-input change as the seconds value the schema expects. */
+  protected onMaxRuntimeMinutesChange(key: string, minutes: unknown): void {
+    const m = Number(minutes);
+    const seconds = Number.isFinite(m) && m > 0 ? Math.round(m * 60) : undefined;
+    this.updateRouteOverride.emit({ key, field: 'max_runtime_seconds', value: seconds });
   }
 
   // --- Route & validation helpers ---

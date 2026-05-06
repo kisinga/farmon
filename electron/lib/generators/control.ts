@@ -265,18 +265,22 @@ ${pumpMgmt}
       - lambda: |-
           if (id(safety_override).state) return;
           uint32_t now = millis();
-          float flow_watchdog_state = id(flow_watchdog_ms).state;
-          float flow_confirm_state = id(flow_confirm_ms).state;
+          // HA tunables are operator-facing units (seconds, L/min). Convert
+          // time-based fields to ms for the internal control loop. Bound
+          // checks are in operator units; values below the bound fall back
+          // to the manifest-baked DEFAULT_*_MS firmware constants.
+          float flow_watchdog_state = id(flow_watchdog_s).state;
+          float flow_confirm_state = id(flow_confirm_s).state;
           float flow_threshold_state = id(flow_threshold_l_min).state;
-          float api_watchdog_state = id(api_watchdog_ms).state;
-          uint32_t flow_watchdog = (!std::isnan(flow_watchdog_state) && flow_watchdog_state >= 5000.0f)
-            ? (uint32_t)flow_watchdog_state : DEFAULT_FLOW_WATCHDOG_MS;
-          uint32_t flow_confirm = (!std::isnan(flow_confirm_state) && flow_confirm_state >= 3000.0f)
-            ? (uint32_t)flow_confirm_state : DEFAULT_FLOW_CONFIRM_MS;
+          float api_watchdog_state = id(api_watchdog_s).state;
+          uint32_t flow_watchdog = (!std::isnan(flow_watchdog_state) && flow_watchdog_state >= 5.0f)
+            ? (uint32_t)(flow_watchdog_state * 1000.0f) : DEFAULT_FLOW_WATCHDOG_MS;
+          uint32_t flow_confirm = (!std::isnan(flow_confirm_state) && flow_confirm_state >= 3.0f)
+            ? (uint32_t)(flow_confirm_state * 1000.0f) : DEFAULT_FLOW_CONFIRM_MS;
           float flow_threshold = (!std::isnan(flow_threshold_state) && flow_threshold_state >= 0.1f)
             ? flow_threshold_state : DEFAULT_FLOW_THRESHOLD_L_MIN;
-          uint32_t api_watchdog = (!std::isnan(api_watchdog_state) && api_watchdog_state >= 30000.0f)
-            ? (uint32_t)api_watchdog_state : DEFAULT_API_WATCHDOG_MS;
+          uint32_t api_watchdog = (!std::isnan(api_watchdog_state) && api_watchdog_state >= 30.0f)
+            ? (uint32_t)(api_watchdog_state * 1000.0f) : DEFAULT_API_WATCHDOG_MS;
 
           for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
             if (slots[s].state != 2) continue;

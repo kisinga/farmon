@@ -1,6 +1,6 @@
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
-import { valveCoverId, valveTravelMsId, levelSensorLevelId, pressureSensorLevelId, flowSensorId, parseRouteKey } from '@far-mon/core';
+import { valveCoverId, valveTravelTimeId, levelSensorLevelId, pressureSensorLevelId, flowSensorId, parseRouteKey } from '@far-mon/core';
 
 /** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
 export function parseDurationMs(s: string): number {
@@ -99,10 +99,13 @@ export function generateRoutes(m: Manifest): string {
     .map((f, i) => `    case ${i}: return id(${flowSensorId(nid(f))}).state;`)
     .join("\n");
 
+  // Route max-runtime is operator-facing in minutes; convert to seconds for
+  // the firmware control loop. Bound check in minutes — anything below 1 min
+  // falls back to the manifest-baked seconds default.
   const runtimeCases = m.routes
     .map((_, i) => `    case ${i}: {
       float v = id(route_${i}_max_runtime).state;
-      return (!std::isnan(v) && v >= 10.0f) ? (uint16_t)v : ROUTES[${i}].max_runtime_s;
+      return (!std::isnan(v) && v >= 1.0f) ? (uint16_t)(v * 60.0f) : ROUTES[${i}].max_runtime_s;
     }`)
     .join("\n");
 
@@ -126,10 +129,13 @@ export function generateRoutes(m: Manifest): string {
       : `    case ${i}: return ROUTES[${i}].dest_max_pct;`)
     .join("\n");
 
+  // Valve travel time is operator-facing in seconds; convert to ms for the
+  // ESPHome time-based cover. Bound check in seconds — anything below 1 s
+  // falls back to the firmware default (already in ms).
   const valveTravelCases = valves
     .map((v, i) => `    case ${i}: {
-      float v = id(${valveTravelMsId(nid(v))}).state;
-      return (!std::isnan(v) && v >= 1000.0f) ? (uint32_t)v : DEFAULT_VALVE_TRAVEL_MS;
+      float v = id(${valveTravelTimeId(nid(v))}).state;
+      return (!std::isnan(v) && v >= 1.0f) ? (uint32_t)(v * 1000.0f) : DEFAULT_VALVE_TRAVEL_MS;
     }`)
     .join("\n");
 

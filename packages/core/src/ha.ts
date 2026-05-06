@@ -104,11 +104,14 @@ export const SYSTEM_ENTITY_NAMES = {
   combinedTankLevel:  { domain: 'sensor',        name: 'Combined Tank Level' },
   waterCritical:      { domain: 'binary_sensor', name: 'Water Critical' },
 
-  // number (sensors.ts safety blocks)
-  flowWatchdogMs:     { domain: 'number', name: 'Flow Watchdog (ms)' },
-  flowConfirmMs:      { domain: 'number', name: 'Flow Confirm (ms)' },
+  // number (sensors.ts safety blocks). Values are stored in user-facing units
+  // (seconds, L/min). Firmware converts to its internal representation
+  // (typically ms) at read time. Units are also embedded in the entity name
+  // for HA history/logging clarity.
+  flowWatchdog:       { domain: 'number', name: 'Flow Watchdog (s)' },
+  flowConfirm:        { domain: 'number', name: 'Flow Confirm (s)' },
   flowThreshold:      { domain: 'number', name: 'Flow Threshold (L/min)' },
-  apiWatchdogMs:      { domain: 'number', name: 'API Watchdog (ms)' },
+  apiWatchdog:        { domain: 'number', name: 'API Watchdog (s)' },
 
   // switch (control.ts)
   safetyOverride:     { domain: 'switch', name: 'Safety Override' },
@@ -175,7 +178,7 @@ export function routeEntityNames(route: { name: string }): {
     status:         { domain: 'sensor', name: `Route: ${route.name}` },
     start:          { domain: 'button', name: `Start: ${route.name}` },
     stop:           { domain: 'button', name: `Stop: ${route.name}` },
-    maxRuntime:     { domain: 'number', name: `Route: ${route.name} Max Runtime (s)` },
+    maxRuntime:     { domain: 'number', name: `Route: ${route.name} Max Runtime (min)` },
     sourceMinLevel: { domain: 'number', name: `Route: ${route.name} Source Min (%)` },
     destMaxLevel:   { domain: 'number', name: `Route: ${route.name} Dest Max (%)` },
   };

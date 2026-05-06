@@ -3,6 +3,49 @@ import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
 import { NODE_REGISTRY, systemHaEntityIds, networkHaEntityIds, batteryHaEntityIds, automationHaEntityId, routeAutomationAlias, type BoardDef } from '@far-mon/core';
 
+// ---------------------------------------------------------------------------
+// HA dashboard structural types — keeps generators type-safe without spelling
+// out every Lovelace card schema. Producers must always set `type` (the HA
+// discriminator); other fields vary per card kind and are checked at the call
+// site where they are constructed.
+// ---------------------------------------------------------------------------
+
+export type HaWidget = { type: string; [k: string]: unknown };
+
+export interface HaGridSection {
+  type: "grid";
+  cards: HaWidget[];
+  column_span?: number;
+}
+
+export interface HaSectionsView {
+  title: string;
+  icon: string;
+  type: "sections";
+  subview: boolean;
+  sections: HaGridSection[];
+  badges: HaWidget[];
+  cards: HaWidget[];
+}
+
+export interface HaCardsView {
+  title: string;
+  path: string;
+  icon: string;
+  cards: HaWidget[];
+}
+
+export type HaView = HaSectionsView | HaCardsView;
+
+export interface HaRouteControl {
+  sections: HaGridSection[];
+}
+
+interface HaDashboard {
+  title: string;
+  views: HaView[];
+}
+
 /** Shorthand for accessing ManifestNode string fields. */
 function n(node: ManifestNode, key: string): string {
   return String(node[key] ?? '');
@@ -21,8 +64,20 @@ function haIds(node: ManifestNode, device: { friendly_name: string }): Record<st
 // Composable section builders
 // ---------------------------------------------------------------------------
 
-export function buildStatusSection(m: Manifest): unknown {
-  const sys = systemHaEntityIds(m.device, m.routes);
+export function buildStatusSection(m: Manifest, board: BoardDef): HaGridSection {
+  const dev = m.device;
+  const sys = systemHaEntityIds(dev, m.routes);
+  const net = networkHaEntityIds(dev, dev.network, board);
+  const bat = batteryHaEntityIds(dev, board);
+
+  const healthEntities: Array<{ entity: string; name: string }> = [];
+  if (bat) healthEntities.push({ entity: bat.batteryPercent, name: "Battery" });
+  if (net) healthEntities.push({ entity: net.wifiSignal,     name: "WiFi" });
+  healthEntities.push(
+    { entity: sys.esp32Temperature, name: "Temp" },
+    { entity: sys.uptime,           name: "Uptime" },
+  );
+
   return {
     type: "grid",
     cards: [
@@ -38,12 +93,16 @@ export function buildStatusSection(m: Manifest): unknown {
         ],
         grid_options: { columns: "full" },
       },
+      {
+        type: "glance", title: "Device Health", show_state: true,
+        entities: healthEntities, grid_options: { columns: "full" },
+      },
     ],
     column_span: 1,
   };
 }
 
-export function buildWaterSection(m: Manifest): unknown {
+export function buildWaterSection(m: Manifest): HaGridSection {
   const dev = m.device;
   const sys = systemHaEntityIds(dev, m.routes);
   const waterSources = nodesByKind(m.nodes, 'water_source');
@@ -52,26 +111,26 @@ export function buildWaterSection(m: Manifest): unknown {
   const filters = nodesByKind(m.nodes, 'filter');
 
   const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
-  const levelGauges = levelSensors.map(ls => ({
+  const levelGauges: HaWidget[] = levelSensors.map(ls => ({
     type: "gauge", entity: haIds(ls, dev).level!, name: n(ls, 'name'),
     min: 0, max: 100, severity: { red: 0, yellow: 25, green: 50 }, needle: true,
   }));
 
   // Pressure sensors that act as tank-level sources contribute their derived
   // level% to the same row of tank-fill gauges as the level sensors.
-  const pressureLevelGauges = pressureSensors.map(ps => ({
+  const pressureLevelGauges: HaWidget[] = pressureSensors.map(ps => ({
     type: "gauge", entity: haIds(ps, dev).level!, name: `${n(ps, 'name')} Level`,
     min: 0, max: 100, severity: { red: 0, yellow: 25, green: 50 }, needle: true,
   }));
 
-  const tankLevelGauges = [...levelGauges, ...pressureLevelGauges];
+  const tankLevelGauges: HaWidget[] = [...levelGauges, ...pressureLevelGauges];
 
-  const wsPressureGauges = waterSources.filter(ws => ws['pressure_pin']).map(ws => ({
+  const wsPressureGauges: HaWidget[] = waterSources.filter(ws => ws['pressure_pin']).map(ws => ({
     type: "gauge", entity: haIds(ws, dev).pressure!, name: `${n(ws, 'name')} Pressure`,
     min: 0, max: 10, severity: { red: 0, yellow: 1, green: 2 }, needle: true,
   }));
 
-  const pressureGauges = pressureSensors.map(ps => {
+  const pressureGauges: HaWidget[] = pressureSensors.map(ps => {
     const max = Number(ps['sensor_max_psi'] ?? 15);
     return {
       type: "gauge", entity: haIds(ps, dev).pressure!, name: n(ps, 'name'),
@@ -84,7 +143,7 @@ export function buildWaterSection(m: Manifest): unknown {
     .filter(f => f['inlet_pressure_pin'] && f['outlet_pressure_pin'])
     .map(f => ({ entity: haIds(f, dev).deltaPressure!, name: `${n(f, 'name')} ΔP` }));
 
-  const flowColumns = flowSensors.map(f => {
+  const flowColumns: HaWidget[] = flowSensors.map(f => {
     const ids = haIds(f, dev);
     return {
       type: "vertical-stack",
@@ -108,53 +167,51 @@ export function buildWaterSection(m: Manifest): unknown {
   const flowLabels = flowSensors.map(f =>
     n(f, 'name').replace(" Water Flow", "").replace(" Flow", "")
   );
-  const flowMonthCards = flowSensors.map((f, i) => ({
+  const flowMonthCards: HaWidget[] = flowSensors.map((f, i) => ({
     type: "statistic", entity: haIds(f, dev).total!, stat_type: "change",
     period: { calendar: { period: "month" } }, name: `${flowLabels[i]} Month`,
   }));
-  const flowYearCards = flowSensors.map((f, i) => ({
+  const flowYearCards: HaWidget[] = flowSensors.map((f, i) => ({
     type: "statistic", entity: haIds(f, dev).total!, stat_type: "change",
     period: { calendar: { period: "year" } }, name: `${flowLabels[i]} Year`,
   }));
 
-  return {
-    type: "grid",
-    cards: [
-      { type: "heading", heading: "Water levels", heading_style: "title",
-        ...(levelSensors.length >= 2
-          ? { badges: [{ type: "entity", show_state: true, show_icon: true, entity: sys.combinedTankLevel }] }
-          : {}),
-      },
+  const cards: HaWidget[] = [
+    { type: "heading", heading: "Water levels", heading_style: "title",
       ...(levelSensors.length >= 2
-        ? [{ type: "entities", entities: [{ entity: sys.waterCritical, name: "Water Critical" }], grid_options: { columns: "full" } }]
-        : []),
-      ...(tankLevelGauges.length > 0
-        ? [{ type: "horizontal-stack", cards: tankLevelGauges, grid_options: { columns: "full", rows: "auto" } }]
-        : []),
-      ...(wsPressureGauges.length > 0
-        ? [{ type: "horizontal-stack", cards: wsPressureGauges, grid_options: { columns: "full", rows: "auto" } }]
-        : []),
-      ...(pressureGauges.length > 0
-        ? [{ type: "horizontal-stack", cards: pressureGauges, grid_options: { columns: "full", rows: "auto" } }]
-        : []),
-      ...(filterEntities.length > 0
-        ? [{ type: "entities", title: "Filter Status", entities: filterEntities, grid_options: { columns: "full" } }]
-        : []),
-      ...(flowColumns.length > 0
-        ? [{ type: "horizontal-stack", cards: flowColumns, grid_options: { columns: "full" } }]
-        : []),
-      ...(flowMonthCards.length > 0
-        ? [{ type: "horizontal-stack", cards: flowMonthCards, grid_options: { columns: "full" } }]
-        : []),
-      ...(flowYearCards.length > 0
-        ? [{ type: "horizontal-stack", cards: flowYearCards, grid_options: { columns: "full" } }]
-        : []),
-    ],
-    column_span: 1,
-  };
+        ? { badges: [{ type: "entity", show_state: true, show_icon: true, entity: sys.combinedTankLevel }] }
+        : {}),
+    },
+  ];
+  if (levelSensors.length >= 2) {
+    cards.push({ type: "entities", entities: [{ entity: sys.waterCritical, name: "Water Critical" }], grid_options: { columns: "full" } });
+  }
+  if (tankLevelGauges.length > 0) {
+    cards.push({ type: "horizontal-stack", cards: tankLevelGauges, grid_options: { columns: "full", rows: "auto" } });
+  }
+  if (wsPressureGauges.length > 0) {
+    cards.push({ type: "horizontal-stack", cards: wsPressureGauges, grid_options: { columns: "full", rows: "auto" } });
+  }
+  if (pressureGauges.length > 0) {
+    cards.push({ type: "horizontal-stack", cards: pressureGauges, grid_options: { columns: "full", rows: "auto" } });
+  }
+  if (filterEntities.length > 0) {
+    cards.push({ type: "entities", title: "Filter Status", entities: filterEntities, grid_options: { columns: "full" } });
+  }
+  if (flowColumns.length > 0) {
+    cards.push({ type: "horizontal-stack", cards: flowColumns, grid_options: { columns: "full" } });
+  }
+  if (flowMonthCards.length > 0) {
+    cards.push({ type: "horizontal-stack", cards: flowMonthCards, grid_options: { columns: "full" } });
+  }
+  if (flowYearCards.length > 0) {
+    cards.push({ type: "horizontal-stack", cards: flowYearCards, grid_options: { columns: "full" } });
+  }
+
+  return { type: "grid", cards, column_span: 1 };
 }
 
-export function buildRouteControlSection(m: Manifest): unknown {
+export function buildRouteControlSection(m: Manifest): HaRouteControl {
   const dev = m.device;
   const sys = systemHaEntityIds(dev, m.routes);
   const valves = nodesByKind(m.nodes, 'valve');
@@ -170,7 +227,7 @@ export function buildRouteControlSection(m: Manifest): unknown {
   // One column per route — start button on top, stop button below.
   // Replaces two parallel rows of N buttons each, which squeezed labels
   // to <100px on phones.
-  const routeButtonColumns = m.routes.map((r, i) => ({
+  const routeButtonColumns: HaWidget[] = m.routes.map((r, i) => ({
     type: "vertical-stack",
     cards: [
       {
@@ -200,85 +257,81 @@ export function buildRouteControlSection(m: Manifest): unknown {
     return items;
   });
 
-  const automationSection = m.automations.length > 0 ? [{
-    type: "grid",
-    cards: [{
-      type: "entities", title: "Automations",
-      entities: m.automations.map(a => {
-        const alias = routeAutomationAlias(a);
-        return { entity: automationHaEntityId(alias), name: alias, icon: "mdi:calendar-clock" };
-      }),
+  const mainCards: HaWidget[] = [
+    {
+      type: "vertical-stack",
+      cards: [
+        { type: "entities", title: "Route Status", entities: routeStatusEntities, state_color: true, show_header_toggle: false },
+        { type: "horizontal-stack", cards: routeButtonColumns },
+        {
+          type: "horizontal-stack",
+          cards: [
+            {
+              show_name: true, show_icon: true, type: "button", name: "Stop All", icon: "mdi:stop-circle",
+              tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.stopAll } },
+              show_state: false, color: "red",
+            },
+            {
+              show_name: true, show_icon: true, type: "button", name: "Reset Faults", icon: "mdi:alert-circle-check",
+              tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.resetFaults } },
+              show_state: false, color: "accent",
+            },
+            {
+              show_name: true, show_icon: true, type: "button", name: "Clear Queue", icon: "mdi:tray-remove",
+              tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.clearQueue } },
+              show_state: false, color: "grey",
+            },
+          ],
+        },
+      ],
+      title: "Route Control",
+      grid_options: { columns: "full", rows: "auto" },
+    },
+    {
+      type: "glance", title: "Hardware", show_state: true,
+      entities: [...valveEntities, ...dosingEntities],
       grid_options: { columns: "full" },
-    }],
-    column_span: 1,
-  }] : [];
+    },
+  ];
+  if (vfdEntities.length > 0) {
+    mainCards.push({ type: "entities", title: "VFD Drive", entities: vfdEntities, grid_options: { columns: "full" } });
+  }
 
-  return {
-    sections: [
-      {
-        type: "grid",
-        cards: [
-          {
-            type: "vertical-stack",
-            cards: [
-              { type: "entities", title: "Route Status", entities: routeStatusEntities, state_color: true, show_header_toggle: false },
-              { type: "horizontal-stack", cards: routeButtonColumns },
-              {
-                type: "horizontal-stack",
-                cards: [
-                  {
-                    show_name: true, show_icon: true, type: "button", name: "Stop All", icon: "mdi:stop-circle",
-                    tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.stopAll } },
-                    show_state: false, color: "red",
-                  },
-                  {
-                    show_name: true, show_icon: true, type: "button", name: "Reset Faults", icon: "mdi:alert-circle-check",
-                    tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.resetFaults } },
-                    show_state: false, color: "accent",
-                  },
-                  {
-                    show_name: true, show_icon: true, type: "button", name: "Clear Queue", icon: "mdi:tray-remove",
-                    tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.clearQueue } },
-                    show_state: false, color: "grey",
-                  },
-                ],
-              },
-            ],
-            title: "Route Control",
-            grid_options: { columns: "full", rows: "auto" },
-          },
-          {
-            type: "glance", title: "Hardware", show_state: true,
-            entities: [...valveEntities, ...dosingEntities],
-            grid_options: { columns: "full" },
-          },
-          ...(vfdEntities.length > 0
-            ? [{ type: "entities", title: "VFD Drive", entities: vfdEntities, grid_options: { columns: "full" } }]
-            : []),
-        ],
-        column_span: 1,
-      },
-      ...automationSection,
-    ],
-  };
+  const sections: HaGridSection[] = [
+    { type: "grid", cards: mainCards, column_span: 1 },
+  ];
+
+  if (m.automations.length > 0) {
+    sections.push({
+      type: "grid",
+      cards: [{
+        type: "entities", title: "Automations",
+        entities: m.automations.map(a => {
+          const alias = routeAutomationAlias(a);
+          return { entity: automationHaEntityId(alias), name: alias, icon: "mdi:calendar-clock" };
+        }),
+        grid_options: { columns: "full" },
+      }],
+      column_span: 1,
+    });
+  }
+
+  return { sections };
 }
 
-export function buildConfigurationView(m: Manifest, board: BoardDef): unknown {
+export function buildConfigurationView(m: Manifest): HaCardsView {
   const dev = m.device;
   const sys = systemHaEntityIds(dev, m.routes);
-  const net = networkHaEntityIds(dev, dev.network, board);
-  const bat = batteryHaEntityIds(dev, board);
   const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
   const pressureSensors = nodesWithFlag(m.nodes, 'isPressureSensor');
   const valves = nodesWithFlag(m.nodes, 'isValve');
-  const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
 
   // Watchdogs / timeouts — global safety timing + per-route max runtime.
   const timingEntities: Array<{ entity: string; name: string }> = [
-    { entity: sys.flowWatchdogMs, name: "Flow Watchdog" },
-    { entity: sys.flowConfirmMs,  name: "Flow Confirm" },
+    { entity: sys.flowWatchdog,   name: "Flow Watchdog" },
+    { entity: sys.flowConfirm,    name: "Flow Confirm" },
     { entity: sys.flowThreshold,  name: "Flow Threshold" },
-    { entity: sys.apiWatchdogMs,  name: "API Watchdog" },
+    { entity: sys.apiWatchdog,    name: "API Watchdog" },
     ...m.routes.map((r, i) => ({ entity: sys.routes[i].maxRuntime, name: `${r.name} Max Runtime` })),
   ];
 
@@ -321,48 +374,37 @@ export function buildConfigurationView(m: Manifest, board: BoardDef): unknown {
     ];
   });
 
-  const healthEntities: Array<{ entity: string; name: string }> = [];
-  if (bat) healthEntities.push({ entity: bat.batteryPercent, name: "Battery" });
-  if (net) healthEntities.push({ entity: net.wifiSignal,     name: "WiFi" });
-  healthEntities.push(
-    { entity: sys.esp32Temperature, name: "Temp" },
-    { entity: sys.uptime,           name: "Uptime" },
-  );
+  const cards: HaWidget[] = [
+    { type: "entities", title: "Watchdogs & Runtimes", entities: timingEntities },
+  ];
+  if (safetyThresholdEntities.length > 0) {
+    cards.push({ type: "entities", title: "Route Safety Thresholds", entities: safetyThresholdEntities });
+  }
+  if (valveTravelEntities.length > 0) {
+    cards.push({ type: "entities", title: "Valve Travel Times", entities: valveTravelEntities });
+  }
+  if (levelCalEntities.length > 0) {
+    cards.push({ type: "entities", title: "Level Sensor Calibration (voltage)", entities: levelCalEntities });
+  }
+  if (pressureCalEntities.length > 0) {
+    cards.push({ type: "entities", title: "Pressure Sensor Calibration (psi)", entities: pressureCalEntities });
+  }
 
   return {
     title: "Configuration",
     path: "configuration",
     icon: "mdi:cog",
-    cards: [
-      { type: "entities", title: "Watchdogs & Runtimes", entities: timingEntities },
-      ...(safetyThresholdEntities.length > 0 ? [{
-        type: "entities", title: "Route Safety Thresholds", entities: safetyThresholdEntities,
-      }] : []),
-      ...(valveTravelEntities.length > 0 ? [{
-        type: "entities", title: "Valve Travel Times", entities: valveTravelEntities,
-      }] : []),
-      ...(levelCalEntities.length > 0 ? [{
-        type: "entities", title: "Level Sensor Calibration (voltage)", entities: levelCalEntities,
-      }] : []),
-      ...(pressureCalEntities.length > 0 ? [{
-        type: "entities", title: "Pressure Sensor Calibration (psi)", entities: pressureCalEntities,
-      }] : []),
-      { type: "glance", title: "Device Health", show_state: true, entities: healthEntities },
-      ...(flowSensors.length > 0 ? [{
-        type: "entities", title: "Sensor Diagnostics",
-        entities: flowSensors.map(f => ({ entity: haIds(f, dev).sensorFault!, name: `${n(f, 'name')} Fault` })),
-      }] : []),
-    ],
+    cards,
   };
 }
 
-export function buildManualView(m: Manifest): unknown {
+export function buildManualView(m: Manifest): HaCardsView {
   const dev = m.device;
   const sys = systemHaEntityIds(dev, m.routes);
   const pumps = nodesByKind(m.nodes, 'pump');
   const valves = nodesWithFlag(m.nodes, 'isValve');
 
-  const explainerCard = {
+  const explainerCard: HaWidget = {
     type: "markdown",
     content: [
       "**Manual control** — direct access to the pump, valves, and the operator override.",
@@ -374,7 +416,7 @@ export function buildManualView(m: Manifest): unknown {
     ].join("\n"),
   };
 
-  const overrideCard = {
+  const overrideCard: HaWidget = {
     type: "entities",
     title: "Operator Override",
     entities: [
@@ -385,9 +427,6 @@ export function buildManualView(m: Manifest): unknown {
   // Pump direct control. Without an owning route, the pump only runs when
   // safety_override is ON (firmware-enforced).
   const pumpEntities = pumps.map(p => ({ entity: haIds(p, dev).relay!, name: n(p, 'name') }));
-  const pumpCard = pumpEntities.length > 0 ? [{
-    type: "entities", title: "Pump", entities: pumpEntities,
-  }] : [];
 
   // Per-valve manual: cover (timer-bounded), open coil, close coil (raw).
   // Coils are interlocked at firmware level (only one can be ON at a time).
@@ -395,7 +434,7 @@ export function buildManualView(m: Manifest): unknown {
   // card header — for this card a master toggle would try to fire BOTH coils,
   // which the firmware interlock blocks but still results in one coil briefly
   // energizing without timer protection.
-  const valveCards = valves.map(v => {
+  const valveCards: HaWidget[] = valves.map(v => {
     const ids = haIds(v, dev);
     return {
       type: "entities",
@@ -410,27 +449,20 @@ export function buildManualView(m: Manifest): unknown {
   });
 
   // Route start/stop buttons — same as Overview, kept here for one-stop manual ops.
-  const routeStartButtons = m.routes.map((r, i) => ({
+  const routeStartButtons: HaWidget[] = m.routes.map((r, i) => ({
     show_name: true, show_icon: true, type: "button", name: r.name, icon: "mdi:water-sync",
     tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.routes[i].start } },
     show_state: false,
   }));
-  const routeStopButtons = m.routes.map((r, i) => ({
+  const routeStopButtons: HaWidget[] = m.routes.map((r, i) => ({
     show_name: true, show_icon: true, type: "button", name: `Stop ${r.name}`, icon: "mdi:stop-circle-outline",
     tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.routes[i].stop } },
     show_state: false, color: "red",
   }));
-  const routeCard = m.routes.length > 0 ? [{
-    type: "vertical-stack",
-    cards: [
-      { type: "horizontal-stack", cards: routeStartButtons },
-      { type: "horizontal-stack", cards: routeStopButtons },
-    ],
-  }] : [];
 
   // Recovery controls — site-wide stop, fault clearing, queue clearing.
   // Each presses a parameterless template button defined in control.ts.
-  const recoveryCard = {
+  const recoveryCard: HaWidget = {
     type: "horizontal-stack",
     cards: [
       {
@@ -451,18 +483,26 @@ export function buildManualView(m: Manifest): unknown {
     ],
   };
 
+  const cards: HaWidget[] = [explainerCard, overrideCard, recoveryCard];
+  if (pumpEntities.length > 0) {
+    cards.push({ type: "entities", title: "Pump", entities: pumpEntities });
+  }
+  cards.push(...valveCards);
+  if (m.routes.length > 0) {
+    cards.push({
+      type: "vertical-stack",
+      cards: [
+        { type: "horizontal-stack", cards: routeStartButtons },
+        { type: "horizontal-stack", cards: routeStopButtons },
+      ],
+    });
+  }
+
   return {
     title: "Manual",
     path: "manual",
     icon: "mdi:hand-back-right",
-    cards: [
-      explainerCard,
-      overrideCard,
-      recoveryCard,
-      ...pumpCard,
-      ...valveCards,
-      ...routeCard,
-    ],
+    cards,
   };
 }
 
@@ -471,9 +511,9 @@ export function buildManualView(m: Manifest): unknown {
 // ---------------------------------------------------------------------------
 
 export function generateDashboard(m: Manifest, board: BoardDef): string {
-  const routeControl = buildRouteControlSection(m) as { sections: unknown[] };
+  const routeControl = buildRouteControlSection(m);
 
-  const dashboard = {
+  const dashboard: HaDashboard = {
     title: "Water System",
     views: [
       {
@@ -483,13 +523,13 @@ export function generateDashboard(m: Manifest, board: BoardDef): string {
         type: "sections",
         subview: false,
         sections: [
-          buildStatusSection(m),
+          buildStatusSection(m, board),
           buildWaterSection(m),
           ...routeControl.sections,
         ],
         badges: [],
       },
-      buildConfigurationView(m, board),
+      buildConfigurationView(m),
       buildManualView(m),
     ],
   };

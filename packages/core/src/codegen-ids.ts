@@ -22,7 +22,7 @@ export const pumpSwitchId = () => 'pump_relay';
 export const valveCoverId = (node: { id: string }) => node.id;
 export const valveOpenPinId = (node: { id: string }) => `${node.id}_open_pin`;
 export const valveClosePinId = (node: { id: string }) => `${node.id}_close_pin`;
-export const valveTravelMsId = (node: { id: string }) => `${node.id}_travel_ms`;
+export const valveTravelTimeId = (node: { id: string }) => `${node.id}_travel_s`;
 
 // ---------------------------------------------------------------------------
 // Component IDs — flow sensor

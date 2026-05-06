@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
-import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId } from '../codegen-ids';
+import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
 
@@ -33,7 +33,7 @@ const haNames = (node: ValveNode) => ({
   openCoil:   `${node.name} Open Coil`,
   closeCoil:  `${node.name} Close Coil`,
   cover:      node.name,
-  travelTime: `${node.name} Travel Time (ms)`,
+  travelTime: `${node.name} Travel Time (s)`,
 });
 
 // --- Descriptor ---
@@ -114,7 +114,7 @@ ${closeHeader}
       const coverId = valveCoverId(node);
       const openId = valveOpenPinId(node);
       const closeId = valveClosePinId(node);
-      const travelId = valveTravelMsId(node);
+      const travelId = valveTravelTimeId(node);
       const names = haNames(node);
       return {
         cover: `\
@@ -132,10 +132,11 @@ ${closeHeader}
   name: "${names.travelTime}"
   id: ${travelId}
   icon: "mdi:timer-cog-outline"
-  min_value: 1000
-  max_value: 30000
-  step: 1000
-  initial_value: ${node.travel_time * 1000}
+  unit_of_measurement: "s"
+  min_value: 1
+  max_value: 30
+  step: 1
+  initial_value: ${node.travel_time}
   optimistic: true
   restore_value: true
   entity_category: config`,

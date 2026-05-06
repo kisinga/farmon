@@ -74,7 +74,7 @@ export type { BuildHaMetaOptions } from './ha-meta';
 
 // --- Codegen IDs ---
 export {
-  pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelMsId,
+  pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId,
   flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId,
   levelSensorLevelId, levelSensorRawVoltageId, levelSensorCalEmptyId, levelSensorCalFullId,
   pressureSensorId, pressureSensorRangeMinId, pressureSensorRangeMaxId,
