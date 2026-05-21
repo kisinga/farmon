@@ -29,11 +29,12 @@ export type {
   SiteMetadata, LinkData, StoredTopology, SystemPayload,
   SiteFullPayload, SiteSavePayload, SiteListEntry, TemplateListEntry,
 } from './site.types';
+export type { RemoteBinding } from './schemas';
 export type { BoundaryPort } from './graph/boundary-ports';
 
 // --- Schemas ---
 export { TopologySchema, RouteOverrideSchema, parseTopology, parsePortRef, portRef, migrateTopology, CURRENT_SCHEMA_VERSION, type Topology } from './topology-schema';
-export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, parseDurationMs, escXml } from './schemas';
+export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, parseDurationMs, escXml, RemoteBindingSchema } from './schemas';
 export { type InputPolicy, policyString } from './input-policy';
 
 // --- Registry ---
@@ -82,6 +83,13 @@ export {
   waterSourcePressureId,
   dosingPumpSwitchId, filterInletPressureId, filterOutletPressureId, filterDeltaPressureId,
 } from './codegen-ids';
+
+// --- Remote Proxy ---
+export {
+  homeassistantSensorImport,
+  templateSwitchProxy,
+  templateCoverProxy,
+} from './remote-proxy';
 
 // --- I/O Providers ---
 export { createBoardDriver } from './io-providers/board-driver';

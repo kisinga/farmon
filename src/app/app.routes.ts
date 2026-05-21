@@ -48,6 +48,7 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./pages/editor/automations-tab/automations-tab.component').then((m) => m.AutomationsTabComponent),
       },
+
     ],
   },
 ];

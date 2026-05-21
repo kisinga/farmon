@@ -156,6 +156,7 @@ function initials(name: string): string {
                       </svg>
                       {{ site.linkCount }} link{{ site.linkCount !== 1 ? 's' : '' }}
                     </div>
+
                   </div>
                   <div class="card-actions justify-end mt-1">
                     <button

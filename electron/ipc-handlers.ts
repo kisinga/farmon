@@ -4,13 +4,15 @@ import { BoardDefSchema, type BoardDef } from "./lib/board.js";
 import { parseTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
 import { generateEsphome, generateSiteHA, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
+
 import { generateSelfTest } from "./lib/self-test/index.js";
 import { topologyToManifest } from "./lib/topology-to-manifest.js";
 import * as store from "./store.js";
 import * as db from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
-import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport } from '@far-mon/core';
+import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport, NODE_REGISTRY, deriveHaEntityId } from '@far-mon/core';
+
 import { generateSiteDocumentation, type PinTableRow } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
@@ -50,6 +52,41 @@ function resolveTopologyAndManifest(dataRaw: unknown) {
   const topology = parseTopology(dataRaw);
   const manifest = topologyToManifest(topology);
   return { topology, manifest };
+}
+
+/**
+ * Resolve remote node bindings into HA entity IDs using provider system data.
+ * Mutates the manifest nodes in place.
+ */
+function resolveRemoteNodes(
+  manifest: import("./lib/schema.js").Manifest,
+  siteSystems: db.SiteFullPayload['systems'],
+) {
+  for (const node of manifest.nodes) {
+    const remote = (node as Record<string, unknown>)['remote'] as
+      | { providerSystemId: string; providerNodeId: string; providerEntityKey: string }
+      | undefined;
+    if (!remote) continue;
+
+    const providerSys = siteSystems.find(s => s.id === remote.providerSystemId);
+    if (!providerSys) continue;
+
+    const topo = providerSys.topology as { nodes?: Array<Record<string, unknown>> };
+    const nodes = Array.isArray(topo?.nodes) ? topo.nodes : [];
+    const providerNode = nodes.find(n => n['id'] === remote.providerNodeId);
+    if (!providerNode) continue;
+
+    const desc = NODE_REGISTRY.get(providerNode['kind'] as string);
+    const haMap = desc?.codegen?.haEntityIds?.(providerNode as any, { friendly_name: providerSys.friendlyName });
+    const haEntityId = haMap?.[remote.providerEntityKey];
+    if (!haEntityId) continue;
+
+    node.remote = {
+      haEntityId,
+      providerSystemId: remote.providerSystemId,
+      providerNodeName: (providerNode['name'] as string) || remote.providerNodeId,
+    };
+  }
 }
 
 /**
@@ -193,6 +230,7 @@ export function registerIpcHandlers() {
       site: data.site,
       systems,
       links: data.links,
+
     });
 
     // Import HA files
@@ -399,12 +437,19 @@ export function registerIpcHandlers() {
         throw new Error(errors.join('\n'));
       }
 
+      // Resolve remote node bindings into HA entity IDs
+      const sitePayload = db.loadSiteFull(siteId);
+      if (sitePayload) {
+        resolveRemoteNodes(manifest, sitePayload.systems);
+      }
+
       // Load secrets from DB, falling back to defaults
       const savedSecrets = db.getSecrets(siteId, systemId);
       const secrets: SecretsMap = {
         ...generateDefaultSecrets(),
         ...savedSecrets,
       } as SecretsMap;
+
       const files = generateEsphome(manifest, board, siteId, secrets);
 
       const gen = db.createGeneration(siteId, systemId, topology, board, 'esphome', { ...secrets });
@@ -841,6 +886,7 @@ export function registerIpcHandlers() {
           deviceName: s.id,
         })),
         links: site.links,
+
       });
 
       // Import HA files

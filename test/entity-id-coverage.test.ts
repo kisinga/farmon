@@ -133,7 +133,7 @@ function check(fixture: FixtureCheck) {
   const firmwareIds = new Set<string>();
 
   // ESPHome firmware files (board package, control, hardware, sensors).
-  for (const f of generateEsphome(manifest, board, 'test-site')) {
+  for (const f of generateEsphome(manifest, board, 'test-site', undefined, [])) {
     if (!f.relativePath.endsWith('.yaml')) continue;
     if (f.relativePath.endsWith('secrets.yaml')) continue;
     const found = collectFirmwareEntityIds(f.content, manifest.device);

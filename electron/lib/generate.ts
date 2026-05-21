@@ -10,6 +10,7 @@ import { generateSiteDashboard, type SiteDashboardSystem } from "./generators/si
 import { generateDeviceYaml } from "./generators/device-yaml.js";
 import { generateControl } from "./generators/control.js";
 import { generateAutomations } from "./generators/automations.js";
+
 import { collectEntityCodegen } from "./generators/collect.js";
 import { LOGO_SVG } from '@far-mon/core';
 
@@ -76,7 +77,7 @@ export function generateEsphome(
   const deviceDir = `${siteRoot(siteId)}/esphome/${dir}`;
   const collected = collectEntityCodegen(m, board);
 
-  return [
+  const files: GeneratedFile[] = [
     {
       relativePath: `${deviceDir}/common/board.yaml`,
       description: `${board.label} board package (buses, battery, LED, diagnostics)`,
@@ -118,6 +119,8 @@ export function generateEsphome(
       content: generateSensors(m, collected),
     },
   ];
+
+  return files;
 }
 
 export function generateSiteHA(

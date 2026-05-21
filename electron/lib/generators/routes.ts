@@ -1,16 +1,9 @@
-import type { Manifest, ManifestNode } from "../schema.js";
+import type { Manifest } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
 import { valveCoverId, valveTravelTimeId, levelSensorLevelId, pressureSensorLevelId, flowSensorId, parseRouteKey } from '@far-mon/core';
 
-/** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
-export function parseDurationMs(s: string): number {
-  const ms = s.match(/^(\d+)\s*ms$/);
-  if (ms) return parseInt(ms[1], 10);
-  const sec = s.match(/^(\d+)\s*s$/);
-  if (sec) return parseInt(sec[1], 10) * 1000;
-  return 15000; // fallback
-}
 
+/** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
 export function generateRoutes(m: Manifest): string {
   const tanks = nodesByKind(m.nodes, 'tank');
   const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
@@ -83,6 +76,9 @@ export function generateRoutes(m: Manifest): string {
   // from pressure-vs-calibration). Dispatch on kind to the right codegen ID.
   const tankCases = tanks
     .map((t, i) => {
+      if (t.remote?.haEntityId) {
+        return `    case ${i}: return id(ri_${t['id']}).state; // remote: ${t.remote.providerNodeName}`;
+      }
       const src = t['level_source'] as { id: string; kind: 'level_sensor' | 'pressure_sensor' } | undefined;
       if (!src) return `    case ${i}: return -1.0f; // ${t['id']}: no level source`;
       if (src.kind === 'level_sensor') {
@@ -96,7 +92,12 @@ export function generateRoutes(m: Manifest): string {
     })
     .join("\n");
   const flowCases = flowSensors
-    .map((f, i) => `    case ${i}: return id(${flowSensorId(nid(f))}).state;`)
+    .map((f, i) => {
+      if (f.remote?.haEntityId) {
+        return `    case ${i}: return id(ri_${f['id']}).state; // remote: ${f.remote.providerNodeName}`;
+      }
+      return `    case ${i}: return id(${flowSensorId(nid(f))}).state;`;
+    })
     .join("\n");
 
   // Route max-runtime is operator-facing in minutes; convert to seconds for
@@ -488,9 +489,9 @@ inline int try_route_start(int route_id) {
     return queue_push(route_id) ? 1 : 2;
   }
 
-  const Route& r = ROUTES[route_id];
   uint8_t src_min = get_route_source_min_pct(route_id);
   uint8_t dst_max = get_route_dest_max_pct(route_id);
+  const Route& r = ROUTES[route_id];
   if (r.source_tank != 0xFF && src_min > 0) {
     float src = get_tank_level(r.source_tank);
     if (!id(safety_override).state && (std::isnan(src) || src < (float)src_min)) return 3;

@@ -160,6 +160,74 @@ Classes: `.nav-label-overview`, `.nav-label-site`, `.nav-label-system` (text col
 
 ---
 
+## Multi-Controller Sites and Partial Routes
+
+A MajiFlow **site** is a physical location with multiple ESP32 controllers. Each controller runs its own firmware, manages its own routes, and knows nothing about nodes on other controllers except through **interconnects** and **remote node imports**.
+
+### Route autonomy
+
+`deriveRoutes` runs on each controller's topology independently. A route is `valid` if it has at least one flow sensor — it does **not** need a complete end-to-end path on this controller. The `interconnect` node kind is both a `routeSource` and a `role: 'terminal'`, so routes can begin or end at a controller boundary.
+
+Example:
+
+```
+Controller A:  Tank → Pump → Flow Sensor → Interconnect
+Controller B:  Interconnect → Valve → Tank
+```
+
+Controller A derives `Tank → Interconnect` as a valid route (has flow sensor). Controller B derives `Interconnect → Tank` as a valid route. Neither firmware sees the other's nodes. The flow sensor on Controller A is the termination condition for its segment; the valve on Controller B is the termination condition for its segment.
+
+### Why this is safe
+
+Each controller is an autonomous safety boundary. Its state machine:
+- Opens only its own valves
+- Starts only its own pump
+- Watches only its own flow sensor
+- Has its own max-runtime watchdog
+- Has its own API watchdog
+
+If Controller A loses communication with Home Assistant, its own safety checks still run. Controller B's safety is unaffected. There is no distributed consensus — no two-phase commit, no leader election.
+
+### Remote node imports
+
+A controller can import the state or actuation of a node from another controller through Home Assistant. The imported node appears in the local topology as a proxy with a `remote` binding:
+
+```typescript
+remote: {
+  providerSystemId: 'greenhouse-b',
+  providerNodeId:   'valve1',
+  providerEntityKey: 'cover',
+}
+```
+
+At codegen time, `resolveRemoteNodes` looks up the provider system, finds the provider node, calls its `haEntityIds` descriptor, and resolves the entity key to a concrete Home Assistant entity ID. The generated firmware emits a `homeassistant` platform sensor import (for state) or a template cover/switch proxy (for actuation).
+
+### Resolution failure modes
+
+If `resolveRemoteNodes` cannot find the provider system, provider node, or entity key, `remote.haEntityId` is left unset. The `remote-nodes` validator fires:
+
+> Remote node "Valve 0" references provider "kc868-a16-controller2" which could not be resolved.
+
+Common causes:
+
+1. **Provider system deleted or renamed** — the stored `providerSystemId` no longer matches any system in the site.
+2. **Provider node deleted or renamed** — the node existed when the import was created, but its ID changed.
+3. **Entity key stale** — the provider node's descriptor changed and no longer exports the key stored in the binding.
+4. **Friendly name changed** — `deriveHaEntityId` uses `device.friendly_name` as a prefix. If the provider system's friendly name is renamed, its HA entity IDs change, and the derived lookup fails. (This is a known fragility; the entity ID should ideally be stored at import time rather than re-derived.)
+
+**Fix:** Delete the remote node and re-import it. There is no automatic re-linking when provider nodes change.
+
+### What can break the design
+
+Partial routes are a first-class feature, but they can be accidentally broken by changing any of these invariants:
+
+- `interconnect` must remain `role: 'terminal'` and `routeSource: true`
+- `deriveRoutes` must continue to accept any terminal, not just tanks
+- Route validity must continue to require only a flow sensor, not a destination tank
+- `topologyToManifest` must continue to include all connected nodes, not just those on complete routes
+
+---
+
 ## @far-mon/core
 
 Shared library with no Angular dependency. Key exports:

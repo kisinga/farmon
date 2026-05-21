@@ -43,6 +43,16 @@ export function collectEntityCodegen(m: Manifest, board: BoardDef): CollectedCod
     if (!desc?.codegen) continue;
     const idx = nodesByKind(m.nodes, node.kind).indexOf(node);
 
+    // Remote proxy — descriptor owns the proxy type and ID convention.
+    // When present, skip ALL local hardware generation.
+    if (node.remote?.haEntityId) {
+      const proxy = desc.codegen.remoteProxy?.(node);
+      if (proxy) {
+        (result.sections[proxy.section] ??= []).push(proxy.yaml);
+      }
+      continue;
+    }
+
     // Hardware (switch: section)
     if (desc.codegen.hardware) {
       const block = desc.codegen.hardware(node, idx, ctx);

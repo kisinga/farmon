@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../schemas';
+import { RemoteBindingSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { HaNodeFields } from '../ha';
@@ -26,6 +27,7 @@ export const TankNodeSchema = z.object({
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
   ...HaNodeFields,
+  remote: RemoteBindingSchema.optional(),
 });
 
 export type TankNode = z.infer<typeof TankNodeSchema>;

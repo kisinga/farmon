@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../schemas';
+import { RemoteBindingSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { HaNodeFields } from '../ha';
 
@@ -19,6 +20,7 @@ export const InterconnectNodeSchema = z.object({
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
   ...HaNodeFields,
+  remote: RemoteBindingSchema.optional(),
 });
 
 export type InterconnectNode = z.infer<typeof InterconnectNodeSchema>;

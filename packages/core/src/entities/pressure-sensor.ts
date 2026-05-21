@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
+import { RemoteBindingSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import {
   pressureSensorId,
@@ -13,6 +14,7 @@ import {
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
+import { homeassistantSensorImport } from '../remote-proxy';
 import { deriveTankCalibration, recommendSensorMaxPsi } from '../units';
 
 const COLOR = '#8b5cf6'; // violet
@@ -48,6 +50,7 @@ export const PressureSensorNodeSchema = z.object({
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
   ...HaNodeFields,
+  remote: RemoteBindingSchema.optional(),
 });
 
 export type PressureSensorNode = z.infer<typeof PressureSensorNodeSchema>;
@@ -255,6 +258,7 @@ ${header}
       id: 'pressure-sensor-pin-required',
       severity: 'error',
       evaluate: (nodes) => nodes
+        .filter(n => !n['remote'])
         .filter(n => !n['pin'])
         .map(n => ({
           message: `Pressure sensor "${n['name']}": no pin assigned. Standalone pressure sensors require an ADC pin.`,

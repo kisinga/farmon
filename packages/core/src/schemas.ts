@@ -64,6 +64,18 @@ export type Port = z.infer<typeof PortSchema>;
 export type Position = z.infer<typeof PositionSchema>;
 
 // ---------------------------------------------------------------------------
+// Remote binding — cross-controller node import
+// ---------------------------------------------------------------------------
+
+export const RemoteBindingSchema = z.object({
+  providerSystemId: z.string().min(1),
+  providerNodeId: z.string().min(1),
+  providerEntityKey: z.string().min(1),
+});
+
+export type RemoteBinding = z.infer<typeof RemoteBindingSchema>;
+
+// ---------------------------------------------------------------------------
 // Device & timing schemas (previously in electron/lib/shared-schema.ts)
 // ---------------------------------------------------------------------------
 

@@ -44,6 +44,7 @@ export type { Selection };
             (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'disabled', value: !$event })" />
           <!-- Entity-specific fields -->
           @for (field of sn.desc.sidebarFields; track field.key) {
+            @if (!$any(sn.node).remote || field.type !== 'pin') {
             <label class="sidebar-label">{{ field.label }}</label>
             <div class="sidebar-control">
               @if (field.type === 'pin') {
@@ -133,6 +134,7 @@ export type { Selection };
             </div>
             @if (field.hint) {
               <div class="sidebar-hint">{{ field.hint }}</div>
+            }
             }
           }
         </div>

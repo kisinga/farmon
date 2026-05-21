@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
+import { RemoteBindingSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
+import { templateSwitchProxy } from '../remote-proxy';
 
 const COLOR = '#dc2626'; // red
 const S = 60;
@@ -30,6 +32,7 @@ export const PumpNodeSchema = z.object({
     ),
   position: PositionSchema,
   ...HaNodeFields,
+  remote: RemoteBindingSchema.optional(),
 });
 
 export type PumpNode = z.infer<typeof PumpNodeSchema>;
@@ -136,6 +139,15 @@ ${header}
     haEntityIds: (node: PumpNode, device) => ({
       relay: deriveHaEntityId('switch', device, haNames(node).relay),
     }),
+
+    remoteProxy: (node: PumpNode) => {
+      const haEntityId = ((node as Record<string, any>)['remote'] as any)?.haEntityId as string | undefined;
+      if (!haEntityId) return null;
+      return {
+        section: 'switch',
+        yaml: templateSwitchProxy(pumpSwitchId(), node.name, haEntityId),
+      };
+    },
   },
 
   rules: [
@@ -143,6 +155,7 @@ ${header}
       id: 'pump-pin-required',
       severity: 'error',
       evaluate: (nodes) => nodes
+        .filter(n => !n['remote'])
         .filter(n => !n['pin'])
         .map(n => ({
           message: `Pump "${n['name'] ?? n['id']}": Relay Pin not configured`,

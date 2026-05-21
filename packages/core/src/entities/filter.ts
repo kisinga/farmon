@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
+import { RemoteBindingSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { filterInletPressureId, filterOutletPressureId, filterDeltaPressureId } from '../codegen-ids';
@@ -22,6 +23,7 @@ export const FilterNodeSchema = z.object({
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
   ...HaNodeFields,
+  remote: RemoteBindingSchema.optional(),
 });
 
 export type FilterNode = z.infer<typeof FilterNodeSchema>;

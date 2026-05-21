@@ -223,6 +223,10 @@ const MIGRATIONS: Record<number, string> = {
       FOREIGN KEY (system_id, site_id) REFERENCES systems(id, site_id) ON DELETE CASCADE
     );
   `,
+  4: `
+    -- Drop remote_inputs table (migrated to topology node.remote binding)
+    DROP TABLE IF EXISTS remote_inputs;
+  `,
 };
 
 // ---------------------------------------------------------------------------

@@ -47,6 +47,12 @@ import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlay
             }
           </ul>
         </div>
+        <button class="btn btn-ghost btn-xs gap-1" title="Add Remote Node" (click)="addRemoteNode()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
+          Remote
+        </button>
         <div class="divider divider-horizontal mx-0 h-4"></div>
         <button class="btn btn-ghost btn-xs" title="Undo" (click)="doUndo()">&#x21A9;</button>
         <button class="btn btn-ghost btn-xs" title="Redo" (click)="doRedo()">&#x21AA;</button>
@@ -83,6 +89,53 @@ import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlay
             }
           </ul>
         </div>
+      }
+
+      <!-- Remote node import modal -->
+      @if (remoteModalOpen()) {
+        <div class="node-popup-backdrop" (click)="closeRemoteModal()"></div>
+        <dialog class="modal modal-open" style="position: fixed;">
+          <div class="modal-box max-w-sm">
+            <h3 class="text-lg font-bold">Import Remote Node</h3>
+            <div class="py-4 space-y-3">
+              <!-- Provider System -->
+              <div class="form-control">
+                <label class="label label-text text-xs">Provider System</label>
+                <select class="select select-sm select-bordered w-full" [value]="remoteSelectedSystem()" (change)="onRemoteSystemChange($any($event.target).value)">
+                  <option value="" disabled selected>Choose system…</option>
+                  @for (s of remoteModalSystems(); track s.id) {
+                    <option [value]="s.id">{{ s.name }}</option>
+                  }
+                </select>
+              </div>
+              <!-- Provider Node -->
+              <div class="form-control">
+                <label class="label label-text text-xs">Provider Node</label>
+                <select class="select select-sm select-bordered w-full" [value]="remoteSelectedNode()" [disabled]="!remoteModalNodeEnabled()" (change)="onRemoteNodeChange($any($event.target).value)">
+                  <option value="" disabled selected>Choose node…</option>
+                  @for (n of remoteModalNodes(); track n.id) {
+                    <option [value]="n.id">{{ n.name }} ({{ n.kind }})</option>
+                  }
+                </select>
+              </div>
+              <!-- Entity Key -->
+              <div class="form-control">
+                <label class="label label-text text-xs">Entity Key</label>
+                <select class="select select-sm select-bordered w-full" [value]="remoteSelectedKey()" [disabled]="!remoteModalKeyEnabled()" (change)="remoteSelectedKey.set($any($event.target).value)">
+                  <option value="" disabled selected>Choose entity…</option>
+                  @for (k of remoteModalKeys(); track k) {
+                    <option [value]="k">{{ k }}</option>
+                  }
+                </select>
+              </div>
+
+            </div>
+            <div class="modal-action">
+              <button class="btn btn-sm" (click)="closeRemoteModal()">Cancel</button>
+              <button class="btn btn-sm btn-primary" [disabled]="!remoteModalSubmitEnabled()" (click)="submitRemoteModal()">Add</button>
+            </div>
+          </div>
+        </dialog>
       }
 
       <!-- Sidebar -->
@@ -176,6 +229,22 @@ export class TopologyX6TabComponent {
       return desc.defaultPorts.some(p => p.direction === 'inlet');
     });
   });
+
+  // --- Remote node modal state ---
+  protected remoteModalOpen = signal(false);
+  protected remoteModalSystems = signal<Array<{ id: string; name: string }>>([]);
+  protected remoteModalNodes = signal<Array<{ id: string; name: string; kind: string }>>([]);
+  protected remoteModalKeys = signal<string[]>([]);
+
+  protected remoteSelectedSystem = signal('');
+  protected remoteSelectedNode = signal('');
+  protected remoteSelectedKey = signal('');
+
+  protected remoteModalNodeEnabled = computed(() => !!this.remoteSelectedSystem());
+  protected remoteModalKeyEnabled = computed(() => !!this.remoteSelectedNode());
+  protected remoteModalSubmitEnabled = computed(() =>
+    !!this.remoteSelectedSystem() && !!this.remoteSelectedNode() && !!this.remoteSelectedKey(),
+  );
 
   constructor() {
     afterNextRender(() => {
@@ -333,6 +402,84 @@ export class TopologyX6TabComponent {
       } as TopologyNode);
     });
     this.renderAndSnapshot(this.editor.topology()!);
+  }
+
+  addRemoteNode() {
+    const otherSystems = [...this.workspace.systems().entries()]
+      .filter(([id]) => id !== this.editor.systemId())
+      .map(([id, s]) => ({ id, name: s.topology.device?.friendly_name || id }));
+    if (otherSystems.length === 0) {
+      return;
+    }
+
+    this.remoteModalSystems.set(otherSystems);
+    this.remoteModalNodes.set([]);
+    this.remoteModalKeys.set([]);
+    this.remoteSelectedSystem.set('');
+    this.remoteSelectedNode.set('');
+    this.remoteSelectedKey.set('');
+    this.remoteModalOpen.set(true);
+  }
+
+  onRemoteSystemChange(systemId: string) {
+    this.remoteSelectedSystem.set(systemId);
+    this.remoteSelectedNode.set('');
+    this.remoteSelectedKey.set('');
+    this.remoteModalKeys.set([]);
+
+    const providerSys = this.workspace.systems().get(systemId);
+    const providerNodes = providerSys?.topology.nodes ?? [];
+    const haNodes = providerNodes.filter(n => {
+      const desc = NODE_REGISTRY.get(n.kind);
+      return desc?.codegen?.haEntityIds;
+    });
+    this.remoteModalNodes.set(haNodes.map(n => ({
+      id: n.id,
+      name: (n as any).name || n.id,
+      kind: n.kind,
+    })));
+  }
+
+  onRemoteNodeChange(nodeId: string) {
+    this.remoteSelectedNode.set(nodeId);
+    this.remoteSelectedKey.set('');
+
+    const systemId = this.remoteSelectedSystem();
+    const providerSys = this.workspace.systems().get(systemId);
+    const providerNode = providerSys?.topology.nodes.find(n => n.id === nodeId);
+    if (!providerNode) {
+      this.remoteModalKeys.set([]);
+      return;
+    }
+
+    const desc = NODE_REGISTRY.get(providerNode.kind);
+    const haMap = desc?.codegen?.haEntityIds?.(providerNode as any, { friendly_name: providerSys?.topology.device?.friendly_name ?? systemId });
+    this.remoteModalKeys.set(Object.keys(haMap ?? {}));
+  }
+
+  closeRemoteModal() {
+    this.remoteModalOpen.set(false);
+  }
+
+  submitRemoteModal() {
+    const systemId = this.remoteSelectedSystem();
+    const nodeId = this.remoteSelectedNode();
+    const entityKey = this.remoteSelectedKey();
+    if (!systemId || !nodeId || !entityKey) return;
+
+    const providerNode = this.remoteModalNodes().find(n => n.id === nodeId);
+    if (!providerNode) return;
+
+    const center = this.c.getViewportCenter();
+    this.editor.addRemoteNode(
+      providerNode.kind,
+      systemId,
+      nodeId,
+      entityKey,
+      { x: center.x - 60, y: center.y - 35 },
+    );
+    this.renderAndSnapshot(this.editor.topology()!);
+    this.closeRemoteModal();
   }
 
   doZoomIn() { this.c.zoomIn(); }
