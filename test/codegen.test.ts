@@ -668,6 +668,83 @@ const kcDeviceYaml = getKcFile("kc868-controller.yaml");
 assert(kcDeviceYaml.includes("name: ${device_name}"), "ESPHome name sub");
 assert(!kcDeviceYaml.includes("display:"), "No OLED display (board has no OLED)");
 
+// =============================================================================
+// SONOFF BASICR4 Board Tests — ESP32-C3 single-relay pump controller
+// =============================================================================
+
+console.log("\n\nSONOFF BASICR4 Board Tests");
+console.log("==========================\n");
+
+const R4_BOARD_DIR = path.join(DEFAULTS, "boards/sonoff-basicr4");
+const R4_CONFIG_PATH = path.join(DEFAULTS, "configs/sonoff-basicr4-pump.yaml");
+const r4Board = loadBoard(R4_BOARD_DIR);
+const r4RawConfig = fs.readFileSync(R4_CONFIG_PATH, "utf-8");
+const r4Topology = parseTopology(parseYaml(r4RawConfig));
+const r4Manifest = topologyToManifest(r4Topology);
+const r4Validation = validateAll(r4Topology, r4Manifest, r4Board);
+const r4Files = generateAll(r4Manifest, r4Board, 'test-site');
+const r4FileMap = new Map(r4Files.map((f) => [f.relativePath, f.content]));
+
+function getR4File(suffix: string): string {
+  for (const [key, content] of r4FileMap) {
+    if (key.endsWith(suffix)) return content;
+  }
+  throw new Error(`No BASICR4 generated file ending with "${suffix}"`);
+}
+
+// --- Board definition ---
+
+console.log("Board definition:");
+assert(r4Board.model === "sonoff_basicr4", `Board model = ${r4Board.model}`);
+assert(r4Board.pins.length === 2, `${r4Board.pins.length} exposed pins`);
+assert(r4Board.mcu.variant === "esp32c3", `MCU variant = ${r4Board.mcu.variant}`);
+assert(r4Board.mcu.flash_size === "4MB", `Flash size = ${r4Board.mcu.flash_size}`);
+assert(!!r4Board.peripherals.led, "Has LED peripheral");
+assert(!r4Board.peripherals.oled, "No OLED");
+assert(!r4Board.peripherals.ethernet, "No Ethernet");
+assert(!r4Board.expanders, "No expanders");
+
+// --- Validation ---
+
+console.log("\nManifest validation:");
+assert(r4Validation.ok, "Manifest passes validation");
+assert(r4Validation.errors.length === 0, "No validation errors");
+
+// --- Board package ---
+
+console.log("\nBoard package:");
+const r4BoardPkg = getR4File("common/board.yaml");
+assert(r4BoardPkg.includes("esp32c3"), "MCU variant = esp32c3");
+assert(r4BoardPkg.includes("esp-idf"), "Framework = esp-idf");
+assert(r4BoardPkg.includes("led_output"), "Has LED output");
+assert(r4BoardPkg.includes("wifi:"), "Has wifi: section");
+assert(r4BoardPkg.includes("wifi_dbm"), "Has WiFi signal sensor");
+assert(!r4BoardPkg.includes("ethernet:"), "No ethernet: section");
+assert(!r4BoardPkg.includes("pcf8574:"), "No PCF8574 expanders");
+assert(!r4BoardPkg.includes("display:"), "No OLED display block");
+
+// --- Hardware ---
+
+console.log("\nHardware:");
+const r4Hw = getR4File("hardware.yaml");
+assert(r4Hw.includes("pump_relay"), "Has pump relay");
+assert(r4Hw.includes("GPIO4"), "Pump relay uses GPIO4");
+
+// --- Sensors ---
+
+console.log("\nSensors:");
+const r4Sensors = getR4File("sensors.yaml");
+assert(r4Sensors.includes("id: flow1"), "Flow sensor defined");
+assert(r4Sensors.includes("GPIO5"), "Flow sensor uses GPIO5");
+
+// --- Device YAML ---
+
+console.log("\nDevice YAML:");
+const r4DeviceYaml = getR4File("sonoff-pump.yaml");
+assert(r4DeviceYaml.includes("name: ${device_name}"), "ESPHome name sub");
+assert(!r4DeviceYaml.includes("display:"), "No OLED display (board has no OLED)");
+assert(r4DeviceYaml.includes("switch.turn_off"), "Boot turns off pump relay");
+
 // --- Summary ---
 
 console.log(`\n${"=".repeat(40)}`);

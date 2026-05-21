@@ -1,0 +1,54 @@
+schema: 11
+device:
+  name: sonoff-pump
+  friendly_name: Sonoff Pump
+  board: sonoff-basicr4
+  directory: sonoff-pump
+
+nodes:
+  - kind: tank
+    id: tank1
+    name: Source Tank
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 100, y: 200 }
+
+  - kind: pump
+    id: pump
+    name: Main Pump
+    pin: GPIO4
+    ports:
+      - { id: in, label: Inlet, direction: inlet }
+      - { id: out, label: Outlet, direction: outlet }
+    position: { x: 400, y: 200 }
+
+  - kind: flow_sensor
+    id: flow1
+    name: Pump Flow
+    pin: GPIO5
+    flow_cal: 450
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+      - { id: outlet, label: Outlet, direction: outlet }
+    position: { x: 550, y: 200 }
+
+  - kind: endpoint
+    id: endpoint1
+    name: Irrigation Line
+    ports:
+      - { id: inlet, label: Inlet, direction: inlet }
+    position: { x: 700, y: 200 }
+
+pipes:
+  - { id: p1, from: "tank1:outlet", to: "pump:in" }
+  - { id: p2, from: "pump:out", to: "flow1:inlet" }
+  - { id: p3, from: "flow1:outlet", to: "endpoint1:inlet" }
+
+timing:
+  valve_travel_time: 15
+  flow_watchdog: 30
+  flow_confirm: 15
+  flow_threshold: 0.5
+  api_watchdog: 300
+  update_interval: 5

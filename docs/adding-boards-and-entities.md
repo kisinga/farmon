@@ -15,6 +15,7 @@ defaults/boards/{board-id}/
 Use the existing boards as reference:
 - `defaults/boards/heltec-v3/board.yaml` — direct GPIO, WiFi, OLED, battery
 - `defaults/boards/kc868-a16/board.yaml` — I2C expanders, Ethernet, no display
+- `defaults/boards/sonoff-basicr4/board.yaml` — minimal ESP32-C3, single relay, WiFi only
 
 Required sections:
 
