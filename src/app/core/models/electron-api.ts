@@ -185,7 +185,7 @@ export interface ElectronAPI {
 
   // Codegen
   codegenDeriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>>;
-  codegenValidate(manifest: unknown, board: unknown): Promise<ValidationResult>;
+  codegenValidate(manifest: unknown, board: unknown, siteId?: string): Promise<ValidationResult>;
   codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult>;
   codegenGenerateHA(siteId: string): Promise<GenerateHAResult>;
   codegenGenerateSelfTest(boardModel: string, secrets: Record<string, string>, network?: NetworkConfig): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }>;

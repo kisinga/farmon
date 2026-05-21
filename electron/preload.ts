@@ -36,8 +36,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // --- Codegen ---
   codegenDeriveRoutes: (topology: unknown) =>
     ipcRenderer.invoke("codegen:derive-routes", topology),
-  codegenValidate: (manifest: unknown, board: unknown) =>
-    ipcRenderer.invoke("codegen:validate", manifest, board),
+  codegenValidate: (manifest: unknown, board: unknown, siteId?: string) =>
+    ipcRenderer.invoke("codegen:validate", manifest, board, siteId),
   codegenGenerate: (siteId: string, systemId: string, manifest: unknown, board: unknown) =>
     ipcRenderer.invoke("codegen:generate", siteId, systemId, manifest, board),
   codegenGenerateHA: (siteId: string) =>

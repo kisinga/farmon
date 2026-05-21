@@ -638,16 +638,16 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
     await this.boards.refresh();
     await this.boards.load(sys.topology.device.board);
 
-    // Run validation
-    if (sys.board) {
-      const result = await this.electron.validate(sys.topology, sys.board);
-      this.fwValidation.set(result);
-    }
-
     // Set OTA address
     this.otaAddress.set(`${sys.topology.device.name}.local`);
 
     const siteId = this.workspace.site()?.id;
+
+    // Run validation
+    if (sys.board) {
+      const result = await this.electron.validate(sys.topology, sys.board, siteId);
+      this.fwValidation.set(result);
+    }
     if (!siteId) return;
 
     // Load secrets (or initialize defaults)

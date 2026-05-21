@@ -99,9 +99,9 @@ export class ElectronService {
     if (!this.api) return Promise.resolve([]);
     return this.api.codegenDeriveRoutes(topology);
   }
-  validate(manifest: unknown, board: unknown): Promise<ValidationResult> {
+  validate(manifest: unknown, board: unknown, siteId?: string): Promise<ValidationResult> {
     if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false, diagnostics: [] });
-    return this.api.codegenValidate(manifest, board);
+    return this.api.codegenValidate(manifest, board, siteId);
   }
   generate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult> {
     return this.invoke(() => this.api!.codegenGenerate(siteId, systemId, manifest, board));

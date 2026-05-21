@@ -417,9 +417,18 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     "codegen:validate",
-    async (_e, dataRaw: unknown, boardRaw: unknown) => {
+    async (_e, dataRaw: unknown, boardRaw: unknown, siteId?: string) => {
       const board = BoardDefSchema.parse(boardRaw) as BoardDef;
       const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
+
+      // Resolve remote nodes when site context is available (design-time validation)
+      if (siteId) {
+        const sitePayload = db.loadSiteFull(siteId);
+        if (sitePayload) {
+          resolveRemoteNodes(manifest, sitePayload.systems);
+        }
+      }
+
       return validateAll(topology, manifest, board);
     }
   );
@@ -429,18 +438,20 @@ export function registerIpcHandlers() {
     async (_e, siteId: string, systemId: string, dataRaw: unknown, boardRaw: unknown) => {
       const board = BoardDefSchema.parse(boardRaw) as BoardDef;
       const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
+
+      // Resolve remote node bindings BEFORE validation so the validator
+      // sees resolved haEntityIds, not raw provider references.
+      const sitePayload = db.loadSiteFull(siteId);
+      if (sitePayload) {
+        resolveRemoteNodes(manifest, sitePayload.systems);
+      }
+
       const validation = validateAll(topology, manifest, board);
       if (!validation.ok) {
         const errors = validation.diagnostics
           .filter(d => d.severity === 'error')
           .map(d => d.message);
         throw new Error(errors.join('\n'));
-      }
-
-      // Resolve remote node bindings into HA entity IDs
-      const sitePayload = db.loadSiteFull(siteId);
-      if (sitePayload) {
-        resolveRemoteNodes(manifest, sitePayload.systems);
       }
 
       // Load secrets from DB, falling back to defaults

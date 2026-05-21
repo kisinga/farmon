@@ -116,7 +116,8 @@ export class EditorComponent implements OnInit, OnDestroy {
     const board = this.editor.board();
     if (!topology || !board) return;
     const gen = ++this.validationGen;
-    const result = await this.electron.validate(topology, board);
+    const siteId = this.workspace.site()?.id;
+    const result = await this.electron.validate(topology, board, siteId);
     if (gen !== this.validationGen) return;
     this.editor.setValidation(result);
   }
