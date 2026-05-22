@@ -2,9 +2,40 @@ import type { Manifest } from "../schema.js";
 import { nodesByKind, nodesWithFlag } from "../schema.js";
 import { valveCoverId, valveTravelTimeId, levelSensorLevelId, pressureSensorLevelId, flowSensorId, parseRouteKey } from '@far-mon/core';
 
+// ---------------------------------------------------------------------------
+// Route context — pure computation, platform-agnostic
+// ---------------------------------------------------------------------------
 
-/** Parse an ESPHome duration string like "15s" or "2000ms" to milliseconds. */
-export function generateRoutes(m: Manifest): string {
+export interface RouteContext {
+  manifest: Manifest;
+  tanks: Manifest['nodes'];
+  levelSensors: Manifest['nodes'];
+  pressureSensors: Manifest['nodes'];
+  valves: Manifest['nodes'];
+  flowSensors: Manifest['nodes'];
+  waterSources: Manifest['nodes'];
+  tankIdx: Map<string, number>;
+  valveIdx: Map<string, number>;
+  flowIdx: Map<string, number>;
+  wsIdx: Map<string, number>;
+  valveTravelMs: number;
+  flowWatchdogMs: number;
+  flowConfirmMs: number;
+  apiWatchdogMs: number;
+  conflictMasks: number[];
+  routeLines: string[];
+  valveComment: string;
+  tankComment: string;
+  wsComment: string;
+  flowComment: string;
+}
+
+/**
+ * Build a RouteContext from a manifest.
+ * Pure function — all index computation, conflict masks, and route table
+ * formatting lives here. Platform-specific emission is separate.
+ */
+export function buildRouteContext(m: Manifest): RouteContext {
   const tanks = nodesByKind(m.nodes, 'tank');
   const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
   const pressureSensors = nodesWithFlag(m.nodes, 'isPressureSensor');
@@ -59,6 +90,29 @@ export function generateRoutes(m: Manifest): string {
   const tankComment = tanks.map((t, i) => `${i}=${t['id']}(${t['name']})`).join("  ");
   const wsComment = waterSources.map((ws, i) => `${i}=${ws['id']}(${ws['name']})`).join("  ");
   const flowComment = flowSensors.map((f, i) => `${i}=${f['id']}(${f['name']})`).join("  ");
+
+  return {
+    manifest: m,
+    tanks, levelSensors, pressureSensors, valves, flowSensors, waterSources,
+    tankIdx, valveIdx, flowIdx, wsIdx,
+    valveTravelMs, flowWatchdogMs, flowConfirmMs, apiWatchdogMs,
+    conflictMasks, routeLines,
+    valveComment, tankComment, wsComment, flowComment,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ESPHome-specific emission
+// ---------------------------------------------------------------------------
+
+export function generateRoutes(m: Manifest): string {
+  const ctx = buildRouteContext(m);
+  const {
+    tanks, levelSensors, pressureSensors, valves, flowSensors, waterSources,
+    valveTravelMs, flowWatchdogMs, flowConfirmMs, apiWatchdogMs,
+    conflictMasks, routeLines,
+    valveComment, tankComment, wsComment, flowComment,
+  } = ctx;
 
   // Build dispatch functions (hardware-level, renamed with _hw suffix)
   const nid = (node: Record<string, any>) => ({ id: String(node['id']) });

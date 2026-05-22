@@ -142,15 +142,15 @@ export class ElectronService {
     return this.invoke(() => this.api!.esphomeCancel(processId));
   }
 
-  // --- ESPHome events ---
-  onEsphomeStarted(callback: (handle: ProcessHandle) => void): () => void {
-    return this.api?.onEsphomeStarted(callback) ?? (() => {});
+  // --- Process events (unified for all backends) ---
+  onProcessStarted(callback: (handle: ProcessHandle) => void): () => void {
+    return this.api?.onProcessStarted(callback) ?? (() => {});
   }
-  onEsphomeOutput(callback: (data: ProcessOutputEvent) => void): () => void {
-    return this.api?.onEsphomeOutput(callback) ?? (() => {});
+  onProcessOutput(callback: (data: ProcessOutputEvent) => void): () => void {
+    return this.api?.onProcessOutput(callback) ?? (() => {});
   }
-  onEsphomeDone(callback: (data: ProcessDoneEvent) => void): () => void {
-    return this.api?.onEsphomeDone(callback) ?? (() => {});
+  onProcessDone(callback: (data: ProcessDoneEvent) => void): () => void {
+    return this.api?.onProcessDone(callback) ?? (() => {});
   }
 
   // --- Serial monitor ---
@@ -263,6 +263,17 @@ export class ElectronService {
   }
   async secretsSet(siteId: string, systemId: string, secrets: Record<string, string>): Promise<void> {
     await this.invoke(() => this.api!.secretsSet(siteId, systemId, secrets));
+  }
+
+  // --- System settings ---
+  settingsGet(siteId: string, systemId: string, key: string): Promise<string | null> {
+    return this.api?.settingsGet(siteId, systemId, key) ?? Promise.resolve(null);
+  }
+  async settingsSet(siteId: string, systemId: string, key: string, value: string): Promise<void> {
+    await this.invoke(() => this.api!.settingsSet(siteId, systemId, key, value));
+  }
+  settingsGetAll(siteId: string, systemId: string): Promise<Record<string, string>> {
+    return this.api?.settingsGetAll(siteId, systemId) ?? Promise.resolve({});
   }
 
   private invoke<T>(fn: () => Promise<T>): Promise<T> {

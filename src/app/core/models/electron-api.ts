@@ -78,6 +78,7 @@ export type ProcessOperation = "compile" | "flash" | "logs";
 
 export interface ProcessHandle {
   id: string;
+  backend: string;
   operation: ProcessOperation;
   configName: string;
   pid: number | undefined;
@@ -91,6 +92,7 @@ export interface ProcessResult {
 
 export interface ProcessOutputEvent {
   id: string;
+  backend: string;
   operation: ProcessOperation;
   stream: "stdout" | "stderr";
   text: string;
@@ -98,6 +100,7 @@ export interface ProcessOutputEvent {
 
 export interface ProcessDoneEvent {
   id: string;
+  backend: string;
   operation: ProcessOperation;
   code: number | null;
   signal: string | null;
@@ -202,10 +205,10 @@ export interface ElectronAPI {
   esphomeLogs(configName: string, device?: string): Promise<ProcessResult>;
   esphomeCancel(processId: string): Promise<{ cancelled: boolean }>;
 
-  // ESPHome events
-  onEsphomeStarted(callback: (handle: ProcessHandle) => void): () => void;
-  onEsphomeOutput(callback: (data: ProcessOutputEvent) => void): () => void;
-  onEsphomeDone(callback: (data: ProcessDoneEvent) => void): () => void;
+  // Process events (unified for all backends)
+  onProcessStarted(callback: (handle: ProcessHandle) => void): () => void;
+  onProcessOutput(callback: (data: ProcessOutputEvent) => void): () => void;
+  onProcessDone(callback: (data: ProcessDoneEvent) => void): () => void;
 
   // Serial monitor
   serialMonitor(port: string, baudRate: number): Promise<SerialHandle>;
@@ -255,6 +258,11 @@ export interface ElectronAPI {
   // System secrets
   secretsGet(siteId: string, systemId: string): Promise<Record<string, string>>;
   secretsSet(siteId: string, systemId: string, secrets: Record<string, string>): Promise<void>;
+
+  // System settings
+  settingsGet(siteId: string, systemId: string, key: string): Promise<string | null>;
+  settingsSet(siteId: string, systemId: string, key: string, value: string): Promise<{ ok: boolean }>;
+  settingsGetAll(siteId: string, systemId: string): Promise<Record<string, string>>;
 }
 
 declare global {

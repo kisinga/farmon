@@ -35,9 +35,11 @@ export {
 export {
   generateAll,
   generateEsphome,
+  generateFirmware,
   generateSiteHA,
   generateDefaultSecrets,
   type GeneratedFile,
+  type GeneratorId,
   type SecretsMap,
 } from "./generate.js";
 

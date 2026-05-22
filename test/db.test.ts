@@ -25,6 +25,10 @@ import {
   deleteSite,
   insertSystem,
   checkNodeIdConflicts,
+  getSetting,
+  setSetting,
+  getSettings,
+  duplicateSite,
 } from "../electron/db.js";
 
 let passed = 0;
@@ -78,7 +82,7 @@ async function main() {
         board: "heltec-v3",
         directory: null,
         topology: { nodes: [{ id: "pump1", kind: "pump" }, { id: "tank1", kind: "tank" }], pipes: [], route_overrides: {}, timing: {}, automations: [] },
-        position: { x: 0, y: 0 },
+        deviceName: "pump-ctrl",
       },
     ],
     links: [],
@@ -106,7 +110,7 @@ async function main() {
     board: "heltec-v3",
     directory: null,
     topology: { nodes: [{ id: "valve1", kind: "valve" }], pipes: [], route_overrides: {}, timing: {}, automations: [] },
-    position: { x: 100, y: 0 },
+    deviceName: "valve-ctrl",
   });
   const full2 = loadSiteFull("test-site");
   assert(full2!.systems.length === 2, "second system inserted");
@@ -192,6 +196,45 @@ async function main() {
   assert(listGenerations("test-site", "pump-ctrl").length === 2, "keeps only 2 most recent");
 
   assert(listGenerations("test-site", "valve-ctrl").length === 1, "prune does not affect other systems");
+
+  // -------------------------------------------------------------------------
+  // System settings
+  // -------------------------------------------------------------------------
+
+  console.log("\nsettings — CRUD");
+  setSetting("test-site", "pump-ctrl", "generator", "esphome");
+  assert(getSetting("test-site", "pump-ctrl", "generator") === "esphome", "getSetting returns stored value");
+  assert(getSetting("test-site", "pump-ctrl", "missing") === null, "getSetting returns null for missing key");
+
+  setSetting("test-site", "pump-ctrl", "generator", "frugaliot");
+  assert(getSetting("test-site", "pump-ctrl", "generator") === "frugaliot", "setSetting overwrites existing value");
+
+  setSetting("test-site", "pump-ctrl", "ota_address", "192.168.1.50");
+  const allSettings = getSettings("test-site", "pump-ctrl");
+  assert(Object.keys(allSettings).length === 2, "getSettings returns all keys");
+  assert(allSettings.generator === "frugaliot", "getSettings includes generator");
+  assert(allSettings.ota_address === "192.168.1.50", "getSettings includes ota_address");
+
+  console.log("\nsettings — cascade on site delete");
+  createSite("settings-cascade", "Cascade Test");
+  insertSystem("settings-cascade", {
+    id: "sys1",
+    friendlyName: "Sys 1",
+    board: "heltec-v3",
+    directory: null,
+    topology: { nodes: [], pipes: [], route_overrides: {}, timing: {}, automations: [] },
+    deviceName: "sys1",
+  });
+  setSetting("settings-cascade", "sys1", "key1", "val1");
+  deleteSite("settings-cascade");
+  assert(loadSiteFull("settings-cascade") === null, "site deleted");
+
+  console.log("\nsettings — duplicateSite copies settings");
+  setSetting("test-site", "pump-ctrl", "copy_test", "copied_value");
+  duplicateSite("test-site", "dup-site", "Dup Site");
+  const dupSettings = getSettings("dup-site", "pump-ctrl");
+  assert(dupSettings.copy_test === "copied_value", "duplicateSite copies settings");
+  assert(dupSettings.generator === "frugaliot", "duplicateSite copies all settings");
 
   // -------------------------------------------------------------------------
 

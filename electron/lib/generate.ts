@@ -13,6 +13,7 @@ import { generateAutomations } from "./generators/automations.js";
 
 import { collectEntityCodegen } from "./generators/collect.js";
 import { LOGO_SVG } from '@far-mon/core';
+import { type GeneratorId, type SecretsMap } from './backends/types.js';
 
 export interface GeneratedFile {
   relativePath: string;
@@ -20,12 +21,7 @@ export interface GeneratedFile {
   content: string;
 }
 
-export interface SecretsMap {
-  wifi_ssid: string;
-  wifi_password: string;
-  api_key: string;
-  ota_password: string;
-}
+export { type GeneratorId, type SecretsMap } from './backends/types.js';
 
 export function generateDefaultSecrets(): SecretsMap {
   return {
@@ -155,6 +151,22 @@ export function generateSiteHA(
 }
 
 /** Single-system convenience for tests. Produces ESPHome + per-device HA files. */
+/**
+ * Generate firmware files for a manifest + board using the specified backend.
+ */
+export function generateFirmware(
+  generator: GeneratorId,
+  manifest: Manifest,
+  board: BoardDef,
+  siteId: string,
+  secrets?: SecretsMap,
+): GeneratedFile[] {
+  if (generator === 'esphome') {
+    return generateEsphome(manifest, board, siteId, secrets);
+  }
+  throw new Error(`Unknown generator: ${generator}`);
+}
+
 export function generateAll(
   m: Manifest,
   board: BoardDef,
@@ -163,7 +175,7 @@ export function generateAll(
 ): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const haRoot = `${siteRoot(siteId)}/homeassistant`;
-  const files = [...generateEsphome(m, board, siteId, secrets)];
+  const files = [...generateFirmware('esphome', m, board, siteId, secrets)];
 
   files.push({
     relativePath: `${haRoot}/dashboards/dashboard.yaml`,

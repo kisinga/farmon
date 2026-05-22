@@ -38,7 +38,7 @@ interface TerminalLine {
           </svg>
           <div>
             <h2 class="font-semibold text-sm">{{ heading() }}</h2>
-            @if (!toolchain()?.esphomePath) {
+            @if (!toolchainReady()) {
               <p class="text-xs text-warning mt-0.5">ESPHome not found on PATH</p>
             } @else if (!canBuild() && canBuildReason()) {
               <p class="text-xs text-warning mt-0.5">{{ canBuildReason() }}</p>
@@ -54,7 +54,7 @@ interface TerminalLine {
           <button
             class="btn btn-ghost btn-xs gap-1.5 border border-base-300/50"
             (click)="compile()"
-            [disabled]="!toolchain()?.esphomePath || running() || !deviceDir()"
+            [disabled]="!toolchainReady() || running() || !deviceDir()"
           >
             @if (running() && activeAction() === 'compile') {
               <span class="loading loading-spinner loading-xs"></span>
@@ -226,12 +226,15 @@ export class FirmwareBuildPanelComponent implements OnInit, OnDestroy, AfterView
   readonly showOta = input<boolean>(false);
   readonly showOpenFiles = input<boolean>(false);
   readonly initialOtaAddress = input<string>('');
+  /** Which backend to use for compile/flash. */
+  readonly generator = input<'esphome'>('esphome');
   /** When true, the panel is interactive even if `canBuild` is false (so the user can read why). */
   readonly alwaysEnabled = input<boolean>(false);
 
   readonly compiled = output<void>();
   readonly openFiles = output<void>();
   readonly errorOccurred = output<string>();
+  readonly toolchainRefreshRequested = output<void>();
 
   protected running = signal(false);
   protected activeAction = signal<'compile' | 'flash' | null>(null);
@@ -252,7 +255,11 @@ export class FirmwareBuildPanelComponent implements OnInit, OnDestroy, AfterView
   private unsubOutput: (() => void) | null = null;
   private unsubDone: (() => void) | null = null;
 
-  protected toolchainReady = computed(() => !!this.toolchain()?.esphomePath);
+  protected toolchainReady = computed(() => {
+    const t = this.toolchain();
+    if (!t) return false;
+    return this.generator() === 'esphome' ? !!t.esphomePath : false;
+  });
 
   constructor() {
     // Reset compile state whenever the host swaps the device (e.g. regenerate or controller switch).
@@ -271,16 +278,20 @@ export class FirmwareBuildPanelComponent implements OnInit, OnDestroy, AfterView
   }
 
   ngOnInit() {
-    this.unsubStarted = this.electron.onEsphomeStarted((handle) => {
+    this.unsubStarted = this.electron.onProcessStarted((handle) => {
       this.activeProcessId.set(handle.id);
     });
-    this.unsubOutput = this.electron.onEsphomeOutput((data) => {
+    this.unsubOutput = this.electron.onProcessOutput((data) => {
+      // Only show output for processes we started (ignore concurrent ones)
+      if (data.id !== this.activeProcessId()) return;
       this.terminalLines.update((lines) => [
         ...lines,
         { text: data.text, stream: data.stream as 'stdout' | 'stderr' },
       ]);
     });
-    this.unsubDone = this.electron.onEsphomeDone((data) => {
+    this.unsubDone = this.electron.onProcessDone((data) => {
+      // Only handle events for processes we started
+      if (data.id !== this.activeProcessId()) return;
       const cancelled = data.signal === 'SIGTERM';
       const success = data.code === 0;
       const msg = cancelled
@@ -333,7 +344,9 @@ export class FirmwareBuildPanelComponent implements OnInit, OnDestroy, AfterView
     this.terminalStatus.set('running');
     this.shouldAutoScroll = true;
     try {
-      await this.electron.esphomeCompile(dir);
+      if (this.generator() === 'esphome') {
+        await this.electron.esphomeCompile(dir);
+      }
     } catch (err) {
       this.errorOccurred.emit(String(err));
       this.running.set(false);
@@ -352,7 +365,9 @@ export class FirmwareBuildPanelComponent implements OnInit, OnDestroy, AfterView
     this.terminalStatus.set('running');
     this.shouldAutoScroll = true;
     try {
-      await this.electron.esphomeFlash(dir, device);
+      if (this.generator() === 'esphome') {
+        await this.electron.esphomeFlash(dir, device);
+      }
     } catch (err) {
       this.errorOccurred.emit(String(err));
       this.running.set(false);
@@ -363,7 +378,10 @@ export class FirmwareBuildPanelComponent implements OnInit, OnDestroy, AfterView
 
   protected async cancel() {
     const id = this.activeProcessId();
-    if (id) await this.electron.esphomeCancel(id);
+    if (!id) return;
+    if (this.generator() === 'esphome') {
+      await this.electron.esphomeCancel(id);
+    }
   }
 
   protected clearTerminal() {

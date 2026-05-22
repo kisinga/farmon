@@ -294,6 +294,7 @@ interface FileEntry {
               <app-firmware-build-panel
                 [deviceDir]="fwDeviceDir()"
                 [toolchain]="toolchain()"
+                [generator]="'esphome'"
                 [canBuild]="canBuild()"
                 [canBuildReason]="buildBlockedReason()"
                 [showOta]="true"
@@ -301,6 +302,7 @@ interface FileEntry {
                 [initialOtaAddress]="otaAddress()"
                 (errorOccurred)="fwError.set($event)"
                 (openFiles)="openDeviceFolder()"
+                (toolchainRefreshRequested)="refreshToolchain()"
               />
 
               <!-- Errors -->
@@ -731,6 +733,10 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   async openOutputFolder() {
     const dir = this.fwOutputDir();
     if (dir) await this.electron.shellShowInFolder(dir);
+  }
+
+  async refreshToolchain() {
+    this.toolchain.set(await this.electron.toolchainRefresh());
   }
 
   async openDeviceFolder() {

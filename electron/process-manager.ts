@@ -6,6 +6,7 @@ export type ProcessOperation = "compile" | "flash" | "logs";
 
 export interface ProcessHandle {
   id: string;
+  backend: string;
   operation: ProcessOperation;
   configName: string;
   pid: number | undefined;
@@ -19,6 +20,7 @@ export interface ProcessResult {
 
 export interface ProcessOutputEvent {
   id: string;
+  backend: string;
   operation: ProcessOperation;
   stream: "stdout" | "stderr";
   text: string;
@@ -26,6 +28,7 @@ export interface ProcessOutputEvent {
 
 export interface ProcessDoneEvent {
   id: string;
+  backend: string;
   operation: ProcessOperation;
   code: number | null;
   signal: string | null;
@@ -38,6 +41,77 @@ interface TrackedProcess {
 
 const active = new Map<string, TrackedProcess>();
 
+// ---------------------------------------------------------------------------
+// Generic process spawn
+// ---------------------------------------------------------------------------
+
+export interface SpawnOptions {
+  /** Backend identifier (e.g. "esphome", "frugaliot") */
+  backend: string;
+  /** Working directory for the spawned process */
+  cwd?: string;
+}
+
+function spawnProcessInternal(
+  win: BrowserWindow,
+  bin: string,
+  args: string[],
+  operation: ProcessOperation,
+  configName: string,
+  opts: SpawnOptions
+): { handle: ProcessHandle; result: Promise<ProcessResult> } {
+  const id = randomUUID();
+  const backend = opts.backend;
+
+  const proc = spawn(bin, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    cwd: opts.cwd,
+    env: { ...process.env, PYTHONUNBUFFERED: "1" },
+  });
+
+  const handle: ProcessHandle = { id, backend, operation, configName, pid: proc.pid };
+  active.set(id, { proc, handle });
+
+  // Notify renderer immediately so it can track/cancel
+  win.webContents.send("process:started", handle);
+
+  proc.stdout!.on("data", (chunk: Buffer) => {
+    win.webContents.send("process:output", {
+      id,
+      backend,
+      operation,
+      stream: "stdout",
+      text: chunk.toString("utf-8"),
+    } satisfies ProcessOutputEvent);
+  });
+
+  proc.stderr!.on("data", (chunk: Buffer) => {
+    win.webContents.send("process:output", {
+      id,
+      backend,
+      operation,
+      stream: "stderr",
+      text: chunk.toString("utf-8"),
+    } satisfies ProcessOutputEvent);
+  });
+
+  const result = new Promise<ProcessResult>((resolve, reject) => {
+    proc.on("close", (code, signal) => {
+      active.delete(id);
+      const event: ProcessDoneEvent = { id, backend, operation, code, signal };
+      win.webContents.send("process:done", event);
+      resolve({ id, code, signal });
+    });
+
+    proc.on("error", (err) => {
+      active.delete(id);
+      reject(new Error(`Failed to start ${backend}: ${err.message}`));
+    });
+  });
+
+  return { handle, result };
+}
+
 /**
  * Spawn an ESPHome process, stream tagged output to the window, return result.
  */
@@ -48,51 +122,9 @@ export function spawnEsphome(
   operation: ProcessOperation,
   configName: string
 ): { handle: ProcessHandle; result: Promise<ProcessResult> } {
-  const id = randomUUID();
-
-  const proc = spawn(esphomePath, args, {
-    stdio: ["ignore", "pipe", "pipe"],
+  return spawnProcessInternal(win, esphomePath, args, operation, configName, {
+    backend: "esphome",
   });
-
-  const handle: ProcessHandle = { id, operation, configName, pid: proc.pid };
-  active.set(id, { proc, handle });
-
-  // Notify renderer immediately so it can track/cancel
-  win.webContents.send("esphome:started", handle);
-
-  proc.stdout!.on("data", (chunk: Buffer) => {
-    win.webContents.send("esphome:output", {
-      id,
-      operation,
-      stream: "stdout",
-      text: chunk.toString("utf-8"),
-    } satisfies ProcessOutputEvent);
-  });
-
-  proc.stderr!.on("data", (chunk: Buffer) => {
-    win.webContents.send("esphome:output", {
-      id,
-      operation,
-      stream: "stderr",
-      text: chunk.toString("utf-8"),
-    } satisfies ProcessOutputEvent);
-  });
-
-  const result = new Promise<ProcessResult>((resolve, reject) => {
-    proc.on("close", (code, signal) => {
-      active.delete(id);
-      const event: ProcessDoneEvent = { id, operation, code, signal };
-      win.webContents.send("esphome:done", event);
-      resolve({ id, code, signal });
-    });
-
-    proc.on("error", (err) => {
-      active.delete(id);
-      reject(new Error(`Failed to start ESPHome: ${err.message}`));
-    });
-  });
-
-  return { handle, result };
 }
 
 /** Kill a running process by id. Returns true if found and killed. */

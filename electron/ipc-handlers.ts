@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import { BoardDefSchema, type BoardDef } from "./lib/board.js";
 import { parseTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
-import { generateEsphome, generateSiteHA, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
+import { generateFirmware, generateSiteHA, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
 
 import { generateSelfTest } from "./lib/self-test/index.js";
 import { topologyToManifest } from "./lib/topology-to-manifest.js";
@@ -461,7 +461,7 @@ export function registerIpcHandlers() {
         ...savedSecrets,
       } as SecretsMap;
 
-      const files = generateEsphome(manifest, board, siteId, secrets);
+      const files = generateFirmware('esphome', manifest, board, siteId, secrets);
 
       const gen = db.createGeneration(siteId, systemId, topology, board, 'esphome', { ...secrets });
       const latestMeta = gen ? null : db.listGenerations(siteId, systemId, 'esphome')[0] ?? null;
@@ -942,6 +942,23 @@ export function registerIpcHandlers() {
   ipcMain.handle("secrets:set", async (_e, siteId: string, systemId: string, secrets: Record<string, string>) => {
     db.setSecrets(siteId, systemId, secrets);
   });
+
+  // =========================================================================
+  // System settings
+  // =========================================================================
+
+  ipcMain.handle("settings:get", async (_e, siteId: string, systemId: string, key: string) =>
+    db.getSetting(siteId, systemId, key)
+  );
+
+  ipcMain.handle("settings:set", async (_e, siteId: string, systemId: string, key: string, value: string) => {
+    db.setSetting(siteId, systemId, key, value);
+    return { ok: true };
+  });
+
+  ipcMain.handle("settings:get-all", async (_e, siteId: string, systemId: string) =>
+    db.getSettings(siteId, systemId)
+  );
 }
 
 // ---------------------------------------------------------------------------

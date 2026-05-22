@@ -102,7 +102,7 @@ export interface GenerationSnapshot extends GenerationMeta {
 // DB versioning & migrations
 // ---------------------------------------------------------------------------
 
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 const MIGRATIONS: Record<number, string> = {
   0: `
@@ -226,6 +226,16 @@ const MIGRATIONS: Record<number, string> = {
   4: `
     -- Drop remote_inputs table (migrated to topology node.remote binding)
     DROP TABLE IF EXISTS remote_inputs;
+
+    -- Per-system settings (generator preference, UI state, etc.)
+    CREATE TABLE system_settings (
+      site_id    TEXT NOT NULL,
+      system_id  TEXT NOT NULL,
+      key        TEXT NOT NULL,
+      value      TEXT NOT NULL,
+      PRIMARY KEY (site_id, system_id, key),
+      FOREIGN KEY (system_id, site_id) REFERENCES systems(id, site_id) ON DELETE CASCADE
+    );
   `,
 };
 
@@ -398,7 +408,15 @@ export function duplicateSite(sourceId: string, newId: string, newFriendlyName: 
     db.run("INSERT INTO sites (id, friendly_name) VALUES (?, ?)", [newId, newFriendlyName]);
 
     // Copy systems
-    const systems = queryAll<SystemRow>(
+    const systems = queryAll<{
+      id: string;
+      friendly_name: string;
+      board: string;
+      directory: string | null;
+      topology: string;
+      device_name: string;
+      sort_order: number;
+    }>(
       "SELECT id, friendly_name, board, directory, topology, device_name, sort_order FROM systems WHERE site_id = ?",
       [sourceId],
     );
@@ -406,7 +424,7 @@ export function duplicateSite(sourceId: string, newId: string, newFriendlyName: 
       db.run(
         `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, device_name, sort_order)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [sys.id, newId, sys.friendlyName, sys.board, sys.directory, sys.topology, sys.deviceName, sys.sortOrder],
+        [sys.id, newId, sys.friendly_name, sys.board, sys.directory, sys.topology, sys.device_name, sys.sort_order],
       );
     }
 
@@ -444,6 +462,28 @@ export function duplicateSite(sourceId: string, newId: string, newFriendlyName: 
       db.run(
         "INSERT INTO ha_files (site_id, filename, content) VALUES (?, ?, ?)",
         [newId, hf.filename, hf.content],
+      );
+    }
+
+    // Copy system secrets
+    const secrets = queryAll<{ system_id: string; key: string; value: string }>(
+      "SELECT system_id, key, value FROM system_secrets WHERE site_id = ?", [sourceId],
+    );
+    for (const s of secrets) {
+      db.run(
+        "INSERT INTO system_secrets (site_id, system_id, key, value) VALUES (?, ?, ?, ?)",
+        [newId, s.system_id, s.key, s.value],
+      );
+    }
+
+    // Copy system settings
+    const settings = queryAll<{ system_id: string; key: string; value: string }>(
+      "SELECT system_id, key, value FROM system_settings WHERE site_id = ?", [sourceId],
+    );
+    for (const s of settings) {
+      db.run(
+        "INSERT INTO system_settings (site_id, system_id, key, value) VALUES (?, ?, ?, ?)",
+        [newId, s.system_id, s.key, s.value],
       );
     }
 
@@ -924,4 +964,35 @@ export function setSecrets(siteId: string, systemId: string, secrets: Record<str
     );
   }
   persist();
+}
+
+// ---------------------------------------------------------------------------
+// System settings (generator preference, etc.)
+// ---------------------------------------------------------------------------
+
+export function getSetting(siteId: string, systemId: string, key: string): string | null {
+  const row = queryOne<{ value: string }>(
+    `SELECT value FROM system_settings WHERE site_id = ? AND system_id = ? AND key = ?`,
+    [siteId, systemId, key],
+  );
+  return row?.value ?? null;
+}
+
+export function setSetting(siteId: string, systemId: string, key: string, value: string): void {
+  getDb().run(
+    `INSERT INTO system_settings (site_id, system_id, key, value) VALUES (?, ?, ?, ?)
+     ON CONFLICT(site_id, system_id, key) DO UPDATE SET value = excluded.value`,
+    [siteId, systemId, key, value],
+  );
+  persist();
+}
+
+export function getSettings(siteId: string, systemId: string): Record<string, string> {
+  const rows = queryAll<{ key: string; value: string }>(
+    `SELECT key, value FROM system_settings WHERE site_id = ? AND system_id = ?`,
+    [siteId, systemId],
+  );
+  const result: Record<string, string> = {};
+  for (const r of rows) result[r.key] = r.value;
+  return result;
 }

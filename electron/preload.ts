@@ -63,10 +63,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   esphomeCancel: (processId: string) =>
     ipcRenderer.invoke("esphome:cancel", processId),
 
-  // --- ESPHome events (main → renderer) ---
-  onEsphomeStarted: (
+  // --- Process events (main → renderer) ---
+  onProcessStarted: (
     callback: (handle: {
       id: string;
+      backend: string;
       operation: string;
       configName: string;
       pid: number | undefined;
@@ -74,12 +75,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   ) => {
     const listener = (_event: unknown, handle: Parameters<typeof callback>[0]) =>
       callback(handle);
-    ipcRenderer.on("esphome:started", listener);
-    return () => ipcRenderer.removeListener("esphome:started", listener);
+    ipcRenderer.on("process:started", listener);
+    return () => ipcRenderer.removeListener("process:started", listener);
   },
-  onEsphomeOutput: (
+  onProcessOutput: (
     callback: (data: {
       id: string;
+      backend: string;
       operation: string;
       stream: string;
       text: string;
@@ -87,12 +89,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   ) => {
     const listener = (_event: unknown, data: Parameters<typeof callback>[0]) =>
       callback(data);
-    ipcRenderer.on("esphome:output", listener);
-    return () => ipcRenderer.removeListener("esphome:output", listener);
+    ipcRenderer.on("process:output", listener);
+    return () => ipcRenderer.removeListener("process:output", listener);
   },
-  onEsphomeDone: (
+  onProcessDone: (
     callback: (data: {
       id: string;
+      backend: string;
       operation: string;
       code: number | null;
       signal: string | null;
@@ -100,8 +103,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   ) => {
     const listener = (_event: unknown, data: Parameters<typeof callback>[0]) =>
       callback(data);
-    ipcRenderer.on("esphome:done", listener);
-    return () => ipcRenderer.removeListener("esphome:done", listener);
+    ipcRenderer.on("process:done", listener);
+    return () => ipcRenderer.removeListener("process:done", listener);
   },
 
   // --- Serial monitor ---
@@ -195,4 +198,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("secrets:get", siteId, systemId),
   secretsSet: (siteId: string, systemId: string, secrets: Record<string, string>) =>
     ipcRenderer.invoke("secrets:set", siteId, systemId, secrets),
+
+  // --- System settings ---
+  settingsGet: (siteId: string, systemId: string, key: string) =>
+    ipcRenderer.invoke("settings:get", siteId, systemId, key),
+  settingsSet: (siteId: string, systemId: string, key: string, value: string) =>
+    ipcRenderer.invoke("settings:set", siteId, systemId, key, value),
+  settingsGetAll: (siteId: string, systemId: string) =>
+    ipcRenderer.invoke("settings:get-all", siteId, systemId),
 });
