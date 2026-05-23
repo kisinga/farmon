@@ -1,13 +1,12 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../schemas';
-import { RemoteBindingSchema } from '../schemas';
+import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { waterSourcePressureId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { homeassistantSensorImport } from '../remote-proxy';
 
 const COLOR = '#0ea5e9'; // sky blue
 const W = 120, H = 50;
@@ -23,7 +22,7 @@ export const WaterSourceNodeSchema = z.object({
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
   ...HaNodeFields,
-  remote: RemoteBindingSchema.optional(),
+  anchorId: AnchorIdSchema,
 });
 
 export type WaterSourceNode = z.infer<typeof WaterSourceNodeSchema>;

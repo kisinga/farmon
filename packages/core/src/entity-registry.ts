@@ -21,7 +21,7 @@ import type { InputPolicy } from './input-policy';
 export type EntityKind =
   | 'tank' | 'pump' | 'endpoint' | 'valve' | 'flow_sensor'
   | 'water_source' | 'pressure_sensor' | 'filter' | 'dosing_pump'
-  | 'vfd' | 'interconnect' | 'level_sensor';
+  | 'vfd' | 'level_sensor';
 
 // ---------------------------------------------------------------------------
 // Field definition (drives sidebar forms)
@@ -91,13 +91,6 @@ export interface EntityCodegen<T extends Record<string, any> = Record<string, an
     node: T,
     device: { friendly_name: string },
   ) => Record<string, string | undefined>;
-  /**
-   * Remote proxy YAML for nodes with `node.remote.haEntityId`.
-   * When present, collect.ts calls this instead of hardware/sensors/extraComponents.
-   * The descriptor owns the proxy ID convention and proxy type.
-   * Returns null if this kind does not support remote import.
-   */
-  remoteProxy?: (node: T) => { section: string; yaml: string } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +110,24 @@ export interface EntityRule {
 // ---------------------------------------------------------------------------
 // Node descriptor
 // ---------------------------------------------------------------------------
+
+export type DeadManAction = 'stop' | 'hold' | 'revert';
+
+export interface SafetyProfile {
+  /** True if this actuator can cause physical damage (dry-run, flood, chemical overdose). */
+  safetyCritical: boolean;
+  /** Sensors that must be present and monitored when this actuator runs. */
+  requiredSensors: Array<{
+    kind: string;
+    position: 'upstream' | 'downstream' | 'inline';
+    severity: 'error' | 'warning';
+    reason: string;
+  }>;
+  /** Max runtime if no explicit route limit is set (dead-man fallback). */
+  deadManTimeoutMs: number;
+  /** What the anchor does when a remote claim expires. */
+  deadManAction: DeadManAction;
+}
 
 export interface NodeDescriptor {
   kind: EntityKind;
@@ -153,6 +164,9 @@ export interface NodeDescriptor {
 
   /** Flow constraints this entity declares on routes it appears in. */
   constraints?: FlowConstraint[];
+
+  /** Safety profile for this entity kind. Drives firmware dead-man behavior and validation. */
+  safetyProfile?: SafetyProfile;
 
   // --- Home Assistant integration (consumed by TopologyRenderer.exportHa + farm-scada-card) ---
 
@@ -191,6 +205,8 @@ export interface NodeDescriptor {
   isLevelSensor?: boolean;
   /** Acts as a pressure sensor — included in pressure dispatch and route analysis. */
   isPressureSensor?: boolean;
+  /** Acts as a dosing pump — participates in dead-man claim tracking. */
+  isDosingPump?: boolean;
   /** Conflict class: 'sensor' readings are ambiguous when shared, 'actuator' access is refcountable. */
   conflictClass?: 'sensor' | 'actuator';
 }
@@ -223,7 +239,6 @@ import { pressureSensorDescriptor } from './entities/pressure-sensor';
 import { filterDescriptor } from './entities/filter';
 import { dosingPumpDescriptor } from './entities/dosing-pump';
 import { vfdDescriptor } from './entities/vfd';
-import { interconnectDescriptor } from './entities/interconnect';
 import { levelSensorDescriptor } from './entities/level-sensor';
 
 export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
@@ -238,7 +253,6 @@ export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   filterDescriptor,
   dosingPumpDescriptor,
   vfdDescriptor,
-  interconnectDescriptor,
 ];
 
 export const NODE_REGISTRY: ReadonlyMap<string, NodeDescriptor> = new Map(
@@ -288,7 +302,7 @@ export const REGISTRY_RULES: readonly EntityRule[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-type DispatchFlag = 'isPump' | 'isValve' | 'isFlowSensor' | 'isLevelSensor' | 'isPressureSensor';
+type DispatchFlag = 'isPump' | 'isValve' | 'isFlowSensor' | 'isLevelSensor' | 'isPressureSensor' | 'isDosingPump';
 
 /**
  * Type-safe descriptor accessor — narrows to a specific entity's data shape.

@@ -20,7 +20,7 @@ export type { PressureSensorNode } from './entities/pressure-sensor';
 export type { FilterNode } from './entities/filter';
 export type { DosingPumpNode } from './entities/dosing-pump';
 export type { VfdNode } from './entities/vfd';
-export type { InterconnectNode } from './entities/interconnect';
+
 export type { LevelSensorNode } from './entities/level-sensor';
 
 import type { TankNode } from './entities/tank';
@@ -33,7 +33,7 @@ import type { PressureSensorNode } from './entities/pressure-sensor';
 import type { FilterNode } from './entities/filter';
 import type { DosingPumpNode } from './entities/dosing-pump';
 import type { VfdNode } from './entities/vfd';
-import type { InterconnectNode } from './entities/interconnect';
+
 import type { LevelSensorNode } from './entities/level-sensor';
 
 // ---------------------------------------------------------------------------
@@ -51,8 +51,7 @@ export type TopologyNode =
   | LevelSensorNode
   | FilterNode
   | DosingPumpNode
-  | VfdNode
-  | InterconnectNode;
+  | VfdNode;
 
 // ---------------------------------------------------------------------------
 // Pipes
@@ -141,6 +140,31 @@ export function effectiveTransport(
   return network?.transport ?? 'ethernet';
 }
 
+export interface Controller {
+  id: string;
+  board: string;
+  friendlyName?: string;
+  network?: NetworkConfig;
+}
+
+export interface SiteTopology {
+  schema: 15;
+  controllers: Controller[];
+  nodes: TopologyNode[];
+  pipes: PipeSegment[];
+  route_overrides: Record<string, RouteOverride>;
+  timing: {
+    valve_travel_time: number;
+    flow_watchdog: number;
+    flow_confirm: number;
+    flow_threshold: number;
+    api_watchdog: number;
+    update_interval: number;
+  };
+  automations: Automation[];
+}
+
+/** @deprecated Use SiteTopology. SystemTopology is schema 14 only. */
 export interface SystemTopology {
   schema: 14;
   device: {

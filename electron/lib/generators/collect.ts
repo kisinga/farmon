@@ -38,20 +38,16 @@ export function collectEntityCodegen(m: Manifest, board: BoardDef): CollectedCod
     sections: {},
   };
 
+  const controllerId = m.device.friendly_name;
+
   for (const node of m.nodes) {
     const desc = NODE_REGISTRY.get(node.kind);
     if (!desc?.codegen) continue;
     const idx = nodesByKind(m.nodes, node.kind).indexOf(node);
 
-    // Remote proxy — descriptor owns the proxy type and ID convention.
-    // When present, skip ALL local hardware generation.
-    if (node.remote?.haEntityId) {
-      const proxy = desc.codegen.remoteProxy?.(node);
-      if (proxy) {
-        (result.sections[proxy.section] ??= []).push(proxy.yaml);
-      }
-      continue;
-    }
+    // Skip hardware for nodes anchored to other controllers.
+    // The control layer handles remote claims; this layer only generates local hardware.
+    if (node.anchorId !== controllerId) continue;
 
     // Hardware (switch: section)
     if (desc.codegen.hardware) {

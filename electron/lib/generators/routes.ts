@@ -1,6 +1,7 @@
 import type { Manifest } from "../schema.js";
-import { nodesByKind, nodesWithFlag } from "../schema.js";
+import { nodesByKind, nodesWithFlag, pumpSwitchId } from "../schema.js";
 import { valveCoverId, valveTravelTimeId, levelSensorLevelId, pressureSensorLevelId, flowSensorId, parseRouteKey } from '@far-mon/core';
+import { generateDeadman } from './deadman.js';
 
 // ---------------------------------------------------------------------------
 // Route context — pure computation, platform-agnostic
@@ -114,6 +115,9 @@ export function generateRoutes(m: Manifest): string {
     valveComment, tankComment, wsComment, flowComment,
   } = ctx;
 
+  const hasPump = nodesWithFlag(m.nodes, 'isPump').length > 0;
+  const pumpId = pumpSwitchId();
+
   // Build dispatch functions (hardware-level, renamed with _hw suffix)
   const nid = (node: Record<string, any>) => ({ id: String(node['id']) });
   const openCases = valves
@@ -201,11 +205,12 @@ export function generateRoutes(m: Manifest): string {
 // AUTO-GENERATED from system manifest. Do not edit by hand.
 //
 // This header provides:
-//   1. Route table (ROUTES[]) — static, topology-derived
-//   2. RouteSlot[] — per-slot state for concurrent execution
-//   3. Queue — circular buffer for deferred route starts
-//   4. Helpers — slot management, conflict detection, pump refcount
-//   5. Hardware dispatch — valve/tank/flow access by index
+//   1. Dead-man claim registry (anchor mesh safety)
+//   2. Route table (ROUTES[]) — static, topology-derived
+//   3. RouteSlot[] — per-slot state for concurrent execution
+//   4. Queue — circular buffer for deferred route starts
+//   5. Helpers — slot management, conflict detection, pump refcount
+//   6. Hardware dispatch — valve/tank/flow access by index
 //
 // The control layer (control.yaml) is topology-agnostic — it never
 // references valve/tank/flow IDs directly. All routing goes through
@@ -216,6 +221,8 @@ export function generateRoutes(m: Manifest): string {
 
 #include "esphome.h"
 #include <cstring>
+
+${generateDeadman(m)}
 
 // --- Constants ---------------------------------------------------------------
 
@@ -403,6 +410,9 @@ inline uint16_t valve_claim_mask(int s) {
 inline uint16_t desired_valve_mask() {
   uint16_t m = 0;
   for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) m |= valve_claim_mask(i);
+  for (int i = 0; i < NUM_VALVES; i++) {
+    if (has_live_claim(valve_id_for_index(i))) m |= (1 << i);
+  }
   return m;
 }
 
@@ -529,6 +539,13 @@ inline uint32_t get_route_travel_ms(int route_id) {
     }
   }
   return mx;
+}
+
+// --- Actuator stop (dead-man enforcement) ------------------------------------
+
+inline void stop_actuator(const std::string& nodeId) {
+${hasPump ? `  if (nodeId == "${pumpId}") { id(${pumpId}).turn_off(); return; }` : '  // No pump in this controller'}
+${valves.map((v, i) => `  if (nodeId == "${v['id']}") { close_valve_hw(${i}); return; }`).join('\n')}
 }
 
 // --- Route start/stop (shared by API services + button entities) -------------

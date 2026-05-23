@@ -16,6 +16,8 @@ export interface ManifestRule {
   id: string;
   name: string;
   evaluate(manifest: Manifest, board: BoardDef): RuleDiagnostic[];
+  /** Optional runtime configuration passed to the rule before evaluation. */
+  options?: Record<string, unknown>;
 }
 
 export type ValidationRule = TopologyRule | ManifestRule;

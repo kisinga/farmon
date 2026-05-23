@@ -159,7 +159,7 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     const systemFriendly = new Map<string, string>();
     systemIds.forEach((id, i) => {
       systemColor.set(id, BOUNDARY_COLORS[i % BOUNDARY_COLORS.length]);
-      systemFriendly.set(id, systems.get(id)?.topology.device.friendly_name ?? id);
+      systemFriendly.set(id, systems.get(id)?.topology?.device?.friendly_name ?? id);
     });
 
     // Group routes by source system
@@ -253,10 +253,10 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   protected navigateToSystem(systemId: string) {
-    this.zone.run(() => {
-      this.router.navigate(['/site', this.siteName, 'system', systemId]);
-    });
+    this.router.navigate(['/site', this.siteName, 'system', systemId]);
   }
+
+
 
   private initCanvas() {
     const canvasEl = this.canvasElRef.nativeElement;
@@ -282,12 +282,24 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
       this.updateSystemEntries();
     }, { injector: this.injector });
 
-    this.canvas.graphInstance.on('node:click', ({ node }: any) => {
-      const id: string = node.id;
+    // Click or double-click any node/boundary to navigate to its controller
+    const handleCellClick = ({ cell }: any) => {
+      const id: string = cell.id;
       if (id.startsWith('boundary-')) {
-        const systemId = id.replace('boundary-', '');
-        this.navigateToSystem(systemId);
+        this.navigateToSystem(id.replace('boundary-', ''));
+        return;
       }
+      const data = cell.getData?.() as Record<string, unknown> | undefined;
+      const anchorId = data?.['anchorId'] as string | undefined;
+      if (anchorId) {
+        this.navigateToSystem(anchorId);
+      }
+    };
+    this.canvas.graphInstance.on('node:click', handleCellClick);
+    this.canvas.graphInstance.on('node:dblclick', handleCellClick);
+    this.canvas.graphInstance.on('cell:click', ({ cell }: any) => {
+      // cell:click catches boundaries (which are nodes) and edges
+      if (cell.isNode?.()) handleCellClick({ cell });
     });
 
     this.resizeObserver = new ResizeObserver(() => {
@@ -301,9 +313,12 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.canvas || !composite || composite.nodes.length === 0) return;
 
     this.canvas.reset(composite);
+    const friendlyNames = new Map<string, string>();
+    for (const [id, { topology }] of this.workspace.systems()) {
+      friendlyNames.set(id, topology.device.friendly_name ?? id);
+    }
     renderCompositeOverlays(this.canvas.graphInstance, composite, {
-      systems: this.workspace.systems(),
-      links: this.workspace.links(),
+      friendlyNames,
     });
   }
 

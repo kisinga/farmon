@@ -3,6 +3,7 @@ import type { BoardDef } from "../../board.js";
 import { pinsWithCapability } from "../../board.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
 import { NODE_REGISTRY } from '@far-mon/core';
+import type { PinCap } from '@far-mon/core';
 
 /**
  * Board pin-pool capacity — checks per-capability pin pools.
@@ -19,7 +20,7 @@ export const boardCapacity: ManifestRule = {
     const diagnostics: RuleDiagnostic[] = [];
 
     // Count demanded pins by required capability (from entity sidebar field pinCap)
-    const demandByCapability = new Map<string, number>();
+    const demandByCapability = new Map<PinCap, number>();
     for (const node of m.nodes) {
       const desc = NODE_REGISTRY.get(node['kind']);
       if (!desc) continue;
@@ -35,7 +36,7 @@ export const boardCapacity: ManifestRule = {
 
     // Check each capability pool
     for (const [cap, demand] of demandByCapability) {
-      const available = pinsWithCapability(board, cap as any);
+      const available = pinsWithCapability(board, cap);
       if (demand > available.size) {
         const pinList = [...available].join(', ');
         diagnostics.push({

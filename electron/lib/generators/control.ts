@@ -11,11 +11,22 @@ export function generateControl(m: Manifest): string {
   // Conditional pump management in the transition interval
   const pumpMgmt = hasPump ? `
           // --- Pump management ---
-          bool need_pump = pump_ref_count() > 0;
+          bool need_pump = pump_ref_count() > 0 || has_live_claim("${pumpId}");
           if (need_pump && !id(${pumpId}).state) id(${pumpId}).turn_on();
           else if (!need_pump && id(${pumpId}).state) id(${pumpId}).turn_off();` : "";
 
   const pumpOffBoot = hasPump ? `\n      - switch.turn_off: ${pumpId}` : "";
+
+  // Dead-man enforcement for all local actuators
+  const actuators = [
+    ...nodesWithFlag(m.nodes, 'isPump'),
+    ...nodesWithFlag(m.nodes, 'isValve'),
+    ...nodesWithFlag(m.nodes, 'isDosingPump'),
+  ];
+  const deadmanEnforcement = actuators.length > 0
+    ? `\n          // --- Dead-man enforcement ---
+${actuators.map(a => `          enforce_deadman("${a['id']}");`).join('\n')}`
+    : "";
 
   return `# =============================================================================
 # MajiFlow — Control Layer
@@ -108,6 +119,25 @@ api:
             init_slot(s);
             id(system_state) = derived_system_state();
             ESP_LOGI("ctrl", "Fault cleared for route %d → slot %d free", route_id, s);
+
+    - service: node_claim
+      variables:
+        node_id: string
+        owner: string
+        duration_ms: int
+      then:
+        - lambda: |-
+            extend_deadman(node_id, owner, duration_ms);
+            ESP_LOGI("claim", "Claim %s by %s for %u ms", node_id.c_str(), owner.c_str(), duration_ms);
+
+    - service: node_release
+      variables:
+        node_id: string
+        owner: string
+      then:
+        - lambda: |-
+            drop_claim(node_id, owner);
+            ESP_LOGI("claim", "Released %s by %s", node_id.c_str(), owner.c_str());
 
 # --- Safety override ---------------------------------------------------------
 
@@ -255,7 +285,7 @@ ${pumpMgmt}
             if (slots[s].state >= 1 && slots[s].state <= 3) { id(active_slot) = s; break; }
 
           // --- Valve reconciliation (level-triggered, last step) ---
-          reconcile_valves();
+          reconcile_valves();${deadmanEnforcement}
 
   # --- 2s Safety Monitor -------------------------------------------------------
   # Per-slot watchdogs: flow, max runtime, API loss.

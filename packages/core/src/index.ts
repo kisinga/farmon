@@ -8,11 +8,11 @@
 
 // --- Types ---
 export type {
-  SystemTopology, TopologyNode, PipeSegment, RouteOverride,
+  SiteTopology, SystemTopology, TopologyNode, PipeSegment, RouteOverride,
   Automation, AutomationTrigger, UartBus, NetworkConfig, NetworkTransport,
   TankNode, PumpNode, EndpointNode, ValveNode,
-  FlowSensorNode, WaterSourceNode, PressureSensorNode, LevelSensorNode, FilterNode, DosingPumpNode, VfdNode, InterconnectNode,
-  Port, Position,
+  FlowSensorNode, WaterSourceNode, PressureSensorNode, LevelSensorNode, FilterNode, DosingPumpNode, VfdNode,
+  Port, Position, Controller,
 } from './topology.types';
 export { effectiveTransport } from './topology.types';
 export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
@@ -26,15 +26,14 @@ export type { ChannelUsage, ResolvedChannel, IoChannel, IoProviderDriver } from 
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
 export type {
-  SiteMetadata, LinkData, StoredTopology, SystemPayload,
+  SiteMetadata, StoredSiteTopology,
   SiteFullPayload, SiteSavePayload, SiteListEntry, TemplateListEntry,
 } from './site.types';
-export type { RemoteBinding } from './schemas';
-export type { BoundaryPort } from './graph/boundary-ports';
+
 
 // --- Schemas ---
 export { TopologySchema, RouteOverrideSchema, parseTopology, parsePortRef, portRef, migrateTopology, CURRENT_SCHEMA_VERSION, type Topology } from './topology-schema';
-export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, parseDurationMs, escXml, RemoteBindingSchema } from './schemas';
+export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, AnchorIdSchema, parseDurationMs, escXml } from './schemas';
 export { type InputPolicy, policyString } from './input-policy';
 
 // --- Registry ---
@@ -44,7 +43,7 @@ export { NODE_REGISTRY, ALL_DESCRIPTORS, REGISTRY_RULES, legendSvgFor, nodesWith
 export { slug } from './slug';
 
 // --- Conversion & utilities ---
-export { topologyToManifest } from './topology-to-manifest';
+export { topologyToManifestForController } from './topology-to-manifest';
 export { collectPins } from './pin-collect';
 export { computePinOverlays } from './board-pin-overlays';
 export { reservedPins, exposedPins, pinsWithCap } from './board.types';
@@ -85,11 +84,7 @@ export {
 } from './codegen-ids';
 
 // --- Remote Proxy ---
-export {
-  homeassistantSensorImport,
-  templateSwitchProxy,
-  templateCoverProxy,
-} from './remote-proxy';
+
 
 // --- I/O Providers ---
 export { createBoardDriver } from './io-providers/board-driver';
@@ -116,8 +111,4 @@ export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './g
 export { evaluateConstraints } from './graph/evaluate-constraints';
 export { detectConflicts, type ConflictManifest, type RouteConflict, type SharedResource } from './graph/conflicts';
 export { evaluateEscalations } from './graph/evaluate-escalations';
-export { boundaryPorts } from './graph/boundary-ports';
-export { buildCompositeGraph, type CompositeInput } from './graph/composite-graph';
 
-// --- Topology enrichment (interconnect labels) ---
-export { enrichPerSystemInterconnects, enrichCompositeInterconnects, type InterconnectContext } from './enrich-interconnects';

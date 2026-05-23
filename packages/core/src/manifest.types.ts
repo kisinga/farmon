@@ -20,11 +20,7 @@ export type Timing = SystemTopology['timing'];
 export type ManifestNode = Record<string, any> & {
   kind: string;
   id: string;
-  remote?: {
-    haEntityId: string;
-    providerSystemId: string;
-    providerNodeName: string;
-  };
+  anchorId: string;
 };
 
 

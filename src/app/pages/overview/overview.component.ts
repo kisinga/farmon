@@ -148,13 +148,13 @@ function initials(name: string): string {
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
                       </svg>
-                      {{ site.systemCount }} controller{{ site.systemCount !== 1 ? 's' : '' }}
+                      {{ site.controllerCount }} controller{{ site.controllerCount !== 1 ? 's' : '' }}
                     </div>
                     <div class="flex items-center gap-1.5">
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                       </svg>
-                      {{ site.linkCount }} link{{ site.linkCount !== 1 ? 's' : '' }}
+                      {{ site.nodeCount }} node{{ site.nodeCount !== 1 ? 's' : '' }}
                     </div>
 
                   </div>
@@ -288,12 +288,17 @@ export class OverviewComponent implements OnInit {
   }
 
   protected async importSite(): Promise<void> {
-    const result = await this.electron.siteImport();
-    if (result.ok) {
-      await this.refresh();
-      if (result.siteId) {
-        this.router.navigate(['/site', result.siteId]);
+    try {
+      const result = await this.electron.siteImport();
+      if (result.ok) {
+        await this.refresh();
+        if (result.siteId) {
+          this.router.navigate(['/site', result.siteId]);
+        }
       }
+    } catch (err) {
+      console.error('Site import failed:', err);
+      alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -312,13 +317,18 @@ export class OverviewComponent implements OnInit {
     this.importing.set(true);
     try {
       const scanned = await this.electron.legacyScan();
-      if (scanned.sites.length > 0) {
-        const result = await this.electron.legacyImport(scanned.sites);
-        if (result.imported > 0) {
-          await this.refresh();
-        }
+      if (scanned.sites.length === 0) {
+        this.hasLegacy.set(false);
+        return;
       }
-      this.hasLegacy.set(false);
+      const result = await this.electron.legacyImport(scanned.sites);
+      if (result.imported > 0) {
+        await this.refresh();
+        this.hasLegacy.set(false);
+      }
+    } catch (err) {
+      console.error('Legacy import failed:', err);
+      alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       this.importing.set(false);
     }

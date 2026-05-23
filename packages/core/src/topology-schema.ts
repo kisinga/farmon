@@ -6,8 +6,9 @@
  */
 import { z } from 'zod';
 import { NODE_REGISTRY } from './entity-registry';
-import { DeviceSchema, TimingSchema, AutomationSchema, parseDurationMs } from './schemas';
+import { DeviceSchema, TimingSchema, AutomationSchema, NetworkConfigSchema, parseDurationMs } from './schemas';
 import { buildGraph, deriveRoutes } from './graph/index';
+import type { SiteTopology } from './topology.types';
 
 // ---------------------------------------------------------------------------
 // Node discriminated union — driven by the registry
@@ -46,9 +47,14 @@ export const RouteOverrideSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const TopologySchema = z.object({
-  schema: z.literal(14),
-  device: DeviceSchema,
-  nodes: z.array(TopologyNodeSchema).min(1),
+  schema: z.literal(15),
+  controllers: z.array(z.object({
+    id: z.string().min(1),
+    board: z.string().min(1),
+    friendlyName: z.string().optional(),
+    network: NetworkConfigSchema.optional(),
+  })),
+  nodes: z.array(TopologyNodeSchema),
   pipes: z.array(PipeSegmentSchema).default([]),
   route_overrides: z.record(z.string(), RouteOverrideSchema).default({}),
   timing: TimingSchema.default({}),
@@ -146,7 +152,7 @@ function migrateLegacyTopology(data: unknown): unknown {
 // Schema-version migration chain
 // ---------------------------------------------------------------------------
 
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 15;
 
 type SchemaMigration = (data: Record<string, unknown>) => Record<string, unknown>;
 
@@ -316,6 +322,40 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
 
     return data;
   },
+  14: (data) => {
+    data['schema'] = 15;
+    // Anchor Mesh migration: flatten multi-system into site topology.
+    // Convert interconnect nodes to endpoint nodes.
+    // Move inter-system links into regular pipes.
+    // Add anchorId to every node (default: first controller or 'default').
+    const nodes = (data['nodes'] ?? []) as Array<Record<string, unknown>>;
+    const pipes = (data['pipes'] ?? []) as Array<{ from: string; to: string }>;
+
+    // Migrate interconnect → endpoint
+    for (const node of nodes) {
+      if (node['kind'] === 'interconnect') {
+        node['kind'] = 'endpoint';
+      }
+    }
+
+    // Create controllers array from device metadata
+    const device = (data['device'] ?? {}) as Record<string, unknown>;
+    const controllerId = (device['name'] as string) ?? 'default';
+    data['controllers'] = [{
+      id: controllerId,
+      board: device['board'] ?? '',
+      friendlyName: device['friendly_name'] as string | undefined,
+      network: device['network'],
+    }];
+
+    // Add anchorId to every node
+    for (const node of nodes) {
+      node['anchorId'] = controllerId;
+      delete node['remote'];
+    }
+
+    return data;
+  },
 };
 
 /**
@@ -344,8 +384,8 @@ export function migrateTopology(data: unknown): unknown {
  * the structure matches because entity schemas are the source of truth.
  * Applies schema-version migrations and legacy-key cleanup before validation.
  */
-export function parseTopology(data: unknown): SystemTopology {
-  return TopologySchema.parse(migrateLegacyTopology(migrateTopology(data))) as SystemTopology;
+export function parseTopology(data: unknown): SiteTopology {
+  return TopologySchema.parse(migrateLegacyTopology(migrateTopology(data))) as unknown as SiteTopology;
 }
 
 // ---------------------------------------------------------------------------

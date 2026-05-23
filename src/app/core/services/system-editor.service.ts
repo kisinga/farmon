@@ -189,35 +189,6 @@ export class SystemEditorService {
     this.workspace.updateActiveTopology(updater);
   }
 
-  /**
-   * Add a remote node bound to a provider entity on another controller.
-   * The node is created with `remote` set and positioned at the canvas center.
-   */
-  addRemoteNode(
-    kind: string,
-    providerSystemId: string,
-    providerNodeId: string,
-    providerEntityKey: string,
-    position?: { x: number; y: number },
-  ): string {
-    const id = this.workspace.nextNodeId(kind);
-    const desc = NODE_REGISTRY.get(kind);
-    if (!desc) throw new Error(`Unknown node kind: ${kind}`);
-
-    this.updateTopology((t) => {
-      t.nodes.push({
-        kind,
-        id,
-        ...desc.defaultData(0),
-        ports: desc.defaultPorts.map(p => ({ ...p })),
-        position: position ?? { x: 100, y: 100 },
-        remote: { providerSystemId, providerNodeId, providerEntityKey },
-      } as any);
-    });
-
-    return id;
-  }
-
   /** Atomically swap the board for the active system. */
   changeBoard(board: BoardDef): void {
     if (this._readonly()) return;

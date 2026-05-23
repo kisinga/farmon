@@ -231,9 +231,9 @@ export class AutomationsTabComponent {
     if (!t) return result;
     const graph = buildGraph(t.nodes, t.pipes);
     const active = activeGraph(graph);
-    const nodeKindById = new Map(t.nodes.map(n => [n.id, n.kind]));
+    const nodeKindById = new Map<string, string>(t.nodes.map(n => [n.id, n.kind]));
     const tankLevelSources = resolveTankLevelSources(active, nodeKindById);
-    const nameById = new Map(t.nodes.map(n => [n.id, (n as { name?: string }).name ?? n.id]));
+    const nameById = new Map<string, string>(t.nodes.map(n => [n.id, (n as { name?: string }).name ?? n.id]));
     for (const route of deriveRoutes(active)) {
       const found = findRouteAutomationSensor(route, tankLevelSources, nodeKindById);
       if (found) {
@@ -293,7 +293,7 @@ export class AutomationsTabComponent {
 
   protected updateField(index: number, field: keyof Automation, value: unknown) {
     this.editor.updateTopology(t => {
-      (t.automations[index] as any)[field] = value;
+      (t.automations[index] as Record<typeof field, unknown>)[field] = value;
     });
   }
 

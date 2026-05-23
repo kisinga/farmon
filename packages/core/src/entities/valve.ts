@@ -1,11 +1,10 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
-import { RemoteBindingSchema } from '../schemas';
+import { AnchorIdSchema } from '../schemas';
 import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { templateCoverProxy } from '../remote-proxy';
 
 const COLOR = '#e11d48'; // rose
 const W = 50, H = 36;
@@ -24,7 +23,7 @@ export const ValveNodeSchema = z.object({
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
   ...HaNodeFields,
-  remote: RemoteBindingSchema.optional(),
+  anchorId: AnchorIdSchema,
 });
 
 export type ValveNode = z.infer<typeof ValveNodeSchema>;
@@ -86,6 +85,13 @@ export const valveDescriptor: NodeDescriptor = {
     ] },
     { key: 'travel_time', label: 'Travel Time (s)', type: 'number' },
   ],
+
+  safetyProfile: {
+    safetyCritical: false,
+    requiredSensors: [],
+    deadManTimeoutMs: 0,
+    deadManAction: 'hold',
+  },
 
   // --- Codegen ---
 
@@ -158,14 +164,6 @@ ${closeHeader}
       };
     },
 
-    remoteProxy: (node: ValveNode) => {
-      const haEntityId = ((node as Record<string, any>)['remote'] as any)?.haEntityId as string | undefined;
-      if (!haEntityId) return null;
-      return {
-        section: 'cover',
-        yaml: templateCoverProxy(node.id, node.name, haEntityId),
-      };
-    },
   },
 
   rules: [
@@ -175,7 +173,6 @@ ${closeHeader}
       evaluate: (nodes) => {
         const out: Array<{ message: string; target?: string }> = [];
         for (const n of nodes) {
-          if (n['remote']) continue;
           if (!n['open_pin']) {
             out.push({
               message: `Valve "${n['name'] ?? n['id']}": Open Pin not configured`,

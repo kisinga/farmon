@@ -24,6 +24,7 @@ import type {
   SiteSavePayload,
   SystemPayload,
   TemplateListEntry,
+  LegacySiteFullPayload,
 } from '../models/electron-api';
 import type { NetworkConfig } from '@far-mon/core';
 
@@ -41,10 +42,10 @@ export class ElectronService {
   siteList(): Promise<SiteListEntry[]> {
     return this.api?.siteList() ?? Promise.resolve([]);
   }
-  siteLoad(id: string): Promise<SiteFullPayload> {
+  siteLoad(id: string): Promise<LegacySiteFullPayload> {
     return this.invoke(() => this.api!.siteLoad(id));
   }
-  async siteSave(payload: SiteSavePayload): Promise<void> {
+  async siteSave(payload: LegacySiteFullPayload): Promise<void> {
     await this.invoke(() => this.api!.siteSave(payload));
   }
   async siteCreate(id: string, friendlyName: string): Promise<void> {

@@ -1,22 +1,23 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { ElectronService } from './electron.service';
 import type {
-  SystemTopology, BoardDef, TopologyGraph, Route,
+  BoardDef, TopologyGraph, Route,
   TopologyNode, PipeSegment, RouteOverride,
-  SiteMetadata, LinkData, StoredTopology, SiteSavePayload, SystemPayload,
+  SiteMetadata, SiteSavePayload,
 } from '@far-mon/core';
+import type { SystemTopology } from '../models/topology.model';
+import type { SystemPayload } from '../models/electron-api';
 import {
-  boundaryPorts, buildCompositeGraph, deriveRoutes, activeGraph, parseTopology,
+  buildGraph, deriveRoutes, activeGraph, parseTopology,
 } from '@far-mon/core';
-import type { BoundaryPort } from '@far-mon/core';
 
 @Injectable({ providedIn: 'root' })
 export class WorkspaceService {
 
   // --- Core state ---
   private _site = signal<SiteMetadata | null>(null);
+  // TODO(anchor-mesh): transition from per-system Map to flat SiteTopology
   private _systems = signal<Map<string, { topology: SystemTopology; board: BoardDef }>>(new Map());
-  private _links = signal<LinkData[]>([]);
   private _activeSystemId = signal<string | null>(null);
   private _dirty = signal(false);
   private _dirtySystemIds = signal<Set<string>>(new Set());
@@ -25,7 +26,8 @@ export class WorkspaceService {
   // --- Public readonly signals ---
   readonly site = this._site.asReadonly();
   readonly systems = this._systems.asReadonly();
-  readonly links = this._links.asReadonly();
+  // TODO(anchor-mesh): links removed in SiteTopology; keep empty for UI compat
+  readonly links = computed<unknown[]>(() => []);
   readonly activeSystemId = this._activeSystemId.asReadonly();
   readonly dirty = this._dirty.asReadonly();
   readonly dirtySystemIds = this._dirtySystemIds.asReadonly();
@@ -66,7 +68,7 @@ export class WorkspaceService {
     const allPipes: PipeSegment[] = [];
 
     // Build interconnect connection map: "systemId/nodeId" → { label, dir }
-    const links = this._links();
+    const links: any[] = [];
     const interconnectConn = new Map<string, { label: string; dir: 'out' | 'in' }>();
     for (const link of links) {
       const toName = systems.get(link.toSystem)?.topology.device.friendly_name ?? link.toSystem;
@@ -108,7 +110,6 @@ export class WorkspaceService {
       const offset = systemOffsets.get(systemId)!;
       for (const node of topology.nodes) {
         const nsId = `${systemId}/${node.id}`;
-        const conn = node.kind === 'interconnect' ? interconnectConn.get(nsId) : undefined;
         allNodes.push({
           ...node,
           id: nsId,
@@ -116,8 +117,7 @@ export class WorkspaceService {
             x: node.position.x + offset.x,
             y: node.position.y + offset.y,
           },
-          ...(conn ? { _connectionLabel: conn.label, _connectionDir: conn.dir } : {}),
-        } as TopologyNode);
+        });
       }
       for (const pipe of topology.pipes) {
         const [fromNode, fromPort] = pipe.from.split(':');
@@ -131,7 +131,7 @@ export class WorkspaceService {
     }
 
     // Add inter-system links as pipes
-    for (const link of this._links()) {
+    for (const link of links) {
       allPipes.push({
         id: `link-${link.id}`,
         from: `${link.fromSystem}/${link.fromNode}:${link.fromPort}`,
@@ -160,17 +160,9 @@ export class WorkspaceService {
   // --- Composite graph (for cross-system route derivation) ---
 
   readonly compositeGraph = computed<TopologyGraph | null>(() => {
-    const site = this._site();
-    const systems = this._systems();
-    const links = this._links();
-    if (!site || systems.size === 0) return null;
-
-    const inputs = [...systems.entries()].map(([systemId, { topology }]) => ({
-      systemId,
-      topology,
-    }));
-
-    return buildCompositeGraph(inputs, links);
+    const topo = this.compositeTopology();
+    if (!topo) return null;
+    return buildGraph(topo.nodes, topo.pipes);
   });
 
   readonly compositeRoutes = computed<Route[]>(() => {
@@ -179,43 +171,14 @@ export class WorkspaceService {
     return deriveRoutes(activeGraph(graph));
   });
 
-  readonly boundaryPortsBySystem = computed<Map<string, BoundaryPort[]>>(() => {
-    const systems = this._systems();
-    const result = new Map<string, BoundaryPort[]>();
-    for (const [systemId, { topology }] of systems) {
-      result.set(systemId, boundaryPorts(topology));
-    }
-    return result;
-  });
+  // TODO(anchor-mesh): boundaryPorts removed; return empty for UI compat
+  readonly boundaryPortsBySystem = computed<Map<string, any[]>>(() => new Map());
 
-  readonly brokenLinks = computed<LinkData[]>(() => {
-    const systems = this._systems();
-    const links = this._links();
-    return links.filter(link =>
-      !systems.has(link.fromSystem) || !systems.has(link.toSystem)
-    );
-  });
+  // TODO(anchor-mesh): links removed in SiteTopology
+  readonly brokenLinks = computed<unknown[]>(() => []);
 
-  readonly unlinkedInterconnects = computed<Array<{ systemId: string; nodeId: string; nodeName: string }>>(() => {
-    const systems = this._systems();
-    const links = this._links();
-
-    const linkedNodeIds = new Set<string>();
-    for (const link of links) {
-      linkedNodeIds.add(`${link.fromSystem}/${link.fromNode}`);
-      linkedNodeIds.add(`${link.toSystem}/${link.toNode}`);
-    }
-
-    const result: Array<{ systemId: string; nodeId: string; nodeName: string }> = [];
-    for (const [systemId, { topology }] of systems) {
-      for (const node of topology.nodes) {
-        if (node.kind === 'interconnect' && !linkedNodeIds.has(`${systemId}/${node.id}`)) {
-          result.push({ systemId, nodeId: node.id, nodeName: (node as any).name ?? node.id });
-        }
-      }
-    }
-    return result;
-  });
+  // TODO(anchor-mesh): interconnect nodes removed in SiteTopology
+  readonly unlinkedInterconnects = computed<Array<{ systemId: string; nodeId: string; nodeName: string }>>(() => []);
 
   constructor(private electron: ElectronService) {}
 
@@ -233,20 +196,20 @@ export class WorkspaceService {
 
       for (const sp of payload.systems) {
         try {
-          // Reconstruct full SystemTopology from stored parts
+          // Reconstruct full topology from stored parts
           const topology = this.reconstructTopology(sp);
 
           const boardResult = await this.electron.boardLoad(sp.board);
           const board = boardResult.board as BoardDef;
 
           systems.set(sp.id, { topology, board });
-        } catch {
+        } catch (err) {
           // Skip systems with broken board references
+          console.error(`[Workspace] Failed to load system "${sp.id}":`, err);
         }
       }
 
       this._systems.set(systems);
-      this._links.set(payload.links);
       this._dirty.set(false);
     } finally {
       this._loading.set(false);
@@ -311,18 +274,12 @@ export class WorkspaceService {
 
   // --- Link mutations ---
 
-  addLink(link: LinkData): void {
-    this._links.update(links => [...links, link]);
-    this._dirtySystemIds.update(s => { const n = new Set(s); n.add(link.fromSystem); n.add(link.toSystem); return n; });
+  // TODO(anchor-mesh): links removed in SiteTopology; keep no-op for UI compat
+  addLink(link: any): void {
     this._dirty.set(true);
   }
 
   removeLink(linkId: string): void {
-    const link = this._links().find(l => l.id === linkId);
-    this._links.update(links => links.filter(l => l.id !== linkId));
-    if (link) {
-      this._dirtySystemIds.update(s => { const n = new Set(s); n.add(link.fromSystem); n.add(link.toSystem); return n; });
-    }
     this._dirty.set(true);
   }
 
@@ -352,11 +309,6 @@ export class WorkspaceService {
     const systems = new Map(this._systems());
     systems.delete(systemId);
     this._systems.set(systems);
-
-    // Remove links referencing this system
-    this._links.update(links =>
-      links.filter(l => l.fromSystem !== systemId && l.toSystem !== systemId)
-    );
 
     this._dirtySystemIds.update(s => { const n = new Set(s); n.delete(systemId); return n; });
 
@@ -395,7 +347,7 @@ export class WorkspaceService {
     const site = this._site();
     if (!site) return;
 
-    const systemPayloads: SiteSavePayload['systems'] = [];
+    const systemPayloads: SystemPayload[] = [];
     for (const [systemId, { topology }] of this._systems()) {
       systemPayloads.push({
         id: systemId,
@@ -403,23 +355,23 @@ export class WorkspaceService {
         board: topology.device.board,
         directory: topology.device.directory ?? null,
         topology: {
-          nodes: topology.nodes,
-          pipes: topology.pipes,
-          route_overrides: topology.route_overrides,
-          timing: topology.timing,
-          automations: topology.automations,
-          uart_buses: topology.device.uart_buses,
-          io_providers: topology.device.io_providers,
-          network: topology.device.network,
+          nodes: topology.nodes as unknown[],
+          pipes: topology.pipes as unknown[],
+          route_overrides: topology.route_overrides as Record<string, unknown>,
+          timing: topology.timing as unknown,
+          automations: topology.automations as unknown[],
+          uart_buses: topology.device.uart_buses as unknown[] | undefined,
+          io_providers: topology.device.io_providers as unknown[] | undefined,
+          network: topology.device.network as unknown,
         },
         deviceName: topology.device.name,
       });
     }
 
-    const payload: SiteSavePayload = {
+    const payload: any = {
       site: { id: site.id, friendlyName: site.friendlyName },
       systems: systemPayloads,
-      links: this._links(),
+      links: [],
     };
 
     await this.electron.siteSave(payload);
@@ -432,7 +384,6 @@ export class WorkspaceService {
   clear(): void {
     this._site.set(null);
     this._systems.set(new Map());
-    this._links.set([]);
     this._activeSystemId.set(null);
     this._dirtySystemIds.set(new Set());
     this._dirty.set(false);
@@ -441,24 +392,38 @@ export class WorkspaceService {
 
   // --- Helpers ---
 
-  private reconstructTopology(sp: SystemPayload): SystemTopology {
-    const topo = sp.topology;
-    return parseTopology({
+  private reconstructTopology(sp: SystemPayload): any {
+    const topo = sp.topology as Record<string, unknown>;
+    const parsed = parseTopology({
       schema: 14,
       device: {
         name: sp.deviceName || sp.id,
         friendly_name: sp.friendlyName,
         board: sp.board,
         directory: sp.directory ?? undefined,
-        uart_buses: topo.uart_buses,
-        io_providers: topo.io_providers,
-        network: topo.network,
+        uart_buses: topo['uart_buses'],
+        io_providers: topo['io_providers'],
+        network: topo['network'],
       },
-      nodes: topo.nodes,
-      pipes: topo.pipes,
-      route_overrides: topo.route_overrides,
-      timing: topo.timing,
-      automations: topo.automations,
+      nodes: topo['nodes'],
+      pipes: topo['pipes'],
+      route_overrides: topo['route_overrides'],
+      timing: topo['timing'],
+      automations: topo['automations'],
     });
+    // Frontend still expects legacy SystemTopology shape with `device` field.
+    // Add it back for compatibility during the anchor-mesh transition.
+    return {
+      ...parsed,
+      device: {
+        name: sp.deviceName || sp.id,
+        friendly_name: sp.friendlyName,
+        board: sp.board,
+        directory: sp.directory ?? undefined,
+        uart_buses: topo['uart_buses'],
+        io_providers: topo['io_providers'],
+        network: topo['network'],
+      },
+    };
   }
 }

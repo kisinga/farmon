@@ -193,7 +193,7 @@ export class X6Canvas {
 
     // Collect disabled node IDs for pipe dimming
     const disabledNodeIds = new Set(
-      topology.nodes.filter(n => (n as any).disabled).map(n => n.id),
+      topology.nodes.filter(n => n.disabled).map(n => n.id),
     );
 
     // Add or update edges — dim pipes touching disabled nodes

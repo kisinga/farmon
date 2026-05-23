@@ -54,7 +54,7 @@ interface TerminalLine {
           <button
             class="btn btn-ghost btn-xs gap-1.5 border border-base-300/50"
             (click)="compile()"
-            [disabled]="!toolchainReady() || running() || !deviceDir()"
+            [disabled]="!toolchainReady() || running() || !deviceDir() || !canBuild()"
           >
             @if (running() && activeAction() === 'compile') {
               <span class="loading loading-spinner loading-xs"></span>

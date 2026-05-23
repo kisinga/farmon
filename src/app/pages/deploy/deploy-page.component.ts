@@ -14,7 +14,7 @@ import { FirmwareFilesTableComponent } from '../../shared/firmware-files-table/f
 import { FirmwareBuildPanelComponent } from '../../shared/firmware-build-panel/firmware-build-panel.component';
 import { TopologyRenderer } from '../../shared/canvas/topology-renderer';
 import { renderCompositeOverlays, renderPerSystemOverlays } from '../../shared/canvas/topology-overlays';
-import { enrichPerSystemInterconnects } from '@far-mon/core';
+// TODO(anchor-mesh): enrichPerSystemInterconnects removed — replace with site-level route analysis
 import { ConfirmService } from '../../core/services/confirm.service';
 import { FormsModule } from '@angular/forms';
 import type { ToolchainInfo, GenerationMeta } from '../../core/models/electron-api';
@@ -575,14 +575,18 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
       const linksData = this.workspace.links();
       const overlayCtx = { systems: systemsMap, links: linksData };
 
+      const friendlyNames = new Map<string, string>();
+      for (const [id, { topology }] of systemsMap) {
+        friendlyNames.set(id, topology.device.friendly_name ?? id);
+      }
       const compositeSvg = await renderer.export(composite, [
-        (canvas, topology) => renderCompositeOverlays(canvas.graphInstance, topology, overlayCtx),
+        (canvas, topology) => renderCompositeOverlays(canvas.graphInstance, topology, { friendlyNames }),
       ]);
 
       const perSystemSvgs: Record<string, string> = {};
       for (const [id, { topology }] of systemsMap) {
-        const enriched = enrichPerSystemInterconnects(topology, id, overlayCtx);
-        perSystemSvgs[id] = await renderer.export(enriched, [
+        // TODO(anchor-mesh): replace enrichPerSystemInterconnects with site-level analysis
+        perSystemSvgs[id] = await renderer.export(topology, [
           (canvas, t) => renderPerSystemOverlays(canvas.graphInstance, t),
         ]);
       }

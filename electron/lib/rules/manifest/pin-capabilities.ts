@@ -3,6 +3,7 @@ import type { BoardDef } from "../../board.js";
 import { pinsWithCapability } from "../../board.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
 import { NODE_REGISTRY } from '@far-mon/core';
+import type { PinCap } from '@far-mon/core';
 
 export const pinCapabilities: ManifestRule = {
   id: "pin-capabilities",
@@ -12,9 +13,9 @@ export const pinCapabilities: ManifestRule = {
     const diagnostics: RuleDiagnostic[] = [];
 
     // Cache capability lookups
-    const capCache = new Map<string, Set<string>>();
-    const getPins = (cap: string) => {
-      if (!capCache.has(cap)) capCache.set(cap, pinsWithCapability(board, cap as any));
+    const capCache = new Map<PinCap, Set<string>>();
+    const getPins = (cap: PinCap) => {
+      if (!capCache.has(cap)) capCache.set(cap, pinsWithCapability(board, cap));
       return capCache.get(cap)!;
     };
 

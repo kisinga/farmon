@@ -1,4 +1,4 @@
-import type { SystemTopology } from '@far-mon/core';
+import type { SiteTopology } from '@far-mon/core';
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 import type { TopologyRule, ManifestRule, RuleDiagnostic } from "./rule.types.js";
@@ -97,7 +97,7 @@ function runEntityRules(nodes: Array<Record<string, any>>): RuleDiagnostic[] {
 // ---------------------------------------------------------------------------
 
 export function runTopologyRules(
-  topology: SystemTopology,
+  topology: SiteTopology,
   rules: TopologyRule[],
 ): ValidationResult {
   const graph = buildGraph(topology.nodes, topology.pipes);
@@ -128,7 +128,7 @@ export function runManifestRules(
   opts: ValidateOptions = {},
 ): ValidationResult {
   if (opts.loose) {
-    const gpioRule = rules.find((r) => r.id === "gpio-budget") as any;
+    const gpioRule = rules.find((r) => r.id === "gpio-budget");
     if (gpioRule) gpioRule.options = { loose: true };
   }
 
@@ -148,7 +148,7 @@ export function runManifestRules(
 // ---------------------------------------------------------------------------
 
 export function validateAll(
-  topology: SystemTopology,
+  topology: SiteTopology,
   manifest: Manifest,
   board: BoardDef,
   topologyRules: TopologyRule[],

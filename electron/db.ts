@@ -7,12 +7,7 @@ import * as path from "node:path";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface SiteListEntry {
-  id: string;
-  friendlyName: string;
-  systemCount: number;
-  linkCount: number;
-}
+import type { SiteListEntry } from '@far-mon/core';
 
 export interface SystemListEntry {
   id: string;
@@ -46,37 +41,12 @@ export interface SystemRow {
 
 export interface SiteFullPayload {
   site: { id: string; friendlyName: string };
-  systems: Array<{
-    id: string;
-    friendlyName: string;
-    board: string;
-    directory: string | null;
-    topology: unknown; // parsed JSON
-    deviceName: string;
-  }>;
-  links: LinkRow[];
+  topology: unknown; // parsed SiteTopology JSON
 }
 
 export interface SiteSavePayload {
   site: { id: string; friendlyName: string };
-  systems: Array<{
-    id: string;
-    friendlyName: string;
-    board: string;
-    directory: string | null;
-    topology: unknown; // will be JSON.stringify'd
-    deviceName: string;
-  }>;
-  links: Array<{
-    id: string;
-    fromSystem: string;
-    fromNode: string;
-    fromPort: string;
-    toSystem: string;
-    toNode: string;
-    toPort: string;
-    label?: string | null;
-  }>;
+  topology: unknown; // SiteTopology — will be JSON.stringify'd
 }
 
 export type GenerationType = 'esphome' | 'ha';
@@ -102,7 +72,7 @@ export interface GenerationSnapshot extends GenerationMeta {
 // DB versioning & migrations
 // ---------------------------------------------------------------------------
 
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 const MIGRATIONS: Record<number, string> = {
   0: `
@@ -237,6 +207,11 @@ const MIGRATIONS: Record<number, string> = {
       FOREIGN KEY (system_id, site_id) REFERENCES systems(id, site_id) ON DELETE CASCADE
     );
   `,
+  5: `
+    -- Anchor Mesh migration: flat SiteTopology storage
+    ALTER TABLE sites ADD COLUMN topology TEXT;
+    ALTER TABLE sites ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 15;
+  `,
 };
 
 // ---------------------------------------------------------------------------
@@ -292,6 +267,92 @@ function migrate(db: Database): void {
     db.run(`PRAGMA user_version = ${current + 1}`);
     db.run("COMMIT");
     current++;
+  }
+
+  // Post-migration: populate flat topology for sites that still use legacy tables
+  migrateLegacySitesToFlatTopology(db);
+}
+
+/**
+ * For sites created before DB v6, `systems`/`links` tables hold the data
+ * but `sites.topology` is NULL. Build a flat SiteTopology JSON from the
+ * legacy tables and write it into the new column. Idempotent — skips
+ * sites that already have topology.
+ */
+function migrateLegacySitesToFlatTopology(db: Database): void {
+  const sites = queryAll<{ id: string; friendly_name: string }>(
+    "SELECT id, friendly_name FROM sites WHERE topology IS NULL",
+  );
+  if (sites.length === 0) return;
+
+  for (const site of sites) {
+    const systems = queryAll<{
+      id: string; friendly_name: string; board: string;
+      directory: string | null; topology: string; device_name: string;
+    }>(
+      "SELECT id, friendly_name, board, directory, topology, device_name FROM systems WHERE site_id = ?",
+      [site.id],
+    );
+    if (systems.length === 0) continue;
+
+    const controllers: Array<{ id: string; board: string; friendlyName?: string; network?: unknown }> = [];
+    const nodes: unknown[] = [];
+    const pipes: Array<{ id: string; from: string; to: string }> = [];
+    let route_overrides: Record<string, unknown> = {};
+    let timing: unknown;
+    const automations: unknown[] = [];
+
+    for (const sys of systems) {
+      const topo = JSON.parse(sys.topology) as Record<string, unknown>;
+      controllers.push({
+        id: sys.id,
+        board: sys.board,
+        friendlyName: sys.friendly_name,
+        network: topo.network,
+      });
+      for (const n of (topo.nodes as Array<Record<string, unknown>> ?? [])) {
+        nodes.push({ ...n, anchorId: sys.id });
+      }
+      for (const p of (topo.pipes as Array<{ id: string; from: string; to: string }> ?? [])) {
+        pipes.push(p);
+      }
+      route_overrides = { ...route_overrides, ...(topo.route_overrides as Record<string, unknown> ?? {}) };
+      for (const a of (topo.automations as unknown[] ?? [])) {
+        automations.push(a);
+      }
+      if (!timing && topo.timing) timing = topo.timing;
+    }
+
+    // Migrate legacy links into pipes
+    const links = queryAll<{
+      id: string; from_system: string; from_node: string; from_port: string;
+      to_system: string; to_node: string; to_port: string;
+    }>(
+      "SELECT id, from_system, from_node, from_port, to_system, to_node, to_port FROM links WHERE site_id = ?",
+      [site.id],
+    );
+    for (const link of links) {
+      pipes.push({
+        id: link.id,
+        from: `${link.from_node}:${link.from_port}`,
+        to: `${link.to_node}:${link.to_port}`,
+      });
+    }
+
+    const siteTopology = {
+      schema: 15,
+      controllers,
+      nodes,
+      pipes,
+      route_overrides,
+      timing: timing ?? { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 10, flow_threshold: 0.5, api_watchdog: 60, update_interval: 30 },
+      automations,
+    };
+
+    db.run(
+      "UPDATE sites SET topology = ?, schema_version = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
+      [JSON.stringify(siteTopology), 15, site.id],
+    );
   }
 }
 
@@ -365,26 +426,48 @@ export function inputChecksum(topology: unknown, board: unknown | null, secrets?
 // ---------------------------------------------------------------------------
 
 export function listSites(): SiteListEntry[] {
-  return queryAll<{ id: string; friendly_name: string }>(
-    "SELECT id, friendly_name FROM sites ORDER BY friendly_name",
+  return queryAll<{ id: string; friendly_name: string; topology: string | null }>(
+    "SELECT id, friendly_name, topology FROM sites ORDER BY friendly_name",
   ).map(row => {
-    const sysCnt = queryOne<{ c: number }>(
-      "SELECT COUNT(*) as c FROM systems WHERE site_id = ?", [row.id],
-    );
-    const linkCnt = queryOne<{ c: number }>(
-      "SELECT COUNT(*) as c FROM links WHERE site_id = ?", [row.id],
-    );
+    let controllerCount = 0;
+    let nodeCount = 0;
+    if (row.topology) {
+      try {
+        const topo = JSON.parse(row.topology) as { controllers?: unknown[]; nodes?: unknown[] };
+        controllerCount = topo.controllers?.length ?? 0;
+        nodeCount = topo.nodes?.length ?? 0;
+      } catch { /* ignore malformed topology */ }
+    }
     return {
       id: row.id,
       friendlyName: row.friendly_name,
-      systemCount: sysCnt?.c ?? 0,
-      linkCount: linkCnt?.c ?? 0,
+      controllerCount,
+      nodeCount,
     };
   });
 }
 
 export function createSite(id: string, friendlyName: string): void {
-  getDb().run("INSERT INTO sites (id, friendly_name) VALUES (?, ?)", [id, friendlyName]);
+  const emptyTopology = {
+    schema: 15,
+    controllers: [],
+    nodes: [],
+    pipes: [],
+    route_overrides: {},
+    timing: {
+      valve_travel_time: 15,
+      flow_watchdog: 30,
+      flow_confirm: 10,
+      flow_threshold: 0.5,
+      api_watchdog: 60,
+      update_interval: 30,
+    },
+    automations: [],
+  };
+  getDb().run(
+    "INSERT INTO sites (id, friendly_name, topology, schema_version) VALUES (?, ?, ?, ?)",
+    [id, friendlyName, JSON.stringify(emptyTopology), 15],
+  );
   persist();
 }
 
@@ -405,54 +488,15 @@ export function duplicateSite(sourceId: string, newId: string, newFriendlyName: 
   const db = getDb();
   db.run("BEGIN TRANSACTION");
   try {
-    db.run("INSERT INTO sites (id, friendly_name) VALUES (?, ?)", [newId, newFriendlyName]);
-
-    // Copy systems
-    const systems = queryAll<{
-      id: string;
-      friendly_name: string;
-      board: string;
-      directory: string | null;
-      topology: string;
-      device_name: string;
-      sort_order: number;
-    }>(
-      "SELECT id, friendly_name, board, directory, topology, device_name, sort_order FROM systems WHERE site_id = ?",
-      [sourceId],
+    const source = queryOne<{ topology: string | null; friendly_name: string }>(
+      "SELECT topology, friendly_name FROM sites WHERE id = ?", [sourceId],
     );
-    for (const sys of systems) {
-      db.run(
-        `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, device_name, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [sys.id, newId, sys.friendly_name, sys.board, sys.directory, sys.topology, sys.device_name, sys.sort_order],
-      );
-    }
+    if (!source) throw new Error(`Source site not found: ${sourceId}`);
 
-    // Copy node_ids
-    const nodeIds = queryAll<{ node_id: string; system_id: string }>(
-      "SELECT node_id, system_id FROM node_ids WHERE site_id = ?", [sourceId],
+    db.run(
+      "INSERT INTO sites (id, friendly_name, topology, schema_version) VALUES (?, ?, ?, ?)",
+      [newId, newFriendlyName, source.topology, 15],
     );
-    for (const ni of nodeIds) {
-      db.run(
-        "INSERT INTO node_ids (node_id, system_id, site_id) VALUES (?, ?, ?)",
-        [ni.node_id, ni.system_id, newId],
-      );
-    }
-
-    // Copy links
-    const links = queryAll<LinkRow>(
-      `SELECT id, from_system, from_node, from_port, to_system, to_node, to_port, label
-       FROM links WHERE site_id = ?`,
-      [sourceId],
-    );
-    for (const link of links) {
-      db.run(
-        `INSERT INTO links (id, site_id, from_system, from_node, from_port, to_system, to_node, to_port, label)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [link.id, newId, link.fromSystem, link.fromNode, link.fromPort,
-         link.toSystem, link.toNode, link.toPort, link.label],
-      );
-    }
 
     // Copy HA files
     const haFiles = queryAll<{ filename: string; content: string }>(
@@ -465,7 +509,7 @@ export function duplicateSite(sourceId: string, newId: string, newFriendlyName: 
       );
     }
 
-    // Copy system secrets
+    // Copy controller secrets (renamed from system_secrets)
     const secrets = queryAll<{ system_id: string; key: string; value: string }>(
       "SELECT system_id, key, value FROM system_secrets WHERE site_id = ?", [sourceId],
     );
@@ -476,7 +520,7 @@ export function duplicateSite(sourceId: string, newId: string, newFriendlyName: 
       );
     }
 
-    // Copy system settings
+    // Copy controller settings
     const settings = queryAll<{ system_id: string; key: string; value: string }>(
       "SELECT system_id, key, value FROM system_settings WHERE site_id = ?", [sourceId],
     );
@@ -500,125 +544,35 @@ export function duplicateSite(sourceId: string, newId: string, newFriendlyName: 
 // ---------------------------------------------------------------------------
 
 export function loadSiteFull(id: string): SiteFullPayload | null {
-  const site = queryOne<{ id: string; friendly_name: string }>(
-    "SELECT id, friendly_name FROM sites WHERE id = ?", [id],
+  const site = queryOne<{ id: string; friendly_name: string; topology: string | null }>(
+    "SELECT id, friendly_name, topology FROM sites WHERE id = ?", [id],
   );
   if (!site) return null;
 
-  const systems = queryAll<{
-    id: string; friendly_name: string; board: string; directory: string | null;
-    topology: string; device_name: string; sort_order: number;
-  }>(
-    `SELECT id, friendly_name, board, directory, topology, device_name, sort_order
-     FROM systems WHERE site_id = ? ORDER BY sort_order, id`,
-    [id],
-  );
-
-  const links = queryAll<{
-    id: string; from_system: string; from_node: string; from_port: string;
-    to_system: string; to_node: string; to_port: string; label: string | null;
-  }>(
-    `SELECT id, from_system, from_node, from_port, to_system, to_node, to_port, label
-     FROM links WHERE site_id = ?`,
-    [id],
-  );
-
   return {
     site: { id: site.id, friendlyName: site.friendly_name },
-    systems: systems.map(s => ({
-      id: s.id,
-      friendlyName: s.friendly_name,
-      board: s.board,
-      directory: s.directory,
-      topology: JSON.parse(s.topology),
-      deviceName: s.device_name,
-    })),
-    links: links.map(l => ({
-      id: l.id,
-      siteId: id,
-      fromSystem: l.from_system,
-      fromNode: l.from_node,
-      fromPort: l.from_port,
-      toSystem: l.to_system,
-      toNode: l.to_node,
-      toPort: l.to_port,
-      label: l.label,
-    })),
+    topology: site.topology ? JSON.parse(site.topology) : null,
   };
 }
 
 export function saveSiteTransaction(payload: SiteSavePayload): void {
   const db = getDb();
   const siteId = payload.site.id;
+  const topologyJson = serializeTopology(payload.topology);
 
   db.run("BEGIN TRANSACTION");
   try {
-    // Upsert site
+    // Insert if new, update if existing
     db.run(
-      `INSERT INTO sites (id, friendly_name) VALUES (?, ?)
+      `INSERT INTO sites (id, friendly_name, topology, schema_version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))
        ON CONFLICT(id) DO UPDATE SET
-         friendly_name = excluded.friendly_name,
-         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
-      [siteId, payload.site.friendlyName],
+        friendly_name = excluded.friendly_name,
+        topology = excluded.topology,
+        schema_version = excluded.schema_version,
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
+      [siteId, payload.site.friendlyName, topologyJson, 15],
     );
-
-    // Get existing system IDs for this site
-    const existingSystemIds = new Set(
-      queryAll<{ id: string }>("SELECT id FROM systems WHERE site_id = ?", [siteId])
-        .map(r => r.id),
-    );
-    const newSystemIds = new Set(payload.systems.map(s => s.id));
-
-    // Delete systems that are no longer in the payload
-    for (const oldId of existingSystemIds) {
-      if (!newSystemIds.has(oldId)) {
-        db.run("DELETE FROM systems WHERE id = ? AND site_id = ?", [oldId, siteId]);
-      }
-    }
-
-    // Upsert systems
-    for (const sys of payload.systems) {
-      const topologyJson = serializeTopology(sys.topology);
-      db.run(
-        `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, device_name)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id, site_id) DO UPDATE SET
-           friendly_name = excluded.friendly_name,
-           board = excluded.board,
-           directory = excluded.directory,
-           topology = excluded.topology,
-           device_name = excluded.device_name,
-           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
-        [sys.id, siteId, sys.friendlyName, sys.board, sys.directory ?? null,
-         topologyJson, sys.deviceName],
-      );
-    }
-
-    // Rebuild node_ids for this site
-    db.run("DELETE FROM node_ids WHERE site_id = ?", [siteId]);
-    for (const sys of payload.systems) {
-      const topo = sys.topology as { nodes?: Array<{ id?: string }> };
-      const nodes = Array.isArray(topo?.nodes) ? topo.nodes : [];
-      for (const node of nodes) {
-        if (node.id) {
-          db.run(
-            "INSERT OR IGNORE INTO node_ids (node_id, system_id, site_id) VALUES (?, ?, ?)",
-            [node.id, sys.id, siteId],
-          );
-        }
-      }
-    }
-
-    // Replace all links
-    db.run("DELETE FROM links WHERE site_id = ?", [siteId]);
-    for (const link of payload.links) {
-      db.run(
-        `INSERT INTO links (id, site_id, from_system, from_node, from_port, to_system, to_node, to_port, label)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [link.id, siteId, link.fromSystem, link.fromNode, link.fromPort,
-         link.toSystem, link.toNode, link.toPort, link.label ?? null],
-      );
-    }
 
     db.run("COMMIT");
     persist();
@@ -633,54 +587,55 @@ export function saveSiteTransaction(payload: SiteSavePayload): void {
 // ---------------------------------------------------------------------------
 
 export function listSystems(siteId: string): SystemListEntry[] {
-  return queryAll<{ id: string; friendly_name: string; board: string; topology: string }>(
-    "SELECT id, friendly_name, board, topology FROM systems WHERE site_id = ? ORDER BY id",
-    [siteId],
-  ).map(row => {
-    let nodeCount = 0;
-    try {
-      const topo = JSON.parse(row.topology);
-      nodeCount = Array.isArray(topo.nodes) ? topo.nodes.length : 0;
-    } catch { /* ignore */ }
-    return {
-      id: row.id,
-      friendlyName: row.friendly_name,
-      board: row.board,
-      nodeCount,
-    };
-  });
+  const row = queryOne<{ topology: string | null }>(
+    "SELECT topology FROM sites WHERE id = ?", [siteId],
+  );
+  if (!row?.topology) return [];
+  try {
+    const topo = JSON.parse(row.topology) as { controllers?: Array<{ id: string; board: string }>; nodes?: unknown[] };
+    return (topo.controllers ?? []).map(c => ({
+      id: c.id,
+      friendlyName: c.id,
+      board: c.board,
+      nodeCount: (topo.nodes ?? []).filter((n: any) => n.anchorId === c.id).length,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 /**
  * Get all node IDs registered in a site.
  */
 export function getAllNodeIds(siteId: string): string[] {
-  return queryAll<{ node_id: string }>(
-    "SELECT node_id FROM node_ids WHERE site_id = ?",
-    [siteId],
-  ).map(r => r.node_id);
+  const row = queryOne<{ topology: string | null }>(
+    "SELECT topology FROM sites WHERE id = ?", [siteId],
+  );
+  if (!row?.topology) return [];
+  try {
+    const topo = JSON.parse(row.topology) as { nodes?: Array<{ id: string }> };
+    return (topo.nodes ?? []).map(n => n.id);
+  } catch {
+    return [];
+  }
 }
 
 /**
- * Check for node ID conflicts within a site, excluding a specific system.
- * Returns node IDs that already exist in other systems of the same site.
+ * Check for node ID conflicts within a site.
+ * In the anchor-mesh model, node IDs are site-scoped.
+ * Returns node IDs that already exist in the site topology.
  */
 export function checkNodeIdConflicts(
-  siteId: string, excludeSystemId: string, nodeIds: string[],
+  siteId: string, _excludeSystemId: string, nodeIds: string[],
 ): string[] {
   if (nodeIds.length === 0) return [];
-
-  const placeholders = nodeIds.map(() => "?").join(",");
-  return queryAll<{ node_id: string }>(
-    `SELECT node_id FROM node_ids
-     WHERE site_id = ? AND system_id != ? AND node_id IN (${placeholders})`,
-    [siteId, excludeSystemId, ...nodeIds],
-  ).map(r => r.node_id);
+  const existing = new Set(getAllNodeIds(siteId));
+  return nodeIds.filter(id => existing.has(id));
 }
 
 /**
- * Insert a new system into a site. Caller is responsible for ensuring
- * node IDs don't conflict (use checkNodeIdConflicts first and remap if needed).
+ * Insert a new controller into a site's topology.
+ * Caller is responsible for ensuring node IDs don't conflict.
  */
 export function insertSystem(
   siteId: string,
@@ -694,39 +649,103 @@ export function insertSystem(
   },
 ): void {
   const db = getDb();
-  const topologyJson = serializeTopology(system.topology);
+  const site = queryOne<{ topology: string | null }>(
+    "SELECT topology FROM sites WHERE id = ?", [siteId],
+  );
+  if (!site) throw new Error(`Site not found: ${siteId}`);
 
-  db.run("BEGIN TRANSACTION");
-  try {
-    db.run(
-      `INSERT INTO systems (id, site_id, friendly_name, board, directory, topology, device_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [system.id, siteId, system.friendlyName, system.board, system.directory,
-       topologyJson, system.deviceName],
-    );
+  const siteTopo = site.topology ? JSON.parse(site.topology) as Record<string, unknown> : {
+    schema: 15, controllers: [], nodes: [], pipes: [], route_overrides: {},
+    timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 10, flow_threshold: 0.5, api_watchdog: 60, update_interval: 30 },
+    automations: [],
+  };
+  const incoming = system.topology as Record<string, unknown>;
 
-    // Register node IDs
-    const topo = system.topology as { nodes?: Array<{ id?: string }> };
-    const nodes = Array.isArray(topo?.nodes) ? topo.nodes : [];
-    for (const node of nodes) {
-      if (node.id) {
-        db.run(
-          "INSERT INTO node_ids (node_id, system_id, site_id) VALUES (?, ?, ?)",
-          [node.id, system.id, siteId],
-        );
-      }
-    }
+  // Merge controller
+  const controllers = siteTopo.controllers as Array<Record<string, unknown>> ?? [];
+  controllers.push({
+    id: system.id,
+    board: system.board,
+    network: (incoming as Record<string, unknown>).network,
+  });
 
-    db.run("COMMIT");
-    persist();
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
+  // Merge nodes with anchorId
+  const existingNodes = siteTopo.nodes as Array<Record<string, unknown>> ?? [];
+  const incomingNodes = (incoming.nodes as Array<Record<string, unknown>> ?? [])
+    .map(n => ({ ...n, anchorId: system.id }));
+  siteTopo.nodes = [...existingNodes, ...incomingNodes];
+
+  // Merge pipes
+  const existingPipes = siteTopo.pipes as Array<Record<string, unknown>> ?? [];
+  const incomingPipes = (incoming.pipes as Array<Record<string, unknown>> ?? []);
+  siteTopo.pipes = [...existingPipes, ...incomingPipes];
+
+  // Merge route_overrides, timing, automations (last wins)
+  siteTopo.route_overrides = { ...(siteTopo.route_overrides as Record<string, unknown> ?? {}), ...(incoming.route_overrides as Record<string, unknown> ?? {}) };
+  siteTopo.automations = [...(siteTopo.automations as unknown[] ?? []), ...(incoming.automations as unknown[] ?? [])];
+
+  const topologyJson = serializeTopology(siteTopo);
+
+  db.run(
+    "UPDATE sites SET topology = ?, schema_version = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
+    [topologyJson, 15, siteId],
+  );
+  persist();
 }
 
 export function deleteSystem(siteId: string, systemId: string): void {
-  getDb().run("DELETE FROM systems WHERE id = ? AND site_id = ?", [systemId, siteId]);
+  const db = getDb();
+  const site = queryOne<{ topology: string | null }>(
+    "SELECT topology FROM sites WHERE id = ?", [siteId],
+  );
+  if (!site?.topology) return;
+
+  const topo = JSON.parse(site.topology) as {
+    controllers?: Array<{ id: string }>;
+    nodes?: Array<{ id: string; anchorId?: string }>;
+    pipes?: Array<{ from: string; to: string }>;
+    route_overrides?: Record<string, unknown>;
+    automations?: Array<{ route?: string; nodes?: string[] }>;
+  };
+
+  // Collect node IDs anchored to this controller
+  const removedNodeIds = new Set(
+    (topo.nodes ?? [])
+      .filter(n => n.anchorId === systemId)
+      .map(n => n.id),
+  );
+
+  // Remove controller
+  topo.controllers = (topo.controllers ?? []).filter(c => c.id !== systemId);
+
+  // Remove anchored nodes
+  topo.nodes = (topo.nodes ?? []).filter(n => n.anchorId !== systemId);
+
+  // Remove pipes that reference removed nodes
+  topo.pipes = (topo.pipes ?? []).filter(p => {
+    const fromNode = p.from.split(':')[0];
+    const toNode = p.to.split(':')[0];
+    return !removedNodeIds.has(fromNode) && !removedNodeIds.has(toNode);
+  });
+
+  // Remove route_overrides for removed nodes
+  if (topo.route_overrides) {
+    topo.route_overrides = Object.fromEntries(
+      Object.entries(topo.route_overrides).filter(([key]) => !removedNodeIds.has(key)),
+    );
+  }
+
+  // Remove automations referencing removed nodes
+  topo.automations = (topo.automations ?? []).filter(a => {
+    if (a.route && removedNodeIds.has(a.route)) return false;
+    if (a.nodes && a.nodes.some(id => removedNodeIds.has(id))) return false;
+    return true;
+  });
+
+  db.run(
+    "UPDATE sites SET topology = ?, schema_version = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
+    [JSON.stringify(topo), 15, siteId],
+  );
   persist();
 }
 
@@ -734,25 +753,9 @@ export function deleteSystem(siteId: string, systemId: string): void {
 // Links
 // ---------------------------------------------------------------------------
 
-export function listLinks(siteId: string): LinkRow[] {
-  return queryAll<{
-    id: string; site_id: string; from_system: string; from_node: string; from_port: string;
-    to_system: string; to_node: string; to_port: string; label: string | null;
-  }>(
-    `SELECT id, site_id, from_system, from_node, from_port, to_system, to_node, to_port, label
-     FROM links WHERE site_id = ?`,
-    [siteId],
-  ).map(r => ({
-    id: r.id,
-    siteId: r.site_id,
-    fromSystem: r.from_system,
-    fromNode: r.from_node,
-    fromPort: r.from_port,
-    toSystem: r.to_system,
-    toNode: r.to_node,
-    toPort: r.to_port,
-    label: r.label,
-  }));
+export function listLinks(_siteId: string): LinkRow[] {
+  // Links are now pipes inside the site topology JSON; no separate link table.
+  return [];
 }
 
 // ---------------------------------------------------------------------------

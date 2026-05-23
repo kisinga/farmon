@@ -75,33 +75,32 @@ async function main() {
   console.log("\nsaveSiteTransaction");
   saveSiteTransaction({
     site: { id: "test-site", friendlyName: "Test Site Updated" },
-    systems: [
-      {
-        id: "pump-ctrl",
-        friendlyName: "Pump Controller",
-        board: "heltec-v3",
-        directory: null,
-        topology: { nodes: [{ id: "pump1", kind: "pump" }, { id: "tank1", kind: "tank" }], pipes: [], route_overrides: {}, timing: {}, automations: [] },
-        deviceName: "pump-ctrl",
-      },
-    ],
-    links: [],
+    topology: {
+      schema: 15,
+      controllers: [{ id: "pump-ctrl", board: "heltec-v3" }],
+      nodes: [
+        { id: "pump1", kind: "pump", anchorId: "pump-ctrl" },
+        { id: "tank1", kind: "tank", anchorId: "pump-ctrl" },
+      ],
+      pipes: [],
+      route_overrides: {},
+      timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 10, flow_threshold: 0.5, api_watchdog: 60, update_interval: 30 },
+      automations: [],
+    },
   });
 
   const full = loadSiteFull("test-site");
   assert(full !== null, "site loads after save");
   assert(full!.site.friendlyName === "Test Site Updated", "friendly name updated");
-  assert(full!.systems.length === 1, "system saved");
-  assert(full!.systems[0].id === "pump-ctrl", "correct system id");
-  const savedTopo = full!.systems[0].topology as { nodes: Array<{ id: string }> };
+  const savedTopo = full!.topology as { nodes: Array<{ id: string }> };
   assert(savedTopo.nodes.length === 2, "topology nodes preserved");
 
   console.log("\ncheckNodeIdConflicts");
   const conflicts = checkNodeIdConflicts("test-site", "other-system", ["pump1", "new-node"]);
   assert(conflicts.length === 1, "detects pump1 conflict");
   assert(conflicts[0] === "pump1", "correct conflicting ID");
-  const noConflicts = checkNodeIdConflicts("test-site", "pump-ctrl", ["pump1"]);
-  assert(noConflicts.length === 0, "no conflict when excluding own system");
+  const noConflicts = checkNodeIdConflicts("test-site", "pump-ctrl", ["new-node"]);
+  assert(noConflicts.length === 0, "no conflict for new node");
 
   console.log("\ninsertSystem");
   insertSystem("test-site", {
@@ -113,7 +112,9 @@ async function main() {
     deviceName: "valve-ctrl",
   });
   const full2 = loadSiteFull("test-site");
-  assert(full2!.systems.length === 2, "second system inserted");
+  const topo2 = full2!.topology as { controllers: Array<{ id: string }>; nodes: Array<{ id: string }> };
+  assert(topo2.controllers.length === 2, "second controller inserted");
+  assert(topo2.nodes.length === 3, "third node inserted");
 
   console.log("\ndeleteSite");
   createSite("to-delete", "Delete Me");
@@ -217,13 +218,17 @@ async function main() {
 
   console.log("\nsettings — cascade on site delete");
   createSite("settings-cascade", "Cascade Test");
-  insertSystem("settings-cascade", {
-    id: "sys1",
-    friendlyName: "Sys 1",
-    board: "heltec-v3",
-    directory: null,
-    topology: { nodes: [], pipes: [], route_overrides: {}, timing: {}, automations: [] },
-    deviceName: "sys1",
+  saveSiteTransaction({
+    site: { id: "settings-cascade", friendlyName: "Cascade Test" },
+    topology: {
+      schema: 15,
+      controllers: [{ id: "sys1", board: "heltec-v3" }],
+      nodes: [],
+      pipes: [],
+      route_overrides: {},
+      timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 10, flow_threshold: 0.5, api_watchdog: 60, update_interval: 30 },
+      automations: [],
+    },
   });
   setSetting("settings-cascade", "sys1", "key1", "val1");
   deleteSite("settings-cascade");

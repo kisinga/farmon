@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { nodesByKind, nodesWithFlag, type Manifest, type LinkData, type NetworkTransport, type Route, type PinOverlayData, LOGO_SVG_SMALL } from '@far-mon/core';
+import { nodesByKind, nodesWithFlag, type Manifest, type NetworkTransport, type Route, type PinOverlayData, LOGO_SVG_SMALL } from '@far-mon/core';
 import { TEMPLATES_DIR, PARTIALS_DIR, compileFile } from '../../../packages/core/src/templates/hbs.js';
 
 // Boundary colors — same cycle as canvas boundary-renderer
@@ -99,7 +99,6 @@ const compiledSiteTemplate = compileFile(path.join(TEMPLATES_DIR, 'site-document
 export function generateSiteDocumentation(
   siteName: string,
   systems: SiteDocSystem[],
-  links: LinkData[],
   compositeTopologySvg: string,
   compositeRoutes: Route[],
   opts?: SiteDocOptions,
@@ -138,14 +137,6 @@ export function generateSiteDocumentation(
     pumpCount: nodesByKind(s.manifest.nodes, 'pump').length,
     valveCount: nodesByKind(s.manifest.nodes, 'valve').length,
     routeCount: s.manifest.routes.length,
-  }));
-
-  // Links table data
-  const linksTable = links.map(l => ({
-    fromSystemName: systemFriendly.get(l.fromSystem) ?? l.fromSystem,
-    fromNode: l.fromNode,
-    toSystemName: systemFriendly.get(l.toSystem) ?? l.toSystem,
-    toNode: l.toNode,
   }));
 
   // Routes grouped by source system
@@ -367,8 +358,6 @@ export function generateSiteDocumentation(
     componentPills,
     compositeTopologySvg,
     systems: systemsTable,
-    hasLinks: links.length > 0,
-    links: linksTable,
     routeGroups,
     hasAutomations: automationGroups.length > 0,
     automationGroups,

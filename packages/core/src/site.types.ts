@@ -1,9 +1,8 @@
 /**
- * Site types — the composition layer that groups site-scoped systems
- * with inter-system links.
+ * Site types — the top-level workspace for Anchor Mesh.
  *
- * Sites are the top-level workspace. Each system belongs to exactly one site.
- * Templates are read-only blueprints instantiated into site-scoped systems.
+ * A site is one continuous water graph. Nodes are anchored to controllers.
+ * Routes are derived per-controller from the site topology.
  */
 
 // ---------------------------------------------------------------------------
@@ -16,27 +15,18 @@ export interface SiteMetadata {
 }
 
 // ---------------------------------------------------------------------------
-// Inter-system links (explicit fields, no string parsing)
-// ---------------------------------------------------------------------------
-
-export interface LinkData {
-  id: string;
-  fromSystem: string;
-  fromNode: string;
-  fromPort: string;
-  toSystem: string;
-  toNode: string;
-  toPort: string;
-  label?: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Stored topology (the JSON blob in the systems table)
+// Stored site topology (the JSON blob on disk)
 // ---------------------------------------------------------------------------
 
 import type { TopologyNode, PipeSegment, RouteOverride, Automation, UartBus, IoProviderDef, NetworkConfig } from './topology.types';
 
-export interface StoredTopology {
+export interface StoredSiteTopology {
+  schema: number;
+  controllers: Array<{
+    id: string;
+    board: string;
+    network?: NetworkConfig;
+  }>;
   nodes: TopologyNode[];
   pipes: PipeSegment[];
   route_overrides: Record<string, RouteOverride>;
@@ -49,28 +39,15 @@ export interface StoredTopology {
     update_interval: number;
   };
   automations: Automation[];
-  uart_buses?: UartBus[];
-  io_providers?: IoProviderDef[];
-  network?: NetworkConfig;
 }
 
 // ---------------------------------------------------------------------------
 // IPC payloads
 // ---------------------------------------------------------------------------
 
-export interface SystemPayload {
-  id: string;
-  friendlyName: string;
-  board: string;
-  directory: string | null;
-  topology: StoredTopology;
-  deviceName: string;
-}
-
 export interface SiteFullPayload {
   site: SiteMetadata;
-  systems: SystemPayload[];
-  links: LinkData[];
+  topology: StoredSiteTopology;
 }
 
 export type SiteSavePayload = SiteFullPayload;
@@ -82,8 +59,8 @@ export type SiteSavePayload = SiteFullPayload;
 export interface SiteListEntry {
   id: string;
   friendlyName: string;
-  systemCount: number;
-  linkCount: number;
+  controllerCount: number;
+  nodeCount: number;
 }
 
 export interface TemplateListEntry {

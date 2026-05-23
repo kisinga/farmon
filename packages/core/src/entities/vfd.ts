@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
-import { RemoteBindingSchema } from '../schemas';
+import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
@@ -36,7 +36,7 @@ export const VfdNodeSchema = z.object({
     ),
   position: PositionSchema,
   ...HaNodeFields,
-  remote: RemoteBindingSchema.optional(),
+  anchorId: AnchorIdSchema,
 });
 
 export type VfdNode = z.infer<typeof VfdNodeSchema>;
@@ -99,6 +99,15 @@ export const vfdDescriptor: NodeDescriptor = {
     { key: 'fault_register', label: 'Fault Register', type: 'number' },
     { key: 'fault_reset_register', label: 'Fault Reset Register', type: 'number' },
   ],
+
+  safetyProfile: {
+    safetyCritical: true,
+    requiredSensors: [
+      { kind: 'flow_sensor', position: 'downstream', severity: 'error', reason: 'dry-run protection' },
+    ],
+    deadManTimeoutMs: 30000,
+    deadManAction: 'stop',
+  },
 
   // --- Codegen ---
 

@@ -1,4 +1,4 @@
-import type { SystemTopology } from '@far-mon/core';
+import type { SiteTopology } from '@far-mon/core';
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 import type { TopologyRule, ManifestRule, RuleDiagnostic } from "./rule.types.js";
@@ -63,7 +63,7 @@ export const ALL_MANIFEST_RULES: ManifestRule[] = [
 // Convenience wrappers with default rule sets
 
 export function runTopologyRules(
-  topology: SystemTopology,
+  topology: SiteTopology,
   rules: TopologyRule[] = ALL_TOPOLOGY_RULES,
 ): ValidationResult {
   return _runTopologyRules(topology, rules);
@@ -79,7 +79,7 @@ export function runManifestRules(
 }
 
 export function validateAll(
-  topology: SystemTopology,
+  topology: SiteTopology,
   manifest: Manifest,
   board: BoardDef,
   opts: ValidateOptions = {},

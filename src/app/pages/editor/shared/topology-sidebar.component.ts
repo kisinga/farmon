@@ -193,69 +193,6 @@ export type { Selection };
           </div>
         }
 
-        <!-- Interconnect site link section -->
-        @if (sn.node.kind === 'interconnect') {
-          <div class="mt-3 pt-3 border-t border-base-300/30">
-            <h4 class="sidebar-title">Site Link</h4>
-
-            <!-- Existing links -->
-            @for (hl of interconnectLinks(); track hl.link.id) {
-              <div class="flex items-center gap-2 py-1 text-xs">
-                <span class="badge badge-xs" [class.badge-info]="hl.direction === 'outgoing'" [class.badge-success]="hl.direction === 'incoming'">
-                  {{ hl.direction === 'outgoing' ? '\u2192' : '\u2190' }}
-                </span>
-                <span class="font-medium truncate flex-1">{{ hl.remoteName }}</span>
-                <button class="btn btn-ghost btn-xs text-error" (click)="unlinkInterconnect(hl.link.id)" title="Remove link">\u00d7</button>
-              </div>
-            }
-
-            @if (linkDirection()) {
-              @if (otherSystems().length === 0) {
-                <div class="text-xs text-warning py-2">Add another controller to this site before linking this interconnect.</div>
-              } @else {
-                <div class="space-y-2">
-                  <div class="text-[10px] text-base-content/40 mb-1">
-                    {{ linkDirection() === 'outgoing' ? 'Link to (outlet \u2192 inlet)' : 'Link from (outlet \u2192 inlet)' }}
-                  </div>
-                  <select class="select select-xs select-bordered w-full"
-                    [ngModel]="linkTargetSystem()"
-                    (ngModelChange)="linkTargetSystem.set($event); linkTargetPort.set(null)">
-                    <option [ngValue]="null">Select target controller...</option>
-                    @for (sys of otherSystems(); track sys.config) {
-                      <option [ngValue]="sys.config">{{ sys.friendlyName }}</option>
-                    }
-                  </select>
-
-                  @if (linkTargetSystem()) {
-                    @if (targetBoundaryPorts().length === 0) {
-                      <div class="space-y-2">
-                        <div class="text-xs text-base-content/50">No interconnects in target controller.</div>
-                        <button class="btn btn-xs btn-outline btn-primary w-full" (click)="createInterconnectInTarget()">
-                          + Create Interconnect
-                        </button>
-                      </div>
-                    } @else {
-                      <select class="select select-xs select-bordered w-full"
-                        [ngModel]="linkTargetPort()"
-                        (ngModelChange)="linkTargetPort.set($event)">
-                        <option [ngValue]="null">Select target port...</option>
-                        @for (port of targetBoundaryPorts(); track port.nodeId + ':' + port.portId) {
-                          <option [ngValue]="port.nodeId + ':' + port.portId">
-                            {{ port.nodeName }} ({{ port.portId }})
-                          </option>
-                        }
-                      </select>
-                      @if (linkTargetPort()) {
-                        <button class="btn btn-xs btn-primary w-full" (click)="createInterconnectLink()">Create Link</button>
-                      }
-                    }
-                  }
-                </div>
-              }
-            }
-          </div>
-        }
-
         @if (!sn.desc.singleton) {
           <button class="btn btn-error btn-xs mt-3 w-full" (click)="deleteNode.emit(sn.node.id)">Delete {{ sn.desc.label }}</button>
         }
@@ -414,10 +351,6 @@ export class TopologySidebarComponent {
   selectRoute = output<{ route: DerivedRoute; sharedNodeIds?: string[] }>();
   selectNode = output<string>();
 
-  // --- Interconnect link form state ---
-  protected linkTargetSystem = signal<string | null>(null);
-  protected linkTargetPort = signal<string | null>(null);
-
   // --- Computed ---
   protected selectedNodeData = computed(() => {
     const sel = this.selection();
@@ -454,29 +387,6 @@ export class TopologySidebarComponent {
     }));
   });
 
-  /** Links involving the currently selected interconnect node */
-  protected interconnectLinks = computed(() => {
-    const sn = this.selectedNodeData();
-    if (!sn || sn.node.kind !== 'interconnect') return [];
-    const systemId = this.workspace.activeSystemId();
-    const links = this.workspace.links();
-    if (!systemId) return [];
-
-    const nodeId = sn.node.id;
-    return links.filter(link =>
-      (link.fromSystem === systemId && link.fromNode === nodeId)
-      || (link.toSystem === systemId && link.toNode === nodeId)
-    ).map(link => {
-      const isSource = link.fromSystem === systemId && link.fromNode === nodeId;
-      const remoteSystemId = isSource ? link.toSystem : link.fromSystem;
-      const remoteNodeId = isSource ? link.toNode : link.fromNode;
-      const remotePortId = isSource ? link.toPort : link.fromPort;
-      const remoteSystem = this.workspace.systems().get(remoteSystemId);
-      const remoteName = remoteSystem?.topology.device.friendly_name ?? remoteSystemId;
-      return { link, remoteName, remoteNodeId, remotePortId, direction: isSource ? 'outgoing' : 'incoming' as const };
-    });
-  });
-
   /** Other systems in the site (for the target dropdown) */
   protected otherSystems = computed(() => {
     const systemId = this.workspace.activeSystemId();
@@ -489,107 +399,6 @@ export class TopologySidebarComponent {
         friendlyName: topology.device.friendly_name ?? id,
       }));
   });
-
-  /** Whether the current interconnect links as outgoing (outlet→inlet) or incoming (inlet←outlet). */
-  protected linkDirection = computed<'outgoing' | 'incoming' | null>(() => {
-    const sn = this.selectedNodeData();
-    const systemId = this.workspace.activeSystemId();
-    const links = this.workspace.links();
-    if (!sn || sn.node.kind !== 'interconnect' || !systemId) return null;
-    const outUsed = links.some(l => l.fromSystem === systemId && l.fromNode === sn.node.id);
-    const inUsed = links.some(l => l.toSystem === systemId && l.toNode === sn.node.id);
-    if (!outUsed) return 'outgoing';
-    if (!inUsed) return 'incoming';
-    return null; // both ports linked
-  });
-
-  /** Boundary ports on the target system, filtered by link direction. */
-  protected targetBoundaryPorts = computed(() => {
-    const target = this.linkTargetSystem();
-    const dir = this.linkDirection();
-    if (!target || !dir) return [];
-    const all = this.workspace.boundaryPortsBySystem().get(target) ?? [];
-    // Outgoing: current outlet → target inlet. Incoming: target outlet → current inlet.
-    const wantDir = dir === 'outgoing' ? 'inlet' : 'outlet';
-    return all.filter(p => p.nodeKind === 'interconnect' && p.direction === wantDir);
-  });
-
-  // --- Interconnect link actions ---
-
-  protected createInterconnectLink() {
-    const sn = this.selectedNodeData();
-    const systemId = this.workspace.activeSystemId();
-    const targetSystem = this.linkTargetSystem();
-    const targetPort = this.linkTargetPort();
-    const dir = this.linkDirection();
-    if (!sn || !systemId || !targetSystem || !targetPort || !dir) return;
-
-    const [targetNodeId, targetPortId] = targetPort.split(':');
-
-    if (dir === 'outgoing') {
-      // Current outlet → target inlet
-      const outletPort = sn.node.ports.find(p => p.direction === 'outlet');
-      this.workspace.addLink({
-        id: crypto.randomUUID(),
-        fromSystem: systemId,
-        fromNode: sn.node.id,
-        fromPort: outletPort?.id ?? 'outlet',
-        toSystem: targetSystem,
-        toNode: targetNodeId,
-        toPort: targetPortId,
-      });
-    } else {
-      // Target outlet → current inlet
-      const inletPort = sn.node.ports.find(p => p.direction === 'inlet');
-      this.workspace.addLink({
-        id: crypto.randomUUID(),
-        fromSystem: targetSystem,
-        fromNode: targetNodeId,
-        fromPort: targetPortId,
-        toSystem: systemId,
-        toNode: sn.node.id,
-        toPort: inletPort?.id ?? 'inlet',
-      });
-    }
-
-    this.linkTargetSystem.set(null);
-    this.linkTargetPort.set(null);
-  }
-
-  /** Create an interconnect node in the target system without switching to it. */
-  protected createInterconnectInTarget() {
-    const targetSystemId = this.linkTargetSystem();
-    if (!targetSystemId) return;
-
-    const kind = 'interconnect';
-    const id = this.workspace.nextNodeId(kind);
-    const n = this.workspace.systems().get(targetSystemId)?.topology.nodes.filter(n => n.kind === kind).length ?? 0;
-
-    this.workspace.updateSystemTopology(targetSystemId, t => {
-      // Place below existing nodes so it doesn't overlap
-      let maxY = 0;
-      for (const node of t.nodes) {
-        maxY = Math.max(maxY, node.position.y + 60);
-      }
-      t.nodes.push({
-        kind,
-        id,
-        name: `Interconnect ${n + 1}`,
-        ports: [
-          { id: 'inlet', label: 'Inlet', direction: 'inlet' },
-          { id: 'outlet', label: 'Outlet', direction: 'outlet' },
-        ],
-        position: { x: 0, y: maxY + 20 },
-      } as any);
-    });
-
-    // Reset target port so the dropdown refreshes with the new interconnect
-    this.linkTargetPort.set(null);
-  }
-
-  protected unlinkInterconnect(linkId: string) {
-    this.workspace.removeLink(linkId);
-  }
 
   // --- Two-step channel selector helpers ---
 

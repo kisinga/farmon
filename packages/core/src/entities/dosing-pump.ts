@@ -1,13 +1,12 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
-import { RemoteBindingSchema } from '../schemas';
+import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { dosingPumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { templateSwitchProxy } from '../remote-proxy';
 
 const COLOR = '#ea580c'; // orange
 const S = 50;
@@ -25,7 +24,7 @@ export const DosingPumpNodeSchema = z.object({
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
   ...HaNodeFields,
-  remote: RemoteBindingSchema.optional(),
+  anchorId: AnchorIdSchema,
 });
 
 export type DosingPumpNode = z.infer<typeof DosingPumpNodeSchema>;
@@ -85,6 +84,15 @@ export const dosingPumpDescriptor: NodeDescriptor = {
     { key: 'flow_rate_ml_min', label: 'Rate (mL/min)', type: 'number' },
   ],
 
+  safetyProfile: {
+    safetyCritical: true,
+    requiredSensors: [
+      { kind: 'flow_sensor', position: 'downstream', severity: 'warning', reason: 'injection verification' },
+    ],
+    deadManTimeoutMs: 30000,
+    deadManAction: 'stop',
+  },
+
   constraints: [
     { type: 'presence', id: 'dosing-downstream-flow', requiredKind: ['flow_sensor'],
       position: 'downstream', baseSeverity: 'warning',
@@ -113,14 +121,6 @@ ${header}
       relay: deriveHaEntityId('switch', device, haNames(node).relay),
     }),
 
-    remoteProxy: (node: DosingPumpNode) => {
-      const haEntityId = ((node as Record<string, any>)['remote'] as any)?.haEntityId as string | undefined;
-      if (!haEntityId) return null;
-      return {
-        section: 'switch',
-        yaml: templateSwitchProxy(dosingPumpSwitchId(node), node.name, haEntityId),
-      };
-    },
   },
 
   rules: [
@@ -128,7 +128,6 @@ ${header}
       id: 'dosing-pump-pin-required',
       severity: 'error',
       evaluate: (nodes) => nodes
-        .filter(n => !n['remote'])
         .filter(n => !n['pin'])
         .map(n => ({
           message: `Dosing pump "${n['name'] ?? n['id']}": Relay Pin not configured`,

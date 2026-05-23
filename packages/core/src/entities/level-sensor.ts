@@ -1,13 +1,12 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
-import { RemoteBindingSchema } from '../schemas';
+import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { levelSensorLevelId, levelSensorRawVoltageId, levelSensorCalEmptyId, levelSensorCalFullId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { homeassistantSensorImport } from '../remote-proxy';
 
 const COLOR = '#0ea5e9'; // sky blue
 const W = 50, H = 36;
@@ -26,7 +25,7 @@ export const LevelSensorNodeSchema = z.object({
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
   ...HaNodeFields,
-  remote: RemoteBindingSchema.optional(),
+  anchorId: AnchorIdSchema,
 });
 
 export type LevelSensorNode = z.infer<typeof LevelSensorNodeSchema>;
@@ -173,14 +172,6 @@ ${header}
       };
     },
 
-    remoteProxy: (node: LevelSensorNode) => {
-      const haEntityId = ((node as Record<string, any>)['remote'] as any)?.haEntityId as string | undefined;
-      if (!haEntityId) return null;
-      return {
-        section: 'sensor',
-        yaml: homeassistantSensorImport(node.id, haEntityId),
-      };
-    },
   },
 
   constraints: [] satisfies FlowConstraint[],
@@ -191,7 +182,6 @@ ${header}
     id: 'level-sensor-pin-required',
     severity: 'error',
     evaluate: (nodes) => nodes
-      .filter(n => !n['remote'])
       .filter(n => !n['pin'])
       .map(n => ({
         message: `Level sensor "${n['name']}": no pin assigned. Level sensors require an ADC pin.`,

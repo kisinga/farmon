@@ -1,23 +1,33 @@
 import type { Manifest, ManifestNode, ManifestAutomation, Route as ManifestRoute } from "./manifest.types";
-import type { SystemTopology } from "./topology.types";
+import type { SiteTopology } from "./topology.types";
 import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
 import { resolveTankLevelSources } from "./tank-level";
 import { slug } from "./slug";
 
 // ---------------------------------------------------------------------------
-// Main conversion
+// Per-controller manifest conversion
 // ---------------------------------------------------------------------------
 
-export function topologyToManifest(topology: SystemTopology): Manifest {
+export function topologyToManifestForController(
+  topology: SiteTopology,
+  controllerId: string,
+): Manifest {
   const graph = buildGraph(topology.nodes, topology.pipes);
   const active = activeGraph(graph);
-  const routes = deriveRoutes(active);
+  const allRoutes = deriveRoutes(active);
 
-  // Only nodes connected via pipes enter the manifest.
-  const connected = new Set<string>();
-  for (const pipe of topology.pipes) {
-    connected.add(pipe.from.split(':')[0]);
-    connected.add(pipe.to.split(':')[0]);
+  // A controller runs routes whose flow sensor is anchored to it.
+  // This controller is the safety brain for the route.
+  const controllerRoutes = allRoutes.filter(r => {
+    if (!r.valid) return false;
+    const flowNode = topology.nodes.find(n => n.id === r.flowSensors[0]);
+    return flowNode && flowNode.anchorId === controllerId;
+  });
+
+  // Only nodes that appear in this controller's routes enter the manifest.
+  const routeNodeIds = new Set<string>();
+  for (const r of controllerRoutes) {
+    for (const id of r.nodeSequence) routeNodeIds.add(id);
   }
 
   const nodeMap = new Map(topology.nodes.map(n => [n.id, n]));
@@ -26,28 +36,18 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
   // Resolve tank → level-source associations from graph topology
   const tankLevelSources = resolveTankLevelSources(active, nodeKindById);
 
-  // Inverse map: pressure-sensor id → its parent tank id (when the sensor is
-  // that tank's level source). Used to annotate the sensor with the tank's
-  // height_m / capacity_l so codegen and validation see calibration inputs
-  // in their original shape (`tank_height_m` / `tank_capacity_l`) without
-  // each having to walk the graph.
   const pressureSensorToTank = new Map<string, string>();
   for (const [tankId, src] of tankLevelSources) {
     if (src.kind === 'pressure_sensor') pressureSensorToTank.set(src.id, tankId);
   }
 
-  // All pressure-sensor node ids — used to derive per-route lists below.
   const pressureSensorIds = new Set(
     topology.nodes.filter(n => n.kind === 'pressure_sensor').map(n => n.id),
   );
 
-  // Strip layout fields (ports, position) — generators don't need them.
-  // Annotate tanks with their associated level source. Annotate pressure
-  // sensors with their parent tank's dimensions when they are a tank-level
-  // source — keeping calibration inputs co-located with the sensor for
-  // backward-compatible codegen.
+  // Strip layout fields, annotate level sources and calibration data.
   const nodes: ManifestNode[] = topology.nodes
-    .filter(n => connected.has(n.id) && !n.disabled)
+    .filter(n => routeNodeIds.has(n.id) && !n.disabled)
     .map(({ ports, position, ...data }) => {
       const node = data as ManifestNode;
       if (node.kind === 'tank') {
@@ -69,64 +69,52 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
 
   // --- Route mapping ---
 
-  const manifestRoutes: ManifestRoute[] = routes
-    .filter(r => r.valid) // only routes with a flow sensor
-    .map(r => {
-      const override = topology.route_overrides[r.key] ?? {};
-      const srcNode = nodeMap.get(r.source);
-      const dstNode = nodeMap.get(r.destination);
-      const srcLabel = (srcNode as any)?.name ?? r.source;
-      const dstLabel = (dstNode as any)?.name ?? r.destination;
+  const manifestRoutes: ManifestRoute[] = controllerRoutes.map(r => {
+    const override = topology.route_overrides[r.key] ?? {};
+    const srcNode = nodeMap.get(r.source);
+    const dstNode = nodeMap.get(r.destination);
+    const srcLabel = (srcNode as { name?: string } | undefined)?.name ?? r.source;
+    const dstLabel = (dstNode as { name?: string } | undefined)?.name ?? r.destination;
 
-      // Determine if runtime level checks are reliable for this route.
-      // Level sensors are intrinsically tank-mounted → always pump-safe, no
-      // flag to consult. Pressure sensors carry the pump_rated flag because
-      // they can be plumbed inline near a pump where pump operation
-      // disturbs the reading.
-      const runtimeLevelOk = !r.crossesPump || (() => {
-        const checkTank = (tankId: string | undefined) => {
-          if (!tankId) return true;
-          const tank = nodeMap.get(tankId);
-          if (!tank || tank.kind !== 'tank') return true;
-          const src = tankLevelSources.get(tankId);
-          if (!src) return true; // no sensor = no level data = skip check
-          if (src.kind === 'level_sensor') return true; // level sensors are pump-safe by construction
-          const sensor = nodeMap.get(src.id);
-          return !sensor || !!(sensor as any).pump_rated;
-        };
-        return checkTank(r.source) && checkTank(r.destination);
-      })();
-
-      // Pressure sensors that lie on this route's path. Pure metadata for
-      // downstream consumers — the firmware doesn't read it.
-      const inlinePressureSensors = r.nodeSequence.filter(id => pressureSensorIds.has(id));
-
-      // Drop level-safety overrides whose tank has no level source — firmware
-      // can't read what doesn't exist, so the value would be dead weight that
-      // also misleads the user into thinking a check is active.
-      const sourceHasLevel = r.sourceKind === 'tank' && tankLevelSources.has(r.source);
-      const destHasLevel = r.destKind === 'tank' && tankLevelSources.has(r.destination);
-
-      return {
-        key: r.key,
-        name: `${srcLabel} > ${dstLabel}`,
-        source: r.source,
-        source_type: r.sourceKind as 'tank' | 'water_source',
-        destination: r.destKind === 'tank' ? r.destination : undefined,
-        valves: r.valves,
-        flow_sensor: r.flowSensors[0],
-        max_runtime_seconds: override.max_runtime_seconds ?? 1800,
-        crossesPump: r.crossesPump,
-        pumpIndex: r.pumpIndex,
-        nodeSequence: r.nodeSequence,
-        source_min_pct: sourceHasLevel ? (override.source_min_level ?? 0) : 0,
-        dest_max_pct: destHasLevel ? (override.dest_max_level ?? 0) : 0,
-        source_has_level: sourceHasLevel,
-        dest_has_level: destHasLevel,
-        runtime_level_ok: runtimeLevelOk,
-        inline_pressure_sensors: inlinePressureSensors,
+    const runtimeLevelOk = !r.crossesPump || (() => {
+      const checkTank = (tankId: string | undefined) => {
+        if (!tankId) return true;
+        const tank = nodeMap.get(tankId);
+        if (!tank || tank.kind !== 'tank') return true;
+        const src = tankLevelSources.get(tankId);
+        if (!src) return true;
+        if (src.kind === 'level_sensor') return true;
+        const sensor = nodeMap.get(src.id);
+        return !sensor || (sensor.kind === 'pressure_sensor' && !!(sensor as { pump_rated?: boolean }).pump_rated);
       };
-    });
+      return checkTank(r.source) && checkTank(r.destination);
+    })();
+
+    const inlinePressureSensors = r.nodeSequence.filter(id => pressureSensorIds.has(id));
+
+    const sourceHasLevel = r.sourceKind === 'tank' && tankLevelSources.has(r.source);
+    const destHasLevel = r.destKind === 'tank' && tankLevelSources.has(r.destination);
+
+    return {
+      key: r.key,
+      name: `${srcLabel} > ${dstLabel}`,
+      source: r.source,
+      source_type: r.sourceKind as 'tank' | 'water_source',
+      destination: r.destKind === 'tank' ? r.destination : undefined,
+      valves: r.valves,
+      flow_sensor: r.flowSensors[0],
+      max_runtime_seconds: override.max_runtime_seconds ?? 1800,
+      crossesPump: r.crossesPump,
+      pumpIndex: r.pumpIndex,
+      nodeSequence: r.nodeSequence,
+      source_min_pct: sourceHasLevel ? (override.source_min_level ?? 0) : 0,
+      dest_max_pct: destHasLevel ? (override.dest_max_level ?? 0) : 0,
+      source_has_level: sourceHasLevel,
+      dest_has_level: destHasLevel,
+      runtime_level_ok: runtimeLevelOk,
+      inline_pressure_sensors: inlinePressureSensors,
+    };
+  });
 
   // --- Automation resolution ---
 
@@ -154,8 +142,16 @@ export function topologyToManifest(topology: SystemTopology): Manifest {
       };
     });
 
+  const controller = topology.controllers.find(c => c.id === controllerId);
+
   return {
-    device: { ...topology.device, name: slug(topology.device.friendly_name) },
+    device: {
+      name: slug(controller?.board ?? controllerId),
+      friendly_name: controllerId,
+      board: controller?.board ?? '',
+      directory: undefined,
+      network: controller?.network,
+    },
     nodes,
     routes: manifestRoutes,
     timing: { ...topology.timing },

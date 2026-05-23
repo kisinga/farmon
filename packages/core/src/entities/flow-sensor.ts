@@ -1,12 +1,11 @@
 import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
-import { RemoteBindingSchema } from '../schemas';
+import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { homeassistantSensorImport } from '../remote-proxy';
 
 const COLOR = '#16a34a'; // green
 const W = 50, H = 36;
@@ -23,7 +22,7 @@ export const FlowSensorNodeSchema = z.object({
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
   ...HaNodeFields,
-  remote: RemoteBindingSchema.optional(),
+  anchorId: AnchorIdSchema,
 });
 
 export type FlowSensorNode = z.infer<typeof FlowSensorNodeSchema>;
@@ -165,13 +164,5 @@ ${header}
       };
     },
 
-    remoteProxy: (node: FlowSensorNode) => {
-      const haEntityId = ((node as Record<string, any>)['remote'] as any)?.haEntityId as string | undefined;
-      if (!haEntityId) return null;
-      return {
-        section: 'sensor',
-        yaml: homeassistantSensorImport(node.id, haEntityId),
-      };
-    },
   },
 };

@@ -1,17 +1,17 @@
 import { ipcMain, BrowserWindow, dialog, shell } from "electron";
 import * as fs from "node:fs";
 import { BoardDefSchema, type BoardDef } from "./lib/board.js";
-import { parseTopology } from "./lib/topology.js";
+import { parseTopology, type SiteTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
 import { generateFirmware, generateSiteHA, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
 
 import { generateSelfTest } from "./lib/self-test/index.js";
-import { topologyToManifest } from "./lib/topology-to-manifest.js";
+import { topologyToManifestForController } from "./lib/topology-to-manifest.js";
 import * as store from "./store.js";
 import * as db from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
-import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport, NODE_REGISTRY, deriveHaEntityId } from '@far-mon/core';
+import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport, NODE_REGISTRY, deriveHaEntityId, buildGraph, activeGraph, deriveRoutes, type Route } from '@far-mon/core';
 
 import { generateSiteDocumentation, type PinTableRow } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
@@ -47,78 +47,205 @@ function comparePinRows(a: PinTableRow, b: PinTableRow): number {
   return ar - br || ap.localeCompare(bp) || an - bn;
 }
 
-/** Parse topology and derive manifest (activeGraph filtering happens inside topologyToManifest). */
-function resolveTopologyAndManifest(dataRaw: unknown) {
+/** Parse topology and derive manifest for a specific controller.
+ *  If controllerId is omitted, uses the first controller in the topology.
+ */
+function resolveTopologyAndManifest(dataRaw: unknown, controllerId?: string) {
   const topology = parseTopology(dataRaw);
-  const manifest = topologyToManifest(topology);
+  const cid = controllerId ?? topology.controllers[0]?.id ?? 'default';
+  const manifest = topologyToManifestForController(topology, cid);
   return { topology, manifest };
 }
 
 /**
- * Resolve remote node bindings into HA entity IDs using provider system data.
- * Mutates the manifest nodes in place.
- */
-function resolveRemoteNodes(
-  manifest: import("./lib/schema.js").Manifest,
-  siteSystems: db.SiteFullPayload['systems'],
-) {
-  for (const node of manifest.nodes) {
-    const remote = (node as Record<string, unknown>)['remote'] as
-      | { providerSystemId: string; providerNodeId: string; providerEntityKey: string }
-      | undefined;
-    if (!remote) continue;
-
-    const providerSys = siteSystems.find(s => s.id === remote.providerSystemId);
-    if (!providerSys) continue;
-
-    const topo = providerSys.topology as { nodes?: Array<Record<string, unknown>> };
-    const nodes = Array.isArray(topo?.nodes) ? topo.nodes : [];
-    const providerNode = nodes.find(n => n['id'] === remote.providerNodeId);
-    if (!providerNode) continue;
-
-    const desc = NODE_REGISTRY.get(providerNode['kind'] as string);
-    const haMap = desc?.codegen?.haEntityIds?.(providerNode as any, { friendly_name: providerSys.friendlyName });
-    const haEntityId = haMap?.[remote.providerEntityKey];
-    if (!haEntityId) continue;
-
-    node.remote = {
-      haEntityId,
-      providerSystemId: remote.providerSystemId,
-      providerNodeName: (providerNode['name'] as string) || remote.providerNodeId,
-    };
-  }
-}
-
-/**
- * Reconstruct a full SystemTopology object from stored parts and hydrate
+ * Reconstruct a full SiteTopology object from stored parts and hydrate
  * through parseTopology so every Zod `.default()` is applied at the boundary.
  * The DB stores topology as a JSON blob (nodes, pipes, etc.) separate from
  * controller-level fields (name, board, etc.). This merges them back.
  */
 function reconstructTopology(
   systemId: string,
-  friendlyName: string,
+  _friendlyName: string,
   board: string,
-  directory: string | null,
+  _directory: string | null,
   storedTopology: Record<string, unknown>,
 ) {
   return parseTopology({
     schema: store.SCHEMA_VERSION,
-    device: {
-      name: systemId,
-      friendly_name: friendlyName,
+    controllers: [{
+      id: systemId,
       board,
-      directory: directory ?? undefined,
-      uart_buses: storedTopology.uart_buses,
-      io_providers: storedTopology.io_providers,
       network: storedTopology.network,
-    },
+    }],
     nodes: storedTopology.nodes,
     pipes: storedTopology.pipes,
     route_overrides: storedTopology.route_overrides,
     timing: storedTopology.timing,
     automations: storedTopology.automations,
   });
+}
+
+/**
+ * Convert legacy multi-system payload into a flat SiteTopology (schema v15).
+ */
+function legacySystemsToSiteTopology(
+  systems: Array<{
+    id: string;
+    friendlyName: string;
+    board: string;
+    directory: string | null;
+    topology: Record<string, unknown>;
+    deviceName: string;
+  }>,
+  links: Array<{
+    id: string;
+    fromSystem: string; fromNode: string; fromPort: string;
+    toSystem: string; toNode: string; toPort: string;
+    label?: string | null;
+  }>,
+): SiteTopology {
+  const controllers: Array<{ id: string; board: string; friendlyName?: string; network?: unknown }> = [];
+  const nodes: unknown[] = [];
+  const pipes: Array<{ id: string; from: string; to: string }> = [];
+  let route_overrides: Record<string, unknown> = {};
+  let timing: unknown;
+  const automations: unknown[] = [];
+
+  for (const sys of systems) {
+    const topo = sys.topology;
+    controllers.push({
+      id: sys.id,
+      board: sys.board,
+      friendlyName: sys.friendlyName,
+      network: topo.network,
+    });
+    for (const n of (topo.nodes as Array<Record<string, unknown>> ?? [])) {
+      nodes.push({ ...n, anchorId: sys.id });
+    }
+    for (const p of (topo.pipes as Array<{ id: string; from: string; to: string }> ?? [])) {
+      pipes.push(p);
+    }
+    route_overrides = { ...route_overrides, ...(topo.route_overrides as Record<string, unknown> ?? {}) };
+    for (const a of (topo.automations as unknown[] ?? [])) {
+      automations.push(a);
+    }
+    if (!timing && topo.timing) timing = topo.timing;
+  }
+
+  // Convert legacy inter-system links to pipes
+  for (const link of links) {
+    pipes.push({
+      id: link.id,
+      from: `${link.fromNode}:${link.fromPort}`,
+      to: `${link.toNode}:${link.toPort}`,
+    });
+  }
+
+  return parseTopology({
+    schema: store.SCHEMA_VERSION,
+    controllers,
+    nodes,
+    pipes,
+    route_overrides,
+    timing: timing ?? { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 10, flow_threshold: 0.5, api_watchdog: 60, update_interval: 30 },
+    automations,
+  });
+}
+
+/**
+ * Convert flat SiteTopology back to legacy multi-system payload.
+ * Keeps frontend compatibility during the anchor-mesh transition.
+ */
+function siteTopologyToLegacyPayload(topology: SiteTopology): {
+  systems: Array<{
+    id: string;
+    friendlyName: string;
+    board: string;
+    directory: string | null;
+    topology: Record<string, unknown>;
+    deviceName: string;
+  }>;
+  links: Array<{
+    id: string;
+    fromSystem: string; fromNode: string; fromPort: string;
+    toSystem: string; toNode: string; toPort: string;
+    label?: string | null;
+  }>;
+} {
+  // Group nodes by anchorId
+  const nodesByController = new Map<string, Array<Record<string, unknown>>>();
+  for (const n of topology.nodes) {
+    const anchorId = (n as Record<string, unknown>).anchorId as string;
+    if (!nodesByController.has(anchorId)) nodesByController.set(anchorId, []);
+    nodesByController.get(anchorId)!.push(n as Record<string, unknown>);
+  }
+
+  // Build per-system topologies
+  const systems = topology.controllers.map(ctrl => {
+    const sysNodes = nodesByController.get(ctrl.id) ?? [];
+    // Strip anchorId from nodes to match legacy per-system format
+    const strippedNodes = sysNodes.map(n => {
+      const { anchorId: _, ...rest } = n;
+      return rest;
+    });
+
+    // Collect pipes that are fully inside this controller
+    const sysPipes = topology.pipes.filter(p => {
+      const fromNodeId = p.from.split(':')[0];
+      const toNodeId = p.to.split(':')[0];
+      const fromNode = topology.nodes.find(n => (n as { id: string }).id === fromNodeId);
+      const toNode = topology.nodes.find(n => (n as { id: string }).id === toNodeId);
+      return (fromNode as Record<string, unknown> | undefined)?.anchorId === ctrl.id
+        && (toNode as Record<string, unknown> | undefined)?.anchorId === ctrl.id;
+    });
+
+    return {
+      id: ctrl.id,
+      friendlyName: ctrl.friendlyName ?? ctrl.id,
+      board: ctrl.board,
+      directory: null as string | null,
+      topology: {
+        nodes: strippedNodes,
+        pipes: sysPipes,
+        route_overrides: topology.route_overrides,
+        timing: topology.timing,
+        automations: topology.automations,
+        network: ctrl.network,
+      } as Record<string, unknown>,
+      deviceName: ctrl.id,
+    };
+  });
+
+  // Convert inter-system pipes to legacy links
+  const links: Array<{
+    id: string;
+    fromSystem: string; fromNode: string; fromPort: string;
+    toSystem: string; toNode: string; toPort: string;
+    label?: string | null;
+  }> = [];
+  for (const pipe of topology.pipes) {
+    const fromNodeId = pipe.from.split(':')[0];
+    const fromPort = pipe.from.split(':')[1] ?? '';
+    const toNodeId = pipe.to.split(':')[0];
+    const toPort = pipe.to.split(':')[1] ?? '';
+    const fromNode = topology.nodes.find(n => (n as { id: string }).id === fromNodeId);
+    const toNode = topology.nodes.find(n => (n as { id: string }).id === toNodeId);
+    const fromAnchor = (fromNode as Record<string, unknown> | undefined)?.anchorId as string | undefined;
+    const toAnchor = (toNode as Record<string, unknown> | undefined)?.anchorId as string | undefined;
+    if (fromAnchor && toAnchor && fromAnchor !== toAnchor) {
+      links.push({
+        id: pipe.id,
+        fromSystem: fromAnchor,
+        fromNode: fromNodeId,
+        fromPort,
+        toSystem: toAnchor,
+        toNode: toNodeId,
+        toPort,
+      });
+    }
+  }
+
+  return { systems, links };
 }
 
 // ---------------------------------------------------------------------------
@@ -136,11 +263,39 @@ export function registerIpcHandlers() {
   ipcMain.handle("site:load", async (_e, id: string) => {
     const payload = db.loadSiteFull(id);
     if (!payload) throw new Error(`Site not found: ${id}`);
-    return payload;
+    // Convert flat topology back to legacy multi-system payload for frontend compat
+    const topology = payload.topology ? parseTopology(payload.topology as Record<string, unknown>) : null;
+    if (!topology) {
+      return { site: payload.site, systems: [], links: [] };
+    }
+    const legacy = siteTopologyToLegacyPayload(topology);
+    return { site: payload.site, ...legacy };
   });
 
-  ipcMain.handle("site:save", async (_e, payload: db.SiteSavePayload) => {
-    db.saveSiteTransaction(payload);
+  ipcMain.handle("site:save", async (_e, payload: {
+    site: { id: string; friendlyName: string };
+    systems?: Array<{
+      id: string; friendlyName: string; board: string;
+      directory: string | null; topology: Record<string, unknown>;
+      deviceName: string;
+    }>;
+    links?: Array<{
+      id: string; fromSystem: string; fromNode: string; fromPort: string;
+      toSystem: string; toNode: string; toPort: string;
+      label?: string | null;
+    }>;
+    topology?: unknown;
+  }) => {
+    // Accept either new flat topology or legacy multi-system format
+    let topology: SiteTopology;
+    if (payload.topology) {
+      topology = parseTopology(payload.topology as Record<string, unknown>);
+    } else if (payload.systems) {
+      topology = legacySystemsToSiteTopology(payload.systems, payload.links ?? []);
+    } else {
+      throw new Error("Invalid save payload: missing topology or systems");
+    }
+    db.saveSiteTransaction({ site: payload.site, topology });
     return { ok: true };
   });
 
@@ -199,7 +354,19 @@ export function registerIpcHandlers() {
     if (result.canceled || result.filePaths.length === 0) return { ok: false };
 
     const raw = fs.readFileSync(result.filePaths[0], "utf-8");
-    const data = JSON.parse(raw) as db.SiteFullPayload & {
+    const data = JSON.parse(raw) as {
+      site: { id: string; friendlyName: string };
+      systems?: Array<{
+        id: string; friendlyName: string; board: string;
+        directory: string | null; topology: Record<string, unknown>;
+        deviceName?: string;
+      }>;
+      topology?: Record<string, unknown>;
+      links?: Array<{
+        id: string; fromSystem: string; fromNode: string; fromPort: string;
+        toSystem: string; toNode: string; toPort: string;
+        label?: string | null;
+      }>;
       exportVersion?: number;
       haFiles?: Array<{ filename: string; content: string }>;
     };
@@ -220,17 +387,24 @@ export function registerIpcHandlers() {
     }
     data.site.id = siteId;
 
-    // Backfill deviceName for legacy exports (v0) that don't have it
-    const systems = data.systems.map(s => ({
-      ...s,
-      deviceName: (s as any).deviceName || s.id,
-    }));
+    let topology: SiteTopology;
+    if (data.topology) {
+      // New flat export format
+      topology = parseTopology(data.topology);
+    } else if (data.systems) {
+      // Legacy multi-system export — convert to flat SiteTopology
+      const systems = data.systems.map(s => ({
+        ...s,
+        deviceName: s.deviceName || s.id,
+      }));
+      topology = legacySystemsToSiteTopology(systems, data.links ?? []);
+    } else {
+      throw new Error("Invalid site file: missing topology or systems");
+    }
 
     db.saveSiteTransaction({
       site: data.site,
-      systems,
-      links: data.links,
-
+      topology,
     });
 
     // Import HA files
@@ -410,8 +584,11 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     "codegen:derive-routes",
     async (_e, dataRaw: unknown) => {
-      const { manifest } = resolveTopologyAndManifest(dataRaw);
-      return manifest.routes.map(r => ({ key: r.key, name: r.name }));
+      const topology = parseTopology(dataRaw);
+      const graph = buildGraph(topology.nodes, topology.pipes);
+      const active = activeGraph(graph);
+      const routes = deriveRoutes(active);
+      return routes.filter(r => r.valid).map(r => ({ key: r.key, name: `${r.source}>${r.destination}` }));
     }
   );
 
@@ -421,14 +598,6 @@ export function registerIpcHandlers() {
       const board = BoardDefSchema.parse(boardRaw) as BoardDef;
       const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
 
-      // Resolve remote nodes when site context is available (design-time validation)
-      if (siteId) {
-        const sitePayload = db.loadSiteFull(siteId);
-        if (sitePayload) {
-          resolveRemoteNodes(manifest, sitePayload.systems);
-        }
-      }
-
       return validateAll(topology, manifest, board);
     }
   );
@@ -437,14 +606,7 @@ export function registerIpcHandlers() {
     "codegen:generate",
     async (_e, siteId: string, systemId: string, dataRaw: unknown, boardRaw: unknown) => {
       const board = BoardDefSchema.parse(boardRaw) as BoardDef;
-      const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
-
-      // Resolve remote node bindings BEFORE validation so the validator
-      // sees resolved haEntityIds, not raw provider references.
-      const sitePayload = db.loadSiteFull(siteId);
-      if (sitePayload) {
-        resolveRemoteNodes(manifest, sitePayload.systems);
-      }
+      const { topology, manifest } = resolveTopologyAndManifest(dataRaw, systemId);
 
       const validation = validateAll(topology, manifest, board);
       if (!validation.ok) {
@@ -460,6 +622,17 @@ export function registerIpcHandlers() {
         ...generateDefaultSecrets(),
         ...savedSecrets,
       } as SecretsMap;
+
+      // Validate secrets before generating so ESPHome doesn't fail with a cryptic error
+      const transport = effectiveTransport(manifest.device.network, boardSupportedTransports(board));
+      if (transport === 'wifi') {
+        if (!secrets.wifi_ssid) {
+          throw new Error('WiFi SSID is not configured. Open the Deploy panel, select this controller, and set the WiFi SSID and password in the Connectivity card.');
+        }
+        if (!secrets.wifi_password || secrets.wifi_password.length < 8) {
+          throw new Error('WiFi password must be at least 8 characters. Open the Deploy panel, select this controller, and set the WiFi password in the Connectivity card.');
+        }
+      }
 
       const files = generateFirmware('esphome', manifest, board, siteId, secrets);
 
@@ -505,19 +678,18 @@ export function registerIpcHandlers() {
       const systems: Array<import("./lib/generators/site-dashboard.js").SiteDashboardSystem> = [];
       const manifests = new Map<string, import("./lib/schema.js").Manifest>();
 
-      for (const sp of site.systems) {
-        const fullTopology = reconstructTopology(
-          sp.deviceName || sp.id, sp.friendlyName, sp.board, sp.directory,
-          sp.topology as unknown as Record<string, unknown>,
-        );
-        const manifest = topologyToManifest(fullTopology);
-        const boardData = store.loadBoard(sp.board);
+      const fullTopology = site.topology ? parseTopology(site.topology as Record<string, unknown>) : null;
+      if (!fullTopology) throw new Error(`Site "${site.site.friendlyName}" has no topology`);
+
+      for (const ctrl of fullTopology.controllers) {
+        const manifest = topologyToManifestForController(fullTopology, ctrl.id);
+        const boardData = store.loadBoard(ctrl.board);
         if (!boardData?.board) {
-          throw new Error(`Board not found for system "${sp.friendlyName}" (${sp.id}): ${sp.board}`);
+          throw new Error(`Board not found for controller "${ctrl.id}": ${ctrl.board}`);
         }
         const board = boardData.board as unknown as BoardDef;
-        systems.push({ systemId: sp.id, friendlyName: sp.friendlyName, manifest, board });
-        manifests.set(sp.id, manifest);
+        systems.push({ systemId: ctrl.id, friendlyName: ctrl.id, manifest, board });
+        manifests.set(ctrl.id, manifest);
       }
 
       const files = generateSiteHA(siteId, site.site.friendlyName, systems, manifests);
@@ -583,7 +755,7 @@ export function registerIpcHandlers() {
       perSystemSvgs: Record<string, string>,
       systemsRaw: Array<{ systemId: string; friendlyName: string; board: string; deviceName: string; topology: unknown }>,
       linksRaw: Array<{ id: string; fromSystem: string; fromNode: string; fromPort: string; toSystem: string; toNode: string; toPort: string; label?: string | null }>,
-      routesRaw: unknown[],
+      routesRaw: Route[],
     ) => {
       // Derive manifests and board data for each system
       const systems = systemsRaw.map(s => {
@@ -669,9 +841,8 @@ export function registerIpcHandlers() {
       const html = generateSiteDocumentation(
         db.loadSiteFull(siteId)?.site.friendlyName ?? siteId,
         systems,
-        linksRaw,
         compositeSvg,
-        routesRaw as any[],
+        routesRaw,
       );
 
       // Write to output dir, scoped under the site's tree.
@@ -871,11 +1042,7 @@ export function registerIpcHandlers() {
   });
 
   // --- Legacy import ---
-  ipcMain.handle("legacy:has-data", async () => {
-    // Only show if legacy YAML exists AND DB has no sites yet (not already imported)
-    if (db.listSites().length > 0) return false;
-    return store.hasLegacyData();
-  });
+  ipcMain.handle("legacy:has-data", async () => store.hasLegacyData());
 
   ipcMain.handle("legacy:scan", async () => store.scanLegacyData());
 
@@ -886,9 +1053,8 @@ export function registerIpcHandlers() {
       const existing = db.loadSiteFull(site.id);
       if (existing) continue;
 
-      db.saveSiteTransaction({
-        site: { id: site.id, friendlyName: site.friendlyName },
-        systems: site.systems.map(s => ({
+      const topology = legacySystemsToSiteTopology(
+        site.systems.map(s => ({
           id: s.id,
           friendlyName: s.friendlyName,
           board: s.board,
@@ -896,8 +1062,11 @@ export function registerIpcHandlers() {
           topology: s.topology,
           deviceName: s.id,
         })),
-        links: site.links,
-
+        site.links,
+      );
+      db.saveSiteTransaction({
+        site: { id: site.id, friendlyName: site.friendlyName },
+        topology,
       });
 
       // Import HA files
