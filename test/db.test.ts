@@ -29,6 +29,8 @@ import {
   setSetting,
   getSettings,
   duplicateSite,
+  listTopologyEvents,
+  topologyEventCount,
 } from "../electron/db.js";
 
 let passed = 0;
@@ -121,6 +123,37 @@ async function main() {
   createSite("to-delete", "Delete Me");
   deleteSite("to-delete");
   assert(loadSiteFull("to-delete") === null, "site deleted");
+
+  // -------------------------------------------------------------------------
+  // Topology event log
+  // -------------------------------------------------------------------------
+
+  console.log("\ntopologyEvents");
+  createSite("event-site", "Event Site");
+  saveSiteTransaction(
+    {
+      site: { id: "event-site", friendlyName: "Event Site" },
+      topology: {
+        schema: 16,
+        controllers: [{ id: "ctrl1", board: "heltec-v3" }],
+        nodes: [{ id: "pump1", kind: "pump", anchorId: "ctrl1" }],
+        pipes: [],
+        route_overrides: {},
+        timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 10, flow_threshold: 0.5, api_watchdog: 60, update_interval: 30 },
+        automations: [],
+        remoteImports: [],
+      },
+    },
+    [
+      { actor: "user", eventType: "snapshot", payload: { message: "initial" } },
+      { actor: "user", eventType: "node_added", payload: { node: { id: "pump1" } } },
+    ],
+  );
+  const events = listTopologyEvents("event-site");
+  assert(events.length === 2, "events written: got " + events.length);
+  assert(events[0].eventType === "node_added", "most recent first");
+  assert(events[1].eventType === "snapshot", "snapshot second");
+  assert(topologyEventCount("event-site") === 2, "event count matches");
 
   // -------------------------------------------------------------------------
   // Generation history

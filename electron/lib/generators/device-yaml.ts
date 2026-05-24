@@ -4,6 +4,7 @@ import type { Manifest } from "../schema.js";
 import { nodesWithFlag } from "../schema.js";
 import { pumpSwitchId } from '@far-mon/core';
 import type { CollectedCodegen } from "./collect.js";
+import type { GenerationMetadata } from "../backends/types.js";
 
 /**
  * Generate the ESPHome device YAML from board definition + system manifest.
@@ -14,6 +15,7 @@ export function generateDeviceYaml(
   board: BoardDef,
   m: Manifest,
   collected: CollectedCodegen,
+  metadata: GenerationMetadata,
 ): string {
   const dir = m.device.directory ?? m.device.name;
   const hasOled = !!board.peripherals.oled;
@@ -142,6 +144,9 @@ export function generateDeviceYaml(
   lines.push("  hardware: !include packages/hardware.yaml");
   lines.push("  sensors: !include packages/sensors.yaml");
   lines.push("  control: !include packages/control.yaml");
+  if (metadata) {
+    lines.push("  metadata: !include packages/metadata.yaml");
+  }
   lines.push("");
 
   // UART buses (for Modbus/RS485 devices)

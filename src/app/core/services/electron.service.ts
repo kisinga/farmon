@@ -24,6 +24,7 @@ import type {
   SiteSavePayload,
   Controller,
   TemplateListEntry,
+  DriftReport,
 } from '../models/electron-api';
 import type { NetworkConfig } from '@far-mon/core';
 
@@ -277,6 +278,44 @@ export class ElectronService {
   }
   settingsGetAll(siteId: string, systemId: string): Promise<Record<string, string>> {
     return this.api?.settingsGetAll(siteId, systemId) ?? Promise.resolve({});
+  }
+
+  // --- Fleet telemetry & drift detection ---
+  driftCheck(siteId: string): Promise<DriftReport[]> {
+    return this.invoke(() => this.api!.driftCheck(siteId));
+  }
+  driftHaCheck(): Promise<{ ok: boolean; version?: string; error?: string }> {
+    return this.api?.driftHaCheck() ?? Promise.resolve({ ok: false, error: 'Not in Electron' });
+  }
+
+  // --- App settings ---
+  appSettingGet(key: string): Promise<string | null> {
+    return this.api?.appSettingGet(key) ?? Promise.resolve(null);
+  }
+  async appSettingSet(key: string, value: string): Promise<void> {
+    await this.invoke(() => this.api!.appSettingSet(key, value));
+  }
+
+  // --- Topology event log ---
+  eventsList(siteId: string, limit?: number): Promise<Array<{ id: number; siteId: string; timestamp: string; actor: string | null; eventType: string; payload: string }>> {
+    return this.api?.eventsList(siteId, limit) ?? Promise.resolve([]);
+  }
+  eventsCount(siteId: string): Promise<number> {
+    return this.api?.eventsCount(siteId) ?? Promise.resolve(0);
+  }
+  async eventsReconstruct(siteId: string, eventId: number): Promise<unknown> {
+    return this.invoke(() => this.api!.eventsReconstruct(siteId, eventId));
+  }
+
+  // --- Coordinated deployment ---
+  deploymentPlan(siteId: string, targetControllers?: string[]): Promise<unknown> {
+    return this.invoke(() => this.api!.deploymentPlan(siteId, targetControllers));
+  }
+  deploymentExecute(plan: unknown): Promise<unknown> {
+    return this.invoke(() => this.api!.deploymentExecute(plan));
+  }
+  deploymentRollback(siteId: string, controllerId: string): Promise<unknown> {
+    return this.invoke(() => this.api!.deploymentRollback(siteId, controllerId));
   }
 
   private invoke<T>(fn: () => Promise<T>): Promise<T> {

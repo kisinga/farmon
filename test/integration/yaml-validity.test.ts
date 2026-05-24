@@ -13,7 +13,7 @@ import * as path from 'node:path';
 import { parse as parseYaml, parseAllDocuments } from 'yaml';
 import { parseTopology, topologyToManifestForController } from '@far-mon/core';
 import { loadBoard } from '../../electron/lib/board.js';
-import { generateAll } from '../../electron/lib/generate.js';
+import { generateAll, createTestMetadata } from '../../electron/lib/generate.js';
 
 const DEFAULTS = path.resolve(new URL('.', import.meta.url).pathname, '..', '..', 'defaults');
 const CONFIGS_DIR = path.join(DEFAULTS, 'configs');
@@ -54,7 +54,7 @@ for (const configFile of configFiles) {
   const board = loadBoard(path.join(BOARDS_DIR, boardName));
   const topology = parseTopology(parsed);
   const manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? 'default');
-  const files = generateAll(manifest, board, 'test-site');
+  const files = generateAll(manifest, board, 'test-site', undefined, createTestMetadata());
 
   assert(files.length > 0, 'Pipeline produces at least one file');
 

@@ -10,6 +10,7 @@ import type { SystemTopology, TopologyNode, RouteOverride } from '../../../core/
 import type { TemplateListEntry } from '../../../core/models/electron-api';
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
+import type { Node as X6Node } from '@antv/x6';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
 import { buildGraph, activeGraph, downstreamNodes } from '@far-mon/core';
 import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlays';
@@ -420,7 +421,12 @@ export class TopologyX6TabComponent {
 
     // Re-render overlays when nodes are dragged so they track position
     let ghostEdgeTimer: ReturnType<typeof setTimeout> | null = null;
-    this.c.graphInstance.on('node:change:position', () => {
+    this.c.graphInstance.on('node:change:position', ({ node }: { node: X6Node }) => {
+      const data = node.getData() as Record<string, unknown> | undefined;
+      if (data?.['kind'] === 'controller') {
+        const controllerId = data['controllerId'] as string;
+        this.workspace.setControllerLayoutPosition(controllerId, node.getPosition());
+      }
       if (ghostEdgeTimer) clearTimeout(ghostEdgeTimer);
       ghostEdgeTimer = setTimeout(() => {
         const t = this.editor.topology();
@@ -625,6 +631,7 @@ export class TopologyX6TabComponent {
     renderControllerOverlays(this.c.graphInstance, {
       controllers: siteTopology.controllers,
       friendlyNames,
+      positions: siteTopology.layout?.controllers,
     });
   }
 

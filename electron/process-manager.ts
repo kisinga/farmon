@@ -42,6 +42,96 @@ interface TrackedProcess {
 const active = new Map<string, TrackedProcess>();
 
 // ---------------------------------------------------------------------------
+// Circuit breaker
+// ---------------------------------------------------------------------------
+
+interface CircuitState {
+  failures: number;
+  lastFailure: number;
+  open: boolean;
+}
+
+const circuits = new Map<string, CircuitState>();
+const CIRCUIT_THRESHOLD = 3;
+const CIRCUIT_COOLDOWN_MS = 60000;
+
+function getCircuit(backend: string): CircuitState {
+  if (!circuits.has(backend)) {
+    circuits.set(backend, { failures: 0, lastFailure: 0, open: false });
+  }
+  return circuits.get(backend)!;
+}
+
+function recordSuccess(backend: string) {
+  const c = getCircuit(backend);
+  c.failures = 0;
+  c.open = false;
+}
+
+function recordFailure(backend: string) {
+  const c = getCircuit(backend);
+  c.failures++;
+  c.lastFailure = Date.now();
+  if (c.failures >= CIRCUIT_THRESHOLD) {
+    c.open = true;
+  }
+}
+
+function isCircuitOpen(backend: string): boolean {
+  const c = getCircuit(backend);
+  if (!c.open) return false;
+  if (Date.now() - c.lastFailure > CIRCUIT_COOLDOWN_MS) {
+    c.open = false;
+    c.failures = 0;
+    return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Idempotency
+// ---------------------------------------------------------------------------
+
+const inFlight = new Set<string>();
+
+export function isInFlight(key: string): boolean {
+  return inFlight.has(key);
+}
+
+export function markInFlight(key: string): void {
+  inFlight.add(key);
+}
+
+export function clearInFlight(key: string): void {
+  inFlight.delete(key);
+}
+
+// ---------------------------------------------------------------------------
+// Bounded concurrency (semaphore)
+// ---------------------------------------------------------------------------
+
+const MAX_CONCURRENT = 2;
+const queue: Array<() => void> = [];
+let running = 0;
+
+function acquireSlot(): Promise<void> {
+  if (running < MAX_CONCURRENT) {
+    running++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => queue.push(resolve));
+}
+
+function releaseSlot(): void {
+  running = Math.max(0, running - 1);
+  const next = queue.shift();
+  if (next) {
+    running++;
+    next();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Generic process spawn
 // ---------------------------------------------------------------------------
 
@@ -52,14 +142,16 @@ export interface SpawnOptions {
   cwd?: string;
 }
 
-function spawnProcessInternal(
+async function spawnProcessInternal(
   win: BrowserWindow,
   bin: string,
   args: string[],
   operation: ProcessOperation,
   configName: string,
   opts: SpawnOptions
-): { handle: ProcessHandle; result: Promise<ProcessResult> } {
+): Promise<{ handle: ProcessHandle; result: Promise<ProcessResult> }> {
+  await acquireSlot();
+
   const id = randomUUID();
   const backend = opts.backend;
 
@@ -98,6 +190,7 @@ function spawnProcessInternal(
   const result = new Promise<ProcessResult>((resolve, reject) => {
     proc.on("close", (code, signal) => {
       active.delete(id);
+      releaseSlot();
       const event: ProcessDoneEvent = { id, backend, operation, code, signal };
       win.webContents.send("process:done", event);
       resolve({ id, code, signal });
@@ -105,6 +198,7 @@ function spawnProcessInternal(
 
     proc.on("error", (err) => {
       active.delete(id);
+      releaseSlot();
       reject(new Error(`Failed to start ${backend}: ${err.message}`));
     });
   });
@@ -112,19 +206,76 @@ function spawnProcessInternal(
   return { handle, result };
 }
 
-/**
- * Spawn an ESPHome process, stream tagged output to the window, return result.
- */
-export function spawnEsphome(
+// ---------------------------------------------------------------------------
+// ESPHome spawn with circuit breaker + idempotency
+// ---------------------------------------------------------------------------
+
+export interface EsphomeSpawnOptions {
+  idempotencyKey?: string;
+}
+
+export async function spawnEsphome(
   win: BrowserWindow,
   esphomePath: string,
   args: string[],
   operation: ProcessOperation,
-  configName: string
-): { handle: ProcessHandle; result: Promise<ProcessResult> } {
-  return spawnProcessInternal(win, esphomePath, args, operation, configName, {
-    backend: "esphome",
-  });
+  configName: string,
+  opts?: EsphomeSpawnOptions
+): Promise<{ handle: ProcessHandle; result: Promise<ProcessResult> }> {
+  const backend = "esphome";
+
+  // Circuit breaker check
+  if (isCircuitOpen(backend)) {
+    throw new Error(
+      `ESPHome toolchain is temporarily unavailable (circuit breaker open). ` +
+        `Wait ${Math.ceil((CIRCUIT_COOLDOWN_MS - (Date.now() - getCircuit(backend).lastFailure)) / 1000)}s and retry.`
+    );
+  }
+
+  // Idempotency check
+  if (opts?.idempotencyKey && isInFlight(opts.idempotencyKey)) {
+    throw new Error(
+      `An ESPHome ${operation} is already in progress for this controller and generation. Please wait or cancel it.`
+    );
+  }
+
+  if (opts?.idempotencyKey) {
+    markInFlight(opts.idempotencyKey);
+  }
+
+  try {
+    const { handle, result } = await spawnProcessInternal(
+      win,
+      esphomePath,
+      args,
+      operation,
+      configName,
+      { backend }
+    );
+
+    // Wrap result to record success/failure and clear idempotency
+    const wrappedResult = result.then(
+      (res) => {
+        if (opts?.idempotencyKey) clearInFlight(opts.idempotencyKey);
+        if (res.code === 0) {
+          recordSuccess(backend);
+        } else {
+          recordFailure(backend);
+        }
+        return res;
+      },
+      (err) => {
+        if (opts?.idempotencyKey) clearInFlight(opts.idempotencyKey);
+        recordFailure(backend);
+        throw err;
+      }
+    );
+
+    return { handle, result: wrappedResult };
+  } catch (err) {
+    if (opts?.idempotencyKey) clearInFlight(opts.idempotencyKey);
+    throw err;
+  }
 }
 
 /** Kill a running process by id. Returns true if found and killed. */

@@ -1,5 +1,6 @@
-import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import { Component, inject, OnInit, signal, computed, effect } from '@angular/core';
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
+import { DatePipe } from '@angular/common';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { ElectronService } from './core/services/electron.service';
 import { WorkspaceService } from './core/services/workspace.service';
@@ -9,6 +10,7 @@ import { PipelineRailComponent } from './shared/pipeline-rail/pipeline-rail.comp
 import { SiteRailComponent } from './shared/site-rail/site-rail.component';
 import { ConfirmDialogComponent } from './shared/confirm-dialog/confirm-dialog.component';
 import type { SeedChange } from './core/models/electron-api';
+import type { SiteTopology } from '@far-mon/core';
 import { filter } from 'rxjs';
 
 const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
@@ -40,7 +42,7 @@ const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/s
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, ContextStripComponent, PipelineRailComponent, SiteRailComponent, ConfirmDialogComponent],
+  imports: [RouterOutlet, RouterLink, DatePipe, ContextStripComponent, PipelineRailComponent, SiteRailComponent, ConfirmDialogComponent],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -55,6 +57,15 @@ export class App implements OnInit {
   protected seedChanges = signal<SeedChange[]>([]);
   protected applyingSeed = signal(false);
   private currentUrl = signal('/overview');
+
+  // History modal state
+  protected historyOpen = signal(false);
+  protected historyEvents = signal<Array<{ id: number; timestamp: string; eventType: string; payload: string }>>([]);
+  protected historyLoading = signal(false);
+
+  // Save toast state
+  protected saveToastVisible = signal(false);
+  private saveToastTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected navLevel = computed<'overview' | 'site' | 'editor'>(() => {
     const url = this.currentUrl();
@@ -84,6 +95,16 @@ export class App implements OnInit {
 
   constructor() {
     this.logoSvg = this.sanitizer.bypassSecurityTrustHtml(LOGO_SVG);
+
+    // Watch dirty → clean transitions to show save cue
+    let wasDirty = false;
+    effect(() => {
+      const dirty = this.workspace.dirty();
+      if (wasDirty && !dirty) {
+        this.showSaveCue();
+      }
+      wasDirty = dirty;
+    });
   }
 
   async ngOnInit() {
@@ -98,8 +119,39 @@ export class App implements OnInit {
     }
   }
 
-  protected async onEditorSave() {
+  protected showSaveCue() {
+    this.saveToastVisible.set(true);
+    if (this.saveToastTimer) clearTimeout(this.saveToastTimer);
+    this.saveToastTimer = setTimeout(() => this.saveToastVisible.set(false), 2000);
+  }
+
+  protected async onEditorHistory() {
+    await this.refreshHistory();
+    this.historyOpen.set(true);
+  }
+
+  protected async refreshHistory() {
+    const site = this.workspace.site();
+    if (!site) return;
+    this.historyLoading.set(true);
+    try {
+      this.historyEvents.set(await this.electron.eventsList(site.id, 100));
+    } finally {
+      this.historyLoading.set(false);
+    }
+  }
+
+  protected closeHistory() {
+    this.historyOpen.set(false);
+  }
+
+  protected async restoreToEvent(eventId: number) {
+    const site = this.workspace.site();
+    if (!site) return;
+    const topology = await this.electron.eventsReconstruct(site.id, eventId) as SiteTopology;
+    this.workspace.restoreTopology(topology);
     await this.workspace.save();
+    this.historyOpen.set(false);
   }
 
   protected async applyAllSeedChanges() {

@@ -264,6 +264,52 @@ export interface ElectronAPI {
   settingsGet(siteId: string, systemId: string, key: string): Promise<string | null>;
   settingsSet(siteId: string, systemId: string, key: string, value: string): Promise<{ ok: boolean }>;
   settingsGetAll(siteId: string, systemId: string): Promise<Record<string, string>>;
+
+  // Fleet telemetry & drift detection
+  driftCheck(siteId: string): Promise<DriftReport[]>;
+  driftHaCheck(): Promise<{ ok: boolean; version?: string; error?: string }>;
+
+  // App settings
+  appSettingGet(key: string): Promise<string | null>;
+  appSettingSet(key: string, value: string): Promise<{ ok: boolean }>;
+
+  // Topology event log
+  eventsList(siteId: string, limit?: number): Promise<Array<{ id: number; siteId: string; timestamp: string; actor: string | null; eventType: string; payload: string }>>;
+  eventsCount(siteId: string): Promise<number>;
+  eventsReconstruct(siteId: string, eventId: number): Promise<unknown>;
+
+  // Coordinated deployment
+  deploymentPlan(siteId: string, targetControllers?: string[]): Promise<unknown>;
+  deploymentExecute(plan: unknown): Promise<unknown>;
+  deploymentRollback(siteId: string, controllerId: string): Promise<unknown>;
+}
+
+// --- Drift detection ---
+
+export type DriftState = 'synced' | 'stale' | 'diverged' | 'unreachable' | 'orphan';
+
+export interface ControllerTelemetry {
+  controllerId: string;
+  haEntityId: string;
+  runningSha: string | null;
+  runningVersion: string | null;
+  runningSiteId: string | null;
+  runningSchemaVersion: number | null;
+  runningRouteCount: number | null;
+  runningNodeCount: number | null;
+  buildTimestamp: number | null;
+  lastUpdated: string | null;
+}
+
+export interface DriftReport {
+  siteId: string;
+  controllerId: string;
+  drift: DriftState;
+  telemetry: ControllerTelemetry;
+  expectedSha: string | null;
+  expectedVersion: string | null;
+  lastDeployedAt: string | null;
+  message: string;
 }
 
 declare global {

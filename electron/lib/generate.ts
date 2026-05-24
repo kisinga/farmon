@@ -13,7 +13,7 @@ import { generateAutomations } from "./generators/automations.js";
 
 import { collectEntityCodegen } from "./generators/collect.js";
 import { LOGO_SVG } from '@far-mon/core';
-import { type GeneratorId, type SecretsMap } from './backends/types.js';
+import { type GeneratorId, type SecretsMap, type GenerationMetadata } from './backends/types.js';
 
 export interface GeneratedFile {
   relativePath: string;
@@ -21,7 +21,21 @@ export interface GeneratedFile {
   content: string;
 }
 
-export { type GeneratorId, type SecretsMap } from './backends/types.js';
+export { type GeneratorId, type SecretsMap, type GenerationMetadata } from './backends/types.js';
+
+/** Convenience helper for tests — creates a valid GenerationMetadata with defaults. */
+export function createTestMetadata(overrides?: Partial<GenerationMetadata>): GenerationMetadata {
+  return {
+    configSha: 'testsha000000000',
+    version: 'testver1',
+    siteId: 'test-site',
+    controllerId: 'default',
+    schemaVersion: 16,
+    buildTimestamp: 0,
+    appVersion: '0.0.0',
+    ...overrides,
+  };
+}
 
 export function generateDefaultSecrets(): SecretsMap {
   return {
@@ -46,6 +60,75 @@ function generateSecretsYaml(m: Manifest, secrets?: SecretsMap): string {
   ].join("\n");
 }
 
+function generateMetadataYaml(m: Manifest, metadata: GenerationMetadata): string {
+
+  const lines: string[] = [];
+  lines.push(`# =============================================================================`);
+  lines.push(`# MajiFlow — Fleet Metadata Sensors`);
+  lines.push(`# =============================================================================`);
+  lines.push(`# Embedded provenance for drift detection and fleet management.`);
+  lines.push(`# These sensors publish to Home Assistant as diagnostic entities.`);
+  lines.push(`# =============================================================================`);
+  lines.push(``);
+
+  // text_sensor block
+  lines.push(`text_sensor:`);
+  lines.push(`  - platform: template`);
+  lines.push(`    id: majiflow_config_sha`);
+  lines.push(`    name: "MajiFlow Config SHA"`);
+  lines.push(`    entity_category: diagnostic`);
+  lines.push(`    lambda: return "${metadata.configSha}";`);
+  lines.push(``);
+  lines.push(`  - platform: template`);
+  lines.push(`    id: majiflow_generation_version`);
+  lines.push(`    name: "MajiFlow Generation"`);
+  lines.push(`    entity_category: diagnostic`);
+  lines.push(`    lambda: return "${metadata.version}";`);
+  lines.push(``);
+  lines.push(`  - platform: template`);
+  lines.push(`    id: majiflow_site_id`);
+  lines.push(`    name: "MajiFlow Site"`);
+  lines.push(`    entity_category: diagnostic`);
+  lines.push(`    lambda: return "${metadata.siteId}";`);
+  lines.push(``);
+  lines.push(`  - platform: template`);
+  lines.push(`    id: majiflow_controller_id`);
+  lines.push(`    name: "MajiFlow Controller"`);
+  lines.push(`    entity_category: diagnostic`);
+  lines.push(`    lambda: return "${metadata.controllerId}";`);
+  lines.push(``);
+
+  // sensor block
+  lines.push(`sensor:`);
+  lines.push(`  - platform: template`);
+  lines.push(`    id: majiflow_build_timestamp`);
+  lines.push(`    name: "MajiFlow Build Time"`);
+  lines.push(`    entity_category: diagnostic`);
+  lines.push(`    unit_of_measurement: "timestamp"`);
+  lines.push(`    lambda: return ${metadata.buildTimestamp};`);
+  lines.push(``);
+  lines.push(`  - platform: template`);
+  lines.push(`    id: majiflow_schema_version`);
+  lines.push(`    name: "MajiFlow Schema"`);
+  lines.push(`    entity_category: diagnostic`);
+  lines.push(`    lambda: return ${metadata.schemaVersion};`);
+  lines.push(``);
+  lines.push(`  - platform: template`);
+  lines.push(`    id: majiflow_route_count`);
+  lines.push(`    name: "MajiFlow Routes"`);
+  lines.push(`    entity_category: diagnostic`);
+  lines.push(`    lambda: return ${m.routes.length};`);
+  lines.push(``);
+  lines.push(`  - platform: template`);
+  lines.push(`    id: majiflow_node_count`);
+  lines.push(`    name: "MajiFlow Nodes"`);
+  lines.push(`    entity_category: diagnostic`);
+  lines.push(`    lambda: return ${m.nodes.length};`);
+  lines.push(``);
+
+  return lines.join("\n");
+}
+
 /**
  * Returns the relative path prefix for everything a site generates.
  * `sites/{siteId}/...` is the single root for site-scoped artifacts:
@@ -67,7 +150,8 @@ export function generateEsphome(
   m: Manifest,
   board: BoardDef,
   siteId: string,
-  secrets?: SecretsMap,
+  secrets: SecretsMap | undefined,
+  metadata: GenerationMetadata,
 ): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const deviceDir = `${siteRoot(siteId)}/esphome/${dir}`;
@@ -87,7 +171,7 @@ export function generateEsphome(
     {
       relativePath: `${deviceDir}/${dir}.yaml`,
       description: "Device config (substitutions, boot, OLED display)",
-      content: generateDeviceYaml(board, m, collected),
+      content: generateDeviceYaml(board, m, collected, metadata),
     },
     {
       relativePath: `${deviceDir}/secrets.yaml`,
@@ -113,6 +197,11 @@ export function generateEsphome(
       relativePath: `${deviceDir}/packages/sensors.yaml`,
       description: "Flow sensors, tank levels, calibration, state text",
       content: generateSensors(m, collected),
+    },
+    {
+      relativePath: `${deviceDir}/packages/metadata.yaml`,
+      description: "Fleet metadata sensors (SHA, version, build timestamp)",
+      content: generateMetadataYaml(m, metadata),
     },
   ];
 
@@ -159,10 +248,11 @@ export function generateFirmware(
   manifest: Manifest,
   board: BoardDef,
   siteId: string,
-  secrets?: SecretsMap,
+  secrets: SecretsMap | undefined,
+  metadata: GenerationMetadata,
 ): GeneratedFile[] {
   if (generator === 'esphome') {
-    return generateEsphome(manifest, board, siteId, secrets);
+    return generateEsphome(manifest, board, siteId, secrets, metadata);
   }
   throw new Error(`Unknown generator: ${generator}`);
 }
@@ -171,11 +261,12 @@ export function generateAll(
   m: Manifest,
   board: BoardDef,
   siteId: string,
-  secrets?: SecretsMap,
+  secrets: SecretsMap | undefined,
+  metadata: GenerationMetadata,
 ): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const haRoot = `${siteRoot(siteId)}/homeassistant`;
-  const files = [...generateFirmware('esphome', m, board, siteId, secrets)];
+  const files = [...generateFirmware('esphome', m, board, siteId, secrets, metadata)];
 
   files.push({
     relativePath: `${haRoot}/dashboards/dashboard.yaml`,

@@ -5,7 +5,7 @@
  * the set they need.
  */
 import type { Graph } from '@antv/x6';
-import type { RenderableTopology } from '../../core/models/topology.model';
+import type { RenderableTopology, SiteTopology } from '../../core/models/topology.model';
 import { renderControllerOverlays, CONTROLLER_COLORS } from './controller-overlay-renderer';
 
 export { CONTROLLER_COLORS };
@@ -24,11 +24,11 @@ export function renderCompositeOverlays(
     friendlyNames: Map<string, string>;
   },
 ): void {
-  // Cast to SiteTopology to access controllers array
-  const controllers = (topology as any).controllers as Array<{ id: string }> | undefined;
+  const siteTopology = topology as SiteTopology;
   renderControllerOverlays(graph, {
-    controllers,
+    controllers: siteTopology.controllers,
     friendlyNames: ctx.friendlyNames,
+    positions: siteTopology.layout?.controllers,
   });
 }
 

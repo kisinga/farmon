@@ -208,4 +208,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("settings:set", siteId, systemId, key, value),
   settingsGetAll: (siteId: string, systemId: string) =>
     ipcRenderer.invoke("settings:get-all", siteId, systemId),
+
+  // --- Fleet telemetry & drift detection ---
+  driftCheck: (siteId: string) => ipcRenderer.invoke("drift:check", siteId),
+  driftHaCheck: () => ipcRenderer.invoke("drift:ha-check"),
+
+  // --- App settings ---
+  appSettingGet: (key: string) => ipcRenderer.invoke("app-setting:get", key),
+  appSettingSet: (key: string, value: string) => ipcRenderer.invoke("app-setting:set", key, value),
+
+  // --- Topology event log ---
+  eventsList: (siteId: string, limit?: number) => ipcRenderer.invoke("events:list", siteId, limit),
+  eventsCount: (siteId: string) => ipcRenderer.invoke("events:count", siteId),
+  eventsReconstruct: (siteId: string, eventId: number) => ipcRenderer.invoke("events:reconstruct", siteId, eventId),
+
+  // --- Coordinated deployment ---
+  deploymentPlan: (siteId: string, targetControllers?: string[]) =>
+    ipcRenderer.invoke("deployment:plan", siteId, targetControllers),
+  deploymentExecute: (plan: unknown) =>
+    ipcRenderer.invoke("deployment:execute", plan),
+  deploymentRollback: (siteId: string, controllerId: string) =>
+    ipcRenderer.invoke("deployment:rollback", siteId, controllerId),
 });

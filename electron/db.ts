@@ -65,7 +65,7 @@ export interface GenerationSnapshot extends GenerationMeta {
 // DB versioning & migrations
 // ---------------------------------------------------------------------------
 
-const DB_VERSION = 6;
+const DB_VERSION = 10;
 
 const MIGRATIONS: Record<number, string> = {
   0: `
@@ -204,6 +204,55 @@ const MIGRATIONS: Record<number, string> = {
     -- Anchor Mesh migration: flat SiteTopology storage
     ALTER TABLE sites ADD COLUMN topology TEXT;
     ALTER TABLE sites ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 16;
+  `,
+  6: `
+    -- Fleet telemetry: deployment tracking
+    CREATE TABLE deployments (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      site_id       TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      system_id     TEXT NOT NULL,
+      generation_id INTEGER NOT NULL REFERENCES generations(id),
+      method        TEXT NOT NULL,
+      target_addr   TEXT,
+      status        TEXT NOT NULL,
+      started_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      completed_at  TEXT,
+      error_message TEXT,
+      verified_sha  TEXT,
+      verified_at   TEXT
+    );
+    CREATE INDEX idx_deployments_site ON deployments (site_id, system_id, id DESC);
+  `,
+  7: `
+    -- App settings (HA connection, drift detector config, etc.)
+    CREATE TABLE app_settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `,
+  8: `
+    -- Event-sourced topology log
+    CREATE TABLE topology_events (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      site_id     TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      actor       TEXT,
+      event_type  TEXT NOT NULL,
+      payload     TEXT NOT NULL
+    );
+    CREATE INDEX idx_topology_events_site ON topology_events (site_id, id DESC);
+  `,
+  9: `
+    -- Defensive: ensure topology_events table exists (some early DBs may have missed v8)
+    CREATE TABLE IF NOT EXISTS topology_events (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      site_id     TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      actor       TEXT,
+      event_type  TEXT NOT NULL,
+      payload     TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_topology_events_site ON topology_events (site_id, id DESC);
   `,
 };
 
@@ -556,7 +605,7 @@ export function loadSiteFull(id: string): SiteFullPayload | null {
   };
 }
 
-export function saveSiteTransaction(payload: SiteSavePayload): void {
+export function saveSiteTransaction(payload: SiteSavePayload, events?: Array<{ actor: string; eventType: string; payload: unknown }>): void {
   const db = getDb();
   const siteId = payload.site.id;
   const topologyJson = serializeTopology(payload.topology);
@@ -574,6 +623,30 @@ export function saveSiteTransaction(payload: SiteSavePayload): void {
         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
       [siteId, payload.site.friendlyName, topologyJson, 16],
     );
+
+    // Append topology events if provided
+    if (events && events.length > 0) {
+      for (const ev of events) {
+        db.run(
+          `INSERT INTO topology_events (site_id, actor, event_type, payload)
+           VALUES (?, ?, ?, ?)`,
+          [siteId, ev.actor, ev.eventType, JSON.stringify(ev.payload)],
+        );
+      }
+
+      // Snapshot every 50 non-snapshot events
+      const eventCount = db.exec(
+        `SELECT COUNT(*) as c FROM topology_events WHERE site_id = ? AND event_type != 'snapshot'`,
+        [siteId],
+      )[0]?.values[0][0] ?? 0;
+      if ((eventCount as number) % 50 === 0) {
+        db.run(
+          `INSERT INTO topology_events (site_id, actor, event_type, payload)
+           VALUES (?, ?, ?, ?)`,
+          [siteId, 'system', 'snapshot', JSON.stringify({ topology: payload.topology })],
+        );
+      }
+    }
 
     db.run("COMMIT");
     persist();
@@ -596,7 +669,7 @@ export function listSystems(siteId: string): SystemListEntry[] {
     const topo = JSON.parse(row.topology) as { controllers?: Array<{ id: string; board: string }>; nodes?: unknown[] };
     return (topo.controllers ?? []).map(c => ({
       id: c.id,
-      friendlyName: c.id,
+      friendlyName: (c as any).friendlyName ?? c.id,
       board: c.board,
       nodeCount: (topo.nodes ?? []).filter((n: any) => n.anchorId === c.id).length,
     }));
@@ -967,6 +1040,114 @@ export function pruneGenerations(siteId: string, systemId: string, keepCount: nu
 }
 
 // ---------------------------------------------------------------------------
+// Deployments
+// ---------------------------------------------------------------------------
+
+export interface Deployment {
+  id: number;
+  siteId: string;
+  systemId: string;
+  generationId: number;
+  method: string;
+  targetAddr: string | null;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  errorMessage: string | null;
+  verifiedSha: string | null;
+  verifiedAt: string | null;
+}
+
+export function createDeployment(
+  siteId: string,
+  systemId: string,
+  generationId: number,
+  method: string,
+  targetAddr?: string,
+): Deployment {
+  const db = getDb();
+  db.run(
+    `INSERT INTO deployments (site_id, system_id, generation_id, method, target_addr, status, started_at)
+     VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+    [siteId, systemId, generationId, method, targetAddr ?? null, 'pending'],
+  );
+  const row = db.exec("SELECT last_insert_rowid() AS id");
+  const id = Number(row[0].values[0][0]);
+  persist();
+  return {
+    id,
+    siteId,
+    systemId,
+    generationId,
+    method,
+    targetAddr: targetAddr ?? null,
+    status: 'pending',
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    errorMessage: null,
+    verifiedSha: null,
+    verifiedAt: null,
+  };
+}
+
+export function updateDeploymentStatus(
+  id: number,
+  status: string,
+  errorMessage?: string,
+): void {
+  getDb().run(
+    `UPDATE deployments
+     SET status = ?, error_message = ?, completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     WHERE id = ?`,
+    [status, errorMessage ?? null, id],
+  );
+  persist();
+}
+
+export function verifyDeployment(id: number, sha: string): void {
+  getDb().run(
+    `UPDATE deployments
+     SET verified_sha = ?, verified_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), status = 'verified'
+     WHERE id = ?`,
+    [sha, id],
+  );
+  persist();
+}
+
+export function listDeployments(siteId: string, systemId?: string): Deployment[] {
+  const systemClause = systemId ? ' AND system_id = ?' : '';
+  const params: unknown[] = [siteId];
+  if (systemId) params.push(systemId);
+
+  return queryAll<{
+    id: number; site_id: string; system_id: string; generation_id: number;
+    method: string; target_addr: string | null; status: string;
+    started_at: string; completed_at: string | null; error_message: string | null;
+    verified_sha: string | null; verified_at: string | null;
+  }>(
+    `SELECT id, site_id, system_id, generation_id, method, target_addr, status,
+            started_at, completed_at, error_message, verified_sha, verified_at
+     FROM deployments
+     WHERE site_id = ?${systemClause}
+     ORDER BY id DESC`,
+    params,
+  ).map(r => ({
+    id: r.id,
+    siteId: r.site_id,
+    systemId: r.system_id,
+    generationId: r.generation_id,
+    method: r.method,
+    targetAddr: r.target_addr,
+    status: r.status,
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+    errorMessage: r.error_message,
+    verifiedSha: r.verified_sha,
+    verifiedAt: r.verified_at,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // System secrets
 // ---------------------------------------------------------------------------
 
@@ -1011,6 +1192,92 @@ export function setSetting(siteId: string, systemId: string, key: string, value:
     [siteId, systemId, key, value],
   );
   persist();
+}
+
+// ---------------------------------------------------------------------------
+// App settings (global)
+// ---------------------------------------------------------------------------
+
+export function getAppSetting(key: string): string | null {
+  const row = queryOne<{ value: string }>(
+    `SELECT value FROM app_settings WHERE key = ?`,
+    [key],
+  );
+  return row?.value ?? null;
+}
+
+export function setAppSetting(key: string, value: string): void {
+  getDb().run(
+    `INSERT INTO app_settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value],
+  );
+  persist();
+}
+
+// ---------------------------------------------------------------------------
+// Topology events (event-sourced configuration log)
+// ---------------------------------------------------------------------------
+
+export interface TopologyEventRow {
+  id: number;
+  siteId: string;
+  timestamp: string;
+  actor: string | null;
+  eventType: string;
+  payload: string;
+}
+
+export function appendTopologyEvents(siteId: string, events: Array<{ actor: string; eventType: string; payload: unknown }>): void {
+  const db = getDb();
+  for (const ev of events) {
+    db.run(
+      `INSERT INTO topology_events (site_id, actor, event_type, payload)
+       VALUES (?, ?, ?, ?)`,
+      [siteId, ev.actor, ev.eventType, JSON.stringify(ev.payload)],
+    );
+  }
+  persist();
+}
+
+export function listTopologyEvents(siteId: string, limit?: number): TopologyEventRow[] {
+  const sql = limit
+    ? `SELECT id, site_id, timestamp, actor, event_type, payload FROM topology_events WHERE site_id = ? ORDER BY id DESC LIMIT ?`
+    : `SELECT id, site_id, timestamp, actor, event_type, payload FROM topology_events WHERE site_id = ? ORDER BY id DESC`;
+  const params = limit ? [siteId, limit] : [siteId];
+  return queryAll<{ id: number; site_id: string; timestamp: string; actor: string | null; event_type: string; payload: string }>(
+    sql, params,
+  ).map(r => ({
+    id: r.id,
+    siteId: r.site_id,
+    timestamp: r.timestamp,
+    actor: r.actor,
+    eventType: r.event_type,
+    payload: r.payload,
+  }));
+}
+
+export function topologyEventCount(siteId: string): number {
+  const row = queryOne<{ count: number }>(
+    `SELECT COUNT(*) as count FROM topology_events WHERE site_id = ?`,
+    [siteId],
+  );
+  return row?.count ?? 0;
+}
+
+export function getTopologyEvent(siteId: string, eventId: number): TopologyEventRow | null {
+  const row = queryOne<{ id: number; site_id: string; timestamp: string; actor: string | null; event_type: string; payload: string }>(
+    `SELECT id, site_id, timestamp, actor, event_type, payload FROM topology_events WHERE site_id = ? AND id = ?`,
+    [siteId, eventId],
+  );
+  return row ? {
+    id: row.id,
+    siteId: row.site_id,
+    timestamp: row.timestamp,
+    actor: row.actor,
+    eventType: row.event_type,
+    payload: row.payload,
+  } : null;
 }
 
 export function getSettings(siteId: string, systemId: string): Record<string, string> {

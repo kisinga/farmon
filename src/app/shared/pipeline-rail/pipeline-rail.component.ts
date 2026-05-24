@@ -76,7 +76,12 @@ const STEPS: { id: StepId; label: string; icon: string }[] = [
         @if (editor.readonly()) {
           <span class="badge badge-info badge-sm">Preview</span>
         } @else {
-          <button class="btn btn-sm btn-primary" [disabled]="!editor.dirty()" (click)="save.emit()">Save</button>
+          <button class="btn btn-sm btn-ghost gap-1.5" (click)="history.emit()">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            History
+          </button>
         }
       </div>
     </div>
@@ -86,7 +91,7 @@ export class PipelineRailComponent implements OnInit, OnDestroy {
   protected editor = inject(SystemEditorService);
   private router = inject(Router);
 
-  save = output<void>();
+  history = output<void>();
 
   private currentUrl = signal(this.router.url);
   private routerSub: any;

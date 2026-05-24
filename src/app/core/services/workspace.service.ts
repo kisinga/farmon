@@ -101,7 +101,35 @@ export class WorkspaceService {
     });
   });
 
+  private _autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(private electron: ElectronService) {}
+
+  /** Mark dirty and schedule debounced autosave. Called by every mutation. */
+  private _markDirty(controllerId?: string): void {
+    this._dirty.set(true);
+    if (controllerId) {
+      this._dirtyControllerIds.update(s => new Set(s).add(controllerId));
+    }
+    this._scheduleAutosave();
+  }
+
+  private _scheduleAutosave(): void {
+    if (this._autosaveTimer) clearTimeout(this._autosaveTimer);
+    this._autosaveTimer = setTimeout(() => {
+      this._autosaveTimer = null;
+      this.save().catch((err) => {
+        console.error('[Workspace] Autosave failed:', err);
+      });
+    }, 800);
+  }
+
+  private _cancelAutosave(): void {
+    if (this._autosaveTimer) {
+      clearTimeout(this._autosaveTimer);
+      this._autosaveTimer = null;
+    }
+  }
 
   // --- Load ---
 
@@ -119,7 +147,7 @@ export class WorkspaceService {
         // v15 → v16 migration: auto-derive remoteImports from routes
         if (!topology.remoteImports) {
           topology = this.migrateV15ToV16(topology);
-          this._dirty.set(true);
+          this._markDirty();
         }
 
         this._siteTopology.set(topology);
@@ -159,6 +187,15 @@ export class WorkspaceService {
     } finally {
       this._loading.set(false);
     }
+  }
+
+  /**
+   * Restore a topology from event log reconstruction.
+   * Marks the workspace dirty so it will be saved on next save.
+   */
+  restoreTopology(topology: SiteTopology): void {
+    this._siteTopology.set(topology);
+    this._markDirty();
   }
 
   // --- Focus ---
@@ -275,8 +312,7 @@ export class WorkspaceService {
     clone.automations = activeTopo.automations;
 
     this._siteTopology.set(clone);
-    this._dirtyControllerIds.update(s => new Set(s).add(controllerId));
-    this._dirty.set(true);
+    this._markDirty(controllerId);
   }
 
   updateActiveTopology(updater: (t: SystemTopology) => void): void {
@@ -327,8 +363,7 @@ export class WorkspaceService {
     clone.remoteImports = fullTopo.remoteImports;
 
     this._siteTopology.set(clone);
-    this._dirtyControllerIds.update(s => new Set(s).add(cid));
-    this._dirty.set(true);
+    this._markDirty(cid);
   }
 
   /** Atomically swap the board for the active controller. */
@@ -347,8 +382,19 @@ export class WorkspaceService {
 
     this._siteTopology.set(clone);
     this._boards.set(boards);
-    this._dirtyControllerIds.update(s => new Set(s).add(cid));
-    this._dirty.set(true);
+    this._markDirty(cid);
+  }
+
+  /** Persist a controller overlay node position in the site layout. */
+  setControllerLayoutPosition(controllerId: string, position: { x: number; y: number }): void {
+    const topology = this._siteTopology();
+    if (!topology) return;
+    const clone = structuredClone(topology);
+    if (!clone.layout) clone.layout = { controllers: {} };
+    if (!clone.layout.controllers) clone.layout.controllers = {};
+    clone.layout.controllers[controllerId] = position;
+    this._siteTopology.set(clone);
+    this._markDirty(controllerId);
   }
 
   // --- Migration ---
@@ -397,7 +443,7 @@ export class WorkspaceService {
     const site = this._site();
     if (!site) return;
     this._site.set({ ...site, friendlyName });
-    this._dirty.set(true);
+    this._markDirty();
   }
 
   // --- Controller management ---
@@ -423,8 +469,7 @@ export class WorkspaceService {
     boards.set(controller.id, board);
     this._boards.set(boards);
 
-    this._dirtyControllerIds.update(s => new Set(s).add(controller.id));
-    this._dirty.set(true);
+    this._markDirty(controller.id);
 
     return controller.id;
   }
@@ -450,8 +495,7 @@ export class WorkspaceService {
     boards.set(controller.id, board);
     this._boards.set(boards);
 
-    this._dirtyControllerIds.update(s => new Set(s).add(controller.id));
-    this._dirty.set(true);
+    this._markDirty(controller.id);
 
     return controller.id;
   }
@@ -499,8 +543,9 @@ export class WorkspaceService {
     }
 
     this._dirtyControllerIds.update(s => { const n = new Set(s); n.delete(controllerId); return n; });
-    this._dirty.set(true);
+    this._markDirty();
   }
+
 
   // --- ID generation (site-wide unique) ---
 
@@ -540,13 +585,19 @@ export class WorkspaceService {
     };
 
     await this.electron.siteSave(payload);
-    this._dirty.set(false);
-    this._dirtyControllerIds.set(new Set());
+
+    // Only clear dirty if state hasn't changed since we started saving.
+    // This prevents races where a mutation happens during the async save.
+    if (this._siteTopology() === topology && this._site() === site) {
+      this._dirty.set(false);
+      this._dirtyControllerIds.set(new Set());
+    }
   }
 
   // --- Clear ---
 
   clear(): void {
+    this._cancelAutosave();
     this._site.set(null);
     this._siteTopology.set(null);
     this._boards.set(new Map());

@@ -17,7 +17,7 @@ import { renderCompositeOverlays, renderPerSystemOverlays } from '../../shared/c
 // TODO(anchor-mesh): enrichPerSystemInterconnects removed — replace with site-level route analysis
 import { ConfirmService } from '../../core/services/confirm.service';
 import { FormsModule } from '@angular/forms';
-import type { ToolchainInfo, GenerationMeta } from '../../core/models/electron-api';
+import type { ToolchainInfo, GenerationMeta, DriftReport } from '../../core/models/electron-api';
 import { type FirmwareSecrets, EMPTY_FIRMWARE_SECRETS, isApiKeyValid } from '../../core/models/firmware-secrets';
 import { randomBase64, randomHex } from '../../core/util/random-keys';
 import { boardSupportedTransports, effectiveTransport, slug, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
@@ -142,6 +142,191 @@ interface FileEntry {
       @if (activeTab() === 'firmware') {
         <div class="flex-1 flex flex-col min-h-0 overflow-auto">
           <div class="p-6 space-y-4">
+            <!-- Fleet Status -->
+            <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
+              <div class="flex items-center justify-between px-5 py-3.5">
+                <div class="flex items-center gap-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.745 3.745 0 013.296-1.043A3.745 3.745 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.745 3.745 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+                  </svg>
+                  <div>
+                    <h2 class="font-semibold text-sm">Fleet Status</h2>
+                    <p class="text-xs text-base-content/60 mt-0.5">Verify deployed controllers match generated firmware</p>
+                  </div>
+                </div>
+                <button
+                  class="btn btn-primary btn-xs gap-1.5"
+                  (click)="checkFleet()"
+                  [disabled]="driftLoading()"
+                >
+                  @if (driftLoading()) { <span class="loading loading-spinner loading-xs"></span> }
+                  Check Fleet
+                </button>
+              </div>
+
+              <!-- HA connection settings -->
+              <div class="border-t border-base-300/30 px-5 py-3 bg-base-200/30">
+                <div class="flex items-end gap-3">
+                  <div class="flex-1">
+                    <label class="label-text text-[11px] text-base-content/50">Home Assistant URL</label>
+                    <input
+                      type="text"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="http://homeassistant.local:8123"
+                      [value]="haUrl()"
+                      (input)="haUrl.set(toInputValue($event))"
+                    />
+                  </div>
+                  <div class="flex-1">
+                    <label class="label-text text-[11px] text-base-content/50">Access Token</label>
+                    <input
+                      type="password"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="eyJ..."
+                      [value]="haToken()"
+                      (input)="haToken.set(toInputValue($event))"
+                    />
+                  </div>
+                  <button class="btn btn-ghost btn-xs" (click)="testHaConnection()">Test</button>
+                </div>
+                @if (haConnectionStatus(); as status) {
+                  <div class="mt-2 text-xs" [class.text-success]="status.ok" [class.text-error]="!status.ok">
+                    @if (status.ok) {
+                      Connected to Home Assistant {{ status.version }}
+                    } @else {
+                      Connection failed: {{ status.error }}
+                    }
+                  </div>
+                }
+              </div>
+
+              <!-- Drift reports -->
+              @if (driftReports().length > 0) {
+                <div class="border-t border-base-300/30 px-5 py-3">
+                  <table class="table table-xs">
+                    <thead>
+                      <tr>
+                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Controller</th>
+                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Running SHA</th>
+                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Status</th>
+                        <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Message</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (report of driftReports(); track report.controllerId) {
+                        <tr>
+                          <td class="font-medium text-sm">{{ report.controllerId }}</td>
+                          <td class="font-mono text-[11px] text-base-content/60">{{ report.telemetry.runningSha ?? '—' }}</td>
+                          <td class="text-sm">
+                            <span [class]="driftClass(report.drift)">{{ driftIcon(report.drift) }} {{ report.drift }}</span>
+                          </td>
+                          <td class="text-[11px] text-base-content/60">{{ report.message }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+
+              @if (driftError()) {
+                <div class="border-t border-base-300/30 px-5 py-2">
+                  <div class="text-xs text-error">{{ driftError() }}</div>
+                </div>
+              }
+            </div>
+
+            <!-- Site-wide Coordinated Deployment -->
+            @if (systemEntries().length > 1) {
+              <div class="bg-base-100 rounded-xl border border-base-300/40 overflow-hidden">
+                <div class="flex items-center justify-between px-5 py-3.5">
+                  <div class="flex items-center gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3" />
+                    </svg>
+                    <div>
+                      <h2 class="font-semibold text-sm">Site Deployment</h2>
+                      <p class="text-xs text-base-content/60 mt-0.5">Deploy all {{ systemEntries().length }} controllers in dependency order with verification</p>
+                    </div>
+                  </div>
+                  <button
+                    class="btn btn-primary btn-xs gap-1.5"
+                    (click)="runSiteDeployment()"
+                    [disabled]="deploymentRunning()"
+                  >
+                    @if (deploymentRunning()) { <span class="loading loading-spinner loading-xs"></span> }
+                    Deploy All
+                  </button>
+                </div>
+
+                @if (deploymentPlan(); as plan) {
+                  <div class="border-t border-base-300/30 px-5 py-3 bg-base-200/30 space-y-3">
+                    @if (plan.warnings.length > 0) {
+                      <div class="alert alert-warning py-1.5 text-xs">
+                        @for (warning of plan.warnings; track $index) {
+                          <p>{{ warning }}</p>
+                        }
+                      </div>
+                    }
+                    <div class="text-xs text-base-content/60">
+                      <span class="font-medium">Consistency hash:</span> <span class="font-mono">{{ plan.consistencyHash }}</span>
+                      @if (plan.requiresFullDeployment) {
+                        <span class="badge badge-warning badge-xs ml-2">coordinated update required</span>
+                      }
+                    </div>
+                    <div class="space-y-2">
+                      @for (phase of plan.phases; track phase.name) {
+                        <div class="bg-base-100 rounded-lg border border-base-300/30 px-3 py-2">
+                          <div class="text-[11px] font-semibold text-base-content/50 uppercase tracking-wider mb-1">{{ phase.name }}</div>
+                          <div class="flex flex-wrap gap-1.5">
+                            @for (ctrl of phase.controllers; track ctrl.controllerId) {
+                              <span class="badge badge-sm" [class.badge-primary]="deploymentResult(ctrl.controllerId)?.success" [class.badge-error]="deploymentResult(ctrl.controllerId)?.success === false">
+                                {{ ctrl.controllerId }}
+                              </span>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+
+                @if (deploymentResults().length > 0) {
+                  <div class="border-t border-base-300/30 px-5 py-3">
+                    <table class="table table-xs">
+                      <thead>
+                        <tr>
+                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Controller</th>
+                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Status</th>
+                          <th class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">Verified</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (r of deploymentResults(); track r.controllerId) {
+                          <tr>
+                            <td class="font-medium text-sm">{{ r.controllerId }}</td>
+                            <td class="text-sm">
+                              @if (r.success) {
+                                <span class="text-success">✓ Success</span>
+                              } @else {
+                                <span class="text-error">✗ {{ r.error }}</span>
+                              }
+                            </td>
+                            <td class="text-sm">
+                              @if (r.verified) {
+                                <span class="text-success">✓</span>
+                              } @else {
+                                <span class="text-base-content/40">—</span>
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+            }
+
             <!-- Controller selector -->
             <div class="flex items-center gap-3">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/40 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -477,6 +662,29 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   protected haGenerating = signal(false);
   protected haError = signal<string | null>(null);
 
+  // Fleet telemetry state
+  protected driftReports = signal<DriftReport[]>([]);
+  protected driftLoading = signal(false);
+  protected driftError = signal<string | null>(null);
+  protected haUrl = signal('');
+  protected haToken = signal('');
+  protected haConnectionStatus = signal<{ ok: boolean; version?: string; error?: string } | null>(null);
+
+  // Coordinated deployment state
+  protected deploymentRunning = signal(false);
+  protected deploymentPlan = signal<{
+    siteId: string;
+    phases: Array<{ name: string; controllers: Array<{ controllerId: string }> }>;
+    consistencyHash: string;
+    requiresFullDeployment: boolean;
+    warnings: string[];
+  } | null>(null);
+  protected deploymentResults = signal<Array<{ controllerId: string; success: boolean; error?: string; verified: boolean }>>([]);
+
+  protected deploymentResult(controllerId: string) {
+    return this.deploymentResults().find(r => r.controllerId === controllerId);
+  }
+
 
   protected canBuild = computed(() =>
     !!this.toolchain()?.esphomePath && this.fwFiles().length > 0 && this.secretsValid()
@@ -530,6 +738,12 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.updateSystemEntries();
     this.toolchain.set(await this.electron.toolchainStatus());
+
+    // Load HA connection settings
+    const savedUrl = await this.electron.appSettingGet('ha_url');
+    const savedToken = await this.electron.appSettingGet('ha_token');
+    if (savedUrl) this.haUrl.set(savedUrl);
+    if (savedToken) this.haToken.set(savedToken);
   }
 
   ngAfterViewInit() {
@@ -866,5 +1080,84 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected toInputValue(event: Event): string {
     return (event.target as HTMLInputElement).value;
+  }
+
+  // === Fleet telemetry methods ===
+
+  async saveHaSettings() {
+    await this.electron.appSettingSet('ha_url', this.haUrl());
+    await this.electron.appSettingSet('ha_token', this.haToken());
+    this.haConnectionStatus.set(null);
+  }
+
+  async testHaConnection() {
+    await this.saveHaSettings();
+    this.haConnectionStatus.set(await this.electron.driftHaCheck());
+  }
+
+  async checkFleet() {
+    const siteId = this.workspace.site()?.id;
+    if (!siteId) return;
+    await this.saveHaSettings();
+    this.driftLoading.set(true);
+    this.driftError.set(null);
+    try {
+      this.driftReports.set(await this.electron.driftCheck(siteId));
+    } catch (err) {
+      this.driftError.set(String(err));
+    } finally {
+      this.driftLoading.set(false);
+    }
+  }
+
+  driftIcon(drift: string): string {
+    switch (drift) {
+      case 'synced': return '✅';
+      case 'stale': return '⚠️';
+      case 'diverged': return '🔴';
+      case 'unreachable': return '⚫';
+      case 'orphan': return '❓';
+      default: return '❔';
+    }
+  }
+
+  driftClass(drift: string): string {
+    switch (drift) {
+      case 'synced': return 'text-success';
+      case 'stale': return 'text-warning';
+      case 'diverged': return 'text-error';
+      case 'unreachable': return 'text-base-content/40';
+      case 'orphan': return 'text-info';
+      default: return '';
+    }
+  }
+
+  // === Coordinated deployment methods ===
+
+  async runSiteDeployment() {
+    const siteId = this.workspace.site()?.id;
+    if (!siteId) return;
+
+    this.deploymentRunning.set(true);
+    this.deploymentResults.set([]);
+    this.deploymentPlan.set(null);
+
+    try {
+      const plan = await this.electron.deploymentPlan(siteId) as {
+        siteId: string;
+        phases: Array<{ name: string; controllers: Array<{ controllerId: string }> }>;
+        consistencyHash: string;
+        requiresFullDeployment: boolean;
+        warnings: string[];
+      };
+      this.deploymentPlan.set(plan);
+
+      const results = await this.electron.deploymentExecute(plan) as Array<{ controllerId: string; success: boolean; error?: string; verified: boolean }>;
+      this.deploymentResults.set(results);
+    } catch (err) {
+      this.fwError.set(String(err));
+    } finally {
+      this.deploymentRunning.set(false);
+    }
   }
 }

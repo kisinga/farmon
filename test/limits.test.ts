@@ -8,7 +8,7 @@
 import * as path from "node:path";
 import type { Manifest } from "../electron/lib/schema.js";
 import { runManifestRules } from "../electron/lib/validate.js";
-import { generateAll } from "../electron/lib/generate.js";
+import { generateAll, createTestMetadata } from "../electron/lib/generate.js";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
@@ -158,7 +158,7 @@ function runTest(label: string, p: ScaleParams): TestResult {
   if (!v.ok) return result;
 
   try {
-    const files = generateAll(manifest, board, 'test-site');
+    const files = generateAll(manifest, board, 'test-site', undefined, createTestMetadata());
     result.generateOk = true;
     const rh = files.find((f) => f.relativePath.endsWith("routes.h"));
     if (rh) result.routesHLines = rh.content.split("\n").length;
@@ -387,7 +387,7 @@ function runKcTest(label: string, p: KcScaleParams): TestResult {
   if (!v.ok) return result;
 
   try {
-    const files = generateAll(manifest, kcBoard, 'test-site');
+    const files = generateAll(manifest, kcBoard, 'test-site', undefined, createTestMetadata());
     result.generateOk = true;
     const rh = files.find((f) => f.relativePath.endsWith("routes.h"));
     if (rh) result.routesHLines = rh.content.split("\n").length;

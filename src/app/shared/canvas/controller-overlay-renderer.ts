@@ -9,6 +9,7 @@ const GAP_ABOVE_CLUSTER = 16;
 interface ControllerOverlayOptions {
   controllers?: Array<{ id: string }>;
   friendlyNames?: Map<string, string>;
+  positions?: Record<string, { x: number; y: number }>;
 }
 
 /**
@@ -63,11 +64,11 @@ export function renderControllerOverlays(
     if (existing && controllerLooksSame(existing, color, label)) {
       // Preserve manually dragged position; only recreate if label/color changed.
     } else if (existing) {
-      const pos = existing.getPosition();
+      const pos = options.positions?.[controllerId] ?? existing.getPosition();
       existing.remove();
       graph.addNode(buildControllerNode(controllerNodeId, pos, color, label));
     } else {
-      const pos = computeControllerPosition(nodes);
+      const pos = options.positions?.[controllerId] ?? computeControllerPosition(nodes);
       graph.addNode(buildControllerNode(controllerNodeId, pos, color, label));
     }
 
@@ -76,7 +77,23 @@ export function renderControllerOverlays(
       const wireId = `wire-${controllerId}-${String(n.id).replace(/^node-/, '')}`;
       desiredWires.add(wireId);
       graph.getCellById(wireId)?.remove();
-      graph.addEdge(buildWireEdge(wireId, controllerNodeId, String(n.id)));
+      graph.addEdge({
+        id: wireId,
+        shape: 'edge',
+        source: { cell: controllerNodeId },
+        target: { cell: String(n.id) },
+        zIndex: -2,
+        router: { name: 'orth', args: { padding: 6 } },
+        connector: { name: 'rounded' },
+        attrs: {
+          line: {
+            stroke: color + '80',
+            strokeWidth: 1,
+            strokeDasharray: '3,3',
+            targetMarker: null,
+          },
+        },
+      });
     }
   }
 
@@ -96,12 +113,13 @@ export function renderControllerOverlays(
     if (existing && controllerLooksSame(existing, color, label)) {
       // Preserve position
     } else if (existing) {
-      const pos = existing.getPosition();
+      const pos = options.positions?.[controllerId] ?? existing.getPosition();
       existing.remove();
       graph.addNode(buildControllerNode(controllerNodeId, pos, color, label));
     } else {
-      graph.addNode(buildControllerNode(controllerNodeId, { x: orphanX, y: orphanY }, color, label));
-      orphanX += CONTROLLER_WIDTH + 20;
+      const pos = options.positions?.[controllerId] ?? { x: orphanX, y: orphanY };
+      graph.addNode(buildControllerNode(controllerNodeId, pos, color, label));
+      if (!options.positions?.[controllerId]) orphanX += CONTROLLER_WIDTH + 20;
     }
   }
 
@@ -178,26 +196,9 @@ function buildControllerNode(
     width: CONTROLLER_WIDTH,
     height: CONTROLLER_HEIGHT,
     imageUrl: svgDataUri(controllerSvg(color, label)),
-    zIndex: 0,
+    zIndex: 10,
     data: { controllerId: id.replace(/^controller-/, ''), kind: 'controller', color, label },
   };
 }
 
-function buildWireEdge(id: string, sourceCell: string, targetCell: string): Edge.Metadata {
-  return {
-    id,
-    shape: 'edge',
-    source: { cell: sourceCell },
-    target: { cell: targetCell },
-    zIndex: -2,
-    attrs: {
-      line: {
-        stroke: '#94a3b8',
-        strokeWidth: 1,
-        strokeDasharray: '3,3',
-        targetMarker: null,
-      },
-    },
-    connector: { name: 'rounded' },
-  };
-}
+

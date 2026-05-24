@@ -1,9 +1,9 @@
-import { ipcMain, BrowserWindow, dialog, shell } from "electron";
+import { ipcMain, BrowserWindow, dialog, shell, app } from "electron";
 import * as fs from "node:fs";
 import { BoardDefSchema, type BoardDef } from "./lib/board.js";
 import { parseTopology, type SiteTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
-import { generateFirmware, generateSiteHA, generateDefaultSecrets, type SecretsMap } from "./lib/generate.js";
+import { generateFirmware, generateSiteHA, generateDefaultSecrets, type SecretsMap, type GenerationMetadata } from "./lib/generate.js";
 
 import { generateSelfTest } from "./lib/self-test/index.js";
 import { topologyToManifestForController } from "./lib/topology-to-manifest.js";
@@ -18,6 +18,14 @@ import * as esphome from "./esphome.js";
 import { killProcess } from "./process-manager.js";
 import { listSerialPorts } from "./discovery.js";
 import { serialMonitor } from "./serial-monitor.js";
+import { checkSiteDrift, checkHaConnection, type HaConnection } from "./drift-detector.js";
+import {
+  buildDeploymentPlan,
+  executeDeployment,
+  rollbackDeployment,
+  type DeploymentPlan,
+} from "./deployment-coordinator.js";
+import { diffTopology } from "./lib/topology-diff.js";
 
 
 // ---------------------------------------------------------------------------
@@ -177,8 +185,17 @@ export function registerIpcHandlers() {
     topology: unknown;
   }) => {
     const topology = parseTopology(payload.topology as Record<string, unknown>);
-    db.saveSiteTransaction({ site: payload.site, topology });
-    return { ok: true };
+
+    // Load existing topology for diffing
+    const existing = db.loadSiteFull(payload.site.id);
+    const oldTopology = existing?.topology ?? null;
+
+    // Diff and generate events
+    const events = diffTopology(oldTopology as any, topology);
+    console.log(`[site:save] ${payload.site.id}: generated ${events.length} events`);
+
+    db.saveSiteTransaction({ site: payload.site, topology }, events);
+    return { ok: true, events: events.length };
   });
 
   ipcMain.handle("site:create", async (_e, id: string, friendlyName: string) => {
@@ -284,10 +301,11 @@ export function registerIpcHandlers() {
       throw new Error("Invalid site file: missing topology or systems");
     }
 
+    // Import is a bulk operation — use a snapshot event instead of diffs
     db.saveSiteTransaction({
       site: data.site,
       topology,
-    });
+    }, [{ actor: 'import', eventType: 'snapshot', payload: { source: 'site-import' } }]);
 
     // Import HA files
     if (data.haFiles) {
@@ -575,11 +593,24 @@ export function registerIpcHandlers() {
         }
       }
 
-      const files = generateFirmware('esphome', manifest, board, siteId, secrets);
-
+      // Compute generation metadata before building firmware so it can be embedded.
+      const configSha = db.inputChecksum(topology, board, { ...secrets });
       const gen = db.createGeneration(siteId, systemId, topology, board, 'esphome', { ...secrets });
       const latestMeta = gen ? null : db.listGenerations(siteId, systemId, 'esphome')[0] ?? null;
       const version = gen?.version ?? latestMeta?.version ?? '';
+
+      const metadata: GenerationMetadata = {
+        configSha,
+        version,
+        siteId,
+        controllerId: systemId,
+        schemaVersion: store.SCHEMA_VERSION,
+        buildTimestamp: Math.floor(Date.now() / 1000),
+        appVersion: app.getVersion(),
+      };
+
+      const files = generateFirmware('esphome', manifest, board, siteId, secrets, metadata);
+
       const deviceFolder = manifest.device.directory ?? manifest.device.name;
       // Full path from outputDir to the device folder (used by Deploy panel to open it).
       const deviceDir = `sites/${siteId}/esphome/${deviceFolder}`;
@@ -859,14 +890,14 @@ export function registerIpcHandlers() {
   // =========================================================================
 
   ipcMain.handle("esphome:compile", async (event, configName: string) => {
-    const { result } = esphome.compile(winFromEvent(event), configName);
+    const { result } = await esphome.compile(winFromEvent(event), configName);
     return result;
   });
 
   ipcMain.handle(
     "esphome:flash",
     async (event, configName: string, device?: string) => {
-      const { result } = esphome.flash(winFromEvent(event), configName, device);
+      const { result } = await esphome.flash(winFromEvent(event), configName, device);
       return result;
     }
   );
@@ -874,7 +905,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     "esphome:logs",
     async (event, configName: string, device?: string) => {
-      const { result } = esphome.logs(winFromEvent(event), configName, device);
+      const { result } = await esphome.logs(winFromEvent(event), configName, device);
       return result;
     }
   );
@@ -1009,10 +1040,11 @@ export function registerIpcHandlers() {
         })),
         site.links,
       );
+      // Legacy import is a bulk operation — use a snapshot event
       db.saveSiteTransaction({
         site: { id: site.id, friendlyName: site.friendlyName },
         topology,
-      });
+      }, [{ actor: 'import', eventType: 'snapshot', payload: { source: 'legacy-import' } }]);
 
       // Import HA files
       for (const hf of site.haFiles) {
@@ -1073,6 +1105,80 @@ export function registerIpcHandlers() {
   ipcMain.handle("settings:get-all", async (_e, siteId: string, systemId: string) =>
     db.getSettings(siteId, systemId)
   );
+
+  // =========================================================================
+  // Fleet telemetry & drift detection
+  // =========================================================================
+
+  ipcMain.handle("drift:check", async (_e, siteId: string) => {
+    const haUrl = db.getAppSetting('ha_url');
+    const haToken = db.getAppSetting('ha_token');
+    if (!haUrl || !haToken) {
+      throw new Error('Home Assistant connection not configured. Open Deploy → Fleet Status to set URL and token.');
+    }
+    const conn: HaConnection = { baseUrl: haUrl, token: haToken };
+    return checkSiteDrift(conn, siteId);
+  });
+
+  ipcMain.handle("drift:ha-check", async (_e) => {
+    const haUrl = db.getAppSetting('ha_url');
+    const haToken = db.getAppSetting('ha_token');
+    if (!haUrl || !haToken) {
+      return { ok: false, error: 'Not configured' };
+    }
+    return checkHaConnection({ baseUrl: haUrl, token: haToken });
+  });
+
+  // =========================================================================
+  // Coordinated deployment (site-wide phased rollout)
+  // =========================================================================
+
+  ipcMain.handle("deployment:plan", async (_e, siteId: string, targetControllers?: string[]) => {
+    return buildDeploymentPlan(siteId, targetControllers);
+  });
+
+  ipcMain.handle("deployment:execute", async (event, plan: DeploymentPlan) => {
+    const haUrl = db.getAppSetting('ha_url');
+    const haToken = db.getAppSetting('ha_token');
+    const haConn = haUrl && haToken ? { baseUrl: haUrl, token: haToken } : undefined;
+    return executeDeployment(winFromEvent(event), plan, haConn);
+  });
+
+  ipcMain.handle("deployment:rollback", async (event, siteId: string, controllerId: string) => {
+    const haUrl = db.getAppSetting('ha_url');
+    const haToken = db.getAppSetting('ha_token');
+    const haConn = haUrl && haToken ? { baseUrl: haUrl, token: haToken } : undefined;
+    return rollbackDeployment(winFromEvent(event), siteId, controllerId, haConn);
+  });
+
+  // =========================================================================
+  // App settings (HA connection, global preferences)
+  // =========================================================================
+
+  ipcMain.handle("app-setting:get", async (_e, key: string) => db.getAppSetting(key));
+
+  ipcMain.handle("app-setting:set", async (_e, key: string, value: string) => {
+    db.setAppSetting(key, value);
+    return { ok: true };
+  });
+
+  // =========================================================================
+  // Topology event log (time-travel)
+  // =========================================================================
+
+  ipcMain.handle("events:list", async (_e, siteId: string, limit?: number) =>
+    db.listTopologyEvents(siteId, limit)
+  );
+
+  ipcMain.handle("events:count", async (_e, siteId: string) =>
+    db.topologyEventCount(siteId)
+  );
+
+  ipcMain.handle("events:reconstruct", async (_e, siteId: string, eventId: number) => {
+    const events = db.listTopologyEvents(siteId);
+    const { reconstructTopology } = await import("./lib/reconstruct-topology.js");
+    return reconstructTopology(events, eventId);
+  });
 }
 
 // ---------------------------------------------------------------------------

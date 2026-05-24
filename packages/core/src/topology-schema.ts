@@ -79,6 +79,9 @@ export const TopologySchema = z.object({
   timing: TimingSchema.default({}),
   automations: z.array(AutomationSchema).default([]),
   remoteImports: z.array(RemoteImportSchema).default([]),
+  layout: z.object({
+    controllers: z.record(z.object({ x: z.number(), y: z.number() })),
+  }).optional(),
 });
 
 // ---------------------------------------------------------------------------

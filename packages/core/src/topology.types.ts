@@ -171,6 +171,9 @@ export interface SiteTopology {
   };
   automations: Automation[];
   remoteImports: RemoteImport[];
+  layout?: {
+    controllers: Record<string, { x: number; y: number }>;
+  };
 }
 
 /** @deprecated Use SiteTopology. Per-controller projection shape used by frontend editor. */

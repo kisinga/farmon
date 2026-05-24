@@ -52,9 +52,9 @@ import type { TemplateListEntry } from '../../core/models/electron-api';
           </svg>
           Deploy
         </button>
-        @if (workspace.dirty()) {
-          <button class="btn btn-sm btn-primary" (click)="saveSite()">Save Site</button>
-        }
+        <span class="text-[10px] text-base-content/30" [class.text-success]="!workspace.dirty()" [class.text-warning]="workspace.dirty()">
+          {{ workspace.dirty() ? 'Saving…' : 'Saved' }}
+        </span>
       </div>
     </div>
 
@@ -126,10 +126,6 @@ export class SiteRailComponent {
     }
     return stats;
   });
-
-  protected async saveSite() {
-    await this.workspace.save();
-  }
 
   protected async addFromTemplate(templateName: string) {
     this.adding.set(true);
