@@ -279,7 +279,7 @@ export class ConfigTabComponent implements OnInit {
   // Re-fetch the last-deployed friendly_name whenever the active system
   // changes, so the warning banner reflects the system the user is editing.
   private readonly _trackSystem = effect(() => {
-    this.editor.systemId();
+    this.editor.controllerId();
     void this.refreshLastDeployed();
   });
 
@@ -289,7 +289,7 @@ export class ConfigTabComponent implements OnInit {
 
   private async refreshLastDeployed(): Promise<void> {
     const site = this.workspace.site();
-    const systemId = this.editor.systemId();
+    const systemId = this.editor.controllerId();
     if (!site || !systemId) {
       this.lastDeployedFriendlyName.set(null);
       return;

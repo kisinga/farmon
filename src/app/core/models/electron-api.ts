@@ -3,11 +3,11 @@
 import type { ValidationResult, RuleDiagnostic, NetworkConfig } from '@far-mon/core';
 import type {
   SiteListEntry, SiteFullPayload, SiteSavePayload,
-  TemplateListEntry,
+  TemplateListEntry, Controller,
 } from '@far-mon/core';
 
 export type { ValidationResult, RuleDiagnostic };
-export type { SiteListEntry, SiteFullPayload, SiteSavePayload, TemplateListEntry };
+export type { SiteListEntry, SiteFullPayload, SiteSavePayload, TemplateListEntry, Controller };
 
 // --- Boards ---
 
@@ -158,50 +158,13 @@ export interface SeedChange {
   action: "added" | "updated";
 }
 
-// --- Legacy system payload (DB still returns old shape) ---
-
-export interface SystemPayload {
-  id: string;
-  friendlyName: string;
-  board: string;
-  directory: string | null;
-  deviceName: string;
-  topology: {
-    nodes: unknown[];
-    pipes: unknown[];
-    route_overrides: Record<string, unknown>;
-    timing: unknown;
-    automations: unknown[];
-    uart_buses?: unknown[];
-    io_providers?: unknown[];
-    network?: unknown;
-  };
-}
-
-/** Legacy site payload — DB v5 still returns this shape.
- *  TODO(anchor-mesh): remove once DB migrates to v6 flat SiteTopology. */
-export interface LegacySiteFullPayload {
-  site: { id: string; friendlyName: string };
-  systems: SystemPayload[];
-  links: Array<{
-    id: string;
-    fromSystem: string;
-    fromNode: string;
-    fromPort: string;
-    toSystem: string;
-    toNode: string;
-    toPort: string;
-    label: string | null;
-  }>;
-}
-
 // --- ElectronAPI ---
 
 export interface ElectronAPI {
   // Sites
   siteList(): Promise<SiteListEntry[]>;
-  siteLoad(id: string): Promise<LegacySiteFullPayload>;
-  siteSave(payload: LegacySiteFullPayload): Promise<{ ok: boolean }>;
+  siteLoad(id: string): Promise<SiteFullPayload>;
+  siteSave(payload: SiteSavePayload): Promise<{ ok: boolean }>;
   siteCreate(id: string, friendlyName: string): Promise<{ ok: boolean }>;
   siteDelete(id: string): Promise<{ ok: boolean }>;
   siteDuplicate(sourceId: string, newId: string, newFriendlyName: string): Promise<{ ok: boolean; id: string }>;
@@ -209,9 +172,10 @@ export interface ElectronAPI {
   siteExport(siteId: string): Promise<{ ok: boolean; path?: string }>;
   siteImport(): Promise<{ ok: boolean; siteId?: string }>;
 
-  // Systems
+  // Controllers (formerly systems)
   systemList(siteId: string): Promise<Array<{ id: string; friendlyName: string; board: string; nodeCount: number }>>;
-  systemAddFromTemplate(siteId: string, templateName: string): Promise<SystemPayload>;
+  systemAddFromTemplate(siteId: string, templateName: string): Promise<Controller>;
+  systemCreateBlank(siteId: string, friendlyName: string, board: string): Promise<Controller>;
   systemDelete(siteId: string, systemId: string): Promise<{ ok: boolean }>;
 
   // Templates
@@ -229,7 +193,7 @@ export interface ElectronAPI {
   codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult>;
   codegenGenerateHA(siteId: string): Promise<GenerateHAResult>;
   codegenGenerateSelfTest(boardModel: string, secrets: Record<string, string>, network?: NetworkConfig): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }>;
-  codegenGenerateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }>;
+  codegenGenerateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, topology: unknown, routes: unknown[]): Promise<{ html: string; outputPath: string }>;
   codegenWriteScadaArtifacts(siteId: string, artifacts: Array<{ name: string; svg: string; meta: unknown }>): Promise<{ outputDir: string; files: Array<{ path: string; bytes: number }> }>;
 
   // Toolchain

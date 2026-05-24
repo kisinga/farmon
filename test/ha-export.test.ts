@@ -52,7 +52,7 @@ function fixture(): SystemTopology {
   // HA derives entity_ids from friendly_name; ESPHome services use name. Both must be testable
   // independently, so the fixture forces them apart.
   return {
-    schema: 11,
+    schema: 14,
     device: { name: 'gh-1', friendly_name: 'Greenhouse', board: 'heltec_v3' },
     nodes: [
       {
@@ -62,7 +62,8 @@ function fixture(): SystemTopology {
           { id: 'outlet', label: 'Outlet', direction: 'outlet' },
         ],
         position: { x: 100, y: 100 },
-      } as any,
+        anchorId: 'gh-1',
+      },
       {
         kind: 'level_sensor', id: 'ls_main', name: 'Main', pin: 'GPIO1', pump_rated: false,
         ports: [
@@ -70,7 +71,8 @@ function fixture(): SystemTopology {
           { id: 'outlet', label: 'Outlet', direction: 'outlet' },
         ],
         position: { x: 175, y: 100 },
-      } as any,
+        anchorId: 'gh-1',
+      },
       {
         kind: 'pump', id: 'pump_1', name: 'Pump 1', pin: 'GPIO42',
         ports: [
@@ -78,7 +80,8 @@ function fixture(): SystemTopology {
           { id: 'out', label: 'Outlet', direction: 'outlet' },
         ],
         position: { x: 250, y: 100 },
-      } as any,
+        anchorId: 'gh-1',
+      },
       {
         kind: 'valve', id: 'valve_a', name: 'Valve A',
         open_pin: 'GPIO4', close_pin: 'GPIO5',
@@ -87,7 +90,8 @@ function fixture(): SystemTopology {
           { id: 'outlet', label: 'Outlet', direction: 'outlet' },
         ],
         position: { x: 400, y: 100 },
-      } as any,
+        anchorId: 'gh-1',
+      },
     ],
     pipes: [
       { id: 'p1', from: 'tank_main:outlet', to: 'ls_main:inlet' },
@@ -173,8 +177,8 @@ assert(JSON.stringify(pipeKeys) === JSON.stringify(sortedPipeKeys), 'pipe keys a
 console.log('\nOverride precedence:');
 const withOverride = fixture();
 // pump_1 is at index 2 (tank, level_sensor, pump, valve).
-(withOverride.nodes[2] as any).haActions = [{ id: 'custom', label: 'Custom', service: 'script.my_custom' }];
-(withOverride.nodes[2] as any).binds = { label: 'attributes.current_power|format:watts' };
+withOverride.nodes[2].haActions = [{ id: 'custom', label: 'Custom', service: 'script.my_custom' }];
+withOverride.nodes[2].binds = { label: 'attributes.current_power|format:watts' };
 const metaOv = buildHaMeta(withOverride, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
 assert(metaOv.nodes['pump_1'].actions?.length === 1, 'per-node actions replace defaults entirely');
 assert(metaOv.nodes['pump_1'].actions?.[0].id === 'custom', 'override action id wins');
@@ -187,7 +191,7 @@ assertThrows(
   () => {
     const bad = fixture();
     // tank declares slots { label, value }; binding onto a slot it doesn't declare should throw.
-    (bad.nodes[0] as any).binds = { nonexistent: 'state' };
+    bad.nodes[0].binds = { nonexistent: 'state' };
     buildHaMeta(bad, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
   },
   'throws on unknown slot in binds',
@@ -197,7 +201,7 @@ assertThrows(
 assertThrows(
   () => {
     const bad = fixture();
-    (bad.nodes[0] as any).binds = { label: 'invalid!!!' };
+    bad.nodes[0].binds = { label: 'invalid!!!' };
     buildHaMeta(bad, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
   },
   'throws on malformed bind expression',

@@ -8,7 +8,7 @@ import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
 import { buildGraph, activeGraph, deriveRoutes, RouteOverrideSchema, deriveHaEntityId, deriveTankCalibration, recommendSensorMaxPsi } from '@far-mon/core';
 import type { PinCap } from '@far-mon/core';
-import type { RouteOverride } from '../../../core/models/topology.model';
+import type { RouteOverride, TopologyNode } from '../../../core/models/topology.model';
 import { routeLevelInfo } from './route-level-info';
 import type { Selection } from './selection';
 import { ZodFieldDirective } from '../../../core/utils/field-validation';
@@ -26,9 +26,12 @@ export type { Selection };
       <div class="sidebar-section">
         <h3 class="sidebar-title">{{ sn.desc.label }}
           @if (sn.desc.experimental) { <span class="badge badge-ghost badge-xs ml-1">experimental</span> }
+          @if (isRemoteNode(sn.node)) {
+            <span class="badge badge-ghost badge-xs ml-1">Remote: {{ controllerNameFor(sn.node) }}</span>
+          }
         </h3>
         <div class="sidebar-fields">
-          <!-- Standard fields: Name + ID (all entities) -->
+          <!-- Standard fields: Name + Controller + Enabled -->
           <label class="sidebar-label">Name</label>
           <div class="sidebar-control">
             <app-zod-input
@@ -38,13 +41,22 @@ export type { Selection };
               [value]="$any(sn.node).name"
               (valueChange)="updateField.emit({ nodeId: sn.node.id, field: 'name', value: $event })" />
           </div>
+          <label class="sidebar-label">Controller</label>
+          <select class="select select-xs select-bordered w-full font-mono"
+            [ngModel]="$any(sn.node).anchorId"
+            [ngModelOptions]="{ standalone: true }"
+            (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'anchorId', value: $event })">
+            @for (ctrl of allControllers(); track ctrl.id) {
+              <option [value]="ctrl.id">{{ ctrl.friendlyName }}</option>
+            }
+          </select>
           <label class="sidebar-label">Enabled</label>
           <input type="checkbox" class="toggle toggle-xs toggle-success"
             [ngModel]="!$any(sn.node).disabled"
             (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'disabled', value: !$event })" />
           <!-- Entity-specific fields -->
           @for (field of sn.desc.sidebarFields; track field.key) {
-            @if (!$any(sn.node).remote || field.type !== 'pin') {
+            @if (!isRemoteNode(sn.node) || field.type !== 'pin') {
             <label class="sidebar-label">{{ field.label }}</label>
             <div class="sidebar-control">
               @if (field.type === 'pin') {
@@ -189,6 +201,21 @@ export type { Selection };
             </div>
             <div class="text-[10px] text-base-content/40 mt-1">
               Auto-derived from friendly name. Edit the entity's name to change.
+            </div>
+          </div>
+        }
+
+        <!-- Remote imports — read-only info showing which controllers import this local node. -->
+        @if (!isRemoteNode(sn.node) && nodeImporterNames(sn.node.id).length > 0) {
+          <div class="mt-3 pt-3 border-t border-base-300/30">
+            <h4 class="sidebar-title">Imported By</h4>
+            <div class="flex flex-wrap gap-1">
+              @for (name of nodeImporterNames(sn.node.id); track name) {
+                <span class="badge badge-secondary badge-xs">{{ name }}</span>
+              }
+            </div>
+            <div class="text-[10px] text-base-content/40 mt-1">
+              Other controllers have imported this node as a remote reference.
             </div>
           </div>
         }
@@ -387,16 +414,49 @@ export class TopologySidebarComponent {
     }));
   });
 
-  /** Other systems in the site (for the target dropdown) */
+  /** All controllers for the node assignment dropdown. */
+  protected allControllers = computed(() => {
+    const topology = this.workspace.siteTopology();
+    return topology?.controllers.map(c => ({
+      id: c.id,
+      friendlyName: c.friendlyName ?? c.id,
+    })) ?? [];
+  });
+
+  /** True when a node's anchorId differs from the active controller. */
+  protected isRemoteNode(node: TopologyNode): boolean {
+    return node.anchorId !== this.workspace.activeControllerId();
+  }
+
+  /** Friendly name of the controller that owns this node. */
+  protected controllerNameFor(node: TopologyNode): string {
+    const topology = this.workspace.siteTopology();
+    const ctrl = topology?.controllers.find(c => c.id === node.anchorId);
+    return ctrl?.friendlyName ?? node.anchorId;
+  }
+
+  /** Names of controllers that have imported this local node as remote. */
+  protected nodeImporterNames(nodeId: string): string[] {
+    const topology = this.workspace.siteTopology();
+    if (!topology) return [];
+    return topology.remoteImports
+      .filter(ri => ri.nodeId === nodeId)
+      .map(ri => {
+        const ctrl = topology.controllers.find(c => c.id === ri.controllerId);
+        return ctrl?.friendlyName ?? ri.controllerId;
+      });
+  }
+
+  /** Other controllers in the site (for the target dropdown) */
   protected otherSystems = computed(() => {
-    const systemId = this.workspace.activeSystemId();
-    const systems = this.workspace.systems();
-    if (!systemId) return [];
-    return [...systems.entries()]
-      .filter(([id]) => id !== systemId)
-      .map(([id, { topology }]) => ({
-        config: id,
-        friendlyName: topology.device.friendly_name ?? id,
+    const controllerId = this.workspace.activeControllerId();
+    const topology = this.workspace.siteTopology();
+    if (!controllerId || !topology) return [];
+    return topology.controllers
+      .filter(c => c.id !== controllerId)
+      .map(c => ({
+        config: c.id,
+        friendlyName: c.friendlyName ?? c.id,
       }));
   });
 

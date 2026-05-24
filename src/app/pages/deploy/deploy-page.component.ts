@@ -20,7 +20,7 @@ import { FormsModule } from '@angular/forms';
 import type { ToolchainInfo, GenerationMeta } from '../../core/models/electron-api';
 import { type FirmwareSecrets, EMPTY_FIRMWARE_SECRETS, isApiKeyValid } from '../../core/models/firmware-secrets';
 import { randomBase64, randomHex } from '../../core/util/random-keys';
-import { boardSupportedTransports, effectiveTransport, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
+import { boardSupportedTransports, effectiveTransport, slug, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
 
 type ActiveTab = 'docs' | 'firmware' | 'ha' | 'serial';
 
@@ -493,14 +493,13 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   protected selectedBoardId = computed(() => {
     const id = this.selectedSystemId();
     if (!id) return '';
-    const sys = this.workspace.systems().get(id);
-    return sys?.topology.device.board ?? '';
+    return this.workspace.boards().get(id)?.model ?? '';
   });
 
   protected selectedNetwork = computed(() => {
     const id = this.selectedSystemId();
     if (!id) return undefined;
-    return this.workspace.systems().get(id)?.topology.device.network;
+    return this.workspace.siteTopology()?.controllers.find(c => c.id === id)?.network;
   });
 
   protected supportedTransports = computed<readonly NetworkTransport[]>(() => {
@@ -511,7 +510,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   protected updateNetwork(network: NetworkConfig) {
     const id = this.selectedSystemId();
     if (!id) return;
-    this.workspace.updateSystemTopology(id, (t) => {
+    this.workspace.updateControllerTopology(id, (t) => {
       t.device.network = network;
     });
   }
@@ -542,15 +541,13 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   private updateSystemEntries() {
-    const entries: Array<{ id: string; friendlyName: string; board: string; deviceName: string }> = [];
-    for (const [id, { topology }] of this.workspace.systems()) {
-      entries.push({
-        id,
-        friendlyName: topology.device.friendly_name,
-        board: topology.device.board,
-        deviceName: topology.device.name,
-      });
-    }
+    const topology = this.workspace.siteTopology();
+    const entries = (topology?.controllers ?? []).map(ctrl => ({
+      id: ctrl.id,
+      friendlyName: ctrl.friendlyName ?? ctrl.id,
+      board: ctrl.board,
+      deviceName: slug(ctrl.friendlyName ?? ctrl.id),
+    }));
     this.systemEntries.set(entries);
   }
 
@@ -566,45 +563,32 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
 
     if (!this.topologyRenderer && this.hiddenCanvasRef) this.initTopologyRenderer();
     const renderer = this.topologyRenderer;
-    const composite = this.workspace.compositeTopology();
-    if (!renderer || !composite || composite.nodes.length === 0) return;
+    const topology = this.workspace.siteTopology();
+    if (!renderer || !topology || topology.nodes.length === 0) return;
 
     this.generatingDocs.set(true);
     try {
-      const systemsMap = this.workspace.systems();
-      const linksData = this.workspace.links();
-      const overlayCtx = { systems: systemsMap, links: linksData };
-
       const friendlyNames = new Map<string, string>();
-      for (const [id, { topology }] of systemsMap) {
-        friendlyNames.set(id, topology.device.friendly_name ?? id);
+      for (const ctrl of topology.controllers) {
+        friendlyNames.set(ctrl.id, ctrl.friendlyName ?? ctrl.id);
       }
-      const compositeSvg = await renderer.export(composite, [
-        (canvas, topology) => renderCompositeOverlays(canvas.graphInstance, topology, { friendlyNames }),
+      const compositeSvg = await renderer.export(topology, [
+        (canvas, topo) => renderCompositeOverlays(canvas.graphInstance, topo, { friendlyNames }),
       ]);
 
       const perSystemSvgs: Record<string, string> = {};
-      for (const [id, { topology }] of systemsMap) {
-        // TODO(anchor-mesh): replace enrichPerSystemInterconnects with site-level analysis
-        perSystemSvgs[id] = await renderer.export(topology, [
-          (canvas, t) => renderPerSystemOverlays(canvas.graphInstance, t),
-        ]);
-      }
-
-      const systems: Array<{ systemId: string; friendlyName: string; board: string; deviceName: string; topology: unknown }> = [];
-      for (const [id, { topology }] of systemsMap) {
-        systems.push({
-          systemId: id,
-          friendlyName: topology.device.friendly_name,
-          board: topology.device.board,
-          deviceName: topology.device.name,
-          topology,
-        });
+      for (const ctrl of topology.controllers) {
+        const ctrlTopo = this.workspace.controllerTopology(ctrl.id);
+        if (ctrlTopo) {
+          perSystemSvgs[ctrl.id] = await renderer.export(ctrlTopo, [
+            (canvas, t) => renderPerSystemOverlays(canvas.graphInstance, t),
+          ]);
+        }
       }
 
       const siteId = this.workspace.site()!.id;
-      const routesData = this.workspace.compositeRoutes();
-      const result = await this.electron.generateSiteDocs(siteId, compositeSvg, perSystemSvgs, systems, linksData, routesData);
+      const routesData = this.workspace.siteRoutes();
+      const result = await this.electron.generateSiteDocs(siteId, compositeSvg, perSystemSvgs, topology, routesData);
       this.siteDocHtml.set(result.html);
     } finally {
       this.generatingDocs.set(false);
@@ -637,21 +621,22 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
 
     if (!systemId) return;
 
-    const sys = this.workspace.systems().get(systemId);
-    if (!sys) return;
+    const ctrlTopo = this.workspace.controllerTopology(systemId);
+    const board = this.workspace.boards().get(systemId);
+    if (!ctrlTopo) return;
 
     // Load board SVG for display, use workspace board for validation
     await this.boards.refresh();
-    await this.boards.load(sys.topology.device.board);
+    await this.boards.load(ctrlTopo.device.board);
 
     // Set OTA address
-    this.otaAddress.set(`${sys.topology.device.name}.local`);
+    this.otaAddress.set(`${ctrlTopo.device.name}.local`);
 
     const siteId = this.workspace.site()?.id;
 
     // Run validation
-    if (sys.board) {
-      const result = await this.electron.validate(sys.topology, sys.board, siteId);
+    if (board) {
+      const result = await this.electron.validate(ctrlTopo, board, siteId);
       this.fwValidation.set(result);
     }
     if (!siteId) return;
@@ -693,15 +678,16 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
     const systemId = this.selectedSystemId();
     if (!systemId) return;
 
-    const sys = this.workspace.systems().get(systemId);
-    if (!sys) return;
+    const ctrlTopo = this.workspace.controllerTopology(systemId);
+    const board = this.workspace.boards().get(systemId);
+    if (!ctrlTopo) return;
 
     this.generating.set(true);
     this.fwError.set(null);
     try {
-      if (!sys.board) throw new Error('No board loaded');
+      if (!board) throw new Error('No board loaded');
       const siteId = this.workspace.site()?.id ?? '';
-      const result = await this.electron.generate(siteId, systemId, sys.topology, sys.board);
+      const result = await this.electron.generate(siteId, systemId, ctrlTopo, board);
       // Stale guard
       if (this.selectedSystemId() !== systemId) return;
       this.fwFiles.set(result.files);
@@ -839,12 +825,15 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
       try {
         if (!this.topologyRenderer && this.hiddenCanvasRef) this.initTopologyRenderer();
         const renderer = this.topologyRenderer;
-        const systemsMap = this.workspace.systems();
-        if (renderer && systemsMap.size > 0) {
+        const topology = this.workspace.siteTopology();
+        if (renderer && topology && topology.controllers.length > 0) {
           const artifacts: Array<{ name: string; svg: string; meta: unknown }> = [];
-          for (const [, { topology }] of systemsMap) {
-            const { svg, meta } = await renderer.exportHa(topology);
-            artifacts.push({ name: topology.device.name, svg, meta });
+          for (const ctrl of topology.controllers) {
+            const ctrlTopo = this.workspace.controllerTopology(ctrl.id);
+            if (ctrlTopo) {
+              const { svg, meta } = await renderer.exportHa(ctrlTopo);
+              artifacts.push({ name: ctrlTopo.device.name, svg, meta });
+            }
           }
           if (artifacts.length) await this.electron.writeScadaArtifacts(siteId, artifacts);
         }

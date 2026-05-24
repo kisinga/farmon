@@ -5,6 +5,7 @@ import { AnchorIdSchema } from '../schemas';
 import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
+import { templateCoverProxy } from '../remote-proxy';
 
 const COLOR = '#e11d48'; // rose
 const W = 50, H = 36;
@@ -163,6 +164,11 @@ ${closeHeader}
         travelTime: deriveHaEntityId('number', device, n.travelTime),
       };
     },
+
+    remoteProxy: (node, haEntityId) => ({
+      section: 'cover',
+      yaml: templateCoverProxy(node.id, node.name, haEntityId),
+    }),
 
   },
 

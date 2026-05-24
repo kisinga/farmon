@@ -134,8 +134,8 @@ export function generateRoutes(m: Manifest): string {
   // from pressure-vs-calibration). Dispatch on kind to the right codegen ID.
   const tankCases = tanks
     .map((t, i) => {
-      if (t.remote?.haEntityId) {
-        return `    case ${i}: return id(ri_${t['id']}).state; // remote: ${t.remote.providerNodeName}`;
+      if (t['remoteHaEntityId']) {
+        return `    case ${i}: return id(ri_${t['id']}).state; // remote: ${t['name']}`;
       }
       const src = t['level_source'] as { id: string; kind: 'level_sensor' | 'pressure_sensor' } | undefined;
       if (!src) return `    case ${i}: return -1.0f; // ${t['id']}: no level source`;
@@ -151,8 +151,8 @@ export function generateRoutes(m: Manifest): string {
     .join("\n");
   const flowCases = flowSensors
     .map((f, i) => {
-      if (f.remote?.haEntityId) {
-        return `    case ${i}: return id(ri_${f['id']}).state; // remote: ${f.remote.providerNodeName}`;
+      if (f['remoteHaEntityId']) {
+        return `    case ${i}: return id(ri_${f['id']}).state; // remote: ${f['name']}`;
       }
       return `    case ${i}: return id(${flowSensorId(nid(f))}).state;`;
     })

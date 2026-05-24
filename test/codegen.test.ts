@@ -8,12 +8,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifest, reservedPins } from "@far-mon/core";
+import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifestForController, reservedPins } from "@far-mon/core";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
 import { validateAll } from "../electron/lib/validate.js";
 import { generateAll, type GeneratedFile } from "../electron/lib/generate.js";
 import { generateBoardPackage } from "../electron/lib/generators/board-package.js";
 import { generateRoutes } from "../electron/lib/generators/routes.js";
+import { collectEntityCodegen } from "../electron/lib/generators/collect.js";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
 const CONFIG_PATH = path.join(DEFAULTS, "configs/pump-controller.yaml");
@@ -123,7 +124,7 @@ console.log("=========================\n");
 board = loadBoard(BOARD_DIR);
 const rawConfig = fs.readFileSync(CONFIG_PATH, "utf-8");
 const topology = parseTopology(parseYaml(rawConfig));
-manifest = topologyToManifest(topology);
+manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? 'default');
 const validation = validateAll(topology, manifest, board);
 files = generateAll(manifest, board, 'test-site');
 fileMap = new Map(files.map((f) => [f.relativePath, f.content]));
@@ -432,7 +433,8 @@ const pressureRuntimeCases = [
   { sourcePumpRated: true, destPumpRated: true, expected: true, label: 'both pressure sensors are pump-rated' },
 ];
 for (const c of pressureRuntimeCases) {
-  const pressureManifest = topologyToManifest(pumpedPressureTopology(c.sourcePumpRated, c.destPumpRated));
+  const pressureTopo = pumpedPressureTopology(c.sourcePumpRated, c.destPumpRated);
+  const pressureManifest = topologyToManifestForController(pressureTopo, pressureTopo.controllers[0]?.id ?? 'default');
   const pressureRoutesH = generateRoutes(pressureManifest);
   const pressureRoute = pressureManifest.routes.find(r => r.source === 'source_tank' && r.destination === 'dest_tank');
   assert(
@@ -467,7 +469,7 @@ console.log("================\n");
 const VFD_CONFIG_PATH = path.join(DEFAULTS, "configs/vfd-pump-controller.yaml");
 const vfdRawConfig = fs.readFileSync(VFD_CONFIG_PATH, "utf-8");
 const vfdTopology = parseTopology(parseYaml(vfdRawConfig));
-const vfdManifest = topologyToManifest(vfdTopology);
+const vfdManifest = topologyToManifestForController(vfdTopology, vfdTopology.controllers[0]?.id ?? 'default');
 const vfdFiles = generateAll(vfdManifest, board, 'test-site');
 const vfdFileMap = new Map(vfdFiles.map((f) => [f.relativePath, f.content]));
 
@@ -481,8 +483,8 @@ function getVfdFile(suffix: string): string {
 // --- Topology & routes ---
 
 console.log("Topology:");
-assert(vfdTopology.device.uart_buses?.length === 1, "Has 1 UART bus");
-assert(vfdTopology.device.uart_buses?.[0].id === "uart_modbus", "UART bus id = uart_modbus");
+assert(vfdTopology.controllers[0]?.uart_buses?.length === 1, "Has 1 UART bus");
+assert(vfdTopology.controllers[0]?.uart_buses?.[0].id === "uart_modbus", "UART bus id = uart_modbus");
 
 const vfdRoutes = vfdManifest.routes;
 assert(vfdRoutes.length === 1, `${vfdRoutes.length} route (tank1>tank2)`);
@@ -543,7 +545,7 @@ const KC_CONFIG_PATH = path.join(DEFAULTS, "configs/kc868-a16-controller.yaml");
 const kcBoard = loadBoard(KC_BOARD_DIR);
 const kcRawConfig = fs.readFileSync(KC_CONFIG_PATH, "utf-8");
 const kcTopology = parseTopology(parseYaml(kcRawConfig));
-const kcManifest = topologyToManifest(kcTopology);
+const kcManifest = topologyToManifestForController(kcTopology, kcTopology.controllers[0]?.id ?? 'default');
 const kcFiles = generateAll(kcManifest, kcBoard, 'test-site');
 const kcFileMap = new Map(kcFiles.map((f) => [f.relativePath, f.content]));
 
@@ -680,7 +682,7 @@ const R4_CONFIG_PATH = path.join(DEFAULTS, "configs/sonoff-basicr4-pump.yaml");
 const r4Board = loadBoard(R4_BOARD_DIR);
 const r4RawConfig = fs.readFileSync(R4_CONFIG_PATH, "utf-8");
 const r4Topology = parseTopology(parseYaml(r4RawConfig));
-const r4Manifest = topologyToManifest(r4Topology);
+const r4Manifest = topologyToManifestForController(r4Topology, r4Topology.controllers[0]?.id ?? 'default');
 const r4Validation = validateAll(r4Topology, r4Manifest, r4Board);
 const r4Files = generateAll(r4Manifest, r4Board, 'test-site');
 const r4FileMap = new Map(r4Files.map((f) => [f.relativePath, f.content]));
@@ -745,8 +747,79 @@ assert(r4DeviceYaml.includes("name: ${device_name}"), "ESPHome name sub");
 assert(!r4DeviceYaml.includes("display:"), "No OLED display (board has no OLED)");
 assert(r4DeviceYaml.includes("switch.turn_off"), "Boot turns off pump relay");
 
+// --- Remote nodes (cross-controller) ---
+
+console.log("\nRemote node support:");
+
+const crossControllerTopology = parseTopology({
+  schema: 16,
+  controllers: [
+    { id: 'pump-ctrl', friendlyName: 'Pump Controller', board: 'heltec-v3' },
+    { id: 'tank-ctrl', friendlyName: 'Tank Controller', board: 'heltec-v3' },
+  ],
+  timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 5, flow_threshold: 0.5, api_watchdog: 60 },
+  nodes: [
+    // Tank Controller nodes
+    { kind: 'tank', id: 'src_tank', name: 'Source Tank', ports: [{ id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
+    { kind: 'level_sensor', id: 'src_lvl', name: 'Source Level', pin: 'GPIO1', ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
+    { kind: 'tank', id: 'dst_tank', name: 'Dest Tank', ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
+    { kind: 'level_sensor', id: 'dst_lvl', name: 'Dest Level', pin: 'GPIO2', ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
+    // Pump Controller nodes
+    { kind: 'pump', id: 'pump1', name: 'Pump', pin: 'GPIO4', relay_polarity: 'active_low', ports: [{ id: 'in', label: 'In', direction: 'inlet' }, { id: 'out', label: 'Out', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'pump-ctrl' },
+    { kind: 'flow_sensor', id: 'flow1', name: 'Main Flow', pin: 'GPIO5', ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'pump-ctrl' },
+    { kind: 'valve', id: 'valve1', name: 'Main Valve', open_pin: 'GPIO6', close_pin: 'GPIO7', coil_polarity: 'active_low', ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'pump-ctrl' },
+  ],
+  pipes: [
+    { id: 'p1', from: 'src_tank:outlet', to: 'pump1:in' },
+    { id: 'p2', from: 'pump1:out', to: 'flow1:inlet' },
+    { id: 'p3', from: 'flow1:outlet', to: 'valve1:inlet' },
+    { id: 'p4', from: 'valve1:outlet', to: 'dst_tank:inlet' },
+    { id: 'p5', from: 'src_tank:outlet', to: 'src_lvl:inlet' },
+    { id: 'p6', from: 'dst_tank:outlet', to: 'dst_lvl:inlet' },
+  ],
+  remoteImports: [
+    { controllerId: 'pump-ctrl', nodeId: 'src_tank' },
+    { controllerId: 'pump-ctrl', nodeId: 'dst_tank' },
+  ],
+});
+
+// Manifest for pump-ctrl (owns the route because flow sensor is anchored here)
+const pumpManifest = topologyToManifestForController(crossControllerTopology, 'pump-ctrl');
+const srcTank = pumpManifest.nodes.find(n => n.id === 'src_tank');
+const dstTank = pumpManifest.nodes.find(n => n.id === 'dst_tank');
+const flowNode = pumpManifest.nodes.find(n => n.id === 'flow1');
+const pumpNode = pumpManifest.nodes.find(n => n.id === 'pump1');
+
+assert(!!srcTank, "Remote source tank included in pump-ctrl manifest");
+assert(!!dstTank, "Remote dest tank included in pump-ctrl manifest");
+assert(!!flowNode, "Local flow sensor included in pump-ctrl manifest");
+assert(!!pumpNode, "Local pump included in pump-ctrl manifest");
+assert(srcTank?.remoteHaEntityId === 'sensor.tank_controller_source_level_level', "Remote src tank HA entity resolved from its level sensor: got " + srcTank?.remoteHaEntityId);
+assert(dstTank?.remoteHaEntityId === 'sensor.tank_controller_dest_level_level', "Remote dst tank HA entity resolved from its level sensor: got " + dstTank?.remoteHaEntityId);
+assert(!flowNode?.remoteHaEntityId, "Local flow sensor has no remote HA entity");
+assert(!pumpNode?.remoteHaEntityId, "Local pump has no remote HA entity");
+
+// Collect: remote tanks should emit homeassistant sensor imports
+const pumpCollect = collectEntityCodegen(pumpManifest, board);
+assert(
+  pumpCollect.sections['sensor']?.some(y => y.includes('ri_src_tank') && y.includes('sensor.tank_controller_source_level_level')),
+  "Remote src tank emits homeassistant sensor import"
+);
+assert(
+  pumpCollect.sections['sensor']?.some(y => y.includes('ri_dst_tank') && y.includes('sensor.tank_controller_dest_level_level')),
+  "Remote dst tank emits homeassistant sensor import"
+);
+
+// Routes: remote tanks should use ri_ prefix in get_tank_level
+const pumpRoutes = generateRoutes(pumpManifest);
+assert(pumpRoutes.includes('ri_src_tank'), "Routes dispatch uses ri_src_tank for remote tank level");
+assert(pumpRoutes.includes('ri_dst_tank'), "Routes dispatch uses ri_dst_tank for remote tank level");
+
+// Local hardware should still be generated for pump-ctrl's own nodes
+assert(pumpCollect.switches.some(y => y.includes('pump_relay')), "Local pump relay generated");
+assert(pumpCollect.sensors.some(y => y.includes('id: flow1')), "Local flow sensor generated");
+
 // --- Summary ---
 
 console.log(`\n${"=".repeat(40)}`);
 console.log(`${passed} passed, ${failed} failed`);
-process.exit(failed > 0 ? 1 : 0);

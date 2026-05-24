@@ -38,16 +38,30 @@ export function collectEntityCodegen(m: Manifest, board: BoardDef): CollectedCod
     sections: {},
   };
 
-  const controllerId = m.device.friendly_name;
+  // Determine the controller this manifest belongs to.
+  // topologyToManifestForController sets controllerId; test fixtures that
+  // create Manifest directly may not have it, so fall back to friendly_name.
+  const controllerId = m.controllerId ?? m.device.friendly_name;
 
   for (const node of m.nodes) {
     const desc = NODE_REGISTRY.get(node.kind);
+
+    // Remote proxy — descriptor owns the proxy type and ID convention.
+    // When present, skip ALL local hardware generation for this node.
+    if (node.remoteHaEntityId) {
+      const proxy = desc?.codegen?.remoteProxy?.(node, node.remoteHaEntityId);
+      if (proxy) (result.sections[proxy.section] ??= []).push(proxy.yaml);
+      continue;
+    }
+
+    // Skip hardware for nodes anchored to other controllers that have no
+    // remote HA entity (e.g. a remote water_source without a pressure pin).
+    // Backward compat: nodes without anchorId (pre-flat-topology test fixtures)
+    // are treated as belonging to this controller.
+    if (node.anchorId && node.anchorId !== controllerId) continue;
+
     if (!desc?.codegen) continue;
     const idx = nodesByKind(m.nodes, node.kind).indexOf(node);
-
-    // Skip hardware for nodes anchored to other controllers.
-    // The control layer handles remote claims; this layer only generates local hardware.
-    if (node.anchorId !== controllerId) continue;
 
     // Hardware (switch: section)
     if (desc.codegen.hardware) {

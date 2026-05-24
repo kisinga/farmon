@@ -105,9 +105,8 @@ const compositeRoutes = [
 const html = generateSiteDocumentation(
   "Test Site",
   systems,
-  [],
   TOPOLOGY_SVG,
-  compositeRoutes as unknown as Parameters<typeof generateSiteDocumentation>[4],
+  compositeRoutes,
   { genDate: "2026-01-01" },
 );
 
@@ -141,9 +140,8 @@ function reportDiff(actual: string, expected: string): void {
   const dedupHtml = generateSiteDocumentation(
     "Triple Site",
     tripleSystems,
-    [],
     TOPOLOGY_SVG,
-    compositeRoutes as unknown as Parameters<typeof generateSiteDocumentation>[4],
+    compositeRoutes,
     { genDate: "2026-01-01" },
   );
   const expectedConcerns = fs

@@ -3,12 +3,11 @@ import { ElectronService } from './electron.service';
 import type {
   BoardDef, TopologyGraph, Route,
   TopologyNode, PipeSegment, RouteOverride,
-  SiteMetadata, SiteSavePayload,
+  SiteMetadata, SiteSavePayload, SiteTopology, Controller,
 } from '@far-mon/core';
 import type { SystemTopology } from '../models/topology.model';
-import type { SystemPayload } from '../models/electron-api';
 import {
-  buildGraph, deriveRoutes, activeGraph, parseTopology,
+  buildGraph, deriveRoutes, activeGraph, parseTopology, slug,
 } from '@far-mon/core';
 
 @Injectable({ providedIn: 'root' })
@@ -16,169 +15,91 @@ export class WorkspaceService {
 
   // --- Core state ---
   private _site = signal<SiteMetadata | null>(null);
-  // TODO(anchor-mesh): transition from per-system Map to flat SiteTopology
-  private _systems = signal<Map<string, { topology: SystemTopology; board: BoardDef }>>(new Map());
-  private _activeSystemId = signal<string | null>(null);
+  private _siteTopology = signal<SiteTopology | null>(null);
+  private _boards = signal<Map<string, BoardDef>>(new Map());
+  private _activeControllerId = signal<string | null>(null);
   private _dirty = signal(false);
-  private _dirtySystemIds = signal<Set<string>>(new Set());
+  private _dirtyControllerIds = signal<Set<string>>(new Set());
   private _loading = signal(false);
 
   // --- Public readonly signals ---
   readonly site = this._site.asReadonly();
-  readonly systems = this._systems.asReadonly();
-  // TODO(anchor-mesh): links removed in SiteTopology; keep empty for UI compat
-  readonly links = computed<unknown[]>(() => []);
-  readonly activeSystemId = this._activeSystemId.asReadonly();
+  readonly siteTopology = this._siteTopology.asReadonly();
+  readonly boards = this._boards.asReadonly();
+  readonly activeControllerId = this._activeControllerId.asReadonly();
   readonly dirty = this._dirty.asReadonly();
-  readonly dirtySystemIds = this._dirtySystemIds.asReadonly();
+  readonly dirtyControllerIds = this._dirtyControllerIds.asReadonly();
   readonly loading = this._loading.asReadonly();
 
-  // --- Active system computed signals ---
+  // --- Active controller computed signals ---
 
   readonly activeTopology = computed<SystemTopology | null>(() => {
-    const id = this._activeSystemId();
-    if (!id) return null;
-    return this._systems().get(id)?.topology ?? null;
-  });
+    const topology = this._siteTopology();
+    const cid = this._activeControllerId();
+    if (!topology || !cid) return null;
 
-  readonly activeBoard = computed<BoardDef | null>(() => {
-    const id = this._activeSystemId();
-    if (!id) return null;
-    return this._systems().get(id)?.board ?? null;
-  });
+    const controller = topology.controllers.find(c => c.id === cid);
+    if (!controller) return null;
 
-  // --- All nodes across all systems (for ID generation) ---
-
-  readonly allNodes = computed<TopologyNode[]>(() => {
-    const result: TopologyNode[] = [];
-    for (const [, { topology }] of this._systems()) {
-      result.push(...topology.nodes);
-    }
-    return result;
-  });
-
-  // --- Composite topology (flat merge for canvas rendering) ---
-
-  readonly compositeTopology = computed<SystemTopology | null>(() => {
-    const site = this._site();
-    const systems = this._systems();
-    if (!site || systems.size === 0) return null;
-
-    const allNodes: TopologyNode[] = [];
-    const allPipes: PipeSegment[] = [];
-
-    // Build interconnect connection map: "systemId/nodeId" → { label, dir }
-    const links: any[] = [];
-    const interconnectConn = new Map<string, { label: string; dir: 'out' | 'in' }>();
-    for (const link of links) {
-      const toName = systems.get(link.toSystem)?.topology.device.friendly_name ?? link.toSystem;
-      const fromName = systems.get(link.fromSystem)?.topology.device.friendly_name ?? link.fromSystem;
-      interconnectConn.set(`${link.fromSystem}/${link.fromNode}`, { label: toName, dir: 'out' });
-      interconnectConn.set(`${link.toSystem}/${link.toNode}`, { label: fromName, dir: 'in' });
-    }
-
-    // Compute non-overlapping vertical layout from actual node bounding boxes
-    // Gap = boundary padding (top + bottom) + label height + visual breathing room
-    const SYSTEM_GAP = 30 * 2 + 24 + 20; // BOUNDARY_PADDING*2 + LABEL_HEIGHT + spacing
-    let nextY = 0;
-    const systemOffsets = new Map<string, { x: number; y: number }>();
-
-    for (const [systemId, { topology }] of systems) {
-      if (topology.nodes.length === 0) {
-        systemOffsets.set(systemId, { x: 0, y: nextY });
-        nextY += SYSTEM_GAP;
-        continue;
-      }
-
-      // Find bounding box of nodes within this system
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (const node of topology.nodes) {
-        minX = Math.min(minX, node.position.x);
-        minY = Math.min(minY, node.position.y);
-        maxX = Math.max(maxX, node.position.x + 120); // approximate node width
-        maxY = Math.max(maxY, node.position.y + 60);  // approximate node height
-      }
-
-      // Offset so system's top-left starts at (0, nextY), normalized
-      const offsetX = -minX;
-      const offsetY = nextY - minY;
-      systemOffsets.set(systemId, { x: offsetX, y: offsetY });
-      nextY += (maxY - minY) + SYSTEM_GAP;
-    }
-
-    for (const [systemId, { topology }] of systems) {
-      const offset = systemOffsets.get(systemId)!;
-      for (const node of topology.nodes) {
-        const nsId = `${systemId}/${node.id}`;
-        allNodes.push({
-          ...node,
-          id: nsId,
-          position: {
-            x: node.position.x + offset.x,
-            y: node.position.y + offset.y,
-          },
-        });
-      }
-      for (const pipe of topology.pipes) {
-        const [fromNode, fromPort] = pipe.from.split(':');
-        const [toNode, toPort] = pipe.to.split(':');
-        allPipes.push({
-          id: `${systemId}/${pipe.id}`,
-          from: `${systemId}/${fromNode}:${fromPort}`,
-          to: `${systemId}/${toNode}:${toPort}`,
-        });
-      }
-    }
-
-    // Add inter-system links as pipes
-    for (const link of links) {
-      allPipes.push({
-        id: `link-${link.id}`,
-        from: `${link.fromSystem}/${link.fromNode}:${link.fromPort}`,
-        to: `${link.toSystem}/${link.toNode}:${link.toPort}`,
-      });
-    }
-
+    // Show ALL nodes and ALL pipes — the editor is a flat topology view.
+    // activeControllerId is a UI selection, not a filter.
     return {
-      schema: 14,
-      device: { name: 'composite', friendly_name: 'Site', board: '' },
-      nodes: allNodes,
-      pipes: allPipes,
-      route_overrides: {},
-      timing: {
-        valve_travel_time: 0,
-        flow_watchdog: 0,
-        flow_confirm: 0,
-        flow_threshold: 0,
-        api_watchdog: 0,
-        update_interval: 0,
+      schema: 16,
+      device: {
+        name: slug(controller.friendlyName ?? controller.id),
+        friendly_name: controller.friendlyName ?? controller.id,
+        board: controller.board,
+        directory: controller.directory,
+        network: controller.network,
+        uart_buses: controller.uart_buses,
+        io_providers: controller.io_providers,
       },
-      automations: [],
+      nodes: topology.nodes,
+      pipes: topology.pipes,
+      route_overrides: topology.route_overrides,
+      timing: topology.timing,
+      automations: topology.automations,
+      remoteImports: topology.remoteImports,
     };
   });
 
-  // --- Composite graph (for cross-system route derivation) ---
-
-  readonly compositeGraph = computed<TopologyGraph | null>(() => {
-    const topo = this.compositeTopology();
-    if (!topo) return null;
-    return buildGraph(topo.nodes, topo.pipes);
+  readonly activeBoard = computed<BoardDef | null>(() => {
+    const cid = this._activeControllerId();
+    if (!cid) return null;
+    return this._boards().get(cid) ?? null;
   });
 
-  readonly compositeRoutes = computed<Route[]>(() => {
-    const graph = this.compositeGraph();
+  // --- All nodes across all controllers (for ID generation) ---
+
+  readonly allNodes = computed<TopologyNode[]>(() => {
+    return this._siteTopology()?.nodes ?? [];
+  });
+
+  // --- Flat graph (site-wide) ---
+
+  readonly siteGraph = computed<TopologyGraph | null>(() => {
+    const topology = this._siteTopology();
+    if (!topology) return null;
+    return buildGraph(topology.nodes, topology.pipes);
+  });
+
+  readonly siteRoutes = computed<Route[]>(() => {
+    const graph = this.siteGraph();
     if (!graph) return [];
     return deriveRoutes(activeGraph(graph));
   });
 
-  // TODO(anchor-mesh): boundaryPorts removed; return empty for UI compat
-  readonly boundaryPortsBySystem = computed<Map<string, any[]>>(() => new Map());
+  // --- Controller-level filtered routes ---
 
-  // TODO(anchor-mesh): links removed in SiteTopology
-  readonly brokenLinks = computed<unknown[]>(() => []);
-
-  // TODO(anchor-mesh): interconnect nodes removed in SiteTopology
-  readonly unlinkedInterconnects = computed<Array<{ systemId: string; nodeId: string; nodeName: string }>>(() => []);
+  readonly activeControllerRoutes = computed<Route[]>(() => {
+    const cid = this._activeControllerId();
+    if (!cid) return [];
+    return this.siteRoutes().filter(r => {
+      if (!r.valid) return false;
+      const flowNode = this._siteTopology()?.nodes.find(n => n.id === r.flowSensors[0]);
+      return flowNode && flowNode.anchorId === cid;
+    });
+  });
 
   constructor(private electron: ElectronService) {}
 
@@ -192,24 +113,48 @@ export class WorkspaceService {
       const payload = await this.electron.siteLoad(siteId);
       this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName });
 
-      const systems = new Map<string, { topology: SystemTopology; board: BoardDef }>();
+      if (payload.topology) {
+        let topology = payload.topology as SiteTopology;
 
-      for (const sp of payload.systems) {
-        try {
-          // Reconstruct full topology from stored parts
-          const topology = this.reconstructTopology(sp);
-
-          const boardResult = await this.electron.boardLoad(sp.board);
-          const board = boardResult.board as BoardDef;
-
-          systems.set(sp.id, { topology, board });
-        } catch (err) {
-          // Skip systems with broken board references
-          console.error(`[Workspace] Failed to load system "${sp.id}":`, err);
+        // v15 → v16 migration: auto-derive remoteImports from routes
+        if (!topology.remoteImports) {
+          topology = this.migrateV15ToV16(topology);
+          this._dirty.set(true);
         }
+
+        this._siteTopology.set(topology);
+
+        // Load boards for each controller
+        const boards = new Map<string, BoardDef>();
+        for (const ctrl of topology.controllers) {
+          try {
+            const boardResult = await this.electron.boardLoad(ctrl.board);
+            boards.set(ctrl.id, boardResult.board as BoardDef);
+          } catch (err) {
+            console.error(`[Workspace] Failed to load board "${ctrl.board}" for controller "${ctrl.id}":`, err);
+          }
+        }
+        this._boards.set(boards);
+      } else {
+        this._siteTopology.set({
+          schema: 16,
+          controllers: [],
+          nodes: [],
+          pipes: [],
+          route_overrides: {},
+          timing: {
+            valve_travel_time: 15,
+            flow_watchdog: 30,
+            flow_confirm: 10,
+            flow_threshold: 0.5,
+            api_watchdog: 60,
+            update_interval: 30,
+          },
+          automations: [],
+          remoteImports: [],
+        });
       }
 
-      this._systems.set(systems);
       this._dirty.set(false);
     } finally {
       this._loading.set(false);
@@ -218,52 +163,234 @@ export class WorkspaceService {
 
   // --- Focus ---
 
-  focusSystem(systemId: string): void {
-    this._activeSystemId.set(systemId);
+  focusController(controllerId: string): void {
+    this._activeControllerId.set(controllerId);
   }
 
-  unfocusSystem(): void {
-    this._activeSystemId.set(null);
+  unfocusController(): void {
+    this._activeControllerId.set(null);
+  }
+
+  // --- Controller topology projection (for any controller, not just active) ---
+
+  controllerTopology(controllerId: string): SystemTopology | null {
+    const topology = this._siteTopology();
+    if (!topology) return null;
+
+    const controller = topology.controllers.find(c => c.id === controllerId);
+    if (!controller) return null;
+
+    const nodes = topology.nodes.filter(n => n.anchorId === controllerId);
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const pipes = topology.pipes.filter(p => {
+      const fromNode = p.from.split(':')[0];
+      const toNode = p.to.split(':')[0];
+      return nodeIds.has(fromNode) && nodeIds.has(toNode);
+    });
+
+    return {
+      schema: 16,
+      device: {
+        name: slug(controller.friendlyName ?? controller.id),
+        friendly_name: controller.friendlyName ?? controller.id,
+        board: controller.board,
+        directory: controller.directory,
+        network: controller.network,
+        uart_buses: controller.uart_buses,
+        io_providers: controller.io_providers,
+      },
+      nodes,
+      pipes,
+      route_overrides: topology.route_overrides,
+      timing: topology.timing,
+      automations: topology.automations,
+      remoteImports: topology.remoteImports,
+    };
   }
 
   // --- Topology mutations ---
 
+  updateControllerTopology(controllerId: string, updater: (t: SystemTopology) => void): void {
+    const topology = this._siteTopology();
+    if (!topology) return;
+
+    const controller = topology.controllers.find(c => c.id === controllerId);
+    if (!controller) return;
+
+    const clone = structuredClone(topology);
+    const ctrlClone = clone.controllers.find(c => c.id === controllerId);
+    if (!ctrlClone) return;
+
+    const nodeIds = new Set(clone.nodes.filter(n => n.anchorId === controllerId).map(n => n.id));
+    const activeTopo: SystemTopology = {
+      schema: 16,
+      device: {
+        name: slug(ctrlClone.friendlyName ?? ctrlClone.id),
+        friendly_name: ctrlClone.friendlyName ?? ctrlClone.id,
+        board: ctrlClone.board,
+        directory: ctrlClone.directory,
+        network: ctrlClone.network,
+        uart_buses: ctrlClone.uart_buses,
+        io_providers: ctrlClone.io_providers,
+      },
+      nodes: clone.nodes.filter(n => n.anchorId === controllerId),
+      pipes: clone.pipes.filter(p => {
+        const fromNode = p.from.split(':')[0];
+        const toNode = p.to.split(':')[0];
+        return nodeIds.has(fromNode) && nodeIds.has(toNode);
+      }),
+      route_overrides: clone.route_overrides,
+      timing: clone.timing,
+      automations: clone.automations,
+      remoteImports: clone.remoteImports,
+    };
+
+    updater(activeTopo);
+
+    ctrlClone.friendlyName = activeTopo.device.friendly_name;
+    ctrlClone.board = activeTopo.device.board;
+    ctrlClone.directory = activeTopo.device.directory;
+    ctrlClone.network = activeTopo.device.network;
+    ctrlClone.uart_buses = activeTopo.device.uart_buses;
+    ctrlClone.io_providers = activeTopo.device.io_providers;
+
+    clone.nodes = [
+      ...clone.nodes.filter(n => n.anchorId !== controllerId),
+      ...activeTopo.nodes.map(n => ({ ...n, anchorId: controllerId })),
+    ];
+
+    clone.pipes = [
+      ...clone.pipes.filter(p => {
+        const fromNode = p.from.split(':')[0];
+        const toNode = p.to.split(':')[0];
+        const fromAnchor = clone.nodes.find(n => n.id === fromNode)?.anchorId;
+        const toAnchor = clone.nodes.find(n => n.id === toNode)?.anchorId;
+        return !(fromAnchor === controllerId && toAnchor === controllerId);
+      }),
+      ...activeTopo.pipes,
+    ];
+
+    clone.route_overrides = activeTopo.route_overrides;
+    clone.timing = activeTopo.timing;
+    clone.automations = activeTopo.automations;
+
+    this._siteTopology.set(clone);
+    this._dirtyControllerIds.update(s => new Set(s).add(controllerId));
+    this._dirty.set(true);
+  }
+
   updateActiveTopology(updater: (t: SystemTopology) => void): void {
-    const id = this._activeSystemId();
-    if (!id) return;
-    this.updateSystemTopology(id, updater);
+    const topology = this._siteTopology();
+    const cid = this._activeControllerId();
+    if (!topology || !cid) return;
+
+    const clone = structuredClone(topology);
+    const controller = clone.controllers.find(c => c.id === cid);
+    if (!controller) return;
+
+    // Pass the FULL topology to the updater — no filtering.
+    const fullTopo: SystemTopology = {
+      schema: 16,
+      device: {
+        name: slug(controller.friendlyName ?? controller.id),
+        friendly_name: controller.friendlyName ?? controller.id,
+        board: controller.board,
+        directory: controller.directory,
+        network: controller.network,
+        uart_buses: controller.uart_buses,
+        io_providers: controller.io_providers,
+      },
+      nodes: clone.nodes,
+      pipes: clone.pipes,
+      route_overrides: clone.route_overrides,
+      timing: clone.timing,
+      automations: clone.automations,
+      remoteImports: clone.remoteImports,
+    };
+
+    updater(fullTopo);
+
+    // Write controller-level fields back
+    controller.friendlyName = fullTopo.device.friendly_name;
+    controller.board = fullTopo.device.board;
+    controller.directory = fullTopo.device.directory;
+    controller.network = fullTopo.device.network;
+    controller.uart_buses = fullTopo.device.uart_buses;
+    controller.io_providers = fullTopo.device.io_providers;
+
+    // Replace everything — updater saw the full topology
+    clone.nodes = fullTopo.nodes;
+    clone.pipes = fullTopo.pipes;
+    clone.route_overrides = fullTopo.route_overrides;
+    clone.timing = fullTopo.timing;
+    clone.automations = fullTopo.automations;
+
+    this._siteTopology.set(clone);
+    this._dirtyControllerIds.update(s => new Set(s).add(cid));
+    this._dirty.set(true);
   }
 
-  /** Atomically swap the board for the active system, updating both the BoardDef and topology.device.board. */
+  /** Atomically swap the board for the active controller. */
   changeActiveBoard(board: BoardDef): void {
-    const id = this._activeSystemId();
-    if (!id) return;
-    const systems = this._systems();
-    const entry = systems.get(id);
-    if (!entry) return;
-    const clone = structuredClone(entry.topology);
-    clone.device.board = board.model;
-    const newSystems = new Map(systems);
-    newSystems.set(id, { topology: clone, board });
-    this._systems.set(newSystems);
-    this._dirtySystemIds.update(s => new Set(s).add(id));
+    const topology = this._siteTopology();
+    const cid = this._activeControllerId();
+    if (!topology || !cid) return;
+
+    const clone = structuredClone(topology);
+    const controller = clone.controllers.find(c => c.id === cid);
+    if (!controller) return;
+    controller.board = board.model;
+
+    const boards = new Map(this._boards());
+    boards.set(cid, board);
+
+    this._siteTopology.set(clone);
+    this._boards.set(boards);
+    this._dirtyControllerIds.update(s => new Set(s).add(cid));
     this._dirty.set(true);
   }
 
-  updateSystemTopology(systemId: string, updater: (t: SystemTopology) => void): void {
-    const systems = this._systems();
-    const entry = systems.get(systemId);
-    if (!entry) return;
-    const clone = structuredClone(entry.topology);
-    updater(clone);
-    const newSystems = new Map(systems);
-    newSystems.set(systemId, { topology: clone, board: entry.board });
-    this._systems.set(newSystems);
-    this._dirtySystemIds.update(s => new Set(s).add(systemId));
-    this._dirty.set(true);
+  // --- Migration ---
+
+  private migrateV15ToV16(topology: SiteTopology): SiteTopology {
+    const migrated: SiteTopology = {
+      ...topology,
+      schema: 16,
+      remoteImports: [],
+    };
+
+    // Auto-derive remoteImports from route analysis.
+    // For each controller, for each route it owns, import every remote node.
+    const graph = buildGraph(topology.nodes, topology.pipes);
+    const active = activeGraph(graph);
+    const allRoutes = deriveRoutes(active);
+
+    for (const controller of topology.controllers) {
+      const controllerRoutes = allRoutes.filter(r => {
+        if (!r.valid) return false;
+        const flowNode = topology.nodes.find(n => n.id === r.flowSensors[0]);
+        return flowNode && flowNode.anchorId === controller.id;
+      });
+
+      for (const route of controllerRoutes) {
+        for (const nodeId of route.nodeSequence) {
+          const node = topology.nodes.find(n => n.id === nodeId);
+          if (!node) continue;
+          if (node.anchorId === controller.id) continue;
+          const exists = migrated.remoteImports.some(
+            ri => ri.controllerId === controller.id && ri.nodeId === nodeId,
+          );
+          if (!exists) {
+            migrated.remoteImports.push({ controllerId: controller.id, nodeId });
+          }
+        }
+      }
+    }
+
+    return migrated;
   }
 
-  // --- Site metadata mutations ---
+  // --- Site metadata migrations ---
 
   updateSiteName(friendlyName: string): void {
     const site = this._site();
@@ -272,46 +399,105 @@ export class WorkspaceService {
     this._dirty.set(true);
   }
 
-  // --- Link mutations ---
+  // --- Controller management ---
 
-  // TODO(anchor-mesh): links removed in SiteTopology; keep no-op for UI compat
-  addLink(link: any): void {
-    this._dirty.set(true);
-  }
-
-  removeLink(linkId: string): void {
-    this._dirty.set(true);
-  }
-
-  // --- System management ---
-
-  async addSystemFromTemplate(templateName: string): Promise<string> {
+  async addControllerFromTemplate(templateName: string): Promise<string> {
     const site = this._site();
     if (!site) throw new Error('No site loaded');
 
-    const systemPayload = await this.electron.systemAddFromTemplate(site.id, templateName);
+    const controller = await this.electron.systemAddFromTemplate(site.id, templateName);
 
-    // Load board for the new system
-    const boardResult = await this.electron.boardLoad(systemPayload.board);
+    // Load board for the new controller
+    const boardResult = await this.electron.boardLoad(controller.board);
     const board = boardResult.board as BoardDef;
-    const topology = this.reconstructTopology(systemPayload);
 
-    const newSystems = new Map(this._systems());
-    newSystems.set(systemPayload.id, { topology, board });
-    this._systems.set(newSystems);
-    this._dirtySystemIds.update(s => new Set(s).add(systemPayload.id));
+    const topology = this._siteTopology();
+    if (topology) {
+      const clone = structuredClone(topology);
+      clone.controllers.push(controller as Controller);
+      this._siteTopology.set(clone);
+    }
+
+    const boards = new Map(this._boards());
+    boards.set(controller.id, board);
+    this._boards.set(boards);
+
+    this._dirtyControllerIds.update(s => new Set(s).add(controller.id));
     this._dirty.set(true);
 
-    return systemPayload.id;
+    return controller.id;
   }
 
-  removeSystem(systemId: string): void {
-    const systems = new Map(this._systems());
-    systems.delete(systemId);
-    this._systems.set(systems);
+  async addBlankController(friendlyName: string, boardModel: string): Promise<string> {
+    const site = this._site();
+    if (!site) throw new Error('No site loaded');
 
-    this._dirtySystemIds.update(s => { const n = new Set(s); n.delete(systemId); return n; });
+    const controller = await this.electron.systemCreateBlank(site.id, friendlyName, boardModel);
 
+    // Load board for the new controller
+    const boardResult = await this.electron.boardLoad(controller.board);
+    const board = boardResult.board as BoardDef;
+
+    const topology = this._siteTopology();
+    if (topology) {
+      const clone = structuredClone(topology);
+      clone.controllers.push(controller as Controller);
+      this._siteTopology.set(clone);
+    }
+
+    const boards = new Map(this._boards());
+    boards.set(controller.id, board);
+    this._boards.set(boards);
+
+    this._dirtyControllerIds.update(s => new Set(s).add(controller.id));
+    this._dirty.set(true);
+
+    return controller.id;
+  }
+
+  removeController(controllerId: string): void {
+    const topology = this._siteTopology();
+    if (!topology) return;
+
+    const clone = structuredClone(topology);
+    clone.controllers = clone.controllers.filter(c => c.id !== controllerId);
+    clone.nodes = clone.nodes.filter(n => n.anchorId !== controllerId);
+
+    // Remove pipes that reference removed nodes
+    const removedNodeIds = new Set(
+      topology.nodes.filter(n => n.anchorId === controllerId).map(n => n.id)
+    );
+    clone.pipes = clone.pipes.filter(p => {
+      const fromNode = p.from.split(':')[0];
+      const toNode = p.to.split(':')[0];
+      return !removedNodeIds.has(fromNode) && !removedNodeIds.has(toNode);
+    });
+
+    // Clean up route_overrides for removed nodes
+    if (clone.route_overrides) {
+      clone.route_overrides = Object.fromEntries(
+        Object.entries(clone.route_overrides).filter(([key]) => !removedNodeIds.has(key))
+      );
+    }
+
+    // Clean up automations referencing removed nodes
+    clone.automations = clone.automations.filter((a: any) => {
+      if (a.route && removedNodeIds.has(a.route)) return false;
+      if (a.nodes && a.nodes.some((id: string) => removedNodeIds.has(id))) return false;
+      return true;
+    });
+
+    const boards = new Map(this._boards());
+    boards.delete(controllerId);
+
+    this._siteTopology.set(clone);
+    this._boards.set(boards);
+
+    if (this._activeControllerId() === controllerId) {
+      this._activeControllerId.set(null);
+    }
+
+    this._dirtyControllerIds.update(s => { const n = new Set(s); n.delete(controllerId); return n; });
     this._dirty.set(true);
   }
 
@@ -331,12 +517,11 @@ export class WorkspaceService {
   }
 
   nextPipeId(): string {
+    const topology = this._siteTopology();
     let max = 0;
-    for (const [, { topology }] of this._systems()) {
-      for (const p of topology.pipes) {
-        const m = p.id.match(/^pipe(\d+)$/);
-        if (m) max = Math.max(max, parseInt(m[1], 10));
-      }
+    for (const p of topology?.pipes ?? []) {
+      const m = p.id.match(/^pipe(\d+)$/);
+      if (m) max = Math.max(max, parseInt(m[1], 10));
     }
     return `pipe${max + 1}`;
   }
@@ -345,85 +530,28 @@ export class WorkspaceService {
 
   async save(): Promise<void> {
     const site = this._site();
-    if (!site) return;
+    const topology = this._siteTopology();
+    if (!site || !topology) return;
 
-    const systemPayloads: SystemPayload[] = [];
-    for (const [systemId, { topology }] of this._systems()) {
-      systemPayloads.push({
-        id: systemId,
-        friendlyName: topology.device.friendly_name,
-        board: topology.device.board,
-        directory: topology.device.directory ?? null,
-        topology: {
-          nodes: topology.nodes as unknown[],
-          pipes: topology.pipes as unknown[],
-          route_overrides: topology.route_overrides as Record<string, unknown>,
-          timing: topology.timing as unknown,
-          automations: topology.automations as unknown[],
-          uart_buses: topology.device.uart_buses as unknown[] | undefined,
-          io_providers: topology.device.io_providers as unknown[] | undefined,
-          network: topology.device.network as unknown,
-        },
-        deviceName: topology.device.name,
-      });
-    }
-
-    const payload: any = {
+    const payload: SiteSavePayload = {
       site: { id: site.id, friendlyName: site.friendlyName },
-      systems: systemPayloads,
-      links: [],
+      topology,
     };
 
     await this.electron.siteSave(payload);
     this._dirty.set(false);
-    this._dirtySystemIds.set(new Set());
+    this._dirtyControllerIds.set(new Set());
   }
 
   // --- Clear ---
 
   clear(): void {
     this._site.set(null);
-    this._systems.set(new Map());
-    this._activeSystemId.set(null);
-    this._dirtySystemIds.set(new Set());
+    this._siteTopology.set(null);
+    this._boards.set(new Map());
+    this._activeControllerId.set(null);
+    this._dirtyControllerIds.set(new Set());
     this._dirty.set(false);
     this._loading.set(false);
-  }
-
-  // --- Helpers ---
-
-  private reconstructTopology(sp: SystemPayload): any {
-    const topo = sp.topology as Record<string, unknown>;
-    const parsed = parseTopology({
-      schema: 14,
-      device: {
-        name: sp.deviceName || sp.id,
-        friendly_name: sp.friendlyName,
-        board: sp.board,
-        directory: sp.directory ?? undefined,
-        uart_buses: topo['uart_buses'],
-        io_providers: topo['io_providers'],
-        network: topo['network'],
-      },
-      nodes: topo['nodes'],
-      pipes: topo['pipes'],
-      route_overrides: topo['route_overrides'],
-      timing: topo['timing'],
-      automations: topo['automations'],
-    });
-    // Frontend still expects legacy SystemTopology shape with `device` field.
-    // Add it back for compatibility during the anchor-mesh transition.
-    return {
-      ...parsed,
-      device: {
-        name: sp.deviceName || sp.id,
-        friendly_name: sp.friendlyName,
-        board: sp.board,
-        directory: sp.directory ?? undefined,
-        uart_buses: topo['uart_buses'],
-        io_providers: topo['io_providers'],
-        network: topo['network'],
-      },
-    };
   }
 }

@@ -10,7 +10,7 @@ import { Snapline } from '@antv/x6-plugin-snapline';
 import type { Node, Edge as X6Edge } from '@antv/x6';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import { UI_COLORS } from '../../../core/models/colors.model';
-import type { SystemTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
+import type { RenderableTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
 import type { TopologyGraph } from '../shared/derive-routes';
 import { pipesFromSource, pipesToDestination, connectedPipes, deriveHaEntityId } from '@far-mon/core';
@@ -71,6 +71,11 @@ export class X6Canvas {
   get graphInstance(): Graph { return this.graph; }
   private history: History;
   private events: CanvasEvents;
+
+  /** Active controller for remote-node styling. */
+  activeControllerId?: string;
+  /** Map of nodeId → count of other controllers importing this node. Used for canvas badges. */
+  nodeImportCounts?: Map<string, number>;
 
   private nodeIds = new Set<string>();
   private positionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -137,7 +142,7 @@ export class X6Canvas {
   }
 
   /** Incrementally reconcile the graph with the topology. */
-  render(topology: SystemTopology): void {
+  render(topology: RenderableTopology): void {
     this.rendering = true;
     this.nodeIds.clear();
 
@@ -155,8 +160,8 @@ export class X6Canvas {
     const entityById = new Map<string, string>();
     for (const n of topology.nodes) {
       const desc = NODE_REGISTRY.get(n.kind);
-      if (desc?.haDomain) {
-        entityById.set(n.id, deriveHaEntityId(desc.haDomain, topology.device, (n as { name: string }).name));
+      if (topology.device && desc?.haDomain) {
+        entityById.set(n.id, deriveHaEntityId(desc.haDomain, topology.device, n.name));
       }
     }
     for (const pipe of topology.pipes) {
@@ -228,7 +233,7 @@ export class X6Canvas {
   }
 
   /** Full reset — used only for initial load. */
-  reset(topology: SystemTopology): void {
+  reset(topology: RenderableTopology): void {
     this.graph.clearCells();
     this.render(topology);
     this.fitContent();
@@ -473,7 +478,8 @@ export class X6Canvas {
       }
       return { id: p.id, group };
     });
-    return buildNodeConfig(desc, node.id, extractNodeData(node), node.position.x, node.position.y, ports);
+    const importCount = this.nodeImportCounts?.get(node.id);
+    return buildNodeConfig(desc, node.id, extractNodeData(node), node.position.x, node.position.y, ports, this.activeControllerId, importCount);
   }
 
   private toEdgeConfig(pipe: PipeSegment, entityById?: Map<string, string>): X6Edge.Metadata | null {

@@ -21,6 +21,8 @@ export type ManifestNode = Record<string, any> & {
   kind: string;
   id: string;
   anchorId: string;
+  /** HA entity_id for remote reads — set when this node's value lives on another controller. */
+  remoteHaEntityId?: string;
 };
 
 
@@ -36,6 +38,8 @@ export interface ManifestAutomation {
 }
 
 export interface Manifest {
+  /** The controller ID this manifest was built for (set by topologyToManifestForController). */
+  controllerId?: string;
   device: Device;
   nodes: ManifestNode[];
   routes: Route[];

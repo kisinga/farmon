@@ -20,7 +20,7 @@ export class SystemEditorService {
   // --- Delegated reads from workspace ---
   readonly topology = this.workspace.activeTopology;
   readonly board = this.workspace.activeBoard;
-  readonly systemId = this.workspace.activeSystemId;
+  readonly controllerId = this.workspace.activeControllerId;
 
   readonly dirty = this.workspace.dirty;
 
@@ -174,9 +174,9 @@ export class SystemEditorService {
 
   // --- Actions ---
 
-  /** Focus on a system for editing. Workspace must already have it loaded. */
-  focus(systemId: string, opts?: { readonly?: boolean }): void {
-    this.workspace.focusSystem(systemId);
+  /** Focus on a controller for editing. Workspace must already have it loaded. */
+  focus(controllerId: string, opts?: { readonly?: boolean }): void {
+    this.workspace.focusController(controllerId);
     this._readonly.set(opts?.readonly ?? false);
     this._validation.set(null);
     this._generatedFiles.set(null);
@@ -232,14 +232,14 @@ export class SystemEditorService {
         if (!desc) continue;
         for (const field of desc.sidebarFields) {
           if (field.type !== 'pin') continue;
-          (node as unknown as Record<string, unknown>)[field.key] = '';
+          (node as Record<string, unknown>)[field.key] = '';
         }
       }
     });
   }
 
   clear(): void {
-    this.workspace.unfocusSystem();
+    this.workspace.unfocusController();
     this._readonly.set(false);
     this._validation.set(null);
     this._generatedFiles.set(null);

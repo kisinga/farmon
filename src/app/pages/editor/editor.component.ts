@@ -55,6 +55,7 @@ export class EditorComponent implements OnInit, OnDestroy {
   });
 
   private routerSub: any;
+  private paramSub: any;
 
   constructor() {
     effect(() => {
@@ -66,17 +67,11 @@ export class EditorComponent implements OnInit, OnDestroy {
   private siteName: string | null = null;
 
   async ngOnInit() {
-    const systemId = this.route.snapshot.paramMap.get('config');
     this.siteName = this.route.snapshot.paramMap.get('name');
 
     this.routerSub = this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe((e) => this.currentUrl.set(e.urlAfterRedirects));
-
-    if (!systemId) {
-      this.router.navigate(['/overview']);
-      return;
-    }
 
     const preview = this.route.snapshot.data['preview'] === true;
     this.isPreview.set(preview);
@@ -88,6 +83,18 @@ export class EditorComponent implements OnInit, OnDestroy {
       }
     }
 
+    // Watch for controller changes within the same editor instance
+    this.paramSub = this.route.paramMap.subscribe(async (params) => {
+      const systemId = params.get('config');
+      if (!systemId) {
+        this.router.navigate(['/overview']);
+        return;
+      }
+      await this.focusController(systemId, preview);
+    });
+  }
+
+  private async focusController(systemId: string, preview: boolean) {
     // Focus the system
     this.editor.focus(systemId, { readonly: preview });
 
@@ -101,6 +108,7 @@ export class EditorComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.routerSub?.unsubscribe();
+    this.paramSub?.unsubscribe();
     this.editor.clear();
     this.boards.clear();
   }

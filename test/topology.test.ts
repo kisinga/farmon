@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { TopologySchema, parseTopology, type Topology } from "../electron/lib/topology.js";
-import { topologyToManifest } from "../electron/lib/topology-to-manifest.js";
+import { topologyToManifestForController } from "../electron/lib/topology-to-manifest.js";
 import { nodesByKind } from "../electron/lib/schema.js";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
@@ -35,7 +35,7 @@ function assert(condition: boolean, name: string, detail?: string) {
 console.log("Loading topology config...");
 const raw = parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
 const topology = parseTopology(raw);
-assert(topology.schema === 14, "Schema version is 14");
+assert(topology.schema === 15, "Schema version is 15");
 
 // ---------------------------------------------------------------------------
 // Node structure
@@ -80,7 +80,7 @@ assert(
 // ---------------------------------------------------------------------------
 
 console.log("\nManifest derivation:");
-const manifest = topologyToManifest(topology);
+const manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? 'default');
 
 assert(manifest.device.name === "pump_ctrl", "Device name derived from friendly_name");
 assert(manifest.device.board === "heltec-v3", "Board preserved");
@@ -139,6 +139,7 @@ const topologyWithGravity: Topology = {
       name: "Garden",
       ports: [{ id: "inlet", label: "Inlet", direction: "inlet" as const }],
       position: { x: 800, y: 600 },
+      anchorId: topology.controllers[0]?.id ?? 'default',
     },
     {
       kind: "flow_sensor" as const,
@@ -151,6 +152,7 @@ const topologyWithGravity: Topology = {
         { id: "outlet", label: "Outlet", direction: "outlet" as const },
       ],
       position: { x: 600, y: 600 },
+      anchorId: topology.controllers[0]?.id ?? 'default',
     },
   ],
   pipes: [
@@ -160,7 +162,7 @@ const topologyWithGravity: Topology = {
   ],
 };
 
-const derivedWithGravity = topologyToManifest(topologyWithGravity);
+const derivedWithGravity = topologyToManifestForController(topologyWithGravity, topologyWithGravity.controllers[0]?.id ?? 'default');
 const gravityRoute = derivedWithGravity.routes.find((r) => r.flow_sensor === "flow_gravity");
 assert(!!gravityRoute, "Gravity pipe produces a valid route (has flow sensor)");
 assert(

@@ -46,19 +46,39 @@ export const RouteOverrideSchema = z.object({
 // Topology (top-level document)
 // ---------------------------------------------------------------------------
 
+const RemoteImportSchema = z.object({
+  controllerId: z.string().min(1),
+  nodeId: z.string().min(1),
+});
+
 export const TopologySchema = z.object({
-  schema: z.literal(15),
+  schema: z.literal(16),
   controllers: z.array(z.object({
     id: z.string().min(1),
     board: z.string().min(1),
     friendlyName: z.string().optional(),
+    directory: z.string().optional(),
     network: NetworkConfigSchema.optional(),
+    uart_buses: z.array(z.object({
+      id: z.string().min(1),
+      tx_pin: z.string().min(1),
+      rx_pin: z.string().min(1),
+      de_pin: z.string().optional(),
+      baud_rate: z.number().int().positive(),
+    })).optional(),
+    io_providers: z.array(z.object({
+      id: z.string().min(1),
+      type: z.string().min(1),
+      config: z.record(z.string(), z.unknown()),
+    })).optional(),
   })),
+  // Empty topology is valid for a newly created site before any controller is added.
   nodes: z.array(TopologyNodeSchema),
   pipes: z.array(PipeSegmentSchema).default([]),
   route_overrides: z.record(z.string(), RouteOverrideSchema).default({}),
   timing: TimingSchema.default({}),
   automations: z.array(AutomationSchema).default([]),
+  remoteImports: z.array(RemoteImportSchema).default([]),
 });
 
 // ---------------------------------------------------------------------------
@@ -152,7 +172,7 @@ function migrateLegacyTopology(data: unknown): unknown {
 // Schema-version migration chain
 // ---------------------------------------------------------------------------
 
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 
 type SchemaMigration = (data: Record<string, unknown>) => Record<string, unknown>;
 
@@ -345,13 +365,20 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
       id: controllerId,
       board: device['board'] ?? '',
       friendlyName: device['friendly_name'] as string | undefined,
+      directory: device['directory'] as string | undefined,
       network: device['network'],
+      uart_buses: device['uart_buses'],
+      io_providers: device['io_providers'],
     }];
 
     // Add anchorId to every node
     for (const node of nodes) {
       node['anchorId'] = controllerId;
-      delete node['remote'];
+      if ('remote' in node) {
+        console.warn(`[topology migration] Node "${node['id']}" has remote bindings that are not supported in schema 15. Remote configuration will be removed. ` +
+          `TODO(anchor-mesh): reimplement remote bindings as endpoint HA imports.`);
+        delete node['remote'];
+      }
     }
 
     return data;
@@ -375,6 +402,27 @@ export function migrateTopology(data: unknown): unknown {
     d = SCHEMA_MIGRATIONS[v](d);
     v = versionOf(d, v + 1);
   }
+
+  // Normalise synthetic SystemTopology objects sent by the frontend
+  // compatibility layer (schema 15/16 with `device` but no `controllers`).
+  if ((d['schema'] === 15 || d['schema'] === 16) && d['device'] && !Array.isArray(d['controllers'])) {
+    const device = d['device'] as Record<string, unknown>;
+    const controllerId = (device['name'] as string) ?? 'default';
+    d['controllers'] = [{
+      id: controllerId,
+      board: device['board'] ?? '',
+      friendlyName: device['friendly_name'] as string | undefined,
+      directory: device['directory'] as string | undefined,
+      network: device['network'],
+      uart_buses: device['uart_buses'],
+      io_providers: device['io_providers'],
+    }];
+    for (const node of (d['nodes'] as Array<Record<string, unknown>> ?? [])) {
+      if (!node['anchorId']) node['anchorId'] = controllerId;
+    }
+    delete d['device'];
+  }
+
   return d;
 }
 
@@ -385,7 +433,11 @@ export function migrateTopology(data: unknown): unknown {
  * Applies schema-version migrations and legacy-key cleanup before validation.
  */
 export function parseTopology(data: unknown): SiteTopology {
-  return TopologySchema.parse(migrateLegacyTopology(migrateTopology(data))) as unknown as SiteTopology;
+  // Runtime validation guarantees structural correctness, but Zod can't
+  // precisely infer the discriminated-union type when schemas are pulled
+  // dynamically from NODE_REGISTRY (typed as ZodTypeAny). The cast is safe
+  // because TopologySchema.parse() already validated every field.
+  return TopologySchema.parse(migrateLegacyTopology(migrateTopology(data))) as SiteTopology;
 }
 
 // ---------------------------------------------------------------------------

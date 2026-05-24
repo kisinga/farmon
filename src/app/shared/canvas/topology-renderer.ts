@@ -6,7 +6,8 @@
  * there is no cross-render contamination and only one place knows about the
  * paint-cycle timing.
  */
-import type { SystemTopology, HaMeta } from '@far-mon/core';
+import type { HaMeta, SystemTopology } from '@far-mon/core';
+import type { RenderableTopology } from '../../core/models/topology.model';
 import { NODE_REGISTRY, buildHaMeta } from '@far-mon/core';
 import { X6Canvas, type CanvasEvents } from '../../pages/editor/topology-x6-tab/x6-canvas';
 
@@ -17,7 +18,7 @@ const CANVAS_PADDING = 200;
 const MIN_CANVAS_SIZE = 400;
 
 /** Mutator run after `reset()` has added cells and before SVG is captured. */
-export type TopologyOverlay = (canvas: X6Canvas, topology: SystemTopology) => void;
+export type TopologyOverlay = (canvas: X6Canvas, topology: RenderableTopology) => void;
 
 const NOOP_EVENTS: CanvasEvents = {
   onNodesMoved: () => {},
@@ -46,7 +47,7 @@ export class TopologyRenderer {
    * The canvas is sized to fit the topology's bounding box plus a safety
    * margin, so all cells render without wasting offscreen paint area.
    */
-  async export(topology: SystemTopology, overlays: ReadonlyArray<TopologyOverlay> = []): Promise<string> {
+  async export(topology: RenderableTopology, overlays: ReadonlyArray<TopologyOverlay> = []): Promise<string> {
     const { width, height } = canvasSizeFor(topology);
     this.canvas.resize(width, height);
 
@@ -106,7 +107,7 @@ export class TopologyRenderer {
 function round(n: number): number { return Math.round(n); }
 
 /** Compute hidden-canvas dimensions that contain the topology + margin. */
-function canvasSizeFor(topology: SystemTopology): { width: number; height: number } {
+function canvasSizeFor(topology: RenderableTopology): { width: number; height: number } {
   if (topology.nodes.length === 0) return { width: MIN_CANVAS_SIZE, height: MIN_CANVAS_SIZE };
   let maxX = 0, maxY = 0;
   for (const node of topology.nodes) {

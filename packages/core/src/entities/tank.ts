@@ -5,6 +5,7 @@ import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { HaNodeFields } from '../ha';
+import { homeassistantSensorImport } from '../remote-proxy';
 
 const COLOR = '#14b8a6'; // teal
 const W = 120, H = 70;
@@ -72,6 +73,13 @@ export const tankDescriptor: NodeDescriptor = {
     { key: 'height_m', label: 'Tank height (m)', type: 'number', hint: 'Drives pressure-sensor calibration when a downstream pressure sensor reads this tank.' },
     { key: 'capacity_l', label: 'Tank capacity (L)', type: 'number' },
   ],
+
+  codegen: {
+    remoteProxy: (node, haEntityId) => ({
+      section: 'sensor',
+      yaml: homeassistantSensorImport(node.id, haEntityId),
+    }),
+  },
 
   constraints: [
     { type: 'presence', id: 'tank-downstream-sensor',

@@ -11,6 +11,17 @@ import type {
   NetworkConfig,
 } from '@far-mon/core';
 
+/**
+ * Minimal topology shape needed by the X6 canvas and SVG renderers.
+ * Both `SiteTopology` (schema 16) and `SystemTopology` (deprecated compat)
+ * satisfy this interface, so callers don't need casts.
+ */
+export interface RenderableTopology {
+  nodes: TopologyNode[];
+  pipes: PipeSegment[];
+  device?: { friendly_name: string };
+}
+
 export type {
   Port,
   Position,

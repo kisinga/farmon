@@ -39,6 +39,11 @@ export const routes: Routes = [
         children: [],
       },
       {
+        path: 'remotes',
+        loadComponent: () =>
+          import('./pages/editor/remotes-tab/remotes-tab.component').then((m) => m.RemotesTabComponent),
+      },
+      {
         path: 'config',
         loadComponent: () =>
           import('./pages/editor/config-tab/config-tab.component').then((m) => m.ConfigTabComponent),

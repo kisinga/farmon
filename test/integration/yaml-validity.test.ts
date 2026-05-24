@@ -10,8 +10,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { parse as parseYaml } from 'yaml';
-import { parseTopology, topologyToManifest } from '@far-mon/core';
+import { parse as parseYaml, parseAllDocuments } from 'yaml';
+import { parseTopology, topologyToManifestForController } from '@far-mon/core';
 import { loadBoard } from '../../electron/lib/board.js';
 import { generateAll } from '../../electron/lib/generate.js';
 
@@ -53,7 +53,7 @@ for (const configFile of configFiles) {
   // Load board + run pipeline
   const board = loadBoard(path.join(BOARDS_DIR, boardName));
   const topology = parseTopology(parsed);
-  const manifest = topologyToManifest(topology);
+  const manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? 'default');
   const files = generateAll(manifest, board, 'test-site');
 
   assert(files.length > 0, 'Pipeline produces at least one file');
@@ -68,7 +68,17 @@ for (const configFile of configFiles) {
       const result = parseYaml(file.content);
       assert(result != null && typeof result === 'object', `${short} — valid YAML object`);
     } catch (err: any) {
-      assert(false, `${short} — valid YAML`, err.message);
+      // Some generated files (automations) contain multiple YAML documents.
+      if (err.message?.includes('multiple documents')) {
+        try {
+          const docs = parseAllDocuments(file.content);
+          assert(docs.length > 0 && docs.every(d => d.contents != null), `${short} — valid YAML`);
+        } catch (err2: any) {
+          assert(false, `${short} — valid YAML`, err2.message);
+        }
+      } else {
+        assert(false, `${short} — valid YAML`, err.message);
+      }
     }
   }
 

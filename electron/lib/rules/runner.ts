@@ -111,7 +111,7 @@ export function runTopologyRules(
 
   // Explicit topology rules (if any remain beyond constraints)
   for (const rule of rules) {
-    diagnostics.push(...rule.evaluate(active, routes));
+    diagnostics.push(...rule.evaluate(active, routes, topology));
   }
 
   return toResult(diagnostics);
@@ -163,7 +163,7 @@ export function validateAll(
   const topoDiags: RuleDiagnostic[] = [];
   topoDiags.push(...evaluateConstraints(active, routes));
   for (const rule of topologyRules) {
-    topoDiags.push(...rule.evaluate(active, routes));
+    topoDiags.push(...rule.evaluate(active, routes, topology));
   }
 
   // Layer 2: Manifest + board

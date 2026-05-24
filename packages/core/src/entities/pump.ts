@@ -7,6 +7,7 @@ import type { FlowConstraint } from '../graph/constraints';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
+import { templateSwitchProxy } from '../remote-proxy';
 
 const COLOR = '#dc2626'; // red
 const S = 60;
@@ -146,6 +147,11 @@ ${header}
 
     haEntityIds: (node: PumpNode, device) => ({
       relay: deriveHaEntityId('switch', device, haNames(node).relay),
+    }),
+
+    remoteProxy: (_node, haEntityId) => ({
+      section: 'switch',
+      yaml: templateSwitchProxy(pumpSwitchId(), 'Pump', haEntityId),
     }),
 
   },

@@ -91,6 +91,13 @@ export interface EntityCodegen<T extends Record<string, any> = Record<string, an
     node: T,
     device: { friendly_name: string },
   ) => Record<string, string | undefined>;
+  /**
+   * Remote proxy YAML for nodes with `node.remoteHaEntityId`.
+   * Called by collect.ts instead of local hardware when the node is anchored
+   * to another controller. The descriptor owns the proxy ID convention so
+   * that it matches what routes.ts expects.
+   */
+  remoteProxy?: (node: T, haEntityId: string) => { section: string; yaml: string } | null;
 }
 
 // ---------------------------------------------------------------------------

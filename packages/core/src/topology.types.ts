@@ -144,11 +144,19 @@ export interface Controller {
   id: string;
   board: string;
   friendlyName?: string;
+  directory?: string;
   network?: NetworkConfig;
+  uart_buses?: UartBus[];
+  io_providers?: IoProviderDef[];
+}
+
+export interface RemoteImport {
+  controllerId: string; // consumer controller that is importing
+  nodeId: string;       // node being imported from its host controller
 }
 
 export interface SiteTopology {
-  schema: 15;
+  schema: 16;
   controllers: Controller[];
   nodes: TopologyNode[];
   pipes: PipeSegment[];
@@ -162,11 +170,12 @@ export interface SiteTopology {
     update_interval: number;
   };
   automations: Automation[];
+  remoteImports: RemoteImport[];
 }
 
-/** @deprecated Use SiteTopology. SystemTopology is schema 14 only. */
+/** @deprecated Use SiteTopology. Per-controller projection shape used by frontend editor. */
 export interface SystemTopology {
-  schema: 14;
+  schema: 14 | 15 | 16;
   device: {
     name: string;
     friendly_name: string;
@@ -188,6 +197,7 @@ export interface SystemTopology {
     update_interval: number;
   };
   automations: Automation[];
+  remoteImports: RemoteImport[];
 }
 
 // ---------------------------------------------------------------------------

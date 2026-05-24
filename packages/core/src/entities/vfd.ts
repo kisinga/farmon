@@ -6,6 +6,7 @@ import { UI_COLORS } from '../colors';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
+import { templateSwitchProxy } from '../remote-proxy';
 
 const COLOR = '#7c3aed'; // violet
 const S = 60;
@@ -230,5 +231,10 @@ ${header}
           ? deriveHaEntityId('button', device, n.faultReset) : undefined,
       };
     },
+
+    remoteProxy: (node, haEntityId) => ({
+      section: 'switch',
+      yaml: templateSwitchProxy(pumpSwitchId(), node.name, haEntityId),
+    }),
   },
 };

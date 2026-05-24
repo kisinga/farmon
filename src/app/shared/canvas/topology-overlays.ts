@@ -5,8 +5,7 @@
  * the set they need.
  */
 import type { Graph } from '@antv/x6';
-import type { SiteTopology } from '@far-mon/core';
-import type { SystemTopology } from '../../core/models/topology.model';
+import type { RenderableTopology } from '../../core/models/topology.model';
 import { renderBoundaries } from './boundary-renderer';
 
 /**
@@ -18,7 +17,7 @@ import { renderBoundaries } from './boundary-renderer';
  */
 export function renderCompositeOverlays(
   graph: Graph,
-  topology: SiteTopology | SystemTopology,
+  topology: RenderableTopology,
   ctx: {
     friendlyNames: Map<string, string>;
   },
@@ -38,6 +37,6 @@ export function renderCompositeOverlays(
  * Per-system overlay: no-op in anchor-mesh model.
  * Previously added ghost edges for interconnect nodes.
  */
-export function renderPerSystemOverlays(_graph: Graph, _topology: SiteTopology | SystemTopology): void {
+export function renderPerSystemOverlays(_graph: Graph, _topology: RenderableTopology): void {
   // Anchor mesh: no interconnect ghost edges needed
 }

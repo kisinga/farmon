@@ -12,7 +12,8 @@ import {
 
 // Topology rules — pump-inlet-valve, pump-outlet-ordering, endpoint-flow-warning
 // are now entity-declared constraints (on pump.ts and endpoint.ts descriptors).
-// ALL_TOPOLOGY_RULES is empty unless new non-constraint topology rules are added.
+
+import { unclaimedRouteNodes } from "./topology/unclaimed-route-nodes.js";
 
 // Manifest rules
 import { pinConflicts } from "./manifest/pin-conflicts.js";
@@ -37,7 +38,9 @@ import { remoteNodes } from "./manifest/remote-nodes.js";
 // Entity-specific topology rules are registered on NodeDescriptor.rules
 // and collected by the runner via NODE_REGISTRY. No imports needed here.
 
-export const ALL_TOPOLOGY_RULES: TopologyRule[] = [];
+export const ALL_TOPOLOGY_RULES: TopologyRule[] = [
+  unclaimedRouteNodes,
+];
 
 export const ALL_MANIFEST_RULES: ManifestRule[] = [
   pinConflicts,

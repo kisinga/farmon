@@ -2,6 +2,7 @@ import type { Manifest, ManifestNode, ManifestAutomation, Route as ManifestRoute
 import type { SiteTopology } from "./topology.types";
 import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
 import { resolveTankLevelSources } from "./tank-level";
+import { deriveRemoteHaEntityId } from "./remote-ha-entity";
 import { slug } from "./slug";
 
 // ---------------------------------------------------------------------------
@@ -24,7 +25,7 @@ export function topologyToManifestForController(
     return flowNode && flowNode.anchorId === controllerId;
   });
 
-  // Only nodes that appear in this controller's routes enter the manifest.
+  // Nodes that appear in this controller's routes (for route table generation).
   const routeNodeIds = new Set<string>();
   for (const r of controllerRoutes) {
     for (const id of r.nodeSequence) routeNodeIds.add(id);
@@ -45,9 +46,23 @@ export function topologyToManifestForController(
     topology.nodes.filter(n => n.kind === 'pressure_sensor').map(n => n.id),
   );
 
-  // Strip layout fields, annotate level sources and calibration data.
+  // A node is included in a controller's manifest if it is either anchored
+  // locally OR explicitly imported via a RemoteImport. No auto-inclusion of
+  // route nodes — the consumer must explicitly import what it needs.
+  const claimedNodeIds = new Set(
+    topology.remoteImports
+      .filter(c => c.controllerId === controllerId)
+      .map(c => c.nodeId),
+  );
+  const isLocalNode = (n: typeof topology.nodes[number]) => n.anchorId === controllerId;
+  const isIncludedNode = (n: typeof topology.nodes[number]) => {
+    if (n.disabled) return false;
+    if (isLocalNode(n)) return true;
+    if (claimedNodeIds.has(n.id)) return true;
+    return false;
+  };
   const nodes: ManifestNode[] = topology.nodes
-    .filter(n => routeNodeIds.has(n.id) && !n.disabled)
+    .filter(isIncludedNode)
     .map(({ ports, position, ...data }) => {
       const node = data as ManifestNode;
       if (node.kind === 'tank') {
@@ -63,6 +78,12 @@ export function topologyToManifestForController(
           if (typeof h === 'number') node['tank_height_m'] = h;
           if (typeof c === 'number') node['tank_capacity_l'] = c;
         }
+      }
+      // Derive remote HA entity for nodes whose primary value lives elsewhere
+      const origNode = nodeMap.get(node.id);
+      if (origNode) {
+        const remoteHaEntityId = deriveRemoteHaEntityId(origNode, controllerId, topology, tankLevelSources);
+        if (remoteHaEntityId) node.remoteHaEntityId = remoteHaEntityId;
       }
       return node;
     });
@@ -145,12 +166,15 @@ export function topologyToManifestForController(
   const controller = topology.controllers.find(c => c.id === controllerId);
 
   return {
+    controllerId,
     device: {
-      name: slug(controller?.board ?? controllerId),
-      friendly_name: controllerId,
+      name: slug(controller?.friendlyName ?? controllerId),
+      friendly_name: controller?.friendlyName ?? controllerId,
       board: controller?.board ?? '',
-      directory: undefined,
+      directory: controller?.directory,
       network: controller?.network,
+      uart_buses: controller?.uart_buses,
+      io_providers: controller?.io_providers,
     },
     nodes,
     routes: manifestRoutes,

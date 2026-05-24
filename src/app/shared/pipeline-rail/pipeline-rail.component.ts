@@ -3,11 +3,12 @@ import { Router, RouterLink, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs';
 import { SystemEditorService } from '../../core/services/system-editor.service';
 
-type StepId = 'design' | 'config' | 'automations';
+type StepId = 'design' | 'remotes' | 'config' | 'automations';
 type StepState = 'complete' | 'active' | 'untouched' | 'warning';
 
 const STEPS: { id: StepId; label: string; icon: string }[] = [
   { id: 'design',       label: 'Design',        icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
+  { id: 'remotes',      label: 'Remotes',       icon: 'M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244' },
   { id: 'config',       label: 'Config',        icon: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z' },
   { id: 'automations',  label: 'Automations',   icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
 
@@ -70,7 +71,7 @@ const STEPS: { id: StepId; label: string; icon: string }[] = [
       <!-- Device name + actions -->
       <div class="flex items-center gap-3 shrink-0 px-4 border-l border-base-300/30">
         <span class="text-xs text-base-content/40 font-mono truncate max-w-32 hidden md:inline">
-          {{ editor.systemId() }}
+          {{ editor.controllerId() }}
         </span>
         @if (editor.readonly()) {
           <span class="badge badge-info badge-sm">Preview</span>
@@ -118,6 +119,7 @@ export class PipelineRailComponent implements OnInit, OnDestroy {
 
     const states = new Map<StepId, StepState>();
     states.set('design', (t?.nodes?.length ?? 0) > 0 && (t?.pipes?.length ?? 0) > 0 ? 'complete' : 'untouched');
+    states.set('remotes', (t?.remoteImports?.length ?? 0) > 0 ? 'complete' : 'untouched');
     states.set('config', t?.device?.name && t?.device?.board ? 'complete' : 'untouched');
     states.set('automations', (t?.automations?.length ?? 0) > 0 ? 'complete' : 'untouched');
 

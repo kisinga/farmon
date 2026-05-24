@@ -29,7 +29,7 @@ import type { TemplateListEntry } from '../../core/models/electron-api';
             >{{ site.friendlyName }}</span>
           }
           <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span class="text-xs text-base-content/50">{{ workspace.systems().size }} controller{{ workspace.systems().size !== 1 ? 's' : '' }}</span>
+            <span class="text-xs text-base-content/50">{{ controllerCount() }} controller{{ controllerCount() !== 1 ? 's' : '' }}</span>
             <span class="text-[10px] text-base-content/30">·</span>
             @for (stat of siteStats(); track stat.label) {
               <span class="text-xs text-base-content/40">{{ stat.count }} {{ stat.label }}</span>
@@ -101,13 +101,13 @@ export class SiteRailComponent {
   protected adding = signal(false);
   protected templates = signal<TemplateListEntry[]>([]);
 
+  protected controllerCount = computed(() => this.workspace.siteTopology()?.controllers.length ?? 0);
+
   protected nodeCounts = computed(() => {
     const counts: Record<string, number> = {};
-    for (const [, { topology }] of this.workspace.systems()) {
-      for (const node of topology.nodes ?? []) {
-        const kind = (node as { kind?: string }).kind;
-        if (kind) counts[kind] = (counts[kind] ?? 0) + 1;
-      }
+    for (const node of this.workspace.siteTopology()?.nodes ?? []) {
+      const kind = node.kind;
+      if (kind) counts[kind] = (counts[kind] ?? 0) + 1;
     }
     return counts;
   });
@@ -134,7 +134,7 @@ export class SiteRailComponent {
   protected async addFromTemplate(templateName: string) {
     this.adding.set(true);
     try {
-      await this.workspace.addSystemFromTemplate(templateName);
+      await this.workspace.addControllerFromTemplate(templateName);
       this.showAddSystem.set(false);
     } finally {
       this.adding.set(false);

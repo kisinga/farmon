@@ -12,7 +12,7 @@ export type {
   Automation, AutomationTrigger, UartBus, NetworkConfig, NetworkTransport,
   TankNode, PumpNode, EndpointNode, ValveNode,
   FlowSensorNode, WaterSourceNode, PressureSensorNode, LevelSensorNode, FilterNode, DosingPumpNode, VfdNode,
-  Port, Position, Controller,
+  Port, Position, Controller, RemoteImport,
 } from './topology.types';
 export { effectiveTransport } from './topology.types';
 export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
@@ -84,7 +84,8 @@ export {
 } from './codegen-ids';
 
 // --- Remote Proxy ---
-
+export { homeassistantSensorImport, templateSwitchProxy, templateCoverProxy } from './remote-proxy';
+export { deriveRemoteHaEntityId } from './remote-ha-entity';
 
 // --- I/O Providers ---
 export { createBoardDriver } from './io-providers/board-driver';

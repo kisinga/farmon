@@ -6,6 +6,7 @@ import { UI_COLORS } from '../colors';
 import { flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
+import { homeassistantSensorImport } from '../remote-proxy';
 
 const COLOR = '#16a34a'; // green
 const W = 50, H = 36;
@@ -163,6 +164,11 @@ ${header}
         sensorFault: deriveHaEntityId('binary_sensor', device, n.sensorFault),
       };
     },
+
+    remoteProxy: (node, haEntityId) => ({
+      section: 'sensor',
+      yaml: homeassistantSensorImport(node.id, haEntityId),
+    }),
 
   },
 };

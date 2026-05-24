@@ -14,7 +14,7 @@ import { renderCompositeOverlays } from '../../shared/canvas/topology-overlays';
   standalone: true,
   host: { class: 'flex-1 flex overflow-hidden' },
   template: `
-    <!-- Left pane: system list -->
+    <!-- Left pane: controller list -->
     <div class="w-56 shrink-0 bg-base-100 border-r border-base-300/30 flex flex-col overflow-hidden">
       <div class="px-3 py-2 text-xs font-semibold text-base-content/50 border-b border-base-300/20">Controllers</div>
       <div class="flex-1 overflow-auto">
@@ -26,7 +26,7 @@ import { renderCompositeOverlays } from '../../shared/canvas/topology-overlays';
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
                 <span class="font-medium truncate">{{ entry.friendlyName }}</span>
-                @if (workspace.dirtySystemIds().has(entry.id)) {
+                @if (workspace.dirtyControllerIds().has(entry.id)) {
                   <span class="badge badge-warning badge-xs shrink-0" title="Unsaved changes">modified</span>
                 }
               </div>
@@ -63,39 +63,25 @@ import { renderCompositeOverlays } from '../../shared/canvas/topology-overlays';
         <button class="btn btn-ghost btn-xs btn-square" (click)="zoomOut()" title="Zoom out">&minus;</button>
         <button class="btn btn-ghost btn-xs" (click)="fit()" title="Fit content">Fit</button>
       </div>
-      @if (workspace.unlinkedInterconnects().length > 0) {
-        <div class="alert alert-warning text-xs mx-4 mt-2 py-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <div>
-            <span class="font-medium">Unlinked interconnect{{ workspace.unlinkedInterconnects().length > 1 ? 's' : '' }}:</span>
-            @for (h of workspace.unlinkedInterconnects(); track h.nodeId) {
-              <span class="font-mono">{{ h.nodeName }} ({{ h.systemId }})</span>{{ !$last ? ', ' : '' }}
-            }
-            — open each controller's designer to configure the link.
-          </div>
-        </div>
-      }
       <div class="flex-1 min-h-0 overflow-hidden" #canvasWrap>
         <div #canvasEl class="w-full h-full"></div>
       </div>
     </div>
 
-    <!-- Right pane: derived routes grouped by system -->
+    <!-- Right pane: derived routes grouped by controller -->
     <div class="w-72 shrink-0 bg-base-100 border-l border-base-300/30 flex flex-col overflow-hidden">
       <div class="px-3 py-2 text-xs font-semibold text-base-content/50 border-b border-base-300/20">
-        Routes ({{ workspace.compositeRoutes().length }})
+        Routes ({{ workspace.siteRoutes().length }})
       </div>
       <div class="flex-1 overflow-auto">
-        @for (group of routeGroups(); track group.systemId) {
-          <!-- System group header -->
+        @for (group of routeGroups(); track group.controllerId) {
+          <!-- Controller group header -->
           <div class="px-3 py-1.5 flex items-center gap-2 border-b border-base-300/20 sticky top-0 bg-base-100 z-10">
             <div class="w-2.5 h-2.5 rounded-full shrink-0" [style.backgroundColor]="group.color"></div>
             <span class="text-[11px] font-semibold truncate" [style.color]="group.color">{{ group.friendlyName }}</span>
             <span class="text-[10px] text-base-content/30 ml-auto">{{ group.routes.length }}</span>
           </div>
-          <!-- Routes in this system -->
+          <!-- Routes in this controller -->
           @for (route of group.routes; track route.key) {
             <div class="pl-6 pr-3 py-1.5 text-xs border-b border-base-300/10 hover:bg-base-200/40 transition-colors"
                  [style.borderLeftColor]="group.color"
@@ -105,8 +91,8 @@ import { renderCompositeOverlays } from '../../shared/canvas/topology-overlays';
                 <span class="text-base-content/30">&rsaquo;</span>
                 {{ route.displayDest }}
               </div>
-              @if (route.crossSystem) {
-                <div class="text-[10px] text-base-content/30 italic">via {{ route.destSystem }}</div>
+              @if (route.crossController) {
+                <div class="text-[10px] text-base-content/30 italic">via {{ route.destController }}</div>
               }
               <div class="flex items-center gap-2 mt-0.5 text-[10px] text-base-content/40">
                 <span>{{ route.valveCount }} valve{{ route.valveCount !== 1 ? 's' : '' }}</span>
@@ -120,7 +106,7 @@ import { renderCompositeOverlays } from '../../shared/canvas/topology-overlays';
             </div>
           }
         }
-        @if (workspace.compositeRoutes().length === 0) {
+        @if (workspace.siteRoutes().length === 0) {
           <div class="px-3 py-6 text-xs text-base-content/30 text-center">
             No routes derived yet.
           </div>
@@ -148,55 +134,56 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
 
   protected systemEntries = signal<Array<{ id: string; friendlyName: string; board: string; nodeCount: number }>>([]);
 
-  /** Routes grouped by source system, with boundary colors and clean display names. */
+  /** Routes grouped by source controller, with boundary colors and clean display names. */
   protected routeGroups = computed(() => {
-    const routes = this.workspace.compositeRoutes();
-    const systems = this.workspace.systems();
+    const routes = this.workspace.siteRoutes();
+    const topology = this.workspace.siteTopology();
+    if (!topology) return [];
 
-    // Build system ID → color + friendly name map (same order as boundary renderer)
-    const systemIds = [...systems.keys()];
-    const systemColor = new Map<string, string>();
-    const systemFriendly = new Map<string, string>();
-    systemIds.forEach((id, i) => {
-      systemColor.set(id, BOUNDARY_COLORS[i % BOUNDARY_COLORS.length]);
-      systemFriendly.set(id, systems.get(id)?.topology?.device?.friendly_name ?? id);
+    // Build controller ID → color + friendly name map
+    const controllerIds = topology.controllers.map(c => c.id);
+    const controllerColor = new Map<string, string>();
+    const controllerFriendly = new Map<string, string>();
+    controllerIds.forEach((id, i) => {
+      controllerColor.set(id, BOUNDARY_COLORS[i % BOUNDARY_COLORS.length]);
+      controllerFriendly.set(id, topology.controllers.find(c => c.id === id)?.friendlyName ?? id);
     });
 
-    // Group routes by source system
+    // Group routes by source controller (using anchorId of source node)
     const groups = new Map<string, Array<{
       key: string; displaySource: string; displayDest: string;
-      crossSystem: boolean; destSystem: string;
+      crossController: boolean; destController: string;
       valveCount: number; hasPump: boolean; valid: boolean;
     }>>();
 
     for (const route of routes) {
-      const srcSystem = route.source.split('/')[0];
-      const destSystem = route.destination.split('/')[0];
-      const srcNode = route.source.split('/').slice(1).join('/');
-      const destNode = route.destination.split('/').slice(1).join('/');
+      const srcNode = topology.nodes.find(n => n.id === route.source);
+      const destNode = topology.nodes.find(n => n.id === route.destination);
+      const srcController = srcNode?.anchorId ?? 'unknown';
+      const destController = destNode?.anchorId ?? 'unknown';
 
       const entry = {
         key: route.key,
-        displaySource: srcNode,
-        displayDest: destNode,
-        crossSystem: srcSystem !== destSystem,
-        destSystem: systemFriendly.get(destSystem) ?? destSystem,
+        displaySource: route.source,
+        displayDest: route.destination,
+        crossController: srcController !== destController,
+        destController: controllerFriendly.get(destController) ?? destController,
         valveCount: route.valves.length,
         hasPump: route.crossesPump,
         valid: route.valid,
       };
 
-      const arr = groups.get(srcSystem) ?? [];
+      const arr = groups.get(srcController) ?? [];
       arr.push(entry);
-      groups.set(srcSystem, arr);
+      groups.set(srcController, arr);
     }
 
-    return systemIds
+    return controllerIds
       .filter(id => groups.has(id))
       .map(id => ({
-        systemId: id,
-        friendlyName: systemFriendly.get(id) ?? id,
-        color: systemColor.get(id) ?? '#666',
+        controllerId: id,
+        friendlyName: controllerFriendly.get(id) ?? id,
+        color: controllerColor.get(id) ?? '#666',
         routes: groups.get(id)!,
       }));
   });
@@ -226,15 +213,13 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private updateSystemEntries() {
-    const entries: Array<{ id: string; friendlyName: string; board: string; nodeCount: number }> = [];
-    for (const [id, { topology }] of this.workspace.systems()) {
-      entries.push({
-        id,
-        friendlyName: topology.device.friendly_name,
-        board: topology.device.board,
-        nodeCount: topology.nodes.length,
-      });
-    }
+    const topology = this.workspace.siteTopology();
+    const entries = (topology?.controllers ?? []).map(ctrl => ({
+      id: ctrl.id,
+      friendlyName: ctrl.friendlyName ?? ctrl.id,
+      board: ctrl.board,
+      nodeCount: topology?.nodes.filter(n => n.anchorId === ctrl.id).length ?? 0,
+    }));
     this.systemEntries.set(entries);
   }
 
@@ -242,21 +227,19 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     event.stopPropagation();
     const confirmed = await this.confirmService.confirm({
       title: 'Delete Controller',
-      message: `Delete "${friendlyName}"? All links to/from this controller will also be removed.`,
+      message: `Delete "${friendlyName}"? All pipes to/from this controller will also be removed.`,
     });
     if (!confirmed) return;
-    if (this.workspace.activeSystemId() === systemId) {
-      this.workspace.unfocusSystem();
+    if (this.workspace.activeControllerId() === systemId) {
+      this.workspace.unfocusController();
     }
-    this.workspace.removeSystem(systemId);
+    this.workspace.removeController(systemId);
     this.updateSystemEntries();
   }
 
   protected navigateToSystem(systemId: string) {
     this.router.navigate(['/site', this.siteName, 'system', systemId]);
   }
-
-
 
   private initCanvas() {
     const canvasEl = this.canvasElRef.nativeElement;
@@ -309,15 +292,15 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private renderComposite() {
-    const composite = this.workspace.compositeTopology();
-    if (!this.canvas || !composite || composite.nodes.length === 0) return;
+    const topology = this.workspace.siteTopology();
+    if (!this.canvas || !topology || topology.nodes.length === 0) return;
 
-    this.canvas.reset(composite);
+    this.canvas.reset(topology);
     const friendlyNames = new Map<string, string>();
-    for (const [id, { topology }] of this.workspace.systems()) {
-      friendlyNames.set(id, topology.device.friendly_name ?? id);
+    for (const ctrl of topology.controllers) {
+      friendlyNames.set(ctrl.id, ctrl.friendlyName ?? ctrl.id);
     }
-    renderCompositeOverlays(this.canvas.graphInstance, composite, {
+    renderCompositeOverlays(this.canvas.graphInstance, topology, {
       friendlyNames,
     });
   }

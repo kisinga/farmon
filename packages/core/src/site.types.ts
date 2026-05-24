@@ -26,6 +26,8 @@ export interface StoredSiteTopology {
     id: string;
     board: string;
     network?: NetworkConfig;
+    uart_buses?: unknown[];
+    io_providers?: unknown[];
   }>;
   nodes: TopologyNode[];
   pipes: PipeSegment[];
@@ -47,10 +49,13 @@ export interface StoredSiteTopology {
 
 export interface SiteFullPayload {
   site: SiteMetadata;
-  topology: StoredSiteTopology;
+  topology: StoredSiteTopology | null;
 }
 
-export type SiteSavePayload = SiteFullPayload;
+export type SiteSavePayload = {
+  site: SiteMetadata;
+  topology: StoredSiteTopology;
+};
 
 // ---------------------------------------------------------------------------
 // List entries (for overview)

@@ -37,10 +37,10 @@ export function collectPins(nodes: TopologyNode[]): PinUsage[] {
   for (const node of nodes) {
     const desc = NODE_REGISTRY.get(node.kind);
     if (!desc) continue;
-    const nodeName = ((node as unknown as { name?: string }).name) || node.id;
+    const nodeName = node.name || node.id;
     for (const field of desc.sidebarFields) {
       if (field.type !== 'pin') continue;
-      const nodeRecord = node as unknown as Record<string, unknown>;
+      const nodeRecord = node as Record<string, unknown>;
       const value = nodeRecord[field.key];
       if (typeof value === 'string' && value) {
         let polarity: string | undefined;

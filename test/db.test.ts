@@ -76,7 +76,7 @@ async function main() {
   saveSiteTransaction({
     site: { id: "test-site", friendlyName: "Test Site Updated" },
     topology: {
-      schema: 15,
+      schema: 16,
       controllers: [{ id: "pump-ctrl", board: "heltec-v3" }],
       nodes: [
         { id: "pump1", kind: "pump", anchorId: "pump-ctrl" },
@@ -86,6 +86,7 @@ async function main() {
       route_overrides: {},
       timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 10, flow_threshold: 0.5, api_watchdog: 60, update_interval: 30 },
       automations: [],
+      remoteImports: [],
     },
   });
 
@@ -221,13 +222,14 @@ async function main() {
   saveSiteTransaction({
     site: { id: "settings-cascade", friendlyName: "Cascade Test" },
     topology: {
-      schema: 15,
+      schema: 16,
       controllers: [{ id: "sys1", board: "heltec-v3" }],
       nodes: [],
       pipes: [],
       route_overrides: {},
       timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 10, flow_threshold: 0.5, api_watchdog: 60, update_interval: 30 },
       automations: [],
+      remoteImports: [],
     },
   });
   setSetting("settings-cascade", "sys1", "key1", "val1");

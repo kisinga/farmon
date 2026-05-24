@@ -14,6 +14,7 @@ import {
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
+import { homeassistantSensorImport } from '../remote-proxy';
 import { deriveTankCalibration, recommendSensorMaxPsi } from '../units';
 
 const COLOR = '#8b5cf6'; // violet
@@ -246,6 +247,11 @@ ${header}
         calFull:  deriveHaEntityId('number', device, n.calFull),
       };
     },
+
+    remoteProxy: (node, haEntityId) => ({
+      section: 'sensor',
+      yaml: homeassistantSensorImport(node.id, haEntityId),
+    }),
   },
 
   constraints: [] satisfies FlowConstraint[],

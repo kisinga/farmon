@@ -83,6 +83,8 @@ export function buildNodeConfig(
   x: number,
   y: number,
   ports: PortItem[],
+  activeControllerId?: string,
+  importCount?: number,
 ): Node.Metadata {
   const { width, height } = desc.size;
   return {
@@ -92,7 +94,7 @@ export function buildNodeConfig(
     y,
     width,
     height,
-    imageUrl: svgDataUri(desc.kind, nodeData),
+    imageUrl: svgDataUri(desc.kind, nodeData, activeControllerId, importCount),
     ports: { groups: PORT_GROUPS, items: spacePorts(ports, height) },
     data: { nodeId: id, kind: desc.kind, ...nodeData },
   };

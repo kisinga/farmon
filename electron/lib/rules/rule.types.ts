@@ -1,4 +1,4 @@
-import type { TopologyGraph, Route, RuleDiagnostic, Severity } from '@far-mon/core';
+import type { SiteTopology, TopologyGraph, Route, RuleDiagnostic, Severity } from '@far-mon/core';
 import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 
@@ -8,7 +8,7 @@ export type { Severity, RuleDiagnostic } from '@far-mon/core';
 export interface TopologyRule {
   id: string;
   name: string;
-  evaluate(graph: TopologyGraph, routes: Route[]): RuleDiagnostic[];
+  evaluate(graph: TopologyGraph, routes: Route[], topology?: SiteTopology): RuleDiagnostic[];
 }
 
 /** A rule that validates the flat manifest against the board definition. */

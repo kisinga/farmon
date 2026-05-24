@@ -22,9 +22,8 @@ import type {
   SiteListEntry,
   SiteFullPayload,
   SiteSavePayload,
-  SystemPayload,
+  Controller,
   TemplateListEntry,
-  LegacySiteFullPayload,
 } from '../models/electron-api';
 import type { NetworkConfig } from '@far-mon/core';
 
@@ -42,10 +41,10 @@ export class ElectronService {
   siteList(): Promise<SiteListEntry[]> {
     return this.api?.siteList() ?? Promise.resolve([]);
   }
-  siteLoad(id: string): Promise<LegacySiteFullPayload> {
+  siteLoad(id: string): Promise<SiteFullPayload> {
     return this.invoke(() => this.api!.siteLoad(id));
   }
-  async siteSave(payload: LegacySiteFullPayload): Promise<void> {
+  async siteSave(payload: SiteSavePayload): Promise<void> {
     await this.invoke(() => this.api!.siteSave(payload));
   }
   async siteCreate(id: string, friendlyName: string): Promise<void> {
@@ -69,8 +68,11 @@ export class ElectronService {
   }
 
   // --- Systems ---
-  systemAddFromTemplate(siteId: string, templateName: string): Promise<SystemPayload> {
+  systemAddFromTemplate(siteId: string, templateName: string): Promise<Controller> {
     return this.invoke(() => this.api!.systemAddFromTemplate(siteId, templateName));
+  }
+  systemCreateBlank(siteId: string, friendlyName: string, board: string): Promise<Controller> {
+    return this.invoke(() => this.api!.systemCreateBlank(siteId, friendlyName, board));
   }
   async systemDelete(siteId: string, systemId: string): Promise<void> {
     await this.invoke(() => this.api!.systemDelete(siteId, systemId));
@@ -110,8 +112,8 @@ export class ElectronService {
   generateSiteHA(siteId: string): Promise<import('../models/electron-api').GenerateHAResult> {
     return this.invoke(() => this.api!.codegenGenerateHA(siteId));
   }
-  generateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, systems: unknown[], links: unknown[], routes: unknown[]): Promise<{ html: string; outputPath: string }> {
-    return this.invoke(() => this.api!.codegenGenerateSiteDocs(siteId, compositeSvg, perSystemSvgs, systems, links, routes));
+  generateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, topology: unknown, routes: unknown[]): Promise<{ html: string; outputPath: string }> {
+    return this.invoke(() => this.api!.codegenGenerateSiteDocs(siteId, compositeSvg, perSystemSvgs, topology, routes));
   }
   writeScadaArtifacts(siteId: string, artifacts: Array<{ name: string; svg: string; meta: unknown }>): Promise<{ outputDir: string; files: Array<{ path: string; bytes: number }> }> {
     return this.invoke(() => this.api!.codegenWriteScadaArtifacts(siteId, artifacts));

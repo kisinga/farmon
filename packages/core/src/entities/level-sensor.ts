@@ -7,6 +7,7 @@ import { levelSensorLevelId, levelSensorRawVoltageId, levelSensorCalEmptyId, lev
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import type { FlowConstraint } from '../graph/constraints';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
+import { homeassistantSensorImport } from '../remote-proxy';
 
 const COLOR = '#0ea5e9'; // sky blue
 const W = 50, H = 36;
@@ -171,6 +172,11 @@ ${header}
         calFull:    deriveHaEntityId('number', device, n.calFull),
       };
     },
+
+    remoteProxy: (node, haEntityId) => ({
+      section: 'sensor',
+      yaml: homeassistantSensorImport(node.id, haEntityId),
+    }),
 
   },
 

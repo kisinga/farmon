@@ -47,14 +47,14 @@ export class ContextStripComponent implements OnInit, OnDestroy {
 
   protected nodes = computed(() => {
     const site = this.workspace.site();
-    const systems = this.workspace.systems();
-    const activeId = this.workspace.activeSystemId();
-    if (!site || systems.size === 0) return [];
+    const topology = this.workspace.siteTopology();
+    const activeId = this.workspace.activeControllerId();
+    if (!site || !topology || topology.controllers.length === 0) return [];
 
-    return [...systems.entries()].map(([systemId, { topology }]) => ({
-      systemId,
-      label: topology.device.friendly_name ?? systemId,
-      isActive: systemId === activeId,
+    return topology.controllers.map(ctrl => ({
+      systemId: ctrl.id,
+      label: ctrl.friendlyName ?? ctrl.id,
+      isActive: ctrl.id === activeId,
     }));
   });
 

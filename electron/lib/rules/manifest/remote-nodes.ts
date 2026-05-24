@@ -12,13 +12,16 @@ export const remoteNodes: ManifestRule = {
       || boardSupportedTransports(board).includes('ethernet');
 
     for (const node of m.nodes) {
-      const remote = node.remote;
-      if (!remote) continue;
+      // anchorId tells us if a node is remote; remoteHaEntityId tells us if
+      // its HA entity was successfully resolved. A node can be remote without
+      // remoteHaEntityId (e.g. a remote water_source without a pressure pin).
+      const controllerId = m.controllerId ?? m.device.friendly_name;
+      if (!node.anchorId || node.anchorId === controllerId) continue;
 
-      if (!remote.haEntityId) {
+      if (!node.remoteHaEntityId) {
         diagnostics.push({
           severity: 'error',
-          message: `Remote node "${node.name || node.id}" references provider "${remote.providerSystemId}" which could not be resolved. Verify the provider system and node exist and export HA entities.`,
+          message: `Remote node "${node.name || node.id}" (anchored to ${node.anchorId}) could not resolve a Home Assistant entity. Verify the provider controller exports HA entities for this node kind.`,
           target: String(node.id),
           ruleId: 'remote-nodes:unresolved-provider',
         });

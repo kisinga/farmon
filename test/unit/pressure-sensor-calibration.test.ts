@@ -114,7 +114,10 @@ const fullNode: PressureSensorNode = {
 };
 
 {
-  const components = pressureSensorDescriptor.codegen!.extraComponents!(fullNode, 0, { resolveChannel: () => ({} as any) });
+  const dummyCtx: import('@far-mon/core').CodegenContext = {
+    resolveChannel: () => ({ platform: 'template', config: '' }),
+  };
+  const components = pressureSensorDescriptor.codegen!.extraComponents!(fullNode, 0, dummyCtx);
   const numberSection = components.number ?? '';
   assert(numberSection.includes('initial_value: 0'), 'rangeMin seeded to 0 (sensor electrical bottom)');
   assert(numberSection.includes('initial_value: 15'), 'rangeMax seeded to sensor_max_psi (15)');
@@ -133,10 +136,11 @@ const fullNode: PressureSensorNode = {
 console.log('\nESPHome codegen: pressure sensor block');
 
 {
-  const ctx = {
+  const ctx: import('@far-mon/core').CodegenContext = {
     resolveChannel: () => ({
-      esphomeYaml: '- platform: adc\n  pin:\n    number: GPIO19',
-    } as any),
+      platform: 'adc',
+      config: 'pin:\n    number: GPIO19',
+    }),
   };
   const yaml = pressureSensorDescriptor.codegen!.sensors!(fullNode, 0, ctx);
   assert(yaml.includes('unit_of_measurement: "psi"'), 'pressure sensor block emits psi unit');
@@ -165,7 +169,7 @@ const lineNode: PressureSensorNode = {
 };
 
 {
-  const components = pressureSensorDescriptor.codegen!.extraComponents!(lineNode, 0, { resolveChannel: () => ({} as any) });
+  const components = pressureSensorDescriptor.codegen!.extraComponents!(lineNode, 0, dummyCtx);
   const numberSection = components.number ?? '';
   // calEmpty ← 0, calFull ← sensor_max_psi when geometry absent (inert until tuned)
   assert(numberSection.includes('initial_value: 0'), 'calEmpty seeded to 0 when no tank');

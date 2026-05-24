@@ -25,10 +25,11 @@ import * as path from 'node:path';
 import { parse as parseYaml, parseAllDocuments } from 'yaml';
 import {
   parseTopology,
-  topologyToManifest,
+  topologyToManifestForController,
   buildHaMeta,
   deriveHaEntityId,
   type Manifest,
+  type SystemTopology,
 } from '@far-mon/core';
 import { loadBoard } from '../electron/lib/board.js';
 import { generateEsphome, generateAll } from '../electron/lib/generate.js';
@@ -126,7 +127,7 @@ interface FixtureCheck {
 function check(fixture: FixtureCheck) {
   const config = fs.readFileSync(path.join(DEFAULTS, fixture.configFile), 'utf-8');
   const topology = parseTopology(parseYaml(config));
-  const manifest = topologyToManifest(topology);
+  const manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? 'default');
   const board = loadBoard(path.join(DEFAULTS, fixture.boardDir));
 
   // --- Firmware: entity set HA will see ---
@@ -150,7 +151,19 @@ function check(fixture: FixtureCheck) {
   }
 
   // SCADA meta sidecar (built separately, lives under `/local/` in HA).
-  const meta = buildHaMeta(topology, { viewBox: [0, 0, 1200, 600] });
+  // buildHaMeta expects SystemTopology shape which has a top-level `device`;
+  // SiteTopology (schema 15) stores device data in controllers[]. Synthesize
+  // the expected shape from the manifest we built for the first controller.
+  const metaTopology: SystemTopology = {
+    schema: 16,
+    device: manifest.device,
+    nodes: topology.nodes,
+    pipes: topology.pipes,
+    route_overrides: topology.route_overrides,
+    timing: topology.timing,
+    automations: topology.automations,
+  };
+  const meta = buildHaMeta(metaTopology, { viewBox: [0, 0, 1200, 600] });
   collectEntityIdReferences(meta, referencedIds);
 
   // --- Filter ---
