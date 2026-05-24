@@ -1,5 +1,4 @@
 import type { Graph, Node, Edge } from '@antv/x6';
-import type { SiteTopology, TopologyNode } from '../../core/models/topology.model';
 
 export const CONTROLLER_COLORS = ['#0284C7', '#059669', '#D97706', '#DC2626', '#7C3AED', '#DB2777'];
 
@@ -8,6 +7,7 @@ const CONTROLLER_HEIGHT = 36;
 const GAP_ABOVE_CLUSTER = 16;
 
 interface ControllerOverlayOptions {
+  controllers?: Array<{ id: string }>;
   friendlyNames?: Map<string, string>;
 }
 
@@ -22,7 +22,6 @@ interface ControllerOverlayOptions {
  */
 export function renderControllerOverlays(
   graph: Graph,
-  topology: SiteTopology,
   options: ControllerOverlayOptions = {},
 ): void {
   const nodesByController = new Map<string, Node[]>();
@@ -35,23 +34,42 @@ export function renderControllerOverlays(
     nodesByController.set(anchorId, list);
   }
 
+  // Build complete set of known controller IDs (from explicit list + graph nodes)
+  const allControllerIds = new Set<string>();
+  for (const c of options.controllers ?? []) allControllerIds.add(c.id);
+  for (const id of nodesByController.keys()) allControllerIds.add(id);
+
   const desiredControllers = new Set<string>();
   const desiredWires = new Set<string>();
 
-  let colorIdx = 0;
-  for (const [controllerId, nodes] of nodesByController) {
-    if (nodes.length === 0) continue;
+  // Sort for stable color assignment
+  const sortedIds = [...allControllerIds].sort();
+  const colorMap = new Map<string, string>();
+  sortedIds.forEach((id, idx) => {
+    colorMap.set(id, CONTROLLER_COLORS[idx % CONTROLLER_COLORS.length]);
+  });
 
-    const color = CONTROLLER_COLORS[colorIdx % CONTROLLER_COLORS.length];
-    colorIdx++;
+  // Place controllers that have nodes on the graph
+  for (const controllerId of sortedIds) {
+    const nodes = nodesByController.get(controllerId);
+    if (!nodes || nodes.length === 0) continue;
 
-    const pos = computeControllerPosition(nodes);
+    const color = colorMap.get(controllerId)!;
+    const label = options.friendlyNames?.get(controllerId) ?? controllerId;
     const controllerNodeId = `controller-${controllerId}`;
     desiredControllers.add(controllerNodeId);
 
-    // Replace or add controller node
-    graph.getCellById(controllerNodeId)?.remove();
-    graph.addNode(buildControllerNode(controllerNodeId, pos, color, options.friendlyNames?.get(controllerId) ?? controllerId));
+    const existing = graph.getCellById(controllerNodeId) as Node | undefined;
+    if (existing && controllerLooksSame(existing, color, label)) {
+      // Preserve manually dragged position; only recreate if label/color changed.
+    } else if (existing) {
+      const pos = existing.getPosition();
+      existing.remove();
+      graph.addNode(buildControllerNode(controllerNodeId, pos, color, label));
+    } else {
+      const pos = computeControllerPosition(nodes);
+      graph.addNode(buildControllerNode(controllerNodeId, pos, color, label));
+    }
 
     // Add/replace wire edges to each owned node
     for (const n of nodes) {
@@ -59,6 +77,31 @@ export function renderControllerOverlays(
       desiredWires.add(wireId);
       graph.getCellById(wireId)?.remove();
       graph.addEdge(buildWireEdge(wireId, controllerNodeId, String(n.id)));
+    }
+  }
+
+  // Place orphan controllers (no nodes yet) in a fallback row
+  let orphanX = 20;
+  const orphanY = 20;
+  for (const controllerId of sortedIds) {
+    const nodes = nodesByController.get(controllerId);
+    if (nodes && nodes.length > 0) continue;
+
+    const color = colorMap.get(controllerId)!;
+    const label = options.friendlyNames?.get(controllerId) ?? controllerId;
+    const controllerNodeId = `controller-${controllerId}`;
+    desiredControllers.add(controllerNodeId);
+
+    const existing = graph.getCellById(controllerNodeId) as Node | undefined;
+    if (existing && controllerLooksSame(existing, color, label)) {
+      // Preserve position
+    } else if (existing) {
+      const pos = existing.getPosition();
+      existing.remove();
+      graph.addNode(buildControllerNode(controllerNodeId, pos, color, label));
+    } else {
+      graph.addNode(buildControllerNode(controllerNodeId, { x: orphanX, y: orphanY }, color, label));
+      orphanX += CONTROLLER_WIDTH + 20;
     }
   }
 
@@ -72,6 +115,11 @@ export function renderControllerOverlays(
       cell.remove();
     }
   }
+}
+
+function controllerLooksSame(node: Node, color: string, label: string): boolean {
+  const data = node.getData() as Record<string, unknown> | undefined;
+  return data?.['color'] === color && data?.['label'] === label;
 }
 
 function computeControllerPosition(nodes: ReadonlyArray<Node>): { x: number; y: number } {
@@ -92,6 +140,30 @@ function computeControllerPosition(nodes: ReadonlyArray<Node>): { x: number; y: 
   };
 }
 
+function escapeXml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function controllerSvg(color: string, label: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CONTROLLER_WIDTH}" height="${CONTROLLER_HEIGHT}">
+    <rect x="1" y="1" width="${CONTROLLER_WIDTH - 2}" height="${CONTROLLER_HEIGHT - 2}" rx="6"
+      fill="${color}15" stroke="${color}" stroke-width="1.5"/>
+    <g transform="translate(10,10)">
+      <rect x="0" y="0" width="16" height="16" rx="2" fill="none" stroke="${color}" stroke-width="1.2"/>
+      <circle cx="4" cy="5" r="1.2" fill="${color}"/>
+      <circle cx="12" cy="5" r="1.2" fill="${color}"/>
+      <circle cx="4" cy="11" r="1.2" fill="${color}"/>
+      <circle cx="12" cy="11" r="1.2" fill="${color}"/>
+    </g>
+    <text x="34" y="22" font-size="11" fill="${color}" font-weight="bold"
+      font-family="ui-sans-serif, system-ui, sans-serif">${escapeXml(label)}</text>
+  </svg>`;
+}
+
+function svgDataUri(svg: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 function buildControllerNode(
   id: string,
   pos: { x: number; y: number },
@@ -99,33 +171,15 @@ function buildControllerNode(
   label: string,
 ): Node.Metadata {
   return {
-    shape: 'rect',
+    shape: 'image',
     id,
     x: pos.x,
     y: pos.y,
     width: CONTROLLER_WIDTH,
     height: CONTROLLER_HEIGHT,
+    imageUrl: svgDataUri(controllerSvg(color, label)),
     zIndex: 0,
-    attrs: {
-      body: {
-        fill: `${color}15`,
-        stroke: color,
-        strokeWidth: 1.5,
-        rx: 6,
-        ry: 6,
-        cursor: 'pointer',
-      },
-      label: {
-        text: label,
-        fill: color,
-        fontSize: 11,
-        fontWeight: 'bold',
-        textVerticalAnchor: 'middle',
-        textAnchor: 'middle',
-        cursor: 'pointer',
-      },
-    },
-    data: { controllerId: id.replace(/^controller-/, ''), kind: 'controller' },
+    data: { controllerId: id.replace(/^controller-/, ''), kind: 'controller', color, label },
   };
 }
 

@@ -24,12 +24,15 @@ export type { Selection };
     <!-- Node properties (data-driven) -->
     @if (selectedNodeData(); as sn) {
       <div class="sidebar-section">
-        <h3 class="sidebar-title">{{ sn.desc.label }}
+        <button class="sidebar-title w-full flex items-center justify-between" (click)="toggleSection('node')">
+          <span>{{ sn.desc.label }}
           @if (sn.desc.experimental) { <span class="badge badge-ghost badge-xs ml-1">experimental</span> }
           @if (isRemoteNode(sn.node)) {
             <span class="badge badge-ghost badge-xs ml-1">Remote: {{ controllerNameFor(sn.node) }}</span>
-          }
-        </h3>
+          }</span>
+          <span class="text-[10px]">{{ isExpanded('node') ? '▼' : '▶' }}</span>
+        </button>
+        @if (isExpanded('node')) {
         <div class="sidebar-fields">
           <!-- Standard fields: Name + Controller + Enabled -->
           <label class="sidebar-label">Name</label>
@@ -223,21 +226,31 @@ export type { Selection };
         @if (!sn.desc.singleton) {
           <button class="btn btn-error btn-xs mt-3 w-full" (click)="deleteNode.emit(sn.node.id)">Delete {{ sn.desc.label }}</button>
         }
+        }
       </div>
     }
 
     <!-- Pipe properties -->
     @if (selectedPipeData(); as pipeData) {
       <div class="sidebar-section">
-        <h3 class="sidebar-title">Pipe</h3>
+        <button class="sidebar-title w-full flex items-center justify-between" (click)="toggleSection('pipe')">
+          <span>Pipe</span>
+          <span class="text-[10px]">{{ isExpanded('pipe') ? '▼' : '▶' }}</span>
+        </button>
+        @if (isExpanded('pipe')) {
         <div class="text-xs font-mono text-base-content/60 mb-2">{{ pipeData.pipe.from }} &rarr; {{ pipeData.pipe.to }}</div>
         <button class="btn btn-error btn-xs w-full" (click)="deletePipe.emit(pipeData.pipe.id)">Delete Pipe</button>
+        }
       </div>
     }
 
     <!-- Routes (always visible) -->
     <div class="sidebar-section">
-      <h3 class="sidebar-title">Derived Routes</h3>
+      <button class="sidebar-title w-full flex items-center justify-between" (click)="toggleSection('routes')">
+        <span>Derived Routes</span>
+        <span class="text-[10px]">{{ isExpanded('routes') ? '▼' : '▶' }}</span>
+      </button>
+      @if (isExpanded('routes')) {
       @if (derivedRoutes().length === 0) {
         <div class="text-base-content/40 text-center py-4 text-xs">No routes derived yet.<br>Connect nodes with pipes.</div>
       } @else {
@@ -262,11 +275,16 @@ export type { Selection };
           </div>
         }
       }
+      }
     </div>
 
     @if (!selection()) {
       <div class="sidebar-section">
-        <h3 class="sidebar-title">Route Overrides</h3>
+        <button class="sidebar-title w-full flex items-center justify-between" (click)="toggleSection('overrides')">
+          <span>Route Overrides</span>
+          <span class="text-[10px]">{{ isExpanded('overrides') ? '▼' : '▶' }}</span>
+        </button>
+        @if (isExpanded('overrides')) {
         @if (overrideEntries().length === 0) {
           <div class="text-base-content/40 text-center py-4 text-xs">No overrides defined.</div>
         } @else {
@@ -326,17 +344,23 @@ export type { Selection };
             </div>
           }
         }
+        }
       </div>
     }
 
     <!-- Validation summary (always visible) -->
     <div class="sidebar-section">
-      <h3 class="sidebar-title">Validation</h3>
+      <button class="sidebar-title w-full flex items-center justify-between" (click)="toggleSection('validation')">
+        <span>Validation</span>
+        <span class="text-[10px]">{{ isExpanded('validation') ? '▼' : '▶' }}</span>
+      </button>
+      @if (isExpanded('validation')) {
       <app-validation-panel
         [result]="editor.validation()"
         [gpioUsage]="editor.gpioUsage()"
         (selectTarget)="selectNode.emit($event)"
       />
+      }
     </div>
   `,
   styles: [`
@@ -348,7 +372,9 @@ export type { Selection };
     .sidebar-title {
       font-size: 10px; font-weight: 600; text-transform: uppercase;
       letter-spacing: 0.05em; color: oklch(var(--bc) / 0.5); margin-bottom: 8px;
+      background: none; border: none; padding: 0; cursor: pointer;
     }
+    .sidebar-title:hover { color: oklch(var(--bc) / 0.7); }
     .sidebar-fields { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: start; }
     .sidebar-label { font-size: 10px; color: oklch(var(--bc) / 0.5); white-space: nowrap; padding-top: 4px; }
     .sidebar-control { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -366,6 +392,20 @@ export class TopologySidebarComponent {
   protected routeOverrideSchema = RouteOverrideSchema;
   protected deriveHaEntityId = deriveHaEntityId;
   protected device = computed(() => this.editor.topology()?.device ?? null);
+
+  private expandedSections = signal<Set<string>>(new Set(['node', 'pipe', 'routes']));
+
+  protected isExpanded(key: string): boolean {
+    return this.expandedSections().has(key);
+  }
+
+  protected toggleSection(key: string) {
+    this.expandedSections.update(set => {
+      const next = new Set(set);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   // --- Inputs ---
   selection = input<Selection | null>(null);

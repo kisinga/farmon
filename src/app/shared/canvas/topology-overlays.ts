@@ -6,14 +6,16 @@
  */
 import type { Graph } from '@antv/x6';
 import type { RenderableTopology } from '../../core/models/topology.model';
-import { renderBoundaries } from './boundary-renderer';
+import { renderControllerOverlays, CONTROLLER_COLORS } from './controller-overlay-renderer';
+
+export { CONTROLLER_COLORS };
 
 /**
  * Apply the overlays that make a composite (site-level) canvas look right:
- * coloured boundary rects around controller groups.
+ * controller nodes above each cluster with dashed wire edges to owned nodes.
  *
  * In the anchor-mesh model, nodes are grouped by `anchorId` into controller
- * boundaries. Clicking a boundary navigates to that controller's designer.
+ * groups. Clicking a controller node navigates to that controller's designer.
  */
 export function renderCompositeOverlays(
   graph: Graph,
@@ -22,15 +24,12 @@ export function renderCompositeOverlays(
     friendlyNames: Map<string, string>;
   },
 ): void {
-  const systemNodes = new Map<string, string[]>();
-  for (const node of topology.nodes) {
-    const anchorId = (node as Record<string, unknown>)['anchorId'] as string | undefined;
-    if (!anchorId) continue;
-    const list = systemNodes.get(anchorId) ?? [];
-    list.push(node.id);
-    systemNodes.set(anchorId, list);
-  }
-  renderBoundaries(graph, systemNodes, ctx.friendlyNames);
+  // Cast to SiteTopology to access controllers array
+  const controllers = (topology as any).controllers as Array<{ id: string }> | undefined;
+  renderControllerOverlays(graph, {
+    controllers,
+    friendlyNames: ctx.friendlyNames,
+  });
 }
 
 /**

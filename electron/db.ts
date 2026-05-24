@@ -496,7 +496,7 @@ export function duplicateSite(sourceId: string, newId: string, newFriendlyName: 
 
     db.run(
       "INSERT INTO sites (id, friendly_name, topology, schema_version) VALUES (?, ?, ?, ?)",
-      [newId, newFriendlyName, source.topology, 15],
+      [newId, newFriendlyName, source.topology, 16],
     );
 
     // Copy HA files
@@ -572,7 +572,7 @@ export function saveSiteTransaction(payload: SiteSavePayload): void {
         topology = excluded.topology,
         schema_version = excluded.schema_version,
         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
-      [siteId, payload.site.friendlyName, topologyJson, 15],
+      [siteId, payload.site.friendlyName, topologyJson, 16],
     );
 
     db.run("COMMIT");
@@ -696,7 +696,7 @@ export function insertSystem(
 
     db.run(
       "UPDATE sites SET topology = ?, schema_version = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
-      [topologyJson, 15, siteId],
+      [topologyJson, 16, siteId],
     );
     db.run("COMMIT");
     persist();
@@ -762,7 +762,7 @@ export function deleteSystem(siteId: string, systemId: string): void {
 
     db.run(
       "UPDATE sites SET topology = ?, schema_version = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
-      [JSON.stringify(topo), 15, siteId],
+      [JSON.stringify(topo), 16, siteId]
     );
     db.run("COMMIT");
     persist();

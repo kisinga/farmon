@@ -6,8 +6,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { X6Canvas, type CanvasEvents } from '../editor/topology-x6-tab/x6-canvas';
-import { BOUNDARY_COLORS } from '../../shared/canvas/boundary-renderer';
-import { renderCompositeOverlays } from '../../shared/canvas/topology-overlays';
+import { renderCompositeOverlays, CONTROLLER_COLORS } from '../../shared/canvas/topology-overlays';
 
 @Component({
   selector: 'app-site-view',
@@ -145,7 +144,7 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     const controllerColor = new Map<string, string>();
     const controllerFriendly = new Map<string, string>();
     controllerIds.forEach((id, i) => {
-      controllerColor.set(id, BOUNDARY_COLORS[i % BOUNDARY_COLORS.length]);
+      controllerColor.set(id, CONTROLLER_COLORS[i % CONTROLLER_COLORS.length]);
       controllerFriendly.set(id, topology.controllers.find(c => c.id === id)?.friendlyName ?? id);
     });
 
@@ -268,11 +267,12 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     // Click or double-click any node/boundary to navigate to its controller
     const handleCellClick = ({ cell }: any) => {
       const id: string = cell.id;
-      if (id.startsWith('boundary-')) {
-        this.navigateToSystem(id.replace('boundary-', ''));
+      const data = cell.getData?.() as Record<string, unknown> | undefined;
+      const controllerId = data?.['controllerId'] as string | undefined;
+      if (controllerId) {
+        this.navigateToSystem(controllerId);
         return;
       }
-      const data = cell.getData?.() as Record<string, unknown> | undefined;
       const anchorId = data?.['anchorId'] as string | undefined;
       if (anchorId) {
         this.navigateToSystem(anchorId);
@@ -294,6 +294,12 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
   private renderComposite() {
     const topology = this.workspace.siteTopology();
     if (!this.canvas || !topology || topology.nodes.length === 0) return;
+
+    const importCounts = new Map<string, number>();
+    for (const ri of topology.remoteImports) {
+      importCounts.set(ri.nodeId, (importCounts.get(ri.nodeId) ?? 0) + 1);
+    }
+    this.canvas.nodeImportCounts = importCounts;
 
     this.canvas.reset(topology);
     const friendlyNames = new Map<string, string>();

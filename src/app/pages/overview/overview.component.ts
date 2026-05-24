@@ -318,6 +318,7 @@ export class OverviewComponent implements OnInit {
     try {
       const scanned = await this.electron.legacyScan();
       if (scanned.sites.length === 0) {
+        alert('No importable legacy sites found. The old configuration files may be missing or corrupted.');
         this.hasLegacy.set(false);
         return;
       }
@@ -325,6 +326,8 @@ export class OverviewComponent implements OnInit {
       if (result.imported > 0) {
         await this.refresh();
         this.hasLegacy.set(false);
+      } else {
+        alert('All legacy sites already exist in the current database.');
       }
     } catch (err) {
       console.error('Legacy import failed:', err);

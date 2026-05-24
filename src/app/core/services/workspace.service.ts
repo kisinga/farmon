@@ -324,6 +324,7 @@ export class WorkspaceService {
     clone.route_overrides = fullTopo.route_overrides;
     clone.timing = fullTopo.timing;
     clone.automations = fullTopo.automations;
+    clone.remoteImports = fullTopo.remoteImports;
 
     this._siteTopology.set(clone);
     this._dirtyControllerIds.update(s => new Set(s).add(cid));

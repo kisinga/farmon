@@ -8,11 +8,6 @@ import type { NodeDescriptor } from '../../../core/models/entities.model';
 import { UI_COLORS } from '../../../core/models/colors.model';
 import { svgDataUri } from './scada-shape';
 
-// --- Register a boundary shape (excluded from manhattan obstacle map) ---
-
-export const BOUNDARY_SHAPE = 'boundary';
-Shape.Rect.define({ shape: BOUNDARY_SHAPE });
-
 // --- Shared router config (used by edges and drag connections) ---
 
 export const MANHATTAN_ROUTER = {
@@ -21,7 +16,6 @@ export const MANHATTAN_ROUTER = {
     step: 10,
     padding: { top: 20, right: 20, bottom: 20, left: 20 },
     excludeTerminals: ['source', 'target'],
-    excludeShapes: [BOUNDARY_SHAPE],
     startDirections: ['right'],
     endDirections: ['left'],
   },

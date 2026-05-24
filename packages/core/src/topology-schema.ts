@@ -383,6 +383,11 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
 
     return data;
   },
+  15: (data) => {
+    data['schema'] = 16;
+    data['remoteImports'] = data['remoteImports'] ?? [];
+    return data;
+  },
 };
 
 /**

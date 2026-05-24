@@ -1,4 +1,5 @@
 import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, computed, signal, effect, Injector } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { DomSanitizer } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
@@ -12,11 +13,12 @@ import { X6Canvas, type Selection } from './x6-canvas';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
 import { buildGraph, activeGraph, downstreamNodes } from '@far-mon/core';
 import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlays';
+import { renderControllerOverlays } from '../../../shared/canvas/controller-overlay-renderer';
 
 @Component({
   selector: 'app-topology-x6-tab',
   standalone: true,
-  imports: [TopologySidebarComponent],
+  imports: [TopologySidebarComponent, FormsModule],
   host: {
     '(document:keydown.escape)': 'closePopup()',
     '(document:keydown.control.z)': 'doUndo()',
@@ -30,6 +32,13 @@ import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlay
     <!-- Toolbar -->
     <div class="flex items-center gap-2 px-4 py-2 border-b border-base-300/30 bg-base-200/30">
       <h2 class="text-sm font-semibold text-base-content/70">Design</h2>
+      <select class="select select-xs select-bordered font-mono text-xs"
+        [ngModel]="workspace.activeControllerId()"
+        (ngModelChange)="switchController($event)">
+        @for (ctrl of allControllers(); track ctrl.id) {
+          <option [value]="ctrl.id">{{ ctrl.friendlyName }}</option>
+        }
+      </select>
       <div class="flex-1"></div>
       @if (!editor.readonly()) {
         <div class="dropdown dropdown-end">
@@ -227,7 +236,7 @@ import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlay
 })
 export class TopologyX6TabComponent {
   protected editor = inject(SystemEditorService);
-  private workspace = inject(WorkspaceService);
+  protected workspace = inject(WorkspaceService);
   protected boards = inject(BoardService);
   private electron = inject(ElectronService);
   private router = inject(Router);
@@ -279,10 +288,31 @@ export class TopologyX6TabComponent {
     });
   });
 
+  protected allControllers = computed(() => {
+    const topology = this.workspace.siteTopology();
+    return topology?.controllers.map(c => ({
+      id: c.id,
+      friendlyName: c.friendlyName ?? c.id,
+    })) ?? [];
+  });
+
+  private lastRenderedControllerId: string | null = null;
+
   constructor() {
     afterNextRender(() => {
       this.initCanvas();
-      this.doInitialRender();
+
+      // Unified render effect: triggers on initial load AND controller switches,
+      // but skips redundant renders when only topology data mutates.
+      const stop = effect(() => {
+        const cid = this.workspace.activeControllerId();
+        const t = this.editor.topology();
+        if (!t || !cid || !this.canvas) return;
+        if (cid === this.lastRenderedControllerId) return;
+        this.lastRenderedControllerId = cid;
+        this.renderToCanvas(t, { reset: true });
+      }, { injector: this.injector });
+      this.destroyRef.onDestroy(() => stop.destroy());
     });
   }
 
@@ -313,11 +343,13 @@ export class TopologyX6TabComponent {
    */
   private renderToCanvas(topology: SystemTopology, opts: { reset: boolean }) {
     if (this.canvas) {
+      this.canvas.activeControllerId = this.workspace.activeControllerId() ?? undefined;
       this.canvas.nodeImportCounts = this.computeNodeImportCounts();
     }
     const enriched = this.enrich(topology);
     if (opts.reset) this.c.reset(enriched); else this.c.render(enriched);
     renderPerSystemOverlays(this.c.graphInstance, enriched);
+    this.renderControllerOverlay();
     requestAnimationFrame(() =>
       this.c.exportSvg()
         .then(svg => this.editor.setCanvasSvg(svg))
@@ -327,19 +359,6 @@ export class TopologyX6TabComponent {
 
   private renderAndSnapshot(topology: SystemTopology) {
     this.renderToCanvas(topology, { reset: false });
-  }
-
-  private doInitialRender() {
-    const t = this.editor.topology();
-    if (t) { this.renderToCanvas(t, { reset: true }); return; }
-    const stop = effect(() => {
-      const t = this.editor.topology();
-      if (t) {
-        this.renderToCanvas(t, { reset: true });
-        queueMicrotask(() => stop.destroy());
-      }
-    }, { injector: this.injector });
-    this.destroyRef.onDestroy(() => stop.destroy());
   }
 
   // --- Template helpers ---
@@ -393,20 +412,20 @@ export class TopologyX6TabComponent {
         this.nodePopup.set({ from, graphPos, clientPos });
       },
     });
-    this.canvas.activeControllerId = this.workspace.activeControllerId() ?? undefined;
     this.canvas.nodeImportCounts = this.computeNodeImportCounts();
 
     if (this.editor.readonly()) {
       this.canvas.setReadonly(true);
     }
 
-    // Re-render ghost edges when nodes are dragged so they track position
+    // Re-render overlays when nodes are dragged so they track position
     let ghostEdgeTimer: ReturnType<typeof setTimeout> | null = null;
     this.c.graphInstance.on('node:change:position', () => {
       if (ghostEdgeTimer) clearTimeout(ghostEdgeTimer);
       ghostEdgeTimer = setTimeout(() => {
         const t = this.editor.topology();
         if (t) renderPerSystemOverlays(this.c.graphInstance, this.enrich(t));
+        this.renderControllerOverlay();
       }, 50);
     });
 
@@ -594,6 +613,25 @@ export class TopologyX6TabComponent {
 
   closePopup() {
     this.nodePopup.set(null);
+  }
+
+  private renderControllerOverlay() {
+    const siteTopology = this.workspace.siteTopology();
+    if (!siteTopology) return;
+    const friendlyNames = new Map<string, string>();
+    for (const ctrl of siteTopology.controllers) {
+      friendlyNames.set(ctrl.id, ctrl.friendlyName ?? ctrl.id);
+    }
+    renderControllerOverlays(this.c.graphInstance, {
+      controllers: siteTopology.controllers,
+      friendlyNames,
+    });
+  }
+
+  protected switchController(controllerId: string) {
+    const siteId = this.workspace.site()?.id;
+    if (!siteId) return;
+    this.router.navigate(['/site', siteId, 'system', controllerId, 'design']);
   }
 
   // --- Controller creation ---
