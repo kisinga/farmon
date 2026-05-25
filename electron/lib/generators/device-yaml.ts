@@ -2,7 +2,6 @@ import { stringify } from "yaml";
 import type { BoardDef } from "../board.js";
 import type { Manifest } from "../schema.js";
 import { nodesWithFlag } from "../schema.js";
-import { pumpSwitchId } from '@far-mon/core';
 import type { CollectedCodegen } from "./collect.js";
 import type { GenerationMetadata } from "../backends/types.js";
 
@@ -98,7 +97,9 @@ export function generateDeviceYaml(
   ].join("\n");
 
   const bootActions: unknown[] = [];
-  if (nodesWithFlag(m.nodes, 'isPump').length > 0) bootActions.push({ "switch.turn_off": pumpSwitchId() });
+  for (const pump of nodesWithFlag(m.nodes, 'isPump')) {
+    bootActions.push({ "switch.turn_off": `${pump['id']}_relay` });
+  }
   bootActions.push({ lambda: initVars });
 
   bootSteps.push({

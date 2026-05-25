@@ -13,7 +13,7 @@ import type { BoardDef } from './board.types';
 // Component IDs — pump
 // ---------------------------------------------------------------------------
 
-export const pumpSwitchId = () => 'pump_relay';
+export const pumpSwitchId = (nodeId: string) => `${nodeId}_relay`;
 
 // ---------------------------------------------------------------------------
 // Component IDs — valve

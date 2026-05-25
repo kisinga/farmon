@@ -15,10 +15,12 @@ export interface RouteContext {
   valves: Manifest['nodes'];
   flowSensors: Manifest['nodes'];
   waterSources: Manifest['nodes'];
+  pumps: Manifest['nodes'];
   tankIdx: Map<string, number>;
   valveIdx: Map<string, number>;
   flowIdx: Map<string, number>;
   wsIdx: Map<string, number>;
+  pumpIdx: Map<string, number>;
   valveTravelMs: number;
   flowWatchdogMs: number;
   flowConfirmMs: number;
@@ -29,6 +31,7 @@ export interface RouteContext {
   tankComment: string;
   wsComment: string;
   flowComment: string;
+  pumpComment: string;
 }
 
 /**
@@ -43,11 +46,13 @@ export function buildRouteContext(m: Manifest): RouteContext {
   const valves = nodesWithFlag(m.nodes, 'isValve');
   const flowSensors = nodesWithFlag(m.nodes, 'isFlowSensor');
   const waterSources = nodesByKind(m.nodes, 'water_source');
+  const pumps = nodesWithFlag(m.nodes, 'isPump');
 
   const tankIdx = new Map(tanks.map((t, i) => [t['id'], i]));
   const valveIdx = new Map(valves.map((v, i) => [v['id'], i]));
   const flowIdx = new Map(flowSensors.map((f, i) => [f['id'], i]));
   const wsIdx = new Map(waterSources.map((ws, i) => [ws['id'], i]));
+  const pumpIdx = new Map(pumps.map((p, i) => [p['id'], i]));
 
   // Timing constants
   const valveTravelMs = m.timing.valve_travel_time * 1000;
@@ -79,7 +84,7 @@ export function buildRouteContext(m: Manifest): RouteContext {
     const flow = flowIdx.get(r.flow_sensor)!;
     const maskBin = mask.toString(2).padStart(valves.length, "0");
     const conflictBin = conflictMasks[i].toString(2).padStart(m.routes.length, "0");
-    const pump = r.crossesPump ? "true" : "false";
+    const pump = r.crossesPump ? pumpIdx.get(r.nodeSequence[r.pumpIndex])! : "0xFF";
     const srcMin = r.source_min_pct ?? 0;
     const dstMax = r.dest_max_pct ?? 0;
     const rtLvl = r.runtime_level_ok ? "true" : "false";
@@ -91,14 +96,15 @@ export function buildRouteContext(m: Manifest): RouteContext {
   const tankComment = tanks.map((t, i) => `${i}=${t['id']}(${t['name']})`).join("  ");
   const wsComment = waterSources.map((ws, i) => `${i}=${ws['id']}(${ws['name']})`).join("  ");
   const flowComment = flowSensors.map((f, i) => `${i}=${f['id']}(${f['name']})`).join("  ");
+  const pumpComment = pumps.map((p, i) => `${i}=${p['id']}(${p['name']})`).join("  ");
 
   return {
     manifest: m,
-    tanks, levelSensors, pressureSensors, valves, flowSensors, waterSources,
-    tankIdx, valveIdx, flowIdx, wsIdx,
+    tanks, levelSensors, pressureSensors, valves, flowSensors, waterSources, pumps,
+    tankIdx, valveIdx, flowIdx, wsIdx, pumpIdx,
     valveTravelMs, flowWatchdogMs, flowConfirmMs, apiWatchdogMs,
     conflictMasks, routeLines,
-    valveComment, tankComment, wsComment, flowComment,
+    valveComment, tankComment, wsComment, flowComment, pumpComment,
   };
 }
 
@@ -109,14 +115,11 @@ export function buildRouteContext(m: Manifest): RouteContext {
 export function generateRoutes(m: Manifest): string {
   const ctx = buildRouteContext(m);
   const {
-    tanks, levelSensors, pressureSensors, valves, flowSensors, waterSources,
+    tanks, levelSensors, pressureSensors, valves, flowSensors, waterSources, pumps,
     valveTravelMs, flowWatchdogMs, flowConfirmMs, apiWatchdogMs,
     conflictMasks, routeLines,
-    valveComment, tankComment, wsComment, flowComment,
+    valveComment, tankComment, wsComment, flowComment, pumpComment,
   } = ctx;
-
-  const hasPump = nodesWithFlag(m.nodes, 'isPump').length > 0;
-  const pumpId = pumpSwitchId();
 
   // Build dispatch functions (hardware-level, renamed with _hw suffix)
   const nid = (node: Manifest['nodes'][number]) => ({ id: node.id });
@@ -278,7 +281,7 @@ struct Route {
   uint16_t    conflict_mask;   // bitmask of route IDs that cannot run concurrently
                                // (shared sensor + different destination = ambiguous reading)
   uint16_t    max_runtime_s;
-  bool        needs_pump;      // true if route path crosses the pump node
+  uint8_t     pump_idx;        // index into PUMP_IDS — 0xFF = no pump
   uint8_t     source_min_pct;  // pre-start: reject if source tank below this %. 0 = no check.
   uint8_t     dest_max_pct;    // pre-start: reject if dest tank above this %. 0 = no check.
   bool        runtime_level_ok; // true if tank sensors are reliable during pump operation
@@ -293,7 +296,7 @@ struct Route {
 // Flow indices:    ${flowComment}
 
 static const Route ROUTES[NUM_ROUTES] = {
-  //  id   valve_mask  src_tank  src_ws  dst   flow  conflict  max_rt  pump  name
+  //  id   valve_mask  src_tank  src_ws  dst   flow  conflict  max_rt  pump_idx  name
 ${routeLines.join("\n")}
 };
 
@@ -353,14 +356,24 @@ inline bool has_conflict(int rid) {
 
 // --- Pump reference counting -------------------------------------------------
 
-// Count of RUNNING slots whose route needs the pump.
-inline int pump_ref_count() {
+${pumps.length > 0 ? `static const char* PUMP_IDS[${pumps.length}] = {
+${pumps.map(p => `  "${p['id']}_relay"`).join(',\n')}
+};
+
+inline int pump_index_for_id(const std::string& id) {
+  for (int i = 0; i < ${pumps.length}; i++)
+    if (std::string(PUMP_IDS[i]) == id) return i;
+  return -1;
+}
+
+// Count of RUNNING slots whose route needs a specific pump.
+inline int pump_ref_count(uint8_t pump_idx) {
   int c = 0;
   for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++)
-    if (slots[i].state == 2 && slots[i].route_id >= 0 && ROUTES[slots[i].route_id].needs_pump)
+    if (slots[i].state == 2 && slots[i].route_id >= 0 && ROUTES[slots[i].route_id].pump_idx == pump_idx)
       c++;
   return c;
-}
+}` : '// No pumps in this controller'}}
 
 // --- Derived system state ----------------------------------------------------
 
@@ -544,7 +557,7 @@ inline uint32_t get_route_travel_ms(int route_id) {
 // --- Actuator stop (dead-man enforcement) ------------------------------------
 
 inline void stop_actuator(const std::string& nodeId) {
-${hasPump ? `  if (nodeId == "${pumpId}") { id(${pumpId}).turn_off(); return; }` : '  // No pump in this controller'}
+${pumps.map(p => `  if (nodeId == "${p['id']}_relay") { id(${p['id']}_relay).turn_off(); return; }`).join('\n')}
 ${valves.map((v, i) => `  if (nodeId == "${v['id']}") { close_valve_hw(${i}); return; }`).join('\n')}
 }
 

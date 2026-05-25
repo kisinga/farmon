@@ -228,7 +228,7 @@ assert(routesH.includes("source_ws"), "Has source_ws field in struct");
 // Concurrent execution support
 assert(routesH.includes("struct RouteSlot"), "Has RouteSlot struct");
 assert(routesH.includes("MAX_CONCURRENT_ROUTES"), "Has MAX_CONCURRENT_ROUTES constant");
-assert(routesH.includes("needs_pump"), "Has needs_pump field in Route struct");
+assert(routesH.includes("pump_idx"), "Has pump_idx field in Route struct");
 assert(routesH.includes("queue_push"), "Has queue_push function");
 assert(routesH.includes("queue_pop"), "Has queue_pop function");
 assert(routesH.includes("pump_ref_count"), "Has pump_ref_count function");
@@ -311,7 +311,7 @@ assert(
 console.log("\nhardware.yaml:");
 const hw = getFile("hardware.yaml");
 assert(hw.includes("pump_relay"), "Has pump relay");
-assert(hw.includes("pump_ref_count()"), "Relay guard uses pump refcount");
+assert(hw.includes("pump_ref_count("), "Relay guard uses parametric pump refcount");
 for (const v of valves) {
   assert(hw.includes(`id: ${n(v, 'id')}_open_pin`), `Valve ${n(v, 'id')} open pin`);
   assert(hw.includes(`interlock:`), `Has interlock`);
@@ -442,7 +442,7 @@ for (const c of pressureRuntimeCases) {
     `Pressure runtime level checks ${c.expected ? 'enabled' : 'disabled'} when ${c.label}`,
   );
   assert(
-    pressureRoutesH.includes(`true, 20, 90, ${c.expected ? 'true' : 'false'}, "Source Tank > Destination Tank"`),
+    pressureRoutesH.includes(`0, 0, 20, 90, ${c.expected ? 'true' : 'false'}, "Source Tank > Destination Tank"`),
     `Generated route table writes runtime_level_ok=${c.expected} when ${c.label}`,
   );
 }
@@ -502,13 +502,14 @@ assert(vfdDeviceYaml.includes("de_pin: GPIO19"), "UART DE pin");
 assert(vfdDeviceYaml.includes("baud_rate: 9600"), "UART baud rate");
 assert(vfdDeviceYaml.includes("modbus:"), "Has modbus: section");
 assert(vfdDeviceYaml.includes("id: uart_modbus_modbus"), "Modbus controller id");
-assert(vfdDeviceYaml.includes("switch.turn_off"), "Boot turns off pump_relay");
+assert(vfdDeviceYaml.includes("switch.turn_off"), "Boot turns off actuator");
+assert(vfdDeviceYaml.includes("vfd1_relay"), "Boot turns off vfd1_relay");
 
 // --- Hardware ---
 
 console.log("\nHardware:");
 const vfdHw = getVfdFile("hardware.yaml");
-assert(vfdHw.includes("pump_relay"), "Has pump_relay (from VFD codegen)");
+assert(vfdHw.includes("vfd1_relay"), "Has vfd1_relay (from VFD codegen)");
 assert(vfdHw.includes("modbus_controller"), "Uses modbus_controller platform");
 assert(vfdHw.includes("uart_modbus_modbus"), "References modbus controller id");
 
@@ -531,7 +532,7 @@ const vfdRoutesH = getVfdFile("routes.h");
 assert(vfdRoutesH.includes("pump_ref_count"), "Has pump_ref_count (VFD is isPump)");
 // pump_relay is referenced in control.yaml, not routes.h — check control instead
 const vfdControl = getVfdFile("control.yaml");
-assert(vfdControl.includes("pump_relay"), "Control references pump_relay");
+assert(vfdControl.includes("vfd1_relay"), "Control references vfd1_relay");
 
 // =============================================================================
 // KC868-A16 Board Tests — PCF8574 expander pins + Ethernet
@@ -816,7 +817,7 @@ assert(pumpRoutes.includes('ri_src_tank'), "Routes dispatch uses ri_src_tank for
 assert(pumpRoutes.includes('ri_dst_tank'), "Routes dispatch uses ri_dst_tank for remote tank level");
 
 // Local hardware should still be generated for pump-ctrl's own nodes
-assert(pumpCollect.switches.some(y => y.includes('pump_relay')), "Local pump relay generated");
+assert(pumpCollect.switches.some(y => y.includes('pump1_relay')), "Local pump1 relay generated");
 assert(pumpCollect.sensors.some(y => y.includes('id: flow1')), "Local flow sensor generated");
 
 // --- Summary ---

@@ -310,19 +310,7 @@ export const REGISTRY_RULES: readonly EntityRule[] = [
         }));
     },
   },
-  {
-    id: 'pump-id-uniqueness',
-    severity: 'error',
-    evaluate: (_kind, allNodes) => {
-      const pumpNodes = allNodes.filter(n => NODE_REGISTRY.get(n.kind)?.isPump);
-      if (pumpNodes.length <= 1) return [];
-      // Multiple pump-flagged nodes share the same pumpSwitchId — conflict
-      return pumpNodes.slice(1).map(n => ({
-        message: `Multiple pump entities found. "${n.name ?? n.id}" conflicts with an existing pump — only one pump-class node is supported per device.`,
-        target: n.id,
-      }));
-    },
-  },
+  // pump-id-uniqueness removed — per-node pumpSwitchId() makes multiple pumps safe.
 ];
 
 // ---------------------------------------------------------------------------

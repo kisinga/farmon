@@ -124,7 +124,7 @@ export const pumpDescriptor: NodeDescriptor = {
 
   codegen: {
     hardware: (node: PumpNode, _idx, ctx) => {
-      const id = pumpSwitchId();
+      const id = pumpSwitchId(node.id);
       const inverted = node.relay_polarity !== 'active_high';
       const header = resolveComponentHeader(ctx, node.pin, { purpose: 'digital_out', inverted });
       return `\
@@ -137,7 +137,7 @@ ${header}
   on_turn_on:
     - if:
         condition:
-          lambda: 'return pump_ref_count() == 0 && !id(safety_override).state;'
+          lambda: 'return pump_ref_count(pump_index_for_id("${id}")) == 0 && !has_live_claim("${id}") && !id(safety_override).state;'
         then:
           - switch.turn_off: ${id}
           - logger.log: {level: WARN, format: "BLOCKED: pump only runs during a route or when safety_override is ON"}`;
@@ -149,9 +149,9 @@ ${header}
       relay: deriveHaEntityId('switch', device, haNames(node).relay),
     }),
 
-    remoteProxy: (_node, haEntityId) => ({
+    remoteProxy: (node, haEntityId) => ({
       section: 'switch',
-      yaml: templateSwitchProxy(pumpSwitchId(), 'Pump', haEntityId),
+      yaml: templateSwitchProxy(pumpSwitchId(node.id), node.name ?? 'Pump', haEntityId),
     }),
 
   },

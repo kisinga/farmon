@@ -214,8 +214,9 @@ export function buildWaterSection(m: Manifest): HaGridSection {
 export function buildRouteControlSection(m: Manifest): HaRouteControl {
   const dev = m.device;
   const sys = systemHaEntityIds(dev, m.routes);
-  const valves = nodesByKind(m.nodes, 'valve');
-  const dosingPumps = nodesByKind(m.nodes, 'dosing_pump');
+  const valves = nodesWithFlag(m.nodes, 'isValve');
+  const dosingPumps = nodesWithFlag(m.nodes, 'isDosingPump');
+  const pumps = nodesWithFlag(m.nodes, 'isPump');
   const vfds = nodesByKind(m.nodes, 'vfd');
 
   const routeColors = ["purple", "deep-purple", "indigo", "blue", "teal", "cyan", "light-blue", "green"];
@@ -289,7 +290,11 @@ export function buildRouteControlSection(m: Manifest): HaRouteControl {
     },
     {
       type: "glance", title: "Hardware", show_state: true,
-      entities: [...valveEntities, ...dosingEntities],
+      entities: [
+        ...pumps.map((p, i) => ({ entity: (haIds(p, dev).relay ?? haIds(p, dev).switch)!, name: `P${i + 1}` })),
+        ...valveEntities,
+        ...dosingEntities,
+      ],
       grid_options: { columns: "full" },
     },
   ];
@@ -401,7 +406,7 @@ export function buildConfigurationView(m: Manifest): HaCardsView {
 export function buildManualView(m: Manifest): HaCardsView {
   const dev = m.device;
   const sys = systemHaEntityIds(dev, m.routes);
-  const pumps = nodesByKind(m.nodes, 'pump');
+  const pumps = nodesWithFlag(m.nodes, 'isPump');
   const valves = nodesWithFlag(m.nodes, 'isValve');
 
   const explainerCard: HaWidget = {
@@ -426,7 +431,10 @@ export function buildManualView(m: Manifest): HaCardsView {
 
   // Pump direct control. Without an owning route, the pump only runs when
   // safety_override is ON (firmware-enforced).
-  const pumpEntities = pumps.map(p => ({ entity: haIds(p, dev).relay!, name: n(p, 'name') }));
+  const pumpEntities = pumps.map(p => {
+    const ids = haIds(p, dev);
+    return { entity: (ids.relay ?? ids.switch)!, name: n(p, 'name') };
+  });
 
   // Per-valve manual: cover (timer-bounded), open coil, close coil (raw).
   // Coils are interlocked at firmware level (only one can be ON at a time).
@@ -485,7 +493,7 @@ export function buildManualView(m: Manifest): HaCardsView {
 
   const cards: HaWidget[] = [explainerCard, overrideCard, recoveryCard];
   if (pumpEntities.length > 0) {
-    cards.push({ type: "entities", title: "Pump", entities: pumpEntities });
+    cards.push({ type: "entities", title: pumps.length > 1 ? "Pumps" : "Pump", entities: pumpEntities });
   }
   cards.push(...valveCards);
   if (m.routes.length > 0) {

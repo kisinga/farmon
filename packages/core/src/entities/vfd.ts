@@ -114,7 +114,7 @@ export const vfdDescriptor: NodeDescriptor = {
 
   codegen: {
     hardware: (node: VfdNode, _idx, ctx) => {
-      const id = pumpSwitchId();
+      const id = pumpSwitchId(node.id);
       const header = resolveComponentHeader(ctx, node.controller, { purpose: 'digital_out' });
       return `\
 # --- VFD: ${node.name} ---
@@ -234,7 +234,7 @@ ${header}
 
     remoteProxy: (node, haEntityId) => ({
       section: 'switch',
-      yaml: templateSwitchProxy(pumpSwitchId(), node.name, haEntityId),
+      yaml: templateSwitchProxy(pumpSwitchId(node.id), node.name ?? 'VFD Pump', haEntityId),
     }),
   },
 };
