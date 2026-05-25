@@ -19,7 +19,7 @@ export const pinTransportConsistency: ManifestRule = {
     );
 
     for (const node of m.nodes) {
-      const desc = NODE_REGISTRY.get(node['kind']);
+      const desc = NODE_REGISTRY.get(node.kind);
       if (!desc) continue;
 
       const pinFields = desc.sidebarFields.filter(f => f.type === 'pin');
@@ -40,8 +40,8 @@ export const pinTransportConsistency: ManifestRule = {
         const details = resolved.map(r => `${r.field} → ${r.transport}`).join(', ');
         diagnostics.push({
           severity: "error",
-          message: `${desc.label} "${node['id']}": pins use different transports (${details}). All pins must use the same transport.`,
-          target: String(node['id']),
+          message: `${desc.label} "${node.id}": pins use different transports (${details}). All pins must use the same transport.`,
+          target: String(node.id),
           ruleId: this.id,
         });
       }

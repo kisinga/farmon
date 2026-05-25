@@ -67,9 +67,7 @@
                   <span class="text-[10px] text-base-content/40 font-mono w-8 text-right">#{{ ev.id }}</span>
                   <span class="text-xs text-base-content/50 w-28">{{ ev.timestamp | date:'short' }}</span>
                   <span class="text-xs font-medium flex-1">{{ ev.eventType }}</span>
-                  @if (ev.eventType === 'snapshot') {
-                    <button class="btn btn-ghost btn-xs text-primary" (click)="restoreToEvent(ev.id)">Restore</button>
-                  }
+                  <button class="btn btn-ghost btn-xs text-primary" (click)="restoreToEvent(ev.id)">Restore</button>
                 </div>
               }
             </div>

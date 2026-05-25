@@ -19,10 +19,10 @@ export interface PinUsage {
 export function collectAllPins(m: Manifest): PinUsage[] {
   const pins: PinUsage[] = [];
   for (const node of m.nodes) {
-    const desc = NODE_REGISTRY.get(node['kind']);
+    const desc = NODE_REGISTRY.get(node.kind);
     if (!desc) continue;
-    const nodeId = String(node['id']);
-    const nodeName = (typeof node['name'] === 'string' && node['name']) ? node['name'] : nodeId;
+    const nodeId = String(node.id);
+    const nodeName = (typeof node.name === 'string' && node.name) ? node.name : nodeId;
     for (const field of desc.sidebarFields) {
       if (field.type !== 'pin') continue;
       const value = node[field.key];

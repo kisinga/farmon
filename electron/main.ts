@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { registerIpcHandlers } from "./ipc-handlers.js";
 import { initStore, getStorePath } from "./store.js";
 import { openDb, closeDb } from "./db.js";
+import { init as initSiteRepository } from "./lib/site-repository.js";
 import { killAll } from "./process-manager.js";
 
 let mainWindow: BrowserWindow | null = null;
@@ -47,6 +48,7 @@ app.whenReady().then(async () => {
 
   initStore(defaultsDir);
   await openDb(getStorePath());
+  await initSiteRepository();
   registerIpcHandlers();
   createWindow();
 

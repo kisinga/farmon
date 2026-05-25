@@ -25,8 +25,12 @@ import type {
   Controller,
   TemplateListEntry,
   DriftReport,
+  LegacyScanResult,
+  LegacySiteImport,
+  DeploymentPlan,
+  DeploymentResult,
 } from '../models/electron-api';
-import type { NetworkConfig } from '@far-mon/core';
+import type { NetworkConfig, BoardDef, Route, SiteTopology, SystemTopology } from '@far-mon/core';
 
 @Injectable({ providedIn: 'root' })
 export class ElectronService {
@@ -43,48 +47,48 @@ export class ElectronService {
     return this.api?.siteList() ?? Promise.resolve([]);
   }
   siteLoad(id: string): Promise<SiteFullPayload> {
-    return this.invoke(() => this.api!.siteLoad(id));
+    return this.invoke(api => api.siteLoad(id));
   }
   async siteSave(payload: SiteSavePayload): Promise<void> {
-    await this.invoke(() => this.api!.siteSave(payload));
+    await this.invoke(api => api.siteSave(payload));
   }
   async siteCreate(id: string, friendlyName: string): Promise<void> {
-    await this.invoke(() => this.api!.siteCreate(id, friendlyName));
+    await this.invoke(api => api.siteCreate(id, friendlyName));
   }
   async siteDelete(id: string): Promise<void> {
-    await this.invoke(() => this.api!.siteDelete(id));
+    await this.invoke(api => api.siteDelete(id));
   }
   async siteDuplicate(sourceId: string, newId: string, newFriendlyName: string): Promise<string> {
-    const result = await this.invoke(() => this.api!.siteDuplicate(sourceId, newId, newFriendlyName));
+    const result = await this.invoke(api => api.siteDuplicate(sourceId, newId, newFriendlyName));
     return result.id;
   }
   async siteRename(id: string, friendlyName: string): Promise<void> {
-    await this.invoke(() => this.api!.siteRename(id, friendlyName));
+    await this.invoke(api => api.siteRename(id, friendlyName));
   }
   siteExport(siteId: string): Promise<{ ok: boolean; path?: string }> {
-    return this.invoke(() => this.api!.siteExport(siteId));
+    return this.invoke(api => api.siteExport(siteId));
   }
   siteImport(): Promise<{ ok: boolean; siteId?: string }> {
-    return this.invoke(() => this.api!.siteImport());
+    return this.invoke(api => api.siteImport());
   }
 
   // --- Systems ---
   systemAddFromTemplate(siteId: string, templateName: string): Promise<Controller> {
-    return this.invoke(() => this.api!.systemAddFromTemplate(siteId, templateName));
+    return this.invoke(api => api.systemAddFromTemplate(siteId, templateName));
   }
   systemCreateBlank(siteId: string, friendlyName: string, board: string): Promise<Controller> {
-    return this.invoke(() => this.api!.systemCreateBlank(siteId, friendlyName, board));
+    return this.invoke(api => api.systemCreateBlank(siteId, friendlyName, board));
   }
   async systemDelete(siteId: string, systemId: string): Promise<void> {
-    await this.invoke(() => this.api!.systemDelete(siteId, systemId));
+    await this.invoke(api => api.systemDelete(siteId, systemId));
   }
 
   // --- Templates ---
   templateList(): Promise<TemplateListEntry[]> {
     return this.api?.templateList() ?? Promise.resolve([]);
   }
-  templateLoad(name: string): Promise<unknown> {
-    return this.invoke(() => this.api!.templateLoad(name));
+  templateLoad(name: string): Promise<Record<string, unknown>> {
+    return this.invoke(api => api.templateLoad(name));
   }
 
   // --- Boards ---
@@ -92,35 +96,35 @@ export class ElectronService {
     return this.api?.boardList() ?? Promise.resolve([]);
   }
   boardLoad(model: string): Promise<BoardLoadResult> {
-    return this.invoke(() => this.api!.boardLoad(model));
+    return this.invoke(api => api.boardLoad(model));
   }
   importBoard(dirPath: string): Promise<string> {
-    return this.invoke(() => this.api!.boardImport(dirPath));
+    return this.invoke(api => api.boardImport(dirPath));
   }
 
   // --- Codegen ---
-  deriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>> {
+  deriveRoutes(topology: SiteTopology | SystemTopology): Promise<Array<{ key: string; name: string }>> {
     if (!this.api) return Promise.resolve([]);
     return this.api.codegenDeriveRoutes(topology);
   }
-  validate(manifest: unknown, board: unknown, siteId?: string): Promise<ValidationResult> {
+  validate(topology: SiteTopology | SystemTopology, board: BoardDef, siteId?: string): Promise<ValidationResult> {
     if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false, diagnostics: [] });
-    return this.api.codegenValidate(manifest, board, siteId);
+    return this.api.codegenValidate(topology, board, siteId);
   }
-  generate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult> {
-    return this.invoke(() => this.api!.codegenGenerate(siteId, systemId, manifest, board));
+  generate(siteId: string, systemId: string, topology: SiteTopology | SystemTopology, board: BoardDef): Promise<GenerateResult> {
+    return this.invoke(api => api.codegenGenerate(siteId, systemId, topology, board));
   }
   generateSiteHA(siteId: string): Promise<import('../models/electron-api').GenerateHAResult> {
-    return this.invoke(() => this.api!.codegenGenerateHA(siteId));
+    return this.invoke(api => api.codegenGenerateHA(siteId));
   }
-  generateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, topology: unknown, routes: unknown[]): Promise<{ html: string; outputPath: string }> {
-    return this.invoke(() => this.api!.codegenGenerateSiteDocs(siteId, compositeSvg, perSystemSvgs, topology, routes));
+  generateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, topology: SiteTopology, routes: Route[]): Promise<{ html: string; outputPath: string }> {
+    return this.invoke(api => api.codegenGenerateSiteDocs(siteId, compositeSvg, perSystemSvgs, topology, routes));
   }
   writeScadaArtifacts(siteId: string, artifacts: Array<{ name: string; svg: string; meta: unknown }>): Promise<{ outputDir: string; files: Array<{ path: string; bytes: number }> }> {
-    return this.invoke(() => this.api!.codegenWriteScadaArtifacts(siteId, artifacts));
+    return this.invoke(api => api.codegenWriteScadaArtifacts(siteId, artifacts));
   }
   generateSelfTest(boardModel: string, secrets: Record<string, string>, network?: NetworkConfig): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }> {
-    return this.invoke(() => this.api!.codegenGenerateSelfTest(boardModel, secrets, network));
+    return this.invoke(api => api.codegenGenerateSelfTest(boardModel, secrets, network));
   }
 
   // --- Toolchain ---
@@ -129,21 +133,21 @@ export class ElectronService {
     return this.api.toolchainStatus();
   }
   toolchainRefresh(): Promise<ToolchainInfo> {
-    return this.invoke(() => this.api!.toolchainRefresh());
+    return this.invoke(api => api.toolchainRefresh());
   }
 
   // --- ESPHome operations ---
   esphomeCompile(configName: string): Promise<ProcessResult> {
-    return this.invoke(() => this.api!.esphomeCompile(configName));
+    return this.invoke(api => api.esphomeCompile(configName));
   }
   esphomeFlash(configName: string, device?: string): Promise<ProcessResult> {
-    return this.invoke(() => this.api!.esphomeFlash(configName, device));
+    return this.invoke(api => api.esphomeFlash(configName, device));
   }
   esphomeLogs(configName: string, device?: string): Promise<ProcessResult> {
-    return this.invoke(() => this.api!.esphomeLogs(configName, device));
+    return this.invoke(api => api.esphomeLogs(configName, device));
   }
   esphomeCancel(processId: string): Promise<{ cancelled: boolean }> {
-    return this.invoke(() => this.api!.esphomeCancel(processId));
+    return this.invoke(api => api.esphomeCancel(processId));
   }
 
   // --- Process events (unified for all backends) ---
@@ -159,10 +163,10 @@ export class ElectronService {
 
   // --- Serial monitor ---
   serialMonitor(port: string, baudRate: number): Promise<SerialHandle> {
-    return this.invoke(() => this.api!.serialMonitor(port, baudRate));
+    return this.invoke(api => api.serialMonitor(port, baudRate));
   }
   serialCancel(processId: string): Promise<{ cancelled: boolean }> {
-    return this.invoke(() => this.api!.serialCancel(processId));
+    return this.invoke(api => api.serialCancel(processId));
   }
   onSerialOutput(callback: (data: SerialOutputEvent) => void): () => void {
     return this.api?.onSerialOutput(callback) ?? (() => {});
@@ -207,21 +211,21 @@ export class ElectronService {
     return this.api.healthCheck();
   }
   healthFix(): Promise<{ success: boolean; output: string }> {
-    return this.invoke(() => this.api!.healthFix());
+    return this.invoke(api => api.healthFix());
   }
 
   // --- Store ---
   outputDir(): Promise<string> {
-    return this.invoke(() => this.api!.outputDir());
+    return this.invoke(api => api.outputDir());
   }
   seedChanges(): Promise<SeedChange[]> {
     return this.api?.seedChanges() ?? Promise.resolve([]);
   }
   applySeed(id?: string): Promise<{ ok: boolean }> {
-    return this.invoke(() => this.api!.applySeed(id));
+    return this.invoke(api => api.applySeed(id));
   }
   dismissSeed(id: string): Promise<{ ok: boolean }> {
-    return this.invoke(() => this.api!.dismissSeed(id));
+    return this.invoke(api => api.dismissSeed(id));
   }
 
   // --- Legacy import ---
@@ -229,11 +233,11 @@ export class ElectronService {
     if (!this.api) return Promise.resolve(false);
     return this.api.legacyHasData();
   }
-  legacyScan(): Promise<{ sites: Array<{ id: string; friendlyName: string; systems: unknown[]; links: unknown[]; haFiles: unknown[] }> }> {
-    return this.invoke(() => this.api!.legacyScan());
+  legacyScan(): Promise<LegacyScanResult> {
+    return this.invoke(api => api.legacyScan());
   }
-  legacyImport(sites: unknown): Promise<{ imported: number }> {
-    return this.invoke(() => this.api!.legacyImport(sites));
+  legacyImport(sites: LegacySiteImport[]): Promise<{ imported: number }> {
+    return this.invoke(api => api.legacyImport(sites));
   }
 
   // --- HA config files ---
@@ -241,10 +245,10 @@ export class ElectronService {
     return this.api?.siteHaList(siteId) ?? Promise.resolve([]);
   }
   siteHaLoad(siteId: string, filename: string): Promise<string> {
-    return this.invoke(() => this.api!.siteHaLoad(siteId, filename));
+    return this.invoke(api => api.siteHaLoad(siteId, filename));
   }
   async siteHaSave(siteId: string, filename: string, content: string): Promise<void> {
-    await this.invoke(() => this.api!.siteHaSave(siteId, filename, content));
+    await this.invoke(api => api.siteHaSave(siteId, filename, content));
   }
 
   // --- Generation history ---
@@ -252,10 +256,10 @@ export class ElectronService {
     return this.api?.generationList(siteId, systemId, genType) ?? Promise.resolve([]);
   }
   generationLoad(id: number): Promise<GenerationSnapshot | null> {
-    return this.invoke(() => this.api!.generationLoad(id));
+    return this.invoke(api => api.generationLoad(id));
   }
   generationFind(version: string): Promise<GenerationSnapshot | null> {
-    return this.invoke(() => this.api!.generationFind(version));
+    return this.invoke(api => api.generationFind(version));
   }
   generationLatest(siteId: string, systemId: string, genType?: GenerationType): Promise<GenerationMeta | null> {
     return this.api?.generationLatest(siteId, systemId, genType) ?? Promise.resolve(null);
@@ -266,7 +270,7 @@ export class ElectronService {
     return this.api?.secretsGet(siteId, systemId) ?? Promise.resolve({});
   }
   async secretsSet(siteId: string, systemId: string, secrets: Record<string, string>): Promise<void> {
-    await this.invoke(() => this.api!.secretsSet(siteId, systemId, secrets));
+    await this.invoke(api => api.secretsSet(siteId, systemId, secrets));
   }
 
   // --- System settings ---
@@ -274,7 +278,7 @@ export class ElectronService {
     return this.api?.settingsGet(siteId, systemId, key) ?? Promise.resolve(null);
   }
   async settingsSet(siteId: string, systemId: string, key: string, value: string): Promise<void> {
-    await this.invoke(() => this.api!.settingsSet(siteId, systemId, key, value));
+    await this.invoke(api => api.settingsSet(siteId, systemId, key, value));
   }
   settingsGetAll(siteId: string, systemId: string): Promise<Record<string, string>> {
     return this.api?.settingsGetAll(siteId, systemId) ?? Promise.resolve({});
@@ -282,7 +286,7 @@ export class ElectronService {
 
   // --- Fleet telemetry & drift detection ---
   driftCheck(siteId: string): Promise<DriftReport[]> {
-    return this.invoke(() => this.api!.driftCheck(siteId));
+    return this.invoke(api => api.driftCheck(siteId));
   }
   driftHaCheck(): Promise<{ ok: boolean; version?: string; error?: string }> {
     return this.api?.driftHaCheck() ?? Promise.resolve({ ok: false, error: 'Not in Electron' });
@@ -293,7 +297,7 @@ export class ElectronService {
     return this.api?.appSettingGet(key) ?? Promise.resolve(null);
   }
   async appSettingSet(key: string, value: string): Promise<void> {
-    await this.invoke(() => this.api!.appSettingSet(key, value));
+    await this.invoke(api => api.appSettingSet(key, value));
   }
 
   // --- Topology event log ---
@@ -303,23 +307,23 @@ export class ElectronService {
   eventsCount(siteId: string): Promise<number> {
     return this.api?.eventsCount(siteId) ?? Promise.resolve(0);
   }
-  async eventsReconstruct(siteId: string, eventId: number): Promise<unknown> {
-    return this.invoke(() => this.api!.eventsReconstruct(siteId, eventId));
+  async eventsReconstruct(siteId: string, eventId: number): Promise<SiteTopology | null> {
+    return this.invoke(api => api.eventsReconstruct(siteId, eventId));
   }
 
   // --- Coordinated deployment ---
-  deploymentPlan(siteId: string, targetControllers?: string[]): Promise<unknown> {
-    return this.invoke(() => this.api!.deploymentPlan(siteId, targetControllers));
+  deploymentPlan(siteId: string, targetControllers?: string[]): Promise<DeploymentPlan> {
+    return this.invoke(api => api.deploymentPlan(siteId, targetControllers));
   }
-  deploymentExecute(plan: unknown): Promise<unknown> {
-    return this.invoke(() => this.api!.deploymentExecute(plan));
+  deploymentExecute(plan: DeploymentPlan): Promise<DeploymentResult[]> {
+    return this.invoke(api => api.deploymentExecute(plan));
   }
-  deploymentRollback(siteId: string, controllerId: string): Promise<unknown> {
-    return this.invoke(() => this.api!.deploymentRollback(siteId, controllerId));
+  deploymentRollback(siteId: string, controllerId: string): Promise<DeploymentResult[]> {
+    return this.invoke(api => api.deploymentRollback(siteId, controllerId));
   }
 
-  private invoke<T>(fn: () => Promise<T>): Promise<T> {
+  private invoke<T>(fn: (api: ElectronAPI) => Promise<T>): Promise<T> {
     if (!this.api) return Promise.reject(new Error('Not running in Electron'));
-    return fn();
+    return fn(this.api);
   }
 }

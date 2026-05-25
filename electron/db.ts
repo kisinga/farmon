@@ -8,13 +8,7 @@ import * as path from "node:path";
 // ---------------------------------------------------------------------------
 
 import type { SiteListEntry } from '@far-mon/core';
-
-export interface SystemListEntry {
-  id: string;
-  friendlyName: string;
-  board: string;
-  nodeCount: number;
-}
+import { parseTopology } from '@far-mon/core';
 
 export interface LinkRow {
   id: string;
@@ -39,9 +33,6 @@ export interface SystemRow {
   sortOrder: number;
 }
 
-import type { SiteFullPayload, SiteSavePayload } from '@far-mon/core';
-export type { SiteFullPayload, SiteSavePayload };
-
 export type GenerationType = 'esphome' | 'ha';
 
 export interface GenerationMeta {
@@ -65,7 +56,7 @@ export interface GenerationSnapshot extends GenerationMeta {
 // DB versioning & migrations
 // ---------------------------------------------------------------------------
 
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 
 const MIGRATIONS: Record<number, string> = {
   0: `
@@ -254,6 +245,11 @@ const MIGRATIONS: Record<number, string> = {
     );
     CREATE INDEX IF NOT EXISTS idx_topology_events_site ON topology_events (site_id, id DESC);
   `,
+  10: `
+    -- Drop legacy topology blob columns; events are now the SSOT
+    ALTER TABLE sites DROP COLUMN topology;
+    ALTER TABLE sites DROP COLUMN schema_version;
+  `,
 };
 
 // ---------------------------------------------------------------------------
@@ -263,7 +259,7 @@ const MIGRATIONS: Record<number, string> = {
 let _db: Database | null = null;
 let _dbPath: string = "";
 
-function persist(): void {
+export function persist(): void {
   if (!_db) return;
   const data = _db.export();
   fs.writeFileSync(_dbPath, Buffer.from(data));
@@ -301,6 +297,11 @@ function migrate(db: Database): void {
   const row = db.exec("PRAGMA user_version");
   let current = row.length > 0 && row[0].values.length > 0 ? Number(row[0].values[0][0]) : 0;
 
+  // Pre-migration: convert topology blobs to snapshot events before v10 drops the columns.
+  if (hasTopologyColumn(db)) {
+    migrateV11Data(db);
+  }
+
   while (current < DB_VERSION) {
     const sql = MIGRATIONS[current];
     if (!sql) throw new Error(`Missing DB migration from version ${current}`);
@@ -316,6 +317,32 @@ function migrate(db: Database): void {
   if (current === 6) {
     migrateLegacySitesToFlatTopology(db);
   }
+}
+
+function hasTopologyColumn(db: Database): boolean {
+  const result = db.exec("SELECT COUNT(*) as c FROM pragma_table_info('sites') WHERE name = 'topology'");
+  return (result[0]?.values[0][0] as number ?? 0) > 0;
+}
+
+/** Migrate v11: convert sites.topology blobs into snapshot events. */
+function migrateV11Data(db: Database): void {
+  const sites = queryAll<{ id: string; topology: string | null }>(
+    "SELECT id, topology FROM sites WHERE topology IS NOT NULL",
+  );
+  for (const site of sites) {
+    if (!site.topology) continue;
+    try {
+      const topology = parseTopology(JSON.parse(site.topology));
+      db.run(
+        `INSERT INTO topology_events (site_id, actor, event_type, payload)
+         VALUES (?, ?, ?, ?)`,
+        [site.id, 'system', 'snapshot', JSON.stringify({ topology })],
+      );
+    } catch (e) {
+      console.error(`[migrateV11] Failed to migrate site ${site.id}:`, e);
+    }
+  }
+  persist();
 }
 
 /**
@@ -405,13 +432,13 @@ function migrateLegacySitesToFlatTopology(db: Database): void {
   }
 }
 
-function getDb(): Database {
+export function getDb(): Database {
   if (!_db) throw new Error("DB not initialized. Call openDb() first.");
   return _db;
 }
 
 /** Run a query and return rows as typed objects. */
-function queryAll<T>(sql: string, params: unknown[] = []): T[] {
+export function queryAll<T>(sql: string, params: unknown[] = []): T[] {
   const db = getDb();
   const stmt = db.prepare(sql);
   stmt.bind(params as (string | number | null)[]);
@@ -447,7 +474,7 @@ function serializeTopology(topology: unknown): string {
   return JSON.stringify(stripPrivateFields(topology));
 }
 
-function queryOne<T>(sql: string, params: unknown[] = []): T | null {
+export function queryOne<T>(sql: string, params: unknown[] = []): T | null {
   const rows = queryAll<T>(sql, params);
   return rows[0] ?? null;
 }
@@ -473,377 +500,6 @@ export function inputChecksum(topology: unknown, board: unknown | null, secrets?
 // ---------------------------------------------------------------------------
 // Sites
 // ---------------------------------------------------------------------------
-
-export function listSites(): SiteListEntry[] {
-  return queryAll<{ id: string; friendly_name: string; topology: string | null }>(
-    "SELECT id, friendly_name, topology FROM sites ORDER BY friendly_name",
-  ).map(row => {
-    let controllerCount = 0;
-    let nodeCount = 0;
-    if (row.topology) {
-      try {
-        const topo = JSON.parse(row.topology) as { controllers?: unknown[]; nodes?: unknown[] };
-        controllerCount = topo.controllers?.length ?? 0;
-        nodeCount = topo.nodes?.length ?? 0;
-      } catch { /* ignore malformed topology */ }
-    }
-    return {
-      id: row.id,
-      friendlyName: row.friendly_name,
-      controllerCount,
-      nodeCount,
-    };
-  });
-}
-
-export function createSite(id: string, friendlyName: string): void {
-  const emptyTopology = {
-    schema: 16,
-    controllers: [],
-    nodes: [],
-    pipes: [],
-    route_overrides: {},
-    timing: {
-      valve_travel_time: 15,
-      flow_watchdog: 30,
-      flow_confirm: 10,
-      flow_threshold: 0.5,
-      api_watchdog: 60,
-      update_interval: 30,
-    },
-    automations: [],
-    remoteImports: [],
-  };
-  getDb().run(
-    "INSERT INTO sites (id, friendly_name, topology, schema_version) VALUES (?, ?, ?, ?)",
-    [id, friendlyName, JSON.stringify(emptyTopology), 16],
-  );
-  persist();
-}
-
-export function deleteSite(id: string): void {
-  getDb().run("DELETE FROM sites WHERE id = ?", [id]);
-  persist();
-}
-
-export function renameSite(id: string, friendlyName: string): void {
-  getDb().run(
-    "UPDATE sites SET friendly_name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
-    [friendlyName, id],
-  );
-  persist();
-}
-
-export function duplicateSite(sourceId: string, newId: string, newFriendlyName: string): void {
-  const db = getDb();
-  db.run("BEGIN TRANSACTION");
-  try {
-    const source = queryOne<{ topology: string | null; friendly_name: string }>(
-      "SELECT topology, friendly_name FROM sites WHERE id = ?", [sourceId],
-    );
-    if (!source) throw new Error(`Source site not found: ${sourceId}`);
-
-    db.run(
-      "INSERT INTO sites (id, friendly_name, topology, schema_version) VALUES (?, ?, ?, ?)",
-      [newId, newFriendlyName, source.topology, 16],
-    );
-
-    // Copy HA files
-    const haFiles = queryAll<{ filename: string; content: string }>(
-      "SELECT filename, content FROM ha_files WHERE site_id = ?", [sourceId],
-    );
-    for (const hf of haFiles) {
-      db.run(
-        "INSERT INTO ha_files (site_id, filename, content) VALUES (?, ?, ?)",
-        [newId, hf.filename, hf.content],
-      );
-    }
-
-    // Copy controller secrets (renamed from system_secrets)
-    const secrets = queryAll<{ system_id: string; key: string; value: string }>(
-      "SELECT system_id, key, value FROM system_secrets WHERE site_id = ?", [sourceId],
-    );
-    for (const s of secrets) {
-      db.run(
-        "INSERT INTO system_secrets (site_id, system_id, key, value) VALUES (?, ?, ?, ?)",
-        [newId, s.system_id, s.key, s.value],
-      );
-    }
-
-    // Copy controller settings
-    const settings = queryAll<{ system_id: string; key: string; value: string }>(
-      "SELECT system_id, key, value FROM system_settings WHERE site_id = ?", [sourceId],
-    );
-    for (const s of settings) {
-      db.run(
-        "INSERT INTO system_settings (site_id, system_id, key, value) VALUES (?, ?, ?, ?)",
-        [newId, s.system_id, s.key, s.value],
-      );
-    }
-
-    db.run("COMMIT");
-    persist();
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Site full load/save (atomic)
-// ---------------------------------------------------------------------------
-
-export function loadSiteFull(id: string): SiteFullPayload | null {
-  const site = queryOne<{ id: string; friendly_name: string; topology: string | null }>(
-    "SELECT id, friendly_name, topology FROM sites WHERE id = ?", [id],
-  );
-  if (!site) return null;
-
-  return {
-    site: { id: site.id, friendlyName: site.friendly_name },
-    topology: site.topology ? JSON.parse(site.topology) : null,
-  };
-}
-
-export function saveSiteTransaction(payload: SiteSavePayload, events?: Array<{ actor: string; eventType: string; payload: unknown }>): void {
-  const db = getDb();
-  const siteId = payload.site.id;
-  const topologyJson = serializeTopology(payload.topology);
-
-  db.run("BEGIN TRANSACTION");
-  try {
-    // Insert if new, update if existing
-    db.run(
-      `INSERT INTO sites (id, friendly_name, topology, schema_version, created_at, updated_at)
-       VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-       ON CONFLICT(id) DO UPDATE SET
-        friendly_name = excluded.friendly_name,
-        topology = excluded.topology,
-        schema_version = excluded.schema_version,
-        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
-      [siteId, payload.site.friendlyName, topologyJson, 16],
-    );
-
-    // Append topology events if provided
-    if (events && events.length > 0) {
-      for (const ev of events) {
-        db.run(
-          `INSERT INTO topology_events (site_id, actor, event_type, payload)
-           VALUES (?, ?, ?, ?)`,
-          [siteId, ev.actor, ev.eventType, JSON.stringify(ev.payload)],
-        );
-      }
-
-      // Snapshot every 50 non-snapshot events
-      const eventCount = db.exec(
-        `SELECT COUNT(*) as c FROM topology_events WHERE site_id = ? AND event_type != 'snapshot'`,
-        [siteId],
-      )[0]?.values[0][0] ?? 0;
-      if ((eventCount as number) % 50 === 0) {
-        db.run(
-          `INSERT INTO topology_events (site_id, actor, event_type, payload)
-           VALUES (?, ?, ?, ?)`,
-          [siteId, 'system', 'snapshot', JSON.stringify({ topology: payload.topology })],
-        );
-      }
-    }
-
-    db.run("COMMIT");
-    persist();
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Systems
-// ---------------------------------------------------------------------------
-
-export function listSystems(siteId: string): SystemListEntry[] {
-  const row = queryOne<{ topology: string | null }>(
-    "SELECT topology FROM sites WHERE id = ?", [siteId],
-  );
-  if (!row?.topology) return [];
-  try {
-    const topo = JSON.parse(row.topology) as { controllers?: Array<{ id: string; board: string }>; nodes?: unknown[] };
-    return (topo.controllers ?? []).map(c => ({
-      id: c.id,
-      friendlyName: (c as any).friendlyName ?? c.id,
-      board: c.board,
-      nodeCount: (topo.nodes ?? []).filter((n: any) => n.anchorId === c.id).length,
-    }));
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Get all node IDs registered in a site.
- */
-export function getAllNodeIds(siteId: string): string[] {
-  const row = queryOne<{ topology: string | null }>(
-    "SELECT topology FROM sites WHERE id = ?", [siteId],
-  );
-  if (!row?.topology) return [];
-  try {
-    const topo = JSON.parse(row.topology) as { nodes?: Array<{ id: string }> };
-    return (topo.nodes ?? []).map(n => n.id);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Check for node ID conflicts within a site.
- * In the anchor-mesh model, node IDs are site-scoped.
- * Returns node IDs that already exist in the site topology.
- */
-export function checkNodeIdConflicts(
-  siteId: string, _excludeSystemId: string, nodeIds: string[],
-): string[] {
-  if (nodeIds.length === 0) return [];
-  const existing = new Set(getAllNodeIds(siteId));
-  return nodeIds.filter(id => existing.has(id));
-}
-
-/**
- * Insert a new controller into a site's topology.
- * Caller is responsible for ensuring node IDs don't conflict.
- */
-export function insertSystem(
-  siteId: string,
-  system: {
-    id: string;
-    friendlyName: string;
-    board: string;
-    directory: string | null;
-    topology: unknown;
-    deviceName: string;
-  },
-): void {
-  const db = getDb();
-  db.run("BEGIN TRANSACTION");
-  try {
-    const site = queryOne<{ topology: string | null }>(
-      "SELECT topology FROM sites WHERE id = ?", [siteId],
-    );
-    if (!site) throw new Error(`Site not found: ${siteId}`);
-
-    const siteTopo = site.topology ? JSON.parse(site.topology) as Record<string, unknown> : {
-      schema: 16, controllers: [], nodes: [], pipes: [], route_overrides: {},
-      timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 10, flow_threshold: 0.5, api_watchdog: 60, update_interval: 30 },
-      automations: [],
-      remoteImports: [],
-    };
-    const incoming = system.topology as Record<string, unknown>;
-
-    // Merge controller
-    const controllers = siteTopo.controllers as Array<Record<string, unknown>> ?? [];
-    controllers.push({
-      id: system.id,
-      friendlyName: system.friendlyName,
-      board: system.board,
-      directory: system.directory ?? undefined,
-      network: (incoming as Record<string, unknown>).network,
-      uart_buses: (incoming as Record<string, unknown>).uart_buses,
-      io_providers: (incoming as Record<string, unknown>).io_providers,
-    });
-
-    // Merge nodes with anchorId
-    const existingNodes = siteTopo.nodes as Array<Record<string, unknown>> ?? [];
-    const incomingNodes = (incoming.nodes as Array<Record<string, unknown>> ?? [])
-      .map(n => ({ ...n, anchorId: system.id }));
-    siteTopo.nodes = [...existingNodes, ...incomingNodes];
-
-    // Merge pipes
-    const existingPipes = siteTopo.pipes as Array<Record<string, unknown>> ?? [];
-    const incomingPipes = (incoming.pipes as Array<Record<string, unknown>> ?? []);
-    siteTopo.pipes = [...existingPipes, ...incomingPipes];
-
-    // Merge route_overrides, timing, automations (last wins)
-    siteTopo.route_overrides = { ...(siteTopo.route_overrides as Record<string, unknown> ?? {}), ...(incoming.route_overrides as Record<string, unknown> ?? {}) };
-    siteTopo.automations = [...(siteTopo.automations as unknown[] ?? []), ...(incoming.automations as unknown[] ?? [])];
-
-    const topologyJson = serializeTopology(siteTopo);
-
-    db.run(
-      "UPDATE sites SET topology = ?, schema_version = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
-      [topologyJson, 16, siteId],
-    );
-    db.run("COMMIT");
-    persist();
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
-}
-
-export function deleteSystem(siteId: string, systemId: string): void {
-  const db = getDb();
-  db.run("BEGIN TRANSACTION");
-  try {
-    const site = queryOne<{ topology: string | null }>(
-      "SELECT topology FROM sites WHERE id = ?", [siteId],
-    );
-    if (!site?.topology) {
-      db.run("COMMIT");
-      return;
-    }
-
-    const topo = JSON.parse(site.topology) as {
-      controllers?: Array<{ id: string }>;
-      nodes?: Array<{ id: string; anchorId?: string }>;
-      pipes?: Array<{ from: string; to: string }>;
-      route_overrides?: Record<string, unknown>;
-      automations?: Array<{ route?: string; nodes?: string[] }>;
-    };
-
-    // Collect node IDs anchored to this controller
-    const removedNodeIds = new Set(
-      (topo.nodes ?? [])
-        .filter(n => n.anchorId === systemId)
-        .map(n => n.id),
-    );
-
-    // Remove controller
-    topo.controllers = (topo.controllers ?? []).filter(c => c.id !== systemId);
-
-    // Remove anchored nodes
-    topo.nodes = (topo.nodes ?? []).filter(n => n.anchorId !== systemId);
-
-    // Remove pipes that reference removed nodes
-    topo.pipes = (topo.pipes ?? []).filter(p => {
-      const fromNode = p.from.split(':')[0];
-      const toNode = p.to.split(':')[0];
-      return !removedNodeIds.has(fromNode) && !removedNodeIds.has(toNode);
-    });
-
-    // Remove route_overrides for removed nodes
-    if (topo.route_overrides) {
-      topo.route_overrides = Object.fromEntries(
-        Object.entries(topo.route_overrides).filter(([key]) => !removedNodeIds.has(key)),
-      );
-    }
-
-    // Remove automations referencing removed nodes
-    topo.automations = (topo.automations ?? []).filter(a => {
-      if (a.route && removedNodeIds.has(a.route)) return false;
-      if (a.nodes && a.nodes.some(id => removedNodeIds.has(id))) return false;
-      return true;
-    });
-
-    db.run(
-      "UPDATE sites SET topology = ?, schema_version = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
-      [JSON.stringify(topo), 16, siteId]
-    );
-    db.run("COMMIT");
-    persist();
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Links

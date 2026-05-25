@@ -26,6 +26,7 @@ import {
   type DeploymentPlan,
 } from "./deployment-coordinator.js";
 import { diffTopology } from "./lib/topology-diff.js";
+import * as SiteRepository from "./lib/site-repository.js";
 
 
 // ---------------------------------------------------------------------------
@@ -172,10 +173,10 @@ export function registerIpcHandlers() {
   // Sites
   // =========================================================================
 
-  ipcMain.handle("site:list", async () => db.listSites());
+  ipcMain.handle("site:list", async () => SiteRepository.list());
 
   ipcMain.handle("site:load", async (_e, id: string) => {
-    const payload = db.loadSiteFull(id);
+    const payload = SiteRepository.loadFull(id);
     if (!payload) throw new Error(`Site not found: ${id}`);
     return payload;
   });
@@ -186,40 +187,44 @@ export function registerIpcHandlers() {
   }) => {
     const topology = parseTopology(payload.topology as Record<string, unknown>);
 
-    // Load existing topology for diffing
-    const existing = db.loadSiteFull(payload.site.id);
-    const oldTopology = existing?.topology ?? null;
+    // Update friendly name if it changed
+    const existing = SiteRepository.loadFull(payload.site.id);
+    if (existing && existing.site.friendlyName !== payload.site.friendlyName) {
+      SiteRepository.rename(payload.site.id, payload.site.friendlyName);
+    }
 
-    // Diff and generate events
-    const events = diffTopology(oldTopology as any, topology);
+    // Sanitize: strip automations with empty routes so they don't pollute the manifest
+    topology.automations = topology.automations.filter(
+      (a) => a.route && a.route.trim() !== '',
+    );
+
+    const events = SiteRepository.save(payload.site.id, topology);
     console.log(`[site:save] ${payload.site.id}: generated ${events.length} events`);
-
-    db.saveSiteTransaction({ site: payload.site, topology }, events);
     return { ok: true, events: events.length };
   });
 
   ipcMain.handle("site:create", async (_e, id: string, friendlyName: string) => {
-    db.createSite(id, friendlyName);
+    SiteRepository.create(id, friendlyName);
     return { ok: true };
   });
 
   ipcMain.handle("site:delete", async (_e, id: string) => {
-    db.deleteSite(id);
+    SiteRepository.deleteSite(id);
     return { ok: true };
   });
 
   ipcMain.handle("site:duplicate", async (_e, sourceId: string, newId: string, newFriendlyName: string) => {
-    db.duplicateSite(sourceId, newId, newFriendlyName);
+    SiteRepository.duplicate(sourceId, newId, newFriendlyName);
     return { ok: true, id: newId };
   });
 
   ipcMain.handle("site:rename", async (_e, id: string, friendlyName: string) => {
-    db.renameSite(id, friendlyName);
+    SiteRepository.rename(id, friendlyName);
     return { ok: true };
   });
 
   ipcMain.handle("site:export", async (event, siteId: string) => {
-    const payload = db.loadSiteFull(siteId);
+    const payload = SiteRepository.loadFull(siteId);
     if (!payload) throw new Error(`Site not found: ${siteId}`);
 
     // Include HA files in export
@@ -281,7 +286,7 @@ export function registerIpcHandlers() {
 
     // Avoid ID collision — append suffix if site already exists
     let siteId = data.site.id;
-    while (db.loadSiteFull(siteId)) {
+    while (SiteRepository.loadFull(siteId)) {
       siteId = siteId + '-imported';
     }
     data.site.id = siteId;
@@ -301,11 +306,8 @@ export function registerIpcHandlers() {
       throw new Error("Invalid site file: missing topology or systems");
     }
 
-    // Import is a bulk operation — use a snapshot event instead of diffs
-    db.saveSiteTransaction({
-      site: data.site,
-      topology,
-    }, [{ actor: 'import', eventType: 'snapshot', payload: { source: 'site-import' } }]);
+    SiteRepository.create(data.site.id, data.site.friendlyName);
+    SiteRepository.save(data.site.id, topology);
 
     // Import HA files
     if (data.haFiles) {
@@ -321,7 +323,7 @@ export function registerIpcHandlers() {
   // Systems (within a site)
   // =========================================================================
 
-  ipcMain.handle("system:list", async (_e, siteId: string) => db.listSystems(siteId));
+  ipcMain.handle("system:list", async (_e, siteId: string) => SiteRepository.load(siteId).controllers);
 
   /**
    * Add a system from a template. Loads template YAML, remaps any conflicting
@@ -337,7 +339,7 @@ export function registerIpcHandlers() {
         : [];
 
       // Generate system ID (unique within site)
-      const existingSystems = db.listSystems(siteId);
+      const existingSystems = SiteRepository.load(siteId).controllers;
       const existingIds = new Set(existingSystems.map(s => s.id));
       let systemId = templateName;
       if (existingIds.has(systemId)) {
@@ -347,7 +349,7 @@ export function registerIpcHandlers() {
       }
 
       // Remap any node IDs that conflict with existing ones in the site
-      const existingNodeIds = new Set(db.getAllNodeIds(siteId));
+      const existingNodeIds = new Set(SiteRepository.load(siteId).nodes.map(n => n.id));
       const kindMax = new Map<string, number>();
 
       // Parse a node ID into (kind, number). Bare IDs like "pump" → ("pump", 1).
@@ -444,7 +446,24 @@ export function registerIpcHandlers() {
         deviceName: slug((device?.friendly_name as string) ?? templateName),
       };
 
-      db.insertSystem(siteId, system);
+      SiteRepository.addController(siteId, {
+        id: system.id,
+        friendlyName: system.friendlyName,
+        board: system.board,
+        directory: system.directory ?? undefined,
+        network: (system.topology as Record<string, unknown>).network as import('@far-mon/core').NetworkConfig | undefined,
+        uart_buses: (system.topology as Record<string, unknown>).uart_buses as import('@far-mon/core').UartBus[] | undefined,
+        io_providers: (system.topology as Record<string, unknown>).io_providers as import('@far-mon/core').IoProviderDef[] | undefined,
+      }, {
+        nodes: (system.topology as Record<string, unknown>).nodes as import('@far-mon/core').TopologyNode[] | undefined,
+        pipes: (system.topology as Record<string, unknown>).pipes as import('@far-mon/core').PipeSegment[] | undefined,
+        route_overrides: (system.topology as Record<string, unknown>).route_overrides as Record<string, import('@far-mon/core').RouteOverride> | undefined,
+        timing: (system.topology as Record<string, unknown>).timing as Partial<import('@far-mon/core').SiteTopology['timing']> | undefined,
+        automations: (system.topology as Record<string, unknown>).automations as import('@far-mon/core').Automation[] | undefined,
+      });
+
+      // Seed default secrets so generation doesn't fail on missing API/OTA keys
+      db.setSecrets(siteId, systemId, generateDefaultSecrets() as unknown as Record<string, string>);
 
       return {
         id: systemId,
@@ -464,7 +483,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     "system:create-blank",
     async (_e, siteId: string, friendlyName: string, board: string) => {
-      const existingSystems = db.listSystems(siteId);
+      const existingSystems = SiteRepository.load(siteId).controllers;
       const existingIds = new Set(existingSystems.map(s => s.id));
 
       let systemId = slug(friendlyName);
@@ -498,7 +517,21 @@ export function registerIpcHandlers() {
         deviceName: slug(friendlyName),
       };
 
-      db.insertSystem(siteId, system);
+      SiteRepository.addController(siteId, {
+        id: system.id,
+        friendlyName: system.friendlyName,
+        board: system.board,
+        directory: system.directory ?? undefined,
+      }, {
+        nodes: (system.topology as Record<string, unknown>).nodes as import('@far-mon/core').TopologyNode[] | undefined,
+        pipes: (system.topology as Record<string, unknown>).pipes as import('@far-mon/core').PipeSegment[] | undefined,
+        route_overrides: (system.topology as Record<string, unknown>).route_overrides as Record<string, import('@far-mon/core').RouteOverride> | undefined,
+        timing: (system.topology as Record<string, unknown>).timing as Partial<import('@far-mon/core').SiteTopology['timing']> | undefined,
+        automations: (system.topology as Record<string, unknown>).automations as import('@far-mon/core').Automation[] | undefined,
+      });
+
+      // Seed default secrets so generation doesn't fail on missing API/OTA keys
+      db.setSecrets(siteId, systemId, generateDefaultSecrets() as unknown as Record<string, string>);
 
       return {
         id: systemId,
@@ -510,7 +543,7 @@ export function registerIpcHandlers() {
   );
 
   ipcMain.handle("system:delete", async (_e, siteId: string, systemId: string) => {
-    db.deleteSystem(siteId, systemId);
+    SiteRepository.removeController(siteId, systemId);
     return { ok: true };
   });
 
@@ -644,14 +677,13 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     "codegen:generate-ha",
     async (_e, siteId: string) => {
-      const site = db.loadSiteFull(siteId);
+      const site = SiteRepository.loadFull(siteId);
       if (!site) throw new Error(`Site not found: ${siteId}`);
 
       const systems: Array<import("./lib/generators/site-dashboard.js").SiteDashboardSystem> = [];
       const manifests = new Map<string, import("./lib/schema.js").Manifest>();
 
-      const fullTopology = site.topology ? parseTopology(site.topology) : null;
-      if (!fullTopology) throw new Error(`Site "${site.site.friendlyName}" has no topology`);
+      const fullTopology = site.topology;
 
       for (const ctrl of fullTopology.controllers) {
         const manifest = topologyToManifestForController(fullTopology, ctrl.id);
@@ -812,7 +844,7 @@ export function registerIpcHandlers() {
       });
 
       const html = generateSiteDocumentation(
-        db.loadSiteFull(siteId)?.site.friendlyName ?? siteId,
+        SiteRepository.loadFull(siteId)?.site.friendlyName ?? siteId,
         systems,
         compositeSvg,
         routesRaw,
@@ -840,7 +872,7 @@ export function registerIpcHandlers() {
       siteId: string,
       artifacts: Array<{ name: string; svg: string; meta: unknown }>,
     ) => {
-      if (!db.loadSiteFull(siteId)) throw new Error(`Site not found: ${siteId}`);
+      if (!SiteRepository.loadFull(siteId)) throw new Error(`Site not found: ${siteId}`);
       const outputDir = store.getOutputDir();
       const files: Array<{ relativePath: string; content: string }> = [];
       for (const a of artifacts) {
@@ -1016,7 +1048,7 @@ export function registerIpcHandlers() {
 
   // --- Legacy import ---
   ipcMain.handle("legacy:has-data", async () => {
-    if (db.listSites().length > 0) return false;
+    if (SiteRepository.list().length > 0) return false;
     return store.hasLegacyData();
   });
 
@@ -1026,7 +1058,7 @@ export function registerIpcHandlers() {
     let imported = 0;
     for (const site of sites) {
       // Skip if site ID already exists
-      const existing = db.loadSiteFull(site.id);
+      const existing = SiteRepository.loadFull(site.id);
       if (existing) continue;
 
       const topology = legacySystemsToSiteTopology(
@@ -1040,11 +1072,8 @@ export function registerIpcHandlers() {
         })),
         site.links,
       );
-      // Legacy import is a bulk operation — use a snapshot event
-      db.saveSiteTransaction({
-        site: { id: site.id, friendlyName: site.friendlyName },
-        topology,
-      }, [{ actor: 'import', eventType: 'snapshot', payload: { source: 'legacy-import' } }]);
+      SiteRepository.create(site.id, site.friendlyName);
+      SiteRepository.save(site.id, topology);
 
       // Import HA files
       for (const hf of site.haFiles) {
@@ -1175,8 +1204,9 @@ export function registerIpcHandlers() {
   );
 
   ipcMain.handle("events:reconstruct", async (_e, siteId: string, eventId: number) => {
-    const events = db.listTopologyEvents(siteId);
+    const { listEvents } = await import("./lib/event-store.js");
     const { reconstructTopology } = await import("./lib/reconstruct-topology.js");
+    const events = listEvents(siteId);
     return reconstructTopology(events, eventId);
   });
 }

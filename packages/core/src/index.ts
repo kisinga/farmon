@@ -21,7 +21,7 @@ export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board
 export { boardSupportedTransports } from './board.types';
 export type { IoProviderDef } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
-export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext, TypedDescriptor, EntityKind } from './entity-registry';
+export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext, TypedDescriptor, EntityKind, HaEntityKey } from './entity-registry';
 export type { ChannelUsage, ResolvedChannel, IoChannel, IoProviderDriver } from './io-provider.types';
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
@@ -33,6 +33,7 @@ export type {
 
 // --- Schemas ---
 export { TopologySchema, RouteOverrideSchema, parseTopology, parsePortRef, portRef, migrateTopology, CURRENT_SCHEMA_VERSION, type Topology } from './topology-schema';
+export { TopologyEventSchema, parseTopologyEvent, type TopologyEvent, type TopologyEventType } from './topology-events';
 export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, AnchorIdSchema, parseDurationMs, escXml } from './schemas';
 export { type InputPolicy, policyString } from './input-policy';
 
@@ -47,7 +48,8 @@ export { topologyToManifestForController } from './topology-to-manifest';
 export { collectPins } from './pin-collect';
 export { computePinOverlays } from './board-pin-overlays';
 export { reservedPins, exposedPins, pinsWithCap } from './board.types';
-export { entityColor, UI_COLORS } from './colors';
+export { UI_COLORS } from './colors';
+export { entityColor } from './entity-registry';
 export { nodesByKind } from './manifest.types';
 export { getNodesByKind, getNodeByKind } from './topology.types';
 

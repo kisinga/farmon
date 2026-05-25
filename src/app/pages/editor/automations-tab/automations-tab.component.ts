@@ -106,7 +106,7 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
                       fieldKey="at"
                       type="time"
                       size="sm"
-                      [value]="auto.trigger.at ?? '06:00'"
+                      [value]="auto.trigger.at"
                       (valueChange)="updateTrigger(i, 'at', $any($event))" />
                   </div>
                 }
@@ -272,12 +272,13 @@ export class AutomationsTabComponent {
 
   protected add() {
     const id = `auto_${Date.now().toString(36)}`;
+    const firstRoute = this.derivedRoutes()[0]?.key ?? '';
     this.editor.updateTopology(t => {
       if (!t.automations) t.automations = [];
       t.automations.push({
         id,
         name: '',
-        route: '',
+        route: firstRoute,
         trigger: { type: 'time', at: '06:00' },
         days_of_week: [...DAYS],
         enabled: true,

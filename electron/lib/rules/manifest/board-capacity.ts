@@ -22,7 +22,7 @@ export const boardCapacity: ManifestRule = {
     // Count demanded pins by required capability (from entity sidebar field pinCap)
     const demandByCapability = new Map<PinCap, number>();
     for (const node of m.nodes) {
-      const desc = NODE_REGISTRY.get(node['kind']);
+      const desc = NODE_REGISTRY.get(node.kind);
       if (!desc) continue;
       for (const field of desc.sidebarFields) {
         if (field.type !== 'pin' || !field.pinCap) continue;
@@ -57,7 +57,7 @@ export const boardCapacity: ManifestRule = {
       if (outputPins.size > 0) {
         let outputDemand = 0;
         for (const node of m.nodes) {
-          const desc = NODE_REGISTRY.get(node['kind']);
+          const desc = NODE_REGISTRY.get(node.kind);
           if (!desc) continue;
           for (const field of desc.sidebarFields) {
             if (field.type !== 'pin') continue;

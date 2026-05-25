@@ -9,7 +9,7 @@ export const routeConcurrency: ManifestRule = {
 
   evaluate(m: Manifest, _board: BoardDef): RuleDiagnostic[] {
     const diagnostics: RuleDiagnostic[] = [];
-    const nodeName = new Map(m.nodes.map(n => [n['id'] as string, (n['name'] as string) || n['id']]));
+    const nodeName = new Map(m.nodes.map(n => [n.id, n.name || n.id]));
     const destOf = (r: Route) => parseRouteKey(r.key).destination;
 
     // Group routes by flow sensor

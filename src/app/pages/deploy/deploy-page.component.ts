@@ -17,8 +17,9 @@ import { renderCompositeOverlays, renderPerSystemOverlays } from '../../shared/c
 // TODO(anchor-mesh): enrichPerSystemInterconnects removed — replace with site-level route analysis
 import { ConfirmService } from '../../core/services/confirm.service';
 import { FormsModule } from '@angular/forms';
-import type { ToolchainInfo, GenerationMeta, DriftReport } from '../../core/models/electron-api';
+import type { ToolchainInfo, GenerationMeta, DriftReport, DeploymentPlan, DeploymentResult } from '../../core/models/electron-api';
 import { type FirmwareSecrets, EMPTY_FIRMWARE_SECRETS, isApiKeyValid } from '../../core/models/firmware-secrets';
+import type { ValidationResult } from '../../core/models/electron-api';
 import { randomBase64, randomHex } from '../../core/util/random-keys';
 import { boardSupportedTransports, effectiveTransport, slug, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
 
@@ -623,7 +624,7 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   protected fwOutputDir = signal('');
   protected fwDeviceDir = signal('');
   protected generating = signal(false);
-  protected fwValidation = signal<any>(null);
+  protected fwValidation = signal<ValidationResult | null>(null);
   protected fwError = signal<string | null>(null);
 
   // Build state owned by the embedded panel; deploy keeps just the toolchain
@@ -672,14 +673,8 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
 
   // Coordinated deployment state
   protected deploymentRunning = signal(false);
-  protected deploymentPlan = signal<{
-    siteId: string;
-    phases: Array<{ name: string; controllers: Array<{ controllerId: string }> }>;
-    consistencyHash: string;
-    requiresFullDeployment: boolean;
-    warnings: string[];
-  } | null>(null);
-  protected deploymentResults = signal<Array<{ controllerId: string; success: boolean; error?: string; verified: boolean }>>([]);
+  protected deploymentPlan = signal<DeploymentPlan | null>(null);
+  protected deploymentResults = signal<DeploymentResult[]>([]);
 
   protected deploymentResult(controllerId: string) {
     return this.deploymentResults().find(r => r.controllerId === controllerId);
@@ -1143,16 +1138,10 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
     this.deploymentPlan.set(null);
 
     try {
-      const plan = await this.electron.deploymentPlan(siteId) as {
-        siteId: string;
-        phases: Array<{ name: string; controllers: Array<{ controllerId: string }> }>;
-        consistencyHash: string;
-        requiresFullDeployment: boolean;
-        warnings: string[];
-      };
+      const plan = await this.electron.deploymentPlan(siteId);
       this.deploymentPlan.set(plan);
 
-      const results = await this.electron.deploymentExecute(plan) as Array<{ controllerId: string; success: boolean; error?: string; verified: boolean }>;
+      const results = await this.electron.deploymentExecute(plan);
       this.deploymentResults.set(results);
     } catch (err) {
       this.fwError.set(String(err));

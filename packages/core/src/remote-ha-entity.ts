@@ -32,7 +32,7 @@ export function deriveRemoteHaEntityId(
     if (!srcDesc?.codegen?.haEntityIds) return undefined;
     const providerController = topology.controllers.find(c => c.id === srcNode.anchorId);
     const device = { friendly_name: providerController?.friendlyName ?? srcNode.anchorId };
-    const declared = srcDesc.codegen.haEntityIds(srcNode as Record<string, any>, device);
+    const declared = srcDesc.codegen.haEntityIds(srcNode, device);
     return declared?.['level'];
   }
 
@@ -42,7 +42,7 @@ export function deriveRemoteHaEntityId(
   if (!desc.codegen?.haEntityIds) return undefined;
   const providerController = topology.controllers.find(c => c.id === node.anchorId);
   const device = { friendly_name: providerController?.friendlyName ?? node.anchorId };
-  const declared = desc.codegen.haEntityIds(node as Record<string, any>, device);
+  const declared = desc.codegen.haEntityIds(node, device);
   if (!declared) return undefined;
 
   // Pick canonical entity matching haDomain

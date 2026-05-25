@@ -3,7 +3,7 @@ import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 import type { TopologyRule, ManifestRule, RuleDiagnostic } from "./rule.types.js";
 import { z } from 'zod';
-import { NODE_REGISTRY, REGISTRY_RULES, buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateEscalations, type ValidationResult } from '@far-mon/core';
+import { NODE_REGISTRY, REGISTRY_RULES, buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateEscalations, type ValidationResult, type TopologyNode } from '@far-mon/core';
 
 export type { ValidationResult } from '@far-mon/core';
 
@@ -39,10 +39,10 @@ function isSchemaFieldRequired(schema: z.ZodTypeAny, fieldKey: string): boolean 
  * pin validation (richer messages). The generic check only runs for
  * entities without rules. REGISTRY_RULES run last for cross-cutting checks.
  */
-function runEntityRules(nodes: Array<Record<string, any>>): RuleDiagnostic[] {
+function runEntityRules(nodes: TopologyNode[]): RuleDiagnostic[] {
   const diagnostics: RuleDiagnostic[] = [];
   for (const [kind, desc] of NODE_REGISTRY) {
-    const kindNodes = nodes.filter(n => n['kind'] === kind);
+    const kindNodes = nodes.filter(n => n.kind === kind);
 
     if (desc.rules?.length) {
       // Entity-specific rules are the authority — they produce richer messages
@@ -63,11 +63,11 @@ function runEntityRules(nodes: Array<Record<string, any>>): RuleDiagnostic[] {
       const pinFields = desc.sidebarFields.filter(f => f.type === 'pin');
       for (const node of kindNodes) {
         for (const field of pinFields) {
-          if (!node[field.key] && isSchemaFieldRequired(desc.schema, field.key)) {
+          if (!(node as Record<string, unknown>)[field.key] && isSchemaFieldRequired(desc.schema, field.key)) {
             diagnostics.push({
               severity: 'error',
-              message: `${desc.label} "${node['name'] || node['id']}": ${field.label} not configured`,
-              target: String(node['id']),
+              message: `${desc.label} "${node.name || node.id}": ${field.label} not configured`,
+              target: String(node.id),
               ruleId: 'pin-not-configured',
             });
           }

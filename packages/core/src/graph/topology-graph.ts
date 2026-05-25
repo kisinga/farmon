@@ -11,7 +11,7 @@ import { NODE_REGISTRY } from '../entity-registry';
 // ── Node & edge attribute types ─────────────────────────────────────────────
 
 export interface NodeAttrs {
-  kind: string;
+  kind: TopologyNode['kind'];
   role: 'terminal' | 'passthrough';
   routeSource: boolean;
   isPump: boolean;

@@ -1,24 +1,43 @@
 /**
  * TopologySchema — the single Zod schema for validating topology documents.
  *
- * Assembles the node discriminated union from NODE_REGISTRY, so adding a new
- * entity file is all that's needed — no manual wiring here.
+ * The node discriminated union is assembled statically from entity schemas so
+ * that Zod can infer the precise TopologyNode type. Adding a new entity
+ * requires importing its schema here.
  */
 import { z } from 'zod';
-import { NODE_REGISTRY } from './entity-registry';
+import { TankNodeSchema } from './entities/tank';
+import { PumpNodeSchema } from './entities/pump';
+import { EndpointNodeSchema } from './entities/endpoint';
+import { ValveNodeSchema } from './entities/valve';
+import { FlowSensorNodeSchema } from './entities/flow-sensor';
+import { WaterSourceNodeSchema } from './entities/water-source';
+import { PressureSensorNodeSchema } from './entities/pressure-sensor';
+import { LevelSensorNodeSchema } from './entities/level-sensor';
+import { FilterNodeSchema } from './entities/filter';
+import { DosingPumpNodeSchema } from './entities/dosing-pump';
+import { VfdNodeSchema } from './entities/vfd';
 import { DeviceSchema, TimingSchema, AutomationSchema, NetworkConfigSchema, parseDurationMs } from './schemas';
 import { buildGraph, deriveRoutes } from './graph/index';
 import type { SiteTopology } from './topology.types';
 
 // ---------------------------------------------------------------------------
-// Node discriminated union — driven by the registry
+// Node discriminated union — static assembly for precise inference
 // ---------------------------------------------------------------------------
 
-const entitySchemas = [...NODE_REGISTRY.values()].map(d => d.schema);
-const TopologyNodeSchema = z.discriminatedUnion(
-  "kind",
-  entitySchemas as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]],
-);
+export const TopologyNodeSchema = z.discriminatedUnion("kind", [
+  TankNodeSchema,
+  PumpNodeSchema,
+  EndpointNodeSchema,
+  ValveNodeSchema,
+  FlowSensorNodeSchema,
+  WaterSourceNodeSchema,
+  PressureSensorNodeSchema,
+  LevelSensorNodeSchema,
+  FilterNodeSchema,
+  DosingPumpNodeSchema,
+  VfdNodeSchema,
+]);
 
 // ---------------------------------------------------------------------------
 // Pipes (edges between ports)
@@ -26,7 +45,7 @@ const TopologyNodeSchema = z.discriminatedUnion(
 
 const PortRef = z.string().regex(/^[^:]+:[^:]+$/, 'Must be "nodeId:portId" format');
 
-const PipeSegmentSchema = z.object({
+export const PipeSegmentSchema = z.object({
   id: z.string().min(1),
   from: PortRef,
   to: PortRef,
@@ -46,32 +65,34 @@ export const RouteOverrideSchema = z.object({
 // Topology (top-level document)
 // ---------------------------------------------------------------------------
 
-const RemoteImportSchema = z.object({
+export const RemoteImportSchema = z.object({
   controllerId: z.string().min(1),
   nodeId: z.string().min(1),
 });
 
+export const ControllerSchema = z.object({
+  id: z.string().min(1),
+  board: z.string().min(1),
+  friendlyName: z.string().optional(),
+  directory: z.string().optional(),
+  network: NetworkConfigSchema.optional(),
+  uart_buses: z.array(z.object({
+    id: z.string().min(1),
+    tx_pin: z.string().min(1),
+    rx_pin: z.string().min(1),
+    de_pin: z.string().optional(),
+    baud_rate: z.number().int().positive(),
+  })).optional(),
+  io_providers: z.array(z.object({
+    id: z.string().min(1),
+    type: z.string().min(1),
+    config: z.record(z.string(), z.unknown()),
+  })).optional(),
+});
+
 export const TopologySchema = z.object({
   schema: z.literal(16),
-  controllers: z.array(z.object({
-    id: z.string().min(1),
-    board: z.string().min(1),
-    friendlyName: z.string().optional(),
-    directory: z.string().optional(),
-    network: NetworkConfigSchema.optional(),
-    uart_buses: z.array(z.object({
-      id: z.string().min(1),
-      tx_pin: z.string().min(1),
-      rx_pin: z.string().min(1),
-      de_pin: z.string().optional(),
-      baud_rate: z.number().int().positive(),
-    })).optional(),
-    io_providers: z.array(z.object({
-      id: z.string().min(1),
-      type: z.string().min(1),
-      config: z.record(z.string(), z.unknown()),
-    })).optional(),
-  })),
+  controllers: z.array(ControllerSchema),
   // Empty topology is valid for a newly created site before any controller is added.
   nodes: z.array(TopologyNodeSchema),
   pipes: z.array(PipeSegmentSchema).default([]),
@@ -441,11 +462,7 @@ export function migrateTopology(data: unknown): unknown {
  * Applies schema-version migrations and legacy-key cleanup before validation.
  */
 export function parseTopology(data: unknown): SiteTopology {
-  // Runtime validation guarantees structural correctness, but Zod can't
-  // precisely infer the discriminated-union type when schemas are pulled
-  // dynamically from NODE_REGISTRY (typed as ZodTypeAny). The cast is safe
-  // because TopologySchema.parse() already validated every field.
-  return TopologySchema.parse(migrateLegacyTopology(migrateTopology(data))) as SiteTopology;
+  return TopologySchema.parse(migrateLegacyTopology(migrateTopology(data)));
 }
 
 // ---------------------------------------------------------------------------

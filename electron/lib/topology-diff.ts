@@ -1,34 +1,4 @@
-import type { SiteTopology, TopologyNode, PipeSegment, Automation, RouteOverride } from "@far-mon/core";
-
-// ---------------------------------------------------------------------------
-// Event types
-// ---------------------------------------------------------------------------
-
-export type TopologyEventType =
-  | "snapshot"
-  | "node_added"
-  | "node_removed"
-  | "node_moved"
-  | "node_modified"
-  | "pipe_connected"
-  | "pipe_disconnected"
-  | "pipe_modified"
-  | "timing_changed"
-  | "route_override_set"
-  | "route_override_cleared"
-  | "automation_created"
-  | "automation_deleted"
-  | "automation_modified"
-  | "controller_added"
-  | "controller_removed"
-  | "controller_modified"
-  | "site_renamed";
-
-export interface TopologyDiffEvent {
-  actor: string;
-  eventType: TopologyEventType;
-  payload: unknown;
-}
+import type { SiteTopology, TopologyNode, PipeSegment, Automation, RouteOverride, TopologyEvent } from "@far-mon/core";
 
 // ---------------------------------------------------------------------------
 // Diff engine
@@ -37,8 +7,8 @@ export interface TopologyDiffEvent {
 export function diffTopology(
   oldTopo: SiteTopology | null,
   newTopo: SiteTopology,
-): TopologyDiffEvent[] {
-  const events: TopologyDiffEvent[] = [];
+): TopologyEvent[] {
+  const events: TopologyEvent[] = [];
 
   // First save — record a snapshot instead of individual events
   if (!oldTopo) {

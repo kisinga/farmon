@@ -4,10 +4,12 @@ import type { ValidationResult, RuleDiagnostic, NetworkConfig } from '@far-mon/c
 import type {
   SiteListEntry, SiteFullPayload, SiteSavePayload,
   TemplateListEntry, Controller,
+  BoardDef, Route, SiteTopology, SystemTopology,
 } from '@far-mon/core';
 
 export type { ValidationResult, RuleDiagnostic };
 export type { SiteListEntry, SiteFullPayload, SiteSavePayload, TemplateListEntry, Controller };
+export type { BoardDef, Route, SiteTopology, SystemTopology };
 
 // --- Boards ---
 
@@ -19,7 +21,7 @@ export interface BoardListEntry {
 }
 
 export interface BoardLoadResult {
-  board: unknown;
+  board: BoardDef;
   svg: string | null;
 }
 
@@ -180,7 +182,7 @@ export interface ElectronAPI {
 
   // Templates
   templateList(): Promise<TemplateListEntry[]>;
-  templateLoad(name: string): Promise<unknown>;
+  templateLoad(name: string): Promise<Record<string, unknown>>;
 
   // Boards
   boardList(): Promise<BoardListEntry[]>;
@@ -188,12 +190,12 @@ export interface ElectronAPI {
   boardImport(dirPath: string): Promise<string>;
 
   // Codegen
-  codegenDeriveRoutes(topology: unknown): Promise<Array<{ key: string; name: string }>>;
-  codegenValidate(manifest: unknown, board: unknown, siteId?: string): Promise<ValidationResult>;
-  codegenGenerate(siteId: string, systemId: string, manifest: unknown, board: unknown): Promise<GenerateResult>;
+  codegenDeriveRoutes(topology: SiteTopology | SystemTopology): Promise<Array<{ key: string; name: string }>>;
+  codegenValidate(topology: SiteTopology | SystemTopology, board: BoardDef, siteId?: string): Promise<ValidationResult>;
+  codegenGenerate(siteId: string, systemId: string, topology: SiteTopology | SystemTopology, board: BoardDef): Promise<GenerateResult>;
   codegenGenerateHA(siteId: string): Promise<GenerateHAResult>;
   codegenGenerateSelfTest(boardModel: string, secrets: Record<string, string>, network?: NetworkConfig): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }>;
-  codegenGenerateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, topology: unknown, routes: unknown[]): Promise<{ html: string; outputPath: string }>;
+  codegenGenerateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, topology: SiteTopology, routes: Route[]): Promise<{ html: string; outputPath: string }>;
   codegenWriteScadaArtifacts(siteId: string, artifacts: Array<{ name: string; svg: string; meta: unknown }>): Promise<{ outputDir: string; files: Array<{ path: string; bytes: number }> }>;
 
   // Toolchain
@@ -247,8 +249,8 @@ export interface ElectronAPI {
 
   // Legacy import
   legacyHasData(): Promise<boolean>;
-  legacyScan(): Promise<{ sites: Array<{ id: string; friendlyName: string; systems: unknown[]; links: unknown[]; haFiles: unknown[] }> }>;
-  legacyImport(sites: unknown): Promise<{ imported: number }>;
+  legacyScan(): Promise<LegacyScanResult>;
+  legacyImport(sites: LegacySiteImport[]): Promise<{ imported: number }>;
 
   // Generation history
   generationList(siteId: string, systemId: string, genType?: GenerationType): Promise<GenerationMeta[]>;
@@ -276,12 +278,71 @@ export interface ElectronAPI {
   // Topology event log
   eventsList(siteId: string, limit?: number): Promise<Array<{ id: number; siteId: string; timestamp: string; actor: string | null; eventType: string; payload: string }>>;
   eventsCount(siteId: string): Promise<number>;
-  eventsReconstruct(siteId: string, eventId: number): Promise<unknown>;
+  eventsReconstruct(siteId: string, eventId: number): Promise<SiteTopology | null>;
 
   // Coordinated deployment
-  deploymentPlan(siteId: string, targetControllers?: string[]): Promise<unknown>;
-  deploymentExecute(plan: unknown): Promise<unknown>;
-  deploymentRollback(siteId: string, controllerId: string): Promise<unknown>;
+  deploymentPlan(siteId: string, targetControllers?: string[]): Promise<DeploymentPlan>;
+  deploymentExecute(plan: DeploymentPlan): Promise<DeploymentResult[]>;
+  deploymentRollback(siteId: string, controllerId: string): Promise<DeploymentResult[]>;
+}
+
+// --- Legacy import ---
+
+export interface LegacySiteImport {
+  id: string;
+  friendlyName: string;
+  systems: Array<{
+    id: string;
+    friendlyName: string;
+    board: string;
+    directory: string | null;
+    topology: Record<string, unknown>;
+    position: { x: number; y: number };
+  }>;
+  links: Array<{
+    id: string;
+    fromSystem: string;
+    fromNode: string;
+    fromPort: string;
+    toSystem: string;
+    toNode: string;
+    toPort: string;
+  }>;
+  haFiles: Array<{ filename: string; content: string }>;
+}
+
+export interface LegacyScanResult {
+  sites: LegacySiteImport[];
+}
+
+// --- Deployment ---
+
+export interface ControllerDeployment {
+  controllerId: string;
+  deviceName: string;
+  deviceDir: string;
+}
+
+export interface DeploymentPhase {
+  name: string;
+  controllers: ControllerDeployment[];
+}
+
+export interface DeploymentPlan {
+  siteId: string;
+  phases: DeploymentPhase[];
+  consistencyHash: string;
+  previousConsistencyHash: string | null;
+  requiresFullDeployment: boolean;
+  warnings: string[];
+}
+
+export interface DeploymentResult {
+  controllerId: string;
+  success: boolean;
+  processId?: string;
+  error?: string;
+  verified: boolean;
 }
 
 // --- Drift detection ---

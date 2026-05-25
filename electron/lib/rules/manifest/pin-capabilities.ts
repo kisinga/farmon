@@ -21,7 +21,7 @@ export const pinCapabilities: ManifestRule = {
 
     // Check every node's pin fields against required capabilities
     for (const node of m.nodes) {
-      const desc = NODE_REGISTRY.get(node['kind']);
+      const desc = NODE_REGISTRY.get(node.kind);
       if (!desc) continue;
 
       for (const field of desc.sidebarFields) {
@@ -44,8 +44,8 @@ export const pinCapabilities: ManifestRule = {
             : '';
           diagnostics.push({
             severity,
-            message: `${desc.label} "${node['id']}": ${pin} does not have ${field.pinCap} capability on ${board.label}${detail}`,
-            target: String(node['id']),
+            message: `${desc.label} "${node.id}": ${pin} does not have ${field.pinCap} capability on ${board.label}${detail}`,
+            target: String(node.id),
             ruleId: this.id,
           });
         }

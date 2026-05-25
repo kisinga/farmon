@@ -18,17 +18,11 @@ export interface SiteMetadata {
 // Stored site topology (the JSON blob on disk)
 // ---------------------------------------------------------------------------
 
-import type { TopologyNode, PipeSegment, RouteOverride, Automation, UartBus, IoProviderDef, NetworkConfig } from './topology.types';
+import type { TopologyNode, PipeSegment, RouteOverride, Automation, UartBus, IoProviderDef, NetworkConfig, Controller } from './topology.types';
 
 export interface StoredSiteTopology {
   schema: number;
-  controllers: Array<{
-    id: string;
-    board: string;
-    network?: NetworkConfig;
-    uart_buses?: unknown[];
-    io_providers?: unknown[];
-  }>;
+  controllers: Controller[];
   nodes: TopologyNode[];
   pipes: PipeSegment[];
   route_overrides: Record<string, RouteOverride>;

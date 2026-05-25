@@ -179,16 +179,17 @@ ${closeHeader}
       evaluate: (nodes) => {
         const out: Array<{ message: string; target?: string }> = [];
         for (const n of nodes) {
-          if (!n['open_pin']) {
+          const data = n as Record<string, unknown>;
+          if (!data['open_pin']) {
             out.push({
-              message: `Valve "${n['name'] ?? n['id']}": Open Pin not configured`,
-              target: String(n['id']),
+              message: `Valve "${n.name ?? n.id}": Open Pin not configured`,
+              target: n.id,
             });
           }
-          if (!n['close_pin']) {
+          if (!data['close_pin']) {
             out.push({
-              message: `Valve "${n['name'] ?? n['id']}": Close Pin not configured`,
-              target: String(n['id']),
+              message: `Valve "${n.name ?? n.id}": Close Pin not configured`,
+              target: n.id,
             });
           }
         }
@@ -199,10 +200,10 @@ ${closeHeader}
       id: 'valve-active-high-wiring-hint',
       severity: 'warning',
       evaluate: (nodes) => nodes
-        .filter(n => n['coil_polarity'] === 'active_high')
+        .filter(n => (n as Record<string, unknown>)['coil_polarity'] === 'active_high')
         .map(n => ({
-          message: `Valve "${n['name'] ?? n['id']}": active-high coil polarity selected — verify the relay module's NC contact is wired to the coil, otherwise the coil will be energized at MCU power-off (boot, reset, brown-out).`,
-          target: String(n['id']),
+          message: `Valve "${n.name ?? n.id}": active-high coil polarity selected — verify the relay module's NC contact is wired to the coil, otherwise the coil will be energized at MCU power-off (boot, reset, brown-out).`,
+          target: n.id,
         })),
     },
   ],

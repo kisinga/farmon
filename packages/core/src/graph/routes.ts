@@ -10,6 +10,7 @@
  */
 import { allSimplePaths } from 'graphology-simple-path';
 import type { TopologyGraph } from './topology-graph';
+import type { TopologyNode } from '../topology.types';
 
 // ── Unified Route ───────────────────────────────────────────────────────────
 
@@ -26,9 +27,9 @@ export interface Route {
    */
   key: string;
   source: string;
-  sourceKind: string;
+  sourceKind: TopologyNode['kind'];
   destination: string;
-  destKind: string;
+  destKind: TopologyNode['kind'];
   /** Ordered node IDs from source to destination (inclusive). */
   nodeSequence: string[];
   /** Valve IDs encountered along the path, in flow order. */

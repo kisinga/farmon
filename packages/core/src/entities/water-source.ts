@@ -107,10 +107,10 @@ ${header}
     id: 'water-source-pressure-warning',
     severity: 'warning',
     evaluate: (sources) => sources
-      .filter(ws => !ws['pressure_pin'])
+      .filter(ws => !(ws as Record<string, unknown>)['pressure_pin'])
       .map(ws => ({
-        message: `Water source "${ws['id']}": no pressure sensor configured. Incoming supply pressure will not be monitored.`,
-        target: ws['id'],
+        message: `Water source "${ws.id}": no pressure sensor configured. Incoming supply pressure will not be monitored.`,
+        target: ws.id,
       })),
   }],
 };

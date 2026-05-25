@@ -1,4 +1,5 @@
 import * as db from "./db.js";
+import * as SiteRepository from "./lib/site-repository.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -154,7 +155,7 @@ export async function checkSiteDrift(
   );
 
   // Resolve expected (latest) generation per controller
-  const systems = db.listSystems(siteId);
+  const systems = SiteRepository.load(siteId).controllers;
   const latestGenBySystem = new Map<string, { checksum: string; version: string }>();
   for (const sys of systems) {
     const gens = db.listGenerations(siteId, sys.id, "esphome");

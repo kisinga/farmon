@@ -11,7 +11,7 @@ export const uniqueIds: ManifestRule = {
 
     const idCounts = new Map<string, number>();
     for (const node of m.nodes) {
-      const id = String(node['id']);
+      const id = String(node.id);
       idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
     }
     for (const [id, count] of idCounts) {

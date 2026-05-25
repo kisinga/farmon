@@ -1,5 +1,6 @@
 import { BrowserWindow } from "electron";
 import * as db from "./db.js";
+import * as SiteRepository from "./lib/site-repository.js";
 import * as esphome from "./esphome.js";
 import { checkSiteDrift, type HaConnection } from "./drift-detector.js";
 import { generateFirmware, generateDefaultSecrets } from "./lib/generate.js";
@@ -134,11 +135,7 @@ export async function buildDeploymentPlan(
   siteId: string,
   targetControllers?: string[]
 ): Promise<DeploymentPlan> {
-  const site = db.loadSiteFull(siteId);
-  if (!site) throw new Error(`Site not found: ${siteId}`);
-
-  if (!site.topology) throw new Error(`Site "${siteId}" has no topology.`);
-  const topology = parseTopology(site.topology as unknown as Record<string, unknown>);
+  const topology = SiteRepository.load(siteId);
   const allControllers = topology.controllers.map((c) => c.id);
   const targets = targetControllers ?? allControllers;
 

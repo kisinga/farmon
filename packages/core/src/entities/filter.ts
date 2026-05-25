@@ -149,10 +149,10 @@ ${header}
     id: 'filter-pressure-warning',
     severity: 'warning',
     evaluate: (nodes) => nodes
-      .filter(n => !n['inlet_pressure_pin'] && !n['outlet_pressure_pin'])
+      .filter(n => !(n as Record<string, unknown>)['inlet_pressure_pin'] && !(n as Record<string, unknown>)['outlet_pressure_pin'])
       .map(n => ({
-        message: `Filter "${n['name']}": no pressure pins configured. Blockage detection will not be available.`,
-        target: String(n['id']),
+        message: `Filter "${n.name}": no pressure pins configured. Blockage detection will not be available.`,
+        target: n.id,
       })),
   }],
 };

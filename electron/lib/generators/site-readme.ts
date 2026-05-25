@@ -288,8 +288,8 @@ export function generateSiteDocumentation(
           name: r.name,
           sensors: (r.inline_pressure_sensors ?? [])
             .map(id => {
-              const node = s.manifest.nodes.find(n => n['id'] === id);
-              return node ? String(node['name'] ?? id) : id;
+              const node = s.manifest.nodes.find(n => n.id === id);
+              return node ? String(node.name ?? id) : id;
             })
             .join(', '),
         }))

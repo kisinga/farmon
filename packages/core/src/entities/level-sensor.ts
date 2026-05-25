@@ -188,10 +188,10 @@ ${header}
     id: 'level-sensor-pin-required',
     severity: 'error',
     evaluate: (nodes) => nodes
-      .filter(n => !n['pin'])
+      .filter(n => !(n as Record<string, unknown>)['pin'])
       .map(n => ({
-        message: `Level sensor "${n['name']}": no pin assigned. Level sensors require an ADC pin.`,
-        target: String(n['id']),
+        message: `Level sensor "${n.name}": no pin assigned. Level sensors require an ADC pin.`,
+        target: n.id,
       })),
   }],
 };

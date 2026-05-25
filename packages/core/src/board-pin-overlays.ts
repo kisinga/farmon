@@ -3,7 +3,8 @@
  * the documentation generator. No DOM, no framework dependencies.
  */
 import type { BoardDef } from './board.types';
-import { entityColor, UI_COLORS } from './colors';
+import { entityColor } from './entity-registry';
+import { UI_COLORS } from './colors';
 
 export interface PinOverlayData {
   connector: string;

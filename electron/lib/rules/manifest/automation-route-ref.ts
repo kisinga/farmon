@@ -16,9 +16,9 @@ export const automationRouteRef: ManifestRule = {
     const tankLevelSourceById = new Map<string, TankLevelSource>();
     const nodeKindById = new Map<string, string>();
     for (const n of manifest.nodes) {
-      nodeKindById.set(n['id'] as string, n.kind);
-      if (n.kind === 'tank' && n['level_source']) {
-        tankLevelSourceById.set(n['id'] as string, n['level_source'] as TankLevelSource);
+      nodeKindById.set(n.id, n.kind);
+      if (n.kind === 'tank' && n.level_source) {
+        tankLevelSourceById.set(n.id, n.level_source);
       }
     }
 

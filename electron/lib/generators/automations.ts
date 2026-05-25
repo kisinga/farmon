@@ -3,7 +3,7 @@ import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesWithFlag } from "../schema.js";
 import { NODE_REGISTRY, systemHaEntityIds, routeAutomationAlias, findRouteAutomationSensor, type TankLevelSource } from '@far-mon/core';
 
-function haIds(node: ManifestNode, device: { friendly_name: string }): Record<string, string | undefined> {
+function haIds(node: ManifestNode, device: { friendly_name: string }): Partial<Record<import('@far-mon/core').HaEntityKey, string>> {
   return NODE_REGISTRY.get(node.kind)?.codegen?.haEntityIds?.(node, device) ?? {};
 }
 
@@ -25,9 +25,9 @@ export function generateAutomations(m: Manifest): string | null {
   const tankLevelSourceById = new Map<string, TankLevelSource>();
   const nodeKindById = new Map<string, string>();
   for (const n of m.nodes) {
-    nodeKindById.set(n['id'] as string, n.kind);
-    if (n.kind === 'tank' && n['level_source']) {
-      tankLevelSourceById.set(n['id'] as string, n['level_source'] as TankLevelSource);
+    nodeKindById.set(n.id, n.kind);
+    if (n.kind === 'tank' && n.level_source) {
+      tankLevelSourceById.set(n.id, n.level_source);
     }
   }
 
@@ -52,7 +52,7 @@ export function generateAutomations(m: Manifest): string | null {
       if (!route.source_min_pct) {
         throw new Error(`Automation "${a.name}" uses a level trigger, but route "${route.name}" has no Source Min Level set. The trigger fires when the source tank rises above this value, so it must be > 0.`);
       }
-      const sensorNode = m.nodes.find(n => n['id'] === found.sensorId);
+      const sensorNode = m.nodes.find(n => n.id === found.sensorId);
       const entityId = sensorNode ? haIds(sensorNode, m.device).level : undefined;
       if (!entityId) {
         throw new Error(`Automation "${a.name}": resolved sensor "${found.sensorId}" exposes no level entity_id.`);

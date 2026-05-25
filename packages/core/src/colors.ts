@@ -1,7 +1,6 @@
 /**
  * Consolidated color tokens — single source for entity and UI colors.
  */
-import { NODE_REGISTRY } from './entity-registry';
 
 // ---------------------------------------------------------------------------
 // Non-entity UI colors
@@ -19,11 +18,3 @@ export const UI_COLORS = {
   reserved: '#6b7280',  // gray-500
   available: '#d1d5db', // gray-300
 } as const;
-
-// ---------------------------------------------------------------------------
-// Entity color lookup
-// ---------------------------------------------------------------------------
-
-export function entityColor(kind: string): string {
-  return NODE_REGISTRY.get(kind)?.color ?? UI_COLORS.text;
-}

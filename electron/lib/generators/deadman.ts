@@ -18,15 +18,15 @@ export function generateDeadman(m: Manifest): string {
   const actuators = [...valves, ...pumps, ...dosingPumps];
 
   // Build valve ID lookup table for index → nodeId mapping
-  const valveIdArray = valves.map(v => `    "${v['id']}"`).join(",\n");
+  const valveIdArray = valves.map(v => `    "${v.id}"`).join(",\n");
 
   // Per-actuator dead-man timeout and action constants
   const timeoutCases = actuators.map(n => {
-    const desc = NODE_REGISTRY.get(n['kind'] as string);
+    const desc = NODE_REGISTRY.get(n.kind);
     const sp = desc?.safetyProfile;
     const timeout = sp?.deadManTimeoutMs ?? 0;
     const action = sp?.deadManAction ?? 'hold';
-    return `    {"${n['id']}", {${timeout}, '${action.charAt(0)}'}},  // ${n['name'] ?? n['id']}`;
+    return `    {"${n.id}", {${timeout}, '${action.charAt(0)}'}},  // ${n.name ?? n.id}`;
   }).join("\n");
 
   return `\

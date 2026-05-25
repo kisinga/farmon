@@ -20,7 +20,7 @@ export const providerReferences: ManifestRule = {
     const referencedProviders = new Set<string>();
 
     for (const node of m.nodes) {
-      const desc = NODE_REGISTRY.get(node['kind']);
+      const desc = NODE_REGISTRY.get(node.kind);
       if (!desc) continue;
       for (const field of desc.sidebarFields) {
         if (field.type !== 'pin') continue;
@@ -38,8 +38,8 @@ export const providerReferences: ManifestRule = {
         if (!declaredProviders.has(providerId)) {
           diagnostics.push({
             severity: "error",
-            message: `${desc.label} "${node['id']}": references unknown I/O provider "${providerId}"`,
-            target: String(node['id']),
+            message: `${desc.label} "${node.id}": references unknown I/O provider "${providerId}"`,
+            target: String(node.id),
             ruleId: this.id,
           });
         }

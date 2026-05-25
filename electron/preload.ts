@@ -1,10 +1,23 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type {
+  SiteSavePayload,
+  SiteTopology,
+  SystemTopology,
+  BoardDef,
+  NetworkConfig,
+  Route,
+} from "@far-mon/core";
+import type {
+  DeploymentPlan,
+  DeploymentResult,
+} from "./deployment-coordinator.js";
+import type { LegacyImportResult } from "./store.js";
 
 contextBridge.exposeInMainWorld("electronAPI", {
   // --- Sites ---
   siteList: () => ipcRenderer.invoke("site:list"),
   siteLoad: (id: string) => ipcRenderer.invoke("site:load", id),
-  siteSave: (payload: unknown) => ipcRenderer.invoke("site:save", payload),
+  siteSave: (payload: SiteSavePayload) => ipcRenderer.invoke("site:save", payload),
   siteCreate: (id: string, friendlyName: string) =>
     ipcRenderer.invoke("site:create", id, friendlyName),
   siteDelete: (id: string) => ipcRenderer.invoke("site:delete", id),
@@ -36,18 +49,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
   boardImport: (dirPath: string) => ipcRenderer.invoke("board:import", dirPath),
 
   // --- Codegen ---
-  codegenDeriveRoutes: (topology: unknown) =>
+  codegenDeriveRoutes: (topology: SiteTopology | SystemTopology) =>
     ipcRenderer.invoke("codegen:derive-routes", topology),
-  codegenValidate: (manifest: unknown, board: unknown, siteId?: string) =>
-    ipcRenderer.invoke("codegen:validate", manifest, board, siteId),
-  codegenGenerate: (siteId: string, systemId: string, manifest: unknown, board: unknown) =>
-    ipcRenderer.invoke("codegen:generate", siteId, systemId, manifest, board),
+  codegenValidate: (topology: SiteTopology | SystemTopology, board: BoardDef, siteId?: string) =>
+    ipcRenderer.invoke("codegen:validate", topology, board, siteId),
+  codegenGenerate: (siteId: string, systemId: string, topology: SiteTopology | SystemTopology, board: BoardDef) =>
+    ipcRenderer.invoke("codegen:generate", siteId, systemId, topology, board),
   codegenGenerateHA: (siteId: string) =>
     ipcRenderer.invoke("codegen:generate-ha", siteId),
-  codegenGenerateSelfTest: (boardModel: string, secrets: Record<string, string>, network?: unknown) =>
+  codegenGenerateSelfTest: (boardModel: string, secrets: Record<string, string>, network?: NetworkConfig) =>
     ipcRenderer.invoke("codegen:generate-selftest", boardModel, secrets, network),
-  codegenGenerateSiteDocs: (siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, systems: unknown[], links: unknown[], routes: unknown[]) =>
-    ipcRenderer.invoke("codegen:generate-site-docs", siteId, compositeSvg, perSystemSvgs, systems, links, routes),
+  codegenGenerateSiteDocs: (siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, topology: SiteTopology, routes: Route[]) =>
+    ipcRenderer.invoke("codegen:generate-site-docs", siteId, compositeSvg, perSystemSvgs, topology, routes),
   codegenWriteScadaArtifacts: (siteId: string, artifacts: Array<{ name: string; svg: string; meta: unknown }>) =>
     ipcRenderer.invoke("codegen:write-scada-artifacts", siteId, artifacts),
 
@@ -183,7 +196,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // --- Legacy import ---
   legacyHasData: () => ipcRenderer.invoke("legacy:has-data"),
   legacyScan: () => ipcRenderer.invoke("legacy:scan"),
-  legacyImport: (sites: unknown) => ipcRenderer.invoke("legacy:import", sites),
+  legacyImport: (sites: LegacyImportResult['sites']) => ipcRenderer.invoke("legacy:import", sites),
 
   // --- Generation history ---
   generationList: (siteId: string, systemId: string, genType?: string) =>
@@ -225,7 +238,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // --- Coordinated deployment ---
   deploymentPlan: (siteId: string, targetControllers?: string[]) =>
     ipcRenderer.invoke("deployment:plan", siteId, targetControllers),
-  deploymentExecute: (plan: unknown) =>
+  deploymentExecute: (plan: DeploymentPlan) =>
     ipcRenderer.invoke("deployment:execute", plan),
   deploymentRollback: (siteId: string, controllerId: string) =>
     ipcRenderer.invoke("deployment:rollback", siteId, controllerId),

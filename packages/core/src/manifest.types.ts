@@ -1,4 +1,5 @@
-import type { SystemTopology } from './topology.types';
+import type { SystemTopology, TopologyNode } from './topology.types';
+import type { TankLevelSource } from './tank-level';
 
 // ---------------------------------------------------------------------------
 // Manifest — internal intermediate representation
@@ -16,13 +17,17 @@ import type { SystemTopology } from './topology.types';
 export type Device = SystemTopology['device'];
 export type Timing = SystemTopology['timing'];
 
-/** A topology node with layout fields stripped. */
-export type ManifestNode = Record<string, any> & {
-  kind: string;
-  id: string;
-  anchorId: string;
+/** A topology node with manifest-only extensions (remote entity ID, level sources). */
+export type ManifestNode = TopologyNode & {
   /** HA entity_id for remote reads — set when this node's value lives on another controller. */
   remoteHaEntityId?: string;
+  /** Resolved level source for tank nodes. */
+  level_source?: TankLevelSource;
+  /** Lifted from upstream tank for pressure-sensor calibration. */
+  tank_height_m?: number;
+  tank_capacity_l?: number;
+  /** Allow dynamic field access for sidebar field iteration. */
+  [key: string]: unknown;
 };
 
 
@@ -95,11 +100,11 @@ export interface Route {
 
 /**
  * Filter manifest nodes by kind with type narrowing.
- * Returns nodes whose `kind` matches, cast to the inferred type.
+ * Returns nodes whose `kind` matches, narrowed to the specific node type.
  */
-export function nodesByKind<K extends string>(
+export function nodesByKind<K extends TopologyNode['kind']>(
   nodes: ManifestNode[],
   kind: K,
-): ManifestNode[] {
-  return nodes.filter(n => n.kind === kind);
+): Extract<ManifestNode, { kind: K }>[] {
+  return nodes.filter((n): n is Extract<ManifestNode, { kind: K }> => n.kind === kind);
 }

@@ -56,7 +56,7 @@ function n(node: ManifestNode, key: string): string {
  * truth: the descriptor declares both the firmware-emitted name and the
  * derived entity_id, so dashboards can never drift from firmware here.
  */
-function haIds(node: ManifestNode, device: { friendly_name: string }): Record<string, string | undefined> {
+function haIds(node: ManifestNode, device: { friendly_name: string }): Partial<Record<import('@far-mon/core').HaEntityKey, string>> {
   return NODE_REGISTRY.get(node.kind)?.codegen?.haEntityIds?.(node, device) ?? {};
 }
 

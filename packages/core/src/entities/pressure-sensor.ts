@@ -263,21 +263,22 @@ ${header}
       id: 'pressure-sensor-pin-required',
       severity: 'error',
       evaluate: (nodes) => nodes
-        .filter(n => !n['pin'])
+        .filter(n => !(n as Record<string, unknown>)['pin'])
         .map(n => ({
-          message: `Pressure sensor "${n['name']}": no pin assigned. Standalone pressure sensors require an ADC pin.`,
-          target: String(n['id']),
+          message: `Pressure sensor "${n.name}": no pin assigned. Standalone pressure sensors require an ADC pin.`,
+          target: n.id,
         })),
     },
     {
       id: 'pressure-sensor-undersized',
       severity: 'warning',
       evaluate: (nodes) => nodes
-        .filter(n => typeof n['sensor_max_psi'] === 'number' && typeof n['tank_height_m'] === 'number')
+        .filter(n => typeof (n as Record<string, unknown>)['sensor_max_psi'] === 'number' && typeof (n as Record<string, unknown>)['tank_height_m'] === 'number')
         .flatMap(n => {
-          const tankHeight = Number(n['tank_height_m']);
-          const elevation = Number(n['elevation_m'] ?? 0);
-          const sensorMax = Number(n['sensor_max_psi']);
+          const data = n as Record<string, unknown>;
+          const tankHeight = Number(data['tank_height_m']);
+          const elevation = Number(data['elevation_m'] ?? 0);
+          const sensorMax = Number(data['sensor_max_psi']);
           const cal = deriveTankCalibration(tankHeight, elevation);
           const recommended = recommendSensorMaxPsi(cal.p_full_psi);
           if (sensorMax < recommended) {
@@ -293,11 +294,12 @@ ${header}
       id: 'pressure-sensor-elevated-low-resolution',
       severity: 'warning',
       evaluate: (nodes) => nodes
-        .filter(n => typeof n['sensor_max_psi'] === 'number' && typeof n['tank_height_m'] === 'number')
+        .filter(n => typeof (n as Record<string, unknown>)['sensor_max_psi'] === 'number' && typeof (n as Record<string, unknown>)['tank_height_m'] === 'number')
         .flatMap(n => {
-          const tankHeight = Number(n['tank_height_m']);
-          const elevation = Number(n['elevation_m'] ?? 0);
-          const sensorMax = Number(n['sensor_max_psi']);
+          const data = n as Record<string, unknown>;
+          const tankHeight = Number(data['tank_height_m']);
+          const elevation = Number(data['elevation_m'] ?? 0);
+          const sensorMax = Number(data['sensor_max_psi']);
           if (tankHeight <= 0 || elevation <= 0 || sensorMax <= 0) return [];
 
           const cal = deriveTankCalibration(tankHeight, elevation);

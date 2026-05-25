@@ -79,11 +79,9 @@ export interface RouteOverride {
 // Automations
 // ---------------------------------------------------------------------------
 
-export interface AutomationTrigger {
-  type: 'time' | 'level';
-  at?: string;            // HH:MM (for type: time)
-  for_minutes?: number;   // hold duration in minutes before trigger fires
-}
+export type AutomationTrigger =
+  | { type: 'time'; at: string }
+  | { type: 'level'; for_minutes?: number };
 
 export interface Automation {
   id: string;

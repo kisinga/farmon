@@ -134,20 +134,20 @@ ${header}
       id: 'dosing-pump-pin-required',
       severity: 'error',
       evaluate: (nodes) => nodes
-        .filter(n => !n['pin'])
+        .filter(n => !(n as Record<string, unknown>)['pin'])
         .map(n => ({
-          message: `Dosing pump "${n['name'] ?? n['id']}": Relay Pin not configured`,
-          target: String(n['id']),
+          message: `Dosing pump "${n.name ?? n.id}": Relay Pin not configured`,
+          target: n.id,
         })),
     },
     {
       id: 'dosing-pump-active-high-wiring-hint',
       severity: 'warning',
       evaluate: (nodes) => nodes
-        .filter(n => n['relay_polarity'] === 'active_high')
+        .filter(n => (n as Record<string, unknown>)['relay_polarity'] === 'active_high')
         .map(n => ({
-          message: `Dosing pump "${n['name'] ?? n['id']}": active-high polarity selected — verify the relay module's NC contact is wired to the load, otherwise the load will be energized at MCU power-off (boot, reset, brown-out).`,
-          target: String(n['id']),
+          message: `Dosing pump "${n.name ?? n.id}": active-high polarity selected — verify the relay module's NC contact is wired to the load, otherwise the load will be energized at MCU power-off (boot, reset, brown-out).`,
+          target: n.id,
         })),
     },
   ],

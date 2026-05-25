@@ -13,6 +13,8 @@ import type { PinCap } from './board.types';
 import type { FlowConstraint } from './graph/constraints';
 import type { HaActionSpec, HaSlotSpec } from './ha';
 import type { InputPolicy } from './input-policy';
+import type { TopologyNode } from './topology.types';
+import { UI_COLORS } from './colors';
 
 // ---------------------------------------------------------------------------
 // Entity kind — compile-time registry of all known node kinds
@@ -53,6 +55,16 @@ export interface FieldDef {
  * Context passed to codegen functions. Provides channel resolution
  * without coupling entities to BoardDef or transport details.
  */
+export type HaEntityKey =
+  | 'level' | 'rawVoltage' | 'calEmpty' | 'calFull'
+  | 'relay'
+  | 'flow' | 'total' | 'sensorFault'
+  | 'pressure'
+  | 'rangeMin' | 'rangeMax'
+  | 'inletPressure' | 'outletPressure' | 'deltaPressure'
+  | 'cover' | 'openCoil' | 'closeCoil' | 'travelTime'
+  | 'switch' | 'power' | 'frequency' | 'faultCode' | 'faultReset' | 'speedSetpoint';
+
 export interface CodegenContext {
   /** Resolve a channel ID + usage to an ESPHome platform + config block. */
   resolveChannel: (channelId: string, usage: ChannelUsage) => ResolvedChannel;
@@ -109,8 +121,8 @@ export interface EntityRule {
   severity: 'error' | 'warning';
   /** Evaluate this rule against nodes of this kind. */
   evaluate: (
-    kindNodes: Record<string, any>[],
-    allNodes: Record<string, any>[],
+    kindNodes: TopologyNode[],
+    allNodes: TopologyNode[],
   ) => Array<{ message: string; target?: string }>;
 }
 
@@ -219,6 +231,14 @@ export interface NodeDescriptor {
 }
 
 // ---------------------------------------------------------------------------
+// Entity color lookup
+// ---------------------------------------------------------------------------
+
+export function entityColor(kind: string): string {
+  return NODE_REGISTRY.get(kind)?.color ?? UI_COLORS.text;
+}
+
+// ---------------------------------------------------------------------------
 // Legend SVG — derived from renderSvg, scaled to fit menu/legend contexts
 // ---------------------------------------------------------------------------
 
@@ -281,12 +301,12 @@ export const REGISTRY_RULES: readonly EntityRule[] = [
     evaluate: (_kindNodes, allNodes) => {
       return allNodes
         .filter(n => {
-          const desc = NODE_REGISTRY.get(n['kind']);
+          const desc = NODE_REGISTRY.get(n.kind);
           return desc?.experimental && !desc.codegen;
         })
         .map(n => ({
-          message: `"${n['name'] ?? n['id']}" is experimental and will not generate hardware configuration.`,
-          target: String(n['id']),
+          message: `"${n.name ?? n.id}" is experimental and will not generate hardware configuration.`,
+          target: n.id,
         }));
     },
   },
@@ -294,12 +314,12 @@ export const REGISTRY_RULES: readonly EntityRule[] = [
     id: 'pump-id-uniqueness',
     severity: 'error',
     evaluate: (_kind, allNodes) => {
-      const pumpNodes = allNodes.filter(n => NODE_REGISTRY.get(n['kind'])?.isPump);
+      const pumpNodes = allNodes.filter(n => NODE_REGISTRY.get(n.kind)?.isPump);
       if (pumpNodes.length <= 1) return [];
       // Multiple pump-flagged nodes share the same pumpSwitchId — conflict
       return pumpNodes.slice(1).map(n => ({
-        message: `Multiple pump entities found. "${n['name'] ?? n['id']}" conflicts with an existing pump — only one pump-class node is supported per device.`,
-        target: String(n['id']),
+        message: `Multiple pump entities found. "${n.name ?? n.id}" conflicts with an existing pump — only one pump-class node is supported per device.`,
+        target: n.id,
       }));
     },
   },

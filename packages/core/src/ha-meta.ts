@@ -4,7 +4,7 @@
  * Pure function — runs in Node or browser, no DOM required. SVG decoration
  * lives in the editor (browser-only) because it needs live X6 rendering.
  */
-import type { SystemTopology } from './topology.types';
+import type { SystemTopology, TopologyNode } from './topology.types';
 import type { HaMeta, HaMetaNode, HaMetaPipe, HaActionSpec } from './ha';
 import { HA_SCHEMA_VERSION, isValidBindExpr } from './ha';
 import { NODE_REGISTRY } from './entity-registry';
@@ -29,7 +29,7 @@ export function buildHaMeta(topology: SystemTopology, opts: BuildHaMetaOptions):
   }
 
   const sortedNodes = [...topology.nodes]
-    .filter(n => connected.has(n.id) && !(n as { disabled?: boolean }).disabled)
+    .filter(n => connected.has(n.id) && !((n as Record<string, unknown>)['disabled']))
     .sort((a, b) => a.id.localeCompare(b.id));
 
   // Build pipe-adjacency once for cross-reference lookups (tank → downstream
@@ -43,8 +43,8 @@ export function buildHaMeta(topology: SystemTopology, opts: BuildHaMetaOptions):
     list.push(toId);
     downstream.set(fromId, list);
   }
-  const nodeKindById = new Map<string, { node: { id: string; kind: string }; }>();
-  for (const n of topology.nodes) nodeKindById.set(n.id, { node: n as { id: string; kind: string } });
+  const nodeKindById = new Map<string, TopologyNode>();
+  for (const n of topology.nodes) nodeKindById.set(n.id, n);
 
   for (const n of sortedNodes) {
     const desc = NODE_REGISTRY.get(n.kind);
@@ -59,12 +59,12 @@ export function buildHaMeta(topology: SystemTopology, opts: BuildHaMetaOptions):
     // dropped — the SCADA card renders it label-only.
     const declared = desc.codegen?.haEntityIds?.(n, topology.device);
     const entityId = pickCanonicalEntityId(declared, desc.haDomain)
-      ?? resolveCrossReference(n as { id: string; kind: string }, downstream, topology, nodeKindById);
+      ?? resolveCrossReference(n, downstream, topology, nodeKindById);
     if (!entityId) continue;
     nodesById.set(n.id, { entityId });
 
-    const binds = resolveBinds(desc.defaultBinds, n as { binds?: Record<string, string> });
-    const actions = resolveActions(desc.defaultHaActions, (n as { haActions?: HaActionSpec[] }).haActions);
+    const binds = resolveBinds(desc.defaultBinds, { binds: (n as Record<string, unknown>)['binds'] as Record<string, string> | undefined });
+    const actions = resolveActions(desc.defaultHaActions, (n as Record<string, unknown>)['haActions'] as HaActionSpec[] | undefined);
 
     nodes[n.id] = {
       kind: n.kind,
@@ -111,7 +111,7 @@ export function buildHaMeta(topology: SystemTopology, opts: BuildHaMetaOptions):
  * the canonical one is always the first declared).
  */
 function pickCanonicalEntityId(
-  declared: Record<string, string | undefined> | undefined,
+  declared: Partial<Record<import('./entity-registry').HaEntityKey, string>> | undefined,
   haDomain: string,
 ): string | undefined {
   if (!declared) return undefined;
@@ -132,17 +132,17 @@ function pickCanonicalEntityId(
  * dropped and the SCADA card renders the node label-only.
  */
 function resolveCrossReference(
-  node: { id: string; kind: string },
+  node: TopologyNode,
   downstream: Map<string, string[]>,
   topology: SystemTopology,
-  nodeKindById: Map<string, { node: { id: string; kind: string } }>,
+  nodeKindById: Map<string, TopologyNode>,
 ): string | undefined {
   if (node.kind === 'tank') {
     for (const neighborId of downstream.get(node.id) ?? []) {
-      const neighbor = nodeKindById.get(neighborId)?.node;
+      const neighbor = nodeKindById.get(neighborId);
       if (!neighbor || neighbor.kind !== 'level_sensor') continue;
       const desc = NODE_REGISTRY.get(neighbor.kind);
-      const declared = desc?.codegen?.haEntityIds?.(neighbor as { id: string; kind: string; name: string }, topology.device);
+      const declared = desc?.codegen?.haEntityIds?.(neighbor, topology.device);
       const id = declared?.['level'];
       if (id) return id;
     }

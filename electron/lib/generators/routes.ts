@@ -119,7 +119,7 @@ export function generateRoutes(m: Manifest): string {
   const pumpId = pumpSwitchId();
 
   // Build dispatch functions (hardware-level, renamed with _hw suffix)
-  const nid = (node: Record<string, any>) => ({ id: String(node['id']) });
+  const nid = (node: Manifest['nodes'][number]) => ({ id: node.id });
   const openCases = valves
     .map((v, i) => `    case ${i}: id(${valveCoverId(nid(v))}).make_call().set_command_open().perform(); break;`)
     .join("\n");

@@ -1,9 +1,23 @@
 import type { Manifest, ManifestNode, ManifestAutomation, Route as ManifestRoute } from "./manifest.types";
-import type { SiteTopology } from "./topology.types";
+import type { SiteTopology, TopologyNode, AutomationTrigger } from "./topology.types";
 import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
 import { resolveTankLevelSources } from "./tank-level";
 import { deriveRemoteHaEntityId } from "./remote-ha-entity";
 import { slug } from "./slug";
+
+function assertSourceKind(kind: TopologyNode['kind']): asserts kind is 'tank' | 'water_source' {
+  if (kind !== 'tank' && kind !== 'water_source') {
+    throw new Error(`Invalid source kind: ${kind}`);
+  }
+}
+
+function mapTrigger(trigger: AutomationTrigger): ManifestAutomation['trigger'] {
+  if (trigger.type === 'time') {
+    if (!trigger.at) throw new Error('Time trigger missing "at"');
+    return { type: 'time', at: trigger.at };
+  }
+  return { type: 'level', for_minutes: trigger.for_minutes };
+}
 
 // ---------------------------------------------------------------------------
 // Per-controller manifest conversion
@@ -63,29 +77,29 @@ export function topologyToManifestForController(
   };
   const nodes: ManifestNode[] = topology.nodes
     .filter(isIncludedNode)
-    .map(({ ports, position, ...data }) => {
-      const node = data as ManifestNode;
-      if (node.kind === 'tank') {
-        const src = tankLevelSources.get(node.id);
-        if (src) node['level_source'] = src;
+    .map(node => {
+      const manifestNode: ManifestNode = { ...node };
+      if (manifestNode.kind === 'tank') {
+        const src = tankLevelSources.get(manifestNode.id);
+        if (src) manifestNode.level_source = src;
       }
-      if (node.kind === 'pressure_sensor') {
-        const parentTankId = pressureSensorToTank.get(node.id);
+      if (manifestNode.kind === 'pressure_sensor') {
+        const parentTankId = pressureSensorToTank.get(manifestNode.id);
         if (parentTankId) {
-          const tank = nodeMap.get(parentTankId) as Record<string, unknown> | undefined;
-          const h = tank?.['height_m'];
-          const c = tank?.['capacity_l'];
-          if (typeof h === 'number') node['tank_height_m'] = h;
-          if (typeof c === 'number') node['tank_capacity_l'] = c;
+          const tank = nodeMap.get(parentTankId);
+          if (tank && tank.kind === 'tank') {
+            if (tank.height_m != null) manifestNode.tank_height_m = tank.height_m;
+            if (tank.capacity_l != null) manifestNode.tank_capacity_l = tank.capacity_l;
+          }
         }
       }
       // Derive remote HA entity for nodes whose primary value lives elsewhere
-      const origNode = nodeMap.get(node.id);
+      const origNode = nodeMap.get(manifestNode.id);
       if (origNode) {
         const remoteHaEntityId = deriveRemoteHaEntityId(origNode, controllerId, topology, tankLevelSources);
-        if (remoteHaEntityId) node.remoteHaEntityId = remoteHaEntityId;
+        if (remoteHaEntityId) manifestNode.remoteHaEntityId = remoteHaEntityId;
       }
-      return node;
+      return manifestNode;
     });
 
   // --- Route mapping ---
@@ -94,8 +108,8 @@ export function topologyToManifestForController(
     const override = topology.route_overrides[r.key] ?? {};
     const srcNode = nodeMap.get(r.source);
     const dstNode = nodeMap.get(r.destination);
-    const srcLabel = (srcNode as { name?: string } | undefined)?.name ?? r.source;
-    const dstLabel = (dstNode as { name?: string } | undefined)?.name ?? r.destination;
+    const srcLabel = srcNode?.name ?? r.source;
+    const dstLabel = dstNode?.name ?? r.destination;
 
     const runtimeLevelOk = !r.crossesPump || (() => {
       const checkTank = (tankId: string | undefined) => {
@@ -106,7 +120,7 @@ export function topologyToManifestForController(
         if (!src) return true;
         if (src.kind === 'level_sensor') return true;
         const sensor = nodeMap.get(src.id);
-        return !sensor || (sensor.kind === 'pressure_sensor' && !!(sensor as { pump_rated?: boolean }).pump_rated);
+        return !sensor || (sensor.kind === 'pressure_sensor' && !!sensor.pump_rated);
       };
       return checkTank(r.source) && checkTank(r.destination);
     })();
@@ -120,7 +134,7 @@ export function topologyToManifestForController(
       key: r.key,
       name: `${srcLabel} > ${dstLabel}`,
       source: r.source,
-      source_type: r.sourceKind as 'tank' | 'water_source',
+      source_type: ((): 'tank' | 'water_source' => { assertSourceKind(r.sourceKind); return r.sourceKind; })(),
       destination: r.destKind === 'tank' ? r.destination : undefined,
       valves: r.valves,
       flow_sensor: r.flowSensors[0],
@@ -157,7 +171,7 @@ export function topologyToManifestForController(
         route_index: idx,
         route_key: a.route,
         route_name: manifestRoutes[idx].name,
-        trigger: a.trigger as ManifestAutomation['trigger'],
+        trigger: mapTrigger(a.trigger),
         days_of_week: a.days_of_week,
         enabled: a.enabled,
       };
