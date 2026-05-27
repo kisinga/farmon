@@ -176,7 +176,7 @@ export interface ElectronAPI {
 
   // Controllers (formerly systems)
   systemList(siteId: string): Promise<Array<{ id: string; friendlyName: string; board: string; nodeCount: number }>>;
-  systemAddFromTemplate(siteId: string, templateName: string): Promise<Controller>;
+  systemAddFromTemplate(siteId: string, templateName: string, friendlyName?: string): Promise<Controller>;
   systemCreateBlank(siteId: string, friendlyName: string, board: string): Promise<Controller>;
   systemDelete(siteId: string, systemId: string): Promise<{ ok: boolean }>;
 

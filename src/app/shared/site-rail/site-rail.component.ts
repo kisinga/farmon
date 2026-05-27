@@ -1,12 +1,14 @@
 import { Component, inject, signal, computed } from '@angular/core';
 import { Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { ElectronService } from '../../core/services/electron.service';
-import type { TemplateListEntry } from '../../core/models/electron-api';
+import type { TemplateListEntry, BoardListEntry } from '../../core/models/electron-api';
 
 @Component({
   selector: 'app-site-rail',
   standalone: true,
+  imports: [FormsModule],
   host: { class: 'shrink-0' },
   template: `
     <div class="h-[var(--pipeline-rail-h)] bg-base-100 border-t border-base-300/30 px-6 flex items-center justify-between">
@@ -58,32 +60,77 @@ import type { TemplateListEntry } from '../../core/models/electron-api';
       </div>
     </div>
 
-    <!-- Add system dialog (templates only) -->
+    <!-- Add controller dialog -->
     @if (showAddSystem()) {
       <dialog class="modal modal-open" style="position: fixed;">
         <div class="modal-box max-w-md">
-          <h3 class="font-bold text-lg mb-4">Add Controller from Template</h3>
+          <h3 class="font-bold text-lg mb-4">Add Controller</h3>
 
-          @if (templates().length === 0) {
-            <p class="text-sm text-base-content/40 py-6 text-center">No templates available.</p>
-          } @else {
-            <p class="text-xs text-base-content/40 mb-2">Create a controller from a template.</p>
-            <div class="space-y-1 max-h-60 overflow-auto">
-              @for (entry of templates(); track entry.name) {
-                <button
-                  class="btn btn-ghost btn-sm w-full justify-start gap-3 font-normal"
-                  [disabled]="adding()"
-                  (click)="addFromTemplate(entry.name)"
+          <!-- Name (always required) -->
+          <div class="mb-4">
+            <label class="label"><span class="label-text">Controller Name</span></label>
+            <input
+              class="input input-sm input-bordered w-full"
+              [ngModel]="controllerName()"
+              (ngModelChange)="controllerName.set($event)"
+              placeholder="e.g. Pump Controller"
+            />
+          </div>
+
+          <!-- Tabs -->
+          <div class="tabs tabs-boxed mb-4">
+            <button class="tab" [class.tab-active]="addMode() === 'template'" (click)="addMode.set('template')">From Template</button>
+            <button class="tab" [class.tab-active]="addMode() === 'blank'" (click)="addMode.set('blank')">Blank</button>
+          </div>
+
+          @if (addMode() === 'template') {
+            @if (templates().length === 0) {
+              <p class="text-sm text-base-content/40 py-6 text-center">No templates available.</p>
+            } @else {
+              <p class="text-xs text-base-content/40 mb-2">Pick a template to pre-fill the topology.</p>
+              <div class="space-y-1 max-h-60 overflow-auto">
+                @for (entry of templates(); track entry.name) {
+                  <button
+                    class="btn btn-ghost btn-sm w-full justify-start gap-3 font-normal"
+                    [class.btn-active]="selectedTemplate() === entry.name"
+                    [disabled]="adding()"
+                    (click)="selectedTemplate.set(entry.name)"
+                  >
+                    <span class="font-medium">{{ entry.friendlyName || entry.name }}</span>
+                    <span class="text-xs text-base-content/40 font-mono">{{ entry.board }}</span>
+                  </button>
+                }
+              </div>
+            }
+          }
+
+          @if (addMode() === 'blank') {
+            <div class="space-y-3">
+              <div>
+                <label class="label"><span class="label-text">Board</span></label>
+                <select
+                  class="select select-sm select-bordered w-full"
+                  [ngModel]="selectedBoard()"
+                  (ngModelChange)="selectedBoard.set($event)"
                 >
-                  <span class="font-medium">{{ entry.friendlyName || entry.name }}</span>
-                  <span class="text-xs text-base-content/40 font-mono">{{ entry.board }}</span>
-                </button>
-              }
+                  <option value="">-- select board --</option>
+                  @for (b of boards(); track b.model) {
+                    <option [value]="b.model">{{ b.label }} ({{ b.model }})</option>
+                  }
+                </select>
+              </div>
             </div>
           }
 
           <div class="modal-action">
             <button class="btn btn-ghost" (click)="showAddSystem.set(false)">Cancel</button>
+            <button
+              class="btn btn-primary"
+              [disabled]="!canCreate() || adding()"
+              (click)="onCreate()"
+            >
+              Create
+            </button>
           </div>
         </div>
         <div class="modal-backdrop" (click)="showAddSystem.set(false)"></div>
@@ -100,8 +147,20 @@ export class SiteRailComponent {
   protected editingName = signal(false);
   protected adding = signal(false);
   protected templates = signal<TemplateListEntry[]>([]);
+  protected boards = signal<BoardListEntry[]>([]);
+  protected addMode = signal<'template' | 'blank'>('template');
+  protected controllerName = signal('');
+  protected selectedTemplate = signal('');
+  protected selectedBoard = signal('');
 
   protected controllerCount = computed(() => this.workspace.siteTopology()?.controllers.length ?? 0);
+
+  protected canCreate = computed(() => {
+    const name = this.controllerName().trim();
+    if (!name) return false;
+    if (this.addMode() === 'template') return !!this.selectedTemplate();
+    return !!this.selectedBoard();
+  });
 
   protected nodeCounts = computed(() => {
     const counts: Record<string, number> = {};
@@ -127,19 +186,45 @@ export class SiteRailComponent {
     return stats;
   });
 
-  protected async addFromTemplate(templateName: string) {
+  protected async onCreate() {
+    const name = this.controllerName().trim();
+    if (!name || !this.canCreate()) return;
+
     this.adding.set(true);
     try {
-      await this.workspace.addControllerFromTemplate(templateName);
+      let controllerId: string;
+      if (this.addMode() === 'template') {
+        controllerId = await this.workspace.addControllerFromTemplate(this.selectedTemplate(), name);
+      } else {
+        controllerId = await this.workspace.addBlankController(name, this.selectedBoard());
+      }
+
       this.showAddSystem.set(false);
+      this.controllerName.set('');
+      this.selectedTemplate.set('');
+      this.selectedBoard.set('');
+
+      const siteId = this.workspace.site()?.id;
+      if (siteId) {
+        this.router.navigate(['/site', siteId, 'system', controllerId]);
+      }
     } finally {
       this.adding.set(false);
     }
   }
 
   protected async onAddClick() {
-    this.templates.set(await this.electron.templateList());
+    const [templates, boards] = await Promise.all([
+      this.electron.templateList(),
+      this.electron.boardList(),
+    ]);
+    this.templates.set(templates);
+    this.boards.set(boards);
     this.showAddSystem.set(true);
+    this.addMode.set('template');
+    this.controllerName.set('');
+    this.selectedTemplate.set('');
+    this.selectedBoard.set('');
   }
 
   protected goToDeploy() {

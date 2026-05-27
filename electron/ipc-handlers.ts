@@ -331,7 +331,7 @@ export function registerIpcHandlers() {
    */
   ipcMain.handle(
     "system:add-from-template",
-    async (_e, siteId: string, templateName: string) => {
+    async (_e, siteId: string, templateName: string, friendlyName?: string) => {
       const templateData = store.loadTemplate(templateName);
       const device = templateData.device as Record<string, unknown> | undefined;
       const nodes = Array.isArray(templateData.nodes)
@@ -341,11 +341,12 @@ export function registerIpcHandlers() {
       // Generate system ID (unique within site)
       const existingSystems = SiteRepository.load(siteId).controllers;
       const existingIds = new Set(existingSystems.map(s => s.id));
-      let systemId = templateName;
+      const baseName = friendlyName ?? templateName;
+      let systemId = slug(baseName);
       if (existingIds.has(systemId)) {
         let i = 2;
-        while (existingIds.has(`${templateName}${i}`)) i++;
-        systemId = `${templateName}${i}`;
+        while (existingIds.has(`${systemId}${i}`)) i++;
+        systemId = `${systemId}${i}`;
       }
 
       // Remap any node IDs that conflict with existing ones in the site
@@ -437,13 +438,14 @@ export function registerIpcHandlers() {
         io_providers: (device as Record<string, unknown>)?.io_providers,
       };
 
+      const systemFriendlyName = friendlyName ?? (device?.friendly_name as string) ?? templateName;
       const system = {
         id: systemId,
-        friendlyName: (device?.friendly_name as string) ?? templateName,
+        friendlyName: systemFriendlyName,
         board: (device?.board as string) ?? "unknown",
         directory: (device?.directory as string) ?? null,
         topology,
-        deviceName: slug((device?.friendly_name as string) ?? templateName),
+        deviceName: slug(systemFriendlyName),
       };
 
       SiteRepository.addController(siteId, {

@@ -76,17 +76,17 @@ export type { Selection };
                   [class.pin-invalid]="pinCtrl.touched && pinCtrl.invalid">
                   <select class="select select-xs select-bordered flex-1 font-mono min-w-0"
                     [class.select-warning]="!(pinCtrl.touched && pinCtrl.invalid) && !$any(sn.node)[field.key]"
-                    [ngModel]="activeGroup(sn.node.id, field.key, $any(sn.node)[field.key] ?? '', field.pinCap)"
+                    [ngModel]="activeGroup(sn.node.id, field.key, $any(sn.node)[field.key] ?? '', field.pinCap, $any(sn.node).anchorId)"
                     [ngModelOptions]="{ standalone: true }"
                     [name]="'grp-' + sn.node.id + '-' + field.key"
-                    (ngModelChange)="onTransportChange(sn.node.id, field.key, $event, field.pinCap)"
+                    (ngModelChange)="onTransportChange(sn.node.id, field.key, $event, field.pinCap, $any(sn.node).anchorId)"
                     (blur)="pinCtrl.control.markAsTouched()">
                     <option value="">-- transport --</option>
-                    @for (group of editor.channelGroups(field.pinCap); track group.provider) {
+                    @for (group of editor.channelGroupsForController($any(sn.node).anchorId ?? '', field.pinCap); track group.provider) {
                       <option [value]="group.provider">{{ group.label }}</option>
                     }
                   </select>
-                  @if (activeGroupChannels(sn.node.id, field.key, $any(sn.node)[field.key] ?? '', field.pinCap); as channels) {
+                  @if (activeGroupChannels(sn.node.id, field.key, $any(sn.node)[field.key] ?? '', field.pinCap, $any(sn.node).anchorId); as channels) {
                     @if (channels.length > 1) {
                       <select class="select select-xs select-bordered flex-1 font-mono min-w-0"
                         [name]="'ch-' + sn.node.id + '-' + field.key"
@@ -505,13 +505,21 @@ export class TopologySidebarComponent {
   /** Tracks user's transport group selection per field (survives value clearing). */
   private selectedGroups = new Map<string, string>();
 
-  /** Resolve active group: explicit selection > derived from value > empty. */
-  protected activeGroup(nodeId: string, fieldKey: string, currentValue: string, cap?: PinCap): string {
+  /** Resolve active group: explicit selection > derived from value > empty.
+   *  Uses the NODE\'S controller so pin options stay correct even when the
+   *  editor is focused on a different controller. */
+  protected activeGroup(
+    nodeId: string,
+    fieldKey: string,
+    currentValue: string,
+    cap?: PinCap,
+    nodeAnchorId: string = this.editor.controllerId() ?? '',
+  ): string {
     const key = `${nodeId}:${fieldKey}`;
     const explicit = this.selectedGroups.get(key);
     if (explicit) return explicit;
     if (!currentValue) return '';
-    const groups = this.editor.channelGroups(cap);
+    const groups = this.editor.channelGroupsForController(nodeAnchorId, cap);
     for (const g of groups) {
       if (g.channels.some(ch => ch.id === currentValue)) return g.provider;
     }
@@ -519,20 +527,32 @@ export class TopologySidebarComponent {
   }
 
   /** Channels in the active group for step 2. */
-  protected activeGroupChannels(nodeId: string, fieldKey: string, currentValue: string, cap?: PinCap): Array<{ id: string; label: string; caps: PinCap[]; usedBy?: string }> {
-    const groupId = this.activeGroup(nodeId, fieldKey, currentValue, cap);
+  protected activeGroupChannels(
+    nodeId: string,
+    fieldKey: string,
+    currentValue: string,
+    cap?: PinCap,
+    nodeAnchorId: string = this.editor.controllerId() ?? '',
+  ): Array<{ id: string; label: string; caps: PinCap[]; usedBy?: string }> {
+    const groupId = this.activeGroup(nodeId, fieldKey, currentValue, cap, nodeAnchorId);
     if (!groupId) return [];
-    const groups = this.editor.channelGroups(cap);
+    const groups = this.editor.channelGroupsForController(nodeAnchorId, cap);
     const group = groups.find(g => g.provider === groupId);
     return group?.channels ?? [];
   }
 
   /** When transport group changes, auto-select if single channel or clear. */
-  protected onTransportChange(nodeId: string, field: string, groupId: string, cap?: PinCap) {
+  protected onTransportChange(
+    nodeId: string,
+    field: string,
+    groupId: string,
+    cap?: PinCap,
+    nodeAnchorId: string = this.editor.controllerId() ?? '',
+  ) {
     const key = `${nodeId}:${field}`;
     this.selectedGroups.set(key, groupId);
     if (!groupId) { this.updateField.emit({ nodeId, field, value: '' }); return; }
-    const groups = this.editor.channelGroups(cap);
+    const groups = this.editor.channelGroupsForController(nodeAnchorId, cap);
     const group = groups.find(g => g.provider === groupId);
     if (!group) { this.updateField.emit({ nodeId, field, value: '' }); return; }
     if (group.channels.length === 1) {

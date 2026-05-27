@@ -448,11 +448,11 @@ export class WorkspaceService {
 
   // --- Controller management ---
 
-  async addControllerFromTemplate(templateName: string): Promise<string> {
+  async addControllerFromTemplate(templateName: string, friendlyName?: string): Promise<string> {
     const site = this._site();
     if (!site) throw new Error('No site loaded');
 
-    const controller = await this.electron.systemAddFromTemplate(site.id, templateName);
+    const controller = await this.electron.systemAddFromTemplate(site.id, templateName, friendlyName);
 
     // Load board for the new controller
     const boardResult = await this.electron.boardLoad(controller.board);

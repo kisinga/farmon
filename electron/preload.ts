@@ -32,8 +32,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // --- Systems ---
   systemList: (siteId: string) => ipcRenderer.invoke("system:list", siteId),
-  systemAddFromTemplate: (siteId: string, templateName: string) =>
-    ipcRenderer.invoke("system:add-from-template", siteId, templateName),
+  systemAddFromTemplate: (siteId: string, templateName: string, friendlyName?: string) =>
+    ipcRenderer.invoke("system:add-from-template", siteId, templateName, friendlyName),
   systemCreateBlank: (siteId: string, friendlyName: string, board: string) =>
     ipcRenderer.invoke("system:create-blank", siteId, friendlyName, board),
   systemDelete: (siteId: string, systemId: string) =>

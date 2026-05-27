@@ -373,7 +373,7 @@ inline int pump_ref_count(uint8_t pump_idx) {
     if (slots[i].state == 2 && slots[i].route_id >= 0 && ROUTES[slots[i].route_id].pump_idx == pump_idx)
       c++;
   return c;
-}` : '// No pumps in this controller'}}
+}` : '// No pumps in this controller'}
 
 // --- Derived system state ----------------------------------------------------
 

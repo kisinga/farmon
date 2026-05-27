@@ -73,8 +73,8 @@ export class ElectronService {
   }
 
   // --- Systems ---
-  systemAddFromTemplate(siteId: string, templateName: string): Promise<Controller> {
-    return this.invoke(api => api.systemAddFromTemplate(siteId, templateName));
+  systemAddFromTemplate(siteId: string, templateName: string, friendlyName?: string): Promise<Controller> {
+    return this.invoke(api => api.systemAddFromTemplate(siteId, templateName, friendlyName));
   }
   systemCreateBlank(siteId: string, friendlyName: string, board: string): Promise<Controller> {
     return this.invoke(api => api.systemCreateBlank(siteId, friendlyName, board));
