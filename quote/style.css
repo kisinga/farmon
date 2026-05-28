@@ -43,6 +43,15 @@ body {
   color: var(--primary);
   text-decoration: none;
   letter-spacing: -0.3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nav-logo {
+  width: 28px;
+  height: 28px;
+  display: block;
 }
 
 .nav-link {
