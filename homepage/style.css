@@ -507,6 +507,95 @@ footer {
 
 footer a { color: var(--primary); text-decoration: none; }
 
+/* Select dropdowns */
+.field select {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23475569' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+.field select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+/* Param section */
+.param-section {
+  margin-bottom: 16px;
+  padding: 14px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.param-section h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.param-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* Live preview */
+.preview-card {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.preview-card.empty {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.preview-table th {
+  text-align: left;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.preview-table td {
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.preview-table td.num {
+  text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.preview-table .spec-tag {
+  display: inline-block;
+  font-size: 11px;
+  background: var(--primary-light);
+  color: var(--primary);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+}
+.preview-total {
+  text-align: right;
+  margin-top: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
 .site-footer {
   text-align: center;
   padding: 32px 20px;

@@ -6,14 +6,16 @@ import {
   buildQuotationFromTopology,
   renderQuotationHtml,
   renderTechnicalBomHtml,
-  DEFAULT_CATALOG,
-  type CatalogItem,
+  resolveQuoteLineItem,
+  COMPONENT_REGISTRY,
+  type ProductLine,
   type QuotationLineItem,
+  type QuoteDefaults,
 } from '@far-mon/core';
 import type { SiteTopology } from '@far-mon/core';
 import { ElectronService } from '../../core/services/electron.service';
 import { WorkspaceService } from '../../core/services/workspace.service';
-import type { ManifestRow } from '../../core/models/electron-api';
+import type { ManifestRow, ProductLineRow, QuoteDefaultsRow } from '../../core/models/electron-api';
 
 interface EditableLineItem extends QuotationLineItem {
   _key: string;
@@ -40,6 +42,39 @@ interface EditableLineItem extends QuotationLineItem {
 
       @if (error()) {
         <div class="alert alert-error">{{ error() }}</div>
+      }
+
+      <!-- Component Parameters -->
+      @if (paramComponents().length > 0) {
+        <div class="card bg-base-200">
+          <div class="card-body p-4">
+            <h2 class="card-title text-base">Component Parameters</h2>
+            <p class="text-xs text-base-content/50 mb-3">Change specifications to update prices dynamically.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              @for (comp of paramComponents(); track comp.id) {
+                <div class="bg-base-100 rounded-lg p-3">
+                  <div class="font-medium text-sm mb-2">{{ comp.name }}</div>
+                  <div class="space-y-2">
+                    @for (param of comp.parameters; track param.name) {
+                      @if (param.type === 'select') {
+                        <div>
+                          <label class="label"><span class="label-text text-xs">{{ param.label }}</span></label>
+                          <select class="select select-sm select-bordered w-full"
+                            [ngModel]="componentParams()[comp.id]?.[param.name] ?? comp.defaultParams[param.name]"
+                            (ngModelChange)="updateParam(comp.id, param.name, $event)">
+                            @for (opt of param.options; track opt) {
+                              <option [value]="opt">{{ opt }}</option>
+                            }
+                          </select>
+                        </div>
+                      }
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
       }
 
       <!-- Base Infrastructure -->
@@ -72,7 +107,7 @@ interface EditableLineItem extends QuotationLineItem {
                     <td class="text-right font-mono text-sm">{{ item.unitPrice.toFixed(2) }}</td>
                     <td class="text-right font-mono text-sm font-medium">{{ item.lineTotal.toFixed(2) }}</td>
                     <td class="w-8">
-                      @if (item.catalogItemId === 'relay-30a-module') {
+                      @if (item.manufacturerId === 'relay-30a-module') {
                         <span class="badge badge-ghost badge-xs">conditional</span>
                       }
                     </td>
@@ -174,7 +209,7 @@ interface EditableLineItem extends QuotationLineItem {
               <button class="btn btn-ghost btn-sm w-full justify-start gap-2 font-normal" (click)="confirmSwap(alt.id)">
                 <span class="font-medium">{{ alt.name }}</span>
                 <span class="text-xs text-base-content/40">{{ alt.manufacturer }}</span>
-                <span class="text-xs text-base-content/40 font-mono">KSh {{ alt.unitCostUsd.toFixed(2) }}</span>
+                <span class="text-xs text-base-content/40 font-mono">{{ '$' + firstActiveUnitCost(alt).toFixed(2) }}</span>
                 @if (alt.selectionHelp) {
                   <span class="text-xs text-base-content/40 italic">— {{ alt.selectionHelp }}</span>
                 }
@@ -198,11 +233,14 @@ export class HardwarePageComponent implements OnInit {
   protected siteId = signal('');
   protected siteName = signal('');
   protected topology = signal<SiteTopology | null>(null);
-  protected catalog = signal<CatalogItem[]>([]);
+  protected lines = signal<ProductLine[]>([]);
+  protected defaults = signal<QuoteDefaults[]>([]);
   protected lineItems = signal<EditableLineItem[]>([]);
   protected history = signal<ManifestRow[]>([]);
   protected error = signal('');
   protected swappingKey = signal<string | null>(null);
+  /** Per-component parameter overrides. Key = componentId. */
+  protected componentParams = signal<Record<string, Record<string, string>>>({});
 
   protected baseItems = computed(() => this.lineItems().filter((i) => i._key.startsWith('base-')));
   protected topologyItems = computed(() => this.lineItems().filter((i) => i._key.startsWith('topo-')));
@@ -216,9 +254,23 @@ export class HardwarePageComponent implements OnInit {
     if (!key) return [];
     const item = this.lineItems().find((i) => i._key === key);
     if (!item) return [];
-    return this.catalog().filter(
-      (c) => c.isActive && c.category === this.inferCategory(item.catalogItemId),
+    return this.lines().filter(
+      (c) => c.isActive && c.componentId === this.inferComponentId(item.manufacturerId),
     );
+  });
+
+  /** Component types that have parameters and are present in the current quotation. */
+  protected paramComponents = computed(() => {
+    const items = this.lineItems();
+    const needed = new Set<string>();
+    for (const item of items) {
+      const compId = this.inferComponentId(item.manufacturerId);
+      const comp = COMPONENT_REGISTRY[compId];
+      if (comp && comp.parameters.length > 0) {
+        needed.add(compId);
+      }
+    }
+    return Array.from(needed).map((id) => COMPONENT_REGISTRY[id]).filter(Boolean);
   });
 
   async ngOnInit() {
@@ -233,48 +285,56 @@ export class HardwarePageComponent implements OnInit {
       this.topology.set(full.topology as SiteTopology);
     }
 
-    // Load catalog and history in parallel
-    const [catalogRows, historyRows] = await Promise.all([
+    // Load catalog lines, defaults, and history in parallel
+    const [lineRows, defaultRows, historyRows] = await Promise.all([
       this.electron.catalogActive(),
+      this.electron.quoteDefaultsGet(),
       this.electron.manifestList(name),
     ]);
 
-    // Convert DB rows to core CatalogItem shape
-    this.catalog.set(catalogRows.map((r) => ({
-      id: r.id,
-      category: r.category as CatalogItem['category'],
-      subCategory: r.sub_category ?? undefined,
-      name: r.name,
-      manufacturer: r.manufacturer,
-      manufacturerPartNumber: r.manufacturer_pn ?? undefined,
-      specs: JSON.parse(r.specs || '{}') as Record<string, string>,
-      unitCostUsd: r.unit_cost_usd ?? 0,
-      currency: r.currency,
-      description: r.description ?? '',
-      selectionHelp: r.selection_help ?? undefined,
-      reliabilityScore: r.reliability_score ?? undefined,
-      isActive: r.is_active === 1,
-      isUserDefined: r.is_user_defined === 1,
+    this.lines.set(lineRows.map((r) => this.mapRowToProductLine(r)));
+    this.defaults.set(defaultRows.map((r) => ({
+      componentId: r.component_id,
+      manufacturerId: r.manufacturer_id,
+      params: JSON.parse(r.params || '{}'),
     })));
 
     this.history.set(historyRows);
+
+    // Initialize componentParams from DB defaults, falling back to registry defaults
+    const initialParams: Record<string, Record<string, string>> = {};
+    for (const comp of Object.values(COMPONENT_REGISTRY)) {
+      const dbDefault = this.defaults().find((d) => d.componentId === comp.id);
+      if (dbDefault && Object.keys(dbDefault.params).length > 0) {
+        initialParams[comp.id] = dbDefault.params;
+      } else if (Object.keys(comp.defaultParams).length > 0) {
+        initialParams[comp.id] = { ...comp.defaultParams };
+      }
+    }
+    this.componentParams.set(initialParams);
 
     // Build initial line items from topology
     this.rebuildFromTopology();
   }
 
-  private inferCategory(catalogId: string): string {
-    const item = this.catalog().find((c) => c.id === catalogId);
-    return item?.category ?? 'base_infra';
+  private inferComponentId(manufacturerId: string): string {
+    const item = this.lines().find((c) => c.id === manufacturerId);
+    return item?.componentId ?? '';
   }
 
   private rebuildFromTopology() {
     const topo = this.topology();
-    const cat = this.catalog();
     if (!topo) return;
 
-    const quotation = buildQuotationFromTopology(topo, cat as any, {
+    const bundle = {
+      registry: COMPONENT_REGISTRY,
+      lines: this.lines(),
+      defaults: this.defaults(),
+    };
+
+    const quotation = buildQuotationFromTopology(topo, bundle, {
       siteName: this.siteName(),
+      componentParams: this.componentParams(),
     });
 
     const editable: EditableLineItem[] = [
@@ -282,6 +342,38 @@ export class HardwarePageComponent implements OnInit {
       ...quotation.systemComponents.map((i, idx) => ({ ...i, _key: `topo-${idx}` })),
     ];
     this.lineItems.set(editable);
+  }
+
+  /**
+   * Refresh prices and specs for all line items after params change.
+   * Preserves quantities and manufacturer swaps — only re-resolves variants.
+   * Hard limit: if a swapped manufacturer no longer has a matching variant,
+   * the item keeps its old specs/price until manually swapped again.
+   */
+  private refreshPrices() {
+    const bundle = {
+      registry: COMPONENT_REGISTRY,
+      lines: this.lines(),
+      defaults: this.defaults(),
+    };
+    const params = this.componentParams();
+
+    this.lineItems.update((items) =>
+      items.map((item) => {
+        const compId = this.inferComponentId(item.manufacturerId);
+        const paramOverrides = params[compId] ?? {};
+        const resolved = resolveQuoteLineItem(compId, paramOverrides, bundle);
+        if (!resolved) return item;
+        const unitPrice = Math.round(resolved.variant.unitCost * 1.3 * 100) / 100;
+        return {
+          ...item,
+          specs: { ...resolved.line.baseSpecs, ...resolved.variant.params },
+          unitCost: resolved.variant.unitCost,
+          unitPrice,
+          lineTotal: Math.round(unitPrice * item.quantity * 100) / 100,
+        };
+      }),
+    );
   }
 
   protected updateQty(key: string, qty: number) {
@@ -294,31 +386,58 @@ export class HardwarePageComponent implements OnInit {
     );
   }
 
+  protected firstActiveUnitCost(line: ProductLine): number {
+    return line.variants.find((v) => v.isActive)?.unitCost ?? 0;
+  }
+
+  protected updateParam(componentId: string, paramName: string, value: string) {
+    this.componentParams.update((params) => ({
+      ...params,
+      [componentId]: { ...params[componentId], [paramName]: value },
+    }));
+    this.refreshPrices();
+  }
+
   protected swapCatalogItem(key: string) {
     this.swappingKey.set(key);
   }
 
-  protected confirmSwap(catalogId: string) {
+  protected confirmSwap(manufacturerId: string) {
     const key = this.swappingKey();
     if (!key) return;
-    const catItem = this.catalog().find((c) => c.id === catalogId);
-    if (!catItem) return;
+    const line = this.lines().find((c) => c.id === manufacturerId);
+    if (!line) return;
+
+    const compId = line.componentId;
+    const paramOverrides = this.componentParams()[compId] ?? {};
+    const bundle = {
+      registry: COMPONENT_REGISTRY,
+      lines: this.lines(),
+      defaults: this.defaults(),
+    };
+    const resolved = resolveQuoteLineItem(compId, paramOverrides, bundle);
+    if (!resolved) {
+      this.error.set(`No variant found for ${line.name} with params ${JSON.stringify(paramOverrides)}`);
+      this.swappingKey.set(null);
+      return;
+    }
 
     this.lineItems.update((items) =>
       items.map((i) => {
         if (i._key !== key) return i;
-        const unitPrice = Math.round(catItem.unitCostUsd * 1.3 * 100) / 100;
+        const unitPrice = Math.round(resolved.variant.unitCost * 1.3 * 100) / 100;
         return {
           ...i,
-          catalogItemId: catItem.id,
-          name: catItem.name,
-          manufacturer: catItem.manufacturer,
-          specs: catItem.specs,
-          description: catItem.description,
-          unitCost: catItem.unitCostUsd,
+          manufacturerId: line.id,
+          name: line.name,
+          manufacturer: line.manufacturer,
+          specs: { ...line.baseSpecs, ...resolved.variant.params },
+          description: line.description,
+          unitCost: resolved.variant.unitCost,
+          currency: resolved.variant.currency,
           unitPrice,
           lineTotal: Math.round(unitPrice * i.quantity * 100) / 100,
-          selectionHelp: catItem.selectionHelp,
+          selectionHelp: line.selectionHelp,
         };
       }),
     );
@@ -328,7 +447,10 @@ export class HardwarePageComponent implements OnInit {
   protected async saveManifest() {
     try {
       const items = this.lineItems().map((i) => ({
-        catalogItemId: i.catalogItemId,
+        manufacturerId: i.manufacturerId,
+        params: Object.fromEntries(
+          Object.entries(i.specs).filter(([k]) => COMPONENT_REGISTRY[this.inferComponentId(i.manufacturerId)]?.parameters.some((p) => p.name === k))
+        ),
         quantity: i.quantity,
         unitPriceAtTime: i.unitPrice,
         notes: i.notes,
@@ -354,7 +476,7 @@ export class HardwarePageComponent implements OnInit {
       currency: 'USD',
     };
     const html = showPricing
-      ? renderQuotationHtml(quotation, { showPricing: true })
+      ? renderQuotationHtml(quotation, { showPricing: true, exchangeRate: 130 })
       : renderTechnicalBomHtml(quotation);
     const win = window.open('', '_blank');
     if (win) {
@@ -362,6 +484,23 @@ export class HardwarePageComponent implements OnInit {
       win.document.close();
       setTimeout(() => win.print(), 300);
     }
+  }
+
+  private mapRowToProductLine(r: ProductLineRow): ProductLine {
+    return {
+      id: r.id,
+      componentId: r.component_id,
+      manufacturer: r.manufacturer,
+      name: r.name,
+      manufacturerPartNumber: r.manufacturer_pn ?? undefined,
+      description: r.description ?? '',
+      selectionHelp: r.selection_help ?? undefined,
+      reliabilityScore: r.reliability_score ?? undefined,
+      baseSpecs: JSON.parse(r.base_specs || '{}'),
+      variants: JSON.parse(r.variants || '[]'),
+      isActive: r.is_active === 1,
+      isUserDefined: r.is_user_defined === 1,
+    };
   }
 
   protected parseItems(itemsJson: string): Array<unknown> {

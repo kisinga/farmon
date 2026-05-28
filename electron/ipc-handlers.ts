@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow, dialog, shell, app } from "electron";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { BoardDefSchema, type BoardDef } from "./lib/board.js";
 import { parseTopology, type SiteTopology } from "./lib/topology.js";
 import { validateAll } from "./lib/validate.js";
@@ -11,7 +12,7 @@ import * as store from "./store.js";
 import * as db from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
 import { checkHealth, fixDeps } from "./health.js";
-import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport, NODE_REGISTRY, deriveHaEntityId, buildGraph, activeGraph, deriveRoutes, type Route } from '@far-mon/core';
+import { collectPins, reservedPins, computePinOverlays, slug, boardSupportedTransports, effectiveTransport, NODE_REGISTRY, deriveHaEntityId, buildGraph, activeGraph, deriveRoutes, type Route, COMPONENT_REGISTRY } from '@far-mon/core';
 
 import { generateSiteDocumentation, type PinTableRow } from './lib/generators/site-readme.js';
 import * as esphome from "./esphome.js";
@@ -1237,25 +1238,78 @@ export function registerIpcHandlers() {
   // Product Catalog
   // =========================================================================
 
-  ipcMain.handle("catalog:list", async (_e, category?: string) =>
-    db.listCatalogItems(category),
+  function exportCatalogForQuote() {
+    try {
+      const lines = db.listActiveCatalogItems();
+      const defaults = db.getQuoteDefaults();
+      const payload = {
+        registry: COMPONENT_REGISTRY,
+        lines: lines.map((r) => ({
+          id: r.id,
+          componentId: r.component_id,
+          manufacturer: r.manufacturer,
+          name: r.name,
+          manufacturerPartNumber: r.manufacturer_pn ?? undefined,
+          description: r.description ?? '',
+          selectionHelp: r.selection_help ?? undefined,
+          reliabilityScore: r.reliability_score ?? undefined,
+          baseSpecs: JSON.parse(r.base_specs || '{}'),
+          variants: JSON.parse(r.variants || '[]'),
+          isActive: r.is_active === 1,
+          isUserDefined: r.is_user_defined === 1,
+        })),
+        defaults: defaults.map((d) => ({
+          componentId: d.component_id,
+          manufacturerId: d.manufacturer_id,
+          params: JSON.parse(d.params || '{}'),
+        })),
+      };
+      const quoteDir = path.join(process.cwd(), "homepage");
+      fs.mkdirSync(quoteDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(quoteDir, "catalog.json"),
+        JSON.stringify(payload, null, 2),
+        "utf-8",
+      );
+    } catch (err) {
+      console.error("[catalog:export-for-quote] failed:", err);
+    }
+  }
+
+  ipcMain.handle("catalog:list", async (_e, componentId?: string) =>
+    db.listCatalogItems(componentId),
   );
 
-  ipcMain.handle("catalog:active", async (_e, category?: string) =>
-    db.listActiveCatalogItems(category),
+  ipcMain.handle("catalog:active", async (_e, componentId?: string) =>
+    db.listActiveCatalogItems(componentId),
   );
 
   ipcMain.handle("catalog:get", async (_e, id: string) =>
     db.getCatalogItem(id),
   );
 
-  ipcMain.handle("catalog:upsert", async (_e, item: db.CatalogItemRow) => {
+  ipcMain.handle("catalog:upsert", async (_e, item: db.ProductLineRow) => {
     db.upsertCatalogItem(item);
+    exportCatalogForQuote();
     return { ok: true };
   });
 
   ipcMain.handle("catalog:deactivate", async (_e, id: string) => {
     db.deactivateCatalogItem(id);
+    exportCatalogForQuote();
+    return { ok: true };
+  });
+
+  ipcMain.handle("catalog:export-for-quote", async () => {
+    exportCatalogForQuote();
+    return { ok: true };
+  });
+
+  ipcMain.handle("quote-defaults:get", async () => db.getQuoteDefaults());
+
+  ipcMain.handle("quote-defaults:set", async (_e, componentId: string, manufacturerId: string, params: string) => {
+    db.setQuoteDefaults(componentId, manufacturerId, params);
+    exportCatalogForQuote();
     return { ok: true };
   });
 

@@ -4,8 +4,9 @@
  * Pure, composable functions. No side effects.
  */
 
-import type { CatalogItem, CatalogItemSpecs, Quotation, QuotationInput, QuotationLineItem } from './types';
-import { findDefaultCatalogItem } from './catalog';
+import type { ProductLine, ProductVariant, Quotation, QuotationDiagnostic, QuotationInput, QuotationLineItem } from './types';
+import type { CatalogBundle } from './catalog';
+import { resolveQuoteLineItem } from './catalog';
 
 /** Generate a short quote ID: Q-YYYYMMDD-XXXX */
 function generateQuoteId(): string {
@@ -19,23 +20,25 @@ function generateQuoteId(): string {
 const DEFAULT_MARKUP = 1.3;
 
 function makeLineItem(
-  item: CatalogItem,
+  line: ProductLine,
+  variant: ProductVariant,
   quantity: number,
   markup: number = DEFAULT_MARKUP,
   notes?: string,
 ): QuotationLineItem {
-  const unitPrice = Math.round(item.unitCostUsd * markup * 100) / 100;
+  const unitPrice = Math.round(variant.unitCost * markup * 100) / 100;
   return {
-    catalogItemId: item.id,
-    name: item.name,
-    manufacturer: item.manufacturer,
-    specs: item.specs,
-    description: item.description,
+    manufacturerId: line.id,
+    name: line.name,
+    manufacturer: line.manufacturer,
+    specs: { ...line.baseSpecs, ...variant.params },
+    description: line.description,
     quantity,
-    unitCost: item.unitCostUsd,
+    unitCost: variant.unitCost,
     unitPrice,
     lineTotal: Math.round(unitPrice * quantity * 100) / 100,
-    selectionHelp: item.selectionHelp,
+    currency: variant.currency,
+    selectionHelp: line.selectionHelp,
     notes,
   };
 }
@@ -50,33 +53,36 @@ function sumLineItems(items: QuotationLineItem[]): number {
 
 export function buildBaseInfrastructure(
   hasVfd: boolean,
-  catalog: CatalogItem[],
-  opts?: { cableLengthMeters?: number },
+  bundle: CatalogBundle,
+  opts?: { cableLengthMeters?: number; componentParams?: Record<string, Record<string, string>>; diagnostics?: QuotationDiagnostic[] },
 ): QuotationLineItem[] {
   const items: QuotationLineItem[] = [];
 
-  const add = (category: CatalogItem['category'], subCategory: string | undefined, specMatch: Partial<CatalogItemSpecs>, qty: number, notes?: string) => {
-    const found = findDefaultCatalogItem(catalog, category, subCategory, specMatch);
-    if (!found) return;
-    items.push(makeLineItem(found, qty, DEFAULT_MARKUP, notes));
+  const add = (componentId: string, paramOverrides: Record<string, string> = {}, qty: number, notes?: string) => {
+    const resolved = resolveQuoteLineItem(componentId, paramOverrides, bundle);
+    if (!resolved) {
+      opts?.diagnostics?.push({
+        componentId,
+        reason: `No active variant found for params ${JSON.stringify(paramOverrides)}`,
+      });
+      return;
+    }
+    items.push(makeLineItem(resolved.line, resolved.variant, qty, DEFAULT_MARKUP, notes));
   };
 
-  // Always present
-  add('controller', 'esp32_relay_board', {}, 1, 'Main controller');
-  add('base_infra', 'single_board_computer', {}, 1, 'Home Assistant OS host');
-  add('power', 'ups', {}, 1, 'Battery backup for controller and Pi');
-  add('power', 'solar', {}, 1, 'Keeps UPS charged, reduces running costs');
-  add('enclosure', 'din_rail', {}, 1, 'Houses all electronics');
+  add('controller', {}, 1, 'Main controller');
+  add('compute', {}, 1, 'Home Assistant OS host');
+  add('power_ups', {}, 1, 'Battery backup for controller and Pi');
+  add('power_solar', {}, 1, 'Keeps UPS charged, reduces running costs');
+  add('enclosure', {}, 1, 'Houses all electronics');
 
-  // Relay only if NOT using VFD
   if (!hasVfd) {
-    add('relay', 'high_current_relay', {}, 1, 'Pump switching (omitted for VFD installs)');
+    add('relay', {}, 1, 'Pump switching (omitted for VFD installs)');
   }
 
-  // Cabling — rough estimate based on valve count + sensor count
   const cableLength = opts?.cableLengthMeters ?? 50;
-  add('base_infra', 'cable', { gauge: '1.0mm²' }, cableLength, 'Valve actuator wiring (~10-20m per valve)');
-  add('base_infra', 'cable', { gauge: '0.34mm²' }, Math.round(cableLength * 0.6), 'Sensor signal wiring (~5-15m per sensor)');
+  add('cable_valve', opts?.componentParams?.['cable_valve'] ?? {}, cableLength, 'Valve actuator wiring (~10-20m per valve)');
+  add('cable_sensor', opts?.componentParams?.['cable_sensor'] ?? {}, Math.round(cableLength * 0.6), 'Sensor signal wiring (~5-15m per sensor)');
 
   return items;
 }
@@ -87,24 +93,32 @@ export function buildBaseInfrastructure(
 
 export function buildTopologyComponents(
   input: QuotationInput,
-  catalog: CatalogItem[],
+  bundle: CatalogBundle,
+  opts?: { diagnostics?: QuotationDiagnostic[] },
 ): QuotationLineItem[] {
   const items: QuotationLineItem[] = [];
 
-  const add = (category: CatalogItem['category'], subCategory: string | undefined, specMatch: Partial<CatalogItemSpecs>, qty: number, notes?: string) => {
-    const found = findDefaultCatalogItem(catalog, category, subCategory, specMatch);
-    if (!found) return;
-    items.push(makeLineItem(found, qty, DEFAULT_MARKUP, notes));
+  const add = (componentId: string, paramOverrides: Record<string, string> = {}, qty: number, notes?: string) => {
+    const resolved = resolveQuoteLineItem(componentId, paramOverrides, bundle);
+    if (!resolved) {
+      opts?.diagnostics?.push({
+        componentId,
+        reason: `No active variant found for params ${JSON.stringify(paramOverrides)}`,
+      });
+      return;
+    }
+    items.push(makeLineItem(resolved.line, resolved.variant, qty, DEFAULT_MARKUP, notes));
   };
 
-  // Valves — one per zone, sized by pipe diameter
+  const valveParams = input.componentParams?.['valve'] ?? { portSize: input.maxPipeDiameter };
+  const flowParams = input.componentParams?.['flow_sensor'] ?? { portSize: input.maxPipeDiameter };
+
   if (input.numValveZones > 0) {
-    add('valve', 'ball_valve', { portSize: input.maxPipeDiameter }, input.numValveZones);
+    add('valve', valveParams, input.numValveZones);
   }
 
-  // Flow sensors
   if (input.numFlowSensors > 0) {
-    add('flow_sensor', 'pulse_flow', { portSize: input.maxPipeDiameter }, input.numFlowSensors);
+    add('flow_sensor', flowParams, input.numFlowSensors);
   }
 
   return items;
@@ -116,11 +130,12 @@ export function buildTopologyComponents(
 
 export function buildQuotation(
   input: QuotationInput,
-  catalog: CatalogItem[],
-  opts?: { customerName?: string; siteName?: string; cableLengthMeters?: number },
+  bundle: CatalogBundle,
+  opts?: { customerName?: string; siteName?: string; cableLengthMeters?: number; diagnostics?: QuotationDiagnostic[] },
 ): Quotation {
-  const base = buildBaseInfrastructure(input.hasVfd, catalog, opts);
-  const topology = buildTopologyComponents(input, catalog);
+  const diagnostics = opts?.diagnostics;
+  const base = buildBaseInfrastructure(input.hasVfd, bundle, { cableLengthMeters: opts?.cableLengthMeters, componentParams: input.componentParams, diagnostics });
+  const topology = buildTopologyComponents(input, bundle, { diagnostics });
   const all = [...base, ...topology];
 
   return {
@@ -131,7 +146,7 @@ export function buildQuotation(
     baseInfrastructure: base,
     systemComponents: topology,
     subtotal: sumLineItems(all),
-    currency: 'KES',
+    currency: 'USD',
   };
 }
 
@@ -147,17 +162,14 @@ function countByKind(nodes: TopologyNode[], kind: TopologyNode['kind']): number 
 
 export function buildQuotationFromTopology(
   topology: SiteTopology,
-  catalog: CatalogItem[],
-  opts?: { customerName?: string; siteName?: string; cableLengthMeters?: number },
+  bundle: CatalogBundle,
+  opts?: { customerName?: string; siteName?: string; cableLengthMeters?: number; componentParams?: Record<string, Record<string, string>>; diagnostics?: QuotationDiagnostic[] },
 ): Quotation {
   const hasVfd = countByKind(topology.nodes, 'vfd') > 0;
   const numValveZones = countByKind(topology.nodes, 'valve');
   const numFlowSensors = countByKind(topology.nodes, 'flow_sensor');
 
-  // Infer pipe diameter from the largest valve spec if available, else default DN20
   let maxPipeDiameter: QuotationInput['maxPipeDiameter'] = 'DN20';
-  // Future: valves may carry a portSize property; for now default to DN20
-  // and let the user override in the desktop app.
 
   const input: QuotationInput = {
     numTanks: countByKind(topology.nodes, 'tank'),
@@ -166,8 +178,9 @@ export function buildQuotationFromTopology(
     numValveZones,
     maxPipeDiameter,
     numFlowSensors,
+    componentParams: opts?.componentParams,
     customerName: opts?.customerName,
   };
 
-  return buildQuotation(input, catalog, opts);
+  return buildQuotation(input, bundle, opts);
 }

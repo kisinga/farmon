@@ -26,6 +26,7 @@
     "test:site-doc": "npm run build:electron && npx tsx test/site-doc-snapshot.test.ts",
     "docs:build": "npx tsx scripts/docs-build.ts",
     "docs:check": "npm run docs:build && git diff --exit-code docs/",
+    "build:quote": "cd packages/core && npm run build:quotation && cp dist/quotation.esm.js ../../homepage/quotation.esm.js",
     "postinstall": "electron-builder install-app-deps"
   },
   "private": true,

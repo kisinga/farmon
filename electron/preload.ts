@@ -244,30 +244,35 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("deployment:rollback", siteId, controllerId),
 
   // --- Product Catalog ---
-  catalogList: (category?: string) =>
-    ipcRenderer.invoke("catalog:list", category),
-  catalogActive: (category?: string) =>
-    ipcRenderer.invoke("catalog:active", category),
+  catalogList: (componentId?: string) =>
+    ipcRenderer.invoke("catalog:list", componentId),
+  catalogActive: (componentId?: string) =>
+    ipcRenderer.invoke("catalog:active", componentId),
   catalogGet: (id: string) =>
     ipcRenderer.invoke("catalog:get", id),
   catalogUpsert: (item: {
     id: string;
-    category: string;
-    sub_category: string | null;
-    name: string;
+    component_id: string;
     manufacturer: string;
+    name: string;
     manufacturer_pn: string | null;
-    specs: string;
-    unit_cost_usd: number | null;
-    currency: string;
     description: string | null;
     selection_help: string | null;
     reliability_score: number | null;
+    base_specs: string;
+    variants: string;
     is_active: number;
     is_user_defined: number;
   }) => ipcRenderer.invoke("catalog:upsert", item),
   catalogDeactivate: (id: string) =>
     ipcRenderer.invoke("catalog:deactivate", id),
+  catalogExportForQuote: () =>
+    ipcRenderer.invoke("catalog:export-for-quote"),
+
+  // --- Quote Defaults ---
+  quoteDefaultsGet: () => ipcRenderer.invoke("quote-defaults:get"),
+  quoteDefaultsSet: (componentId: string, manufacturerId: string, params: string) =>
+    ipcRenderer.invoke("quote-defaults:set", componentId, manufacturerId, params),
 
   // --- Site Manifests ---
   manifestList: (siteId: string) =>

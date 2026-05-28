@@ -4,33 +4,47 @@
  * Zero external dependencies. Pure data shapes.
  */
 
-export interface CatalogItemSpecs {
-  portSize?: 'DN15' | 'DN20' | 'DN25' | 'DN32' | string;
-  voltage?: string;
-  pressureRating?: string;
-  material?: string;
-  flowRange?: string;
-  currentDraw?: string;
-  wattage?: string;
-  ipRating?: string;
-  [key: string]: string | undefined;
-}
+export type ParameterDef =
+  | { name: string; label: string; type: 'select'; options: string[] }
+  | { name: string; label: string; type: 'number'; min?: number; max?: number };
 
-export interface CatalogItem {
+export interface ComponentDefinition {
   id: string;
-  category: 'base_infra' | 'controller' | 'valve' | 'flow_sensor' | 'pump' | 'relay' | 'power' | 'enclosure';
+  category: string;
   subCategory?: string;
   name: string;
+  description: string;
+  parameters: ParameterDef[];
+  defaultParams: Record<string, string>;
+}
+
+export interface ProductVariant {
+  params: Record<string, string>;
+  unitCost: number;
+  currency: string;
+  partNumber?: string;
+  isActive: boolean;
+}
+
+export interface ProductLine {
+  id: string;
+  componentId: string;
   manufacturer: string;
+  name: string;
   manufacturerPartNumber?: string;
-  specs: CatalogItemSpecs;
-  unitCostUsd: number;
-  currency: string;  // default 'KES'
   description: string;
   selectionHelp?: string;
   reliabilityScore?: number;
+  baseSpecs: Record<string, string>;
+  variants: ProductVariant[];
   isActive: boolean;
   isUserDefined: boolean;
+}
+
+export interface QuoteDefaults {
+  componentId: string;
+  manufacturerId: string;
+  params: Record<string, string>;
 }
 
 export interface QuotationInput {
@@ -40,22 +54,31 @@ export interface QuotationInput {
   numValveZones: number;
   maxPipeDiameter: 'DN15' | 'DN20' | 'DN25' | 'DN32';
   numFlowSensors: number;
+  /** Per-component parameter overrides. Key = componentId, value = param map.
+   *  Falls back to maxPipeDiameter for valve/flow_sensor if not specified. */
+  componentParams?: Record<string, Record<string, string>>;
   customerName?: string;
   customerEmail?: string;
   customerPhone?: string;
   consentGiven?: boolean;
 }
 
+export interface QuotationDiagnostic {
+  componentId: string;
+  reason: string;
+}
+
 export interface QuotationLineItem {
-  catalogItemId: string;
+  manufacturerId: string;
   name: string;
   manufacturer: string;
-  specs: CatalogItemSpecs;
+  specs: Record<string, string>;
   description: string;
   quantity: number;
   unitCost: number;
   unitPrice: number;
   lineTotal: number;
+  currency: string;
   selectionHelp?: string;
   notes?: string;
 }
@@ -72,7 +95,8 @@ export interface Quotation {
 }
 
 export interface ManifestLineItem {
-  catalogItemId: string;
+  manufacturerId: string;
+  params: Record<string, string>;
   quantity: number;
   unitPriceAtTime: number;
   notes?: string;

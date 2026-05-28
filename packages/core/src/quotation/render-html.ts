@@ -12,15 +12,16 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-function formatCurrency(n: number): string {
-  return n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function formatCurrency(n: number, currency: string): string {
+  const formatted = n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return currency === 'USD' ? `$${formatted}` : `${formatted} ${currency}`;
 }
 
 function renderLineItems(items: QuotationLineItem[], showPricing: boolean): string {
   if (items.length === 0) return '<p>None</p>';
 
   const priceCols = showPricing
-    ? `<th class="num">Unit Price (KSh)</th><th class="num">Line Total (KSh)</th>`
+    ? `<th class="num">Unit Price</th><th class="num">Line Total</th>`
     : '';
 
   const rows = items
@@ -30,7 +31,7 @@ function renderLineItems(items: QuotationLineItem[], showPricing: boolean): stri
         .join(' ');
 
       const priceCells = showPricing
-        ? `<td class="num">${formatCurrency(item.unitPrice)}</td><td class="num">${formatCurrency(item.lineTotal)}</td>`
+        ? `<td class="num">${formatCurrency(item.unitPrice, item.currency)}</td><td class="num">${formatCurrency(item.lineTotal, item.currency)}</td>`
         : '';
 
       const help = item.selectionHelp
@@ -104,6 +105,7 @@ function renderStyles(): string {
       .notes { color: #777; font-size: 12px; margin-top: 4px; }
       .totals { margin-top: 16px; text-align: right; font-size: 16px; }
       .totals .subtotal { font-weight: 700; font-size: 18px; }
+      .totals .approx { color: #666; font-size: 14px; margin-top: 6px; }
       .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #888; text-align: center; }
       @media print {
         body { margin: 0; padding: 20px; }
@@ -115,7 +117,10 @@ function renderStyles(): string {
   `;
 }
 
-export function renderQuotationHtml(q: Quotation, opts: { showPricing: boolean }): string {
+export function renderQuotationHtml(
+  q: Quotation,
+  opts: { showPricing: boolean; exchangeRate?: number },
+): string {
   const customerBlock = q.customerName
     ? `<div class="meta"><span>Customer: ${escapeHtml(q.customerName)}</span></div>`
     : '';
@@ -125,7 +130,10 @@ export function renderQuotationHtml(q: Quotation, opts: { showPricing: boolean }
     : '';
 
   const totals = opts.showPricing
-    ? `<div class="totals"><span class="subtotal">Subtotal: KSh ${formatCurrency(q.subtotal)}</span></div>`
+    ? `<div class="totals">
+         <span class="subtotal">Subtotal: ${formatCurrency(q.subtotal, q.currency)}</span>
+         ${opts.exchangeRate ? `<div class="approx">Approximate KES total: KSh ${formatCurrency(Math.round(q.subtotal * opts.exchangeRate * 100) / 100, 'KES')}</div>` : ''}
+       </div>`
     : '';
 
   return `<!DOCTYPE html>

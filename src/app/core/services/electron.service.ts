@@ -29,7 +29,8 @@ import type {
   LegacySiteImport,
   DeploymentPlan,
   DeploymentResult,
-  CatalogItem,
+  ProductLineRow,
+  QuoteDefaultsRow,
   ManifestRow,
   ManifestData,
   FeedbackRow,
@@ -328,20 +329,31 @@ export class ElectronService {
   }
 
   // --- Product Catalog ---
-  catalogList(category?: string): Promise<CatalogItem[]> {
-    return this.api?.catalogList(category) ?? Promise.resolve([]);
+  catalogList(componentId?: string): Promise<ProductLineRow[]> {
+    return this.api?.catalogList(componentId) ?? Promise.resolve([]);
   }
-  catalogActive(category?: string): Promise<CatalogItem[]> {
-    return this.api?.catalogActive(category) ?? Promise.resolve([]);
+  catalogActive(componentId?: string): Promise<ProductLineRow[]> {
+    return this.api?.catalogActive(componentId) ?? Promise.resolve([]);
   }
-  catalogGet(id: string): Promise<CatalogItem | null> {
+  catalogGet(id: string): Promise<ProductLineRow | null> {
     return this.invoke(api => api.catalogGet(id));
   }
-  async catalogUpsert(item: CatalogItem): Promise<void> {
+  async catalogUpsert(item: ProductLineRow): Promise<void> {
     await this.invoke(api => api.catalogUpsert(item));
   }
   async catalogDeactivate(id: string): Promise<void> {
     await this.invoke(api => api.catalogDeactivate(id));
+  }
+  async catalogExportForQuote(): Promise<void> {
+    await this.invoke(api => api.catalogExportForQuote());
+  }
+
+  // --- Quote Defaults ---
+  quoteDefaultsGet(): Promise<QuoteDefaultsRow[]> {
+    return this.api?.quoteDefaultsGet() ?? Promise.resolve([]);
+  }
+  async quoteDefaultsSet(componentId: string, manufacturerId: string, params: string): Promise<void> {
+    await this.invoke(api => api.quoteDefaultsSet(componentId, manufacturerId, params));
   }
 
   // --- Site Manifests ---

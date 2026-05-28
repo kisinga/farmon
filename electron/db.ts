@@ -56,7 +56,7 @@ export interface GenerationSnapshot extends GenerationMeta {
 // DB versioning & migrations
 // ---------------------------------------------------------------------------
 
-const DB_VERSION = 12;
+const DB_VERSION = 13;
 
 const MIGRATIONS: Record<number, string> = {
   0: `
@@ -301,6 +301,36 @@ const MIGRATIONS: Record<number, string> = {
       reported_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX idx_feedback_catalog ON product_feedback (catalog_id);
+  `,
+  12: `
+    -- Refactor: flat catalog → component registry + product lines with variants
+    -- Clean up orphaned feedback before dropping the old catalog table.
+    DELETE FROM product_feedback WHERE catalog_id NOT IN (SELECT id FROM product_catalog);
+
+    DROP TABLE IF EXISTS product_catalog;
+
+    CREATE TABLE product_catalog (
+      id                TEXT PRIMARY KEY,
+      component_id      TEXT NOT NULL,
+      manufacturer      TEXT NOT NULL,
+      name              TEXT NOT NULL,
+      manufacturer_pn   TEXT,
+      description       TEXT,
+      selection_help    TEXT,
+      reliability_score REAL,
+      base_specs        TEXT NOT NULL DEFAULT '{}',
+      variants          TEXT NOT NULL DEFAULT '[]',
+      is_active         INTEGER NOT NULL DEFAULT 1,
+      is_user_defined   INTEGER NOT NULL DEFAULT 0,
+      created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX idx_catalog_component ON product_catalog (component_id, is_active);
+
+    CREATE TABLE quote_defaults (
+      component_id    TEXT PRIMARY KEY,
+      manufacturer_id TEXT NOT NULL REFERENCES product_catalog(id),
+      params          TEXT NOT NULL DEFAULT '{}'
+    );
   `,
 };
 
@@ -1003,118 +1033,137 @@ export function getSettings(siteId: string, systemId: string): Record<string, st
 // Product Catalog
 // ---------------------------------------------------------------------------
 
-export interface CatalogItemRow {
+export interface ProductLineRow {
   id: string;
-  category: string;
-  sub_category: string | null;
-  name: string;
+  component_id: string;
   manufacturer: string;
+  name: string;
   manufacturer_pn: string | null;
-  specs: string; // JSON
-  unit_cost_usd: number | null;
-  currency: string;
   description: string | null;
   selection_help: string | null;
   reliability_score: number | null;
+  base_specs: string; // JSON
+  variants: string; // JSON
   is_active: number;
   is_user_defined: number;
   created_at: string;
 }
 
-export function seedCatalogIfEmpty(defaultItems: Array<{
+export interface QuoteDefaultsRow {
+  component_id: string;
+  manufacturer_id: string;
+  params: string; // JSON
+}
+
+export function seedCatalogIfEmpty(lines: Array<{
   id: string;
-  category: string;
-  subCategory?: string;
-  name: string;
+  componentId: string;
   manufacturer: string;
+  name: string;
   manufacturerPartNumber?: string;
-  specs: Record<string, string | undefined>;
-  unitCostUsd: number;
-  currency: string;
   description: string;
   selectionHelp?: string;
+  reliabilityScore?: number;
+  baseSpecs: Record<string, string>;
+  variants: Array<{ params: Record<string, string>; unitCost: number; currency: string; partNumber?: string; isActive: boolean }>;
   isActive: boolean;
   isUserDefined: boolean;
+}>, defaults: Array<{
+  componentId: string;
+  manufacturerId: string;
+  params: Record<string, string>;
 }>): void {
   const count = queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM product_catalog`);
   if ((count?.c ?? 0) > 0) return;
 
   const db = getDb();
-  for (const item of defaultItems) {
+  db.run('BEGIN TRANSACTION');
+  try {
+    for (const item of lines) {
     db.run(
       `INSERT INTO product_catalog (
-        id, category, sub_category, name, manufacturer, manufacturer_pn,
-        specs, unit_cost_usd, currency, description, selection_help,
-        is_active, is_user_defined
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, component_id, manufacturer, name, manufacturer_pn,
+        description, selection_help, reliability_score,
+        base_specs, variants, is_active, is_user_defined
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         item.id,
-        item.category,
-        item.subCategory ?? null,
-        item.name,
+        item.componentId,
         item.manufacturer,
+        item.name,
         item.manufacturerPartNumber ?? null,
-        JSON.stringify(item.specs),
-        item.unitCostUsd,
-        item.currency,
         item.description,
         item.selectionHelp ?? null,
+        item.reliabilityScore ?? null,
+        JSON.stringify(item.baseSpecs),
+        JSON.stringify(item.variants),
         item.isActive ? 1 : 0,
         item.isUserDefined ? 1 : 0,
       ],
     );
   }
-  persist();
+
+    for (const d of defaults) {
+      db.run(
+        `INSERT INTO quote_defaults (component_id, manufacturer_id, params) VALUES (?, ?, ?)`,
+        [d.componentId, d.manufacturerId, JSON.stringify(d.params)],
+      );
+    }
+
+    db.run('COMMIT');
+    persist();
+  } catch (err) {
+    db.run('ROLLBACK');
+    throw err;
+  }
 }
 
-export function listCatalogItems(category?: string): CatalogItemRow[] {
-  const sql = category
-    ? `SELECT * FROM product_catalog WHERE category = ? ORDER BY category, sub_category, name`
-    : `SELECT * FROM product_catalog ORDER BY category, sub_category, name`;
-  const params = category ? [category] : [];
-  return queryAll<CatalogItemRow>(sql, params);
+export function listCatalogItems(componentId?: string): ProductLineRow[] {
+  const sql = componentId
+    ? `SELECT * FROM product_catalog WHERE component_id = ? ORDER BY component_id, name`
+    : `SELECT * FROM product_catalog ORDER BY component_id, name`;
+  const params = componentId ? [componentId] : [];
+  return queryAll<ProductLineRow>(sql, params);
 }
 
-export function listActiveCatalogItems(category?: string): CatalogItemRow[] {
-  const sql = category
-    ? `SELECT * FROM product_catalog WHERE is_active = 1 AND category = ? ORDER BY category, sub_category, name`
-    : `SELECT * FROM product_catalog WHERE is_active = 1 ORDER BY category, sub_category, name`;
-  const params = category ? [category] : [];
-  return queryAll<CatalogItemRow>(sql, params);
+export function listActiveCatalogItems(componentId?: string): ProductLineRow[] {
+  const sql = componentId
+    ? `SELECT * FROM product_catalog WHERE is_active = 1 AND component_id = ? ORDER BY component_id, name`
+    : `SELECT * FROM product_catalog WHERE is_active = 1 ORDER BY component_id, name`;
+  const params = componentId ? [componentId] : [];
+  return queryAll<ProductLineRow>(sql, params);
 }
 
-export function getCatalogItem(id: string): CatalogItemRow | null {
-  return queryOne<CatalogItemRow>(
+export function getCatalogItem(id: string): ProductLineRow | null {
+  return queryOne<ProductLineRow>(
     `SELECT * FROM product_catalog WHERE id = ?`,
     [id],
   );
 }
 
-export function upsertCatalogItem(item: Omit<CatalogItemRow, 'created_at'>): void {
+export function upsertCatalogItem(item: Omit<ProductLineRow, 'created_at'>): void {
   getDb().run(
     `INSERT INTO product_catalog (
-      id, category, sub_category, name, manufacturer, manufacturer_pn,
-      specs, unit_cost_usd, currency, description, selection_help,
-      reliability_score, is_active, is_user_defined
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, component_id, manufacturer, name, manufacturer_pn,
+      description, selection_help, reliability_score,
+      base_specs, variants, is_active, is_user_defined
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
-      category = excluded.category,
-      sub_category = excluded.sub_category,
-      name = excluded.name,
+      component_id = excluded.component_id,
       manufacturer = excluded.manufacturer,
+      name = excluded.name,
       manufacturer_pn = excluded.manufacturer_pn,
-      specs = excluded.specs,
-      unit_cost_usd = excluded.unit_cost_usd,
-      currency = excluded.currency,
       description = excluded.description,
       selection_help = excluded.selection_help,
       reliability_score = excluded.reliability_score,
+      base_specs = excluded.base_specs,
+      variants = excluded.variants,
       is_active = excluded.is_active,
       is_user_defined = excluded.is_user_defined`,
     [
-      item.id, item.category, item.sub_category, item.name, item.manufacturer,
-      item.manufacturer_pn, item.specs, item.unit_cost_usd, item.currency,
-      item.description, item.selection_help, item.reliability_score,
+      item.id, item.component_id, item.manufacturer, item.name,
+      item.manufacturer_pn, item.description, item.selection_help,
+      item.reliability_score, item.base_specs, item.variants,
       item.is_active, item.is_user_defined,
     ],
   );
@@ -1125,6 +1174,22 @@ export function deactivateCatalogItem(id: string): void {
   getDb().run(
     `UPDATE product_catalog SET is_active = 0 WHERE id = ?`,
     [id],
+  );
+  persist();
+}
+
+export function getQuoteDefaults(): QuoteDefaultsRow[] {
+  return queryAll<QuoteDefaultsRow>(`SELECT * FROM quote_defaults`);
+}
+
+export function setQuoteDefaults(componentId: string, manufacturerId: string, params: string): void {
+  getDb().run(
+    `INSERT INTO quote_defaults (component_id, manufacturer_id, params)
+     VALUES (?, ?, ?)
+     ON CONFLICT(component_id) DO UPDATE SET
+       manufacturer_id = excluded.manufacturer_id,
+       params = excluded.params`,
+    [componentId, manufacturerId, params],
   );
   persist();
 }
@@ -1154,7 +1219,7 @@ export interface ManifestInsert {
   customer_email?: string;
   customer_phone?: string;
   notes?: string;
-  items: Array<{ catalogItemId: string; quantity: number; unitPriceAtTime: number; notes?: string }>;
+  items: Array<{ manufacturerId: string; params: Record<string, string>; quantity: number; unitPriceAtTime: number; notes?: string }>;
 }
 
 export function listManifests(siteId: string): ManifestRow[] {

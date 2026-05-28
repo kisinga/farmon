@@ -162,27 +162,32 @@ export interface SeedChange {
 
 // --- Catalog ---
 
-export interface CatalogItem {
+export interface ProductLineRow {
   id: string;
-  category: string;
-  sub_category: string | null;
-  name: string;
+  component_id: string;
   manufacturer: string;
+  name: string;
   manufacturer_pn: string | null;
-  specs: string; // JSON
-  unit_cost_usd: number | null;
-  currency: string;
   description: string | null;
   selection_help: string | null;
   reliability_score: number | null;
+  base_specs: string; // JSON
+  variants: string; // JSON
   is_active: number;
   is_user_defined: number;
+}
+
+export interface QuoteDefaultsRow {
+  component_id: string;
+  manufacturer_id: string;
+  params: string; // JSON
 }
 
 // --- Manifest ---
 
 export interface ManifestItem {
-  catalogItemId: string;
+  manufacturerId: string;
+  params: Record<string, string>;
   quantity: number;
   unitPriceAtTime: number;
   notes?: string;
@@ -360,11 +365,16 @@ export interface ElectronAPI {
   deploymentRollback(siteId: string, controllerId: string): Promise<DeploymentResult[]>;
 
   // Product Catalog
-  catalogList(category?: string): Promise<CatalogItem[]>;
-  catalogActive(category?: string): Promise<CatalogItem[]>;
-  catalogGet(id: string): Promise<CatalogItem | null>;
-  catalogUpsert(item: CatalogItem): Promise<{ ok: boolean }>;
+  catalogList(componentId?: string): Promise<ProductLineRow[]>;
+  catalogActive(componentId?: string): Promise<ProductLineRow[]>;
+  catalogGet(id: string): Promise<ProductLineRow | null>;
+  catalogUpsert(item: ProductLineRow): Promise<{ ok: boolean }>;
   catalogDeactivate(id: string): Promise<{ ok: boolean }>;
+  catalogExportForQuote(): Promise<{ ok: boolean }>;
+
+  // Quote Defaults
+  quoteDefaultsGet(): Promise<QuoteDefaultsRow[]>;
+  quoteDefaultsSet(componentId: string, manufacturerId: string, params: string): Promise<{ ok: boolean }>;
 
   // Site Manifests
   manifestList(siteId: string): Promise<ManifestRow[]>;

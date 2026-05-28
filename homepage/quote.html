@@ -18,12 +18,12 @@
   <div class="container">
     <header>
       <h1>Quick Quote</h1>
-      <p class="subtitle">Answer a few questions and we'll generate a hardware quotation.</p>
+      <p class="subtitle">Configure your system and watch the quotation update live.</p>
     </header>
 
     <form id="quoteForm" class="form-card">
       <h2>System Requirements</h2>
-      <p class="hint">Tell us about your setup so we can estimate the right hardware.</p>
+      <p class="hint">Tell us about your setup.</p>
 
       <div class="field-row">
         <div class="field">
@@ -52,14 +52,17 @@
         </div>
       </div>
 
-      <div class="field">
-        <label>What is the main pipe diameter?</label>
-        <div class="radio-group">
-          <label class="radio-label"><input type="radio" name="pipeDiameter" value="DN15"> DN15</label>
-          <label class="radio-label"><input type="radio" name="pipeDiameter" value="DN20" checked> DN20</label>
-          <label class="radio-label"><input type="radio" name="pipeDiameter" value="DN25"> DN25</label>
-          <label class="radio-label"><input type="radio" name="pipeDiameter" value="DN32"> DN32</label>
-        </div>
+      <hr>
+
+      <h2>Component Specifications</h2>
+      <p class="hint">Pick the exact specifications for each component type.</p>
+      <div id="paramSections"></div>
+
+      <hr>
+
+      <h2>Live Preview</h2>
+      <div id="livePreview" class="preview-card">
+        <p class="text-muted">Fill in the details above to see a preview.</p>
       </div>
 
       <hr>

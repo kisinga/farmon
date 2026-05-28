@@ -117,12 +117,15 @@ export { evaluateEscalations } from './graph/evaluate-escalations';
 
 // --- Quotation & BOM ---
 export type {
-  CatalogItem, CatalogItemSpecs,
-  Quotation, QuotationInput, QuotationLineItem,
+  ComponentDefinition, ParameterDef,
+  ProductLine, ProductVariant, QuoteDefaults,
+  Quotation, QuotationInput, QuotationLineItem, QuotationDiagnostic,
   ManifestLineItem, SiteManifest,
+  CatalogBundle,
 } from './quotation';
 export {
-  DEFAULT_CATALOG, findDefaultCatalogItem,
+  COMPONENT_REGISTRY, DEFAULT_LINES, DEFAULT_DEFAULTS, DEFAULT_CATALOG,
+  resolveQuoteLineItem,
   buildBaseInfrastructure, buildTopologyComponents,
   buildQuotation, buildQuotationFromTopology,
   renderQuotationHtml, renderTechnicalBomHtml,

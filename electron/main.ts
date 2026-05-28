@@ -4,7 +4,7 @@ import { registerIpcHandlers } from "./ipc-handlers.js";
 import { initStore, getStorePath } from "./store.js";
 import { openDb, closeDb, seedCatalogIfEmpty } from "./db.js";
 import { init as initSiteRepository } from "./lib/site-repository.js";
-import { DEFAULT_CATALOG } from "@far-mon/core";
+import { DEFAULT_LINES, DEFAULT_DEFAULTS } from "@far-mon/core";
 import { killAll } from "./process-manager.js";
 
 let mainWindow: BrowserWindow | null = null;
@@ -49,7 +49,7 @@ app.whenReady().then(async () => {
 
   initStore(defaultsDir);
   await openDb(getStorePath());
-  seedCatalogIfEmpty(DEFAULT_CATALOG);
+  seedCatalogIfEmpty(DEFAULT_LINES, DEFAULT_DEFAULTS);
   await initSiteRepository();
   registerIpcHandlers();
   createWindow();

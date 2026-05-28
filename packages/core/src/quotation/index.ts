@@ -5,16 +5,27 @@
  */
 
 export type {
-  CatalogItem,
-  CatalogItemSpecs,
+  ComponentDefinition,
+  ParameterDef,
+  ProductLine,
+  ProductVariant,
+  QuoteDefaults,
   Quotation,
   QuotationInput,
   QuotationLineItem,
+  QuotationDiagnostic,
   ManifestLineItem,
   SiteManifest,
 } from './types';
+export type { CatalogBundle } from './catalog';
 
-export { DEFAULT_CATALOG, findDefaultCatalogItem } from './catalog';
+export {
+  COMPONENT_REGISTRY,
+  DEFAULT_LINES,
+  DEFAULT_DEFAULTS,
+  DEFAULT_CATALOG,
+  resolveQuoteLineItem,
+} from './catalog';
 
 export {
   buildBaseInfrastructure,
