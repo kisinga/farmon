@@ -48,6 +48,12 @@ import type { TemplateListEntry, BoardListEntry } from '../../core/models/electr
           </svg>
           Add Controller
         </button>
+        <button class="btn btn-sm btn-ghost gap-1.5" (click)="goToHardware()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          Hardware
+        </button>
         <button class="btn btn-sm btn-ghost gap-1.5" (click)="goToDeploy()">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -225,6 +231,11 @@ export class SiteRailComponent {
     this.controllerName.set('');
     this.selectedTemplate.set('');
     this.selectedBoard.set('');
+  }
+
+  protected goToHardware() {
+    const siteId = this.workspace.site()?.id;
+    if (siteId) this.router.navigate(['/site', siteId, 'hardware']);
   }
 
   protected goToDeploy() {

@@ -56,7 +56,7 @@ export interface GenerationSnapshot extends GenerationMeta {
 // DB versioning & migrations
 // ---------------------------------------------------------------------------
 
-const DB_VERSION = 11;
+const DB_VERSION = 12;
 
 const MIGRATIONS: Record<number, string> = {
   0: `
@@ -249,6 +249,58 @@ const MIGRATIONS: Record<number, string> = {
     -- Drop legacy topology blob columns; events are now the SSOT
     ALTER TABLE sites DROP COLUMN topology;
     ALTER TABLE sites DROP COLUMN schema_version;
+  `,
+  11: `
+    -- Product catalog: user-editable hardware inventory
+    CREATE TABLE product_catalog (
+      id                TEXT PRIMARY KEY,
+      category          TEXT NOT NULL,
+      sub_category      TEXT,
+      name              TEXT NOT NULL,
+      manufacturer      TEXT NOT NULL,
+      manufacturer_pn   TEXT,
+      specs             TEXT NOT NULL DEFAULT '{}',
+      unit_cost_usd     REAL,
+      currency          TEXT DEFAULT 'KES',
+      description       TEXT,
+      selection_help    TEXT,
+      reliability_score REAL,
+      is_active         INTEGER NOT NULL DEFAULT 1,
+      is_user_defined   INTEGER NOT NULL DEFAULT 0,
+      created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX idx_catalog_category ON product_catalog (category, sub_category);
+    CREATE INDEX idx_catalog_active ON product_catalog (is_active);
+
+    -- Site hardware manifests: versioned snapshots
+    CREATE TABLE site_manifests (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      site_id           TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      manifest_version  INTEGER NOT NULL,
+      manifest_type     TEXT NOT NULL,
+      created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      topology_checksum TEXT,
+      customer_name     TEXT,
+      customer_email    TEXT,
+      customer_phone    TEXT,
+      notes             TEXT,
+      items             TEXT NOT NULL DEFAULT '[]',
+      FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_manifests_site ON site_manifests (site_id, manifest_version DESC);
+
+    -- Product feedback / field reliability tracking
+    CREATE TABLE product_feedback (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      catalog_id    TEXT NOT NULL REFERENCES product_catalog(id),
+      site_id       TEXT REFERENCES sites(id) ON DELETE SET NULL,
+      manifest_id   INTEGER REFERENCES site_manifests(id) ON DELETE SET NULL,
+      deployed_at   TEXT,
+      feedback      TEXT NOT NULL,
+      rating        INTEGER,
+      reported_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX idx_feedback_catalog ON product_feedback (catalog_id);
   `,
 };
 
@@ -944,4 +996,264 @@ export function getSettings(siteId: string, systemId: string): Record<string, st
   const result: Record<string, string> = {};
   for (const r of rows) result[r.key] = r.value;
   return result;
+}
+
+
+// ---------------------------------------------------------------------------
+// Product Catalog
+// ---------------------------------------------------------------------------
+
+export interface CatalogItemRow {
+  id: string;
+  category: string;
+  sub_category: string | null;
+  name: string;
+  manufacturer: string;
+  manufacturer_pn: string | null;
+  specs: string; // JSON
+  unit_cost_usd: number | null;
+  currency: string;
+  description: string | null;
+  selection_help: string | null;
+  reliability_score: number | null;
+  is_active: number;
+  is_user_defined: number;
+  created_at: string;
+}
+
+export function seedCatalogIfEmpty(defaultItems: Array<{
+  id: string;
+  category: string;
+  subCategory?: string;
+  name: string;
+  manufacturer: string;
+  manufacturerPartNumber?: string;
+  specs: Record<string, string | undefined>;
+  unitCostUsd: number;
+  currency: string;
+  description: string;
+  selectionHelp?: string;
+  isActive: boolean;
+  isUserDefined: boolean;
+}>): void {
+  const count = queryOne<{ c: number }>(`SELECT COUNT(*) as c FROM product_catalog`);
+  if ((count?.c ?? 0) > 0) return;
+
+  const db = getDb();
+  for (const item of defaultItems) {
+    db.run(
+      `INSERT INTO product_catalog (
+        id, category, sub_category, name, manufacturer, manufacturer_pn,
+        specs, unit_cost_usd, currency, description, selection_help,
+        is_active, is_user_defined
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        item.id,
+        item.category,
+        item.subCategory ?? null,
+        item.name,
+        item.manufacturer,
+        item.manufacturerPartNumber ?? null,
+        JSON.stringify(item.specs),
+        item.unitCostUsd,
+        item.currency,
+        item.description,
+        item.selectionHelp ?? null,
+        item.isActive ? 1 : 0,
+        item.isUserDefined ? 1 : 0,
+      ],
+    );
+  }
+  persist();
+}
+
+export function listCatalogItems(category?: string): CatalogItemRow[] {
+  const sql = category
+    ? `SELECT * FROM product_catalog WHERE category = ? ORDER BY category, sub_category, name`
+    : `SELECT * FROM product_catalog ORDER BY category, sub_category, name`;
+  const params = category ? [category] : [];
+  return queryAll<CatalogItemRow>(sql, params);
+}
+
+export function listActiveCatalogItems(category?: string): CatalogItemRow[] {
+  const sql = category
+    ? `SELECT * FROM product_catalog WHERE is_active = 1 AND category = ? ORDER BY category, sub_category, name`
+    : `SELECT * FROM product_catalog WHERE is_active = 1 ORDER BY category, sub_category, name`;
+  const params = category ? [category] : [];
+  return queryAll<CatalogItemRow>(sql, params);
+}
+
+export function getCatalogItem(id: string): CatalogItemRow | null {
+  return queryOne<CatalogItemRow>(
+    `SELECT * FROM product_catalog WHERE id = ?`,
+    [id],
+  );
+}
+
+export function upsertCatalogItem(item: Omit<CatalogItemRow, 'created_at'>): void {
+  getDb().run(
+    `INSERT INTO product_catalog (
+      id, category, sub_category, name, manufacturer, manufacturer_pn,
+      specs, unit_cost_usd, currency, description, selection_help,
+      reliability_score, is_active, is_user_defined
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      category = excluded.category,
+      sub_category = excluded.sub_category,
+      name = excluded.name,
+      manufacturer = excluded.manufacturer,
+      manufacturer_pn = excluded.manufacturer_pn,
+      specs = excluded.specs,
+      unit_cost_usd = excluded.unit_cost_usd,
+      currency = excluded.currency,
+      description = excluded.description,
+      selection_help = excluded.selection_help,
+      reliability_score = excluded.reliability_score,
+      is_active = excluded.is_active,
+      is_user_defined = excluded.is_user_defined`,
+    [
+      item.id, item.category, item.sub_category, item.name, item.manufacturer,
+      item.manufacturer_pn, item.specs, item.unit_cost_usd, item.currency,
+      item.description, item.selection_help, item.reliability_score,
+      item.is_active, item.is_user_defined,
+    ],
+  );
+  persist();
+}
+
+export function deactivateCatalogItem(id: string): void {
+  getDb().run(
+    `UPDATE product_catalog SET is_active = 0 WHERE id = ?`,
+    [id],
+  );
+  persist();
+}
+
+// ---------------------------------------------------------------------------
+// Site Manifests
+// ---------------------------------------------------------------------------
+
+export interface ManifestRow {
+  id: number;
+  site_id: string;
+  manifest_version: number;
+  manifest_type: 'quote' | 'deployment' | 'revision';
+  created_at: string;
+  topology_checksum: string | null;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  notes: string | null;
+  items: string; // JSON
+}
+
+export interface ManifestInsert {
+  manifest_type: 'quote' | 'deployment' | 'revision';
+  topology_checksum?: string;
+  customer_name?: string;
+  customer_email?: string;
+  customer_phone?: string;
+  notes?: string;
+  items: Array<{ catalogItemId: string; quantity: number; unitPriceAtTime: number; notes?: string }>;
+}
+
+export function listManifests(siteId: string): ManifestRow[] {
+  return queryAll<ManifestRow>(
+    `SELECT * FROM site_manifests WHERE site_id = ? ORDER BY manifest_version DESC`,
+    [siteId],
+  );
+}
+
+export function getManifest(siteId: string, version: number): ManifestRow | null {
+  return queryOne<ManifestRow>(
+    `SELECT * FROM site_manifests WHERE site_id = ? AND manifest_version = ?`,
+    [siteId, version],
+  );
+}
+
+export function getLatestManifest(siteId: string): ManifestRow | null {
+  return queryOne<ManifestRow>(
+    `SELECT * FROM site_manifests WHERE site_id = ? ORDER BY manifest_version DESC LIMIT 1`,
+    [siteId],
+  );
+}
+
+export function saveManifest(siteId: string, data: ManifestInsert): number {
+  const latest = queryOne<{ max_version: number }>(
+    `SELECT COALESCE(MAX(manifest_version), 0) as max_version FROM site_manifests WHERE site_id = ?`,
+    [siteId],
+  );
+  const nextVersion = (latest?.max_version ?? 0) + 1;
+
+  getDb().run(
+    `INSERT INTO site_manifests (
+      site_id, manifest_version, manifest_type, topology_checksum,
+      customer_name, customer_email, customer_phone, notes, items
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      siteId,
+      nextVersion,
+      data.manifest_type,
+      data.topology_checksum ?? null,
+      data.customer_name ?? null,
+      data.customer_email ?? null,
+      data.customer_phone ?? null,
+      data.notes ?? null,
+      JSON.stringify(data.items),
+    ],
+  );
+  persist();
+  return nextVersion;
+}
+
+// ---------------------------------------------------------------------------
+// Product Feedback
+// ---------------------------------------------------------------------------
+
+export interface FeedbackRow {
+  id: number;
+  catalog_id: string;
+  site_id: string | null;
+  manifest_id: number | null;
+  deployed_at: string | null;
+  feedback: string;
+  rating: number | null;
+  reported_at: string;
+}
+
+export interface FeedbackInsert {
+  catalog_id: string;
+  site_id?: string;
+  manifest_id?: number;
+  deployed_at?: string;
+  feedback: string;
+  rating?: number;
+}
+
+export function listFeedback(catalogId?: string): FeedbackRow[] {
+  if (catalogId) {
+    return queryAll<FeedbackRow>(
+      `SELECT * FROM product_feedback WHERE catalog_id = ? ORDER BY reported_at DESC`,
+      [catalogId],
+    );
+  }
+  return queryAll<FeedbackRow>(
+    `SELECT * FROM product_feedback ORDER BY reported_at DESC`,
+  );
+}
+
+export function addFeedback(data: FeedbackInsert): void {
+  getDb().run(
+    `INSERT INTO product_feedback (catalog_id, site_id, manifest_id, deployed_at, feedback, rating)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      data.catalog_id,
+      data.site_id ?? null,
+      data.manifest_id ?? null,
+      data.deployed_at ?? null,
+      data.feedback,
+      data.rating ?? null,
+    ],
+  );
+  persist();
 }

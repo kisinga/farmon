@@ -115,3 +115,16 @@ export { evaluateConstraints } from './graph/evaluate-constraints';
 export { detectConflicts, type ConflictManifest, type RouteConflict, type SharedResource } from './graph/conflicts';
 export { evaluateEscalations } from './graph/evaluate-escalations';
 
+// --- Quotation & BOM ---
+export type {
+  CatalogItem, CatalogItemSpecs,
+  Quotation, QuotationInput, QuotationLineItem,
+  ManifestLineItem, SiteManifest,
+} from './quotation';
+export {
+  DEFAULT_CATALOG, findDefaultCatalogItem,
+  buildBaseInfrastructure, buildTopologyComponents,
+  buildQuotation, buildQuotationFromTopology,
+  renderQuotationHtml, renderTechnicalBomHtml,
+} from './quotation';
+

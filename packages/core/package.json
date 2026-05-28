@@ -3,7 +3,11 @@
   "version": "0.0.1",
   "private": true,
   "exports": {
-    ".": { "types": "./src/index.ts", "default": "./dist/index.js" }
+    ".": { "types": "./src/index.ts", "default": "./dist/index.js" },
+    "./quotation": { "types": "./src/quotation/index.ts", "default": "./dist/quotation.esm.js" }
+  },
+  "scripts": {
+    "build:quotation": "esbuild src/quotation/index.ts --bundle --format=esm --outfile=dist/quotation.esm.js --minify"
   },
   "dependencies": {
     "zod": "^3.25.76",

@@ -242,4 +242,65 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("deployment:execute", plan),
   deploymentRollback: (siteId: string, controllerId: string) =>
     ipcRenderer.invoke("deployment:rollback", siteId, controllerId),
+
+  // --- Product Catalog ---
+  catalogList: (category?: string) =>
+    ipcRenderer.invoke("catalog:list", category),
+  catalogActive: (category?: string) =>
+    ipcRenderer.invoke("catalog:active", category),
+  catalogGet: (id: string) =>
+    ipcRenderer.invoke("catalog:get", id),
+  catalogUpsert: (item: {
+    id: string;
+    category: string;
+    sub_category: string | null;
+    name: string;
+    manufacturer: string;
+    manufacturer_pn: string | null;
+    specs: string;
+    unit_cost_usd: number | null;
+    currency: string;
+    description: string | null;
+    selection_help: string | null;
+    reliability_score: number | null;
+    is_active: number;
+    is_user_defined: number;
+  }) => ipcRenderer.invoke("catalog:upsert", item),
+  catalogDeactivate: (id: string) =>
+    ipcRenderer.invoke("catalog:deactivate", id),
+
+  // --- Site Manifests ---
+  manifestList: (siteId: string) =>
+    ipcRenderer.invoke("manifest:list", siteId),
+  manifestLatest: (siteId: string) =>
+    ipcRenderer.invoke("manifest:latest", siteId),
+  manifestGet: (siteId: string, version: number) =>
+    ipcRenderer.invoke("manifest:get", siteId, version),
+  manifestSave: (siteId: string, data: {
+    manifest_type: 'quote' | 'deployment' | 'revision';
+    topology_checksum?: string;
+    customer_name?: string;
+    customer_email?: string;
+    customer_phone?: string;
+    notes?: string;
+    items: Array<{ catalogItemId: string; quantity: number; unitPriceAtTime: number; notes?: string }>;
+  }) => ipcRenderer.invoke("manifest:save", siteId, data),
+
+  // --- Product Feedback ---
+  feedbackList: (catalogId?: string) =>
+    ipcRenderer.invoke("feedback:list", catalogId),
+  feedbackAdd: (data: {
+    catalog_id: string;
+    site_id?: string;
+    manifest_id?: number;
+    deployed_at?: string;
+    feedback: string;
+    rating?: number;
+  }) => ipcRenderer.invoke("feedback:add", data),
+
+  // --- Google Drive Backup ---
+  backupAuth: () => ipcRenderer.invoke("backup:auth"),
+  backupStatus: () => ipcRenderer.invoke("backup:status"),
+  backupUploadSite: (siteId: string) => ipcRenderer.invoke("backup:upload-site", siteId),
+  backupUploadDb: () => ipcRenderer.invoke("backup:upload-db"),
 });

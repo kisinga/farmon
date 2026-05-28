@@ -160,6 +160,80 @@ export interface SeedChange {
   action: "added" | "updated";
 }
 
+// --- Catalog ---
+
+export interface CatalogItem {
+  id: string;
+  category: string;
+  sub_category: string | null;
+  name: string;
+  manufacturer: string;
+  manufacturer_pn: string | null;
+  specs: string; // JSON
+  unit_cost_usd: number | null;
+  currency: string;
+  description: string | null;
+  selection_help: string | null;
+  reliability_score: number | null;
+  is_active: number;
+  is_user_defined: number;
+}
+
+// --- Manifest ---
+
+export interface ManifestItem {
+  catalogItemId: string;
+  quantity: number;
+  unitPriceAtTime: number;
+  notes?: string;
+}
+
+export interface ManifestData {
+  manifest_type: 'quote' | 'deployment' | 'revision';
+  topology_checksum?: string;
+  customer_name?: string;
+  customer_email?: string;
+  customer_phone?: string;
+  notes?: string;
+  items: ManifestItem[];
+}
+
+export interface ManifestRow {
+  id: number;
+  site_id: string;
+  manifest_version: number;
+  manifest_type: 'quote' | 'deployment' | 'revision';
+  created_at: string;
+  topology_checksum: string | null;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  notes: string | null;
+  items: string; // JSON
+}
+
+// --- Feedback ---
+
+export interface FeedbackRow {
+  id: number;
+  catalog_id: string;
+  site_id: string | null;
+  manifest_id: number | null;
+  deployed_at: string | null;
+  feedback: string;
+  rating: number | null;
+  reported_at: string;
+}
+
+export interface FeedbackInsert {
+  catalog_id: string;
+  site_id?: string;
+  manifest_id?: number;
+  deployed_at?: string;
+  feedback: string;
+  rating?: number;
+}
+
 // --- ElectronAPI ---
 
 export interface ElectronAPI {
@@ -284,6 +358,29 @@ export interface ElectronAPI {
   deploymentPlan(siteId: string, targetControllers?: string[]): Promise<DeploymentPlan>;
   deploymentExecute(plan: DeploymentPlan): Promise<DeploymentResult[]>;
   deploymentRollback(siteId: string, controllerId: string): Promise<DeploymentResult[]>;
+
+  // Product Catalog
+  catalogList(category?: string): Promise<CatalogItem[]>;
+  catalogActive(category?: string): Promise<CatalogItem[]>;
+  catalogGet(id: string): Promise<CatalogItem | null>;
+  catalogUpsert(item: CatalogItem): Promise<{ ok: boolean }>;
+  catalogDeactivate(id: string): Promise<{ ok: boolean }>;
+
+  // Site Manifests
+  manifestList(siteId: string): Promise<ManifestRow[]>;
+  manifestLatest(siteId: string): Promise<ManifestRow | null>;
+  manifestGet(siteId: string, version: number): Promise<ManifestRow | null>;
+  manifestSave(siteId: string, data: ManifestData): Promise<number>;
+
+  // Product Feedback
+  feedbackList(catalogId?: string): Promise<FeedbackRow[]>;
+  feedbackAdd(data: FeedbackInsert): Promise<{ ok: boolean }>;
+
+  // Google Drive Backup
+  backupAuth(): Promise<{ ok: boolean }>;
+  backupStatus(): Promise<{ configured: boolean }>;
+  backupUploadSite(siteId: string): Promise<{ ok: boolean }>;
+  backupUploadDb(): Promise<{ ok: boolean }>;
 }
 
 // --- Legacy import ---

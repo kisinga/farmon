@@ -29,6 +29,11 @@ import type {
   LegacySiteImport,
   DeploymentPlan,
   DeploymentResult,
+  CatalogItem,
+  ManifestRow,
+  ManifestData,
+  FeedbackRow,
+  FeedbackInsert,
 } from '../models/electron-api';
 import type { NetworkConfig, BoardDef, Route, SiteTopology, SystemTopology } from '@far-mon/core';
 
@@ -320,6 +325,59 @@ export class ElectronService {
   }
   deploymentRollback(siteId: string, controllerId: string): Promise<DeploymentResult[]> {
     return this.invoke(api => api.deploymentRollback(siteId, controllerId));
+  }
+
+  // --- Product Catalog ---
+  catalogList(category?: string): Promise<CatalogItem[]> {
+    return this.api?.catalogList(category) ?? Promise.resolve([]);
+  }
+  catalogActive(category?: string): Promise<CatalogItem[]> {
+    return this.api?.catalogActive(category) ?? Promise.resolve([]);
+  }
+  catalogGet(id: string): Promise<CatalogItem | null> {
+    return this.invoke(api => api.catalogGet(id));
+  }
+  async catalogUpsert(item: CatalogItem): Promise<void> {
+    await this.invoke(api => api.catalogUpsert(item));
+  }
+  async catalogDeactivate(id: string): Promise<void> {
+    await this.invoke(api => api.catalogDeactivate(id));
+  }
+
+  // --- Site Manifests ---
+  manifestList(siteId: string): Promise<ManifestRow[]> {
+    return this.api?.manifestList(siteId) ?? Promise.resolve([]);
+  }
+  manifestLatest(siteId: string): Promise<ManifestRow | null> {
+    return this.invoke(api => api.manifestLatest(siteId));
+  }
+  manifestGet(siteId: string, version: number): Promise<ManifestRow | null> {
+    return this.invoke(api => api.manifestGet(siteId, version));
+  }
+  manifestSave(siteId: string, data: ManifestData): Promise<number> {
+    return this.invoke(api => api.manifestSave(siteId, data));
+  }
+
+  // --- Product Feedback ---
+  feedbackList(catalogId?: string): Promise<FeedbackRow[]> {
+    return this.api?.feedbackList(catalogId) ?? Promise.resolve([]);
+  }
+  async feedbackAdd(data: FeedbackInsert): Promise<void> {
+    await this.invoke(api => api.feedbackAdd(data));
+  }
+
+  // --- Google Drive Backup ---
+  backupAuth(): Promise<{ ok: boolean }> {
+    return this.invoke(api => api.backupAuth());
+  }
+  backupStatus(): Promise<{ configured: boolean }> {
+    return this.invoke(api => api.backupStatus());
+  }
+  backupUploadSite(siteId: string): Promise<{ ok: boolean }> {
+    return this.invoke(api => api.backupUploadSite(siteId));
+  }
+  backupUploadDb(): Promise<{ ok: boolean }> {
+    return this.invoke(api => api.backupUploadDb());
   }
 
   private invoke<T>(fn: (api: ElectronAPI) => Promise<T>): Promise<T> {

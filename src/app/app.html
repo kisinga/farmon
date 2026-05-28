@@ -16,6 +16,11 @@
         </a>
       }
     </div>
+    <div class="navbar-center hidden md:flex gap-1">
+      <a routerLink="/overview" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Sites</a>
+      <a routerLink="/boards" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Boards</a>
+      <a routerLink="/catalog" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Catalog</a>
+    </div>
     <div class="navbar-end">
       @if (navLevel() === 'editor') {
         <app-context-strip />

@@ -1,8 +1,10 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { ElectronService } from '../../core/services/electron.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import type { SiteListEntry } from '../../core/models/electron-api';
+import { buildQuotation, renderQuotationHtml, DEFAULT_CATALOG } from '@far-mon/core';
 
 /** Generate a stable color from a string for site card visuals. */
 function siteColor(name: string): string {
@@ -17,9 +19,20 @@ function initials(name: string): string {
   return name.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('');
 }
 
+interface QuickQuoteForm {
+  numTanks: number;
+  numPumps: number;
+  hasVfd: boolean;
+  numValveZones: number;
+  maxPipeDiameter: 'DN15' | 'DN20' | 'DN25' | 'DN32';
+  numFlowSensors: number;
+  customerName: string;
+}
+
 @Component({
   selector: 'app-overview',
   standalone: true,
+  imports: [FormsModule],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="flex-1 flex flex-col h-full overflow-auto">
@@ -87,6 +100,42 @@ function initials(name: string): string {
                 <div class="text-left">
                   <span class="text-base font-semibold text-base-content/40 group-hover:text-primary/70 transition-colors">Import Site</span>
                   <p class="text-xs text-base-content/30 mt-0.5">Load a site from a .json file</p>
+                </div>
+              </div>
+            </button>
+
+            <!-- Quick Quote card -->
+            <button
+              class="card card-side bg-base-100/50 border-2 border-dashed border-base-300/60 hover:border-primary/40 hover:bg-base-100 transition-all cursor-pointer group min-h-[140px]"
+              (click)="showQuickQuote.set(true)"
+            >
+              <div class="card-body flex-row items-center justify-center gap-4 p-6">
+                <div class="w-14 h-14 rounded-2xl bg-base-200/80 group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-base-content/30 group-hover:text-primary/60 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div class="text-left">
+                  <span class="text-base font-semibold text-base-content/40 group-hover:text-primary/70 transition-colors">Quick Quote</span>
+                  <p class="text-xs text-base-content/30 mt-0.5">Generate a quotation without designing</p>
+                </div>
+              </div>
+            </button>
+
+            <!-- Backup card -->
+            <button
+              class="card card-side bg-base-100/50 border-2 border-dashed border-base-300/60 hover:border-primary/40 hover:bg-base-100 transition-all cursor-pointer group min-h-[140px]"
+              (click)="showBackup.set(true); checkBackupStatus()"
+            >
+              <div class="card-body flex-row items-center justify-center gap-4 p-6">
+                <div class="w-14 h-14 rounded-2xl bg-base-200/80 group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-base-content/30 group-hover:text-primary/60 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                  </svg>
+                </div>
+                <div class="text-left">
+                  <span class="text-base font-semibold text-base-content/40 group-hover:text-primary/70 transition-colors">Backup</span>
+                  <p class="text-xs text-base-content/30 mt-0.5">Sync to Google Drive</p>
                 </div>
               </div>
             </button>
@@ -214,6 +263,91 @@ function initials(name: string): string {
           <div class="modal-backdrop" (click)="showCreate.set(false)"></div>
         </dialog>
       }
+
+      <!-- Quick Quote dialog -->
+      @if (showQuickQuote()) {
+        <dialog class="modal modal-open" style="position: fixed;">
+          <div class="modal-box max-w-md">
+            <h3 class="font-bold text-lg mb-4">Quick Quote</h3>
+            <div class="space-y-3">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="label"><span class="label-text">Tanks</span></label>
+                  <input type="number" min="0" class="input input-sm input-bordered w-full" [ngModel]="qq().numTanks" (ngModelChange)="updateQq('numTanks', $event)" />
+                </div>
+                <div>
+                  <label class="label"><span class="label-text">Pumps</span></label>
+                  <input type="number" min="0" class="input input-sm input-bordered w-full" [ngModel]="qq().numPumps" (ngModelChange)="updateQq('numPumps', $event)" />
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <input type="checkbox" class="checkbox checkbox-sm" [ngModel]="qq().hasVfd" (ngModelChange)="updateQq('hasVfd', $event)" />
+                <span class="text-sm">Any pump uses VFD or >1.5kW</span>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="label"><span class="label-text">Valve Zones</span></label>
+                  <input type="number" min="0" class="input input-sm input-bordered w-full" [ngModel]="qq().numValveZones" (ngModelChange)="updateQq('numValveZones', $event)" />
+                </div>
+                <div>
+                  <label class="label"><span class="label-text">Flow Sensors</span></label>
+                  <input type="number" min="0" class="input input-sm input-bordered w-full" [ngModel]="qq().numFlowSensors" (ngModelChange)="updateQq('numFlowSensors', $event)" />
+                </div>
+              </div>
+              <div>
+                <label class="label"><span class="label-text">Pipe Diameter</span></label>
+                <div class="flex gap-2">
+                  @for (d of ['DN15','DN20','DN25','DN32']; track d) {
+                    <button class="btn btn-xs flex-1" [class.btn-active]="qq().maxPipeDiameter === d" (click)="updateQq('maxPipeDiameter', d)">{{ d }}</button>
+                  }
+                </div>
+              </div>
+              <div class="divider text-xs text-base-content/40">Customer Info (optional)</div>
+              <div>
+                <input type="text" class="input input-sm input-bordered w-full" placeholder="Customer name" [ngModel]="qq().customerName" (ngModelChange)="updateQq('customerName', $event)" />
+              </div>
+            </div>
+            <div class="modal-action">
+              <button class="btn btn-ghost" (click)="showQuickQuote.set(false)">Cancel</button>
+              <button class="btn btn-primary" (click)="generateQuickQuote()">Generate Quotation</button>
+            </div>
+          </div>
+          <div class="modal-backdrop" (click)="showQuickQuote.set(false)"></div>
+        </dialog>
+      }
+
+      <!-- Backup dialog -->
+      @if (showBackup()) {
+        <dialog class="modal modal-open" style="position: fixed;">
+          <div class="modal-box max-w-sm">
+            <h3 class="font-bold text-lg mb-4">Google Drive Backup</h3>
+            <div class="space-y-3">
+              @if (backupConfigured()) {
+                <div class="alert alert-success text-xs">
+                  <span>Google Drive is connected.</span>
+                </div>
+                <div class="space-y-2">
+                  <button class="btn btn-primary btn-sm w-full" [disabled]="backupLoading()" (click)="backupDb()">
+                    @if (backupLoading()) { <span class="loading loading-spinner loading-xs"></span> }
+                    Backup Full Database Now
+                  </button>
+                  <p class="text-xs text-base-content/40 text-center">Per-site backups run automatically on save.</p>
+                </div>
+              } @else {
+                <p class="text-sm text-base-content/60">Connect your Google Drive to enable automatic backups.</p>
+                <button class="btn btn-primary btn-sm w-full" [disabled]="backupLoading()" (click)="connectBackup()">
+                  @if (backupLoading()) { <span class="loading loading-spinner loading-xs"></span> }
+                  Connect Google Drive
+                </button>
+              }
+            </div>
+            <div class="modal-action">
+              <button class="btn btn-ghost" (click)="showBackup.set(false)">Close</button>
+            </div>
+          </div>
+          <div class="modal-backdrop" (click)="showBackup.set(false)"></div>
+        </dialog>
+      }
     </div>
   `,
 })
@@ -225,9 +359,84 @@ export class OverviewComponent implements OnInit {
   protected entries = signal<SiteListEntry[]>([]);
   protected loading = signal(true);
   protected showCreate = signal(false);
+  protected showQuickQuote = signal(false);
+  protected showBackup = signal(false);
+  protected backupConfigured = signal(false);
+  protected backupLoading = signal(false);
   protected hasLegacy = signal(false);
   protected importing = signal(false);
   protected renamingId = signal<string | null>(null);
+
+  protected qq = signal<QuickQuoteForm>({
+    numTanks: 1,
+    numPumps: 1,
+    hasVfd: false,
+    numValveZones: 1,
+    maxPipeDiameter: 'DN20',
+    numFlowSensors: 1,
+    customerName: '',
+  });
+
+  protected updateQq(key: keyof QuickQuoteForm, value: unknown) {
+    this.qq.update((q) => ({ ...q, [key]: value }));
+  }
+
+  protected generateQuickQuote() {
+    const q = this.qq();
+    const quotation = buildQuotation(
+      {
+        numTanks: q.numTanks,
+        numPumps: q.numPumps,
+        hasVfd: q.hasVfd,
+        numValveZones: q.numValveZones,
+        maxPipeDiameter: q.maxPipeDiameter,
+        numFlowSensors: q.numFlowSensors,
+      },
+      DEFAULT_CATALOG,
+      { customerName: q.customerName || undefined },
+    );
+    const html = renderQuotationHtml(quotation, { showPricing: true });
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+      setTimeout(() => win.print(), 300);
+    }
+    this.showQuickQuote.set(false);
+  }
+
+  protected async checkBackupStatus() {
+    try {
+      const status = await this.electron.backupStatus();
+      this.backupConfigured.set(status.configured);
+    } catch {
+      this.backupConfigured.set(false);
+    }
+  }
+
+  protected async connectBackup() {
+    this.backupLoading.set(true);
+    try {
+      await this.electron.backupAuth();
+      this.backupConfigured.set(true);
+    } catch (e) {
+      alert('Authorization failed: ' + String(e));
+    } finally {
+      this.backupLoading.set(false);
+    }
+  }
+
+  protected async backupDb() {
+    this.backupLoading.set(true);
+    try {
+      await this.electron.backupUploadDb();
+      alert('Database backed up to Google Drive.');
+    } catch (e) {
+      alert('Backup failed: ' + String(e));
+    } finally {
+      this.backupLoading.set(false);
+    }
+  }
 
   async ngOnInit() {
     await this.refresh();

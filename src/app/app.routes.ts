@@ -17,6 +17,11 @@ export const routes: Routes = [
       import('./pages/boards/boards-page.component').then((m) => m.BoardsPageComponent),
   },
   {
+    path: 'catalog',
+    loadComponent: () =>
+      import('./pages/catalog/catalog-page.component').then((m) => m.CatalogPageComponent),
+  },
+  {
     path: 'site/:name',
     loadComponent: () =>
       import('./pages/site/site-view.component').then((m) => m.SiteViewComponent),
@@ -25,6 +30,11 @@ export const routes: Routes = [
     path: 'site/:name/deploy',
     loadComponent: () =>
       import('./pages/deploy/deploy-page.component').then((m) => m.DeployPageComponent),
+  },
+  {
+    path: 'site/:name/hardware',
+    loadComponent: () =>
+      import('./pages/hardware/hardware-page.component').then((m) => m.HardwarePageComponent),
   },
   {
     path: 'site/:name/system/:config',

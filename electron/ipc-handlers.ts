@@ -200,6 +200,27 @@ export function registerIpcHandlers() {
 
     const events = SiteRepository.save(payload.site.id, topology);
     console.log(`[site:save] ${payload.site.id}: generated ${events.length} events`);
+
+    // Background: auto-backup to Google Drive if configured
+    const refreshToken = db.getAppSetting("gdrive_refresh_token");
+    if (refreshToken) {
+      (async () => {
+        try {
+          const { refreshAccessToken } = await import("./lib/backup/oauth.js");
+          const { ensureBackupFolder, uploadFile } = await import("./lib/backup/google-drive.js");
+          const tokens = await refreshAccessToken(refreshToken);
+          const folderId = await ensureBackupFolder(tokens.access_token);
+          const full = SiteRepository.loadFull(payload.site.id);
+          const json = JSON.stringify(full, null, 2);
+          const fileName = `site-${payload.site.id}-${Date.now()}.json`;
+          await uploadFile(tokens.access_token, folderId, fileName, "application/json", Buffer.from(json));
+          console.log(`[backup] uploaded ${fileName}`);
+        } catch (err) {
+          console.error("[backup] auto-backup failed:", err);
+        }
+      })();
+    }
+
     return { ok: true, events: events.length };
   });
 
@@ -1210,6 +1231,118 @@ export function registerIpcHandlers() {
     const { reconstructTopology } = await import("./lib/reconstruct-topology.js");
     const events = listEvents(siteId);
     return reconstructTopology(events, eventId);
+  });
+
+  // =========================================================================
+  // Product Catalog
+  // =========================================================================
+
+  ipcMain.handle("catalog:list", async (_e, category?: string) =>
+    db.listCatalogItems(category),
+  );
+
+  ipcMain.handle("catalog:active", async (_e, category?: string) =>
+    db.listActiveCatalogItems(category),
+  );
+
+  ipcMain.handle("catalog:get", async (_e, id: string) =>
+    db.getCatalogItem(id),
+  );
+
+  ipcMain.handle("catalog:upsert", async (_e, item: db.CatalogItemRow) => {
+    db.upsertCatalogItem(item);
+    return { ok: true };
+  });
+
+  ipcMain.handle("catalog:deactivate", async (_e, id: string) => {
+    db.deactivateCatalogItem(id);
+    return { ok: true };
+  });
+
+  // =========================================================================
+  // Site Manifests (Quotations / BOM snapshots)
+  // =========================================================================
+
+  ipcMain.handle("manifest:list", async (_e, siteId: string) =>
+    db.listManifests(siteId),
+  );
+
+  ipcMain.handle("manifest:latest", async (_e, siteId: string) =>
+    db.getLatestManifest(siteId),
+  );
+
+  ipcMain.handle("manifest:get", async (_e, siteId: string, version: number) =>
+    db.getManifest(siteId, version),
+  );
+
+  ipcMain.handle("manifest:save", async (_e, siteId: string, data: db.ManifestInsert) =>
+    db.saveManifest(siteId, data),
+  );
+
+  // =========================================================================
+  // Product Feedback (field reliability)
+  // =========================================================================
+
+  ipcMain.handle("feedback:list", async (_e, catalogId?: string) =>
+    db.listFeedback(catalogId),
+  );
+
+  ipcMain.handle("feedback:add", async (_e, data: db.FeedbackInsert) => {
+    db.addFeedback(data);
+    return { ok: true };
+  });
+
+  // =========================================================================
+  // Google Drive Backup
+  // =========================================================================
+
+  ipcMain.handle("backup:auth", async () => {
+    const { startOAuthFlow } = await import("./lib/backup/oauth.js");
+    const tokens = await startOAuthFlow();
+    db.setAppSetting("gdrive_refresh_token", tokens.refresh_token);
+    return { ok: true };
+  });
+
+  ipcMain.handle("backup:status", async () => {
+    const refreshToken = db.getAppSetting("gdrive_refresh_token");
+    return { configured: !!refreshToken };
+  });
+
+  ipcMain.handle("backup:upload-site", async (_e, siteId: string) => {
+    const refreshToken = db.getAppSetting("gdrive_refresh_token");
+    if (!refreshToken) throw new Error("Google Drive not configured");
+
+    const { refreshAccessToken } = await import("./lib/backup/oauth.js");
+    const { ensureBackupFolder, uploadFile } = await import("./lib/backup/google-drive.js");
+
+    const tokens = await refreshAccessToken(refreshToken);
+    const folderId = await ensureBackupFolder(tokens.access_token);
+
+    const full = SiteRepository.loadFull(siteId);
+    const json = JSON.stringify(full, null, 2);
+    const fileName = `site-${siteId}-${Date.now()}.json`;
+
+    await uploadFile(tokens.access_token, folderId, fileName, "application/json", Buffer.from(json));
+    return { ok: true };
+  });
+
+  ipcMain.handle("backup:upload-db", async () => {
+    const refreshToken = db.getAppSetting("gdrive_refresh_token");
+    if (!refreshToken) throw new Error("Google Drive not configured");
+
+    const { refreshAccessToken } = await import("./lib/backup/oauth.js");
+    const { ensureBackupFolder, uploadFile, compressBuffer } = await import("./lib/backup/google-drive.js");
+
+    const tokens = await refreshAccessToken(refreshToken);
+    const folderId = await ensureBackupFolder(tokens.access_token);
+
+    const dbPath = store.getStorePath(); // actually need the full DB path
+    const fullDbPath = require("node:path").join(dbPath, "generations.db");
+    const compressed = await compressBuffer(require("node:fs").readFileSync(fullDbPath));
+    const fileName = `majiflow-db-${new Date().toISOString().slice(0, 10)}.db.gz`;
+
+    await uploadFile(tokens.access_token, folderId, fileName, "application/gzip", compressed);
+    return { ok: true };
   });
 }
 

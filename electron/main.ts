@@ -2,8 +2,9 @@ import { app, BrowserWindow } from "electron";
 import * as path from "node:path";
 import { registerIpcHandlers } from "./ipc-handlers.js";
 import { initStore, getStorePath } from "./store.js";
-import { openDb, closeDb } from "./db.js";
+import { openDb, closeDb, seedCatalogIfEmpty } from "./db.js";
 import { init as initSiteRepository } from "./lib/site-repository.js";
+import { DEFAULT_CATALOG } from "@far-mon/core";
 import { killAll } from "./process-manager.js";
 
 let mainWindow: BrowserWindow | null = null;
@@ -48,6 +49,7 @@ app.whenReady().then(async () => {
 
   initStore(defaultsDir);
   await openDb(getStorePath());
+  seedCatalogIfEmpty(DEFAULT_CATALOG);
   await initSiteRepository();
   registerIpcHandlers();
   createWindow();
