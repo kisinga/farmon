@@ -31,7 +31,7 @@ A working system gives you one dashboard with three things:
 
 ## Two parts, one system
 
-MajiFlow is not just software sitting on a server. It is the bridge between the design on your screen and the physical hardware in the field.
+MajiFlow bridges the design on your screen and the hardware in the field.
 
 **The software** is the desktop design app and the monitoring dashboard. You draw your system, validate it, and generate controller firmware from your laptop.
 
@@ -85,7 +85,7 @@ packages/core/   # Shared types, topology logic, and quotation engine
 test/            # Integration and scaling tests
 defaults/        # Bundled board definitions and example configs
 docs/            # Documentation and development journal
-quote/           # Static site (homepage + quick quote) for GitHub Pages
+homepage/           # Static site (homepage + quick quote) for GitHub Pages
 ```
 
 ## Desktop app
