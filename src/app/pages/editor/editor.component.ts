@@ -120,12 +120,17 @@ export class EditorComponent implements OnInit, OnDestroy {
   private validationGen = 0;
 
   private async runValidation() {
-    const topology = this.editor.topology();
+    const topology = this.workspace.siteTopology();
     const board = this.editor.board();
-    if (!topology || !board) return;
+    const controllerId = this.workspace.activeControllerId();
+    if (!topology || !board || !controllerId) return;
     const gen = ++this.validationGen;
-    const siteId = this.workspace.site()?.id;
-    const result = await this.electron.validate(topology, board, siteId);
+    const result = await this.electron.validate({
+      kind: 'live',
+      topology,
+      board,
+      controllerId,
+    });
     if (gen !== this.validationGen) return;
     this.editor.setValidation(result);
   }

@@ -2,6 +2,7 @@ import { Component, inject, signal, effect, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { ElectronService } from '../../../core/services/electron.service';
+import { WorkspaceService } from '../../../core/services/workspace.service';
 import type { Automation, AutomationTrigger, RouteOverride } from '../../../core/models/topology.model';
 import { routeLevelInfo, type RouteLevelInfo } from '../shared/route-level-info';
 import {
@@ -213,6 +214,7 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
 export class AutomationsTabComponent {
   protected editor = inject(SystemEditorService);
   private electron = inject(ElectronService);
+  private workspace = inject(WorkspaceService);
 
   protected days = DAYS;
   protected derivedRoutes = signal<Array<{ key: string; name: string }>>([]);
@@ -261,7 +263,7 @@ export class AutomationsTabComponent {
 
   constructor() {
     effect(() => {
-      const t = this.editor.topology();
+      const t = this.workspace.siteTopology();
       if (t) {
         this.electron.deriveRoutes(t).then(routes => {
           this.derivedRoutes.set(routes);

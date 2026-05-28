@@ -844,8 +844,12 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
     const siteId = this.workspace.site()?.id;
 
     // Run validation
-    if (board) {
-      const result = await this.electron.validate(ctrlTopo, board, siteId);
+    if (board && siteId) {
+      const result = await this.electron.validate({
+        kind: 'saved',
+        siteId,
+        controllerId: systemId,
+      });
       this.fwValidation.set(result);
     }
     if (!siteId) return;
@@ -887,16 +891,13 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
     const systemId = this.selectedSystemId();
     if (!systemId) return;
 
-    const ctrlTopo = this.workspace.controllerTopology(systemId);
-    const board = this.workspace.boards().get(systemId);
-    if (!ctrlTopo) return;
+    const siteId = this.workspace.site()?.id;
+    if (!siteId) return;
 
     this.generating.set(true);
     this.fwError.set(null);
     try {
-      if (!board) throw new Error('No board loaded');
-      const siteId = this.workspace.site()?.id ?? '';
-      const result = await this.electron.generate(siteId, systemId, ctrlTopo, board);
+      const result = await this.electron.generate(siteId, systemId);
       // Stale guard
       if (this.selectedSystemId() !== systemId) return;
       this.fwFiles.set(result.files);
@@ -956,16 +957,18 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   async restoreGeneration(id: number) {
-    const snapshot = await this.electron.generationLoad(id);
-    if (!snapshot) return;
-    const topology = JSON.parse(snapshot.topology);
-    const board = JSON.parse(snapshot.board);
+    const siteId = this.workspace.site()?.id;
+    const systemId = this.selectedSystemId();
+    if (!siteId || !systemId) return;
+
     this.generating.set(true);
     this.fwError.set(null);
     try {
-      const siteId = this.workspace.site()?.id ?? '';
-      const systemId = this.selectedSystemId();
-      const result = await this.electron.generate(siteId, systemId, topology, board);
+      const result = await this.electron.restoreGeneration({
+        siteId,
+        controllerId: systemId,
+        generationId: id,
+      });
       this.fwFiles.set(result.files);
       this.fwOutputDir.set(result.outputDir);
       this.fwDeviceDir.set(result.deviceDir);

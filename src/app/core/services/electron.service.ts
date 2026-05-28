@@ -36,7 +36,7 @@ import type {
   FeedbackRow,
   FeedbackInsert,
 } from '../models/electron-api';
-import type { NetworkConfig, BoardDef, Route, SiteTopology, SystemTopology } from '@far-mon/core';
+import type { NetworkConfig, BoardDef, Route, SiteTopology } from '@far-mon/core';
 
 @Injectable({ providedIn: 'root' })
 export class ElectronService {
@@ -109,16 +109,19 @@ export class ElectronService {
   }
 
   // --- Codegen ---
-  deriveRoutes(topology: SiteTopology | SystemTopology): Promise<Array<{ key: string; name: string }>> {
+  deriveRoutes(topology: SiteTopology): Promise<Array<{ key: string; name: string }>> {
     if (!this.api) return Promise.resolve([]);
     return this.api.codegenDeriveRoutes(topology);
   }
-  validate(topology: SiteTopology | SystemTopology, board: BoardDef, siteId?: string): Promise<ValidationResult> {
+  validate(request: import('../models/electron-api').ValidateRequest): Promise<ValidationResult> {
     if (!this.api) return Promise.resolve({ errors: ['Not in Electron'], warnings: [], ok: false, diagnostics: [] });
-    return this.api.codegenValidate(topology, board, siteId);
+    return this.api.codegenValidate(request);
   }
-  generate(siteId: string, systemId: string, topology: SiteTopology | SystemTopology, board: BoardDef): Promise<GenerateResult> {
-    return this.invoke(api => api.codegenGenerate(siteId, systemId, topology, board));
+  generate(siteId: string, controllerId: string): Promise<GenerateResult> {
+    return this.invoke(api => api.codegenGenerate(siteId, controllerId));
+  }
+  restoreGeneration(request: import('../models/electron-api').RestoreRequest): Promise<GenerateResult> {
+    return this.invoke(api => api.codegenRestore(request));
   }
   generateSiteHA(siteId: string): Promise<import('../models/electron-api').GenerateHAResult> {
     return this.invoke(api => api.codegenGenerateHA(siteId));

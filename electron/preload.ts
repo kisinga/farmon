@@ -2,7 +2,6 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   SiteSavePayload,
   SiteTopology,
-  SystemTopology,
   BoardDef,
   NetworkConfig,
   Route,
@@ -49,12 +48,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   boardImport: (dirPath: string) => ipcRenderer.invoke("board:import", dirPath),
 
   // --- Codegen ---
-  codegenDeriveRoutes: (topology: SiteTopology | SystemTopology) =>
+  codegenDeriveRoutes: (topology: SiteTopology) =>
     ipcRenderer.invoke("codegen:derive-routes", topology),
-  codegenValidate: (topology: SiteTopology | SystemTopology, board: BoardDef, siteId?: string) =>
-    ipcRenderer.invoke("codegen:validate", topology, board, siteId),
-  codegenGenerate: (siteId: string, systemId: string, topology: SiteTopology | SystemTopology, board: BoardDef) =>
-    ipcRenderer.invoke("codegen:generate", siteId, systemId, topology, board),
+  codegenValidate: (request: import("../src/app/core/models/electron-api").ValidateRequest) =>
+    ipcRenderer.invoke("codegen:validate", request),
+  codegenGenerate: (siteId: string, controllerId: string) =>
+    ipcRenderer.invoke("codegen:generate", siteId, controllerId),
+  codegenRestore: (request: import("../src/app/core/models/electron-api").RestoreRequest) =>
+    ipcRenderer.invoke("codegen:restore", request.siteId, request.controllerId, request.generationId),
   codegenGenerateHA: (siteId: string) =>
     ipcRenderer.invoke("codegen:generate-ha", siteId),
   codegenGenerateSelfTest: (boardModel: string, secrets: Record<string, string>, network?: NetworkConfig) =>

@@ -50,6 +50,21 @@ export interface GenerateHAResult {
   }>;
 }
 
+export interface GenerateRequest {
+  siteId: string;
+  controllerId: string;
+}
+
+export interface RestoreRequest {
+  siteId: string;
+  controllerId: string;
+  generationId: number;
+}
+
+export type ValidateRequest =
+  | { kind: 'live'; topology: SiteTopology; board: BoardDef; controllerId: string }
+  | { kind: 'saved'; siteId: string; controllerId: string };
+
 export interface GenerationMeta {
   id: number;
   version: string;
@@ -269,9 +284,10 @@ export interface ElectronAPI {
   boardImport(dirPath: string): Promise<string>;
 
   // Codegen
-  codegenDeriveRoutes(topology: SiteTopology | SystemTopology): Promise<Array<{ key: string; name: string }>>;
-  codegenValidate(topology: SiteTopology | SystemTopology, board: BoardDef, siteId?: string): Promise<ValidationResult>;
-  codegenGenerate(siteId: string, systemId: string, topology: SiteTopology | SystemTopology, board: BoardDef): Promise<GenerateResult>;
+  codegenDeriveRoutes(topology: SiteTopology): Promise<Array<{ key: string; name: string }>>;
+  codegenValidate(request: ValidateRequest): Promise<ValidationResult>;
+  codegenGenerate(siteId: string, controllerId: string): Promise<GenerateResult>;
+  codegenRestore(request: RestoreRequest): Promise<GenerateResult>;
   codegenGenerateHA(siteId: string): Promise<GenerateHAResult>;
   codegenGenerateSelfTest(boardModel: string, secrets: Record<string, string>, network?: NetworkConfig): Promise<{ outputDir: string; deviceDir: string; files: Array<{ path: string; description: string; lines: number }> }>;
   codegenGenerateSiteDocs(siteId: string, compositeSvg: string, perSystemSvgs: Record<string, string>, topology: SiteTopology, routes: Route[]): Promise<{ html: string; outputPath: string }>;

@@ -8,6 +8,7 @@ import { generateFirmware, generateSiteHA, generateDefaultSecrets, type SecretsM
 
 import { generateSelfTest } from "./lib/self-test/index.js";
 import { topologyToManifestForController } from "./lib/topology-to-manifest.js";
+import type { Manifest } from "./lib/schema.js";
 import * as store from "./store.js";
 import * as db from "./db.js";
 import { detectToolchain, refreshToolchain } from "./toolchain.js";
@@ -57,40 +58,12 @@ function comparePinRows(a: PinTableRow, b: PinTableRow): number {
   return ar - br || ap.localeCompare(bp) || an - bn;
 }
 
-/** Parse topology and derive manifest for a specific controller.
- *  If controllerId is omitted, uses the first controller in the topology.
- *
- *  Handles both raw SiteTopology JSON (from DB / files) and synthetic
- *  SystemTopology objects sent by the frontend compatibility layer.
+/**
+ * Build a manifest for a specific controller from a SiteTopology.
+ * Thin wrapper around topologyToManifestForController.
  */
-function resolveTopologyAndManifest(dataRaw: unknown, controllerId?: string) {
-  const data = structuredClone(dataRaw) as Record<string, unknown>;
-
-  // Frontend compatibility layer sends synthetic SystemTopology (schema 16
-  // shape with `device` but no `controllers`). Convert it to SiteTopology
-  // so parseTopology / validateAll work uniformly.
-  if (data['device'] && !Array.isArray(data['controllers'])) {
-    const device = data['device'] as Record<string, unknown>;
-    const ctrlId = (device['name'] as string) ?? 'default';
-    data['controllers'] = [{
-      id: ctrlId,
-      board: device['board'] ?? '',
-      friendlyName: device['friendly_name'] as string | undefined,
-      directory: device['directory'] as string | undefined,
-      network: device['network'],
-      uart_buses: device['uart_buses'],
-      io_providers: device['io_providers'],
-    }];
-    // Ensure every node is anchored to this controller
-    for (const node of (data['nodes'] as Array<Record<string, unknown>> ?? [])) {
-      if (!node['anchorId']) node['anchorId'] = ctrlId;
-    }
-  }
-
-  const topology = parseTopology(data);
-  const cid = controllerId ?? topology.controllers[0]?.id ?? 'default';
-  const manifest = topologyToManifestForController(topology, cid);
-  return { topology, manifest };
+function buildManifest(topology: SiteTopology, controllerId: string): Manifest {
+  return topologyToManifestForController(topology, controllerId);
 }
 
 /**
@@ -597,10 +570,13 @@ export function registerIpcHandlers() {
   // Codegen
   // =========================================================================
 
+  type ValidateRequest =
+    | { kind: 'live'; topology: SiteTopology; board: BoardDef; controllerId: string }
+    | { kind: 'saved'; siteId: string; controllerId: string };
+
   ipcMain.handle(
     "codegen:derive-routes",
-    async (_e, dataRaw: unknown) => {
-      const topology = parseTopology(dataRaw);
+    async (_e, topology: SiteTopology) => {
       const graph = buildGraph(topology.nodes, topology.pipes);
       const active = activeGraph(graph);
       const routes = deriveRoutes(active);
@@ -610,20 +586,44 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     "codegen:validate",
-    async (_e, dataRaw: unknown, boardRaw: unknown, siteId?: string) => {
-      const board = BoardDefSchema.parse(boardRaw) as BoardDef;
-      const { topology, manifest } = resolveTopologyAndManifest(dataRaw);
+    async (_e, request: ValidateRequest) => {
+      let topology: SiteTopology;
+      let board: BoardDef;
 
+      if (request.kind === 'live') {
+        topology = request.topology;
+        board = request.board;
+      } else {
+        const site = SiteRepository.loadFull(request.siteId);
+        if (!site) throw new Error(`Site not found: ${request.siteId}`);
+        topology = site.topology;
+        const controller = topology.controllers.find(c => c.id === request.controllerId);
+        if (!controller) throw new Error(`Controller not found: ${request.controllerId}`);
+        const boardData = store.loadBoard(controller.board);
+        if (!boardData?.board) throw new Error(`Board not found: ${controller.board}`);
+        board = BoardDefSchema.parse(boardData.board) as BoardDef;
+      }
+
+      const manifest = buildManifest(topology, request.controllerId);
       return validateAll(topology, manifest, board);
     }
   );
 
   ipcMain.handle(
     "codegen:generate",
-    async (_e, siteId: string, systemId: string, dataRaw: unknown, boardRaw: unknown) => {
-      const board = BoardDefSchema.parse(boardRaw) as BoardDef;
-      const { topology, manifest } = resolveTopologyAndManifest(dataRaw, systemId);
+    async (_e, siteId: string, controllerId: string) => {
+      const site = SiteRepository.loadFull(siteId);
+      if (!site) throw new Error(`Site not found: ${siteId}`);
 
+      const topology = site.topology;
+      const controller = topology.controllers.find(c => c.id === controllerId);
+      if (!controller) throw new Error(`Controller not found: ${controllerId}`);
+
+      const boardData = store.loadBoard(controller.board);
+      if (!boardData?.board) throw new Error(`Board not found: ${controller.board}`);
+      const board = BoardDefSchema.parse(boardData.board) as BoardDef;
+
+      const manifest = buildManifest(topology, controllerId);
       const validation = validateAll(topology, manifest, board);
       if (!validation.ok) {
         const errors = validation.diagnostics
@@ -633,7 +633,7 @@ export function registerIpcHandlers() {
       }
 
       // Load secrets from DB, falling back to defaults
-      const savedSecrets = db.getSecrets(siteId, systemId);
+      const savedSecrets = db.getSecrets(siteId, controllerId);
       const secrets: SecretsMap = {
         ...generateDefaultSecrets(),
         ...savedSecrets,
@@ -652,15 +652,15 @@ export function registerIpcHandlers() {
 
       // Compute generation metadata before building firmware so it can be embedded.
       const configSha = db.inputChecksum(topology, board, { ...secrets });
-      const gen = db.createGeneration(siteId, systemId, topology, board, 'esphome', { ...secrets });
-      const latestMeta = gen ? null : db.listGenerations(siteId, systemId, 'esphome')[0] ?? null;
+      const gen = db.createGeneration(siteId, controllerId, topology, board, 'esphome', { ...secrets });
+      const latestMeta = gen ? null : db.listGenerations(siteId, controllerId, 'esphome')[0] ?? null;
       const version = gen?.version ?? latestMeta?.version ?? '';
 
       const metadata: GenerationMetadata = {
         configSha,
         version,
         siteId,
-        controllerId: systemId,
+        controllerId,
         schemaVersion: store.SCHEMA_VERSION,
         buildTimestamp: Math.floor(Date.now() / 1000),
         appVersion: app.getVersion(),
@@ -677,7 +677,88 @@ export function registerIpcHandlers() {
 
       if (gen) {
         db.finalizeGeneration(gen.id, files.length);
-        db.pruneGenerations(siteId, systemId, 10, 'esphome');
+        db.pruneGenerations(siteId, controllerId, 10, 'esphome');
+      }
+
+      return {
+        outputDir,
+        deviceDir,
+        generationId: gen?.id ?? latestMeta?.id ?? 0,
+        version,
+        files: files.map((f) => ({
+          path: f.relativePath,
+          description: f.description,
+          lines: f.content.split("\n").length,
+        })),
+      };
+    }
+  );
+
+  ipcMain.handle(
+    "codegen:restore",
+    async (_e, siteId: string, controllerId: string, generationId: number) => {
+      const snapshot = db.loadGeneration(generationId);
+      if (!snapshot) throw new Error(`Generation not found: ${generationId}`);
+
+      // Backward compat: old snapshots may have stored SystemTopology (filtered)
+      // or SiteTopology. parseTopology handles both via migrateTopology.
+      const topology = parseTopology(JSON.parse(snapshot.topology));
+      const board = BoardDefSchema.parse(JSON.parse(snapshot.board)) as BoardDef;
+
+      const manifest = buildManifest(topology, controllerId);
+      const validation = validateAll(topology, manifest, board);
+      if (!validation.ok) {
+        const errors = validation.diagnostics
+          .filter(d => d.severity === 'error')
+          .map(d => d.message);
+        throw new Error(errors.join('\n'));
+      }
+
+      // Load secrets from DB, falling back to defaults
+      const savedSecrets = db.getSecrets(siteId, controllerId);
+      const secrets: SecretsMap = {
+        ...generateDefaultSecrets(),
+        ...savedSecrets,
+      } as SecretsMap;
+
+      // Validate secrets before generating so ESPHome doesn't fail with a cryptic error
+      const transport = effectiveTransport(manifest.device.network, boardSupportedTransports(board));
+      if (transport === 'wifi') {
+        if (!secrets.wifi_ssid) {
+          throw new Error('WiFi SSID is not configured. Open the Deploy panel, select this controller, and set the WiFi SSID and password in the Connectivity card.');
+        }
+        if (!secrets.wifi_password || secrets.wifi_password.length < 8) {
+          throw new Error('WiFi password must be at least 8 characters. Open the Deploy panel, select this controller, and set the WiFi password in the Connectivity card.');
+        }
+      }
+
+      // Compute generation metadata before building firmware so it can be embedded.
+      const configSha = db.inputChecksum(topology, board, { ...secrets });
+      const gen = db.createGeneration(siteId, controllerId, topology, board, 'esphome', { ...secrets });
+      const latestMeta = gen ? null : db.listGenerations(siteId, controllerId, 'esphome')[0] ?? null;
+      const version = gen?.version ?? latestMeta?.version ?? '';
+
+      const metadata: GenerationMetadata = {
+        configSha,
+        version,
+        siteId,
+        controllerId,
+        schemaVersion: store.SCHEMA_VERSION,
+        buildTimestamp: Math.floor(Date.now() / 1000),
+        appVersion: app.getVersion(),
+      };
+
+      const files = generateFirmware('esphome', manifest, board, siteId, secrets, metadata);
+
+      const deviceFolder = manifest.device.directory ?? manifest.device.name;
+      const deviceDir = `sites/${siteId}/esphome/${deviceFolder}`;
+
+      const outputDir = store.getOutputDir();
+      store.writeOutput(files, outputDir);
+
+      if (gen) {
+        db.finalizeGeneration(gen.id, files.length);
+        db.pruneGenerations(siteId, controllerId, 10, 'esphome');
       }
 
       return {
@@ -706,6 +787,7 @@ export function registerIpcHandlers() {
 
       const systems: Array<import("./lib/generators/site-dashboard.js").SiteDashboardSystem> = [];
       const manifests = new Map<string, import("./lib/schema.js").Manifest>();
+      const warnings: string[] = [];
 
       const fullTopology = site.topology;
 
@@ -713,11 +795,26 @@ export function registerIpcHandlers() {
         const manifest = topologyToManifestForController(fullTopology, ctrl.id);
         const boardData = store.loadBoard(ctrl.board);
         if (!boardData?.board) {
-          throw new Error(`Board not found for controller "${ctrl.id}": ${ctrl.board}`);
+          warnings.push(`Board not found for controller "${ctrl.id}": ${ctrl.board}`);
+          continue;
         }
         const board = BoardDefSchema.parse(boardData.board);
+
+        const validation = validateAll(fullTopology, manifest, board);
+        if (!validation.ok) {
+          const errors = validation.diagnostics.filter(d => d.severity === 'error').map(d => d.message);
+          if (errors.length > 0) {
+            warnings.push(`Controller "${ctrl.id}" has validation errors — skipped in dashboard: ${errors.join('; ')}`);
+            continue;
+          }
+        }
+
         systems.push({ systemId: ctrl.id, friendlyName: ctrl.friendlyName ?? ctrl.id, manifest, board });
         manifests.set(ctrl.id, manifest);
+      }
+
+      if (systems.length === 0) {
+        throw new Error(`No valid controllers for dashboard generation.\n${warnings.join('\n')}`);
       }
 
       const files = generateSiteHA(siteId, site.site.friendlyName, systems, manifests);
@@ -781,11 +878,9 @@ export function registerIpcHandlers() {
       siteId: string,
       compositeSvg: string,
       perSystemSvgs: Record<string, string>,
-      topologyRaw: unknown,
+      siteTopology: SiteTopology,
       routesRaw: Route[],
     ) => {
-      const siteTopology = parseTopology(topologyRaw as Record<string, unknown>);
-
       // Derive manifests and board data for each controller
       const systems = siteTopology.controllers.map(ctrl => {
         const manifest = topologyToManifestForController(siteTopology, ctrl.id);
