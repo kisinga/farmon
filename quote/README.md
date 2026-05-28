@@ -1,27 +1,18 @@
-# MajiFlow Quick Quote
+# MajiFlow Site
 
-A static questionnaire that generates hardware quotations. Designed to run on GitHub Pages.
+Static homepage + quotation page for GitHub Pages.
 
-## Setup
-
-### 1. Build the quotation bundle
+## Build
 
 ```bash
 cd packages/core
 npm run build:quotation
+cp dist/quotation.esm.js ../../quote/quotation.esm.js
 ```
 
-This produces `packages/core/dist/quotation.esm.js`.
+## Configure
 
-### 2. Copy the bundle into this folder
-
-```bash
-cp ../packages/core/dist/quotation.esm.js ./quotation.esm.js
-```
-
-### 3. Configure the Google Apps Script endpoint
-
-Edit `index.html` and replace `YOUR_SCRIPT_ID` in this line:
+Edit `quote.html` and set your Google Apps Script endpoint:
 
 ```html
 <script>
@@ -29,51 +20,15 @@ Edit `index.html` and replace `YOUR_SCRIPT_ID` in this line:
 </script>
 ```
 
-### 4. Deploy to GitHub Pages
+## Deploy (manual)
 
-Push this `quote/` folder to a `gh-pages` branch (or a separate repo) and enable GitHub Pages.
-
-## Google Apps Script Backend
-
-Create a new Google Apps Script project bound to a Google Sheet. Use this code:
-
-```javascript
-function doPost(e) {
-  const data = JSON.parse(e.postData.contents);
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-
-  // Append row: timestamp, name, email, phone, quoteId, subtotal, itemsJSON
-  sheet.appendRow([
-    new Date(),
-    data.customerName,
-    data.customerEmail,
-    data.customerPhone,
-    data.quoteId,
-    data.subtotal,
-    JSON.stringify(data.items),
-  ]);
-
-  // Email yourself
-  MailApp.sendEmail({
-    to: Session.getEffectiveUser().getEmail(),
-    subject: `MajiFlow Quote ${data.quoteId}`,
-    body: `
-New quotation request:
-
-Name: ${data.customerName}
-Email: ${data.customerEmail}
-Phone: ${data.customerPhone}
-Quote ID: ${data.quoteId}
-Subtotal: KSh ${data.subtotal}
-
-Items:
-${data.items.map(i => `- ${i.name} x${i.qty} = $${i.lineTotal.toFixed(2)}`).join('\n')}
-    `.trim(),
-  });
-
-  return ContentService.createTextOutput(JSON.stringify({ ok: true }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+```bash
+git checkout --orphan gh-pages
+git rm -rf .
+cp -r quote/* .
+git add .
+git commit -m "Deploy site"
+git push origin gh-pages
 ```
 
-Deploy the script as a Web App with execute permissions set to "Anyone".
+Enable GitHub Pages from the `gh-pages` branch in repository settings.
