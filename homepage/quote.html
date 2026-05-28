@@ -18,7 +18,7 @@
   <div class="container">
     <header>
       <h1>Quick Quote</h1>
-      <p class="subtitle">Configure your system and watch the quotation update live.</p>
+      <p class="subtitle">Configure your system, enter your details, and generate an estimate.</p>
     </header>
 
     <form id="quoteForm" class="form-card">
@@ -52,18 +52,17 @@
         </div>
       </div>
 
+      <div class="field">
+        <label for="cableLengthMeters">Estimated cable run (meters)</label>
+        <input type="number" id="cableLengthMeters" name="cableLengthMeters" min="0" value="50" required>
+        <p class="hint">Total approximate distance from controller to valves and sensors.</p>
+      </div>
+
       <hr>
 
       <h2>Component Specifications</h2>
       <p class="hint">Pick the exact specifications for each component type.</p>
       <div id="paramSections"></div>
-
-      <hr>
-
-      <h2>Live Preview</h2>
-      <div id="livePreview" class="preview-card">
-        <p class="text-muted">Fill in the details above to see a preview.</p>
-      </div>
 
       <hr>
 
@@ -90,8 +89,17 @@
         <label for="consent">I consent to MajiFlow contacting me via email and phone regarding this quotation.</label>
       </div>
 
-      <div class="actions">
+      <div class="actions button-row">
+        <button type="button" id="btnPreview" class="btn-secondary">Preview Quotation</button>
         <button type="submit" class="btn-primary">Generate Quotation</button>
+      </div>
+
+      <div id="previewSection" class="preview-section hidden">
+        <hr>
+        <h2>Quotation Preview</h2>
+        <div id="livePreview" class="preview-card empty">
+          <p class="text-muted">Fill in your details and click Preview to see the estimate.</p>
+        </div>
       </div>
     </form>
 

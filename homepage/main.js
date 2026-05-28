@@ -14,6 +14,8 @@ const btnEmail = document.getElementById('btnEmail');
 const btnReset = document.getElementById('btnReset');
 const paramSections = document.getElementById('paramSections');
 const livePreview = document.getElementById('livePreview');
+const btnPreview = document.getElementById('btnPreview');
+const previewSection = document.getElementById('previewSection');
 
 let lastQuotation = null;
 let loadedCatalog = null;
@@ -134,20 +136,7 @@ function gatherComponentParams() {
 // Live preview
 // ---------------------------------------------------------------------------
 
-function renderPreview(quotation) {
-  livePreview.innerHTML = '';
-
-  if (!quotation || (quotation.baseInfrastructure.length === 0 && quotation.systemComponents.length === 0)) {
-    const p = document.createElement('p');
-    p.className = 'text-muted';
-    p.textContent = 'Fill in the details above to see a preview.';
-    livePreview.appendChild(p);
-    livePreview.classList.add('empty');
-    return;
-  }
-
-  livePreview.classList.remove('empty');
-
+function renderTable(items) {
   const table = document.createElement('table');
   table.className = 'preview-table';
 
@@ -156,9 +145,7 @@ function renderPreview(quotation) {
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
-  const allItems = [...quotation.baseInfrastructure, ...quotation.systemComponents];
-
-  for (const item of allItems) {
+  for (const item of items) {
     const tr = document.createElement('tr');
 
     const nameCell = document.createElement('td');
@@ -205,7 +192,38 @@ function renderPreview(quotation) {
   }
 
   table.appendChild(tbody);
-  livePreview.appendChild(table);
+  return table;
+}
+
+function renderPreview(quotation) {
+  livePreview.innerHTML = '';
+
+  if (!quotation || (quotation.baseInfrastructure.length === 0 && quotation.systemComponents.length === 0)) {
+    const p = document.createElement('p');
+    p.className = 'text-muted';
+    p.textContent = 'Fill in your details and click Preview to see the estimate.';
+    livePreview.appendChild(p);
+    livePreview.classList.add('empty');
+    return;
+  }
+
+  livePreview.classList.remove('empty');
+
+  if (quotation.baseInfrastructure.length > 0) {
+    const heading = document.createElement('div');
+    heading.className = 'preview-heading';
+    heading.textContent = 'Base Infrastructure';
+    livePreview.appendChild(heading);
+    livePreview.appendChild(renderTable(quotation.baseInfrastructure));
+  }
+
+  if (quotation.systemComponents.length > 0) {
+    const heading = document.createElement('div');
+    heading.className = 'preview-heading';
+    heading.textContent = 'System Components';
+    livePreview.appendChild(heading);
+    livePreview.appendChild(renderTable(quotation.systemComponents));
+  }
 
   const totalDiv = document.createElement('div');
   totalDiv.className = 'preview-total';
@@ -213,7 +231,7 @@ function renderPreview(quotation) {
   livePreview.appendChild(totalDiv);
 }
 
-async function updatePreview() {
+async function updatePreview(opts = {}) {
   const catalog = await loadCatalog();
   const fd = new FormData(form);
 
@@ -229,8 +247,11 @@ async function updatePreview() {
     componentParams: Object.keys(componentParams).length > 0 ? componentParams : undefined,
   };
 
-  const quotation = buildQuotation(input, catalog);
-  renderPreview(quotation);
+  const quotation = buildQuotation(input, catalog, {
+    cableLengthMeters: parseInt(fd.get('cableLengthMeters'), 10) || 50,
+    customerName: fd.get('customerName') || undefined,
+    ...opts,
+  });
   return quotation;
 }
 
@@ -240,22 +261,25 @@ async function updatePreview() {
 
 renderParamSections();
 
-// Wire up live preview on relevant fields only.
-// System requirements trigger on input/change.
-// Parameter selectors trigger on change.
-// Contact fields are ignored.
-const sysFields = ['numTanks', 'numPumps', 'hasVfd', 'numValveZones', 'numFlowSensors'];
-for (const id of sysFields) {
-  const el = document.getElementById(id);
-  if (el) {
-    el.addEventListener('change', () => updatePreview());
-    if (el.type === 'number') el.addEventListener('input', () => updatePreview());
-  }
-}
-paramSections.addEventListener('change', () => updatePreview());
+// Initial empty preview
+renderPreview(null);
 
-// Initial preview
-updatePreview();
+// Preview button: validate contact details, then show preview
+btnPreview.addEventListener('click', async () => {
+  const required = ['customerName', 'customerEmail', 'customerPhone', 'consent'];
+  for (const id of required) {
+    const el = document.getElementById(id);
+    if (!el || !el.checkValidity()) {
+      el?.reportValidity();
+      return;
+    }
+  }
+
+  const quotation = await updatePreview();
+  renderPreview(quotation);
+  previewSection.classList.remove('hidden');
+  previewSection.scrollIntoView({ behavior: 'smooth' });
+});
 
 // ---------------------------------------------------------------------------
 // Submit
@@ -343,8 +367,9 @@ btnReset.addEventListener('click', () => {
   form.reset();
   form.classList.remove('hidden');
   result.classList.add('hidden');
+  previewSection.classList.add('hidden');
   lastQuotation = null;
   renderParamSections();
-  updatePreview();
+  renderPreview(null);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });
