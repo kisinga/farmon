@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'quote/**'
+      - 'homepage/**'
       - '.github/workflows/deploy-site.yml'
 
 permissions:
@@ -27,6 +27,6 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: quote
+          path: homepage
       - id: deployment
         uses: actions/deploy-pages@v4
