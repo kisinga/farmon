@@ -29,6 +29,25 @@ A working system gives you one dashboard with three things:
 - **Remote control** — turn pumps and valves on or off from your phone, wherever you are
 - **Automation** — e.g. fill the reservoir at 6 AM on Mondays and Thursdays, or whenever the tank drops below 30%
 
+## Screenshots
+
+**Visual designer** — draw tanks, pumps, valves, and sensors on a screen. MajiFlow validates the design before you spend money.
+
+<p align="center">
+  <img src="docs/cad_design.png" alt="MajiFlow visual designer" width="90%">
+</p>
+
+**Monitoring dashboard** — tank levels, flow rates, route control, and automations in one place.
+
+<p align="center">
+  <img src="docs/dashboard_desktop.png" alt="Desktop monitoring dashboard" width="75%">
+</p>
+
+<p align="center">
+  <img src="docs/dashboard_mobile.png" alt="Mobile dashboard" width="26%">
+</p>
+<p align="center"><em>Access your dashboard from anywhere — desktop or mobile.</em></p>
+
 ## Two parts, one system
 
 MajiFlow bridges the design on your screen and the hardware in the field.

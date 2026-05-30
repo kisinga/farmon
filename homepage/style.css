@@ -606,18 +606,42 @@ footer a { color: var(--primary); text-decoration: none; }
 
 .site-footer a { color: var(--primary); text-decoration: none; }
 
-/* Screenshots */
-.screenshots {
+/* Showcase */
+.showcase {
   margin-bottom: 48px;
 }
 
-.screenshot-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+.showcase-feature {
+  margin: 0 0 16px;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  overflow: hidden;
 }
 
-.screenshot-grid figure {
+.showcase-feature img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.showcase-feature figcaption {
+  padding: 14px 18px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+
+.showcase-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.showcase-grid figure {
   margin: 0;
   background: var(--card);
   border-radius: var(--radius);
@@ -626,21 +650,30 @@ footer a { color: var(--primary); text-decoration: none; }
   overflow: hidden;
 }
 
-.screenshot-grid img {
+.showcase-grid img {
   display: block;
   width: 100%;
   height: auto;
 }
 
-.screenshot-grid figcaption {
+.showcase-grid figcaption {
   padding: 12px 16px;
   font-size: 13px;
   color: var(--text-secondary);
+  text-align: center;
+  border-top: 1px solid var(--border);
   line-height: 1.45;
 }
 
+.phone-frame img {
+  max-height: 420px;
+  object-fit: cover;
+  object-position: top center;
+}
+
 @media (max-width: 720px) {
-  .screenshot-grid { grid-template-columns: 1fr; }
+  .showcase-grid { grid-template-columns: 1fr; }
+  .phone-frame img { max-height: 360px; }
 }
 
 /* Button row */
@@ -688,5 +721,5 @@ footer a { color: var(--primary); text-decoration: none; }
 }
 
 @media print {
-  .form-card, .result, footer, .nav, .hero, .features, .use-cases, .cta-band, .site-footer { display: none; }
+  .form-card, .result, footer, .nav, .hero, .features, .use-cases, .cta-band, .site-footer, .showcase { display: none; }
 }
