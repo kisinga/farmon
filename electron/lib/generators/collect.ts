@@ -43,20 +43,45 @@ export function collectEntityCodegen(m: Manifest, board: BoardDef): CollectedCod
   // create Manifest directly may not have it, so fall back to friendly_name.
   const controllerId = m.controllerId ?? m.device.friendly_name;
 
+  // --- Imported nodes: proxy generation only, no local hardware ---
+  for (const node of m.imports) {
+    const desc = NODE_REGISTRY.get(node.kind);
+    const proxies = desc?.codegen?.remoteProxy?.(
+      node,
+      node.remoteHaEntityId,
+      node.remoteDeviceName,
+      m.device.name,
+    );
+    if (proxies) {
+      for (const proxy of proxies) {
+        (result.sections[proxy.section] ??= []).push(proxy.yaml);
+      }
+    }
+  }
+
+  // --- Local nodes: hardware, sensors, substitutions, extras ---
   for (const node of m.nodes) {
     const desc = NODE_REGISTRY.get(node.kind);
 
-    // Remote proxy — descriptor owns the proxy type and ID convention.
-    // When present, skip ALL local hardware generation for this node.
+    // Remote proxy for local nodes with remote HA entity (e.g. tank with remote level source).
     if (node.remoteHaEntityId) {
-      const proxy = desc?.codegen?.remoteProxy?.(node, node.remoteHaEntityId);
-      if (proxy) (result.sections[proxy.section] ??= []).push(proxy.yaml);
+      const proxies = desc?.codegen?.remoteProxy?.(
+        node,
+        node.remoteHaEntityId,
+        node.remoteDeviceName as string | undefined,
+        m.device.name,
+      );
+      if (proxies) {
+        for (const proxy of proxies) {
+          (result.sections[proxy.section] ??= []).push(proxy.yaml);
+        }
+      }
       continue;
     }
 
     // Skip hardware for nodes anchored to other controllers that have no
     // remote HA entity (e.g. a remote water_source without a pressure pin).
-    // Backward compat: nodes without anchorId (pre-flat-topology test fixtures)
+    // Backward compat: nodes without anchorId (pre-split test fixtures)
     // are treated as belonging to this controller.
     if (node.anchorId && node.anchorId !== controllerId) continue;
 

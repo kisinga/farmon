@@ -38,6 +38,8 @@ export type TopologyEventType =
   | 'controller_added'
   | 'controller_removed'
   | 'controller_modified'
+  | 'remote_import_added'
+  | 'remote_import_removed'
   | 'site_renamed';
 
 // ---------------------------------------------------------------------------
@@ -130,6 +132,16 @@ const ControllerModifiedPayloadSchema = z.object({
   newController: ControllerSchema,
 });
 
+const RemoteImportAddedPayloadSchema = z.object({
+  controllerId: z.string().min(1),
+  nodeId: z.string().min(1),
+});
+
+const RemoteImportRemovedPayloadSchema = z.object({
+  controllerId: z.string().min(1),
+  nodeId: z.string().min(1),
+});
+
 const SiteRenamedPayloadSchema = z.object({
   oldName: z.string(),
   newName: z.string(),
@@ -157,6 +169,8 @@ const BaseTopologyEventSchema = z.discriminatedUnion('eventType', [
   z.object({ eventType: z.literal('controller_added'), payload: ControllerAddedPayloadSchema }),
   z.object({ eventType: z.literal('controller_removed'), payload: ControllerRemovedPayloadSchema }),
   z.object({ eventType: z.literal('controller_modified'), payload: ControllerModifiedPayloadSchema }),
+  z.object({ eventType: z.literal('remote_import_added'), payload: RemoteImportAddedPayloadSchema }),
+  z.object({ eventType: z.literal('remote_import_removed'), payload: RemoteImportRemovedPayloadSchema }),
   z.object({ eventType: z.literal('site_renamed'), payload: SiteRenamedPayloadSchema }),
 ]);
 

@@ -17,10 +17,11 @@ import type { TankLevelSource } from './tank-level';
 export type Device = SystemTopology['device'];
 export type Timing = SystemTopology['timing'];
 
-/** A topology node with manifest-only extensions (remote entity ID, level sources). */
-export type ManifestNode = TopologyNode & {
-  /** HA entity_id for remote reads — set when this node's value lives on another controller. */
+/** Local topology node with manifest-only extensions. */
+export type LocalManifestNode = TopologyNode & {
+  /** HA entity_id for remote reads — set when this node's primary value lives on another controller (e.g. tank with remote level source). */
   remoteHaEntityId?: string;
+  remoteDeviceName?: string;
   /** Resolved level source for tank nodes. */
   level_source?: TankLevelSource;
   /** Lifted from upstream tank for pressure-sensor calibration. */
@@ -29,6 +30,19 @@ export type ManifestNode = TopologyNode & {
   /** Allow dynamic field access for sidebar field iteration. */
   [key: string]: unknown;
 };
+
+/** Imported node — anchored to another controller, proxied locally. */
+export type ImportedManifestNode = TopologyNode & {
+  /** HA entity_id of the canonical entity on the owning controller. */
+  remoteHaEntityId: string;
+  /** Slug of the controller that owns this node. */
+  remoteDeviceName: string;
+  /** Allow dynamic field access for sidebar field iteration. */
+  [key: string]: unknown;
+};
+
+/** Union type for consumers that need to handle both local and imported nodes. */
+export type ManifestNode = LocalManifestNode | ImportedManifestNode;
 
 
 export interface ManifestAutomation {
@@ -46,7 +60,10 @@ export interface Manifest {
   /** The controller ID this manifest was built for (set by topologyToManifestForController). */
   controllerId?: string;
   device: Device;
-  nodes: ManifestNode[];
+  /** Local nodes — generate hardware on this controller. */
+  nodes: LocalManifestNode[];
+  /** Imported nodes — proxied from other controllers. */
+  imports: ImportedManifestNode[];
   routes: Route[];
   timing: Timing;
   automations: ManifestAutomation[];
@@ -100,11 +117,11 @@ export interface Route {
 
 /**
  * Filter manifest nodes by kind with type narrowing.
- * Returns nodes whose `kind` matches, narrowed to the specific node type.
+ * Works with any node array (local, imported, or mixed).
  */
-export function nodesByKind<K extends TopologyNode['kind']>(
-  nodes: ManifestNode[],
+export function nodesByKind<K extends TopologyNode['kind'], T extends { kind: string }>(
+  nodes: T[],
   kind: K,
-): Extract<ManifestNode, { kind: K }>[] {
-  return nodes.filter((n): n is Extract<ManifestNode, { kind: K }> => n.kind === kind);
+): Extract<T, { kind: K }>[] {
+  return nodes.filter((n): n is Extract<T, { kind: K }> => n.kind === kind);
 }

@@ -786,8 +786,8 @@ const crossControllerTopology = parseTopology({
 
 // Manifest for pump-ctrl (owns the route because flow sensor is anchored here)
 const pumpManifest = topologyToManifestForController(crossControllerTopology, 'pump-ctrl');
-const srcTank = pumpManifest.nodes.find(n => n.id === 'src_tank');
-const dstTank = pumpManifest.nodes.find(n => n.id === 'dst_tank');
+const srcTank = pumpManifest.imports.find(n => n.id === 'src_tank');
+const dstTank = pumpManifest.imports.find(n => n.id === 'dst_tank');
 const flowNode = pumpManifest.nodes.find(n => n.id === 'flow1');
 const pumpNode = pumpManifest.nodes.find(n => n.id === 'pump1');
 

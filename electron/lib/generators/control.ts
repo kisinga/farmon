@@ -1,16 +1,16 @@
 import type { Manifest } from "../schema.js";
-import { nodesWithFlag, slug } from "../schema.js";
+import { localNodesWithFlag, slug } from "../schema.js";
 import { SYSTEM_ENTITY_NAMES, routeEntityNames } from '@far-mon/core';
 
 const SYS = SYSTEM_ENTITY_NAMES;
 
 export function generateControl(m: Manifest): string {
-  const pumps = nodesWithFlag(m.nodes, 'isPump');
+  const pumps = localNodesWithFlag(m, 'isPump');
 
   // Conditional pump management in the transition interval
   const pumpMgmt = pumps.length > 0 ? `
           // --- Pump management ---
-${pumps.map((p, i) => `          bool need_pump_${i} = pump_ref_count(${i}) > 0 || has_live_claim("${p['id']}_relay");
+${pumps.map((p, i) => `          bool need_pump_${i} = pump_ref_count(${i}) > 0 || has_live_claim("${p['id']}_relay") || id(safety_override).state;
           if (need_pump_${i} && !id(${p['id']}_relay).state) id(${p['id']}_relay).turn_on();
           else if (!need_pump_${i} && id(${p['id']}_relay).state) id(${p['id']}_relay).turn_off();`).join('\n')}` : "";
 
@@ -18,9 +18,9 @@ ${pumps.map((p, i) => `          bool need_pump_${i} = pump_ref_count(${i}) > 0 
 
   // Dead-man enforcement for all local actuators
   const actuators = [
-    ...nodesWithFlag(m.nodes, 'isPump'),
-    ...nodesWithFlag(m.nodes, 'isValve'),
-    ...nodesWithFlag(m.nodes, 'isDosingPump'),
+    ...localNodesWithFlag(m, 'isPump'),
+    ...localNodesWithFlag(m, 'isValve'),
+    ...localNodesWithFlag(m, 'isDosingPump'),
   ];
   const deadmanEnforcement = actuators.length > 0
     ? `\n          // --- Dead-man enforcement ---

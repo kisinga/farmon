@@ -1,6 +1,6 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
-import { nodesByKind, nodesWithFlag } from "../schema.js";
+import { nodesByKind, nodesWithFlag, localNodesWithFlag, importedNodesWithFlag, importedNodesByKind } from "../schema.js";
 import { NODE_REGISTRY, systemHaEntityIds, networkHaEntityIds, batteryHaEntityIds, automationHaEntityId, routeAutomationAlias, type BoardDef } from '@far-mon/core';
 
 // ---------------------------------------------------------------------------
@@ -58,6 +58,14 @@ function n(node: ManifestNode, key: string): string {
  */
 function haIds(node: ManifestNode, device: { friendly_name: string }): Partial<Record<import('@far-mon/core').HaEntityKey, string>> {
   return NODE_REGISTRY.get(node.kind)?.codegen?.haEntityIds?.(node, device) ?? {};
+}
+
+/**
+ * Pull a proxy's HA entity_ids from its entity descriptor.
+ * Used for imported actuators that create template proxies.
+ */
+function proxyHaIds(node: Manifest['imports'][number], device: { friendly_name: string }): Partial<Record<import('@far-mon/core').HaEntityKey, string>> {
+  return NODE_REGISTRY.get(node.kind)?.codegen?.proxyEntityIds?.(node as any, device) ?? {};
 }
 
 // ---------------------------------------------------------------------------
@@ -214,10 +222,18 @@ export function buildWaterSection(m: Manifest): HaGridSection {
 export function buildRouteControlSection(m: Manifest): HaRouteControl {
   const dev = m.device;
   const sys = systemHaEntityIds(dev, m.routes);
-  const valves = nodesWithFlag(m.nodes, 'isValve');
-  const dosingPumps = nodesWithFlag(m.nodes, 'isDosingPump');
-  const pumps = nodesWithFlag(m.nodes, 'isPump');
-  const vfds = nodesByKind(m.nodes, 'vfd');
+
+  // Local actuators
+  const localValves = localNodesWithFlag(m, 'isValve');
+  const localDosingPumps = localNodesWithFlag(m, 'isDosingPump');
+  const localPumps = localNodesWithFlag(m, 'isPump');
+  const localVfds = nodesByKind(m.nodes, 'vfd');
+
+  // Imported (remote) actuators
+  const remotePumps = importedNodesWithFlag(m, 'isPump');
+  const remoteValves = importedNodesWithFlag(m, 'isValve');
+  const remoteDosing = importedNodesWithFlag(m, 'isDosingPump');
+  const remoteVfds = importedNodesByKind(m, 'vfd');
 
   const routeColors = ["purple", "deep-purple", "indigo", "blue", "teal", "cyan", "light-blue", "green"];
 
@@ -226,8 +242,6 @@ export function buildRouteControlSection(m: Manifest): HaRouteControl {
   const displayName = (s: string) => s.replace(/\s*>\s*/g, " → ");
 
   // One column per route — start button on top, stop button below.
-  // Replaces two parallel rows of N buttons each, which squeezed labels
-  // to <100px on phones.
   const routeButtonColumns: HaWidget[] = m.routes.map((r, i) => ({
     type: "vertical-stack",
     cards: [
@@ -245,9 +259,11 @@ export function buildRouteControlSection(m: Manifest): HaRouteControl {
   }));
 
   const routeStatusEntities = m.routes.map((r, i) => ({ entity: sys.routes[i].status, name: displayName(r.name) }));
-  const valveEntities = valves.map((v, i) => ({ entity: haIds(v, dev).cover!, name: `V${i + 1}` }));
-  const dosingEntities = dosingPumps.map(dp => ({ entity: haIds(dp, dev).relay!, name: n(dp, 'name') }));
-  const vfdEntities = vfds.flatMap(v => {
+
+  // Local hardware entities
+  const valveEntities = localValves.map((v, i) => ({ entity: haIds(v, dev).cover!, name: `V${i + 1}` }));
+  const dosingEntities = localDosingPumps.map(dp => ({ entity: haIds(dp, dev).relay!, name: n(dp, 'name') }));
+  const vfdEntities = localVfds.flatMap(v => {
     const ids = haIds(v, dev);
     const items: Array<{ entity: string; name: string }> = [];
     if (ids.power)         items.push({ entity: ids.power,         name: `${n(v, 'name')} Power` });
@@ -257,6 +273,19 @@ export function buildRouteControlSection(m: Manifest): HaRouteControl {
     if (ids.faultReset)    items.push({ entity: ids.faultReset,    name: `${n(v, 'name')} Reset` });
     return items;
   });
+
+  // Remote hardware entities
+  const remoteHardwareEntities: Array<{ entity: string; name: string }> = [
+    ...remotePumps.map(p => ({ entity: proxyHaIds(p, dev).relay!, name: n(p, 'name') })),
+    ...remoteValves.map(v => ({ entity: proxyHaIds(v, dev).cover!, name: n(v, 'name') })),
+    ...remoteDosing.map(dp => ({ entity: proxyHaIds(dp, dev).relay!, name: n(dp, 'name') })),
+    ...remoteVfds.flatMap(v => {
+      const ids = proxyHaIds(v, dev);
+      const items: Array<{ entity: string; name: string }> = [];
+      if (ids.switch) items.push({ entity: ids.switch, name: n(v, 'name') });
+      return items;
+    }),
+  ];
 
   const mainCards: HaWidget[] = [
     {
@@ -291,7 +320,7 @@ export function buildRouteControlSection(m: Manifest): HaRouteControl {
     {
       type: "glance", title: "Hardware", show_state: true,
       entities: [
-        ...pumps.map((p, i) => ({ entity: (haIds(p, dev).relay ?? haIds(p, dev).switch)!, name: `P${i + 1}` })),
+        ...localPumps.map((p, i) => ({ entity: (haIds(p, dev).relay ?? haIds(p, dev).switch)!, name: `P${i + 1}` })),
         ...valveEntities,
         ...dosingEntities,
       ],
@@ -300,6 +329,13 @@ export function buildRouteControlSection(m: Manifest): HaRouteControl {
   ];
   if (vfdEntities.length > 0) {
     mainCards.push({ type: "entities", title: "VFD Drive", entities: vfdEntities, grid_options: { columns: "full" } });
+  }
+  if (remoteHardwareEntities.length > 0) {
+    mainCards.push({
+      type: "glance", title: "Remote Hardware", show_state: true,
+      entities: remoteHardwareEntities,
+      grid_options: { columns: "full" },
+    });
   }
 
   const sections: HaGridSection[] = [
@@ -406,8 +442,10 @@ export function buildConfigurationView(m: Manifest): HaCardsView {
 export function buildManualView(m: Manifest): HaCardsView {
   const dev = m.device;
   const sys = systemHaEntityIds(dev, m.routes);
-  const pumps = nodesWithFlag(m.nodes, 'isPump');
-  const valves = nodesWithFlag(m.nodes, 'isValve');
+  const localPumps = localNodesWithFlag(m, 'isPump');
+  const localValves = localNodesWithFlag(m, 'isValve');
+  const remotePumps = importedNodesWithFlag(m, 'isPump');
+  const remoteValves = importedNodesWithFlag(m, 'isValve');
 
   const explainerCard: HaWidget = {
     type: "markdown",
@@ -429,20 +467,22 @@ export function buildManualView(m: Manifest): HaCardsView {
     ],
   };
 
-  // Pump direct control. Without an owning route, the pump only runs when
-  // safety_override is ON (firmware-enforced).
-  const pumpEntities = pumps.map(p => {
+  // Local pump direct control
+  const localPumpEntities = localPumps.map(p => {
     const ids = haIds(p, dev);
     return { entity: (ids.relay ?? ids.switch)!, name: n(p, 'name') };
   });
 
-  // Per-valve manual: cover (timer-bounded), open coil, close coil (raw).
-  // Coils are interlocked at firmware level (only one can be ON at a time).
-  // show_header_toggle: false suppresses HA's default "master switch" in the
-  // card header — for this card a master toggle would try to fire BOTH coils,
-  // which the firmware interlock blocks but still results in one coil briefly
-  // energizing without timer protection.
-  const valveCards: HaWidget[] = valves.map(v => {
+  // Remote pump proxy control
+  const remotePumpEntities = remotePumps.map(p => {
+    const ids = proxyHaIds(p, dev);
+    return { entity: (ids.relay ?? ids.switch)!, name: `Remote ${n(p, 'name')}` };
+  });
+
+  const allPumpEntities = [...localPumpEntities, ...remotePumpEntities];
+
+  // Local valve cards: cover + open coil + close coil
+  const localValveCards: HaWidget[] = localValves.map(v => {
     const ids = haIds(v, dev);
     return {
       type: "entities",
@@ -452,6 +492,19 @@ export function buildManualView(m: Manifest): HaCardsView {
         { entity: ids.cover!,     name: "Cover (timer)" },
         { entity: ids.openCoil!,  name: "Open Coil (raw)" },
         { entity: ids.closeCoil!, name: "Close Coil (raw)" },
+      ],
+    };
+  });
+
+  // Remote valve cards: cover only (proxy has no raw coils)
+  const remoteValveCards: HaWidget[] = remoteValves.map(v => {
+    const ids = proxyHaIds(v, dev);
+    return {
+      type: "entities",
+      title: `Remote ${n(v, 'name')}`,
+      show_header_toggle: false,
+      entities: [
+        { entity: ids.cover!, name: "Cover (timer)" },
       ],
     };
   });
@@ -492,10 +545,10 @@ export function buildManualView(m: Manifest): HaCardsView {
   };
 
   const cards: HaWidget[] = [explainerCard, overrideCard, recoveryCard];
-  if (pumpEntities.length > 0) {
-    cards.push({ type: "entities", title: pumps.length > 1 ? "Pumps" : "Pump", entities: pumpEntities });
+  if (allPumpEntities.length > 0) {
+    cards.push({ type: "entities", title: allPumpEntities.length > 1 ? "Pumps" : "Pump", entities: allPumpEntities });
   }
-  cards.push(...valveCards);
+  cards.push(...localValveCards, ...remoteValveCards);
   if (m.routes.length > 0) {
     cards.push({
       type: "vertical-stack",

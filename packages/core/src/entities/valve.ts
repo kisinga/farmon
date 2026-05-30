@@ -5,7 +5,7 @@ import { AnchorIdSchema } from '../schemas';
 import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { templateCoverProxy } from '../remote-proxy';
+import { templateCoverProxy, homeassistantTextSensorProxy } from '../remote-proxy';
 
 const COLOR = '#e11d48'; // rose
 const W = 50, H = 36;
@@ -165,9 +165,12 @@ ${closeHeader}
       };
     },
 
-    remoteProxy: (node, haEntityId) => ({
-      section: 'cover',
-      yaml: templateCoverProxy(node.id, node.name, haEntityId),
+    remoteProxy: (node, haEntityId) => [
+      { section: 'text_sensor', yaml: homeassistantTextSensorProxy(node.id, haEntityId) },
+      { section: 'cover', yaml: templateCoverProxy(node.id, node.name, haEntityId) },
+    ],
+    proxyEntityIds: (node: ValveNode, device) => ({
+      cover: deriveHaEntityId('cover', device, `Remote ${node.name}`),
     }),
 
   },

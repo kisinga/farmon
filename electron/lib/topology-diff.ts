@@ -222,5 +222,30 @@ export function diffTopology(
     }
   }
 
+  // Remote imports
+  const oldImports = new Map((oldTopo.remoteImports ?? []).map((ri) => [`${ri.controllerId}:${ri.nodeId}`, ri]));
+  const newImports = new Map((newTopo.remoteImports ?? []).map((ri) => [`${ri.controllerId}:${ri.nodeId}`, ri]));
+
+  for (const ri of newTopo.remoteImports ?? []) {
+    const key = `${ri.controllerId}:${ri.nodeId}`;
+    if (!oldImports.has(key)) {
+      events.push({
+        actor: "user",
+        eventType: "remote_import_added",
+        payload: { controllerId: ri.controllerId, nodeId: ri.nodeId },
+      });
+    }
+  }
+
+  for (const [key, ri] of oldImports) {
+    if (!newImports.has(key)) {
+      events.push({
+        actor: "user",
+        eventType: "remote_import_removed",
+        payload: { controllerId: ri.controllerId, nodeId: ri.nodeId },
+      });
+    }
+  }
+
   return events;
 }

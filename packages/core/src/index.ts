@@ -15,7 +15,7 @@ export type {
   Port, Position, Controller, RemoteImport,
 } from './topology.types';
 export { effectiveTransport } from './topology.types';
-export type { Manifest, ManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
+export type { Manifest, ManifestNode, LocalManifestNode, ImportedManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
 export { boardSupportedTransports } from './board.types';
@@ -38,7 +38,7 @@ export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, 
 export { type InputPolicy, policyString } from './input-policy';
 
 // --- Registry ---
-export { NODE_REGISTRY, ALL_DESCRIPTORS, REGISTRY_RULES, legendSvgFor, nodesWithFlag, getTypedDescriptor } from './entity-registry';
+export { NODE_REGISTRY, ALL_DESCRIPTORS, REGISTRY_RULES, legendSvgFor, nodesWithFlag, getTypedDescriptor, allNodes, localNodesWithFlag, importedNodesWithFlag, importedNodesByKind } from './entity-registry';
 
 // --- Slug / naming ---
 export { slug } from './slug';
@@ -86,7 +86,7 @@ export {
 } from './codegen-ids';
 
 // --- Remote Proxy ---
-export { homeassistantSensorImport, templateSwitchProxy, templateCoverProxy } from './remote-proxy';
+export { homeassistantSensorImport, homeassistantBinarySensorProxy, homeassistantTextSensorProxy, templateSwitchProxy, templateCoverProxy } from './remote-proxy';
 export { deriveRemoteHaEntityId } from './remote-ha-entity';
 
 // --- I/O Providers ---

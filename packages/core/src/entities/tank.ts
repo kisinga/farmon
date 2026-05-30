@@ -75,10 +75,9 @@ export const tankDescriptor: NodeDescriptor = {
   ],
 
   codegen: {
-    remoteProxy: (node, haEntityId) => ({
-      section: 'sensor',
-      yaml: homeassistantSensorImport(node.id, haEntityId),
-    }),
+    remoteProxy: (node, haEntityId) => [
+      { section: 'sensor', yaml: homeassistantSensorImport(node.id, haEntityId) },
+    ],
   },
 
   constraints: [

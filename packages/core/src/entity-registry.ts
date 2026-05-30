@@ -14,6 +14,7 @@ import type { FlowConstraint } from './graph/constraints';
 import type { HaActionSpec, HaSlotSpec } from './ha';
 import type { InputPolicy } from './input-policy';
 import type { TopologyNode } from './topology.types';
+import type { Manifest } from './manifest.types';
 import { UI_COLORS } from './colors';
 
 // ---------------------------------------------------------------------------
@@ -104,12 +105,17 @@ export interface EntityCodegen<T extends Record<string, any> = Record<string, an
     device: { friendly_name: string },
   ) => Record<string, string | undefined>;
   /**
-   * Remote proxy YAML for nodes with `node.remoteHaEntityId`.
-   * Called by collect.ts instead of local hardware when the node is anchored
-   * to another controller. The descriptor owns the proxy ID convention so
-   * that it matches what routes.ts expects.
+   * Remote proxy YAML sections for imported nodes.
+   * Called by collect.ts instead of local hardware. Each returned section
+   * is emitted into the corresponding ESPHome YAML section.
+   * Must include the state-tracking homeassistant sensor + template proxy.
    */
-  remoteProxy?: (node: T, haEntityId: string) => { section: string; yaml: string } | null;
+  remoteProxy?: (node: T, haEntityId: string, remoteDeviceName?: string, ownerDeviceName?: string) => Array<{ section: string; yaml: string }> | null;
+  /**
+   * HA entity IDs created by the proxy. Used by dashboard generators
+   * to reference imported actuators correctly.
+   */
+  proxyEntityIds?: (node: T, device: { friendly_name: string }) => Record<string, string | undefined>;
 }
 
 // ---------------------------------------------------------------------------
@@ -339,4 +345,30 @@ export function nodesWithFlag<T extends { kind: string; [k: string]: any }>(
   flag: DispatchFlag,
 ): T[] {
   return nodes.filter(n => NODE_REGISTRY.get(n.kind)?.[flag]);
+}
+
+// ---------------------------------------------------------------------------
+// Manifest-aware helpers — operate on the split manifest arrays
+// ---------------------------------------------------------------------------
+
+/** All nodes (local + imported). Use for route table generation. */
+export function allNodes(m: Manifest): Manifest['nodes'] | Manifest['imports'] {
+  return [...m.nodes, ...m.imports];
+}
+
+/** Local nodes matching a dispatch flag. Use for hardware generators. */
+export function localNodesWithFlag(m: Manifest, flag: DispatchFlag): Manifest['nodes'] {
+  return nodesWithFlag(m.nodes, flag);
+}
+
+/** Imported nodes matching a dispatch flag. Use for proxy/dashboard. */
+export function importedNodesWithFlag(m: Manifest, flag: DispatchFlag): Manifest['imports'] {
+  return nodesWithFlag(m.imports, flag);
+}
+
+/** Imported nodes by kind. */
+export function importedNodesByKind<K extends TopologyNode['kind']>(
+  m: Manifest, kind: K,
+): Extract<Manifest['imports'][number], { kind: K }>[] {
+  return m.imports.filter((n): n is Extract<typeof n, { kind: K }> => n.kind === kind);
 }

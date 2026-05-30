@@ -1,5 +1,5 @@
 import type { Manifest } from "../schema.js";
-import { nodesByKind, nodesWithFlag, pumpSwitchId } from "../schema.js";
+import { nodesByKind, nodesWithFlag, allNodes, pumpSwitchId } from "../schema.js";
 import { valveCoverId, valveTravelTimeId, levelSensorLevelId, pressureSensorLevelId, flowSensorId, parseRouteKey } from '@far-mon/core';
 import { generateDeadman } from './deadman.js';
 
@@ -9,13 +9,13 @@ import { generateDeadman } from './deadman.js';
 
 export interface RouteContext {
   manifest: Manifest;
-  tanks: Manifest['nodes'];
-  levelSensors: Manifest['nodes'];
-  pressureSensors: Manifest['nodes'];
-  valves: Manifest['nodes'];
-  flowSensors: Manifest['nodes'];
-  waterSources: Manifest['nodes'];
-  pumps: Manifest['nodes'];
+  tanks: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
+  levelSensors: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
+  pressureSensors: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
+  valves: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
+  flowSensors: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
+  waterSources: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
+  pumps: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
   tankIdx: Map<string, number>;
   valveIdx: Map<string, number>;
   flowIdx: Map<string, number>;
@@ -40,13 +40,14 @@ export interface RouteContext {
  * formatting lives here. Platform-specific emission is separate.
  */
 export function buildRouteContext(m: Manifest): RouteContext {
-  const tanks = nodesByKind(m.nodes, 'tank');
-  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
-  const pressureSensors = nodesWithFlag(m.nodes, 'isPressureSensor');
-  const valves = nodesWithFlag(m.nodes, 'isValve');
-  const flowSensors = nodesWithFlag(m.nodes, 'isFlowSensor');
-  const waterSources = nodesByKind(m.nodes, 'water_source');
-  const pumps = nodesWithFlag(m.nodes, 'isPump');
+  const all = allNodes(m);
+  const tanks = nodesByKind(all, 'tank');
+  const levelSensors = nodesWithFlag(all, 'isLevelSensor');
+  const pressureSensors = nodesWithFlag(all, 'isPressureSensor');
+  const valves = nodesWithFlag(all, 'isValve');
+  const flowSensors = nodesWithFlag(all, 'isFlowSensor');
+  const waterSources = nodesByKind(all, 'water_source');
+  const pumps = nodesWithFlag(all, 'isPump');
 
   const tankIdx = new Map(tanks.map((t, i) => [t['id'], i]));
   const valveIdx = new Map(valves.map((v, i) => [v['id'], i]));
@@ -84,7 +85,7 @@ export function buildRouteContext(m: Manifest): RouteContext {
     const flow = flowIdx.get(r.flow_sensor)!;
     const maskBin = mask.toString(2).padStart(valves.length, "0");
     const conflictBin = conflictMasks[i].toString(2).padStart(m.routes.length, "0");
-    const pump = r.crossesPump ? pumpIdx.get(r.nodeSequence[r.pumpIndex])! : "0xFF";
+    const pump = r.crossesPump ? (pumpIdx.get(r.nodeSequence[r.pumpIndex]) ?? "0xFF") : "0xFF";
     const srcMin = r.source_min_pct ?? 0;
     const dstMax = r.dest_max_pct ?? 0;
     const rtLvl = r.runtime_level_ok ? "true" : "false";

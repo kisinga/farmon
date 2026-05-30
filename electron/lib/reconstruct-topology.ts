@@ -159,6 +159,18 @@ function applyEvent(topology: SiteTopology, event: TopologyEvent): SiteTopology 
       t.controllers = t.controllers.map((c) => (c.id === controllerId ? newController : c));
       break;
     }
+    case "remote_import_added": {
+      const { controllerId, nodeId } = event.payload;
+      t.remoteImports = [...(t.remoteImports ?? []), { controllerId, nodeId }];
+      break;
+    }
+    case "remote_import_removed": {
+      const { controllerId, nodeId } = event.payload;
+      t.remoteImports = (t.remoteImports ?? []).filter(
+        (ri) => !(ri.controllerId === controllerId && ri.nodeId === nodeId),
+      );
+      break;
+    }
     case "snapshot": {
       // Replace entire topology (skip old marker snapshots without topology)
       const payload = event.payload as { topology?: SiteTopology };

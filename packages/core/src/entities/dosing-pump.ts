@@ -7,7 +7,7 @@ import type { FlowConstraint } from '../graph/constraints';
 import { dosingPumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { templateSwitchProxy } from '../remote-proxy';
+import { templateSwitchProxy, homeassistantBinarySensorProxy } from '../remote-proxy';
 
 const COLOR = '#ea580c'; // orange
 const S = 50;
@@ -122,9 +122,12 @@ ${header}
       relay: deriveHaEntityId('switch', device, haNames(node).relay),
     }),
 
-    remoteProxy: (node, haEntityId) => ({
-      section: 'switch',
-      yaml: templateSwitchProxy(dosingPumpSwitchId(node), node.name, haEntityId),
+    remoteProxy: (node, haEntityId, remoteDeviceName, ownerDeviceName) => [
+      { section: 'binary_sensor', yaml: homeassistantBinarySensorProxy(dosingPumpSwitchId(node), haEntityId) },
+      { section: 'switch', yaml: templateSwitchProxy(dosingPumpSwitchId(node), node.name, haEntityId, remoteDeviceName, ownerDeviceName) },
+    ],
+    proxyEntityIds: (node: DosingPumpNode, device) => ({
+      relay: deriveHaEntityId('switch', device, `Remote ${node.name}`),
     }),
 
   },

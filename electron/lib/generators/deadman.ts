@@ -1,5 +1,5 @@
 import type { Manifest } from "../schema.js";
-import { nodesWithFlag, NODE_REGISTRY } from '@far-mon/core';
+import { localNodesWithFlag, NODE_REGISTRY } from '@far-mon/core';
 
 /**
  * Generate the C++ dead-man module for actuator claim tracking.
@@ -12,9 +12,9 @@ import { nodesWithFlag, NODE_REGISTRY } from '@far-mon/core';
  * Valves default to deadManAction: 'hold'.
  */
 export function generateDeadman(m: Manifest): string {
-  const valves = nodesWithFlag(m.nodes, 'isValve');
-  const pumps = nodesWithFlag(m.nodes, 'isPump');
-  const dosingPumps = nodesWithFlag(m.nodes, 'isDosingPump');
+  const valves = localNodesWithFlag(m, 'isValve');
+  const pumps = localNodesWithFlag(m, 'isPump');
+  const dosingPumps = localNodesWithFlag(m, 'isDosingPump');
   const actuators = [...valves, ...pumps, ...dosingPumps];
 
   // Build valve ID lookup table for index → nodeId mapping

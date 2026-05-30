@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { nodesByKind, nodesWithFlag, type Manifest, type NetworkTransport, type Route, type PinOverlayData, LOGO_SVG_SMALL } from '@far-mon/core';
+import { nodesByKind, nodesWithFlag, allNodes, type Manifest, type NetworkTransport, type Route, type PinOverlayData, LOGO_SVG_SMALL } from '@far-mon/core';
 import { TEMPLATES_DIR, PARTIALS_DIR, compileFile } from '../../../packages/core/src/templates/hbs.js';
 
 // Boundary colors — same cycle as canvas boundary-renderer
@@ -114,10 +114,11 @@ export function generateSiteDocumentation(
   // Aggregate component counts
   let totalTanks = 0, totalPumps = 0, totalValves = 0, totalFlowSensors = 0;
   for (const s of systems) {
-    totalTanks += nodesByKind(s.manifest.nodes, 'tank').length;
-    totalPumps += nodesByKind(s.manifest.nodes, 'pump').length;
-    totalValves += nodesByKind(s.manifest.nodes, 'valve').length;
-    totalFlowSensors += nodesByKind(s.manifest.nodes, 'flow_sensor').length;
+    const allSiteNodes = allNodes(s.manifest);
+    totalTanks += nodesByKind(allSiteNodes, 'tank').length;
+    totalPumps += nodesByKind(allSiteNodes, 'pump').length;
+    totalValves += nodesByKind(allSiteNodes, 'valve').length;
+    totalFlowSensors += nodesByKind(allSiteNodes, 'flow_sensor').length;
   }
 
   const componentPills = [
@@ -133,9 +134,9 @@ export function generateSiteDocumentation(
     friendlyName: s.friendlyName,
     board: s.board,
     deviceName: s.deviceName,
-    tankCount: nodesByKind(s.manifest.nodes, 'tank').length,
-    pumpCount: nodesByKind(s.manifest.nodes, 'pump').length,
-    valveCount: nodesByKind(s.manifest.nodes, 'valve').length,
+    tankCount: nodesByKind(allNodes(s.manifest), 'tank').length,
+    pumpCount: nodesByKind(allNodes(s.manifest), 'pump').length,
+    valveCount: nodesByKind(allNodes(s.manifest), 'valve').length,
     routeCount: s.manifest.routes.length,
   }));
 
@@ -193,8 +194,8 @@ export function generateSiteDocumentation(
 
   // Per-controller detail sections
   const controllerDetails = systems.map((s, i) => {
-    const tanks = nodesByKind(s.manifest.nodes, 'tank');
-    const levelSensors = nodesWithFlag(s.manifest.nodes, 'isLevelSensor');
+    const tanks = nodesByKind(allNodes(s.manifest), 'tank');
+    const levelSensors = nodesWithFlag(allNodes(s.manifest), 'isLevelSensor');
 
     let boardPinoutSection = '';
     if (s.boardSvg && s.pinOverlays?.length) {
@@ -288,7 +289,7 @@ export function generateSiteDocumentation(
           name: r.name,
           sensors: (r.inline_pressure_sensors ?? [])
             .map(id => {
-              const node = s.manifest.nodes.find(n => n.id === id);
+              const node = allNodes(s.manifest).find(n => n.id === id);
               return node ? String(node.name ?? id) : id;
             })
             .join(', '),
@@ -337,9 +338,9 @@ export function generateSiteDocumentation(
   // Aggregate flags for installation guidelines
   let hasFlowSensors = false, hasValves = false, hasTanks = false;
   for (const s of systems) {
-    if (nodesByKind(s.manifest.nodes, 'flow_sensor').length > 0) hasFlowSensors = true;
-    if (nodesByKind(s.manifest.nodes, 'valve').length > 0) hasValves = true;
-    if (nodesByKind(s.manifest.nodes, 'tank').length > 0) hasTanks = true;
+    if (nodesByKind(allNodes(s.manifest), 'flow_sensor').length > 0) hasFlowSensors = true;
+    if (nodesByKind(allNodes(s.manifest), 'valve').length > 0) hasValves = true;
+    if (nodesByKind(allNodes(s.manifest), 'tank').length > 0) hasTanks = true;
   }
 
   const singleSystem = systems.length === 1;

@@ -98,6 +98,13 @@ function generateMetadataYaml(m: Manifest, metadata: GenerationMetadata): string
   lines.push(`    lambda: return "${metadata.controllerId}";`);
   lines.push(``);
 
+  lines.push(`  - platform: template`);
+  lines.push(`    id: majiflow_device_name`);
+  lines.push(`    name: "MajiFlow Device Name"`);
+  lines.push(`    entity_category: diagnostic`);
+  lines.push(`    lambda: return "${m.device.name}";`);
+  lines.push(``);
+
   // sensor block
   lines.push(`sensor:`);
   lines.push(`  - platform: template`);

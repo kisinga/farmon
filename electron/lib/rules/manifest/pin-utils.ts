@@ -21,6 +21,8 @@ export function collectAllPins(m: Manifest): PinUsage[] {
   for (const node of m.nodes) {
     const desc = NODE_REGISTRY.get(node.kind);
     if (!desc) continue;
+    // Skip remote-imported nodes — their pins belong to the owning controller
+    if (node.remoteHaEntityId) continue;
     const nodeId = String(node.id);
     const nodeName = (typeof node.name === 'string' && node.name) ? node.name : nodeId;
     for (const field of desc.sidebarFields) {
