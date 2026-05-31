@@ -10,7 +10,7 @@
  */
 import { allSimplePaths } from 'graphology-simple-path';
 import type { TopologyGraph } from './topology-graph';
-import type { TopologyNode } from '../topology.types';
+import type { TopologyNode, SiteTopology } from '../topology.types';
 
 // ── Unified Route ───────────────────────────────────────────────────────────
 
@@ -34,14 +34,14 @@ export interface Route {
   nodeSequence: string[];
   /** Valve IDs encountered along the path, in flow order. */
   valves: string[];
-  /** ALL flow sensor IDs along the path, in flow order. */
+  /** ALL flow sensor IDs along the path, in flow order. May be empty for unmonitored segments. */
   flowSensors: string[];
+  /** True if route has at least one flow sensor (monitored segment). */
+  monitored: boolean;
   /** True if route crosses a pump. */
   crossesPump: boolean;
   /** Index of pump in nodeSequence (-1 if none). */
   pumpIndex: number;
-  /** True if route has at least one flow sensor. */
-  valid: boolean;
 }
 
 // ── Route derivation ────────────────────────────────────────────────────────
@@ -71,9 +71,9 @@ function analyzePathSequence(graph: TopologyGraph, path: string[]): Route {
     nodeSequence: path,
     valves,
     flowSensors,
+    monitored: flowSensors.length > 0,
     crossesPump: pumpIndex >= 0,
     pumpIndex,
-    valid: flowSensors.length > 0,
   };
 }
 
@@ -92,19 +92,96 @@ export function parseRouteKey(key: string): { source: string; destination: strin
 
 export function deriveRoutes(graph: TopologyGraph): Route[] {
   const sources = graph.filterNodes((_id, attrs) => attrs.routeSource);
-  const terminals = graph.filterNodes((_id, attrs) => attrs.role === 'terminal');
+  const waypoints = graph.filterNodes((_id, attrs) => attrs.role === 'terminal');
 
   const routes: Route[] = [];
 
   for (const sourceId of sources) {
-    for (const sinkId of terminals) {
-      if (sourceId === sinkId) continue;
-      const paths = allSimplePaths(graph, sourceId, sinkId);
+    for (const destId of waypoints) {
+      if (sourceId === destId) continue;
+      const paths = allSimplePaths(graph, sourceId, destId);
       for (const path of paths) {
+        // A segment must not pass through an intermediate waypoint.
+        // Waypoints are natural boundaries (tanks buffer water; you fill,
+        // then you drain). Paths that pass through an intermediate waypoint
+        // are compositions of multiple segments and are handled separately.
+        const hasIntermediateWaypoint = path.slice(1, -1).some(
+          nodeId => graph.getNodeAttribute(nodeId, 'role') === 'terminal'
+        );
+        if (hasIntermediateWaypoint) continue;
+
+        // Count pumps in the path. The firmware supports at most one pump
+        // per segment. In well-structured topologies, intermediate tanks
+        // naturally prevent multi-pump segments; this is a safety guardrail.
+        const pumpCount = path.filter(
+          nodeId => graph.getNodeAttribute(nodeId, 'isPump')
+        ).length;
+        if (pumpCount > 1) {
+          console.warn(
+            `[deriveRoutes] Path ${path.join(' -> ')} crosses ${pumpCount} pumps.` +
+            ` Multi-pump paths must pass through an intermediate tank. Segment rejected.`
+          );
+          continue;
+        }
+
         routes.push(analyzePathSequence(graph, path));
       }
     }
   }
 
   return routes;
+}
+
+/**
+ * Determine whether a controller can claim a segment.
+ *
+ * A controller claims a segment if:
+ *   1. It can access all actuators (pumps, valves) in the segment.
+ *   2. Monitored segments: at least one flow sensor is local.
+ *   3. Unmonitored segments: the destination is local (for level-based stopping).
+ */
+export function controllerClaimsSegment(
+  route: Route,
+  controllerId: string,
+  topology: SiteTopology,
+): boolean {
+  const claimedNodeIds = new Set(
+    topology.remoteImports
+      .filter(c => c.controllerId === controllerId)
+      .map(c => c.nodeId),
+  );
+
+  const canAccessActuator = (nodeId: string) => {
+    const node = topology.nodes.find(n => n.id === nodeId);
+    if (!node) return false;
+    if (node.anchorId === controllerId) return true;
+    if (claimedNodeIds.has(nodeId)) return true;
+    return false;
+  };
+
+  // Every actuator must be accessible
+  for (const nodeId of route.nodeSequence) {
+    const node = topology.nodes.find(n => n.id === nodeId);
+    if (!node) return false;
+    if ((node.kind === 'pump' || node.kind === 'valve') && !canAccessActuator(nodeId)) {
+      return false;
+    }
+  }
+
+  // Monitored segments need a local flow sensor
+  if (route.flowSensors.length > 0) {
+    const hasLocalFlow = route.flowSensors.some(id => {
+      const node = topology.nodes.find(n => n.id === id);
+      return node && node.anchorId === controllerId;
+    });
+    if (!hasLocalFlow) return false;
+  }
+
+  // Unmonitored segments need a local destination (for level-based stopping)
+  if (route.flowSensors.length === 0 && route.destination) {
+    const destNode = topology.nodes.find(n => n.id === route.destination);
+    if (!destNode || destNode.anchorId !== controllerId) return false;
+  }
+
+  return true;
 }

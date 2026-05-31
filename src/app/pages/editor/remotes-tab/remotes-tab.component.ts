@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
-import { NODE_REGISTRY, legendSvgFor, buildGraph, activeGraph, deriveRoutes } from '@far-mon/core';
+import { NODE_REGISTRY, legendSvgFor, buildGraph, activeGraph, deriveRoutes, controllerClaimsSegment } from '@far-mon/core';
 import type { TopologyNode } from '../../../core/models/topology.model';
 
 @Component({
@@ -149,16 +149,12 @@ export class RemotesTabComponent {
     return deriveRoutes(activeGraph(graph));
   });
 
-  /** Routes owned by the active controller. */
+  /** Routes claimed by the active controller. */
   private activeControllerRoutes = computed(() => {
     const topology = this.siteTopology();
     const cid = this.activeControllerId();
     if (!topology || !cid) return [];
-    return this.allRoutes().filter(r => {
-      if (!r.valid) return false;
-      const flowNode = topology.nodes.find(n => n.id === r.flowSensors[0]);
-      return flowNode && flowNode.anchorId === cid;
-    });
+    return this.allRoutes().filter(r => controllerClaimsSegment(r, cid, topology));
   });
 
   /** Map: nodeId → how many active-controller routes reference it. */

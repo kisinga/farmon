@@ -8,6 +8,7 @@ import type {
 import type { SystemTopology } from '../models/topology.model';
 import {
   buildGraph, deriveRoutes, activeGraph, parseTopology, slug,
+  controllerClaimsSegment,
 } from '@far-mon/core';
 
 @Injectable({ providedIn: 'root' })
@@ -93,12 +94,9 @@ export class WorkspaceService {
 
   readonly activeControllerRoutes = computed<Route[]>(() => {
     const cid = this._activeControllerId();
-    if (!cid) return [];
-    return this.siteRoutes().filter(r => {
-      if (!r.valid) return false;
-      const flowNode = this._siteTopology()?.nodes.find(n => n.id === r.flowSensors[0]);
-      return flowNode && flowNode.anchorId === cid;
-    });
+    const topology = this._siteTopology();
+    if (!cid || !topology) return [];
+    return this.siteRoutes().filter(r => controllerClaimsSegment(r, cid, topology));
   });
 
   private _autosaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -414,9 +412,26 @@ export class WorkspaceService {
 
     for (const controller of topology.controllers) {
       const controllerRoutes = allRoutes.filter(r => {
-        if (!r.valid) return false;
-        const flowNode = topology.nodes.find(n => n.id === r.flowSensors[0]);
-        return flowNode && flowNode.anchorId === controller.id;
+        // All actuators must be local to this controller
+        const allActuatorsLocal = r.nodeSequence.every(id => {
+          const node = topology.nodes.find(n => n.id === id);
+          if (!node) return false;
+          if (node.kind !== 'pump' && node.kind !== 'valve') return true;
+          return node.anchorId === controller.id;
+        });
+        if (!allActuatorsLocal) return false;
+
+        // Monitored: needs a local flow sensor
+        if (r.monitored) {
+          return r.flowSensors.some(id => {
+            const node = topology.nodes.find(n => n.id === id);
+            return node && node.anchorId === controller.id;
+          });
+        }
+
+        // Unmonitored: needs local destination for level-based stopping
+        const destNode = topology.nodes.find(n => n.id === r.destination);
+        return destNode && destNode.anchorId === controller.id;
       });
 
       for (const route of controllerRoutes) {

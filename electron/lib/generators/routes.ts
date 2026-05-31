@@ -67,8 +67,12 @@ export function buildRouteContext(m: Manifest): RouteContext {
   const destOf = (r: typeof m.routes[number]) => parseRouteKey(r.key).destination;
   const conflictMasks = m.routes.map((r, i) => {
     let mask = 0;
+    // Unmonitored routes (no flow sensor) never conflict — there's no
+    // ambiguous reading to worry about.
+    if (!r.flow_sensor) return mask;
     for (let j = 0; j < m.routes.length; j++) {
       if (i === j) continue;
+      if (!m.routes[j].flow_sensor) continue;
       if (r.flow_sensor === m.routes[j].flow_sensor && destOf(r) !== destOf(m.routes[j])) {
         mask |= (1 << j);
       }
@@ -82,7 +86,7 @@ export function buildRouteContext(m: Manifest): RouteContext {
     const srcTank = r.source_type === "tank" ? tankIdx.get(r.source)! : "0xFF";
     const srcWs = r.source_type === "water_source" ? wsIdx.get(r.source)! : "0xFF";
     const dst = r.destination ? tankIdx.get(r.destination)! : "0xFF";
-    const flow = flowIdx.get(r.flow_sensor)!;
+    const flow = r.flow_sensor !== undefined ? flowIdx.get(r.flow_sensor)! : "0xFF";
     const maskBin = mask.toString(2).padStart(valves.length, "0");
     const conflictBin = conflictMasks[i].toString(2).padStart(m.routes.length, "0");
     const pump = r.crossesPump ? (pumpIdx.get(r.nodeSequence[r.pumpIndex]) ?? "0xFF") : "0xFF";

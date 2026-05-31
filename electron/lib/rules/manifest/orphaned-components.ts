@@ -22,7 +22,7 @@ export const orphanedComponents: ManifestRule = {
       }
     }
 
-    const usedFlows = new Set(m.routes.map((r) => r.flow_sensor));
+    const usedFlows = new Set(m.routes.map((r) => r.flow_sensor).filter(Boolean));
     for (const f of nodesByKind(m.nodes, 'flow_sensor')) {
       if (!usedFlows.has(String(f['id']))) {
         diagnostics.push({

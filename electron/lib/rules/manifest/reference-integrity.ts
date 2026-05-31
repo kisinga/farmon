@@ -52,7 +52,7 @@ export const referenceIntegrity: ManifestRule = {
         }
       }
 
-      if (!flowIds.has(route.flow_sensor)) {
+      if (route.flow_sensor !== undefined && !flowIds.has(route.flow_sensor)) {
         diagnostics.push({
           severity: "error",
           message: `Route "${route.name}": flow_sensor "${route.flow_sensor}" not found`,

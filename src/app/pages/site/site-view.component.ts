@@ -98,8 +98,8 @@ import { renderCompositeOverlays, CONTROLLER_COLORS } from '../../shared/canvas/
                 @if (route.hasPump) {
                   <span class="badge badge-ghost badge-xs">pump</span>
                 }
-                @if (!route.valid) {
-                  <span class="badge badge-error badge-xs">no sensor</span>
+                @if (!route.monitored) {
+                  <span class="badge badge-ghost badge-xs">unmonitored</span>
                 }
               </div>
             </div>
@@ -152,7 +152,7 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
     const groups = new Map<string, Array<{
       key: string; displaySource: string; displayDest: string;
       crossController: boolean; destController: string;
-      valveCount: number; hasPump: boolean; valid: boolean;
+      valveCount: number; hasPump: boolean; monitored: boolean;
     }>>();
 
     for (const route of routes) {
@@ -169,7 +169,7 @@ export class SiteViewComponent implements OnInit, AfterViewInit, OnDestroy {
         destController: controllerFriendly.get(destController) ?? destController,
         valveCount: route.valves.length,
         hasPump: route.crossesPump,
-        valid: route.valid,
+        monitored: route.monitored,
       };
 
       const arr = groups.get(srcController) ?? [];

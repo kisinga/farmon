@@ -580,7 +580,7 @@ export function registerIpcHandlers() {
       const graph = buildGraph(topology.nodes, topology.pipes);
       const active = activeGraph(graph);
       const routes = deriveRoutes(active);
-      return routes.filter(r => r.valid).map(r => ({ key: r.key, name: `${r.source}>${r.destination}` }));
+      return routes.map(r => ({ key: r.key, name: `${r.source}>${r.destination}` }));
     }
   );
 

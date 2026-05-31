@@ -76,7 +76,8 @@ export interface Route {
   source_type: 'tank' | 'water_source';
   destination?: string;
   valves: string[];
-  flow_sensor: string;
+  /** Primary flow sensor for this route. Undefined for unmonitored routes (no flow watchdog). */
+  flow_sensor?: string;
   max_runtime_seconds: number;
   /** Whether this route crosses a pump. */
   crossesPump: boolean;
@@ -109,6 +110,8 @@ export interface Route {
    * does not consume this list.
    */
   inline_pressure_sensors: string[];
+  /** True when this route has a flow sensor and participates in flow watchdog/confirm. */
+  monitored: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -107,7 +107,7 @@ export type { TankCalibration } from './units';
 // --- Graph ---
 export { buildGraph, type TopologyGraph, type NodeAttrs, type EdgeAttrs } from './graph/topology-graph';
 export { activeGraph, isNodeActive } from './graph/active-graph';
-export { deriveRoutes, parseRouteKey, type Route } from './graph/routes';
+export { deriveRoutes, parseRouteKey, controllerClaimsSegment, type Route } from './graph/routes';
 export { resolveTankLevelSources, findRouteAutomationSensor, type TankLevelSource, type RouteAutomationSensor } from './tank-level';
 export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes } from './graph/highlight';
 export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './graph/constraints';

@@ -163,8 +163,16 @@ assert(
   "Control loop has local pump (pump1)"
 );
 assert(
-  !controlYaml.includes('need_pump_1'),
-  "Control loop does NOT have remote pump (pump2)"
+  controlYaml.includes('need_pump_1'),
+  "Control loop has imported pump (pump2) via proxy"
+);
+assert(
+  controlYaml.includes('has_live_claim("pump1_relay")'),
+  "Local pump checks deadman claims"
+);
+assert(
+  !controlYaml.includes('has_live_claim("pump2_relay")'),
+  "Imported pump does NOT check deadman claims (proxy handles cross-controller claim)"
 );
 assert(
   controlYaml.includes('safety_override'),

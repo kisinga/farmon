@@ -147,7 +147,6 @@ export function generateSiteDocumentation(
   }>>();
 
   for (const route of compositeRoutes) {
-    if (!route.valid) continue;
     const srcSystem = route.source.split('/')[0];
     const destSystem = route.destination.split('/')[0];
     const srcNode = route.source.split('/').slice(1).join('/');

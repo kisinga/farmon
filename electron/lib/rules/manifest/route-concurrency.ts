@@ -15,6 +15,7 @@ export const routeConcurrency: ManifestRule = {
     // Group routes by flow sensor
     const byFlowSensor = new Map<string, Route[]>();
     for (const route of m.routes) {
+      if (!route.flow_sensor) continue;
       const list = byFlowSensor.get(route.flow_sensor) ?? [];
       list.push(route);
       byFlowSensor.set(route.flow_sensor, list);

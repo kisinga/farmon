@@ -258,9 +258,8 @@ export class X6Canvas {
       const fromSource = new Set(pipesFromSource(tg, selection.route.source));
       const routePipes = pipesToDestination(tg, selection.route.destination)
         .filter(id => fromSource.has(id));
-      const color = selection.route.valid ? UI_COLORS.selected : UI_COLORS.warning;
       for (const pid of routePipes) {
-        this.highlightEdge(pid, color, 2.5, 0.8, true);
+        this.highlightEdge(pid, UI_COLORS.selected, 2.5, 0.8, true);
       }
       for (const nid of selection.sharedNodeIds ?? []) {
         this.highlightNode(nid, UI_COLORS.warning);

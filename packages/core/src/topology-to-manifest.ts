@@ -47,26 +47,63 @@ export function topologyToManifestForController(
     return false;
   };
 
+  // ---------------------------------------------------------------------------
+  // Controller segment assignment — actuator-centric
+  //
+  // A controller claims a segment if:
+  //   1. It can access all actuators (pumps, valves) in the segment.
+  //   2. Monitored segments: at least one flow sensor is local.
+  //   3. Unmonitored segments: the destination is local (so the controller
+  //      can read the destination level and know when to stop).
+  //
+  // Source nodes do NOT need to be local — their levels are read via remote
+  // HA sensors when needed.
+  // ---------------------------------------------------------------------------
+
+  const canAccessActuator = (nodeId: string) => {
+    const node = topology.nodes.find(n => n.id === nodeId);
+    if (!node) return false;
+    if (node.anchorId === controllerId) return true;
+    if (claimedNodeIds.has(nodeId)) return true;
+    return false;
+  };
+
   const controllerRoutes = allRoutes.filter(r => {
-    if (!r.valid) return false;
-    const flowNode = topology.nodes.find(n => n.id === r.flowSensors[0]);
-    if (!flowNode || flowNode.anchorId !== controllerId) return false;
-    // Source and destination must be included in this controller's manifest
-    if (!isNodeIncluded(r.source)) return false;
-    if (r.destination && !isNodeIncluded(r.destination)) return false;
-    // Every actuator in the route must be owned or imported by this controller
+    // Every actuator must be accessible
     for (const nodeId of r.nodeSequence) {
       const node = topology.nodes.find(n => n.id === nodeId);
       if (!node) return false;
-      if ((node.kind === 'pump' || node.kind === 'valve') && !isNodeIncluded(nodeId)) {
+      if ((node.kind === 'pump' || node.kind === 'valve') && !canAccessActuator(nodeId)) {
         return false;
       }
     }
-    // Firmware only supports one pump per route
-    const pumpCount = r.nodeSequence.filter(nodeId => topology.nodes.find(n => n.id === nodeId)?.kind === 'pump').length;
-    if (pumpCount > 1) return false;
+
+    // Monitored segments need a local flow sensor
+    if (r.flowSensors.length > 0) {
+      const hasLocalFlow = r.flowSensors.some(id => {
+        const node = topology.nodes.find(n => n.id === id);
+        return node && node.anchorId === controllerId;
+      });
+      if (!hasLocalFlow) return false;
+    }
+
+    // Unmonitored segments need a local destination (for level-based stopping)
+    if (r.flowSensors.length === 0 && r.destination) {
+      const destNode = topology.nodes.find(n => n.id === r.destination);
+      if (!destNode || destNode.anchorId !== controllerId) return false;
+    }
+
     return true;
   });
+
+  // Collect waypoints referenced by claimed segments so their levels can be
+  // read remotely (via homeassistant sensors) even when the waypoint lives
+  // on another controller.
+  const referencedWaypointIds = new Set<string>();
+  for (const r of controllerRoutes) {
+    referencedWaypointIds.add(r.source);
+    if (r.destination) referencedWaypointIds.add(r.destination);
+  }
 
   // Nodes that appear in this controller's routes (for route table generation).
   const routeNodeIds = new Set<string>();
@@ -94,6 +131,7 @@ export function topologyToManifestForController(
     if (n.disabled) return false;
     if (isLocalNode(n)) return true;
     if (claimedNodeIds.has(n.id)) return true;
+    if (referencedWaypointIds.has(n.id)) return true;
     return false;
   };
   // Split into local and imported nodes
@@ -187,6 +225,7 @@ export function topologyToManifestForController(
       dest_has_level: destHasLevel,
       runtime_level_ok: runtimeLevelOk,
       inline_pressure_sensors: inlinePressureSensors,
+      monitored: r.flowSensors.length > 0,
     };
   });
 

@@ -10,7 +10,6 @@ export const unclaimedRouteNodes: TopologyRule = {
 
     for (const controller of topology.controllers) {
       const controllerRoutes = routes.filter(r => {
-        if (!r.valid) return false;
         const flowNode = topology.nodes.find(n => n.id === r.flowSensors[0]);
         return flowNode && flowNode.anchorId === controller.id;
       });

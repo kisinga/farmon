@@ -265,8 +265,8 @@ export type { Selection };
               <span class="badge badge-error badge-xs">Error</span>
             } @else if (hasWarningDiagnostics(route.key)) {
               <span class="badge badge-warning badge-xs">Warning</span>
-            } @else if (!route.valid) {
-              <span class="badge badge-ghost badge-xs">Passive</span>
+            } @else if (!route.monitored) {
+              <span class="badge badge-ghost badge-xs">Unmonitored</span>
             } @else if (hasInfoDiagnostics(route.key)) {
               <span class="badge badge-info badge-xs">Info</span>
             } @else {

@@ -246,7 +246,8 @@ export function buildRouteControlSection(m: Manifest): HaRouteControl {
     type: "vertical-stack",
     cards: [
       {
-        show_name: true, show_icon: true, type: "button", name: displayName(r.name), icon: "mdi:water-sync",
+        show_name: true, show_icon: true, type: "button", name: displayName(r.name),
+        icon: r.monitored ? "mdi:water-sync" : "mdi:water-sync-off",
         tap_action: { action: "call-service", service: "button.press", target: { entity_id: sys.routes[i].start } },
         show_state: false, color: routeColors[i % routeColors.length],
       },
@@ -258,7 +259,10 @@ export function buildRouteControlSection(m: Manifest): HaRouteControl {
     ],
   }));
 
-  const routeStatusEntities = m.routes.map((r, i) => ({ entity: sys.routes[i].status, name: displayName(r.name) }));
+  const routeStatusEntities = m.routes.map((r, i) => ({
+    entity: sys.routes[i].status,
+    name: r.monitored ? displayName(r.name) : `${displayName(r.name)} (unmonitored)`,
+  }));
 
   // Local hardware entities
   const valveEntities = localValves.map((v, i) => ({ entity: haIds(v, dev).cover!, name: `V${i + 1}` }));
@@ -452,7 +456,7 @@ export function buildManualView(m: Manifest): HaCardsView {
     content: [
       "**Manual control** — direct access to the pump, valves, and the operator override.",
       "",
-      "- **Safety Override**: bypasses pre-start gates (source-low / dest-full), runtime watchdogs (flow, max runtime, API), and lets the pump run without an owning route. Use only for commissioning or recovery.",
+      "- **Safety Override**: bypasses pre-start gates (source-low / dest-full) and runtime watchdogs (flow, max runtime, API) for active routes. It does NOT turn on the pump by itself — start a route (or use the pump relay directly) to run the pump. Use only for commissioning or recovery.",
       "- **Cover** is the safe way to operate a valve — timer-bounded, used by the routing layer.",
       "- **Open / Close coils** are diagnostic. They bypass the cover's position estimate; firing one during a route can desync state. After firing a coil, call `cover.stop_cover` on the same valve to resync.",
       "- Closing a cover *during* a running route does not stop the route — the flow watchdog will eventually fault it. Use the route Stop button instead.",

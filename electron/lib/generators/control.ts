@@ -1,20 +1,29 @@
 import type { Manifest } from "../schema.js";
-import { localNodesWithFlag, slug } from "../schema.js";
+import { localNodesWithFlag, nodesWithFlag, slug } from "../schema.js";
 import { SYSTEM_ENTITY_NAMES, routeEntityNames } from '@far-mon/core';
 
 const SYS = SYSTEM_ENTITY_NAMES;
 
 export function generateControl(m: Manifest): string {
-  const pumps = localNodesWithFlag(m, 'isPump');
+  const localPumps = nodesWithFlag(m.nodes, 'isPump');
+  const importedPumps = nodesWithFlag(m.imports, 'isPump');
+  const allPumps = [...localPumps, ...importedPumps];
 
-  // Conditional pump management in the transition interval
-  const pumpMgmt = pumps.length > 0 ? `
+  // Conditional pump management in the transition interval.
+  // Local pumps: drive relay directly + honor deadman claims.
+  // Imported pumps: toggle proxy switch; the proxy sends node_claim /
+  // node_release to the owning controller, which turns on its local relay.
+  const pumpMgmt = allPumps.length > 0 ? `
           // --- Pump management ---
-${pumps.map((p, i) => `          bool need_pump_${i} = pump_ref_count(${i}) > 0 || has_live_claim("${p['id']}_relay") || id(safety_override).state;
+${allPumps.map((p, i) => {
+  const isLocal = localPumps.some(lp => lp.id === p.id);
+  const claimCheck = isLocal ? ` || has_live_claim("${p['id']}_relay")` : '';
+  return `          bool need_pump_${i} = pump_ref_count(${i}) > 0${claimCheck};
           if (need_pump_${i} && !id(${p['id']}_relay).state) id(${p['id']}_relay).turn_on();
-          else if (!need_pump_${i} && id(${p['id']}_relay).state) id(${p['id']}_relay).turn_off();`).join('\n')}` : "";
+          else if (!need_pump_${i} && id(${p['id']}_relay).state) id(${p['id']}_relay).turn_off();`;
+}).join('\n')}` : "";
 
-  const pumpOffBoot = pumps.map(p => `\n      - switch.turn_off: ${p['id']}_relay`).join("");
+  const pumpOffBoot = localPumps.map(p => `\n      - switch.turn_off: ${p['id']}_relay`).join("");
 
   // Dead-man enforcement for all local actuators
   const actuators = [
@@ -318,34 +327,36 @@ ${pumpMgmt}
             const Route& r = ROUTES[rid];
             uint32_t runtime = now - slots[s].run_start_time;
 
-            // --- FLOW SAMPLING ---
-            float flow = get_flow_rate(r.flow_sensor);
-            if (!std::isnan(flow) && flow >= flow_threshold) {
-              if (slots[s].flow_active_since == 0) slots[s].flow_active_since = now;
-              slots[s].last_flow_time = now;
-              if (!slots[s].flow_confirmed && now - slots[s].flow_active_since >= flow_confirm) {
-                slots[s].flow_confirmed = true;
-                ESP_LOGI("safety", "Flow confirmed on slot %d route [%s]: %.2f L/min",
-                         s, r.name, flow);
+            // --- FLOW SAMPLING (monitored routes only) ---
+            if (r.flow_sensor != 0xFF) {
+              float flow = get_flow_rate(r.flow_sensor);
+              if (!std::isnan(flow) && flow >= flow_threshold) {
+                if (slots[s].flow_active_since == 0) slots[s].flow_active_since = now;
+                slots[s].last_flow_time = now;
+                if (!slots[s].flow_confirmed && now - slots[s].flow_active_since >= flow_confirm) {
+                  slots[s].flow_confirmed = true;
+                  ESP_LOGI("safety", "Flow confirmed on slot %d route [%s]: %.2f L/min",
+                           s, r.name, flow);
+                }
+              } else {
+                slots[s].flow_active_since = 0;
               }
-            } else {
-              slots[s].flow_active_since = 0;
-            }
 
-            // --- FLOW WATCHDOG ---
-            if (slots[s].fault_code == 0 && runtime > flow_watchdog) {
-              uint32_t age = now - slots[s].last_flow_time;
-              if (age > flow_watchdog) {
-                if (slots[s].flow_confirmed) {
-                  // Flow was established then stopped → tank full
-                  ESP_LOGI("safety", "Tank full on slot %d route [%s]: flow stopped %us ago",
-                           s, r.name, age / 1000);
-                  slots[s].tank_full_detected = true;
-                } else {
-                  // Flow was never established → genuine fault
-                  ESP_LOGE("safety", "No flow for %us on slot %d route [%s]",
-                           age / 1000, s, r.name);
-                  slots[s].fault_code = FAULT_NO_FLOW;
+              // --- FLOW WATCHDOG ---
+              if (slots[s].fault_code == 0 && runtime > flow_watchdog) {
+                uint32_t age = now - slots[s].last_flow_time;
+                if (age > flow_watchdog) {
+                  if (slots[s].flow_confirmed) {
+                    // Flow was established then stopped → tank full
+                    ESP_LOGI("safety", "Tank full on slot %d route [%s]: flow stopped %us ago",
+                             s, r.name, age / 1000);
+                    slots[s].tank_full_detected = true;
+                  } else {
+                    // Flow was never established → genuine fault
+                    ESP_LOGE("safety", "No flow for %us on slot %d route [%s]",
+                             age / 1000, s, r.name);
+                    slots[s].fault_code = FAULT_NO_FLOW;
+                  }
                 }
               }
             }
