@@ -11,6 +11,7 @@
 import { allSimplePaths } from 'graphology-simple-path';
 import type { TopologyGraph } from './topology-graph';
 import type { TopologyNode, SiteTopology } from '../topology.types';
+import { NODE_REGISTRY } from '../entity-registry';
 
 // ── Unified Route ───────────────────────────────────────────────────────────
 
@@ -163,7 +164,8 @@ export function controllerClaimsSegment(
   for (const nodeId of route.nodeSequence) {
     const node = topology.nodes.find(n => n.id === nodeId);
     if (!node) return false;
-    if ((node.kind === 'pump' || node.kind === 'valve') && !canAccessActuator(nodeId)) {
+    const desc = NODE_REGISTRY.get(node.kind);
+    if ((desc?.conflictClass === 'actuator') && !canAccessActuator(nodeId)) {
       return false;
     }
   }

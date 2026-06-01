@@ -5,6 +5,7 @@
 
 import { NODE_REGISTRY } from './entity-registry';
 import type { TopologyNode } from './topology.types';
+import type { FieldDef } from './entity-registry';
 
 export interface PinUsage {
   pin: string;
@@ -32,15 +33,25 @@ const POLARITY_LABELS: Record<string, string> = {
  * Adding a new node type with pin fields requires zero changes here —
  * just register it with `type: 'pin'` in its sidebarFields.
  */
+export function isFieldVisible(field: FieldDef, node: Record<string, unknown>): boolean {
+  if (!field.visibleWhen) return true;
+  const value = node[field.visibleWhen.key];
+  if ('eq' in field.visibleWhen) return value === field.visibleWhen.eq;
+  if ('in' in field.visibleWhen) return (field.visibleWhen.in as ReadonlyArray<unknown>).includes(value as string);
+  if ('neq' in field.visibleWhen) return value !== field.visibleWhen.neq;
+  return true;
+}
+
 export function collectPins(nodes: TopologyNode[]): PinUsage[] {
   const result: PinUsage[] = [];
   for (const node of nodes) {
     const desc = NODE_REGISTRY.get(node.kind);
     if (!desc) continue;
     const nodeName = node.name || node.id;
+    const nodeRecord = node as Record<string, unknown>;
     for (const field of desc.sidebarFields) {
       if (field.type !== 'pin') continue;
-      const nodeRecord = node as Record<string, unknown>;
+      if (!isFieldVisible(field, nodeRecord)) continue;
       const value = nodeRecord[field.key];
       if (typeof value === 'string' && value) {
         let polarity: string | undefined;

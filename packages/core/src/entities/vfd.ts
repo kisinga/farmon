@@ -91,7 +91,7 @@ export const vfdDescriptor: NodeDescriptor = {
   },
 
   sidebarFields: [
-    { key: 'controller', label: 'Controller', type: 'pin', pinCap: 'modbus' },
+    { key: 'controller', label: 'Controller', type: 'text', placeholder: 'Modbus controller ID' },
     { key: 'start_register', label: 'Start Register', type: 'number' },
     { key: 'speed_register', label: 'Speed Register', type: 'number' },
     { key: 'max_frequency', label: 'Max Frequency (Hz)', type: 'number' },

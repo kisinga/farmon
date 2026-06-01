@@ -18,7 +18,9 @@ export const FlowSensorNodeSchema = z.object({
   id: ComponentId,
   name: EntityName,
   pin: GpioPin,
+  signal_type: z.enum(['pulse', '4_20ma', '0_10v']).default('pulse'),
   flow_cal: z.number().default(450.0),
+  max_flow: z.number().default(100.0),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
@@ -59,7 +61,7 @@ export const flowSensorDescriptor: NodeDescriptor = {
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
-  defaultData: (n) => ({ name: `Flow ${n}`, pin: '', flow_cal: 450 }),
+  defaultData: (n) => ({ name: `Flow ${n}`, pin: '', signal_type: 'pulse', flow_cal: 450, max_flow: 100 }),
 
   renderSvg: (_data) => {
     const cx = W / 2, cy = H / 2, r = 14;
@@ -79,8 +81,19 @@ export const flowSensorDescriptor: NodeDescriptor = {
   },
 
   sidebarFields: [
-    { key: 'pin', label: 'Pin', type: 'pin', placeholder: 'GPIO47', pinCap: 'pulse_counter' },
-    { key: 'flow_cal', label: 'Cal (pulses/L)', type: 'number' },
+    { key: 'signal_type', label: 'Signal', type: 'select', options: [
+      { value: 'pulse', label: 'Pulse (digital)' },
+      { value: '4_20ma', label: '4-20 mA' },
+      { value: '0_10v', label: '0-10 V' },
+    ]},
+    { key: 'pin', label: 'Pin', type: 'pin', placeholder: 'GPIO47', pinCap: 'pulse_counter',
+      visibleWhen: { key: 'signal_type', eq: 'pulse' } },
+    { key: 'pin', label: 'Pin', type: 'pin', placeholder: 'AI1', pinCap: 'adc',
+      visibleWhen: { key: 'signal_type', in: ['4_20ma', '0_10v'] } },
+    { key: 'flow_cal', label: 'Cal (pulses/L)', type: 'number',
+      visibleWhen: { key: 'signal_type', eq: 'pulse' } },
+    { key: 'max_flow', label: 'Max Flow (L/min)', type: 'number',
+      visibleWhen: { key: 'signal_type', in: ['4_20ma', '0_10v'] } },
   ],
 
   // --- Codegen ---
@@ -90,9 +103,11 @@ export const flowSensorDescriptor: NodeDescriptor = {
       const sId = flowSensorId(node);
       const totalId = flowTotalId(node);
       const faultId = flowFaultCountId(node);
-      const header = resolveComponentHeader(ctx, node.pin, { purpose: 'pulse_counter', mode: 'INPUT_PULLUP' });
       const names = haNames(node);
-      return `\
+
+      if (node.signal_type === 'pulse') {
+        const header = resolveComponentHeader(ctx, node.pin, { purpose: 'pulse_counter', mode: 'INPUT_PULLUP' });
+        return `\
 ${header}
   id: ${sId}
   name: "${names.flow}"
@@ -127,6 +142,53 @@ ${header}
   time_unit: min
   icon: "mdi:counter"
   state_class: total_increasing`;
+      }
+
+      // Analog: 4-20mA or 0-10V
+      const header = resolveComponentHeader(ctx, node.pin, { purpose: 'adc' });
+      const is4to20 = node.signal_type === '4_20ma';
+      return `\
+${header}
+  id: ${sId}
+  name: "${names.flow}"
+  unit_of_measurement: "L/min"
+  icon: "mdi:water"
+  update_interval: \${update_interval}
+  filters:
+    - lambda: |-
+        float raw = float(x);
+        float flow = 0.0f;
+        ${is4to20
+          ? `if (raw < 4000.0f) return 0.0f;\n        flow = (raw - 4000.0f) / 16000.0f * ${node.max_flow};`
+          : `flow = raw / 10000.0f * ${node.max_flow};`
+        }
+        return flow;
+    - sliding_window_moving_average: { window_size: 5, send_every: 1 }
+  on_value:
+    - lambda: |-
+        const int SENSOR_IDX = ${idx};
+        for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
+          if (slots[s].state != 2 || slots[s].route_id < 0) continue;
+          if (ROUTES[slots[s].route_id].flow_sensor != SENSOR_IDX) continue;
+          if (x >= id(flow_threshold_l_min).state) {
+            id(${faultId}) = 0;
+          } else if (slots[s].flow_confirmed) {
+            id(${faultId}) += 1;
+            if (id(${faultId}) == 3) {
+              ESP_LOGW("safety", "Sensor fault on ${node.id} — 3 consecutive below-threshold readings");
+            }
+          }
+        }
+        if (derived_system_state() == 0) id(${faultId}) = 0;
+
+- platform: integration
+  sensor: ${sId}
+  name: "${names.total}"
+  id: ${totalId}
+  unit_of_measurement: "L"
+  time_unit: min
+  icon: "mdi:counter"
+  state_class: total_increasing`;
     },
 
     extraComponents: (node: FlowSensorNode) => {
@@ -144,9 +206,12 @@ ${header}
       };
     },
 
-    substitutions: (node: FlowSensorNode) => [
-      `flow_cal_${node.id}: "${node.flow_cal}"`,
-    ],
+    substitutions: (node: FlowSensorNode) => {
+      if (node.signal_type === 'pulse') {
+        return [`flow_cal_${node.id}: "${node.flow_cal}"`];
+      }
+      return [`flow_max_${node.id}: "${node.max_flow}"`];
+    },
 
     globals: (node: FlowSensorNode) => {
       const faultId = flowFaultCountId(node);
@@ -170,4 +235,24 @@ ${header}
     ],
 
   },
+
+  rules: [
+    {
+      id: 'flow-sensor-pin-required',
+      severity: 'error',
+      evaluate: (nodes) => {
+        const out: Array<{ message: string; target?: string }> = [];
+        for (const n of nodes) {
+          const data = n as Record<string, unknown>;
+          if (!data['pin']) {
+            out.push({
+              message: `Flow sensor "${n.name ?? n.id}": Pin not configured`,
+              target: n.id,
+            });
+          }
+        }
+        return out;
+      },
+    },
+  ],
 };

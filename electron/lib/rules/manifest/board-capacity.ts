@@ -2,15 +2,17 @@ import type { Manifest } from "../../schema.js";
 import type { BoardDef } from "../../board.js";
 import { pinsWithCapability } from "../../board.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
-import { NODE_REGISTRY } from '@far-mon/core';
+import { NODE_REGISTRY, isFieldVisible } from '@far-mon/core';
 import type { PinCap } from '@far-mon/core';
+import { loadExpansionBoard } from '../../../../packages/core/src/io-providers/expansion-board-loader';
+import { BUILTIN_EXPANSION_BOARDS } from '@far-mon/core';
 
 /**
  * Board pin-pool capacity — checks per-capability pin pools.
  *
  * Boards like the KC868-A16 have segregated pin pools: 16 relay outputs,
- * 4 ADC inputs, 3 pulse counter pins. The generic gpio-budget rule counts
- * total pins, but this rule catches over-subscription of individual pools.
+ * 4 ADC inputs, 3 pulse counter pins. Expansion boards add more channels.
+ * This rule counts demand vs supply across board + expansion channels.
  */
 export const boardCapacity: ManifestRule = {
   id: "board-capacity",
@@ -19,29 +21,45 @@ export const boardCapacity: ManifestRule = {
   evaluate(m: Manifest, board: BoardDef): RuleDiagnostic[] {
     const diagnostics: RuleDiagnostic[] = [];
 
-    // Count demanded pins by required capability (from entity sidebar field pinCap)
+    // Count demanded pins by required capability (from visible entity sidebar fields)
     const demandByCapability = new Map<PinCap, number>();
     for (const node of m.nodes) {
       const desc = NODE_REGISTRY.get(node.kind);
       if (!desc) continue;
       for (const field of desc.sidebarFields) {
         if (field.type !== 'pin' || !field.pinCap) continue;
-        const pin = node[field.key];
-        if (typeof pin === 'string' && pin && !pin.includes(':')) {
-          // Only count board pins — provider channels are managed by their provider
+        if (!isFieldVisible(field, node as Record<string, unknown>)) continue;
+        const pin = (node as Record<string, unknown>)[field.key];
+        if (typeof pin === 'string' && pin) {
           demandByCapability.set(field.pinCap, (demandByCapability.get(field.pinCap) ?? 0) + 1);
+        }
+      }
+    }
+
+    // Count supply from board-native pins
+    const supplyByCapability = new Map<PinCap, number>();
+    for (const cap of demandByCapability.keys()) {
+      supplyByCapability.set(cap, pinsWithCapability(board, cap).size);
+    }
+
+    // Count supply from expansion boards (I/O providers whose type is a known board model)
+    for (const prov of m.device.io_providers ?? []) {
+      const boardDef = BUILTIN_EXPANSION_BOARDS[prov.type];
+      if (!boardDef) continue;
+      for (const ch of boardDef.channels) {
+        for (const cap of ch.caps) {
+          supplyByCapability.set(cap, (supplyByCapability.get(cap) ?? 0) + 1);
         }
       }
     }
 
     // Check each capability pool
     for (const [cap, demand] of demandByCapability) {
-      const available = pinsWithCapability(board, cap);
-      if (demand > available.size) {
-        const pinList = [...available].join(', ');
+      const supply = supplyByCapability.get(cap) ?? 0;
+      if (demand > supply) {
         diagnostics.push({
           severity: 'error',
-          message: `${demand} pins require ${cap} capability, but ${board.label} only has ${available.size} (${pinList}).`,
+          message: `${demand} pins require ${cap} capability, but only ${supply} available.`,
           ruleId: this.id,
         });
       }
@@ -61,7 +79,7 @@ export const boardCapacity: ManifestRule = {
           if (!desc) continue;
           for (const field of desc.sidebarFields) {
             if (field.type !== 'pin') continue;
-            const pin = node[field.key];
+            const pin = (node as Record<string, unknown>)[field.key];
             if (typeof pin === 'string' && outputPins.has(pin)) {
               outputDemand++;
             }

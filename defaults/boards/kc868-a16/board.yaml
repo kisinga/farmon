@@ -45,9 +45,12 @@ buses:
     sda: GPIO4
     scl: GPIO5
     frequency: 100kHz
-  uart:
-    tx: GPIO13
-    rx: GPIO16
+
+uart_buses:
+  - id: uart_modbus
+    tx_pin: GPIO13
+    rx_pin: GPIO16
+    baud_rate: 9600
 
 expanders:
   - id: pcf8574_out_1

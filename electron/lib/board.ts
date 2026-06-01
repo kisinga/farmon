@@ -16,8 +16,6 @@ export const PinCapability = z.enum([
   "adc",
   "pwm",
   "pulse_counter",
-  "i2c",
-  "uart",
   "dac",
 ]);
 export type PinCapability = PinCap;
@@ -98,6 +96,14 @@ const ExpanderSchema = z.object({
 
 const BusSchema = z.record(z.union([z.string(), z.number()]));
 
+const UartBusSchema = z.object({
+  id: z.string().min(1),
+  tx_pin: z.string().min(1),
+  rx_pin: z.string().min(1),
+  de_pin: z.string().optional(),
+  baud_rate: z.number().int().positive().default(9600),
+});
+
 export const BoardDefSchema = z.object({
   schema: z.number().int().positive().optional(),
   id: z.string().optional(),
@@ -109,6 +115,7 @@ export const BoardDefSchema = z.object({
   buses: z.record(BusSchema),
   pins: z.array(PinDefSchema),
   expanders: z.array(ExpanderSchema).optional(),
+  uart_buses: z.array(UartBusSchema).optional(),
 });
 
 export type BoardDef = z.infer<typeof BoardDefSchema>;

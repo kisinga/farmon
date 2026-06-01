@@ -26,7 +26,7 @@ export function createModbusControllerDriver(config: ModbusControllerConfig): Io
       return [{
         fqid: '',
         label: `Modbus @${config.address}`,
-        caps: ['modbus'] as PinCap[],
+        caps: [] as PinCap[],
         provider: '',
       }];
     },

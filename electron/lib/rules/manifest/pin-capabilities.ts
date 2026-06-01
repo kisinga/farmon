@@ -2,7 +2,7 @@ import type { Manifest } from "../../schema.js";
 import type { BoardDef } from "../../board.js";
 import { pinsWithCapability } from "../../board.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
-import { NODE_REGISTRY } from '@far-mon/core';
+import { NODE_REGISTRY, isFieldVisible } from '@far-mon/core';
 import type { PinCap } from '@far-mon/core';
 
 export const pinCapabilities: ManifestRule = {
@@ -26,6 +26,7 @@ export const pinCapabilities: ManifestRule = {
 
       for (const field of desc.sidebarFields) {
         if (field.type !== 'pin' || !field.pinCap) continue;
+        if (!isFieldVisible(field, node as Record<string, unknown>)) continue;
         const pin = node[field.key];
         if (typeof pin !== 'string' || !pin) continue;
 

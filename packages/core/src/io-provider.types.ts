@@ -79,4 +79,11 @@ export interface IoProviderDriver {
 
   /** Board pins consumed by this provider's infrastructure (auto-reserved). */
   consumedPins?(): string[];
+
+  /**
+   * Emit top-level ESPHome components required by this provider.
+   * E.g., a Modbus expansion board emits its `modbus_controller:` hub.
+   * Returns an array of { section, yaml } pairs.
+   */
+  infrastructureYaml?(): Array<{ section: string; yaml: string }>;
 }

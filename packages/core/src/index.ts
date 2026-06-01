@@ -17,7 +17,7 @@ export type {
 export { effectiveTransport } from './topology.types';
 export type { Manifest, ManifestNode, LocalManifestNode, ImportedManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
-export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board.types';
+export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef, ExpansionBoardDef, ExpansionBoardChannelDef } from './board.types';
 export { boardSupportedTransports } from './board.types';
 export type { IoProviderDef } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
@@ -45,7 +45,7 @@ export { slug } from './slug';
 
 // --- Conversion & utilities ---
 export { topologyToManifestForController } from './topology-to-manifest';
-export { collectPins } from './pin-collect';
+export { collectPins, isFieldVisible } from './pin-collect';
 export { computePinOverlays } from './board-pin-overlays';
 export { reservedPins, exposedPins, pinsWithCap } from './board.types';
 export { UI_COLORS } from './colors';
@@ -94,6 +94,8 @@ export { createBoardDriver } from './io-providers/board-driver';
 export { buildResolveChannel, resolveComponentHeader } from './io-providers/resolve-channel';
 export { createModbusControllerDriver } from './io-providers/modbus-controller-driver';
 export { createProviderDriver } from './io-providers/provider-factory';
+export { createExpansionBoardDriver } from './io-providers/expansion-board-driver';
+export { BUILTIN_EXPANSION_BOARDS, listBuiltinExpansionBoards } from './io-providers/expansion-board-defs';
 
 // --- Static ---
 export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';

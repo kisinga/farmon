@@ -1,5 +1,5 @@
 import type { Manifest } from "../../schema.js";
-import { NODE_REGISTRY } from '@far-mon/core';
+import { NODE_REGISTRY, isFieldVisible } from '@far-mon/core';
 
 export interface PinUsage {
   pin: string;
@@ -27,6 +27,7 @@ export function collectAllPins(m: Manifest): PinUsage[] {
     const nodeName = (typeof node.name === 'string' && node.name) ? node.name : nodeId;
     for (const field of desc.sidebarFields) {
       if (field.type !== 'pin') continue;
+      if (!isFieldVisible(field, node as Record<string, unknown>)) continue;
       const value = node[field.key];
       if (typeof value === 'string' && value) {
         pins.push({

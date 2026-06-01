@@ -40,7 +40,7 @@ export interface FieldDef {
   placeholder?: string;
   /** Optional one-line help text shown beneath the field. Use plain language. */
   hint?: string;
-  /** Channel capability required for this field, e.g. 'adc', 'digital', 'modbus'. Filters channel selection. */
+  /** Channel capability required for this field, e.g. 'adc', 'digital'. Filters channel selection. */
   pinCap?: PinCap;
   /** Optional input-time char filter. Applied via [charFilter] in the sidebar template. */
   inputPolicy?: InputPolicy;
@@ -49,7 +49,14 @@ export interface FieldDef {
   /** On a `pin` field, names the sibling field that holds the relay polarity for this pin.
    *  Lets pin-collect attach polarity to the doc table without string-munging field keys. */
   polarityKey?: string;
+  /** Only show this field when the predicate matches the node's current data. */
+  visibleWhen?: FieldPredicate;
 }
+
+export type FieldPredicate =
+  | { key: string; eq: string | boolean | number }
+  | { key: string; in: ReadonlyArray<string | boolean | number> }
+  | { key: string; neq: string | boolean | number };
 
 // ---------------------------------------------------------------------------
 // Codegen — ESPHome YAML/C++ fragment generators per entity kind

@@ -34,7 +34,10 @@ export class SystemEditorService {
     const board = this.board();
     const topology = this.topology();
     if (!board) return [];
-    return this._buildDrivers(board, topology?.device.io_providers ?? []);
+    return this._buildDrivers(
+      board,
+      topology?.device.io_providers ?? [],
+    );
   });
 
   readonly reservedPins = computed(() => {

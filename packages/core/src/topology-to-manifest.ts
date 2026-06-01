@@ -4,6 +4,7 @@ import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
 import { resolveTankLevelSources } from "./tank-level";
 import { deriveRemoteHaEntityId } from "./remote-ha-entity";
 import { slug } from "./slug";
+import { NODE_REGISTRY } from './entity-registry';
 
 function assertSourceKind(kind: TopologyNode['kind']): asserts kind is 'tank' | 'water_source' {
   if (kind !== 'tank' && kind !== 'water_source') {
@@ -73,7 +74,8 @@ export function topologyToManifestForController(
     for (const nodeId of r.nodeSequence) {
       const node = topology.nodes.find(n => n.id === nodeId);
       if (!node) return false;
-      if ((node.kind === 'pump' || node.kind === 'valve') && !canAccessActuator(nodeId)) {
+      const desc = NODE_REGISTRY.get(node.kind);
+      if ((desc?.conflictClass === 'actuator') && !canAccessActuator(nodeId)) {
         return false;
       }
     }

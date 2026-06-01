@@ -151,7 +151,10 @@ export function generateDeviceYaml(
   lines.push("");
 
   // UART buses (for Modbus/RS485 devices)
-  const buses = m.device.uart_buses ?? [];
+  // Controller buses override built-in board buses by ID.
+  const busMap = new Map((board.uart_buses ?? []).map(b => [b.id, b]));
+  for (const b of m.device.uart_buses ?? []) busMap.set(b.id, b);
+  const buses = [...busMap.values()];
   if (buses.length > 0) {
     lines.push("uart:");
     for (const bus of buses) {
@@ -166,6 +169,18 @@ export function generateDeviceYaml(
     for (const bus of buses) {
       lines.push(`  - id: ${bus.id}_modbus`);
       lines.push(`    uart_id: ${bus.id}`);
+    }
+    lines.push("");
+  }
+
+  // Provider infrastructure (modbus_controller hubs, etc.)
+  for (const [section, blocks] of Object.entries(collected.infrastructure)) {
+    if (blocks.length === 0) continue;
+    lines.push(`${section}:`);
+    for (const block of blocks) {
+      for (const line of block.split('\n')) {
+        lines.push(line);
+      }
     }
     lines.push("");
   }

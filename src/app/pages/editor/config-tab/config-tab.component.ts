@@ -6,7 +6,8 @@ import { ElectronService } from '../../../core/services/electron.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
-import { slug, NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY } from '@far-mon/core';
+import { slug, NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY, BUILTIN_EXPANSION_BOARDS } from '@far-mon/core';
+import type { UartBus } from '@far-mon/core';
 import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
 
 interface TimingField {
@@ -147,6 +148,87 @@ const TIMING_FIELDS: TimingField[] = [
           </div>
         </div>
 
+        <!-- UART Buses -->
+        <div class="card bg-base-100 shadow-sm border border-base-200">
+          <div class="card-body gap-4">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-base">UART Buses</h2>
+              <button class="btn btn-sm btn-primary" (click)="addUartBus()">+ Add</button>
+            </div>
+            <!-- Board-native UART buses (read-only) -->
+            @for (bus of editor.board()?.uart_buses ?? []; track bus.id) {
+              <div class="border border-base-200 rounded-lg p-3 space-y-2 bg-base-200/30">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono text-xs">{{ bus.id }}</span>
+                    <span class="badge badge-ghost badge-xs">built-in</span>
+                  </div>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                  <label class="form-control">
+                    <span class="label-text text-xs">TX Pin</span>
+                    <span class="text-xs font-mono">{{ bus.tx_pin }}</span>
+                  </label>
+                  <label class="form-control">
+                    <span class="label-text text-xs">RX Pin</span>
+                    <span class="text-xs font-mono">{{ bus.rx_pin }}</span>
+                  </label>
+                  <label class="form-control">
+                    <span class="label-text text-xs">DE Pin</span>
+                    <span class="text-xs font-mono">{{ bus.de_pin ?? '—' }}</span>
+                  </label>
+                  <label class="form-control">
+                    <span class="label-text text-xs">Baud Rate</span>
+                    <span class="text-xs font-mono">{{ bus.baud_rate }}</span>
+                  </label>
+                </div>
+              </div>
+            }
+            <!-- User-configured UART buses -->
+            @for (bus of t.device.uart_buses ?? []; track bus.id) {
+              <div class="border border-base-200 rounded-lg p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <input type="text" class="input input-xs input-bordered font-mono w-24"
+                      [ngModel]="bus.id"
+                      (ngModelChange)="updateUartBusId(bus.id, $event)" />
+                  </div>
+                  <button class="btn btn-ghost btn-xs text-error" (click)="removeUartBus(bus.id)">Remove</button>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                  <label class="form-control">
+                    <span class="label-text text-xs">TX Pin</span>
+                    <input type="text" class="input input-xs input-bordered font-mono"
+                      [ngModel]="bus.tx_pin"
+                      (ngModelChange)="updateUartBusField(bus.id, 'tx_pin', $event)" />
+                  </label>
+                  <label class="form-control">
+                    <span class="label-text text-xs">RX Pin</span>
+                    <input type="text" class="input input-xs input-bordered font-mono"
+                      [ngModel]="bus.rx_pin"
+                      (ngModelChange)="updateUartBusField(bus.id, 'rx_pin', $event)" />
+                  </label>
+                  <label class="form-control">
+                    <span class="label-text text-xs">DE Pin</span>
+                    <input type="text" class="input input-xs input-bordered font-mono"
+                      [ngModel]="bus.de_pin ?? ''"
+                      (ngModelChange)="updateUartBusField(bus.id, 'de_pin', $event || undefined)" />
+                  </label>
+                  <label class="form-control">
+                    <span class="label-text text-xs">Baud Rate</span>
+                    <input type="number" class="input input-xs input-bordered font-mono"
+                      [ngModel]="bus.baud_rate"
+                      (ngModelChange)="updateUartBusField(bus.id, 'baud_rate', +$event)" />
+                  </label>
+                </div>
+              </div>
+            }
+            @if (!(editor.board()?.uart_buses ?? []).length && !(t.device.uart_buses ?? []).length) {
+              <p class="text-sm text-base-content/50">No UART buses configured. Add one before creating Modbus devices.</p>
+            }
+          </div>
+        </div>
+
         <!-- I/O Providers -->
         <div class="card bg-base-100 shadow-sm border border-base-200">
           <div class="card-body gap-4">
@@ -169,32 +251,38 @@ const TIMING_FIELDS: TimingField[] = [
                       [ngModel]="prov.type"
                       (ngModelChange)="updateProviderType(prov.id, $event)">
                       <option value="modbus_controller">Modbus Controller</option>
+                      @for (opt of builtinExpansionBoardOptions; track opt.value) {
+                        <option [value]="opt.value">{{ opt.label }}</option>
+                      }
                     </select>
                   </div>
                   <button class="btn btn-ghost btn-xs text-error" (click)="removeProvider(prov.id)">Remove</button>
                 </div>
-                @if (prov.type === 'modbus_controller') {
-                  <div class="grid grid-cols-2 gap-2">
-                    <label class="form-control">
-                      <span class="label-text text-xs">UART Bus</span>
-                      <select class="select select-xs select-bordered font-mono"
-                        [ngModel]="$any(prov.config)['bus']"
-                        (ngModelChange)="updateProviderConfig(prov.id, 'bus', $event)">
-                        <option value="">--</option>
-                        @for (bus of t.device.uart_buses ?? []; track bus.id) {
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="form-control">
+                    <span class="label-text text-xs">UART Bus</span>
+                    <select class="select select-xs select-bordered font-mono"
+                      [ngModel]="$any(prov.config)['bus']"
+                      (ngModelChange)="updateProviderConfig(prov.id, 'bus', $event)">
+                      <option value="">--</option>
+                      @for (bus of editor.board()?.uart_buses ?? []; track bus.id) {
+                        <option [value]="bus.id">{{ bus.id }} (built-in)</option>
+                      }
+                      @for (bus of t.device.uart_buses ?? []; track bus.id) {
+                        @if (!(editor.board()?.uart_buses ?? []).some(b => b.id === bus.id)) {
                           <option [value]="bus.id">{{ bus.id }}</option>
                         }
-                      </select>
-                    </label>
-                    <label class="form-control">
-                      <span class="label-text text-xs">Address</span>
-                      <input type="number" class="input input-xs input-bordered font-mono"
-                        [ngModel]="$any(prov.config)['address']"
-                        (ngModelChange)="updateProviderConfig(prov.id, 'address', +$event)"
-                        min="1" max="247" />
-                    </label>
-                  </div>
-                }
+                      }
+                    </select>
+                  </label>
+                  <label class="form-control">
+                    <span class="label-text text-xs">Address</span>
+                    <input type="number" class="input input-xs input-bordered font-mono"
+                      [ngModel]="$any(prov.config)['address']"
+                      (ngModelChange)="updateProviderConfig(prov.id, 'address', +$event)"
+                      min="1" max="247" />
+                  </label>
+                </div>
               </div>
             }
             @if (!(t.device.io_providers ?? []).length) {
@@ -259,6 +347,10 @@ export class ConfigTabComponent implements OnInit {
   protected deviceSchema = DeviceSchema;
   protected providerSchema = IoProviderDefSchema;
   protected componentIdPolicy = COMPONENT_ID_POLICY;
+  protected builtinExpansionBoardOptions = Object.entries(BUILTIN_EXPANSION_BOARDS).map(([value, def]) => ({
+    value,
+    label: def.label,
+  }));
 
   /** friendly_name of the most recent successful firmware generation. null = never deployed. */
   private lastDeployedFriendlyName = signal<string | null>(null);
@@ -391,7 +483,9 @@ export class ConfigTabComponent implements OnInit {
   updateProviderType(id: string, type: string) {
     this.editor.updateTopology(t => {
       const prov = (t.device.io_providers ?? []).find(p => p.id === id);
-      if (prov) { prov.type = type; prov.config = {}; }
+      if (!prov) return;
+      prov.type = type;
+      prov.config = { bus: '', address: 1 };
     });
   }
 
@@ -405,6 +499,47 @@ export class ConfigTabComponent implements OnInit {
   updateTiming(key: string, value: number) {
     this.editor.updateTopology((t) => {
       (t.timing as Record<string, number>)[key] = value;
+    });
+  }
+
+  addUartBus() {
+    this.editor.updateTopology(t => {
+      if (!t.device.uart_buses) t.device.uart_buses = [];
+      const n = t.device.uart_buses.length + 1;
+      t.device.uart_buses.push({
+        id: `uart_${n}`,
+        tx_pin: '',
+        rx_pin: '',
+        baud_rate: 9600,
+      });
+    });
+  }
+
+  removeUartBus(id: string) {
+    this.editor.updateTopology(t => {
+      t.device.uart_buses = (t.device.uart_buses ?? []).filter(b => b.id !== id);
+    });
+  }
+
+  updateUartBusId(oldId: string, newId: string) {
+    if (!newId || oldId === newId) return;
+    this.editor.updateTopology(t => {
+      const bus = (t.device.uart_buses ?? []).find(b => b.id === oldId);
+      if (bus) bus.id = newId;
+      // Cascade: update provider configs that reference this bus
+      for (const prov of t.device.io_providers ?? []) {
+        const config = prov.config as Record<string, unknown>;
+        if (config['bus'] === oldId) config['bus'] = newId;
+      }
+    });
+  }
+
+  updateUartBusField<K extends keyof UartBus>(id: string, key: K, value: UartBus[K]) {
+    this.editor.updateTopology(t => {
+      const bus = (t.device.uart_buses ?? []).find(b => b.id === id);
+      if (bus) {
+        (bus as Record<keyof UartBus, unknown>)[key] = value;
+      }
     });
   }
 }

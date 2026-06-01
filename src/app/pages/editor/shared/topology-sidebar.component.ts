@@ -7,7 +7,7 @@ import type { RuleDiagnostic } from '../../../core/models/electron-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
 import { buildGraph, activeGraph, deriveRoutes, RouteOverrideSchema, deriveHaEntityId, deriveTankCalibration, recommendSensorMaxPsi } from '@far-mon/core';
-import type { PinCap } from '@far-mon/core';
+import type { PinCap, FieldDef } from '@far-mon/core';
 import type { RouteOverride, TopologyNode } from '../../../core/models/topology.model';
 import { routeLevelInfo } from './route-level-info';
 import type { Selection } from './selection';
@@ -59,7 +59,7 @@ export type { Selection };
             (ngModelChange)="updateField.emit({ nodeId: sn.node.id, field: 'disabled', value: !$event })" />
           <!-- Entity-specific fields -->
           @for (field of sn.desc.sidebarFields; track field.key) {
-            @if (!isRemoteNode(sn.node) || field.type !== 'pin') {
+            @if (isFieldVisible(field, $any(sn.node)) && (!isRemoteNode(sn.node) || field.type !== 'pin')) {
             <label class="sidebar-label">{{ field.label }}</label>
             <div class="sidebar-control">
               @if (field.type === 'pin') {
@@ -413,6 +413,15 @@ export class TopologySidebarComponent {
 
   protected isExpanded(key: string): boolean {
     return this.expandedSections().has(key);
+  }
+
+  protected isFieldVisible(field: FieldDef, node: Record<string, unknown>): boolean {
+    if (!field.visibleWhen) return true;
+    const value = node[field.visibleWhen.key];
+    if ('eq' in field.visibleWhen) return value === field.visibleWhen.eq;
+    if ('in' in field.visibleWhen) return (field.visibleWhen.in as ReadonlyArray<unknown>).includes(value as string);
+    if ('neq' in field.visibleWhen) return value !== field.visibleWhen.neq;
+    return true;
   }
 
   protected toggleSection(key: string) {

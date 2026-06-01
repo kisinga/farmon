@@ -5,7 +5,11 @@
  * No runtime dependencies. Pure interfaces and helper functions.
  */
 
-export type PinCap = 'digital' | 'adc' | 'pwm' | 'pulse_counter' | 'i2c' | 'uart' | 'dac' | 'modbus';
+/** Channel capabilities — what a channel can do, not how it's wired. */
+export type PinCap = 'digital' | 'adc' | 'pwm' | 'pulse_counter' | 'dac';
+
+/** Transport types for expansion boards. */
+export type TransportType = 'modbus_rtu' | 'i2c_gpio';
 
 export interface PinDef {
   gpio: string;
@@ -59,6 +63,14 @@ export interface BoardDef {
   pins: PinDef[];
   /** I2C GPIO expander chips (PCF8574, PCF8575, MCP23017, etc.). */
   expanders?: ExpanderDef[];
+  /** Built-in UART buses (e.g. RS485 transceiver on fixed pins). */
+  uart_buses?: Array<{
+    id: string;
+    tx_pin: string;
+    rx_pin: string;
+    de_pin?: string;
+    baud_rate: number;
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +121,11 @@ export function reservedPins(board: BoardDef): Map<string, string> {
       }
     }
   }
+  for (const bus of board.uart_buses ?? []) {
+    reserved.set(bus.tx_pin, `UART ${bus.id} TX`);
+    reserved.set(bus.rx_pin, `UART ${bus.id} RX`);
+    if (bus.de_pin) reserved.set(bus.de_pin, `UART ${bus.id} DE`);
+  }
   return reserved;
 }
 
@@ -122,3 +139,28 @@ export function pinsWithCap(board: BoardDef, cap: PinCap): Set<string> {
 
 // Pin colors are now sourced from entity-registry via shared/colors.ts.
 // Use entityColor(kind) for entity colors and UI_COLORS for reserved/selected/available.
+
+// ---------------------------------------------------------------------------
+// Expansion board definitions
+// ---------------------------------------------------------------------------
+
+/** A channel on an expansion board — isomorphic to PinDef but transport-agnostic. */
+export interface ExpansionBoardChannelDef {
+  id: string;
+  label?: string;
+  caps: PinCap[];
+  /** Modbus-specific register metadata. Other transports may add their own keys. */
+  modbus?: {
+    register: number;
+    register_type: 'input' | 'holding' | 'coil' | 'discrete';
+    value_type?: string;
+  };
+}
+
+/** Schema-driven definition for an expansion board (e.g., Waveshare Modbus AI 8CH). */
+export interface ExpansionBoardDef {
+  model: string;
+  label: string;
+  transport_type: TransportType;
+  channels: ExpansionBoardChannelDef[];
+}

@@ -3,6 +3,7 @@ import type { BoardDef } from "../board.js";
 import { nodesByKind, NODE_REGISTRY, buildResolveChannel, createProviderDriver } from '@far-mon/core';
 import type { CodegenContext } from '@far-mon/core';
 
+
 // ---------------------------------------------------------------------------
 // Collected codegen output — organized by ESPHome YAML section
 // ---------------------------------------------------------------------------
@@ -14,6 +15,8 @@ export interface CollectedCodegen {
   substitutions: Record<string, string>;
   /** Catch-all sections: cover, number, binary_sensor, button, text_sensor, etc. */
   sections: Record<string, string[]>;
+  /** Top-level ESPHome infrastructure sections from provider drivers. */
+  infrastructure: Record<string, string[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -36,7 +39,16 @@ export function collectEntityCodegen(m: Manifest, board: BoardDef): CollectedCod
     globals: [],
     substitutions: {},
     sections: {},
+    infrastructure: {},
   };
+
+  // Collect infrastructure YAML from all providers
+  for (const { driver } of providers) {
+    const infra = driver.infrastructureYaml?.() ?? [];
+    for (const { section, yaml } of infra) {
+      (result.infrastructure[section] ??= []).push(yaml);
+    }
+  }
 
   // Determine the controller this manifest belongs to.
   // topologyToManifestForController sets controllerId; test fixtures that
