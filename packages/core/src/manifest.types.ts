@@ -24,9 +24,6 @@ export type LocalManifestNode = TopologyNode & {
   remoteDeviceName?: string;
   /** Resolved level source for tank nodes. */
   level_source?: TankLevelSource;
-  /** Lifted from upstream tank for pressure-sensor calibration. */
-  tank_height_m?: number;
-  tank_capacity_l?: number;
   /** Allow dynamic field access for sidebar field iteration. */
   [key: string]: unknown;
 };

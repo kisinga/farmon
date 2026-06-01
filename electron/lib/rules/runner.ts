@@ -3,7 +3,7 @@ import type { Manifest } from "../schema.js";
 import type { BoardDef } from "../board.js";
 import type { TopologyRule, ManifestRule, RuleDiagnostic } from "./rule.types.js";
 import { z } from 'zod';
-import { NODE_REGISTRY, REGISTRY_RULES, buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateEscalations, type ValidationResult, type TopologyNode } from '@far-mon/core';
+import { NODE_REGISTRY, REGISTRY_RULES, buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateRouteRules, evaluateEscalations, type ValidationResult, type TopologyNode } from '@far-mon/core';
 
 export type { ValidationResult } from '@far-mon/core';
 
@@ -109,6 +109,9 @@ export function runTopologyRules(
   // Entity-declared flow constraints (from NODE_REGISTRY.constraints)
   diagnostics.push(...evaluateConstraints(active, routes));
 
+  // Entity-declared route rules (property-aware + topology-aware)
+  diagnostics.push(...evaluateRouteRules(active, routes));
+
   // Explicit topology rules (if any remain beyond constraints)
   for (const rule of rules) {
     diagnostics.push(...rule.evaluate(active, routes, topology));
@@ -162,6 +165,7 @@ export function validateAll(
 
   const topoDiags: RuleDiagnostic[] = [];
   topoDiags.push(...evaluateConstraints(active, routes));
+  topoDiags.push(...evaluateRouteRules(active, routes));
   for (const rule of topologyRules) {
     topoDiags.push(...rule.evaluate(active, routes, topology));
   }

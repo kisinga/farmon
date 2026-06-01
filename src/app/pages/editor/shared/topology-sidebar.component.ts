@@ -154,9 +154,9 @@ export type { Selection };
           }
         </div>
 
-        <!-- Pressure sensor: derived calibration readout (read-only, computed from inputs). -->
-        @if (sn.node.kind === 'pressure_sensor') {
-          @if (pressureSensorReadout(sn.node); as r) {
+        <!-- Tank with intrinsic pressure sensor: derived calibration readout. -->
+        @if (sn.node.kind === 'tank') {
+          @if (tankPressureReadout(sn.node); as r) {
             <div class="mt-3 pt-3 border-t border-base-300/30">
               <h4 class="sidebar-title">Derived Calibration</h4>
               @if (r.cal) {
@@ -187,9 +187,25 @@ export type { Selection };
                 </div>
               } @else {
                 <div class="text-[10px] text-base-content/50">
-                  Enter tank height to derive calibration. Without it, this sensor measures line pressure only — Cal Empty / Cal Full must be set manually in Home Assistant.
+                  Enter tank height and sensor max to derive calibration.
                 </div>
               }
+            </div>
+          }
+        }
+
+        <!-- Inline pressure sensor: no upstream tank calibration in the new model. -->
+        @if (sn.node.kind === 'pressure_sensor') {
+          @if (pressureSensorReadout(sn.node); as r) {
+            <div class="mt-3 pt-3 border-t border-base-300/30">
+              <h4 class="sidebar-title">Sensor Range</h4>
+              <div class="sidebar-fields">
+                <span class="sidebar-label">Max rated</span>
+                <span class="text-xs font-mono">{{ r.sensorMax }} psi</span>
+              </div>
+              <div class="text-[10px] text-base-content/50 mt-1">
+                Inline pressure sensors measure line pressure. Cal Empty / Cal Full must be set manually in Home Assistant.
+              </div>
             </div>
           }
         }
@@ -562,30 +578,25 @@ export class TopologySidebarComponent {
     }
   }
 
-  // --- Pressure-sensor derived readout ---
+  // --- Tank pressure derived readout ---
 
   /**
-   * Compute the derived calibration panel for a pressure-sensor node. Returns
-   * null when sensor_max_psi is missing (impossible after schema validation,
-   * but the form lets fields be cleared transiently); returns `cal: null`
-   * when no upstream tank with `height_m` is connected (line-pressure mode).
-   *
-   * Tank dimensions live on the tank node — walk one hop upstream in the
-   * topology graph from the sensor to find the parent tank's `height_m`.
+   * Compute the derived calibration panel for a tank node with an intrinsic
+   * pressure sensor. Returns null when pressure_sensor_max_psi is missing.
    */
-  protected pressureSensorReadout(node: any): {
+  protected tankPressureReadout(node: any): {
     cal: { p_empty_psi: number; p_full_psi: number; working_span_psi: number } | null;
     recommended: number;
     swingPct: number;
     headroomPct: number;
   } | null {
-    const sensorMax = Number(node.sensor_max_psi);
+    const sensorMax = Number(node.pressure_sensor_max_psi);
     if (!Number.isFinite(sensorMax) || sensorMax <= 0) return null;
-    const tankHeight = this.upstreamTankHeight(node.id);
-    if (tankHeight == null || tankHeight <= 0) {
+    const tankHeight = Number(node.height_m);
+    if (!Number.isFinite(tankHeight) || tankHeight <= 0) {
       return { cal: null, recommended: 0, swingPct: 0, headroomPct: 0 };
     }
-    const elevation = Number(node.elevation_m ?? 0);
+    const elevation = Number(node.pressure_elevation_m ?? 0);
     const cal = deriveTankCalibration(tankHeight, Number.isFinite(elevation) ? elevation : 0);
     return {
       cal,
@@ -595,37 +606,18 @@ export class TopologySidebarComponent {
     };
   }
 
+  // --- Inline pressure-sensor readout ---
+
   /**
-   * Walk upstream from `nodeId` through pass-through nodes (valves, inline
-   * sensors, filters …) until we hit a tank, and return its `height_m`.
-   *
-   * A pump or VFD encountered along the way decouples the sensor from the
-   * tank's static column — return `undefined` in that case. Likewise
-   * `undefined` if we reach a non-tank terminal (water source, endpoint) or
-   * run out of pipes.
+   * Minimal readout for inline pressure sensors. In the new model they never
+   * have upstream tank calibration context, so we only show the sensor range.
    */
-  private upstreamTankHeight(nodeId: string): number | undefined {
-    const t = this.editor.topology();
-    if (!t) return undefined;
-    const visited = new Set<string>();
-    let currentId: string | undefined = nodeId;
-    while (currentId && !visited.has(currentId)) {
-      visited.add(currentId);
-      const inbound = t.pipes.find(p => p.to.split(':')[0] === currentId);
-      if (!inbound) return undefined;
-      const upstreamId = inbound.from.split(':')[0];
-      const upstream = t.nodes.find(n => n.id === upstreamId);
-      if (!upstream) return undefined;
-      if (upstream.kind === 'tank') {
-        const h = (upstream as { height_m?: number }).height_m;
-        return typeof h === 'number' ? h : undefined;
-      }
-      // Pumps / VFDs sit between the tank and the sensor and break the
-      // hydraulic column — sensor below them doesn't read tank head.
-      if (upstream.kind === 'pump' || upstream.kind === 'vfd') return undefined;
-      currentId = upstreamId;
-    }
-    return undefined;
+  protected pressureSensorReadout(node: any): {
+    sensorMax: number;
+  } | null {
+    const sensorMax = Number(node.sensor_max_psi);
+    if (!Number.isFinite(sensorMax) || sensorMax <= 0) return null;
+    return { sensorMax };
   }
 
   // --- Route override unit conversion ---

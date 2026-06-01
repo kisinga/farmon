@@ -3,14 +3,14 @@
  *
  * --- Tank level invariant ----------------------------------------------------
  *
- * A tank's level reading comes from one of two downstream sensor kinds,
- * connected to the tank in the active topology graph:
+ * A tank's level reading comes from one of two sources:
  *
  *   - level_sensor    — direct % reading from an ADC (preferred when present)
- *   - pressure_sensor — % derived from pressure-vs-calibration
+ *   - intrinsic pressure_sensor on the tank node — % derived from pressure-vs-calibration
  *
- * `resolveTankLevelSources` walks the graph once and returns a map keyed by
- * tank id. When both kinds are present on the same tank, level_sensor wins.
+ * `resolveTankLevelSources` walks the graph once for level_sensor nodes and
+ * checks each tank node for intrinsic pressure config. When both are present
+ * on the same tank, level_sensor wins.
  *
  * This is the single source of truth shared by:
  *   - manifest construction (tank annotation)
@@ -35,6 +35,7 @@
  * (different `key`); each is automatable independently.
  */
 import type { TopologyGraph } from './graph/topology-graph';
+import type { TankNode } from './entities/tank';
 
 /**
  * Subset of `Route` fields needed by `findRouteAutomationSensor`. Both the
@@ -53,11 +54,9 @@ export interface TankLevelSource {
   kind: 'level_sensor' | 'pressure_sensor';
 }
 
-const LEVEL_SOURCE_KINDS = ['level_sensor', 'pressure_sensor'] as const;
-
 /**
  * For each tank in the graph, find the first downstream level source.
- * level_sensor preferred over pressure_sensor when both present.
+ * level_sensor preferred over intrinsic pressure_sensor when both present.
  */
 export function resolveTankLevelSources(
   graph: TopologyGraph,
@@ -66,18 +65,24 @@ export function resolveTankLevelSources(
   const result = new Map<string, TankLevelSource>();
   for (const [id, kind] of nodeKindById) {
     if (kind !== 'tank' || !graph.hasNode(id)) continue;
-    for (const wantedKind of LEVEL_SOURCE_KINDS) {
-      let found: string | undefined;
-      for (const neighbor of graph.outNeighbors(id)) {
-        if (graph.hasNode(neighbor) && graph.getNodeAttribute(neighbor, 'kind') === wantedKind) {
-          found = neighbor;
-          break;
-        }
-      }
-      if (found) {
-        result.set(id, { id: found, kind: wantedKind });
+
+    // Prefer downstream level_sensor if present
+    let foundLevelSensor: string | undefined;
+    for (const neighbor of graph.outNeighbors(id)) {
+      if (graph.hasNode(neighbor) && graph.getNodeAttribute(neighbor, 'kind') === 'level_sensor') {
+        foundLevelSensor = neighbor;
         break;
       }
+    }
+    if (foundLevelSensor) {
+      result.set(id, { id: foundLevelSensor, kind: 'level_sensor' });
+      continue;
+    }
+
+    // Fall back to intrinsic pressure sensor on the tank node itself
+    const tankNode = graph.getNodeAttribute(id, 'data') as TankNode | undefined;
+    if (tankNode?.pressure_pin) {
+      result.set(id, { id, kind: 'pressure_sensor' });
     }
   }
   return result;

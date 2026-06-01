@@ -9,6 +9,7 @@
  */
 
 import type { SiteTopology, TopologyEvent } from "@far-mon/core";
+import { migrateTopology } from "@far-mon/core";
 
 export type TopologyEventRecord = TopologyEvent & {
   id: number;
@@ -36,7 +37,7 @@ export function reconstructTopology(
   if (snapshotIndex === -1) {
     // No valid snapshot found — start from empty topology
     topology = {
-      schema: 16,
+      schema: 17,
       controllers: [],
       nodes: [],
       pipes: [],
@@ -53,8 +54,8 @@ export function reconstructTopology(
       remoteImports: [],
     };
   } else {
-    const snapshotPayload = sorted[snapshotIndex].payload as { topology: SiteTopology };
-    topology = structuredClone(snapshotPayload.topology);
+    const snapshotPayload = sorted[snapshotIndex].payload as unknown as { topology: SiteTopology };
+    topology = structuredClone(migrateTopology(snapshotPayload.topology) as SiteTopology);
   }
 
   for (let i = snapshotIndex + 1; i < sorted.length; i++) {
@@ -173,9 +174,9 @@ function applyEvent(topology: SiteTopology, event: TopologyEvent): SiteTopology 
     }
     case "snapshot": {
       // Replace entire topology (skip old marker snapshots without topology)
-      const payload = event.payload as { topology?: SiteTopology };
+      const payload = event.payload as unknown as { topology?: SiteTopology };
       if (payload.topology) {
-        t = payload.topology;
+        t = structuredClone(migrateTopology(payload.topology) as SiteTopology);
       }
       break;
     }

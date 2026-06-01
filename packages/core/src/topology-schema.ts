@@ -91,7 +91,7 @@ export const ControllerSchema = z.object({
 });
 
 export const TopologySchema = z.object({
-  schema: z.literal(16),
+  schema: z.literal(16).or(z.literal(17)),
   controllers: z.array(ControllerSchema),
   // Empty topology is valid for a newly created site before any controller is added.
   nodes: z.array(TopologyNodeSchema),
@@ -196,7 +196,7 @@ function migrateLegacyTopology(data: unknown): unknown {
 // Schema-version migration chain
 // ---------------------------------------------------------------------------
 
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 17;
 
 type SchemaMigration = (data: Record<string, unknown>) => Record<string, unknown>;
 
@@ -412,6 +412,58 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
     data['remoteImports'] = data['remoteImports'] ?? [];
     return data;
   },
+  16: (data) => {
+    data['schema'] = 17;
+    // Tank-mounted pressure monitoring is now intrinsic to the tank node.
+    // Migrate any downstream pressure_sensor that was acting as a tank's
+    // level source onto the tank itself, then delete the sensor node and
+    // rewire pipes.
+    const nodes = (data['nodes'] ?? []) as Array<Record<string, unknown>>;
+    const pipes = (data['pipes'] ?? []) as Array<{ from: string; to: string }>;
+    const nodeById = new Map(nodes.map(n => [n['id'] as string, n] as const));
+    const portRef = (s: string): string => s.split(':')[0];
+
+    const nodesToDelete = new Set<string>();
+
+    for (const node of nodes) {
+      if (node['kind'] !== 'tank') continue;
+      const tankId = node['id'] as string;
+      const downstream = pipes
+        .map((p, idx) => ({ pipeIdx: idx, toNodeId: portRef(p.to) }))
+        .filter(d => portRef(pipes[d.pipeIdx].from) === tankId);
+
+      const pressureEntry = downstream.find(d => {
+        const n = nodeById.get(d.toNodeId);
+        return n && n['kind'] === 'pressure_sensor';
+      });
+      if (!pressureEntry) continue;
+
+      const psNode = nodeById.get(pressureEntry.toNodeId);
+      if (!psNode) continue;
+
+      // Copy pressure config onto tank as flat fields
+      if (psNode['pin'] != null) node['pressure_pin'] = psNode['pin'];
+      if (psNode['elevation_m'] != null) node['pressure_elevation_m'] = psNode['elevation_m'];
+      if (psNode['sensor_max_psi'] != null) node['pressure_sensor_max_psi'] = psNode['sensor_max_psi'];
+      if (psNode['pump_rated'] != null) node['pressure_pump_rated'] = psNode['pump_rated'];
+
+      nodesToDelete.add(pressureEntry.toNodeId);
+
+      // Delete the pipe from tank to pressure sensor
+      pipes.splice(pressureEntry.pipeIdx, 1);
+
+      // Rewire any remaining pipes that originated from the pressure sensor
+      // to originate from the tank's outlet instead.
+      for (const p of pipes) {
+        if (portRef(p.from) === pressureEntry.toNodeId) {
+          p.from = `${tankId}:outlet`;
+        }
+      }
+    }
+
+    data['nodes'] = nodes.filter(n => !nodesToDelete.has(n['id'] as string));
+    return data;
+  },
 };
 
 /**
@@ -462,7 +514,7 @@ export function migrateTopology(data: unknown): unknown {
  * Applies schema-version migrations and legacy-key cleanup before validation.
  */
 export function parseTopology(data: unknown): SiteTopology {
-  return TopologySchema.parse(migrateLegacyTopology(migrateTopology(data)));
+  return TopologySchema.parse(migrateLegacyTopology(migrateTopology(data))) as SiteTopology;
 }
 
 // ---------------------------------------------------------------------------

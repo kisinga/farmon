@@ -12,10 +12,14 @@ import {
   STANDARD_PSI,
   NODE_REGISTRY,
   parseTopology,
+  emitPressureCalNumbers,
+  emitPressureSensorYaml,
 } from '../../packages/core/src/index';
 import type { PressureSensorNode } from '../../packages/core/src/entities/pressure-sensor';
+import type { TankNode } from '../../packages/core/src/entities/tank';
 
 const pressureSensorDescriptor = NODE_REGISTRY.get('pressure_sensor')!;
+const tankDescriptor = NODE_REGISTRY.get('tank')!;
 
 let passed = 0;
 let failed = 0;
@@ -94,30 +98,16 @@ console.log('\nrecommendSensorMaxPsi:');
 }
 
 // ---------------------------------------------------------------------------
-// ESPHome codegen — extraComponents seeds
+// Shared helper: emitPressureCalNumbers
 // ---------------------------------------------------------------------------
 
-console.log('\nESPHome codegen: extraComponents seeds');
-
-const fullNode: PressureSensorNode = {
-  kind: 'pressure_sensor',
-  id: 'ps_test',
-  name: 'Tank Pressure',
-  pin: 'GPIO19',
-  tank_height_m: 5,
-  tank_capacity_l: 10000,
-  elevation_m: 2,
-  sensor_max_psi: 15,
-  pump_rated: true,
-  ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }],
-  position: { x: 0, y: 0 },
-};
+console.log('\nShared helper: emitPressureCalNumbers');
 
 {
-  const dummyCtx: import('@far-mon/core').CodegenContext = {
-    resolveChannel: () => ({ platform: 'template', config: '' }),
-  };
-  const components = pressureSensorDescriptor.codegen!.extraComponents!(fullNode, 0, dummyCtx);
+  const components = emitPressureCalNumbers(
+    { id: 'ps_test', name: 'Tank Pressure', sensor_max_psi: 15, elevation_m: 2 },
+    5, // tank height
+  );
   const numberSection = components.number ?? '';
   assert(numberSection.includes('initial_value: 0'), 'rangeMin seeded to 0 (sensor electrical bottom)');
   assert(numberSection.includes('initial_value: 15'), 'rangeMax seeded to sensor_max_psi (15)');
@@ -130,10 +120,37 @@ const fullNode: PressureSensorNode = {
 }
 
 // ---------------------------------------------------------------------------
-// ESPHome codegen — sensors block uses psi
+// Tank descriptor codegen — intrinsic pressure sensor
 // ---------------------------------------------------------------------------
 
-console.log('\nESPHome codegen: pressure sensor block');
+console.log('\nTank descriptor codegen: intrinsic pressure sensor');
+
+const tankWithPressure: TankNode = {
+  kind: 'tank',
+  id: 'tank1',
+  name: 'Rain Tank',
+  height_m: 5,
+  capacity_l: 10000,
+  pressure_pin: 'GPIO19',
+  pressure_elevation_m: 2,
+  pressure_sensor_max_psi: 15,
+  pressure_pump_rated: true,
+  ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+  position: { x: 0, y: 0 },
+  anchorId: 'ctrl',
+};
+
+{
+  const dummyCtx: import('@far-mon/core').CodegenContext = {
+    resolveChannel: () => ({ platform: 'template', config: '' }),
+  };
+  const components = tankDescriptor.codegen!.extraComponents!(tankWithPressure, 0, dummyCtx);
+  const numberSection = components.number ?? '';
+  assert(numberSection.includes('initial_value: 0'), 'rangeMin seeded to 0');
+  assert(numberSection.includes('initial_value: 15'), 'rangeMax seeded to sensor_max_psi');
+  assert(numberSection.includes('initial_value: 2.84'), 'calEmpty seeded from tank height + elevation');
+  assert(numberSection.includes('initial_value: 9.96'), 'calFull seeded from tank height + elevation');
+}
 
 {
   const ctx: import('@far-mon/core').CodegenContext = {
@@ -142,36 +159,39 @@ console.log('\nESPHome codegen: pressure sensor block');
       config: 'pin:\n    number: GPIO19',
     }),
   };
-  const yaml = pressureSensorDescriptor.codegen!.sensors!(fullNode, 0, ctx);
+  const yaml = tankDescriptor.codegen!.sensors!(tankWithPressure, 0, ctx);
   assert(yaml.includes('unit_of_measurement: "psi"'), 'pressure sensor block emits psi unit');
   assert(!yaml.includes('unit_of_measurement: "bar"'), 'no bar unit anywhere');
-  assert(yaml.includes('Tank Pressure Pressure'), 'pressure sensor name preserved');
-  assert(yaml.includes('Tank Pressure Level'), 'level template name preserved');
+  assert(yaml.includes('Rain Tank Pressure'), 'pressure sensor name preserved');
+  assert(yaml.includes('Rain Tank Level'), 'level template name preserved');
 }
 
 // ---------------------------------------------------------------------------
-// Line-pressure use case (no tank geometry)
+// Pressure sensor descriptor codegen — inline line-pressure use
 // ---------------------------------------------------------------------------
 
-console.log('\nLine-pressure use (no tank geometry):');
+console.log('\nPressure sensor descriptor codegen: line-pressure use');
 
 const lineNode: PressureSensorNode = {
   kind: 'pressure_sensor',
   id: 'ps_line',
   name: 'Line Pressure',
   pin: 'GPIO7',
-  // tank_height_m, tank_capacity_l intentionally omitted
   elevation_m: 0,
   sensor_max_psi: 145,
-  pump_rated: true,
+  pump_rated: false,
   ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }],
   position: { x: 0, y: 0 },
+  anchorId: 'ctrl',
 };
 
 {
+  const dummyCtx: import('@far-mon/core').CodegenContext = {
+    resolveChannel: () => ({ platform: 'template', config: '' }),
+  };
   const components = pressureSensorDescriptor.codegen!.extraComponents!(lineNode, 0, dummyCtx);
   const numberSection = components.number ?? '';
-  // calEmpty ← 0, calFull ← sensor_max_psi when geometry absent (inert until tuned)
+  // Inline sensors have no tank geometry, so calibration seeds 0 → sensor_max_psi
   assert(numberSection.includes('initial_value: 0'), 'calEmpty seeded to 0 when no tank');
   assert(numberSection.includes('initial_value: 145'), 'calFull seeded to sensor_max_psi when no tank');
 }
@@ -204,18 +224,18 @@ console.log('\nLegacy topology migration:');
 }
 
 // ---------------------------------------------------------------------------
-// Sensor-undersized rule
+// Tank descriptor validation rules
 // ---------------------------------------------------------------------------
 
-console.log('\nValidation rule: pressure-sensor-undersized');
+console.log('\nValidation rules: tank descriptor');
 
-const undersizedRule = pressureSensorDescriptor.rules!.find(r => r.id === 'pressure-sensor-undersized')!;
-assert(undersizedRule !== undefined, 'pressure-sensor-undersized rule registered');
+const undersizedRule = tankDescriptor.rules!.find(r => r.id === 'tank-pressure-undersized')!;
+assert(undersizedRule !== undefined, 'tank-pressure-undersized rule registered');
 assert(undersizedRule.severity === 'warning', 'severity is warning');
 
 {
   // 5 m tank, 2 m elevation, 5 psi sensor → P_full ≈ 9.96, recommended 15. 5 < 15 → warns.
-  const nodes = [{ ...fullNode, sensor_max_psi: 5 }];
+  const nodes = [{ ...tankWithPressure, pressure_sensor_max_psi: 5 }];
   const results = undersizedRule.evaluate(nodes, nodes);
   assert(results.length === 1, 'fires for 5 psi sensor on 5m+2m tank');
   assert(results[0].message.includes('15 psi'), 'message recommends 15 psi');
@@ -223,32 +243,26 @@ assert(undersizedRule.severity === 'warning', 'severity is warning');
 
 {
   // 5 m tank, 2 m elevation, 15 psi sensor → matches recommendation, no warning.
-  const nodes = [fullNode];
+  const nodes = [tankWithPressure];
   const results = undersizedRule.evaluate(nodes, nodes);
   assert(results.length === 0, 'no warning for properly sized sensor');
 }
 
 {
-  // No tank geometry → rule does not fire (line-pressure use)
-  const nodes = [lineNode];
+  // Tank without pressure sensor config → rule does not fire
+  const nodes = [{ ...tankWithPressure, pressure_pin: undefined, pressure_sensor_max_psi: undefined }];
   const results = undersizedRule.evaluate(nodes, nodes);
-  assert(results.length === 0, 'no warning when tank geometry absent (line-pressure use)');
+  assert(results.length === 0, 'no warning when tank has no pressure sensor config');
 }
 
-// ---------------------------------------------------------------------------
-// Elevated tank low-resolution rule
-// ---------------------------------------------------------------------------
-
-console.log('\nValidation rule: pressure-sensor-elevated-low-resolution');
-
-const elevatedLowResolutionRule = pressureSensorDescriptor.rules!.find(r => r.id === 'pressure-sensor-elevated-low-resolution')!;
-assert(elevatedLowResolutionRule !== undefined, 'pressure-sensor-elevated-low-resolution rule registered');
+const elevatedLowResolutionRule = tankDescriptor.rules!.find(r => r.id === 'tank-pressure-elevated-low-resolution')!;
+assert(elevatedLowResolutionRule !== undefined, 'tank-pressure-elevated-low-resolution rule registered');
 assert(elevatedLowResolutionRule.severity === 'warning', 'severity is warning');
 
 {
   // 2 m tank, 20 m elevation, 50 psi sensor → range/headroom is adequate,
   // but the useful tank swing is only ≈2.84 psi, about 6% of sensor range.
-  const nodes = [{ ...fullNode, tank_height_m: 2, elevation_m: 20, sensor_max_psi: 50 }];
+  const nodes = [{ ...tankWithPressure, height_m: 2, pressure_elevation_m: 20, pressure_sensor_max_psi: 50 }];
   const results = elevatedLowResolutionRule.evaluate(nodes, nodes);
   assert(results.length === 1, 'fires for elevated tank with poor working-span utilisation');
   assert(results[0].message.includes('Resolution may be poor'), 'message explains resolution risk');
@@ -258,7 +272,7 @@ assert(elevatedLowResolutionRule.severity === 'warning', 'severity is warning');
 {
   // Same geometry, but 30 psi is undersized for headroom, so the undersized
   // rule owns the diagnostic rather than emitting two competing warnings.
-  const nodes = [{ ...fullNode, tank_height_m: 2, elevation_m: 20, sensor_max_psi: 30 }];
+  const nodes = [{ ...tankWithPressure, height_m: 2, pressure_elevation_m: 20, pressure_sensor_max_psi: 30 }];
   const results = elevatedLowResolutionRule.evaluate(nodes, nodes);
   assert(results.length === 0, 'does not fire when the sensor is already undersized');
 }
@@ -266,7 +280,7 @@ assert(elevatedLowResolutionRule.severity === 'warning', 'severity is warning');
 {
   // Low utilisation can happen without elevation too, but this PRV-oriented
   // rule is specifically about elevated tanks with high empty pressure.
-  const nodes = [{ ...fullNode, tank_height_m: 1, elevation_m: 0, sensor_max_psi: 10 }];
+  const nodes = [{ ...tankWithPressure, height_m: 1, pressure_elevation_m: 0, pressure_sensor_max_psi: 10 }];
   const results = elevatedLowResolutionRule.evaluate(nodes, nodes);
   assert(results.length === 0, 'does not fire without elevation offset');
 }

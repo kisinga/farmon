@@ -154,7 +154,7 @@ export interface RemoteImport {
 }
 
 export interface SiteTopology {
-  schema: 16;
+  schema: 17;
   controllers: Controller[];
   nodes: TopologyNode[];
   pipes: PipeSegment[];
@@ -176,7 +176,7 @@ export interface SiteTopology {
 
 /** @deprecated Use SiteTopology. Per-controller projection shape used by frontend editor. */
 export interface SystemTopology {
-  schema: 14 | 15 | 16;
+  schema: 14 | 15 | 16 | 17;
   device: {
     name: string;
     friendly_name: string;

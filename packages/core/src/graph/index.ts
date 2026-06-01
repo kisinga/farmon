@@ -8,9 +8,10 @@ export { deriveRoutes, parseRouteKey, controllerClaimsSegment, type Route } from
 // Highlighting
 export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes } from './highlight';
 
-// Constraints
+// Constraints & route rules
 export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './constraints';
 export { evaluateConstraints } from './evaluate-constraints';
+export { evaluateRouteRules } from './evaluate-route-rules';
 
 // Conflicts
 export { detectConflicts, type ConflictManifest, type RouteConflict, type SharedResource } from './conflicts';

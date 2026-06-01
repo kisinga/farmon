@@ -11,6 +11,9 @@ import type { z } from 'zod';
 import type { ChannelUsage, ResolvedChannel } from './io-provider.types';
 import type { PinCap } from './board.types';
 import type { FlowConstraint } from './graph/constraints';
+import type { TopologyGraph } from './graph/topology-graph';
+import type { Route } from './graph/routes';
+import type { RuleDiagnostic } from './validation.types';
 import type { HaActionSpec, HaSlotSpec } from './ha';
 import type { InputPolicy } from './input-policy';
 import type { TopologyNode } from './topology.types';
@@ -132,6 +135,26 @@ export interface EntityRule {
   ) => Array<{ message: string; target?: string }>;
 }
 
+/**
+ * Route-aware entity rule — validates a single node within the context of a
+ * route.  Receives the full node data, the route, and the graph so it can
+ * inspect both node properties and topology.
+ *
+ * Use for validations that are conditional on node configuration (e.g. a
+ * pressurised water source needs a downstream valve, but an unpressurised one
+ * does not).
+ */
+export interface RouteRule {
+  id: string;
+  severity: 'error' | 'warning';
+  /** Evaluate this rule for a single node within a route. Return null when satisfied. */
+  evaluate: (
+    node: TopologyNode,
+    route: Route,
+    graph: TopologyGraph,
+  ) => RuleDiagnostic | null;
+}
+
 // ---------------------------------------------------------------------------
 // Node descriptor
 // ---------------------------------------------------------------------------
@@ -186,6 +209,9 @@ export interface NodeDescriptor {
 
   /** Per-entity validation rules — only consumed by electron rule runner. */
   rules?: EntityRule[];
+
+  /** Route-aware validation rules — checked per-node per-route. */
+  routeRules?: RouteRule[];
 
   /** Flow constraints this entity declares on routes it appears in. */
   constraints?: FlowConstraint[];

@@ -21,7 +21,7 @@ export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef } from './board
 export { boardSupportedTransports } from './board.types';
 export type { IoProviderDef } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
-export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, CodegenContext, TypedDescriptor, EntityKind, HaEntityKey } from './entity-registry';
+export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, RouteRule, CodegenContext, TypedDescriptor, EntityKind, HaEntityKey } from './entity-registry';
 export type { ChannelUsage, ResolvedChannel, IoChannel, IoProviderDriver } from './io-provider.types';
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
@@ -104,6 +104,18 @@ export {
 } from './units';
 export type { TankCalibration } from './units';
 
+// --- Pressure sensor shared helpers ---
+export {
+  PressureSensorConfigSchema,
+  emitPressureSensorYaml,
+  emitPressureCalNumbers,
+  pressureSensorHaNames,
+  getPressureSensorIds,
+  evaluatePressureSensorUndersized,
+  evaluatePressureSensorElevatedLowResolution,
+} from './pressure-sensor-shared';
+export type { PressureSensorConfig, PressureSensorCodegenIds, PressureSensorHaNames, PressureValidationIssue } from './pressure-sensor-shared';
+
 // --- Graph ---
 export { buildGraph, type TopologyGraph, type NodeAttrs, type EdgeAttrs } from './graph/topology-graph';
 export { activeGraph, isNodeActive } from './graph/active-graph';
@@ -112,6 +124,7 @@ export { resolveTankLevelSources, findRouteAutomationSensor, type TankLevelSourc
 export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes } from './graph/highlight';
 export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './graph/constraints';
 export { evaluateConstraints } from './graph/evaluate-constraints';
+export { evaluateRouteRules } from './graph/evaluate-route-rules';
 export { detectConflicts, type ConflictManifest, type RouteConflict, type SharedResource } from './graph/conflicts';
 export { evaluateEscalations } from './graph/evaluate-escalations';
 

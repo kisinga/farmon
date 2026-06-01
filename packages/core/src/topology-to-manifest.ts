@@ -117,11 +117,6 @@ export function topologyToManifestForController(
   // Resolve tank → level-source associations from graph topology
   const tankLevelSources = resolveTankLevelSources(active, nodeKindById);
 
-  const pressureSensorToTank = new Map<string, string>();
-  for (const [tankId, src] of tankLevelSources) {
-    if (src.kind === 'pressure_sensor') pressureSensorToTank.set(src.id, tankId);
-  }
-
   const pressureSensorIds = new Set(
     topology.nodes.filter(n => n.kind === 'pressure_sensor').map(n => n.id),
   );
@@ -142,16 +137,6 @@ export function topologyToManifestForController(
       if (manifestNode.kind === 'tank') {
         const src = tankLevelSources.get(manifestNode.id);
         if (src) manifestNode.level_source = src;
-      }
-      if (manifestNode.kind === 'pressure_sensor') {
-        const parentTankId = pressureSensorToTank.get(manifestNode.id);
-        if (parentTankId) {
-          const tank = nodeMap.get(parentTankId);
-          if (tank && tank.kind === 'tank') {
-            if (tank.height_m != null) manifestNode.tank_height_m = tank.height_m;
-            if (tank.capacity_l != null) manifestNode.tank_capacity_l = tank.capacity_l;
-          }
-        }
       }
       // Derive remote HA entity for nodes whose primary value lives elsewhere
       // (e.g. a local tank with a remote level source)
@@ -196,8 +181,14 @@ export function topologyToManifestForController(
         const src = tankLevelSources.get(tankId);
         if (!src) return true;
         if (src.kind === 'level_sensor') return true;
+        // src.kind === 'pressure_sensor'
+        if (src.id === tankId) {
+          // Intrinsic pressure sensor on tank
+          return !!(tank as { pressure_pump_rated?: boolean }).pressure_pump_rated;
+        }
+        // Legacy path — should no longer happen after migration
         const sensor = nodeMap.get(src.id);
-        return !sensor || (sensor.kind === 'pressure_sensor' && !!sensor.pump_rated);
+        return !sensor || (sensor.kind === 'pressure_sensor' && !!(sensor as { pump_rated?: boolean }).pump_rated);
       };
       return checkTank(r.source) && checkTank(r.destination);
     })();

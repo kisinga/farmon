@@ -35,12 +35,13 @@ const manifest: Manifest = {
     board: "kc868-a16",
   },
   nodes: [
-    { kind: "tank", id: "tank_main", name: "Main Tank", isLevelSensor: true },
+    { kind: "tank", id: "tank_main", name: "Main Tank" },
     { kind: "pump", id: "pump_main", name: "Main Pump" },
     { kind: "valve", id: "valve_a", name: "Valve A" },
     { kind: "valve", id: "valve_b", name: "Valve B" },
     { kind: "flow_sensor", id: "flow_main", name: "Flow Meter" },
   ],
+  imports: [],
   routes: [
     {
       key: "tank_main>valve_a",
@@ -51,11 +52,16 @@ const manifest: Manifest = {
       valves: ["valve_a"],
       flow_sensor: "flow_main",
       max_runtime_seconds: 1800,
-      needs_pump: true,
+      crossesPump: true,
+      pumpIndex: 1,
       nodeSequence: ["tank_main", "pump_main", "valve_a"],
       source_min_pct: 10,
       dest_max_pct: 0,
+      source_has_level: false,
+      dest_has_level: false,
       runtime_level_ok: true,
+      inline_pressure_sensors: [],
+      monitored: true,
     },
   ],
   timing: {

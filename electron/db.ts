@@ -497,7 +497,7 @@ function migrateLegacySitesToFlatTopology(db: Database): void {
     }
 
     const siteTopology = {
-      schema: 16,
+      schema: 17,
       controllers,
       nodes,
       pipes,

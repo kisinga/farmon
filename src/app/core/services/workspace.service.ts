@@ -163,7 +163,7 @@ export class WorkspaceService {
         this._boards.set(boards);
       } else {
         this._siteTopology.set({
-          schema: 16,
+          schema: 17,
           controllers: [],
           nodes: [],
           pipes: [],
@@ -400,7 +400,7 @@ export class WorkspaceService {
   private migrateV15ToV16(topology: SiteTopology): SiteTopology {
     const migrated: SiteTopology = {
       ...topology,
-      schema: 16,
+      schema: 17,
       remoteImports: [],
     };
 

@@ -208,7 +208,7 @@ export function duplicate(sourceId: string, newId: string, newFriendlyName: stri
 
 function emptyTopology(): SiteTopology {
   return parseTopology({
-    schema: 16,
+    schema: 17,
     controllers: [],
     nodes: [],
     pipes: [],

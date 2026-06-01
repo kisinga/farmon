@@ -5,7 +5,6 @@ import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { waterSourcePressureId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import type { FlowConstraint } from '../graph/constraints';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#0ea5e9'; // sky blue
@@ -17,6 +16,10 @@ export const WaterSourceNodeSchema = z.object({
   kind: z.literal('water_source'),
   id: ComponentId,
   name: EntityName,
+  /** When true (default), the source is pressurised and requires a downstream
+   *  isolation valve for positive shut-off.  When false (e.g. borehole, sump),
+   *  the pump itself provides isolation and no valve is required. */
+  pressurized: z.boolean().default(true).optional(),
   pressure_pin: GpioPin.optional(),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
@@ -66,6 +69,12 @@ export const waterSourceDescriptor: NodeDescriptor = {
   },
 
   sidebarFields: [
+    {
+      key: 'pressurized',
+      label: 'Pressurised supply',
+      type: 'toggle',
+      hint: 'Mains water or elevated tank — requires a downstream isolation valve. Disable for boreholes or sumps where the pump itself stops flow.',
+    },
     { key: 'pressure_pin', label: 'Pressure Pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc' },
   ],
 
@@ -95,13 +104,27 @@ ${header}
     }),
   },
 
-  constraints: [
-    { type: 'presence', id: 'source-downstream-valve', requiredKind: ['valve'],
-      position: 'downstream', baseSeverity: 'error',
-      description: 'Isolation valve required downstream of water source' },
-  ] satisfies FlowConstraint[],
-
   // --- Validation ---
+
+  routeRules: [{
+    id: 'source-downstream-valve',
+    severity: 'error',
+    evaluate: (node, route, graph) => {
+      if (!(node as WaterSourceNode).pressurized) return null;
+      const idx = route.nodeSequence.indexOf(node.id);
+      const downstream = route.nodeSequence.slice(idx + 1);
+      const searchRange = downstream.length > 0
+        ? downstream
+        : graph.outNeighbors(node.id);
+      if (searchRange.some(id => graph.getNodeAttribute(id, 'isValve'))) return null;
+      return {
+        severity: 'error',
+        message: `Route "${route.key}": Isolation valve required downstream of pressurised water source`,
+        target: route.key,
+        ruleId: 'source-downstream-valve',
+      };
+    },
+  }],
 
   rules: [{
     id: 'water-source-pressure-warning',
