@@ -47,9 +47,9 @@ const TIMING_FIELDS: TimingField[] = [
                 [schema]="deviceSchema"
                 fieldKey="friendly_name"
                 size="sm"
-                [value]="t.device.friendly_name"
+                [value]="editor.controllerDevice()?.friendly_name"
                 (valueChange)="updateFriendlyName($any($event))" />
-              <div class="label"><span class="label-text-alt text-base-content/60 font-mono">ESPHome ID: {{ t.device.name }}</span></div>
+              <div class="label"><span class="label-text-alt text-base-content/60 font-mono">ESPHome ID: {{ editor.controllerDevice()?.name }}</span></div>
             </label>
 
             @if (friendlyNameWarning(); as w) {
@@ -81,7 +81,7 @@ const TIMING_FIELDS: TimingField[] = [
               <div class="label"><span class="label-text font-medium">Board</span></div>
               <select
                 class="select select-bordered select-sm"
-                [ngModel]="t.device.board"
+                [ngModel]="editor.controllerDevice()?.board"
                 (ngModelChange)="changeBoard($event)"
               >
                 @for (b of boards.boards(); track b.id) {
@@ -185,7 +185,7 @@ const TIMING_FIELDS: TimingField[] = [
               </div>
             }
             <!-- User-configured UART buses -->
-            @for (bus of t.device.uart_buses ?? []; track bus.id) {
+            @for (bus of editor.controllerDevice()?.uart_buses ?? []; track bus.id) {
               <div class="border border-base-200 rounded-lg p-3 space-y-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
@@ -223,7 +223,7 @@ const TIMING_FIELDS: TimingField[] = [
                 </div>
               </div>
             }
-            @if (!(editor.board()?.uart_buses ?? []).length && !(t.device.uart_buses ?? []).length) {
+            @if (!(editor.board()?.uart_buses ?? []).length && !(editor.controllerDevice()?.uart_buses ?? []).length) {
               <p class="text-sm text-base-content/50">No UART buses configured. Add one before creating Modbus devices.</p>
             }
           </div>
@@ -236,7 +236,7 @@ const TIMING_FIELDS: TimingField[] = [
               <h2 class="card-title text-base">I/O Providers</h2>
               <button class="btn btn-sm btn-primary" (click)="addProvider()">+ Add</button>
             </div>
-            @for (prov of t.device.io_providers ?? []; track prov.id) {
+            @for (prov of editor.controllerDevice()?.io_providers ?? []; track prov.id) {
               <div class="border border-base-200 rounded-lg p-3 space-y-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
@@ -268,7 +268,7 @@ const TIMING_FIELDS: TimingField[] = [
                       @for (bus of editor.board()?.uart_buses ?? []; track bus.id) {
                         <option [value]="bus.id">{{ bus.id }} (built-in)</option>
                       }
-                      @for (bus of t.device.uart_buses ?? []; track bus.id) {
+                      @for (bus of editor.controllerDevice()?.uart_buses ?? []; track bus.id) {
                         @if (!(editor.board()?.uart_buses ?? []).some(b => b.id === bus.id)) {
                           <option [value]="bus.id">{{ bus.id }}</option>
                         }
@@ -285,7 +285,7 @@ const TIMING_FIELDS: TimingField[] = [
                 </div>
               </div>
             }
-            @if (!(t.device.io_providers ?? []).length) {
+            @if (!(editor.controllerDevice()?.io_providers ?? []).length) {
               <p class="text-sm text-base-content/50">No I/O providers configured.</p>
             }
           </div>
@@ -356,11 +356,11 @@ export class ConfigTabComponent implements OnInit {
   private lastDeployedFriendlyName = signal<string | null>(null);
 
   protected friendlyNameWarning = computed(() => {
-    const t = this.editor.topology();
+    const ctrl = this.editor.activeController();
     const last = this.lastDeployedFriendlyName();
-    if (!t || !last) return null;
+    if (!ctrl || !last) return null;
     const oldSlug = slug(last);
-    const newSlug = slug(t.device.friendly_name);
+    const newSlug = slug(ctrl.friendlyName ?? ctrl.id);
     if (oldSlug === newSlug) return null;
     return {
       oldDomain: `<domain>.${oldSlug}_*`,
@@ -418,9 +418,9 @@ export class ConfigTabComponent implements OnInit {
   });
 
   updateFriendlyName(value: string) {
-    this.editor.updateTopology((t) => {
-      t.device.friendly_name = value;
-      t.device.name = slug(value);
+    // `name` is derived by `controllerDevice` via `slug(friendlyName)` — no need to write it back.
+    this.editor.updateActiveController((ctrl) => {
+      ctrl.friendlyName = value;
     });
   }
 
@@ -442,10 +442,10 @@ export class ConfigTabComponent implements OnInit {
   }
 
   addProvider() {
-    this.editor.updateTopology(t => {
-      if (!t.device.io_providers) t.device.io_providers = [];
-      const n = t.device.io_providers.length + 1;
-      t.device.io_providers.push({
+    this.editor.updateActiveController(ctrl => {
+      if (!ctrl.io_providers) ctrl.io_providers = [];
+      const n = ctrl.io_providers.length + 1;
+      ctrl.io_providers.push({
         id: `provider_${n}`,
         type: 'modbus_controller',
         config: { bus: '', address: 1 },
@@ -454,15 +454,19 @@ export class ConfigTabComponent implements OnInit {
   }
 
   removeProvider(id: string) {
-    this.editor.updateTopology(t => {
-      t.device.io_providers = (t.device.io_providers ?? []).filter(p => p.id !== id);
+    this.editor.updateActiveController(ctrl => {
+      ctrl.io_providers = (ctrl.io_providers ?? []).filter(p => p.id !== id);
     });
   }
 
   updateProviderId(oldId: string, newId: string) {
     if (!newId || oldId === newId) return;
+    const cid = this.editor.controllerId();
+    if (!cid) return;
     this.editor.updateTopology(t => {
-      const prov = (t.device.io_providers ?? []).find(p => p.id === oldId);
+      const ctrl = t.controllers.find(c => c.id === cid);
+      if (!ctrl) return;
+      const prov = (ctrl.io_providers ?? []).find(p => p.id === oldId);
       if (!prov) return;
       prov.id = newId;
       // Cascade: update all node fields that reference this provider by value
@@ -481,8 +485,8 @@ export class ConfigTabComponent implements OnInit {
   }
 
   updateProviderType(id: string, type: string) {
-    this.editor.updateTopology(t => {
-      const prov = (t.device.io_providers ?? []).find(p => p.id === id);
+    this.editor.updateActiveController(ctrl => {
+      const prov = (ctrl.io_providers ?? []).find(p => p.id === id);
       if (!prov) return;
       prov.type = type;
       prov.config = { bus: '', address: 1 };
@@ -490,8 +494,8 @@ export class ConfigTabComponent implements OnInit {
   }
 
   updateProviderConfig(id: string, key: string, value: unknown) {
-    this.editor.updateTopology(t => {
-      const prov = (t.device.io_providers ?? []).find(p => p.id === id);
+    this.editor.updateActiveController(ctrl => {
+      const prov = (ctrl.io_providers ?? []).find(p => p.id === id);
       if (prov) (prov.config as Record<string, unknown>)[key] = value;
     });
   }
@@ -503,10 +507,10 @@ export class ConfigTabComponent implements OnInit {
   }
 
   addUartBus() {
-    this.editor.updateTopology(t => {
-      if (!t.device.uart_buses) t.device.uart_buses = [];
-      const n = t.device.uart_buses.length + 1;
-      t.device.uart_buses.push({
+    this.editor.updateActiveController(ctrl => {
+      if (!ctrl.uart_buses) ctrl.uart_buses = [];
+      const n = ctrl.uart_buses.length + 1;
+      ctrl.uart_buses.push({
         id: `uart_${n}`,
         tx_pin: '',
         rx_pin: '',
@@ -516,18 +520,22 @@ export class ConfigTabComponent implements OnInit {
   }
 
   removeUartBus(id: string) {
-    this.editor.updateTopology(t => {
-      t.device.uart_buses = (t.device.uart_buses ?? []).filter(b => b.id !== id);
+    this.editor.updateActiveController(ctrl => {
+      ctrl.uart_buses = (ctrl.uart_buses ?? []).filter(b => b.id !== id);
     });
   }
 
   updateUartBusId(oldId: string, newId: string) {
     if (!newId || oldId === newId) return;
+    const cid = this.editor.controllerId();
+    if (!cid) return;
     this.editor.updateTopology(t => {
-      const bus = (t.device.uart_buses ?? []).find(b => b.id === oldId);
+      const ctrl = t.controllers.find(c => c.id === cid);
+      if (!ctrl) return;
+      const bus = (ctrl.uart_buses ?? []).find(b => b.id === oldId);
       if (bus) bus.id = newId;
       // Cascade: update provider configs that reference this bus
-      for (const prov of t.device.io_providers ?? []) {
+      for (const prov of ctrl.io_providers ?? []) {
         const config = prov.config as Record<string, unknown>;
         if (config['bus'] === oldId) config['bus'] = newId;
       }
@@ -535,8 +543,8 @@ export class ConfigTabComponent implements OnInit {
   }
 
   updateUartBusField<K extends keyof UartBus>(id: string, key: K, value: UartBus[K]) {
-    this.editor.updateTopology(t => {
-      const bus = (t.device.uart_buses ?? []).find(b => b.id === id);
+    this.editor.updateActiveController(ctrl => {
+      const bus = (ctrl.uart_buses ?? []).find(b => b.id === id);
       if (bus) {
         (bus as Record<keyof UartBus, unknown>)[key] = value;
       }

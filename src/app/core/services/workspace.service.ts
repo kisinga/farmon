@@ -5,7 +5,7 @@ import type {
   TopologyNode, PipeSegment, RouteOverride,
   SiteMetadata, SiteSavePayload, SiteTopology, Controller,
 } from '@far-mon/core';
-import type { SystemTopology } from '../models/topology.model';
+
 import {
   buildGraph, deriveRoutes, activeGraph, parseTopology, slug,
   controllerClaimsSegment,
@@ -34,7 +34,7 @@ export class WorkspaceService {
 
   // --- Active controller computed signals ---
 
-  readonly activeTopology = computed<SystemTopology | null>(() => {
+  readonly activeTopology = computed<SiteTopology | null>(() => {
     const topology = this._siteTopology();
     const cid = this._activeControllerId();
     if (!topology || !cid) return null;
@@ -42,26 +42,10 @@ export class WorkspaceService {
     const controller = topology.controllers.find(c => c.id === cid);
     if (!controller) return null;
 
-    // Show ALL nodes and ALL pipes — the editor is a flat topology view.
-    // activeControllerId is a UI selection, not a filter.
-    return {
-      schema: 16,
-      device: {
-        name: slug(controller.friendlyName ?? controller.id),
-        friendly_name: controller.friendlyName ?? controller.id,
-        board: controller.board,
-        directory: controller.directory,
-        network: controller.network,
-        uart_buses: controller.uart_buses,
-        io_providers: controller.io_providers,
-      },
-      nodes: topology.nodes,
-      pipes: topology.pipes,
-      route_overrides: topology.route_overrides,
-      timing: topology.timing,
-      automations: topology.automations,
-      remoteImports: topology.remoteImports,
-    };
+    // Return the site topology directly (all editor tabs operate on SiteTopology now).
+    // Controller existence check is just a guard — if the active controller was
+    // removed, the editor should not show stale topology.
+    return topology;
   });
 
   readonly activeBoard = computed<BoardDef | null>(() => {
@@ -206,159 +190,29 @@ export class WorkspaceService {
     this._activeControllerId.set(null);
   }
 
-  // --- Controller topology projection (for any controller, not just active) ---
-
-  controllerTopology(controllerId: string): SystemTopology | null {
-    const topology = this._siteTopology();
-    if (!topology) return null;
-
-    const controller = topology.controllers.find(c => c.id === controllerId);
-    if (!controller) return null;
-
-    const nodes = topology.nodes.filter(n => n.anchorId === controllerId);
-    const nodeIds = new Set(nodes.map(n => n.id));
-    const pipes = topology.pipes.filter(p => {
-      const fromNode = p.from.split(':')[0];
-      const toNode = p.to.split(':')[0];
-      return nodeIds.has(fromNode) && nodeIds.has(toNode);
-    });
-
-    return {
-      schema: 16,
-      device: {
-        name: slug(controller.friendlyName ?? controller.id),
-        friendly_name: controller.friendlyName ?? controller.id,
-        board: controller.board,
-        directory: controller.directory,
-        network: controller.network,
-        uart_buses: controller.uart_buses,
-        io_providers: controller.io_providers,
-      },
-      nodes,
-      pipes,
-      route_overrides: topology.route_overrides,
-      timing: topology.timing,
-      automations: topology.automations,
-      remoteImports: topology.remoteImports,
-    };
-  }
-
   // --- Topology mutations ---
 
-  updateControllerTopology(controllerId: string, updater: (t: SystemTopology) => void): void {
+  updateController(controllerId: string, updater: (ctrl: Controller) => void): void {
     const topology = this._siteTopology();
     if (!topology) return;
-
-    const controller = topology.controllers.find(c => c.id === controllerId);
-    if (!controller) return;
 
     const clone = structuredClone(topology);
     const ctrlClone = clone.controllers.find(c => c.id === controllerId);
     if (!ctrlClone) return;
 
-    const nodeIds = new Set(clone.nodes.filter(n => n.anchorId === controllerId).map(n => n.id));
-    const activeTopo: SystemTopology = {
-      schema: 16,
-      device: {
-        name: slug(ctrlClone.friendlyName ?? ctrlClone.id),
-        friendly_name: ctrlClone.friendlyName ?? ctrlClone.id,
-        board: ctrlClone.board,
-        directory: ctrlClone.directory,
-        network: ctrlClone.network,
-        uart_buses: ctrlClone.uart_buses,
-        io_providers: ctrlClone.io_providers,
-      },
-      nodes: clone.nodes.filter(n => n.anchorId === controllerId),
-      pipes: clone.pipes.filter(p => {
-        const fromNode = p.from.split(':')[0];
-        const toNode = p.to.split(':')[0];
-        return nodeIds.has(fromNode) && nodeIds.has(toNode);
-      }),
-      route_overrides: clone.route_overrides,
-      timing: clone.timing,
-      automations: clone.automations,
-      remoteImports: clone.remoteImports,
-    };
-
-    updater(activeTopo);
-
-    ctrlClone.friendlyName = activeTopo.device.friendly_name;
-    ctrlClone.board = activeTopo.device.board;
-    ctrlClone.directory = activeTopo.device.directory;
-    ctrlClone.network = activeTopo.device.network;
-    ctrlClone.uart_buses = activeTopo.device.uart_buses;
-    ctrlClone.io_providers = activeTopo.device.io_providers;
-
-    clone.nodes = [
-      ...clone.nodes.filter(n => n.anchorId !== controllerId),
-      ...activeTopo.nodes.map(n => ({ ...n, anchorId: controllerId })),
-    ];
-
-    clone.pipes = [
-      ...clone.pipes.filter(p => {
-        const fromNode = p.from.split(':')[0];
-        const toNode = p.to.split(':')[0];
-        const fromAnchor = clone.nodes.find(n => n.id === fromNode)?.anchorId;
-        const toAnchor = clone.nodes.find(n => n.id === toNode)?.anchorId;
-        return !(fromAnchor === controllerId && toAnchor === controllerId);
-      }),
-      ...activeTopo.pipes,
-    ];
-
-    clone.route_overrides = activeTopo.route_overrides;
-    clone.timing = activeTopo.timing;
-    clone.automations = activeTopo.automations;
+    updater(ctrlClone);
 
     this._siteTopology.set(clone);
     this._markDirty(controllerId);
   }
 
-  updateActiveTopology(updater: (t: SystemTopology) => void): void {
+  updateSiteTopology(updater: (t: SiteTopology) => void): void {
     const topology = this._siteTopology();
     const cid = this._activeControllerId();
     if (!topology || !cid) return;
 
     const clone = structuredClone(topology);
-    const controller = clone.controllers.find(c => c.id === cid);
-    if (!controller) return;
-
-    // Pass the FULL topology to the updater — no filtering.
-    const fullTopo: SystemTopology = {
-      schema: 16,
-      device: {
-        name: slug(controller.friendlyName ?? controller.id),
-        friendly_name: controller.friendlyName ?? controller.id,
-        board: controller.board,
-        directory: controller.directory,
-        network: controller.network,
-        uart_buses: controller.uart_buses,
-        io_providers: controller.io_providers,
-      },
-      nodes: clone.nodes,
-      pipes: clone.pipes,
-      route_overrides: clone.route_overrides,
-      timing: clone.timing,
-      automations: clone.automations,
-      remoteImports: clone.remoteImports,
-    };
-
-    updater(fullTopo);
-
-    // Write controller-level fields back
-    controller.friendlyName = fullTopo.device.friendly_name;
-    controller.board = fullTopo.device.board;
-    controller.directory = fullTopo.device.directory;
-    controller.network = fullTopo.device.network;
-    controller.uart_buses = fullTopo.device.uart_buses;
-    controller.io_providers = fullTopo.device.io_providers;
-
-    // Replace everything — updater saw the full topology
-    clone.nodes = fullTopo.nodes;
-    clone.pipes = fullTopo.pipes;
-    clone.route_overrides = fullTopo.route_overrides;
-    clone.timing = fullTopo.timing;
-    clone.automations = fullTopo.automations;
-    clone.remoteImports = fullTopo.remoteImports;
+    updater(clone);
 
     this._siteTopology.set(clone);
     this._markDirty(cid);

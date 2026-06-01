@@ -700,8 +700,8 @@ export function registerIpcHandlers() {
       const snapshot = db.loadGeneration(generationId);
       if (!snapshot) throw new Error(`Generation not found: ${generationId}`);
 
-      // Backward compat: old snapshots may have stored SystemTopology (filtered)
-      // or SiteTopology. parseTopology handles both via migrateTopology.
+      // Backward compat: old snapshots may have stored per-controller projection
+      // (filtered) or SiteTopology. parseTopology handles both via migrateTopology.
       const topology = parseTopology(JSON.parse(snapshot.topology));
       const board = BoardDefSchema.parse(JSON.parse(snapshot.board)) as BoardDef;
 

@@ -6,7 +6,7 @@
  * there is no cross-render contamination and only one place knows about the
  * paint-cycle timing.
  */
-import type { HaMeta, SystemTopology } from '@far-mon/core';
+import type { HaMeta, SiteTopology, Device } from '@far-mon/core';
 import type { RenderableTopology } from '../../core/models/topology.model';
 import { NODE_REGISTRY, buildHaMeta } from '@far-mon/core';
 import { X6Canvas, type CanvasEvents } from '../../pages/editor/topology-x6-tab/x6-canvas';
@@ -77,7 +77,7 @@ export class TopologyRenderer {
    *  - Throws if a node declares a `binds` key whose slot isn't emitted in the
    *    SVG (catches drift between descriptor slots and meta bindings early).
    */
-  async exportHa(topology: SystemTopology): Promise<{ svg: string; meta: HaMeta }> {
+  async exportHa(topology: SiteTopology, device: Device): Promise<{ svg: string; meta: HaMeta }> {
     const { width, height } = canvasSizeFor(topology);
     this.canvas.resize(width, height);
 
@@ -95,7 +95,7 @@ export class TopologyRenderer {
       ? [round(viewBox.x), round(viewBox.y), round(viewBox.width), round(viewBox.height)]
       : [0, 0, round(width), round(height)];
 
-    const meta = buildHaMeta(topology, { viewBox: vbTuple });
+    const meta = buildHaMeta(topology, device, { viewBox: vbTuple });
     return { svg, meta };
   }
 

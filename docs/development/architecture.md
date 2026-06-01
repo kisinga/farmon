@@ -165,7 +165,7 @@ Classes: `.nav-label-overview`, `.nav-label-site`, `.nav-label-system` (text col
 
 Shared library with no Angular dependency. Key exports:
 
-- **Types:** `SystemTopology`, `Site`, `TopologyNode`, `PipeSegment`, `BoardDef`, `Route`, etc.
+- **Types:** `SiteTopology`, `Site`, `TopologyNode`, `PipeSegment`, `BoardDef`, `Route`, etc.
 - **Entity registry:** `NODE_REGISTRY` — descriptors for all node kinds (tank, pump, valve, etc.)
 - **Graph algorithms:** `buildGraph`, `activeGraph`, `deriveRoutes`, `buildCompositeGraph`
 - **Validation:** `parseTopology`, `parseSite` (Zod schemas)

@@ -4,7 +4,8 @@
  * Pure function — runs in Node or browser, no DOM required. SVG decoration
  * lives in the editor (browser-only) because it needs live X6 rendering.
  */
-import type { SystemTopology, TopologyNode } from './topology.types';
+import type { SiteTopology, TopologyNode } from './topology.types';
+import type { Device } from './manifest.types';
 import type { HaMeta, HaMetaNode, HaMetaPipe, HaActionSpec } from './ha';
 import { HA_SCHEMA_VERSION, isValidBindExpr } from './ha';
 import { NODE_REGISTRY } from './entity-registry';
@@ -15,7 +16,7 @@ export interface BuildHaMetaOptions {
   generatedAt?: string;
 }
 
-export function buildHaMeta(topology: SystemTopology, opts: BuildHaMetaOptions): HaMeta {
+export function buildHaMeta(topology: SiteTopology, device: Device, opts: BuildHaMetaOptions): HaMeta {
   const nodesById = new Map<string, { entityId: string }>();
   const nodes: Record<string, HaMetaNode> = {};
 
@@ -57,9 +58,9 @@ export function buildHaMeta(topology: SystemTopology, opts: BuildHaMetaOptions):
     // pressure pin), try a cross-reference resolver. If that also yields
     // nothing, the node has no HA representation and the meta entry is
     // dropped — the SCADA card renders it label-only.
-    const declared = desc.codegen?.haEntityIds?.(n, topology.device);
+    const declared = desc.codegen?.haEntityIds?.(n, device);
     const entityId = pickCanonicalEntityId(declared, desc.haDomain)
-      ?? resolveCrossReference(n, downstream, topology, nodeKindById);
+      ?? resolveCrossReference(n, downstream, device, nodeKindById);
     if (!entityId) continue;
     nodesById.set(n.id, { entityId });
 
@@ -134,7 +135,7 @@ function pickCanonicalEntityId(
 function resolveCrossReference(
   node: TopologyNode,
   downstream: Map<string, string[]>,
-  topology: SystemTopology,
+  device: Device,
   nodeKindById: Map<string, TopologyNode>,
 ): string | undefined {
   if (node.kind === 'tank') {
@@ -142,7 +143,7 @@ function resolveCrossReference(
       const neighbor = nodeKindById.get(neighborId);
       if (!neighbor || neighbor.kind !== 'level_sensor') continue;
       const desc = NODE_REGISTRY.get(neighbor.kind);
-      const declared = desc?.codegen?.haEntityIds?.(neighbor, topology.device);
+      const declared = desc?.codegen?.haEntityIds?.(neighbor, device);
       const id = declared?.['level'];
       if (id) return id;
     }

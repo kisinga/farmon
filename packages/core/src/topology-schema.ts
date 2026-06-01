@@ -109,8 +109,6 @@ export const TopologySchema = z.object({
 // Exported types & typed parse
 // ---------------------------------------------------------------------------
 
-import type { SystemTopology } from './topology.types';
-
 /** Raw Zod-inferred type (loose due to registry-driven union). */
 export type Topology = z.infer<typeof TopologySchema>;
 
@@ -484,7 +482,7 @@ export function migrateTopology(data: unknown): unknown {
     v = versionOf(d, v + 1);
   }
 
-  // Normalise synthetic SystemTopology objects sent by the frontend
+  // Normalise synthetic per-controller projection objects sent by the frontend
   // compatibility layer (schema 15/16 with `device` but no `controllers`).
   if ((d['schema'] === 15 || d['schema'] === 16) && d['device'] && !Array.isArray(d['controllers'])) {
     const device = d['device'] as Record<string, unknown>;
@@ -509,7 +507,7 @@ export function migrateTopology(data: unknown): unknown {
 
 /**
  * Parse and validate a raw topology document.
- * Returns a properly typed SystemTopology — the Zod schema guarantees
+ * Returns a properly typed SiteTopology — the Zod schema guarantees
  * the structure matches because entity schemas are the source of truth.
  * Applies schema-version migrations and legacy-key cleanup before validation.
  */

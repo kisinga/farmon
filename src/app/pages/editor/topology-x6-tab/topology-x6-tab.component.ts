@@ -6,7 +6,7 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 import { WorkspaceService } from '../../../core/services/workspace.service';
 import { BoardService } from '../../../core/services/board.service';
 import { ElectronService } from '../../../core/services/electron.service';
-import type { SystemTopology, TopologyNode, RouteOverride } from '../../../core/models/topology.model';
+import type { SiteTopology, TopologyNode, RouteOverride } from '../../../core/models/topology.model';
 import type { TemplateListEntry } from '../../../core/models/electron-api';
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
@@ -318,7 +318,7 @@ export class TopologyX6TabComponent {
   }
 
   /** Enrich topology with interconnect labels based on the active system context. */
-  private enrich(topology: SystemTopology): SystemTopology {
+  private enrich(topology: SiteTopology): SiteTopology {
     // TODO(anchor-mesh): interconnect enrichment removed — flat site topology
     return topology;
   }
@@ -342,7 +342,7 @@ export class TopologyX6TabComponent {
    * `reset: true` clears cells (use on initial load or full topology swap);
    * `reset: false` performs incremental reconciliation (use on granular edits).
    */
-  private renderToCanvas(topology: SystemTopology, opts: { reset: boolean }) {
+  private renderToCanvas(topology: SiteTopology, opts: { reset: boolean }) {
     if (this.canvas) {
       this.canvas.activeControllerId = this.workspace.activeControllerId() ?? undefined;
       this.canvas.nodeImportCounts = this.computeNodeImportCounts();
@@ -358,7 +358,7 @@ export class TopologyX6TabComponent {
     );
   }
 
-  private renderAndSnapshot(topology: SystemTopology) {
+  private renderAndSnapshot(topology: SiteTopology) {
     this.renderToCanvas(topology, { reset: false });
   }
 

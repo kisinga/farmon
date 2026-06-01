@@ -407,7 +407,7 @@ export class TopologySidebarComponent {
   private workspace = inject(WorkspaceService);
   protected routeOverrideSchema = RouteOverrideSchema;
   protected deriveHaEntityId = deriveHaEntityId;
-  protected device = computed(() => this.editor.topology()?.device ?? null);
+  protected device = computed(() => this.editor.controllerDevice() ?? null);
 
   private expandedSections = signal<Set<string>>(new Set(['node', 'pipe', 'routes']));
 

@@ -174,45 +174,18 @@ export interface SiteTopology {
   };
 }
 
-/** @deprecated Use SiteTopology. Per-controller projection shape used by frontend editor. */
-export interface SystemTopology {
-  schema: 14 | 15 | 16 | 17;
-  device: {
-    name: string;
-    friendly_name: string;
-    board: string;
-    directory?: string;
-    uart_buses?: UartBus[];
-    io_providers?: IoProviderDef[];
-    network?: NetworkConfig;
-  };
-  nodes: TopologyNode[];
-  pipes: PipeSegment[];
-  route_overrides: Record<string, RouteOverride>;
-  timing: {
-    valve_travel_time: number;
-    flow_watchdog: number;
-    flow_confirm: number;
-    flow_threshold: number;
-    api_watchdog: number;
-    update_interval: number;
-  };
-  automations: Automation[];
-  remoteImports: RemoteImport[];
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 export function getNodesByKind<K extends TopologyNode['kind']>(
-  t: SystemTopology, kind: K,
+  t: { nodes: TopologyNode[] }, kind: K,
 ): Extract<TopologyNode, { kind: K }>[] {
   return t.nodes.filter((n): n is Extract<TopologyNode, { kind: K }> => n.kind === kind);
 }
 
 export function getNodeByKind<K extends TopologyNode['kind']>(
-  t: SystemTopology, kind: K,
+  t: { nodes: TopologyNode[] }, kind: K,
 ): Extract<TopologyNode, { kind: K }> | undefined {
   return t.nodes.find((n): n is Extract<TopologyNode, { kind: K }> => n.kind === kind);
 }

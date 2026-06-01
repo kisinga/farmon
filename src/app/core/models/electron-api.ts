@@ -4,12 +4,12 @@ import type { ValidationResult, RuleDiagnostic, NetworkConfig } from '@far-mon/c
 import type {
   SiteListEntry, SiteFullPayload, SiteSavePayload,
   TemplateListEntry, Controller,
-  BoardDef, Route, SiteTopology, SystemTopology,
+  BoardDef, Route, SiteTopology,
 } from '@far-mon/core';
 
 export type { ValidationResult, RuleDiagnostic };
 export type { SiteListEntry, SiteFullPayload, SiteSavePayload, TemplateListEntry, Controller };
-export type { BoardDef, Route, SiteTopology, SystemTopology };
+export type { BoardDef, Route, SiteTopology };
 
 // --- Boards ---
 

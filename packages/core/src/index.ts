@@ -8,7 +8,7 @@
 
 // --- Types ---
 export type {
-  SiteTopology, SystemTopology, TopologyNode, PipeSegment, RouteOverride,
+  SiteTopology, TopologyNode, PipeSegment, RouteOverride,
   Automation, AutomationTrigger, UartBus, NetworkConfig, NetworkTransport,
   TankNode, PumpNode, EndpointNode, ValveNode,
   FlowSensorNode, WaterSourceNode, PressureSensorNode, LevelSensorNode, FilterNode, DosingPumpNode, VfdNode,

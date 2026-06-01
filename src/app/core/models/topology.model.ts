@@ -13,8 +13,7 @@ import type {
 
 /**
  * Minimal topology shape needed by the X6 canvas and SVG renderers.
- * Both `SiteTopology` (schema 16) and `SystemTopology` (deprecated compat)
- * satisfy this interface, so callers don't need casts.
+ * `SiteTopology` satisfies this interface, so callers don't need casts.
  */
 export interface RenderableTopology {
   nodes: TopologyNode[];
@@ -40,7 +39,6 @@ export type {
   Automation,
   AutomationTrigger,
   SiteTopology,
-  SystemTopology,
   Controller,
   NetworkConfig,
   UartBus,

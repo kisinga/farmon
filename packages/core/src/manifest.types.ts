@@ -1,4 +1,4 @@
-import type { SystemTopology, TopologyNode } from './topology.types';
+import type { SiteTopology, TopologyNode, NetworkConfig, UartBus, IoProviderDef } from './topology.types';
 import type { TankLevelSource } from './tank-level';
 
 // ---------------------------------------------------------------------------
@@ -13,9 +13,17 @@ import type { TankLevelSource } from './tank-level';
 // requires zero changes here.
 // ---------------------------------------------------------------------------
 
-/** Device and Timing types derived from SystemTopology (single source of truth). */
-export type Device = SystemTopology['device'];
-export type Timing = SystemTopology['timing'];
+/** Device and Timing types — single source of truth. */
+export type Device = {
+  name: string;
+  friendly_name: string;
+  board: string;
+  directory?: string;
+  network?: NetworkConfig;
+  uart_buses?: UartBus[];
+  io_providers?: IoProviderDef[];
+};
+export type Timing = SiteTopology['timing'];
 
 /** Local topology node with manifest-only extensions. */
 export type LocalManifestNode = TopologyNode & {

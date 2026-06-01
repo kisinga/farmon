@@ -21,7 +21,7 @@ import type { ToolchainInfo, GenerationMeta, DriftReport, DeploymentPlan, Deploy
 import { type FirmwareSecrets, EMPTY_FIRMWARE_SECRETS, isApiKeyValid } from '../../core/models/firmware-secrets';
 import type { ValidationResult } from '../../core/models/electron-api';
 import { randomBase64, randomHex } from '../../core/util/random-keys';
-import { boardSupportedTransports, effectiveTransport, slug, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
+import { boardSupportedTransports, effectiveTransport, slug, type NetworkConfig, type NetworkTransport, type Device } from '@far-mon/core';
 
 type ActiveTab = 'docs' | 'firmware' | 'ha' | 'serial';
 
@@ -685,6 +685,18 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
     !!this.toolchain()?.esphomePath && this.fwFiles().length > 0 && this.secretsValid()
   );
 
+  private buildDevice(ctrl: { id: string; friendlyName?: string; board: string; directory?: string; network?: NetworkConfig; uart_buses?: import('@far-mon/core').UartBus[]; io_providers?: import('@far-mon/core').IoProviderDef[] }): Device {
+    return {
+      name: slug(ctrl.friendlyName ?? ctrl.id),
+      friendly_name: ctrl.friendlyName ?? ctrl.id,
+      board: ctrl.board,
+      directory: ctrl.directory,
+      network: ctrl.network,
+      uart_buses: ctrl.uart_buses,
+      io_providers: ctrl.io_providers,
+    };
+  }
+
   protected buildBlockedReason = computed(() => {
     if (this.secretsHasPlaceholders()) return 'Configure WiFi secrets above before compiling';
     if (!this.secretsValid()) return 'Fix secret validation errors above';
@@ -713,8 +725,8 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
   protected updateNetwork(network: NetworkConfig) {
     const id = this.selectedSystemId();
     if (!id) return;
-    this.workspace.updateControllerTopology(id, (t) => {
-      t.device.network = network;
+    this.workspace.updateController(id, (ctrl) => {
+      ctrl.network = network;
     });
   }
 
@@ -787,12 +799,9 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
 
       const perSystemSvgs: Record<string, string> = {};
       for (const ctrl of topology.controllers) {
-        const ctrlTopo = this.workspace.controllerTopology(ctrl.id);
-        if (ctrlTopo) {
-          perSystemSvgs[ctrl.id] = await renderer.export(ctrlTopo, [
-            (canvas, t) => renderPerSystemOverlays(canvas.graphInstance, t),
-          ]);
-        }
+        perSystemSvgs[ctrl.id] = await renderer.export(topology, [
+          (canvas, t) => renderPerSystemOverlays(canvas.graphInstance, t),
+        ]);
       }
 
       const siteId = this.workspace.site()!.id;
@@ -830,16 +839,19 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
 
     if (!systemId) return;
 
-    const ctrlTopo = this.workspace.controllerTopology(systemId);
+    const topology = this.workspace.siteTopology();
+    const controller = topology?.controllers.find(c => c.id === systemId);
     const board = this.workspace.boards().get(systemId);
-    if (!ctrlTopo) return;
+    if (!controller) return;
+
+    const device = this.buildDevice(controller);
 
     // Load board SVG for display, use workspace board for validation
     await this.boards.refresh();
-    await this.boards.load(ctrlTopo.device.board);
+    await this.boards.load(device.board);
 
     // Set OTA address
-    this.otaAddress.set(`${ctrlTopo.device.name}.local`);
+    this.otaAddress.set(`${device.name}.local`);
 
     const siteId = this.workspace.site()?.id;
 
@@ -1041,11 +1053,9 @@ export class DeployPageComponent implements OnInit, OnDestroy, AfterViewInit {
         if (renderer && topology && topology.controllers.length > 0) {
           const artifacts: Array<{ name: string; svg: string; meta: unknown }> = [];
           for (const ctrl of topology.controllers) {
-            const ctrlTopo = this.workspace.controllerTopology(ctrl.id);
-            if (ctrlTopo) {
-              const { svg, meta } = await renderer.exportHa(ctrlTopo);
-              artifacts.push({ name: ctrlTopo.device.name, svg, meta });
-            }
+            const device = this.buildDevice(ctrl);
+            const { svg, meta } = await renderer.exportHa(topology, device);
+            artifacts.push({ name: device.name, svg, meta });
           }
           if (artifacts.length) await this.electron.writeScadaArtifacts(siteId, artifacts);
         }

@@ -125,7 +125,8 @@ export class PipelineRailComponent implements OnInit, OnDestroy {
     const states = new Map<StepId, StepState>();
     states.set('design', (t?.nodes?.length ?? 0) > 0 && (t?.pipes?.length ?? 0) > 0 ? 'complete' : 'untouched');
     states.set('remotes', (t?.remoteImports?.length ?? 0) > 0 ? 'complete' : 'untouched');
-    states.set('config', t?.device?.name && t?.device?.board ? 'complete' : 'untouched');
+    const device = this.editor.controllerDevice();
+    states.set('config', device?.name && device?.board ? 'complete' : 'untouched');
     states.set('automations', (t?.automations?.length ?? 0) > 0 ? 'complete' : 'untouched');
 
     // Active step overrides

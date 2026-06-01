@@ -2,14 +2,14 @@
  * Thin delegation layer — re-exports from @far-mon/core so existing
  * import paths (from '../shared/derive-routes') continue to work.
  */
-import type { SystemTopology } from '../../../core/models/topology.model';
-import { buildGraph, deriveRoutes as _deriveRoutes, type Route } from '@far-mon/core';
+
+import { buildGraph, deriveRoutes as _deriveRoutes, type Route, type TopologyNode, type PipeSegment } from '@far-mon/core';
 
 export type DerivedRoute = Route;
 
 export { type Route } from '@far-mon/core';
 
-export function deriveRoutes(topology: SystemTopology): DerivedRoute[] {
+export function deriveRoutes(topology: { nodes: TopologyNode[]; pipes: PipeSegment[] }): DerivedRoute[] {
   const graph = buildGraph(topology.nodes, topology.pipes);
   return _deriveRoutes(graph);
 }

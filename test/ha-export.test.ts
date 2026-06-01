@@ -11,7 +11,7 @@
  * Usage: npx tsx test/ha-export.test.ts
  */
 
-import { buildHaMeta, HA_SCHEMA_VERSION, deriveHaEntityId, esphomeServicePrefix, type SystemTopology } from '@far-mon/core';
+import { buildHaMeta, HA_SCHEMA_VERSION, deriveHaEntityId, esphomeServicePrefix, type SiteTopology, type Device } from '@far-mon/core';
 
 let passed = 0;
 let failed = 0;
@@ -47,13 +47,23 @@ function assertThrows(fn: () => unknown, name: string, match?: RegExp) {
 
 const FIXED_TIME = '2026-01-01T00:00:00.000Z';
 
-function fixture(): SystemTopology {
+const FIXTURE_DEVICE: Device = Object.freeze({
+  name: 'gh-1',
+  friendly_name: 'Greenhouse',
+  board: 'heltec_v3',
+});
+
+function fixture(): SiteTopology {
   // Intentionally divergent: slug(name) = 'gh_1' but slug(friendly_name) = 'greenhouse'.
   // HA derives entity_ids from friendly_name; ESPHome services use name. Both must be testable
   // independently, so the fixture forces them apart.
   return {
-    schema: 14,
-    device: { name: 'gh-1', friendly_name: 'Greenhouse', board: 'heltec_v3' },
+    schema: 17,
+    controllers: [{
+      id: 'gh-1',
+      board: 'heltec_v3',
+      friendlyName: 'Greenhouse',
+    }],
     nodes: [
       {
         kind: 'tank', id: 'tank_main', name: 'Main Tank',
@@ -104,6 +114,7 @@ function fixture(): SystemTopology {
       flow_threshold: 0.5, api_watchdog: 300, update_interval: 5,
     },
     automations: [],
+    remoteImports: [],
   };
 }
 
@@ -112,7 +123,7 @@ function fixture(): SystemTopology {
 console.log('HA SCADA Export — Meta sidecar');
 console.log('==============================\n');
 
-const meta = buildHaMeta(fixture(), { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
+const meta = buildHaMeta(fixture(), FIXTURE_DEVICE, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
 
 // --- Schema & structure ---
 
@@ -160,7 +171,7 @@ assert(meta.pipes['p3']?.toEntity === 'cover.greenhouse_valve_a', 'p3 toEntity s
 // --- Determinism: 3 runs produce identical JSON ---
 
 console.log('\nDeterminism:');
-const runs = [1, 2, 3].map(() => JSON.stringify(buildHaMeta(fixture(), { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME })));
+const runs = [1, 2, 3].map(() => JSON.stringify(buildHaMeta(fixture(), FIXTURE_DEVICE, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME })));
 assert(runs[0] === runs[1] && runs[1] === runs[2], '3 runs byte-identical');
 
 // Node + pipe keys sorted in emitted object
@@ -179,7 +190,7 @@ const withOverride = fixture();
 // pump_1 is at index 2 (tank, level_sensor, pump, valve).
 withOverride.nodes[2].haActions = [{ id: 'custom', label: 'Custom', service: 'script.my_custom' }];
 withOverride.nodes[2].binds = { label: 'attributes.current_power|format:watts' };
-const metaOv = buildHaMeta(withOverride, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
+const metaOv = buildHaMeta(withOverride, FIXTURE_DEVICE, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
 assert(metaOv.nodes['pump_1'].actions?.length === 1, 'per-node actions replace defaults entirely');
 assert(metaOv.nodes['pump_1'].actions?.[0].id === 'custom', 'override action id wins');
 assert(metaOv.nodes['pump_1'].binds?.['label'] === 'attributes.current_power|format:watts', 'override bind wins');
@@ -192,7 +203,7 @@ assertThrows(
     const bad = fixture();
     // tank declares slots { label, value }; binding onto a slot it doesn't declare should throw.
     bad.nodes[0].binds = { nonexistent: 'state' };
-    buildHaMeta(bad, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
+    buildHaMeta(bad, FIXTURE_DEVICE, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
   },
   'throws on unknown slot in binds',
   /does not declare it/,
@@ -202,7 +213,7 @@ assertThrows(
   () => {
     const bad = fixture();
     bad.nodes[0].binds = { label: 'invalid!!!' };
-    buildHaMeta(bad, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
+    buildHaMeta(bad, FIXTURE_DEVICE, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
   },
   'throws on malformed bind expression',
   /Invalid bind expression/,

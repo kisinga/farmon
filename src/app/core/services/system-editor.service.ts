@@ -2,9 +2,9 @@ import { Injectable, inject, signal, computed } from '@angular/core';
 import type { PinDef, PinCap, BoardDef } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
-import type { SystemTopology } from '../models/topology.model';
+import type { Controller, SiteTopology } from '@far-mon/core';
 import type { IoProviderDef } from '@far-mon/core';
-import { collectPins, NODE_REGISTRY, createBoardDriver, createProviderDriver } from '@far-mon/core';
+import { collectPins, NODE_REGISTRY, createBoardDriver, createProviderDriver, slug } from '@far-mon/core';
 import type { IoProviderDriver } from '@far-mon/core';
 import { WorkspaceService } from './workspace.service';
 
@@ -27,16 +27,39 @@ export class SystemEditorService {
 
   readonly readonly = this._readonly.asReadonly();
 
+  // --- Active controller computed ---
+  readonly activeController = computed(() => {
+    const topology = this.workspace.siteTopology();
+    const cid = this.controllerId();
+    if (!topology || !cid) return null;
+    return topology.controllers.find(c => c.id === cid) ?? null;
+  });
+
+  /** Transient device projection for template convenience. Not a source of truth. */
+  readonly controllerDevice = computed(() => {
+    const ctrl = this.activeController();
+    if (!ctrl) return null;
+    return {
+      name: slug(ctrl.friendlyName ?? ctrl.id),
+      friendly_name: ctrl.friendlyName ?? ctrl.id,
+      board: ctrl.board,
+      directory: ctrl.directory,
+      network: ctrl.network,
+      uart_buses: ctrl.uart_buses,
+      io_providers: ctrl.io_providers,
+    };
+  });
+
   // --- Transport-agnostic channel computeds ---
 
   /** All driver instances — board is just another driver. */
   private readonly drivers = computed(() => {
     const board = this.board();
-    const topology = this.topology();
-    if (!board) return [];
+    const controller = this.activeController();
+    if (!board || !controller) return [];
     return this._buildDrivers(
       board,
-      topology?.device.io_providers ?? [],
+      controller.io_providers ?? [],
     );
   });
 
@@ -113,11 +136,11 @@ export class SystemEditorService {
     id: string; label: string; caps: PinCap[]; usedBy?: string;
   }> }> {
     const board = this.board();
-    const topology = this.topology();
-    if (!board) return [];
+    const controller = this.activeController();
+    if (!board || !controller) return [];
     return this._channelGroups(
       board,
-      topology?.device.io_providers ?? [],
+      controller.io_providers ?? [],
       this.usedPins(),
       cap,
     );
@@ -187,9 +210,17 @@ export class SystemEditorService {
   }
 
   /** Mutate the active system's topology. Marks workspace dirty. */
-  updateTopology(updater: (t: SystemTopology) => void): void {
+  updateTopology(updater: (t: SiteTopology) => void): void {
     if (this._readonly()) return;
-    this.workspace.updateActiveTopology(updater);
+    this.workspace.updateSiteTopology(updater);
+  }
+
+  /** Mutate the active controller's device fields. */
+  updateActiveController(updater: (ctrl: Controller) => void): void {
+    if (this._readonly()) return;
+    const cid = this.controllerId();
+    if (!cid) return;
+    this.workspace.updateController(cid, updater);
   }
 
   /** Atomically swap the board for the active system. */

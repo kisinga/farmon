@@ -100,9 +100,9 @@ export class EditorComponent implements OnInit, OnDestroy {
 
     // Load board list and active board SVG
     await this.boards.refresh();
-    const topology = this.editor.topology();
-    if (topology) {
-      await this.boards.load(topology.device.board);
+    const device = this.editor.controllerDevice();
+    if (device) {
+      await this.boards.load(device.board);
     }
   }
 
