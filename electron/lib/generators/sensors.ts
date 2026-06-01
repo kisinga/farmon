@@ -73,6 +73,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
     { name: SYS.flowConfirm.name,   id: 'flow_confirm_s',      icon: 'mdi:check-decagram-outline', unit: 's',     min: 3,   max: 60,  step: 1,   initial: m.timing.flow_confirm },
     { name: SYS.flowThreshold.name, id: 'flow_threshold_l_min',icon: 'mdi:waves',                  unit: 'L/min', min: 0.1, max: 20,  step: 0.1, initial: m.timing.flow_threshold },
     { name: SYS.apiWatchdog.name,   id: 'api_watchdog_s',      icon: 'mdi:api',                    unit: 's',     min: 30,  max: 600, step: 10,  initial: m.timing.api_watchdog },
+    { name: SYS.claimLease.name,    id: 'claim_lease_s',       icon: 'mdi:timer-refresh',          unit: 's',     min: 30,  max: 600, step: 10,  initial: 90 },
   ].map((p) => `\
 - platform: template
   name: "${p.name}"
@@ -88,7 +89,22 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   entity_category: config`);
 
   const numberBlocks = [...runtimeBlocks, ...safetyThresholdBlocks, ...safetyBlocks, ...(collected.sections['number'] ?? [])];
-  const binarySensorBlocks = collected.sections['binary_sensor'] ?? [];
+  const binarySensorBlocks = [...(collected.sections['binary_sensor'] ?? [])];
+  binarySensorBlocks.push(`\
+  - platform: template
+    id: queue_full
+    name: "${SYS.queueFull.name}"
+    icon: "mdi:tray-full"
+    lambda: |-
+      return queue_count >= MAX_QUEUE_SIZE;`);
+  binarySensorBlocks.push(`\
+  - platform: template
+    id: api_partitioned
+    name: "${SYS.apiPartitioned.name}"
+    icon: "mdi:lan-disconnect"
+    device_class: problem
+    lambda: |-
+      return is_api_partitioned(millis());`);
 
   return `\
 # =============================================================================
@@ -117,6 +133,14 @@ ${joinYamlItems(collected.sensors)}${levelSensors.length >= 2 ? `
 ${levelSensors.map(t => `\
       { float v = id(${levelSensorLevelId({ id: String(t['id']) })}).state; if (!std::isnan(v)) { sum += v; count++; } }`).join("\n")}
       return count > 0 ? sum / (float)count : 0.0f;` : ""}
+
+  - platform: template
+    id: queue_depth
+    name: "${SYS.queueDepth.name}"
+    icon: "mdi:counter"
+    update_interval: 2s
+    lambda: |-
+      return (float)queue_count;
 
 ${numberBlocks.length > 0 ? `# --- Adjustable numbers (persisted, editable from HA) -------------------------
 

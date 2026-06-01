@@ -97,24 +97,26 @@ api:
     - service: route_start
       variables:
         route_id: int
+        command_id: string
       then:
         - lambda: |-
-            const char* results[] = {"started", "queued", "rejected", "source low", "dest full"};
-            int r = try_route_start(route_id);
+            const char* results[] = {"started", "queued", "rejected", "source low", "dest full", "partitioned"};
+            int r = try_route_start(route_id, command_id.c_str());
             if (r == 0) {
               ESP_LOGI("ctrl", "API start route %d [%s]: %s", route_id,
                        (route_id >= 0 && route_id < NUM_ROUTES) ? ROUTES[route_id].name : "?", results[r]);
             } else {
-              ESP_LOGW("ctrl", "API start route %d: %s", route_id, (r >= 0 && r <= 4) ? results[r] : "?");
+              ESP_LOGW("ctrl", "API start route %d: %s", route_id, (r >= 0 && r <= 5) ? results[r] : "?");
             }
 
     - service: route_stop
       variables:
         route_id: int
+        command_id: string
       then:
         - lambda: |-
             const char* results[] = {"stopping", "not active", "already idle/stopping"};
-            int r = try_route_stop(route_id);
+            int r = try_route_stop(route_id, command_id.c_str());
             ESP_LOGI("ctrl", "API stop route %d: %s", route_id, (r >= 0 && r <= 2) ? results[r] : "?");
 
     - service: fault_reset
@@ -208,8 +210,8 @@ ${m.routes.map((r, i) => `\
     icon: "mdi:play-circle"
     on_press:
       - lambda: |-
-          const char* res[] = {"started","queued","rejected","source low","dest full"};
-          int rc = try_route_start(${i});
+          const char* res[] = {"started","queued","rejected","source low","dest full","partitioned"};
+          int rc = try_route_start(${i}, "");
           ESP_LOGI("btn", "Route ${i} [${r.name}] start: %s", res[rc]);
   - platform: template
     name: "${routeEntityNames(r).stop.name}"
@@ -218,7 +220,7 @@ ${m.routes.map((r, i) => `\
     on_press:
       - lambda: |-
           const char* res[] = {"stopping","not active","already idle"};
-          int rc = try_route_stop(${i});
+          int rc = try_route_stop(${i}, "");
           ESP_LOGI("btn", "Route ${i} [${r.name}] stop: %s", res[rc]);`).join("\n")}
 
 # --- 1s Transition Interval --------------------------------------------------
@@ -310,15 +312,12 @@ ${pumpMgmt}
           float flow_watchdog_state = id(flow_watchdog_s).state;
           float flow_confirm_state = id(flow_confirm_s).state;
           float flow_threshold_state = id(flow_threshold_l_min).state;
-          float api_watchdog_state = id(api_watchdog_s).state;
           uint32_t flow_watchdog = (!std::isnan(flow_watchdog_state) && flow_watchdog_state >= 5.0f)
             ? (uint32_t)(flow_watchdog_state * 1000.0f) : DEFAULT_FLOW_WATCHDOG_MS;
           uint32_t flow_confirm = (!std::isnan(flow_confirm_state) && flow_confirm_state >= 3.0f)
             ? (uint32_t)(flow_confirm_state * 1000.0f) : DEFAULT_FLOW_CONFIRM_MS;
           float flow_threshold = (!std::isnan(flow_threshold_state) && flow_threshold_state >= 0.1f)
             ? flow_threshold_state : DEFAULT_FLOW_THRESHOLD_L_MIN;
-          uint32_t api_watchdog = (!std::isnan(api_watchdog_state) && api_watchdog_state >= 30.0f)
-            ? (uint32_t)(api_watchdog_state * 1000.0f) : DEFAULT_API_WATCHDOG_MS;
 
           for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
             if (slots[s].state != 2) continue;
@@ -404,19 +403,11 @@ ${pumpMgmt}
               }
             }
 
-            // --- API WATCHDOG ---
-            if (slots[s].fault_code == 0) {
-              if (id(api_client_count) > 0) {
-                slots[s].api_lost_since = 0;
-              } else {
-                if (slots[s].api_lost_since == 0) slots[s].api_lost_since = now;
-                uint32_t age = now - slots[s].api_lost_since;
-                if (age > api_watchdog) {
-                  ESP_LOGE("safety", "API lost %us during slot %d route [%s]",
-                           age / 1000, s, r.name);
-                  slots[s].fault_code = FAULT_API_LOST;
-                }
-              }
+            // --- API partition telemetry (AP: degrade, don't fault) ---
+            if (id(api_client_count) > 0) {
+              slots[s].api_lost_since = 0;
+            } else {
+              if (slots[s].api_lost_since == 0) slots[s].api_lost_since = now;
             }
 
             // --- Act on fault ---

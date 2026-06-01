@@ -103,6 +103,9 @@ export const SYSTEM_ENTITY_NAMES = {
   // sensor / binary_sensor (sensors.ts)
   combinedTankLevel:  { domain: 'sensor',        name: 'Combined Tank Level' },
   waterCritical:      { domain: 'binary_sensor', name: 'Water Critical' },
+  queueDepth:         { domain: 'sensor',        name: 'Queue Depth' },
+  queueFull:          { domain: 'binary_sensor', name: 'Queue Full' },
+  apiPartitioned:     { domain: 'binary_sensor', name: 'API Partitioned' },
 
   // number (sensors.ts safety blocks). Values are stored in user-facing units
   // (seconds, L/min). Firmware converts to its internal representation
@@ -112,6 +115,7 @@ export const SYSTEM_ENTITY_NAMES = {
   flowConfirm:        { domain: 'number', name: 'Flow Confirm (s)' },
   flowThreshold:      { domain: 'number', name: 'Flow Threshold (L/min)' },
   apiWatchdog:        { domain: 'number', name: 'API Watchdog (s)' },
+  claimLease:         { domain: 'number', name: 'Claim Lease (s)' },
 
   // switch (control.ts)
   safetyOverride:     { domain: 'switch', name: 'Safety Override' },

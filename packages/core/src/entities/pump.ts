@@ -7,7 +7,7 @@ import type { FlowConstraint } from '../graph/constraints';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { templateSwitchProxy, homeassistantBinarySensorProxy } from '../remote-proxy';
+import { templateSwitchProxy, templateSwitchProxyLeaseInterval, homeassistantBinarySensorProxy } from '../remote-proxy';
 
 const COLOR = '#dc2626'; // red
 const S = 60;
@@ -149,10 +149,16 @@ ${header}
       relay: deriveHaEntityId('switch', device, haNames(node).relay),
     }),
 
-    remoteProxy: (node, haEntityId, remoteDeviceName, ownerDeviceName) => [
-      { section: 'binary_sensor', yaml: homeassistantBinarySensorProxy(pumpSwitchId(node.id), haEntityId) },
-      { section: 'switch', yaml: templateSwitchProxy(pumpSwitchId(node.id), node.name ?? 'Pump', haEntityId, remoteDeviceName, ownerDeviceName) },
-    ],
+    remoteProxy: (node, haEntityId, remoteDeviceName, ownerDeviceName) => {
+      const proxyId = pumpSwitchId(node.id);
+      const items: { section: string; yaml: string }[] = [
+        { section: 'binary_sensor', yaml: homeassistantBinarySensorProxy(proxyId, haEntityId) },
+        { section: 'switch', yaml: templateSwitchProxy(proxyId, node.name ?? 'Pump', haEntityId, remoteDeviceName, ownerDeviceName) },
+      ];
+      const lease = templateSwitchProxyLeaseInterval(proxyId, remoteDeviceName, ownerDeviceName);
+      if (lease) items.push({ section: 'interval', yaml: lease });
+      return items;
+    },
     proxyEntityIds: (node: PumpNode, device) => ({
       relay: deriveHaEntityId('switch', device, `Remote ${node.name ?? 'Pump'}`),
     }),

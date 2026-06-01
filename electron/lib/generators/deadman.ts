@@ -62,15 +62,21 @@ ${valves.length > 0 ? `static const char* VALVE_IDS[${valves.length}] = {
 ${valveIdArray}
 };` : "// No valves in this controller's manifest"}
 
-inline void extend_deadman(const std::string& nodeId, const std::string& owner, uint32_t durationMs, bool local = false) {
+inline uint32_t get_claim_lease_ms() {
+  float v = id(claim_lease_s).state;
+  return (!std::isnan(v) && v >= 30.0f) ? (uint32_t)(v * 1000.0f) : 90000U;
+}
+
+inline void extend_deadman(const std::string& nodeId, const std::string& owner, uint32_t /*durationMs*/, bool local = false) {
+  uint32_t leaseMs = get_claim_lease_ms();
   auto& claims = claim_registry[nodeId];
   auto it = std::find_if(claims.begin(), claims.end(), [&](const Claim& c) { return c.owner == owner; });
   uint32_t now = millis();
   if (it != claims.end()) {
-    it->expires_at = now + durationMs;
+    it->expires_at = now + leaseMs;
     it->local = local;
   } else {
-    claims.push_back({owner, now + durationMs, local});
+    claims.push_back({owner, now + leaseMs, local});
   }
 }
 

@@ -232,6 +232,57 @@ export function generateRoutes(m: Manifest): string {
 
 ${generateDeadman(m)}
 
+// --- Processed command deduplication -----------------------------------------
+
+static std::map<std::string, uint32_t> processed_commands;
+
+inline void prune_processed_commands(uint32_t now) {
+  auto it = processed_commands.begin();
+  while (it != processed_commands.end()) {
+    if (now - it->second > 300000) {
+      it = processed_commands.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+inline bool is_duplicate_command(const char* command_id) {
+  if (!command_id || command_id[0] == '\0') return false;
+  uint32_t now = millis();
+  prune_processed_commands(now);
+  std::string key(command_id);
+  auto it = processed_commands.find(key);
+  if (it != processed_commands.end()) return true;
+  if (processed_commands.size() >= 64) {
+    auto oldest = processed_commands.begin();
+    for (auto jt = processed_commands.begin(); jt != processed_commands.end(); ++jt) {
+      if (jt->second < oldest->second) oldest = jt;
+    }
+    processed_commands.erase(oldest);
+  }
+  processed_commands[key] = now;
+  return false;
+}
+
+// --- API partition handling --------------------------------------------------
+
+static uint32_t api_partition_since = 0;
+
+inline uint32_t get_api_watchdog_ms() {
+  float v = id(api_watchdog_s).state;
+  return (!std::isnan(v) && v >= 30.0f) ? (uint32_t)(v * 1000.0f) : DEFAULT_API_WATCHDOG_MS;
+}
+
+inline bool is_api_partitioned(uint32_t now) {
+  if (id(api_client_count) > 0) {
+    api_partition_since = 0;
+    return false;
+  }
+  if (api_partition_since == 0) api_partition_since = now;
+  return (now - api_partition_since) > get_api_watchdog_ms();
+}
+
 // --- Constants ---------------------------------------------------------------
 
 static const int MAX_CONCURRENT_ROUTES = 2;
@@ -511,6 +562,27 @@ ${flowCases}
   }
 }
 
+// Per-valve travel time — reads from HA number entities (adjustable, persisted).
+inline uint32_t get_valve_travel_ms(int idx) {
+  switch (idx) {
+${valveTravelCases}
+    default: return 15000;
+  }
+}
+
+// Route travel time — max across all valves in the route's valve_mask.
+inline uint32_t get_route_travel_ms(int route_id) {
+  uint32_t mx = 0;
+  uint16_t mask = ROUTES[route_id].valve_mask;
+  for (int i = 0; i < NUM_VALVES; i++) {
+    if (mask & (1 << i)) {
+      uint32_t t = get_valve_travel_ms(i);
+      if (t > mx) mx = t;
+    }
+  }
+  return mx;
+}
+
 // Max runtime — reads from HA number entities (adjustable, persisted).
 // Falls back to 1800s if route_id is out of range.
 inline uint16_t get_max_runtime_s(int route_id) {
@@ -538,27 +610,6 @@ ${destMaxCases}
   }
 }
 
-// Per-valve travel time — reads from HA number entities (adjustable, persisted).
-inline uint32_t get_valve_travel_ms(int idx) {
-  switch (idx) {
-${valveTravelCases}
-    default: return 15000;
-  }
-}
-
-// Route travel time — max across all valves in the route's valve_mask.
-inline uint32_t get_route_travel_ms(int route_id) {
-  uint32_t mx = 0;
-  uint16_t mask = ROUTES[route_id].valve_mask;
-  for (int i = 0; i < NUM_VALVES; i++) {
-    if (mask & (1 << i)) {
-      uint32_t t = get_valve_travel_ms(i);
-      if (t > mx) mx = t;
-    }
-  }
-  return mx;
-}
-
 // --- Actuator stop (dead-man enforcement) ------------------------------------
 
 inline void stop_actuator(const std::string& nodeId) {
@@ -569,10 +620,12 @@ ${valves.map((v, i) => `  if (nodeId == "${v['id']}") { close_valve_hw(${i}); re
 // --- Route start/stop (shared by API services + button entities) -------------
 //
 // Returns: 0=started, 1=queued, 2=rejected (invalid/duplicate/full),
-//          3=rejected (source low), 4=rejected (dest full)
-inline int try_route_start(int route_id) {
+//          3=rejected (source low), 4=rejected (dest full), 5=rejected (partitioned)
+inline int try_route_start(int route_id, const char* command_id) {
   if (route_id < 0 || route_id >= NUM_ROUTES) return 2;
+  if (is_duplicate_command(command_id)) return 0;  // idempotent success
   if (find_slot_by_route(route_id) != -1) return 2;  // already active
+  if (is_api_partitioned(millis())) return 5;
 
   if (has_conflict(route_id) || find_free_slot() == -1) {
     return queue_push(route_id) ? 1 : 2;
@@ -604,7 +657,8 @@ inline int try_route_start(int route_id) {
 // Returns: 0=stopping, 1=not active, 2=already stopping/idle/faulted
 // FAULT (state==4) is rejected — only fault_reset clears a fault, so the
 // per-route fault registration isn't silently overwritten by a Stop press.
-inline int try_route_stop(int route_id) {
+inline int try_route_stop(int route_id, const char* command_id) {
+  if (is_duplicate_command(command_id)) return 0;  // idempotent success
   int s = find_slot_by_route(route_id);
   if (s < 0) return 1;
   if (slots[s].state == 0 || slots[s].state == 3 || slots[s].state == 4) return 2;

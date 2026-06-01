@@ -56,6 +56,7 @@ export function templateSwitchProxy(
   entityId: string,
   remoteDeviceName?: string,
   ownerDeviceName?: string,
+  leaseDurationMs: number = 90000,
 ): string {
   const claimBlock = remoteDeviceName && ownerDeviceName
     ? `    - homeassistant.service:
@@ -63,7 +64,7 @@ export function templateSwitchProxy(
         data:
           node_id: ${proxyId}
           owner: ${ownerDeviceName}
-          duration_ms: "3600000"`
+          duration_ms: "${leaseDurationMs}"`
     : "";
   const releaseBlock = remoteDeviceName && ownerDeviceName
     ? `    - homeassistant.service:
@@ -88,6 +89,36 @@ ${releaseBlock}${releaseBlock ? "\n" : ""}    - homeassistant.service:
         service: switch.turn_off
         data:
           entity_id: ${entityId}`;
+}
+
+/**
+ * Lease heartbeat interval for template switch proxies.
+ *
+ * Emits an `interval:` block that re-issues the dead-man claim every
+ * `intervalMs` while the proxy switch is on. This prevents the claim from
+ * expiring if the turn_on action is not re-triggered.
+ */
+export function templateSwitchProxyLeaseInterval(
+  proxyId: string,
+  remoteDeviceName?: string,
+  ownerDeviceName?: string,
+  intervalMs: number = 10000,
+  leaseDurationMs: number = 90000,
+): string {
+  if (!remoteDeviceName || !ownerDeviceName) return "";
+  return `\
+- interval: ${intervalMs}ms
+  then:
+    - if:
+        condition:
+          lambda: 'return id(${proxyId}).state;'
+        then:
+          - homeassistant.service:
+              service: esphome.${remoteDeviceName}_node_claim
+              data:
+                node_id: ${proxyId}
+                owner: ${ownerDeviceName}
+                duration_ms: "${leaseDurationMs}"`;
 }
 
 /**

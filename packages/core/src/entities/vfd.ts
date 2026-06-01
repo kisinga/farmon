@@ -6,7 +6,7 @@ import { UI_COLORS } from '../colors';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { templateSwitchProxy, homeassistantBinarySensorProxy } from '../remote-proxy';
+import { templateSwitchProxy, templateSwitchProxyLeaseInterval, homeassistantBinarySensorProxy } from '../remote-proxy';
 
 const COLOR = '#7c3aed'; // violet
 const S = 60;
@@ -232,10 +232,16 @@ ${header}
       };
     },
 
-    remoteProxy: (node, haEntityId, remoteDeviceName, ownerDeviceName) => [
-      { section: 'binary_sensor', yaml: homeassistantBinarySensorProxy(pumpSwitchId(node.id), haEntityId) },
-      { section: 'switch', yaml: templateSwitchProxy(pumpSwitchId(node.id), node.name ?? 'VFD Pump', haEntityId, remoteDeviceName, ownerDeviceName) },
-    ],
+    remoteProxy: (node, haEntityId, remoteDeviceName, ownerDeviceName) => {
+      const proxyId = pumpSwitchId(node.id);
+      const items: { section: string; yaml: string }[] = [
+        { section: 'binary_sensor', yaml: homeassistantBinarySensorProxy(proxyId, haEntityId) },
+        { section: 'switch', yaml: templateSwitchProxy(proxyId, node.name ?? 'VFD Pump', haEntityId, remoteDeviceName, ownerDeviceName) },
+      ];
+      const lease = templateSwitchProxyLeaseInterval(proxyId, remoteDeviceName, ownerDeviceName);
+      if (lease) items.push({ section: 'interval', yaml: lease });
+      return items;
+    },
     proxyEntityIds: (node: VfdNode, device) => ({
       switch: deriveHaEntityId('switch', device, `Remote ${node.name}`),
     }),

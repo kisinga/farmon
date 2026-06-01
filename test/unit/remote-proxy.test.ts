@@ -75,7 +75,7 @@ assert(
   "Claim/release carry the importing controller's name as owner"
 );
 assert(
-  proxyYaml.includes('duration_ms: "3600000"'),
+  proxyYaml.includes('duration_ms: "90000"'),
   "Claim duration is quoted string for ESPHome YAML compatibility"
 );
 assert(
@@ -281,6 +281,10 @@ assert(
 assert(
   collected.switches.some(y => y.includes('pump1_relay')),
   "Local pump still emits hardware switch"
+);
+assert(
+  collected.sections['interval']?.some(y => y.includes('interval:') && y.includes('pump2_relay') && y.includes('node_claim')),
+  "Remote proxy emits lease heartbeat interval"
 );
 
 // ---------------------------------------------------------------------------
