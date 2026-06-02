@@ -52,57 +52,45 @@ function n(node: ManifestNode, key: string): string {
 
 function pumpedPressureTopology(sourcePumpRated: boolean, destPumpRated: boolean) {
   return parseTopology({
-    schema: 11,
-    device: { name: 'pressure-runtime', friendly_name: 'Pressure Runtime', board: 'heltec-v3' },
+    schema: 18,
+    controllers: [{ id: 'pressure-runtime', friendlyName: 'Pressure Runtime', board: 'heltec-v3' }],
     nodes: [
       {
         kind: 'tank', id: 'source_tank', name: 'Source Tank',
+        level_monitored: true, pressure_pin: 'GPIO1', pressure_sensor_max_psi: 15, pressure_pump_rated: sourcePumpRated,
         ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
-        position: { x: 0, y: 0 },
-      },
-      {
-        kind: 'pressure_sensor', id: 'source_pressure', name: 'Source Pressure', pin: 'GPIO1',
-        sensor_max_psi: 15, pump_rated: sourcePumpRated,
-        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
-        position: { x: 100, y: 0 },
+        position: { x: 0, y: 0 }, anchorId: 'pressure-runtime',
       },
       {
         kind: 'valve', id: 'route_valve', name: 'Route Valve', open_pin: 'GPIO2', close_pin: 'GPIO3',
         ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
-        position: { x: 200, y: 0 },
+        position: { x: 200, y: 0 }, anchorId: 'pressure-runtime',
       },
       {
         kind: 'pump', id: 'pump', pin: 'GPIO4',
         ports: [{ id: 'in', label: 'Inlet', direction: 'inlet' }, { id: 'out', label: 'Outlet', direction: 'outlet' }],
-        position: { x: 300, y: 0 },
+        position: { x: 300, y: 0 }, anchorId: 'pressure-runtime',
       },
       {
         kind: 'flow_sensor', id: 'route_flow', name: 'Route Flow', pin: 'GPIO5', flow_cal: 450,
         ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
-        position: { x: 400, y: 0 },
+        position: { x: 400, y: 0 }, anchorId: 'pressure-runtime',
       },
       {
         kind: 'tank', id: 'dest_tank', name: 'Destination Tank',
+        level_monitored: true, pressure_pin: 'GPIO6', pressure_sensor_max_psi: 15, pressure_pump_rated: destPumpRated,
         ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
-        position: { x: 500, y: 0 },
-      },
-      {
-        kind: 'pressure_sensor', id: 'dest_pressure', name: 'Destination Pressure', pin: 'GPIO6',
-        sensor_max_psi: 15, pump_rated: destPumpRated,
-        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
-        position: { x: 600, y: 0 },
+        position: { x: 500, y: 0 }, anchorId: 'pressure-runtime',
       },
     ],
     pipes: [
-      { id: 'p1', from: 'source_tank:outlet', to: 'source_pressure:inlet' },
-      { id: 'p2', from: 'source_pressure:outlet', to: 'route_valve:inlet' },
-      { id: 'p3', from: 'route_valve:outlet', to: 'pump:in' },
-      { id: 'p4', from: 'pump:out', to: 'route_flow:inlet' },
-      { id: 'p5', from: 'route_flow:outlet', to: 'dest_tank:inlet' },
-      { id: 'p6', from: 'dest_tank:outlet', to: 'dest_pressure:inlet' },
+      { id: 'p1', from: 'source_tank:outlet', to: 'route_valve:inlet' },
+      { id: 'p2', from: 'route_valve:outlet', to: 'pump:in' },
+      { id: 'p3', from: 'pump:out', to: 'route_flow:inlet' },
+      { id: 'p4', from: 'route_flow:outlet', to: 'dest_tank:inlet' },
     ],
     route_overrides: {
-      'source_tank>dest_tank': { source_min_level: 20, dest_max_level: 90 },
+      'source_tank>dest_tank#route_valve': { source_min_level: 20, dest_max_level: 90 },
     },
     timing: {
       valve_travel_time: 15,
@@ -113,6 +101,7 @@ function pumpedPressureTopology(sourcePumpRated: boolean, destPumpRated: boolean
       update_interval: 5,
     },
     automations: [],
+    remoteImports: [],
   });
 }
 
@@ -132,7 +121,7 @@ fileMap = new Map(files.map((f) => [f.relativePath, f.content]));
 // Helper arrays
 const valves = nodesByKind(manifest.nodes, 'valve');
 const flowSensors = nodesByKind(manifest.nodes, 'flow_sensor');
-const levelSensors = nodesByKind(manifest.nodes, 'level_sensor');
+const tanksWithLevel = manifest.nodes.filter(n => n.kind === 'tank' && n['level_monitored']);
 const waterSources = nodesByKind(manifest.nodes, 'water_source');
 
 // --- Board definition ---
@@ -330,13 +319,10 @@ assert(sensors.includes('name: "Flow Threshold (L/min)"'), "Flow threshold numbe
 assert(sensors.includes('id(flow_threshold_l_min).state'), "Flow logic uses tunable threshold");
 assert(!sensors.includes('x > 0.5f'), "Flow logic does not hardcode 0.5 L/min");
 assert(sensors.includes('unit_of_measurement: "s"'), "Route max-runtime numbers show seconds unit");
-for (const ls of levelSensors) {
-  assert(sensors.includes(`id: ${n(ls, 'id')}_level`), `Level sensor ${n(ls, 'id')} level`);
-  assert(sensors.includes(`id: ${n(ls, 'id')}_cal_empty`), `Level sensor ${n(ls, 'id')} cal`);
+for (const t of tanksWithLevel) {
+  assert(sensors.includes(`id: ${n(t, 'id')}_level`), `Tank ${n(t, 'id')} level`);
+  assert(sensors.includes(`id: ${n(t, 'id')}_cal_empty`), `Tank ${n(t, 'id')} cal`);
 }
-// Level sensor suppression: iterates slots, checks source AND dest
-assert(sensors.includes("r.source_tank == LEVEL_SENSOR_IDX || r.dest_tank == LEVEL_SENSOR_IDX"), "Suppresses source AND dest level sensors");
-assert(sensors.includes("MAX_CONCURRENT_ROUTES"), "Tank suppression iterates slots");
 // Fault/stop text: no old codes
 assert(!sensors.includes("No level rise"), "No 'level rise' in fault/stop text");
 assert(!sensors.includes("Source tank empty"), "No 'source empty' in fault/stop text");
@@ -398,10 +384,10 @@ assert(dashboard.includes("Flow Threshold"), "Configuration dashboard includes F
 // --- Cross-file consistency ---
 
 console.log("\nCross-file consistency:");
-for (const ls of levelSensors) {
+for (const t of tanksWithLevel) {
   assert(
-    sensors.includes(`id: ${n(ls, 'id')}_level`) && routesH.includes(`id(${n(ls, 'id')}_level)`),
-    `Level sensor ${n(ls, 'id')}: sensors \u2194 routes.h`
+    sensors.includes(`id: ${n(t, 'id')}_level`) && routesH.includes(`id(${n(t, 'id')}_level)`),
+    `Tank ${n(t, 'id')}: sensors \u2194 routes.h`
   );
 }
 for (const f of flowSensors) {
@@ -661,8 +647,8 @@ console.log("\nSensors:");
 const kcSensors = getKcFile("sensors.yaml");
 assert(kcSensors.includes("id: flow1"), "Flow sensor defined");
 assert(kcSensors.includes("GPIO32"), "Flow sensor uses native GPIO32");
-assert(kcSensors.includes("id: ls1_level"), "Level sensor defined");
-assert(kcSensors.includes("GPIO36"), "Level sensor uses native GPIO36 for ADC");
+assert(kcSensors.includes("id: tank1_level"), "Tank level sensor defined");
+assert(kcSensors.includes("GPIO36"), "Tank pressure sensor uses native GPIO36 for ADC");
 
 // --- Device YAML ---
 
@@ -761,10 +747,8 @@ const crossControllerTopology = parseTopology({
   timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 5, flow_threshold: 0.5, api_watchdog: 60 },
   nodes: [
     // Tank Controller nodes
-    { kind: 'tank', id: 'src_tank', name: 'Source Tank', ports: [{ id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
-    { kind: 'level_sensor', id: 'src_lvl', name: 'Source Level', pin: 'GPIO1', ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
-    { kind: 'tank', id: 'dst_tank', name: 'Dest Tank', ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
-    { kind: 'level_sensor', id: 'dst_lvl', name: 'Dest Level', pin: 'GPIO2', ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
+    { kind: 'tank', id: 'src_tank', name: 'Source Tank', level_monitored: true, pressure_pin: 'GPIO1', pressure_sensor_max_psi: 15, ports: [{ id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
+    { kind: 'tank', id: 'dst_tank', name: 'Dest Tank', level_monitored: true, pressure_pin: 'GPIO2', pressure_sensor_max_psi: 15, ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
     // Pump Controller nodes
     { kind: 'pump', id: 'pump1', name: 'Pump', pin: 'GPIO4', relay_polarity: 'active_low', ports: [{ id: 'in', label: 'In', direction: 'inlet' }, { id: 'out', label: 'Out', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'pump-ctrl' },
     { kind: 'flow_sensor', id: 'flow1', name: 'Main Flow', pin: 'GPIO5', ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'pump-ctrl' },
@@ -775,8 +759,6 @@ const crossControllerTopology = parseTopology({
     { id: 'p2', from: 'pump1:out', to: 'flow1:inlet' },
     { id: 'p3', from: 'flow1:outlet', to: 'valve1:inlet' },
     { id: 'p4', from: 'valve1:outlet', to: 'dst_tank:inlet' },
-    { id: 'p5', from: 'src_tank:outlet', to: 'src_lvl:inlet' },
-    { id: 'p6', from: 'dst_tank:outlet', to: 'dst_lvl:inlet' },
   ],
   remoteImports: [
     { controllerId: 'pump-ctrl', nodeId: 'src_tank' },
@@ -795,19 +777,19 @@ assert(!!srcTank, "Remote source tank included in pump-ctrl manifest");
 assert(!!dstTank, "Remote dest tank included in pump-ctrl manifest");
 assert(!!flowNode, "Local flow sensor included in pump-ctrl manifest");
 assert(!!pumpNode, "Local pump included in pump-ctrl manifest");
-assert(srcTank?.remoteHaEntityId === 'sensor.tank_controller_source_level_level', "Remote src tank HA entity resolved from its level sensor: got " + srcTank?.remoteHaEntityId);
-assert(dstTank?.remoteHaEntityId === 'sensor.tank_controller_dest_level_level', "Remote dst tank HA entity resolved from its level sensor: got " + dstTank?.remoteHaEntityId);
+assert(srcTank?.remoteHaEntityId === 'sensor.tank_controller_source_tank_level', "Remote src tank HA entity resolved from its intrinsic level: got " + srcTank?.remoteHaEntityId);
+assert(dstTank?.remoteHaEntityId === 'sensor.tank_controller_dest_tank_level', "Remote dst tank HA entity resolved from its intrinsic level: got " + dstTank?.remoteHaEntityId);
 assert(!flowNode?.remoteHaEntityId, "Local flow sensor has no remote HA entity");
 assert(!pumpNode?.remoteHaEntityId, "Local pump has no remote HA entity");
 
 // Collect: remote tanks should emit homeassistant sensor imports
 const pumpCollect = collectEntityCodegen(pumpManifest, board);
 assert(
-  pumpCollect.sections['sensor']?.some(y => y.includes('ri_src_tank') && y.includes('sensor.tank_controller_source_level_level')),
+  pumpCollect.sections['sensor']?.some(y => y.includes('ri_src_tank') && y.includes('sensor.tank_controller_source_tank_level')),
   "Remote src tank emits homeassistant sensor import"
 );
 assert(
-  pumpCollect.sections['sensor']?.some(y => y.includes('ri_dst_tank') && y.includes('sensor.tank_controller_dest_level_level')),
+  pumpCollect.sections['sensor']?.some(y => y.includes('ri_dst_tank') && y.includes('sensor.tank_controller_dest_tank_level')),
   "Remote dst tank emits homeassistant sensor import"
 );
 

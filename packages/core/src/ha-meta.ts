@@ -33,20 +33,6 @@ export function buildHaMeta(topology: SiteTopology, device: Device, opts: BuildH
     .filter(n => connected.has(n.id) && !((n as Record<string, unknown>)['disabled']))
     .sort((a, b) => a.id.localeCompare(b.id));
 
-  // Build pipe-adjacency once for cross-reference lookups (tank → downstream
-  // level_sensor). Mirrors topology-to-manifest's tank-level association.
-  const downstream = new Map<string, string[]>();
-  for (const p of topology.pipes) {
-    const fromId = p.from.split(':')[0];
-    const toId = p.to.split(':')[0];
-    if (!fromId || !toId) continue;
-    const list = downstream.get(fromId) ?? [];
-    list.push(toId);
-    downstream.set(fromId, list);
-  }
-  const nodeKindById = new Map<string, TopologyNode>();
-  for (const n of topology.nodes) nodeKindById.set(n.id, n);
-
   for (const n of sortedNodes) {
     const desc = NODE_REGISTRY.get(n.kind);
     if (!desc) continue;
@@ -54,13 +40,11 @@ export function buildHaMeta(topology: SiteTopology, device: Device, opts: BuildH
     if (!desc.haDomain) continue;
     // Prefer the descriptor's declared HA entity_ids — single source of truth
     // shared with firmware emit. If the descriptor has no codegen mapping or
-    // returns no canonical id (e.g. a tank, or a water_source without a
-    // pressure pin), try a cross-reference resolver. If that also yields
-    // nothing, the node has no HA representation and the meta entry is
-    // dropped — the SCADA card renders it label-only.
+    // returns no canonical id (e.g. a tank without level monitoring, or a
+    // water_source without a pressure pin), the node has no HA representation
+    // and the meta entry is dropped — the SCADA card renders it label-only.
     const declared = desc.codegen?.haEntityIds?.(n, device);
-    const entityId = pickCanonicalEntityId(declared, desc.haDomain)
-      ?? resolveCrossReference(n, downstream, device, nodeKindById);
+    const entityId = pickCanonicalEntityId(declared, desc.haDomain);
     if (!entityId) continue;
     nodesById.set(n.id, { entityId });
 
@@ -132,25 +116,6 @@ function pickCanonicalEntityId(
  * Returns undefined when no cross-reference applies — the meta entry is then
  * dropped and the SCADA card renders the node label-only.
  */
-function resolveCrossReference(
-  node: TopologyNode,
-  downstream: Map<string, string[]>,
-  device: Device,
-  nodeKindById: Map<string, TopologyNode>,
-): string | undefined {
-  if (node.kind === 'tank') {
-    for (const neighborId of downstream.get(node.id) ?? []) {
-      const neighbor = nodeKindById.get(neighborId);
-      if (!neighbor || neighbor.kind !== 'level_sensor') continue;
-      const desc = NODE_REGISTRY.get(neighbor.kind);
-      const declared = desc?.codegen?.haEntityIds?.(neighbor, device);
-      const id = declared?.['level'];
-      if (id) return id;
-    }
-  }
-  return undefined;
-}
-
 function resolveBinds(
   defaults: Record<string, string> | undefined,
   node: { binds?: Record<string, string> },

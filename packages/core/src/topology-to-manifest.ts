@@ -1,7 +1,6 @@
 import type { Manifest, LocalManifestNode, ImportedManifestNode, ManifestAutomation, Route as ManifestRoute } from "./manifest.types";
 import type { SiteTopology, TopologyNode, AutomationTrigger } from "./topology.types";
 import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
-import { resolveTankLevelSources } from "./tank-level";
 import { deriveRemoteHaEntityId } from "./remote-ha-entity";
 import { slug } from "./slug";
 import { NODE_REGISTRY } from './entity-registry';
@@ -116,13 +115,6 @@ export function topologyToManifestForController(
   const nodeMap = new Map(topology.nodes.map(n => [n.id, n]));
   const nodeKindById = new Map(topology.nodes.map(n => [n.id, n.kind]));
 
-  // Resolve tank → level-source associations from graph topology
-  const tankLevelSources = resolveTankLevelSources(active, nodeKindById);
-
-  const pressureSensorIds = new Set(
-    topology.nodes.filter(n => n.kind === 'pressure_sensor').map(n => n.id),
-  );
-
   const isLocalNode = (n: typeof topology.nodes[number]) => n.anchorId === controllerId;
   const isIncludedNode = (n: typeof topology.nodes[number]) => {
     if (n.disabled) return false;
@@ -136,15 +128,10 @@ export function topologyToManifestForController(
     .filter(n => isIncludedNode(n) && isLocalNode(n))
     .map(node => {
       const manifestNode: LocalManifestNode = { ...node };
-      if (manifestNode.kind === 'tank') {
-        const src = tankLevelSources.get(manifestNode.id);
-        if (src) manifestNode.level_source = src;
-      }
       // Derive remote HA entity for nodes whose primary value lives elsewhere
-      // (e.g. a local tank with a remote level source)
       const origNode = nodeMap.get(manifestNode.id);
       if (origNode) {
-        const remoteHaEntityId = deriveRemoteHaEntityId(origNode, controllerId, topology, tankLevelSources);
+        const remoteHaEntityId = deriveRemoteHaEntityId(origNode, controllerId, topology);
         if (remoteHaEntityId) manifestNode.remoteHaEntityId = remoteHaEntityId;
       }
       return manifestNode;
@@ -156,7 +143,7 @@ export function topologyToManifestForController(
       const manifestNode: ImportedManifestNode = { ...node } as ImportedManifestNode;
       const origNode = nodeMap.get(manifestNode.id);
       if (origNode) {
-        const remoteHaEntityId = deriveRemoteHaEntityId(origNode, controllerId, topology, tankLevelSources);
+        const remoteHaEntityId = deriveRemoteHaEntityId(origNode, controllerId, topology);
         if (remoteHaEntityId) manifestNode.remoteHaEntityId = remoteHaEntityId;
         const providerController = topology.controllers.find(c => c.id === origNode.anchorId);
         if (providerController) {
@@ -180,25 +167,14 @@ export function topologyToManifestForController(
         if (!tankId) return true;
         const tank = nodeMap.get(tankId);
         if (!tank || tank.kind !== 'tank') return true;
-        const src = tankLevelSources.get(tankId);
-        if (!src) return true;
-        if (src.kind === 'level_sensor') return true;
-        // src.kind === 'pressure_sensor'
-        if (src.id === tankId) {
-          // Intrinsic pressure sensor on tank
-          return !!(tank as { pressure_pump_rated?: boolean }).pressure_pump_rated;
-        }
-        // Legacy path — should no longer happen after migration
-        const sensor = nodeMap.get(src.id);
-        return !sensor || (sensor.kind === 'pressure_sensor' && !!(sensor as { pump_rated?: boolean }).pump_rated);
+        if (!(tank as Record<string, unknown>)['level_monitored']) return true;
+        return !!(tank as { pressure_pump_rated?: boolean }).pressure_pump_rated;
       };
       return checkTank(r.source) && checkTank(r.destination);
     })();
 
-    const inlinePressureSensors = r.nodeSequence.filter(id => pressureSensorIds.has(id));
-
-    const sourceHasLevel = r.sourceKind === 'tank' && tankLevelSources.has(r.source);
-    const destHasLevel = r.destKind === 'tank' && tankLevelSources.has(r.destination);
+    const sourceHasLevel = r.sourceKind === 'tank' && !!(nodeMap.get(r.source) as Record<string, unknown> | undefined)?.['level_monitored'];
+    const destHasLevel = r.destKind === 'tank' && !!(nodeMap.get(r.destination) as Record<string, unknown> | undefined)?.['level_monitored'];
 
     return {
       key: r.key,
@@ -217,7 +193,6 @@ export function topologyToManifestForController(
       source_has_level: sourceHasLevel,
       dest_has_level: destHasLevel,
       runtime_level_ok: runtimeLevelOk,
-      inline_pressure_sensors: inlinePressureSensors,
       monitored: r.flowSensors.length > 0,
     };
   });

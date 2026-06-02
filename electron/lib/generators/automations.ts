@@ -1,7 +1,7 @@
 import { stringify } from "yaml";
 import type { Manifest, ManifestNode } from "../schema.js";
 import { nodesWithFlag } from "../schema.js";
-import { NODE_REGISTRY, systemHaEntityIds, routeAutomationAlias, findRouteAutomationSensor, type TankLevelSource } from '@far-mon/core';
+import { NODE_REGISTRY, systemHaEntityIds, routeAutomationAlias, findRouteAutomationSensor } from '@far-mon/core';
 
 function haIds(node: ManifestNode, device: { friendly_name: string }): Partial<Record<import('@far-mon/core').HaEntityKey, string>> {
   return NODE_REGISTRY.get(node.kind)?.codegen?.haEntityIds?.(node, device) ?? {};
@@ -17,19 +17,10 @@ function haIds(node: ManifestNode, device: { friendly_name: string }): Partial<R
  * Returns null only when no automations of any kind are applicable.
  */
 export function generateAutomations(m: Manifest): string | null {
-  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
   const sys = systemHaEntityIds(m.device, m.routes);
 
-  // Build the tank → level source lookup the helper expects, reading from
-  // tank annotations attached during topologyToManifest.
-  const tankLevelSourceById = new Map<string, TankLevelSource>();
-  const nodeKindById = new Map<string, string>();
-  for (const n of m.nodes) {
-    nodeKindById.set(n.id, n.kind);
-    if (n.kind === 'tank' && n.level_source) {
-      tankLevelSourceById.set(n.id, n.level_source);
-    }
-  }
+  // Node lookup for findRouteAutomationSensor.
+  const nodeById = new Map<string, { kind: string; [key: string]: unknown }>(m.nodes.map(n => [n.id, n]));
 
   const automations = m.automations
     .filter(a => a.name && a.route_key && a.route_index >= 0 && a.route_index < m.routes.length)
@@ -45,7 +36,7 @@ export function generateAutomations(m: Manifest): string | null {
       });
     } else if (a.trigger.type === "level") {
       const route = m.routes[a.route_index];
-      const found = findRouteAutomationSensor(route, tankLevelSourceById, nodeKindById);
+      const found = findRouteAutomationSensor(route, nodeById);
       if (!found) {
         throw new Error(`Automation "${a.name}" uses a level trigger, but route "${route.name}" has no source tank with a level sensor positioned before its first valve/pump. Change the trigger to time-based, or add a level sensor to the source tank.`);
       }
@@ -123,10 +114,11 @@ export function generateAutomations(m: Manifest): string | null {
     });
   }
 
-  // Water critical — when 2+ level sensors
-  if (levelSensors.length >= 2) {
-    const levelMessages = levelSensors.map(ls =>
-      `${ls['name']}: {{ states('${haIds(ls, m.device).level}') }}%`
+  // Water critical — when 2+ level-monitored tanks
+  const tanksWithLevel = m.nodes.filter(n => n.kind === 'tank' && n['level_monitored']);
+  if (tanksWithLevel.length >= 2) {
+    const levelMessages = tanksWithLevel.map(t =>
+      `${t['name']}: {{ states('${haIds(t, m.device).level}') }}%`
     ).join(", ");
     systemAutomations.push({
       alias: "Water Critical Alert",

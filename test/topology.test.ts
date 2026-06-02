@@ -35,7 +35,7 @@ function assert(condition: boolean, name: string, detail?: string) {
 console.log("Loading topology config...");
 const raw = parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
 const topology = parseTopology(raw);
-assert(topology.schema === 17, "Schema version is 17");
+assert(topology.schema === 18, "Schema version is 18");
 
 // ---------------------------------------------------------------------------
 // Node structure
@@ -67,7 +67,7 @@ assert(pumps[0].ports.length === 2, `Pump has ${pumps[0].ports.length} ports (ex
 // ---------------------------------------------------------------------------
 
 console.log("\nPipe structure:");
-assert(topology.pipes.length === 12, `${topology.pipes.length} pipes (expected 12)`);
+assert(topology.pipes.length === 10, `${topology.pipes.length} pipes (expected 10)`);
 
 // Route overrides
 assert(

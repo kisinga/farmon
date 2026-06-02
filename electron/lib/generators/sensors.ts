@@ -1,13 +1,13 @@
 import type { Manifest } from "../schema.js";
 import { nodesWithFlag } from "../schema.js";
-import { levelSensorLevelId, joinYamlItems, SYSTEM_ENTITY_NAMES, routeEntityNames } from '@far-mon/core';
+import { pressureSensorLevelId, joinYamlItems, SYSTEM_ENTITY_NAMES, routeEntityNames } from '@far-mon/core';
 import type { CollectedCodegen } from "./collect.js";
 
 const SYS = SYSTEM_ENTITY_NAMES;
 
 export function generateSensors(m: Manifest, collected: CollectedCodegen): string {
-  // Level sensor entities (standalone, decoupled from tanks)
-  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
+  // Tanks with intrinsic level monitoring
+  const tanksWithLevel = m.nodes.filter(n => n.kind === 'tank' && n['level_monitored']);
 
   // Route max-runtime numbers — adjustable from HA, persisted across reboots.
   // Surfaced in minutes (operator-facing); firmware multiplies by 60 to get
@@ -91,20 +91,20 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   const numberBlocks = [...runtimeBlocks, ...safetyThresholdBlocks, ...safetyBlocks, ...(collected.sections['number'] ?? [])];
   const binarySensorBlocks = [...(collected.sections['binary_sensor'] ?? [])];
   binarySensorBlocks.push(`\
-  - platform: template
-    id: queue_full
-    name: "${SYS.queueFull.name}"
-    icon: "mdi:tray-full"
-    lambda: |-
-      return queue_count >= MAX_QUEUE_SIZE;`);
+- platform: template
+  id: queue_full
+  name: "${SYS.queueFull.name}"
+  icon: "mdi:tray-full"
+  lambda: |-
+    return queue_count >= MAX_QUEUE_SIZE;`);
   binarySensorBlocks.push(`\
-  - platform: template
-    id: api_partitioned
-    name: "${SYS.apiPartitioned.name}"
-    icon: "mdi:lan-disconnect"
-    device_class: problem
-    lambda: |-
-      return is_api_partitioned(millis());`);
+- platform: template
+  id: api_partitioned
+  name: "${SYS.apiPartitioned.name}"
+  icon: "mdi:lan-disconnect"
+  device_class: problem
+  lambda: |-
+    return is_api_partitioned(millis());`);
 
   return `\
 # =============================================================================
@@ -118,8 +118,8 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
 # =============================================================================
 
 sensor:
-${joinYamlItems(collected.sensors)}${levelSensors.length >= 2 ? `
-  # --- Combined level (auto-derived from ${levelSensors.length} level sensors) ------
+${joinYamlItems(collected.sensors)}${tanksWithLevel.length >= 2 ? `
+  # --- Combined level (auto-derived from ${tanksWithLevel.length} tanks) ------
 
   - platform: template
     id: combined_tank_level
@@ -130,8 +130,8 @@ ${joinYamlItems(collected.sensors)}${levelSensors.length >= 2 ? `
     update_interval: 5s
     lambda: |-
       float sum = 0; int count = 0;
-${levelSensors.map(t => `\
-      { float v = id(${levelSensorLevelId({ id: String(t['id']) })}).state; if (!std::isnan(v)) { sum += v; count++; } }`).join("\n")}
+${tanksWithLevel.map(t => `\
+      { float v = id(${pressureSensorLevelId({ id: String(t['id']) })}).state; if (!std::isnan(v)) { sum += v; count++; } }`).join("\n")}
       return count > 0 ? sum / (float)count : 0.0f;` : ""}
 
   - platform: template
@@ -244,9 +244,9 @@ ${collected.globals.length > 0 ? `
 
 globals:
 ${joinYamlItems(collected.globals)}` : ""}
-${binarySensorBlocks.length > 0 || levelSensors.length >= 2 ? `
+${binarySensorBlocks.length > 0 || tanksWithLevel.length >= 2 ? `
 binary_sensor:
-${joinYamlItems(binarySensorBlocks)}${levelSensors.length >= 2 ? `
+${joinYamlItems(binarySensorBlocks)}${tanksWithLevel.length >= 2 ? `
   - platform: template
     id: water_critical
     name: "${SYS.waterCritical.name}"

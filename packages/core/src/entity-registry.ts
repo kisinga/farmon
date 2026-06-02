@@ -26,8 +26,8 @@ import { UI_COLORS } from './colors';
 
 export type EntityKind =
   | 'tank' | 'pump' | 'endpoint' | 'valve' | 'flow_sensor'
-  | 'water_source' | 'pressure_sensor' | 'filter' | 'dosing_pump'
-  | 'vfd' | 'level_sensor';
+  | 'water_source' | 'filter' | 'dosing_pump'
+  | 'vfd';
 
 // ---------------------------------------------------------------------------
 // Field definition (drives sidebar forms)
@@ -259,10 +259,6 @@ export interface NodeDescriptor {
   isValve?: boolean;
   /** Acts as a flow sensor — required for valid routes, flow dispatch. */
   isFlowSensor?: boolean;
-  /** Acts as a level sensor — included in level dispatch. */
-  isLevelSensor?: boolean;
-  /** Acts as a pressure sensor — included in pressure dispatch and route analysis. */
-  isPressureSensor?: boolean;
   /** Acts as a dosing pump — participates in dead-man claim tracking. */
   isDosingPump?: boolean;
   /** Conflict class: 'sensor' readings are ambiguous when shared, 'actuator' access is refcountable. */
@@ -301,11 +297,9 @@ import { endpointDescriptor } from './entities/endpoint';
 import { valveDescriptor } from './entities/valve';
 import { flowSensorDescriptor } from './entities/flow-sensor';
 import { waterSourceDescriptor } from './entities/water-source';
-import { pressureSensorDescriptor } from './entities/pressure-sensor';
 import { filterDescriptor } from './entities/filter';
 import { dosingPumpDescriptor } from './entities/dosing-pump';
 import { vfdDescriptor } from './entities/vfd';
-import { levelSensorDescriptor } from './entities/level-sensor';
 
 export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   tankDescriptor,
@@ -314,8 +308,6 @@ export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
   valveDescriptor,
   flowSensorDescriptor,
   waterSourceDescriptor,
-  pressureSensorDescriptor,
-  levelSensorDescriptor,
   filterDescriptor,
   dosingPumpDescriptor,
   vfdDescriptor,
@@ -356,7 +348,7 @@ export const REGISTRY_RULES: readonly EntityRule[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-type DispatchFlag = 'isPump' | 'isValve' | 'isFlowSensor' | 'isLevelSensor' | 'isPressureSensor' | 'isDosingPump';
+type DispatchFlag = 'isPump' | 'isValve' | 'isFlowSensor' | 'isDosingPump';
 
 /**
  * Type-safe descriptor accessor — narrows to a specific entity's data shape.

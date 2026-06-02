@@ -36,7 +36,6 @@ Descriptor          - everything the system needs: UI, codegen, flags
 | `isPump: true` | Entity acts as a pump | Participates in `pump_ref_count()`, `needs_pump` on routes |
 | `isValve: true` | Entity acts as a valve | Included in route `valve_mask`, dispatch functions |
 | `isFlowSensor: true` | Entity reads flow rate | Required for valid routes, flow dispatch |
-| `isLevelSensor: true` | Entity reads level (0-100%) | Included in level dispatch, OLED display |
 | `conflictClass: 'sensor'` | Shared readings are ambiguous | Routes sharing this node are queued (blocking conflict) |
 | `conflictClass: 'actuator'` | Shared access is refcountable | Routes sharing this node run concurrently |
 
@@ -84,7 +83,7 @@ The state machine references ESPHome components by ID. These conventions must be
 | Valve (`isValve`) | `{id}` | `cover` (open/close/stop) |
 | Valve switches | `{id}_open_pin`, `{id}_close_pin` | `switch` (internal) |
 | Flow sensor (`isFlowSensor`) | `{id}` | `sensor` (L/min) |
-| Level sensor (`isLevelSensor`) | `{id}_level` | `sensor` (0-100%) |
+| Tank level (intrinsic pressure sensor) | `{id}_level` | `sensor` (0-100%) |
 
 A VFD inverter sets `isPump: true` and emits a Modbus switch with `id: pump_relay` — the state machine calls `.turn_on()` / `.turn_off()` on it identically to a GPIO relay.
 

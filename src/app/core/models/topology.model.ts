@@ -30,7 +30,6 @@ export type {
   ValveNode,
   FlowSensorNode,
   WaterSourceNode,
-  PressureSensorNode,
   FilterNode,
   DosingPumpNode,
   TopologyNode,

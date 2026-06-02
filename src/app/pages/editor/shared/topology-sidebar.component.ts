@@ -194,8 +194,8 @@ export type { Selection };
           }
         }
 
-        <!-- Inline pressure sensor: no upstream tank calibration in the new model. -->
-        @if (sn.node.kind === 'pressure_sensor') {
+        <!-- Tank with intrinsic pressure sensor calibration readout -->
+        @if (sn.node.kind === 'tank' && $any(sn.node).level_monitored) {
           @if (pressureSensorReadout(sn.node); as r) {
             <div class="mt-3 pt-3 border-t border-base-300/30">
               <h4 class="sidebar-title">Sensor Range</h4>
@@ -204,7 +204,7 @@ export type { Selection };
                 <span class="text-xs font-mono">{{ r.sensorMax }} psi</span>
               </div>
               <div class="text-[10px] text-base-content/50 mt-1">
-                Inline pressure sensors measure line pressure. Cal Empty / Cal Full must be set manually in Home Assistant.
+                Tank-mounted pressure sensor calibration. Cal Empty / Cal Full are set via Home Assistant number entities.
               </div>
             </div>
           }
@@ -624,7 +624,7 @@ export class TopologySidebarComponent {
   protected pressureSensorReadout(node: any): {
     sensorMax: number;
   } | null {
-    const sensorMax = Number(node.sensor_max_psi);
+    const sensorMax = Number(node.pressure_sensor_max_psi);
     if (!Number.isFinite(sensorMax) || sensorMax <= 0) return null;
     return { sensorMax };
   }

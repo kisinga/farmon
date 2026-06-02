@@ -15,10 +15,8 @@ import {
   emitPressureCalNumbers,
   emitPressureSensorYaml,
 } from '../../packages/core/src/index';
-import type { PressureSensorNode } from '../../packages/core/src/entities/pressure-sensor';
 import type { TankNode } from '../../packages/core/src/entities/tank';
 
-const pressureSensorDescriptor = NODE_REGISTRY.get('pressure_sensor')!;
 const tankDescriptor = NODE_REGISTRY.get('tank')!;
 
 let passed = 0;
@@ -131,6 +129,7 @@ const tankWithPressure: TankNode = {
   name: 'Rain Tank',
   height_m: 5,
   capacity_l: 10000,
+  level_monitored: true,
   pressure_pin: 'GPIO19',
   pressure_elevation_m: 2,
   pressure_sensor_max_psi: 15,
@@ -167,37 +166,7 @@ const tankWithPressure: TankNode = {
 }
 
 // ---------------------------------------------------------------------------
-// Pressure sensor descriptor codegen — inline line-pressure use
-// ---------------------------------------------------------------------------
-
-console.log('\nPressure sensor descriptor codegen: line-pressure use');
-
-const lineNode: PressureSensorNode = {
-  kind: 'pressure_sensor',
-  id: 'ps_line',
-  name: 'Line Pressure',
-  pin: 'GPIO7',
-  elevation_m: 0,
-  sensor_max_psi: 145,
-  pump_rated: false,
-  ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }],
-  position: { x: 0, y: 0 },
-  anchorId: 'ctrl',
-};
-
-{
-  const dummyCtx: import('@far-mon/core').CodegenContext = {
-    resolveChannel: () => ({ platform: 'template', config: '' }),
-  };
-  const components = pressureSensorDescriptor.codegen!.extraComponents!(lineNode, 0, dummyCtx);
-  const numberSection = components.number ?? '';
-  // Inline sensors have no tank geometry, so calibration seeds 0 → sensor_max_psi
-  assert(numberSection.includes('initial_value: 0'), 'calEmpty seeded to 0 when no tank');
-  assert(numberSection.includes('initial_value: 145'), 'calFull seeded to sensor_max_psi when no tank');
-}
-
-// ---------------------------------------------------------------------------
-// Legacy topology migration — bar range → psi range
+// Legacy topology migration — bar range → psi range (on tank intrinsic sensor)
 // ---------------------------------------------------------------------------
 
 console.log('\nLegacy topology migration:');
@@ -207,20 +176,20 @@ console.log('\nLegacy topology migration:');
     schema: 11,
     device: { name: 'legacy_pressure', friendly_name: 'Legacy Pressure', board: 'kc868-a16' },
     nodes: [{
-      kind: 'pressure_sensor',
-      id: 'ps_legacy',
+      kind: 'tank',
+      id: 'tank_legacy',
       name: 'Legacy Tank',
-      pin: 'GPIO34',
+      pressure_pin: 'GPIO34',
       min_bar: 0,
       max_bar: 10,
-      ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }],
+      ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
       position: { x: 0, y: 0 },
     }],
   });
-  const ps = migrated.nodes[0] as PressureSensorNode;
-  assert(approx(ps.sensor_max_psi, 145.04), 'legacy max_bar=10 migrates to sensor_max_psi≈145.04');
-  assert(!('max_bar' in ps), 'legacy max_bar is stripped after migration');
-  assert(!('min_bar' in ps), 'legacy min_bar is stripped after migration');
+  const tank = migrated.nodes[0] as TankNode;
+  assert(approx(tank.pressure_sensor_max_psi!, 145.04), 'legacy max_bar=10 migrates to sensor_max_psi≈145.04');
+  assert(!('max_bar' in tank), 'legacy max_bar is stripped after migration');
+  assert(!('min_bar' in tank), 'legacy min_bar is stripped after migration');
 }
 
 // ---------------------------------------------------------------------------

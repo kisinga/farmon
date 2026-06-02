@@ -13,6 +13,7 @@ import {
   PipeSegmentSchema,
   RouteOverrideSchema,
   RemoteImportSchema,
+  migrateTopology,
 } from './topology-schema';
 import { AutomationSchema, PositionSchema } from './schemas';
 
@@ -46,18 +47,31 @@ export type TopologyEventType =
 // Payload schemas — one per event type
 // ---------------------------------------------------------------------------
 
+/**
+ * Permissive node schema for event parsing.
+ *
+ * Old events may reference removed node kinds (e.g. `level_sensor`,
+ * `pressure_sensor`) or fields that no longer exist. We accept any object
+ * with `kind` and `id` here; the topology is migrated to the current schema
+ * after event replay, which rewrites / removes legacy nodes.
+ */
+const EventTopologyNodeSchema = z.record(z.unknown()).and(z.object({
+  kind: z.string(),
+  id: z.string(),
+}));
+
 const SnapshotPayloadSchema = z.object({
   topology: TopologySchema.optional(), // optional for backward compat with old marker snapshots
   source: z.string().optional(), // e.g. 'site-import'
 });
 
 const NodeAddedPayloadSchema = z.object({
-  node: TopologyNodeSchema,
+  node: EventTopologyNodeSchema,
 });
 
 const NodeRemovedPayloadSchema = z.object({
   nodeId: z.string().min(1),
-  nodeSnapshot: TopologyNodeSchema.optional(),
+  nodeSnapshot: EventTopologyNodeSchema.optional(),
 });
 
 const NodeMovedPayloadSchema = z.object({
@@ -68,8 +82,8 @@ const NodeMovedPayloadSchema = z.object({
 
 const NodeModifiedPayloadSchema = z.object({
   nodeId: z.string().min(1),
-  oldNode: TopologyNodeSchema,
-  newNode: TopologyNodeSchema,
+  oldNode: EventTopologyNodeSchema,
+  newNode: EventTopologyNodeSchema,
 });
 
 const PipeConnectedPayloadSchema = z.object({
@@ -184,9 +198,28 @@ export type TopologyEvent = z.infer<typeof TopologyEventSchema>;
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Validate a raw parsed event (e.g. from JSON.parse). */
+/** Validate a raw parsed event (e.g. from JSON.parse).
+ *
+ * Snapshot topologies are pre-migrated so old schema versions and removed
+ * node kinds don't fail validation. Individual node events use a permissive
+ * node schema for the same reason.
+ */
 export function parseTopologyEvent(raw: unknown): TopologyEvent {
-  return TopologyEventSchema.parse(raw);
+  let data = raw;
+  if (raw && typeof raw === 'object') {
+    const r = raw as Record<string, unknown>;
+    const payload = r['payload'] as Record<string, unknown> | undefined;
+    if (r['eventType'] === 'snapshot' && payload && payload['topology']) {
+      data = {
+        ...r,
+        payload: {
+          ...payload,
+          topology: migrateTopology(payload['topology']),
+        },
+      };
+    }
+  }
+  return TopologyEventSchema.parse(data);
 }
 
 /** Coerce a TopologyDiffEvent (legacy shape) into a TopologyEvent. */

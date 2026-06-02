@@ -8,7 +8,7 @@
  *    the target event.
  */
 
-import type { SiteTopology, TopologyEvent } from "@far-mon/core";
+import type { SiteTopology, TopologyNode, TopologyEvent } from "@far-mon/core";
 import { migrateTopology } from "@far-mon/core";
 
 export type TopologyEventRecord = TopologyEvent & {
@@ -37,7 +37,7 @@ export function reconstructTopology(
   if (snapshotIndex === -1) {
     // No valid snapshot found — start from empty topology
     topology = {
-      schema: 17,
+      schema: 18,
       controllers: [],
       nodes: [],
       pipes: [],
@@ -64,7 +64,9 @@ export function reconstructTopology(
     topology = applyEvent(topology, ev);
   }
 
-  return topology;
+  // Final migration: incremental events may have added nodes with old kinds
+  // (e.g. level_sensor, pressure_sensor) that no longer exist in schema 18.
+  return migrateTopology(topology) as SiteTopology;
 }
 
 /**
@@ -75,7 +77,7 @@ function applyEvent(topology: SiteTopology, event: TopologyEvent): SiteTopology 
 
   switch (event.eventType) {
     case "node_added": {
-      t.nodes = [...t.nodes, event.payload.node];
+      t.nodes = [...t.nodes, event.payload.node as TopologyNode];
       break;
     }
     case "node_removed": {
@@ -98,7 +100,7 @@ function applyEvent(topology: SiteTopology, event: TopologyEvent): SiteTopology 
     }
     case "node_modified": {
       const { nodeId, newNode } = event.payload;
-      t.nodes = t.nodes.map((n) => (n.id === nodeId ? newNode : n));
+      t.nodes = t.nodes.map((n) => (n.id === nodeId ? (newNode as TopologyNode) : n));
       break;
     }
     case "pipe_connected": {

@@ -1,13 +1,17 @@
-schema: 11
-device:
-  name: pump-ctrl
-  friendly_name: Pump-ctrl
-  board: heltec-v3
-  directory: pump-controller
+schema: 18
+controllers:
+  - id: pump-ctrl
+    directory: pump-controller
+    board: heltec-v3
+    friendlyName: Pump-ctrl
 nodes:
   - kind: tank
     id: tank1
     name: Rain Tank
+    level_monitored: true
+    pressure_pin: GPIO19
+    pressure_sensor_max_psi: 15
+    anchorId: pump-ctrl
     ports:
       - id: inlet
         label: Inlet
@@ -18,19 +22,13 @@ nodes:
     position:
       x: 100
       y: 250
-  - kind: level_sensor
-    id: ls1
-    name: Rain Tank Level
-    pin: GPIO19
-    ports:
-      - { id: inlet, label: Inlet, direction: inlet }
-      - { id: outlet, label: Outlet, direction: outlet }
-    position:
-      x: 170
-      y: 280
   - kind: tank
     id: tank2
     name: Storage Tank
+    level_monitored: true
+    pressure_pin: GPIO20
+    pressure_sensor_max_psi: 15
+    anchorId: pump-ctrl
     ports:
       - id: inlet
         label: Inlet
@@ -41,19 +39,11 @@ nodes:
     position:
       x: 800
       y: 150
-  - kind: level_sensor
-    id: ls2
-    name: Storage Tank Level
-    pin: GPIO20
-    ports:
-      - { id: inlet, label: Inlet, direction: inlet }
-      - { id: outlet, label: Outlet, direction: outlet }
-    position:
-      x: 870
-      y: 180
   - kind: pump
     id: pump
+    name: Main Pump
     pin: GPIO42
+    anchorId: pump-ctrl
     ports:
       - id: in
         label: Inlet
@@ -67,6 +57,7 @@ nodes:
   - kind: endpoint
     id: h2
     name: House 2
+    anchorId: pump-ctrl
     ports:
       - id: inlet
         label: Inlet
@@ -79,6 +70,7 @@ nodes:
     name: Tank 1 Outlet
     open_pin: GPIO4
     close_pin: GPIO5
+    anchorId: pump-ctrl
     ports:
       - id: inlet
         label: Inlet
@@ -94,6 +86,7 @@ nodes:
     name: Tank 2 Outlet
     open_pin: GPIO6
     close_pin: GPIO7
+    anchorId: pump-ctrl
     ports:
       - id: inlet
         label: Inlet
@@ -109,6 +102,7 @@ nodes:
     name: Pump to Tank 2
     open_pin: GPIO2
     close_pin: GPIO3
+    anchorId: pump-ctrl
     ports:
       - id: inlet
         label: Inlet
@@ -124,6 +118,7 @@ nodes:
     name: Pump to House 2
     open_pin: GPIO39
     close_pin: GPIO40
+    anchorId: pump-ctrl
     ports:
       - id: inlet
         label: Inlet
@@ -139,6 +134,7 @@ nodes:
     name: Refill Line Flow
     pin: GPIO47
     flow_cal: 450
+    anchorId: pump-ctrl
     ports:
       - id: inlet
         label: Inlet
@@ -154,6 +150,7 @@ nodes:
     name: House 2 Water Flow
     pin: GPIO46
     flow_cal: 450
+    anchorId: pump-ctrl
     ports:
       - id: inlet
         label: Inlet
@@ -165,50 +162,44 @@ nodes:
       x: 680
       y: 450
 pipes:
-  - id: pipe_ls1
-    from: tank1:outlet
-    to: ls1:inlet
   - id: pipe1
-    from: ls1:outlet
+    from: tank1:outlet
     to: valve1:inlet
   - id: pipe2
     from: valve1:outlet
     to: pump:in
-  - id: pipe_ls2
-    from: tank2:outlet
-    to: ls2:inlet
   - id: pipe3
-    from: ls2:outlet
+    from: tank2:outlet
     to: valve2:inlet
   - id: pipe4
     from: valve2:outlet
     to: pump:in
-  - id: pipe5
+  - id: pipe4
     from: pump:out
     to: valve3:inlet
-  - id: pipe6
+  - id: pipe5
     from: valve3:outlet
     to: flow3:inlet
-  - id: pipe7
+  - id: pipe6
     from: flow3:outlet
     to: tank2:inlet
-  - id: pipe8
+  - id: pipe7
     from: pump:out
     to: valve4:inlet
-  - id: pipe9
+  - id: pipe8
     from: valve4:outlet
     to: flow2:inlet
-  - id: pipe10
+  - id: pipe9
     from: flow2:outlet
     to: h2:inlet
 route_overrides:
-  tank1>tank2:
+  tank1>tank2#valve1+valve3:
     max_runtime_seconds: 600
     source_min_level: 20
     dest_max_level: 90
-  tank1>h2:
+  tank1>h2#valve1+valve4:
     max_runtime_seconds: 1800
-  tank2>h2:
+  tank2>h2#valve2+valve4:
     max_runtime_seconds: 1800
 timing:
   valve_travel_time: 15
@@ -220,7 +211,7 @@ timing:
 automations:
   - id: daily_refill
     name: Daily Refill
-    route: tank1>tank2
+    route: tank1>tank2#valve1+valve3
     trigger:
       type: time
       at: "06:00"

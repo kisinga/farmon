@@ -1,52 +1,44 @@
-schema: 11
-device:
-  name: vfd-ctrl
-  friendly_name: VFD Controller
-  board: heltec-v3
-  directory: vfd-pump-controller
-  uart_buses:
-    - id: uart_modbus
-      tx_pin: GPIO17
-      rx_pin: GPIO18
-      de_pin: GPIO19
-      baud_rate: 9600
-  io_providers:
-    - id: vfd1_ctrl
-      type: modbus_controller
-      config:
-        bus: uart_modbus
-        address: 1
+schema: 18
+controllers:
+  - id: vfd-ctrl
+    directory: vfd-pump-controller
+    board: heltec-v3
+    friendlyName: VFD Controller
+    uart_buses:
+      - id: uart_modbus
+        tx_pin: GPIO17
+        rx_pin: GPIO18
+        de_pin: GPIO19
+        baud_rate: 9600
+    io_providers:
+      - id: vfd1_ctrl
+        type: modbus_controller
+        config:
+          bus: uart_modbus
+          address: 1
 nodes:
   - kind: tank
     id: tank1
     name: Rain Tank
+    level_monitored: true
+    pressure_pin: GPIO20
+    pressure_sensor_max_psi: 15
+    anchorId: vfd-ctrl
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
     position: { x: 100, y: 250 }
-  - kind: level_sensor
-    id: ls1
-    name: Rain Tank Level
-    pin: GPIO20
-    ports:
-      - { id: inlet, label: Inlet, direction: inlet }
-      - { id: outlet, label: Outlet, direction: outlet }
-    position: { x: 170, y: 280 }
   - kind: tank
     id: tank2
     name: Storage Tank
+    level_monitored: true
+    pressure_pin: GPIO21
+    pressure_sensor_max_psi: 15
+    anchorId: vfd-ctrl
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
     position: { x: 800, y: 150 }
-  - kind: level_sensor
-    id: ls2
-    name: Storage Tank Level
-    pin: GPIO21
-    ports:
-      - { id: inlet, label: Inlet, direction: inlet }
-      - { id: outlet, label: Outlet, direction: outlet }
-    position: { x: 870, y: 180 }
   - kind: vfd
     id: vfd1
     name: Main VFD
@@ -57,6 +49,7 @@ nodes:
     power_register: 8
     frequency_register: 9
     fault_reset_register: 10
+    anchorId: vfd-ctrl
     ports:
       - { id: in, label: Inlet, direction: inlet }
       - { id: out, label: Outlet, direction: outlet }
@@ -66,6 +59,7 @@ nodes:
     name: Tank 1 Outlet
     open_pin: GPIO4
     close_pin: GPIO5
+    anchorId: vfd-ctrl
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
@@ -75,6 +69,7 @@ nodes:
     name: Tank 2 Inlet
     open_pin: GPIO6
     close_pin: GPIO7
+    anchorId: vfd-ctrl
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
@@ -84,19 +79,19 @@ nodes:
     name: Refill Flow
     pin: GPIO47
     flow_cal: 450
+    anchorId: vfd-ctrl
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
     position: { x: 700, y: 200 }
 pipes:
-  - { id: p_ls1, from: "tank1:outlet", to: "ls1:inlet" }
-  - { id: p1, from: "ls1:outlet", to: "valve1:inlet" }
+  - { id: p1, from: "tank1:outlet", to: "valve1:inlet" }
   - { id: p2, from: "valve1:outlet", to: "vfd1:in" }
   - { id: p3, from: "vfd1:out", to: "valve2:inlet" }
   - { id: p4, from: "valve2:outlet", to: "flow1:inlet" }
   - { id: p5, from: "flow1:outlet", to: "tank2:inlet" }
 route_overrides:
-  tank1>tank2:
+  tank1>tank2#valve1+valve2:
     max_runtime_seconds: 600
 timing:
   valve_travel_time: 15

@@ -58,7 +58,7 @@ function fixture(): SiteTopology {
   // HA derives entity_ids from friendly_name; ESPHome services use name. Both must be testable
   // independently, so the fixture forces them apart.
   return {
-    schema: 17,
+    schema: 18,
     controllers: [{
       id: 'gh-1',
       board: 'heltec_v3',
@@ -67,20 +67,12 @@ function fixture(): SiteTopology {
     nodes: [
       {
         kind: 'tank', id: 'tank_main', name: 'Main Tank',
+        level_monitored: true, pressure_pin: 'GPIO1', pressure_sensor_max_psi: 15,
         ports: [
           { id: 'inlet', label: 'Inlet', direction: 'inlet' },
           { id: 'outlet', label: 'Outlet', direction: 'outlet' },
         ],
         position: { x: 100, y: 100 },
-        anchorId: 'gh-1',
-      },
-      {
-        kind: 'level_sensor', id: 'ls_main', name: 'Main', pin: 'GPIO1', pump_rated: false,
-        ports: [
-          { id: 'inlet', label: 'Inlet', direction: 'inlet' },
-          { id: 'outlet', label: 'Outlet', direction: 'outlet' },
-        ],
-        position: { x: 175, y: 100 },
         anchorId: 'gh-1',
       },
       {
@@ -104,9 +96,8 @@ function fixture(): SiteTopology {
       },
     ],
     pipes: [
-      { id: 'p1', from: 'tank_main:outlet', to: 'ls_main:inlet' },
-      { id: 'p2', from: 'ls_main:outlet', to: 'pump_1:in' },
-      { id: 'p3', from: 'pump_1:out', to: 'valve_a:inlet' },
+      { id: 'p1', from: 'tank_main:outlet', to: 'pump_1:in' },
+      { id: 'p2', from: 'pump_1:out', to: 'valve_a:inlet' },
     ],
     route_overrides: {},
     timing: {
@@ -150,9 +141,8 @@ assert(pumpActions.some(a => a.id === 'toggle' && a.service === 'switch.toggle')
 
 assert(!!meta.nodes['tank_main'].binds, 'tank carries default binds');
 assert(meta.nodes['tank_main'].binds?.['value'] === 'state|format:percent', 'tank default bind is percent on value slot');
-// Tank itself emits no firmware entity — its state comes from the
-// pipe-connected level_sensor's `level` entity (cross-reference).
-assert(meta.nodes['tank_main'].entityId === 'sensor.greenhouse_main_level', 'tank resolves to downstream level_sensor level entity');
+// Tank emits its own level entity via intrinsic pressure sensor.
+assert(meta.nodes['tank_main'].entityId === 'sensor.greenhouse_main_tank_level', 'tank resolves to its own intrinsic level entity');
 
 assert(!!meta.nodes['valve_a'], 'valve present');
 assert(meta.nodes['valve_a'].entityId === 'cover.greenhouse_valve_a', 'valve_a carries derived entityId');
@@ -161,12 +151,12 @@ assert((meta.nodes['valve_a'].actions ?? []).length > 0, 'valve_a has default ac
 // --- Pipe flow predicates ---
 
 console.log('\nPipes:');
-// p1 (tank→level_sensor) — fromEntity is tank's resolved cross-reference (level entity).
-assert(meta.pipes['p1']?.fromEntity === 'sensor.greenhouse_main_level', 'p1 fromEntity wired (tank cross-ref)');
-assert(meta.pipes['p1']?.toEntity === 'sensor.greenhouse_main_level', 'p1 toEntity is the level_sensor itself');
+// p1 (tank→pump) — fromEntity is tank's own level entity.
+assert(meta.pipes['p1']?.fromEntity === 'sensor.greenhouse_main_tank_level', 'p1 fromEntity wired (tank level)');
+assert(meta.pipes['p1']?.toEntity === 'switch.greenhouse_pump_relay', 'p1 toEntity is pump relay');
 assert(meta.pipes['p1']?.flowWhen === `fromEntity.state == 'on'`, 'p1 default flowWhen set');
-assert(meta.pipes['p3']?.fromEntity === 'switch.greenhouse_pump_relay', 'p3 fromEntity set');
-assert(meta.pipes['p3']?.toEntity === 'cover.greenhouse_valve_a', 'p3 toEntity set');
+assert(meta.pipes['p2']?.fromEntity === 'switch.greenhouse_pump_relay', 'p2 fromEntity set');
+assert(meta.pipes['p2']?.toEntity === 'cover.greenhouse_valve_a', 'p2 toEntity set');
 
 // --- Determinism: 3 runs produce identical JSON ---
 
@@ -187,9 +177,9 @@ assert(JSON.stringify(pipeKeys) === JSON.stringify(sortedPipeKeys), 'pipe keys a
 
 console.log('\nOverride precedence:');
 const withOverride = fixture();
-// pump_1 is at index 2 (tank, level_sensor, pump, valve).
-withOverride.nodes[2].haActions = [{ id: 'custom', label: 'Custom', service: 'script.my_custom' }];
-withOverride.nodes[2].binds = { label: 'attributes.current_power|format:watts' };
+// pump_1 is at index 1 (tank, pump, valve).
+withOverride.nodes[1].haActions = [{ id: 'custom', label: 'Custom', service: 'script.my_custom' }];
+withOverride.nodes[1].binds = { label: 'attributes.current_power|format:watts' };
 const metaOv = buildHaMeta(withOverride, FIXTURE_DEVICE, { viewBox: [0, 0, 1200, 600], generatedAt: FIXED_TIME });
 assert(metaOv.nodes['pump_1'].actions?.length === 1, 'per-node actions replace defaults entirely');
 assert(metaOv.nodes['pump_1'].actions?.[0].id === 'custom', 'override action id wins');

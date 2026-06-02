@@ -30,6 +30,8 @@ export const TankNodeSchema = z.object({
   height_m: z.number().positive().optional(),
   /** Tank usable capacity in litres. Drives volume readouts. */
   capacity_l: z.number().positive().optional(),
+  /** When true, this tank has intrinsic pressure-based level monitoring. */
+  level_monitored: z.boolean().default(false),
   /** Intrinsic pressure-sensor configuration for tank level monitoring. */
   pressure_pin: PressureSensorConfigSchema.shape.pin.optional(),
   pressure_elevation_m: PressureSensorConfigSchema.shape.elevation_m.optional(),
@@ -83,7 +85,8 @@ export const tankDescriptor: NodeDescriptor = {
   sidebarFields: [
     { key: 'height_m', label: 'Tank height (m)', type: 'number', hint: 'Drives pressure-sensor calibration when the tank has an intrinsic pressure sensor.' },
     { key: 'capacity_l', label: 'Tank capacity (L)', type: 'number' },
-    { key: 'pressure_pin', label: 'Pressure pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc', hint: 'ADC pin for an intrinsic tank-mounted pressure sensor. Leave blank if using a separate level sensor or no level monitoring.' },
+    { key: 'level_monitored', label: 'Tank level monitored', type: 'toggle', hint: 'Enable intrinsic pressure-sensor based level monitoring for this tank.' },
+    { key: 'pressure_pin', label: 'Pressure pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc', hint: 'ADC pin for the tank-mounted pressure sensor. Required when level monitoring is enabled.' },
     { key: 'pressure_elevation_m', label: 'Sensor drop below tank (m)', type: 'number', hint: 'Vertical drop from tank outlet down to sensor. Stays full of water — shifts the empty-tank reading.' },
     { key: 'pressure_sensor_max_psi', label: 'Sensor max (psi)', type: 'number', hint: 'Datasheet full-scale value, e.g. 5 / 10 / 15 / 30 psi.' },
     {
@@ -120,8 +123,7 @@ export const tankDescriptor: NodeDescriptor = {
 
     haEntityIds: (node: TankNode, device) => {
       // The tank only has a canonical HA entity when it has an intrinsic
-      // pressure sensor. Otherwise its level comes from a downstream
-      // level_sensor and is resolved via cross-reference in ha-meta.ts.
+      // pressure sensor (level_monitored === true with pressure_pin set).
       if (!node.pressure_pin) return {};
       const n = pressureSensorHaNames(node);
       return {
@@ -139,26 +141,6 @@ export const tankDescriptor: NodeDescriptor = {
     ],
   },
 
-  routeRules: [{
-    id: 'tank-downstream-sensor',
-    severity: 'warning',
-    evaluate: (node, route, graph) => {
-      if ((node as TankNode).pressure_pin) return null;
-      const idx = route.nodeSequence.indexOf(node.id);
-      const downstream = route.nodeSequence.slice(idx + 1);
-      const searchRange = downstream.length > 0
-        ? downstream
-        : graph.outNeighbors(node.id);
-      if (searchRange.some(id => graph.getNodeAttribute(id, 'isLevelSensor'))) return null;
-      return {
-        severity: 'warning',
-        message: `Route "${route.key}": Level sensor recommended after tank for pre-flight checks and automated refill`,
-        target: route.key,
-        ruleId: 'tank-downstream-sensor',
-      };
-    },
-  }],
-
   rules: [
     {
       id: 'tank-pressure-pin-required',
@@ -166,10 +148,10 @@ export const tankDescriptor: NodeDescriptor = {
       evaluate: (nodes) => nodes
         .filter(n => {
           const data = n as Record<string, unknown>;
-          return data['kind'] === 'tank' && data['pressure_sensor_max_psi'] != null && !data['pressure_pin'];
+          return data['kind'] === 'tank' && data['level_monitored'] === true && !data['pressure_pin'];
         })
         .map(n => ({
-          message: `Tank "${n.name}": pressure sensor max psi is set but no pin assigned. Set a pin or clear the pressure sensor config.`,
+          message: `Tank "${n.name}": level monitoring is enabled but no pressure pin assigned. Set a pin or disable level monitoring.`,
           target: n.id,
         })),
     },
@@ -178,7 +160,7 @@ export const tankDescriptor: NodeDescriptor = {
       severity: 'warning',
       evaluate: (nodes) => {
         const candidates = nodes
-          .filter(n => n.kind === 'tank')
+          .filter(n => n.kind === 'tank' && (n as TankNode).level_monitored)
           .map(n => ({
             id: n.id,
             name: n.name,
@@ -196,7 +178,7 @@ export const tankDescriptor: NodeDescriptor = {
       severity: 'warning',
       evaluate: (nodes) => {
         const candidates = nodes
-          .filter(n => n.kind === 'tank')
+          .filter(n => n.kind === 'tank' && (n as TankNode).level_monitored)
           .map(n => ({
             id: n.id,
             name: n.name,

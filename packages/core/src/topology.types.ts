@@ -16,12 +16,9 @@ export type { EndpointNode } from './entities/endpoint';
 export type { ValveNode } from './entities/valve';
 export type { FlowSensorNode } from './entities/flow-sensor';
 export type { WaterSourceNode } from './entities/water-source';
-export type { PressureSensorNode } from './entities/pressure-sensor';
 export type { FilterNode } from './entities/filter';
 export type { DosingPumpNode } from './entities/dosing-pump';
 export type { VfdNode } from './entities/vfd';
-
-export type { LevelSensorNode } from './entities/level-sensor';
 
 import type { TankNode } from './entities/tank';
 import type { PumpNode } from './entities/pump';
@@ -29,12 +26,9 @@ import type { EndpointNode } from './entities/endpoint';
 import type { ValveNode } from './entities/valve';
 import type { FlowSensorNode } from './entities/flow-sensor';
 import type { WaterSourceNode } from './entities/water-source';
-import type { PressureSensorNode } from './entities/pressure-sensor';
 import type { FilterNode } from './entities/filter';
 import type { DosingPumpNode } from './entities/dosing-pump';
 import type { VfdNode } from './entities/vfd';
-
-import type { LevelSensorNode } from './entities/level-sensor';
 
 // ---------------------------------------------------------------------------
 // Node union
@@ -47,8 +41,6 @@ export type TopologyNode =
   | ValveNode
   | FlowSensorNode
   | WaterSourceNode
-  | PressureSensorNode
-  | LevelSensorNode
   | FilterNode
   | DosingPumpNode
   | VfdNode;
@@ -154,7 +146,7 @@ export interface RemoteImport {
 }
 
 export interface SiteTopology {
-  schema: 17;
+  schema: 18;
   controllers: Controller[];
   nodes: TopologyNode[];
   pipes: PipeSegment[];

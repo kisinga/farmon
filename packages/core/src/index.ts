@@ -11,7 +11,7 @@ export type {
   SiteTopology, TopologyNode, PipeSegment, RouteOverride,
   Automation, AutomationTrigger, UartBus, NetworkConfig, NetworkTransport,
   TankNode, PumpNode, EndpointNode, ValveNode,
-  FlowSensorNode, WaterSourceNode, PressureSensorNode, LevelSensorNode, FilterNode, DosingPumpNode, VfdNode,
+  FlowSensorNode, WaterSourceNode, FilterNode, DosingPumpNode, VfdNode,
   Port, Position, Controller, RemoteImport,
 } from './topology.types';
 export { effectiveTransport } from './topology.types';
@@ -78,7 +78,6 @@ export type { BuildHaMetaOptions } from './ha-meta';
 export {
   pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId,
   flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId,
-  levelSensorLevelId, levelSensorRawVoltageId, levelSensorCalEmptyId, levelSensorCalFullId,
   pressureSensorId, pressureSensorRangeMinId, pressureSensorRangeMaxId,
   pressureSensorCalEmptyId, pressureSensorCalFullId, pressureSensorLevelId,
   waterSourcePressureId,
@@ -122,7 +121,7 @@ export type { PressureSensorConfig, PressureSensorCodegenIds, PressureSensorHaNa
 export { buildGraph, type TopologyGraph, type NodeAttrs, type EdgeAttrs } from './graph/topology-graph';
 export { activeGraph, isNodeActive } from './graph/active-graph';
 export { deriveRoutes, parseRouteKey, controllerClaimsSegment, type Route } from './graph/routes';
-export { resolveTankLevelSources, findRouteAutomationSensor, type TankLevelSource, type RouteAutomationSensor } from './tank-level';
+export { findRouteAutomationSensor, type RouteAutomationSensor } from './tank-level';
 export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes } from './graph/highlight';
 export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './graph/constraints';
 export { evaluateConstraints } from './graph/evaluate-constraints';

@@ -60,7 +60,7 @@ const manifest: Manifest = {
       source_has_level: false,
       dest_has_level: false,
       runtime_level_ok: true,
-      inline_pressure_sensors: [],
+
       monitored: true,
     },
   ],

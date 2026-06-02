@@ -194,7 +194,6 @@ export function generateSiteDocumentation(
   // Per-controller detail sections
   const controllerDetails = systems.map((s, i) => {
     const tanks = nodesByKind(allNodes(s.manifest), 'tank');
-    const levelSensors = nodesWithFlag(allNodes(s.manifest), 'isLevelSensor');
 
     let boardPinoutSection = '';
     if (s.boardSvg && s.pinOverlays?.length) {
@@ -279,23 +278,9 @@ export function generateSiteDocumentation(
       topologySvg: s.topologySvg ?? '',
       timing: s.manifest.timing,
       routeEntities: s.manifest.routes.map((r, ri) => ({ index: ri, name: r.name })),
-      // Per-route inline pressure sensors on the path. Resolved from
-      // manifest's `inline_pressure_sensors` IDs to human-readable names.
-      // Empty rows are filtered so the doc only shows routes that actually
-      // touch a sensor — keeps the section cheap when no sensors are inline.
-      routePathSensors: s.manifest.routes
-        .map(r => ({
-          name: r.name,
-          sensors: (r.inline_pressure_sensors ?? [])
-            .map(id => {
-              const node = allNodes(s.manifest).find(n => n.id === id);
-              return node ? String(node.name ?? id) : id;
-            })
-            .join(', '),
-        }))
-        .filter(e => e.sensors.length > 0),
-      hasRoutePathSensors: s.manifest.routes.some(r => (r.inline_pressure_sensors ?? []).length > 0),
-      tankCalEntities: levelSensors.map(t => ({ id: t['id'], name: t['name'] })),
+      tankCalEntities: nodesByKind(allNodes(s.manifest), 'tank')
+        .filter(t => t['level_monitored'])
+        .map(t => ({ id: t['id'], name: t['name'] })),
       activeConnection,
       networkAnchor,
       pinAnchor,

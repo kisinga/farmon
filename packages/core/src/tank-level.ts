@@ -1,42 +1,22 @@
 /**
  * Canonical helpers for tank-level sensing and route automation.
  *
- * --- Tank level invariant ----------------------------------------------------
- *
- * A tank's level reading comes from one of two sources:
- *
- *   - level_sensor    — direct % reading from an ADC (preferred when present)
- *   - intrinsic pressure_sensor on the tank node — % derived from pressure-vs-calibration
- *
- * `resolveTankLevelSources` walks the graph once for level_sensor nodes and
- * checks each tank node for intrinsic pressure config. When both are present
- * on the same tank, level_sensor wins.
- *
- * This is the single source of truth shared by:
- *   - manifest construction (tank annotation)
- *   - codegen (firmware tank-level dispatch)
- *   - automation triggers (route → sensor resolution)
- *   - UI route-level info (which override fields are visible)
+ * Tank level monitoring is intrinsic: a tank with `level_monitored === true`
+ * uses its own pressure sensor config (`pressure_pin`, etc.) to derive a
+ * level % reading. There are no standalone level_sensor or pressure_sensor
+ * nodes.
  *
  * --- Route automation rule ---------------------------------------------------
  *
- * A route is automatable on a level trigger iff its source tank has a level
- * source AND the source tank appears before:
+ * A route is automatable on a level trigger iff its source tank has
+ * `level_monitored === true` AND the source tank appears before:
  *   - any of the route's valves, AND
  *   - the route's pump (if the route is pumped)
  *
  * "Before" = lower index in the route's nodeSequence. The constraint exists
  * so the trigger reading isn't disturbed by valves/pumps actuated as part of
- * the route. Only the route's source endpoint qualifies — destination and
- * mid-route tanks would either sit after a valve (violating the rule) or
- * make no semantic sense as a "fire when level is X" condition.
- *
- * Parallel paths between the same endpoints are distinct Route objects
- * (different `key`); each is automatable independently.
+ * the route. Only the route's source endpoint qualifies.
  */
-import type { TopologyGraph } from './graph/topology-graph';
-import type { TankNode } from './entities/tank';
-
 /**
  * Subset of `Route` fields needed by `findRouteAutomationSensor`. Both the
  * graph `Route` and the manifest `Route` satisfy this shape, so callers on
@@ -49,51 +29,17 @@ export interface RouteForAutomation {
   pumpIndex: number;
 }
 
-export interface TankLevelSource {
-  id: string;
-  kind: 'level_sensor' | 'pressure_sensor';
-}
-
-/**
- * For each tank in the graph, find the first downstream level source.
- * level_sensor preferred over intrinsic pressure_sensor when both present.
- */
-export function resolveTankLevelSources(
-  graph: TopologyGraph,
-  nodeKindById: Map<string, string>,
-): Map<string, TankLevelSource> {
-  const result = new Map<string, TankLevelSource>();
-  for (const [id, kind] of nodeKindById) {
-    if (kind !== 'tank' || !graph.hasNode(id)) continue;
-
-    // Prefer downstream level_sensor if present
-    let foundLevelSensor: string | undefined;
-    for (const neighbor of graph.outNeighbors(id)) {
-      if (graph.hasNode(neighbor) && graph.getNodeAttribute(neighbor, 'kind') === 'level_sensor') {
-        foundLevelSensor = neighbor;
-        break;
-      }
-    }
-    if (foundLevelSensor) {
-      result.set(id, { id: foundLevelSensor, kind: 'level_sensor' });
-      continue;
-    }
-
-    // Fall back to intrinsic pressure sensor on the tank node itself
-    const tankNode = graph.getNodeAttribute(id, 'data') as TankNode | undefined;
-    if (tankNode?.pressure_pin) {
-      result.set(id, { id, kind: 'pressure_sensor' });
-    }
-  }
-  return result;
-}
-
 export interface RouteAutomationSensor {
   /** Tank node id whose level reading drives the trigger. */
   tankId: string;
-  /** Sensor node id supplying the level reading. */
+  /** Sensor node id supplying the level reading (same as tankId for intrinsic). */
   sensorId: string;
-  sensorKind: 'level_sensor' | 'pressure_sensor';
+}
+
+/** Minimal node shape for findRouteAutomationSensor. */
+export interface AutomationNode {
+  kind: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -101,22 +47,18 @@ export interface RouteAutomationSensor {
  * applying the route automation rule above. Returns `null` if the route has no
  * eligible tank — the route is not automatable on level.
  *
- * @param route                Route to evaluate.
- * @param tankLevelSourceById  Lookup from `resolveTankLevelSources` (or any
- *                             equivalent map keyed by tank id).
- * @param nodeKindById         Map of every node id to its kind, used to
- *                             identify valves in the sequence.
+ * @param route     Route to evaluate.
+ * @param nodeById  Map of every node id to its node (TopologyNode or manifest node).
  */
 export function findRouteAutomationSensor(
   route: RouteForAutomation,
-  tankLevelSourceById: Map<string, TankLevelSource>,
-  nodeKindById: Map<string, string>,
+  nodeById: Map<string, AutomationNode>,
 ): RouteAutomationSensor | null {
   // Source endpoint must be a tank — water_source routes can't carry a level
   // trigger because they have no tank-level reading to fire on.
-  if (nodeKindById.get(route.source) !== 'tank') return null;
-  const src = tankLevelSourceById.get(route.source);
-  if (!src) return null;
+  const srcNode = nodeById.get(route.source);
+  if (!srcNode || srcNode.kind !== 'tank') return null;
+  if (!srcNode['level_monitored']) return null;
 
   // Position rule: source tank must sit before any valve, and before the pump
   // if the route is pumped. The source is always at index 0 of nodeSequence,
@@ -125,11 +67,12 @@ export function findRouteAutomationSensor(
   // water source, never at a valve/pump). The check is kept explicit so
   // future changes to route shape don't silently break the invariant.
   for (let i = 0; i < route.nodeSequence.length; i++) {
-    const kind = nodeKindById.get(route.nodeSequence[i]);
-    if (kind === 'valve') break;
+    const node = nodeById.get(route.nodeSequence[i]);
+    if (!node) break;
+    if (node.kind === 'valve') break;
     if (route.crossesPump && i === route.pumpIndex) break;
     if (route.nodeSequence[i] === route.source) {
-      return { tankId: route.source, sensorId: src.id, sensorKind: src.kind };
+      return { tankId: route.source, sensorId: route.source };
     }
   }
   return null;

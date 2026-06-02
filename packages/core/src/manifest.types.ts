@@ -1,5 +1,4 @@
 import type { SiteTopology, TopologyNode, NetworkConfig, UartBus, IoProviderDef } from './topology.types';
-import type { TankLevelSource } from './tank-level';
 
 // ---------------------------------------------------------------------------
 // Manifest — internal intermediate representation
@@ -30,8 +29,6 @@ export type LocalManifestNode = TopologyNode & {
   /** HA entity_id for remote reads — set when this node's primary value lives on another controller (e.g. tank with remote level source). */
   remoteHaEntityId?: string;
   remoteDeviceName?: string;
-  /** Resolved level source for tank nodes. */
-  level_source?: TankLevelSource;
   /** Allow dynamic field access for sidebar field iteration. */
   [key: string]: unknown;
 };
@@ -108,13 +105,6 @@ export interface Route {
   dest_has_level: boolean;
   /** True if level sensors on this route are reliable during pump operation. */
   runtime_level_ok: boolean;
-  /**
-   * Pressure-sensor IDs that lie on this route's path (in traversal order).
-   * Derived metadata — exposed for downstream consumers (HA dashboards, site
-   * docs) that want to surface "this route involves these sensors". Firmware
-   * does not consume this list.
-   */
-  inline_pressure_sensors: string[];
   /** True when this route has a flow sensor and participates in flow watchdog/confirm. */
   monitored: boolean;
 }

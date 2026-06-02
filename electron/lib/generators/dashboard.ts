@@ -115,37 +115,18 @@ export function buildWaterSection(m: Manifest): HaGridSection {
   const sys = systemHaEntityIds(dev, m.routes);
   const waterSources = nodesByKind(m.nodes, 'water_source');
   const flowSensors = nodesByKind(m.nodes, 'flow_sensor');
-  const pressureSensors = nodesByKind(m.nodes, 'pressure_sensor');
   const filters = nodesByKind(m.nodes, 'filter');
 
-  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
-  const levelGauges: HaWidget[] = levelSensors.map(ls => ({
-    type: "gauge", entity: haIds(ls, dev).level!, name: n(ls, 'name'),
+  const tanksWithLevel = m.nodes.filter(n => n.kind === 'tank' && n['level_monitored']);
+  const tankLevelGauges: HaWidget[] = tanksWithLevel.map(t => ({
+    type: "gauge", entity: haIds(t, dev).level!, name: n(t, 'name'),
     min: 0, max: 100, severity: { red: 0, yellow: 25, green: 50 }, needle: true,
   }));
-
-  // Pressure sensors that act as tank-level sources contribute their derived
-  // level% to the same row of tank-fill gauges as the level sensors.
-  const pressureLevelGauges: HaWidget[] = pressureSensors.map(ps => ({
-    type: "gauge", entity: haIds(ps, dev).level!, name: `${n(ps, 'name')} Level`,
-    min: 0, max: 100, severity: { red: 0, yellow: 25, green: 50 }, needle: true,
-  }));
-
-  const tankLevelGauges: HaWidget[] = [...levelGauges, ...pressureLevelGauges];
 
   const wsPressureGauges: HaWidget[] = waterSources.filter(ws => ws['pressure_pin']).map(ws => ({
     type: "gauge", entity: haIds(ws, dev).pressure!, name: `${n(ws, 'name')} Pressure`,
     min: 0, max: 10, severity: { red: 0, yellow: 1, green: 2 }, needle: true,
   }));
-
-  const pressureGauges: HaWidget[] = pressureSensors.map(ps => {
-    const max = Number(ps['sensor_max_psi'] ?? 15);
-    return {
-      type: "gauge", entity: haIds(ps, dev).pressure!, name: n(ps, 'name'),
-      min: 0, max,
-      severity: { red: 0, yellow: max * 0.1, green: max * 0.2 }, needle: true,
-    };
-  });
 
   const filterEntities = filters
     .filter(f => f['inlet_pressure_pin'] && f['outlet_pressure_pin'])
@@ -186,12 +167,12 @@ export function buildWaterSection(m: Manifest): HaGridSection {
 
   const cards: HaWidget[] = [
     { type: "heading", heading: "Water levels", heading_style: "title",
-      ...(levelSensors.length >= 2
+      ...(tanksWithLevel.length >= 2
         ? { badges: [{ type: "entity", show_state: true, show_icon: true, entity: sys.combinedTankLevel }] }
         : {}),
     },
   ];
-  if (levelSensors.length >= 2) {
+  if (tanksWithLevel.length >= 2) {
     cards.push({ type: "entities", entities: [{ entity: sys.waterCritical, name: "Water Critical" }], grid_options: { columns: "full" } });
   }
   if (tankLevelGauges.length > 0) {
@@ -199,9 +180,6 @@ export function buildWaterSection(m: Manifest): HaGridSection {
   }
   if (wsPressureGauges.length > 0) {
     cards.push({ type: "horizontal-stack", cards: wsPressureGauges, grid_options: { columns: "full", rows: "auto" } });
-  }
-  if (pressureGauges.length > 0) {
-    cards.push({ type: "horizontal-stack", cards: pressureGauges, grid_options: { columns: "full", rows: "auto" } });
   }
   if (filterEntities.length > 0) {
     cards.push({ type: "entities", title: "Filter Status", entities: filterEntities, grid_options: { columns: "full" } });
@@ -367,8 +345,7 @@ export function buildRouteControlSection(m: Manifest): HaRouteControl {
 export function buildConfigurationView(m: Manifest): HaCardsView {
   const dev = m.device;
   const sys = systemHaEntityIds(dev, m.routes);
-  const levelSensors = nodesWithFlag(m.nodes, 'isLevelSensor');
-  const pressureSensors = nodesWithFlag(m.nodes, 'isPressureSensor');
+  const tanksWithLevel = m.nodes.filter(n => n.kind === 'tank' && n['level_monitored']);
   const valves = nodesWithFlag(m.nodes, 'isValve');
 
   // Watchdogs / timeouts — global safety timing + per-route max runtime.
@@ -398,24 +375,14 @@ export function buildConfigurationView(m: Manifest): HaCardsView {
     entity: haIds(v, dev).travelTime!, name: `${n(v, 'name')} Travel Time`,
   }));
 
-  // Level sensor calibration (existing pattern).
-  const levelCalEntities = levelSensors.flatMap(ls => {
-    const ids = haIds(ls, dev);
+  // Tank pressure-sensor calibration — sensor electrical range + tank operating range.
+  const tankCalEntities = tanksWithLevel.flatMap(t => {
+    const ids = haIds(t, dev);
     return [
-      { entity: ids.rawVoltage!, name: `${n(ls, 'name')} Raw V` },
-      { entity: ids.calEmpty!,   name: `${n(ls, 'name')} Empty` },
-      { entity: ids.calFull!,    name: `${n(ls, 'name')} Full` },
-    ];
-  });
-
-  // Pressure sensor calibration — sensor electrical range + tank operating range.
-  const pressureCalEntities = pressureSensors.flatMap(ps => {
-    const ids = haIds(ps, dev);
-    return [
-      { entity: ids.rangeMin!, name: `${n(ps, 'name')} Sensor Min` },
-      { entity: ids.rangeMax!, name: `${n(ps, 'name')} Sensor Max` },
-      { entity: ids.calEmpty!, name: `${n(ps, 'name')} Cal Empty` },
-      { entity: ids.calFull!,  name: `${n(ps, 'name')} Cal Full` },
+      { entity: ids.rangeMin!, name: `${n(t, 'name')} Sensor Min` },
+      { entity: ids.rangeMax!, name: `${n(t, 'name')} Sensor Max` },
+      { entity: ids.calEmpty!, name: `${n(t, 'name')} Cal Empty` },
+      { entity: ids.calFull!,  name: `${n(t, 'name')} Cal Full` },
     ];
   });
 
@@ -428,11 +395,8 @@ export function buildConfigurationView(m: Manifest): HaCardsView {
   if (valveTravelEntities.length > 0) {
     cards.push({ type: "entities", title: "Valve Travel Times", entities: valveTravelEntities });
   }
-  if (levelCalEntities.length > 0) {
-    cards.push({ type: "entities", title: "Level Sensor Calibration (voltage)", entities: levelCalEntities });
-  }
-  if (pressureCalEntities.length > 0) {
-    cards.push({ type: "entities", title: "Pressure Sensor Calibration (psi)", entities: pressureCalEntities });
+  if (tankCalEntities.length > 0) {
+    cards.push({ type: "entities", title: "Tank Calibration", entities: tankCalEntities });
   }
 
   return {

@@ -1,6 +1,6 @@
 import type { Manifest } from "../schema.js";
 import { nodesByKind, nodesWithFlag, allNodes, pumpSwitchId } from "../schema.js";
-import { valveCoverId, valveTravelTimeId, levelSensorLevelId, pressureSensorLevelId, flowSensorId, parseRouteKey } from '@far-mon/core';
+import { valveCoverId, valveTravelTimeId, pressureSensorLevelId, flowSensorId, parseRouteKey } from '@far-mon/core';
 import { generateDeadman } from './deadman.js';
 
 // ---------------------------------------------------------------------------
@@ -10,8 +10,6 @@ import { generateDeadman } from './deadman.js';
 export interface RouteContext {
   manifest: Manifest;
   tanks: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
-  levelSensors: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
-  pressureSensors: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
   valves: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
   flowSensors: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
   waterSources: Array<Manifest['nodes'][number] | Manifest['imports'][number]>;
@@ -42,8 +40,6 @@ export interface RouteContext {
 export function buildRouteContext(m: Manifest): RouteContext {
   const all = allNodes(m);
   const tanks = nodesByKind(all, 'tank');
-  const levelSensors = nodesWithFlag(all, 'isLevelSensor');
-  const pressureSensors = nodesWithFlag(all, 'isPressureSensor');
   const valves = nodesWithFlag(all, 'isValve');
   const flowSensors = nodesWithFlag(all, 'isFlowSensor');
   const waterSources = nodesByKind(all, 'water_source');
@@ -105,7 +101,7 @@ export function buildRouteContext(m: Manifest): RouteContext {
 
   return {
     manifest: m,
-    tanks, levelSensors, pressureSensors, valves, flowSensors, waterSources, pumps,
+    tanks, valves, flowSensors, waterSources, pumps,
     tankIdx, valveIdx, flowIdx, wsIdx, pumpIdx,
     valveTravelMs, flowWatchdogMs, flowConfirmMs, apiWatchdogMs,
     conflictMasks, routeLines,
@@ -120,7 +116,7 @@ export function buildRouteContext(m: Manifest): RouteContext {
 export function generateRoutes(m: Manifest): string {
   const ctx = buildRouteContext(m);
   const {
-    tanks, levelSensors, pressureSensors, valves, flowSensors, waterSources, pumps,
+    tanks, valves, flowSensors, waterSources, pumps,
     valveTravelMs, flowWatchdogMs, flowConfirmMs, apiWatchdogMs,
     conflictMasks, routeLines,
     valveComment, tankComment, wsComment, flowComment, pumpComment,
@@ -137,24 +133,15 @@ export function generateRoutes(m: Manifest): string {
   const stopCases = valves
     .map((v, i) => `    case ${i}: id(${valveCoverId(nid(v))}).make_call().set_command_stop().perform(); break;`)
     .join("\n");
-  // Map each tank to its associated level source (set by topology-to-manifest).
-  // Source may be a level_sensor (direct %) or a pressure_sensor (% derived
-  // from pressure-vs-calibration). Dispatch on kind to the right codegen ID.
+  // Map each tank to its level reading. Monitored tanks use their intrinsic
+  // pressure sensor; unmonitored tanks return -1.0f.
   const tankCases = tanks
     .map((t, i) => {
       if (t['remoteHaEntityId']) {
         return `    case ${i}: return id(ri_${t['id']}).state; // remote: ${t['name']}`;
       }
-      const src = t['level_source'] as { id: string; kind: 'level_sensor' | 'pressure_sensor' } | undefined;
-      if (!src) return `    case ${i}: return -1.0f; // ${t['id']}: no level source`;
-      if (src.kind === 'level_sensor') {
-        const ls = levelSensors.find(s => s['id'] === src.id);
-        if (!ls) return `    case ${i}: return -1.0f; // ${t['id']}: level_sensor ${src.id} not found`;
-        return `    case ${i}: return id(${levelSensorLevelId(nid(ls))}).state;`;
-      }
-      const ps = pressureSensors.find(s => s['id'] === src.id);
-      if (!ps) return `    case ${i}: return -1.0f; // ${t['id']}: pressure_sensor ${src.id} not found`;
-      return `    case ${i}: return id(${pressureSensorLevelId(nid(ps))}).state;`;
+      if (!t['level_monitored']) return `    case ${i}: return -1.0f; // ${t['id']}: no level monitoring`;
+      return `    case ${i}: return id(${pressureSensorLevelId(nid(t))}).state;`;
     })
     .join("\n");
   const flowCases = flowSensors
@@ -269,20 +256,6 @@ inline bool is_duplicate_command(const char* command_id) {
 
 static uint32_t api_partition_since = 0;
 
-inline uint32_t get_api_watchdog_ms() {
-  float v = id(api_watchdog_s).state;
-  return (!std::isnan(v) && v >= 30.0f) ? (uint32_t)(v * 1000.0f) : DEFAULT_API_WATCHDOG_MS;
-}
-
-inline bool is_api_partitioned(uint32_t now) {
-  if (id(api_client_count) > 0) {
-    api_partition_since = 0;
-    return false;
-  }
-  if (api_partition_since == 0) api_partition_since = now;
-  return (now - api_partition_since) > get_api_watchdog_ms();
-}
-
 // --- Constants ---------------------------------------------------------------
 
 static const int MAX_CONCURRENT_ROUTES = 2;
@@ -297,6 +270,20 @@ static const uint32_t DEFAULT_FLOW_WATCHDOG_MS       = ${flowWatchdogMs}U;
 static const uint32_t DEFAULT_FLOW_CONFIRM_MS        = ${flowConfirmMs}U;
 static const float    DEFAULT_FLOW_THRESHOLD_L_MIN   = ${m.timing.flow_threshold};
 static const uint32_t DEFAULT_API_WATCHDOG_MS        = ${apiWatchdogMs}U;
+
+inline uint32_t get_api_watchdog_ms() {
+  float v = id(api_watchdog_s).state;
+  return (!std::isnan(v) && v >= 30.0f) ? (uint32_t)(v * 1000.0f) : DEFAULT_API_WATCHDOG_MS;
+}
+
+inline bool is_api_partitioned(uint32_t now) {
+  if (id(api_client_count) > 0) {
+    api_partition_since = 0;
+    return false;
+  }
+  if (api_partition_since == 0) api_partition_since = now;
+  return (now - api_partition_since) > get_api_watchdog_ms();
+}
 
 // --- Component counts --------------------------------------------------------
 

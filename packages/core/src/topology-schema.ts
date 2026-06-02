@@ -12,8 +12,7 @@ import { EndpointNodeSchema } from './entities/endpoint';
 import { ValveNodeSchema } from './entities/valve';
 import { FlowSensorNodeSchema } from './entities/flow-sensor';
 import { WaterSourceNodeSchema } from './entities/water-source';
-import { PressureSensorNodeSchema } from './entities/pressure-sensor';
-import { LevelSensorNodeSchema } from './entities/level-sensor';
+
 import { FilterNodeSchema } from './entities/filter';
 import { DosingPumpNodeSchema } from './entities/dosing-pump';
 import { VfdNodeSchema } from './entities/vfd';
@@ -32,8 +31,6 @@ export const TopologyNodeSchema = z.discriminatedUnion("kind", [
   ValveNodeSchema,
   FlowSensorNodeSchema,
   WaterSourceNodeSchema,
-  PressureSensorNodeSchema,
-  LevelSensorNodeSchema,
   FilterNodeSchema,
   DosingPumpNodeSchema,
   VfdNodeSchema,
@@ -91,7 +88,7 @@ export const ControllerSchema = z.object({
 });
 
 export const TopologySchema = z.object({
-  schema: z.literal(16).or(z.literal(17)),
+  schema: z.literal(17).or(z.literal(18)),
   controllers: z.array(ControllerSchema),
   // Empty topology is valid for a newly created site before any controller is added.
   nodes: z.array(TopologyNodeSchema),
@@ -162,10 +159,14 @@ function migrateLegacyTopology(data: unknown): unknown {
     const n = nodes.map((raw) => {
       if (!raw || typeof raw !== 'object') return raw;
       const node = raw as Record<string, unknown>;
-      if (node['kind'] === 'pressure_sensor') {
+      if (node['kind'] === 'pressure_sensor' || (node['kind'] === 'tank' && node['pressure_pin'] != null)) {
         const migrated = { ...node };
         if (migrated['sensor_max_psi'] == null && typeof migrated['max_bar'] === 'number') {
           migrated['sensor_max_psi'] = Number((migrated['max_bar'] * PSI_PER_BAR).toFixed(2));
+          nodesChanged = true;
+        }
+        if (migrated['pressure_sensor_max_psi'] == null && typeof migrated['max_bar'] === 'number') {
+          migrated['pressure_sensor_max_psi'] = Number((migrated['max_bar'] * PSI_PER_BAR).toFixed(2));
           nodesChanged = true;
         }
         if ('min_bar' in migrated || 'max_bar' in migrated) {
@@ -194,7 +195,7 @@ function migrateLegacyTopology(data: unknown): unknown {
 // Schema-version migration chain
 // ---------------------------------------------------------------------------
 
-export const CURRENT_SCHEMA_VERSION = 17;
+export const CURRENT_SCHEMA_VERSION = 18;
 
 type SchemaMigration = (data: Record<string, unknown>) => Record<string, unknown>;
 
@@ -439,7 +440,8 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
       const psNode = nodeById.get(pressureEntry.toNodeId);
       if (!psNode) continue;
 
-      // Copy pressure config onto tank as flat fields
+      // Copy pressure config onto tank as flat fields and mark level monitored
+      node['level_monitored'] = true;
       if (psNode['pin'] != null) node['pressure_pin'] = psNode['pin'];
       if (psNode['elevation_m'] != null) node['pressure_elevation_m'] = psNode['elevation_m'];
       if (psNode['sensor_max_psi'] != null) node['pressure_sensor_max_psi'] = psNode['sensor_max_psi'];
@@ -456,6 +458,72 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
         if (portRef(p.from) === pressureEntry.toNodeId) {
           p.from = `${tankId}:outlet`;
         }
+      }
+    }
+
+    data['nodes'] = nodes.filter(n => !nodesToDelete.has(n['id'] as string));
+    return data;
+  },
+  17: (data) => {
+    data['schema'] = 18;
+    // Remove level_sensor and standalone pressure_sensor nodes entirely.
+    // Tanks that had downstream level sensors get level_monitored = true.
+    const nodes = (data['nodes'] ?? []) as Array<Record<string, unknown>>;
+    const pipes = (data['pipes'] ?? []) as Array<{ from: string; to: string }>;
+    const nodeById = new Map(nodes.map(n => [n['id'] as string, n] as const));
+    const portRef = (s: string): string => s.split(':')[0];
+
+    const nodesToDelete = new Set<string>();
+
+    function spliceNode(nodeId: string, setLevelMonitored: boolean, copyPressureConfig?: boolean) {
+      const upstreamPipeIdx = pipes.findIndex(p => portRef(p.to) === nodeId);
+      const upstreamPipe = upstreamPipeIdx >= 0 ? pipes[upstreamPipeIdx] : undefined;
+      const upstreamId = upstreamPipe ? portRef(upstreamPipe.from) : undefined;
+      const upstreamNode = upstreamId ? nodeById.get(upstreamId) : undefined;
+
+      if (setLevelMonitored && upstreamNode && upstreamNode['kind'] === 'tank') {
+        upstreamNode['level_monitored'] = true;
+        const lsNode = nodeById.get(nodeId);
+        if (lsNode && lsNode['pin'] != null && upstreamNode['pressure_pin'] == null) {
+          upstreamNode['pressure_pin'] = lsNode['pin'];
+        }
+        if (upstreamNode['pressure_sensor_max_psi'] == null) {
+          upstreamNode['pressure_sensor_max_psi'] = 15;
+        }
+      }
+
+      // For pressure_sensors downstream of tanks, also copy config onto the tank
+      if (copyPressureConfig && upstreamNode && upstreamNode['kind'] === 'tank') {
+        const psNode = nodeById.get(nodeId);
+        if (psNode) {
+          upstreamNode['level_monitored'] = true;
+          if (psNode['pin'] != null) upstreamNode['pressure_pin'] = psNode['pin'];
+          if (psNode['elevation_m'] != null) upstreamNode['pressure_elevation_m'] = psNode['elevation_m'];
+          if (psNode['sensor_max_psi'] != null) upstreamNode['pressure_sensor_max_psi'] = psNode['sensor_max_psi'];
+          if (psNode['pump_rated'] != null) upstreamNode['pressure_pump_rated'] = psNode['pump_rated'];
+        }
+      }
+
+      nodesToDelete.add(nodeId);
+
+      const downstreamPipeIdx = pipes.findIndex(p => portRef(p.from) === nodeId);
+      const downstreamPipe = downstreamPipeIdx >= 0 ? pipes[downstreamPipeIdx] : undefined;
+      const nextId = downstreamPipe ? portRef(downstreamPipe.to) : undefined;
+
+      if (upstreamPipeIdx >= 0) pipes.splice(upstreamPipeIdx, 1);
+      const adjustedDownstreamIdx = downstreamPipeIdx > upstreamPipeIdx ? downstreamPipeIdx - 1 : downstreamPipeIdx;
+      if (adjustedDownstreamIdx >= 0) pipes.splice(adjustedDownstreamIdx, 1);
+
+      if (upstreamId && nextId) {
+        pipes.push({ from: `${upstreamId}:outlet`, to: `${nextId}:inlet` });
+      }
+    }
+
+    for (const node of nodes) {
+      if (node['kind'] === 'level_sensor') {
+        spliceNode(node['id'] as string, true);
+      } else if (node['kind'] === 'pressure_sensor') {
+        spliceNode(node['id'] as string, false, true);
       }
     }
 

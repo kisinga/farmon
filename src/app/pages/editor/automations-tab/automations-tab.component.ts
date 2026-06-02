@@ -13,7 +13,6 @@ import {
   activeGraph,
   deriveRoutes,
   findRouteAutomationSensor,
-  resolveTankLevelSources,
 } from '@far-mon/core';
 import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
 
@@ -234,10 +233,10 @@ export class AutomationsTabComponent {
     const graph = buildGraph(t.nodes, t.pipes);
     const active = activeGraph(graph);
     const nodeKindById = new Map<string, string>(t.nodes.map(n => [n.id, n.kind]));
-    const tankLevelSources = resolveTankLevelSources(active, nodeKindById);
+    const nodeById = new Map(t.nodes.map(n => [n.id, n]));
     const nameById = new Map<string, string>(t.nodes.map(n => [n.id, (n as { name?: string }).name ?? n.id]));
     for (const route of deriveRoutes(active)) {
-      const found = findRouteAutomationSensor(route, tankLevelSources, nodeKindById);
+      const found = findRouteAutomationSensor(route, nodeById);
       if (found) {
         result.set(route.key, {
           tankName: nameById.get(found.tankId) ?? found.tankId,

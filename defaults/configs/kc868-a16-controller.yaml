@@ -1,33 +1,28 @@
-schema: 11
-device:
-  name: kc868-ctrl
-  friendly_name: KC868 Controller
-  board: kc868-a16
-  directory: kc868-controller
-
+schema: 18
+controllers:
+  - id: kc868-ctrl
+    directory: kc868-controller
+    board: kc868-a16
+    friendlyName: KC868 Controller
 nodes:
   - kind: tank
     id: tank1
     name: Rain Tank
+    level_monitored: true
+    pressure_pin: GPIO36
+    pressure_sensor_max_psi: 15
+    anchorId: kc868-ctrl
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
     position: { x: 100, y: 200 }
-
-  - kind: level_sensor
-    id: ls1
-    name: Rain Tank Level
-    pin: GPIO36
-    ports:
-      - { id: inlet, label: Inlet, direction: inlet }
-      - { id: outlet, label: Outlet, direction: outlet }
-    position: { x: 170, y: 230 }
 
   - kind: valve
     id: valve1
     name: Tank 1 Outlet
     open_pin: OUT1
     close_pin: OUT2
+    anchorId: kc868-ctrl
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
@@ -37,6 +32,7 @@ nodes:
     id: pump
     name: Main Pump
     pin: OUT3
+    anchorId: kc868-ctrl
     ports:
       - { id: in, label: Inlet, direction: inlet }
       - { id: out, label: Outlet, direction: outlet }
@@ -47,6 +43,7 @@ nodes:
     name: Main Flow
     pin: GPIO32
     flow_cal: 450
+    anchorId: kc868-ctrl
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
       - { id: outlet, label: Outlet, direction: outlet }
@@ -55,13 +52,13 @@ nodes:
   - kind: endpoint
     id: house1
     name: House 1
+    anchorId: kc868-ctrl
     ports:
       - { id: inlet, label: Inlet, direction: inlet }
     position: { x: 700, y: 200 }
 
 pipes:
-  - { id: p_ls1, from: "tank1:outlet", to: "ls1:inlet" }
-  - { id: p1, from: "ls1:outlet", to: "valve1:inlet" }
+  - { id: p1, from: "tank1:outlet", to: "valve1:inlet" }
   - { id: p2, from: "valve1:outlet", to: "pump:in" }
   - { id: p3, from: "pump:out", to: "flow1:inlet" }
   - { id: p4, from: "flow1:outlet", to: "house1:inlet" }

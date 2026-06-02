@@ -297,7 +297,7 @@ function buildKcManifest(p: KcScaleParams): Manifest {
     close_pin: kcPin(KC_OUT_PINS, outIdx++),
   }));
 
-  // Tanks (no level pins — level sensing is on level_sensor entities)
+  // Tanks (level sensing is intrinsic via pressure_pin when level_monitored)
   const tanks = Array.from({ length: p.tanks }, (_, i) => ({
     kind: 'tank' as const,
     id: `tank${i + 1}`,

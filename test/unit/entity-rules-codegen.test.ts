@@ -260,7 +260,7 @@ console.log('\nAll entities declare constraints or are terminal/infrastructure:'
     const hasConstraints = desc.constraints && desc.constraints.length > 0;
     const isTerminal = desc.role === 'terminal';
     // Entities without constraints should be terminal, constraint-targets, or pump-class (VFD inherits pump's route context)
-    const isConstraintTarget = kind === 'valve' || kind === 'flow_sensor' || kind === 'pressure_sensor';
+    const isConstraintTarget = kind === 'valve' || kind === 'flow_sensor';
     const isPumpClass = !!desc.isPump;
     assert(
       hasConstraints || isTerminal || isConstraintTarget || isPumpClass,

@@ -1,7 +1,7 @@
 import type { Manifest } from "../../schema.js";
 import type { ManifestRule, RuleDiagnostic } from "../rule.types.js";
 import type { BoardDef } from "../../board.js";
-import { findRouteAutomationSensor, type TankLevelSource } from '@far-mon/core';
+import { findRouteAutomationSensor } from '@far-mon/core';
 
 export const automationRouteRef: ManifestRule = {
   id: "automation-route-ref",
@@ -12,14 +12,11 @@ export const automationRouteRef: ManifestRule = {
     const routeKeys = new Set(manifest.routes.map(r => r.key));
     const seenIds = new Set<string>();
 
-    // Lookups for level-trigger automatability check.
-    const tankLevelSourceById = new Map<string, TankLevelSource>();
+    // Node lookup for level-trigger automatability check.
+    const nodeById = new Map<string, { kind: string; [key: string]: unknown }>(manifest.nodes.map(n => [n.id, n]));
     const nodeKindById = new Map<string, string>();
     for (const n of manifest.nodes) {
       nodeKindById.set(n.id, n.kind);
-      if (n.kind === 'tank' && n.level_source) {
-        tankLevelSourceById.set(n.id, n.level_source);
-      }
     }
 
     for (const auto of manifest.automations) {
@@ -93,7 +90,7 @@ export const automationRouteRef: ManifestRule = {
       if (auto.trigger.type === 'level') {
         const route = manifest.routes[auto.route_index];
         if (route) {
-          const found = findRouteAutomationSensor(route, tankLevelSourceById, nodeKindById);
+          const found = findRouteAutomationSensor(route, nodeById);
           if (!found) {
             diagnostics.push({
               ruleId: "automation-route-ref",
@@ -113,12 +110,11 @@ export const automationRouteRef: ManifestRule = {
       }
 
       // Warn if automated route has no firmware-level source conservation
-      // (only meaningful when the source tank has an associated level source —
-      // either a level_sensor or a pressure_sensor)
+      // (only meaningful when the source tank has level monitoring)
       const route = manifest.routes[auto.route_index];
       if (route && route.source_type === 'tank' && route.source_min_pct === 0) {
         const srcNode = manifest.nodes.find(n => n.id === route.source);
-        if (srcNode && srcNode['level_source']) {
+        if (srcNode && srcNode['level_monitored']) {
           diagnostics.push({
             ruleId: "automation-route-ref",
             severity: "warning",

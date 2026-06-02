@@ -8,7 +8,7 @@ import type {
 
 import {
   buildGraph, deriveRoutes, activeGraph, parseTopology, slug,
-  controllerClaimsSegment,
+  controllerClaimsSegment, migrateTopology,
 } from '@far-mon/core';
 
 @Injectable({ providedIn: 'root' })
@@ -128,7 +128,7 @@ export class WorkspaceService {
 
         // v15 → v16 migration: auto-derive remoteImports from routes
         if (!topology.remoteImports) {
-          topology = this.migrateV15ToV16(topology);
+          topology = this.migrateV15ToV18(topology);
           this._markDirty();
         }
 
@@ -147,7 +147,7 @@ export class WorkspaceService {
         this._boards.set(boards);
       } else {
         this._siteTopology.set({
-          schema: 17,
+          schema: 18,
           controllers: [],
           nodes: [],
           pipes: [],
@@ -251,12 +251,12 @@ export class WorkspaceService {
 
   // --- Migration ---
 
-  private migrateV15ToV16(topology: SiteTopology): SiteTopology {
-    const migrated: SiteTopology = {
+  private migrateV15ToV18(topology: SiteTopology): SiteTopology {
+    const migrated = migrateTopology({
       ...topology,
-      schema: 17,
+      schema: 18,
       remoteImports: [],
-    };
+    }) as SiteTopology;
 
     // Auto-derive remoteImports from route analysis.
     // For each controller, for each route it owns, import every remote node.
