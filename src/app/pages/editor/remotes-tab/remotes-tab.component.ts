@@ -138,7 +138,8 @@ export class RemotesTabComponent {
   protected switchController(controllerId: string): void {
     const siteId = this.workspace.site()?.id;
     if (!siteId) return;
-    this.router.navigate(['/site', siteId, 'system', controllerId, 'remotes']);
+    this.editor.panel.set('remotes');
+    this.router.navigate(['/site', siteId, 'system', controllerId]);
   }
 
   /** All routes derived from the full site topology. */

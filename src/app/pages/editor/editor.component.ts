@@ -1,18 +1,26 @@
-import { Component, inject, OnInit, OnDestroy, signal, effect, computed } from '@angular/core';
-import { ActivatedRoute, Router, RouterOutlet, NavigationEnd } from '@angular/router';
-import { filter } from 'rxjs';
+import { Component, inject, OnInit, OnDestroy, signal, effect } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { SystemEditorService } from '../../core/services/system-editor.service';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { BoardService } from '../../core/services/board.service';
-import { ElectronService } from '../../core/services/electron.service';
+import { BackendService } from '../../core/services/backend.service';
 import { TopologyX6TabComponent } from './topology-x6-tab/topology-x6-tab.component';
+import { RemotesTabComponent } from './remotes-tab/remotes-tab.component';
+import { ConfigTabComponent } from './config-tab/config-tab.component';
+import { AutomationsTabComponent } from './automations-tab/automations-tab.component';
+import { SitePanelComponent } from './site-panel/site-panel.component';
+import { DeployPageComponent } from '../deploy/deploy-page.component';
 
 @Component({
   selector: 'app-editor',
   standalone: true,
   imports: [
-    RouterOutlet,
     TopologyX6TabComponent,
+    RemotesTabComponent,
+    ConfigTabComponent,
+    AutomationsTabComponent,
+    SitePanelComponent,
+    DeployPageComponent,
   ],
   host: {
     class: 'flex-1 min-h-0 flex flex-col overflow-hidden',
@@ -20,17 +28,23 @@ import { TopologyX6TabComponent } from './topology-x6-tab/topology-x6-tab.compon
   },
   template: `
     <div class="flex flex-col flex-1 min-h-0">
-      <!-- Design tab: always alive, hidden via display:none to preserve X6 canvas state -->
+      <!-- Design canvas: always alive, hidden via display:none to preserve X6 state -->
       <main class="flex-1 min-h-0 min-w-0 flex flex-col"
-        [style.display]="isDesignTab() ? 'flex' : 'none'">
+        [style.display]="editor.panel() === 'design' ? 'flex' : 'none'">
         <app-topology-x6-tab />
       </main>
 
-      <!-- Other tabs: routed via child routes -->
-      @if (!isDesignTab()) {
+      <!-- Aspect panels (rendered in place — no routing) -->
+      @if (editor.panel() !== 'design') {
         <main class="flex-1 min-h-0 min-w-0 flex flex-col overflow-auto">
           <fieldset [disabled]="isPreview()" class="flex-1 flex flex-col min-h-0">
-            <router-outlet />
+            @switch (editor.panel()) {
+              @case ('site') { <app-site-panel /> }
+              @case ('remotes') { <app-remotes-tab /> }
+              @case ('config') { <app-config-tab /> }
+              @case ('automations') { <app-automations-tab /> }
+              @case ('deploy') { <app-deploy-page /> }
+            }
           </fieldset>
         </main>
       }
@@ -41,20 +55,12 @@ export class EditorComponent implements OnInit, OnDestroy {
   protected editor = inject(SystemEditorService);
   private workspace = inject(WorkspaceService);
   private boards = inject(BoardService);
-  private electron = inject(ElectronService);
+  private backend = inject(BackendService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
   protected isPreview = signal(false);
 
-  private currentUrl = signal(this.router.url);
-
-  protected isDesignTab = computed(() => {
-    const url = this.currentUrl();
-    return url.endsWith('/design');
-  });
-
-  private routerSub: any;
   private paramSub: any;
 
   constructor() {
@@ -69,12 +75,10 @@ export class EditorComponent implements OnInit, OnDestroy {
   async ngOnInit() {
     this.siteName = this.route.snapshot.paramMap.get('name');
 
-    this.routerSub = this.router.events
-      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
-      .subscribe((e) => this.currentUrl.set(e.urlAfterRedirects));
-
     const preview = this.route.snapshot.data['preview'] === true;
     this.isPreview.set(preview);
+    // Bare /site/:name opens the site overview; a specific controller opens Design.
+    this.editor.panel.set(this.route.snapshot.paramMap.get('config') ? 'design' : 'site');
 
     // Ensure workspace is loaded with correct site
     if (!this.workspace.site() || this.workspace.site()?.id !== this.siteName) {
@@ -86,11 +90,13 @@ export class EditorComponent implements OnInit, OnDestroy {
     // Watch for controller changes within the same editor instance
     this.paramSub = this.route.paramMap.subscribe(async (params) => {
       const systemId = params.get('config');
-      if (!systemId) {
-        this.router.navigate(['/overview']);
+      if (systemId) {
+        await this.focusController(systemId, preview);
         return;
       }
-      await this.focusController(systemId, preview);
+      // Site overview: focus the first controller so the shared canvas has context.
+      const first = this.workspace.siteTopology()?.controllers[0]?.id;
+      if (first) await this.focusController(first, preview);
     });
   }
 
@@ -107,7 +113,6 @@ export class EditorComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    this.routerSub?.unsubscribe();
     this.paramSub?.unsubscribe();
     this.editor.clear();
     this.boards.clear();
@@ -125,7 +130,7 @@ export class EditorComponent implements OnInit, OnDestroy {
     const controllerId = this.workspace.activeControllerId();
     if (!topology || !board || !controllerId) return;
     const gen = ++this.validationGen;
-    const result = await this.electron.validate({
+    const result = await this.backend.validate({
       kind: 'live',
       topology,
       board,

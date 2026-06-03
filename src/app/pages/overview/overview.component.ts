@@ -1,9 +1,9 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { ElectronService } from '../../core/services/electron.service';
+import { BackendService } from '../../core/services/backend.service';
 import { ConfirmService } from '../../core/services/confirm.service';
-import type { SiteListEntry } from '../../core/models/electron-api';
+import type { SiteListEntry } from '../../core/models/backend-api';
 /** Generate a stable color from a string for site card visuals. */
 function siteColor(name: string): string {
   const COLORS = ['#0284C7', '#059669', '#D97706', '#7C3AED', '#DB2777', '#0891B2'];
@@ -31,20 +31,12 @@ function initials(name: string): string {
           <p class="text-sm text-base-content/50 mt-1">Select a site to view its water network</p>
         </div>
 
-        <!-- Legacy import banner -->
         @if (hasLegacy()) {
           <div class="alert alert-info mb-6">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
             <div class="flex-1">
-              <div class="font-semibold text-sm">Legacy sites found</div>
-              <p class="text-xs opacity-70">Old YAML-based sites were found in your store. Import them into the new database.</p>
+              <div class="font-semibold text-sm">Legacy import not available</div>
+              <p class="text-xs opacity-70">Use the Import Site card below to load a JSON file.</p>
             </div>
-            <button class="btn btn-sm btn-primary" [disabled]="importing()" (click)="importLegacy()">
-              @if (importing()) { <span class="loading loading-spinner loading-xs"></span> }
-              Import
-            </button>
             <button class="btn btn-sm btn-ghost" (click)="hasLegacy.set(false)">Dismiss</button>
           </div>
         }
@@ -75,10 +67,10 @@ function initials(name: string): string {
             </button>
 
             <!-- Import site card -->
-            <button
+            <label
               class="card card-side bg-base-100/50 border-2 border-dashed border-base-300/60 hover:border-primary/40 hover:bg-base-100 transition-all cursor-pointer group min-h-[140px]"
-              (click)="importSite()"
             >
+              <input type="file" accept=".json" class="hidden" (change)="importSite($event)" />
               <div class="card-body flex-row items-center justify-center gap-4 p-6">
                 <div class="w-14 h-14 rounded-2xl bg-base-200/80 group-hover:bg-primary/10 flex items-center justify-center transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-base-content/30 group-hover:text-primary/60 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -90,7 +82,7 @@ function initials(name: string): string {
                   <p class="text-xs text-base-content/30 mt-0.5">Load a site from a .json file</p>
                 </div>
               </div>
-            </button>
+            </label>
 
             <!-- Backup card -->
             <button
@@ -270,7 +262,7 @@ function initials(name: string): string {
   `,
 })
 export class OverviewComponent implements OnInit {
-  private electron = inject(ElectronService);
+  private backend = inject(BackendService);
   private router = inject(Router);
   private confirmService = inject(ConfirmService);
 
@@ -285,47 +277,26 @@ export class OverviewComponent implements OnInit {
   protected renamingId = signal<string | null>(null);
 
   protected async checkBackupStatus() {
-    try {
-      const status = await this.electron.backupStatus();
-      this.backupConfigured.set(status.configured);
-    } catch {
-      this.backupConfigured.set(false);
-    }
+    this.backupConfigured.set(false);
   }
 
   protected async connectBackup() {
-    this.backupLoading.set(true);
-    try {
-      await this.electron.backupAuth();
-      this.backupConfigured.set(true);
-    } catch (e) {
-      alert('Authorization failed: ' + String(e));
-    } finally {
-      this.backupLoading.set(false);
-    }
+    alert('Google Drive backup is not available in the web app.');
   }
 
   protected async backupDb() {
-    this.backupLoading.set(true);
-    try {
-      await this.electron.backupUploadDb();
-      alert('Database backed up to Google Drive.');
-    } catch (e) {
-      alert('Backup failed: ' + String(e));
-    } finally {
-      this.backupLoading.set(false);
-    }
+    alert('Google Drive backup is not available in the web app.');
   }
 
   async ngOnInit() {
     await this.refresh();
-    // Check for legacy data once
-    this.hasLegacy.set(await this.electron.legacyHasData());
+    // Legacy import not available in web mode
+    this.hasLegacy.set(false);
   }
 
   private async refresh() {
     this.loading.set(true);
-    this.entries.set(await this.electron.siteList());
+    this.entries.set(await this.backend.siteList());
     this.loading.set(false);
   }
 
@@ -348,10 +319,10 @@ export class OverviewComponent implements OnInit {
   protected async createSite(friendlyName: string): Promise<void> {
     if (!friendlyName.trim()) return;
     const slug = friendlyName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    await this.electron.siteCreate(slug, friendlyName.trim());
+    const { id } = await this.backend.siteCreate(slug, friendlyName.trim());
     await this.refresh();
     this.showCreate.set(false);
-    this.router.navigate(['/site', slug]);
+    this.router.navigate(['/site', id]);
   }
 
   protected startRename(id: string, event: Event): void {
@@ -364,7 +335,7 @@ export class OverviewComponent implements OnInit {
     const input = event.target as HTMLInputElement;
     const newName = input.value.trim();
     if (newName) {
-      await this.electron.siteRename(id, newName);
+      await this.backend.siteRename(id, newName);
       await this.refresh();
     }
     this.renamingId.set(null);
@@ -372,21 +343,32 @@ export class OverviewComponent implements OnInit {
 
   protected async exportSite(id: string, event: Event): Promise<void> {
     event.stopPropagation();
-    await this.electron.siteExport(id);
+    const { json } = await this.backend.siteExport(id);
+    if (json) {
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `site-${id}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   }
 
-  protected async importSite(): Promise<void> {
+  protected async importSite(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
     try {
-      const result = await this.electron.siteImport();
-      if (result.ok) {
-        await this.refresh();
-        if (result.siteId) {
-          this.router.navigate(['/site', result.siteId]);
-        }
-      }
+      const text = await file.text();
+      const { id } = await this.backend.siteImport(text);
+      await this.refresh();
+      this.router.navigate(['/site', id]);
     } catch (err) {
       console.error('Site import failed:', err);
       alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      input.value = '';
     }
   }
 
@@ -397,31 +379,9 @@ export class OverviewComponent implements OnInit {
       message: `Delete "${name}"? All controllers and links in this site will be permanently removed.`,
     });
     if (!confirmed) return;
-    await this.electron.siteDelete(id);
+    await this.backend.siteDelete(id);
     await this.refresh();
   }
 
-  protected async importLegacy(): Promise<void> {
-    this.importing.set(true);
-    try {
-      const scanned = await this.electron.legacyScan();
-      if (scanned.sites.length === 0) {
-        alert('No importable legacy sites found. The old configuration files may be missing or corrupted.');
-        this.hasLegacy.set(false);
-        return;
-      }
-      const result = await this.electron.legacyImport(scanned.sites);
-      if (result.imported > 0) {
-        await this.refresh();
-        this.hasLegacy.set(false);
-      } else {
-        alert('All legacy sites already exist in the current database.');
-      }
-    } catch (err) {
-      console.error('Legacy import failed:', err);
-      alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      this.importing.set(false);
-    }
-  }
+  // Legacy import is not available in web mode
 }

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "heltec-v3",
+    "model": "heltec-v3",
+    "label": "Heltec WiFi LoRa 32 V3",
+    "library": false
+  },
+  {
+    "id": "kc868-a16",
+    "model": "kc868-a16",
+    "label": "Kincony KC868-A16",
+    "library": false
+  },
+  {
+    "id": "sonoff-basicr4",
+    "model": "sonoff-basicr4",
+    "label": "SONOFF BASICR4",
+    "library": false
+  },
+  {
+    "id": "waveshare-modbus-ai-8ch",
+    "model": "waveshare-modbus-ai-8ch",
+    "label": "Waveshare Modbus RTU AI 8CH",
+    "library": false
+  },
+  {
+    "id": "waveshare-modbus-relay-8ch",
+    "model": "waveshare-modbus-relay-8ch",
+    "label": "Waveshare Modbus RTU Relay 8CH",
+    "library": false
+  }
+]

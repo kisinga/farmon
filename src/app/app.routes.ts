@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
@@ -7,63 +8,33 @@ export const routes: Routes = [
     pathMatch: 'full',
   },
   {
+    path: 'login',
+    loadComponent: () =>
+      import('./pages/login/login.component').then((m) => m.LoginComponent),
+  },
+  {
     path: 'overview',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./pages/overview/overview.component').then((m) => m.OverviewComponent),
   },
   {
     path: 'boards',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./pages/boards/boards-page.component').then((m) => m.BoardsPageComponent),
   },
   {
-    path: 'catalog',
-    loadComponent: () =>
-      import('./pages/catalog/catalog-page.component').then((m) => m.CatalogPageComponent),
-  },
-  {
+    // Bare site → the unified workspace (site overview panel + shared canvas).
     path: 'site/:name',
+    canActivate: [authGuard],
     loadComponent: () =>
-      import('./pages/site/site-view.component').then((m) => m.SiteViewComponent),
-  },
-  {
-    path: 'site/:name/deploy',
-    loadComponent: () =>
-      import('./pages/deploy/deploy-page.component').then((m) => m.DeployPageComponent),
-  },
-  {
-    path: 'site/:name/hardware',
-    loadComponent: () =>
-      import('./pages/hardware/hardware-page.component').then((m) => m.HardwarePageComponent),
+      import('./pages/editor/editor.component').then((m) => m.EditorComponent),
   },
   {
     path: 'site/:name/system/:config',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./pages/editor/editor.component').then((m) => m.EditorComponent),
-    children: [
-      { path: '', redirectTo: 'design', pathMatch: 'full' },
-      {
-        // Design tab is always-mounted in the editor template to preserve X6 canvas state.
-        // This empty route exists solely so the router doesn't throw NG04002 when navigating to /design.
-        path: 'design',
-        children: [],
-      },
-      {
-        path: 'remotes',
-        loadComponent: () =>
-          import('./pages/editor/remotes-tab/remotes-tab.component').then((m) => m.RemotesTabComponent),
-      },
-      {
-        path: 'config',
-        loadComponent: () =>
-          import('./pages/editor/config-tab/config-tab.component').then((m) => m.ConfigTabComponent),
-      },
-      {
-        path: 'automations',
-        loadComponent: () =>
-          import('./pages/editor/automations-tab/automations-tab.component').then((m) => m.AutomationsTabComponent),
-      },
-
-    ],
   },
 ];

@@ -1,12 +1,11 @@
-import { Component, inject, signal, computed, OnInit, OnDestroy, output } from '@angular/core';
-import { Router, RouterLink, NavigationEnd } from '@angular/router';
-import { filter } from 'rxjs';
-import { SystemEditorService } from '../../core/services/system-editor.service';
+import { Component, inject, computed } from '@angular/core';
+import { SystemEditorService, type EditorPanel } from '../../core/services/system-editor.service';
 
-type StepId = 'design' | 'remotes' | 'config' | 'automations';
+type StepId = EditorPanel;
 type StepState = 'complete' | 'active' | 'untouched' | 'warning';
 
 const STEPS: { id: StepId; label: string; icon: string }[] = [
+  { id: 'site',         label: 'Site',          icon: 'M3 7l9-4 9 4M4 10v10h16V10M9 21v-6h6v6' },
   { id: 'design',       label: 'Design',        icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
   { id: 'remotes',      label: 'Remotes',       icon: 'M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244' },
   { id: 'config',       label: 'Config',        icon: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z' },
@@ -17,7 +16,7 @@ const STEPS: { id: StepId; label: string; icon: string }[] = [
 @Component({
   selector: 'app-pipeline-rail',
   standalone: true,
-  imports: [RouterLink],
+  imports: [],
   host: { class: 'shrink-0' },
   styles: [`
     @keyframes slideIn {
@@ -33,8 +32,9 @@ const STEPS: { id: StepId; label: string; icon: string }[] = [
       <!-- Pipeline steps — equal width across full bar -->
       <nav class="flex items-stretch flex-1 min-w-0">
         @for (step of visibleSteps(); track step.id; let i = $index) {
-          <a
-            [routerLink]="stepRoute(step.id)"
+          <button
+            type="button"
+            (click)="editor.panel.set(step.id)"
             class="flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors hover:bg-base-200/40"
             [class.bg-base-200/50]="state(step.id) === 'active'"
             [title]="step.label"
@@ -64,57 +64,38 @@ const STEPS: { id: StepId; label: string; icon: string }[] = [
               [class.text-primary]="state(step.id) === 'active'"
               [class.text-base-content/50]="state(step.id) !== 'active'"
             >{{ step.label }}</span>
-          </a>
+          </button>
         }
       </nav>
 
-      <!-- Device name + actions -->
-      <div class="flex items-center gap-3 shrink-0 px-4 border-l border-base-300/30">
-        <span class="text-xs text-base-content/40 font-mono truncate max-w-32 hidden md:inline">
+      <!-- Generate firmware (terminal action) + device name -->
+      <div class="flex items-center gap-2 shrink-0 px-3 border-l border-base-300/30">
+        <button
+          class="btn btn-xs gap-1"
+          [class.btn-primary]="editor.panel() === 'deploy'"
+          [class.btn-ghost]="editor.panel() !== 'deploy'"
+          (click)="editor.panel.set('deploy')"
+          title="Generate firmware"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+          </svg>
+          <span class="hidden md:inline">Deploy</span>
+        </button>
+        <span class="text-xs text-base-content/40 font-mono truncate max-w-32 hidden lg:inline">
           {{ editor.controllerId() }}
         </span>
         @if (editor.readonly()) {
           <span class="badge badge-info badge-sm">Preview</span>
-        } @else {
-          <button class="btn btn-sm btn-ghost gap-1.5" (click)="history.emit()">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            History
-          </button>
         }
       </div>
     </div>
   `,
 })
-export class PipelineRailComponent implements OnInit, OnDestroy {
+export class PipelineRailComponent {
   protected editor = inject(SystemEditorService);
-  private router = inject(Router);
 
-  history = output<void>();
-
-  private currentUrl = signal(this.router.url);
-  private routerSub: any;
-
-  /** Base path: /site/:name/system/:config */
-  private basePath = computed(() => {
-    const url = this.currentUrl();
-    // Match up to /site/:name/system/:config
-    const match = url.match(/^(\/site\/[^/]+\/system\/[^/]+)/);
-    return match?.[1] ?? '';
-  });
-
-  protected stepRoute(id: StepId): string {
-    return this.basePath() + '/' + id;
-  }
-
-  protected activeStep = computed(() => {
-    const url = this.currentUrl();
-    for (const s of STEPS) {
-      if (url.endsWith('/' + s.id)) return s.id;
-    }
-    return 'design' as StepId;
-  });
+  protected activeStep = computed<StepId>(() => this.editor.panel());
 
   protected visibleSteps = computed(() => STEPS);
 
@@ -123,6 +104,7 @@ export class PipelineRailComponent implements OnInit, OnDestroy {
     const active = this.activeStep();
 
     const states = new Map<StepId, StepState>();
+    states.set('site', (t?.controllers?.length ?? 0) > 0 ? 'complete' : 'untouched');
     states.set('design', (t?.nodes?.length ?? 0) > 0 && (t?.pipes?.length ?? 0) > 0 ? 'complete' : 'untouched');
     states.set('remotes', (t?.remoteImports?.length ?? 0) > 0 ? 'complete' : 'untouched');
     const device = this.editor.controllerDevice();
@@ -147,13 +129,4 @@ export class PipelineRailComponent implements OnInit, OnDestroy {
     }
   }
 
-  ngOnInit() {
-    this.routerSub = this.router.events
-      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
-      .subscribe(e => this.currentUrl.set(e.urlAfterRedirects));
-  }
-
-  ngOnDestroy() {
-    this.routerSub?.unsubscribe();
-  }
 }

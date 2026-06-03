@@ -1,0 +1,163 @@
+package migrations
+
+import (
+	"github.com/pocketbase/pocketbase/core"
+	m "github.com/pocketbase/pocketbase/migrations"
+	"github.com/pocketbase/pocketbase/tools/types"
+)
+
+// Phase 2 substrate: user roles, site ownership + RBAC, controllers,
+// immutable topology_versions, and the three-tier telemetry store.
+//
+// The backend is domain-agnostic — topology and bundles are stored as opaque
+// JSON/files; telemetry is opaque numeric samples.
+func init() {
+	m.Register(func(app core.App) error {
+		// Rule fragments. Admin sees everything; customers are scoped to sites
+		// they own (directly on `sites`, or via the `site` relation on children).
+		adminOrOwner := types.Pointer(`@request.auth.id != "" && (@request.auth.role = "admin" || owner = @request.auth.id)`)
+		adminOrSiteOwner := types.Pointer(`@request.auth.id != "" && (@request.auth.role = "admin" || site.owner = @request.auth.id)`)
+		authed := types.Pointer(`@request.auth.id != ""`)
+		adminOnly := types.Pointer(`@request.auth.role = "admin"`)
+
+		// --- users.role ---------------------------------------------------
+		users, err := app.FindCollectionByNameOrId("users")
+		if err != nil {
+			users = core.NewAuthCollection("users")
+		}
+		if users.Fields.GetByName("role") == nil {
+			users.Fields.Add(&core.SelectField{
+				Name:      "role",
+				Values:    []string{"admin", "customer"},
+				MaxSelect: 1,
+			})
+		}
+		if err := app.Save(users); err != nil {
+			return err
+		}
+
+		// --- sites: ownership, tier, locale, RBAC -------------------------
+		sites, err := app.FindCollectionByNameOrId("sites")
+		if err != nil {
+			return err
+		}
+		sites.Fields.Add(
+			&core.SelectField{Name: "tier", Values: []string{"lite", "pro", "custom"}, MaxSelect: 1},
+			&core.TextField{Name: "timezone", Max: 64},
+			&core.TextField{Name: "location", Max: 200},
+		)
+		sites.ListRule = adminOrOwner
+		sites.ViewRule = adminOrOwner
+		sites.CreateRule = authed
+		sites.UpdateRule = adminOrOwner
+		sites.DeleteRule = adminOrOwner
+		if err := app.Save(sites); err != nil {
+			return err
+		}
+
+		// --- controllers --------------------------------------------------
+		controllers := core.NewBaseCollection("controllers")
+		controllers.Fields.Add(
+			&core.RelationField{Name: "site", CollectionId: sites.Id, MaxSelect: 1, Required: true, CascadeDelete: true},
+			&core.TextField{Name: "device_id", Required: true, Max: 100},
+			&core.TextField{Name: "name", Max: 200},
+			&core.TextField{Name: "board_type", Max: 100},
+			&core.TextField{Name: "firmware_version", Max: 100},
+			&core.BoolField{Name: "online"},
+			&core.TextField{Name: "last_seen", Max: 40},
+			&core.TextField{Name: "token_hash", Max: 200, Hidden: true},
+			&core.AutodateField{Name: "created", OnCreate: true},
+			&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
+		)
+		controllers.AddIndex("idx_controllers_device_id", true, "device_id", "")
+		controllers.ListRule = adminOrSiteOwner
+		controllers.ViewRule = adminOrSiteOwner
+		controllers.CreateRule = adminOnly
+		controllers.UpdateRule = adminOnly
+		controllers.DeleteRule = adminOnly
+		if err := app.Save(controllers); err != nil {
+			return err
+		}
+
+		// --- topology_versions (immutable commit unit) --------------------
+		versions := core.NewBaseCollection("topology_versions")
+		versions.Fields.Add(
+			&core.RelationField{Name: "site", CollectionId: sites.Id, MaxSelect: 1, Required: true, CascadeDelete: true},
+			&core.NumberField{Name: "version"},
+			&core.JSONField{Name: "topology", MaxSize: 5_000_000},
+			&core.FileField{Name: "bundle", MaxSelect: 1, MaxSize: 5_000_000},
+			&core.FileField{Name: "firmware_bin", MaxSelect: 1, MaxSize: 30_000_000},
+			&core.TextField{Name: "source_hash", Max: 100},
+			&core.TextField{Name: "committed_by", Max: 50},
+			&core.TextField{Name: "note", Max: 500},
+			&core.AutodateField{Name: "committed_at", OnCreate: true},
+		)
+		versions.ListRule = adminOrSiteOwner
+		versions.ViewRule = adminOrSiteOwner
+		versions.CreateRule = adminOrSiteOwner
+		versions.UpdateRule = adminOnly // immutable to customers
+		versions.DeleteRule = adminOnly
+		if err := app.Save(versions); err != nil {
+			return err
+		}
+
+		// --- telemetry (raw + two rollup tiers) ---------------------------
+		// Read-scoped to site owners; writes happen only through the ingest
+		// hook / rollup jobs (app.Save bypasses API rules), so create/update/
+		// delete are admin-only.
+		raw := core.NewBaseCollection("telemetry_raw")
+		raw.Fields.Add(
+			&core.RelationField{Name: "site", CollectionId: sites.Id, MaxSelect: 1, CascadeDelete: true},
+			&core.TextField{Name: "controller", Max: 100},
+			&core.TextField{Name: "sensor", Max: 100},
+			&core.NumberField{Name: "value"},
+			&core.TextField{Name: "ts", Max: 40},
+		)
+		raw.AddIndex("idx_raw_ts", false, "ts", "")
+		raw.ListRule = adminOrSiteOwner
+		raw.ViewRule = adminOrSiteOwner
+		raw.CreateRule = adminOnly
+		raw.UpdateRule = adminOnly
+		raw.DeleteRule = adminOnly
+		if err := app.Save(raw); err != nil {
+			return err
+		}
+
+		for _, name := range []string{"telemetry_5min", "telemetry_1hr"} {
+			agg := core.NewBaseCollection(name)
+			agg.Fields.Add(
+				&core.RelationField{Name: "site", CollectionId: sites.Id, MaxSelect: 1, CascadeDelete: true},
+				&core.TextField{Name: "controller", Max: 100},
+				&core.TextField{Name: "sensor", Max: 100},
+				&core.TextField{Name: "window", Max: 40},
+				&core.NumberField{Name: "avg"},
+				&core.NumberField{Name: "min"},
+				&core.NumberField{Name: "max"},
+				&core.NumberField{Name: "count"},
+			)
+			agg.AddIndex("idx_"+name+"_window", false, "window", "")
+			agg.ListRule = adminOrSiteOwner
+			agg.ViewRule = adminOrSiteOwner
+			agg.CreateRule = adminOnly
+			agg.UpdateRule = adminOnly
+			agg.DeleteRule = adminOnly
+			if err := app.Save(agg); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}, func(app core.App) error {
+		for _, name := range []string{
+			"telemetry_1hr", "telemetry_5min", "telemetry_raw",
+			"topology_versions", "controllers",
+		} {
+			if c, err := app.FindCollectionByNameOrId(name); err == nil {
+				if err := app.Delete(c); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}

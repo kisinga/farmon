@@ -1,16 +1,10 @@
 import { Component, inject, OnInit, signal, computed, effect } from '@angular/core';
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
-import { DatePipe } from '@angular/common';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
-import { ElectronService } from './core/services/electron.service';
 import { WorkspaceService } from './core/services/workspace.service';
-import { SystemEditorService } from './core/services/system-editor.service';
 import { ContextStripComponent } from './shared/context-strip/context-strip.component';
 import { PipelineRailComponent } from './shared/pipeline-rail/pipeline-rail.component';
-import { SiteRailComponent } from './shared/site-rail/site-rail.component';
 import { ConfirmDialogComponent } from './shared/confirm-dialog/confirm-dialog.component';
-import type { SeedChange } from './core/models/electron-api';
-import type { SiteTopology } from '@far-mon/core';
 import { filter } from 'rxjs';
 
 const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
@@ -42,51 +36,39 @@ const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/s
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, DatePipe, ContextStripComponent, PipelineRailComponent, SiteRailComponent, ConfirmDialogComponent],
+  imports: [RouterOutlet, RouterLink, ContextStripComponent, PipelineRailComponent, ConfirmDialogComponent],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
 export class App implements OnInit {
-  private electron = inject(ElectronService);
   private workspace = inject(WorkspaceService);
-  private systemEditor = inject(SystemEditorService);
   private router = inject(Router);
   private sanitizer = inject(DomSanitizer);
 
   protected logoSvg: SafeHtml;
-  protected seedChanges = signal<SeedChange[]>([]);
-  protected applyingSeed = signal(false);
   private currentUrl = signal('/overview');
-
-  // History modal state
-  protected historyOpen = signal(false);
-  protected historyEvents = signal<Array<{ id: number; timestamp: string; eventType: string; payload: string }>>([]);
-  protected historyLoading = signal(false);
 
   // Save toast state
   protected saveToastVisible = signal(false);
   private saveToastTimer: ReturnType<typeof setTimeout> | null = null;
 
-  protected navLevel = computed<'overview' | 'site' | 'editor'>(() => {
+  protected navLevel = computed<'overview' | 'editor'>(() => {
     const url = this.currentUrl();
-    if (/^\/site\/[^/]+\/system\//.test(url)) return 'editor';
-    if (url.startsWith('/site/')) return 'site';
+    // Everything under a site (bare site + per-controller) is the unified workspace.
+    if (url.startsWith('/site/')) return 'editor';
     return 'overview';
   });
 
   protected backLink = computed(() => {
     const segments = this.currentUrl().split('/').filter(Boolean);
 
+    // Per-controller view → back to the site workspace (overview panel).
     if (segments[0] === 'site' && segments[1] && segments[2] === 'system') {
       const siteSlug = decodeURIComponent(segments[1]);
       const siteFriendly = this.workspace.site()?.friendlyName ?? siteSlug;
       return { label: siteFriendly, link: `/site/${segments[1]}`, colorClass: 'nav-label-site' };
     }
-    if (segments[0] === 'site' && segments[1] && segments[2] === 'deploy') {
-      const siteSlug = decodeURIComponent(segments[1]);
-      const siteFriendly = this.workspace.site()?.friendlyName ?? siteSlug;
-      return { label: siteFriendly, link: `/site/${segments[1]}`, colorClass: 'nav-label-site' };
-    }
+    // Bare site → back to Overview.
     if (segments[0] === 'site' && segments[1]) {
       return { label: 'Overview', link: '/overview', colorClass: 'nav-label-overview' };
     }
@@ -107,69 +89,16 @@ export class App implements OnInit {
     });
   }
 
-  async ngOnInit() {
+  ngOnInit() {
     this.currentUrl.set(this.router.url);
     this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe((e) => this.currentUrl.set(e.urlAfterRedirects));
-
-    if (this.electron.isElectron) {
-      const changes = await this.electron.seedChanges();
-      if (changes.length > 0) this.seedChanges.set(changes);
-    }
   }
 
   protected showSaveCue() {
     this.saveToastVisible.set(true);
     if (this.saveToastTimer) clearTimeout(this.saveToastTimer);
     this.saveToastTimer = setTimeout(() => this.saveToastVisible.set(false), 2000);
-  }
-
-  protected async onEditorHistory() {
-    await this.refreshHistory();
-    this.historyOpen.set(true);
-  }
-
-  protected async refreshHistory() {
-    const site = this.workspace.site();
-    if (!site) return;
-    this.historyLoading.set(true);
-    try {
-      this.historyEvents.set(await this.electron.eventsList(site.id, 100));
-    } finally {
-      this.historyLoading.set(false);
-    }
-  }
-
-  protected closeHistory() {
-    this.historyOpen.set(false);
-  }
-
-  protected async restoreToEvent(eventId: number) {
-    const site = this.workspace.site();
-    if (!site) return;
-    const topology = await this.electron.eventsReconstruct(site.id, eventId) as SiteTopology;
-    this.workspace.restoreTopology(topology);
-    await this.workspace.save();
-    this.historyOpen.set(false);
-  }
-
-  protected async applyAllSeedChanges() {
-    this.applyingSeed.set(true);
-    await this.electron.applySeed();
-    this.seedChanges.set([]);
-    this.applyingSeed.set(false);
-  }
-
-  protected async dismissSeedChange(id: string) {
-    await this.electron.dismissSeed(id);
-    this.seedChanges.update(list => list.filter(c => c.id !== id));
-  }
-
-  protected async dismissAllSeedChanges() {
-    for (const c of this.seedChanges()) {
-      await this.electron.dismissSeed(c.id);
-    }
-    this.seedChanges.set([]);
   }
 }

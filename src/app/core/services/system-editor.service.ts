@@ -1,12 +1,15 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import type { PinDef, PinCap, BoardDef } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
-import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
+import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/backend-api';
 import type { Controller, SiteTopology } from '@far-mon/core';
 import type { IoProviderDef } from '@far-mon/core';
 import { collectPins, NODE_REGISTRY, createBoardDriver, createProviderDriver, slug } from '@far-mon/core';
 import type { IoProviderDriver } from '@far-mon/core';
 import { WorkspaceService } from './workspace.service';
+
+/** The selectable aspect panels of the site workspace. */
+export type EditorPanel = 'site' | 'design' | 'remotes' | 'config' | 'automations' | 'deploy';
 
 @Injectable({ providedIn: 'root' })
 export class SystemEditorService {
@@ -17,6 +20,9 @@ export class SystemEditorService {
   private _validation = signal<ValidationResult | null>(null);
   private _generatedFiles = signal<GenerateResult | null>(null);
   private _canvasSvg = signal<string | null>(null);
+
+  /** Active workspace panel. The "design" canvas stays mounted regardless. */
+  readonly panel = signal<EditorPanel>('design');
 
   // --- Delegated reads from workspace ---
   readonly topology = this.workspace.activeTopology;

@@ -19,7 +19,6 @@
     <div class="navbar-center hidden md:flex gap-1">
       <a routerLink="/overview" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Sites</a>
       <a routerLink="/boards" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Boards</a>
-      <a routerLink="/catalog" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Catalog</a>
     </div>
     <div class="navbar-end">
       @if (navLevel() === 'editor') {
@@ -28,59 +27,15 @@
     </div>
   </header>
 
-  <!-- Editor/site rail (below navbar, above content) -->
+  <!-- Workspace rail (below navbar, above content) -->
   @if (navLevel() === 'editor') {
-    <app-pipeline-rail (history)="onEditorHistory()" />
-  } @else if (navLevel() === 'site') {
-    <app-site-rail />
+    <app-pipeline-rail />
   }
 
   <!-- Main content -->
   <main class="flex-1 flex overflow-hidden min-w-0">
     <router-outlet />
   </main>
-
-  <!-- History modal -->
-  @if (historyOpen()) {
-    <div class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" (click)="closeHistory()">
-      <div class="bg-base-100 rounded-xl shadow-2xl border border-base-300/30 max-w-lg w-full max-h-[80vh] flex flex-col" (click)="$event.stopPropagation()">
-        <div class="flex items-center justify-between px-5 py-3.5 border-b border-base-300/30">
-          <h2 class="font-semibold text-sm">History</h2>
-          <button class="btn btn-ghost btn-xs" (click)="closeHistory()">&#10005;</button>
-        </div>
-        <div class="flex-1 overflow-auto p-4">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-[10px] text-base-content/40">{{ historyEvents().length }} events</span>
-            <button class="btn btn-ghost btn-xs" (click)="refreshHistory()" [disabled]="historyLoading()">
-              @if (historyLoading()) { <span class="loading loading-spinner loading-xs"></span> }
-              Refresh
-            </button>
-          </div>
-          @if (historyLoading()) {
-            <div class="flex items-center justify-center py-8">
-              <span class="loading loading-spinner loading-sm"></span>
-            </div>
-          } @else if (historyEvents().length === 0) {
-            <div class="text-center py-8 space-y-2">
-              <p class="text-sm text-base-content/40">No history yet.</p>
-              <p class="text-xs text-base-content/30">Make changes in the editor — autosave will record them here.</p>
-            </div>
-          } @else {
-            <div class="space-y-1">
-              @for (ev of historyEvents(); track ev.id) {
-                <div class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-base-200/50">
-                  <span class="text-[10px] text-base-content/40 font-mono w-8 text-right">#{{ ev.id }}</span>
-                  <span class="text-xs text-base-content/50 w-28">{{ ev.timestamp | date:'short' }}</span>
-                  <span class="text-xs font-medium flex-1">{{ ev.eventType }}</span>
-                  <button class="btn btn-ghost btn-xs text-primary" (click)="restoreToEvent(ev.id)">Restore</button>
-                </div>
-              }
-            </div>
-          }
-        </div>
-      </div>
-    </div>
-  }
 
   <!-- Save cue toast -->
   @if (saveToastVisible()) {
@@ -96,41 +51,4 @@
 
   <!-- Confirm dialog (global) -->
   <app-confirm-dialog />
-
-  <!-- Seed-change prompt -->
-  @if (seedChanges().length > 0) {
-    <div class="toast toast-end toast-bottom z-50">
-      <div class="card bg-base-100 shadow-2xl border border-info/30 max-w-sm">
-        <div class="card-body p-4 gap-3">
-          <div class="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-info shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <div>
-              <div class="font-semibold text-sm">Newer defaults available</div>
-              <div class="text-[10px] text-base-content/50">
-                {{ seedChanges().length }} bundled {{ seedChanges().length === 1 ? 'item has' : 'items have' }} been updated
-              </div>
-            </div>
-          </div>
-          <div class="bg-base-200/50 rounded-lg divide-y divide-base-300/40">
-            @for (c of seedChanges(); track c.id) {
-              <div class="flex items-center gap-2 px-3 py-2 text-xs">
-                <span class="badge badge-xs badge-secondary">{{ c.kind }}</span>
-                <span class="flex-1 truncate font-medium">{{ c.label }}</span>
-                <button class="btn btn-ghost btn-xs opacity-40 hover:opacity-100" (click)="dismissSeedChange(c.id)">&#10005;</button>
-              </div>
-            }
-          </div>
-          <div class="flex gap-2">
-            <button class="btn btn-ghost btn-sm flex-1" (click)="dismissAllSeedChanges()">Skip all</button>
-            <button class="btn btn-primary btn-sm flex-1" (click)="applyAllSeedChanges()" [disabled]="applyingSeed()">
-              @if (applyingSeed()) { <span class="loading loading-spinner loading-xs"></span> }
-              Update all
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  }
 </div>

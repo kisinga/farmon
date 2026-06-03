@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
 import { ValidationPanelComponent } from '../../../shared/validation-panel/validation-panel.component';
-import type { RuleDiagnostic } from '../../../core/models/electron-api';
+import type { RuleDiagnostic } from '../../../core/models/backend-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
 import { buildGraph, activeGraph, deriveRoutes, RouteOverrideSchema, deriveHaEntityId, deriveTankCalibration, recommendSensorMaxPsi } from '@far-mon/core';

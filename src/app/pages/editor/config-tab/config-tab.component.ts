@@ -2,7 +2,7 @@ import { Component, inject, computed, signal, OnInit, effect } from '@angular/co
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { BoardService } from '../../../core/services/board.service';
-import { ElectronService } from '../../../core/services/electron.service';
+import { BackendService } from '../../../core/services/backend.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
@@ -339,7 +339,7 @@ const TIMING_FIELDS: TimingField[] = [
 export class ConfigTabComponent implements OnInit {
   protected editor = inject(SystemEditorService);
   protected boards = inject(BoardService);
-  private electron = inject(ElectronService);
+  private backend = inject(BackendService);
   private workspace = inject(WorkspaceService);
 
   protected timingGroups = [...new Set(TIMING_FIELDS.map((f) => f.group))];
@@ -380,34 +380,15 @@ export class ConfigTabComponent implements OnInit {
   }
 
   private async refreshLastDeployed(): Promise<void> {
-    const site = this.workspace.site();
-    const systemId = this.editor.controllerId();
-    if (!site || !systemId) {
-      this.lastDeployedFriendlyName.set(null);
-      return;
-    }
-    try {
-      const latest = await this.electron.generationLatest(site.id, systemId, 'esphome');
-      if (!latest) {
-        this.lastDeployedFriendlyName.set(null);
-        return;
-      }
-      const snap = await this.electron.generationLoad(latest.id);
-      if (!snap) {
-        this.lastDeployedFriendlyName.set(null);
-        return;
-      }
-      const topo = JSON.parse(snap.topology) as { device?: { friendly_name?: string } };
-      this.lastDeployedFriendlyName.set(topo.device?.friendly_name ?? null);
-    } catch {
-      this.lastDeployedFriendlyName.set(null);
-    }
+    // Generation history not available in web mode
+    this.lastDeployedFriendlyName.set(null);
   }
 
   protected peripherals = computed(() => {
     const board = this.editor.board();
     if (!board) return [];
-    return Object.entries(board.peripherals)
+    // Some boards (e.g. RS-485 expansion boards) have no onboard peripherals.
+    return Object.entries(board.peripherals ?? {})
       .filter(([_, val]) => !!val)
       .map(([key, val]) => ({
         key,

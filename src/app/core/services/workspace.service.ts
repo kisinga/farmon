@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { ElectronService } from './electron.service';
+import { BackendService } from './backend.service';
 import type {
   BoardDef, TopologyGraph, Route,
   TopologyNode, PipeSegment, RouteOverride,
@@ -85,7 +85,7 @@ export class WorkspaceService {
 
   private _autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private electron: ElectronService) {}
+  constructor(private backend: BackendService) {}
 
   /** Mark dirty and schedule debounced autosave. Called by every mutation. */
   private _markDirty(controllerId?: string): void {
@@ -120,7 +120,7 @@ export class WorkspaceService {
     this._loading.set(true);
 
     try {
-      const payload = await this.electron.siteLoad(siteId);
+      const payload = await this.backend.siteLoad(siteId);
       this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName });
 
       if (payload.topology) {
@@ -138,7 +138,7 @@ export class WorkspaceService {
         const boards = new Map<string, BoardDef>();
         for (const ctrl of topology.controllers) {
           try {
-            const boardResult = await this.electron.boardLoad(ctrl.board);
+            const boardResult = await this.backend.boardLoad(ctrl.board);
             boards.set(ctrl.id, boardResult.board as BoardDef);
           } catch (err) {
             console.error(`[Workspace] Failed to load board "${ctrl.board}" for controller "${ctrl.id}":`, err);
@@ -321,10 +321,10 @@ export class WorkspaceService {
     const site = this._site();
     if (!site) throw new Error('No site loaded');
 
-    const controller = await this.electron.systemAddFromTemplate(site.id, templateName, friendlyName);
+    const controller = await this.backend.systemCreateBlank(site.id, friendlyName ?? 'New Controller', 'kc868-a16');
 
     // Load board for the new controller
-    const boardResult = await this.electron.boardLoad(controller.board);
+    const boardResult = await this.backend.boardLoad(controller.board);
     const board = boardResult.board as BoardDef;
 
     const topology = this._siteTopology();
@@ -347,10 +347,10 @@ export class WorkspaceService {
     const site = this._site();
     if (!site) throw new Error('No site loaded');
 
-    const controller = await this.electron.systemCreateBlank(site.id, friendlyName, boardModel);
+    const controller = await this.backend.systemCreateBlank(site.id, friendlyName, boardModel);
 
     // Load board for the new controller
-    const boardResult = await this.electron.boardLoad(controller.board);
+    const boardResult = await this.backend.boardLoad(controller.board);
     const board = boardResult.board as BoardDef;
 
     const topology = this._siteTopology();
@@ -369,9 +369,13 @@ export class WorkspaceService {
     return controller.id;
   }
 
-  removeController(controllerId: string): void {
+  async removeController(controllerId: string): Promise<void> {
     const topology = this._siteTopology();
-    if (!topology) return;
+    const site = this._site();
+    if (!topology || !site) return;
+
+    // Persist deletion to backend
+    await this.backend.systemDelete(site.id, controllerId);
 
     const clone = structuredClone(topology);
     clone.controllers = clone.controllers.filter(c => c.id !== controllerId);
@@ -453,7 +457,7 @@ export class WorkspaceService {
       topology,
     };
 
-    await this.electron.siteSave(payload);
+    await this.backend.siteSave(payload);
 
     // Only clear dirty if state hasn't changed since we started saving.
     // This prevents races where a mutation happens during the async save.

@@ -11,10 +11,10 @@ import { parse as parseYaml } from "yaml";
 import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifestForController, reservedPins } from "@far-mon/core";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
 import { validateAll } from "../electron/lib/validate.js";
-import { generateAll, createTestMetadata, type GeneratedFile } from "../electron/lib/generate.js";
-import { generateBoardPackage } from "../electron/lib/generators/board-package.js";
-import { generateRoutes } from "../electron/lib/generators/routes.js";
-import { collectEntityCodegen } from "../electron/lib/generators/collect.js";
+import { generateAll, createTestMetadata, type GeneratedFile } from "@far-mon/core/codegen";
+import { generateBoardPackage } from "@far-mon/core/codegen";
+import { generateRoutes } from "@far-mon/core/codegen";
+import { collectEntityCodegen } from "@far-mon/core/codegen";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
 const CONFIG_PATH = path.join(DEFAULTS, "configs/pump-controller.yaml");

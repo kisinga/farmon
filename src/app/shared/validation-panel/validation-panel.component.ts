@@ -1,5 +1,5 @@
 import { Component, input, computed, output } from '@angular/core';
-import type { ValidationResult } from '../../core/models/electron-api';
+import type { ValidationResult } from '../../core/models/backend-api';
 
 @Component({
   selector: 'app-validation-panel',

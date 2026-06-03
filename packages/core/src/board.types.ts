@@ -137,6 +137,9 @@ export function pinsWithCap(board: BoardDef, cap: PinCap): Set<string> {
   return new Set(board.pins.filter(p => p.caps.includes(cap)).map(p => p.gpio));
 }
 
+/** Alias of {@link pinsWithCap} — the legacy name used by the generators/rules. */
+export const pinsWithCapability = pinsWithCap;
+
 // Pin colors are now sourced from entity-registry via shared/colors.ts.
 // Use entityColor(kind) for entity colors and UI_COLORS for reserved/selected/available.
 

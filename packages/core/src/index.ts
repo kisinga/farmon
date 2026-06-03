@@ -47,7 +47,7 @@ export { slug } from './slug';
 export { topologyToManifestForController } from './topology-to-manifest';
 export { collectPins, isFieldVisible } from './pin-collect';
 export { computePinOverlays } from './board-pin-overlays';
-export { reservedPins, exposedPins, pinsWithCap } from './board.types';
+export { reservedPins, exposedPins, pinsWithCap, pinsWithCapability } from './board.types';
 export { UI_COLORS } from './colors';
 export { entityColor } from './entity-registry';
 export { nodesByKind } from './manifest.types';

@@ -5,9 +5,9 @@ import { Router } from '@angular/router';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
 import { BoardService } from '../../../core/services/board.service';
-import { ElectronService } from '../../../core/services/electron.service';
+import { BackendService } from '../../../core/services/backend.service';
 import type { SiteTopology, TopologyNode, RouteOverride } from '../../../core/models/topology.model';
-import type { TemplateListEntry } from '../../../core/models/electron-api';
+import type { TemplateListEntry } from '../../../core/models/backend-api';
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
 import type { Node as X6Node } from '@antv/x6';
@@ -239,7 +239,7 @@ export class TopologyX6TabComponent {
   protected editor = inject(SystemEditorService);
   protected workspace = inject(WorkspaceService);
   protected boards = inject(BoardService);
-  private electron = inject(ElectronService);
+  private backend = inject(BackendService);
   private router = inject(Router);
   private sanitizer = inject(DomSanitizer);
   private injector = inject(Injector);
@@ -638,7 +638,10 @@ export class TopologyX6TabComponent {
   protected switchController(controllerId: string) {
     const siteId = this.workspace.site()?.id;
     if (!siteId) return;
-    this.router.navigate(['/site', siteId, 'system', controllerId, 'design']);
+    this.editor.panel.set('design');
+    // Update the :config param so the workspace re-focuses; the component is
+    // reused (no reload) and its paramMap subscription drives focusController.
+    this.router.navigate(['/site', siteId, 'system', controllerId]);
   }
 
   // --- Controller creation ---
@@ -668,7 +671,7 @@ export class TopologyX6TabComponent {
   }
 
   protected async openTemplateModal() {
-    this.templates.set(await this.electron.templateList());
+    this.templates.set([]);
     this.showTemplateModal.set(true);
   }
 
