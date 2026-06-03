@@ -17,9 +17,9 @@ export type {
 export { effectiveTransport } from './topology.types';
 export type { Manifest, ManifestNode, LocalManifestNode, ImportedManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
-export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef, ExpansionBoardDef, ExpansionBoardChannelDef } from './board.types';
+export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef, ExpansionBoardDef, ExpansionBoardChannelDef, ExpansionBoardCatalog } from './board.types';
 export { boardSupportedTransports } from './board.types';
-export type { IoProviderDef } from './topology.types';
+export type { IoProviderDef, IoProviderInstanceConfig } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
 export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, RouteRule, CodegenContext, TypedDescriptor, EntityKind, HaEntityKey } from './entity-registry';
 export type { ChannelUsage, ResolvedChannel, IoChannel, IoProviderDriver } from './io-provider.types';
@@ -34,7 +34,9 @@ export type {
 // --- Schemas ---
 export { TopologySchema, RouteOverrideSchema, parseTopology, parsePortRef, portRef, migrateTopology, CURRENT_SCHEMA_VERSION, type Topology } from './topology-schema';
 export { TopologyEventSchema, parseTopologyEvent, type TopologyEvent, type TopologyEventType } from './topology-events';
-export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, NetworkConfigSchema, AnchorIdSchema, parseDurationMs, escXml } from './schemas';
+export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, IoProviderInstanceConfigSchema, NetworkConfigSchema, AnchorIdSchema, parseDurationMs, escXml } from './schemas';
+export { BoardDefSchema, ExpansionBoardDefSchema, parseBoardDef, parseExpansionBoardDef } from './board-schema';
+export { parseSiteImport, type ParsedSiteImport } from './site-schema';
 export { type InputPolicy, policyString } from './input-policy';
 
 // --- Registry ---
@@ -92,9 +94,8 @@ export { deriveRemoteHaEntityId } from './remote-ha-entity';
 export { createBoardDriver } from './io-providers/board-driver';
 export { buildResolveChannel, resolveComponentHeader } from './io-providers/resolve-channel';
 export { createModbusControllerDriver } from './io-providers/modbus-controller-driver';
-export { createProviderDriver } from './io-providers/provider-factory';
+export { createProviderDriver, buildProviderDrivers, type ProviderDriverEntry } from './io-providers/provider-factory';
 export { createExpansionBoardDriver } from './io-providers/expansion-board-driver';
-export { BUILTIN_EXPANSION_BOARDS, listBuiltinExpansionBoards } from './io-providers/expansion-board-defs';
 
 // --- Static ---
 export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';

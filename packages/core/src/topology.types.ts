@@ -96,10 +96,22 @@ export interface UartBus {
   baud_rate: number;
 }
 
+/**
+ * Transport instance config for an I/O provider. Every provider today is
+ * addressed by a bus + device address (Modbus controller, Modbus expansion
+ * board). When a provider needs a different shape, widen this to a union.
+ */
+export interface IoProviderInstanceConfig {
+  /** UART bus ID the device hangs off (e.g. 'uart_modbus'). */
+  bus: string;
+  /** Modbus device address (1-247). */
+  address: number;
+}
+
 export interface IoProviderDef {
   id: string;
   type: string;
-  config: Record<string, unknown>;
+  config: IoProviderInstanceConfig;
 }
 
 export type NetworkTransport = 'ethernet' | 'wifi';

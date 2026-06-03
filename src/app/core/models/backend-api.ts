@@ -20,10 +20,11 @@ export type { BoardDef, Route, SiteTopology };
 // --- Boards ---
 
 export interface BoardListEntry {
+  /** PocketBase record id. Controllers reference boards by `model`, not this. */
   id: string;
   model: string;
   label: string;
-  library: boolean;
+  kind: 'main' | 'expansion';
 }
 
 export interface BoardLoadResult {

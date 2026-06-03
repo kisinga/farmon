@@ -89,10 +89,15 @@ export const NetworkConfigSchema = z.object({
   dns2: z.string().optional(),
 });
 
+export const IoProviderInstanceConfigSchema = z.object({
+  bus: z.string().min(1),
+  address: z.number().int(),
+});
+
 export const IoProviderDefSchema = z.object({
   id: ComponentId,
   type: z.string().min(1),
-  config: z.record(z.unknown()),
+  config: IoProviderInstanceConfigSchema,
 });
 
 export const DeviceSchema = z.object({

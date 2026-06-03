@@ -6,8 +6,8 @@ import { BackendService } from '../../../core/services/backend.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
-import { slug, NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY, BUILTIN_EXPANSION_BOARDS } from '@far-mon/core';
-import type { UartBus } from '@far-mon/core';
+import { slug, NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY } from '@far-mon/core';
+import type { UartBus, IoProviderInstanceConfig } from '@far-mon/core';
 import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
 
 interface TimingField {
@@ -84,8 +84,8 @@ const TIMING_FIELDS: TimingField[] = [
                 [ngModel]="editor.controllerDevice()?.board"
                 (ngModelChange)="changeBoard($event)"
               >
-                @for (b of boards.boards(); track b.id) {
-                  <option [value]="b.id">{{ b.label }}</option>
+                @for (b of boards.boards(); track b.model) {
+                  <option [value]="b.model">{{ b.label }}</option>
                 }
               </select>
             </label>
@@ -251,7 +251,7 @@ const TIMING_FIELDS: TimingField[] = [
                       [ngModel]="prov.type"
                       (ngModelChange)="updateProviderType(prov.id, $event)">
                       <option value="modbus_controller">Modbus Controller</option>
-                      @for (opt of builtinExpansionBoardOptions; track opt.value) {
+                      @for (opt of expansionBoardOptions(); track opt.value) {
                         <option [value]="opt.value">{{ opt.label }}</option>
                       }
                     </select>
@@ -347,10 +347,12 @@ export class ConfigTabComponent implements OnInit {
   protected deviceSchema = DeviceSchema;
   protected providerSchema = IoProviderDefSchema;
   protected componentIdPolicy = COMPONENT_ID_POLICY;
-  protected builtinExpansionBoardOptions = Object.entries(BUILTIN_EXPANSION_BOARDS).map(([value, def]) => ({
-    value,
-    label: def.label,
-  }));
+  /** Expansion-board picker options, sourced from the DB catalog (kind=expansion). */
+  protected expansionBoardOptions = computed(() =>
+    this.boards.boards()
+      .filter((b) => b.kind === 'expansion')
+      .map((b) => ({ value: b.model, label: b.label })),
+  );
 
   /** friendly_name of the most recent successful firmware generation. null = never deployed. */
   private lastDeployedFriendlyName = signal<string | null>(null);
@@ -474,10 +476,10 @@ export class ConfigTabComponent implements OnInit {
     });
   }
 
-  updateProviderConfig(id: string, key: string, value: unknown) {
+  updateProviderConfig<K extends keyof IoProviderInstanceConfig>(id: string, key: K, value: IoProviderInstanceConfig[K]) {
     this.editor.updateActiveController(ctrl => {
       const prov = (ctrl.io_providers ?? []).find(p => p.id === id);
-      if (prov) (prov.config as Record<string, unknown>)[key] = value;
+      if (prov) prov.config[key] = value;
     });
   }
 
@@ -517,8 +519,7 @@ export class ConfigTabComponent implements OnInit {
       if (bus) bus.id = newId;
       // Cascade: update provider configs that reference this bus
       for (const prov of ctrl.io_providers ?? []) {
-        const config = prov.config as Record<string, unknown>;
-        if (config['bus'] === oldId) config['bus'] = newId;
+        if (prov.config.bus === oldId) prov.config.bus = newId;
       }
     });
   }
@@ -526,9 +527,7 @@ export class ConfigTabComponent implements OnInit {
   updateUartBusField<K extends keyof UartBus>(id: string, key: K, value: UartBus[K]) {
     this.editor.updateActiveController(ctrl => {
       const bus = (ctrl.uart_buses ?? []).find(b => b.id === id);
-      if (bus) {
-        (bus as Record<keyof UartBus, unknown>)[key] = value;
-      }
+      if (bus) bus[key] = value;
     });
   }
 }

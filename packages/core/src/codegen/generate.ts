@@ -1,5 +1,5 @@
 import type { Manifest } from '@far-mon/core';
-import type { BoardDef } from '@far-mon/core';
+import type { BoardDef, ExpansionBoardCatalog } from '@far-mon/core';
 import { generateRoutes } from "./generators/routes";
 import { generateHardware } from "./generators/hardware";
 import { generateSensors } from "./generators/sensors";
@@ -175,10 +175,11 @@ export function generateEsphome(
   siteId: string,
   secrets: SecretsMap | undefined,
   metadata: GenerationMetadata,
+  expansionBoards: ExpansionBoardCatalog,
 ): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const deviceDir = `${siteRoot(siteId)}/esphome/${dir}`;
-  const collected = collectEntityCodegen(m, board);
+  const collected = collectEntityCodegen(m, board, expansionBoards);
 
   const files: GeneratedFile[] = [
     {
@@ -312,9 +313,10 @@ export function generateFirmware(
   siteId: string,
   secrets: SecretsMap | undefined,
   metadata: GenerationMetadata,
+  expansionBoards: ExpansionBoardCatalog,
 ): GeneratedFile[] {
   if (generator === 'esphome') {
-    return generateEsphome(manifest, board, siteId, secrets, metadata);
+    return generateEsphome(manifest, board, siteId, secrets, metadata, expansionBoards);
   }
   throw new Error(`Unknown generator: ${generator}`);
 }
@@ -325,10 +327,11 @@ export function generateAll(
   siteId: string,
   secrets: SecretsMap | undefined,
   metadata: GenerationMetadata,
+  expansionBoards: ExpansionBoardCatalog,
 ): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const haRoot = `${siteRoot(siteId)}/homeassistant`;
-  const files = [...generateFirmware('esphome', m, board, siteId, secrets, metadata)];
+  const files = [...generateFirmware('esphome', m, board, siteId, secrets, metadata, expansionBoards)];
 
   files.push({
     relativePath: `${haRoot}/dashboards/dashboard.yaml`,

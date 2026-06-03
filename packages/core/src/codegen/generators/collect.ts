@@ -1,6 +1,6 @@
 import type { Manifest } from '@far-mon/core';
-import type { BoardDef } from '@far-mon/core';
-import { nodesByKind, NODE_REGISTRY, buildResolveChannel, createProviderDriver } from '@far-mon/core';
+import type { BoardDef, ExpansionBoardCatalog } from '@far-mon/core';
+import { nodesByKind, NODE_REGISTRY, buildResolveChannel, buildProviderDrivers } from '@far-mon/core';
 import type { CodegenContext } from '@far-mon/core';
 
 
@@ -23,11 +23,12 @@ export interface CollectedCodegen {
 // Single-pass collector
 // ---------------------------------------------------------------------------
 
-export function collectEntityCodegen(m: Manifest, board: BoardDef): CollectedCodegen {
-  const providers = (m.device.io_providers ?? []).map(def => ({
-    id: def.id,
-    driver: createProviderDriver(def),
-  }));
+export function collectEntityCodegen(
+  m: Manifest,
+  board: BoardDef,
+  expansionBoards: ExpansionBoardCatalog,
+): CollectedCodegen {
+  const providers = buildProviderDrivers(m.device.io_providers ?? [], expansionBoards);
 
   const ctx: CodegenContext = {
     resolveChannel: buildResolveChannel(board, providers),

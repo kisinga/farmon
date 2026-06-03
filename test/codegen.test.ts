@@ -115,7 +115,7 @@ const rawConfig = fs.readFileSync(CONFIG_PATH, "utf-8");
 const topology = parseTopology(parseYaml(rawConfig));
 manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? 'default');
 const validation = validateAll(topology, manifest, board);
-files = generateAll(manifest, board, 'test-site', undefined, createTestMetadata());
+files = generateAll(manifest, board, 'test-site', undefined, createTestMetadata(), {});
 fileMap = new Map(files.map((f) => [f.relativePath, f.content]));
 
 // Helper arrays
@@ -456,7 +456,7 @@ const VFD_CONFIG_PATH = path.join(DEFAULTS, "configs/vfd-pump-controller.yaml");
 const vfdRawConfig = fs.readFileSync(VFD_CONFIG_PATH, "utf-8");
 const vfdTopology = parseTopology(parseYaml(vfdRawConfig));
 const vfdManifest = topologyToManifestForController(vfdTopology, vfdTopology.controllers[0]?.id ?? 'default');
-const vfdFiles = generateAll(vfdManifest, board, 'test-site', undefined, createTestMetadata());
+const vfdFiles = generateAll(vfdManifest, board, 'test-site', undefined, createTestMetadata(), {});
 const vfdFileMap = new Map(vfdFiles.map((f) => [f.relativePath, f.content]));
 
 function getVfdFile(suffix: string): string {
@@ -533,7 +533,7 @@ const kcBoard = loadBoard(KC_BOARD_DIR);
 const kcRawConfig = fs.readFileSync(KC_CONFIG_PATH, "utf-8");
 const kcTopology = parseTopology(parseYaml(kcRawConfig));
 const kcManifest = topologyToManifestForController(kcTopology, kcTopology.controllers[0]?.id ?? 'default');
-const kcFiles = generateAll(kcManifest, kcBoard, 'test-site', undefined, createTestMetadata());
+const kcFiles = generateAll(kcManifest, kcBoard, 'test-site', undefined, createTestMetadata(), {});
 const kcFileMap = new Map(kcFiles.map((f) => [f.relativePath, f.content]));
 
 function getKcFile(suffix: string): string {
@@ -671,7 +671,7 @@ const r4RawConfig = fs.readFileSync(R4_CONFIG_PATH, "utf-8");
 const r4Topology = parseTopology(parseYaml(r4RawConfig));
 const r4Manifest = topologyToManifestForController(r4Topology, r4Topology.controllers[0]?.id ?? 'default');
 const r4Validation = validateAll(r4Topology, r4Manifest, r4Board);
-const r4Files = generateAll(r4Manifest, r4Board, 'test-site', undefined, createTestMetadata());
+const r4Files = generateAll(r4Manifest, r4Board, 'test-site', undefined, createTestMetadata(), {});
 const r4FileMap = new Map(r4Files.map((f) => [f.relativePath, f.content]));
 
 function getR4File(suffix: string): string {
@@ -783,7 +783,7 @@ assert(!flowNode?.remoteHaEntityId, "Local flow sensor has no remote HA entity")
 assert(!pumpNode?.remoteHaEntityId, "Local pump has no remote HA entity");
 
 // Collect: remote tanks should emit homeassistant sensor imports
-const pumpCollect = collectEntityCodegen(pumpManifest, board);
+const pumpCollect = collectEntityCodegen(pumpManifest, board, {});
 assert(
   pumpCollect.sections['sensor']?.some(y => y.includes('ri_src_tank') && y.includes('sensor.tank_controller_source_tank_level')),
   "Remote src tank emits homeassistant sensor import"

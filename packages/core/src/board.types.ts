@@ -167,3 +167,11 @@ export interface ExpansionBoardDef {
   transport_type: TransportType;
   channels: ExpansionBoardChannelDef[];
 }
+
+/**
+ * Expansion-board catalog, keyed by provider type (the board model id, e.g.
+ * `waveshare-modbus-relay-8ch`). Injected into codegen and the editor so the set
+ * of available expansion boards comes from the DB-backed catalog rather than a
+ * hardcoded map. See `createProviderDriver`.
+ */
+export type ExpansionBoardCatalog = Record<string, ExpansionBoardDef>;

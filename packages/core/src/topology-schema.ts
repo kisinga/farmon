@@ -83,7 +83,7 @@ export const ControllerSchema = z.object({
   io_providers: z.array(z.object({
     id: z.string().min(1),
     type: z.string().min(1),
-    config: z.record(z.string(), z.unknown()),
+    config: z.object({ bus: z.string().min(1), address: z.number().int() }),
   })).optional(),
 });
 

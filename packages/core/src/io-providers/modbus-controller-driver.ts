@@ -10,13 +10,10 @@
 
 import type { IoProviderDriver, ResolvedChannel, ChannelUsage, IoChannel } from '../io-provider.types';
 import type { PinCap } from '../board.types';
+// config: bus = UART bus ID (e.g. 'uart_modbus'), address = Modbus device addr (1-247)
+import type { IoProviderInstanceConfig } from '../topology.types';
 
-interface ModbusControllerConfig {
-  bus: string;       // UART bus ID (e.g., 'uart_modbus')
-  address: number;   // Modbus device address (1-247)
-}
-
-export function createModbusControllerDriver(config: ModbusControllerConfig): IoProviderDriver {
+export function createModbusControllerDriver(config: IoProviderInstanceConfig): IoProviderDriver {
   const modbusId = `${config.bus}_modbus`;
 
   return {

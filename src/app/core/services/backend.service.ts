@@ -1,13 +1,16 @@
 import { Injectable } from '@angular/core';
 import PocketBase, { type RecordModel } from 'pocketbase';
-import { parse as parseYaml } from 'yaml';
 import { strToU8, zipSync } from 'fflate';
 import {
   buildGraph,
   deriveRoutes,
   parseTopology,
   topologyToManifestForController,
+  parseBoardDef,
+  parseExpansionBoardDef,
+  parseSiteImport,
 } from '@far-mon/core';
+import type { ExpansionBoardCatalog, ExpansionBoardDef } from '@far-mon/core';
 import {
   generateEsphome,
   generateDefaultSecrets,
@@ -39,14 +42,11 @@ import type {
 const PB_URL: string =
   (globalThis as { __MAJI_PB_URL__?: string }).__MAJI_PB_URL__ ?? '/';
 
-/** Assets base for static board definitions bundled into the SPA. */
-const BOARDS_BASE = 'boards';
-
 /**
  * BackendService — the single gateway from the Angular app to the MajiFlow
- * backend. Site/controller persistence and auth go through PocketBase; pure
- * domain operations (route derivation, validation) run against `@far-mon/core`
- * in the browser. Board definitions are served as static assets.
+ * backend. Site/controller persistence, auth, and the board catalog go through
+ * PocketBase; pure domain operations (route derivation, validation) run against
+ * `@far-mon/core` in the browser.
  *
  * NOTE (rewrite phasing): `validate` and `generate` are intentionally thin in
  * this slice. The validation rule engine and the ESPHome generators currently
@@ -105,11 +105,13 @@ export class BackendService {
   }
 
   async siteImport(text: string): Promise<{ id: string }> {
-    const parsed = JSON.parse(text) as SiteFullPayload;
+    // Validate + migrate the payload via core (throws on malformed JSON/graph)
+    // instead of trusting a raw cast.
+    const parsed = parseSiteImport(JSON.parse(text));
     const r = await this.pb.collection('sites').create({
-      name: parsed.site?.friendlyName ?? 'Imported Site',
-      slug: this.slugify(parsed.site?.friendlyName ?? 'imported-site'),
-      draft_topology: parsed.topology ?? null,
+      name: parsed.friendlyName,
+      slug: this.slugify(parsed.friendlyName),
+      draft_topology: parsed.topology,
       owner: this.pb.authStore.record?.id ?? null,
     });
     return { id: r['id'] };
@@ -138,24 +140,81 @@ export class BackendService {
     // Removal is persisted by the workspace's subsequent siteSave().
   }
 
-  // --- Boards (static assets) ---------------------------------------------
+  // --- Boards (DB catalog) ------------------------------------------------
+  //
+  // The `boards` collection is the source of truth. Records are keyed by
+  // `model` (the id controllers reference); `def` holds the parsed board.yaml
+  // and `svg` an optional diagram file.
 
   async boardList(): Promise<BoardListEntry[]> {
-    const res = await fetch(`${BOARDS_BASE}/index.json`);
-    if (!res.ok) throw new Error(`boardList: ${res.status}`);
-    return (await res.json()) as BoardListEntry[];
+    const records = await this.pb
+      .collection('boards')
+      .getFullList({ sort: 'label' });
+    return records.map((r) => ({
+      id: r['id'],
+      model: r['model'],
+      label: r['label'] || r['model'],
+      kind: r['kind'] === 'expansion' ? 'expansion' : 'main',
+    }));
   }
 
   async boardLoad(model: string): Promise<BoardLoadResult> {
-    const yamlRes = await fetch(`${BOARDS_BASE}/${model}/board.yaml`);
-    if (!yamlRes.ok) throw new Error(`boardLoad("${model}"): ${yamlRes.status}`);
-    const board = parseYaml(await yamlRes.text()) as BoardDef;
+    const r = await this.pb
+      .collection('boards')
+      .getFirstListItem(this.pb.filter('model = {:m}', { m: model }));
+    return {
+      board: r['def'] as BoardDef,
+      svg: r['svg'] ? this.pb.files.getURL(r, r['svg']) : null,
+    };
+  }
 
-    let svg: string | null = null;
-    const svgRes = await fetch(`${BOARDS_BASE}/${model}/board.svg`);
-    if (svgRes.ok) svg = await svgRes.text();
+  /**
+   * Expansion-board catalog (`{ model → def }`) for the codegen provider
+   * factory and the editor's expansion-board picker. Replaces the former
+   * hardcoded `BUILTIN_EXPANSION_BOARDS` map — the set is now DB data.
+   */
+  async expansionCatalog(): Promise<ExpansionBoardCatalog> {
+    const records = await this.pb
+      .collection('boards')
+      .getFullList({ filter: this.pb.filter('kind = {:k}', { k: 'expansion' }) });
+    const catalog: ExpansionBoardCatalog = {};
+    for (const r of records) {
+      catalog[r['model']] = r['def'] as ExpansionBoardDef;
+    }
+    return catalog;
+  }
 
-    return { board, svg };
+  /** True when the signed-in user may mutate the board catalog (admin-only). */
+  get isAdmin(): boolean {
+    return this.pb.authStore.record?.['role'] === 'admin';
+  }
+
+  /**
+   * Import a board into the DB catalog from a JSON definition. The def is
+   * validated by core (`parseBoardDef` / `parseExpansionBoardDef`) before any
+   * write, so malformed boards are rejected up front. Main controller boards
+   * additionally require an SVG diagram (the canvas renders pin overlays on it);
+   * expansion boards are pure data. Server-side rule restricts this to admins.
+   */
+  async boardImport(
+    defText: string,
+    kind: 'main' | 'expansion',
+    svg?: File,
+  ): Promise<{ id: string }> {
+    const raw: unknown = JSON.parse(defText);
+    if (kind === 'expansion') {
+      const def = parseExpansionBoardDef(raw);
+      const r = await this.pb.collection('boards').create({
+        model: def.model, label: def.label, kind: 'expansion', version: 1, def,
+      });
+      return { id: r['id'] };
+    }
+    const def = parseBoardDef(raw);
+    if (!svg) throw new Error('Main controller boards require an SVG diagram file.');
+    const r = await this.pb.collection('boards').create({
+      model: def.model, label: def.label, kind: 'main', version: 1, def, svg,
+    });
+    return { id: r['id'] };
   }
 
   // --- Domain operations (run in-browser via @far-mon/core) ---------------
@@ -191,7 +250,8 @@ export class BackendService {
     const ctrl = topo.controllers.find((c) => c.id === controllerId);
     if (!ctrl) throw new Error(`Controller "${controllerId}" not found in site.`);
 
-    const built = await this.buildController(topo, ctrl, siteId, secrets);
+    const expansionBoards = await this.expansionCatalog();
+    const built = await this.buildController(topo, ctrl, siteId, expansionBoards, secrets);
     const downloadUrl = URL.createObjectURL(this.zipBundle(built.files));
 
     return {
@@ -216,10 +276,11 @@ export class BackendService {
   async commit(siteId: string, note?: string): Promise<CommitResult> {
     const { topo } = await this.loadTopology(siteId);
 
+    const expansionBoards = await this.expansionCatalog();
     const allFiles: GeneratedFile[] = [];
     const hashParts: string[] = [];
     for (const ctrl of topo.controllers) {
-      const built = await this.buildController(topo, ctrl, siteId);
+      const built = await this.buildController(topo, ctrl, siteId, expansionBoards);
       allFiles.push(...built.files);
       hashParts.push(built.hashPart);
     }
@@ -233,10 +294,18 @@ export class BackendService {
     const nextVersion = ((prev?.['version'] as number) ?? 0) + 1;
     const blob = this.zipBundle(allFiles);
 
+    const referenced = new Set<string>();
+    for (const ctrl of topo.controllers) {
+      referenced.add(ctrl.board);
+      for (const p of ctrl.io_providers ?? []) referenced.add(p.type);
+    }
+    const boardVersions = await this.boardVersions(referenced);
+
     const fd = new FormData();
     fd.set('site', siteId);
     fd.set('version', String(nextVersion));
     fd.set('topology', JSON.stringify(topo));
+    fd.set('board_versions', JSON.stringify(boardVersions));
     fd.set('source_hash', sourceHash);
     fd.set('committed_by', this.pb.authStore.record?.id ?? '');
     if (note) fd.set('note', note);
@@ -287,6 +356,7 @@ export class BackendService {
     topo: SiteTopology,
     ctrl: Controller,
     siteId: string,
+    expansionBoards: ExpansionBoardCatalog,
     secrets?: SecretsMap,
   ): Promise<{ files: GeneratedFile[]; hashPart: string; version: string }> {
     const { board } = await this.boardLoad(ctrl.board);
@@ -311,8 +381,25 @@ export class BackendService {
       siteId,
       secrets ?? generateDefaultSecrets(),
       metadata,
+      expansionBoards,
     );
     return { files, hashPart, version: metadata.version };
+  }
+
+  /**
+   * Resolve `{ model → version }` for the given board models (controller main
+   * boards + expansion provider types). Non-board references (e.g. the built-in
+   * `modbus_controller` provider) are skipped. Recorded into the committed
+   * version for board-revision traceability.
+   */
+  private async boardVersions(models: Set<string>): Promise<Record<string, number>> {
+    if (models.size === 0) return {};
+    const all = await this.pb.collection('boards').getFullList();
+    const out: Record<string, number> = {};
+    for (const r of all) {
+      if (models.has(r['model'])) out[r['model']] = (r['version'] as number) ?? 0;
+    }
+    return out;
   }
 
   private async latestVersion(siteId: string): Promise<RecordModel | undefined> {

@@ -4,9 +4,10 @@ import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/backend-api';
 import type { Controller, SiteTopology } from '@far-mon/core';
 import type { IoProviderDef } from '@far-mon/core';
-import { collectPins, NODE_REGISTRY, createBoardDriver, createProviderDriver, slug } from '@far-mon/core';
+import { collectPins, NODE_REGISTRY, createBoardDriver, buildProviderDrivers, slug } from '@far-mon/core';
 import type { IoProviderDriver } from '@far-mon/core';
 import { WorkspaceService } from './workspace.service';
+import { BoardService } from './board.service';
 
 /** The selectable aspect panels of the site workspace. */
 export type EditorPanel = 'site' | 'design' | 'remotes' | 'config' | 'automations' | 'deploy';
@@ -14,6 +15,7 @@ export type EditorPanel = 'site' | 'design' | 'remotes' | 'config' | 'automation
 @Injectable({ providedIn: 'root' })
 export class SystemEditorService {
   private workspace = inject(WorkspaceService);
+  private boardCatalog = inject(BoardService);
 
   // --- Session-specific state (NOT in workspace) ---
   private _readonly = signal(false);
@@ -299,14 +301,15 @@ export class SystemEditorService {
     const result: Array<{ id: string; label: string; driver: IoProviderDriver }> = [
       { id: 'board', label: 'Board', driver: createBoardDriver(board) },
     ];
-    for (const provDef of ioProviders) {
-      try {
-        result.push({
-          id: provDef.id,
-          label: `${provDef.id} (${provDef.type})`,
-          driver: createProviderDriver(provDef),
-        });
-      } catch { /* skip unknown types */ }
+    try {
+      for (const p of buildProviderDrivers(ioProviders, this.boardCatalog.expansionCatalog())) {
+        result.push({ id: p.id, label: `${p.id} (${p.type})`, driver: p.driver });
+      }
+    } catch (err) {
+      // Unknown/invalid provider type — surface it. The old silent catch hid
+      // exactly this, vanishing providers from the pin selector while codegen
+      // still emitted them.
+      console.error('Failed to build I/O provider drivers', err);
     }
     return result;
   }

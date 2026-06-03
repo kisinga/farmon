@@ -7,15 +7,11 @@
 
 import type { IoProviderDriver, IoChannel, ChannelUsage, ResolvedChannel } from '../io-provider.types';
 import type { ExpansionBoardDef, ExpansionBoardChannelDef, TransportType } from '../board.types';
-
-export interface ExpansionBoardInstanceConfig {
-  bus: string;
-  address: number;
-}
+import type { IoProviderInstanceConfig } from '../topology.types';
 
 export function createExpansionBoardDriver(
   boardDef: ExpansionBoardDef,
-  transport: ExpansionBoardInstanceConfig,
+  transport: IoProviderInstanceConfig,
 ): IoProviderDriver {
   switch (boardDef.transport_type) {
     case 'modbus_rtu':
@@ -27,7 +23,7 @@ export function createExpansionBoardDriver(
 
 function createModbusExpansionBoardDriver(
   boardDef: ExpansionBoardDef,
-  transport: ExpansionBoardInstanceConfig,
+  transport: IoProviderInstanceConfig,
 ): IoProviderDriver {
   const modbusId = `${transport.bus}_modbus`;
 
