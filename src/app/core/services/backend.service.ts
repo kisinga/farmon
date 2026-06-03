@@ -18,6 +18,7 @@ import {
   type GeneratedFile,
   type SecretsMap,
 } from '@far-mon/core/codegen';
+import { validateAll } from '@far-mon/core/rules';
 import type {
   SiteListEntry,
   SiteFullPayload,
@@ -45,13 +46,11 @@ const PB_URL: string =
 /**
  * BackendService — the single gateway from the Angular app to the MajiFlow
  * backend. Site/controller persistence, auth, and the board catalog go through
- * PocketBase; pure domain operations (route derivation, validation) run against
- * `@far-mon/core` in the browser.
- *
- * NOTE (rewrite phasing): `validate` and `generate` are intentionally thin in
- * this slice. The validation rule engine and the ESPHome generators currently
- * live in `electron/lib/{rules,generators}`; Phase 3 relocates them into
- * `@far-mon/core` and wires the full implementations here.
+ * PocketBase; pure domain operations (route derivation, validation, ESPHome
+ * generation) run against `@far-mon/core` in the browser:
+ *   - domain types/graph        → `@far-mon/core`
+ *   - validation rule engine     → `@far-mon/core/rules`
+ *   - ESPHome generators         → `@far-mon/core/codegen`
  */
 @Injectable({ providedIn: 'root' })
 export class BackendService {
@@ -229,10 +228,24 @@ export class BackendService {
     }));
   }
 
-  async validate(_request: ValidateRequest): Promise<ValidationResult> {
-    // Phase 3 wires the full rule engine (currently in electron/lib/rules)
-    // once it is relocated into @far-mon/core.
-    return { ok: true, errors: [], warnings: [], diagnostics: [] };
+  async validate(request: ValidateRequest): Promise<ValidationResult> {
+    let topo: SiteTopology;
+    let board: BoardDef;
+    const controllerId = request.controllerId;
+
+    if (request.kind === 'live') {
+      topo = request.topology;
+      board = request.board;
+    } else {
+      topo = (await this.loadTopology(request.siteId)).topo;
+      const ctrl = topo.controllers.find((c) => c.id === controllerId);
+      if (!ctrl) throw new Error(`Controller "${controllerId}" not found in site.`);
+      board = (await this.boardLoad(ctrl.board)).board;
+    }
+
+    const manifest = topologyToManifestForController(topo, controllerId);
+    const expansionBoards = await this.expansionCatalog();
+    return validateAll(topo, manifest, board, { expansionBoards });
   }
 
   /**

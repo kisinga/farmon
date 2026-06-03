@@ -10,7 +10,7 @@ import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifestForController, reservedPins } from "@far-mon/core";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
-import { validateAll } from "../electron/lib/validate.js";
+import { validateAll } from "@far-mon/core/rules";
 import { generateAll, createTestMetadata, type GeneratedFile } from "@far-mon/core/codegen";
 import { generateBoardPackage } from "@far-mon/core/codegen";
 import { generateRoutes } from "@far-mon/core/codegen";
@@ -127,7 +127,7 @@ const waterSources = nodesByKind(manifest.nodes, 'water_source');
 // --- Board definition ---
 
 console.log("Board definition:");
-assert(board.model === "heltec_v3", `Board model = ${board.model}`);
+assert(board.model === "heltec-v3", `Board model = ${board.model}`);
 assert(board.pins.length === 20, `${board.pins.length} exposed pins`);
 assert(!!board.peripherals.oled, "Has OLED peripheral");
 assert(!!board.peripherals.battery, "Has battery peripheral");
@@ -546,7 +546,7 @@ function getKcFile(suffix: string): string {
 // --- Board definition ---
 
 console.log("Board definition:");
-assert(kcBoard.model === "kc868_a16", `Board model = ${kcBoard.model}`);
+assert(kcBoard.model === "kc868-a16", `Board model = ${kcBoard.model}`);
 assert(kcBoard.pins.length === 39, `${kcBoard.pins.length} pins (32 expander + 7 native)`);
 assert(kcBoard.expanders?.length === 4, "Has 4 PCF8574 expanders");
 assert(!!kcBoard.peripherals.ethernet, "Has Ethernet peripheral");
@@ -684,7 +684,7 @@ function getR4File(suffix: string): string {
 // --- Board definition ---
 
 console.log("Board definition:");
-assert(r4Board.model === "sonoff_basicr4", `Board model = ${r4Board.model}`);
+assert(r4Board.model === "sonoff-basicr4", `Board model = ${r4Board.model}`);
 assert(r4Board.pins.length === 2, `${r4Board.pins.length} exposed pins`);
 assert(r4Board.mcu.variant === "esp32c3", `MCU variant = ${r4Board.mcu.variant}`);
 assert(r4Board.mcu.flash_size === "4MB", `Flash size = ${r4Board.mcu.flash_size}`);

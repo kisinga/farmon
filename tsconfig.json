@@ -16,7 +16,8 @@
     "module": "preserve",
     "paths": {
       "@far-mon/core": ["./packages/core/src/index.ts"],
-      "@far-mon/core/codegen": ["./packages/core/src/codegen/index.ts"]
+      "@far-mon/core/codegen": ["./packages/core/src/codegen/index.ts"],
+      "@far-mon/core/rules": ["./packages/core/src/rules/index.ts"]
     }
   },
   "angularCompilerOptions": {

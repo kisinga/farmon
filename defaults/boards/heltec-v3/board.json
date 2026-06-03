@@ -1,0 +1,294 @@
+{
+  "model": "heltec-v3",
+  "label": "Heltec WiFi LoRa 32 V3",
+  "svg": "board.svg",
+  "mcu": {
+    "variant": "esp32s3",
+    "flash_size": "8MB",
+    "cpu_frequency": "240MHz",
+    "framework": "esp-idf"
+  },
+  "peripherals": {
+    "oled": {
+      "platform": "ssd1306_i2c",
+      "model": "SSD1306 128x64",
+      "bus": "i2c",
+      "address": 60,
+      "reset_pin": "GPIO21",
+      "width": 128,
+      "height": 64
+    },
+    "lora": {
+      "chip": "SX1262",
+      "spi_pins": {
+        "clk": "GPIO9",
+        "mosi": "GPIO10",
+        "miso": "GPIO11"
+      },
+      "control_pins": {
+        "cs": "GPIO8",
+        "rst": "GPIO12",
+        "busy": "GPIO13",
+        "dio1": "GPIO14"
+      }
+    },
+    "battery": {
+      "adc_pin": "GPIO1",
+      "enable_pin": "GPIO37",
+      "divider": 2,
+      "calibration": [
+        [
+          3.04,
+          0
+        ],
+        [
+          3.2,
+          5
+        ],
+        [
+          3.5,
+          20
+        ],
+        [
+          3.7,
+          40
+        ],
+        [
+          3.85,
+          60
+        ],
+        [
+          4,
+          80
+        ],
+        [
+          4.2,
+          100
+        ]
+      ]
+    },
+    "led": {
+      "pin": "GPIO35"
+    },
+    "vext": {
+      "pin": "GPIO36"
+    }
+  },
+  "buses": {
+    "i2c": {
+      "sda": "GPIO17",
+      "scl": "GPIO18",
+      "frequency": "400kHz"
+    },
+    "spi": {
+      "clk": "GPIO9",
+      "mosi": "GPIO10",
+      "miso": "GPIO11"
+    }
+  },
+  "pins": [
+    {
+      "gpio": "GPIO2",
+      "connector": "connector34pin",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO3",
+      "connector": "connector33pin",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO4",
+      "connector": "connector32pin",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO5",
+      "connector": "connector31pin",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO6",
+      "connector": "connector30pin",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO7",
+      "connector": "connector29pin",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO19",
+      "connector": "connector19pin",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO20",
+      "connector": "connector18pin",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO45",
+      "connector": "connector17pin",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO46",
+      "connector": "connector16pin",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO26",
+      "connector": "connector14pin",
+      "edge": "top",
+      "caps": [
+        "digital",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO33",
+      "connector": "connector11pin",
+      "edge": "top",
+      "caps": [
+        "digital",
+        "pwm"
+      ]
+    },
+    {
+      "gpio": "GPIO34",
+      "connector": "connector10pin",
+      "edge": "top",
+      "caps": [
+        "digital",
+        "pwm"
+      ]
+    },
+    {
+      "gpio": "GPIO38",
+      "connector": "connector6pin",
+      "edge": "top",
+      "caps": [
+        "digital",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO39",
+      "connector": "connector5pin",
+      "edge": "top",
+      "caps": [
+        "digital",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO40",
+      "connector": "connector4pin",
+      "edge": "top",
+      "caps": [
+        "digital",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO41",
+      "connector": "connector3pin",
+      "edge": "top",
+      "caps": [
+        "digital",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO42",
+      "connector": "connector2pin",
+      "edge": "top",
+      "caps": [
+        "digital",
+        "pwm"
+      ]
+    },
+    {
+      "gpio": "GPIO47",
+      "connector": "connector12pin",
+      "edge": "top",
+      "caps": [
+        "digital",
+        "pwm",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO48",
+      "connector": "connector13pin",
+      "edge": "top",
+      "caps": [
+        "digital",
+        "pwm",
+        "pulse_counter"
+      ]
+    }
+  ]
+}

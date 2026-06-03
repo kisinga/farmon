@@ -1,5 +1,4 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { BackendService } from '../../core/services/backend.service';
 
 type BoardKind = 'main' | 'expansion';
@@ -7,7 +6,6 @@ type BoardKind = 'main' | 'expansion';
 @Component({
   selector: 'app-boards-page',
   standalone: true,
-  imports: [FormsModule],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="max-w-5xl mx-auto w-full px-8 py-8">
@@ -41,14 +39,9 @@ type BoardKind = 'main' | 'expansion';
               </label>
             </div>
 
-            <textarea
-              class="textarea textarea-bordered font-mono text-xs h-48"
-              placeholder="Paste board definition JSON…"
-              [ngModel]="defText()" (ngModelChange)="defText.set($event)"></textarea>
-
             <label class="text-xs text-base-content/50">
-              …or load a .json file
-              <input type="file" accept="application/json,.json,.yaml,.yml"
+              Board definition (.json)
+              <input type="file" accept=".json"
                 class="file-input file-input-bordered file-input-sm w-full mt-1"
                 (change)="onJsonFile($event)" />
             </label>

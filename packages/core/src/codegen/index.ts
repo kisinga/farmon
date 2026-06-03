@@ -22,3 +22,5 @@ export { generateBoardPackage } from './generators/board-package';
 export { generateRoutes } from './generators/routes';
 export { collectEntityCodegen } from './generators/collect';
 export { type SiteDashboardSystem } from './generators/site-dashboard';
+
+export { generateSelfTest, activeProbes } from './self-test';

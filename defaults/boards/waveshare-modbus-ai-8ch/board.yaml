@@ -1,4 +1,4 @@
-model: waveshare_modbus_ai_8ch
+model: waveshare-modbus-ai-8ch
 label: Waveshare Modbus RTU AI 8CH
 transport_type: modbus_rtu
 channels:

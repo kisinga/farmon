@@ -1,0 +1,103 @@
+{
+  "model": "waveshare-modbus-ai-8ch",
+  "label": "Waveshare Modbus RTU AI 8CH",
+  "transport_type": "modbus_rtu",
+  "channels": [
+    {
+      "id": "AI1",
+      "label": "AI1",
+      "caps": [
+        "adc"
+      ],
+      "modbus": {
+        "register": 0,
+        "register_type": "input",
+        "value_type": "U_WORD"
+      }
+    },
+    {
+      "id": "AI2",
+      "label": "AI2",
+      "caps": [
+        "adc"
+      ],
+      "modbus": {
+        "register": 1,
+        "register_type": "input",
+        "value_type": "U_WORD"
+      }
+    },
+    {
+      "id": "AI3",
+      "label": "AI3",
+      "caps": [
+        "adc"
+      ],
+      "modbus": {
+        "register": 2,
+        "register_type": "input",
+        "value_type": "U_WORD"
+      }
+    },
+    {
+      "id": "AI4",
+      "label": "AI4",
+      "caps": [
+        "adc"
+      ],
+      "modbus": {
+        "register": 3,
+        "register_type": "input",
+        "value_type": "U_WORD"
+      }
+    },
+    {
+      "id": "AI5",
+      "label": "AI5",
+      "caps": [
+        "adc"
+      ],
+      "modbus": {
+        "register": 4,
+        "register_type": "input",
+        "value_type": "U_WORD"
+      }
+    },
+    {
+      "id": "AI6",
+      "label": "AI6",
+      "caps": [
+        "adc"
+      ],
+      "modbus": {
+        "register": 5,
+        "register_type": "input",
+        "value_type": "U_WORD"
+      }
+    },
+    {
+      "id": "AI7",
+      "label": "AI7",
+      "caps": [
+        "adc"
+      ],
+      "modbus": {
+        "register": 6,
+        "register_type": "input",
+        "value_type": "U_WORD"
+      }
+    },
+    {
+      "id": "AI8",
+      "label": "AI8",
+      "caps": [
+        "adc"
+      ],
+      "modbus": {
+        "register": 7,
+        "register_type": "input",
+        "value_type": "U_WORD"
+      }
+    }
+  ]
+}

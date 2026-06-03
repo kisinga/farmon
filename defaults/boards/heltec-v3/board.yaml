@@ -13,7 +13,7 @@ schema: 5
 # Capabilities: digital, adc, pwm, pulse_counter, i2c, uart, dac
 # =============================================================================
 
-model: heltec_v3
+model: heltec-v3
 label: Heltec WiFi LoRa 32 V3
 svg: board.svg
 

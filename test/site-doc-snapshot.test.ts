@@ -140,7 +140,7 @@ function reportDiff(actual: string, expected: string): void {
 {
   const tripleSystems: SiteDocSystem[] = [
     { systemId: "a", friendlyName: "Pump A",   board: "kc868-a16", boardLabel: "KC868-A16", activeTransport: "ethernet", deviceName: "pump_a", manifest, topologySvg: TOPOLOGY_SVG },
-    { systemId: "b", friendlyName: "Pump B",   board: "kc868_a16", boardLabel: "KC868-A16", activeTransport: "ethernet", deviceName: "pump_b", manifest, topologySvg: TOPOLOGY_SVG },
+    { systemId: "b", friendlyName: "Pump B",   board: "kc868-a16", boardLabel: "KC868-A16", activeTransport: "ethernet", deviceName: "pump_b", manifest, topologySvg: TOPOLOGY_SVG },
     { systemId: "c", friendlyName: "Pump C",   board: "kc868-a16", boardLabel: "KC868-A16", activeTransport: "ethernet", deviceName: "pump_c", manifest, topologySvg: TOPOLOGY_SVG },
   ];
   const dedupHtml = generateSiteDocumentation(

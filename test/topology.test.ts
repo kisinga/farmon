@@ -83,7 +83,7 @@ console.log("\nManifest derivation:");
 const manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? 'default');
 
 assert(manifest.device.name === "pump_ctrl", "Device name derived from friendly_name");
-assert(manifest.device.board === "heltec-v3", "Board preserved");
+assert(manifest.device.board === "heltec-v3", "Board id preserved from topology");
 
 const manifestPumps = nodesByKind(manifest.nodes, 'pump');
 assert(manifestPumps[0]?.['pin'] === "GPIO42", `Pump pin = ${manifestPumps[0]?.['pin']}`);

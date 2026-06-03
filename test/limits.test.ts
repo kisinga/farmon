@@ -7,7 +7,7 @@
 
 import * as path from "node:path";
 import type { Manifest } from "../electron/lib/schema.js";
-import { runManifestRules } from "../electron/lib/validate.js";
+import { runManifestRules } from "@far-mon/core/rules";
 import { generateAll, createTestMetadata } from "../electron/lib/generate.js";
 import { loadBoard, type BoardDef } from "../electron/lib/board.js";
 

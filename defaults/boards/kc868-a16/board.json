@@ -1,0 +1,448 @@
+{
+  "model": "kc868-a16",
+  "label": "Kincony KC868-A16",
+  "svg": "board.svg",
+  "mcu": {
+    "variant": "esp32dev",
+    "flash_size": "4MB",
+    "framework": "esp-idf"
+  },
+  "peripherals": {
+    "ethernet": {
+      "type": "LAN8720",
+      "mdc_pin": "GPIO23",
+      "mdio_pin": "GPIO18",
+      "clk": {
+        "pin": "GPIO17",
+        "mode": "GPIO17_OUT"
+      },
+      "phy_addr": 0
+    }
+  },
+  "buses": {
+    "i2c": {
+      "sda": "GPIO4",
+      "scl": "GPIO5",
+      "frequency": "100kHz"
+    }
+  },
+  "pins": [
+    {
+      "gpio": "OUT1",
+      "connector": "relay_k1",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 0
+    },
+    {
+      "gpio": "OUT2",
+      "connector": "relay_k2",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 1
+    },
+    {
+      "gpio": "OUT3",
+      "connector": "relay_k3",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 2
+    },
+    {
+      "gpio": "OUT4",
+      "connector": "relay_k4",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 3
+    },
+    {
+      "gpio": "OUT5",
+      "connector": "relay_k5",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 4
+    },
+    {
+      "gpio": "OUT6",
+      "connector": "relay_k6",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 5
+    },
+    {
+      "gpio": "OUT7",
+      "connector": "relay_k7",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 6
+    },
+    {
+      "gpio": "OUT8",
+      "connector": "relay_k8",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 7
+    },
+    {
+      "gpio": "OUT9",
+      "connector": "relay_k9",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 0
+    },
+    {
+      "gpio": "OUT10",
+      "connector": "relay_k10",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 1
+    },
+    {
+      "gpio": "OUT11",
+      "connector": "relay_k11",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 2
+    },
+    {
+      "gpio": "OUT12",
+      "connector": "relay_k12",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 3
+    },
+    {
+      "gpio": "OUT13",
+      "connector": "relay_k13",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 4
+    },
+    {
+      "gpio": "OUT14",
+      "connector": "relay_k14",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 5
+    },
+    {
+      "gpio": "OUT15",
+      "connector": "relay_k15",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 6
+    },
+    {
+      "gpio": "OUT16",
+      "connector": "relay_k16",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 7
+    },
+    {
+      "gpio": "IN1",
+      "connector": "input_x1",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 0
+    },
+    {
+      "gpio": "IN2",
+      "connector": "input_x2",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 1
+    },
+    {
+      "gpio": "IN3",
+      "connector": "input_x3",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 2
+    },
+    {
+      "gpio": "IN4",
+      "connector": "input_x4",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 3
+    },
+    {
+      "gpio": "IN5",
+      "connector": "input_x5",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 4
+    },
+    {
+      "gpio": "IN6",
+      "connector": "input_x6",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 5
+    },
+    {
+      "gpio": "IN7",
+      "connector": "input_x7",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 6
+    },
+    {
+      "gpio": "IN8",
+      "connector": "input_x8",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 7
+    },
+    {
+      "gpio": "IN9",
+      "connector": "input_x9",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 0
+    },
+    {
+      "gpio": "IN10",
+      "connector": "input_x10",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 1
+    },
+    {
+      "gpio": "IN11",
+      "connector": "input_x11",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 2
+    },
+    {
+      "gpio": "IN12",
+      "connector": "input_x12",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 3
+    },
+    {
+      "gpio": "IN13",
+      "connector": "input_x13",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 4
+    },
+    {
+      "gpio": "IN14",
+      "connector": "input_x14",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 5
+    },
+    {
+      "gpio": "IN15",
+      "connector": "input_x15",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 6
+    },
+    {
+      "gpio": "IN16",
+      "connector": "input_x16",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 7
+    },
+    {
+      "gpio": "GPIO36",
+      "connector": "adc_a1",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc"
+      ]
+    },
+    {
+      "gpio": "GPIO34",
+      "connector": "adc_a2",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc"
+      ]
+    },
+    {
+      "gpio": "GPIO35",
+      "connector": "adc_a3",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc"
+      ]
+    },
+    {
+      "gpio": "GPIO39",
+      "connector": "adc_a4",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc"
+      ]
+    },
+    {
+      "gpio": "GPIO32",
+      "connector": "ht1",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO33",
+      "connector": "ht2",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO14",
+      "connector": "ht3",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "pulse_counter"
+      ]
+    }
+  ],
+  "expanders": [
+    {
+      "id": "pcf8574_out_1",
+      "platform": "pcf8574",
+      "address": 36,
+      "pcf8575": false
+    },
+    {
+      "id": "pcf8574_out_2",
+      "platform": "pcf8574",
+      "address": 37,
+      "pcf8575": false
+    },
+    {
+      "id": "pcf8574_in_1",
+      "platform": "pcf8574",
+      "address": 34,
+      "pcf8575": false
+    },
+    {
+      "id": "pcf8574_in_2",
+      "platform": "pcf8574",
+      "address": 33,
+      "pcf8575": false
+    }
+  ],
+  "uart_buses": [
+    {
+      "id": "uart_modbus",
+      "tx_pin": "GPIO13",
+      "rx_pin": "GPIO16",
+      "baud_rate": 9600
+    }
+  ]
+}

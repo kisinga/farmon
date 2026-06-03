@@ -21,7 +21,7 @@ schema: 5
 #   https://www.kincony.com/esp32-board-16-channel-relay-hardware.html
 # =============================================================================
 
-model: kc868_a16
+model: kc868-a16
 label: Kincony KC868-A16
 svg: board.svg
 

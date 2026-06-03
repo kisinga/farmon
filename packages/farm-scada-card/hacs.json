@@ -1,6 +1,0 @@
-{
-  "name": "MajiFlow SCADA Card",
-  "render_readme": true,
-  "filename": "farm-scada-card.js",
-  "homeassistant": "2024.1.0"
-}

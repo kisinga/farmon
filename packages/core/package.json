@@ -5,6 +5,7 @@
   "exports": {
     ".": { "types": "./src/index.ts", "default": "./dist/index.js" },
     "./codegen": { "types": "./src/codegen/index.ts", "default": "./dist/codegen.js" },
+    "./rules": { "types": "./src/rules/index.ts", "default": "./dist/rules.js" },
     "./quotation": { "types": "./src/quotation/index.ts", "default": "./dist/quotation.esm.js" }
   },
   "scripts": {

@@ -50,7 +50,7 @@ const FIXED_TIME = '2026-01-01T00:00:00.000Z';
 const FIXTURE_DEVICE: Device = Object.freeze({
   name: 'gh-1',
   friendly_name: 'Greenhouse',
-  board: 'heltec_v3',
+  board: 'heltec-v3',
 });
 
 function fixture(): SiteTopology {
@@ -61,7 +61,7 @@ function fixture(): SiteTopology {
     schema: 18,
     controllers: [{
       id: 'gh-1',
-      board: 'heltec_v3',
+      board: 'heltec-v3',
       friendlyName: 'Greenhouse',
     }],
     nodes: [
