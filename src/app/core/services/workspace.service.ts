@@ -4,12 +4,12 @@ import type {
   BoardDef, TopologyGraph, Route,
   TopologyNode, PipeSegment, RouteOverride,
   SiteMetadata, SiteSavePayload, SiteTopology, Controller,
-} from '@far-mon/core';
+} from '@core';
 
 import {
   buildGraph, deriveRoutes, activeGraph, parseTopology, slug,
   controllerClaimsSegment, migrateTopology,
-} from '@far-mon/core';
+} from '@core';
 
 @Injectable({ providedIn: 'root' })
 export class WorkspaceService {

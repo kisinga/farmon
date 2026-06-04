@@ -3,7 +3,7 @@
  * with empty context, write the result to the corresponding `docs/**\/*.md`.
  *
  * The committed `.md` files in `docs/` are build output, not authored.
- * Authors edit the `.hbs` sources under `packages/core/src/templates/pages/docs/`.
+ * Authors edit the `.hbs` sources under `src/lib/templates/pages/docs/`.
  *
  * Usage:
  *   npm run docs:build
@@ -17,11 +17,11 @@ import {
   PAGES_DIR,
   compileMarkdownFile,
   registerAllPartials,
-} from "../packages/core/src/templates/hbs.js";
+} from "../src/lib/templates/hbs.js";
 
 const PAGES_DOCS_DIR = path.join(PAGES_DIR, "docs");
-// TEMPLATES_DIR = <repo>/packages/core/src/templates → repo root is 4 levels up
-const REPO_ROOT = path.resolve(TEMPLATES_DIR, "..", "..", "..", "..");
+// TEMPLATES_DIR = <repo>/src/lib/templates → repo root is 3 levels up
+const REPO_ROOT = path.resolve(TEMPLATES_DIR, "..", "..", "..");
 const DOCS_OUTPUT_DIR = path.join(REPO_ROOT, "docs");
 
 function walkHbs(root: string): string[] {

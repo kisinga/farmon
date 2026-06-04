@@ -6,9 +6,9 @@
  * there is no cross-render contamination and only one place knows about the
  * paint-cycle timing.
  */
-import type { HaMeta, SiteTopology, Device } from '@far-mon/core';
+import type { HaMeta, SiteTopology, Device } from '@core';
 import type { RenderableTopology } from '../../core/models/topology.model';
-import { NODE_REGISTRY, buildHaMeta } from '@far-mon/core';
+import { NODE_REGISTRY, buildHaMeta } from '@core';
 import { X6Canvas, type CanvasEvents } from '../../pages/editor/topology-x6-tab/x6-canvas';
 
 // HaMeta is referenced in the exportHa return type.

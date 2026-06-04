@@ -8,9 +8,9 @@
  * Usage: npx tsx test/unit/entity-rules-codegen.test.ts
  */
 
-import { REGISTRY_RULES, NODE_REGISTRY } from '../../packages/core/src/entity-registry';
-import type { FilterNode } from '../../packages/core/src/entities/filter';
-import type { DosingPumpNode } from '../../packages/core/src/entities/dosing-pump';
+import { REGISTRY_RULES, NODE_REGISTRY } from '../../src/lib/entity-registry';
+import type { FilterNode } from '../../src/lib/entities/filter';
+import type { DosingPumpNode } from '../../src/lib/entities/dosing-pump';
 
 const filterDescriptor = NODE_REGISTRY.get('filter')!;
 const dosingPumpDescriptor = NODE_REGISTRY.get('dosing_pump')!;

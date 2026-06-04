@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
-import { NODE_REGISTRY, legendSvgFor, buildGraph, activeGraph, deriveRoutes, controllerClaimsSegment } from '@far-mon/core';
+import { NODE_REGISTRY, legendSvgFor, buildGraph, activeGraph, deriveRoutes, controllerClaimsSegment } from '@core';
 import type { TopologyNode } from '../../../core/models/topology.model';
 
 @Component({

@@ -1,4 +1,4 @@
 /**
- * Re-exports from @far-mon/core.
+ * Re-exports from @core.
  */
-export { UI_COLORS, entityColor } from '@far-mon/core';
+export { UI_COLORS, entityColor } from '@core';

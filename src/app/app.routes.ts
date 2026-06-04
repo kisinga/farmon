@@ -3,9 +3,11 @@ import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
+    // Public landing + tiers. Everything below is auth-guarded.
     path: '',
-    redirectTo: 'overview',
     pathMatch: 'full',
+    loadComponent: () =>
+      import('./pages/landing/landing.component').then((m) => m.LandingComponent),
   },
   {
     path: 'login',

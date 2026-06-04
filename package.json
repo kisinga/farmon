@@ -2,9 +2,6 @@
   "name": "majiflow-app",
   "version": "1.0.0",
   "description": "MajiFlow — water orchestration configurator",
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
@@ -17,8 +14,7 @@
     "test:entity-coverage": "npx tsx test/entity-id-coverage.test.ts",
     "test:selftest": "npx tsx test/selftest-codegen.test.ts",
     "docs:build": "npx tsx scripts/docs-build.ts",
-    "docs:check": "npm run docs:build && git diff --exit-code docs/",
-    "build:quote": "cd packages/core && npm run build:quotation && cp dist/quotation.esm.js ../../homepage/quotation.esm.js"
+    "docs:check": "npm run docs:build && git diff --exit-code docs/"
   },
   "private": true,
   "license": "AGPL-3.0-or-later",
@@ -36,6 +32,11 @@
     "@antv/x6-plugin-selection": "^2.2.2",
     "@antv/x6-plugin-snapline": "^2.1.7",
     "fflate": "^0.8.3",
+    "graphology": "^0.26.0",
+    "graphology-operators": "^1.6.1",
+    "graphology-simple-path": "^0.2.0",
+    "graphology-traversal": "^0.3.1",
+    "graphology-types": "^0.24.8",
     "handlebars": "^4.7.9",
     "marked": "^14.1.3",
     "pocketbase": "^0.27.0",

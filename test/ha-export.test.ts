@@ -11,7 +11,7 @@
  * Usage: npx tsx test/ha-export.test.ts
  */
 
-import { buildHaMeta, HA_SCHEMA_VERSION, deriveHaEntityId, esphomeServicePrefix, type SiteTopology, type Device } from '@far-mon/core';
+import { buildHaMeta, HA_SCHEMA_VERSION, deriveHaEntityId, esphomeServicePrefix, type SiteTopology, type Device } from '@core';
 
 let passed = 0;
 let failed = 0;

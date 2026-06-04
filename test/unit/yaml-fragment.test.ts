@@ -4,7 +4,7 @@
  * Usage: npx tsx test/unit/yaml-fragment.test.ts
  */
 
-import { indent, joinYamlItems } from '../../packages/core/src/yaml-fragment';
+import { indent, joinYamlItems } from '../../src/lib/yaml-fragment';
 
 let passed = 0;
 let failed = 0;

@@ -13,7 +13,7 @@ import {
   activeGraph,
   deriveRoutes,
   findRouteAutomationSensor,
-} from '@far-mon/core';
+} from '@core';
 import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;

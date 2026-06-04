@@ -13,7 +13,7 @@ import { UI_COLORS } from '../../../core/models/colors.model';
 import type { RenderableTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
 import type { TopologyGraph } from '../shared/derive-routes';
-import { pipesFromSource, pipesToDestination, connectedPipes, deriveHaEntityId } from '@far-mon/core';
+import { pipesFromSource, pipesToDestination, connectedPipes, deriveHaEntityId } from '@core';
 import type { Selection } from '../shared/selection';
 import { decorateScadaSvg } from './scada-decorator';
 

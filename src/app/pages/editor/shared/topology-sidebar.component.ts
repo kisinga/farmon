@@ -6,8 +6,8 @@ import { ValidationPanelComponent } from '../../../shared/validation-panel/valid
 import type { RuleDiagnostic } from '../../../core/models/backend-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
-import { buildGraph, activeGraph, deriveRoutes, RouteOverrideSchema, deriveHaEntityId, deriveTankCalibration, recommendSensorMaxPsi } from '@far-mon/core';
-import type { PinCap, FieldDef } from '@far-mon/core';
+import { buildGraph, activeGraph, deriveRoutes, RouteOverrideSchema, deriveHaEntityId, deriveTankCalibration, recommendSensorMaxPsi } from '@core';
+import type { PinCap, FieldDef } from '@core';
 import type { RouteOverride, TopologyNode } from '../../../core/models/topology.model';
 import { routeLevelInfo } from './route-level-info';
 import type { Selection } from './selection';

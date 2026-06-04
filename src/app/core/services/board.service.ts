@@ -1,6 +1,6 @@
 import { Injectable, signal, inject } from '@angular/core';
 import type { BoardDef } from '../models/board.model';
-import type { ExpansionBoardCatalog } from '@far-mon/core';
+import type { ExpansionBoardCatalog } from '@core';
 import type { BoardListEntry } from '../models/backend-api';
 import { BackendService } from './backend.service';
 

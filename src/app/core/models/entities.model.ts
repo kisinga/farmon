@@ -1,5 +1,5 @@
 /**
- * Re-exports from @far-mon/core.
+ * Re-exports from @core.
  */
-export { NODE_REGISTRY, legendSvgFor } from '@far-mon/core';
-export type { NodeDescriptor, FieldDef } from '@far-mon/core';
+export { NODE_REGISTRY, legendSvgFor } from '@core';
+export type { NodeDescriptor, FieldDef } from '@core';

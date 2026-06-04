@@ -12,7 +12,7 @@ import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/
 import { X6Canvas, type Selection } from './x6-canvas';
 import type { Node as X6Node } from '@antv/x6';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
-import { buildGraph, activeGraph, downstreamNodes } from '@far-mon/core';
+import { buildGraph, activeGraph, downstreamNodes } from '@core';
 import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlays';
 import { renderControllerOverlays } from '../../../shared/canvas/controller-overlay-renderer';
 

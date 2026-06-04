@@ -31,13 +31,14 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		seedAdmin(se.App)
 
-		if _, err := mqtt.Start(se.App, cfg); err != nil {
+		broker, err := mqtt.Start(se.App, cfg)
+		if err != nil {
 			return err
 		}
 
 		go telemetry.RunScheduler(se.App)
 
-		api.Register(se, cfg)
+		api.Register(se, cfg, broker.Server)
 
 		// Serve the built SPA (index fallback for client-side routing) when a
 		// directory is configured.

@@ -2,16 +2,16 @@
  * Shared DTO types for the MajiFlow backend (PocketBase) API surface.
  *
  * Domain types (topology, board, validation, site payloads) are owned by
- * `@far-mon/core` — the single source of truth — and re-exported here for
+ * `@core` — the single source of truth — and re-exported here for
  * convenience. Backend-transport-specific DTOs are declared locally.
  */
 
-import type { ValidationResult, RuleDiagnostic, NetworkConfig } from '@far-mon/core';
+import type { ValidationResult, RuleDiagnostic, NetworkConfig } from '@core';
 import type {
   SiteListEntry, SiteFullPayload, SiteSavePayload,
   TemplateListEntry, Controller,
   BoardDef, Route, SiteTopology,
-} from '@far-mon/core';
+} from '@core';
 
 export type { ValidationResult, RuleDiagnostic, NetworkConfig };
 export type { SiteListEntry, SiteFullPayload, SiteSavePayload, TemplateListEntry, Controller };

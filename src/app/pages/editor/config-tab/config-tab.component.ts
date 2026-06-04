@@ -6,8 +6,8 @@ import { BackendService } from '../../../core/services/backend.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
-import { slug, NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY } from '@far-mon/core';
-import type { UartBus, IoProviderInstanceConfig } from '@far-mon/core';
+import { slug, NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY } from '@core';
+import type { UartBus, IoProviderInstanceConfig } from '@core';
 import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
 
 interface TimingField {

@@ -1,6 +1,6 @@
 import { Component, computed, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { effectiveTransport, type NetworkConfig, type NetworkTransport } from '@far-mon/core';
+import { effectiveTransport, type NetworkConfig, type NetworkTransport } from '@core';
 import { isApiKeyValid } from '../../core/models/firmware-secrets';
 
 /**

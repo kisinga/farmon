@@ -11,7 +11,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parse as parseYaml, parseAllDocuments } from 'yaml';
-import { parseTopology, topologyToManifestForController } from '@far-mon/core';
+import { parseTopology, topologyToManifestForController } from '@core';
 import { loadBoard } from '../../electron/lib/board.js';
 import { generateAll, createTestMetadata } from '../../electron/lib/generate.js';
 

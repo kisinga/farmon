@@ -2,10 +2,10 @@ import { Injectable, inject, signal, computed } from '@angular/core';
 import type { PinDef, PinCap, BoardDef } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/backend-api';
-import type { Controller, SiteTopology } from '@far-mon/core';
-import type { IoProviderDef } from '@far-mon/core';
-import { collectPins, NODE_REGISTRY, createBoardDriver, buildProviderDrivers, slug } from '@far-mon/core';
-import type { IoProviderDriver } from '@far-mon/core';
+import type { Controller, SiteTopology } from '@core';
+import type { IoProviderDef } from '@core';
+import { collectPins, NODE_REGISTRY, createBoardDriver, buildProviderDrivers, slug } from '@core';
+import type { IoProviderDriver } from '@core';
 import { WorkspaceService } from './workspace.service';
 import { BoardService } from './board.service';
 

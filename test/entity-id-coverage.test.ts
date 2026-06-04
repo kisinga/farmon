@@ -29,7 +29,7 @@ import {
   buildHaMeta,
   deriveHaEntityId,
   type Manifest,
-} from '@far-mon/core';
+} from '@core';
 import { loadBoard } from '../electron/lib/board.js';
 import { generateEsphome, generateAll, createTestMetadata } from '../electron/lib/generate.js';
 

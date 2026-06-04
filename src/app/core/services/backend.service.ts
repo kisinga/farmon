@@ -9,16 +9,16 @@ import {
   parseBoardDef,
   parseExpansionBoardDef,
   parseSiteImport,
-} from '@far-mon/core';
-import type { ExpansionBoardCatalog, ExpansionBoardDef } from '@far-mon/core';
+} from '@core';
+import type { ExpansionBoardCatalog, ExpansionBoardDef } from '@core';
 import {
   generateEsphome,
   generateDefaultSecrets,
   createTestMetadata,
   type GeneratedFile,
   type SecretsMap,
-} from '@far-mon/core/codegen';
-import { validateAll } from '@far-mon/core/rules';
+} from '@core/codegen';
+import { validateAll } from '@core/rules';
 import type {
   SiteListEntry,
   SiteFullPayload,
@@ -47,10 +47,10 @@ const PB_URL: string =
  * BackendService — the single gateway from the Angular app to the MajiFlow
  * backend. Site/controller persistence, auth, and the board catalog go through
  * PocketBase; pure domain operations (route derivation, validation, ESPHome
- * generation) run against `@far-mon/core` in the browser:
- *   - domain types/graph        → `@far-mon/core`
- *   - validation rule engine     → `@far-mon/core/rules`
- *   - ESPHome generators         → `@far-mon/core/codegen`
+ * generation) run against `@core` in the browser:
+ *   - domain types/graph        → `@core`
+ *   - validation rule engine     → `@core/rules`
+ *   - ESPHome generators         → `@core/codegen`
  */
 @Injectable({ providedIn: 'root' })
 export class BackendService {
@@ -216,7 +216,7 @@ export class BackendService {
     return { id: r['id'] };
   }
 
-  // --- Domain operations (run in-browser via @far-mon/core) ---------------
+  // --- Domain operations (run in-browser via @core) ---------------
 
   async deriveRoutes(
     topology: SiteTopology,

@@ -19,7 +19,7 @@ import {
   generateSiteDocumentation,
   type SiteDocSystem,
 } from "../dist-electron/electron/lib/generators/site-readme.js";
-import type { Manifest } from "@far-mon/core";
+import type { Manifest } from "@core";
 
 const TEST_DIR = path.resolve(new URL(".", import.meta.url).pathname, "..");
 const SNAPSHOT_PATH = path.join(TEST_DIR, "test", "__snapshots__", "site-doc.html");
@@ -151,7 +151,7 @@ function reportDiff(actual: string, expected: string): void {
     { genDate: "2026-01-01" },
   );
   const expectedConcerns = fs
-    .readdirSync(path.join(TEST_DIR, "packages/core/src/templates/partials/boards/kc868-a16"))
+    .readdirSync(path.join(TEST_DIR, "src/lib/templates/partials/boards/kc868-a16"))
     .filter((f: string) => f.endsWith(".hbs"))
     .length;
 
