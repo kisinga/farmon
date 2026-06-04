@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/kisinga/majiflow/internal/auth"
 	"github.com/kisinga/majiflow/internal/config"
 	"github.com/kisinga/majiflow/internal/telemetry"
 	"github.com/pocketbase/dbx"
@@ -174,6 +175,82 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		}
 
 		return e.JSON(http.StatusOK, map[string]any{"command_id": commandID})
+	})
+
+	// POST /provision {site, controller, name?, board_type?} — mint a fresh MQTT
+	// token for a controller and (re)register it in the controllers collection
+	// with the token's bcrypt hash, returning the raw token once so the firmware
+	// generator can bake it into this build's secrets.yaml. Identity is baked at
+	// generation; the server keeps only the hash. The broker then authenticates
+	// the device by username == controller (== device_id) against that hash.
+	g.POST("/provision", func(e *core.RequestEvent) error {
+		var body struct {
+			Site       string `json:"site"`
+			Controller string `json:"controller"`
+			Name       string `json:"name"`
+			BoardType  string `json:"board_type"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return apis.NewBadRequestError("invalid body", err)
+		}
+		if err := requireSiteAccess(e, body.Site); err != nil {
+			return err
+		}
+		if body.Controller == "" {
+			return apis.NewBadRequestError("controller is required", nil)
+		}
+
+		// Identity row, upserted by device_id (globally unique). A missing row
+		// (or any lookup miss) means first provision → create; otherwise we keep
+		// the row and rotate/refresh its secrets below.
+		rec, err := e.App.FindFirstRecordByFilter(
+			"controllers", "device_id = {:d}", dbx.Params{"d": body.Controller},
+		)
+		if err != nil || rec == nil {
+			coll, cerr := e.App.FindCollectionByNameOrId("controllers")
+			if cerr != nil {
+				return apis.NewApiError(http.StatusInternalServerError, "controllers collection missing", cerr)
+			}
+			rec = core.NewRecord(coll)
+			rec.Set("device_id", body.Controller)
+		}
+
+		// MQTT token: minted fresh each build; only its bcrypt hash is stored.
+		token, err := auth.GenerateToken()
+		if err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "failed to mint token", err)
+		}
+		hash, err := auth.HashToken(token)
+		if err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "failed to hash token", err)
+		}
+
+		// OTA password: generated once and reused. It must stay stable across
+		// rebuilds (ESPHome OTA authenticates the new build against the password
+		// the running device holds), so the firmware bakes the literal value —
+		// we store it raw and only mint it when the row doesn't have one yet.
+		otaPassword := rec.GetString("ota_password")
+		if otaPassword == "" {
+			otaPassword, err = auth.GenerateToken()
+			if err != nil {
+				return apis.NewApiError(http.StatusInternalServerError, "failed to mint OTA password", err)
+			}
+		}
+
+		rec.Set("site", body.Site)
+		if body.Name != "" {
+			rec.Set("name", body.Name)
+		}
+		if body.BoardType != "" {
+			rec.Set("board_type", body.BoardType)
+		}
+		rec.Set("token_hash", hash)
+		rec.Set("ota_password", otaPassword)
+		if err := e.App.Save(rec); err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "failed to register controller", err)
+		}
+
+		return e.JSON(http.StatusOK, map[string]any{"token": token, "ota_password": otaPassword})
 	})
 }
 

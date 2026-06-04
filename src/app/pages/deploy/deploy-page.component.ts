@@ -2,9 +2,6 @@ import { Component, inject, signal, computed } from '@angular/core';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { SystemEditorService } from '../../core/services/system-editor.service';
 import { BackendService } from '../../core/services/backend.service';
-import { FormsModule } from '@angular/forms';
-import { EMPTY_FIRMWARE_SECRETS, type FirmwareSecrets } from '../../core/models/firmware-secrets';
-import { randomHex } from '../../core/util/random-keys';
 
 interface FileEntry {
   path: string;
@@ -15,7 +12,7 @@ interface FileEntry {
 @Component({
   selector: 'app-deploy-page',
   standalone: true,
-  imports: [FormsModule],
+  imports: [],
   host: { class: 'flex-1 flex flex-col overflow-hidden' },
   template: `
     <div class="flex-1 flex flex-col min-h-0">
@@ -46,26 +43,15 @@ interface FileEntry {
         }
 
         @if (selectedSystemId()) {
-          <!-- Secrets -->
-          <div class="bg-base-100 rounded-xl border border-base-300/40 px-5 py-4 space-y-3">
+          <!-- Secrets are provisioned automatically -->
+          <div class="bg-base-100 rounded-xl border border-base-300/40 px-5 py-4">
             <h3 class="font-semibold text-sm">Device Secrets</h3>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="label-text text-[11px] text-base-content/50">Wi-Fi SSID</label>
-                <input class="input input-bordered input-sm w-full" [(ngModel)]="secrets().wifi_ssid" (change)="markSecretsDirty()" />
-              </div>
-              <div>
-                <label class="label-text text-[11px] text-base-content/50">Wi-Fi Password</label>
-                <input type="password" class="input input-bordered input-sm w-full" [(ngModel)]="secrets().wifi_password" (change)="markSecretsDirty()" />
-              </div>
-              <div>
-                <label class="label-text text-[11px] text-base-content/50">OTA Password</label>
-                <div class="flex gap-2">
-                  <input type="password" class="input input-bordered input-sm w-full font-mono text-[10px]" [(ngModel)]="secrets().ota_password" (change)="markSecretsDirty()" />
-                  <button class="btn btn-ghost btn-sm" (click)="regenerateKey('ota_password')">Regen</button>
-                </div>
-              </div>
-            </div>
+            <p class="text-xs text-base-content/50 mt-1 leading-relaxed">
+              Generated &amp; registered automatically when you generate firmware — a per-controller
+              MQTT token and a stable OTA password, baked into <code class="text-[10px]">secrets.yaml</code>.
+              <span class="text-base-content/40">Wi-Fi is not stored here:</span> set it on the device's
+              setup page (captive portal or Improv) after flashing — it lives in the device's own flash.
+            </p>
           </div>
 
           <!-- Generate -->
@@ -156,9 +142,6 @@ export class DeployPageComponent {
   protected fwError = signal<string | null>(null);
   protected downloadUrl = signal<string | null>(null);
 
-  protected secrets = signal<FirmwareSecrets>({ ...EMPTY_FIRMWARE_SECRETS });
-  private secretsDirty = false;
-
   constructor() {
     this.updateSystemEntries();
     // Default to the controller currently focused in the workspace.
@@ -221,15 +204,6 @@ export class DeployPageComponent {
     }
   }
 
-  protected markSecretsDirty() {
-    this.secretsDirty = true;
-  }
-
-  protected regenerateKey(key: 'ota_password') {
-    const fresh = randomHex(16);
-    this.secrets.update(s => ({ ...s, [key]: fresh }));
-    this.secretsDirty = true;
-  }
 }
 
 function slug(name: string): string {

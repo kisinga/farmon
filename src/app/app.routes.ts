@@ -27,6 +27,15 @@ export const routes: Routes = [
       import('./pages/boards/boards-page.component').then((m) => m.BoardsPageComponent),
   },
   {
+    // Customer dashboard for a site (separate component — runtime state only,
+    // no editor services). Declared before the editor's `site/:name` so the
+    // more specific path wins.
+    path: 'site/:name/dashboard',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/dashboard/dashboard.component').then((m) => m.DashboardComponent),
+  },
+  {
     // Bare site → the unified workspace (site overview panel + shared canvas).
     path: 'site/:name',
     canActivate: [authGuard],

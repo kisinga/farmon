@@ -10,7 +10,7 @@ import {
   parseExpansionBoardDef,
   parseSiteImport,
 } from '@core';
-import type { ExpansionBoardCatalog, ExpansionBoardDef } from '@core';
+import type { ExpansionBoardCatalog, ExpansionBoardDef, CommandAction } from '@core';
 import {
   generateEsphome,
   generateDefaultSecrets,
@@ -263,8 +263,17 @@ export class BackendService {
     const ctrl = topo.controllers.find((c) => c.id === controllerId);
     if (!ctrl) throw new Error(`Controller "${controllerId}" not found in site.`);
 
+    // Provision identity server-side: a fresh MQTT token (rotated each build,
+    // only its hash stored) and a stable OTA password (minted once, reused so
+    // OTA keeps working across rebuilds), both baked into this build's
+    // secrets.yaml. Wifi is NOT baked — it is provisioned on the device
+    // (captive portal / improv → NVS). The `secrets` arg is unused here.
+    void secrets;
+    const prov = await this.provision(siteId, ctrl);
+    const provisioned: SecretsMap = { ota_password: prov.ota_password, mqtt_token: prov.token };
+
     const expansionBoards = await this.expansionCatalog();
-    const built = await this.buildController(topo, ctrl, siteId, expansionBoards, secrets);
+    const built = await this.buildController(topo, ctrl, siteId, expansionBoards, provisioned);
     const downloadUrl = URL.createObjectURL(this.zipBundle(built.files));
 
     return {
@@ -276,6 +285,26 @@ export class BackendService {
       downloadUrl,
       version: built.version,
     };
+  }
+
+  /**
+   * Send an operator command to a controller. The server authorizes it, records
+   * it for audit, and publishes it over MQTT; the device's shadow / transition
+   * log reflects the outcome (the dashboard reconciles from there — there is no
+   * reply channel). Returns the command id for correlation.
+   */
+  async sendCommand(
+    siteId: string,
+    controller: string,
+    action: CommandAction,
+    routeId?: number,
+  ): Promise<string> {
+    const res = await this.pb.send<{ command_id?: string }>('/api/farmon/command', {
+      method: 'POST',
+      body: { site: siteId, controller, action, route_id: routeId },
+    });
+    if (!res.command_id) throw new Error('Command was not accepted.');
+    return res.command_id;
   }
 
   // --- Versioning / commit -------------------------------------------------
@@ -362,6 +391,28 @@ export class BackendService {
     const { topology } = await this.siteLoad(siteId);
     if (!topology) throw new Error('Site has no topology to generate from.');
     return { topo: parseTopology(topology) };
+  }
+
+  /**
+   * Provision a controller's runtime identity. The server (re)registers the
+   * controller (`device_id == controller.id`, the wire `{ctrl}` segment / broker
+   * username), mints a fresh MQTT token (storing only its bcrypt hash, which the
+   * broker checks on connect), and returns a stable OTA password (minted once,
+   * reused across builds so OTA keeps authenticating). Both are baked into this
+   * build's `secrets.yaml`.
+   */
+  private async provision(siteId: string, ctrl: Controller): Promise<{ token: string; ota_password: string }> {
+    const res = await this.pb.send<{ token?: string; ota_password?: string }>('/api/farmon/provision', {
+      method: 'POST',
+      body: {
+        site: siteId,
+        controller: ctrl.id,
+        name: ctrl.friendlyName ?? ctrl.id,
+        board_type: ctrl.board,
+      },
+    });
+    if (!res.token || !res.ota_password) throw new Error('Provisioning did not return the device secrets.');
+    return { token: res.token, ota_password: res.ota_password };
   }
 
   /** Build one controller's ESPHome files + its contribution to the source hash. */

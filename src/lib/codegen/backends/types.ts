@@ -3,8 +3,8 @@ import type { DeploymentMode } from '../../codegen-ids';
 export type GeneratorId = 'esphome';
 
 export interface SecretsMap {
-  wifi_ssid: string;
-  wifi_password: string;
+  /** OTA password (ours). Server-managed + stable per controller so OTA works
+   *  across rebuilds. The only secret baked into the firmware besides the token. */
   ota_password: string;
   /** Per-controller MQTT token (ours). Verified against controllers.token_hash. */
   mqtt_token: string;

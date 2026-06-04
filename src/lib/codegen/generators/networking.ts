@@ -1,4 +1,3 @@
-import { Scalar } from "yaml";
 import type { BoardDef } from '@core';
 import { boardSupportedTransports, effectiveTransport, SYSTEM_ENTITY_NAMES, NETWORK_ENTITY_NAMES, type NetworkConfig, type NetworkTransport } from "@core";
 
@@ -13,12 +12,6 @@ interface ManualIp {
   subnet: string;
   dns1?: string;
   dns2?: string;
-}
-
-function secret(name: string): Scalar {
-  const s = new Scalar(name);
-  s.tag = '!secret';
-  return s;
 }
 
 function manualIpFromNetwork(network?: NetworkConfig): ManualIp | undefined {
@@ -47,34 +40,30 @@ function emitEthernet(eth: EthernetDef, manualIp?: ManualIp): Record<string, unk
 }
 
 function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
-  // Both `ap:` and `captive_portal:` are emitted.
+  // No baked credentials. Wifi is provisioned ON THE DEVICE and stored in its
+  // own flash (NVS) — never in the firmware or our DB ("no stored wifi
+  // passwords"). On first boot (empty NVS) the device comes up in AP mode and
+  // serves the setup page; once creds are saved it joins that network, and they
+  // survive OTA as long as the partition table + `wifi:` block stay stable.
   //
-  // Why: web_server does NOT bind the AP interface (esphome/issues#4333,
-  // confirmed empirically — nothing ever serves at 192.168.4.1 unless
-  // captive_portal is present). The entity dashboard only works at the
-  // device's STA IP on the home network. AP fallback exists solely for
-  // wifi-credential recovery, and captive_portal is the only ESPHome
-  // component that serves HTTP on the AP interface.
+  // Two on-device provisioning surfaces are emitted:
+  //   - captive_portal — the AP-mode setup page. web_server does NOT bind the AP
+  //     interface (esphome/issues#4333, confirmed empirically — nothing serves
+  //     at 192.168.4.1 without it); captive_portal is the only ESPHome component
+  //     that serves HTTP on the AP. POST /wifisave writes creds to NVS.
+  //   - improv (emitImprov below) — the modern BLE / serial provisioning path,
+  //     preferred when a Chromium browser is handy.
+  // Because no creds live in YAML, the captive_portal blank-page degradation
+  // (esphome/issues#6784, creds-in-YAML only) does not apply here.
   //
-  // Known degradation: on ESPHome 2025.2.0+ the captive_portal index
-  // page renders blank when wifi creds live in YAML (esphome/issues#6784).
-  // The OS captive-detect popup still fires (/generate_204 etc.) and
-  // POST /wifisave still works, so credential reset is still reachable
-  // — just with degraded UX. Accepted because it's the only AP-mode
-  // HTTP surface ESPHome ships.
-  //
-  // Improv (emitImprov below) is the preferred modern recovery path.
-  // The AP+captive_portal pair is the zero-dependency fallback for
-  // users without a Chromium browser handy.
+  // The setup AP is open (provisioning-only — no control surface binds to it);
+  // add an `ap.password` later if it ever needs locking down.
   return [
     {
       wifi: {
-        ssid: secret('wifi_ssid'),
-        password: secret('wifi_password'),
         ...(manualIp && { manual_ip: manualIp }),
         ap: {
-          ssid: '${friendly_name} Fallback',
-          password: secret('wifi_password'),
+          ssid: '${friendly_name} Setup',
         },
       },
     },

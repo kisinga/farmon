@@ -1,29 +1,10 @@
-import type { Manifest, LocalManifestNode } from '@core';
+import type { Manifest } from '@core';
 import {
-  telemetrySensorId, telemetryTopic, commandTopic, statusTopic, eventTopic,
-  SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR,
+  telemetryTopic, commandTopic, statusTopic, eventTopic,
+  collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
 } from '@core';
 import type { GenerationMetadata } from "../backends/types";
-
-/**
- * A single telemetry value the firmware publishes.
- *  - `state`  reads `id(<sensor>).state`    (numeric sensor; NaN-guarded)
- *  - `bool`   reads `id(<sensor>).state`    (switch; published as 1/0)
- *  - `cover`  reads `id(<sensor>).position` (time_based cover; NaN-guarded)
- *  - `enum`   reads `id(<global>)` (int) and publishes the matching wire token
- *             from `tokens` (index === code), e.g. system_state 2 → "RUNNING"
- */
-type ChannelKind = 'state' | 'bool' | 'cover' | 'enum';
-interface Channel {
-  /** The `sensor` segment on the wire — also the ESPHome component id. */
-  sensor: string;
-  /** The ESPHome id whose value is read (component id, or global name). */
-  ref: string;
-  kind: ChannelKind;
-  /** For `enum`: wire tokens indexed by the firmware's integer code. */
-  tokens?: readonly string[];
-}
 
 /** C++ printf format for a StateEvent JSON line: route, from, to, reason, command_id. */
 const EVENT_FMT =
@@ -37,50 +18,8 @@ const cppTokenArray = (name: string, toks: readonly string[]) =>
 const indent = (lines: string[], n: number) =>
   lines.map(l => (l === '' ? '' : ' '.repeat(n) + l)).join('\n');
 
-/**
- * Build the list of telemetry channels for a controller's local nodes. Mirrors
- * each entity's emit conditions exactly so we never publish an id() that the
- * other generators didn't create.
- */
-function collectChannels(m: Manifest): Channel[] {
-  const channels: Channel[] = [];
-  const num = (node: LocalManifestNode, role: Parameters<typeof telemetrySensorId>[1]) =>
-    channels.push({ sensor: telemetrySensorId(node, role), ref: telemetrySensorId(node, role), kind: 'state' });
-
-  for (const node of m.nodes) {
-    switch (node.kind) {
-      case 'pump':
-        channels.push({ sensor: telemetrySensorId(node, 'pump'), ref: telemetrySensorId(node, 'pump'), kind: 'bool' });
-        break;
-      case 'dosing_pump':
-        channels.push({ sensor: telemetrySensorId(node, 'dosing'), ref: telemetrySensorId(node, 'dosing'), kind: 'bool' });
-        break;
-      case 'valve':
-        channels.push({ sensor: telemetrySensorId(node, 'valve'), ref: telemetrySensorId(node, 'valve'), kind: 'cover' });
-        break;
-      case 'flow_sensor':
-        num(node, 'flow');
-        num(node, 'flow_total');
-        break;
-      case 'tank':
-        if (node['pressure_pin']) num(node, 'level');
-        break;
-      case 'water_source':
-        if (node['pressure_pin']) num(node, 'pressure');
-        break;
-      case 'filter':
-        if (node['inlet_pressure_pin']) num(node, 'filter_inlet');
-        if (node['outlet_pressure_pin']) num(node, 'filter_outlet');
-        if (node['inlet_pressure_pin'] && node['outlet_pressure_pin']) num(node, 'filter_delta');
-        break;
-      // vfd: no telemetry channel yet
-    }
-  }
-  return channels;
-}
-
 /** One bare C++ publish statement for a channel, against the precomputed topic. */
-function publishStmt(c: Channel, topic: string): string {
+function publishStmt(c: TelemetryChannel, topic: string): string {
   switch (c.kind) {
     case 'state':
       return `if (!std::isnan(id(${c.ref}).state)) mc->publish("${topic}", to_string(id(${c.ref}).state));`;
@@ -121,15 +60,10 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
   const NF = FAULT_TOKENS.length;
   const NR = STOP_REASON_TOKENS.length;
 
-  // System-wide channels (always present), then per-node channels. system_state
-  // and stop_reason ride as enum tokens; queue depth + safety override are plain.
-  const channels: Channel[] = [
-    { sensor: SYSTEM_STATE_SENSOR, ref: 'system_state', kind: 'enum', tokens: SYSTEM_STATE_TOKENS },
-    { sensor: STOP_REASON_SENSOR, ref: 'stop_reason', kind: 'enum', tokens: STOP_REASON_TOKENS },
-    { sensor: 'queue_depth', ref: 'queue_depth', kind: 'state' },
-    { sensor: 'safety_override', ref: 'safety_override', kind: 'bool' },
-    ...collectChannels(m),
-  ];
+  // The shared channel enumeration (system-wide channels, then per-node) — the
+  // same list the dashboard chart spec builds widgets from, so what the firmware
+  // publishes and what the UI reads can never drift.
+  const channels = collectTelemetryChannels(m);
 
   // --- Operator command handler (JSON on the command topic) ------------------
   // Refusals/queues become a transition event carrying the reason; a successful

@@ -76,6 +76,14 @@ export type {
 export { buildHaMeta } from './ha-meta';
 export type { BuildHaMetaOptions } from './ha-meta';
 
+// --- Telemetry channels (shared by firmware codegen + dashboard chart spec) ---
+export { collectTelemetryChannels } from './telemetry-channels';
+export type { TelemetryChannel, TelemetryChannelKind } from './telemetry-channels';
+
+// --- Dashboard chart spec (derived from the saved topology, in the browser) ---
+export { buildDashboardSpec } from './dashboard-spec';
+export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls } from './dashboard-spec';
+
 // --- Codegen IDs ---
 export {
   pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId,
