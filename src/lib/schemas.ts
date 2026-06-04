@@ -117,7 +117,6 @@ export const TimingSchema = z.object({
   flow_watchdog: z.number().gt(1).default(30),
   flow_confirm: z.number().gt(1).default(15),
   flow_threshold: z.number().gt(0).default(0.5),
-  api_watchdog: z.number().gt(1).default(300),
   update_interval: z.number().gt(1).default(5),
 });
 

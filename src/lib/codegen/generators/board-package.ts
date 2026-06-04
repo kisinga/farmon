@@ -49,9 +49,6 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   sections.push(...emitConnectionProfile(board, network));
 
   sections.push({
-    api: { encryption: { key: secret('api_key') } },
-  });
-  sections.push({
     ota: [{ platform: "esphome", password: secret('ota_password') }],
   });
 

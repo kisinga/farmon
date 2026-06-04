@@ -105,7 +105,6 @@ export const SYSTEM_ENTITY_NAMES = {
   waterCritical:      { domain: 'binary_sensor', name: 'Water Critical' },
   queueDepth:         { domain: 'sensor',        name: 'Queue Depth' },
   queueFull:          { domain: 'binary_sensor', name: 'Queue Full' },
-  apiPartitioned:     { domain: 'binary_sensor', name: 'API Partitioned' },
 
   // number (sensors.ts safety blocks). Values are stored in user-facing units
   // (seconds, L/min). Firmware converts to its internal representation
@@ -114,7 +113,6 @@ export const SYSTEM_ENTITY_NAMES = {
   flowWatchdog:       { domain: 'number', name: 'Flow Watchdog (s)' },
   flowConfirm:        { domain: 'number', name: 'Flow Confirm (s)' },
   flowThreshold:      { domain: 'number', name: 'Flow Threshold (L/min)' },
-  apiWatchdog:        { domain: 'number', name: 'API Watchdog (s)' },
   claimLease:         { domain: 'number', name: 'Claim Lease (s)' },
 
   // switch (control.ts)
@@ -201,59 +199,6 @@ export function routeEntityNames(route: { name: string }): {
  */
 export function automationHaEntityId(alias: string): string {
   return `automation.${slug(alias)}`;
-}
-
-/** Build the canonical alias for a user-defined route automation. */
-export function routeAutomationAlias(a: { name: string; route_name: string }): string {
-  return `${a.name}: ${a.route_name}`;
-}
-
-
-/**
- * Pre-resolve every system entity_id for a device. Every field is present
- * unconditionally — capability-gated entities live in `networkHaEntityIds()`
- * and `batteryHaEntityIds()` instead, which return `null` when the gate is
- * closed. This function never returns `undefined` fields.
- *
- * Generators consuming HA references should use these values directly and
- * never call `deriveHaEntityId` themselves for system entities.
- */
-export type SystemHaEntityIds = {
-  [K in SystemEntityKey]: string;
-} & {
-  routes: Array<{
-    status: string;
-    start: string;
-    stop: string;
-    maxRuntime: string;
-    sourceMinLevel: string;
-    destMaxLevel: string;
-  }>;
-};
-
-export function systemHaEntityIds(
-  device: { friendly_name: string },
-  routes: { name: string }[],
-): SystemHaEntityIds {
-  const fixed = Object.fromEntries(
-    (Object.entries(SYSTEM_ENTITY_NAMES) as [SystemEntityKey, SystemEntitySpec][])
-      .map(([key, spec]) => [key, deriveHaEntityId(spec.domain, device, spec.name)]),
-  ) as Record<SystemEntityKey, string>;
-
-  return {
-    ...fixed,
-    routes: routes.map(r => {
-      const n = routeEntityNames(r);
-      return {
-        status:         deriveHaEntityId(n.status.domain,         device, n.status.name),
-        start:          deriveHaEntityId(n.start.domain,          device, n.start.name),
-        stop:           deriveHaEntityId(n.stop.domain,           device, n.stop.name),
-        maxRuntime:     deriveHaEntityId(n.maxRuntime.domain,     device, n.maxRuntime.name),
-        sourceMinLevel: deriveHaEntityId(n.sourceMinLevel.domain, device, n.sourceMinLevel.name),
-        destMaxLevel:   deriveHaEntityId(n.destMaxLevel.domain,   device, n.destMaxLevel.name),
-      };
-    }),
-  };
 }
 
 export type NetworkHaEntityIds = { [K in NetworkEntityKey]: string };

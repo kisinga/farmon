@@ -5,7 +5,6 @@ export type GeneratorId = 'esphome';
 export interface SecretsMap {
   wifi_ssid: string;
   wifi_password: string;
-  api_key: string;
   ota_password: string;
   /** Per-controller MQTT token (ours). Verified against controllers.token_hash. */
   mqtt_token: string;

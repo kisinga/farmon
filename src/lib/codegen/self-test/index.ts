@@ -13,7 +13,6 @@ import type { TestProbe } from './probe';
 import { generateBoardPackage } from '../generators/board-package';
 import { generateSequencer } from './sequencer';
 import { generateDeviceYaml } from './device-yaml';
-import { generateDashboard } from './dashboard';
 
 // --- Probe registry (add new probes here) ---
 import { i2cScanProbe } from './probes/i2c-scan';
@@ -57,7 +56,6 @@ function generateSecrets(secrets?: SecretsMap): string {
     ``,
     `wifi_ssid: "${s.wifi_ssid}"`,
     `wifi_password: "${s.wifi_password}"`,
-    `api_key: "${s.api_key}"`,
     `ota_password: "${s.ota_password}"`,
     ``,
   ].join('\n');
@@ -94,13 +92,8 @@ export function generateSelfTest(board: BoardDef, secrets?: SecretsMap, network?
     },
     {
       relativePath: `${root}/esphome/${dir}/secrets.yaml`,
-      description: 'WiFi + API credentials',
+      description: 'WiFi + OTA credentials',
       content: generateSecrets(secrets),
-    },
-    {
-      relativePath: `${root}/homeassistant/dashboards/${dir}.yaml`,
-      description: `HA dashboard for self-test results`,
-      content: generateDashboard(board, probes),
     },
   ];
 }

@@ -3,13 +3,11 @@ import type { BoardDef, ExpansionBoardCatalog } from '@core';
 import { generateRoutes } from "./generators/routes";
 import { generateHardware } from "./generators/hardware";
 import { generateSensors } from "./generators/sensors";
-import { generateDashboard } from "./generators/dashboard";
 import { generateBoardPackage } from "./generators/board-package";
-import { generateSiteDashboard, type SiteDashboardSystem } from "./generators/site-dashboard";
 import { generateDeviceYaml } from "./generators/device-yaml";
 import { generateControl } from "./generators/control";
-import { generateAutomations } from "./generators/automations";
 import { generateMqtt } from "./generators/mqtt";
+import { generateSchedule } from "./generators/schedule";
 
 import { collectEntityCodegen } from "./generators/collect";
 import { LOGO_SVG } from '@core';
@@ -61,7 +59,6 @@ export function generateDefaultSecrets(): SecretsMap {
   return {
     wifi_ssid: '',
     wifi_password: '',
-    api_key: toBase64(randomBytes(32)),
     ota_password: toHex(randomBytes(16)),
     mqtt_token: toBase64(randomBytes(32)),
   };
@@ -75,7 +72,6 @@ function generateSecretsYaml(m: Manifest, secrets?: SecretsMap): string {
     ``,
     `wifi_ssid: "${s.wifi_ssid}"`,
     `wifi_password: "${s.wifi_password}"`,
-    `api_key: "${s.api_key}"`,
     `ota_password: "${s.ota_password}"`,
     `mqtt_token: "${s.mqtt_token}"`,
     ``,
@@ -205,12 +201,12 @@ export function generateEsphome(
     },
     {
       relativePath: `${deviceDir}/secrets.yaml`,
-      description: "WiFi + API credentials",
+      description: "WiFi + OTA credentials",
       content: generateSecretsYaml(m, secrets),
     },
     {
       relativePath: `${deviceDir}/packages/control.yaml`,
-      description: "State machine, API services, safety watchdog",
+      description: "State machine + safety watchdog",
       content: generateControl(m),
     },
     {
@@ -244,6 +240,15 @@ export function generateEsphome(
       content: generateCompileScript(dir),
     },
   ];
+
+  const scheduleYaml = generateSchedule(m);
+  if (scheduleYaml) {
+    files.push({
+      relativePath: `${deviceDir}/packages/schedule.yaml`,
+      description: "On-device schedule (time / level triggers → route start)",
+      content: scheduleYaml,
+    });
+  }
 
   return files;
 }
@@ -282,38 +287,6 @@ function generateCompileScript(dir: string): string {
   ].join("\n");
 }
 
-export function generateSiteHA(
-  siteId: string,
-  siteName: string,
-  systems: SiteDashboardSystem[],
-  manifests: Map<string, Manifest>,
-): GeneratedFile[] {
-  const haRoot = `${siteRoot(siteId)}/homeassistant`;
-  const files: GeneratedFile[] = [
-    {
-      relativePath: `${haRoot}/dashboards/${siteId}.yaml`,
-      description: `HA dashboard — ${systems.length} controllers (overview + per-device tabs)`,
-      content: generateSiteDashboard(siteName, systems),
-    },
-  ];
-
-  for (const s of systems) {
-    const m = manifests.get(s.systemId) ?? s.manifest;
-    const dir = m.device.directory ?? m.device.name;
-    const automationsContent = generateAutomations(m);
-    if (automationsContent) {
-      files.push({
-        relativePath: `${haRoot}/automations/${dir}.yaml`,
-        description: `HA automations — ${s.friendlyName}`,
-        content: automationsContent,
-      });
-    }
-  }
-
-  return files;
-}
-
-/** Single-system convenience for tests. Produces ESPHome + per-device HA files. */
 /**
  * Generate firmware files for a manifest + board using the specified backend.
  */
@@ -340,24 +313,5 @@ export function generateAll(
   metadata: GenerationMetadata,
   expansionBoards: ExpansionBoardCatalog,
 ): GeneratedFile[] {
-  const dir = m.device.directory ?? m.device.name;
-  const haRoot = `${siteRoot(siteId)}/homeassistant`;
-  const files = [...generateFirmware('esphome', m, board, siteId, secrets, metadata, expansionBoards)];
-
-  files.push({
-    relativePath: `${haRoot}/dashboards/dashboard.yaml`,
-    description: "HA dashboard with gauges, controls, settings",
-    content: generateDashboard(m, board),
-  });
-
-  const automationsContent = generateAutomations(m);
-  if (automationsContent) {
-    files.push({
-      relativePath: `${haRoot}/automations/${dir}.yaml`,
-      description: "HA automations + system notifications",
-      content: automationsContent,
-    });
-  }
-
-  return files;
+  return [...generateFirmware('esphome', m, board, siteId, secrets, metadata, expansionBoards)];
 }

@@ -22,7 +22,6 @@ export interface RouteContext {
   valveTravelMs: number;
   flowWatchdogMs: number;
   flowConfirmMs: number;
-  apiWatchdogMs: number;
   conflictMasks: number[];
   routeLines: string[];
   valveComment: string;
@@ -55,7 +54,6 @@ export function buildRouteContext(m: Manifest): RouteContext {
   const valveTravelMs = m.timing.valve_travel_time * 1000;
   const flowWatchdogMs = m.timing.flow_watchdog * 1000;
   const flowConfirmMs = m.timing.flow_confirm * 1000;
-  const apiWatchdogMs = m.timing.api_watchdog * 1000;
 
   // Compute conflict masks — routes conflict when they share a flow sensor
   // but go to different destinations (ambiguous readings).
@@ -103,7 +101,7 @@ export function buildRouteContext(m: Manifest): RouteContext {
     manifest: m,
     tanks, valves, flowSensors, waterSources, pumps,
     tankIdx, valveIdx, flowIdx, wsIdx, pumpIdx,
-    valveTravelMs, flowWatchdogMs, flowConfirmMs, apiWatchdogMs,
+    valveTravelMs, flowWatchdogMs, flowConfirmMs,
     conflictMasks, routeLines,
     valveComment, tankComment, wsComment, flowComment, pumpComment,
   };
@@ -117,7 +115,7 @@ export function generateRoutes(m: Manifest): string {
   const ctx = buildRouteContext(m);
   const {
     tanks, valves, flowSensors, waterSources, pumps,
-    valveTravelMs, flowWatchdogMs, flowConfirmMs, apiWatchdogMs,
+    valveTravelMs, flowWatchdogMs, flowConfirmMs,
     conflictMasks, routeLines,
     valveComment, tankComment, wsComment, flowComment, pumpComment,
   } = ctx;
@@ -252,10 +250,6 @@ inline bool is_duplicate_command(const char* command_id) {
   return false;
 }
 
-// --- API partition handling --------------------------------------------------
-
-static uint32_t api_partition_since = 0;
-
 // --- Constants ---------------------------------------------------------------
 
 static const int MAX_CONCURRENT_ROUTES = 2;
@@ -269,21 +263,6 @@ static const uint32_t DEFAULT_VALVE_TRAVEL_MS        = ${valveTravelMs}U;
 static const uint32_t DEFAULT_FLOW_WATCHDOG_MS       = ${flowWatchdogMs}U;
 static const uint32_t DEFAULT_FLOW_CONFIRM_MS        = ${flowConfirmMs}U;
 static const float    DEFAULT_FLOW_THRESHOLD_L_MIN   = ${m.timing.flow_threshold};
-static const uint32_t DEFAULT_API_WATCHDOG_MS        = ${apiWatchdogMs}U;
-
-inline uint32_t get_api_watchdog_ms() {
-  float v = id(api_watchdog_s).state;
-  return (!std::isnan(v) && v >= 30.0f) ? (uint32_t)(v * 1000.0f) : DEFAULT_API_WATCHDOG_MS;
-}
-
-inline bool is_api_partitioned(uint32_t now) {
-  if (id(api_client_count) > 0) {
-    api_partition_since = 0;
-    return false;
-  }
-  if (api_partition_since == 0) api_partition_since = now;
-  return (now - api_partition_since) > get_api_watchdog_ms();
-}
 
 // --- Component counts --------------------------------------------------------
 
@@ -298,7 +277,7 @@ static const int NUM_ROUTES        = ${m.routes.length};
 static const int FAULT_NONE        = 0;
 static const int FAULT_NO_FLOW     = 1;
 static const int FAULT_MAX_RUNTIME = 2;
-static const int FAULT_API_LOST    = 3;
+static const int FAULT_CONTROL_LOST = 3;  // reserved: local-mode control-link loss (Phase 2)
 
 // --- Stop reasons ------------------------------------------------------------
 
@@ -307,7 +286,7 @@ static const int STOP_MANUAL       = 1;
 static const int STOP_TANK_FULL    = 2;
 static const int STOP_NO_FLOW      = 3;
 static const int STOP_MAX_RUNTIME  = 4;
-static const int STOP_API_LOST     = 5;
+static const int STOP_CONTROL_LOST = 5;  // reserved: local-mode control-link loss (Phase 2)
 static const int STOP_SOURCE_LOW   = 6;
 
 static const int FAULT_TO_STOP_OFFSET = 2;
@@ -350,7 +329,6 @@ struct RouteSlot {
   int      state;            // 0=IDLE 1=PREPARING 2=RUNNING 3=STOPPING 4=FAULT
   uint32_t start_time;       // millis() when PREPARING began
   uint32_t run_start_time;   // millis() when RUNNING began (for watchdogs)
-  uint32_t api_lost_since;   // millis() when this RUNNING slot first had zero API clients
   uint32_t flow_active_since;// millis() when current above-threshold flow began
   uint32_t last_flow_time;   // millis() of last flow above configured threshold
   uint32_t stop_time;        // millis() when STOPPING/FAULT began
@@ -612,7 +590,6 @@ inline int try_route_start(int route_id, const char* command_id) {
   if (route_id < 0 || route_id >= NUM_ROUTES) return 2;
   if (is_duplicate_command(command_id)) return 0;  // idempotent success
   if (find_slot_by_route(route_id) != -1) return 2;  // already active
-  if (is_api_partitioned(millis())) return 5;
 
   if (has_conflict(route_id) || find_free_slot() == -1) {
     return queue_push(route_id) ? 1 : 2;

@@ -39,7 +39,8 @@ ${actuators.map(a => `          enforce_deadman("${a['id']}");`).join('\n')}`
   return `# =============================================================================
 # MajiFlow — Control Layer
 # =============================================================================
-# The brain: API services, slot-based state machine, safety watchdog.
+# The brain: slot-based state machine + safety watchdog. Commands arrive over
+# MQTT (see mqtt.yaml) and dispatch into try_route_start / try_route_stop.
 #
 # Slot states: IDLE(0) → PREPARING(1) → RUNNING(2) → STOPPING(3) → IDLE(0)
 #                                └──────→ FAULT(4) ←──────┘
@@ -48,8 +49,8 @@ ${actuators.map(a => `          enforce_deadman("${a['id']}");`).join('\n')}`
 # independent slots. Routes sharing a flow sensor are queued (ambiguous
 # readings). Shared valves are refcounted — closed only when no route needs them.
 #
-# All safety-critical logic lives HERE on the ESP32, not in HA.
-# HA selects routes and requests start/stop via API services.
+# All safety-critical logic lives HERE on the ESP32. The cloud/broker only
+# selects routes and requests start/stop; the device runs autonomously.
 #
 # Topology is defined in routes.h — this file never references specific
 # valve/tank/flow IDs. All routing goes through ROUTES[], slots[], and
@@ -65,10 +66,6 @@ globals:
     # Derived from slots — highest priority state across all slots.
     # 0=IDLE, 1=PREPARING, 2=RUNNING, 3=STOPPING, 4=FAULT
 
-  - id: api_client_count
-    type: int
-    initial_value: "0"
-
   - id: stop_reason
     type: int
     initial_value: "0"
@@ -80,75 +77,6 @@ globals:
     initial_value: "-1"
     # Primary slot for OLED display. -1 = none active.
 
-# --- API + Services ----------------------------------------------------------
-
-api:
-  encryption:
-    key: !secret api_key
-  on_client_connected:
-    - lambda: |-
-        id(api_client_count)++;
-        ESP_LOGI("api", "API client connected (%d active)", id(api_client_count));
-  on_client_disconnected:
-    - lambda: |-
-        if (id(api_client_count) > 0) id(api_client_count)--;
-        ESP_LOGW("api", "API client disconnected (%d active)", id(api_client_count));
-  services:
-    - service: route_start
-      variables:
-        route_id: int
-        command_id: string
-      then:
-        - lambda: |-
-            const char* results[] = {"started", "queued", "rejected", "source low", "dest full", "partitioned"};
-            int r = try_route_start(route_id, command_id.c_str());
-            if (r == 0) {
-              ESP_LOGI("ctrl", "API start route %d [%s]: %s", route_id,
-                       (route_id >= 0 && route_id < NUM_ROUTES) ? ROUTES[route_id].name : "?", results[r]);
-            } else {
-              ESP_LOGW("ctrl", "API start route %d: %s", route_id, (r >= 0 && r <= 5) ? results[r] : "?");
-            }
-
-    - service: route_stop
-      variables:
-        route_id: int
-        command_id: string
-      then:
-        - lambda: |-
-            const char* results[] = {"stopping", "not active", "already idle/stopping"};
-            int r = try_route_stop(route_id, command_id.c_str());
-            ESP_LOGI("ctrl", "API stop route %d: %s", route_id, (r >= 0 && r <= 2) ? results[r] : "?");
-
-    - service: fault_reset
-      variables:
-        route_id: int
-      then:
-        - lambda: |-
-            int s = find_slot_by_route(route_id);
-            if (s < 0 || slots[s].state != 4) return;
-            init_slot(s);
-            id(system_state) = derived_system_state();
-            ESP_LOGI("ctrl", "Fault cleared for route %d → slot %d free", route_id, s);
-
-    - service: node_claim
-      variables:
-        node_id: string
-        owner: string
-        duration_ms: int
-      then:
-        - lambda: |-
-            extend_deadman(node_id, owner, duration_ms);
-            ESP_LOGI("claim", "Claim %s by %s for %u ms", node_id.c_str(), owner.c_str(), duration_ms);
-
-    - service: node_release
-      variables:
-        node_id: string
-        owner: string
-      then:
-        - lambda: |-
-            drop_claim(node_id, owner);
-            ESP_LOGI("claim", "Released %s by %s", node_id.c_str(), owner.c_str());
-
 # --- Safety override ---------------------------------------------------------
 
 switch:
@@ -159,10 +87,9 @@ switch:
     restore_mode: ALWAYS_OFF
 
 # --- Button entities ---------------------------------------------------------
-# Per-route Start/Stop and parameterless system-wide control actions.
-# All first-class HA entities, trivially automatable. Parameterized actions
-# (route_start, route_stop, fault_reset taking route_id) stay as api services
-# above because buttons can't accept arguments.
+# Per-route Start/Stop and parameterless system-wide control actions, exposed
+# as template buttons. Parameterized actions (route_start/route_stop/fault_reset
+# taking a route_id) arrive over MQTT and dispatch in mqtt.yaml.
 
 button:
   - platform: template
@@ -246,7 +173,6 @@ interval:
               if (now - slots[s].start_time > get_route_travel_ms(rid) + 1000) {
                 slots[s].state = 2;
                 slots[s].run_start_time = now;
-                slots[s].api_lost_since = (id(api_client_count) == 0) ? now : 0;
                 slots[s].flow_active_since = 0;
                 slots[s].last_flow_time = now;
                 slots[s].flow_confirmed = false;
@@ -401,13 +327,6 @@ ${pumpMgmt}
                          max_rt, s, r.name);
                 slots[s].fault_code = FAULT_MAX_RUNTIME;
               }
-            }
-
-            // --- API partition telemetry (AP: degrade, don't fault) ---
-            if (id(api_client_count) > 0) {
-              slots[s].api_lost_since = 0;
-            } else {
-              if (slots[s].api_lost_since == 0) slots[s].api_lost_since = now;
             }
 
             // --- Act on fault ---

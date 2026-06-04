@@ -4,7 +4,7 @@ import { SystemEditorService } from '../../core/services/system-editor.service';
 import { BackendService } from '../../core/services/backend.service';
 import { FormsModule } from '@angular/forms';
 import { EMPTY_FIRMWARE_SECRETS, type FirmwareSecrets } from '../../core/models/firmware-secrets';
-import { randomBase64, randomHex } from '../../core/util/random-keys';
+import { randomHex } from '../../core/util/random-keys';
 
 interface FileEntry {
   path: string;
@@ -57,13 +57,6 @@ interface FileEntry {
               <div>
                 <label class="label-text text-[11px] text-base-content/50">Wi-Fi Password</label>
                 <input type="password" class="input input-bordered input-sm w-full" [(ngModel)]="secrets().wifi_password" (change)="markSecretsDirty()" />
-              </div>
-              <div>
-                <label class="label-text text-[11px] text-base-content/50">API Key</label>
-                <div class="flex gap-2">
-                  <input class="input input-bordered input-sm w-full font-mono text-[10px]" [(ngModel)]="secrets().api_key" (change)="markSecretsDirty()" />
-                  <button class="btn btn-ghost btn-sm" (click)="regenerateKey('api_key')">Regen</button>
-                </div>
               </div>
               <div>
                 <label class="label-text text-[11px] text-base-content/50">OTA Password</label>
@@ -232,8 +225,8 @@ export class DeployPageComponent {
     this.secretsDirty = true;
   }
 
-  protected regenerateKey(key: 'api_key' | 'ota_password') {
-    const fresh = key === 'api_key' ? randomBase64(24) : randomHex(16);
+  protected regenerateKey(key: 'ota_password') {
+    const fresh = randomHex(16);
     this.secrets.update(s => ({ ...s, [key]: fresh }));
     this.secretsDirty = true;
   }

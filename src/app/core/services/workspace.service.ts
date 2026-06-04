@@ -157,7 +157,6 @@ export class WorkspaceService {
             flow_watchdog: 30,
             flow_confirm: 10,
             flow_threshold: 0.5,
-            api_watchdog: 60,
             update_interval: 30,
           },
           automations: [],

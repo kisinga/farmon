@@ -9,7 +9,6 @@ export {
   generateEsphome,
   generateAll,
   generateFirmware,
-  generateSiteHA,
   siteRoot,
   createTestMetadata,
   generateDefaultSecrets,
@@ -21,6 +20,5 @@ export { type GeneratorId, type SecretsMap, type GenerationMetadata } from './ba
 export { generateBoardPackage } from './generators/board-package';
 export { generateRoutes } from './generators/routes';
 export { collectEntityCodegen } from './generators/collect';
-export { type SiteDashboardSystem } from './generators/site-dashboard';
 
 export { generateSelfTest, activeProbes } from './self-test';

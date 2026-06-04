@@ -31,7 +31,6 @@ export interface StoredSiteTopology {
     flow_watchdog: number;
     flow_confirm: number;
     flow_threshold: number;
-    api_watchdog: number;
     update_interval: number;
   };
   automations: Automation[];

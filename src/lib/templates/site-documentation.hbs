@@ -239,7 +239,6 @@ a.xref:hover { border-bottom-style: solid; }
     <tr><td>Flow watchdog</td><td><strong>{{this.timing.flow_watchdog}}s</strong></td><td>No-flow duration before fault/tank-full detection</td></tr>
     <tr><td>Flow confirm</td><td><strong>{{this.timing.flow_confirm}}s</strong></td><td>Time to confirm flow is established after start</td></tr>
     <tr><td>Flow threshold</td><td><strong>{{this.timing.flow_threshold}} L/min</strong></td><td>Minimum measured rate that counts as active flow</td></tr>
-    <tr><td>API watchdog</td><td><strong>{{this.timing.api_watchdog}}s</strong></td><td>HA disconnect duration before route is faulted</td></tr>
     <tr><td>Sensor update</td><td><strong>{{this.timing.update_interval}}s</strong></td><td>ADC/sensor polling interval</td></tr>
   </tbody>
 </table>
@@ -249,7 +248,6 @@ a.xref:hover { border-bottom-style: solid; }
   <div class="safety-card"><strong>Pre-start checks</strong><span>Source/dest level thresholds enforced before every start</span></div>
   <div class="safety-card"><strong>Flow watchdog</strong><span>No-flow fault after {{this.timing.flow_watchdog}}s · Flow confirmed within {{this.timing.flow_confirm}}s</span></div>
   <div class="safety-card"><strong>Runtime level</strong><span>Active on routes with pump-rated sensors · Clean stop on threshold breach</span></div>
-  <div class="safety-card"><strong>API watchdog</strong><span>Route faulted if HA disconnects for {{this.timing.api_watchdog}}s</span></div>
   <div class="safety-card" style="border-left-color:#dc2626;"><strong>Safety Override</strong><span>While <code>switch.…_safety_override</code> is ON, every check above is skipped and the pump may be run without an owning route. Switch reverts to OFF on reboot.</span></div>
 </div>
 {{/each}}
@@ -303,7 +301,6 @@ a.xref:hover { border-bottom-style: solid; }
   <tbody>
     <tr><td>1</td><td>Flow watchdog</td><td><span class="badge badge-fault">no_flow (1)</span></td><td>No pulses for flow_watchdog</td></tr>
     <tr><td>2</td><td>Per-route max runtime</td><td><span class="badge badge-fault">max_runtime (2)</span></td><td>Route-specific max_runtime_s ceiling</td></tr>
-    <tr><td>3</td><td>API watchdog</td><td><span class="badge badge-fault">api_lost (3)</span></td><td>HA disconnected for api_watchdog</td></tr>
   </tbody>
 </table>
 

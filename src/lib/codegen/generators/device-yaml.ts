@@ -4,6 +4,7 @@ import type { Manifest } from '@core';
 import { nodesWithFlag } from '@core';
 import type { CollectedCodegen } from "./collect";
 import type { GenerationMetadata } from "../backends/types";
+import { hasSchedule } from "./schedule";
 
 /**
  * Generate the ESPHome device YAML from board definition + system manifest.
@@ -41,7 +42,6 @@ export function generateDeviceYaml(
   subs['valve_travel_time'] = `${m.timing.valve_travel_time}s`;
   subs['flow_watchdog'] = `"${m.timing.flow_watchdog}"`;
   subs['flow_confirm'] = `"${m.timing.flow_confirm}"`;
-  subs['api_watchdog'] = `"${m.timing.api_watchdog}"`;
 
   // --- On-boot sequence ---
   const bootSteps: unknown[] = [];
@@ -85,7 +85,6 @@ export function generateDeviceYaml(
     "for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) init_slot(i);",
     "queue_head = 0; queue_count = 0;",
     "id(system_state) = 0;",
-    "id(api_client_count) = 0;",
     "id(active_slot) = -1;",
     "for (int i = 0; i < NUM_VALVES; i++) close_valve_hw(i);",
     "// time_based covers default to restore_mode: NO_RESTORE — they boot at",
@@ -146,6 +145,9 @@ export function generateDeviceYaml(
   lines.push("  sensors: !include packages/sensors.yaml");
   lines.push("  control: !include packages/control.yaml");
   lines.push("  mqtt: !include packages/mqtt.yaml");
+  if (hasSchedule(m)) {
+    lines.push("  schedule: !include packages/schedule.yaml");
+  }
   if (metadata) {
     lines.push("  metadata: !include packages/metadata.yaml");
   }

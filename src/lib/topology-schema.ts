@@ -131,7 +131,6 @@ function migrateLegacyTopology(data: unknown): unknown {
     const renames: Array<[string, string]> = [
       ['flow_watchdog_seconds', 'flow_watchdog'],
       ['flow_confirm_seconds', 'flow_confirm'],
-      ['api_watchdog_seconds', 'api_watchdog'],
     ];
     for (const [oldKey, newKey] of renames) {
       if (oldKey in t && !(newKey in t)) {
