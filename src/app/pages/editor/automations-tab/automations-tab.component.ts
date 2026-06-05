@@ -15,26 +15,30 @@ import {
   findRouteAutomationSensor,
 } from '@core';
 import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
+import { SectionHeaderComponent } from '../shared/section-header.component';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
 
 @Component({
   selector: 'app-automations-tab',
   standalone: true,
-  imports: [FormsModule, ZodInputComponent],
+  imports: [FormsModule, ZodInputComponent, SectionHeaderComponent],
   template: `
     @if (editor.topology(); as t) {
       <div class="content-pane space-y-6">
-        <div>
-          <h2 class="text-lg font-semibold">Timed Automations</h2>
-          <p class="text-sm text-base-content/50 mt-1">
-            Define HA automations that will be generated alongside your dashboard.
-            These run in Home Assistant, not on the device — you can edit them in HA after deployment.
-          </p>
-        </div>
+        <app-section-header
+          title="Schedules"
+          subtitle="Rules that run on the controller itself: start a route at a set time, or when a tank crosses a level. They keep working with no internet, since the controller runs them on its own clock." />
+
+        @if (t.automations.length === 0) {
+          <div class="surface px-6 py-10 text-center">
+            <p class="text-sm text-base-content/50">No schedules yet.</p>
+            <p class="text-xs text-base-content/40 mt-1">Add one to run a route automatically by time or tank level.</p>
+          </div>
+        }
 
         @for (auto of t.automations; track auto.id; let i = $index) {
-          <div class="card bg-base-100 shadow-sm border border-base-200">
+          <div class="card surface">
             <div class="card-body gap-4">
               <div class="flex items-center justify-between">
                 <h3 class="font-semibold text-sm">{{ auto.name || 'Untitled' }}</h3>
@@ -200,11 +204,11 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
           </div>
         }
 
-        <button class="btn btn-outline btn-sm gap-2" (click)="add()">
+        <button class="btn btn-primary btn-sm gap-2" (click)="add()">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
           </svg>
-          Add Automation
+          Add Schedule
         </button>
       </div>
     }

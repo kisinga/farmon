@@ -29,6 +29,12 @@ export interface SiteMetadata {
   friendlyName: string;
   /** Undefined until the installer picks Online/Local for the site. */
   deployment?: SiteDeployment;
+  /**
+   * Owning user id (a plain string — no auth coupling). Populated on load so the
+   * dashboard can tell an owner apart from an admin viewing someone else's site
+   * (read-only + "Take control"). Not written back on save (set at create).
+   */
+  owner?: string;
 }
 
 // ---------------------------------------------------------------------------

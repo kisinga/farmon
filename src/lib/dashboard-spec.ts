@@ -18,7 +18,7 @@ import {
 import { collectTelemetryChannels, type TelemetryChannel } from './telemetry-channels';
 import { topologyToManifestForController } from './topology-to-manifest';
 
-export type WidgetKind = 'gauge' | 'line' | 'stat' | 'badge' | 'timeline';
+export type WidgetKind = 'gauge' | 'line' | 'stat' | 'badge' | 'timeline' | 'valve' | 'flow';
 
 export interface DashboardWidget {
   /** Stable id: `${controller}/${sensor}`, or `${controller}/timeline`. */
@@ -29,6 +29,9 @@ export interface DashboardWidget {
   controller: string;
   /** The wire sensor id the widget reads (absent only for `timeline`). */
   sensor?: string;
+  /** For a `flow` widget: the companion cumulative-total sensor, shown beneath
+   *  the rate chart in the same card (so rate + total read as one thing). */
+  totalSensor?: string;
   unit?: string;
   /** Gauge bounds. */
   min?: number;
@@ -72,7 +75,7 @@ const ROLE_PRESENTATION: Record<TelemetryRole, RolePresentation> = {
   level:         { kind: 'gauge', unit: '%',     noun: 'Level', min: 0, max: 100 },
   pressure:      { kind: 'line',  unit: 'psi',   noun: 'Pressure' },
   pump:          { kind: 'badge' },
-  valve:         { kind: 'gauge', unit: '%',     noun: 'Valve', min: 0, max: 1 },
+  valve:         { kind: 'valve', noun: 'Valve' },
   dosing:        { kind: 'badge' },
   filter_inlet:  { kind: 'line',  unit: 'psi',   noun: 'Inlet' },
   filter_outlet: { kind: 'line',  unit: 'psi',   noun: 'Outlet' },
@@ -117,7 +120,21 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
   const controllers: ControllerControls[] = [];
   for (const ctrl of topology.controllers) {
     const manifest = topologyToManifestForController(topology, ctrl.id);
-    for (const ch of collectTelemetryChannels(manifest)) {
+    const channels = collectTelemetryChannels(manifest);
+    // A flow sensor emits two channels (rate + cumulative total) for the same
+    // node. Merge them into ONE `flow` widget: the rate chart with its total
+    // beneath it, instead of two disconnected cards.
+    const totalByNode = new Map<string, string>();
+    for (const ch of channels) {
+      if (ch.role === 'flow_total' && ch.node) totalByNode.set(ch.node, ch.sensor);
+    }
+    for (const ch of channels) {
+      if (ch.role === 'flow_total') continue; // absorbed into the flow widget below
+      if (ch.role === 'flow') {
+        const base = widgetForChannel(ctrl.id, ch);
+        widgets.push({ ...base, kind: 'flow', totalSensor: ch.node ? totalByNode.get(ch.node) : undefined });
+        continue;
+      }
       widgets.push(widgetForChannel(ctrl.id, ch));
     }
     widgets.push({

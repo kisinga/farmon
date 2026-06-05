@@ -1,22 +1,14 @@
-<div class="h-screen bg-base-200 flex flex-col overflow-hidden">
-  <!-- Navbar (hidden on the public landing, which carries its own) -->
+<div class="h-screen bg-base-200 text-base-content flex flex-col overflow-hidden">
+  <!-- Global top bar (hidden on the public landing/login, which carry their own) -->
   @if (!isPublic()) {
-  <header class="navbar bg-base-100 shadow-sm border-b border-base-300/30 px-4 min-h-[var(--header-h)] h-[var(--header-h)]">
+  <header class="navbar bg-base-100 border-b border-base-300/40 px-4 min-h-[var(--header-h)] h-[var(--header-h)]">
     <div class="navbar-start gap-3">
       <a routerLink="/home" class="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
-        <div class="w-7 h-7" [innerHTML]="logoSvg"></div>
-        <span class="font-bold text-base tracking-tight text-base-content">MajiFlow</span>
+        <span class="w-7 h-7 block" [innerHTML]="logoSvg"></span>
+        <span class="font-bold text-base tracking-tight">MajiFlow</span>
       </a>
-      <!-- Back link -->
-      @if (backLink(); as bl) {
-        <a [routerLink]="bl.link" class="flex items-center gap-1.5 text-sm font-medium hover:opacity-80 transition-opacity" [class]="bl.colorClass">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
-          {{ bl.label }}
-        </a>
-      }
     </div>
+
     <div class="navbar-center hidden md:flex gap-1">
       @if (auth.isAdmin()) {
         <a routerLink="/overview" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Sites</a>
@@ -25,10 +17,8 @@
         <a routerLink="/home" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">My Sites</a>
       }
     </div>
+
     <div class="navbar-end gap-2">
-      @if (navLevel() === 'editor') {
-        <app-context-strip />
-      }
       @if (auth.user(); as u) {
         <div class="dropdown dropdown-end">
           <button tabindex="0" class="btn btn-ghost btn-sm gap-1.5">
@@ -44,27 +34,10 @@
   </header>
   }
 
-  <!-- Workspace rail (below navbar, above content) -->
-  @if (navLevel() === 'editor') {
-    <app-pipeline-rail />
-  }
-
   <!-- Main content -->
   <main class="flex-1 flex overflow-hidden min-w-0">
     <router-outlet />
   </main>
-
-  <!-- Save cue toast -->
-  @if (saveToastVisible()) {
-    <div class="toast toast-start toast-bottom z-50 transition-opacity duration-500">
-      <div class="alert alert-success py-2 px-3 text-xs shadow-lg">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-        </svg>
-        <span>Saved</span>
-      </div>
-    </div>
-  }
 
   <!-- Confirm dialog (global) -->
   <app-confirm-dialog />

@@ -88,7 +88,7 @@ export class BackendService {
         }
       : undefined;
     return {
-      site: { id: r['id'], friendlyName: r['name'], deployment },
+      site: { id: r['id'], friendlyName: r['name'], deployment, owner: (r['owner'] ?? '') as string },
       topology: (r['draft_topology'] ?? null) as SiteFullPayload['topology'],
     };
   }
@@ -492,6 +492,19 @@ export class BackendService {
     deployment: DeploymentConfig,
     secrets?: SecretsMap,
   ): Promise<{ files: GeneratedFile[]; hashPart: string; version: string }> {
+    // Hard guard: an empty broker host bakes `broker: ""` into device.yaml, and
+    // the device boots into "Couldn't resolve IP address for ''" forever. Refuse
+    // to generate instead of shipping an unreachable firmware.
+    if (!deployment.brokerAddress.trim()) {
+      throw new Error(
+        deployment.mode === 'local'
+          ? `Cannot generate "${ctrl.friendlyName ?? ctrl.id}": no on-site server address. ` +
+            `Set it under “How your controllers connect” on the site (My own server → server address).`
+          : `Cannot generate "${ctrl.friendlyName ?? ctrl.id}": the MajiFlow Cloud broker is not ` +
+            `configured on the server (MAJI_MQTT_PUBLIC_HOST is empty). Set it and retry.`,
+      );
+    }
+
     const { board } = await this.boardLoad(ctrl.board);
     const manifest = topologyToManifestForController(topo, ctrl.id);
 

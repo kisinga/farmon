@@ -58,8 +58,17 @@ export const routes: Routes = [
       import('./pages/editor/editor.component').then((m) => m.EditorComponent),
   },
   {
-    // Admin: per-controller editor.
+    // Admin: per-controller editor — bare path opens the Design canvas.
     path: 'site/:name/system/:config',
+    canActivate: [roleGuard],
+    data: ADMIN,
+    loadComponent: () =>
+      import('./pages/editor/editor.component').then((m) => m.EditorComponent),
+  },
+  {
+    // Admin: a specific workspace section (config/schedules/sharing/firmware) —
+    // each section is its own bookmarkable URL. Same component; it reads :section.
+    path: 'site/:name/system/:config/:section',
     canActivate: [roleGuard],
     data: ADMIN,
     loadComponent: () =>

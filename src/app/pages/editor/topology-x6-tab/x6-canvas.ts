@@ -95,10 +95,13 @@ export class X6Canvas {
       async: options?.async ?? true,
       grid: options?.grid === false
         ? { visible: false }
-        : { visible: true, type: 'dot', args: [{ color: '#e2e8f0' }] },
+        // Dark slate canvas (slate-900), framed by the slate-800 toolbar/sidebar.
+        // Entity nodes render as dark slate chips (UI_COLORS.bg) with light labels
+        // and their own colour as the stroke, so they sit naturally on it.
+        : { visible: true, type: 'dot', args: [{ color: '#334155' }] },
       background: options?.background === false
         ? false
-        : { color: '#fafbfc' },
+        : { color: '#0f172a' },
       panning: { enabled: true, eventTypes: ['leftMouseDown'], modifiers: [] },
       mousewheel: { enabled: true, factor: 1.1, minScale: 0.2, maxScale: 3 },
       connecting: {

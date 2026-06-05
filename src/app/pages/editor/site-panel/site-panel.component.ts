@@ -5,104 +5,139 @@ import { SystemEditorService } from '../../../core/services/system-editor.servic
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { CONTROLLER_COLORS } from '../../../shared/canvas/topology-overlays';
 import { DeploymentCardComponent } from './deployment-card.component';
+import { SectionHeaderComponent } from '../shared/section-header.component';
 
 /**
- * Site overview panel — the controllers roster and derived routes for the whole
- * site. Lives inside the workspace (not a separate page); selecting a controller
- * focuses it on the shared canvas rather than navigating away.
+ * Site overview — the workspace home. A single scrolling column (like the other
+ * sections): a few at-a-glance stats, how the site connects, the controllers as
+ * cards, and the derived routes grouped by controller. Selecting a controller
+ * focuses it on the shared canvas (Design) rather than navigating away.
  */
 @Component({
   selector: 'app-site-panel',
   standalone: true,
-  imports: [DeploymentCardComponent],
-  host: { class: 'flex-1 flex flex-col min-h-0 overflow-hidden' },
+  imports: [DeploymentCardComponent, SectionHeaderComponent],
   template: `
-    <!-- How this site connects (Online / Local + cross-talk verdict) -->
-    <app-deployment-card />
+    <div class="content-pane space-y-6">
+      <app-section-header
+        title="Overview"
+        subtitle="How this site connects, its controllers, and the routes that move water between them." />
 
-    <div class="flex-1 flex min-h-0 overflow-hidden">
-    <!-- Controllers roster -->
-    <div class="w-72 shrink-0 bg-base-100 border-r border-base-300/30 flex flex-col overflow-hidden">
-      <div class="px-3 py-2 text-xs font-semibold text-base-content/50 border-b border-base-300/20 flex items-center">
-        <span class="flex-1">Controllers</span>
-        <span class="text-base-content/30">{{ systemEntries().length }}</span>
-      </div>
-      <div class="flex-1 overflow-auto">
-        @for (entry of systemEntries(); track entry.id) {
-          <div
-            class="w-full text-left px-3 py-2 text-sm hover:bg-base-200/60 transition-colors border-b border-base-300/10 group flex items-center cursor-pointer"
-            [class.bg-base-200/50]="entry.id === workspace.activeControllerId()"
-            (click)="focus(entry.id)"
-          >
-            <div class="w-2.5 h-2.5 rounded-full shrink-0 mr-2" [style.backgroundColor]="entry.color"></div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-1.5">
-                <span class="font-medium truncate">{{ entry.friendlyName }}</span>
-                @if (workspace.dirtyControllerIds().has(entry.id)) {
-                  <span class="badge badge-warning badge-xs shrink-0" title="Unsaved changes">modified</span>
-                }
-              </div>
-              <div class="flex items-center gap-2 mt-0.5">
-                <span class="text-[10px] text-base-content/40 font-mono">{{ entry.board }}</span>
-                <span class="text-[10px] text-base-content/30">{{ entry.nodeCount }} nodes</span>
-              </div>
-            </div>
-            <button
-              class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
-              (click)="deleteSystem(entry.id, entry.friendlyName, $event)"
-              title="Delete controller"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
+      <!-- At-a-glance stats -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="surface p-4">
+          <div class="text-2xl font-semibold tabular-nums">{{ systemEntries().length }}</div>
+          <div class="text-xs text-base-content/50 mt-0.5">Controllers</div>
+        </div>
+        <div class="surface p-4">
+          <div class="text-2xl font-semibold tabular-nums">{{ workspace.siteRoutes().length }}</div>
+          <div class="text-xs text-base-content/50 mt-0.5">Routes</div>
+        </div>
+        <div class="surface p-4">
+          <div class="text-2xl font-semibold tabular-nums">{{ nodeCount() }}</div>
+          <div class="text-xs text-base-content/50 mt-0.5">Nodes</div>
+        </div>
+        <div class="surface p-4">
+          <div class="text-2xl font-semibold flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full" [class]="isLocal() ? 'bg-success' : 'bg-primary'"></span>
+            {{ isLocal() ? 'On-site' : 'Cloud' }}
           </div>
-        }
+          <div class="text-xs text-base-content/50 mt-0.5">Connection</div>
+        </div>
+      </div>
+
+      <!-- How this site connects -->
+      <app-deployment-card />
+
+      <!-- Controllers -->
+      <div>
+        <h2 class="text-base font-semibold mb-2.5">Controllers</h2>
         @if (systemEntries().length === 0) {
-          <div class="px-3 py-6 text-xs text-base-content/30 text-center">
-            No controllers yet. Use “Add Controller” in the Design canvas.
+          <div class="surface px-6 py-10 text-center">
+            <p class="text-sm text-base-content/50">No controllers yet.</p>
+            <p class="text-xs text-base-content/40 mt-1">Add one with “Add controller” in the Design canvas.</p>
+          </div>
+        } @else {
+          <div class="grid sm:grid-cols-2 gap-3">
+            @for (entry of systemEntries(); track entry.id) {
+              <div
+                class="surface p-4 flex items-start gap-3 cursor-pointer transition-all hover:ring-base-300/70 hover:shadow-lg hover:shadow-black/20 group relative overflow-hidden"
+                (click)="focus(entry.id)">
+                <span class="absolute left-0 inset-y-0 w-1" [style.backgroundColor]="entry.color"></span>
+                <div class="flex-1 min-w-0 pl-1">
+                  <div class="flex items-center gap-2">
+                    <span class="font-semibold truncate">{{ entry.friendlyName }}</span>
+                    @if (workspace.dirtyControllerIds().has(entry.id)) {
+                      <span class="badge badge-warning badge-xs shrink-0" title="Unsaved changes">modified</span>
+                    }
+                  </div>
+                  <div class="flex items-center gap-2 mt-1 text-xs text-base-content/50">
+                    <span class="font-mono">{{ entry.board }}</span>
+                    <span class="text-base-content/30">·</span>
+                    <span>{{ entry.nodeCount }} node{{ entry.nodeCount !== 1 ? 's' : '' }}</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <span class="text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">Open ›</span>
+                  <button
+                    class="btn btn-ghost btn-xs btn-square text-error opacity-0 group-hover:opacity-100 transition-opacity"
+                    (click)="deleteSystem(entry.id, entry.friendlyName, $event)"
+                    title="Delete controller">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            }
           </div>
         }
       </div>
-    </div>
 
-    <!-- Routes grouped by controller -->
-    <div class="flex-1 min-w-0 bg-base-100 flex flex-col overflow-hidden">
-      <div class="px-3 py-2 text-xs font-semibold text-base-content/50 border-b border-base-300/20">
-        Routes ({{ workspace.siteRoutes().length }})
-      </div>
-      <div class="flex-1 overflow-auto">
-        @for (group of routeGroups(); track group.controllerId) {
-          <div class="px-3 py-1.5 flex items-center gap-2 border-b border-base-300/20 sticky top-0 bg-base-100 z-10">
-            <div class="w-2.5 h-2.5 rounded-full shrink-0" [style.backgroundColor]="group.color"></div>
-            <span class="text-[11px] font-semibold truncate" [style.color]="group.color">{{ group.friendlyName }}</span>
-            <span class="text-[10px] text-base-content/30 ml-auto">{{ group.routes.length }}</span>
-          </div>
-          @for (route of group.routes; track route.key) {
-            <div class="pl-6 pr-3 py-1.5 text-xs border-b border-base-300/10 hover:bg-base-200/40 transition-colors"
-                 [style.borderLeftColor]="group.color"
-                 style="border-left-width: 2px;">
-              <div class="font-mono text-[11px] leading-snug break-all" [style.color]="group.color">
-                {{ route.displaySource }}
-                <span class="text-base-content/30">&rsaquo;</span>
-                {{ route.displayDest }}
-              </div>
-              @if (route.crossController) {
-                <div class="text-[10px] text-base-content/30 italic">via {{ route.destController }}</div>
-              }
-              <div class="flex items-center gap-2 mt-0.5 text-[10px] text-base-content/40">
-                <span>{{ route.valveCount }} valve{{ route.valveCount !== 1 ? 's' : '' }}</span>
-                @if (route.hasPump) { <span class="badge badge-ghost badge-xs">pump</span> }
-                @if (!route.monitored) { <span class="badge badge-ghost badge-xs">unmonitored</span> }
-              </div>
-            </div>
-          }
-        }
+      <!-- Routes -->
+      <div>
+        <h2 class="text-base font-semibold mb-2.5">Routes
+          <span class="text-base-content/40 font-normal">({{ workspace.siteRoutes().length }})</span>
+        </h2>
         @if (workspace.siteRoutes().length === 0) {
-          <div class="px-3 py-6 text-xs text-base-content/30 text-center">No routes derived yet.</div>
+          <div class="surface px-6 py-10 text-center">
+            <p class="text-sm text-base-content/50">No routes derived yet.</p>
+            <p class="text-xs text-base-content/40 mt-1">Connect tanks, pumps and valves in Design to form routes.</p>
+          </div>
+        } @else {
+          <div class="space-y-3">
+            @for (group of routeGroups(); track group.controllerId) {
+              <div class="surface overflow-hidden">
+                <div class="px-4 py-2.5 flex items-center gap-2 border-b border-base-300/30">
+                  <span class="w-2.5 h-2.5 rounded-full shrink-0" [style.backgroundColor]="group.color"></span>
+                  <span class="text-sm font-semibold truncate" [style.color]="group.color">{{ group.friendlyName }}</span>
+                  <span class="ml-auto text-xs text-base-content/40">{{ group.routes.length }} route{{ group.routes.length !== 1 ? 's' : '' }}</span>
+                </div>
+                <div class="divide-y divide-base-300/20">
+                  @for (route of group.routes; track route.key) {
+                    <div class="px-4 py-2.5 hover:bg-base-200/40 transition-colors"
+                         [style.borderLeftColor]="group.color" style="border-left-width: 2px;">
+                      <div class="font-mono text-[11px] leading-snug break-all" [style.color]="group.color">
+                        {{ route.displaySource }}
+                        <span class="text-base-content/30">›</span>
+                        {{ route.displayDest }}
+                      </div>
+                      @if (route.crossController) {
+                        <div class="text-[10px] text-base-content/30 italic">via {{ route.destController }}</div>
+                      }
+                      <div class="flex items-center gap-2 mt-1 text-[10px] text-base-content/40">
+                        <span>{{ route.valveCount }} valve{{ route.valveCount !== 1 ? 's' : '' }}</span>
+                        @if (route.hasPump) { <span class="badge badge-ghost badge-xs">pump</span> }
+                        @if (!route.monitored) { <span class="badge badge-ghost badge-xs">unmonitored</span> }
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
         }
       </div>
-    </div>
     </div>
   `,
 })
@@ -111,6 +146,9 @@ export class SitePanelComponent {
   private editor = inject(SystemEditorService);
   private confirmService = inject(ConfirmService);
   private router = inject(Router);
+
+  protected isLocal = computed(() => this.workspace.deploymentMode() === 'local');
+  protected nodeCount = computed(() => this.workspace.siteTopology()?.nodes.length ?? 0);
 
   /** Controllers with stable colors, board + node counts. */
   protected systemEntries = computed(() => {

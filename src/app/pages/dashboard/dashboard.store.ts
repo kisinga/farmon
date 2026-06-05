@@ -59,6 +59,11 @@ export class DashboardStore implements OnDestroy {
     return widget.sensor ? this.shadow().get(widget.id) : undefined;
   }
 
+  /** A shadow row by explicit controller + sensor (e.g. a flow widget's total). */
+  row(controller: string, sensor?: string): ShadowRow | undefined {
+    return sensor ? this.shadow().get(`${controller}/${sensor}`) : undefined;
+  }
+
   /** Transitions for one controller, newest first (the timeline widget). */
   eventsFor(controller: string): StateEventRow[] {
     return this.events().filter((e) => e.controller === controller);

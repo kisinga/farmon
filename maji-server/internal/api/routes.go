@@ -180,6 +180,9 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		}
 		rec.Set("status", "sent")
 		rec.Set("issued_by", e.Auth.Id)
+		// Command provenance: record the issuer's usertype so an admin acting on a
+		// customer's site (after "Take control") is accountable in the same row.
+		rec.Set("issued_role", e.Auth.GetString("role"))
 		if err := e.App.Save(rec); err != nil {
 			return apis.NewApiError(http.StatusInternalServerError, "failed to record command", err)
 		}
