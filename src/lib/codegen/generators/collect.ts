@@ -1,7 +1,8 @@
 import type { Manifest } from '@core';
 import type { BoardDef, ExpansionBoardCatalog } from '@core';
 import { nodesByKind, NODE_REGISTRY, buildResolveChannel, buildProviderDrivers } from '@core';
-import type { CodegenContext } from '@core';
+import type { CodegenContext, RemoteProxyContext } from '@core';
+import type { GenerationMetadata } from "../backends/types";
 
 
 // ---------------------------------------------------------------------------
@@ -27,12 +28,21 @@ export function collectEntityCodegen(
   m: Manifest,
   board: BoardDef,
   expansionBoards: ExpansionBoardCatalog,
+  metadata: GenerationMetadata,
 ): CollectedCodegen {
   const providers = buildProviderDrivers(m.device.io_providers ?? [], expansionBoards);
 
   const ctx: CodegenContext = {
     resolveChannel: buildResolveChannel(board, providers),
   };
+
+  // Peer-proxy context for imported actuators (local mode): this controller is
+  // the claim holder (importerId); each node names its owner via anchorId.
+  const proxyCtx = (ownerId: string): RemoteProxyContext => ({
+    site: metadata.siteId,
+    importerId: metadata.controllerId,
+    ownerId,
+  });
 
   const result: CollectedCodegen = {
     switches: [],
@@ -62,8 +72,7 @@ export function collectEntityCodegen(
     const proxies = desc?.codegen?.remoteProxy?.(
       node,
       node.remoteHaEntityId,
-      node.remoteDeviceName,
-      m.device.name,
+      proxyCtx(node.anchorId),
     );
     if (proxies) {
       for (const proxy of proxies) {
@@ -81,8 +90,7 @@ export function collectEntityCodegen(
       const proxies = desc?.codegen?.remoteProxy?.(
         node,
         node.remoteHaEntityId,
-        node.remoteDeviceName as string | undefined,
-        m.device.name,
+        proxyCtx(node.anchorId),
       );
       if (proxies) {
         for (const proxy of proxies) {

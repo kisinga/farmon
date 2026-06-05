@@ -220,10 +220,16 @@ export type CommandAction =
   | 'reset_faults'  // (no args)
   | 'clear_queue';  // (no args)
 
-/** Peer commands, controller-to-controller over the broker (local mode only). */
+/**
+ * Peer commands, controller-to-controller over the broker (local mode only).
+ * A claim means "I want this node active": the owner runs a pump / vfd
+ * (`has_live_claim` → relay) or opens a valve (`has_live_claim` → reconciler)
+ * while the claim is alive, and stops/closes it within one tick of the claim
+ * expiring (importer link lost) — the local-mode control-loss fail-safe.
+ */
 export type PeerCommandAction =
-  | 'node_claim'    // { node_id, owner, duration_ms }
-  | 'node_release'; // { node_id, owner }
+  | 'node_claim'    // { node_id, owner, duration_ms } — run pump/vfd, open valve
+  | 'node_release'; // { node_id, owner }              — relinquish (stop / close)
 
 /**
  * The JSON body on commandTopic(). `command_id` correlates the request with the

@@ -4,7 +4,9 @@ import { BackendService } from '../services/backend.service';
 
 /**
  * Restricts a route to users whose `role` is in the route's `data.roles`.
- * Falls back to the auth check; unauthorised users are sent to /overview.
+ * Unauthenticated → /login; authenticated-but-wrong-role → /home, which routes
+ * each role where it belongs (admins to /overview, customers to their
+ * dashboard). Must NOT fall back to an admin route, or a customer would loop.
  *
  * Usage: `{ path: 'admin', canActivate: [roleGuard], data: { roles: ['admin'] } }`
  */
@@ -20,5 +22,5 @@ export const roleGuard: CanActivateFn = (route) => {
   const role = backend.pb.authStore.record?.['role'] as string | undefined;
   if (allowed.length === 0 || (role && allowed.includes(role))) return true;
 
-  return router.createUrlTree(['/overview']);
+  return router.createUrlTree(['/home']);
 };

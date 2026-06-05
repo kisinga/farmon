@@ -2,10 +2,10 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
-import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId } from '../codegen-ids';
+import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId, peerCommandTopic } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { templateCoverProxy, homeassistantTextSensorProxy } from '../remote-proxy';
+import { mqttCoverProxy, mqttCoverProxyLeaseInterval } from '../remote-proxy';
 
 const COLOR = '#e11d48'; // rose
 const W = 50, H = 36;
@@ -165,10 +165,13 @@ ${closeHeader}
       };
     },
 
-    remoteProxy: (node, haEntityId) => [
-      { section: 'text_sensor', yaml: homeassistantTextSensorProxy(node.id, haEntityId) },
-      { section: 'cover', yaml: templateCoverProxy(node.id, node.name, haEntityId) },
-    ],
+    remoteProxy: (node, _haEntityId, ctx) => {
+      const peerTopic = peerCommandTopic(ctx.site, ctx.ownerId);
+      return [
+        { section: 'cover', yaml: mqttCoverProxy(valveCoverId(node), node.name, node.id, peerTopic, ctx.importerId) },
+        { section: 'interval', yaml: mqttCoverProxyLeaseInterval(valveCoverId(node), node.id, peerTopic, ctx.importerId) },
+      ];
+    },
     proxyEntityIds: (node: ValveNode, device) => ({
       cover: deriveHaEntityId('cover', device, `Remote ${node.name}`),
     }),

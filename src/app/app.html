@@ -1,8 +1,9 @@
 <div class="h-screen bg-base-200 flex flex-col overflow-hidden">
-  <!-- Navbar -->
+  <!-- Navbar (hidden on the public landing, which carries its own) -->
+  @if (!isPublic()) {
   <header class="navbar bg-base-100 shadow-sm border-b border-base-300/30 px-4 min-h-[var(--header-h)] h-[var(--header-h)]">
     <div class="navbar-start gap-3">
-      <a routerLink="/overview" class="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
+      <a routerLink="/home" class="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
         <div class="w-7 h-7" [innerHTML]="logoSvg"></div>
         <span class="font-bold text-base tracking-tight text-base-content">MajiFlow</span>
       </a>
@@ -17,15 +18,31 @@
       }
     </div>
     <div class="navbar-center hidden md:flex gap-1">
-      <a routerLink="/overview" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Sites</a>
-      <a routerLink="/boards" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Boards</a>
+      @if (auth.isAdmin()) {
+        <a routerLink="/overview" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Sites</a>
+        <a routerLink="/boards" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Boards</a>
+      } @else if (auth.isAuthenticated()) {
+        <a routerLink="/home" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">My Sites</a>
+      }
     </div>
-    <div class="navbar-end">
+    <div class="navbar-end gap-2">
       @if (navLevel() === 'editor') {
         <app-context-strip />
       }
+      @if (auth.user(); as u) {
+        <div class="dropdown dropdown-end">
+          <button tabindex="0" class="btn btn-ghost btn-sm gap-1.5">
+            <span class="text-xs text-base-content/70 max-w-[160px] truncate">{{ u.email }}</span>
+            <span class="badge badge-xs badge-ghost uppercase">{{ u.role }}</span>
+          </button>
+          <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300/40 z-50 w-44 mt-2 p-1.5">
+            <li><button (click)="logout()">Sign out</button></li>
+          </ul>
+        </div>
+      }
     </div>
   </header>
+  }
 
   <!-- Workspace rail (below navbar, above content) -->
   @if (navLevel() === 'editor') {

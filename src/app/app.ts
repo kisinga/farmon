@@ -2,6 +2,7 @@ import { Component, inject, OnInit, signal, computed, effect } from '@angular/co
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { WorkspaceService } from './core/services/workspace.service';
+import { AuthStore } from './core/services/auth.store';
 import { ContextStripComponent } from './shared/context-strip/context-strip.component';
 import { PipelineRailComponent } from './shared/pipeline-rail/pipeline-rail.component';
 import { ConfirmDialogComponent } from './shared/confirm-dialog/confirm-dialog.component';
@@ -42,6 +43,7 @@ const LOGO_SVG = `<svg viewBox="-90 -90 180 180" xmlns="http://www.w3.org/2000/s
 })
 export class App implements OnInit {
   private workspace = inject(WorkspaceService);
+  protected auth = inject(AuthStore);
   private router = inject(Router);
   private sanitizer = inject(DomSanitizer);
 
@@ -54,13 +56,25 @@ export class App implements OnInit {
 
   protected navLevel = computed<'overview' | 'editor'>(() => {
     const url = this.currentUrl();
-    // Everything under a site (bare site + per-controller) is the unified workspace.
-    if (url.startsWith('/site/')) return 'editor';
+    // The site editor is the unified workspace — but the customer dashboard,
+    // though also under /site/, is NOT the editor and gets no editor chrome.
+    if (url.startsWith('/site/') && !url.includes('/dashboard')) return 'editor';
     return 'overview';
+  });
+
+  // Public, full-bleed pages (landing + login) bring their own branded layout,
+  // so the app shell hides its chrome there. Otherwise the page's own header
+  // stacks under the shell header and clips inside the overflow-hidden main.
+  protected isPublic = computed(() => {
+    const url = this.currentUrl();
+    return url === '/' || url === '' || url.startsWith('/login');
   });
 
   protected backLink = computed(() => {
     const segments = this.currentUrl().split('/').filter(Boolean);
+
+    // The customer dashboard is a leaf — no editor back-link.
+    if (segments.includes('dashboard')) return null;
 
     // Per-controller view → back to the site workspace (overview panel).
     if (segments[0] === 'site' && segments[1] && segments[2] === 'system') {
@@ -100,5 +114,10 @@ export class App implements OnInit {
     this.saveToastVisible.set(true);
     if (this.saveToastTimer) clearTimeout(this.saveToastTimer);
     this.saveToastTimer = setTimeout(() => this.saveToastVisible.set(false), 2000);
+  }
+
+  protected logout(): void {
+    this.auth.logout();
+    void this.router.navigate(['/login']);
   }
 }

@@ -3,7 +3,7 @@
   "label": "Kincony KC868-A16",
   "svg": "board.svg",
   "mcu": {
-    "variant": "esp32dev",
+    "variant": "esp32",
     "flash_size": "4MB",
     "framework": "esp-idf"
   },

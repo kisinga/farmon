@@ -1,6 +1,6 @@
 import type { Manifest } from '@core';
 import {
-  telemetryTopic, commandTopic, statusTopic, eventTopic,
+  MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic, peerCommandTopic,
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
 } from '@core';
@@ -111,6 +111,31 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     '}',
   ];
 
+  // --- Peer ingress (local mode only) ---------------------------------------
+  // Another same-site controller claims/releases one of OUR actuators over the
+  // peer lane. node_claim sets a timed dead-man lease in the claim registry
+  // (routes.h); the actuator runs while the claim is alive and stops within one
+  // tick of it expiring (peer link lost) — the local-mode control-loss fail-safe.
+  // The lease duration is the owner's own claim_lease_s; the envelope's
+  // duration_ms is advisory. `owner` lets a peer renew/release only its own claim.
+  const isLocal = metadata.mode === 'local';
+  const peerBody = [
+    'const char* action = x["action"] | "";',
+    'const char* node_id = x["node_id"] | "";',
+    'const char* owner = x["owner"] | "";',
+    'if (node_id[0] == 0 || owner[0] == 0) return;',
+    'if (strcmp(action, "node_claim") == 0) {',
+    '  extend_deadman(node_id, owner, (uint32_t)(int)(x["duration_ms"] | 0));',
+    '} else if (strcmp(action, "node_release") == 0) {',
+    '  drop_claim(node_id, owner);',
+    '} else {',
+    '  ESP_LOGW("peer", "unknown peer action: %s", action);',
+    '}',
+  ];
+  const peerHandler = isLocal
+    ? `\n    - topic: "${peerCommandTopic(site, ctrl)}"\n      then:\n        - lambda: |-\n${indent(peerBody, 12)}`
+    : '';
+
   // --- Telemetry publisher (every update interval) ---------------------------
   const telemetryBody = [
     'auto *mc = id(mqtt_client);',
@@ -160,8 +185,8 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
 # AUTO-GENERATED. Replaces Home Assistant as the runtime transport.
 #
 # - Telemetry: published explicitly on majiflow/${site}/${ctrl}/telemetry/<id>
-#   (automatic per-entity topics are disabled via empty topic_prefix). Numbers
-#   ride as numbers; system_state / stop_reason ride as human-readable tokens.
+#   (absolute topics, set in the lambdas below). Numbers ride as numbers;
+#   system_state / stop_reason ride as human-readable tokens.
 # - Events:    each state change is appended on majiflow/${site}/${ctrl}/event
 #   as a StateEvent JSON (route, from, to, reason, command_id).
 # - Commands:  operator actions arrive as JSON on the command topic and are
@@ -179,9 +204,12 @@ mqtt:
   username: "${ctrl}"
   password: !secret mqtt_token
   discovery: false
-  # Empty prefix disables ESPHome's automatic per-entity topics — we publish
-  # exactly the telemetry we want, on our own scheme, below.
-  topic_prefix: ""
+  # We publish our own telemetry/event/status on absolute topics (in the lambdas
+  # below). ESPHome still auto-publishes each entity's state under topic_prefix;
+  # we segregate those under .../esphome/* so they never collide with our scheme
+  # (the server's parsers key on the 4th segment being telemetry/event/status).
+  # An empty prefix is no longer accepted by ESPHome (cv.publish_topic).
+  topic_prefix: "${MQTT_ROOT}/${site}/${ctrl}/esphome"
   birth_message:
     topic: "${statusTopic(site, ctrl)}"
     payload: "1"
@@ -194,7 +222,7 @@ mqtt:
     - topic: "${commandTopic(site, ctrl)}"
       then:
         - lambda: |-
-${indent(cmdBody, 12)}
+${indent(cmdBody, 12)}${peerHandler}
 
 interval:
   # Telemetry: publish every channel each update interval while connected.

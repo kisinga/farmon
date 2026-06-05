@@ -575,13 +575,6 @@ ${destMaxCases}
   }
 }
 
-// --- Actuator stop (dead-man enforcement) ------------------------------------
-
-inline void stop_actuator(const std::string& nodeId) {
-${pumps.map(p => `  if (nodeId == "${p['id']}_relay") { id(${p['id']}_relay).turn_off(); return; }`).join('\n')}
-${valves.map((v, i) => `  if (nodeId == "${v['id']}") { close_valve_hw(${i}); return; }`).join('\n')}
-}
-
 // --- Route start/stop (shared by API services + button entities) -------------
 //
 // Returns: 0=started, 1=queued, 2=rejected (invalid/duplicate/full),

@@ -43,6 +43,27 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		})
 	})
 
+	// GET /deployment — the cloud broker defaults used to AUTOFILL an Online site
+	// (mqtt.majiflow.io:8883, TLS). The per-site mode (Online vs Local) and any
+	// Local broker address are chosen on the site itself, not dictated here. A
+	// fallback `mode` still follows the server build shape (cloud→managed,
+	// edge→local) for sites that haven't picked one yet.
+	g.GET("/deployment", func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("authentication required", nil)
+		}
+		firmwareMode := "managed"
+		if cfg.Mode == config.ModeEdge {
+			firmwareMode = "local"
+		}
+		return e.JSON(http.StatusOK, map[string]any{
+			"broker_address": cfg.MQTTPublicHost,
+			"broker_port":    cfg.MQTTPublicPort,
+			"broker_tls":     cfg.MQTTPublicTLS,
+			"mode":           firmwareMode,
+		})
+	})
+
 	// GET /latest?site=&controller= — the device shadow (last-known per sensor).
 	g.GET("/latest", func(e *core.RequestEvent) error {
 		q := e.Request.URL.Query()

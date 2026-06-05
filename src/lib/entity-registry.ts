@@ -81,6 +81,18 @@ export interface CodegenContext {
   resolveChannel: (channelId: string, usage: ChannelUsage) => ResolvedChannel;
 }
 
+/**
+ * Context for an imported actuator's peer-coordination proxy (local mode).
+ * `site` + `ownerId` (the owning controller, == node.anchorId) build the peer
+ * topic; `importerId` (this controller) is the claim holder. Sensor read-import
+ * proxies ignore this.
+ */
+export interface RemoteProxyContext {
+  site: string;
+  importerId: string;
+  ownerId: string;
+}
+
 export interface EntityCodegen<T extends Record<string, any> = Record<string, any>> {
   /** YAML fragment for sensors.yaml sensor: section (ADC, pulse counter, template sensors). */
   sensors?: (node: T, index: number, ctx: CodegenContext) => string;
@@ -118,9 +130,12 @@ export interface EntityCodegen<T extends Record<string, any> = Record<string, an
    * Remote proxy YAML sections for imported nodes.
    * Called by collect.ts instead of local hardware. Each returned section
    * is emitted into the corresponding ESPHome YAML section.
-   * Must include the state-tracking homeassistant sensor + template proxy.
+   *
+   * Actuator proxies (pump/dosing/vfd/valve) use `ctx` to address the owning
+   * controller over the peer lane; sensor read-imports (tank/flow) ignore it and
+   * read from `haEntityId` (still HA-based pending the telemetry-subscribe move).
    */
-  remoteProxy?: (node: T, haEntityId: string, remoteDeviceName?: string, ownerDeviceName?: string) => Array<{ section: string; yaml: string }> | null;
+  remoteProxy?: (node: T, haEntityId: string, ctx: RemoteProxyContext) => Array<{ section: string; yaml: string }> | null;
   /**
    * HA entity IDs created by the proxy. Used by dashboard generators
    * to reference imported actuators correctly.

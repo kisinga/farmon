@@ -9,15 +9,26 @@ import {
   parseBoardDef,
   parseExpansionBoardDef,
   parseSiteImport,
+  CURRENT_SCHEMA_VERSION,
 } from '@core';
-import type { ExpansionBoardCatalog, ExpansionBoardDef, CommandAction } from '@core';
+import type { ExpansionBoardCatalog, ExpansionBoardDef, CommandAction, DeploymentMode } from '@core';
 import {
   generateEsphome,
   generateDefaultSecrets,
-  createTestMetadata,
   type GeneratedFile,
   type SecretsMap,
+  type GenerationMetadata,
 } from '@core/codegen';
+
+/** Firmware app version stamped into generation metadata (fleet provenance). */
+const APP_VERSION = '1.0.0';
+
+/** Firmware deployment config (server-level): where devices reach the broker. */
+interface DeploymentConfig {
+  brokerAddress: string;
+  brokerPort: number;
+  mode: DeploymentMode;
+}
 import { validateAll } from '@core/rules';
 import type {
   SiteListEntry,
@@ -67,16 +78,29 @@ export class BackendService {
 
   async siteLoad(id: string): Promise<SiteFullPayload> {
     const r = await this.pb.collection('sites').getOne(id);
+    const mode = r['mode'];
+    const deployment = (mode === 'managed' || mode === 'local')
+      ? {
+          mode,
+          brokerHost: (r['broker_host'] ?? '') as string,
+          brokerPort: (r['broker_port'] ?? 0) as number,
+          brokerTls: !!r['broker_tls'],
+        }
+      : undefined;
     return {
-      site: { id: r['id'], friendlyName: r['name'] },
+      site: { id: r['id'], friendlyName: r['name'], deployment },
       topology: (r['draft_topology'] ?? null) as SiteFullPayload['topology'],
     };
   }
 
   async siteSave(payload: SiteSavePayload): Promise<void> {
+    const d = payload.site.deployment;
     await this.pb.collection('sites').update(payload.site.id, {
       name: payload.site.friendlyName,
       draft_topology: payload.topology,
+      ...(d
+        ? { mode: d.mode, broker_host: d.brokerHost, broker_port: d.brokerPort, broker_tls: d.brokerTls }
+        : {}),
     });
   }
 
@@ -231,21 +255,28 @@ export class BackendService {
   async validate(request: ValidateRequest): Promise<ValidationResult> {
     let topo: SiteTopology;
     let board: BoardDef;
+    let mode: DeploymentMode;
     const controllerId = request.controllerId;
 
     if (request.kind === 'live') {
       topo = request.topology;
       board = request.board;
+      mode = request.mode ?? 'managed';
     } else {
-      topo = (await this.loadTopology(request.siteId)).topo;
+      const loaded = await this.loadTopology(request.siteId);
+      topo = loaded.topo;
       const ctrl = topo.controllers.find((c) => c.id === controllerId);
       if (!ctrl) throw new Error(`Controller "${controllerId}" not found in site.`);
       board = (await this.boardLoad(ctrl.board)).board;
+      mode = loaded.site.deployment?.mode ?? 'managed';
     }
 
     const manifest = topologyToManifestForController(topo, controllerId);
     const expansionBoards = await this.expansionCatalog();
-    return validateAll(topo, manifest, board, { expansionBoards });
+    // Validate against the site's chosen mode (online→managed, local), the same
+    // mode generation bakes, so the editor surfaces exactly the cross-controller
+    // errors generation enforces. Unchosen sites default to managed (online).
+    return validateAll(topo, manifest, board, { expansionBoards, mode });
   }
 
   /**
@@ -257,23 +288,22 @@ export class BackendService {
   async generate(
     siteId: string,
     controllerId: string,
-    secrets?: SecretsMap,
   ): Promise<GenerateResult> {
-    const { topo } = await this.loadTopology(siteId);
+    const { topo, site } = await this.loadTopology(siteId);
     const ctrl = topo.controllers.find((c) => c.id === controllerId);
     if (!ctrl) throw new Error(`Controller "${controllerId}" not found in site.`);
 
-    // Provision identity server-side: a fresh MQTT token (rotated each build,
-    // only its hash stored) and a stable OTA password (minted once, reused so
-    // OTA keeps working across rebuilds), both baked into this build's
-    // secrets.yaml. Wifi is NOT baked — it is provisioned on the device
-    // (captive portal / improv → NVS). The `secrets` arg is unused here.
-    void secrets;
+    // Deployment (broker host/port + mode) is the site's saved Online/Local
+    // choice; identity secrets are per-controller. Provision mints a fresh MQTT
+    // token (rotated each build, only its hash stored) and a stable OTA password
+    // (minted once, reused so OTA keeps working across rebuilds). Both are baked
+    // into this build's secrets.yaml; wifi is NOT baked (captive portal → NVS).
+    const deployment = await this.resolveDeployment(site);
     const prov = await this.provision(siteId, ctrl);
     const provisioned: SecretsMap = { ota_password: prov.ota_password, mqtt_token: prov.token };
 
     const expansionBoards = await this.expansionCatalog();
-    const built = await this.buildController(topo, ctrl, siteId, expansionBoards, provisioned);
+    const built = await this.buildController(topo, ctrl, siteId, expansionBoards, deployment, provisioned);
     const downloadUrl = URL.createObjectURL(this.zipBundle(built.files));
 
     return {
@@ -316,13 +346,14 @@ export class BackendService {
    * since the latest version) returns that version without creating a new one.
    */
   async commit(siteId: string, note?: string): Promise<CommitResult> {
-    const { topo } = await this.loadTopology(siteId);
+    const { topo, site } = await this.loadTopology(siteId);
 
     const expansionBoards = await this.expansionCatalog();
+    const deployment = await this.resolveDeployment(site);
     const allFiles: GeneratedFile[] = [];
     const hashParts: string[] = [];
     for (const ctrl of topo.controllers) {
-      const built = await this.buildController(topo, ctrl, siteId, expansionBoards);
+      const built = await this.buildController(topo, ctrl, siteId, expansionBoards, deployment);
       allFiles.push(...built.files);
       hashParts.push(built.hashPart);
     }
@@ -387,10 +418,10 @@ export class BackendService {
 
   // --- Generation internals ------------------------------------------------
 
-  private async loadTopology(siteId: string): Promise<{ topo: SiteTopology }> {
-    const { topology } = await this.siteLoad(siteId);
+  private async loadTopology(siteId: string): Promise<{ topo: SiteTopology; site: SiteFullPayload['site'] }> {
+    const { topology, site } = await this.siteLoad(siteId);
     if (!topology) throw new Error('Site has no topology to generate from.');
-    return { topo: parseTopology(topology) };
+    return { topo: parseTopology(topology), site };
   }
 
   /**
@@ -415,12 +446,50 @@ export class BackendService {
     return { token: res.token, ota_password: res.ota_password };
   }
 
+  /**
+   * Firmware deployment config (broker host/port + mode) — server-level, fetched
+   * once and cached for the session. Devices bake `brokerAddress:brokerPort` to
+   * reach the broker; `MAJI_MQTT_PUBLIC_HOST` on the server must point at a host
+   * the device can actually reach (its LAN IP / public name).
+   */
+  private cloudDefaults?: { host: string; port: number; tls: boolean };
+  /** The managed-cloud broker defaults (mqtt.majiflow.io:8883 TLS) — the Online
+   *  autofill source. Cached per session. */
+  async cloudBrokerDefaults(): Promise<{ host: string; port: number; tls: boolean }> {
+    if (this.cloudDefaults) return this.cloudDefaults;
+    const res = await this.pb.send<{ broker_address?: string; broker_port?: number; broker_tls?: boolean }>(
+      '/api/farmon/deployment',
+      { method: 'GET' },
+    );
+    this.cloudDefaults = {
+      host: res.broker_address ?? '',
+      port: res.broker_port ?? 8883,
+      tls: res.broker_tls ?? true,
+    };
+    return this.cloudDefaults;
+  }
+
+  /**
+   * Resolve a site's effective deployment for generation/validation from its
+   * saved choice. Managed (or unchosen) → the cloud broker defaults; local →
+   * the site's own broker address (port falls back to the cloud default).
+   */
+  private async resolveDeployment(site: SiteFullPayload['site']): Promise<DeploymentConfig> {
+    const cloud = await this.cloudBrokerDefaults();
+    const d = site.deployment;
+    if (!d || d.mode === 'managed') {
+      return { mode: 'managed', brokerAddress: cloud.host, brokerPort: cloud.port };
+    }
+    return { mode: 'local', brokerAddress: d.brokerHost, brokerPort: d.brokerPort || cloud.port };
+  }
+
   /** Build one controller's ESPHome files + its contribution to the source hash. */
   private async buildController(
     topo: SiteTopology,
     ctrl: Controller,
     siteId: string,
     expansionBoards: ExpansionBoardCatalog,
+    deployment: DeploymentConfig,
     secrets?: SecretsMap,
   ): Promise<{ files: GeneratedFile[]; hashPart: string; version: string }> {
     const { board } = await this.boardLoad(ctrl.board);
@@ -431,13 +500,32 @@ export class BackendService {
     // so regenerated credentials don't churn the version.
     const hashPart = JSON.stringify(manifest) + JSON.stringify(board);
     const sourceHash = await sha256Hex(hashPart);
-    const metadata = createTestMetadata({
-      siteId,
-      controllerId: ctrl.id,
+    const metadata: GenerationMetadata = {
       configSha: sourceHash,
       version: sourceHash.slice(0, 8),
+      siteId,
+      controllerId: ctrl.id,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       buildTimestamp: Math.floor(Date.now() / 1000),
-    });
+      appVersion: APP_VERSION,
+      mode: deployment.mode,
+      brokerAddress: deployment.brokerAddress,
+      brokerPort: deployment.brokerPort,
+    };
+
+    // Validate against the deployment mode BEFORE emitting anything — never ship
+    // a config that can't work. In particular, managed mode rejects
+    // cross-controller routes/imports (those need local-mode peer coordination,
+    // which is not yet built); without this, such a site silently generated
+    // firmware referencing the removed Home Assistant services. Refuse with the
+    // diagnostics instead.
+    const validation = validateAll(topo, manifest, board, { expansionBoards, mode: metadata.mode });
+    if (!validation.ok) {
+      throw new Error(
+        `Cannot generate "${ctrl.friendlyName ?? ctrl.id}" in ${metadata.mode} mode:\n- ` +
+          validation.errors.join('\n- '),
+      );
+    }
 
     const files = generateEsphome(
       manifest,

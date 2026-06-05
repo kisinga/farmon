@@ -4,10 +4,10 @@ import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPola
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
-import { dosingPumpSwitchId } from '../codegen-ids';
+import { dosingPumpSwitchId, peerCommandTopic } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { templateSwitchProxy, templateSwitchProxyLeaseInterval, homeassistantBinarySensorProxy } from '../remote-proxy';
+import { mqttSwitchProxy, mqttSwitchProxyLeaseInterval } from '../remote-proxy';
 
 const COLOR = '#ea580c'; // orange
 const S = 50;
@@ -122,15 +122,13 @@ ${header}
       relay: deriveHaEntityId('switch', device, haNames(node).relay),
     }),
 
-    remoteProxy: (node, haEntityId, remoteDeviceName, ownerDeviceName) => {
+    remoteProxy: (node, _haEntityId, ctx) => {
       const proxyId = dosingPumpSwitchId(node);
-      const items: { section: string; yaml: string }[] = [
-        { section: 'binary_sensor', yaml: homeassistantBinarySensorProxy(proxyId, haEntityId) },
-        { section: 'switch', yaml: templateSwitchProxy(proxyId, node.name, haEntityId, remoteDeviceName, ownerDeviceName) },
+      const peerTopic = peerCommandTopic(ctx.site, ctx.ownerId);
+      return [
+        { section: 'switch', yaml: mqttSwitchProxy(proxyId, node.name, node.id, peerTopic, ctx.importerId) },
+        { section: 'interval', yaml: mqttSwitchProxyLeaseInterval(proxyId, node.id, peerTopic, ctx.importerId) },
       ];
-      const lease = templateSwitchProxyLeaseInterval(proxyId, remoteDeviceName, ownerDeviceName);
-      if (lease) items.push({ section: 'interval', yaml: lease });
-      return items;
     },
     proxyEntityIds: (node: DosingPumpNode, device) => ({
       relay: deriveHaEntityId('switch', device, `Remote ${node.name}`),

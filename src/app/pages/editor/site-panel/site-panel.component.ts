@@ -4,6 +4,7 @@ import { WorkspaceService } from '../../../core/services/workspace.service';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { CONTROLLER_COLORS } from '../../../shared/canvas/topology-overlays';
+import { DeploymentCardComponent } from './deployment-card.component';
 
 /**
  * Site overview panel — the controllers roster and derived routes for the whole
@@ -13,8 +14,13 @@ import { CONTROLLER_COLORS } from '../../../shared/canvas/topology-overlays';
 @Component({
   selector: 'app-site-panel',
   standalone: true,
-  host: { class: 'flex-1 flex min-h-0 overflow-hidden' },
+  imports: [DeploymentCardComponent],
+  host: { class: 'flex-1 flex flex-col min-h-0 overflow-hidden' },
   template: `
+    <!-- How this site connects (Online / Local + cross-talk verdict) -->
+    <app-deployment-card />
+
+    <div class="flex-1 flex min-h-0 overflow-hidden">
     <!-- Controllers roster -->
     <div class="w-72 shrink-0 bg-base-100 border-r border-base-300/30 flex flex-col overflow-hidden">
       <div class="px-3 py-2 text-xs font-semibold text-base-content/50 border-b border-base-300/20 flex items-center">
@@ -96,6 +102,7 @@ import { CONTROLLER_COLORS } from '../../../shared/canvas/topology-overlays';
           <div class="px-3 py-6 text-xs text-base-content/30 text-center">No routes derived yet.</div>
         }
       </div>
+    </div>
     </div>
   `,
 })

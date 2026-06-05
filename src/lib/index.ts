@@ -21,12 +21,12 @@ export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef, ExpansionBoard
 export { boardSupportedTransports } from './board.types';
 export type { IoProviderDef, IoProviderInstanceConfig } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
-export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, RouteRule, CodegenContext, TypedDescriptor, EntityKind, HaEntityKey } from './entity-registry';
+export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, RouteRule, CodegenContext, RemoteProxyContext, TypedDescriptor, EntityKind, HaEntityKey } from './entity-registry';
 export type { ChannelUsage, ResolvedChannel, IoChannel, IoProviderDriver } from './io-provider.types';
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
 export type {
-  SiteMetadata, StoredSiteTopology,
+  SiteMetadata, SiteDeployment, StoredSiteTopology,
   SiteFullPayload, SiteSavePayload, SiteListEntry, TemplateListEntry,
 } from './site.types';
 
@@ -115,7 +115,11 @@ export type {
 } from './codegen-ids';
 
 // --- Remote Proxy ---
-export { homeassistantSensorImport, homeassistantBinarySensorProxy, homeassistantTextSensorProxy, templateSwitchProxy, templateCoverProxy } from './remote-proxy';
+export {
+  mqttSensorImport,
+  mqttSwitchProxy, mqttSwitchProxyLeaseInterval,
+  mqttCoverProxy, mqttCoverProxyLeaseInterval,
+} from './remote-proxy';
 export { deriveRemoteHaEntityId } from './remote-ha-entity';
 
 // --- I/O Providers ---
@@ -150,6 +154,7 @@ export type { PressureSensorConfig, PressureSensorCodegenIds, PressureSensorHaNa
 export { buildGraph, type TopologyGraph, type NodeAttrs, type EdgeAttrs } from './graph/topology-graph';
 export { activeGraph, isNodeActive } from './graph/active-graph';
 export { deriveRoutes, parseRouteKey, controllerClaimsSegment, type Route } from './graph/routes';
+export { detectCrossControllerTalk, type CrossControllerReport } from './cross-controller';
 export { findRouteAutomationSensor, type RouteAutomationSensor } from './tank-level';
 export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes } from './graph/highlight';
 export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './graph/constraints';

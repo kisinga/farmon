@@ -1,5 +1,8 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
+import { roleGuard } from './core/guards/role.guard';
+
+const ADMIN = { roles: ['admin'] };
 
 export const routes: Routes = [
   {
@@ -15,36 +18,50 @@ export const routes: Routes = [
       import('./pages/login/login.component').then((m) => m.LoginComponent),
   },
   {
-    path: 'overview',
+    // Role-aware landing: admins → /overview, customers → their dashboard.
+    path: 'home',
     canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/home/home.component').then((m) => m.HomeComponent),
+  },
+  {
+    // Admin: sites catalog.
+    path: 'overview',
+    canActivate: [roleGuard],
+    data: ADMIN,
     loadComponent: () =>
       import('./pages/overview/overview.component').then((m) => m.OverviewComponent),
   },
   {
+    // Admin: board catalog.
     path: 'boards',
-    canActivate: [authGuard],
+    canActivate: [roleGuard],
+    data: ADMIN,
     loadComponent: () =>
       import('./pages/boards/boards-page.component').then((m) => m.BoardsPageComponent),
   },
   {
-    // Customer dashboard for a site (separate component — runtime state only,
-    // no editor services). Declared before the editor's `site/:name` so the
-    // more specific path wins.
+    // Customer + admin: the site dashboard (separate component — runtime state
+    // only, no editor services). Declared before the editor's `site/:name` so
+    // the more specific path wins.
     path: 'site/:name/dashboard',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./pages/dashboard/dashboard.component').then((m) => m.DashboardComponent),
   },
   {
-    // Bare site → the unified workspace (site overview panel + shared canvas).
+    // Admin: the unified workspace (site overview panel + shared canvas).
     path: 'site/:name',
-    canActivate: [authGuard],
+    canActivate: [roleGuard],
+    data: ADMIN,
     loadComponent: () =>
       import('./pages/editor/editor.component').then((m) => m.EditorComponent),
   },
   {
+    // Admin: per-controller editor.
     path: 'site/:name/system/:config',
-    canActivate: [authGuard],
+    canActivate: [roleGuard],
+    data: ADMIN,
     loadComponent: () =>
       import('./pages/editor/editor.component').then((m) => m.EditorComponent),
   },

@@ -9,9 +9,26 @@
 // Site metadata
 // ---------------------------------------------------------------------------
 
+/**
+ * Per-site deployment choice: which MQTT broker the site's controllers connect
+ * to. `managed` = the MajiFlow cloud (broker autofilled, fields blank here);
+ * `local` = an on-site box (installer sets the broker address). Drives the
+ * cross-controller (cross-talk) rule: managed forbids it, local allows it.
+ */
+export interface SiteDeployment {
+  mode: 'managed' | 'local';
+  /** Broker host for a local site; blank for managed (autofilled from cloud). */
+  brokerHost: string;
+  /** Broker port; 0 means "use the cloud default". */
+  brokerPort: number;
+  brokerTls: boolean;
+}
+
 export interface SiteMetadata {
   id: string;
   friendlyName: string;
+  /** Undefined until the installer picks Online/Local for the site. */
+  deployment?: SiteDeployment;
 }
 
 // ---------------------------------------------------------------------------

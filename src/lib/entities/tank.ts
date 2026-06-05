@@ -4,7 +4,8 @@ import { ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { homeassistantSensorImport } from '../remote-proxy';
+import { telemetryTopic, telemetrySensorId } from '../codegen-ids';
+import { mqttSensorImport } from '../remote-proxy';
 import {
   PressureSensorConfigSchema,
   emitPressureSensorYaml,
@@ -136,8 +137,8 @@ export const tankDescriptor: NodeDescriptor = {
       };
     },
 
-    remoteProxy: (node, haEntityId) => [
-      { section: 'sensor', yaml: homeassistantSensorImport(node.id, haEntityId) },
+    remoteProxy: (node, _haEntityId, ctx) => [
+      { section: 'sensor', yaml: mqttSensorImport(node.id, telemetryTopic(ctx.site, ctx.ownerId, telemetrySensorId(node, 'level'))) },
     ],
   },
 

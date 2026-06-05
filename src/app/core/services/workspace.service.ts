@@ -4,11 +4,12 @@ import type {
   BoardDef, TopologyGraph, Route,
   TopologyNode, PipeSegment, RouteOverride,
   SiteMetadata, SiteSavePayload, SiteTopology, Controller,
+  SiteDeployment, CrossControllerReport,
 } from '@core';
 
 import {
   buildGraph, deriveRoutes, activeGraph, parseTopology, slug,
-  controllerClaimsSegment, migrateTopology,
+  controllerClaimsSegment, migrateTopology, detectCrossControllerTalk,
 } from '@core';
 
 @Injectable({ providedIn: 'root' })
@@ -31,6 +32,28 @@ export class WorkspaceService {
   readonly dirty = this._dirty.asReadonly();
   readonly dirtyControllerIds = this._dirtyControllerIds.asReadonly();
   readonly loading = this._loading.asReadonly();
+
+  // --- Deployment (Online/Local + broker) ---
+
+  /** The site's saved Online/Local choice + broker, or undefined until picked. */
+  readonly deployment = computed<SiteDeployment | undefined>(() => this._site()?.deployment);
+
+  /** Effective mode for the site (defaults to managed/online when unchosen). */
+  readonly deploymentMode = computed<'managed' | 'local'>(() => this._site()?.deployment?.mode ?? 'managed');
+
+  /** Live cross-controller (cross-talk) verdict for the current design. */
+  readonly crossTalk = computed<CrossControllerReport | null>(() => {
+    const t = this._siteTopology();
+    return t ? detectCrossControllerTalk(t) : null;
+  });
+
+  /** Persist the site's deployment choice (marks the workspace dirty → autosaves). */
+  setDeployment(deployment: SiteDeployment): void {
+    const site = this._site();
+    if (!site) return;
+    this._site.set({ ...site, deployment });
+    this._markDirty();
+  }
 
   // --- Active controller computed signals ---
 
@@ -121,7 +144,7 @@ export class WorkspaceService {
 
     try {
       const payload = await this.backend.siteLoad(siteId);
-      this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName });
+      this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName, deployment: payload.site.deployment });
 
       if (payload.topology) {
         let topology = payload.topology as SiteTopology;
@@ -452,7 +475,7 @@ export class WorkspaceService {
     if (!site || !topology) return;
 
     const payload: SiteSavePayload = {
-      site: { id: site.id, friendlyName: site.friendlyName },
+      site: { id: site.id, friendlyName: site.friendlyName, deployment: site.deployment },
       topology,
     };
 

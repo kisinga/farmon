@@ -112,7 +112,9 @@ export const SYSTEM_ENTITY_NAMES = {
   // for HA history/logging clarity.
   flowWatchdog:       { domain: 'number', name: 'Flow Watchdog (s)' },
   flowConfirm:        { domain: 'number', name: 'Flow Confirm (s)' },
-  flowThreshold:      { domain: 'number', name: 'Flow Threshold (L/min)' },
+  // Unit shown via unit_of_measurement (L/min); kept out of the name because a
+  // '/' is reserved in ESPHome entity names (becomes an error in 2026.7).
+  flowThreshold:      { domain: 'number', name: 'Flow Threshold' },
   claimLease:         { domain: 'number', name: 'Claim Lease (s)' },
 
   // switch (control.ts)

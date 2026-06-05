@@ -6,7 +6,7 @@
  * convenience. Backend-transport-specific DTOs are declared locally.
  */
 
-import type { ValidationResult, RuleDiagnostic, NetworkConfig } from '@core';
+import type { ValidationResult, RuleDiagnostic, NetworkConfig, DeploymentMode } from '@core';
 import type {
   SiteListEntry, SiteFullPayload, SiteSavePayload,
   TemplateListEntry, Controller,
@@ -49,7 +49,7 @@ export interface GenerateResult {
 }
 
 export type ValidateRequest =
-  | { kind: 'live'; topology: SiteTopology; board: BoardDef; controllerId: string }
+  | { kind: 'live'; topology: SiteTopology; board: BoardDef; controllerId: string; mode?: DeploymentMode }
   | { kind: 'saved'; siteId: string; controllerId: string };
 
 // --- Versioning (topology_versions) ---

@@ -1,135 +1,375 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
-
-/** A pricing/feature tier shown on the public landing page. */
-interface Tier {
-  name: string;
-  tagline: string;
-  features: string[];
-  highlighted?: boolean;
-}
+import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
+import { BRAND_LOGO_SVG } from '../../shared/brand-logo';
 
 const GITHUB_URL = 'https://github.com/kisinga/majiflow';
 
+/** A way to run MajiFlow, shown side by side so the cloud-vs-own-it trade is honest. */
+interface Plan {
+  name: string;
+  mode: string;
+  tagline: string;
+  features: string[];
+  footnote?: string;
+  badge?: string;
+  highlighted?: boolean;
+}
+
+/** A short "what you can do with it" capability. */
+interface Capability {
+  title: string;
+  body: string;
+}
+
+/** An industry MajiFlow fits, with a one-line use. */
+interface Vertical {
+  title: string;
+  body: string;
+}
+
 /**
- * Public landing page (route `''`). Replaces the old standalone static homepage
- * and its hardware cost-estimator with a simple hero + tiers section. Everything
- * past this point (overview/editor/dashboard) is auth-guarded.
+ * Public landing page (route `''`). Renders full-bleed; the app shell hides its
+ * chrome on this route, so this component owns the nav, scroll, and footer.
+ *
+ * Carries the brand-level story the old static homepage held (designer →
+ * generate → monitor, the verticals, the use-cases) reconciled to the current
+ * managed/local model: internet is for offsite eyes, the controller stays
+ * autonomous on link loss, and you choose who runs the backend.
  */
 @Component({
   selector: 'app-landing',
   standalone: true,
   imports: [RouterLink],
+  host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
+  styles: [`
+    @keyframes ripple-pulse { 0%,100% { opacity:.6; transform:scale(1);} 50% { opacity:1; transform:scale(1.05);} }
+    @keyframes float-glow   { 0%,100% { transform:translate(0,0) scale(1);} 50% { transform:translate(2rem,-1.5rem) scale(1.12);} }
+    @keyframes ripple-ring  { 0% { transform:scale(.5); opacity:.55;} 80% { opacity:0;} 100% { transform:scale(1.75); opacity:0;} }
+    .ripple      { animation: ripple-pulse 5s ease-in-out infinite; transform-origin:center; }
+    .glow-blob   { animation: float-glow 14s ease-in-out infinite; }
+    .ripple-ring { animation: ripple-ring 4s ease-out infinite; transform-origin:center; }
+  `],
   template: `
-    <div class="min-h-screen bg-base-200 text-base-content">
-      <!-- Nav -->
-      <nav class="navbar bg-base-100 shadow-sm px-4 sm:px-8">
-        <div class="flex-1">
-          <span class="text-lg font-semibold">MajiFlow</span>
+    <!-- ============================= NAV ============================= -->
+    <nav class="sticky top-0 z-30 backdrop-blur-md bg-slate-950/80 border-b border-white/10">
+      <div class="max-w-6xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
+        <a href="./" class="flex items-center gap-2.5 group">
+          <span class="w-8 h-8 block" [innerHTML]="logo"></span>
+          <span class="text-lg font-bold tracking-tight text-white">MajiFlow</span>
+        </a>
+        <div class="flex items-center gap-2 sm:gap-3">
+          <a [href]="github" target="_blank" rel="noopener"
+             class="hidden sm:inline-flex text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">GitHub</a>
+          <a routerLink="/login"
+             class="text-sm font-semibold rounded-full px-4 py-2 bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">Sign in</a>
         </div>
-        <div class="flex-none gap-2">
-          <a [href]="github" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">GitHub</a>
-          <a routerLink="/login" class="btn btn-primary btn-sm">Sign in</a>
-        </div>
-      </nav>
+      </div>
+    </nav>
 
-      <!-- Hero -->
-      <header class="px-4 sm:px-8 py-16 sm:py-24 text-center">
-        <div class="max-w-3xl mx-auto">
-          <h1 class="text-3xl sm:text-5xl font-bold leading-tight">
-            Metrics and automation for water-critical installations.
-          </h1>
-          <p class="mt-6 text-base sm:text-lg text-base-content/70">
-            Farms, hotels, greenhouses, boreholes — anywhere water is critical and
-            reliable monitoring and control matter. Draw your tanks, pumps, valves
-            and sensors; we generate the firmware and the dashboard.
-          </p>
-          <div class="mt-8 flex flex-wrap gap-3 justify-center">
-            <a routerLink="/login" class="btn btn-primary">Get started</a>
-            <a [href]="github" target="_blank" rel="noopener" class="btn btn-ghost">View on GitHub</a>
+    <!-- ============================= HERO ============================= -->
+    <header class="relative overflow-hidden bg-slate-950 text-white">
+      <!-- decorative water-light blobs -->
+      <div class="glow-blob pointer-events-none absolute -top-24 -left-16 w-[28rem] h-[28rem] rounded-full bg-cyan-500/25 blur-3xl"></div>
+      <div class="glow-blob pointer-events-none absolute top-10 right-0 w-[24rem] h-[24rem] rounded-full bg-sky-500/20 blur-3xl" style="animation-delay:-6s"></div>
+
+      <div class="relative max-w-5xl mx-auto px-5 sm:px-8 pt-16 sm:pt-24 pb-20 sm:pb-28 text-center">
+        <div class="relative mx-auto mb-9 w-28 h-28 sm:w-32 sm:h-32 flex items-center justify-center">
+          <span class="absolute inset-0 rounded-full ring-1 ring-cyan-400/30 ripple-ring"></span>
+          <span class="absolute inset-0 rounded-full ring-1 ring-cyan-400/20 ripple-ring" style="animation-delay:1.3s"></span>
+          <span class="absolute inset-0 rounded-full ring-1 ring-cyan-400/10 ripple-ring" style="animation-delay:2.6s"></span>
+          <span class="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-cyan-500/10 ring-1 ring-white/10 backdrop-blur-sm flex items-center justify-center">
+            <span class="ripple block w-12 h-12 sm:w-14 sm:h-14" [innerHTML]="logo"></span>
+          </span>
+        </div>
+        <span class="inline-flex items-center gap-2 rounded-full bg-white/10 ring-1 ring-white/15 px-3 py-1 text-xs font-medium text-cyan-200 mb-6">
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-300"></span> Plan it · We build it · You watch it
+        </span>
+        <h1 class="text-4xl sm:text-6xl font-bold leading-[1.05] tracking-tight">
+          Watch and control your
+          <span class="bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-300 bg-clip-text text-transparent">water</span>,
+          from anywhere.
+        </h1>
+        <p class="mt-7 text-base sm:text-xl text-white/70 max-w-2xl mx-auto leading-relaxed">
+          For farms, hotels, greenhouses and boreholes. Anywhere water really matters.
+          Lay out your tanks, pumps, valves and sensors on the screen, and we set up the
+          controllers, build your live dashboard, and hand you a clear wiring guide.
+        </p>
+        <div class="mt-9 flex flex-wrap gap-3 justify-center">
+          <a routerLink="/login"
+             class="rounded-full px-6 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 shadow-lg shadow-cyan-500/25 transition-all hover:-translate-y-0.5">
+            Get started
+          </a>
+          <a [href]="github" target="_blank" rel="noopener"
+             class="rounded-full px-6 py-3 text-sm font-semibold ring-1 ring-white/25 text-white hover:bg-white/10 transition-colors">
+            View on GitHub
+          </a>
+        </div>
+        <p class="mt-6 text-xs text-white/45">
+          Your controllers keep working on their own, whether the internet is up or not.
+        </p>
+      </div>
+
+      <!-- wave divider into the light sections -->
+      <svg class="block w-full text-white" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true">
+        <path fill="currentColor" d="M0,32 C240,72 480,72 720,48 C960,24 1200,24 1440,48 L1440,80 L0,80 Z"></path>
+      </svg>
+    </header>
+
+    <!-- ===================== SOFTWARE + HARDWARE ===================== -->
+    <section class="px-5 sm:px-8 py-16 sm:py-20">
+      <div class="max-w-5xl mx-auto">
+        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-center">Software and hardware, designed together</h2>
+        <div class="mt-10 grid gap-5 md:grid-cols-2">
+          <div class="rounded-2xl p-7 bg-slate-50 ring-1 ring-slate-200">
+            <div class="w-11 h-11 rounded-xl bg-cyan-100 text-cyan-700 flex items-center justify-center mb-4">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <h3 class="text-lg font-semibold">The software</h3>
+            <p class="mt-2 text-sm text-slate-600 leading-relaxed">Draw your tanks, pumps and sensors on the screen. MajiFlow checks your design and flags wiring mistakes <em>before</em> you spend a shilling, then gets the controllers and your dashboard ready.</p>
+          </div>
+          <div class="rounded-2xl p-7 bg-slate-50 ring-1 ring-slate-200">
+            <div class="w-11 h-11 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center mb-4">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <h3 class="text-lg font-semibold">The hardware</h3>
+            <p class="mt-2 text-sm text-slate-600 leading-relaxed">Off-the-shelf controllers, sensors, pumps and valves. No special parts to hunt down. A plumber can do most of the install, and an electrician handles the pump wiring. Everything is documented.</p>
           </div>
         </div>
-      </header>
+        <p class="mt-7 text-center text-sm text-slate-500 max-w-3xl mx-auto leading-relaxed">
+          Out in the field, each controller reads your sensors, switches your pumps and valves,
+          and reports back to your dashboard. Let us host it online for the lowest cost, or keep
+          everything on-site and own it yourself.
+        </p>
+      </div>
+    </section>
 
-      <!-- Tiers -->
-      <main class="px-4 sm:px-8 pb-24">
-        <div class="max-w-5xl mx-auto">
-          <h2 class="text-2xl font-semibold text-center mb-10">Plans</h2>
-          <div class="grid gap-6 md:grid-cols-3">
-            @for (tier of tiers; track tier.name) {
-              <div
-                class="card bg-base-100 shadow-xl border"
-                [class.border-primary]="tier.highlighted"
-                [class.border-base-300]="!tier.highlighted"
-              >
-                <div class="card-body">
-                  @if (tier.highlighted) {
-                    <span class="badge badge-primary self-start">Most popular</span>
-                  }
-                  <h3 class="card-title">{{ tier.name }}</h3>
-                  <p class="text-sm text-base-content/60">{{ tier.tagline }}</p>
-                  <ul class="mt-4 space-y-2 text-sm">
-                    @for (feature of tier.features; track feature) {
-                      <li class="flex gap-2">
-                        <span class="text-primary">✓</span>
-                        <span>{{ feature }}</span>
-                      </li>
-                    }
-                  </ul>
-                  <div class="card-actions mt-6">
-                    <a
-                      routerLink="/login"
-                      class="btn btn-block"
-                      [class.btn-primary]="tier.highlighted"
-                      [class.btn-outline]="!tier.highlighted"
-                    >Get started</a>
-                  </div>
-                </div>
-              </div>
-            }
+    <!-- ===================== DESIGN / SET UP / MONITOR ===================== -->
+    <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-50">
+      <div class="max-w-5xl mx-auto grid gap-6 sm:grid-cols-3">
+        <div class="text-center sm:text-left">
+          <div class="w-11 h-11 mx-auto sm:mx-0 rounded-xl bg-white ring-1 ring-slate-200 text-cyan-600 flex items-center justify-center mb-4">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
           </div>
-          <p class="text-center text-sm text-base-content/50 mt-8">
-            Pricing depends on site size and mode — contact us for a quote.
+          <h3 class="font-semibold">1. Design it</h3>
+          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Lay out your tanks, pumps, valves and sensors on the screen. We check it and catch mistakes before you spend money.</p>
+        </div>
+        <div class="text-center sm:text-left">
+          <div class="w-11 h-11 mx-auto sm:mx-0 rounded-xl bg-white ring-1 ring-slate-200 text-cyan-600 flex items-center justify-center mb-4">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          </div>
+          <h3 class="font-semibold">2. We set it up</h3>
+          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">We get your controllers ready to switch on, build your dashboard, and write the wiring guide. No coding, ever.</p>
+        </div>
+        <div class="text-center sm:text-left">
+          <div class="w-11 h-11 mx-auto sm:mx-0 rounded-xl bg-white ring-1 ring-slate-200 text-cyan-600 flex items-center justify-center mb-4">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </div>
+          <h3 class="font-semibold">3. You watch it</h3>
+          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">See tank levels, water flow and valve positions in one place. Know what is happening even when you are miles away.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== TWO WAYS TO RUN IT (PLANS) ===================== -->
+    <section class="px-5 sm:px-8 py-16 sm:py-24">
+      <div class="max-w-6xl mx-auto">
+        <div class="text-center max-w-2xl mx-auto">
+          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Two ways to run it</h2>
+          <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
+            Same app, same dashboard. The choice is simple: let us host it for you online,
+            or keep everything on-site and own it. Here is what each one costs and includes.
           </p>
         </div>
-      </main>
-    </div>
+
+        <div class="mt-12 grid gap-6 lg:grid-cols-3 items-start">
+          @for (plan of plans; track plan.name) {
+            <div class="relative rounded-2xl bg-white p-7 transition-all hover:-translate-y-1"
+                 [class]="plan.highlighted
+                   ? 'ring-2 ring-cyan-500 shadow-2xl shadow-cyan-500/15'
+                   : 'ring-1 ring-slate-200 shadow-sm'">
+              @if (plan.badge) {
+                <span class="absolute -top-3 left-7 rounded-full bg-cyan-500 text-white text-xs font-semibold px-3 py-1 shadow">{{ plan.badge }}</span>
+              }
+              <p class="text-xs font-semibold uppercase tracking-wider text-cyan-600">{{ plan.mode }}</p>
+              <h3 class="mt-1 text-xl font-bold">{{ plan.name }}</h3>
+              <p class="mt-2 text-sm text-slate-600 leading-relaxed">{{ plan.tagline }}</p>
+              <ul class="mt-5 space-y-2.5 text-sm">
+                @for (f of plan.features; track f) {
+                  <li class="flex gap-2.5">
+                    <svg class="shrink-0 mt-0.5 text-cyan-500" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span class="text-slate-700">{{ f }}</span>
+                  </li>
+                }
+              </ul>
+              @if (plan.footnote) {
+                <p class="mt-5 pt-4 border-t border-slate-100 text-xs text-slate-500">{{ plan.footnote }}</p>
+              }
+              <a routerLink="/login"
+                 class="mt-6 block text-center rounded-full px-5 py-2.5 text-sm font-semibold transition-colors"
+                 [class]="plan.highlighted
+                   ? 'bg-cyan-500 text-white hover:bg-cyan-400'
+                   : 'ring-1 ring-slate-300 text-slate-800 hover:bg-slate-50'">
+                Get started
+              </a>
+            </div>
+          }
+        </div>
+
+        <p class="mt-8 text-center text-sm text-slate-500 max-w-2xl mx-auto">
+          Either way, you only need internet to check in while you are away. On-site, your
+          controllers keep working on their own. The final price depends on how big your
+          site is, so get in touch for a quote.
+        </p>
+      </div>
+    </section>
+
+    <!-- ===================== RESILIENCE BAND ===================== -->
+    <section class="relative overflow-hidden bg-slate-950 text-white px-5 sm:px-8 py-16 sm:py-20">
+      <div class="glow-blob pointer-events-none absolute -bottom-24 right-1/4 w-[26rem] h-[26rem] rounded-full bg-cyan-500/15 blur-3xl"></div>
+      <div class="relative max-w-5xl mx-auto text-center">
+        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Built to keep going</h2>
+        <p class="mt-3 text-white/60 max-w-2xl mx-auto text-sm sm:text-base leading-relaxed">
+          Water cannot wait. Your site keeps running even when things go wrong.
+        </p>
+        <div class="mt-10 grid gap-6 sm:grid-cols-3 text-left">
+          <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-6">
+            <div class="w-10 h-10 rounded-lg bg-cyan-400/15 text-cyan-300 flex items-center justify-center mb-3">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            </div>
+            <h3 class="font-semibold">Battery and solar</h3>
+            <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Add the on-site setup and battery plus solar keep things running right through a power cut.</p>
+          </div>
+          <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-6">
+            <div class="w-10 h-10 rounded-lg bg-cyan-400/15 text-cyan-300 flex items-center justify-center mb-3">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.86a10 10 0 0 1 14 0"/><path d="M8.5 16.43a5 5 0 0 1 7 0"/></svg>
+            </div>
+            <h3 class="font-semibold">Works without internet</h3>
+            <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Every controller follows its own watering schedule and safety checks. Lose the internet and your site simply carries on.</p>
+          </div>
+          <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-6">
+            <div class="w-10 h-10 rounded-lg bg-cyan-400/15 text-cyan-300 flex items-center justify-center mb-3">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+            </div>
+            <h3 class="font-semibold">We keep it online</h3>
+            <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Choose the hosted plan and we run everything online and keep it up, so there is nothing for you to manage.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== WHAT YOU CAN DO ===================== -->
+    <section class="px-5 sm:px-8 py-16 sm:py-20">
+      <div class="max-w-5xl mx-auto">
+        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-center">What you can do with it</h2>
+        <div class="mt-10 grid gap-5 sm:grid-cols-2">
+          @for (c of capabilities; track c.title) {
+            <div class="rounded-xl p-6 bg-slate-50 ring-1 ring-slate-200 hover:ring-cyan-300 transition-colors">
+              <h3 class="font-semibold text-slate-900">{{ c.title }}</h3>
+              <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">{{ c.body }}</p>
+            </div>
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== WORKS IN ===================== -->
+    <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-50">
+      <div class="max-w-5xl mx-auto">
+        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-center">Works in</h2>
+        <div class="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          @for (v of verticals; track v.title) {
+            <div class="rounded-xl p-6 bg-white ring-1 ring-slate-200">
+              <h3 class="font-semibold text-cyan-700">{{ v.title }}</h3>
+              <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">{{ v.body }}</p>
+            </div>
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== CTA BAND ===================== -->
+    <section class="px-5 sm:px-8 py-20">
+      <div class="max-w-4xl mx-auto rounded-3xl bg-gradient-to-br from-cyan-500 via-sky-600 to-blue-700 px-8 py-14 text-center text-white shadow-2xl shadow-cyan-500/20">
+        <h2 class="text-2xl sm:text-4xl font-bold tracking-tight">Ready to plan your site?</h2>
+        <p class="mt-3 text-white/85 max-w-xl mx-auto">Draw your site on the screen, and we will get everything ready to build and run it.</p>
+        <div class="mt-8 flex flex-wrap gap-3 justify-center">
+          <a routerLink="/login" class="rounded-full px-6 py-3 text-sm font-semibold bg-white text-slate-900 hover:bg-slate-100 transition-colors">Get started</a>
+          <a [href]="github" target="_blank" rel="noopener" class="rounded-full px-6 py-3 text-sm font-semibold ring-1 ring-white/40 text-white hover:bg-white/10 transition-colors">View on GitHub</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== FOOTER ===================== -->
+    <footer class="bg-slate-950 text-slate-400 px-5 sm:px-8 py-10">
+      <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-2.5">
+          <span class="w-6 h-6 block" [innerHTML]="logo"></span>
+          <span class="font-semibold text-white">MajiFlow</span>
+        </div>
+        <p class="text-sm text-center">Started on a dry-land farm. Built where water is critical.</p>
+        <a [href]="github" target="_blank" rel="noopener" class="text-sm hover:text-white transition-colors">Open source on GitHub →</a>
+      </div>
+    </footer>
   `,
 })
 export class LandingComponent {
   protected readonly github = GITHUB_URL;
 
-  protected readonly tiers: Tier[] = [
+  /** Sanitizer-trusted brand mark (static SVG), rendered via [innerHTML]. */
+  protected readonly logo: SafeHtml = inject(DomSanitizer).bypassSecurityTrustHtml(BRAND_LOGO_SVG);
+
+  protected readonly plans: Plan[] = [
     {
       name: 'Lite',
-      tagline: 'For a single site getting started.',
-      features: [
-        'Managed cloud — nothing to host',
-        'One controller',
-        'Live dashboards & history',
-        'Alerts on faults',
-      ],
-    },
-    {
-      name: 'Pro',
-      tagline: 'For multi-controller and on-site installs.',
+      mode: 'Hosted by us',
+      tagline: 'The simplest, lowest-cost way to get your water online. We run everything for you; you just sign in to watch and control.',
+      badge: 'Most popular',
       highlighted: true,
       features: [
-        'Everything in Lite',
-        'Multiple controllers',
-        'Local mode — on-site box, works offline',
-        'Controller-to-controller coordination',
+        'Starter kit: one KC868 controller with a water-flow sensor, a pressure sensor, a power supply, and a clock that keeps the right time through power cuts',
+        'Need more? Add another KC868 controller for that area. Each one runs on its own and handles only what is wired to it (in Lite they do not share sensors or talk to each other)',
+        'We host everything online and keep it running, with nothing for you to manage',
+        'Live dashboard, full history, and instant alerts when something goes wrong',
       ],
+      footnote: 'No power backup: if the mains goes out, the controller stops, then starts itself again on the right schedule when power returns. KES 3,000 a year for upkeep after the first year. Internet is only needed to check in while you are away.',
+    },
+    {
+      name: 'Own your setup',
+      mode: 'Runs on-site',
+      tagline: 'Keep everything on your own property and own it outright. Built to keep going no matter what.',
+      features: [
+        'An on-site hub runs your whole site by itself, even with no internet',
+        'Battery and solar keep it working straight through power cuts',
+        'Your controllers work together and share sensors across the whole site',
+        'You own everything; nothing depends on us to keep your site running day to day',
+      ],
+      footnote: 'More equipment, so it costs more to set up. You still need internet to check in while you are away.',
     },
     {
       name: 'Custom',
-      tagline: 'For large or bespoke deployments.',
+      mode: 'Tailored',
+      tagline: 'For large or unusual sites that need a setup built around them.',
       features: [
-        'Everything in Pro',
-        'Custom integrations',
-        'Priority support & SLAs',
-        'Onboarding & training',
+        'Everything in the other plans',
+        'Connections to your other systems',
+        'Priority support and faster response times',
+        'Setup help and training for your team',
       ],
     },
+  ];
+
+  protected readonly capabilities: Capability[] = [
+    { title: 'Keep an eye from anywhere', body: 'Tank levels, water flow and valve positions in one dashboard, whether you are on-site or across the country.' },
+    { title: 'Know how much you use', body: 'Field A used 10,300 litres this week. The main tank has held 85% for two days. See it all in one place.' },
+    { title: 'Take action from your phone', body: 'Reservoir down to 8%? Switch on the pump from your phone. No need to drive out to the site.' },
+    { title: 'Let the routine run itself', body: 'Fill the reservoir at 6 AM on Mondays, or whenever it drops below 30%. Set it once and forget it.' },
+  ];
+
+  protected readonly verticals: Vertical[] = [
+    { title: 'Farms', body: 'Automatic irrigation and remote pump control, for small plots and large commercial farms alike.' },
+    { title: 'Hotels and lodges', body: 'Balanced tanks, steady water pressure, and early leak warnings for guest sites.' },
+    { title: 'Greenhouses', body: 'Automatic feeding and dosing, with watering that follows the weather.' },
+    { title: 'Remote sites', body: 'Solar-powered monitoring for boreholes, dams, and places with no grid power.' },
   ];
 }

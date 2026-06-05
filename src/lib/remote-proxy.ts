@@ -1,152 +1,196 @@
 /**
  * Remote proxy helpers — shared YAML generators for remote-bound nodes.
  *
- * Each descriptor's `remoteProxy` composes these helpers with its own
- * ID conventions to produce the proxy block that collect.ts emits.
+ * In local mode an importing controller can drive an actuator that is physically
+ * wired to a DIFFERENT same-site controller. It never touches the owner's relay
+ * directly — it speaks over the peer lane (`peerCommandTopic(site, ownerCtrl)`):
+ *
+ *   - switch actuators (pump / dosing / vfd): `node_claim` = run, `node_release`
+ *     = stop. The owner runs the actuator while a claim is alive and stops it
+ *     within one tick of the claim expiring (importer link lost) — the
+ *     local-mode control-loss fail-safe. A heartbeat interval renews the claim
+ *     while the proxy is on, so a single missed renewal is enough to stop it.
+ *   - cover actuators (valve): `node_claim` = open, `node_release` = close. The
+ *     owner's valve reconciler opens a valve while a claim is alive, so a valve
+ *     is just an actuator whose "active" state is "open" — same claim model as a
+ *     pump. A heartbeat renews the claim while the proxy is open; lose the link
+ *     and the claim expires → the owner closes it (fail-closed).
+ *
+ * Proxy switches/covers are OPTIMISTIC — true actuator state reaches the
+ * dashboard from the OWNER's own telemetry via the server, so the importer needs
+ * no cross-controller telemetry subscription (and the broker ACL stays locked to
+ * the peer lane only).
+ *
+ * Each descriptor's `remoteProxy` composes these helpers with its own ID
+ * conventions to produce the proxy block that collect.ts emits.
  */
 
-/**
- * Home Assistant platform sensor import — for sensor / number / binary_sensor domains.
- */
-export function homeassistantSensorImport(nodeId: string, entityId: string): string {
+/** Default dead-man lease the owner honours; the wire `duration_ms` is advisory. */
+const LEASE_MS = 90000;
+/** Re-claim cadence — well under LEASE_MS so one missed beat still stops safely. */
+const HEARTBEAT_MS = 10000;
+
+/** A `mqtt.publish_json` action building `root[...]` from key→C++-literal pairs. */
+function publishJson(topic: string, fields: Record<string, string>): string {
+  const body = Object.entries(fields)
+    .map(([k, v]) => `          root["${k}"] = ${v};`)
+    .join("\n");
   return `\
-- platform: homeassistant
+    - mqtt.publish_json:
+        topic: "${topic}"
+        payload: |-
+${body}`;
+}
+
+/**
+ * MQTT sensor read-import — mirrors an owning controller's numeric telemetry as
+ * a local (internal) sensor the importer's route logic can read (e.g. a remote
+ * tank level or flow). Subscribes to the owner's telemetry topic; the value is
+ * the same number the owner publishes (and the server stores). Read-only — the
+ * importer never writes here. The component id (`ri_<nodeId>`) is unchanged from
+ * the old HA import, so downstream `id(ri_...)` references keep working.
+ */
+export function mqttSensorImport(nodeId: string, topic: string): string {
+  return `\
+- platform: mqtt_subscribe
   id: ri_${nodeId}
-  entity_id: ${entityId}
+  topic: "${topic}"
   internal: true`;
 }
 
 /**
- * Home Assistant platform binary_sensor — tracks a remote switch state
- * so the local proxy switch lambda can read the true source-of-truth state.
- */
-export function homeassistantBinarySensorProxy(proxyId: string, entityId: string): string {
-  return `\
-- platform: homeassistant
-  id: bs_${proxyId}
-  entity_id: ${entityId}
-  internal: true`;
-}
-
-/**
- * Home Assistant platform text_sensor — tracks a remote cover state
- * so the local proxy cover lambda can read the true source-of-truth state.
- */
-export function homeassistantTextSensorProxy(proxyId: string, entityId: string): string {
-  return `\
-- platform: homeassistant
-  id: ts_${proxyId}
-  entity_id: ${entityId}
-  internal: true`;
-}
-
-/**
- * Template switch proxy — for switch-domain remote entities.
+ * MQTT switch proxy — for switch-domain remote actuators (pump / dosing / vfd).
  *
- * Reads state from a `homeassistant` binary_sensor so the proxy always
- * reflects the actual remote controller state (source of truth).
- *
- * When `remoteDeviceName` and `ownerDeviceName` are provided, the proxy
- * registers a timed dead-man claim on the owning controller before
- * turning the switch on, and releases the claim after turning off.
+ * Optimistic template switch: turning it on publishes a `node_claim` to the
+ * owner (which runs its local relay); turning it off publishes a `node_release`.
+ * `nodeId` is the topology node id — the exact key the owner's claim registry
+ * uses (`has_live_claim`). `owner` identifies this importing controller so it
+ * can renew/release only its own claim.
  */
-export function templateSwitchProxy(
+export function mqttSwitchProxy(
   proxyId: string,
   name: string,
-  entityId: string,
-  remoteDeviceName?: string,
-  ownerDeviceName?: string,
-  leaseDurationMs: number = 90000,
+  nodeId: string,
+  peerTopic: string,
+  owner: string,
 ): string {
-  const claimBlock = remoteDeviceName && ownerDeviceName
-    ? `    - homeassistant.service:
-        service: esphome.${remoteDeviceName}_node_claim
-        data:
-          node_id: ${proxyId}
-          owner: ${ownerDeviceName}
-          duration_ms: "${leaseDurationMs}"`
-    : "";
-  const releaseBlock = remoteDeviceName && ownerDeviceName
-    ? `    - homeassistant.service:
-        service: esphome.${remoteDeviceName}_node_release
-        data:
-          node_id: ${proxyId}
-          owner: ${ownerDeviceName}`
-    : "";
+  const claim = publishJson(peerTopic, {
+    action: '"node_claim"',
+    node_id: `"${nodeId}"`,
+    owner: `"${owner}"`,
+    duration_ms: `${LEASE_MS}`,
+  });
+  const release = publishJson(peerTopic, {
+    action: '"node_release"',
+    node_id: `"${nodeId}"`,
+    owner: `"${owner}"`,
+  });
   return `\
 - platform: template
   name: "Remote ${name}"
   id: ${proxyId}
   icon: "mdi:remote"
-  lambda: 'return id(bs_${proxyId}).has_state() ? id(bs_${proxyId}).state : false;'
+  optimistic: true
   turn_on_action:
-${claimBlock}${claimBlock ? "\n" : ""}    - homeassistant.service:
-        service: switch.turn_on
-        data:
-          entity_id: ${entityId}
+${claim}
   turn_off_action:
-${releaseBlock}${releaseBlock ? "\n" : ""}    - homeassistant.service:
-        service: switch.turn_off
-        data:
-          entity_id: ${entityId}`;
+${release}`;
 }
 
 /**
- * Lease heartbeat interval for template switch proxies.
+ * Lease heartbeat interval for an MQTT switch proxy.
  *
- * Emits an `interval:` block that re-issues the dead-man claim every
- * `intervalMs` while the proxy switch is on. This prevents the claim from
- * expiring if the turn_on action is not re-triggered.
+ * Re-issues the `node_claim` every `HEARTBEAT_MS` while the proxy switch is on,
+ * so the owner's lease never lapses while the importer wants the actuator
+ * running. Stop renewing (proxy off, importer crash, link loss) and the owner's
+ * claim expires → it stops within one tick.
  */
-export function templateSwitchProxyLeaseInterval(
+export function mqttSwitchProxyLeaseInterval(
   proxyId: string,
-  remoteDeviceName?: string,
-  ownerDeviceName?: string,
-  intervalMs: number = 10000,
-  leaseDurationMs: number = 90000,
+  nodeId: string,
+  peerTopic: string,
+  owner: string,
 ): string {
-  if (!remoteDeviceName || !ownerDeviceName) return "";
+  const claim = publishJson(peerTopic, {
+    action: '"node_claim"',
+    node_id: `"${nodeId}"`,
+    owner: `"${owner}"`,
+    duration_ms: `${LEASE_MS}`,
+  });
   return `\
-- interval: ${intervalMs}ms
+- interval: ${HEARTBEAT_MS}ms
   then:
     - if:
         condition:
           lambda: 'return id(${proxyId}).state;'
         then:
-          - homeassistant.service:
-              service: esphome.${remoteDeviceName}_node_claim
-              data:
-                node_id: ${proxyId}
-                owner: ${ownerDeviceName}
-                duration_ms: "${leaseDurationMs}"`;
+${claim.split("\n").map(l => (l === "" ? "" : "      " + l)).join("\n")}`;
 }
 
 /**
- * Template cover proxy — for cover-domain remote entities.
+ * MQTT cover proxy — for cover-domain remote actuators (valve).
  *
- * Reads state from a `homeassistant` text_sensor so the proxy always
- * reflects the actual remote controller state (source of truth).
+ * Optimistic template cover: opening publishes a `node_claim` (the owner's
+ * reconciler opens its local valve while the claim is alive); closing or
+ * stopping publishes a `node_release` (the owner closes it). `nodeId` is the
+ * topology node id (== the owner's cover component id and claim-registry key).
  */
-export function templateCoverProxy(proxyId: string, name: string, entityId: string): string {
+export function mqttCoverProxy(
+  proxyId: string,
+  name: string,
+  nodeId: string,
+  peerTopic: string,
+  owner: string,
+): string {
+  const claim = publishJson(peerTopic, {
+    action: '"node_claim"',
+    node_id: `"${nodeId}"`,
+    owner: `"${owner}"`,
+    duration_ms: `${LEASE_MS}`,
+  });
+  const release = publishJson(peerTopic, {
+    action: '"node_release"',
+    node_id: `"${nodeId}"`,
+    owner: `"${owner}"`,
+  });
   return `\
 - platform: template
   name: "Remote ${name}"
   id: ${proxyId}
   icon: "mdi:remote"
-  lambda: 'return id(ts_${proxyId}).state == "open" ? COVER_OPEN : COVER_CLOSED;'
+  optimistic: true
+  assumed_state: true
   open_action:
-    - homeassistant.service:
-        service: cover.open_cover
-        data:
-          entity_id: ${entityId}
+${claim}
   close_action:
-    - homeassistant.service:
-        service: cover.close_cover
-        data:
-          entity_id: ${entityId}
+${release}
   stop_action:
-    - homeassistant.service:
-        service: cover.stop_cover
-        data:
-          entity_id: ${entityId}`;
+${release}`;
+}
+
+/**
+ * Lease heartbeat interval for an MQTT cover proxy — re-issues the `node_claim`
+ * every `HEARTBEAT_MS` while the proxy valve is open, so the owner keeps it open.
+ * Stop renewing (closed, importer crash, link loss) and the owner closes it.
+ */
+export function mqttCoverProxyLeaseInterval(
+  proxyId: string,
+  nodeId: string,
+  peerTopic: string,
+  owner: string,
+): string {
+  const claim = publishJson(peerTopic, {
+    action: '"node_claim"',
+    node_id: `"${nodeId}"`,
+    owner: `"${owner}"`,
+    duration_ms: `${LEASE_MS}`,
+  });
+  return `\
+- interval: ${HEARTBEAT_MS}ms
+  then:
+    - if:
+        condition:
+          lambda: 'return id(${proxyId}).position > 0.5f;'
+        then:
+${claim.split("\n").map(l => (l === "" ? "" : "      " + l)).join("\n")}`;
 }

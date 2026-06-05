@@ -178,7 +178,7 @@ export function generateEsphome(
 ): GeneratedFile[] {
   const dir = m.device.directory ?? m.device.name;
   const deviceDir = `${siteRoot(siteId)}/esphome/${dir}`;
-  const collected = collectEntityCodegen(m, board, expansionBoards);
+  const collected = collectEntityCodegen(m, board, expansionBoards, metadata);
 
   const files: GeneratedFile[] = [
     {

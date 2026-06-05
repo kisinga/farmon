@@ -1,5 +1,5 @@
 import type { Manifest } from '@core';
-import { localNodesWithFlag, nodesWithFlag, slug } from '@core';
+import { nodesWithFlag, slug } from '@core';
 import { SYSTEM_ENTITY_NAMES, routeEntityNames } from '@core';
 
 const SYS = SYSTEM_ENTITY_NAMES;
@@ -13,28 +13,22 @@ export function generateControl(m: Manifest): string {
   // Local pumps: drive relay directly + honor deadman claims.
   // Imported pumps: toggle proxy switch; the proxy sends node_claim /
   // node_release to the owning controller, which turns on its local relay.
+  //
+  // A live claim is keyed by the topology node id (the shared identity a peer
+  // controller addresses in node_claim/node_release) — so a remote controller
+  // claiming this pump drives the relay here, and the claim expiring (peer link
+  // lost) drops it within one tick (the local-mode dead-man stop).
   const pumpMgmt = allPumps.length > 0 ? `
           // --- Pump management ---
 ${allPumps.map((p, i) => {
   const isLocal = localPumps.some(lp => lp.id === p.id);
-  const claimCheck = isLocal ? ` || has_live_claim("${p['id']}_relay")` : '';
+  const claimCheck = isLocal ? ` || has_live_claim("${p['id']}")` : '';
   return `          bool need_pump_${i} = pump_ref_count(${i}) > 0${claimCheck};
           if (need_pump_${i} && !id(${p['id']}_relay).state) id(${p['id']}_relay).turn_on();
           else if (!need_pump_${i} && id(${p['id']}_relay).state) id(${p['id']}_relay).turn_off();`;
 }).join('\n')}` : "";
 
   const pumpOffBoot = localPumps.map(p => `\n      - switch.turn_off: ${p['id']}_relay`).join("");
-
-  // Dead-man enforcement for all local actuators
-  const actuators = [
-    ...localNodesWithFlag(m, 'isPump'),
-    ...localNodesWithFlag(m, 'isValve'),
-    ...localNodesWithFlag(m, 'isDosingPump'),
-  ];
-  const deadmanEnforcement = actuators.length > 0
-    ? `\n          // --- Dead-man enforcement ---
-${actuators.map(a => `          enforce_deadman("${a['id']}");`).join('\n')}`
-    : "";
 
   return `# =============================================================================
 # MajiFlow — Control Layer
@@ -221,7 +215,7 @@ ${pumpMgmt}
             if (slots[s].state >= 1 && slots[s].state <= 3) { id(active_slot) = s; break; }
 
           // --- Valve reconciliation (level-triggered, last step) ---
-          reconcile_valves();${deadmanEnforcement}
+          reconcile_valves();
 
   # --- 2s Safety Monitor -------------------------------------------------------
   # Per-slot watchdogs: flow, max runtime, API loss.
