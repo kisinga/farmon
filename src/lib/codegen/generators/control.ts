@@ -20,9 +20,13 @@ export function generateControl(m: Manifest): string {
   // lost) drops it within one tick (the local-mode dead-man stop).
   const pumpMgmt = allPumps.length > 0 ? `
           // --- Pump management ---
+          manual_pump_guard_tick();  // guard claim-only (manual/peer) runs; latches gate manual_claim_ok below
 ${allPumps.map((p, i) => {
   const isLocal = localPumps.some(lp => lp.id === p.id);
-  const claimCheck = isLocal ? ` || has_live_claim("${p['id']}")` : '';
+  const mpSlot = localPumps.findIndex(lp => lp.id === p.id);
+  // A local pump's claim contribution is gated by manual_claim_ok: a dry-run /
+  // max-runtime latch (or, when set, override) decides whether the claim energises.
+  const claimCheck = isLocal ? ` || (has_live_claim("${p['id']}") && manual_claim_ok(${mpSlot}))` : '';
   return `          bool need_pump_${i} = pump_ref_count(${i}) > 0${claimCheck};
           if (need_pump_${i} && !id(${p['id']}_relay).state) id(${p['id']}_relay).turn_on();
           else if (!need_pump_${i} && id(${p['id']}_relay).state) id(${p['id']}_relay).turn_off();`;
@@ -112,6 +116,7 @@ button:
           for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
             if (slots[s].state == 4) init_slot(s);
           }
+          manual_clear_all_latches();
           id(system_state) = derived_system_state();
           ESP_LOGI("ctrl", "All faults cleared");
 

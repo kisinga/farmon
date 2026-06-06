@@ -54,6 +54,10 @@ export interface ActuatorControl {
   id: string;
   name: string;
   kind: 'valve' | 'pump';
+  /** The telemetry channel reporting this actuator's actual state (pump relay /
+   *  valve cover) — the shadow the dashboard reconciles a manual hold against, so
+   *  a toggle reflects reality (latched/refused) instead of staying optimistically on. */
+  reportedSensor: string;
 }
 
 /** The controllable routes + actuators for one controller. */
@@ -160,7 +164,7 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
     const actuators: ActuatorControl[] = [];
     for (const ch of channels) {
       if ((ch.role === 'valve' || ch.role === 'pump') && ch.node) {
-        actuators.push({ id: ch.node, name: ch.label ?? ch.node, kind: ch.role });
+        actuators.push({ id: ch.node, name: ch.label ?? ch.node, kind: ch.role, reportedSensor: ch.sensor });
       }
     }
     controllers.push({

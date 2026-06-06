@@ -9,6 +9,7 @@ import { generateControl } from "./generators/control";
 import { generateMqtt } from "./generators/mqtt";
 import { generateSchedule } from "./generators/schedule";
 import { generateCoordination, generateCoordinationHeader } from "./generators/coordination";
+import { generateTimeSync, generateTimeSyncHeader } from "./generators/time-sync";
 
 import { collectEntityCodegen } from "./generators/collect";
 import { LOGO_SVG } from '@core';
@@ -228,6 +229,16 @@ export function generateEsphome(
       relativePath: `${deviceDir}/packages/coordination.yaml`,
       description: "Cross-controller coordination over UDP (udp: block, on_receive, reading broadcast)",
       content: generateCoordination(m),
+    },
+    {
+      relativePath: `${deviceDir}/packages/time-sync.h`,
+      description: "C++ persisted-clock boot seed (no-RTC time across reboots)",
+      content: generateTimeSyncHeader(metadata),
+    },
+    {
+      relativePath: `${deviceDir}/packages/time-sync.yaml`,
+      description: "Persisted wall clock: flash-restored epoch + refresh interval",
+      content: generateTimeSync(),
     },
     {
       relativePath: `${deviceDir}/packages/hardware.yaml`,

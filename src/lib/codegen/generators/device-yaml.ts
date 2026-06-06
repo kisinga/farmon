@@ -92,6 +92,7 @@ export function generateDeviceYaml(
     "// full close_duration. No stop_valve_hw resync needed here.",
     "commanded_valve_mask = 0;  // matches the boot-closed state above",
     '// stop_reason intentionally NOT reset — survives reboot',
+    'seed_clock_from_persisted();  // restore wall clock from flash before SNTP (no RTC)',
     `ESP_LOGI("ctrl", "Boot complete — IDLE (%d routes, %d slots)", NUM_ROUTES, MAX_CONCURRENT_ROUTES);`,
   ].join("\n");
 
@@ -149,6 +150,7 @@ export function generateDeviceYaml(
   lines.push("  control: !include packages/control.yaml");
   lines.push("  mqtt: !include packages/mqtt.yaml");
   lines.push("  coordination: !include packages/coordination.yaml");
+  lines.push("  time_sync: !include packages/time-sync.yaml");
   if (hasSchedule(m)) {
     lines.push("  schedule: !include packages/schedule.yaml");
   }
@@ -200,6 +202,8 @@ export function generateDeviceYaml(
   lines.push("    - packages/routes.h");
   // After routes.h — the coordination dispatcher calls extend_deadman/drop_claim.
   lines.push("    - packages/coordination.h");
+  // Persisted-clock boot seed (no-RTC time across reboots).
+  lines.push("    - packages/time-sync.h");
   lines.push("  on_boot:");
   for (const step of bootSteps) {
     const s = step as { priority: number; then: unknown[] };

@@ -111,6 +111,96 @@ export function buildRouteContext(m: Manifest): RouteContext {
 // ESPHome-specific emission
 // ---------------------------------------------------------------------------
 
+interface ManualPumpRow {
+  nodeId: string; relayIdx: number; flowMask: number; srcTank: string; srcMin: number; maxRtMs: number;
+}
+
+/**
+ * C++ for the manual / claim-driven pump guard (routes.h). A bare claim drives a
+ * local pump's relay in pumpMgmt, bypassing the per-route-slot watchdogs; this
+ * guards that run (dry-run via the pump's local flow sensors + max-runtime) and
+ * latches the pump on a trip so pumpMgmt gates the claim off until release/reset.
+ * Reuses check_precheck (source-low) + get_flow_rate + the STOP_* vocabulary.
+ */
+function buildManualGuard(rows: ManualPumpRow[]): string {
+  if (rows.length === 0) {
+    return `// --- Manual / claim-driven pump guard (no local pumps) -----------------------
+static const int NUM_MANUAL_PUMPS = 0;
+inline int  manual_pump_slot(const char*) { return -1; }
+inline bool manual_claim_ok(int) { return true; }
+inline void manual_clear_latch(int) {}
+inline void manual_clear_all_latches() {}
+inline int  manual_pump_precheck(int) { return 0; }
+inline void manual_pump_guard_tick() {}`;
+  }
+  const col = (sel: (r: ManualPumpRow) => string | number) => rows.map(sel).join(', ');
+  return `// --- Manual / claim-driven pump guard ----------------------------------------
+// A bare claim (manual node_set OR a cross-controller peer) drives a local pump
+// relay in pumpMgmt, bypassing the per-route-slot watchdogs. This guards that run:
+// dry-run (no flow on the pump's local flow sensors after the watchdog) and
+// max-runtime. A trip latches the pump → pumpMgmt gates its claim contribution off
+// until released / fault_reset. safety_override bypasses pre-check + watchdog.
+static const int NUM_MANUAL_PUMPS = ${rows.length};
+static const char*    MP_NODE_ID[NUM_MANUAL_PUMPS]   = { ${col((r) => `"${r.nodeId}"`)} };
+static const uint8_t  MP_RELAY_IDX[NUM_MANUAL_PUMPS] = { ${col((r) => r.relayIdx)} };
+static const uint16_t MP_FLOW_MASK[NUM_MANUAL_PUMPS] = { ${col((r) => `0x${r.flowMask.toString(16)}`)} };
+static const uint8_t  MP_SRC_TANK[NUM_MANUAL_PUMPS]  = { ${col((r) => r.srcTank)} };
+static const uint8_t  MP_SRC_MIN[NUM_MANUAL_PUMPS]   = { ${col((r) => r.srcMin)} };
+static const uint32_t MP_MAX_RT_MS[NUM_MANUAL_PUMPS] = { ${col((r) => `${r.maxRtMs}U`)} };
+static int      manual_latch[NUM_MANUAL_PUMPS]     = {0};   // 0 ok, else STOP_* reason
+static uint32_t manual_run_since[NUM_MANUAL_PUMPS] = {0};
+static uint32_t manual_last_flow[NUM_MANUAL_PUMPS] = {0};
+
+inline int manual_pump_slot(const char* node_id) {
+  for (int k = 0; k < NUM_MANUAL_PUMPS; k++)
+    if (strcmp(node_id, MP_NODE_ID[k]) == 0) return k;
+  return -1;
+}
+inline bool manual_claim_ok(int k) {
+  if (k < 0 || k >= NUM_MANUAL_PUMPS) return true;
+  return id(safety_override).state || manual_latch[k] == 0;
+}
+inline void manual_clear_latch(int k) {
+  if (k >= 0 && k < NUM_MANUAL_PUMPS) { manual_latch[k] = 0; manual_run_since[k] = 0; }
+}
+inline void manual_clear_all_latches() {
+  for (int k = 0; k < NUM_MANUAL_PUMPS; k++) manual_clear_latch(k);
+}
+// NODE_SET pre-check rc: 0 ok, 1 source-low, 2 no local flow sensor (dry-run unprotectable).
+inline int manual_pump_precheck(int k) {
+  if (k < 0 || k >= NUM_MANUAL_PUMPS) return 0;
+  if (id(safety_override).state) return 0;
+  if (MP_FLOW_MASK[k] == 0) return 2;
+  if (check_precheck(MP_SRC_TANK[k], MP_SRC_MIN[k], 0xFF, 0) == 3) return 1;
+  return 0;
+}
+// 1s tick: guard claim-only pump runs. Latches gate the claim in pumpMgmt; cleared
+// when the claim drops (release / lease expiry → !claim_only).
+inline void manual_pump_guard_tick() {
+  uint32_t now = millis();
+  float wd_s = id(flow_watchdog_s).state;
+  uint32_t flow_watchdog = (!std::isnan(wd_s) && wd_s >= 5.0f) ? (uint32_t)(wd_s * 1000.0f) : DEFAULT_FLOW_WATCHDOG_MS;
+  float th = id(flow_threshold_l_min).state;
+  float flow_threshold = (!std::isnan(th) && th >= 0.1f) ? th : DEFAULT_FLOW_THRESHOLD_L_MIN;
+  for (int k = 0; k < NUM_MANUAL_PUMPS; k++) {
+    bool claim_only = pump_ref_count(MP_RELAY_IDX[k]) == 0 && has_live_claim(MP_NODE_ID[k]);
+    if (!claim_only) { manual_run_since[k] = 0; manual_latch[k] = 0; continue; }
+    if (id(safety_override).state) { manual_run_since[k] = 0; continue; }
+    if (manual_latch[k] != 0) continue;
+    if (manual_run_since[k] == 0) { manual_run_since[k] = now; manual_last_flow[k] = now; }
+    uint32_t runtime = now - manual_run_since[k];
+    if (MP_FLOW_MASK[k]) {
+      bool flow = false;
+      for (int i = 0; i < NUM_FLOW_SENSORS; i++)
+        if (MP_FLOW_MASK[k] & (1 << i)) { float f = get_flow_rate(i); if (!std::isnan(f) && f >= flow_threshold) { flow = true; break; } }
+      if (flow) manual_last_flow[k] = now;
+      if (runtime > flow_watchdog && now - manual_last_flow[k] > flow_watchdog) { manual_latch[k] = STOP_NO_FLOW; continue; }
+    }
+    if (runtime > MP_MAX_RT_MS[k]) manual_latch[k] = STOP_MAX_RUNTIME;
+  }
+}`;
+}
+
 export function generateRoutes(m: Manifest): string {
   const ctx = buildRouteContext(m);
   const {
@@ -119,6 +209,35 @@ export function generateRoutes(m: Manifest): string {
     conflictMasks, routeLines,
     valveComment, tankComment, wsComment, flowComment, pumpComment,
   } = ctx;
+
+  // --- Manual / claim-driven pump guard data (local pumps only) ---
+  // A bare claim (manual node_set OR a cross-controller peer) drives a LOCAL pump
+  // relay in pumpMgmt, bypassing the per-route-slot watchdogs. Bake each local
+  // pump's guard context — derived from the route(s) that cross it — so the runtime
+  // guard (below) can dry-run / max-runtime protect that run.
+  const localFlowIds = new Set(nodesWithFlag(m.nodes, 'isFlowSensor').map((f) => f['id']));
+  const localPumps = nodesWithFlag(m.nodes, 'isPump');
+  const mpRows = localPumps.map((p) => {
+    const routesUsing = m.routes.filter((r) => r.crossesPump && r.nodeSequence[r.pumpIndex] === p['id']);
+    // Union of LOCAL primary flow sensors across the pump's routes → bitmask (a
+    // remote/imported flow sensor is excluded: its mirror lags, can't dry-run-guard).
+    let flowMask = 0;
+    for (const r of routesUsing) {
+      if (r.flow_sensor && localFlowIds.has(r.flow_sensor)) flowMask |= 1 << ctx.flowIdx.get(r.flow_sensor)!;
+    }
+    // Source-low only when every route shares ONE source tank with a level reading.
+    const srcSet = new Set(routesUsing.filter((r) => r.source_type === 'tank' && r.source_has_level).map((r) => r.source));
+    let srcTank = '0xFF';
+    let srcMin = 0;
+    if (srcSet.size === 1) {
+      const t = [...srcSet][0];
+      srcTank = String(ctx.tankIdx.get(t)!);
+      srcMin = Math.max(0, ...routesUsing.filter((r) => r.source === t).map((r) => r.source_min_pct ?? 0));
+    }
+    const maxRtS = routesUsing.length ? Math.max(...routesUsing.map((r) => r.max_runtime_seconds)) : 1800;
+    return { nodeId: p['id'], relayIdx: ctx.pumpIdx.get(p['id'])!, flowMask, srcTank, srcMin, maxRtMs: maxRtS * 1000 };
+  });
+  const manualGuardCpp = buildManualGuard(mpRows);
 
   // Build dispatch functions (hardware-level, renamed with _hw suffix)
   const nid = (node: Manifest['nodes'][number]) => ({ id: node.id });
@@ -575,6 +694,25 @@ ${destMaxCases}
   }
 }
 
+// --- Pre-start guard (shared by routes + manual pump claims) ------------------
+// Value-based so try_route_start and manual_pump_precheck use ONE impl. src_idx/
+// dst_idx are tank indices (0xFF = skip); src_min/dst_max are %. safety_override
+// bypasses both. Returns 0 ok, 3 source-low, 4 dest-full.
+inline int check_precheck(uint8_t src_idx, uint8_t src_min, uint8_t dst_idx, uint8_t dst_max) {
+  if (id(safety_override).state) return 0;
+  if (src_idx != 0xFF && src_min > 0) {
+    float src = get_tank_level(src_idx);
+    if (std::isnan(src) || src < (float)src_min) return 3;
+  }
+  if (dst_idx != 0xFF && dst_max > 0) {
+    float dst = get_tank_level(dst_idx);
+    if (!std::isnan(dst) && dst > (float)dst_max) return 4;
+  }
+  return 0;
+}
+
+${manualGuardCpp}
+
 // --- Route start/stop (shared by API services + button entities) -------------
 //
 // Returns: 0=started, 1=queued, 2=rejected (invalid/duplicate/full),
@@ -588,17 +726,10 @@ inline int try_route_start(int route_id, const char* command_id) {
     return queue_push(route_id) ? 1 : 2;
   }
 
-  uint8_t src_min = get_route_source_min_pct(route_id);
-  uint8_t dst_max = get_route_dest_max_pct(route_id);
   const Route& r = ROUTES[route_id];
-  if (r.source_tank != 0xFF && src_min > 0) {
-    float src = get_tank_level(r.source_tank);
-    if (!id(safety_override).state && (std::isnan(src) || src < (float)src_min)) return 3;
-  }
-  if (r.dest_tank != 0xFF && dst_max > 0) {
-    float dst = get_tank_level(r.dest_tank);
-    if (!id(safety_override).state && !std::isnan(dst) && dst > (float)dst_max) return 4;
-  }
+  int pc = check_precheck(r.source_tank, get_route_source_min_pct(route_id),
+                          r.dest_tank, get_route_dest_max_pct(route_id));
+  if (pc != 0) return pc;
 
   int slot = find_free_slot();
   init_slot(slot);

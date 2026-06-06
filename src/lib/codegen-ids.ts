@@ -417,11 +417,12 @@ export const STOP_REASON_MEANINGS: Record<StopReasonToken, StateMeaning> = {
  * REJECTED/NOT_ACTIVE/NOT_RUNNING tokens below).
  */
 export const OUTCOME_TOKENS = [
-  'QUEUED', 'REFUSED', 'REJECTED', 'NOT_ACTIVE', 'NOT_RUNNING', 'STALE',
+  'APPLIED', 'QUEUED', 'REFUSED', 'REJECTED', 'NOT_ACTIVE', 'NOT_RUNNING', 'STALE',
 ] as const;
 export type OutcomeToken = (typeof OUTCOME_TOKENS)[number];
 
 export const OUTCOME_MEANINGS: Record<OutcomeToken, StateMeaning> = {
+  APPLIED:     { label: 'Applied',     kind: 'active' },
   QUEUED:      { label: 'Queued',      kind: 'active' },
   REFUSED:     { label: 'Refused',     kind: 'warn' },
   REJECTED:    { label: 'Rejected',    kind: 'warn' },
@@ -449,6 +450,21 @@ export const ROUTE_STOP_RESULTS: readonly { to: '' | OutcomeToken; reason: '' | 
   { to: '',        reason: '' },            // 0 stopping
   { to: 'REFUSED', reason: 'NOT_ACTIVE' },  // 1 route not active
   { to: 'REFUSED', reason: 'NOT_RUNNING' }, // 2 already stopping / idle / faulted
+];
+
+/**
+ * Manual actuator command (`node_set`) results → the transition the device emits,
+ * same shape + index contract as ROUTE_START_RESULTS. The array INDEX is the rc the
+ * firmware's manual handler returns: a claim-driven pump run is guarded (dry-run /
+ * source-low) like a route, so the refusals reuse the same vocabulary. rc 0 emits
+ * APPLIED — an explicit ack the operator's pending toggle reconciles against
+ * (unlike a route start, whose slot edge is its own confirmation).
+ */
+export const NODE_SET_RESULTS: readonly { to: OutcomeToken; reason: '' | OutcomeToken | StopReasonToken }[] = [
+  { to: 'APPLIED',  reason: '' },           // 0 claim set / released
+  { to: 'REFUSED',  reason: 'SOURCE_LOW' }, // 1 source tank below its min level
+  { to: 'REFUSED',  reason: 'NO_FLOW' },    // 2 no local flow sensor → dry-run unprotectable (override to force)
+  { to: 'REJECTED', reason: '' },           // 3 no local actuator for this node (e.g. dosing pump)
 ];
 
 /**

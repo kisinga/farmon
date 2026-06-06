@@ -1,6 +1,6 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, type CommandAction, type DashboardWidget } from '@core';
+import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, type CommandAction, type DashboardWidget, type ActuatorControl } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
 import { ConfirmService } from '../../core/services/confirm.service';
@@ -192,6 +192,12 @@ export class DashboardComponent implements OnDestroy {
   protected manualHeld = signal<Set<string>>(new Set());
   /** Re-claim timers for held actuators, same key — cleared on release/destroy. */
   private heartbeats = new Map<string, number>();
+  /** When each actuator was first claimed — a grace window before reconciling its
+   *  reported state (the device needs a tick or two to start + report). */
+  private claimedAt = new Map<string, number>();
+  /** Polls held actuators against their reported state to catch a device-side
+   *  refusal/latch, so a blocked toggle stops showing "held". */
+  private reconcileTimer?: number;
 
   /** True when an admin is viewing a site they don't own (support/validation). */
   protected adminViewing = signal(false);
@@ -287,11 +293,13 @@ export class DashboardComponent implements OnDestroy {
   constructor() {
     this.siteId = this.route.snapshot.paramMap.get('name') ?? '';
     if (this.siteId) void this.load();
+    this.reconcileTimer = window.setInterval(() => this.reconcileHeld(), 3000);
   }
 
   ngOnDestroy(): void {
     for (const h of this.heartbeats.values()) clearInterval(h);
     this.heartbeats.clear();
+    if (this.reconcileTimer) clearInterval(this.reconcileTimer);
   }
 
   private async load(): Promise<void> {
@@ -369,11 +377,49 @@ export class DashboardComponent implements OnDestroy {
     const key = this.manualKey(controller, node);
     if (this.manualHeld().has(key)) {
       this.stopHeartbeat(key);
+      this.claimedAt.delete(key);
       this.manualHeld.update((s) => { const n = new Set(s); n.delete(key); return n; });
       await this.run(controller, 'node_set', { nodeId: node, on: false }, key);
     } else if (await this.run(controller, 'node_set', { nodeId: node, on: true }, key)) {
+      this.claimedAt.set(key, Date.now());
       this.manualHeld.update((s) => new Set(s).add(key));
       this.startHeartbeat(controller, node, key);
+    }
+  }
+
+  /** Find the actuator + its controller for a manual-hold key. */
+  private actuatorByKey(key: string): { controller: string; actuator: ActuatorControl } | undefined {
+    for (const c of this.store.spec().controllers)
+      for (const actuator of c.actuators)
+        if (this.manualKey(c.controller, actuator.id) === key) return { controller: c.controller, actuator };
+    return undefined;
+  }
+
+  /** Locally drop a hold the device refused/latched: stop heartbeat + tell the
+   *  device to release (which clears its latch so a retry starts clean). */
+  private releaseHeld(controller: string, node: string, key: string): void {
+    this.stopHeartbeat(key);
+    this.claimedAt.delete(key);
+    this.manualHeld.update((s) => { const n = new Set(s); n.delete(key); return n; });
+    void this.backend.sendCommand(this.siteId, controller, 'node_set', { nodeId: node, on: false }).catch(() => {});
+  }
+
+  /** Poll: an ONLINE controller reporting a held actuator OFF (past the start
+   *  grace) means a safety guard refused/latched it — revert the toggle so it
+   *  stops lying, and surface why. Offline controllers are left alone (can't judge;
+   *  the device's dead-man lease is the safety there). */
+  private reconcileHeld(): void {
+    const held = this.manualHeld();
+    if (held.size === 0) return;
+    const now = Date.now();
+    for (const key of held) {
+      if (now - (this.claimedAt.get(key) ?? 0) < 8000) continue;
+      const found = this.actuatorByKey(key);
+      if (!found || !this.store.presence(found.controller).online) continue;
+      const row = this.store.row(found.controller, found.actuator.reportedSensor);
+      if (row && row.reported >= 0.5) continue; // actually running — fine
+      this.releaseHeld(found.controller, found.actuator.id, key);
+      this.note.set(`${found.actuator.name} on ${this.ctrlName(found.controller)} stopped — blocked by a safety check (no flow, source low, or runtime). See Activity. Safety override is commissioning-only.`);
     }
   }
 

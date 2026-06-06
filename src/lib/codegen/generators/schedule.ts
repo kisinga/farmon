@@ -32,7 +32,8 @@ export function hasTimeSchedule(m: Manifest): boolean {
  * so no external scheduler is required.
  *
  *  - time triggers  → an ESPHome `time:` (SNTP) `on_time:` entry, with the
- *    weekday filter when it's a subset of the week.
+ *    weekday filter when it's a subset of the week. Fires only once time is trusted
+ *    (a real SNTP sync), never on the flash-seeded boot estimate (see time-sync.ts).
  *  - level triggers → an edge-detecting `interval:` that starts the route when
  *    the source tank rises above the route's Source Min Level, re-arming when it
  *    falls back below.
@@ -64,6 +65,11 @@ export function generateSchedule(m: Manifest): string | null {
     out.push('time:');
     out.push('  - platform: sntp');
     out.push('    id: sntp_time');
+    // A real SNTP sync is the only thing that marks time trusted; the flash-seeded
+    // boot estimate (time-sync.h) does not, so schedules never fire on a guess.
+    out.push('    on_time_sync:');
+    out.push('      - then:');
+    out.push("          - lambda: 'id(time_trusted) = true;'");
     out.push('    on_time:');
     for (const a of timeAutos) {
       if (a.trigger.type !== 'time') continue; // type narrowing
@@ -76,7 +82,7 @@ export function generateSchedule(m: Manifest): string | null {
         out.push(`        days_of_week: [${a.days_of_week.map(DAY3).join(', ')}]`);
       }
       out.push('        then:');
-      out.push(`          - lambda: 'try_route_start(${a.route_index}, "");'`);
+      out.push(`          - lambda: 'if (id(time_trusted)) try_route_start(${a.route_index}, "");'`);
     }
     out.push('');
   }

@@ -95,5 +95,11 @@ inline std::string valve_id_for_index(int idx) {
   ${valves.length > 0 ? `if (idx < 0 || idx >= ${valves.length}) return "";
   return VALVE_IDS[idx];` : `return "";`}
 }
+
+// True if nodeId is a local valve — lets the manual handler open it via a claim.
+inline bool is_valve_node(const char* nodeId) {
+${valves.length > 0 ? `  for (int i = 0; i < ${valves.length}; i++) if (strcmp(nodeId, VALVE_IDS[i]) == 0) return true;
+  return false;` : `  return false;`}
+}
 `;
 }

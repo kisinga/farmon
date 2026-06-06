@@ -3,7 +3,8 @@ import {
   MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic,
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
-  COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS,
+  COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
+  localNodesWithFlag,
 } from '@core';
 import type { GenerationMetadata } from "../backends/types";
 import { hasTimeSchedule } from "./schedule";
@@ -66,13 +67,14 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
   // same list the dashboard chart spec builds widgets from, so what the firmware
   // publishes and what the UI reads can never drift.
   const channels = collectTelemetryChannels(m);
+  const hasManualPumps = localNodesWithFlag(m, 'isPump').length > 0;
 
   // SNTP wall clock for the command TTL gate. Emit it here UNLESS an on-device
   // time schedule already declares `time: sntp` (id: sntp_time) — that way there
   // is exactly one sntp_time and we never depend on ESPHome package merge-by-id.
   const timeBlock = hasTimeSchedule(m)
     ? ''
-    : '\ntime:\n  - platform: sntp\n    id: sntp_time\n';
+    : '\ntime:\n  - platform: sntp\n    id: sntp_time\n    on_time_sync:\n      - then:\n          - lambda: \'id(time_trusted) = true;\'\n';
 
   // --- Shared event helper ---------------------------------------------------
   // One lambda-local C++ helper, embedded in both the command handler and the
@@ -98,11 +100,12 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     'const char* action = x["action"] | "";',
     'const char* command_id = x["command_id"] | "";',
     '',
-    '// TTL gate: once the device clock is valid, drop a command older than the',
-    '// window (e.g. one queued while the link was down) and report it as STALE.',
+    '// TTL gate: once time is TRUSTED (a real SNTP sync, not the flash-seeded boot',
+    '// estimate), drop a command older than the window (e.g. one queued while the link',
+    '// was down) and report it as STALE. Untrusted clock → skip the gate (fail-open).',
     'auto _t = id(sntp_time).now();',
     'long long issued_at = x["issued_at"] | 0LL;',
-    `if (_t.is_valid() && issued_at > 0 && (long long)_t.timestamp - issued_at > ${COMMAND_TTL_S}) {`,
+    `if (id(time_trusted) && issued_at > 0 && (long long)_t.timestamp - issued_at > ${COMMAND_TTL_S}) {`,
     '  publish_event(-1, "", "REFUSED", "STALE", command_id);',
     '  return;',
     '}',
@@ -127,10 +130,33 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     '} else if (strcmp(action, "clear_queue") == 0) {',
     '  id(btn_clear_queue).press();',
     '} else if (strcmp(action, "node_set") == 0) {',
-    '  // Manual claim/release via the dead-man registry the reconciler honours: a',
-    '  // claim runs a pump / opens a valve; release (or the lease expiring) stops it.',
+    '  // Manual claim/release via the dead-man registry the reconciler honours. A pump',
+    '  // claim is GUARDED (manual_pump_precheck: source-low / dry-run-unprotectable) and',
+    '  // reports a NODE_SET outcome; a valve claim just opens it; release always applies.',
+    `  ${cppTokenArray('NS_TO', NODE_SET_RESULTS.map(r => r.to))}`,
+    `  ${cppTokenArray('NS_REASON', NODE_SET_RESULTS.map(r => r.reason))}`,
     '  const char* node_id = x["node_id"] | "";',
-    '  if (node_id[0]) { if (x["on"] | false) extend_deadman(node_id, "manual", 0); else drop_claim(node_id, "manual"); }',
+    '  bool on = x["on"] | false;',
+    '  if (node_id[0] == 0) {',
+    '    // no node id — ignore',
+    '  } else if (!on) {',
+    '    int k = manual_pump_slot(node_id);',
+    '    drop_claim(node_id, "manual");',
+    '    if (k >= 0) manual_clear_latch(k);',
+    '    publish_event(-1, "", NS_TO[0], NS_REASON[0], command_id);',
+    '  } else {',
+    '    int k = manual_pump_slot(node_id);',
+    '    if (k >= 0) {',
+    '      int rc = manual_pump_precheck(k);   // 0 ok, 1 source-low, 2 no local flow sensor',
+    '      if (rc == 0) extend_deadman(node_id, "manual", 0);',
+    '      publish_event(-1, "", NS_TO[rc], NS_REASON[rc], command_id);',
+    '    } else if (is_valve_node(node_id)) {',
+    '      extend_deadman(node_id, "manual", 0);',
+    '      publish_event(-1, "", NS_TO[0], NS_REASON[0], command_id);',
+    '    } else {',
+    '      publish_event(-1, "", NS_TO[3], NS_REASON[3], command_id);  // no local actuator',
+    '    }',
+    '  }',
     '} else if (strcmp(action, "safety_override") == 0) {',
     '  if (x["on"] | false) id(safety_override).turn_on(); else id(safety_override).turn_off();',
     '} else {',
@@ -181,6 +207,17 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     '  last_state[s] = cur;',
     '}',
     'for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) { if (slots[s].route_id >= 0) last_route[s] = slots[s].route_id; }',
+    // Manual/claim pump guard latch transitions → timeline. The node-identified
+    // truth is the relay shadow (telemetry); this carries the reason. No command_id
+    // (the trip is async, the original command is long gone).
+    ...(hasManualPumps ? [
+      'static int last_latch[NUM_MANUAL_PUMPS];',
+      'for (int k = 0; k < NUM_MANUAL_PUMPS; k++) {',
+      '  if (manual_latch[k] == last_latch[k]) continue;',
+      `  if (manual_latch[k] > 0 && manual_latch[k] < ${NR}) publish_event(-1, "", "REFUSED", STOP_TOK[manual_latch[k]], "");`,
+      '  last_latch[k] = manual_latch[k];',
+      '}',
+    ] : []),
   ];
 
   return `# =============================================================================
