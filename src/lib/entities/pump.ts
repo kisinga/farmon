@@ -137,7 +137,10 @@ ${header}
   on_turn_on:
     - if:
         condition:
-          lambda: 'return pump_ref_count(pump_index_for_id("${id}")) == 0 && !has_live_claim("${id}") && !id(safety_override).state;'
+          # Claims are keyed by the topology node id (the registry key extend_deadman
+          # uses), NOT the relay id — a cross-controller claim on a non-brain owner
+          # (pump_ref_count==0) must be seen here or this interlock fights pumpMgmt.
+          lambda: 'return pump_ref_count(pump_index_for_id("${id}")) == 0 && !has_live_claim("${node.id}") && !id(safety_override).state;'
         then:
           - switch.turn_off: ${id}
           - logger.log: {level: WARN, format: "BLOCKED: pump only runs during a route or when safety_override is ON"}`;
