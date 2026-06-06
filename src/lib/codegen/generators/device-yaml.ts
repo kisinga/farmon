@@ -136,6 +136,9 @@ export function generateDeviceYaml(
   for (const [key, val] of Object.entries(subs)) {
     lines.push(`  ${key}: ${val}`);
   }
+  // Per-site UDP coordination key — resolved from secrets.yaml into the
+  // coordination.yaml C++ global (udp_key_g) that keys the HMAC.
+  lines.push(`  udp_key: !secret udp_key`);
   lines.push("");
 
   // Packages
@@ -145,6 +148,7 @@ export function generateDeviceYaml(
   lines.push("  sensors: !include packages/sensors.yaml");
   lines.push("  control: !include packages/control.yaml");
   lines.push("  mqtt: !include packages/mqtt.yaml");
+  lines.push("  coordination: !include packages/coordination.yaml");
   if (hasSchedule(m)) {
     lines.push("  schedule: !include packages/schedule.yaml");
   }
@@ -194,6 +198,8 @@ export function generateDeviceYaml(
   lines.push(`  friendly_name: \${friendly_name}`);
   lines.push("  includes:");
   lines.push("    - packages/routes.h");
+  // After routes.h — the coordination dispatcher calls extend_deadman/drop_claim.
+  lines.push("    - packages/coordination.h");
   lines.push("  on_boot:");
   for (const step of bootSteps) {
     const s = step as { priority: number; then: unknown[] };

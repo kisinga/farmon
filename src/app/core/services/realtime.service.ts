@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import type { RecordModel, UnsubscribeFunc } from 'pocketbase';
 import { BackendService } from './backend.service';
-import type { ShadowRow, TelemetryHistory, StateEventRow } from '../models/runtime';
+import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow } from '../models/runtime';
 
 /**
  * RealtimeService — the runtime telemetry I/O gateway: shadow + history reads
@@ -54,6 +54,23 @@ export class RealtimeService {
     return res.items.map(toEvent);
   }
 
+  /** Controller presence rows (online + last_seen) for a site. */
+  async controllers(siteId: string): Promise<ControllerRow[]> {
+    const items = await this.pb.collection('controllers').getFullList({
+      filter: this.pb.filter('site = {:s}', { s: siteId }),
+    });
+    return items.map(toController);
+  }
+
+  /** Live controller presence updates for a site. Returns an unsubscribe function. */
+  subscribeControllers(siteId: string, cb: (row: ControllerRow) => void): Promise<UnsubscribeFunc> {
+    return this.pb.collection('controllers').subscribe(
+      '*',
+      (e) => cb(toController(e.record)),
+      { filter: this.pb.filter('site = {:s}', { s: siteId }) },
+    );
+  }
+
   /** Live shadow updates for a site. Returns an unsubscribe function. */
   subscribeShadow(siteId: string, cb: (row: ShadowRow) => void): Promise<UnsubscribeFunc> {
     return this.pb.collection('entity_state').subscribe(
@@ -83,6 +100,15 @@ function toShadow(r: RecordModel): ShadowRow {
     reported_text: r['reported_text'],
     desired: r['desired'],
     ts: r['ts'],
+  };
+}
+
+function toController(r: RecordModel): ControllerRow {
+  return {
+    device_id: r['device_id'],
+    online: r['online'],
+    last_seen: r['last_seen'],
+    firmware_version: r['firmware_version'],
   };
 }
 

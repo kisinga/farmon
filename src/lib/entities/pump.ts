@@ -4,10 +4,10 @@ import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPola
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
-import { pumpSwitchId, peerCommandTopic } from '../codegen-ids';
+import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { mqttSwitchProxy, mqttSwitchProxyLeaseInterval } from '../remote-proxy';
+import { udpSwitchProxy, udpSwitchProxyLeaseInterval } from '../remote-proxy';
 
 const COLOR = '#dc2626'; // red
 const S = 60;
@@ -149,12 +149,11 @@ ${header}
       relay: deriveHaEntityId('switch', device, haNames(node).relay),
     }),
 
-    remoteProxy: (node, _haEntityId, ctx) => {
+    remoteProxy: (node) => {
       const proxyId = pumpSwitchId(node.id);
-      const peerTopic = peerCommandTopic(ctx.site, ctx.ownerId);
       return [
-        { section: 'switch', yaml: mqttSwitchProxy(proxyId, node.name ?? 'Pump', node.id, peerTopic, ctx.importerId) },
-        { section: 'interval', yaml: mqttSwitchProxyLeaseInterval(proxyId, node.id, peerTopic, ctx.importerId) },
+        { section: 'switch', yaml: udpSwitchProxy(proxyId, node.name ?? 'Pump', node.id) },
+        { section: 'interval', yaml: udpSwitchProxyLeaseInterval(proxyId, node.id) },
       ];
     },
     proxyEntityIds: (node: PumpNode, device) => ({

@@ -21,7 +21,7 @@ export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef, ExpansionBoard
 export { boardSupportedTransports } from './board.types';
 export type { IoProviderDef, IoProviderInstanceConfig } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
-export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, RouteRule, CodegenContext, RemoteProxyContext, TypedDescriptor, EntityKind, HaEntityKey } from './entity-registry';
+export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, RouteRule, CodegenContext, TypedDescriptor, EntityKind, HaEntityKey } from './entity-registry';
 export type { ChannelUsage, ResolvedChannel, IoChannel, IoProviderDriver } from './io-provider.types';
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
@@ -82,7 +82,7 @@ export type { TelemetryChannel, TelemetryChannelKind } from './telemetry-channel
 
 // --- Dashboard chart spec (derived from the saved topology, in the browser) ---
 export { buildDashboardSpec } from './dashboard-spec';
-export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls } from './dashboard-spec';
+export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl } from './dashboard-spec';
 
 // --- Codegen IDs ---
 export {
@@ -96,17 +96,19 @@ export {
 
 // --- Runtime contract: deployment mode, MQTT topics, command vocabulary ---
 export {
-  MQTT_ROOT, telemetryTopic, commandTopic, peerCommandTopic, statusTopic, eventTopic,
-  telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR,
+  MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic,
+  telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, COMMAND_TTL_S,
+  COORD_MSG, COORD_TYPE,
 } from './codegen-ids';
 export type {
-  DeploymentMode, CommandAction, PeerCommandAction, CommandEnvelope, PeerEnvelope, TelemetryRole,
+  DeploymentMode, CommandAction, CommandEnvelope, CoordMessage, TelemetryRole,
 } from './codegen-ids';
 
 // --- Runtime contract: state/fault/reason vocabulary + meanings ---
 export {
   SYSTEM_STATE_TOKENS, FAULT_TOKENS, STOP_REASON_TOKENS, OUTCOME_TOKENS,
   SYSTEM_STATE_MEANINGS, FAULT_MEANINGS, STOP_REASON_MEANINGS, OUTCOME_MEANINGS,
+  ROUTE_START_RESULTS, ROUTE_STOP_RESULTS,
   describeState,
 } from './codegen-ids';
 export type {
@@ -116,9 +118,9 @@ export type {
 
 // --- Remote Proxy ---
 export {
-  mqttSensorImport,
-  mqttSwitchProxy, mqttSwitchProxyLeaseInterval,
-  mqttCoverProxy, mqttCoverProxyLeaseInterval,
+  udpSensorImport,
+  udpSwitchProxy, udpSwitchProxyLeaseInterval,
+  udpCoverProxy, udpCoverProxyLeaseInterval,
 } from './remote-proxy';
 export { deriveRemoteHaEntityId } from './remote-ha-entity';
 

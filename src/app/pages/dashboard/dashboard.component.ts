@@ -1,8 +1,9 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { buildDashboardSpec, parseTopology, type CommandAction, type DashboardWidget } from '@core';
+import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, type CommandAction, type DashboardWidget } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
+import { ConfirmService } from '../../core/services/confirm.service';
 import { DashboardStore } from './dashboard.store';
 import { TelemetryStore } from './telemetry.store';
 import { DashboardCardComponent } from './widgets/dashboard-card.component';
@@ -10,9 +11,9 @@ import { DashboardCardComponent } from './widgets/dashboard-card.component';
 /**
  * Customer dashboard for a site (`/site/:name/dashboard`, where `:name` is the
  * site id). Builds the chart spec in the browser from the saved topology, then
- * renders live widgets from the shadow + transition log and a per-controller
- * command bar. Runtime state group only — it must not import the editor
- * services (WorkspaceService / SystemEditorService).
+ * renders live widgets from the shadow + transition log, a per-controller
+ * command bar, and a manual-control panel. Runtime state group only — it must
+ * not import the editor services (WorkspaceService / SystemEditorService).
  */
 @Component({
   selector: 'app-dashboard',
@@ -31,9 +32,21 @@ import { DashboardCardComponent } from './widgets/dashboard-card.component';
             <h1 class="text-2xl font-bold tracking-tight truncate">{{ siteName() || 'Dashboard' }}</h1>
             <p class="text-sm text-base-content/60 mt-0.5">Live status &amp; control</p>
           </div>
-          <span class="inline-flex items-center gap-1.5 text-xs text-cyan-300 bg-cyan-400/10 rounded-full px-2.5 py-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-pulse"></span> Live
-          </span>
+          <!-- Real device presence (replaces the old hardcoded pill). -->
+          @if (presenceTone() === 'online') {
+            <span class="inline-flex items-center gap-1.5 text-xs text-success bg-success/10 rounded-full px-2.5 py-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span> {{ presenceLabel() }}
+            </span>
+          } @else if (presenceTone() === 'partial') {
+            <span class="inline-flex items-center gap-1.5 text-xs text-warning bg-warning/10 rounded-full px-2.5 py-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-warning"></span> {{ presenceLabel() }}
+            </span>
+          } @else {
+            <span class="inline-flex items-center gap-1.5 text-xs text-base-content/50 bg-base-content/10 rounded-full px-2.5 py-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-base-content/40"></span>
+              {{ presenceLabel() }}@if (presenceDetail()) { <span class="opacity-70">· {{ presenceDetail() }}</span> }
+            </span>
+          }
         </div>
       </div>
 
@@ -69,11 +82,14 @@ import { DashboardCardComponent } from './widgets/dashboard-card.component';
           </div>
         }
 
-        <!-- Command bar (hidden while an admin is viewing read-only) -->
+        <!-- Command bar + manual control (hidden while an admin is read-only) -->
         @if (canControl()) {
         @for (c of store.spec().controllers; track c.controller) {
           <div class="bg-base-100 rounded-2xl ring-1 ring-base-300/40 px-4 py-3 mb-4">
+            <!-- Routes -->
             <div class="flex items-center flex-wrap gap-2">
+              <span class="w-2 h-2 rounded-full shrink-0" [class]="store.presence(c.controller).online ? 'bg-success' : 'bg-base-content/30'"
+                [title]="store.presence(c.controller).online ? 'Online' : ('Offline · ' + lastSeenText(c.controller))"></span>
               <span class="text-xs font-semibold text-base-content/60 mr-1">{{ c.name }}</span>
               @for (r of c.routes; track r.routeId) {
                 <div class="join">
@@ -91,6 +107,36 @@ import { DashboardCardComponent } from './widgets/dashboard-card.component';
               <button class="btn btn-xs btn-ghost" [disabled]="busy().has(key(c.controller,'clear_queue'))"
                 (click)="cmd(c.controller,'clear_queue')">Clear queue</button>
             </div>
+
+            <!-- Manual control: hold an actuator open/running. It releases on its
+                 own if your connection drops (the device's dead-man lease). -->
+            @if (c.actuators.length > 0) {
+              <div class="mt-3 pt-3 border-t border-base-300/30">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-xs font-semibold text-base-content/60">Manual control</span>
+                  <span class="text-[11px] text-base-content/40">hold to drive; releases automatically if you disconnect</span>
+                  <span class="grow"></span>
+                  <button class="btn btn-xs" [class]="overrideOn(c.controller) ? 'btn-error' : 'btn-ghost'"
+                    [disabled]="busy().has(manualKey(c.controller,'safety_override'))"
+                    (click)="toggleOverride(c.controller)">
+                    Safety override: {{ overrideOn(c.controller) ? 'ON' : 'off' }}
+                  </button>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  @for (a of c.actuators; track a.id) {
+                    <button class="btn btn-sm" [class]="isHeld(c.controller,a.id) ? 'btn-primary' : 'btn-outline'"
+                      [disabled]="busy().has(manualKey(c.controller,a.id))"
+                      (click)="toggleActuator(c.controller,a.id)">
+                      {{ a.name }}
+                      <span class="text-[10px] opacity-70 ml-1">{{ isHeld(c.controller,a.id) ? (a.kind === 'valve' ? 'holding open' : 'running') : (a.kind === 'valve' ? 'open' : 'run') }}</span>
+                    </button>
+                  }
+                </div>
+                @if (overrideOn(c.controller)) {
+                  <p class="text-[11px] text-warning mt-2">Safety checks are OFF: a pump can run with no route and the watchdogs are bypassed. Turn this off when you finish.</p>
+                }
+              </div>
+            }
           </div>
         }
         }
@@ -126,10 +172,11 @@ import { DashboardCardComponent } from './widgets/dashboard-card.component';
     </div>
   `,
 })
-export class DashboardComponent {
+export class DashboardComponent implements OnDestroy {
   private route = inject(ActivatedRoute);
   private backend = inject(BackendService);
   private auth = inject(AuthStore);
+  private confirm = inject(ConfirmService);
   protected store = inject(DashboardStore);
   protected telemetry = inject(TelemetryStore);
 
@@ -137,6 +184,14 @@ export class DashboardComponent {
   protected siteName = signal('');
   protected busy = signal<Set<string>>(new Set());
   protected note = signal<string | null>(null);
+
+  /** Stale-command window in minutes, for the offline warning copy. */
+  private readonly ttlMin = Math.max(1, Math.round(COMMAND_TTL_S / 60));
+
+  /** Actuators we are actively holding (heartbeating), keyed `${ctrl}::${node}`. */
+  protected manualHeld = signal<Set<string>>(new Set());
+  /** Re-claim timers for held actuators, same key — cleared on release/destroy. */
+  private heartbeats = new Map<string, number>();
 
   /** True when an admin is viewing a site they don't own (support/validation). */
   protected adminViewing = signal(false);
@@ -161,6 +216,43 @@ export class DashboardComponent {
   protected showController = computed(() => this.store.spec().controllers.length > 1);
   protected ctrlName(id: string): string { return this.ctrlMeta().get(id)?.name ?? id; }
   protected ctrlColor(id: string): string { return this.ctrlMeta().get(id)?.color ?? '#94a3b8'; }
+
+  // --- Device presence (aggregate, for the hero pill) ----------------------
+  private onlineCount = computed(() =>
+    this.store.spec().controllers.filter((c) => this.store.presence(c.controller).online).length,
+  );
+  protected presenceTone = computed<'online' | 'offline' | 'partial'>(() => {
+    const total = this.store.spec().controllers.length;
+    if (total === 0) return 'offline';
+    const on = this.onlineCount();
+    return on === total ? 'online' : on === 0 ? 'offline' : 'partial';
+  });
+  protected presenceLabel = computed(() => {
+    const total = this.store.spec().controllers.length;
+    if (this.presenceTone() === 'online') return 'Live';
+    if (this.presenceTone() === 'partial') return `${this.onlineCount()}/${total} online`;
+    return 'Offline';
+  });
+  /** Single-controller offline detail ("last seen 3m ago"). */
+  protected presenceDetail = computed(() => {
+    const ctrls = this.store.spec().controllers;
+    if (ctrls.length !== 1 || this.presenceTone() === 'online') return '';
+    const seen = this.store.presence(ctrls[0].controller).lastSeen;
+    return seen ? `last seen ${this.ago(seen)}` : '';
+  });
+
+  protected lastSeenText(controller: string): string {
+    const seen = this.store.presence(controller).lastSeen;
+    return seen ? this.ago(seen) : 'never seen';
+  }
+
+  private ago(ts: number): string {
+    const s = Math.max(0, Math.round((this.store.now() - ts) / 1000));
+    if (s < 60) return 'just now';
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m}m ago`;
+    return `${Math.round(m / 60)}h ago`;
+  }
 
   /** Section a widget belongs to — drives the grouped layout below. */
   private category(w: DashboardWidget): 'status' | 'levels' | 'valves' | 'flow' | 'pressure' | 'activity' {
@@ -197,6 +289,11 @@ export class DashboardComponent {
     if (this.siteId) void this.load();
   }
 
+  ngOnDestroy(): void {
+    for (const h of this.heartbeats.values()) clearInterval(h);
+    this.heartbeats.clear();
+  }
+
   private async load(): Promise<void> {
     const { site, topology } = await this.backend.siteLoad(this.siteId);
     this.siteName.set(site.friendlyName);
@@ -219,23 +316,96 @@ export class DashboardComponent {
     return `${controller}/${action}/${routeId ?? ''}`;
   }
 
-  protected async cmd(controller: string, action: CommandAction, routeId?: number): Promise<void> {
-    // Read-only admins must Take control first (the bar is hidden, but guard anyway).
-    if (!this.canControl()) return;
-    const k = this.key(controller, action, routeId);
-    this.busy.update((s) => new Set(s).add(k));
+  protected manualKey(controller: string, node: string): string {
+    return `${controller}::${node}`;
+  }
+
+  protected isHeld(controller: string, node: string): boolean {
+    return this.manualHeld().has(this.manualKey(controller, node));
+  }
+
+  /** Safety override reported state, read from the shadow (the device switch). */
+  protected overrideOn(controller: string): boolean {
+    const r = this.store.row(controller, 'safety_override');
+    return !!r && r.reported >= 0.5;
+  }
+
+  /** Send a command + reconcile the note (warns when the target reads offline). */
+  private async run(
+    controller: string,
+    action: CommandAction,
+    args: { routeId?: number; nodeId?: string; on?: boolean },
+    busyKey: string,
+  ): Promise<boolean> {
+    if (!this.canControl()) return false;
+    this.busy.update((s) => new Set(s).add(busyKey));
     this.note.set(null);
     try {
-      await this.backend.sendCommand(this.siteId, controller, action, routeId);
-      this.note.set(`Sent ${action}${routeId != null ? ' #' + routeId : ''} to ${controller} — watching for the device to confirm…`);
+      await this.backend.sendCommand(this.siteId, controller, action, args);
+      this.note.set(
+        this.store.presence(controller).online
+          ? `Sent to ${this.ctrlName(controller)} — watching for the device to confirm.`
+          : `${this.ctrlName(controller)} looks offline — the command expires in ~${this.ttlMin} min if it doesn't reconnect.`,
+      );
+      return true;
     } catch (err) {
       this.note.set(String(err));
+      return false;
     } finally {
       this.busy.update((s) => {
         const n = new Set(s);
-        n.delete(k);
+        n.delete(busyKey);
         return n;
       });
     }
+  }
+
+  protected async cmd(controller: string, action: CommandAction, routeId?: number): Promise<void> {
+    await this.run(controller, action, { routeId }, this.key(controller, action, routeId));
+  }
+
+  /** Toggle a manual claim on an actuator. On → claim + heartbeat; off → release. */
+  protected async toggleActuator(controller: string, node: string): Promise<void> {
+    const key = this.manualKey(controller, node);
+    if (this.manualHeld().has(key)) {
+      this.stopHeartbeat(key);
+      this.manualHeld.update((s) => { const n = new Set(s); n.delete(key); return n; });
+      await this.run(controller, 'node_set', { nodeId: node, on: false }, key);
+    } else if (await this.run(controller, 'node_set', { nodeId: node, on: true }, key)) {
+      this.manualHeld.update((s) => new Set(s).add(key));
+      this.startHeartbeat(controller, node, key);
+    }
+  }
+
+  /** Toggle the commissioning safety-override switch; enabling it is gated by a
+   *  hard confirm (it disables every runtime safety check). */
+  protected async toggleOverride(controller: string): Promise<void> {
+    if (!this.canControl()) return;
+    const turningOn = !this.overrideOn(controller);
+    if (turningOn) {
+      const ok = await this.confirm.confirm({
+        title: 'Disable all safety checks?',
+        message: `Safety override turns OFF every runtime safety check on ${this.ctrlName(controller)}: tank-level gates, the no-flow watchdog, runtime level stops and the max-runtime limit. A pump can run with no route and no protection. Use it only for commissioning or manual recovery. It reverts to off when the device reboots.`,
+        confirmLabel: 'Disable safety',
+        variant: 'error',
+      });
+      if (!ok) return;
+    }
+    await this.run(controller, 'safety_override', { on: turningOn }, this.manualKey(controller, 'safety_override'));
+  }
+
+  /** Re-claim a held actuator every 60s (the lease is ~90s) so it stays driven
+   *  while the operator holds it; stopping the heartbeat lets it fail-safe stop. */
+  private startHeartbeat(controller: string, node: string, key: string): void {
+    this.stopHeartbeat(key);
+    const h = window.setInterval(() => {
+      void this.backend.sendCommand(this.siteId, controller, 'node_set', { nodeId: node, on: true }).catch(() => {});
+    }, 60_000);
+    this.heartbeats.set(key, h);
+  }
+
+  private stopHeartbeat(key: string): void {
+    const h = this.heartbeats.get(key);
+    if (h) { clearInterval(h); this.heartbeats.delete(key); }
   }
 }

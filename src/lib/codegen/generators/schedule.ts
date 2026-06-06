@@ -18,6 +18,13 @@ export function hasSchedule(m: Manifest): boolean {
   return validAutomations(m).length > 0;
 }
 
+/** True when a TIME automation exists — meaning schedule.yaml declares the
+ *  `time: sntp` component (id: sntp_time). mqtt.ts emits its own only when this
+ *  is false, so there is exactly one sntp_time (no package merge to rely on). */
+export function hasTimeSchedule(m: Manifest): boolean {
+  return validAutomations(m).some((a) => a.trigger.type === 'time');
+}
+
 /**
  * Generate the on-device schedule package — the firmware replacement for the old
  * Home Assistant schedule automations. Triggers fire on the ESP32 itself and call

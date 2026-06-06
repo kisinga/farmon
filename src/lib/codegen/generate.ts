@@ -8,6 +8,7 @@ import { generateDeviceYaml } from "./generators/device-yaml";
 import { generateControl } from "./generators/control";
 import { generateMqtt } from "./generators/mqtt";
 import { generateSchedule } from "./generators/schedule";
+import { generateCoordination, generateCoordinationHeader } from "./generators/coordination";
 
 import { collectEntityCodegen } from "./generators/collect";
 import { LOGO_SVG } from '@core';
@@ -59,6 +60,7 @@ export function generateDefaultSecrets(): SecretsMap {
   return {
     ota_password: toHex(randomBytes(16)),
     mqtt_token: toBase64(randomBytes(32)),
+    udp_key: toHex(randomBytes(32)),
   };
 }
 
@@ -71,6 +73,7 @@ function generateSecretsYaml(m: Manifest, secrets?: SecretsMap): string {
     ``,
     `ota_password: "${s.ota_password}"`,
     `mqtt_token: "${s.mqtt_token}"`,
+    `udp_key: "${s.udp_key}"`,
     ``,
   ].join("\n");
 }
@@ -215,6 +218,16 @@ export function generateEsphome(
       relativePath: `${deviceDir}/packages/routes.h`,
       description: "C++ route table + dispatch functions",
       content: generateRoutes(m),
+    },
+    {
+      relativePath: `${deviceDir}/packages/coordination.h`,
+      description: "C++ cross-controller coordination (UDP HMAC, message build/parse, dispatcher)",
+      content: generateCoordinationHeader(m, metadata),
+    },
+    {
+      relativePath: `${deviceDir}/packages/coordination.yaml`,
+      description: "Cross-controller coordination over UDP (udp: block, on_receive, reading broadcast)",
+      content: generateCoordination(m),
     },
     {
       relativePath: `${deviceDir}/packages/hardware.yaml`,

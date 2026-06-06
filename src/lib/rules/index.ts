@@ -14,7 +14,6 @@ import {
 // are now entity-declared constraints (on pump.ts and endpoint.ts descriptors).
 
 import { unclaimedRouteNodes } from "./topology/unclaimed-route-nodes";
-import { managedCrossController } from "./topology/managed-cross-controller";
 
 // Manifest rules
 import { pinConflicts } from "./manifest/pin-conflicts";
@@ -73,16 +72,6 @@ export function runTopologyRules(
   return _runTopologyRules(topology, rules);
 }
 
-/**
- * Topology rule set for a given deployment mode. `managed` adds the
- * cross-controller ban; `local` (or unset) uses the base set.
- */
-export function topologyRulesForMode(mode?: ValidateOptions['mode']): TopologyRule[] {
-  return mode === 'managed'
-    ? [...ALL_TOPOLOGY_RULES, managedCrossController]
-    : ALL_TOPOLOGY_RULES;
-}
-
 export function runManifestRules(
   manifest: Manifest,
   board: BoardDef,
@@ -98,7 +87,7 @@ export function validateAll(
   board: BoardDef,
   opts: ValidateOptions = {},
 ): ValidationResult {
-  return _validateAll(topology, manifest, board, topologyRulesForMode(opts.mode), ALL_MANIFEST_RULES, opts);
+  return _validateAll(topology, manifest, board, ALL_TOPOLOGY_RULES, ALL_MANIFEST_RULES, opts);
 }
 
 // Re-export types

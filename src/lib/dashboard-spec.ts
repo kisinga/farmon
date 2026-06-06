@@ -47,11 +47,21 @@ export interface RouteControl {
   name: string;
 }
 
-/** The controllable routes for one controller. */
+/** An actuator an operator can manually drive via `node_set`. `id` is the
+ *  topology node id — the claim key the firmware's dead-man registry uses
+ *  (a valve opens / a pump runs while claimed; the lease expiring stops it). */
+export interface ActuatorControl {
+  id: string;
+  name: string;
+  kind: 'valve' | 'pump';
+}
+
+/** The controllable routes + actuators for one controller. */
 export interface ControllerControls {
   controller: string;
   name: string;
   routes: RouteControl[];
+  actuators: ActuatorControl[];
 }
 
 export interface DashboardSpec {
@@ -143,11 +153,22 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
       title: 'Activity',
       controller: ctrl.id,
     });
+    // Manually drivable actuators: the valve + pump channels this controller
+    // publishes. `ch.node` is the topology node id (the node_set claim key) — not
+    // ch.sensor, which for a pump is the `<id>_relay` component. Dosing pumps are
+    // excluded: they have no owner-side actuation path yet.
+    const actuators: ActuatorControl[] = [];
+    for (const ch of channels) {
+      if ((ch.role === 'valve' || ch.role === 'pump') && ch.node) {
+        actuators.push({ id: ch.node, name: ch.label ?? ch.node, kind: ch.role });
+      }
+    }
     controllers.push({
       controller: ctrl.id,
       name: ctrl.friendlyName ?? ctrl.id,
       // Index === firmware route_id (ROUTES[] is built in manifest.routes order).
       routes: manifest.routes.map((r, i) => ({ routeId: i, name: r.name || r.key })),
+      actuators,
     });
   }
   return { widgets, controllers };

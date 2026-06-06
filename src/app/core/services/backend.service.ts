@@ -300,7 +300,7 @@ export class BackendService {
     // into this build's secrets.yaml; wifi is NOT baked (captive portal → NVS).
     const deployment = await this.resolveDeployment(site);
     const prov = await this.provision(siteId, ctrl);
-    const provisioned: SecretsMap = { ota_password: prov.ota_password, mqtt_token: prov.token };
+    const provisioned: SecretsMap = { ota_password: prov.ota_password, mqtt_token: prov.token, udp_key: prov.udp_key };
 
     const expansionBoards = await this.expansionCatalog();
     const built = await this.buildController(topo, ctrl, siteId, expansionBoards, deployment, provisioned);
@@ -327,11 +327,18 @@ export class BackendService {
     siteId: string,
     controller: string,
     action: CommandAction,
-    routeId?: number,
+    args: { routeId?: number; nodeId?: string; on?: boolean } = {},
   ): Promise<string> {
     const res = await this.pb.send<{ command_id?: string }>('/api/farmon/command', {
       method: 'POST',
-      body: { site: siteId, controller, action, route_id: routeId },
+      body: {
+        site: siteId,
+        controller,
+        action,
+        route_id: args.routeId,
+        node_id: args.nodeId,
+        on: args.on,
+      },
     });
     if (!res.command_id) throw new Error('Command was not accepted.');
     return res.command_id;
@@ -432,8 +439,8 @@ export class BackendService {
    * reused across builds so OTA keeps authenticating). Both are baked into this
    * build's `secrets.yaml`.
    */
-  private async provision(siteId: string, ctrl: Controller): Promise<{ token: string; ota_password: string }> {
-    const res = await this.pb.send<{ token?: string; ota_password?: string }>('/api/farmon/provision', {
+  private async provision(siteId: string, ctrl: Controller): Promise<{ token: string; ota_password: string; udp_key: string }> {
+    const res = await this.pb.send<{ token?: string; ota_password?: string; udp_key?: string }>('/api/farmon/provision', {
       method: 'POST',
       body: {
         site: siteId,
@@ -442,8 +449,8 @@ export class BackendService {
         board_type: ctrl.board,
       },
     });
-    if (!res.token || !res.ota_password) throw new Error('Provisioning did not return the device secrets.');
-    return { token: res.token, ota_password: res.ota_password };
+    if (!res.token || !res.ota_password || !res.udp_key) throw new Error('Provisioning did not return the device secrets.');
+    return { token: res.token, ota_password: res.ota_password, udp_key: res.udp_key };
   }
 
   /**

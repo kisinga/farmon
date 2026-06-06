@@ -1,7 +1,7 @@
 import type { Manifest } from '@core';
 import type { BoardDef, ExpansionBoardCatalog } from '@core';
 import { nodesByKind, NODE_REGISTRY, buildResolveChannel, buildProviderDrivers } from '@core';
-import type { CodegenContext, RemoteProxyContext } from '@core';
+import type { CodegenContext } from '@core';
 import type { GenerationMetadata } from "../backends/types";
 
 
@@ -36,13 +36,8 @@ export function collectEntityCodegen(
     resolveChannel: buildResolveChannel(board, providers),
   };
 
-  // Peer-proxy context for imported actuators (local mode): this controller is
-  // the claim holder (importerId); each node names its owner via anchorId.
-  const proxyCtx = (ownerId: string): RemoteProxyContext => ({
-    site: metadata.siteId,
-    importerId: metadata.controllerId,
-    ownerId,
-  });
+  // Cross-controller proxies are generic by node id (see coordination.ts), so the
+  // proxy emitters take only the node.
 
   const result: CollectedCodegen = {
     switches: [],
@@ -69,11 +64,7 @@ export function collectEntityCodegen(
   // --- Imported nodes: proxy generation only, no local hardware ---
   for (const node of m.imports) {
     const desc = NODE_REGISTRY.get(node.kind);
-    const proxies = desc?.codegen?.remoteProxy?.(
-      node,
-      node.remoteHaEntityId,
-      proxyCtx(node.anchorId),
-    );
+    const proxies = desc?.codegen?.remoteProxy?.(node);
     if (proxies) {
       for (const proxy of proxies) {
         (result.sections[proxy.section] ??= []).push(proxy.yaml);
@@ -87,11 +78,7 @@ export function collectEntityCodegen(
 
     // Remote proxy for local nodes with remote HA entity (e.g. tank with remote level source).
     if (node.remoteHaEntityId) {
-      const proxies = desc?.codegen?.remoteProxy?.(
-        node,
-        node.remoteHaEntityId,
-        proxyCtx(node.anchorId),
-      );
+      const proxies = desc?.codegen?.remoteProxy?.(node);
       if (proxies) {
         for (const proxy of proxies) {
           (result.sections[proxy.section] ??= []).push(proxy.yaml);

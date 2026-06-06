@@ -39,48 +39,24 @@ func (h *deviceAuthHook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packe
 	return auth.VerifyToken(rec.GetString("token_hash"), token)
 }
 
-// OnACLCheck confines a device to its own namespace `majiflow/{site}/{device_id}/…`,
-// plus two same-site cross-controller lanes for local-mode coordination:
-//   - `majiflow/{site}/{anyCtrl}/peer`         — WRITE a node_claim/release to
-//     another same-site controller's actuators.
-//   - `majiflow/{site}/{anyCtrl}/telemetry|status` — READ another same-site
-//     controller's published values (the remote level/flow read-import).
-// Everything else stays locked down. Cross-site access is never allowed.
-func (h *deviceAuthHook) OnACLCheck(cl *mqtt.Client, topic string, write bool) bool {
+// OnACLCheck confines a device to its own namespace `majiflow/{site}/{device_id}/…`
+// (plus the ESPHome discovery lane). Cross-controller coordination is device↔device
+// over UDP, so the broker carries only each device's own telemetry / command / status.
+func (h *deviceAuthHook) OnACLCheck(cl *mqtt.Client, topic string, _ bool) bool {
 	deviceID := string(cl.Properties.Username)
 	if deviceID == "" {
 		return false
 	}
 	parts := strings.Split(topic, "/")
-	if len(parts) < 3 || parts[0] != "majiflow" {
-		return false
-	}
-	// Own namespace — always allowed (includes the device's own .../peer, which
-	// it subscribes to).
-	if parts[2] == deviceID {
+	// ESPHome's own dashboard discovery uses absolute `esphome/*` topics
+	// (esphome/discover/<name>, esphome/ping/<name>) outside our namespace, and
+	// the firmware publishes the retained discover message unconditionally.
+	// REJECTING it makes mochi treat the packet as a processing error and reset the
+	// connection — a reconnect loop that blocks telemetry. Allow authenticated
+	// controllers this discovery-metadata namespace (no telemetry/control rides here).
+	if len(parts) > 0 && parts[0] == "esphome" {
 		return true
 	}
-	// Cross-controller lanes — same site only.
-	if len(parts) >= 4 {
-		switch parts[3] {
-		case "peer":
-			// Claim/release another controller's actuators (write).
-			return h.sameSite(deviceID, parts[1])
-		case "telemetry", "status":
-			// Read another controller's outputs; never write into them.
-			return !write && h.sameSite(deviceID, parts[1])
-		}
-	}
-	return false
-}
-
-// sameSite reports whether deviceID's controller belongs to the given site.
-func (h *deviceAuthHook) sameSite(deviceID, site string) bool {
-	rec, err := h.app.FindFirstRecordByFilter(
-		"controllers", "device_id = {:d}", dbx.Params{"d": deviceID},
-	)
-	if err != nil || rec == nil {
-		return false
-	}
-	return rec.GetString("site") == site
+	// Own namespace only: majiflow/{site}/{device_id}/…
+	return len(parts) >= 3 && parts[0] == "majiflow" && parts[2] == deviceID
 }

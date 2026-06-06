@@ -3,9 +3,9 @@ import { buildGraph } from './graph/topology-graph';
 import { activeGraph } from './graph/active-graph';
 import { deriveRoutes } from './graph/routes';
 
-/** Why a site needs controllers to coordinate (and thus needs local mode). */
+/** Whether a site's design uses cross-controller coordination. */
 export interface CrossControllerReport {
-  /** True when the design needs inter-controller coordination. */
+  /** True when the design uses inter-controller coordination. */
   hasCrossTalk: boolean;
   /** Route keys whose nodes span more than one controller. */
   spanningRoutes: string[];
@@ -14,16 +14,11 @@ export interface CrossControllerReport {
 }
 
 /**
- * Detect whether a site's design needs controllers to talk to each other
- * ("cross-talk"): a route whose nodes span more than one controller, or an
- * explicit cross-controller import.
- *
- * Such designs only work in local mode (an on-site broker lets controllers
- * coordinate); online/managed mode treats each controller as an island. This is
- * the same condition the `managed-cross-controller` validation rule enforces,
- * exposed as a pure, site-level helper so the deployment UI can show a live
- * verdict next to the Online/Local choice without building a per-controller
- * manifest.
+ * Detect whether a site's design uses cross-controller coordination ("cross-talk"):
+ * a route whose nodes span more than one controller, or an explicit cross-controller
+ * import. Coordination runs over the LAN UDP lane (coordination.ts) in both
+ * deployment modes. Pure and site-level (no per-controller manifest needed) — the
+ * deployment UI surfaces it as live design info.
  */
 export function detectCrossControllerTalk(topology: SiteTopology): CrossControllerReport {
   const routes = deriveRoutes(activeGraph(buildGraph(topology.nodes, topology.pipes)));

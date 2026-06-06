@@ -1,10 +1,12 @@
 import type { Manifest } from '@core';
 import {
-  MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic, peerCommandTopic,
+  MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic,
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
+  COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS,
 } from '@core';
 import type { GenerationMetadata } from "../backends/types";
+import { hasTimeSchedule } from "./schedule";
 
 /** C++ printf format for a StateEvent JSON line: route, from, to, reason, command_id. */
 const EVENT_FMT =
@@ -65,76 +67,79 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
   // publishes and what the UI reads can never drift.
   const channels = collectTelemetryChannels(m);
 
+  // SNTP wall clock for the command TTL gate. Emit it here UNLESS an on-device
+  // time schedule already declares `time: sntp` (id: sntp_time) — that way there
+  // is exactly one sntp_time and we never depend on ESPHome package merge-by-id.
+  const timeBlock = hasTimeSchedule(m)
+    ? ''
+    : '\ntime:\n  - platform: sntp\n    id: sntp_time\n';
+
+  // --- Shared event helper ---------------------------------------------------
+  // One lambda-local C++ helper, embedded in both the command handler and the
+  // transition log, so the snprintf + publish is written once. Best-effort: it
+  // skips silently when the broker is disconnected.
+  const publishEventHelper = [
+    'auto publish_event = [](int route, const char* from, const char* to, const char* reason, const char* cid) {',
+    '  auto *mc = id(mqtt_client);',
+    '  if (!mc->is_connected()) return;',
+    '  char payload[192];',
+    `  snprintf(payload, sizeof(payload), "${EVENT_FMT}", route, from, to, reason, cid);`,
+    `  mc->publish("${ev}", payload);`,
+    '};',
+  ];
+
   // --- Operator command handler (JSON on the command topic) ------------------
-  // Refusals/queues become a transition event carrying the reason; a successful
-  // start (rc 0) needs no event here — the diff below logs the PREPARING edge.
+  // A stale command (issued before the TTL window) is refused outright. Route
+  // refusals/queues become a transition event carrying the reason via the rc →
+  // {to, reason} tables from core (no magic numbers); a successful start (rc 0)
+  // needs no event here — the transition log below catches the PREPARING edge.
   const cmdBody = [
+    ...publishEventHelper,
     'const char* action = x["action"] | "";',
     'const char* command_id = x["command_id"] | "";',
+    '',
+    '// TTL gate: once the device clock is valid, drop a command older than the',
+    '// window (e.g. one queued while the link was down) and report it as STALE.',
+    'auto _t = id(sntp_time).now();',
+    'long long issued_at = x["issued_at"] | 0LL;',
+    `if (_t.is_valid() && issued_at > 0 && (long long)_t.timestamp - issued_at > ${COMMAND_TTL_S}) {`,
+    '  publish_event(-1, "", "REFUSED", "STALE", command_id);',
+    '  return;',
+    '}',
+    '',
     'int route_id = x["route_id"] | -1;',
-    'auto *mc = id(mqtt_client);',
     'if (strcmp(action, "route_start") == 0) {',
+    `  ${cppTokenArray('RS_TO', ROUTE_START_RESULTS.map(r => r.to))}`,
+    `  ${cppTokenArray('RS_REASON', ROUTE_START_RESULTS.map(r => r.reason))}`,
     '  int rc = try_route_start(route_id, command_id);',
-    '  if (rc != 0) {',
-    '    const char* to = (rc == 1) ? "QUEUED" : "REFUSED";',
-    '    const char* reason = "";',
-    '    if (rc == 3) reason = "SOURCE_LOW";',
-    '    else if (rc == 4) reason = "TANK_FULL";',
-    '    else if (rc == 5) reason = "CONTROL_LOST";',
-    '    else if (rc == 2) reason = "REJECTED";',
-    '    char payload[192];',
-    `    snprintf(payload, sizeof(payload), "${EVENT_FMT}", route_id, "", to, reason, command_id);`,
-    `    mc->publish("${ev}", payload);`,
-    '  }',
+    `  if (rc > 0 && rc < ${ROUTE_START_RESULTS.length}) publish_event(route_id, "", RS_TO[rc], RS_REASON[rc], command_id);`,
     '} else if (strcmp(action, "route_stop") == 0) {',
+    `  ${cppTokenArray('RST_REASON', ROUTE_STOP_RESULTS.map(r => r.reason))}`,
     '  int rc = try_route_stop(route_id, command_id);',
-    '  if (rc != 0) {',
-    '    const char* reason = (rc == 1) ? "NOT_ACTIVE" : "NOT_RUNNING";',
-    '    char payload[192];',
-    `    snprintf(payload, sizeof(payload), "${EVENT_FMT}", route_id, "", "REFUSED", reason, command_id);`,
-    `    mc->publish("${ev}", payload);`,
-    '  }',
+    `  if (rc > 0 && rc < ${ROUTE_STOP_RESULTS.length}) publish_event(route_id, "", "REFUSED", RST_REASON[rc], command_id);`,
     '} else if (strcmp(action, "fault_reset") == 0) {',
     '  int s = find_slot_by_route(route_id);',
-    '  if (s >= 0 && slots[s].state == 4) {',
-    '    init_slot(s);',
-    '    id(system_state) = derived_system_state();',
-    '  }',
+    '  if (s >= 0 && slots[s].state == 4) { init_slot(s); id(system_state) = derived_system_state(); }',
     '} else if (strcmp(action, "stop_all") == 0) {',
     '  id(btn_stop_all).press();',
     '} else if (strcmp(action, "reset_faults") == 0) {',
     '  id(btn_reset_faults).press();',
     '} else if (strcmp(action, "clear_queue") == 0) {',
     '  id(btn_clear_queue).press();',
+    '} else if (strcmp(action, "node_set") == 0) {',
+    '  // Manual claim/release via the dead-man registry the reconciler honours: a',
+    '  // claim runs a pump / opens a valve; release (or the lease expiring) stops it.',
+    '  const char* node_id = x["node_id"] | "";',
+    '  if (node_id[0]) { if (x["on"] | false) extend_deadman(node_id, "manual", 0); else drop_claim(node_id, "manual"); }',
+    '} else if (strcmp(action, "safety_override") == 0) {',
+    '  if (x["on"] | false) id(safety_override).turn_on(); else id(safety_override).turn_off();',
     '} else {',
     '  ESP_LOGW("cmd", "unknown action: %s", action);',
     '}',
   ];
 
-  // --- Peer ingress (local mode only) ---------------------------------------
-  // Another same-site controller claims/releases one of OUR actuators over the
-  // peer lane. node_claim sets a timed dead-man lease in the claim registry
-  // (routes.h); the actuator runs while the claim is alive and stops within one
-  // tick of it expiring (peer link lost) — the local-mode control-loss fail-safe.
-  // The lease duration is the owner's own claim_lease_s; the envelope's
-  // duration_ms is advisory. `owner` lets a peer renew/release only its own claim.
-  const isLocal = metadata.mode === 'local';
-  const peerBody = [
-    'const char* action = x["action"] | "";',
-    'const char* node_id = x["node_id"] | "";',
-    'const char* owner = x["owner"] | "";',
-    'if (node_id[0] == 0 || owner[0] == 0) return;',
-    'if (strcmp(action, "node_claim") == 0) {',
-    '  extend_deadman(node_id, owner, (uint32_t)(int)(x["duration_ms"] | 0));',
-    '} else if (strcmp(action, "node_release") == 0) {',
-    '  drop_claim(node_id, owner);',
-    '} else {',
-    '  ESP_LOGW("peer", "unknown peer action: %s", action);',
-    '}',
-  ];
-  const peerHandler = isLocal
-    ? `\n    - topic: "${peerCommandTopic(site, ctrl)}"\n      then:\n        - lambda: |-\n${indent(peerBody, 12)}`
-    : '';
+  // MQTT here is the device↔server pipe: telemetry up, commands down. Cross-controller
+  // coordination is device↔device over UDP (packages/coordination.{h,yaml}).
 
   // --- Telemetry publisher (every update interval) ---------------------------
   const telemetryBody = [
@@ -149,6 +154,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
   // STOPPING/IDLE → stop reason). last_route survives the slot resetting to -1
   // so a stop event still names the route that just ran.
   const eventBody = [
+    ...publishEventHelper,
     'auto *mc = id(mqtt_client);',
     'if (!mc->is_connected()) return;',
     cppTokenArray('SYS_TOK', SYSTEM_STATE_TOKENS),
@@ -171,9 +177,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     '  const char* reason = "";',
     `  if (cur == 4) { int f = slots[s].fault_code; if (f >= 0 && f < ${NF}) reason = FAULT_TOK[f]; }`,
     `  else if (cur == 3 || cur == 0) { int r = slots[s].stop_reason; if (r >= 0 && r < ${NR}) reason = STOP_TOK[r]; }`,
-    '  char payload[192];',
-    `  snprintf(payload, sizeof(payload), "${EVENT_FMT}", rid, from, to, reason, "");`,
-    `  mc->publish("${ev}", payload);`,
+    '  publish_event(rid, from, to, reason, "");',
     '  last_state[s] = cur;',
     '}',
     'for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) { if (slots[s].route_id >= 0) last_route[s] = slots[s].route_id; }',
@@ -222,8 +226,8 @@ mqtt:
     - topic: "${commandTopic(site, ctrl)}"
       then:
         - lambda: |-
-${indent(cmdBody, 12)}${peerHandler}
-
+${indent(cmdBody, 12)}
+${timeBlock}
 interval:
   # Telemetry: publish every channel each update interval while connected.
   - interval: \${update_interval}

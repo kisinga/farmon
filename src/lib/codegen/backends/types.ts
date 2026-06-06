@@ -8,6 +8,10 @@ export interface SecretsMap {
   ota_password: string;
   /** Per-controller MQTT token (ours). Verified against controllers.token_hash. */
   mqtt_token: string;
+  /** Per-SITE UDP coordination key (ours). Shared by every controller on the site;
+   *  keys the HMAC that authenticates cross-controller claims/readings over the LAN
+   *  UDP lane. See coordination.ts. */
+  udp_key: string;
 }
 
 /** Metadata embedded into generated firmware for fleet telemetry and drift detection. */
@@ -26,7 +30,10 @@ export interface GenerationMetadata {
   buildTimestamp: number;
   /** MajiFlow app version. */
   appVersion: string;
-  /** Runtime mode this firmware is built for — the only mode the device knows. */
+  /** Deployment mode (managed | local) — a location/infra concern: which broker to
+   *  bake and which server build fronts the site. The firmware's control AND
+   *  coordination code is identical in both modes (cross-controller is LAN UDP,
+   *  mode-independent); this only labels the build (the mqtt.yaml header). */
   mode: DeploymentMode;
   /** MQTT broker host the device connects to (cloud broker in managed; on-site
    *  box in local). Baked at generation time. */

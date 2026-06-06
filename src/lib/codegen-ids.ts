@@ -193,18 +193,6 @@ export const eventTopic = (site: string, ctrl: string) =>
 export const SYSTEM_STATE_SENSOR = 'system_state';
 export const STOP_REASON_SENSOR = 'stop_reason';
 
-/**
- * Peer coordination topic (controller → controller, local mode only):
- *   majiflow/{site}/{ownerCtrl}/peer
- * Addressed to the controller that OWNS the node being claimed/released; the
- * payload is a PeerEnvelope. The owner subscribes under its own namespace
- * (allowed by the default device ACL). A different same-site controller is the
- * publisher, so Phase 2 relaxes the broker ACL to permit same-site writes to
- * the `…/peer` lane only — telemetry/command namespaces stay locked down.
- */
-export const peerCommandTopic = (site: string, ownerCtrl: string) =>
-  `${MQTT_ROOT}/${site}/${ownerCtrl}/peer`;
-
 // ---------------------------------------------------------------------------
 // Command vocabulary — issued by the dashboard, relayed + audited by the
 // server, handled by the firmware. Mirrors the legacy HA api: services and the
@@ -213,37 +201,84 @@ export const peerCommandTopic = (site: string, ownerCtrl: string) =>
 
 /** Operator commands, server-mediated (durable audit + authz). */
 export type CommandAction =
-  | 'route_start'   // { route_id }
-  | 'route_stop'    // { route_id }
-  | 'fault_reset'   // { route_id }
-  | 'stop_all'      // (no args)
-  | 'reset_faults'  // (no args)
-  | 'clear_queue';  // (no args)
+  | 'route_start'      // { route_id }
+  | 'route_stop'       // { route_id }
+  | 'fault_reset'      // { route_id }
+  | 'stop_all'         // (no args)
+  | 'reset_faults'     // (no args)
+  | 'clear_queue'      // (no args)
+  | 'node_set'         // { node_id, on } — manual claim/release of any actuator
+  | 'safety_override'; // { on } — toggle the commissioning bypass switch (see note)
 
 /**
- * Peer commands, controller-to-controller over the broker (local mode only).
- * A claim means "I want this node active": the owner runs a pump / vfd
- * (`has_live_claim` → relay) or opens a valve (`has_live_claim` → reconciler)
- * while the claim is alive, and stops/closes it within one tick of the claim
- * expiring (importer link lost) — the local-mode control-loss fail-safe.
+ * Commands older than this many seconds (now - issued_at, by the device's SNTP
+ * clock) are ignored as stale, so a command queued while the link was down can
+ * never fire on reconnect. The firmware gates on it; the dashboard uses it for
+ * the "expires in ~Ns" offline warning. One definition, both sides read it.
  */
-export type PeerCommandAction =
-  | 'node_claim'    // { node_id, owner, duration_ms } — run pump/vfd, open valve
-  | 'node_release'; // { node_id, owner }              — relinquish (stop / close)
+export const COMMAND_TTL_S = 120;
 
 /**
  * The JSON body on commandTopic(). `command_id` correlates the request with the
  * device's reported result so the dashboard can show a pending → done state.
+ * `issued_at` (unix seconds, stamped by the server) is the staleness clock the
+ * device checks against COMMAND_TTL_S — see the TTL gate in the firmware handler.
  */
-export type CommandEnvelope = { command_id: string } & (
+export type CommandEnvelope = { command_id: string; issued_at: number } & (
   | { action: 'route_start' | 'route_stop' | 'fault_reset'; route_id: number }
   | { action: 'stop_all' | 'reset_faults' | 'clear_queue' }
+  // node_set: claim (on) / release (off) any actuator via the dead-man registry
+  // the reconciler already honours — a claim runs a pump / opens a valve, and the
+  // lease expiring (heartbeat stops) fail-safe stops/closes it.
+  | { action: 'node_set'; node_id: string; on: boolean }
+  // safety_override: the commissioning BYPASS switch. ON disables every runtime
+  // safety check (pre-start level gates, flow watchdog, runtime stops, max-runtime)
+  // and lets a pump run without an owning route. Enabling it is dangerous — gate
+  // behind a hard confirm. Reverts to OFF on device reboot.
+  | { action: 'safety_override'; on: boolean }
 );
 
-/** The JSON body on peerCommandTopic(). */
-export type PeerEnvelope =
-  | { action: 'node_claim'; node_id: string; owner: string; duration_ms: number }
-  | { action: 'node_release'; node_id: string; owner: string };
+// ---------------------------------------------------------------------------
+// Cross-controller coordination message — carried controller→controller over the
+// UDP lane (ESPHome `udp:` udp.write/on_receive, LAN broadcast). One definition
+// both firmware ends build and parse.
+//
+// `on_receive` does not expose the packet source, so the sender's controller id
+// travels in `from`. Each message is authenticated by `mac` = HMAC-SHA256(udp_key,
+// canonical bytes), with `c` a per-sender monotonic counter for replay protection;
+// the receiver verifies `mac` and that `c` advanced before acting. Authenticity
+// only — claims are not secret, so there is no confidentiality.
+// ---------------------------------------------------------------------------
+
+/** Wire field names — emit (importer) and parse (owner) share these, no drift. */
+export const COORD_MSG = {
+  type: 't',
+  from: 'from',
+  counter: 'c',
+  mac: 'mac',
+  node: 'node_id',
+  role: 'role',
+  value: 'value',
+} as const;
+
+/** Message kinds carried on the coordination UDP lane. */
+export const COORD_TYPE = {
+  claim: 'claim',     // importer → owner: keep this node active (run pump / open valve)
+  release: 'release', // importer → owner: relinquish it (stop / close)
+  reading: 'reading', // owner → importer: a sensor value for a node the owner holds
+} as const;
+
+/**
+ * The JSON body of every coordination udp.write. `from` is the sender controller
+ * id (== the dead-man registry's claim-holder key). A claim/release drives
+ * `extend_deadman`/`drop_claim` on the owner; a reading populates the importer's
+ * `ri_<node_id>` mirror sensor.
+ */
+export type CoordMessage = { from: string; c: number; mac: string } & (
+  | { t: 'claim'; node_id: string }
+  | { t: 'release'; node_id: string }
+  | { t: 'reading'; node_id: string; role: TelemetryRole; value: number }
+);
 
 // ---------------------------------------------------------------------------
 // Telemetry sensor id — bridges a topology node + channel to the ESPHome
@@ -382,7 +417,7 @@ export const STOP_REASON_MEANINGS: Record<StopReasonToken, StateMeaning> = {
  * REJECTED/NOT_ACTIVE/NOT_RUNNING tokens below).
  */
 export const OUTCOME_TOKENS = [
-  'QUEUED', 'REFUSED', 'REJECTED', 'NOT_ACTIVE', 'NOT_RUNNING',
+  'QUEUED', 'REFUSED', 'REJECTED', 'NOT_ACTIVE', 'NOT_RUNNING', 'STALE',
 ] as const;
 export type OutcomeToken = (typeof OUTCOME_TOKENS)[number];
 
@@ -392,7 +427,29 @@ export const OUTCOME_MEANINGS: Record<OutcomeToken, StateMeaning> = {
   REJECTED:    { label: 'Rejected',    kind: 'warn' },
   NOT_ACTIVE:  { label: 'Not active',  kind: 'normal' },
   NOT_RUNNING: { label: 'Not running', kind: 'normal' },
+  STALE:       { label: 'Expired (stale)', kind: 'warn' },
 };
+
+/**
+ * Firmware route-command results → the transition the device emits. The array
+ * INDEX is the integer try_route_start() / try_route_stop() returns (routes.ts),
+ * so the MQTT command handler maps rc → {to, reason} by indexing — no
+ * hand-decoded magic numbers. rc 0 emits nothing (a started/stopping route logs
+ * its own slot edge). Typed against the vocabulary so a wrong token won't compile.
+ */
+export const ROUTE_START_RESULTS: readonly { to: '' | OutcomeToken; reason: '' | OutcomeToken | StopReasonToken }[] = [
+  { to: '',        reason: '' },           // 0 started (and idempotent duplicate)
+  { to: 'QUEUED',  reason: '' },           // 1 queued (conflict / no free slot)
+  { to: 'REFUSED', reason: 'REJECTED' },   // 2 invalid id / already active / queue full
+  { to: 'REFUSED', reason: 'SOURCE_LOW' }, // 3 source tank below its min level
+  { to: 'REFUSED', reason: 'TANK_FULL' },  // 4 dest tank above its max level
+];
+
+export const ROUTE_STOP_RESULTS: readonly { to: '' | OutcomeToken; reason: '' | OutcomeToken }[] = [
+  { to: '',        reason: '' },            // 0 stopping
+  { to: 'REFUSED', reason: 'NOT_ACTIVE' },  // 1 route not active
+  { to: 'REFUSED', reason: 'NOT_RUNNING' }, // 2 already stopping / idle / faulted
+];
 
 /**
  * Resolve a wire token to its meaning, falling back to the raw token for an

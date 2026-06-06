@@ -81,17 +81,6 @@ export interface CodegenContext {
   resolveChannel: (channelId: string, usage: ChannelUsage) => ResolvedChannel;
 }
 
-/**
- * Context for an imported actuator's peer-coordination proxy (local mode).
- * `site` + `ownerId` (the owning controller, == node.anchorId) build the peer
- * topic; `importerId` (this controller) is the claim holder. Sensor read-import
- * proxies ignore this.
- */
-export interface RemoteProxyContext {
-  site: string;
-  importerId: string;
-  ownerId: string;
-}
 
 export interface EntityCodegen<T extends Record<string, any> = Record<string, any>> {
   /** YAML fragment for sensors.yaml sensor: section (ADC, pulse counter, template sensors). */
@@ -128,14 +117,15 @@ export interface EntityCodegen<T extends Record<string, any> = Record<string, an
   ) => Record<string, string | undefined>;
   /**
    * Remote proxy YAML sections for imported nodes.
-   * Called by collect.ts instead of local hardware. Each returned section
-   * is emitted into the corresponding ESPHome YAML section.
+   * Called by collect.ts instead of local hardware. Each returned section is
+   * emitted into the corresponding ESPHome YAML section.
    *
-   * Actuator proxies (pump/dosing/vfd/valve) use `ctx` to address the owning
-   * controller over the peer lane; sensor read-imports (tank/flow) ignore it and
-   * read from `haEntityId` (still HA-based pending the telemetry-subscribe move).
+   * Actuator proxies (pump/dosing/vfd/valve) emit a UDP claim switch/cover; sensor
+   * read-imports (tank/flow) emit a local `ri_<id>` mirror sensor. All coordination
+   * is generic by node id (no owner/topic addressing — see coordination.ts), so
+   * only the node is needed.
    */
-  remoteProxy?: (node: T, haEntityId: string, ctx: RemoteProxyContext) => Array<{ section: string; yaml: string }> | null;
+  remoteProxy?: (node: T) => Array<{ section: string; yaml: string }> | null;
   /**
    * HA entity IDs created by the proxy. Used by dashboard generators
    * to reference imported actuators correctly.

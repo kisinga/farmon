@@ -14,16 +14,14 @@ import { SectionHeaderComponent } from '../shared/section-header.component';
       <div class="content-pane space-y-6">
         <app-section-header
           title="Sharing"
-          subtitle="Let this controller read sensors from another controller on the same site. Only works on your own on-site server, where controllers can talk to each other." />
+          subtitle="Let this controller read sensors from, and drive actuators on, another controller. Controllers coordinate directly over your local network." />
 
-        @if (managed()) {
-          <div class="alert alert-info text-xs items-start">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            <span>Sharing sensors between controllers only works on <strong>My own server</strong>. This site is on MajiFlow Cloud, where each controller works on its own.</span>
-          </div>
-        }
+        <div class="alert alert-info text-xs items-start">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span>Controllers coordinate directly over your <strong>local network</strong>, so the ones that share must be on the same LAN. This works whether the site runs on MajiFlow Cloud or your own server.</span>
+        </div>
 
         <!-- Section 1: Import Remote Nodes -->
         <div>
@@ -117,7 +115,6 @@ export class RemotesTabComponent {
   private workspace = inject(WorkspaceService);
 
   protected activeControllerId = computed(() => this.workspace.activeControllerId());
-  protected managed = computed(() => this.workspace.deploymentMode() === 'managed');
   private siteTopology = computed(() => this.workspace.siteTopology());
 
   /** All routes derived from the full site topology. */

@@ -451,11 +451,20 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
       // Delete the pipe from tank to pressure sensor
       pipes.splice(pressureEntry.pipeIdx, 1);
 
-      // Rewire any remaining pipes that originated from the pressure sensor
-      // to originate from the tank's outlet instead.
-      for (const p of pipes) {
-        if (portRef(p.from) === pressureEntry.toNodeId) {
-          p.from = `${tankId}:outlet`;
+      // Reconnect pipes leaving the pressure sensor to the tank's outlet. If the
+      // tank already reaches that target directly (the sensor was a tap beside a
+      // real pipe), the sensor pipe is redundant — drop it rather than create a
+      // duplicate edge.
+      const psId = pressureEntry.toNodeId;
+      const reaches = new Set(pipes.map(p => `${portRef(p.from)}->${portRef(p.to)}`));
+      for (let i = pipes.length - 1; i >= 0; i--) {
+        if (portRef(pipes[i].from) !== psId) continue;
+        const pair = `${tankId}->${portRef(pipes[i].to)}`;
+        if (reaches.has(pair)) {
+          pipes.splice(i, 1);
+        } else {
+          pipes[i].from = `${tankId}:outlet`;
+          reaches.add(pair);
         }
       }
     }
@@ -514,7 +523,10 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
       if (adjustedDownstreamIdx >= 0) pipes.splice(adjustedDownstreamIdx, 1);
 
       if (upstreamId && nextId) {
-        pipes.push({ from: `${upstreamId}:outlet`, to: `${nextId}:inlet` });
+        // Skip if the spliced edge already exists — the removed node paralleled a
+        // direct pipe, so reconnecting would create a duplicate edge.
+        const exists = pipes.some(p => portRef(p.from) === upstreamId && portRef(p.to) === nextId);
+        if (!exists) pipes.push({ from: `${upstreamId}:outlet`, to: `${nextId}:inlet` });
       }
     }
 

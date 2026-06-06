@@ -183,26 +183,18 @@ export class DeploymentCardComponent implements OnInit {
 
   protected verdict = computed<{ kind: 'ok' | 'warn' | 'error'; text: string } | null>(() => {
     const ct = this.crossTalk();
+    // Cross-controller coordination runs over the local network (UDP) in both modes,
+    // so it is never a mode error — the only requirement is a shared LAN.
+    const lanNote = ct?.hasCrossTalk
+      ? ' Controllers that share must be on the same local network — they coordinate directly over the LAN.'
+      : '';
     if (this.mode() === 'managed') {
-      if (ct?.hasCrossTalk) {
-        const parts: string[] = [];
-        const n = ct.spanningRoutes.length;
-        if (n) parts.push(`${n} route${n !== 1 ? 's' : ''} cross between controllers`);
-        if (ct.importCount) parts.push(`${ct.importCount} shared sensor${ct.importCount !== 1 ? 's' : ''}`);
-        return {
-          kind: 'error',
-          text: `This design needs your controllers to share data (${parts.join(', ')}). That only works with “My own server”. Switch to it, or remove the cross-controller links.`,
-        };
-      }
-      return { kind: 'ok', text: 'Ready for the cloud. Each controller runs on its own.' };
+      return { kind: 'ok', text: `Ready for the cloud.${lanNote || ' Each controller runs independently.'}` };
     }
     // local
     if (!this.host().trim()) {
       return { kind: 'warn', text: 'Enter your on-site server address so the controllers know where to connect.' };
     }
-    return {
-      kind: 'ok',
-      text: ct?.hasCrossTalk ? 'Your controllers can share data and work together.' : 'Running on your own on-site server.',
-    };
+    return { kind: 'ok', text: `Running on your own on-site server.${lanNote}` };
   });
 }

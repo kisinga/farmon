@@ -1,90 +1,52 @@
 /**
- * Remote proxy helpers — shared YAML generators for remote-bound nodes.
+ * Remote proxy helpers — YAML generators for imported (cross-controller) nodes.
  *
- * In local mode an importing controller can drive an actuator that is physically
- * wired to a DIFFERENT same-site controller. It never touches the owner's relay
- * directly — it speaks over the peer lane (`peerCommandTopic(site, ownerCtrl)`):
+ * An importing controller drives an actuator wired to a DIFFERENT same-site
+ * controller, and reads that controller's sensors, over the LAN UDP coordination
+ * lane. The C++ that builds/signs/sends and parses these messages lives in
+ * coordination.ts (packages/coordination.h); these helpers emit the ESPHome
+ * entities that call into it via the shared `udp:` component `coord_udp`:
  *
- *   - switch actuators (pump / dosing / vfd): `node_claim` = run, `node_release`
- *     = stop. The owner runs the actuator while a claim is alive and stops it
- *     within one tick of the claim expiring (importer link lost) — the
- *     local-mode control-loss fail-safe. A heartbeat interval renews the claim
- *     while the proxy is on, so a single missed renewal is enough to stop it.
- *   - cover actuators (valve): `node_claim` = open, `node_release` = close. The
- *     owner's valve reconciler opens a valve while a claim is alive, so a valve
- *     is just an actuator whose "active" state is "open" — same claim model as a
- *     pump. A heartbeat renews the claim while the proxy is open; lose the link
- *     and the claim expires → the owner closes it (fail-closed).
+ *   - switch actuators (pump / dosing / vfd): turning the proxy on sends a
+ *     `claim` (the owner runs its relay while a claim is alive); off sends a
+ *     `release`. A 10s interval re-sends the claim while on, so the owner's lease
+ *     never lapses; stop renewing (off / crash / link loss) → the owner's claim
+ *     expires → it stops within one tick (the control-loss fail-safe).
+ *   - cover actuators (valve): open sends a `claim` (owner opens its valve),
+ *     close/stop send a `release`. Same lease/heartbeat model.
+ *   - sensor read-import (tank level / flow): a local `ri_<id>` mirror sensor the
+ *     owner populates by broadcasting its reading; the dispatcher in
+ *     coordination.h sets it. Read-only.
  *
- * Proxy switches/covers are OPTIMISTIC — true actuator state reaches the
- * dashboard from the OWNER's own telemetry via the server, so the importer needs
- * no cross-controller telemetry subscription (and the broker ACL stays locked to
- * the peer lane only).
+ * Proxy switches/covers stay OPTIMISTIC — true actuator state reaches the
+ * dashboard from the OWNER's own MQTT telemetry via the server, so the importer
+ * needs no cross-controller telemetry.
  *
- * Each descriptor's `remoteProxy` composes these helpers with its own ID
- * conventions to produce the proxy block that collect.ts emits.
+ * Build/sign details (counter, HMAC over udp_key, `from = this controller`) all
+ * live in `build_claim_msg` / `build_release_msg` (coordination.h), so these
+ * emitters only ever name the node id.
  */
-
-/** Default dead-man lease the owner honours; the wire `duration_ms` is advisory. */
-const LEASE_MS = 90000;
-/** Re-claim cadence — well under LEASE_MS so one missed beat still stops safely. */
-const HEARTBEAT_MS = 10000;
-
-/** A `mqtt.publish_json` action building `root[...]` from key→C++-literal pairs. */
-function publishJson(topic: string, fields: Record<string, string>): string {
-  const body = Object.entries(fields)
-    .map(([k, v]) => `          root["${k}"] = ${v};`)
-    .join("\n");
-  return `\
-    - mqtt.publish_json:
-        topic: "${topic}"
-        payload: |-
-${body}`;
-}
 
 /**
- * MQTT sensor read-import — mirrors an owning controller's numeric telemetry as
- * a local (internal) sensor the importer's route logic can read (e.g. a remote
- * tank level or flow). Subscribes to the owner's telemetry topic; the value is
- * the same number the owner publishes (and the server stores). Read-only — the
- * importer never writes here. The component id (`ri_<nodeId>`) is unchanged from
- * the old HA import, so downstream `id(ri_...)` references keep working.
+ * A `udp.write` action that builds+signs the message in C++ and broadcasts it via
+ * coord_udp. Sends MUST go through this action, not `send_packet()` directly: the
+ * action's codegen calls `set_should_broadcast()`, which is what makes the udp
+ * component create its broadcast socket. `indent` is the YAML column of the `-`.
  */
-export function mqttSensorImport(nodeId: string, topic: string): string {
-  return `\
-- platform: mqtt_subscribe
-  id: ri_${nodeId}
-  topic: "${topic}"
-  internal: true`;
-}
+const writeMsg = (builder: string, nodeId: string, indent: string): string =>
+  `${indent}- udp.write:
+${indent}    id: coord_udp
+${indent}    data: !lambda |-
+${indent}      return ${builder}("${nodeId}");`;
+const claimAction = (nodeId: string, indent: string) => writeMsg('build_claim_msg', nodeId, indent);
+const releaseAction = (nodeId: string, indent: string) => writeMsg('build_release_msg', nodeId, indent);
 
 /**
- * MQTT switch proxy — for switch-domain remote actuators (pump / dosing / vfd).
- *
- * Optimistic template switch: turning it on publishes a `node_claim` to the
- * owner (which runs its local relay); turning it off publishes a `node_release`.
- * `nodeId` is the topology node id — the exact key the owner's claim registry
- * uses (`has_live_claim`). `owner` identifies this importing controller so it
- * can renew/release only its own claim.
+ * UDP switch proxy — switch-domain remote actuators (pump / dosing / vfd).
+ * On → `claim`, off → `release`. `nodeId` is the topology node id, the exact key
+ * the owner's claim registry (`has_live_claim`) uses.
  */
-export function mqttSwitchProxy(
-  proxyId: string,
-  name: string,
-  nodeId: string,
-  peerTopic: string,
-  owner: string,
-): string {
-  const claim = publishJson(peerTopic, {
-    action: '"node_claim"',
-    node_id: `"${nodeId}"`,
-    owner: `"${owner}"`,
-    duration_ms: `${LEASE_MS}`,
-  });
-  const release = publishJson(peerTopic, {
-    action: '"node_release"',
-    node_id: `"${nodeId}"`,
-    owner: `"${owner}"`,
-  });
+export function udpSwitchProxy(proxyId: string, name: string, nodeId: string): string {
   return `\
 - platform: template
   name: "Remote ${name}"
@@ -92,67 +54,33 @@ export function mqttSwitchProxy(
   icon: "mdi:remote"
   optimistic: true
   turn_on_action:
-${claim}
+${claimAction(nodeId, '    ')}
   turn_off_action:
-${release}`;
+${releaseAction(nodeId, '    ')}`;
 }
 
 /**
- * Lease heartbeat interval for an MQTT switch proxy.
- *
- * Re-issues the `node_claim` every `HEARTBEAT_MS` while the proxy switch is on,
- * so the owner's lease never lapses while the importer wants the actuator
- * running. Stop renewing (proxy off, importer crash, link loss) and the owner's
- * claim expires → it stops within one tick.
+ * Lease heartbeat for a UDP switch proxy — re-sends the `claim` every 10s while
+ * the proxy switch is on, so the owner's lease never lapses. Stop renewing and
+ * the owner's claim expires → it stops within one tick.
  */
-export function mqttSwitchProxyLeaseInterval(
-  proxyId: string,
-  nodeId: string,
-  peerTopic: string,
-  owner: string,
-): string {
-  const claim = publishJson(peerTopic, {
-    action: '"node_claim"',
-    node_id: `"${nodeId}"`,
-    owner: `"${owner}"`,
-    duration_ms: `${LEASE_MS}`,
-  });
+export function udpSwitchProxyLeaseInterval(proxyId: string, nodeId: string): string {
   return `\
-- interval: ${HEARTBEAT_MS}ms
+- interval: 10s
   then:
     - if:
         condition:
           lambda: 'return id(${proxyId}).state;'
         then:
-${claim.split("\n").map(l => (l === "" ? "" : "      " + l)).join("\n")}`;
+${claimAction(nodeId, '          ')}`;
 }
 
 /**
- * MQTT cover proxy — for cover-domain remote actuators (valve).
- *
- * Optimistic template cover: opening publishes a `node_claim` (the owner's
- * reconciler opens its local valve while the claim is alive); closing or
- * stopping publishes a `node_release` (the owner closes it). `nodeId` is the
- * topology node id (== the owner's cover component id and claim-registry key).
+ * UDP cover proxy — cover-domain remote actuators (valve). Open → `claim` (owner
+ * opens its valve while the claim is alive), close/stop → `release`. `nodeId` is
+ * the topology node id (== the owner's cover id and claim-registry key).
  */
-export function mqttCoverProxy(
-  proxyId: string,
-  name: string,
-  nodeId: string,
-  peerTopic: string,
-  owner: string,
-): string {
-  const claim = publishJson(peerTopic, {
-    action: '"node_claim"',
-    node_id: `"${nodeId}"`,
-    owner: `"${owner}"`,
-    duration_ms: `${LEASE_MS}`,
-  });
-  const release = publishJson(peerTopic, {
-    action: '"node_release"',
-    node_id: `"${nodeId}"`,
-    owner: `"${owner}"`,
-  });
+export function udpCoverProxy(proxyId: string, name: string, nodeId: string): string {
   return `\
 - platform: template
   name: "Remote ${name}"
@@ -161,36 +89,39 @@ export function mqttCoverProxy(
   optimistic: true
   assumed_state: true
   open_action:
-${claim}
+${claimAction(nodeId, '    ')}
   close_action:
-${release}
+${releaseAction(nodeId, '    ')}
   stop_action:
-${release}`;
+${releaseAction(nodeId, '    ')}`;
 }
 
 /**
- * Lease heartbeat interval for an MQTT cover proxy — re-issues the `node_claim`
- * every `HEARTBEAT_MS` while the proxy valve is open, so the owner keeps it open.
- * Stop renewing (closed, importer crash, link loss) and the owner closes it.
+ * Lease heartbeat for a UDP cover proxy — re-sends the `claim` every 10s while the
+ * proxy valve is open. Stop renewing (closed / crash / link loss) → owner closes it.
  */
-export function mqttCoverProxyLeaseInterval(
-  proxyId: string,
-  nodeId: string,
-  peerTopic: string,
-  owner: string,
-): string {
-  const claim = publishJson(peerTopic, {
-    action: '"node_claim"',
-    node_id: `"${nodeId}"`,
-    owner: `"${owner}"`,
-    duration_ms: `${LEASE_MS}`,
-  });
+export function udpCoverProxyLeaseInterval(proxyId: string, nodeId: string): string {
   return `\
-- interval: ${HEARTBEAT_MS}ms
+- interval: 10s
   then:
     - if:
         condition:
           lambda: 'return id(${proxyId}).position > 0.5f;'
         then:
-${claim.split("\n").map(l => (l === "" ? "" : "      " + l)).join("\n")}`;
+${claimAction(nodeId, '          ')}`;
+}
+
+/**
+ * UDP sensor read-import — a local (internal) mirror of an owning controller's
+ * numeric telemetry (remote tank level / flow) the importer's route logic reads.
+ * It carries no source of its own: the owner broadcasts the reading and the
+ * coordination.h dispatcher does `id(ri_<nodeId>).publish_state(value)`. The
+ * `ri_<nodeId>` id is unchanged from the old import so downstream `id(ri_...)`
+ * references keep working.
+ */
+export function udpSensorImport(nodeId: string): string {
+  return `\
+- platform: template
+  id: ri_${nodeId}
+  internal: true`;
 }

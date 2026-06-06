@@ -25,12 +25,17 @@ type Publisher interface {
 var commandActions = map[string]bool{
 	"route_start": true, "route_stop": true, "fault_reset": true,
 	"stop_all": true, "reset_faults": true, "clear_queue": true,
+	"node_set": true, "safety_override": true,
 }
 
 // routeActions are the commands that require a route_id.
 var routeActions = map[string]bool{
 	"route_start": true, "route_stop": true, "fault_reset": true,
 }
+
+// nodeActions require a node_id (which actuator); onActions require an on bool.
+var nodeActions = map[string]bool{"node_set": true}
+var onActions = map[string]bool{"node_set": true, "safety_override": true}
 
 // Register mounts the /api/farmon routes on the serve event's router.
 func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
@@ -150,6 +155,8 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			Controller string `json:"controller"`
 			Action     string `json:"action"`
 			RouteID    *int   `json:"route_id"`
+			NodeID     string `json:"node_id"`
+			On         *bool  `json:"on"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return apis.NewBadRequestError("invalid body", err)
@@ -162,6 +169,12 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		}
 		if routeActions[body.Action] && body.RouteID == nil {
 			return apis.NewBadRequestError("route_id is required for "+body.Action, nil)
+		}
+		if nodeActions[body.Action] && body.NodeID == "" {
+			return apis.NewBadRequestError("node_id is required for "+body.Action, nil)
+		}
+		if onActions[body.Action] && body.On == nil {
+			return apis.NewBadRequestError("on is required for "+body.Action, nil)
 		}
 
 		commandID := security.RandomString(15)
@@ -187,9 +200,21 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			return apis.NewApiError(http.StatusInternalServerError, "failed to record command", err)
 		}
 
-		envelope := map[string]any{"command_id": commandID, "action": body.Action}
+		// issued_at stamps the command's age so the device can drop a stale one
+		// (queued during an outage) instead of replaying it — see the firmware TTL gate.
+		envelope := map[string]any{
+			"command_id": commandID,
+			"action":     body.Action,
+			"issued_at":  time.Now().Unix(),
+		}
 		if body.RouteID != nil {
 			envelope["route_id"] = *body.RouteID
+		}
+		if body.NodeID != "" {
+			envelope["node_id"] = body.NodeID
+		}
+		if body.On != nil {
+			envelope["on"] = *body.On
 		}
 		payload, _ := json.Marshal(envelope)
 		if err := pub.Publish(telemetry.CommandTopic(body.Site, body.Controller), payload, false, 1); err != nil {
@@ -274,7 +299,26 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			return apis.NewApiError(http.StatusInternalServerError, "failed to register controller", err)
 		}
 
-		return e.JSON(http.StatusOK, map[string]any{"token": token, "ota_password": otaPassword})
+		// Per-site UDP coordination key: shared by every controller on the site,
+		// minted once and reused so the whole site keeps the same key. Authenticates
+		// cross-controller claims/readings over the LAN UDP lane (baked into secrets.yaml).
+		siteRec, err := e.App.FindRecordById("sites", body.Site)
+		if err != nil || siteRec == nil {
+			return apis.NewApiError(http.StatusInternalServerError, "site not found", err)
+		}
+		udpKey := siteRec.GetString("udp_key")
+		if udpKey == "" {
+			udpKey, err = auth.GenerateToken()
+			if err != nil {
+				return apis.NewApiError(http.StatusInternalServerError, "failed to mint UDP key", err)
+			}
+			siteRec.Set("udp_key", udpKey)
+			if err := e.App.Save(siteRec); err != nil {
+				return apis.NewApiError(http.StatusInternalServerError, "failed to store UDP key", err)
+			}
+		}
+
+		return e.JSON(http.StatusOK, map[string]any{"token": token, "ota_password": otaPassword, "udp_key": udpKey})
 	})
 }
 

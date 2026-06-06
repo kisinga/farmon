@@ -4,8 +4,7 @@ import { ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { HaNodeFields, deriveHaEntityId } from '../ha';
-import { telemetryTopic, telemetrySensorId } from '../codegen-ids';
-import { mqttSensorImport } from '../remote-proxy';
+import { udpSensorImport } from '../remote-proxy';
 import {
   PressureSensorConfigSchema,
   emitPressureSensorYaml,
@@ -137,8 +136,8 @@ export const tankDescriptor: NodeDescriptor = {
       };
     },
 
-    remoteProxy: (node, _haEntityId, ctx) => [
-      { section: 'sensor', yaml: mqttSensorImport(node.id, telemetryTopic(ctx.site, ctx.ownerId, telemetrySensorId(node, 'level'))) },
+    remoteProxy: (node) => [
+      { section: 'sensor', yaml: udpSensorImport(node.id) },
     ],
   },
 

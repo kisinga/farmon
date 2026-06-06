@@ -147,10 +147,14 @@ export class WorkspaceService {
       this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName, deployment: payload.site.deployment });
 
       if (payload.topology) {
-        let topology = payload.topology as SiteTopology;
+        // Migrate the stored draft to the current schema (e.g. fold obsolete
+        // standalone pressure_sensor nodes into their tank) and validate.
+        // parseTopology returns a typed SiteTopology.
+        let topology = parseTopology(payload.topology);
 
-        // v15 → v16 migration: auto-derive remoteImports from routes
-        if (!topology.remoteImports) {
+        // Pre-remoteImports drafts: derive cross-controller imports from routes.
+        const stored = payload.topology as { remoteImports?: unknown };
+        if (!stored.remoteImports) {
           topology = this.migrateV15ToV18(topology);
           this._markDirty();
         }
