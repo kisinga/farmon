@@ -18,6 +18,12 @@ export const routes: Routes = [
       import('./pages/login/login.component').then((m) => m.LoginComponent),
   },
   {
+    // Public pricing estimator + consent-gated lead capture.
+    path: 'pricing',
+    loadComponent: () =>
+      import('./pages/pricing/pricing.component').then((m) => m.PricingComponent),
+  },
+  {
     // Role-aware landing: admins → /overview, customers → their dashboard.
     path: 'home',
     canActivate: [authGuard],

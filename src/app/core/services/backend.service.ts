@@ -140,6 +140,32 @@ export class BackendService {
     return { id: r['id'] };
   }
 
+  // --- Leads (public marketing form) --------------------------------------
+
+  /**
+   * Persist a pricing-page enquiry. Unauthenticated: the `leads` collection's
+   * create rule is public (consent + honeypot enforced server-side). The
+   * estimate snapshot rides along so followup has the visitor's configuration.
+   */
+  async leadCreate(input: {
+    name: string;
+    phone: string;
+    email: string;
+    consent: boolean;
+    estimate: unknown;
+    hp: string;
+  }): Promise<void> {
+    await this.pb.collection('leads').create({
+      name: input.name,
+      phone: input.phone,
+      email: input.email,
+      consent: input.consent,
+      estimate: input.estimate,
+      source: 'pricing',
+      hp: input.hp,
+    });
+  }
+
   // --- Controllers ("systems") --------------------------------------------
   //
   // Controllers live inside `sites.draft_topology`. `systemCreateBlank` mints a

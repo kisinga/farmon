@@ -11,9 +11,16 @@ interface Plan {
   mode: string;
   tagline: string;
   features: string[];
+  /** Headline figure, e.g. "From KES 30,000". */
+  price?: string;
+  /** Small print under the price, e.g. "per controller · + KES 4,000/year". */
+  priceNote?: string;
   footnote?: string;
   badge?: string;
   highlighted?: boolean;
+  /** Call-to-action: defaults to "Get started" → /login. */
+  ctaLabel?: string;
+  ctaLink?: string;
 }
 
 /** A short "what you can do with it" capability. */
@@ -59,6 +66,8 @@ interface Vertical {
           <span class="text-lg font-bold tracking-tight text-white">MajiFlow</span>
         </a>
         <div class="flex items-center gap-2 sm:gap-3">
+          <a routerLink="/pricing"
+             class="text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">Pricing</a>
           <a [href]="github" target="_blank" rel="noopener"
              class="hidden sm:inline-flex text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">GitHub</a>
           <a routerLink="/login"
@@ -182,7 +191,7 @@ interface Vertical {
           </p>
         </div>
 
-        <div class="mt-12 grid gap-6 lg:grid-cols-3 items-start">
+        <div class="mt-12 grid gap-6 md:grid-cols-2 max-w-3xl mx-auto items-start">
           @for (plan of plans; track plan.name) {
             <div class="relative rounded-2xl bg-white p-7 transition-all hover:-translate-y-1"
                  [class]="plan.highlighted
@@ -193,7 +202,13 @@ interface Vertical {
               }
               <p class="text-xs font-semibold uppercase tracking-wider text-cyan-600">{{ plan.mode }}</p>
               <h3 class="mt-1 text-xl font-bold">{{ plan.name }}</h3>
-              <p class="mt-2 text-sm text-slate-600 leading-relaxed">{{ plan.tagline }}</p>
+              @if (plan.price) {
+                <p class="mt-3 text-3xl font-bold tracking-tight">{{ plan.price }}</p>
+                @if (plan.priceNote) {
+                  <p class="text-xs text-slate-500">{{ plan.priceNote }}</p>
+                }
+              }
+              <p class="mt-3 text-sm text-slate-600 leading-relaxed">{{ plan.tagline }}</p>
               <ul class="mt-5 space-y-2.5 text-sm">
                 @for (f of plan.features; track f) {
                   <li class="flex gap-2.5">
@@ -205,12 +220,12 @@ interface Vertical {
               @if (plan.footnote) {
                 <p class="mt-5 pt-4 border-t border-slate-100 text-xs text-slate-500">{{ plan.footnote }}</p>
               }
-              <a routerLink="/login"
+              <a [routerLink]="plan.ctaLink ?? '/login'"
                  class="mt-6 block text-center rounded-full px-5 py-2.5 text-sm font-semibold transition-colors"
                  [class]="plan.highlighted
                    ? 'bg-cyan-500 text-white hover:bg-cyan-400'
                    : 'ring-1 ring-slate-300 text-slate-800 hover:bg-slate-50'">
-                Get started
+                {{ plan.ctaLabel ?? 'Get started' }}
               </a>
             </div>
           }
@@ -218,8 +233,8 @@ interface Vertical {
 
         <p class="mt-8 text-center text-sm text-slate-500 max-w-2xl mx-auto">
           Either way, you only need internet to check in while you are away. On-site, your
-          controllers keep working on their own. The final price depends on how big your
-          site is, so get in touch for a quote.
+          controllers keep working on their own. Want exact numbers for the hosted plan?
+          <a routerLink="/pricing" class="font-semibold text-cyan-600 hover:text-cyan-700">See what your site costs.</a>
         </p>
       </div>
     </section>
@@ -321,41 +336,38 @@ export class LandingComponent {
 
   protected readonly plans: Plan[] = [
     {
-      name: 'Lite',
+      name: 'Hosted',
       mode: 'Hosted by us',
+      price: 'From KES 30,000',
+      priceNote: 'per controller · + KES 4,000/year after year one',
       tagline: 'The simplest, lowest-cost way to get your water online. We run everything for you; you just sign in to watch and control.',
       badge: 'Most popular',
       highlighted: true,
       features: [
-        'Starter kit: one KC868 controller with a water-flow sensor, a pressure sensor, a power supply, and a clock that keeps the right time through power cuts',
-        'Need more? Add another KC868 controller for that area. Each one runs on its own and handles only what is wired to it (in Lite they do not share sensors or talk to each other)',
-        'We host everything online and keep it running, with nothing for you to manage',
-        'Live dashboard, full history, and instant alerts when something goes wrong',
+        'One controller bundle: a KC868 controller, pump control, one valve, one flow sensor, one tank monitor, a power supply, and a clock that survives power cuts',
+        'Add more on the same controller: about KES 3,000 a valve, 3,000 a flow sensor, 4,000 a tank monitor. One controller fits up to 7 valves, 3 flow sensors and 4 tanks',
+        'Outgrow it? Another full controller for KES 30,000. Each one runs on its own (on Hosted they do not share sensors or talk to each other)',
+        'We host it online and keep it up with an uptime guarantee; live dashboard, full history, and instant alerts',
       ],
-      footnote: 'No power backup: if the mains goes out, the controller stops, then starts itself again on the right schedule when power returns. KES 3,000 a year for upkeep after the first year. Internet is only needed to check in while you are away.',
+      footnote: 'No power backup: if the mains goes out, the controller stops, then restarts on its schedule when power returns. Internet is only needed to check in while you are away.',
+      ctaLabel: 'See what your site costs',
+      ctaLink: '/pricing',
     },
     {
-      name: 'Own your setup',
-      mode: 'Runs on-site',
+      name: 'On-site, own it',
+      mode: 'Runs on-site · you own it',
+      price: 'From KES 200,000',
+      priceNote: 'tailored to your site',
       tagline: 'Keep everything on your own property and own it outright. Built to keep going no matter what.',
       features: [
         'An on-site hub runs your whole site by itself, even with no internet',
         'Battery and solar keep it working straight through power cuts',
         'Your controllers work together and share sensors across the whole site',
+        'Reach it from anywhere over your own private connection, so your data never passes through us',
         'You own everything; nothing depends on us to keep your site running day to day',
       ],
-      footnote: 'More equipment, so it costs more to set up. You still need internet to check in while you are away.',
-    },
-    {
-      name: 'Custom',
-      mode: 'Tailored',
-      tagline: 'For large or unusual sites that need a setup built around them.',
-      features: [
-        'Everything in the other plans',
-        'Connections to your other systems',
-        'Priority support and faster response times',
-        'Setup help and training for your team',
-      ],
+      footnote: 'A build sized to your site, so the price is tailored. You still need internet to check in while you are away.',
+      ctaLabel: 'Talk to us',
     },
   ];
 

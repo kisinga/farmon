@@ -28,6 +28,20 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 		Automigrate: true,
 	})
 
+	// Public lead form guard: drop obvious bot spam (honeypot tripped) and never
+	// store an enquiry without explicit consent. Runs before the `leads` record
+	// is persisted; the honeypot value itself is never kept.
+	app.OnRecordCreateRequest("leads").BindFunc(func(e *core.RecordRequestEvent) error {
+		if e.Record.GetString("hp") != "" {
+			return apis.NewBadRequestError("Rejected.", nil)
+		}
+		if !e.Record.GetBool("consent") {
+			return apis.NewBadRequestError("Consent is required.", nil)
+		}
+		e.Record.Set("hp", "")
+		return e.Next()
+	})
+
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		seedAdmin(se.App)
 

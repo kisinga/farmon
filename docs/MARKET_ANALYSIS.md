@@ -138,41 +138,42 @@ No product in any market combines:
 
 ## Pricing Strategy
 
-### Tiers
+> The DIY-kit / 4-tier USD model below was superseded 2026-06 by the two-product
+> model. (Currency moved to KES for the East-Africa launch market.)
 
-| Tier | Contents | Price | Margin | Target |
-|------|----------|-------|--------|--------|
-| DIY Kit | PCB + firmware guide, no peripherals | $99-129 | 60-70% | HA makers |
-| Controller Unit | Assembled + enclosure + OLED, pre-flashed | $179-229 | 55-65% | Prosumer, compact installation |
-| Complete System | Controller + 4 valves + 2 level + 2 flow + wiring | $449-549 | 45-55% | Turnkey buyers |
-| Pro / Custom | Complete + install consultation + custom routes | $699-899 | 50-60% | Rural properties |
+### Two products
 
-### Price Positioning
+One axis: **where the brain lives and who owns it.** Same firmware + on-device safety in both. (KES, set 2026-06, not final.)
 
-```
-$30         $100        $200        $500        $1000       $2000
- |           |           |           |           |           |
- Tuya junk   DIY Kit    Controller  Complete    Farmbot     DATRAN/PLC
- HenracTech  OpenSprklr  ▲          System      Farmo+sub
- Vukar(IN)              SWEET SPOT              Smart Water
-```
+| Product | Brain | Cross-controller | Remote access | Price |
+|---------|-------|------------------|---------------|-------|
+| **Hosted (Managed)** | Our cloud | No — each controller an island | We host it | Transparent, from **KES 30,000/controller** + **4,000/yr** |
+| **On-Prem (Custom)** | Customer's on-site box (battery+solar) | Yes — controllers coordinate | Customer's own VPN; never proxied by us | Bespoke, **from KES 200,000** |
 
-### Regional Pricing
+### Hosted pricing — the controller-bundle unit
 
-| Market | Entry Point | Notes |
-|--------|-------------|-------|
-| HA/maker (global) | DIY Kit @ $99 | Loss-leader. They blog and review it. |
-| Australia rural | Complete @ AUD 549 | Undercuts Farmbot. Government grants up to AUD 50K available (VIC/SA/QLD). |
-| South Africa | Controller @ ZAR 2,999 (~$165) | "HenracTech Pro" positioning. |
-| India | Controller @ INR 12,999 (~$155) | Premium to Vukar but with WiFi/HA/display. |
-| US off-grid | Complete @ $549 | "Your water keeps running when the internet doesn't." |
+Sold in **controller bundles**. One bundle (KES 30,000) is a complete working system: KC868 controller + pump control + 1 valve + 1 flow sensor + 1 tank monitor + cloud onboarding. Grow it by adding peripherals on the same board up to the KC868-A16 hardware caps; past a cap, buy another full bundle.
 
-### Revenue Model
+| Line item | Price (KES) | Per-controller cap |
+|-----------|-------------|--------------------|
+| Controller bundle (incl. 1 pump + 1 valve + 1 flow + 1 tank) | 30,000 | — |
+| Extra pump relay (30A max, ~2 hp single-phase) | 3,000 *(placeholder, confirm)* | shares the 16-relay pool (1 relay each) |
+| 3-phase pump (VFD over RS485) | included, no relay cost | RS485 bus, 0 relays; not all inverter brands supported yet |
+| Extra valve (≤3/4") | 3,000 | shares the relay pool (2 relays each) — 7 valves w/ one relay pump |
+| Extra flow sensor (≤3/4") | 3,000 | 3 (pulse-counter pins) |
+| Extra tank monitor | 4,000 | 4 (ADC pins) |
+| Additional controller (full bundle) | 30,000 | — |
+| Hosted upkeep | 4,000/yr (after year 1) | per site |
 
-**Hardware-only (recommended to start).** No subscriptions. Differentiates from Farmbot/Farmo and builds trust in the HA community. Optional later:
+Single-phase pumps and valves compete for the same 16 relays, so more pumps means fewer valves per controller: `K = max(1, ⌈(pumps + 2·valves)/16⌉, ⌈flow/3⌉, ⌈tanks/4⌉)`. 3-phase (VFD) pumps use RS485, not relays, so they drop out of the relay term (`pumps→0`).
 
-- Cloud dashboard for non-HA users (free monitoring, $3-5/mo for alerts/history)
-- Firmware customization service ($50-150 per engagement)
+- **>3/4" valves/flow** are custom-quoted: the bundled standard item is credited (−2,500) and the larger one quoted. Valve and flow sizes are independent.
+- **Single-phase pumps over ~2 hp (>30A, 240V)** are custom-quoted: the standard 30A relay drives a single-phase pump up to ~2 hp (1.5 kW) directly; a bigger motor adds a contactor (same dynamic-pricing pattern as the pipe-diameter rule). **3-phase pumps** sidestep this: they run on their own VFD/inverter over RS485 (0 relays, no relay cost), where the inverter brand is supported.
+- **Estimator:** the public `/pricing` page computes this live from three questions (lines → valves, metering points → flow, tanks → tank monitors) and captures consent-gated leads (`leads` collection).
+
+### Margin & scaling
+
+Full-bundle BOM ≈ KES 18,000 (controller ~7k + valve ~1.8k + flow ~1k + pressure ~3k + PSU/enclosure/wiring ~5k) → ~40% gross at 30k; add-ons ~25–65%. Per-unit hardware margin is linear — the **scalable spine is the 4,000/yr recurring (ARR)**, so keep it worth paying (uptime SLA, alerts, history). The real ceiling later is CAC + support per low-ticket sale, not margin.
 
 ### Go-to-Market
 
