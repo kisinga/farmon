@@ -1,5 +1,5 @@
 import type { Manifest } from '@core';
-import { localNodesWithFlag, collectTelemetryChannels } from '@core';
+import { localNodesWithFlag, importedNodesWithFlag, collectTelemetryChannels } from '@core';
 import type { GenerationMetadata } from '../backends/types';
 
 /**
@@ -15,10 +15,25 @@ import type { GenerationMetadata } from '../backends/types';
  * new controller. Claims feed the dead-man registry (deadman.ts); the lease is the
  * fail-safe (stop renewing → lease expires → actuator stops).
  *
+ * DELIVERY. UDP is fire-and-forget: no ack, no retransmit. Reliability is
+ * convergent, not per-message — the importer re-claims every heartbeat and the
+ * lease bounds any loss. Claims are BINARY (run/stop): a VFD's speed setpoint is
+ * an owner-local entity, never carried in a claim, so a remote claimant runs the
+ * VFD at whatever speed the owner is set to.
+ *
+ * CONFIRMATION. The owner broadcasts a `held` receipt per owned actuator — the
+ * sorted claimant set from its registry. An importer confirms its own claim
+ * landed by finding itself in that set, surfaced as a `cc_<node>` diagnostic
+ * binary sensor (local-first, so it stays visible with the server down). This is
+ * best-effort visibility, not a hard guarantee — the receipt can itself drop —
+ * and it does not act on a mismatch (the re-claim heartbeat already retries;
+ * reacting to a sustained mismatch is a deliberate future layer).
+ *
  * Emitted on every device:
  *   - coordination.h    — C++ HMAC + message build/parse + the generic dispatcher.
  *   - coordination.yaml — the `udp:` block (on_receive → dispatcher), the `udp_key`
- *     global, and the owner's reading-broadcast interval.
+ *     global, the owner's broadcast interval (readings + claim receipts), and the
+ *     importer's `cc_<node>` claim-confirm sensors.
  */
 
 /** ESPHome `udp:` listen/broadcast port (component default; pinned for clarity). */
@@ -35,6 +50,16 @@ function ownedActuatorIds(m: Manifest): string[] {
     for (const n of localNodesWithFlag(m, flag)) ids.add(n.id);
   }
   return [...ids];
+}
+
+/** Imported actuator nodes this controller proxies — it claims these remotely and
+ *  confirms each claim landed via the owner's `held` broadcast (cc_<id> sensor). */
+function importedActuatorNodes(m: Manifest): { id: string; name: string }[] {
+  const seen = new Map<string, string>();
+  for (const flag of ['isPump', 'isValve', 'isDosingPump'] as const) {
+    for (const n of importedNodesWithFlag(m, flag)) seen.set(n.id, String(n.name ?? n.id));
+  }
+  return [...seen].map(([id, name]) => ({ id, name }));
 }
 
 /** Imported sensor node ids this controller mirrors as `ri_<id>` (importer side). */
@@ -73,6 +98,13 @@ inline bool coord_owns(const char* node) {
     ? reads.map((id) => `      if (strcmp(node, "${id}") == 0) { id(ri_${id}).publish_state(value); return true; }`).join('\n')
     : '      // no imported readings';
 
+  // Held dispatch: node id → the local claim-confirm sensor it sets (`mine` = this
+  // controller is in the owner's claimant set for that actuator).
+  const importedActuators = importedActuatorNodes(m);
+  const heldDispatch = importedActuators.length > 0
+    ? importedActuators.map(({ id }) => `      if (strcmp(node, "${id}") == 0) { id(cc_${id}).publish_state(mine); return true; }`).join('\n')
+    : '      // no imported actuators';
+
   return `// =============================================================================
 // MajiFlow — Cross-Controller Coordination over UDP (coordination.h)
 // =============================================================================
@@ -87,6 +119,7 @@ inline bool coord_owns(const char* node) {
 #include <string>
 #include <vector>
 #include <cmath>
+#include <cstring>
 #include "mbedtls/md.h"
 #include "esphome/components/json/json_util.h"
 
@@ -153,6 +186,18 @@ inline std::vector<uint8_t> build_reading_msg(const char* node, const char* role
     ",\\"role\\":\\"" + role + "\\",\\"value\\":" + vbuf + ",\\"mac\\":\\"" + mac + "\\"}";
   return coord_bytes(j);
 }
+// owner -> importers: which controllers currently hold a live claim on this actuator
+// (the receipt). An importer confirms its own claim landed by finding itself in 'who'
+// — the sorted, comma-joined claimant set ("" = none).
+inline std::vector<uint8_t> build_held_msg(const char* node) {
+  uint32_t c = ++coord_send_ctr;
+  std::string who = claimants_csv(node);
+  std::string mac = coord_hmac(coord_sig("held", node, COORD_SELF, c, who));
+  std::string j = std::string("{\\"t\\":\\"held\\",\\"node_id\\":\\"") + node +
+    "\\",\\"from\\":\\"" + COORD_SELF + "\\",\\"c\\":" + std::to_string(c) +
+    ",\\"who\\":\\"" + who + "\\",\\"mac\\":\\"" + mac + "\\"}";
+  return coord_bytes(j);
+}
 
 // Accept once: HMAC valid AND counter advanced. A large backward jump means the
 // sender rebooted (RAM counter reset) — accept and re-baseline. This blocks naive
@@ -198,6 +243,21 @@ inline void handle_coord_msg(const std::vector<uint8_t>& data) {
 ${readingDispatch}
       return true;
     }
+    if (strcmp(t, "held") == 0) {
+      const char* who = x["who"] | "";
+      if (!coord_accept(from, c, "held", node, who, mac)) return false;
+      bool mine = false;
+      for (const char* p = who; *p; ) {
+        const char* comma = strchr(p, ',');
+        size_t len = comma ? (size_t)(comma - p) : strlen(p);
+        if (len == strlen(COORD_SELF) && strncmp(p, COORD_SELF, len) == 0) { mine = true; break; }
+        if (!comma) break;
+        p = comma + 1;
+      }
+      (void)mine;
+${heldDispatch}
+      return true;
+    }
     return false;
   });
 }
@@ -212,23 +272,45 @@ ${readingDispatch}
  */
 export function generateCoordination(m: Manifest): string {
   const readings = ownedReadingChannels(m);
+  const owned = ownedActuatorIds(m);
+  const importedActuators = importedActuatorNodes(m);
 
-  // Owner: broadcast each local reading via the udp.write action (which enables the
-  // component's broadcast socket); importers filter by node id. Guarded so a not-yet-read
-  // (NaN) sensor is skipped.
-  const readingInterval = readings.length > 0
-    ? `
-interval:
-  - interval: ${HEARTBEAT_MS}ms
-    then:
-${readings.map((c) => `      - if:
+  // Owner broadcast (10s): each readable channel + a claim-receipt (`held`) for each
+  // owned actuator. The udp.write action enables the component's broadcast socket;
+  // importers filter by node id. Readings are guarded so a not-yet-read (NaN) sensor
+  // is skipped; held is unguarded (an empty claimant set confirms a release too).
+  const readingItems = readings.map((c) => `      - if:
           condition:
             lambda: 'return !std::isnan(id(${c.ref}).state);'
           then:
             - udp.write:
                 id: coord_udp
                 data: !lambda |-
-                  return build_reading_msg("${c.node}", "${c.role}", id(${c.ref}).state);`).join('\n')}
+                  return build_reading_msg("${c.node}", "${c.role}", id(${c.ref}).state);`);
+  const heldItems = owned.map((id) => `      - udp.write:
+          id: coord_udp
+          data: !lambda |-
+            return build_held_msg("${id}");`);
+  const items = [...readingItems, ...heldItems];
+  const broadcast = items.length > 0
+    ? `
+interval:
+  - interval: ${HEARTBEAT_MS}ms
+    then:
+${items.join('\n')}
+`
+    : '';
+
+  // Importer: a diagnostic binary sensor per proxied actuator — true while the owner
+  // reports this controller in the claimant set (i.e. our claim was received). Set by
+  // the `held` branch of the dispatcher; local-first, so it is visible with no server.
+  const confirmSensors = importedActuators.length > 0
+    ? `
+binary_sensor:
+${importedActuators.map(({ id, name }) => `  - platform: template
+    id: cc_${id}
+    name: "${name} claim confirmed"
+    entity_category: diagnostic`).join('\n')}
 `
     : '';
 
@@ -252,5 +334,5 @@ udp:
   on_receive:
     - lambda: |-
         handle_coord_msg(data);
-${readingInterval}`;
+${broadcast}${confirmSensors}`;
 }

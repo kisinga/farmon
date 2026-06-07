@@ -9,7 +9,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifestForController, reservedPins } from "@core";
-import { loadBoard, type BoardDef } from "../electron/lib/board.js";
+import { type BoardDef } from "@core";
+import { loadBoard } from "./helpers";
 import { validateAll } from "@core/rules";
 import { generateAll, createTestMetadata, type GeneratedFile } from "@core/codegen";
 import { generateBoardPackage } from "@core/codegen";
@@ -97,7 +98,6 @@ function pumpedPressureTopology(sourcePumpRated: boolean, destPumpRated: boolean
       flow_watchdog: 30,
       flow_confirm: 15,
       flow_threshold: 0.5,
-      api_watchdog: 300,
       update_interval: 5,
     },
     automations: [],
@@ -149,7 +149,7 @@ const expectedSuffixes = [
   "hardware.yaml",
   "sensors.yaml",
   "control.yaml",
-  "dashboard.yaml",
+  "mqtt.yaml",
 ];
 for (const suffix of expectedSuffixes) {
   const found = [...fileMap.keys()].some((k) => k.endsWith(suffix));
@@ -170,6 +170,19 @@ assert(boardPkg.includes("vext"), "Vext control");
 assert(boardPkg.includes("font_top_bar"), "OLED font (board has OLED)");
 assert(boardPkg.includes("wifi_dbm"), "WiFi signal sensor");
 assert(boardPkg.includes("uptime_sec"), "Uptime sensor");
+
+// --- Server-unavailability reboot safety ---
+// A controller runs local control autonomously and is an island when upstream
+// is down; neither a dead AP nor a rejecting/unreachable broker may reboot it.
+assert(
+  /reboot_timeout:\s*['"]?0s['"]?/.test(boardPkg),
+  "WiFi reboot_timeout disabled (0s) — AP loss never reboots",
+);
+const mqttYaml = getFile("mqtt.yaml");
+assert(
+  /reboot_timeout:\s*['"]?0s['"]?/.test(mqttYaml),
+  "MQTT reboot_timeout disabled (0s) — broker loss never reboots",
+);
 
 // --- Device YAML ---
 
@@ -246,7 +259,7 @@ assert(routesH.includes("DEFAULT_FLOW_THRESHOLD_L_MIN"), "Has manifest-derived f
 assert(routesH.includes("DEFAULT_FLOW_WATCHDOG_MS"), "Has manifest-derived flow watchdog firmware constant");
 assert(routesH.includes("ROUTES[0].max_runtime_s"), "Max runtime dispatch falls back to route table when HA number is not ready");
 assert(routesH.includes("flow_active_since"), "Route slot tracks sustained flow confirmation window");
-assert(routesH.includes("api_lost_since"), "Route slot tracks API loss per running slot");
+assert(!routesH.includes("api_lost_since"), "No per-slot HA API-loss tracking (HA API dropped for MQTT)");
 
 // --- Reconciler claim semantics (P4.8) ---
 // valve_claim_mask must hold the route's mask during PREPARING/RUNNING and
@@ -315,7 +328,7 @@ for (const f of flowSensors) {
   assert(sensors.includes(`\${flow_cal_${n(f, 'id')}}`), `Flow ${n(f, 'id')} uses per-sensor cal`);
 }
 assert(sensors.includes('id: flow_threshold_l_min'), "Has HA-tunable flow threshold number");
-assert(sensors.includes('name: "Flow Threshold (L/min)"'), "Flow threshold number has HA name");
+assert(sensors.includes('name: "Flow Threshold"'), "Flow threshold number has HA name");
 assert(sensors.includes('id(flow_threshold_l_min).state'), "Flow logic uses tunable threshold");
 assert(!sensors.includes('x > 0.5f'), "Flow logic does not hardcode 0.5 L/min");
 assert(sensors.includes('unit_of_measurement: "s"'), "Route max-runtime numbers show seconds unit");
@@ -338,10 +351,10 @@ assert(sensors.includes("queue_count"), "Queue text references queue_count");
 
 console.log("\ncontrol.yaml:");
 const control = getFile("control.yaml");
-// Parameterized actions stay as api services (need route_id argument).
-assert(control.includes("service: route_start"), "Has route_start service");
-assert(control.includes("service: route_stop"), "Has route_stop service");
-assert(control.includes("service: fault_reset"), "Has parameterized fault_reset service");
+// Parameterized route commands arrive as MQTT JSON actions, dispatched to try_route_*.
+assert(mqttYaml.includes('"route_start"'), "route_start dispatched as MQTT command");
+assert(mqttYaml.includes('"route_stop"'), "route_stop dispatched as MQTT command");
+assert(mqttYaml.includes('"fault_reset"'), "fault_reset dispatched as MQTT command");
 // Parameterless system actions are template buttons (auto-discoverable HA entities).
 assert(control.includes("id: btn_stop_all"), "Has Stop All template button");
 assert(control.includes("id: btn_reset_faults"), "Has Reset Faults template button");
@@ -361,25 +374,16 @@ assert(control.includes("flow_confirmed = true"), "Safety loop confirms sustaine
 assert(control.includes(": DEFAULT_FLOW_WATCHDOG_MS"), "Safety loop uses firmware SSOT when timing numbers are not ready");
 assert(control.includes(": DEFAULT_FLOW_THRESHOLD_L_MIN"), "Safety loop uses firmware SSOT when flow threshold is not ready");
 assert(!control.includes("flowThresholdFallback"), "Control generator does not duplicate flow-threshold formatting");
-assert(control.includes("api_client_count"), "Tracks active API client count");
-assert(control.includes("slots[s].api_lost_since"), "API watchdog is per-slot, not a stale global timestamp");
-assert(!control.includes("api_lost_time"), "No stale global API disconnect timestamp");
+assert(
+  !control.includes("api_client_count") && !control.includes("api_lost_since") && !control.includes("api_lost_time"),
+  "No HA API-loss watchdog (server loss never trips a fault — autonomous islands)",
+);
 assert(!control.includes("safe_close_mask"), "Edge-driven safe_close_mask removed");
 assert(!control.includes("valves_closing"), "valves_closing edge flag removed");
 assert(control.includes("try_route_start"), "Delegates to try_route_start (which queues on conflict)");
 assert(!control.includes("close_all_valves"), "No close_all_valves script");
 assert(!control.includes("do_prepare_and_run"), "No do_prepare_and_run script");
 assert(!control.includes("id(active_route)"), "No active_route global reference");
-
-// --- dashboard.yaml ---
-
-console.log("\ndashboard.yaml:");
-const dashboard = getFile("dashboard.yaml");
-assert(dashboard.includes("name: Stop All"), "Dashboard has Stop All recovery button");
-assert(dashboard.includes("name: Reset Faults"), "Dashboard has Reset Faults recovery button");
-assert(dashboard.includes("name: Clear Queue"), "Dashboard has Clear Queue recovery button");
-assert(dashboard.includes("show_header_toggle: false"), "Manual valve cards disable header toggle");
-assert(dashboard.includes("Flow Threshold"), "Configuration dashboard includes Flow Threshold");
 
 // --- Cross-file consistency ---
 
@@ -565,7 +569,7 @@ assert(kcBoardPkg.includes("ethernet:"), "Has ethernet: section");
 assert(kcBoardPkg.includes("LAN8720"), "Ethernet type = LAN8720");
 assert(kcBoardPkg.includes("mdc_pin: GPIO23"), "Ethernet MDC pin");
 assert(kcBoardPkg.includes("pin: GPIO17"), "Ethernet CLK pin (structured)");
-assert(kcBoardPkg.includes("mode: CLK_OUT"), "Ethernet CLK mode (structured)");
+assert(kcBoardPkg.includes("mode: GPIO17_OUT"), "Ethernet CLK mode (structured)");
 assert(!kcBoardPkg.includes("clk_mode"), "No deprecated clk_mode key");
 assert(!kcBoardPkg.includes("wifi:"), "No wifi: section (ethernet board, default transport)");
 assert(!kcBoardPkg.includes("captive_portal"), "No captive_portal (no wifi)");
@@ -599,11 +603,12 @@ assert(kcBoardPkgWifi.includes("esp32_improv"), "transport=wifi: has esp32_impro
 assert(kcBoardPkgWifi.includes("improv_serial"), "transport=wifi: has improv_serial (USB recovery)");
 assert(kcBoardPkgWifi.includes("ap:"), "transport=wifi: has ap: fallback hotspot");
 assert(kcBoardPkgWifi.includes("web_server:"), "transport=wifi: has web_server");
-// SoftAP password reuses the wifi station password — single credential UX.
-// Reachable at 192.168.4.1 when the station fails to associate.
-assert(!kcBoardPkgWifi.includes("fallback_password"), "transport=wifi: no fallback_password (reuses wifi_password)");
+// No baked wifi credentials: the station password is provisioned on-device
+// (captive_portal / Improv → NVS), never in the firmware or our DB. The
+// fallback AP is open (provisioning-only — no control surface binds to it).
+assert(!kcBoardPkgWifi.includes("fallback_password"), "transport=wifi: no fallback_password");
 const apMatches = kcBoardPkgWifi.match(/!secret wifi_password/g) ?? [];
-assert(apMatches.length === 2, `transport=wifi: !secret wifi_password used twice (sta + ap), got ${apMatches.length}`);
+assert(apMatches.length === 0, `transport=wifi: no baked wifi_password — provisioned on-device, got ${apMatches.length}`);
 // Diagnostic sensors must follow the active transport, not board capability:
 assert(!kcBoardPkgWifi.includes("ethernet_info"), "transport=wifi on ethernet board: no ethernet_info text_sensor");
 assert(kcBoardPkgWifi.includes("wifi_info"), "transport=wifi: has wifi_info text_sensor");
@@ -744,7 +749,7 @@ const crossControllerTopology = parseTopology({
     { id: 'pump-ctrl', friendlyName: 'Pump Controller', board: 'heltec-v3' },
     { id: 'tank-ctrl', friendlyName: 'Tank Controller', board: 'heltec-v3' },
   ],
-  timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 5, flow_threshold: 0.5, api_watchdog: 60 },
+  timing: { valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 5, flow_threshold: 0.5 },
   nodes: [
     // Tank Controller nodes
     { kind: 'tank', id: 'src_tank', name: 'Source Tank', level_monitored: true, pressure_pin: 'GPIO1', pressure_sensor_max_psi: 15, ports: [{ id: 'outlet', label: 'Outlet', direction: 'outlet' }], position: { x: 0, y: 0 }, anchorId: 'tank-ctrl' },
@@ -782,15 +787,16 @@ assert(dstTank?.remoteHaEntityId === 'sensor.tank_controller_dest_tank_level', "
 assert(!flowNode?.remoteHaEntityId, "Local flow sensor has no remote HA entity");
 assert(!pumpNode?.remoteHaEntityId, "Local pump has no remote HA entity");
 
-// Collect: remote tanks should emit homeassistant sensor imports
+// Collect: remote tanks emit UDP-fed template sensors (ri_<id>). Cross-controller
+// reads ride UDP now (coordination publishes into these), not a homeassistant: import.
 const pumpCollect = collectEntityCodegen(pumpManifest, board, {});
 assert(
-  pumpCollect.sections['sensor']?.some(y => y.includes('ri_src_tank') && y.includes('sensor.tank_controller_source_tank_level')),
-  "Remote src tank emits homeassistant sensor import"
+  pumpCollect.sections['sensor']?.some(y => y.includes('id: ri_src_tank') && y.includes('platform: template')),
+  "Remote src tank emits UDP-fed template sensor (ri_src_tank)"
 );
 assert(
-  pumpCollect.sections['sensor']?.some(y => y.includes('ri_dst_tank') && y.includes('sensor.tank_controller_dest_tank_level')),
-  "Remote dst tank emits homeassistant sensor import"
+  pumpCollect.sections['sensor']?.some(y => y.includes('id: ri_dst_tank') && y.includes('platform: template')),
+  "Remote dst tank emits UDP-fed template sensor (ri_dst_tank)"
 );
 
 // Routes: remote tanks should use ri_ prefix in get_tank_level

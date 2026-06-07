@@ -559,7 +559,10 @@ inline uint16_t valve_claim_mask(int s) {
   return 0;
 }
 
-// Union of claims across all slots — the desired open-mask.
+// Union of claims across all slots — the desired open-mask. Correct per valve
+// (open if any active route needs it); does NOT verify the combined open-set is
+// a coherent flow path. Two independently-valid routes can merge into an
+// unintended path; path compatibility is a design-time property, not enforced.
 inline uint16_t desired_valve_mask() {
   uint16_t m = 0;
   for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) m |= valve_claim_mask(i);

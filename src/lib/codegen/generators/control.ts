@@ -223,7 +223,7 @@ ${pumpMgmt}
           reconcile_valves();
 
   # --- 2s Safety Monitor -------------------------------------------------------
-  # Per-slot watchdogs: flow, max runtime, API loss.
+  # Per-slot watchdogs: flow, max runtime.
 
   - interval: 2s
     then:

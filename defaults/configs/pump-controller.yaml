@@ -206,7 +206,6 @@ timing:
   flow_watchdog: 30
   flow_confirm: 15
   flow_threshold: 0.5
-  api_watchdog: 300
   update_interval: 5
 automations:
   - id: daily_refill

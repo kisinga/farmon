@@ -14,7 +14,7 @@ The default seeds the live value via ESPHome's `initial_value` when the entity i
 ## Where this pattern is used
 
 - Per-route `Max Runtime`, `Source Min Level`, `Dest Max Level` — set in the editor's *Route Overrides* sidebar, exposed in HA as `number.…_route_<n>_*`.
-- Device-wide timing (`Flow Watchdog`, `Flow Confirm`, `Flow Threshold`, `API Watchdog`, `Valve Travel Time`) — set in the editor's *Config* tab, exposed in HA as `number.…_<key>`.
+- Device-wide timing (`Flow Watchdog`, `Flow Confirm`, `Flow Threshold`, `Valve Travel Time`) — set in the editor's *Config* tab, exposed in HA as `number.…_<key>`.
 - Per-sensor calibration on pressure sensors (`Sensor Min/Max`, `Cal Empty/Full`) — derived from tank dimensions plus `sensor_max_psi`, exposed in HA per sensor.
 - Per-valve travel time — derived from device timing, exposed per valve.
 

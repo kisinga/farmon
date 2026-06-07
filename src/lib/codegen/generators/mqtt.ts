@@ -245,6 +245,10 @@ mqtt:
   username: "${ctrl}"
   password: !secret mqtt_token
   discovery: false
+  # Controller runs local control (routes, safety, UDP peer coordination)
+  # autonomously and is an island when the server is down. An unreachable or
+  # rejecting broker must never reboot it. 0s disables ESPHome's 15-min default.
+  reboot_timeout: 0s
   # We publish our own telemetry/event/status on absolute topics (in the lambdas
   # below). ESPHome still auto-publishes each entity's state under topic_prefix;
   # we segregate those under .../esphome/* so they never collide with our scheme

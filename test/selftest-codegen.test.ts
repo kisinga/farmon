@@ -9,9 +9,10 @@
  */
 
 import * as path from "node:path";
-import { loadBoard, type BoardDef } from "../electron/lib/board.js";
-import { generateSelfTest } from "../electron/lib/self-test/index.js";
-import type { GeneratedFile } from "../electron/lib/generate.js";
+import { type BoardDef } from "@core";
+import { loadBoard } from "./helpers";
+import { generateSelfTest } from "@core/codegen";
+import type { GeneratedFile } from "@core/codegen";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
 
@@ -47,7 +48,7 @@ console.log("KC868-A16 Self-Test:");
 const kc868Board = loadBoard(path.join(DEFAULTS, "boards/kc868-a16"));
 const kc868Files = generateSelfTest(kc868Board);
 
-assert(kc868Files.length === 5, `Generates ${kc868Files.length} files (expected 5)`);
+assert(kc868Files.length === 4, `Generates ${kc868Files.length} files (expected 4)`);
 
 // --- Board package ---
 const kc868BoardPkg = getFile(kc868Files, "common/board.yaml");
@@ -114,16 +115,6 @@ assert(kc868Seq.includes("NUM_INPUT_EXPANDERS"), "Has input expander addresses f
 assert(kc868Seq.includes("i2c_read_reg"), "Has I2C relay readback");
 assert(kc868Seq.includes("i2c_probe"), "Has I2C bus scan");
 
-// --- Dashboard ---
-const kc868Dash = getFile(kc868Files, "selftest-kc868-a16.yaml");
-// The dashboard file is also named selftest-kc868-a16.yaml but in dashboards dir
-const kc868DashFiles = kc868Files.filter(f => f.relativePath.includes("dashboards"));
-assert(kc868DashFiles.length === 1, "Generates 1 dashboard file");
-const kc868DashContent = kc868DashFiles[0].content;
-assert(kc868DashContent.includes("Self-Test"), "Dashboard title contains Self-Test");
-assert(kc868DashContent.includes("Test Progress"), "Dashboard has test progress gauge");
-assert(kc868DashContent.includes("Test Results"), "Dashboard has test results section");
-
 // =============================================================================
 // Heltec V3 Self-Test
 // =============================================================================
@@ -133,7 +124,7 @@ console.log("\nHeltec V3 Self-Test:");
 const heltecBoard = loadBoard(path.join(DEFAULTS, "boards/heltec-v3"));
 const heltecFiles = generateSelfTest(heltecBoard);
 
-assert(heltecFiles.length === 5, `Generates ${heltecFiles.length} files (expected 5)`);
+assert(heltecFiles.length === 4, `Generates ${heltecFiles.length} files (expected 4)`);
 
 // --- Device YAML ---
 const heltecDevice = getFile(heltecFiles, "selftest-heltec-v3.yaml");

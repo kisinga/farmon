@@ -293,7 +293,7 @@ function buildOledDisplay(board: BoardDef, m: Manifest): string {
                         ROUTES[slots[s].route_id].name, rt / 60, rt % 60);
               y += 12;
             } else if (slots[s].state == 4 && slots[s].route_id >= 0) {
-              const char* faults[] = {"", "NoFlow", "MaxRT", "API"};
+              const char* faults[] = {"", "NoFlow", "MaxRT", "CtrlLost"};
               int f = slots[s].fault_code;
               it.printf(0, y, id(font_body), "F:%s %s",
                         ROUTES[slots[s].route_id].name,

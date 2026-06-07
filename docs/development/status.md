@@ -27,13 +27,14 @@ work entirely.
 
 ## Smaller / deferred
 
-- **Tests (tests-last):** repoint the stale harness off deleted `electron/` paths; add the
-  cross-language wire-contract round-trip (Go ACL/ingest vs core topic layout).
+- **Tests (tests-last):** add the cross-language wire-contract round-trip (Go ACL/ingest
+  vs core topic layout). (Done: harness repointed off deleted `electron/` paths — all TS
+  suites green; obsolete db + site-doc tests removed.)
 - **Dosing-pump owner-side actuation** — pre-existing gap; the dosing claim currently no-ops
   on the owner (not wired into pumps or the valve reconciler).
-- **HA-cruft pass** — prune the now-dead `api_watchdog` config field, `SYS.apiWatchdog`/
-  `apiPartitioned`, `api_key` secret, orphaned `safetyProfile.deadMan*` fields, deep
-  `ha.ts`/`ha-meta` exports.
+- **HA-cruft pass** — prune the `api_key` secret, orphaned `safetyProfile.deadMan*` fields,
+  deep `ha.ts`/`ha-meta` exports. (Done: `api_watchdog` field + watchdog, `SYS.apiWatchdog`/
+  `apiPartitioned`.)
 - **Plan 2 leftover** — the Design-canvas topology-sidebar bespoke polish (deferred to its
   own session).
 - **Guided-design wizard** — its own future plan (relationship-input onboarding for lite).

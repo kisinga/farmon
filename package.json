@@ -7,7 +7,6 @@
     "start": "ng serve",
     "build": "ng build",
     "test": "npx tsx test/codegen.test.ts",
-    "test:db": "npx tsx test/db.test.ts",
     "test:limits": "npx tsx test/limits.test.ts",
     "test:topology": "npx tsx test/topology.test.ts",
     "test:ha": "npx tsx test/ha-export.test.ts",

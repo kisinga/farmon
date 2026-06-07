@@ -8,9 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { TopologySchema, parseTopology, type Topology } from "../electron/lib/topology.js";
-import { topologyToManifestForController } from "../electron/lib/topology-to-manifest.js";
-import { nodesByKind } from "../electron/lib/schema.js";
+import { TopologySchema, parseTopology, type Topology, topologyToManifestForController, nodesByKind } from "@core";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
 const CONFIG_PATH = path.join(DEFAULTS, "configs/pump-controller.yaml");

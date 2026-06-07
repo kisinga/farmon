@@ -30,8 +30,8 @@ import {
   deriveHaEntityId,
   type Manifest,
 } from '@core';
-import { loadBoard } from '../electron/lib/board.js';
-import { generateEsphome, generateAll, createTestMetadata } from '../electron/lib/generate.js';
+import { loadBoard } from './helpers';
+import { generateEsphome, generateAll, createTestMetadata } from '@core/codegen';
 
 const DEFAULTS = path.resolve(new URL('.', import.meta.url).pathname, '..', 'defaults');
 
@@ -133,7 +133,7 @@ function check(fixture: FixtureCheck) {
   const firmwareIds = new Set<string>();
 
   // ESPHome firmware files (board package, control, hardware, sensors).
-  for (const f of generateEsphome(manifest, board, 'test-site', undefined, createTestMetadata())) {
+  for (const f of generateEsphome(manifest, board, 'test-site', undefined, createTestMetadata(), {})) {
     if (!f.relativePath.endsWith('.yaml')) continue;
     if (f.relativePath.endsWith('secrets.yaml')) continue;
     const found = collectFirmwareEntityIds(f.content, manifest.device);
@@ -143,7 +143,7 @@ function check(fixture: FixtureCheck) {
   // --- Generator references ---
   const referencedIds = new Set<string>();
 
-  for (const f of generateAll(manifest, board, 'test-site', undefined, createTestMetadata())) {
+  for (const f of generateAll(manifest, board, 'test-site', undefined, createTestMetadata(), {})) {
     if (!f.relativePath.includes('/homeassistant/')) continue;
     const docs = parseAllDocuments(f.content).map(d => d.toJS());
     for (const doc of docs) collectEntityIdReferences(doc, referencedIds);

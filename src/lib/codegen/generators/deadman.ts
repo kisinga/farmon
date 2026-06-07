@@ -15,6 +15,19 @@ import { localNodesWithFlag } from '@core';
  * valve. That positive model IS the local-mode control-loss fail-safe; there is
  * no separate negative "enforce" pass (local routes drive actuators directly via
  * pump_ref_count / slot valve masks, never through this registry).
+ *
+ * CLAIM COMPOSITION. The registry holds a LIST of claims per actuator, so more
+ * than one controller can hold a live claim at once; the actuator runs while ANY
+ * claim is live (logical OR). Complete and safe for a PUMP — its only meaningful
+ * state is on/off, so "run if any route needs flow" can never conflict, and a
+ * pump may be legitimately shared by routes on different controllers.
+ *
+ * LIMITATION (valves). For a valve the OR is correct per-valve (open if any
+ * active route needs it) but does NOT verify the combined open-set is a coherent
+ * flow path: two independently-valid routes can merge into an unintended path —
+ * via a shared valve, or via separate valves meeting at a passive junction.
+ * Path-level compatibility is a topology property, resolvable only at design
+ * time; it is not enforced here or at runtime.
  */
 export function generateDeadman(m: Manifest): string {
   const valves = localNodesWithFlag(m, 'isValve');
@@ -89,6 +102,21 @@ inline bool has_live_claim(const std::string& nodeId) {
   auto it = claim_registry.find(nodeId);
   if (it == claim_registry.end()) return false;
   return !it->second.empty();
+}
+
+// Sorted, comma-joined ids of controllers with a live claim on nodeId ("" = none).
+// The owner broadcasts this (build_held_msg) so an importer can confirm its own
+// claim was received by finding itself in the set.
+inline std::string claimants_csv(const std::string& nodeId) {
+  prune_expired_claims(nodeId);
+  auto it = claim_registry.find(nodeId);
+  if (it == claim_registry.end()) return "";
+  std::vector<std::string> who;
+  for (auto& c : it->second) who.push_back(c.owner);
+  std::sort(who.begin(), who.end());
+  std::string out;
+  for (size_t i = 0; i < who.size(); i++) { if (i) out += ','; out += who[i]; }
+  return out;
 }
 
 inline std::string valve_id_for_index(int idx) {

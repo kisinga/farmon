@@ -62,6 +62,10 @@ function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
     {
       wifi: {
         ...(manualIp && { manual_ip: manualIp }),
+        // An unreachable AP must not reboot the device — it runs local control
+        // autonomously and falls back to the setup AP below. 0s disables
+        // ESPHome's 15-min default WiFi-loss reboot.
+        reboot_timeout: '0s',
         ap: {
           ssid: '${friendly_name} Setup',
         },

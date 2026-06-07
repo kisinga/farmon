@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { loadBoard } from "../electron/lib/board.js";
-import { generateSelfTest } from "../electron/lib/self-test/index.js";
+import { loadBoard } from "./helpers";
+import { generateSelfTest } from "@core/codegen";
 
 const board = loadBoard(path.resolve("defaults/boards/kc868-a16"));
 const secrets = {
