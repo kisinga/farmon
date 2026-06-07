@@ -1,7 +1,12 @@
 # syntax=docker/dockerfile:1
 
 # ── Stage 1: build the Angular SPA ───────────────────────────────────────────
-FROM node:24-alpine AS web
+# Debian (glibc), not alpine (musl): package-lock.json is resolved on glibc, so a
+# glibc builder keeps `npm ci` in sync. On musl, npm wants the musl variants of
+# native deps (rollup/lightningcss/tailwind-oxide + their @emnapi/@napi-rs WASM
+# fallback) which a glibc-generated lockfile omits → `npm ci` aborts "out of sync".
+# This stage is throwaway anyway: only the built SPA is copied to the alpine runtime.
+FROM node:24-slim AS web
 WORKDIR /build
 # Install deps against the lockfile first (cached unless deps change).
 COPY package.json package-lock.json ./

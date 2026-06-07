@@ -35,6 +35,20 @@ interface Vertical {
   body: string;
 }
 
+/** A real built site: the design we drew, next to a photo of it installed. */
+interface Deployment {
+  title: string;
+  body: string;
+  /** Topology render path under public/; '' shows the design placeholder. */
+  design: string;
+  /** Field install photo path under public/; '' shows the photo placeholder. */
+  photo: string;
+  /** Filename hint shown in the empty design slot. */
+  designSlot: string;
+  /** Filename hint shown in the empty photo slot. */
+  photoSlot: string;
+}
+
 /**
  * Public landing page (route `''`). Renders full-bleed; the app shell hides its
  * chrome on this route, so this component owns the nav, scroll, and footer.
@@ -125,6 +139,44 @@ interface Vertical {
       </svg>
     </header>
 
+    <!-- ===================== DASHBOARD PEEK ===================== -->
+    <section class="px-5 sm:px-8 pt-12 sm:pt-16 pb-4">
+      <div class="max-w-5xl mx-auto text-center">
+        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Your whole site, on one screen</h2>
+        <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed max-w-2xl mx-auto">
+          Live tank levels, water flow and valve positions in a single view. Watch it from
+          your laptop or your phone, on-site or across the country.
+        </p>
+      </div>
+
+      <div class="relative max-w-5xl mx-auto mt-10 sm:mt-12">
+        <!-- desktop: browser-chrome frame -->
+        <div class="rounded-2xl bg-white ring-1 ring-slate-200 shadow-2xl shadow-slate-900/10 overflow-hidden">
+          <div class="flex items-center gap-1.5 px-4 h-9 bg-slate-100 border-b border-slate-200">
+            <span class="w-3 h-3 rounded-full bg-red-400/70"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-400/70"></span>
+            <span class="w-3 h-3 rounded-full bg-green-400/70"></span>
+            <span class="ml-3 hidden sm:block rounded-md bg-white ring-1 ring-slate-200 px-3 py-0.5 text-[11px] text-slate-400">majiflow.app / dashboard</span>
+          </div>
+          <!-- TODO: replace placeholder with <img src="marketing/dashboard-desktop.png" alt="MajiFlow dashboard" class="block w-full"> -->
+          <div class="aspect-[16/9] bg-slate-50 flex flex-col items-center justify-center gap-2 text-slate-400">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M3 9h18M8 21h8M12 17v4"/></svg>
+            <span class="text-xs font-medium">marketing/dashboard-desktop.png</span>
+          </div>
+        </div>
+        <!-- phone: overlapping frame (desktop screens only) -->
+        <div class="hidden lg:block absolute -bottom-8 -right-4 w-44 rounded-[1.75rem] bg-slate-900 ring-1 ring-white/10 shadow-2xl p-1.5">
+          <div class="rounded-[1.3rem] overflow-hidden bg-white">
+            <!-- TODO: replace placeholder with <img src="marketing/dashboard-mobile.png" alt="MajiFlow on mobile" class="block w-full"> -->
+            <div class="aspect-[9/19] bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-slate-400 text-center px-2">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+              <span class="text-[10px] font-medium leading-tight">marketing/dashboard-mobile.png</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ===================== SOFTWARE + HARDWARE ===================== -->
     <section class="px-5 sm:px-8 py-16 sm:py-20">
       <div class="max-w-5xl mx-auto">
@@ -145,11 +197,24 @@ interface Vertical {
             <p class="mt-2 text-sm text-slate-600 leading-relaxed">Off-the-shelf controllers, sensors, pumps and valves. No special parts to hunt down. A plumber can do most of the install, and an electrician handles the pump wiring. Everything is documented.</p>
           </div>
         </div>
-        <p class="mt-7 text-center text-sm text-slate-500 max-w-3xl mx-auto leading-relaxed">
-          Out in the field, each controller reads your sensors, switches your pumps and valves,
-          and reports back to your dashboard. Let us host it online for the lowest cost, or keep
-          everything on-site and own it yourself.
-        </p>
+        <!-- the controller itself -->
+        <div class="mt-8 grid gap-6 sm:grid-cols-2 items-center">
+          <div class="rounded-2xl bg-slate-900 ring-1 ring-slate-200/60 shadow-xl shadow-slate-900/10 overflow-hidden">
+            <!-- TODO: replace placeholder with <img src="marketing/device.png" alt="The controller" class="block w-full"> -->
+            <div class="aspect-[4/3] flex flex-col items-center justify-center gap-2 text-slate-500">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 6V4M10 6V4M14 6V4M18 6V4M6 18v2M10 18v2M14 18v2M18 18v2"/></svg>
+              <span class="text-xs font-medium">marketing/device.png</span>
+            </div>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold">The controller that runs your site</h3>
+            <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+              Out in the field, each controller reads your sensors, switches your pumps and valves,
+              and reports back to your dashboard. Mount it on a wall or a rail, wire it once, and
+              leave it. Let us host it online for the lowest cost, or keep everything on-site and own it yourself.
+            </p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -288,6 +353,49 @@ interface Vertical {
       </div>
     </section>
 
+    <!-- ===================== FROM DESIGN TO THE FIELD ===================== -->
+    <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-50">
+      <div class="max-w-6xl mx-auto">
+        <div class="text-center max-w-2xl mx-auto">
+          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">From design to the field</h2>
+          <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
+            Real sites we have planned and built. The same layout you draw on the screen
+            becomes the controllers, pumps and valves running on the ground.
+          </p>
+        </div>
+        <div class="mt-12 grid gap-6 md:grid-cols-3">
+          @for (d of deployments; track d.title) {
+            <div class="rounded-2xl bg-white ring-1 ring-slate-200 shadow-sm overflow-hidden">
+              <!-- the design (topology render) -->
+              <div class="bg-white border-b border-slate-100">
+                @if (d.design) {
+                  <img [src]="d.design" [alt]="d.title + ' design'" class="block w-full aspect-[16/10] object-contain bg-slate-50" />
+                } @else {
+                  <div class="aspect-[16/10] bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-slate-400">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                    <span class="text-[10px] font-medium">{{ d.designSlot }}</span>
+                  </div>
+                }
+              </div>
+              <!-- the install (real field photo) -->
+              @if (d.photo) {
+                <img [src]="d.photo" [alt]="d.title + ' installed'" class="block w-full aspect-[16/10] object-cover" />
+              } @else {
+                <div class="aspect-[16/10] bg-slate-100 flex flex-col items-center justify-center gap-1.5 text-slate-400">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5L9 20"/></svg>
+                  <span class="text-[10px] font-medium">{{ d.photoSlot }}</span>
+                </div>
+              }
+              <div class="p-5">
+                <h3 class="font-semibold text-slate-900">{{ d.title }}</h3>
+                <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">{{ d.body }}</p>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    </section>
+
     <!-- ===================== WORKS IN ===================== -->
     <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-50">
       <div class="max-w-5xl mx-auto">
@@ -383,5 +491,32 @@ export class LandingComponent {
     { title: 'Hotels and lodges', body: 'Balanced tanks, steady water pressure, and early leak warnings for guest sites.' },
     { title: 'Greenhouses', body: 'Automatic feeding and dosing, with watering that follows the weather.' },
     { title: 'Remote sites', body: 'Solar-powered monitoring for boreholes, dams, and places with no grid power.' },
+  ];
+
+  protected readonly deployments: Deployment[] = [
+    {
+      title: 'Dryland farm',
+      body: 'Rain tank and borehole feeding two fields through a shared pump and valves.',
+      design: 'marketing/deploy-1-design.png',
+      photo: '',
+      designSlot: '',
+      photoSlot: 'marketing/deploy-1-install.png',
+    },
+    {
+      title: 'Hotel water store',
+      body: 'Balanced storage tanks holding steady pressure, with early leak warnings.',
+      design: '',
+      photo: '',
+      designSlot: 'marketing/deploy-2-design.png',
+      photoSlot: 'marketing/deploy-2-install.png',
+    },
+    {
+      title: 'Borehole on solar',
+      body: 'Off-grid pumping and monitoring, solar powered, carrying on with no internet.',
+      design: '',
+      photo: '',
+      designSlot: 'marketing/deploy-3-design.png',
+      photoSlot: 'marketing/deploy-3-install.png',
+    },
   ];
 }
