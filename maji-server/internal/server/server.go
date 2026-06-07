@@ -28,6 +28,9 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 		Automigrate: true,
 	})
 
+	// `docs export` — snapshot the runtime-authored docs collection to git.
+	registerDocsCmd(app)
+
 	// Public lead form guard: drop obvious bot spam (honeypot tripped) and never
 	// store an enquiry without explicit consent. Runs before the `leads` record
 	// is persisted; the honeypot value itself is never kept.

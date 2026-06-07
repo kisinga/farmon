@@ -1,9 +1,0 @@
-The KC868-A16's 4 ADC inputs accept **0–5 V** from external sensors. An onboard **LM324 op-amp** scales this to 0–3.3 V for the ESP32's ADC.
-
-**Calibration in MajiFlow**: the `Cal Empty V` and `Cal Full V` values represent the **ESP32-side voltage** (0–3.3 V range), not the original sensor output (0–5 V). Calibrate by:
-
-1. Drain the tank to empty → note the raw voltage reading in Home Assistant.
-2. Fill the tank to full → note the raw voltage reading.
-3. Enter these values as `Cal Empty` and `Cal Full`.
-
-The `Raw Voltage` diagnostic sensor is exposed to HA to assist with calibration.

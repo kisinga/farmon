@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import PocketBase, { type RecordModel } from 'pocketbase';
-import { strToU8, zipSync } from 'fflate';
+import { strToU8, zipSync, type Zippable } from 'fflate';
 import {
   buildGraph,
   deriveRoutes,
@@ -49,6 +49,9 @@ import type {
   AppConfig,
   AppConfigRecord,
   LeadEntry,
+  DocEntry,
+  DocDraft,
+  SiteDiagrams,
 } from '../models/backend-api';
 
 /**
@@ -373,6 +376,103 @@ export class BackendService {
     return { id: r['id'] };
   }
 
+  // --- Documentation -------------------------------------------------------
+  //
+  // The `docs` collection holds product narrative + node-type prose (board
+  // reference docs live in the board `def`). The per-site document is assembled
+  // in-browser from live topology + cached diagrams + these rows. Read is
+  // authed; writes are admin-only (collection rules).
+
+  /** All docs, ordered. */
+  async docList(): Promise<DocEntry[]> {
+    const records = await this.pb.collection('docs').getFullList({ sort: 'order,slug' });
+    return records.map((r) => this.toDocEntry(r));
+  }
+
+  async docCreate(d: DocDraft): Promise<{ id: string }> {
+    const r = await this.pb.collection('docs').create({
+      slug: d.slug, title: d.title, category: d.category, order: d.order, body: d.body,
+    });
+    return { id: r['id'] };
+  }
+
+  async docSave(id: string, d: DocDraft): Promise<void> {
+    await this.pb.collection('docs').update(id, {
+      slug: d.slug, title: d.title, category: d.category, order: d.order, body: d.body,
+    });
+  }
+
+  async docDelete(id: string): Promise<void> {
+    await this.pb.collection('docs').delete(id);
+  }
+
+  /** The site's cached documentation diagrams (empty when never published). */
+  async loadSiteDiagrams(siteId: string): Promise<SiteDiagrams> {
+    const r = await this.pb.collection('sites').getOne(siteId, { fields: 'doc_diagrams' });
+    const d = (r['doc_diagrams'] ?? null) as Partial<SiteDiagrams> | null;
+    return { composite: d?.composite ?? '', controllers: d?.controllers ?? {}, topoHash: d?.topoHash };
+  }
+
+  /** Cache the admin-rendered diagrams on the site (for the customer view),
+   *  stamped with the topology hash they were rendered from. */
+  async saveSiteDiagrams(siteId: string, topo: SiteTopology, diagrams: SiteDiagrams): Promise<void> {
+    const topoHash = await sha256Hex(JSON.stringify(topo));
+    await this.pb.collection('sites').update(siteId, { doc_diagrams: { ...diagrams, topoHash } });
+  }
+
+  /**
+   * Assemble the site's documentation HTML in the browser: live topology +
+   * cached (or caller-supplied) diagrams + board/node/narrative docs, with
+   * `{{slot}}` values filled live. Pass `override.diagrams` on the admin side to
+   * use freshly-rendered diagrams; the customer path uses the stored ones.
+   */
+  async buildSiteDoc(siteId: string, override?: { diagrams?: SiteDiagrams }): Promise<string> {
+    const { topology, site } = await this.siteLoad(siteId);
+    if (!topology) throw new Error('This site has no topology to document yet.');
+    const topo = parseTopology(topology);
+    let diagrams = override?.diagrams ?? (await this.loadSiteDiagrams(siteId));
+    // Stored diagrams are structural — if the topology has changed since they were
+    // published, drop them rather than show a diagram that no longer matches.
+    if (!override?.diagrams) {
+      const currentHash = await sha256Hex(JSON.stringify(topo));
+      if (diagrams.topoHash !== currentHash) diagrams = { composite: '', controllers: {} };
+    }
+    const boards = await this.boardDefsForModels(new Set(topo.controllers.map((c) => c.board)));
+    const docs = await this.docList();
+    // Lazy: pulls the assembler + micromustache + marked into a dynamic chunk,
+    // keeping them out of the initial bundle.
+    const { assembleSiteDoc } = await import('@core/docs');
+    return assembleSiteDoc({ siteName: site.friendlyName, topo, diagrams, boards, docs });
+  }
+
+  /** The site's parsed topology (for offscreen diagram rendering on the admin side). */
+  async siteTopology(siteId: string): Promise<SiteTopology> {
+    const { topology } = await this.siteLoad(siteId);
+    if (!topology) throw new Error('This site has no topology yet.');
+    return parseTopology(topology);
+  }
+
+  /** Resolve `{ model → BoardDef }` for the given board models (skips any missing). */
+  private async boardDefsForModels(models: Set<string>): Promise<Record<string, BoardDef>> {
+    const out: Record<string, BoardDef> = {};
+    for (const model of models) {
+      try { out[model] = (await this.boardLoad(model)).board; } catch { /* board not in catalog — skip */ }
+    }
+    return out;
+  }
+
+  private toDocEntry(r: RecordModel): DocEntry {
+    return {
+      id: r['id'],
+      slug: (r['slug'] ?? '') as string,
+      title: (r['title'] ?? '') as string,
+      category: (r['category'] ?? 'narrative') as DocEntry['category'],
+      order: (r['order'] ?? 0) as number,
+      body: (r['body'] ?? '') as string,
+      updated: (r['updated'] ?? '') as string,
+    };
+  }
+
   // --- Domain operations (run in-browser via @core) ---------------
 
   async deriveRoutes(
@@ -437,7 +537,7 @@ export class BackendService {
 
     const expansionBoards = await this.expansionCatalog();
     const built = await this.buildController(topo, ctrl, siteId, expansionBoards, deployment, provisioned);
-    const downloadUrl = URL.createObjectURL(this.zipBundle(built.files));
+    const downloadUrl = URL.createObjectURL(this.zipBundle(built.files, true));
 
     return {
       files: built.files.map((f) => ({
@@ -715,10 +815,25 @@ export class BackendService {
     return list.items[0];
   }
 
-  /** Zip a generated bundle into a Blob (text files only — stays tiny). */
-  private zipBundle(files: GeneratedFile[]): Blob {
-    const entries: Record<string, Uint8Array> = {};
-    for (const f of files) entries[f.relativePath] = strToU8(f.content);
+  /**
+   * Zip a generated bundle into a Blob (text files only — stays tiny).
+   *
+   * `rebase` strips the shared `sites/{id}/esphome/` scaffolding so the archive
+   * opens straight onto the device folder (`{device}/compile.sh`) instead of
+   * burying it four levels deep — used for single-controller downloads. The
+   * whole-site commit bundle keeps its full paths to disambiguate controllers.
+   *
+   * `compile.sh` (and any `.sh`) is stamped with Unix `0o755` so it extracts
+   * already executable (`./compile.sh`), not just `bash compile.sh`.
+   */
+  private zipBundle(files: GeneratedFile[], rebase = false): Blob {
+    const strip = rebase ? commonDirPrefix(files.map((f) => f.relativePath)) : '';
+    const entries: Zippable = {};
+    for (const f of files) {
+      const path = f.relativePath.slice(strip.length);
+      const data = strToU8(f.content);
+      entries[path] = path.endsWith('.sh') ? [data, { os: 3, attrs: 0o755 << 16 }] : data;
+    }
     const zipped = zipSync(entries, { level: 6 });
     // Copy into a fresh ArrayBuffer-backed view so the Blob owns its bytes.
     return new Blob([zipped.slice()], { type: 'application/zip' });
@@ -767,6 +882,27 @@ export class BackendService {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
   }
+}
+
+/**
+ * Longest shared directory prefix to strip so a zip opens onto the deepest
+ * folder every file shares (kept as the archive root). For one controller's
+ * files — all under `sites/{id}/esphome/{device}/…` — this returns
+ * `sites/{id}/esphome/`, leaving `{device}/…` as the single top-level folder.
+ * Returns `''` when nothing meaningful is shared (no flattening).
+ */
+function commonDirPrefix(paths: string[]): string {
+  if (paths.length === 0) return '';
+  // Common prefix of each path's directory segments (filename dropped).
+  let common = paths[0].split('/').slice(0, -1);
+  for (const p of paths.slice(1)) {
+    const segs = p.split('/').slice(0, -1);
+    let i = 0;
+    while (i < common.length && i < segs.length && common[i] === segs[i]) i++;
+    common = common.slice(0, i);
+  }
+  // Drop the last shared segment so it survives as the archive's root folder.
+  return common.length > 1 ? common.slice(0, -1).join('/') + '/' : '';
 }
 
 /** SHA-256 hex digest via Web Crypto. */

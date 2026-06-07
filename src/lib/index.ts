@@ -17,7 +17,7 @@ export type {
 export { effectiveTransport } from './topology.types';
 export type { Manifest, ManifestNode, LocalManifestNode, ImportedManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
-export type { BoardDef, PinDef, PinCap, ExpanderDef, EthernetDef, ExpansionBoardDef, ExpansionBoardChannelDef, ExpansionBoardCatalog } from './board.types';
+export type { BoardDef, DocSection, PinDef, PinCap, ExpanderDef, EthernetDef, ExpansionBoardDef, ExpansionBoardChannelDef, ExpansionBoardCatalog } from './board.types';
 export { boardSupportedTransports } from './board.types';
 export type { IoProviderDef, IoProviderInstanceConfig } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
@@ -131,6 +131,16 @@ export { buildResolveChannel, resolveComponentHeader } from './io-providers/reso
 export { createModbusControllerDriver } from './io-providers/modbus-controller-driver';
 export { createProviderDriver, buildProviderDrivers, type ProviderDriverEntry } from './io-providers/provider-factory';
 export { createExpansionBoardDriver } from './io-providers/expansion-board-driver';
+
+// --- Documentation: the tiny pure pieces (vocabulary + drift guard) live in the
+// main barrel; the heavy renderer + assembler (micromustache, lazy marked) are
+// reachable ONLY via the `@core/docs` entry so they stay out of the initial
+// bundle (imported dynamically by the doc-build path). ---
+export {
+  siteVars, boardVars, nodeVars, vocabFor,
+  type DocScope, type SiteVarCtx, type NodeVarCtx,
+} from './docs/vars';
+export { extractSlots, unknownSlots } from './docs/validate';
 
 // --- Static ---
 export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';

@@ -32,6 +32,16 @@ import { DashboardCardComponent } from './widgets/dashboard-card.component';
             <h1 class="text-2xl font-bold tracking-tight truncate">{{ siteName() || 'Dashboard' }}</h1>
             <p class="text-sm text-base-content/60 mt-0.5">Live status &amp; control</p>
           </div>
+          <button class="btn btn-sm btn-ghost gap-1.5" (click)="openDocs()" [disabled]="docBusy()"
+                  title="Open this site's documentation">
+            @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
+            @else {
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+            }
+            Documentation
+          </button>
           <!-- Real device presence (replaces the old hardcoded pill). -->
           @if (presenceTone() === 'online') {
             <span class="inline-flex items-center gap-1.5 text-xs text-success bg-success/10 rounded-full px-2.5 py-1">
@@ -184,6 +194,28 @@ export class DashboardComponent implements OnDestroy {
   protected siteName = signal('');
   protected busy = signal<Set<string>>(new Set());
   protected note = signal<string | null>(null);
+  /** Building/opening the site documentation. */
+  protected docBusy = signal(false);
+
+  /**
+   * Assemble this site's documentation in the browser and open it in a new tab.
+   * Uses the diagrams cached on the site (rendered admin-side), so no X6 here.
+   */
+  async openDocs(): Promise<void> {
+    if (this.docBusy()) return;
+    this.docBusy.set(true);
+    this.note.set(null);
+    try {
+      const html = await this.backend.buildSiteDoc(this.siteId);
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      this.note.set(String(e));
+    } finally {
+      this.docBusy.set(false);
+    }
+  }
 
   /** Stale-command window in minutes, for the offline warning copy. */
   private readonly ttlMin = Math.max(1, Math.round(COMMAND_TTL_S / 60));

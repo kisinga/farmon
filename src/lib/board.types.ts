@@ -41,10 +41,27 @@ export interface EthernetDef {
   power_pin?: string;
 }
 
+/**
+ * A single authored documentation section (markdown body). Board reference docs
+ * are an ordered list of these, carried inside the board definition so a board
+ * import is one bundle: hardware def + svg + docs. The body may contain
+ * `{{slot}}` placeholders resolved against the board + site variable scope.
+ */
+export interface DocSection {
+  /** Stable id within its owner (e.g. 'network', 'power'). */
+  slug: string;
+  /** Heading shown for this section. */
+  title: string;
+  /** Markdown body. */
+  body: string;
+}
+
 export interface BoardDef {
   model: string;
   label: string;
   svg: string;
+  /** Per-concern reference docs, in display order. Optional — boards may ship without docs. */
+  documentation?: DocSection[];
   mcu: {
     variant: string;
     flash_size: string;

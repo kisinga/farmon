@@ -1,8 +1,8 @@
 /**
  * `@core/codegen` — ESPHome bundle generation.
  *
- * Browser-safe: every export here runs in the Angular editor. The Node-only
- * documentation generator (`site-readme`) is intentionally NOT re-exported.
+ * Browser-safe: every export here runs in the Angular editor. Per-site
+ * documentation moved to `@core/docs` (runtime markdown + `{{slot}}` fill).
  */
 
 export {

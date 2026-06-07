@@ -42,8 +42,11 @@ func TestIngestRollupPrune(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// --- ingest 3 samples into one completed 5-min window -------------------
-	base := time.Now().UTC().Add(-30 * time.Minute).Truncate(5 * time.Minute)
+	// --- ingest 3 samples into one window completed at both tiers ----------
+	// 90 min back guarantees the sample's hour-window is strictly before the
+	// current hour, so the 1hr rollup's `win < cutoff` fires regardless of the
+	// wall-clock minute (a -30min offset flaked when run past HH:30).
+	base := time.Now().UTC().Add(-90 * time.Minute).Truncate(5 * time.Minute)
 	for i, v := range []float64{10, 20, 30} {
 		r := telemetry.Reading{
 			Site: site.Id, Ctrl: "dev1", Sensor: "flow", Value: v,

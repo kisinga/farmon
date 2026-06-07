@@ -2,6 +2,7 @@ import { Component, inject, signal, computed, effect } from '@angular/core';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { SystemEditorService } from '../../core/services/system-editor.service';
 import { BackendService } from '../../core/services/backend.service';
+import { TopologyDiagramService } from '../../core/services/topology-diagram.service';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
 import type { DeviceEntry } from '../../core/models/backend-api';
 
@@ -145,6 +146,24 @@ function relTime(iso: string): string {
             <div>bash compile.sh logs</div>
           </div>
         </div>
+
+        <!-- Site documentation (whole-site) -->
+        <div class="surface p-5">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h3 class="font-semibold text-sm">Site documentation</h3>
+              <p class="text-xs text-base-content/50 mt-0.5">
+                Render this site's topology diagrams and open the full installer + operator document.
+                This also publishes the diagrams so the customer can view their docs.
+              </p>
+            </div>
+            <button class="btn btn-outline btn-sm gap-1.5" (click)="generateDocs()" [disabled]="docBusy()">
+              @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
+              Generate docs
+            </button>
+          </div>
+          @if (docError()) { <div class="mt-3 text-xs text-error">{{ docError() }}</div> }
+        </div>
       }
     </div>
   `,
@@ -153,6 +172,7 @@ export class DeployPageComponent {
   private workspace = inject(WorkspaceService);
   private editor = inject(SystemEditorService);
   private backend = inject(BackendService);
+  private diagrams = inject(TopologyDiagramService);
 
   /** The controller selected in the sub-header — the one switcher. */
   protected controllerId = this.editor.controllerId;
@@ -166,6 +186,34 @@ export class DeployPageComponent {
   protected downloadUrl = signal<string | null>(null);
   /** This controller's registry status (null until provisioned). */
   protected device = signal<DeviceEntry | null>(null);
+
+  /** Building the whole-site documentation (render diagrams → publish → open). */
+  protected docBusy = signal(false);
+  protected docError = signal<string | null>(null);
+
+  /**
+   * Render the site's topology diagrams (same X6 engine as the editor), cache
+   * them on the site for the customer view, then assemble + open the full doc.
+   */
+  async generateDocs(): Promise<void> {
+    const siteId = this.workspace.site()?.id;
+    if (!siteId || this.docBusy()) return;
+    this.docBusy.set(true);
+    this.docError.set(null);
+    try {
+      const topo = await this.backend.siteTopology(siteId);
+      const diagrams = await this.diagrams.renderSiteDiagrams(topo);
+      await this.backend.saveSiteDiagrams(siteId, topo, diagrams);
+      const html = await this.backend.buildSiteDoc(siteId, { diagrams });
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      this.docError.set(String(err));
+    } finally {
+      this.docBusy.set(false);
+    }
+  }
 
   constructor() {
     // Auto-generate on entry and whenever the active controller changes.

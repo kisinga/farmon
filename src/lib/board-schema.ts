@@ -7,9 +7,15 @@
 
 import { z } from 'zod';
 import type {
-  PinDef, ExpanderDef, EthernetDef, BoardDef,
+  PinDef, ExpanderDef, EthernetDef, BoardDef, DocSection,
   ExpansionBoardChannelDef, ExpansionBoardDef,
 } from './board.types';
+
+const DocSectionSchema = z.object({
+  slug: z.string().min(1),
+  title: z.string(),
+  body: z.string(),
+}) satisfies z.ZodType<DocSection>;
 
 const PinCapSchema = z.enum(['digital', 'adc', 'pwm', 'pulse_counter', 'dac']);
 const TransportTypeSchema = z.enum(['modbus_rtu', 'i2c_gpio']);
@@ -62,6 +68,7 @@ export const BoardDefSchema = z.object({
   model: z.string().min(1),
   label: z.string(),
   svg: z.string(),
+  documentation: z.array(DocSectionSchema).optional(),
   mcu: z.object({
     variant: z.string(),
     flash_size: z.string(),

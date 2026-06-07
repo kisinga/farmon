@@ -17,7 +17,8 @@
     "paths": {
       "@core": ["./src/lib/index.ts"],
       "@core/codegen": ["./src/lib/codegen/index.ts"],
-      "@core/rules": ["./src/lib/rules/index.ts"]
+      "@core/rules": ["./src/lib/rules/index.ts"],
+      "@core/docs": ["./src/lib/docs/index.ts"]
     }
   },
   "angularCompilerOptions": {

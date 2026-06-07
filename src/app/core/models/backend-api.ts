@@ -73,6 +73,45 @@ export interface LeadEntry {
   created: string;
 }
 
+// --- Documentation (the `docs` collection: product narrative + node-type docs) ---
+
+/**
+ * A row in the `docs` collection. `slug` is the single identifying key — for
+ * category 'node' it IS the node kind (e.g. 'valve'). Board reference docs live
+ * in the board def, not here.
+ */
+export interface DocEntry {
+  id: string;
+  slug: string;
+  title: string;
+  category: 'narrative' | 'node' | 'wiring' | 'glossary';
+  order: number;
+  body: string;
+  updated: string;
+}
+
+/** Editable fields for creating/updating a doc. */
+export interface DocDraft {
+  slug: string;
+  title: string;
+  category: DocEntry['category'];
+  order: number;
+  body: string;
+}
+
+/**
+ * Cached topology SVGs for a site's documentation: the composite site diagram
+ * plus one per controller id. Rendered in the admin browser (X6) and stored on
+ * the site so the customer dashboard renders docs without loading X6.
+ */
+export interface SiteDiagrams {
+  composite: string;
+  controllers: Record<string, string>;
+  /** Hash of the topology these were rendered from — lets the customer path
+   *  detect a stale cache (topology edited but diagrams not re-published). */
+  topoHash?: string;
+}
+
 // --- Boards ---
 
 export interface BoardListEntry {

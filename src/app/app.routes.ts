@@ -71,6 +71,14 @@ export const routes: Routes = [
       import('./pages/settings/settings-page.component').then((m) => m.SettingsPageComponent),
   },
   {
+    // Admin: documentation authoring (the `docs` collection).
+    path: 'docs',
+    canActivate: [roleGuard],
+    data: ADMIN,
+    loadComponent: () =>
+      import('./pages/docs/docs-page.component').then((m) => m.DocsPageComponent),
+  },
+  {
     // Customer + admin: the site dashboard (separate component — runtime state
     // only, no editor services). Declared before the editor's `site/:name` so
     // the more specific path wins.
