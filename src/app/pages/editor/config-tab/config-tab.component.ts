@@ -1,14 +1,13 @@
-import { Component, inject, computed, signal, OnInit, effect } from '@angular/core';
+import { Component, inject, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { BoardService } from '../../../core/services/board.service';
-import { ElectronService } from '../../../core/services/electron.service';
-import { WorkspaceService } from '../../../core/services/workspace.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
-import { slug, NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY, BUILTIN_EXPANSION_BOARDS } from '@far-mon/core';
-import type { UartBus } from '@far-mon/core';
+import { NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY } from '@core';
+import type { UartBus, IoProviderInstanceConfig } from '@core';
 import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
+import { SectionHeaderComponent } from '../shared/section-header.component';
 
 interface TimingField {
   key: string;
@@ -26,19 +25,22 @@ const TIMING_FIELDS: TimingField[] = [
   { key: 'flow_watchdog', label: 'Flow Watchdog Timeout', description: 'If no flow detected within this window, fault is raised', unit: 'seconds', default: 30, group: 'Safety' },
   { key: 'flow_confirm', label: 'Flow Confirmation Time', description: 'Sustained flow duration before marking flow as "confirmed"', unit: 'seconds', default: 15, group: 'Safety' },
   { key: 'flow_threshold', label: 'Flow Threshold', description: 'Minimum measured rate that counts as active flow', unit: 'L/min', default: 0.5, group: 'Safety', min: 0.1, step: 0.1 },
-  { key: 'api_watchdog', label: 'API Watchdog Timeout', description: 'Fault if Home Assistant disconnected for this long', unit: 'seconds', default: 300, group: 'Safety' },
   { key: 'update_interval', label: 'Sensor Update Interval', description: 'How often ADC and diagnostic sensors are read', unit: 'seconds', default: 5, group: 'Calibration' },
 ];
 
 @Component({
   selector: 'app-config-tab',
   standalone: true,
-  imports: [FormsModule, BoardSvgComponent, ZodInputComponent],
+  imports: [FormsModule, BoardSvgComponent, ZodInputComponent, SectionHeaderComponent],
   template: `
     @if (editor.topology(); as t) {
       <div class="content-pane space-y-6">
+        <app-section-header
+          title="Config"
+          subtitle="Identity, target board and pins, expansion buses, and the safety timings the firmware enforces." />
+
         <!-- Device identity -->
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card surface">
           <div class="card-body gap-4">
             <h2 class="card-title text-base">Device Identity</h2>
             <label class="form-control">
@@ -52,29 +54,11 @@ const TIMING_FIELDS: TimingField[] = [
               <div class="label"><span class="label-text-alt text-base-content/60 font-mono">ESPHome ID: {{ editor.controllerDevice()?.name }}</span></div>
             </label>
 
-            @if (friendlyNameWarning(); as w) {
-              <div class="alert alert-warning text-xs items-start py-3" role="alert">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.74-2.99l-7.07-12.25a2 2 0 00-3.48 0L3.19 16.01A2 2 0 004.93 19z"/>
-                </svg>
-                <div class="space-y-1">
-                  <div class="font-semibold">Friendly name changed since last deploy</div>
-                  <div class="opacity-90">
-                    HA derives entity_ids from this name. Existing entities under
-                    <code>{{ w.oldDomain }}</code> will become "unavailable" after deploy;
-                    new entities appear under <code>{{ w.newDomain }}</code>.
-                  </div>
-                  <div>
-                    See <strong>Deploy → Steps</strong> for the full handover procedure (revert vs re-pair in HA).
-                  </div>
-                </div>
-              </div>
-            }
           </div>
         </div>
 
         <!-- Board selection -->
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card surface">
           <div class="card-body gap-4">
             <h2 class="card-title text-base">Target Board</h2>
             <label class="form-control">
@@ -84,8 +68,8 @@ const TIMING_FIELDS: TimingField[] = [
                 [ngModel]="editor.controllerDevice()?.board"
                 (ngModelChange)="changeBoard($event)"
               >
-                @for (b of boards.boards(); track b.id) {
-                  <option [value]="b.id">{{ b.label }}</option>
+                @for (b of boards.boards(); track b.model) {
+                  <option [value]="b.model">{{ b.label }}</option>
                 }
               </select>
             </label>
@@ -140,7 +124,7 @@ const TIMING_FIELDS: TimingField[] = [
                   <app-board-svg
                     [board]="editor.board()"
                     [svgContent]="boards.activeSvg()"
-                    [usedPins]="editor.usedPins()"
+                    [usages]="editor.activePinUsages()"
                   />
                 </div>
               }
@@ -149,7 +133,7 @@ const TIMING_FIELDS: TimingField[] = [
         </div>
 
         <!-- UART Buses -->
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card surface">
           <div class="card-body gap-4">
             <div class="flex items-center justify-between">
               <h2 class="card-title text-base">UART Buses</h2>
@@ -157,7 +141,7 @@ const TIMING_FIELDS: TimingField[] = [
             </div>
             <!-- Board-native UART buses (read-only) -->
             @for (bus of editor.board()?.uart_buses ?? []; track bus.id) {
-              <div class="border border-base-200 rounded-lg p-3 space-y-2 bg-base-200/30">
+              <div class="border border-base-300/40 rounded-lg p-3 space-y-2 bg-base-200/30">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <span class="font-mono text-xs">{{ bus.id }}</span>
@@ -186,7 +170,7 @@ const TIMING_FIELDS: TimingField[] = [
             }
             <!-- User-configured UART buses -->
             @for (bus of editor.controllerDevice()?.uart_buses ?? []; track bus.id) {
-              <div class="border border-base-200 rounded-lg p-3 space-y-2">
+              <div class="border border-base-300/40 rounded-lg p-3 space-y-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <input type="text" class="input input-xs input-bordered font-mono w-24"
@@ -230,14 +214,14 @@ const TIMING_FIELDS: TimingField[] = [
         </div>
 
         <!-- I/O Providers -->
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card surface">
           <div class="card-body gap-4">
             <div class="flex items-center justify-between">
               <h2 class="card-title text-base">I/O Providers</h2>
               <button class="btn btn-sm btn-primary" (click)="addProvider()">+ Add</button>
             </div>
             @for (prov of editor.controllerDevice()?.io_providers ?? []; track prov.id) {
-              <div class="border border-base-200 rounded-lg p-3 space-y-2">
+              <div class="border border-base-300/40 rounded-lg p-3 space-y-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <app-zod-input
@@ -251,7 +235,7 @@ const TIMING_FIELDS: TimingField[] = [
                       [ngModel]="prov.type"
                       (ngModelChange)="updateProviderType(prov.id, $event)">
                       <option value="modbus_controller">Modbus Controller</option>
-                      @for (opt of builtinExpansionBoardOptions; track opt.value) {
+                      @for (opt of expansionBoardOptions(); track opt.value) {
                         <option [value]="opt.value">{{ opt.label }}</option>
                       }
                     </select>
@@ -300,10 +284,10 @@ const TIMING_FIELDS: TimingField[] = [
         </div>
 
         @for (group of timingGroups; track group) {
-          <div class="card bg-base-100 shadow-sm border border-base-200">
+          <div class="card surface">
             <div class="card-body gap-3">
               <h3 class="font-semibold text-sm text-base-content/60 uppercase tracking-wider">{{ group }}</h3>
-              <div class="divide-y divide-base-200">
+              <div class="divide-y divide-base-300/30">
                 @for (field of fieldsByGroup(group); track field.key) {
                   <div class="flex items-center gap-4 py-3">
                     <div class="flex-1 min-w-0">
@@ -336,78 +320,28 @@ const TIMING_FIELDS: TimingField[] = [
     }
   `,
 })
-export class ConfigTabComponent implements OnInit {
+export class ConfigTabComponent {
   protected editor = inject(SystemEditorService);
   protected boards = inject(BoardService);
-  private electron = inject(ElectronService);
-  private workspace = inject(WorkspaceService);
 
   protected timingGroups = [...new Set(TIMING_FIELDS.map((f) => f.group))];
   protected timingSchema = TimingSchema;
   protected deviceSchema = DeviceSchema;
   protected providerSchema = IoProviderDefSchema;
   protected componentIdPolicy = COMPONENT_ID_POLICY;
-  protected builtinExpansionBoardOptions = Object.entries(BUILTIN_EXPANSION_BOARDS).map(([value, def]) => ({
-    value,
-    label: def.label,
-  }));
+  /** Expansion-board picker options, sourced from the DB catalog (kind=expansion). */
+  protected expansionBoardOptions = computed(() =>
+    this.boards.boards()
+      .filter((b) => b.kind === 'expansion')
+      .map((b) => ({ value: b.model, label: b.label })),
+  );
 
-  /** friendly_name of the most recent successful firmware generation. null = never deployed. */
-  private lastDeployedFriendlyName = signal<string | null>(null);
-
-  protected friendlyNameWarning = computed(() => {
-    const ctrl = this.editor.activeController();
-    const last = this.lastDeployedFriendlyName();
-    if (!ctrl || !last) return null;
-    const oldSlug = slug(last);
-    const newSlug = slug(ctrl.friendlyName ?? ctrl.id);
-    if (oldSlug === newSlug) return null;
-    return {
-      oldDomain: `<domain>.${oldSlug}_*`,
-      newDomain: `<domain>.${newSlug}_*`,
-    };
-  });
-
-  // Re-fetch the last-deployed friendly_name whenever the active system
-  // changes, so the warning banner reflects the system the user is editing.
-  private readonly _trackSystem = effect(() => {
-    this.editor.controllerId();
-    void this.refreshLastDeployed();
-  });
-
-  ngOnInit() {
-    void this.refreshLastDeployed();
-  }
-
-  private async refreshLastDeployed(): Promise<void> {
-    const site = this.workspace.site();
-    const systemId = this.editor.controllerId();
-    if (!site || !systemId) {
-      this.lastDeployedFriendlyName.set(null);
-      return;
-    }
-    try {
-      const latest = await this.electron.generationLatest(site.id, systemId, 'esphome');
-      if (!latest) {
-        this.lastDeployedFriendlyName.set(null);
-        return;
-      }
-      const snap = await this.electron.generationLoad(latest.id);
-      if (!snap) {
-        this.lastDeployedFriendlyName.set(null);
-        return;
-      }
-      const topo = JSON.parse(snap.topology) as { device?: { friendly_name?: string } };
-      this.lastDeployedFriendlyName.set(topo.device?.friendly_name ?? null);
-    } catch {
-      this.lastDeployedFriendlyName.set(null);
-    }
-  }
 
   protected peripherals = computed(() => {
     const board = this.editor.board();
     if (!board) return [];
-    return Object.entries(board.peripherals)
+    // Some boards (e.g. RS-485 expansion boards) have no onboard peripherals.
+    return Object.entries(board.peripherals ?? {})
       .filter(([_, val]) => !!val)
       .map(([key, val]) => ({
         key,
@@ -493,10 +427,10 @@ export class ConfigTabComponent implements OnInit {
     });
   }
 
-  updateProviderConfig(id: string, key: string, value: unknown) {
+  updateProviderConfig<K extends keyof IoProviderInstanceConfig>(id: string, key: K, value: IoProviderInstanceConfig[K]) {
     this.editor.updateActiveController(ctrl => {
       const prov = (ctrl.io_providers ?? []).find(p => p.id === id);
-      if (prov) (prov.config as Record<string, unknown>)[key] = value;
+      if (prov) prov.config[key] = value;
     });
   }
 
@@ -536,8 +470,7 @@ export class ConfigTabComponent implements OnInit {
       if (bus) bus.id = newId;
       // Cascade: update provider configs that reference this bus
       for (const prov of ctrl.io_providers ?? []) {
-        const config = prov.config as Record<string, unknown>;
-        if (config['bus'] === oldId) config['bus'] = newId;
+        if (prov.config.bus === oldId) prov.config.bus = newId;
       }
     });
   }
@@ -545,9 +478,7 @@ export class ConfigTabComponent implements OnInit {
   updateUartBusField<K extends keyof UartBus>(id: string, key: K, value: UartBus[K]) {
     this.editor.updateActiveController(ctrl => {
       const bus = (ctrl.uart_buses ?? []).find(b => b.id === id);
-      if (bus) {
-        (bus as Record<keyof UartBus, unknown>)[key] = value;
-      }
+      if (bus) bus[key] = value;
     });
   }
 }

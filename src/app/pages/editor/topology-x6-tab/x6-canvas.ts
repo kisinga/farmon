@@ -13,7 +13,7 @@ import { UI_COLORS } from '../../../core/models/colors.model';
 import type { RenderableTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
 import type { TopologyGraph } from '../shared/derive-routes';
-import { pipesFromSource, pipesToDestination, connectedPipes, deriveHaEntityId } from '@far-mon/core';
+import { pipesFromSource, pipesToDestination, connectedPipes, deriveHaEntityId } from '@core';
 import type { Selection } from '../shared/selection';
 import { decorateScadaSvg } from './scada-decorator';
 
@@ -95,10 +95,13 @@ export class X6Canvas {
       async: options?.async ?? true,
       grid: options?.grid === false
         ? { visible: false }
-        : { visible: true, type: 'dot', args: [{ color: '#e2e8f0' }] },
+        // Dark slate canvas (slate-900), framed by the slate-800 toolbar/sidebar.
+        // Entity nodes render as dark slate chips (UI_COLORS.bg) with light labels
+        // and their own colour as the stroke, so they sit naturally on it.
+        : { visible: true, type: 'dot', args: [{ color: '#334155' }] },
       background: options?.background === false
         ? false
-        : { color: '#fafbfc' },
+        : { color: '#0f172a' },
       panning: { enabled: true, eventTypes: ['leftMouseDown'], modifiers: [] },
       mousewheel: { enabled: true, factor: 1.1, minScale: 0.2, maxScale: 3 },
       connecting: {
@@ -149,8 +152,10 @@ export class X6Canvas {
     const desiredNodes = new Map<string, Node.Metadata>();
     const desiredEdges = new Map<string, X6Edge.Metadata>();
 
-    for (const node of topology.nodes) {
-      const cfg = this.toNodeConfig(node);
+    for (let i = 0; i < topology.nodes.length; i++) {
+      const node = topology.nodes[i];
+      const fallbackPos = { x: (i % 4) * 160 + 50, y: Math.floor(i / 4) * 120 + 50 };
+      const cfg = this.toNodeConfig(node, fallbackPos);
       if (cfg) {
         desiredNodes.set(String(cfg.id), cfg);
         this.nodeIds.add(node.id);
@@ -464,11 +469,11 @@ export class X6Canvas {
 
   // --- Private: config builders ---
 
-  private toNodeConfig(node: TopologyNode): Node.Metadata | null {
+  private toNodeConfig(node: TopologyNode, fallbackPos?: { x: number; y: number }): Node.Metadata | null {
     const desc = NODE_REGISTRY.get(node.kind);
     if (!desc) return null;
     const layout = desc.portLayout;
-    const ports = node.ports.map(p => {
+    const ports = (node.ports ?? []).map(p => {
       const group = p.direction === 'inlet' ? 'inlet' : 'outlet';
       const override = layout?.[p.id];
       if (override) {
@@ -478,7 +483,8 @@ export class X6Canvas {
       return { id: p.id, group };
     });
     const importCount = this.nodeImportCounts?.get(node.id);
-    return buildNodeConfig(desc, node.id, extractNodeData(node), node.position.x, node.position.y, ports, this.activeControllerId, importCount);
+    const pos = node.position ?? fallbackPos ?? { x: 50, y: 50 };
+    return buildNodeConfig(desc, node.id, extractNodeData(node), pos.x, pos.y, ports, this.activeControllerId, importCount);
   }
 
   private toEdgeConfig(pipe: PipeSegment, entityById?: Map<string, string>): X6Edge.Metadata | null {

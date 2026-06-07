@@ -1,5 +1,5 @@
 import type { TopologyNode, PipeSegment } from '../../../core/models/topology.model';
-import { buildGraph, activeGraph, parseRouteKey } from '@far-mon/core';
+import { buildGraph, activeGraph, parseRouteKey } from '@core';
 
 export interface RouteLevelInfo {
   sourceHasLevel: boolean;

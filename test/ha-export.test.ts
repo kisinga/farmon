@@ -11,7 +11,7 @@
  * Usage: npx tsx test/ha-export.test.ts
  */
 
-import { buildHaMeta, HA_SCHEMA_VERSION, deriveHaEntityId, esphomeServicePrefix, type SiteTopology, type Device } from '@far-mon/core';
+import { buildHaMeta, HA_SCHEMA_VERSION, deriveHaEntityId, esphomeServicePrefix, type SiteTopology, type Device } from '@core';
 
 let passed = 0;
 let failed = 0;
@@ -50,7 +50,7 @@ const FIXED_TIME = '2026-01-01T00:00:00.000Z';
 const FIXTURE_DEVICE: Device = Object.freeze({
   name: 'gh-1',
   friendly_name: 'Greenhouse',
-  board: 'heltec_v3',
+  board: 'heltec-v3',
 });
 
 function fixture(): SiteTopology {
@@ -61,7 +61,7 @@ function fixture(): SiteTopology {
     schema: 18,
     controllers: [{
       id: 'gh-1',
-      board: 'heltec_v3',
+      board: 'heltec-v3',
       friendlyName: 'Greenhouse',
     }],
     nodes: [
@@ -102,7 +102,7 @@ function fixture(): SiteTopology {
     route_overrides: {},
     timing: {
       valve_travel_time: 15, flow_watchdog: 30, flow_confirm: 5,
-      flow_threshold: 0.5, api_watchdog: 300, update_interval: 5,
+      flow_threshold: 0.5, update_interval: 5,
     },
     automations: [],
     remoteImports: [],

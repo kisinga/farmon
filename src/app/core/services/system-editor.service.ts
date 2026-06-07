@@ -1,22 +1,63 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import type { PinDef, PinCap, BoardDef } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
-import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/electron-api';
-import type { Controller, SiteTopology } from '@far-mon/core';
-import type { IoProviderDef } from '@far-mon/core';
-import { collectPins, NODE_REGISTRY, createBoardDriver, createProviderDriver, slug } from '@far-mon/core';
-import type { IoProviderDriver } from '@far-mon/core';
+import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/backend-api';
+import type { Controller, SiteTopology } from '@core';
+import type { IoProviderDef } from '@core';
+import { collectPins, NODE_REGISTRY, createBoardDriver, buildProviderDrivers, slug } from '@core';
+import type { IoProviderDriver } from '@core';
 import { WorkspaceService } from './workspace.service';
+import { BoardService } from './board.service';
+
+/** The selectable aspect panels of the site workspace. */
+export type EditorPanel = 'site' | 'design' | 'remotes' | 'config' | 'automations' | 'deploy';
+
+/** Plain-language label per panel — the single source the rail + breadcrumb share. */
+export const PANEL_LABELS: Record<EditorPanel, string> = {
+  site: 'Overview',
+  design: 'Design',
+  config: 'Config',
+  automations: 'Schedules',
+  remotes: 'Sharing',
+  deploy: 'Firmware',
+};
+
+/**
+ * URL slug for each controller-scoped panel. Overview ('site') is site-wide and
+ * has no slug — it lives at the bare `/site/:name`. These map a panel to the
+ * `:section` segment of `/site/:name/system/:config/:section`, so each section is
+ * a real, bookmarkable browser link.
+ */
+export const PANEL_SLUGS: Record<Exclude<EditorPanel, 'site'>, string> = {
+  design: 'design',
+  config: 'config',
+  automations: 'schedules',
+  remotes: 'sharing',
+  deploy: 'firmware',
+};
+
+/** Inverse of {@link PANEL_SLUGS}: a URL `:section` slug → the panel it selects. */
+export const SLUG_PANELS: Record<string, EditorPanel> = {
+  design: 'design',
+  config: 'config',
+  schedules: 'automations',
+  sharing: 'remotes',
+  firmware: 'deploy',
+};
 
 @Injectable({ providedIn: 'root' })
 export class SystemEditorService {
   private workspace = inject(WorkspaceService);
+  private boardCatalog = inject(BoardService);
 
   // --- Session-specific state (NOT in workspace) ---
   private _readonly = signal(false);
   private _validation = signal<ValidationResult | null>(null);
   private _generatedFiles = signal<GenerateResult | null>(null);
   private _canvasSvg = signal<string | null>(null);
+
+  /** Active workspace panel. The "design" canvas stays mounted regardless. */
+  readonly panel = signal<EditorPanel>('design');
 
   // --- Delegated reads from workspace ---
   readonly topology = this.workspace.activeTopology;
@@ -92,6 +133,14 @@ export class SystemEditorService {
       map.set(u.pin, u.owner);
     }
     return map;
+  });
+
+  /** Pin usages (with node kind) for the ACTIVE controller — drives the board pinout callouts. */
+  readonly activePinUsages = computed(() => {
+    const cid = this.controllerId();
+    const topology = this.workspace.siteTopology();
+    if (!cid || !topology) return [];
+    return collectPins(topology.nodes.filter(n => n.anchorId === cid));
   });
 
   /** Pins used by nodes belonging to a SPECIFIC controller only. */
@@ -293,14 +342,15 @@ export class SystemEditorService {
     const result: Array<{ id: string; label: string; driver: IoProviderDriver }> = [
       { id: 'board', label: 'Board', driver: createBoardDriver(board) },
     ];
-    for (const provDef of ioProviders) {
-      try {
-        result.push({
-          id: provDef.id,
-          label: `${provDef.id} (${provDef.type})`,
-          driver: createProviderDriver(provDef),
-        });
-      } catch { /* skip unknown types */ }
+    try {
+      for (const p of buildProviderDrivers(ioProviders, this.boardCatalog.expansionCatalog())) {
+        result.push({ id: p.id, label: `${p.id} (${p.type})`, driver: p.driver });
+      }
+    } catch (err) {
+      // Unknown/invalid provider type — surface it. The old silent catch hid
+      // exactly this, vanishing providers from the pin selector while codegen
+      // still emitted them.
+      console.error('Failed to build I/O provider drivers', err);
     }
     return result;
   }

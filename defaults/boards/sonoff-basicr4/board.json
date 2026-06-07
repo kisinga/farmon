@@ -1,0 +1,35 @@
+{
+  "model": "sonoff-basicr4",
+  "label": "SONOFF BASICR4",
+  "svg": "board.svg",
+  "mcu": {
+    "variant": "esp32c3",
+    "flash_size": "4MB",
+    "framework": "esp-idf"
+  },
+  "peripherals": {
+    "led": {
+      "pin": "GPIO6"
+    }
+  },
+  "buses": {},
+  "pins": [
+    {
+      "gpio": "GPIO4",
+      "connector": "relay_out",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ]
+    },
+    {
+      "gpio": "GPIO5",
+      "connector": "switch_in",
+      "edge": "left",
+      "caps": [
+        "digital",
+        "pulse_counter"
+      ]
+    }
+  ]
+}

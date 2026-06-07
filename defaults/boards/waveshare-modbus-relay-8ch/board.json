@@ -1,0 +1,95 @@
+{
+  "model": "waveshare-modbus-relay-8ch",
+  "label": "Waveshare Modbus RTU Relay 8CH",
+  "transport_type": "modbus_rtu",
+  "channels": [
+    {
+      "id": "DO1",
+      "label": "DO1",
+      "caps": [
+        "digital"
+      ],
+      "modbus": {
+        "register": 0,
+        "register_type": "coil"
+      }
+    },
+    {
+      "id": "DO2",
+      "label": "DO2",
+      "caps": [
+        "digital"
+      ],
+      "modbus": {
+        "register": 1,
+        "register_type": "coil"
+      }
+    },
+    {
+      "id": "DO3",
+      "label": "DO3",
+      "caps": [
+        "digital"
+      ],
+      "modbus": {
+        "register": 2,
+        "register_type": "coil"
+      }
+    },
+    {
+      "id": "DO4",
+      "label": "DO4",
+      "caps": [
+        "digital"
+      ],
+      "modbus": {
+        "register": 3,
+        "register_type": "coil"
+      }
+    },
+    {
+      "id": "DO5",
+      "label": "DO5",
+      "caps": [
+        "digital"
+      ],
+      "modbus": {
+        "register": 4,
+        "register_type": "coil"
+      }
+    },
+    {
+      "id": "DO6",
+      "label": "DO6",
+      "caps": [
+        "digital"
+      ],
+      "modbus": {
+        "register": 5,
+        "register_type": "coil"
+      }
+    },
+    {
+      "id": "DO7",
+      "label": "DO7",
+      "caps": [
+        "digital"
+      ],
+      "modbus": {
+        "register": 6,
+        "register_type": "coil"
+      }
+    },
+    {
+      "id": "DO8",
+      "label": "DO8",
+      "caps": [
+        "digital"
+      ],
+      "modbus": {
+        "register": 7,
+        "register_type": "coil"
+      }
+    }
+  ]
+}

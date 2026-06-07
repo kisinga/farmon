@@ -1,15 +1,18 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { ElectronService } from './electron.service';
+import { BackendService } from './backend.service';
+import { BoardService } from './board.service';
+import { SitesStore } from '../stores/sites.store';
 import type {
   BoardDef, TopologyGraph, Route,
   TopologyNode, PipeSegment, RouteOverride,
   SiteMetadata, SiteSavePayload, SiteTopology, Controller,
-} from '@far-mon/core';
+  SiteDeployment, CrossControllerReport,
+} from '@core';
 
 import {
   buildGraph, deriveRoutes, activeGraph, parseTopology, slug,
-  controllerClaimsSegment, migrateTopology,
-} from '@far-mon/core';
+  controllerClaimsSegment, migrateTopology, detectCrossControllerTalk,
+} from '@core';
 
 @Injectable({ providedIn: 'root' })
 export class WorkspaceService {
@@ -31,6 +34,28 @@ export class WorkspaceService {
   readonly dirty = this._dirty.asReadonly();
   readonly dirtyControllerIds = this._dirtyControllerIds.asReadonly();
   readonly loading = this._loading.asReadonly();
+
+  // --- Deployment (Online/Local + broker) ---
+
+  /** The site's saved Online/Local choice + broker, or undefined until picked. */
+  readonly deployment = computed<SiteDeployment | undefined>(() => this._site()?.deployment);
+
+  /** Effective mode for the site (defaults to managed/online when unchosen). */
+  readonly deploymentMode = computed<'managed' | 'local'>(() => this._site()?.deployment?.mode ?? 'managed');
+
+  /** Live cross-controller (cross-talk) verdict for the current design. */
+  readonly crossTalk = computed<CrossControllerReport | null>(() => {
+    const t = this._siteTopology();
+    return t ? detectCrossControllerTalk(t) : null;
+  });
+
+  /** Persist the site's deployment choice (marks the workspace dirty → autosaves). */
+  setDeployment(deployment: SiteDeployment): void {
+    const site = this._site();
+    if (!site) return;
+    this._site.set({ ...site, deployment });
+    this._markDirty();
+  }
 
   // --- Active controller computed signals ---
 
@@ -85,7 +110,11 @@ export class WorkspaceService {
 
   private _autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private electron: ElectronService) {}
+  constructor(
+    private backend: BackendService,
+    private boardCatalog: BoardService,
+    private sites: SitesStore,
+  ) {}
 
   /** Mark dirty and schedule debounced autosave. Called by every mutation. */
   private _markDirty(controllerId?: string): void {
@@ -120,14 +149,18 @@ export class WorkspaceService {
     this._loading.set(true);
 
     try {
-      const payload = await this.electron.siteLoad(siteId);
-      this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName });
+      const payload = await this.backend.siteLoad(siteId);
+      this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName, deployment: payload.site.deployment });
 
       if (payload.topology) {
-        let topology = payload.topology as SiteTopology;
+        // Migrate the stored draft to the current schema (e.g. fold obsolete
+        // standalone pressure_sensor nodes into their tank) and validate.
+        // parseTopology returns a typed SiteTopology.
+        let topology = parseTopology(payload.topology);
 
-        // v15 → v16 migration: auto-derive remoteImports from routes
-        if (!topology.remoteImports) {
+        // Pre-remoteImports drafts: derive cross-controller imports from routes.
+        const stored = payload.topology as { remoteImports?: unknown };
+        if (!stored.remoteImports) {
           topology = this.migrateV15ToV18(topology);
           this._markDirty();
         }
@@ -138,7 +171,7 @@ export class WorkspaceService {
         const boards = new Map<string, BoardDef>();
         for (const ctrl of topology.controllers) {
           try {
-            const boardResult = await this.electron.boardLoad(ctrl.board);
+            const boardResult = await this.boardCatalog.loadResult(ctrl.board);
             boards.set(ctrl.id, boardResult.board as BoardDef);
           } catch (err) {
             console.error(`[Workspace] Failed to load board "${ctrl.board}" for controller "${ctrl.id}":`, err);
@@ -157,7 +190,6 @@ export class WorkspaceService {
             flow_watchdog: 30,
             flow_confirm: 10,
             flow_threshold: 0.5,
-            api_watchdog: 60,
             update_interval: 30,
           },
           automations: [],
@@ -321,10 +353,10 @@ export class WorkspaceService {
     const site = this._site();
     if (!site) throw new Error('No site loaded');
 
-    const controller = await this.electron.systemAddFromTemplate(site.id, templateName, friendlyName);
+    const controller = await this.backend.systemCreateBlank(site.id, friendlyName ?? 'New Controller', 'kc868-a16');
 
     // Load board for the new controller
-    const boardResult = await this.electron.boardLoad(controller.board);
+    const boardResult = await this.boardCatalog.loadResult(controller.board);
     const board = boardResult.board as BoardDef;
 
     const topology = this._siteTopology();
@@ -347,10 +379,10 @@ export class WorkspaceService {
     const site = this._site();
     if (!site) throw new Error('No site loaded');
 
-    const controller = await this.electron.systemCreateBlank(site.id, friendlyName, boardModel);
+    const controller = await this.backend.systemCreateBlank(site.id, friendlyName, boardModel);
 
     // Load board for the new controller
-    const boardResult = await this.electron.boardLoad(controller.board);
+    const boardResult = await this.boardCatalog.loadResult(controller.board);
     const board = boardResult.board as BoardDef;
 
     const topology = this._siteTopology();
@@ -369,9 +401,13 @@ export class WorkspaceService {
     return controller.id;
   }
 
-  removeController(controllerId: string): void {
+  async removeController(controllerId: string): Promise<void> {
     const topology = this._siteTopology();
-    if (!topology) return;
+    const site = this._site();
+    if (!topology || !site) return;
+
+    // Persist deletion to backend
+    await this.backend.systemDelete(site.id, controllerId);
 
     const clone = structuredClone(topology);
     clone.controllers = clone.controllers.filter(c => c.id !== controllerId);
@@ -449,11 +485,13 @@ export class WorkspaceService {
     if (!site || !topology) return;
 
     const payload: SiteSavePayload = {
-      site: { id: site.id, friendlyName: site.friendlyName },
+      site: { id: site.id, friendlyName: site.friendlyName, deployment: site.deployment },
       topology,
     };
 
-    await this.electron.siteSave(payload);
+    await this.backend.siteSave(payload);
+    // Topology counts (controllers/nodes) on the cached site list are now stale.
+    this.sites.invalidate();
 
     // Only clear dirty if state hasn't changed since we started saving.
     // This prevents races where a mutation happens during the async save.

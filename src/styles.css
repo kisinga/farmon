@@ -1,35 +1,85 @@
 @import "tailwindcss";
-@plugin "daisyui";
+@plugin "daisyui" {
+  themes: false; /* drop bundled themes; majiflow below is the only one */
+}
 
-@theme {
-  --color-primary: #0C4A6E;
-  --color-secondary: #0284C7;
-  --color-accent: #0EA5E9;
-  --color-neutral: #1f2937;
-  --color-base-100: #ffffff;
-  --color-info: #0284c7;
-  --color-success: #16a34a;
-  --color-warning: #d97706;
-  --color-error: #dc2626;
+/* ── MajiFlow theme ──────────────────────────────────────────────────────────
+   Dark "slate pro" workspace, harmonised with the public landing/login
+   (slate-950 + cyan-400). The admin uses daisyUI semantic classes, so these
+   tokens recolour the whole app at once. Landing/login use raw slate/cyan
+   classes and are unaffected. Palette = Tailwind slate/cyan hexes. */
+@plugin "daisyui/theme" {
+  name: "majiflow";
+  default: true;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: #1e293b;        /* slate-800 — cards, bars, navbar (surfaces) */
+  --color-base-200: #0f172a;        /* slate-900 — app shell bg, insets, hovers */
+  --color-base-300: #475569;        /* slate-600 — borders / dividers (visible) */
+  --color-base-content: #f1f5f9;    /* slate-100 — text */
+
+  --color-primary: #22d3ee;         /* cyan-400 */
+  --color-primary-content: #042c38; /* deep teal on cyan */
+  --color-secondary: #38bdf8;       /* sky-400 */
+  --color-secondary-content: #04252f;
+  --color-accent: #67e8f9;          /* cyan-300 */
+  --color-accent-content: #04252f;
+  --color-neutral: #1e293b;         /* slate-800 */
+  --color-neutral-content: #e2e8f0;
+
+  --color-info: #38bdf8;            /* sky-400 */
+  --color-info-content: #04252f;
+  --color-success: #34d399;         /* emerald-400 — bumped for dark contrast */
+  --color-success-content: #022c22;
+  --color-warning: #fbbf24;         /* amber-400 */
+  --color-warning-content: #422006;
+  --color-error: #f87171;           /* red-400 */
+  --color-error-content: #450a0a;
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
 }
 
 /* Layout tokens */
 :root {
   --header-h: 56px;
-  --context-strip-h: 56px;
-  --pipeline-rail-h: 52px;
   --content-max: 56rem; /* max-w-4xl */
 
-  /* Navigation layer colors — each depth gets a unique accent */
-  --nav-layer-overview: #6366f1; /* indigo — top level */
-  --nav-layer-site: #0284C7;    /* sky — site level */
-  --nav-layer-system: #059669;  /* emerald — system level */
+  /* Navigation layer colors — each depth gets a unique accent (tuned for dark) */
+  --nav-layer-overview: #818cf8; /* indigo-400 — top level */
+  --nav-layer-site: #38bdf8;     /* sky-400 — site level */
+  --nav-layer-system: #34d399;   /* emerald-400 — system level */
 }
 
 /* Consistent content pane for form/workflow tabs */
 .content-pane {
   @apply px-8 py-8 mx-auto w-full;
   max-width: var(--content-max);
+}
+
+/* ── Shared surface helpers (compose, don't build a component library) ─────── */
+@layer components {
+  /* A slate card surface with a subtle ring — the workspace's default panel. */
+  .surface {
+    @apply bg-base-100 rounded-xl ring-1 ring-base-300/40;
+  }
+  /* Section sub-header bar (breadcrumb + controller switcher live here). */
+  .sub-header {
+    @apply flex items-center gap-3 px-4 h-12 shrink-0 bg-base-100 border-b border-base-300/40;
+  }
+}
+
+/* Themed scrollbars so the dark surfaces don't get bright native gutters. */
+* {
+  scrollbar-color: theme(--color-base-300) transparent;
+  scrollbar-width: thin;
 }
 
 /* Composable nav label styling per layer depth */

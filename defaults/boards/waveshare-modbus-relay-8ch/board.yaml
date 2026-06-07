@@ -1,4 +1,4 @@
-model: waveshare_modbus_relay_8ch
+model: waveshare-modbus-relay-8ch
 label: Waveshare Modbus RTU Relay 8CH
 transport_type: modbus_rtu
 channels:

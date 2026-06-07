@@ -7,6 +7,15 @@ dist-electron/
 out-tsc/
 output/
 
+# maji-server (Go backend)
+maji-server/dist/
+maji-server/maji-cloud
+maji-server/maji-edge
+**/pb_data/
+**/pb_data/*-wal
+**/pb_data/*-shm
+**/pb_storage/
+
 # Angular
 .angular/
 

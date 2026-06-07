@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { ZodFieldDirective } from '../../core/utils/field-validation';
 import { CharFilterDirective } from '../../core/utils/char-filter.directive';
 import { FieldErrorComponent } from '../field-error/field-error.component';
-import type { InputPolicy } from '@far-mon/core';
+import type { InputPolicy } from '@core';
 
 /**
  * Single-purpose wrapper that composes [zodField] + [charFilter] + <app-field-error>

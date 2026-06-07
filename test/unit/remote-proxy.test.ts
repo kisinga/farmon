@@ -5,8 +5,8 @@
  */
 
 import * as path from "node:path";
-import { parseTopology, topologyToManifestForController } from "@far-mon/core";
-import { templateSwitchProxy, templateCoverProxy, homeassistantBinarySensorProxy, homeassistantTextSensorProxy } from "../../packages/core/src/remote-proxy";
+import { parseTopology, topologyToManifestForController } from "@core";
+import { templateSwitchProxy, templateCoverProxy, homeassistantBinarySensorProxy, homeassistantTextSensorProxy } from "../../src/lib/remote-proxy";
 import { collectEntityCodegen } from "../../electron/lib/generators/collect.js";
 import { generateSensors } from "../../electron/lib/generators/sensors.js";
 import { loadBoard, type BoardDef } from "../../electron/lib/board.js";

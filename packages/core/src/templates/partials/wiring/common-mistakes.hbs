@@ -1,7 +1,0 @@
-## Common mistakes
-
-- **Sharing the pump's earth return through the DC rail.** Don't. Star-ground separately at a single bonding point.
-- **Daisy-chaining valve power.** Each valve gets its own pair from the controller — daisy-chained valves brown each other out during inrush.
-- **Skipping the contactor "because the relay is rated 10 A".** Inductive inrush is what kills relays; welded contacts mean the pump won't stop on command.
-- **Running sensor cables alongside mains in the same conduit.** Induced noise wrecks pulse counts. Keep ≥ 10 cm separation, or use separate conduit.
-- **Unregulated 12 V wall-warts.** They sag under solenoid inrush and brown-out the ESP32. Use a regulated SMPS.

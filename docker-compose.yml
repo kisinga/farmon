@@ -1,0 +1,38 @@
+# MajiFlow server — one container: PocketBase (SQLite + SPA + REST API + /_/ admin)
+# with an embedded MQTT broker. No external DB/broker/HA services: the old
+# HA + ChirpStack + ESPHome stack is gone.
+#
+# Coolify: proxy 8090 to your domain (HTTPS handled by Coolify); expose 1883 and
+# (when TLS is on) 8883 as raw TCP for devices. All config is in .env — copy
+# .env.example to .env and fill it in.
+
+services:
+  maji-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8090:8090"   # HTTP: SPA + /api + /_/  (Coolify routes this to your domain)
+      - "1883:1883"   # plain MQTT (device-facing)
+      - "8883:8883"   # TLS MQTT  (device-facing; only serves when MAJI_MQTT_TLS_ENABLED=true)
+    volumes:
+      # The single stateful boundary: SQLite DB + uploaded files + logs + backups.
+      - pb_data:/pb_data
+      # TLS cert/key for the device-facing 8883 listener — ONLY for managed/cloud
+      # (MAJI_MQTT_TLS_ENABLED=true). Mount read-only; paths must match
+      # MAJI_MQTT_TLS_CERT / MAJI_MQTT_TLS_KEY in .env. On Coolify, provide these
+      # via a secret/file mount instead. Leave commented for on-prem (plain 1883).
+      # - ./deploy/certs:/certs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8090/api/farmon/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  # Named volume → the orchestrator owns where the bytes live; the storage backend
+  # is swappable without touching the image or this file.
+  pb_data:

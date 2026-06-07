@@ -6,10 +6,11 @@
  */
 
 import * as path from "node:path";
-import type { Manifest } from "../electron/lib/schema.js";
-import { runManifestRules } from "../electron/lib/validate.js";
-import { generateAll, createTestMetadata } from "../electron/lib/generate.js";
-import { loadBoard, type BoardDef } from "../electron/lib/board.js";
+import type { Manifest } from "@core";
+import { runManifestRules } from "@core/rules";
+import { generateAll, createTestMetadata } from "@core/codegen";
+import { type BoardDef } from "@core";
+import { loadBoard } from "./helpers";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
 const board: BoardDef = loadBoard(path.join(DEFAULTS, "boards/heltec-v3"));
@@ -116,10 +117,10 @@ function buildManifest(p: ScaleParams): Manifest {
       flow_watchdog: 30,
       flow_confirm: 15,
       flow_threshold: 0.5,
-      api_watchdog: 300,
       update_interval: 5,
     },
     automations: [],
+    imports: [],
   };
 }
 
@@ -358,10 +359,10 @@ function buildKcManifest(p: KcScaleParams): Manifest {
       flow_watchdog: 30,
       flow_confirm: 15,
       flow_threshold: 0.5,
-      api_watchdog: 300,
       update_interval: 5,
     },
     automations: [],
+    imports: [],
   };
 }
 

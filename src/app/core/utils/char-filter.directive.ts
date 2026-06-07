@@ -1,8 +1,8 @@
 import { Directive, ElementRef, HostListener, Input, OnDestroy, OnInit } from '@angular/core';
-import type { InputPolicy } from '@far-mon/core';
+import type { InputPolicy } from '@core';
 
 /**
- * Keystroke-time character filter driven by an InputPolicy from @far-mon/core.
+ * Keystroke-time character filter driven by an InputPolicy from @core.
  *
  * Pairs symmetrically with [zodField]: this prevents invalid chars at typing
  * time, [zodField] flags structural problems (missing dot, etc.) on blur.

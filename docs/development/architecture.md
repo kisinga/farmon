@@ -178,7 +178,7 @@ Shared library with no Angular dependency. Key exports:
 Generated firmware exposes a single template switch `safety_override` ([electron/lib/generators/control.ts](../../../../../../../electron/lib/generators/control.ts)) wired into the runtime as a global bypass:
 
 - **Pre-start gates** — guarded inline in `try_route_start` ([electron/lib/generators/routes.ts](../../../../../../../electron/lib/generators/routes.ts)): `if (!id(safety_override).state && …) return FAULT;` for source-low and dest-full.
-- **2 s safety monitor** — the per-slot watchdog loop in `control.ts` short-circuits with `if (id(safety_override).state) return;` at the top, so flow watchdog, runtime level stops, per-route max runtime, and API watchdog are all suppressed for as long as the switch is ON.
+- **2 s safety monitor** — the per-slot watchdog loop in `control.ts` short-circuits with `if (id(safety_override).state) return;` at the top, so flow watchdog, runtime level stops, and per-route max runtime are all suppressed for as long as the switch is ON.
 - **Pump-without-route gate** — the pump relay's `on_turn_on` handler ([packages/core/src/entities/pump.ts](../../../../../../../packages/core/src/entities/pump.ts)) immediately turns the pump back off if no route owns it; this check is also skipped when `safety_override` is ON so operators can commission or bench-test the pump alone.
 - **Default-safe** — declared `restore_mode: ALWAYS_OFF`; never persists across reboots.
 

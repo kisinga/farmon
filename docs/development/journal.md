@@ -1,6 +1,13 @@
 # Heltec Development Journey & Lessons Learned
 
-**Current direction:** PocketBase (Go) + Concentratord + Angular. Single binary, no ChirpStack/MQTT/Postgres; native LoRaWAN codec and SQLite. **Benefits:** one process, easy deploy, full control over join/decrypt/codec. **Drawbacks:** less plug-and-play than Node-RED; custom logic lives in Go, not flows. See [root README](../README.md) and [pi/backend/README.md](../pi/backend/README.md).
+**Current direction:** ESP32/**ESPHome** firmware (no LoRaWAN, no Concentratord) + Go
+**PocketBase** server with an embedded **MQTT** broker + **Angular** web app; SQLite, single
+binary, two builds (cloud/edge). The browser is the source of truth (design, validation,
+firmware codegen); the server is a dumb, secure pipe. For the system as built see
+[built.md](built.md), for what's left [status.md](status.md); the roadmap lives in
+`~/.claude/plans/based-on-all-of-splendid-zebra.md`.
+This file is the **retrospective** — decisions and lessons, including the wrong turns. The
+LoRaWAN/Concentratord narrative below is history (see "The Pivot" and "The Reversal").
 
 ## Overview
 
@@ -319,3 +326,51 @@ Almost nothing as code. Everything as lessons:
 3. **On-device intelligence is insurance, not architecture.** Put smarts on the server, put safety fallbacks on the device. Don't build the whole system around edge compute.
 4. **Pride in code is not a reason to keep it.** The code was good. Walking away from it is better.
 5. **The ecosystem is the product.** HA's 3000+ integrations, community forums, and mobile app are worth more than any custom feature I could build alone.
+
+---
+
+## The Reversal: HA out, web-first MQTT (June 2026)
+
+The March pivot bet on Home Assistant as the runtime brain. We pulled it. HA's 3000+
+integrations were paying for problems we don't have — we drive a fixed set of pumps,
+valves and tanks, not a smart home — while charging us a heavyweight runtime, a Lovelace
+dashboard we couldn't shape, and a control plane that died with the LAN. **HA is now fully
+removed from the firmware** (no `api:` block, no toggle).
+
+### What it is now
+
+- **Web app (Angular) + Go server (PocketBase + embedded MQTT broker) + ECharts.** The
+  browser does the real work (design, validation, firmware codegen, chart spec). The
+  server is a dumb, secure pipe. **The DB is the source of truth** — devices publish,
+  the server stores, the UI reads. Customers never touch MQTT.
+- **Firmware is generated in the browser** as an ESPHome bundle; on-device scheduler
+  replaces HA automations; the always-on `web_server:` portal replaces HA for local
+  control.
+- **Two deployment modes**, `managed` (cloud broker) and `local` (on-site box). With the
+  transport split below, the firmware is mode-uniform.
+
+### The transport rule (hard invariant)
+
+**MQTT is the device↔server pipe ONLY** (telemetry up, commands down). **ALL
+cross-controller traffic — actuator claims AND remote sensor reads — is direct LAN UDP**
+(ESPHome `udp:` `on_receive`/`udp.write`, HMAC-authenticated over a per-site key). The
+owner is generic/reactive: it honours a claim from any sender, so adding a claimant
+flashes only the new controller. Consequence: coordination survives internet/broker loss
+in both modes, and the lease (90s) self-expires — no split-brain by construction.
+
+### Where we are
+
+`managed` single-controller is **proven live on real hardware** (device → MQTT → DB →
+dashboard). Cross-controller over UDP is **code-complete, pending the 2-controller LAN
+proof**.
+
+### Lessons this round
+
+1. **Don't pay for a platform's strengths you can't use.** HA's breadth was overhead, not
+   value, for a fixed-topology water plant.
+2. **Split transports by role, not by convenience.** One pipe for server I/O, one for
+   peer coordination — each keeps its own failure domain.
+3. **The action exists for a reason — don't bypass it.** Calling `udp` `send_packet()`
+   from a lambda instead of the `udp.write` action skips `set_should_broadcast()`, leaving
+   the broadcast socket null → null-deref → reboot loop (relays flashing). Cost a bootloop
+   to learn. Use the documented action.

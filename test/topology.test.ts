@@ -8,9 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { TopologySchema, parseTopology, type Topology } from "../electron/lib/topology.js";
-import { topologyToManifestForController } from "../electron/lib/topology-to-manifest.js";
-import { nodesByKind } from "../electron/lib/schema.js";
+import { TopologySchema, parseTopology, type Topology, topologyToManifestForController, nodesByKind } from "@core";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
 const CONFIG_PATH = path.join(DEFAULTS, "configs/pump-controller.yaml");
@@ -83,7 +81,7 @@ console.log("\nManifest derivation:");
 const manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? 'default');
 
 assert(manifest.device.name === "pump_ctrl", "Device name derived from friendly_name");
-assert(manifest.device.board === "heltec-v3", "Board preserved");
+assert(manifest.device.board === "heltec-v3", "Board id preserved from topology");
 
 const manifestPumps = nodesByKind(manifest.nodes, 'pump');
 assert(manifestPumps[0]?.['pin'] === "GPIO42", `Pump pin = ${manifestPumps[0]?.['pin']}`);

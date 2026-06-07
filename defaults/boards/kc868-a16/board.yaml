@@ -21,12 +21,12 @@ schema: 5
 #   https://www.kincony.com/esp32-board-16-channel-relay-hardware.html
 # =============================================================================
 
-model: kc868_a16
+model: kc868-a16
 label: Kincony KC868-A16
 svg: board.svg
 
 mcu:
-  variant: esp32
+  variant: esp32dev
   flash_size: 4MB
   framework: esp-idf
 
@@ -37,7 +37,7 @@ peripherals:
     mdio_pin: GPIO18
     clk:
       pin: GPIO17
-      mode: CLK_OUT
+      mode: GPIO17_OUT
     phy_addr: 0
 
 buses:

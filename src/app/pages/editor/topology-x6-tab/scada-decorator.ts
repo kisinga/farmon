@@ -3,9 +3,9 @@
  *
  * Post-processes the SVG produced by X6's `toSVG()` to add identity attributes,
  * hit rectangles, label slots, and a state/flow <style> block. Output matches
- * the farm-scada-card v1 contract (see @far-mon/core ha.ts).
+ * the farm-scada-card v1 contract (see @core ha.ts).
  */
-import { NODE_REGISTRY, HA_SCHEMA_VERSION, type HaSlotSpec } from '@far-mon/core';
+import { NODE_REGISTRY, HA_SCHEMA_VERSION, type HaSlotSpec } from '@core';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const X6_NODE_SEL = '.x6-cell.x6-node[data-cell-id]';

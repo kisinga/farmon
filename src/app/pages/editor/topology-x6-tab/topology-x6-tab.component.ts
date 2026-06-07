@@ -1,25 +1,24 @@
 import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, computed, signal, effect, Injector } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { DomSanitizer } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
 import { BoardService } from '../../../core/services/board.service';
-import { ElectronService } from '../../../core/services/electron.service';
+import { BackendService } from '../../../core/services/backend.service';
 import type { SiteTopology, TopologyNode, RouteOverride } from '../../../core/models/topology.model';
-import type { TemplateListEntry } from '../../../core/models/electron-api';
+import type { TemplateListEntry } from '../../../core/models/backend-api';
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
 import type { Node as X6Node } from '@antv/x6';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
-import { buildGraph, activeGraph, downstreamNodes } from '@far-mon/core';
+import { buildGraph, activeGraph, downstreamNodes } from '@core';
 import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlays';
 import { renderControllerOverlays } from '../../../shared/canvas/controller-overlay-renderer';
 
 @Component({
   selector: 'app-topology-x6-tab',
   standalone: true,
-  imports: [TopologySidebarComponent, FormsModule],
+  imports: [TopologySidebarComponent],
   host: {
     '(document:keydown.escape)': 'closePopup()',
     '(document:keydown.control.z)': 'doUndo()',
@@ -33,13 +32,6 @@ import { renderControllerOverlays } from '../../../shared/canvas/controller-over
     <!-- Toolbar -->
     <div class="flex items-center gap-2 px-4 py-2 border-b border-base-300/30 bg-base-200/30">
       <h2 class="text-sm font-semibold text-base-content/70">Design</h2>
-      <select class="select select-xs select-bordered font-mono text-xs"
-        [ngModel]="workspace.activeControllerId()"
-        (ngModelChange)="switchController($event)">
-        @for (ctrl of allControllers(); track ctrl.id) {
-          <option [value]="ctrl.id">{{ ctrl.friendlyName }}</option>
-        }
-      </select>
       <div class="flex-1"></div>
       @if (!editor.readonly()) {
         <div class="dropdown dropdown-end">
@@ -215,10 +207,10 @@ import { renderControllerOverlays } from '../../../shared/canvas/controller-over
       position: absolute; bottom: 12px; left: 12px;
       display: grid; grid-template-columns: 20px 1fr;
       gap: 2px 8px; align-items: center;
-      padding: 8px 12px; background: rgba(255,255,255,0.92);
-      border: 1px solid #e2e8f0; border-radius: 6px;
+      padding: 8px 12px; background: rgba(15,23,42,0.92);
+      border: 1px solid #334155; border-radius: 6px;
       font-size: 10px; font-family: ui-monospace, monospace;
-      color: #1e293b; pointer-events: none; z-index: 10;
+      color: #e2e8f0; pointer-events: none; z-index: 10;
     }
     .legend-item { display: contents; }
     .legend-icon { display: flex; justify-content: center; align-items: center; }
@@ -239,7 +231,7 @@ export class TopologyX6TabComponent {
   protected editor = inject(SystemEditorService);
   protected workspace = inject(WorkspaceService);
   protected boards = inject(BoardService);
-  private electron = inject(ElectronService);
+  private backend = inject(BackendService);
   private router = inject(Router);
   private sanitizer = inject(DomSanitizer);
   private injector = inject(Injector);
@@ -287,14 +279,6 @@ export class TopologyX6TabComponent {
       if (desc.singleton && this.kindExists(desc.kind)) return false;
       return desc.defaultPorts.some(p => p.direction === 'inlet');
     });
-  });
-
-  protected allControllers = computed(() => {
-    const topology = this.workspace.siteTopology();
-    return topology?.controllers.map(c => ({
-      id: c.id,
-      friendlyName: c.friendlyName ?? c.id,
-    })) ?? [];
   });
 
   private lastRenderedControllerId: string | null = null;
@@ -635,12 +619,6 @@ export class TopologyX6TabComponent {
     });
   }
 
-  protected switchController(controllerId: string) {
-    const siteId = this.workspace.site()?.id;
-    if (!siteId) return;
-    this.router.navigate(['/site', siteId, 'system', controllerId, 'design']);
-  }
-
   // --- Controller creation ---
 
   protected openBlankControllerModal() {
@@ -668,7 +646,7 @@ export class TopologyX6TabComponent {
   }
 
   protected async openTemplateModal() {
-    this.templates.set(await this.electron.templateList());
+    this.templates.set([]);
     this.showTemplateModal.set(true);
   }
 

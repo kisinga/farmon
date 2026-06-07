@@ -1,0 +1,495 @@
+{
+  "model": "kc868-a16",
+  "label": "Kincony KC868-A16",
+  "svg": "board.svg",
+  "mcu": {
+    "variant": "esp32",
+    "flash_size": "4MB",
+    "framework": "esp-idf"
+  },
+  "peripherals": {
+    "ethernet": {
+      "type": "LAN8720",
+      "mdc_pin": "GPIO23",
+      "mdio_pin": "GPIO18",
+      "clk": {
+        "pin": "GPIO17",
+        "mode": "GPIO17_OUT"
+      },
+      "phy_addr": 0
+    }
+  },
+  "buses": {
+    "i2c": {
+      "sda": "GPIO4",
+      "scl": "GPIO5",
+      "frequency": "100kHz"
+    }
+  },
+  "pins": [
+    {
+      "gpio": "OUT1",
+      "connector": "relay_k1",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 0
+    },
+    {
+      "gpio": "OUT2",
+      "connector": "relay_k2",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 1
+    },
+    {
+      "gpio": "OUT3",
+      "connector": "relay_k3",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 2
+    },
+    {
+      "gpio": "OUT4",
+      "connector": "relay_k4",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 3
+    },
+    {
+      "gpio": "OUT5",
+      "connector": "relay_k5",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 4
+    },
+    {
+      "gpio": "OUT6",
+      "connector": "relay_k6",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 5
+    },
+    {
+      "gpio": "OUT7",
+      "connector": "relay_k7",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 6
+    },
+    {
+      "gpio": "OUT8",
+      "connector": "relay_k8",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_1",
+      "number": 7
+    },
+    {
+      "gpio": "OUT9",
+      "connector": "relay_k9",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 0
+    },
+    {
+      "gpio": "OUT10",
+      "connector": "relay_k10",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 1
+    },
+    {
+      "gpio": "OUT11",
+      "connector": "relay_k11",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 2
+    },
+    {
+      "gpio": "OUT12",
+      "connector": "relay_k12",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 3
+    },
+    {
+      "gpio": "OUT13",
+      "connector": "relay_k13",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 4
+    },
+    {
+      "gpio": "OUT14",
+      "connector": "relay_k14",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 5
+    },
+    {
+      "gpio": "OUT15",
+      "connector": "relay_k15",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 6
+    },
+    {
+      "gpio": "OUT16",
+      "connector": "relay_k16",
+      "edge": "right",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_out_2",
+      "number": 7
+    },
+    {
+      "gpio": "IN1",
+      "connector": "input_x1",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 0
+    },
+    {
+      "gpio": "IN2",
+      "connector": "input_x2",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 1
+    },
+    {
+      "gpio": "IN3",
+      "connector": "input_x3",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 2
+    },
+    {
+      "gpio": "IN4",
+      "connector": "input_x4",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 3
+    },
+    {
+      "gpio": "IN5",
+      "connector": "input_x5",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 4
+    },
+    {
+      "gpio": "IN6",
+      "connector": "input_x6",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 5
+    },
+    {
+      "gpio": "IN7",
+      "connector": "input_x7",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 6
+    },
+    {
+      "gpio": "IN8",
+      "connector": "input_x8",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_1",
+      "number": 7
+    },
+    {
+      "gpio": "IN9",
+      "connector": "input_x9",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 0
+    },
+    {
+      "gpio": "IN10",
+      "connector": "input_x10",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 1
+    },
+    {
+      "gpio": "IN11",
+      "connector": "input_x11",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 2
+    },
+    {
+      "gpio": "IN12",
+      "connector": "input_x12",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 3
+    },
+    {
+      "gpio": "IN13",
+      "connector": "input_x13",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 4
+    },
+    {
+      "gpio": "IN14",
+      "connector": "input_x14",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 5
+    },
+    {
+      "gpio": "IN15",
+      "connector": "input_x15",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 6
+    },
+    {
+      "gpio": "IN16",
+      "connector": "input_x16",
+      "edge": "left",
+      "caps": [
+        "digital"
+      ],
+      "expander": "pcf8574_in_2",
+      "number": 7
+    },
+    {
+      "gpio": "GPIO36",
+      "connector": "adc_a1",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc"
+      ]
+    },
+    {
+      "gpio": "GPIO34",
+      "connector": "adc_a2",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc"
+      ]
+    },
+    {
+      "gpio": "GPIO35",
+      "connector": "adc_a3",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc"
+      ]
+    },
+    {
+      "gpio": "GPIO39",
+      "connector": "adc_a4",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "adc"
+      ]
+    },
+    {
+      "gpio": "GPIO32",
+      "connector": "ht1",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO33",
+      "connector": "ht2",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "pulse_counter"
+      ]
+    },
+    {
+      "gpio": "GPIO14",
+      "connector": "ht3",
+      "edge": "bottom",
+      "caps": [
+        "digital",
+        "pulse_counter"
+      ]
+    }
+  ],
+  "expanders": [
+    {
+      "id": "pcf8574_out_1",
+      "platform": "pcf8574",
+      "address": 36,
+      "pcf8575": false
+    },
+    {
+      "id": "pcf8574_out_2",
+      "platform": "pcf8574",
+      "address": 37,
+      "pcf8575": false
+    },
+    {
+      "id": "pcf8574_in_1",
+      "platform": "pcf8574",
+      "address": 34,
+      "pcf8575": false
+    },
+    {
+      "id": "pcf8574_in_2",
+      "platform": "pcf8574",
+      "address": 33,
+      "pcf8575": false
+    }
+  ],
+  "uart_buses": [
+    {
+      "id": "uart_modbus",
+      "tx_pin": "GPIO13",
+      "rx_pin": "GPIO16",
+      "baud_rate": 9600
+    }
+  ],
+  "documentation": [
+    {
+      "slug": "overview",
+      "title": "Overview",
+      "body": "MajiFlow's primary board for water-orchestration controllers — pump rooms, irrigation manifolds, hotel water rings, greenhouse zone heads. It provides 16 relay outputs, 16 optocoupled digital inputs, 4 analog inputs, 3 sensor headers, Ethernet, and RS485/Modbus, on a DIN-rail-mountable ESP32 module.\n\nReferences: [Kincony product page](https://www.kincony.com/esp32-board-16-channel-relay-hardware.html) · [ESPHome device page](https://devices.esphome.io/devices/kincony-kc868-a16/) · [GitHub: hzkincony/kc868-a16](https://github.com/hzkincony/kc868-a16)"
+    },
+    {
+      "slug": "network",
+      "title": "Network & Recovery",
+      "body": "The KC868-A16 supports both **Ethernet (LAN8720 PHY)** and **WiFi**. ESPHome enforces XOR — exactly one transport is active per device. Pick one in MajiFlow's *Connection* panel; the choice is baked into the firmware at flash time.\n\n| | Ethernet | WiFi |\n|---|---|---|\n| **Default for this board** | ✓ | |\n| **Speed / reliability** | Wired, deterministic | Depends on RF environment |\n| **Credentials needed** | None | SSID + password |\n| **Diagnostic sensor** | `ethernet_info` (IP) | `wifi_info` (IP, SSID, MAC) + `wifi_signal` (dBm) |\n| **Static IP support** | ✓ via *Connection → IP Configuration* | ✓ same panel |\n| **Recovery if the network goes down** | None — replug the cable, or direct-connect to a laptop (see below) | Improv or join the fallback AP |\n\n### Where the dashboard lives\n\nThe entity dashboard only serves on the device's **station** IP — i.e. the IP it gets from your home network (DHCP) or whatever you set as `manual_ip`. It does **not** serve at `192.168.4.1` (the fallback-AP gateway address). This is an ESPHome limitation: `web_server` doesn't bind the SoftAP interface ([esphome/issues#4333](https://github.com/esphome/issues/issues/4333)), so when wifi is down there is no entity-control surface.\n\nTo control the device, it must be reachable on a network — either the home wifi, or via ethernet.\n\n### Recovery on WiFi transport\n\nWhen the configured wifi credentials stop working (network changed, password rotated, etc.), use one of these to push new credentials. Neither restores the dashboard until wifi rejoins.\n\n**1. Improv Wi-Fi** — recommended. Open standard from the Home Assistant ecosystem (open-source, github.com/improv-wifi). Two flavours, both compiled in:\n\n- **BLE** (`esp32_improv`): pair from any Chromium-based browser at [improv-wifi.com](https://www.improv-wifi.com/) (or the ESPHome / HA companion app). The page uses WebBluetooth to talk **directly** to the device — no server roundtrip, no account.\n- **Serial** (`improv_serial`): same page, but over USB via WebSerial. Useful when BLE is unreachable or the device is bench-bound.\n\n**2. Fallback AP + captive portal** — works without a Chromium browser, but degraded UX.\n\n- After ~90 s of failed wifi association, the device broadcasts `<friendly_name> Fallback` (password = your wifi password).\n- Joining the AP triggers your phone/laptop's captive-portal popup automatically.\n- Use that popup's **Configure WiFi** form to enter new credentials.\n- On ESPHome 2025.2.0+, the popup may render blank. If so, the credential-save endpoint still works — paste your new SSID/password using the form fields the OS shows, or use Improv instead.\n- The 192.168.4.1 address itself shows no useful page; don't bother typing it directly.\n\n### Recovery on Ethernet transport\n\nIf the cable drops the device is unreachable until it's replugged. There's no on-device recovery surface for ethernet (no AP, no Improv-over-cable).\n\n### Direct-to-laptop debug (no router)\n\nUseful for bench testing. Plug an ethernet cable from your laptop straight into the KC868-A16 (the LAN8720 PHY does auto-MDIX). On the laptop:\n\n1. Set the wired interface to a manual IP in the same subnet as the device — e.g. device `192.168.150.142`, laptop `192.168.150.100`, mask `255.255.255.0`.\n2. Open `http://<device-static-ip>/` — full dashboard, no router involved.\n\nRequires a static IP on the device (set in *Connection → IP Configuration*).\n\n### Web dashboard\n\nAlways emitted on **port 80**. Reachable at the device's IP (home-network or direct-cable). Every relay, sensor, switch, and number entity declared in the topology is exposed for manual control — nothing extra to configure."
+    },
+    {
+      "slug": "power",
+      "title": "Power Requirements",
+      "body": "The KC868-A16 board, every 12 V solenoid valve, and every 4–20 mA / 0–10 V sensor draw from one **12 V DC supply** wired to the green DC input terminal block.\n\n| Load | Typical | Notes |\n|---|---|---|\n| Board idle (Ethernet up, OLED off) | ~120 mA @ 12 V | Datasheet figure |\n| All 16 relay coils energized | +320 mA @ 12 V | Worst-case transient — never sustained in practice |\n| 24 V solenoid valves | external supply | Use the dry contact across the relay; do **not** wire 24 V into the board |\n| 4–20 mA sensor (loop powered) | ~25 mA @ 12 V each | Series with sensor + 250 Ω burden |\n| 0–10 V sensor | ~10 mA @ 12 V each | Through the 100 kΩ divider to the ADC pin |\n\n**Sizing rule of thumb**: `0.15 A × controllers + 0.5 A × valves on simultaneously + 0.05 A × sensors`, then add 30% headroom. A 5 A regulated 12 V brick is comfortable for the largest single-board deployment.\n\n**Brown-out**: the ESP32 brown-out detector trips around 2.7 V on the 3.3 V rail. If you see random reboots when relays click in, the supply is sagging — either too small or the wiring is too thin (use ≥ 0.75 mm² for runs longer than 1 m).\n\n**Fuse**: a 5 A inline fuse on the +12 V input is mandatory if your supply is unfused."
+    },
+    {
+      "slug": "pin-architecture",
+      "title": "Pin Architecture",
+      "body": "The KC868-A16 has **segregated pin pools** — unlike boards with general-purpose GPIOs, each pin pool serves a specific function and cannot be reassigned.\n\n| Pool | Pins | Count | Capability | Used For |\n|------|------|-------|------------|----------|\n| **Relay outputs** | OUT1–OUT16 | 16 | `digital` (via PCF8574) | Valves (2 pins each), pumps (1 pin each) |\n| **ADC inputs** | GPIO36, GPIO34, GPIO35, GPIO39 | 4 | `digital`, `adc` | Tank level sensors (0–5V, op-amp conditioned) |\n| **Sensor headers** | GPIO32, GPIO33, GPIO14 | 3 | `digital`, `pulse_counter` | Flow sensors, DS18B20 temperature probes |\n| **Digital inputs** | IN1–IN16 | 16 | `digital` (via PCF8574) | Future: float switches, dry contacts |\n| **RS485** | GPIO13 (TX), GPIO16 (RX) | 2 | Reserved | VFD/Modbus devices (MAX13487E transceiver) |\n| **I2C bus** | GPIO4 (SDA), GPIO5 (SCL) | 2 | Reserved | Internal: PCF8574 expander communication |\n| **Ethernet** | GPIO23 (MDC), GPIO18 (MDIO), GPIO17 (CLK) | 3 | Reserved | LAN8720 PHY |\n\n**Total exposed**: 39 user-assignable pins (16 OUT + 16 IN + 4 ADC + 3 sensor headers).\n**Total reserved**: 7 pins (I2C + Ethernet + RS485 are auto-reserved by MajiFlow).\n\n### Boot-strapping pins (avoid for inputs)\n\nGPIO0, GPIO2, GPIO12, GPIO15 are ESP32 strapping pins. The board package marks them reserved — assigning a topology entity to one surfaces a validation error before flash.\n\n### Polarity\n\nAll onboard relays are **active-low** (the PCF8574 sinks current to energize the coil). MajiFlow defaults to `Active-low` polarity on entity wiring — keep that unless you've modified the board."
+    },
+    {
+      "slug": "peripherals",
+      "title": "On-Board Peripherals",
+      "body": "### I²C bus &amp; expanders\n\nThe KC868-A16 reaches its **16 relays + 16 inputs** through four PCF8574 I²C GPIO expanders behind a single onboard I²C bus on **GPIO4 (SDA) / GPIO5 (SCL)**. Pull-ups are populated on the board — you don't need to add your own on the board's bus.\n\n| Address | Role | Pin labels |\n|---|---|---|\n| 0x24 | Relay outputs 1–8 | OUT1…OUT8 (active-low coil drivers) |\n| 0x25 | Relay outputs 9–16 | OUT9…OUT16 |\n| 0x21 | Digital inputs 1–8 | IN1…IN8 (optocoupled, pull to GND to assert) |\n| 0x22 | Digital inputs 9–16 | IN9…IN16 |\n\n**External I²C devices** (extra expanders, OLEDs, sensors): bring SDA/SCL out of the J6 header. Stay under the standard fast-mode budget — total bus capacitance &lt; 400 pF, total length under ~1 m for reliable 100 kHz.\n\n**Address conflicts**: never assign a new device to 0x21, 0x22, 0x24, 0x25.\n\n### Sensor headers (3× analog)\n\nJ3, J4, J5 are 3-pin headers (signal, +12 V, GND) wired to **GPIO32, GPIO33, GPIO35** through a 100 kΩ / 10 kΩ divider. Inputs accept **0–12 V**, scaled into the ESP32's 0–3.3 V ADC.\n\n- Use J3 (GPIO32) and J4 (GPIO33) for **pulse counters** (flow meters) — these GPIOs support pulse counter peripheral. GPIO35 is ADC-only.\n- Calibration is done in the MajiFlow level-sensor entity — exposes `number.…_cal_empty` / `number.…_cal_full` HA entities.\n\n### RS485 / Modbus (MAX13487E transceiver)\n\nGPIO13 (TX), GPIO16 (RX) are reserved for RS485 via the onboard half-duplex transceiver. Direction is auto-controlled — no DE/RE pin needed.\n\n- A/B terminals on the green DC block. Daisy-chain to VFDs / Modbus sensors. Terminate with 120 Ω at each end of the trunk.\n- Common ground between board and Modbus device is required if they don't share the same power supply."
+    },
+    {
+      "slug": "capacity",
+      "title": "Maximum Capacity",
+      "body": "### Theoretical maximums (single controller)\n\n| Component | Max Count | Reasoning |\n|-----------|-----------|-----------|\n| **Valves** (with 1 relay pump) | **7** | 7 valves × 2 OUT pins = 14 + 1 pump = 15 of 16 OUT pins |\n| **Valves** (with VFD pump) | **8** | 8 valves × 2 OUT pins = 16 OUT pins (VFD uses RS485, no OUT pin) |\n| **Tanks** (with level sensor) | **4** | 4 native ADC pins (GPIO36/34/35/39) |\n| **Flow sensors** | **3** | 3 native pulse counter pins (GPIO32/33/14) |\n| **Relay pumps** | **1** | Shares OUT pin pool with valves |\n| **VFD pumps** (Modbus) | **1+** | Uses RS485 bus — no GPIO needed per VFD |\n| **Routes** | **16** | `conflict_mask` is `uint16_t` (firmware limit) |\n| **Concurrent routes** | **2** | Firmware slot limit (hardcoded) |\n| **Queue depth** | **4** | Deferred route starts |\n\n### Realistic configurations\n\nSizing tiers below are agnostic to the application — a small irrigation plot, a hotel rooftop tank set, a greenhouse zone head, and a small distribution manifold all map to the same controller footprint when the valve / tank / flow-sensor counts match.\n\n**Compact** (e.g. small plot, single rooftop, one-zone greenhouse): 1 pump, 3 valves, 2 tanks, 1 flow sensor — uses 8/16 OUT, 2/4 ADC, 1/3 pulse counter. Room to grow.\n\n**Medium** (e.g. multi-zone irrigation, hotel back-of-house ring, mid-size greenhouse): 1 pump, 6 valves, 4 tanks, 3 flow sensors — uses 14/16 OUT, 4/4 ADC, 3/3 pulse counter. Near maximum: 1 spare OUT pin.\n\n**Maxed out** (every pin utilized): 1 pump, 7 valves, 4 tanks, 3 flow sensors — uses 15/16 OUT, 4/4 ADC, 3/3 pulse counter. No spare capacity on any pool.\n\n**Beyond one controller**: for installations exceeding these limits, deploy multiple KC868-A16 controllers and connect them via MajiFlow's multi-system site feature with inter-system links."
+    },
+    {
+      "slug": "adc-range",
+      "title": "ADC Voltage Range",
+      "body": "The KC868-A16's 4 ADC inputs accept **0–5 V** from external sensors. An onboard **LM324 op-amp** scales this to 0–3.3 V for the ESP32's ADC.\n\n**Calibration in MajiFlow**: the `Cal Empty V` and `Cal Full V` values represent the **ESP32-side voltage** (0–3.3 V range), not the original sensor output (0–5 V). Calibrate by:\n\n1. Drain the tank to empty → note the raw voltage reading in Home Assistant.\n2. Fill the tank to full → note the raw voltage reading.\n3. Enter these values as `Cal Empty` and `Cal Full`.\n\nThe `Raw Voltage` diagnostic sensor is exposed to HA to assist with calibration."
+    },
+    {
+      "slug": "digital-inputs",
+      "title": "Digital Inputs",
+      "body": "The 16 optocoupled digital inputs (IN1–IN16) accept **6–24 V** signals and are isolated from the ESP32 — ground loops on field wiring won't reach the MCU. Pull-down to GND via the field signal asserts the input.\n\nThese pins are currently **reserved for future entity types**:\n\n- Float switch / dry contact binary sensors\n- External trigger inputs\n- Alarm / fault inputs from external equipment\n\nThe pins are defined in the board YAML with `caps: [digital]` and ready for use when the corresponding entity types ship in MajiFlow.\n\n**Wiring tip**: use ≥ 1 kΩ in series with the field signal to clamp the optocoupler current. The board's onboard resistor handles up to 24 V cleanly; higher voltages will saturate the LED."
+    },
+    {
+      "slug": "self-test",
+      "title": "Bench Self-Test",
+      "body": "The KC868-A16 self-test firmware exercises every onboard subsystem in one bench cycle. Probes that don't apply (OLED, LoRa, WiFi-only diagnostics, battery) are excluded automatically by the codegen.\n\n| Probe | What it checks |\n|-------|----------------|\n| I²C scan | All 4 PCF8574 addresses respond (0x24, 0x25, 0x22, 0x21) |\n| Relay cycle | Each of 16 relays activates; readback confirms state |\n| Digital inputs | All 16 optocoupled inputs readable |\n| ADC baseline | All 4 ADC channels return valid voltage |\n| Sensor headers | GPIO32, GPIO33, GPIO14 responsive |\n| Ethernet PHY | LAN8720 link detected |\n\nThe test runs once on boot, then idles — the device exposes every entity for **manual control** via the web dashboard at the device's home-network IP (or `192.168.4.1` in fallback AP mode, though entities won't actuate without STA). Press the *Run Tests* button on the dashboard to re-trigger a cycle."
+    }
+  ]
+}

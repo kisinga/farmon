@@ -15,7 +15,10 @@
     "target": "ES2022",
     "module": "preserve",
     "paths": {
-      "@far-mon/core": ["./packages/core/src/index.ts"]
+      "@core": ["./src/lib/index.ts"],
+      "@core/codegen": ["./src/lib/codegen/index.ts"],
+      "@core/rules": ["./src/lib/rules/index.ts"],
+      "@core/docs": ["./src/lib/docs/index.ts"]
     }
   },
   "angularCompilerOptions": {
@@ -28,13 +31,7 @@
   "files": [],
   "references": [
     {
-      "path": "./packages/core"
-    },
-    {
       "path": "./tsconfig.app.json"
-    },
-    {
-      "path": "./tsconfig.electron.json"
     }
   ]
 }

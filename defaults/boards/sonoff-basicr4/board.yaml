@@ -19,7 +19,7 @@ schema: 5
 #   https://devices.esphome.io/devices/Sonoff-Basic-R4/
 # =============================================================================
 
-model: sonoff_basicr4
+model: sonoff-basicr4
 label: SONOFF BASICR4
 svg: board.svg
 

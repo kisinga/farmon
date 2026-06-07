@@ -1,57 +1,50 @@
 import { Component, inject, computed } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
-import { NODE_REGISTRY, legendSvgFor, buildGraph, activeGraph, deriveRoutes, controllerClaimsSegment } from '@far-mon/core';
+import { NODE_REGISTRY, legendSvgFor, buildGraph, activeGraph, deriveRoutes, controllerClaimsSegment } from '@core';
 import type { TopologyNode } from '../../../core/models/topology.model';
+import { SectionHeaderComponent } from '../shared/section-header.component';
 
 @Component({
   selector: 'app-remotes-tab',
   standalone: true,
-  imports: [FormsModule],
+  imports: [SectionHeaderComponent],
   template: `
     @if (editor.topology(); as t) {
       <div class="content-pane space-y-6">
+        <app-section-header
+          title="Sharing"
+          subtitle="Let this controller read sensors from, and drive actuators on, another controller. Controllers coordinate directly over your local network." />
 
-        <!-- Controller selector -->
-        <div class="card bg-base-100 shadow-sm border border-base-200">
-          <div class="card-body p-4 flex flex-row items-center gap-4">
-            <span class="text-sm font-medium text-base-content/70">Controller</span>
-            <select class="select select-sm select-bordered flex-1 font-mono"
-              [ngModel]="activeControllerId()"
-              (ngModelChange)="switchController($event)">
-              @for (ctrl of allControllers(); track ctrl.id) {
-                <option [value]="ctrl.id">{{ ctrl.friendlyName }}</option>
-              }
-            </select>
-          </div>
+        <div class="alert alert-info text-xs items-start">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span>Controllers coordinate directly over your <strong>local network</strong>, so the ones that share must be on the same LAN. This works whether the site runs on MajiFlow Cloud or your own server.</span>
         </div>
 
         <!-- Section 1: Import Remote Nodes -->
         <div>
-          <h2 class="text-lg font-semibold">Import Remote Nodes</h2>
-          <p class="text-sm text-base-content/50 mt-1">
-            Select nodes from other controllers that this controller imports as remote references.
-            Imported nodes appear in the manifest for route tables and monitoring.
+          <h2 class="text-base font-semibold">Import remote nodes</h2>
+          <p class="text-xs text-base-content/50 mt-0.5">
+            Pick nodes on other controllers to import as remote references. They show up in route
+            tables and monitoring.
           </p>
         </div>
 
         @if (groupedRemoteNodes().length === 0) {
-          <div class="card bg-base-100 shadow-sm border border-base-200">
-            <div class="card-body p-6 text-center">
-              <p class="text-sm text-base-content/50">No remote nodes available.</p>
-              <p class="text-xs text-base-content/40 mt-1">Add controllers and nodes in the Design tab first.</p>
-            </div>
+          <div class="surface px-6 py-10 text-center">
+            <p class="text-sm text-base-content/50">No remote nodes available.</p>
+            <p class="text-xs text-base-content/40 mt-1">Add controllers and nodes in Design first.</p>
           </div>
         } @else {
           @for (group of groupedRemoteNodes(); track group.controllerId) {
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card surface">
               <div class="card-body gap-3">
                 <h3 class="font-semibold text-sm text-base-content/60 uppercase tracking-wider">
                   {{ group.controllerName }}
                 </h3>
-                <div class="divide-y divide-base-200">
+                <div class="divide-y divide-base-300/30">
                   @for (node of group.nodes; track node.id) {
                     <div class="flex items-center gap-3 py-3">
                       <input
@@ -80,22 +73,20 @@ import type { TopologyNode } from '../../../core/models/topology.model';
 
         <!-- Section 2: Local Nodes Imported by Others -->
         <div>
-          <h2 class="text-lg font-semibold">Local Nodes Imported by Others</h2>
-          <p class="text-sm text-base-content/50 mt-1">
-            Nodes physically on this controller that other controllers have chosen to import.
+          <h2 class="text-base font-semibold">Shared with other controllers</h2>
+          <p class="text-xs text-base-content/50 mt-0.5">
+            Nodes physically on this controller that other controllers have imported.
           </p>
         </div>
 
         @if (localNodesImportedByOthers().length === 0) {
-          <div class="card bg-base-100 shadow-sm border border-base-200">
-            <div class="card-body p-6 text-center">
-              <p class="text-sm text-base-content/50">No other controller imports nodes from this one yet.</p>
-            </div>
+          <div class="surface px-6 py-10 text-center">
+            <p class="text-sm text-base-content/50">No other controller imports nodes from this one yet.</p>
           </div>
         } @else {
-          <div class="card bg-base-100 shadow-sm border border-base-200">
+          <div class="card surface">
             <div class="card-body gap-3">
-              <div class="divide-y divide-base-200">
+              <div class="divide-y divide-base-300/30">
                 @for (entry of localNodesImportedByOthers(); track entry.node.id) {
                   <div class="flex items-center gap-3 py-3">
                     <span class="shrink-0" [innerHTML]="legendSvg(entry.node)"></span>
@@ -122,24 +113,9 @@ import type { TopologyNode } from '../../../core/models/topology.model';
 export class RemotesTabComponent {
   protected editor = inject(SystemEditorService);
   private workspace = inject(WorkspaceService);
-  private router = inject(Router);
 
   protected activeControllerId = computed(() => this.workspace.activeControllerId());
   private siteTopology = computed(() => this.workspace.siteTopology());
-
-  protected allControllers = computed(() => {
-    const topology = this.siteTopology();
-    return topology?.controllers.map(c => ({
-      id: c.id,
-      friendlyName: c.friendlyName ?? c.id,
-    })) ?? [];
-  });
-
-  protected switchController(controllerId: string): void {
-    const siteId = this.workspace.site()?.id;
-    if (!siteId) return;
-    this.router.navigate(['/site', siteId, 'system', controllerId, 'remotes']);
-  }
 
   /** All routes derived from the full site topology. */
   private allRoutes = computed(() => {

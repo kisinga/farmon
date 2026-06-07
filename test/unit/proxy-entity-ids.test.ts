@@ -5,11 +5,11 @@
  */
 
 import * as path from "node:path";
-import { parseTopology, topologyToManifestForController } from "@far-mon/core";
-import { pumpDescriptor } from "../../packages/core/src/entities/pump";
-import { valveDescriptor } from "../../packages/core/src/entities/valve";
-import { dosingPumpDescriptor } from "../../packages/core/src/entities/dosing-pump";
-import { vfdDescriptor } from "../../packages/core/src/entities/vfd";
+import { parseTopology, topologyToManifestForController } from "@core";
+import { pumpDescriptor } from "../../src/lib/entities/pump";
+import { valveDescriptor } from "../../src/lib/entities/valve";
+import { dosingPumpDescriptor } from "../../src/lib/entities/dosing-pump";
+import { vfdDescriptor } from "../../src/lib/entities/vfd";
 import { buildRouteControlSection, buildManualView } from "../../electron/lib/generators/dashboard.js";
 import { generateControl } from "../../electron/lib/generators/control.js";
 import { generateDeadman } from "../../electron/lib/generators/deadman.js";

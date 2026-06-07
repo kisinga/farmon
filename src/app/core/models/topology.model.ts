@@ -1,5 +1,5 @@
 /**
- * Re-exports from @far-mon/core.
+ * Re-exports from @core.
  */
 import type {
   TopologyNode,
@@ -9,7 +9,7 @@ import type {
   UartBus,
   IoProviderDef,
   NetworkConfig,
-} from '@far-mon/core';
+} from '@core';
 
 /**
  * Minimal topology shape needed by the X6 canvas and SVG renderers.
@@ -42,5 +42,5 @@ export type {
   NetworkConfig,
   UartBus,
   IoProviderDef,
-} from '@far-mon/core';
-export { getNodesByKind, getNodeByKind } from '@far-mon/core';
+} from '@core';
+export { getNodesByKind, getNodeByKind } from '@core';

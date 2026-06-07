@@ -14,8 +14,8 @@ import {
   parseTopology,
   emitPressureCalNumbers,
   emitPressureSensorYaml,
-} from '../../packages/core/src/index';
-import type { TankNode } from '../../packages/core/src/entities/tank';
+} from '../../src/lib/index';
+import type { TankNode } from '../../src/lib/entities/tank';
 
 const tankDescriptor = NODE_REGISTRY.get('tank')!;
 
@@ -140,7 +140,7 @@ const tankWithPressure: TankNode = {
 };
 
 {
-  const dummyCtx: import('@far-mon/core').CodegenContext = {
+  const dummyCtx: import('@core').CodegenContext = {
     resolveChannel: () => ({ platform: 'template', config: '' }),
   };
   const components = tankDescriptor.codegen!.extraComponents!(tankWithPressure, 0, dummyCtx);
@@ -152,7 +152,7 @@ const tankWithPressure: TankNode = {
 }
 
 {
-  const ctx: import('@far-mon/core').CodegenContext = {
+  const ctx: import('@core').CodegenContext = {
     resolveChannel: () => ({
       platform: 'adc',
       config: 'pin:\n    number: GPIO19',
