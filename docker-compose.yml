@@ -3,8 +3,10 @@
 # HA + ChirpStack + ESPHome stack is gone.
 #
 # Coolify: proxy 8090 to your domain (HTTPS handled by Coolify); expose 1883 and
-# (when TLS is on) 8883 as raw TCP for devices. All config is in .env — copy
-# .env.example to .env and fill it in.
+# (when TLS is on) 8883 as raw TCP for devices. Config is supplied per-variable via
+# the `environment:` block below: set the values in Coolify's env-var UI, or (local)
+# copy .env.example to .env and let Compose auto-load it. See .env.example for the
+# profiles and what each variable means.
 
 services:
   maji-server:
@@ -12,7 +14,29 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    env_file: .env
+    # Each value is interpolated from the deploy environment: Coolify's env-var UI
+    # (it scans these ${...} refs and surfaces them as editable fields), or a local
+    # ./.env that Compose auto-loads. Unset → blank, which the app/entrypoint treat
+    # as "use the built-in default" (see internal/config and deploy/entrypoint.sh).
+    environment:
+      # App admin — the SPA login (role=admin), seeded once on first boot.
+      MAJI_ADMIN_EMAIL: ${MAJI_ADMIN_EMAIL}
+      MAJI_ADMIN_PASSWORD: ${MAJI_ADMIN_PASSWORD}
+      # PocketBase superuser — the /_/ dashboard login (distinct from the app admin).
+      MAJI_SUPERUSER_EMAIL: ${MAJI_SUPERUSER_EMAIL}
+      MAJI_SUPERUSER_PASSWORD: ${MAJI_SUPERUSER_PASSWORD}
+      # Device-facing endpoint baked into generated firmware (what hosts dial out to).
+      MAJI_MQTT_PUBLIC_HOST: ${MAJI_MQTT_PUBLIC_HOST:-mqtt.majiflow.io}
+      MAJI_MQTT_PUBLIC_PORT: ${MAJI_MQTT_PUBLIC_PORT:-8883}
+      MAJI_MQTT_PUBLIC_TLS: ${MAJI_MQTT_PUBLIC_TLS:-true}
+      # Device-facing TLS listener — managed/cloud only; off → plain 1883, no certs.
+      MAJI_MQTT_TLS_ENABLED: ${MAJI_MQTT_TLS_ENABLED:-false}
+      MAJI_MQTT_TLS: ${MAJI_MQTT_TLS:-:8883}
+      MAJI_MQTT_TLS_CERT: ${MAJI_MQTT_TLS_CERT:-/certs/fullchain.pem}
+      MAJI_MQTT_TLS_KEY: ${MAJI_MQTT_TLS_KEY:-/certs/privkey.pem}
+      # Broker bind addresses inside the container (rarely changed; app defaults apply).
+      MAJI_MQTT_TCP: ${MAJI_MQTT_TCP:-:1883}
+      MAJI_MQTT_WS: ${MAJI_MQTT_WS:-:8082}
     ports:
       - "8090:8090"   # HTTP: SPA + /api + /_/  (Coolify routes this to your domain)
       - "1883:1883"   # plain MQTT (device-facing)
