@@ -37,8 +37,8 @@ export interface DocRecord {
 export interface SiteDocInput {
   siteName: string;
   topo: SiteTopology;
-  /** Cached topology SVGs (composite + per controllerId). Empty strings are fine. */
-  diagrams: { composite: string; controllers: Record<string, string> };
+  /** Cached SVGs: topology (composite + per controllerId) and per-controller board pinouts. Empty strings are fine. */
+  diagrams: { composite: string; controllers: Record<string, string>; boardPinouts?: Record<string, string> };
   /** Board defs keyed by model, for every board the site uses. */
   boards: Record<string, BoardDef>;
   /** All `docs` rows (node + narrative). Board reference docs come from the board def. */
@@ -116,6 +116,9 @@ export async function assembleSiteDoc(input: SiteDocInput): Promise<string> {
 
     const diagram = diagrams.controllers[c.id];
     if (diagram) parts.push(`<div class="diagram topology">${diagram}</div>`);
+
+    const pinout = diagrams.boardPinouts?.[c.id];
+    if (pinout) parts.push(`<h3>Board Pinout</h3><div class="diagram pinout">${pinout}</div>`);
 
     const pins = collectPins(cn);
     if (pins.length) {

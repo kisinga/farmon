@@ -52,6 +52,7 @@ import type {
   DocEntry,
   DocDraft,
   SiteDiagrams,
+  BoardBundle,
 } from '../models/backend-api';
 
 /**
@@ -80,12 +81,14 @@ export class BackendService {
   async siteList(): Promise<SiteListEntry[]> {
     const records = await this.pb
       .collection('sites')
-      .getFullList({ sort: 'name' });
+      .getFullList({ sort: 'name', requestKey: 'sites:list' });
     // Provisioned-device counts per site (what the hosting cap measures — distinct
     // from the designed controllers in the topology). One scoped query, grouped here.
+    // Distinct requestKey from the device list so the two controller scans the
+    // Devices page fires in parallel don't auto-cancel each other.
     const devices = await this.pb
       .collection('controllers')
-      .getFullList({ fields: 'site' });
+      .getFullList({ fields: 'site', requestKey: 'controllers:counts' });
     const deviceCounts = new Map<string, number>();
     for (const d of devices) {
       const sid = d['site'] as string;
@@ -202,7 +205,7 @@ export class BackendService {
   async deviceList(): Promise<DeviceEntry[]> {
     const records = await this.pb
       .collection('controllers')
-      .getFullList({ sort: 'name', expand: 'site' });
+      .getFullList({ sort: 'name', expand: 'site', requestKey: 'controllers:list' });
     return records.map((r) => this.toDeviceEntry(r));
   }
 
@@ -212,6 +215,7 @@ export class BackendService {
       filter: this.pb.filter('site = {:s}', { s: siteId }),
       sort: 'name',
       expand: 'site',
+      requestKey: `controllers:by-site:${siteId}`,
     });
     return records.map((r) => this.toDeviceEntry(r));
   }
@@ -254,7 +258,7 @@ export class BackendService {
 
   /** Captured pricing enquiries, newest first (admin-only collection). */
   async leadList(): Promise<LeadEntry[]> {
-    const records = await this.pb.collection('leads').getFullList({ sort: '-created' });
+    const records = await this.pb.collection('leads').getFullList({ sort: '-created', requestKey: 'leads:list' });
     return records.map((r) => ({
       id: r['id'],
       name: (r['name'] ?? '') as string,
@@ -308,7 +312,7 @@ export class BackendService {
   async boardList(): Promise<BoardListEntry[]> {
     const records = await this.pb
       .collection('boards')
-      .getFullList({ sort: 'label' });
+      .getFullList({ sort: 'label', requestKey: 'boards:list' });
     return records.map((r) => ({
       id: r['id'],
       model: r['model'],
@@ -335,7 +339,7 @@ export class BackendService {
   async expansionCatalog(): Promise<ExpansionBoardCatalog> {
     const records = await this.pb
       .collection('boards')
-      .getFullList({ filter: this.pb.filter('kind = {:k}', { k: 'expansion' }) });
+      .getFullList({ filter: this.pb.filter('kind = {:k}', { k: 'expansion' }), requestKey: 'boards:expansion' });
     const catalog: ExpansionBoardCatalog = {};
     for (const r of records) {
       catalog[r['model']] = r['def'] as ExpansionBoardDef;
@@ -385,7 +389,7 @@ export class BackendService {
 
   /** All docs, ordered. */
   async docList(): Promise<DocEntry[]> {
-    const records = await this.pb.collection('docs').getFullList({ sort: 'order,slug' });
+    const records = await this.pb.collection('docs').getFullList({ sort: 'order,slug', requestKey: 'docs:list' });
     return records.map((r) => this.toDocEntry(r));
   }
 
@@ -410,7 +414,12 @@ export class BackendService {
   async loadSiteDiagrams(siteId: string): Promise<SiteDiagrams> {
     const r = await this.pb.collection('sites').getOne(siteId, { fields: 'doc_diagrams' });
     const d = (r['doc_diagrams'] ?? null) as Partial<SiteDiagrams> | null;
-    return { composite: d?.composite ?? '', controllers: d?.controllers ?? {}, topoHash: d?.topoHash };
+    return {
+      composite: d?.composite ?? '',
+      controllers: d?.controllers ?? {},
+      boardPinouts: d?.boardPinouts ?? {},
+      topoHash: d?.topoHash,
+    };
   }
 
   /** Cache the admin-rendered diagrams on the site (for the customer view),
@@ -435,7 +444,7 @@ export class BackendService {
     // published, drop them rather than show a diagram that no longer matches.
     if (!override?.diagrams) {
       const currentHash = await sha256Hex(JSON.stringify(topo));
-      if (diagrams.topoHash !== currentHash) diagrams = { composite: '', controllers: {} };
+      if (diagrams.topoHash !== currentHash) diagrams = { composite: '', controllers: {}, boardPinouts: {} };
     }
     const boards = await this.boardDefsForModels(new Set(topo.controllers.map((c) => c.board)));
     const docs = await this.docList();
@@ -453,10 +462,41 @@ export class BackendService {
   }
 
   /** Resolve `{ model → BoardDef }` for the given board models (skips any missing). */
-  private async boardDefsForModels(models: Set<string>): Promise<Record<string, BoardDef>> {
+  async boardDefsForModels(models: Set<string>): Promise<Record<string, BoardDef>> {
     const out: Record<string, BoardDef> = {};
     for (const model of models) {
       try { out[model] = (await this.boardLoad(model)).board; } catch { /* board not in catalog — skip */ }
+    }
+    return out;
+  }
+
+  /**
+   * Fetch a board's SVG diagram as raw markup. The catalog stores it as a
+   * protected file (collection ViewRule = authed), so we mint a short-lived file
+   * token and download it. Returns '' when the board has no diagram. The board
+   * def's own `svg` field is only the source filename, not the markup.
+   */
+  async boardSvg(model: string): Promise<string> {
+    try {
+      const r = await this.pb
+        .collection('boards')
+        .getFirstListItem(this.pb.filter('model = {:m}', { m: model }));
+      if (!r['svg']) return '';
+      const token = await this.pb.files.getToken();
+      const res = await fetch(this.pb.files.getURL(r, r['svg'] as string, { token }));
+      if (!res.ok) return '';
+      const text = await res.text();
+      return text.includes('<svg') ? text : '';
+    } catch { return ''; }
+  }
+
+  /** `{ model → { def, svg } }` with each board's SVG fetched as raw markup, for pinout rendering. */
+  async boardBundles(models: Set<string>): Promise<Record<string, BoardBundle>> {
+    const out: Record<string, BoardBundle> = {};
+    for (const model of models) {
+      try {
+        out[model] = { def: (await this.boardLoad(model)).board, svg: await this.boardSvg(model) };
+      } catch { /* board not in catalog — skip */ }
     }
     return out;
   }
@@ -633,6 +673,7 @@ export class BackendService {
     const records = await this.pb.collection('topology_versions').getFullList({
       filter: this.pb.filter('site = {:s}', { s: siteId }),
       sort: '-version',
+      requestKey: `versions:${siteId}`,
     });
     return records.map((r) => ({
       id: r['id'],
@@ -799,7 +840,7 @@ export class BackendService {
    */
   private async boardVersions(models: Set<string>): Promise<Record<string, number>> {
     if (models.size === 0) return {};
-    const all = await this.pb.collection('boards').getFullList();
+    const all = await this.pb.collection('boards').getFullList({ requestKey: 'boards:versions' });
     const out: Record<string, number> = {};
     for (const r of all) {
       if (models.has(r['model'])) out[r['model']] = (r['version'] as number) ?? 0;
@@ -811,6 +852,7 @@ export class BackendService {
     const list = await this.pb.collection('topology_versions').getList(1, 1, {
       filter: this.pb.filter('site = {:s}', { s: siteId }),
       sort: '-version',
+      requestKey: `versions:latest:${siteId}`,
     });
     return list.items[0];
   }

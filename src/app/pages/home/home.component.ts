@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { BackendService } from '../../core/services/backend.service';
+import { SitesStore } from '../../core/stores/sites.store';
 import { AuthStore } from '../../core/services/auth.store';
 import type { SiteListEntry } from '../../core/models/backend-api';
 
@@ -71,7 +71,7 @@ function initials(name: string): string {
 })
 export class HomeComponent {
   private auth = inject(AuthStore);
-  private backend = inject(BackendService);
+  private sitesStore = inject(SitesStore);
   private router = inject(Router);
 
   protected loading = signal(true);
@@ -91,7 +91,7 @@ export class HomeComponent {
 
   private async load(): Promise<void> {
     try {
-      const sites = await this.backend.siteList();
+      const sites = await this.sitesStore.ensureLoaded();
       if (sites.length === 1) {
         void this.router.navigate(['/site', sites[0].id, 'dashboard']);
         return;

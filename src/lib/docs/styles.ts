@@ -70,6 +70,8 @@ tr:hover { background: var(--brand-light); }
 }
 .diagram.topology { margin: 12px 0; max-width: 100%; }
 .diagram.topology svg { display: block; width: 100%; height: auto; max-width: 100%; margin: 0 auto; }
+.diagram.pinout { margin: 12px 0; max-width: 100%; }
+.diagram.pinout svg { display: block; width: 100%; height: auto; max-width: 820px; margin: 0 auto; }
 ul, ol { padding-left: 20px; margin: 8px 0; }
 li { margin: 4px 0; }
 p { margin: 6px 0; }

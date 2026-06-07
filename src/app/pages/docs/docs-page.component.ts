@@ -1,7 +1,7 @@
 import { Component, computed, effect, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { unknownSlots, vocabFor, ALL_DESCRIPTORS, type DocScope } from '@core';
-import { BackendService } from '../../core/services/backend.service';
+import { DocsStore } from '../../core/stores/docs.store';
 import type { DocEntry } from '../../core/models/backend-api';
 
 const CATEGORIES = ['narrative', 'node', 'wiring', 'glossary'] as const;
@@ -154,7 +154,7 @@ const CAT_COLOR: Record<string, string> = {
   `],
 })
 export class DocsPageComponent implements OnInit {
-  private backend = inject(BackendService);
+  private docsStore = inject(DocsStore);
 
   protected readonly categories = CATEGORIES;
   /** Literal `{{slot}}` for the body hint (kept out of Angular interpolation). */
@@ -166,7 +166,7 @@ export class DocsPageComponent implements OnInit {
   protected saved = signal(false);
   protected error = signal<string | null>(null);
 
-  protected docs = signal<DocEntry[]>([]);
+  protected docs = computed(() => this.docsStore.list());
   protected selectedId = signal<string | null>(null);
 
   protected title = signal('');
@@ -202,15 +202,12 @@ export class DocsPageComponent implements OnInit {
   }
 
   async ngOnInit() {
-    await this.reload();
-    this.loading.set(false);
-  }
-
-  private async reload() {
     try {
-      this.docs.set(await this.backend.docList());
+      await this.docsStore.ensureLoaded();
     } catch (err) {
       this.error.set(String(err));
+    } finally {
+      this.loading.set(false);
     }
   }
 
@@ -252,13 +249,12 @@ export class DocsPageComponent implements OnInit {
     try {
       const id = this.selectedId();
       if (id) {
-        await this.backend.docSave(id, draft);
+        await this.docsStore.save(id, draft);
       } else {
-        const r = await this.backend.docCreate(draft);
+        const r = await this.docsStore.create(draft);
         this.selectedId.set(r.id);
       }
       this.saved.set(true);
-      await this.reload();
     } catch (err) {
       this.error.set(String(err));
     } finally {
@@ -272,9 +268,8 @@ export class DocsPageComponent implements OnInit {
     this.saving.set(true);
     this.error.set(null);
     try {
-      await this.backend.docDelete(id);
+      await this.docsStore.delete(id);
       this.newDoc();
-      await this.reload();
     } catch (err) {
       this.error.set(String(err));
     } finally {

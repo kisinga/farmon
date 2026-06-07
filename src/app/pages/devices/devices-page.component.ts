@@ -1,6 +1,8 @@
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { BackendService } from '../../core/services/backend.service';
+import { ConfigStore } from '../../core/stores/config.store';
+import { SitesStore } from '../../core/stores/sites.store';
+import { DevicesStore } from '../../core/stores/devices.store';
 import { ConfirmService } from '../../core/services/confirm.service';
 import type { DeviceEntry } from '../../core/models/backend-api';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
@@ -117,11 +119,13 @@ interface DeviceGroup {
   `,
 })
 export class DevicesPageComponent implements OnInit {
-  private backend = inject(BackendService);
+  private configStore = inject(ConfigStore);
+  private sitesStore = inject(SitesStore);
+  private devicesStore = inject(DevicesStore);
   private confirmService = inject(ConfirmService);
   private router = inject(Router);
 
-  protected devices = signal<DeviceEntry[]>([]);
+  protected devices = computed(() => this.devicesStore.list());
   protected cap = signal(0);
   protected loading = signal(true);
   protected renamingId = signal<string | null>(null);
@@ -153,13 +157,12 @@ export class DevicesPageComponent implements OnInit {
 
   private async refresh() {
     this.loading.set(true);
-    const [devices, sites, config] = await Promise.all([
-      this.backend.deviceList(),
-      this.backend.siteList(),
-      this.backend.getConfig(),
+    const [, sites] = await Promise.all([
+      this.devicesStore.ensureLoaded(),
+      this.sitesStore.ensureLoaded(),
+      this.configStore.ensureLoaded(),
     ]);
-    this.devices.set(devices);
-    this.cap.set(config.hostingDeviceCap);
+    this.cap.set(this.configStore.cap());
     this.siteMode.set(new Map(sites.map((s) => [s.id, s.mode !== 'local'])));
     this.loading.set(false);
   }
@@ -185,8 +188,7 @@ export class DevicesPageComponent implements OnInit {
   protected async confirmRename(id: string, event: Event): Promise<void> {
     const name = (event.target as HTMLInputElement).value.trim();
     if (name) {
-      await this.backend.deviceRename(id, name);
-      await this.refresh();
+      await this.devicesStore.rename(id, name);
     }
     this.renamingId.set(null);
   }
@@ -200,7 +202,6 @@ export class DevicesPageComponent implements OnInit {
         `regenerating firmware re-registers it.`,
     });
     if (!confirmed) return;
-    await this.backend.deviceDeregister(d.id);
-    await this.refresh();
+    await this.devicesStore.deregister(d.id);
   }
 }

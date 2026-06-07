@@ -104,9 +104,20 @@ export interface DocDraft {
  * plus one per controller id. Rendered in the admin browser (X6) and stored on
  * the site so the customer dashboard renders docs without loading X6.
  */
+/** A board definition paired with its SVG diagram as raw markup (the catalog
+ *  stores the SVG as a protected file, fetched and inlined for rendering). */
+export interface BoardBundle {
+  def: BoardDef;
+  /** Raw `<svg>` markup, or '' when the board has no diagram. */
+  svg: string;
+}
+
 export interface SiteDiagrams {
   composite: string;
   controllers: Record<string, string>;
+  /** Per-controller board pinout SVGs: the physical board with connected-pin
+   *  callout labels baked in. Keyed by controller id. */
+  boardPinouts: Record<string, string>;
   /** Hash of the topology these were rendered from — lets the customer path
    *  detect a stale cache (topology edited but diagrams not re-published). */
   topoHash?: string;

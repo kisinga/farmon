@@ -183,7 +183,7 @@ export class EditorComponent implements OnInit, OnDestroy {
 
   private async focusController(systemId: string, preview: boolean) {
     this.editor.focus(systemId, { readonly: preview });
-    await this.boards.refresh();
+    await this.boards.ensureLoaded();
     const device = this.editor.controllerDevice();
     if (device) {
       await this.boards.load(device.board);

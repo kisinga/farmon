@@ -50,6 +50,7 @@ export class RealtimeService {
     const res = await this.pb.collection('state_events').getList(1, limit, {
       filter: this.pb.filter('site = {:s}', { s: siteId }),
       sort: '-ts',
+      requestKey: `events:${siteId}`,
     });
     return res.items.map(toEvent);
   }
@@ -58,6 +59,7 @@ export class RealtimeService {
   async controllers(siteId: string): Promise<ControllerRow[]> {
     const items = await this.pb.collection('controllers').getFullList({
       filter: this.pb.filter('site = {:s}', { s: siteId }),
+      requestKey: `controllers:presence:${siteId}`,
     });
     return items.map(toController);
   }

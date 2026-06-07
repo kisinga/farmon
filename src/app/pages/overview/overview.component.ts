@@ -1,6 +1,8 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { BackendService } from '../../core/services/backend.service';
+import { ConfigStore } from '../../core/stores/config.store';
+import { SitesStore } from '../../core/stores/sites.store';
 import { ConfirmService } from '../../core/services/confirm.service';
 import type { SiteListEntry } from '../../core/models/backend-api';
 import { HOSTING_DEVICE_CAP } from '@core';
@@ -191,10 +193,12 @@ function initials(name: string): string {
 })
 export class OverviewComponent implements OnInit {
   private backend = inject(BackendService);
+  private configStore = inject(ConfigStore);
+  private sitesStore = inject(SitesStore);
   private router = inject(Router);
   private confirmService = inject(ConfirmService);
 
-  protected entries = signal<SiteListEntry[]>([]);
+  protected entries = computed(() => this.sitesStore.list());
   protected loading = signal(true);
   protected showCreate = signal(false);
   protected renamingId = signal<string | null>(null);
@@ -207,12 +211,11 @@ export class OverviewComponent implements OnInit {
 
   private async refresh() {
     this.loading.set(true);
-    const [entries, config] = await Promise.all([
-      this.backend.siteList(),
-      this.backend.getConfig(),
+    await Promise.all([
+      this.sitesStore.ensureLoaded(),
+      this.configStore.ensureLoaded(),
     ]);
-    this.entries.set(entries);
-    this.cap.set(config.hostingDeviceCap);
+    this.cap.set(this.configStore.cap());
     this.loading.set(false);
   }
 
@@ -271,8 +274,7 @@ export class OverviewComponent implements OnInit {
   protected async createSite(friendlyName: string): Promise<void> {
     if (!friendlyName.trim()) return;
     const slug = friendlyName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const { id } = await this.backend.siteCreate(slug, friendlyName.trim());
-    await this.refresh();
+    const { id } = await this.sitesStore.create(slug, friendlyName.trim());
     this.showCreate.set(false);
     this.router.navigate(['/site', id]);
   }
@@ -287,8 +289,7 @@ export class OverviewComponent implements OnInit {
     const input = event.target as HTMLInputElement;
     const newName = input.value.trim();
     if (newName) {
-      await this.backend.siteRename(id, newName);
-      await this.refresh();
+      await this.sitesStore.rename(id, newName);
     }
     this.renamingId.set(null);
   }
@@ -313,8 +314,7 @@ export class OverviewComponent implements OnInit {
     if (!file) return;
     try {
       const text = await file.text();
-      const { id } = await this.backend.siteImport(text);
-      await this.refresh();
+      const { id } = await this.sitesStore.import(text);
       this.router.navigate(['/site', id]);
     } catch (err) {
       console.error('Site import failed:', err);
@@ -331,7 +331,6 @@ export class OverviewComponent implements OnInit {
       message: `Delete "${name}"? All controllers and links in this site will be permanently removed.`,
     });
     if (!confirmed) return;
-    await this.backend.siteDelete(id);
-    await this.refresh();
+    await this.sitesStore.delete(id);
   }
 }

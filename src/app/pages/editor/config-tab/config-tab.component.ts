@@ -124,7 +124,7 @@ const TIMING_FIELDS: TimingField[] = [
                   <app-board-svg
                     [board]="editor.board()"
                     [svgContent]="boards.activeSvg()"
-                    [usedPins]="editor.usedPins()"
+                    [usages]="editor.activePinUsages()"
                   />
                 </div>
               }

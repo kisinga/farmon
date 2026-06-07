@@ -10,6 +10,8 @@ import type { FieldDef } from './entity-registry';
 export interface PinUsage {
   pin: string;
   nodeId: string;
+  /** Node kind (e.g. 'valve', 'pump') — drives entity colour for pinout callouts. */
+  kind: TopologyNode['kind'];
   /** User-facing node name (e.g. "Tank 1 outlet"). Falls back to nodeId for nameless nodes. */
   nodeName: string;
   /** Entity-kind label from the descriptor (e.g. "Valve", "Flow Sensor"). */
@@ -62,6 +64,7 @@ export function collectPins(nodes: TopologyNode[]): PinUsage[] {
         result.push({
           pin: value,
           nodeId: node.id,
+          kind: node.kind,
           nodeName,
           typeLabel: desc.label,
           fieldKey: field.key,

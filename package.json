@@ -13,6 +13,7 @@
     "test:entity-coverage": "npx tsx test/entity-id-coverage.test.ts",
     "test:selftest": "npx tsx test/selftest-codegen.test.ts",
     "test:docs": "npx tsx test/docs-vars.test.ts",
+    "test:pinout": "npx tsx test/board-pinout.test.ts",
     "docs:build": "npx tsx scripts/docs-build.ts",
     "docs:check": "npm run docs:build && git diff --exit-code docs/"
   },

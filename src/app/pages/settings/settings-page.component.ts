@@ -1,5 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
-import { BackendService } from '../../core/services/backend.service';
+import { ConfigStore } from '../../core/stores/config.store';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
 
 /**
@@ -50,7 +50,7 @@ import { SectionHeaderComponent } from '../editor/shared/section-header.componen
   `,
 })
 export class SettingsPageComponent implements OnInit {
-  private backend = inject(BackendService);
+  private config = inject(ConfigStore);
 
   protected loading = signal(true);
   protected saving = signal(false);
@@ -61,7 +61,7 @@ export class SettingsPageComponent implements OnInit {
 
   async ngOnInit() {
     try {
-      const cfg = await this.backend.configForEdit();
+      const cfg = await this.config.loadForEdit();
       this.recordId = cfg.id;
       this.cap.set(cfg.hostingDeviceCap);
     } catch (err) {
@@ -77,7 +77,7 @@ export class SettingsPageComponent implements OnInit {
     this.saved.set(false);
     this.error.set(null);
     try {
-      await this.backend.configSave(this.recordId, { hostingDeviceCap: this.cap() });
+      await this.config.save(this.recordId, { hostingDeviceCap: this.cap() });
       this.saved.set(true);
     } catch (err) {
       this.error.set(String(err));

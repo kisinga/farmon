@@ -2,6 +2,7 @@ import { Component, inject, signal, computed, effect } from '@angular/core';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { SystemEditorService } from '../../core/services/system-editor.service';
 import { BackendService } from '../../core/services/backend.service';
+import { DevicesStore } from '../../core/stores/devices.store';
 import { TopologyDiagramService } from '../../core/services/topology-diagram.service';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
 import type { DeviceEntry } from '../../core/models/backend-api';
@@ -29,7 +30,8 @@ function relTime(iso: string): string {
 /**
  * Firmware section. Generates the ESPHome bundle for the controller currently
  * selected in the workspace sub-header (the one switcher) — no local controller
- * picker. Auto-generates on entry and whenever the active controller changes.
+ * picker. Generation is a deliberate button press: it re-provisions the device
+ * (bakes its credentials), so it must not fire just from opening the page.
  */
 @Component({
   selector: 'app-deploy-page',
@@ -73,9 +75,10 @@ function relTime(iso: string): string {
           }
 
           <p class="text-xs text-base-content/50 mt-3 leading-relaxed border-t border-base-300/30 pt-3">
-            Generating firmware <span class="text-base-content/70">(re)provisions</span> this device: it rotates the
-            per-controller MQTT token and bakes it with a stable OTA password into
+            Generating firmware <span class="text-base-content/70">(re)provisions</span> this device: it bakes the
+            controller's stable MQTT token and OTA password into
             <code class="text-[10px] px-1 py-0.5 rounded bg-base-200">secrets.yaml</code>.
+            These stay the same across rebuilds, so a flashed device keeps connecting.
             <span class="text-base-content/40">Wi-Fi is not stored here:</span> set it on the device's
             setup page (captive portal or Improv) after flashing — it lives in the device's own flash.
           </p>
@@ -172,6 +175,7 @@ export class DeployPageComponent {
   private workspace = inject(WorkspaceService);
   private editor = inject(SystemEditorService);
   private backend = inject(BackendService);
+  private devicesStore = inject(DevicesStore);
   private diagrams = inject(TopologyDiagramService);
 
   /** The controller selected in the sub-header — the one switcher. */
@@ -202,7 +206,8 @@ export class DeployPageComponent {
     this.docError.set(null);
     try {
       const topo = await this.backend.siteTopology(siteId);
-      const diagrams = await this.diagrams.renderSiteDiagrams(topo);
+      const boards = await this.backend.boardBundles(new Set(topo.controllers.map((c) => c.board)));
+      const diagrams = await this.diagrams.renderSiteDiagrams(topo, boards);
       await this.backend.saveSiteDiagrams(siteId, topo, diagrams);
       const html = await this.backend.buildSiteDoc(siteId, { diagrams });
       const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
@@ -216,7 +221,9 @@ export class DeployPageComponent {
   }
 
   constructor() {
-    // Auto-generate on entry and whenever the active controller changes.
+    // On controller switch: reset the panel and refresh the (read-only)
+    // registration status. Generation is NOT auto-run — it re-provisions the
+    // device (bakes credentials), so it stays a deliberate button press.
     let lastId: string | null = null;
     effect(() => {
       const id = this.controllerId();
@@ -227,7 +234,6 @@ export class DeployPageComponent {
         this.downloadUrl.set(null);
         this.device.set(null);
         void this.loadDevice();
-        void this.generate();
       }
     });
   }
@@ -239,7 +245,7 @@ export class DeployPageComponent {
   private async loadDevice() {
     const id = this.controllerId();
     if (!id) return;
-    this.device.set(await this.backend.deviceStatus(id));
+    this.device.set(await this.devicesStore.status(id));
   }
 
   async generate() {
@@ -255,6 +261,7 @@ export class DeployPageComponent {
       this.fwFiles.set(result.files);
       this.downloadUrl.set(result.downloadUrl);
       void this.loadDevice(); // generation registers/updates the device row
+      this.devicesStore.invalidateAfterProvision(); // fleet list + site counts changed
 
     } catch (err) {
       this.fwError.set(String(err));

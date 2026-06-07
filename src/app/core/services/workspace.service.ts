@@ -1,5 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { BackendService } from './backend.service';
+import { BoardService } from './board.service';
+import { SitesStore } from '../stores/sites.store';
 import type {
   BoardDef, TopologyGraph, Route,
   TopologyNode, PipeSegment, RouteOverride,
@@ -108,7 +110,11 @@ export class WorkspaceService {
 
   private _autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private backend: BackendService) {}
+  constructor(
+    private backend: BackendService,
+    private boardCatalog: BoardService,
+    private sites: SitesStore,
+  ) {}
 
   /** Mark dirty and schedule debounced autosave. Called by every mutation. */
   private _markDirty(controllerId?: string): void {
@@ -165,7 +171,7 @@ export class WorkspaceService {
         const boards = new Map<string, BoardDef>();
         for (const ctrl of topology.controllers) {
           try {
-            const boardResult = await this.backend.boardLoad(ctrl.board);
+            const boardResult = await this.boardCatalog.loadResult(ctrl.board);
             boards.set(ctrl.id, boardResult.board as BoardDef);
           } catch (err) {
             console.error(`[Workspace] Failed to load board "${ctrl.board}" for controller "${ctrl.id}":`, err);
@@ -350,7 +356,7 @@ export class WorkspaceService {
     const controller = await this.backend.systemCreateBlank(site.id, friendlyName ?? 'New Controller', 'kc868-a16');
 
     // Load board for the new controller
-    const boardResult = await this.backend.boardLoad(controller.board);
+    const boardResult = await this.boardCatalog.loadResult(controller.board);
     const board = boardResult.board as BoardDef;
 
     const topology = this._siteTopology();
@@ -376,7 +382,7 @@ export class WorkspaceService {
     const controller = await this.backend.systemCreateBlank(site.id, friendlyName, boardModel);
 
     // Load board for the new controller
-    const boardResult = await this.backend.boardLoad(controller.board);
+    const boardResult = await this.boardCatalog.loadResult(controller.board);
     const board = boardResult.board as BoardDef;
 
     const topology = this._siteTopology();
@@ -484,6 +490,8 @@ export class WorkspaceService {
     };
 
     await this.backend.siteSave(payload);
+    // Topology counts (controllers/nodes) on the cached site list are now stale.
+    this.sites.invalidate();
 
     // Only clear dirty if state hasn't changed since we started saving.
     // This prevents races where a mutation happens during the async save.

@@ -257,18 +257,23 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		return e.JSON(http.StatusOK, map[string]any{"command_id": commandID})
 	})
 
-	// POST /provision {site, controller, name?, board_type?} — mint a fresh MQTT
-	// token for a controller and (re)register it in the controllers collection
-	// with the token's bcrypt hash, returning the raw token once so the firmware
-	// generator can bake it into this build's secrets.yaml. Identity is baked at
-	// generation; the server keeps only the hash. The broker then authenticates
-	// the device by username == controller (== device_id) against that hash.
+	// POST /provision {site, controller, name?, board_type?, rotate?} — (re)register
+	// a controller in the controllers collection and return its MQTT token (raw),
+	// OTA password and site UDP key so the firmware generator can bake them into
+	// this build's secrets.yaml. The MQTT token is stable: minted once at first
+	// provision and reused on later builds (rotate=true forces a new one); the
+	// broker authenticates the device by username == controller (== device_id)
+	// against the token's bcrypt hash, kept in lockstep with the raw value.
 	g.POST("/provision", func(e *core.RequestEvent) error {
 		var body struct {
 			Site       string `json:"site"`
 			Controller string `json:"controller"`
 			Name       string `json:"name"`
 			BoardType  string `json:"board_type"`
+			// Rotate forces a fresh MQTT token even when one already exists (the
+			// deliberate "I want new credentials" path). Default false: a normal
+			// build reuses the stored token so a flashed device keeps connecting.
+			Rotate bool `json:"rotate"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return apis.NewBadRequestError("invalid body", err)
@@ -331,14 +336,23 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			rec.Set("device_id", body.Controller)
 		}
 
-		// MQTT token: minted fresh each build; only its bcrypt hash is stored.
-		token, err := auth.GenerateToken()
-		if err != nil {
-			return apis.NewApiError(http.StatusInternalServerError, "failed to mint token", err)
-		}
-		hash, err := auth.HashToken(token)
-		if err != nil {
-			return apis.NewApiError(http.StatusInternalServerError, "failed to hash token", err)
+		// MQTT token: stable across rebuilds. The broker authenticates a device by
+		// the password it was flashed with, so re-minting on every build would lock
+		// out an already-flashed device. Like the OTA password, we generate it once
+		// at first provision, store it raw (+ its bcrypt hash for the broker), and
+		// reuse it on later builds; an explicit `rotate` mints a new one.
+		token := rec.GetString("mqtt_token")
+		if token == "" || body.Rotate {
+			token, err = auth.GenerateToken()
+			if err != nil {
+				return apis.NewApiError(http.StatusInternalServerError, "failed to mint token", err)
+			}
+			hash, herr := auth.HashToken(token)
+			if herr != nil {
+				return apis.NewApiError(http.StatusInternalServerError, "failed to hash token", herr)
+			}
+			rec.Set("mqtt_token", token)
+			rec.Set("token_hash", hash)
 		}
 
 		// OTA password: generated once and reused. It must stay stable across
@@ -360,7 +374,6 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		if body.BoardType != "" {
 			rec.Set("board_type", body.BoardType)
 		}
-		rec.Set("token_hash", hash)
 		rec.Set("ota_password", otaPassword)
 		if err := e.App.Save(rec); err != nil {
 			return apis.NewApiError(http.StatusInternalServerError, "failed to register controller", err)

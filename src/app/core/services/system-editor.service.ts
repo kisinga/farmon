@@ -135,6 +135,14 @@ export class SystemEditorService {
     return map;
   });
 
+  /** Pin usages (with node kind) for the ACTIVE controller — drives the board pinout callouts. */
+  readonly activePinUsages = computed(() => {
+    const cid = this.controllerId();
+    const topology = this.workspace.siteTopology();
+    if (!cid || !topology) return [];
+    return collectPins(topology.nodes.filter(n => n.anchorId === cid));
+  });
+
   /** Pins used by nodes belonging to a SPECIFIC controller only. */
   usedPinsForController(controllerId: string): Map<string, string> {
     const topology = this.workspace.siteTopology();

@@ -1,5 +1,6 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
-import { BackendService } from '../../core/services/backend.service';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { BoardService } from '../../core/services/board.service';
+import { AuthStore } from '../../core/services/auth.store';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
 
 type BoardKind = 'main' | 'expansion';
@@ -13,7 +14,7 @@ type BoardKind = 'main' | 'expansion';
     <div class="content-pane space-y-6">
       <div class="flex items-start justify-between gap-4 flex-wrap">
         <app-section-header title="Boards" subtitle="Supported controller boards and expansions." />
-        @if (backend.isAdmin) {
+        @if (auth.isAdmin()) {
           <button class="btn btn-sm rounded-full border-0 bg-cyan-400 text-slate-950 hover:bg-cyan-300 shrink-0" (click)="toggleImport()">
             {{ showImport() ? 'Cancel' : 'Import board' }}
           </button>
@@ -83,8 +84,11 @@ type BoardKind = 'main' | 'expansion';
   `,
 })
 export class BoardsPageComponent implements OnInit {
-  protected backend = inject(BackendService);
-  boards = signal<Array<{ model: string; label: string }>>([]);
+  protected auth = inject(AuthStore);
+  private boardCatalog = inject(BoardService);
+  protected boards = computed(() =>
+    this.boardCatalog.boards().map((b) => ({ model: b.model, label: b.label })),
+  );
 
   protected showImport = signal(false);
   protected kind = signal<BoardKind>('expansion');
@@ -94,12 +98,7 @@ export class BoardsPageComponent implements OnInit {
   private svgFile: File | null = null;
 
   async ngOnInit() {
-    await this.refresh();
-  }
-
-  private async refresh() {
-    const list = await this.backend.boardList();
-    this.boards.set(list.map((b) => ({ model: b.model, label: b.label })));
+    await this.boardCatalog.ensureLoaded();
   }
 
   protected toggleImport() {
@@ -120,12 +119,11 @@ export class BoardsPageComponent implements OnInit {
     this.importing.set(true);
     this.error.set(null);
     try {
-      await this.backend.boardImport(
+      await this.boardCatalog.importBoard(
         this.defText(),
         this.kind(),
         this.svgFile ?? undefined,
       );
-      await this.refresh();
       this.showImport.set(false);
       this.defText.set('');
       this.svgFile = null;

@@ -1,5 +1,5 @@
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
-import { BackendService } from '../../core/services/backend.service';
+import { LeadsStore } from '../../core/stores/leads.store';
 import { ConfirmService } from '../../core/services/confirm.service';
 import type { LeadEntry } from '../../core/models/backend-api';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
@@ -85,11 +85,11 @@ const STATUSES = ['new', 'contacted', 'closed'] as const;
   `,
 })
 export class LeadsPageComponent implements OnInit {
-  private backend = inject(BackendService);
+  private leadsStore = inject(LeadsStore);
   private confirmService = inject(ConfirmService);
 
   protected readonly statuses = STATUSES;
-  protected leads = signal<LeadEntry[]>([]);
+  protected leads = computed(() => this.leadsStore.list());
   protected loading = signal(true);
 
   protected subtitle = computed(() => {
@@ -105,7 +105,7 @@ export class LeadsPageComponent implements OnInit {
 
   private async refresh() {
     this.loading.set(true);
-    this.leads.set(await this.backend.leadList());
+    await this.leadsStore.ensureLoaded();
     this.loading.set(false);
   }
 
@@ -129,8 +129,7 @@ export class LeadsPageComponent implements OnInit {
   }
 
   protected async setStatus(l: LeadEntry, status: string): Promise<void> {
-    await this.backend.leadSetStatus(l.id, status);
-    await this.refresh();
+    await this.leadsStore.setStatus(l.id, status);
   }
 
   protected async remove(l: LeadEntry): Promise<void> {
@@ -139,7 +138,6 @@ export class LeadsPageComponent implements OnInit {
       message: `Delete the enquiry from "${l.name}"? This cannot be undone.`,
     });
     if (!confirmed) return;
-    await this.backend.leadDelete(l.id);
-    await this.refresh();
+    await this.leadsStore.delete(l.id);
   }
 }
