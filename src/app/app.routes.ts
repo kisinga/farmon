@@ -47,6 +47,30 @@ export const routes: Routes = [
       import('./pages/boards/boards-page.component').then((m) => m.BoardsPageComponent),
   },
   {
+    // Admin: registered-device fleet (the provisioning registry).
+    path: 'devices',
+    canActivate: [roleGuard],
+    data: ADMIN,
+    loadComponent: () =>
+      import('./pages/devices/devices-page.component').then((m) => m.DevicesPageComponent),
+  },
+  {
+    // Admin: captured pricing-estimator leads.
+    path: 'leads',
+    canActivate: [roleGuard],
+    data: ADMIN,
+    loadComponent: () =>
+      import('./pages/leads/leads-page.component').then((m) => m.LeadsPageComponent),
+  },
+  {
+    // Admin: global platform settings (app_config).
+    path: 'settings',
+    canActivate: [roleGuard],
+    data: ADMIN,
+    loadComponent: () =>
+      import('./pages/settings/settings-page.component').then((m) => m.SettingsPageComponent),
+  },
+  {
     // Customer + admin: the site dashboard (separate component — runtime state
     // only, no editor services). Declared before the editor's `site/:name` so
     // the more specific path wins.

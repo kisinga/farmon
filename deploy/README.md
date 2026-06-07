@@ -1,202 +1,147 @@
 # MajiFlow — Deployment Guide
 
-Deploy the MajiFlow infrastructure stack on a Raspberry Pi: Home Assistant, ChirpStack, ESPHome, and MQTT — everything needed to run MajiFlow-generated firmware in production.
+MajiFlow runs as **one container**: a single Go binary (`maji-server`) that is
 
----
+- **PocketBase-as-library** — SQLite database, auth, file storage, and it serves the built
+  Angular SPA + the `/api/farmon` REST API + the `/_/` admin dashboard, all on one HTTP port, and
+- an **embedded MQTT broker** (Mochi) that devices connect to.
 
-## Hardware Requirements
-
-| Component | Recommendation | Why |
-|-----------|---------------|-----|
-| **Single-board computer** | Raspberry Pi 4 (4 GB) or Pi 5 | Best balance of cost, power, and community support |
-| **Storage** | USB SSD (Kingston A400, Samsung T7, or similar) | SD cards fail within 12 months from HA's constant database writes |
-| **Power supply** | Official 15 W USB-C PSU | Cheap chargers cause brown-outs → data corruption and system crashes |
-| **LoRa gateway** (optional) | SX1302 concentrator HAT | Required only if using ChirpStack for LoRaWAN devices |
-
----
-
-## Prerequisites
-
-- **Raspberry Pi OS 64-bit** (Bookworm)
-- **Docker + Docker Compose** installed
-- **Concentratord** installed as a systemd service (only if using SX1302 HAT)
-- **Tailscale** installed at OS level (not containerised)
-
----
-
-## Stack Architecture
+There is no separate database, broker, Home Assistant, or ChirpStack to run — the old multi-service
+Raspberry-Pi stack is gone.
 
 ```
-                         Internet
-                            │
-                   Cloudflare Tunnel (HTTPS)
-                            │
-┌───────────────────────────┼───────────────────────────┐
-│  Raspberry Pi             │                           │
-│                           │                           │
-│   ┌───────────────────────┼──────────────────────┐    │
-│   │  Docker Compose                              │    │
-│   │                                              │    │
-│   │   Home Assistant (:8123)  ◄──── MQTT ────►   │    │
-│   │   ESPHome (:6052)           Mosquitto        │    │
-│   │                            (:1883 / :9001)   │    │
-│   │   ChirpStack (:8080)  ◄──── MQTT ────►      │    │
-│   │     ├── PostgreSQL                           │    │
-│   │     └── Redis                                │    │
-│   │   Gateway Bridge (:1700/udp)                 │    │
-│   └──────────────────────────────────────────────┘    │
-│                                                       │
-│   Concentratord (systemd) ◄── SX1302 HAT              │
-│   Tailscale (subnet router)                           │
-└───────────────────────────────────────────────────────┘
+                 Internet
+                    │
+            Coolify (HTTPS, :443)            devices ──► MQTT
+                    │                          1883 (plain) / 8883 (TLS)
+        ┌───────────┼──────────────────────────────┼─────────┐
+        │  maji-server container                    │         │
+        │   HTTP :8090  (SPA + /api + /_/)  ◄────────┘         │
+        │   embedded MQTT broker                                │
+        │   volume → /pb_data (SQLite + files + logs + backups) │
+        └──────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Services
-
-### Mosquitto (MQTT Broker)
-
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 1883 | MQTT | Device communication |
-| 9001 | WebSocket | Browser-based MQTT clients |
-
-- **Config**: `config/mosquitto/mosquitto.conf`
-- **Security**: Anonymous access is enabled by default. For production, add authentication:
-  ```bash
-  docker exec mosquitto mosquitto_passwd -c /mosquitto/config/passwd <username>
-  ```
-  Then update `mosquitto.conf`:
-  ```
-  allow_anonymous false
-  password_file /mosquitto/config/passwd
-  ```
-
-### PostgreSQL
-
-ChirpStack's database. Not exposed outside Docker.
-
-- **Default credentials**: `chirpstack` / `chirpstack` (override via `CHIRPSTACK_DB_PASSWORD` env var)
-- Health check configured — ChirpStack waits for readiness before starting
-
-### Redis
-
-ChirpStack's session and cache store. Not exposed outside Docker. Health check configured.
-
-### ChirpStack (LoRaWAN Network Server)
-
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 8080 | HTTP | Web UI + REST API |
-| 8000 | gRPC | Programmatic API (optional) |
-
-- **Config**: `config/chirpstack/chirpstack.toml`
-- **IMPORTANT**: Replace the default API secret (`you-must-replace-this-with-a-secure-secret`) before production use
-- **Enabled regions**: `eu868`, `us915_0`, `au915_0` — edit `chirpstack.toml` to match your region
-- **Default login**: `admin` / `admin` — change immediately on first run
-
-### ChirpStack Gateway Bridge
-
-Translates Concentratord / Semtech UDP packet forwarder messages into MQTT for ChirpStack.
-
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 1700 | UDP | Semtech packet forwarder |
-
-- **Config**: `config/chirpstack-gateway-bridge/chirpstack-gateway-bridge.toml`
-
-### Home Assistant
-
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 8123 | HTTP | Web UI + API |
-
-- Runs with `network_mode: host` (required for mDNS, USB, Bluetooth discovery)
-- Runs as `privileged: true` (required for hardware access)
-- **Config directory**: `config/homeassistant/`
-
-### ESPHome
-
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 6052 | HTTP | Dashboard + OTA management |
-
-- Runs with `network_mode: host` (required for mDNS discovery and USB flashing)
-- Runs as `privileged: true` (required for USB serial access)
-- **Config directory**: `config/esphome/`
-
----
-
-## First Run
+## Quick start (local)
 
 ```bash
-docker compose up -d
+cp .env.example .env      # then edit .env (see Configuration)
+docker compose up --build
 ```
 
-1. **Home Assistant** — open `http://<pi-ip>:8123`, create admin account
-2. **ChirpStack** — open `http://<pi-ip>:8080`, log in as `admin`/`admin`, change password
-3. **MQTT integration** — in HA, add the MQTT integration pointing to `localhost:1883`
-4. **ChirpStack MQTT** — in HA, add the ChirpStack MQTT integration to receive LoRaWAN device data
-5. **ESPHome** — open `http://<pi-ip>:6052` or install the ESPHome add-on in HA
+Open `http://localhost:8090` and log in with `MAJI_ADMIN_EMAIL` / `MAJI_ADMIN_PASSWORD`.
+
+> The image is built from the repo-root `Dockerfile` (multi-stage: builds the Angular SPA, builds
+> the Go binary, ships a small Alpine runtime). `docker-compose.yml` is at the repo root.
 
 ---
 
-## Remote Access
+## Ports
 
-### User Access — Cloudflare Tunnel
+| Port | Purpose | Exposure |
+|------|---------|----------|
+| 8090 | HTTP — SPA, `/api/farmon`, `/_/` admin | Behind Coolify's HTTPS proxy → your domain |
+| 1883 | Plain MQTT (device-facing) | Raw TCP. On-prem/LAN, or internet only if you accept plaintext |
+| 8883 | TLS MQTT (device-facing) | Raw TCP. Managed/cloud; only serves when `MAJI_MQTT_TLS_ENABLED=true` |
 
-Provides a `https://yourdomain.com` URL for the HA companion app without opening router ports.
-
-1. Install `cloudflared` on the Pi
-2. Create a tunnel pointing to `localhost:8123`
-3. The HA companion app auto-switches between local IP and the tunnel URL
-
-### Technician Access
-
-| Method | Use Case | Setup |
-|--------|----------|-------|
-| **Cloudflare Tunnel** | Web UI access to HA, ChirpStack, ESPHome | Same tunnel, different subdomains |
-| **Cloudflare Zero Trust** | Browser-based SSH terminal | No client install needed on the Pi user's end |
-| **Tailscale subnet router** | ESPHome OTA updates + live logs | Required because Cloudflare cannot proxy the ESPHome native API |
-
-Install Tailscale on the Pi as a subnet router to bridge your development machine to the local network for firmware flashing and live log streaming.
+The browser MQTT-over-WebSocket listener (`:8082`) is not used by the SPA and is not exposed.
 
 ---
 
-## Maintenance
+## Configuration
 
-### Database Management
+All infra config is environment variables — see [`.env.example`](../.env.example), which ships two
+labelled profiles:
 
-HA's recorder writes constantly. Limit history retention to reduce SSD wear:
+- **Profile A — Managed cloud:** TLS on (`MAJI_MQTT_TLS_ENABLED=true`) with a mounted cert; firmware
+  is baked to reach `MAJI_MQTT_PUBLIC_HOST:8883` over TLS.
+- **Profile B — On-prem / edge:** TLS off, no certificate at all; firmware reaches the box's LAN IP
+  on plain `:1883`.
 
-```yaml
-# configuration.yaml
-recorder:
-  purge_keep_days: 10
-  exclude:
-    entity_globs:
-      - sensor.cpu_*
-      - sensor.*_signal_strength
-```
+The `MAJI_MQTT_PUBLIC_*` trio is what gets **baked into generated firmware**, so it must point at
+whichever listener actually serves devices and match its TLS setting.
 
-### Backups
+Business rules (e.g. the managed per-site device cap) are **not** env — they live in the `app_config`
+DB collection and are tuned from the admin **Settings** page.
 
-Use the Google Drive or OneDrive HA add-on for daily encrypted snapshots. Full restore to a new Pi takes approximately 10 minutes.
+### Two admin identities
 
-### Watchdog
-
-Enable the built-in watchdog in HA add-ons to auto-restart services that hang.
+| Identity | What it is | How it's created |
+|----------|-----------|------------------|
+| **App admin** | The SPA login (`users`, `role=admin`) | Seeded on first boot from `MAJI_ADMIN_EMAIL` / `MAJI_ADMIN_PASSWORD` |
+| **Superuser** | The `/_/` PocketBase dashboard login | Bootstrapped idempotently by the entrypoint from `MAJI_SUPERUSER_EMAIL` / `MAJI_SUPERUSER_PASSWORD` |
 
 ---
 
-## Security Checklist
+## Device-facing TLS
 
-Before exposing the stack to the internet:
+TLS is a single flag so on-prem deploys need no certificates:
 
-- [ ] Replace ChirpStack API secret in `config/chirpstack/chirpstack.toml`
-- [ ] Set `CHIRPSTACK_DB_PASSWORD` env var (or update `docker-compose.yml`)
-- [ ] Add Mosquitto authentication and disable `allow_anonymous`
-- [ ] Change ChirpStack default admin password
-- [ ] Configure Cloudflare Access policies to restrict technician routes
-- [ ] Ensure Tailscale ACLs limit subnet router access to authorised devices
+- `MAJI_MQTT_TLS_ENABLED=false` (default) → plain `:1883` only, no cert.
+- `MAJI_MQTT_TLS_ENABLED=true` → the broker also serves `:8883` using `MAJI_MQTT_TLS_CERT` /
+  `MAJI_MQTT_TLS_KEY` (PEM paths). The server refuses to start if the flag is on but the cert/key
+  are missing.
+
+Mount the cert read-only (keep it **out** of the data volume). In `docker-compose.yml` an example
+mount is provided (commented); on Coolify, attach the cert/key as a secret/file mount and set the
+two path vars to match.
+
+---
+
+## Persistence
+
+**One stateful boundary: the `/pb_data` volume.** It holds everything that must outlive the
+container — the SQLite database, uploaded files (`storage/`: board SVGs, committed firmware bundle
+zips), logs, and backups. Nothing else needs persisting: the MQTT broker is in-memory by design
+(telemetry is stored in the DB; devices re-announce on reconnect), so a restart loses nothing.
+
+The compose file uses a **named** volume, so the host/orchestrator owns where the bytes live and the
+storage backend stays swappable.
+
+### File storage — local now, S3 later
+
+File blobs currently live in `/pb_data/storage/` inside the volume. When blob growth (especially the
+30 MB `firmware_bin`) justifies it, switch PocketBase **Files storage** and **Backups** to any
+S3-compatible bucket from the `/_/` dashboard — no code change. The box then holds only the live
+SQLite (which must stay on a real filesystem). **Caveat:** PocketBase does not backfill — copy the
+existing `storage/` blobs into the bucket once when you switch.
+
+---
+
+## Coolify
+
+1. New resource → **Docker Compose** from this repo (root `docker-compose.yml`).
+2. Set the env vars (Profile A for managed). Attach the TLS cert/key as a file/secret mount and
+   point `MAJI_MQTT_TLS_CERT` / `MAJI_MQTT_TLS_KEY` at them.
+3. Map the domain to port **8090** (Coolify terminates HTTPS).
+4. Expose **1883** and **8883** as raw TCP ports for devices.
+5. The `pb_data` volume is managed by Coolify — confirm it's persistent before going live.
+6. Deploy. Coolify rebuilds and redeploys on every push (no CI/CD config needed here).
+
+---
+
+## First run
+
+1. `MAJI_ADMIN_*` and `MAJI_SUPERUSER_*` create the two logins on first boot.
+2. Log in to the app as the admin.
+3. **Import boards before generating firmware.** A fresh database has an empty board catalog by
+   design — generation needs at least the boards your controllers reference (admin → Boards → import
+   the `board.yaml` + SVG).
+4. Design a site, provision/generate a controller, flash, and confirm it shows `online` with
+   telemetry on the dashboard.
+
+> **Production gotcha:** don't edit collection **schema** via `/_/` in production. The schema is
+> owned by the compiled Go migrations; the dashboard's auto-migration would try to write migration
+> files into the read-only image and fail. Editing **records** (and `app_config`) is fine.
+
+---
+
+## Security checklist
+
+- [ ] Strong, unique `MAJI_ADMIN_PASSWORD` and `MAJI_SUPERUSER_PASSWORD`.
+- [ ] `MAJI_MQTT_TLS_ENABLED=true` for any internet-facing (managed) deploy; cert/key mounted.
+- [ ] `MAJI_MQTT_PUBLIC_*` matches the listener devices actually use (port + TLS).
+- [ ] Domain served only over HTTPS (Coolify).
+- [ ] `pb_data` volume is backed up (volume snapshots now; PocketBase → S3 backups later).

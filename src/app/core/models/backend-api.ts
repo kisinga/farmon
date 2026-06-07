@@ -17,6 +17,62 @@ export type { ValidationResult, RuleDiagnostic, NetworkConfig };
 export type { SiteListEntry, SiteFullPayload, SiteSavePayload, TemplateListEntry, Controller };
 export type { BoardDef, Route, SiteTopology };
 
+// --- Devices (registered controllers) + global config ---
+
+/**
+ * A registered device: one `controllers` collection row — the provisioned
+ * identity, distinct from a design-time topology controller. `deviceId` is the
+ * load-bearing id (== topology controller id == MQTT username).
+ */
+export interface DeviceEntry {
+  /** PocketBase record id (for update/delete). */
+  id: string;
+  deviceId: string;
+  name: string;
+  siteId: string;
+  siteName: string;
+  boardType: string;
+  firmwareVersion: string;
+  online: boolean;
+  /** Last-seen timestamp (ISO) or '' if never seen. */
+  lastSeen: string;
+  /** When the device was first registered (ISO). */
+  created: string;
+}
+
+/** Admin-tunable global settings, served by GET /api/farmon/config. */
+export interface AppConfig {
+  hostingDeviceCap: number;
+}
+
+/** The editable app_config singleton (carries the record id for updates). */
+export interface AppConfigRecord {
+  id: string;
+  hostingDeviceCap: number;
+}
+
+/** The configuration a pricing-page visitor submitted alongside a lead. */
+export interface LeadEstimate {
+  controllers: number;
+  oneTime: number;
+  yearly: number;
+  input: { pumps: number; valves: number; flow: number; tanks: number };
+}
+
+/** A captured sales enquiry from the public pricing estimator. */
+export interface LeadEntry {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  consent: boolean;
+  source: string;
+  /** '' (pre-status rows / fresh submissions) is treated as 'new'. */
+  status: string;
+  estimate: LeadEstimate | null;
+  created: string;
+}
+
 // --- Boards ---
 
 export interface BoardListEntry {

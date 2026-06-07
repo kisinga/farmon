@@ -3,11 +3,26 @@ import { WorkspaceService } from '../../core/services/workspace.service';
 import { SystemEditorService } from '../../core/services/system-editor.service';
 import { BackendService } from '../../core/services/backend.service';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
+import type { DeviceEntry } from '../../core/models/backend-api';
 
 interface FileEntry {
   path: string;
   description: string;
   lines: number;
+}
+
+/** Human "x ago" for a last-seen ISO timestamp. */
+function relTime(iso: string): string {
+  if (!iso) return 'never';
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return 'never';
+  const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 /**
@@ -30,12 +45,36 @@ interface FileEntry {
           <p class="text-sm text-base-content/50">Add a controller in Design to generate firmware.</p>
         </div>
       } @else {
-        <!-- Secrets are provisioned automatically -->
+        <!-- Registration status + secrets -->
         <div class="surface p-5">
-          <h3 class="font-semibold text-sm">Device secrets</h3>
-          <p class="text-xs text-base-content/50 mt-1.5 leading-relaxed">
-            Generated &amp; registered automatically when you generate firmware — a per-controller
-            MQTT token and a stable OTA password, baked into <code class="text-[10px] px-1 py-0.5 rounded bg-base-200">secrets.yaml</code>.
+          <div class="flex items-center justify-between gap-3">
+            <h3 class="font-semibold text-sm">Device registration</h3>
+            @if (device(); as d) {
+              <span class="flex items-center gap-1.5 text-xs"
+                    [class]="d.online ? 'text-emerald-400' : 'text-base-content/50'">
+                <span class="w-2 h-2 rounded-full" [class]="d.online ? 'bg-emerald-400' : 'bg-base-content/30'"></span>
+                {{ d.online ? 'Online' : 'Offline' }}
+              </span>
+            }
+          </div>
+
+          @if (device(); as d) {
+            <div class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-base-content/60">
+              <span>Registered <span class="text-emerald-400">&check;</span></span>
+              <span [title]="d.lastSeen">last seen {{ rel(d.lastSeen) }}</span>
+              @if (d.boardType) { <span>{{ d.boardType }}</span> }
+              @if (d.firmwareVersion) { <span>fw {{ d.firmwareVersion }}</span> }
+            </div>
+          } @else {
+            <p class="mt-2 text-xs text-base-content/50">
+              Not yet registered. Generating firmware registers this device on the platform.
+            </p>
+          }
+
+          <p class="text-xs text-base-content/50 mt-3 leading-relaxed border-t border-base-300/30 pt-3">
+            Generating firmware <span class="text-base-content/70">(re)provisions</span> this device: it rotates the
+            per-controller MQTT token and bakes it with a stable OTA password into
+            <code class="text-[10px] px-1 py-0.5 rounded bg-base-200">secrets.yaml</code>.
             <span class="text-base-content/40">Wi-Fi is not stored here:</span> set it on the device's
             setup page (captive portal or Improv) after flashing — it lives in the device's own flash.
           </p>
@@ -125,6 +164,8 @@ export class DeployPageComponent {
   protected fwFiles = signal<FileEntry[]>([]);
   protected fwError = signal<string | null>(null);
   protected downloadUrl = signal<string | null>(null);
+  /** This controller's registry status (null until provisioned). */
+  protected device = signal<DeviceEntry | null>(null);
 
   constructor() {
     // Auto-generate on entry and whenever the active controller changes.
@@ -136,9 +177,21 @@ export class DeployPageComponent {
         this.fwFiles.set([]);
         this.fwError.set(null);
         this.downloadUrl.set(null);
+        this.device.set(null);
+        void this.loadDevice();
         void this.generate();
       }
     });
+  }
+
+  protected rel(iso: string): string {
+    return relTime(iso);
+  }
+
+  private async loadDevice() {
+    const id = this.controllerId();
+    if (!id) return;
+    this.device.set(await this.backend.deviceStatus(id));
   }
 
   async generate() {
@@ -153,6 +206,8 @@ export class DeployPageComponent {
       if (this.controllerId() !== systemId) return;
       this.fwFiles.set(result.files);
       this.downloadUrl.set(result.downloadUrl);
+      void this.loadDevice(); // generation registers/updates the device row
+
     } catch (err) {
       this.fwError.set(String(err));
     } finally {

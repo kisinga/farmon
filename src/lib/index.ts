@@ -29,6 +29,7 @@ export type {
   SiteMetadata, SiteDeployment, StoredSiteTopology,
   SiteFullPayload, SiteSavePayload, SiteListEntry, TemplateListEntry,
 } from './site.types';
+export { HOSTING_DEVICE_CAP } from './site.types';
 
 
 // --- Schemas ---

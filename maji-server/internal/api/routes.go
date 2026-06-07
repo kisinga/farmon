@@ -3,6 +3,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -13,7 +14,26 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
+
+// hostingDeviceCap is the fallback device cap a managed site's yearly hosting fee
+// covers, used when app_config is missing/unset. The live value is admin-tunable
+// in app_config; mirrored by HOSTING_DEVICE_CAP in core. On-prem sites are uncapped.
+const hostingDeviceCap = 5
+
+// hostingCap returns the configured managed device cap, falling back to the
+// built-in default when app_config has no usable value.
+func hostingCap(app core.App) int {
+	rec, err := app.FindFirstRecordByFilter("app_config", "id != ''")
+	if err != nil || rec == nil {
+		return hostingDeviceCap
+	}
+	if v := rec.GetInt("hosting_device_cap"); v > 0 {
+		return v
+	}
+	return hostingDeviceCap
+}
 
 // Publisher is the subset of the MQTT broker the command endpoint needs.
 // The Mochi *server.Server satisfies it (InlineClient must be enabled).
@@ -66,6 +86,17 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			"broker_port":    cfg.MQTTPublicPort,
 			"broker_tls":     cfg.MQTTPublicTLS,
 			"mode":           firmwareMode,
+		})
+	})
+
+	// GET /config exposes admin-tunable global settings (app_config) to the UI, so
+	// the frontend never reads the collection directly. Authed; public bits only.
+	g.GET("/config", func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("authentication required", nil)
+		}
+		return e.JSON(http.StatusOK, map[string]any{
+			"hostingDeviceCap": hostingCap(e.App),
 		})
 	})
 
@@ -249,6 +280,26 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			return apis.NewBadRequestError("controller is required", nil)
 		}
 
+		// Site record: needed for the per-site UDP key, the managed-hosting device
+		// cap, and the hosting-start clock below.
+		siteRec, err := e.App.FindRecordById("sites", body.Site)
+		if err != nil || siteRec == nil {
+			return apis.NewApiError(http.StatusInternalServerError, "site not found", err)
+		}
+
+		// Hosting (device cap + commence clock) applies to managed sites only. A
+		// site's explicit `mode` wins; an unset mode follows the server build shape
+		// (cloud → managed, edge → local). On-prem (local) sites are uncapped.
+		siteMode := siteRec.GetString("mode")
+		if siteMode == "" {
+			if cfg.Mode == config.ModeCloud {
+				siteMode = "managed"
+			} else {
+				siteMode = "local"
+			}
+		}
+		managed := siteMode == "managed"
+
 		// Identity row, upserted by device_id (globally unique). A missing row
 		// (or any lookup miss) means first provision → create; otherwise we keep
 		// the row and rotate/refresh its secrets below.
@@ -256,6 +307,22 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			"controllers", "device_id = {:d}", dbx.Params{"d": body.Controller},
 		)
 		if err != nil || rec == nil {
+			// A new device on a managed site counts against the hosting plan's
+			// device cap; re-provisioning an existing device only rotates its token
+			// and is never capped.
+			if managed {
+				cap := hostingCap(e.App)
+				count, cerr := e.App.CountRecords("controllers", dbx.HashExp{"site": body.Site})
+				if cerr != nil {
+					return apis.NewApiError(http.StatusInternalServerError, "failed to count devices", cerr)
+				}
+				if count >= int64(cap) {
+					return apis.NewBadRequestError(
+						fmt.Sprintf("hosting plan covers up to %d devices per site; remove a device or move to on-prem to add more", cap),
+						nil,
+					)
+				}
+			}
 			coll, cerr := e.App.FindCollectionByNameOrId("controllers")
 			if cerr != nil {
 				return apis.NewApiError(http.StatusInternalServerError, "controllers collection missing", cerr)
@@ -299,13 +366,11 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			return apis.NewApiError(http.StatusInternalServerError, "failed to register controller", err)
 		}
 
-		// Per-site UDP coordination key: shared by every controller on the site,
-		// minted once and reused so the whole site keeps the same key. Authenticates
-		// cross-controller claims/readings over the LAN UDP lane (baked into secrets.yaml).
-		siteRec, err := e.App.FindRecordById("sites", body.Site)
-		if err != nil || siteRec == nil {
-			return apis.NewApiError(http.StatusInternalServerError, "site not found", err)
-		}
+		// Per-site UDP coordination key (shared by every controller on the site,
+		// authenticates cross-controller claims/readings over the LAN UDP lane) and
+		// the managed hosting clock both live on the site record; mint/stamp what's
+		// missing and save once.
+		siteDirty := false
 		udpKey := siteRec.GetString("udp_key")
 		if udpKey == "" {
 			udpKey, err = auth.GenerateToken()
@@ -313,8 +378,16 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 				return apis.NewApiError(http.StatusInternalServerError, "failed to mint UDP key", err)
 			}
 			siteRec.Set("udp_key", udpKey)
+			siteDirty = true
+		}
+		// Hosting starts at the first managed provision; stamp once, never reset.
+		if managed && siteRec.GetDateTime("commence_date").IsZero() {
+			siteRec.Set("commence_date", types.NowDateTime())
+			siteDirty = true
+		}
+		if siteDirty {
 			if err := e.App.Save(siteRec); err != nil {
-				return apis.NewApiError(http.StatusInternalServerError, "failed to store UDP key", err)
+				return apis.NewApiError(http.StatusInternalServerError, "failed to update site", err)
 			}
 		}
 

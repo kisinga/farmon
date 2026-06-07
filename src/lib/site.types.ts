@@ -77,11 +77,22 @@ export type SiteSavePayload = {
 // List entries (for overview)
 // ---------------------------------------------------------------------------
 
+/** Devices a managed site's yearly hosting fee covers. Mirrors hostingDeviceCap
+ *  in maji-server (the authoritative enforcer at /provision). */
+export const HOSTING_DEVICE_CAP = 5;
+
 export interface SiteListEntry {
   id: string;
   friendlyName: string;
+  /** Designed controllers / nodes from the saved topology. */
   controllerCount: number;
   nodeCount: number;
+  /** Deployment mode: '' (unset → treated as managed), 'managed', or 'local'. */
+  mode: string;
+  /** Provisioned (commissioned) devices — the count the hosting cap measures. */
+  deviceCount: number;
+  /** Hosting start (ISO), stamped at first managed provision; '' until then. */
+  commenceDate: string;
 }
 
 export interface TemplateListEntry {

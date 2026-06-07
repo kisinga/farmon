@@ -214,7 +214,7 @@ a.xref:hover { border-bottom-style: solid; }
     <tr><td><code>number.…_{{this.id}}_cal_empty</code></td><td>Number</td><td>{{this.name}} empty voltage calibration</td></tr>
     <tr><td><code>number.…_{{this.id}}_cal_full</code></td><td>Number</td><td>{{this.name}} full voltage calibration</td></tr>
 {{/each}}
-<tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Disables <strong>all</strong> runtime safety checks while ON: pre-start level gates, flow watchdog, runtime level stops, max-runtime, API watchdog. Also lets the pump run without an owning route (commissioning / bench testing). Reverts to OFF on reboot. Use only for commissioning or manual recovery.</td></tr>
+<tr><td><code>switch.…_safety_override</code></td><td>Switch</td><td>Disables <strong>all</strong> runtime safety checks while ON: pre-start level gates, flow watchdog, runtime level stops, max-runtime. Also lets the pump run without an owning route (commissioning / bench testing). Reverts to OFF on reboot. Use only for commissioning or manual recovery.</td></tr>
   </tbody>
 </table>
 
@@ -313,7 +313,6 @@ a.xref:hover { border-bottom-style: solid; }
     <tr><td>2</td><td>Tank full</td><td>Flow confirmed then stopped (backpressure)</td></tr>
     <tr><td>3</td><td>No flow</td><td>Fault: no pulses after confirmation window</td></tr>
     <tr><td>4</td><td>Max runtime</td><td>Fault: route exceeded time limit</td></tr>
-    <tr><td>5</td><td>API lost</td><td>Fault: HA connection lost</td></tr>
   </tbody>
 </table>
 
@@ -343,7 +342,7 @@ a.xref:hover { border-bottom-style: solid; }
     <ul>
       <li>State machine + valve sequencing + pump relay</li>
       <li>Flow watchdog (unconditional on every route)</li>
-      <li>Per-route max runtime + API watchdog</li>
+      <li>Per-route max runtime</li>
       <li>Pre-flight validation (source/dest levels)</li>
       <li>Pump relay guard (blocks direct toggle)</li>
       <li>Tank sensor suppression during pump operation</li>

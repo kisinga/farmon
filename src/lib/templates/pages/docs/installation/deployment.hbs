@@ -63,7 +63,7 @@ When you rename a node (level sensor, valve, pump, etc.), the firmware emits its
 
 Each controller's Home Assistant dashboard has a **Manual** tab exposing the operator-facing controls: `Safety Override`, the pump switch, per-valve `Cover` + `Open Coil` + `Close Coil`, and per-route Start / Stop buttons. The semantics:
 
-- **Safety Override** — single global bypass. While ON, pre-start gates (source-low, dest-full) are skipped, the runtime watchdog (flow, max-runtime, API) is suppressed, and the pump can be turned on without an owning route. Reverts to OFF on reboot. Use for commissioning and recovery only.
+- **Safety Override** — single global bypass. While ON, pre-start gates (source-low, dest-full) are skipped, the runtime watchdog (flow, max-runtime) is suppressed, and the pump can be turned on without an owning route. Reverts to OFF on reboot. Use for commissioning and recovery only.
 
 - **Cover** — the safe way to operate a valve manually. Timer-bounded, the same path the routing layer uses. You can open or close any valve at any time, with or without an active route — the route-level reconciler does not fight manual cover writes for valves it isn't claiming.
 

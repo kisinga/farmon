@@ -1,29 +1,23 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { BackendService } from '../../core/services/backend.service';
+import { SectionHeaderComponent } from '../editor/shared/section-header.component';
 
 type BoardKind = 'main' | 'expansion';
 
 @Component({
   selector: 'app-boards-page',
   standalone: true,
+  imports: [SectionHeaderComponent],
   host: { class: 'flex-1 overflow-auto' },
   template: `
-    <div class="max-w-5xl mx-auto w-full px-6 py-8">
-      <!-- Bright hero band -->
-      <div class="relative overflow-hidden rounded-2xl mb-8 ring-1 ring-white/10
-                  bg-gradient-to-br from-cyan-500/15 via-sky-500/10 to-base-100">
-        <div class="pointer-events-none absolute -top-16 -right-10 w-72 h-72 rounded-full bg-cyan-500/20 blur-3xl"></div>
-        <div class="relative flex items-end justify-between gap-4 flex-wrap px-6 py-7 sm:px-8">
-          <div>
-            <h1 class="text-2xl font-bold tracking-tight">Boards</h1>
-            <p class="text-sm text-base-content/60 mt-1">Supported controller boards and expansions.</p>
-          </div>
-          @if (backend.isAdmin) {
-            <button class="btn btn-sm rounded-full border-0 bg-cyan-400 text-slate-950 hover:bg-cyan-300" (click)="toggleImport()">
-              {{ showImport() ? 'Cancel' : 'Import board' }}
-            </button>
-          }
-        </div>
+    <div class="content-pane space-y-6">
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <app-section-header title="Boards" subtitle="Supported controller boards and expansions." />
+        @if (backend.isAdmin) {
+          <button class="btn btn-sm rounded-full border-0 bg-cyan-400 text-slate-950 hover:bg-cyan-300 shrink-0" (click)="toggleImport()">
+            {{ showImport() ? 'Cancel' : 'Import board' }}
+          </button>
+        }
       </div>
 
       @if (showImport()) {

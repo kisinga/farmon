@@ -25,6 +25,18 @@ type Config struct {
 	MQTTTCPAddr string
 	// MQTTWSAddr is the browser-facing MQTT-over-WebSocket listener address.
 	MQTTWSAddr string
+	// MQTTTLSEnabled turns on the device-facing TLS listener. Off by default so an
+	// on-prem/edge box deploys with no certificates at all (plain TCP only). On
+	// (managed cloud) it serves TLS on MQTTTLSAddr and requires a cert/key.
+	MQTTTLSEnabled bool
+	// MQTTTLSAddr is the device-facing TLS listener address (used only when
+	// MQTTTLSEnabled). Matches the firmware default port (8883).
+	MQTTTLSAddr string
+	// MQTTTLSCert / MQTTTLSKey are filesystem paths to the PEM cert and key the
+	// TLS listener serves. Mounted into the container (a Coolify secret), kept out
+	// of the data volume. Required when MQTTTLSEnabled.
+	MQTTTLSCert string
+	MQTTTLSKey  string
 	// MQTTPublicHost is the broker host/IP that DEVICES use to reach the broker,
 	// baked into generated firmware. MQTTTCPAddr is where the broker binds; this
 	// is how a device on the network connects to it — set it to the server's LAN
@@ -47,6 +59,10 @@ func Load(mode Mode) Config {
 		SPADir:         env("MAJI_SPA_DIR", ""),
 		MQTTTCPAddr:    env("MAJI_MQTT_TCP", ":1883"),
 		MQTTWSAddr:     env("MAJI_MQTT_WS", ":8082"),
+		MQTTTLSEnabled: envBool("MAJI_MQTT_TLS_ENABLED", false),
+		MQTTTLSAddr:    env("MAJI_MQTT_TLS", ":8883"),
+		MQTTTLSCert:    env("MAJI_MQTT_TLS_CERT", ""),
+		MQTTTLSKey:     env("MAJI_MQTT_TLS_KEY", ""),
 		MQTTPublicHost: env("MAJI_MQTT_PUBLIC_HOST", "mqtt.majiflow.io"),
 		MQTTPublicPort: envInt("MAJI_MQTT_PUBLIC_PORT", 8883),
 		MQTTPublicTLS:  envBool("MAJI_MQTT_PUBLIC_TLS", true),

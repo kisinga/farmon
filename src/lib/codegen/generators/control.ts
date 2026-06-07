@@ -68,7 +68,7 @@ globals:
     type: int
     initial_value: "0"
     # Most recent stop reason across all slots. Persists across runs.
-    # 0=none  1=manual  2=tank_full  3=no_flow  4=max_runtime  5=api_lost
+    # 0=none  1=manual  2=tank_full  3=no_flow  4=max_runtime
 
   - id: active_slot
     type: int

@@ -3,6 +3,8 @@ import { Router } from '@angular/router';
 import { BackendService } from '../../core/services/backend.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import type { SiteListEntry } from '../../core/models/backend-api';
+import { HOSTING_DEVICE_CAP } from '@core';
+import { SectionHeaderComponent } from '../editor/shared/section-header.component';
 
 /** Generate a stable color from a string for site card visuals. */
 function siteColor(name: string): string {
@@ -27,40 +29,28 @@ function initials(name: string): string {
 @Component({
   selector: 'app-overview',
   standalone: true,
+  imports: [SectionHeaderComponent],
   host: { class: 'flex-1 overflow-auto' },
   template: `
-    <div class="max-w-6xl mx-auto w-full px-6 py-8">
+    <div class="content-pane space-y-6">
 
-      <!-- Bright hero band -->
-      <div class="relative overflow-hidden rounded-2xl mb-8 ring-1 ring-white/10
-                  bg-gradient-to-br from-cyan-500/15 via-sky-500/10 to-base-100">
-        <div class="pointer-events-none absolute -top-16 -right-10 w-72 h-72 rounded-full bg-cyan-500/20 blur-3xl"></div>
-        <div class="relative flex items-end justify-between gap-4 flex-wrap px-6 py-7 sm:px-8">
-          <div>
-            <div class="flex items-center gap-2.5">
-              <h1 class="text-2xl font-bold tracking-tight">Sites</h1>
-              @if (!loading() && entries().length) {
-                <span class="badge badge-sm bg-cyan-400/15 text-cyan-300 border-0">{{ entries().length }}</span>
-              }
-            </div>
-            <p class="text-sm text-base-content/60 mt-1">Your water networks. Open one to design it, or watch it live.</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <label class="btn btn-sm btn-ghost gap-1.5 ring-1 ring-white/10 cursor-pointer">
-              <input type="file" accept=".json" class="hidden" (change)="importSite($event)" />
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Import
-            </label>
-            <button class="btn btn-sm rounded-full border-0 bg-cyan-400 text-slate-950 hover:bg-cyan-300 gap-1.5 shadow-lg shadow-cyan-500/20"
-              (click)="showCreate.set(true)">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-              New site
-            </button>
-          </div>
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <app-section-header title="Sites" subtitle="Your water networks. Open one to design it, or watch it live." />
+        <div class="flex items-center gap-2 shrink-0">
+          <label class="btn btn-sm btn-ghost gap-1.5 ring-1 ring-white/10 cursor-pointer">
+            <input type="file" accept=".json" class="hidden" (change)="importSite($event)" />
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            Import
+          </label>
+          <button class="btn btn-sm rounded-full border-0 bg-cyan-400 text-slate-950 hover:bg-cyan-300 gap-1.5 shadow-lg shadow-cyan-500/20"
+            (click)="showCreate.set(true)">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            New site
+          </button>
         </div>
       </div>
 
@@ -122,6 +112,32 @@ function initials(name: string): string {
                       {{ site.nodeCount }} node{{ site.nodeCount !== 1 ? 's' : '' }}
                     </span>
                   </div>
+
+                  <!-- Hosting (managed sites only): device usage vs cap + renewal clock. -->
+                  @if (hosting(site); as h) {
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs">
+                      <span class="flex items-center gap-1.5"
+                            [class]="h.atCap ? 'text-amber-400' : 'text-base-content/50'"
+                            [title]="h.atCap ? 'Hosting plan device limit reached' : 'Provisioned devices'">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                        </svg>
+                        {{ site.deviceCount }} / {{ cap() }} devices
+                      </span>
+                      @if (h.commenced) {
+                        <span class="flex items-center gap-1.5"
+                              [class]="h.overdue ? 'text-red-400' : 'text-base-content/40'"
+                              [title]="'Hosting since ' + h.sinceLabel">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          {{ h.renewalLabel }}
+                        </span>
+                      } @else {
+                        <span class="text-base-content/30">Not yet commissioned</span>
+                      }
+                    </div>
+                  }
                 </div>
               </div>
 
@@ -182,6 +198,8 @@ export class OverviewComponent implements OnInit {
   protected loading = signal(true);
   protected showCreate = signal(false);
   protected renamingId = signal<string | null>(null);
+  /** Hosting device cap, loaded from server config (HOSTING_DEVICE_CAP is the fallback). */
+  protected cap = signal(HOSTING_DEVICE_CAP);
 
   async ngOnInit() {
     await this.refresh();
@@ -189,12 +207,51 @@ export class OverviewComponent implements OnInit {
 
   private async refresh() {
     this.loading.set(true);
-    this.entries.set(await this.backend.siteList());
+    const [entries, config] = await Promise.all([
+      this.backend.siteList(),
+      this.backend.getConfig(),
+    ]);
+    this.entries.set(entries);
+    this.cap.set(config.hostingDeviceCap);
     this.loading.set(false);
   }
 
   protected getColor(name: string): string {
     return siteColor(name);
+  }
+
+  /**
+   * Hosting view-model for a site card, or null for on-prem (local) sites that
+   * carry no hosting clock. An unset mode is treated as managed, matching the
+   * firmware-generation default. `commenced` is false until the first device is
+   * provisioned (no commence_date yet); renewal is one year from that date.
+   */
+  protected hosting(site: SiteListEntry): {
+    atCap: boolean;
+    commenced: boolean;
+    sinceLabel: string;
+    renewalLabel: string;
+    overdue: boolean;
+  } | null {
+    if (site.mode === 'local') return null;
+    const atCap = site.deviceCount >= this.cap();
+    if (!site.commenceDate) {
+      return { atCap, commenced: false, sinceLabel: '', renewalLabel: '', overdue: false };
+    }
+    const fmt = (d: Date) =>
+      d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    const start = new Date(site.commenceDate);
+    const renewal = new Date(start);
+    renewal.setFullYear(renewal.getFullYear() + 1);
+    const days = Math.ceil((renewal.getTime() - Date.now()) / 86_400_000);
+    const overdue = days <= 0;
+    return {
+      atCap,
+      commenced: true,
+      sinceLabel: fmt(start),
+      renewalLabel: overdue ? `Renewal overdue (${fmt(renewal)})` : `Renews ${fmt(renewal)} (${days}d)`,
+      overdue,
+    };
   }
 
   protected getInitials(name: string): string {

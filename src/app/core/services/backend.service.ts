@@ -12,6 +12,7 @@ import {
   CURRENT_SCHEMA_VERSION,
 } from '@core';
 import type { ExpansionBoardCatalog, ExpansionBoardDef, CommandAction, DeploymentMode } from '@core';
+import { HOSTING_DEVICE_CAP } from '@core';
 import {
   generateEsphome,
   generateDefaultSecrets,
@@ -44,6 +45,10 @@ import type {
   SiteTopology,
   VersionEntry,
   CommitResult,
+  DeviceEntry,
+  AppConfig,
+  AppConfigRecord,
+  LeadEntry,
 } from '../models/backend-api';
 
 /**
@@ -73,7 +78,17 @@ export class BackendService {
     const records = await this.pb
       .collection('sites')
       .getFullList({ sort: 'name' });
-    return records.map((r) => this.toListEntry(r));
+    // Provisioned-device counts per site (what the hosting cap measures — distinct
+    // from the designed controllers in the topology). One scoped query, grouped here.
+    const devices = await this.pb
+      .collection('controllers')
+      .getFullList({ fields: 'site' });
+    const deviceCounts = new Map<string, number>();
+    for (const d of devices) {
+      const sid = d['site'] as string;
+      deviceCounts.set(sid, (deviceCounts.get(sid) ?? 0) + 1);
+    }
+    return records.map((r) => this.toListEntry(r, deviceCounts.get(r['id']) ?? 0));
   }
 
   async siteLoad(id: string): Promise<SiteFullPayload> {
@@ -164,6 +179,98 @@ export class BackendService {
       source: 'pricing',
       hp: input.hp,
     });
+  }
+
+  // --- Devices (registered controllers) + global config -------------------
+  //
+  // A "device" is a `controllers` collection row — the provisioned identity
+  // minted at /provision, distinct from the design-time controllers in a site's
+  // topology. The Devices fleet view manages these; the firmware page surfaces a
+  // single device's registration status. Update/delete are admin-only (collection
+  // rules); read is admin-or-site-owner.
+
+  /** Admin-tunable global settings; falls back to the core default if unset. */
+  async getConfig(): Promise<AppConfig> {
+    const r = await this.pb.send<{ hostingDeviceCap?: number }>('/api/farmon/config', { method: 'GET' });
+    return { hostingDeviceCap: r.hostingDeviceCap ?? HOSTING_DEVICE_CAP };
+  }
+
+  /** Every registered device across all sites the caller can see, with site names. */
+  async deviceList(): Promise<DeviceEntry[]> {
+    const records = await this.pb
+      .collection('controllers')
+      .getFullList({ sort: 'name', expand: 'site' });
+    return records.map((r) => this.toDeviceEntry(r));
+  }
+
+  /** Registered devices for one site (the per-site slice). */
+  async deviceListForSite(siteId: string): Promise<DeviceEntry[]> {
+    const records = await this.pb.collection('controllers').getFullList({
+      filter: this.pb.filter('site = {:s}', { s: siteId }),
+      sort: 'name',
+      expand: 'site',
+    });
+    return records.map((r) => this.toDeviceEntry(r));
+  }
+
+  /** Registry status of one device by its device_id (== controller id), or null
+   *  if it has not been provisioned yet (no firmware generated). */
+  async deviceStatus(deviceId: string): Promise<DeviceEntry | null> {
+    try {
+      const r = await this.pb
+        .collection('controllers')
+        .getFirstListItem(this.pb.filter('device_id = {:d}', { d: deviceId }), { expand: 'site' });
+      return this.toDeviceEntry(r);
+    } catch {
+      return null; // 404 → not yet registered
+    }
+  }
+
+  async deviceRename(id: string, name: string): Promise<void> {
+    await this.pb.collection('controllers').update(id, { name });
+  }
+
+  /** Deregister a device: removes its identity row so it can no longer connect
+   *  (frees a hosting-cap slot). The physical box keeps its firmware until reflashed. */
+  async deviceDeregister(id: string): Promise<void> {
+    await this.pb.collection('controllers').delete(id);
+  }
+
+  /** The editable app_config singleton (admin settings page). Reads the row
+   *  directly (admin-gated collection) since editing needs the record id. */
+  async configForEdit(): Promise<AppConfigRecord> {
+    const r = await this.pb.collection('app_config').getFirstListItem('id != ""');
+    return { id: r['id'], hostingDeviceCap: (r['hosting_device_cap'] ?? HOSTING_DEVICE_CAP) as number };
+  }
+
+  async configSave(id: string, patch: { hostingDeviceCap: number }): Promise<void> {
+    await this.pb.collection('app_config').update(id, { hosting_device_cap: patch.hostingDeviceCap });
+  }
+
+  // --- Leads (admin pipeline) ---------------------------------------------
+
+  /** Captured pricing enquiries, newest first (admin-only collection). */
+  async leadList(): Promise<LeadEntry[]> {
+    const records = await this.pb.collection('leads').getFullList({ sort: '-created' });
+    return records.map((r) => ({
+      id: r['id'],
+      name: (r['name'] ?? '') as string,
+      phone: (r['phone'] ?? '') as string,
+      email: (r['email'] ?? '') as string,
+      consent: !!r['consent'],
+      source: (r['source'] ?? '') as string,
+      status: (r['status'] ?? '') as string,
+      estimate: (r['estimate'] || null) as LeadEntry['estimate'],
+      created: (r['created'] ?? '') as string,
+    }));
+  }
+
+  async leadSetStatus(id: string, status: string): Promise<void> {
+    await this.pb.collection('leads').update(id, { status });
+  }
+
+  async leadDelete(id: string): Promise<void> {
+    await this.pb.collection('leads').delete(id);
   }
 
   // --- Controllers ("systems") --------------------------------------------
@@ -619,13 +726,32 @@ export class BackendService {
 
   // --- Helpers -------------------------------------------------------------
 
-  private toListEntry(r: RecordModel): SiteListEntry {
+  private toListEntry(r: RecordModel, deviceCount = 0): SiteListEntry {
     const topo = r['draft_topology'] as SiteTopology | null;
     return {
       id: r['id'],
       friendlyName: r['name'],
       controllerCount: topo?.controllers?.length ?? 0,
       nodeCount: topo?.nodes?.length ?? 0,
+      mode: (r['mode'] ?? '') as string,
+      deviceCount,
+      commenceDate: (r['commence_date'] ?? '') as string,
+    };
+  }
+
+  private toDeviceEntry(r: RecordModel): DeviceEntry {
+    const site = r['expand']?.['site'] as RecordModel | undefined;
+    return {
+      id: r['id'],
+      deviceId: (r['device_id'] ?? '') as string,
+      name: (r['name'] ?? '') as string,
+      siteId: (r['site'] ?? '') as string,
+      siteName: (site?.['name'] ?? '') as string,
+      boardType: (r['board_type'] ?? '') as string,
+      firmwareVersion: (r['firmware_version'] ?? '') as string,
+      online: !!r['online'],
+      lastSeen: (r['last_seen'] ?? '') as string,
+      created: (r['created'] ?? '') as string,
     };
   }
 

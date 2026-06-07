@@ -1,0 +1,17 @@
+# Keep the build context small. The Dockerfile copies exactly what each stage
+# needs; everything below is irrelevant to the image and/or large.
+.git
+node_modules
+.angular
+dist
+maji-server/dist
+**/pb_data
+.venv
+legacy
+docs
+deploy/renders
+test
+.claude
+.vscode
+*.md
+!README.md

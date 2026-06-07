@@ -2,6 +2,9 @@
 package mqtt
 
 import (
+	"crypto/tls"
+	"fmt"
+
 	"github.com/kisinga/majiflow/internal/config"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/listeners"
@@ -37,6 +40,27 @@ func Start(app core.App, cfg config.Config) (*Broker, error) {
 	ws := listeners.NewWebsocket(listeners.Config{ID: "ws", Address: cfg.MQTTWSAddr})
 	if err := server.AddListener(ws); err != nil {
 		return nil, err
+	}
+
+	// Device-facing TLS listener (managed cloud). Off by default so on-prem/edge
+	// boxes run plain-only with no certificates; when enabled the cert/key are
+	// required and the firmware's default 8883/TLS endpoint is actually served.
+	if cfg.MQTTTLSEnabled {
+		if cfg.MQTTTLSCert == "" || cfg.MQTTTLSKey == "" {
+			return nil, fmt.Errorf("MAJI_MQTT_TLS_ENABLED is set but MAJI_MQTT_TLS_CERT/MAJI_MQTT_TLS_KEY are missing")
+		}
+		cert, err := tls.LoadX509KeyPair(cfg.MQTTTLSCert, cfg.MQTTTLSKey)
+		if err != nil {
+			return nil, fmt.Errorf("load MQTT TLS keypair: %w", err)
+		}
+		tlsListener := listeners.NewTCP(listeners.Config{
+			ID:        "tls",
+			Address:   cfg.MQTTTLSAddr,
+			TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+		})
+		if err := server.AddListener(tlsListener); err != nil {
+			return nil, err
+		}
 	}
 
 	go func() { _ = server.Serve() }()

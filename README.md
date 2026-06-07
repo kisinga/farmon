@@ -83,39 +83,41 @@ Adding a new board means writing one YAML file and an optional SVG pinout. The c
 ## Quick start
 
 ```bash
-npm install
-npm run dev          # Angular dev server + Electron
+npm install                  # frontend deps
+cd maji-server && make dev   # Go server hosts the SPA (rebuilds on change) at :8090
 ```
 
-Generate and flash firmware from the desktop app, or run tests headless:
+Open `http://127.0.0.1:8090` and log in with the dev admin (`admin@maji.local` / `majiadmin123`).
+Generate and flash firmware from the app, or run tests headless:
 
 ```bash
-npm test             # 67 integration assertions
-npm run test:limits  # Scaling ceiling discovery
+npm test             # integration assertions
+npm run test:limits  # scaling ceiling discovery
 ```
+
+To deploy, see [deploy/README.md](deploy/README.md).
 
 ## Project structure
 
 ```
-src/             # Angular frontend (renderer process)
-electron/        # Electron main process, IPC handlers, codegen engine
-electron/lib/    # Generators, validators, topology engine
-packages/core/   # Shared types, topology logic, and quotation engine
+src/app/         # Angular web app (designer, dashboard, admin)
+src/lib/         # @core — shared types, topology → manifest → codegen, validators
+maji-server/     # Go server: PocketBase (DB + auth + SPA host) + embedded MQTT broker
 test/            # Integration and scaling tests
 defaults/        # Bundled board definitions and example configs
 docs/            # Documentation and development journal
-homepage/           # Static site (homepage + quick quote) for GitHub Pages
+deploy/          # Dockerfile entrypoint + deployment guide
 ```
 
-## Desktop app
+## The app
 
-Angular + Electron + DaisyUI.
+Angular + DaisyUI, served by the Go backend (one origin). Firmware is generated in the browser.
 
 - Create, duplicate, rename, and delete sites
 - Interactive board SVG with live pin overlays and GPIO budget bar
 - Tabbed editor for devices, tanks, valves, flow sensors, routes, timing, and topology
-- One-click generate, compile, and flash per controller
-- Backup to Google Drive
+- One-click generate per controller; compile and flash from the downloaded bundle
+- Live monitoring dashboard with remote control and automation
 
 ## Tests
 
