@@ -30,6 +30,8 @@ services:
       MAJI_MQTT_PUBLIC_PORT: ${MAJI_MQTT_PUBLIC_PORT:-8883}
       MAJI_MQTT_PUBLIC_TLS: ${MAJI_MQTT_PUBLIC_TLS:-true}
       # Device-facing TLS listener — managed/cloud only; off → plain 1883, no certs.
+      # The cert/key paths resolve inside the always-on /certs mount (see volumes);
+      # they are only read when MAJI_MQTT_TLS_ENABLED=true.
       MAJI_MQTT_TLS_ENABLED: ${MAJI_MQTT_TLS_ENABLED:-false}
       MAJI_MQTT_TLS: ${MAJI_MQTT_TLS:-:8883}
       MAJI_MQTT_TLS_CERT: ${MAJI_MQTT_TLS_CERT:-/certs/fullchain.pem}
@@ -44,11 +46,12 @@ services:
     volumes:
       # The single stateful boundary: SQLite DB + uploaded files + logs + backups.
       - pb_data:/pb_data
-      # TLS cert/key for the device-facing 8883 listener — ONLY for managed/cloud
-      # (MAJI_MQTT_TLS_ENABLED=true). Mount read-only; paths must match
-      # MAJI_MQTT_TLS_CERT / MAJI_MQTT_TLS_KEY in .env. On Coolify, provide these
-      # via a secret/file mount instead. Leave commented for on-prem (plain 1883).
-      # - ./deploy/certs:/certs:ro
+      # TLS cert/key for the device-facing 8883 listener. Always mounted (read-only):
+      # the dir holds fullchain.pem + privkey.pem for managed/cloud
+      # (MAJI_MQTT_TLS_ENABLED=true) and is simply empty/unread on on-prem (plain
+      # 1883, TLS off). Container paths match MAJI_MQTT_TLS_CERT / MAJI_MQTT_TLS_KEY.
+      # On Coolify, point this at a storage/file mount that supplies the two PEMs.
+      - ./deploy/certs:/certs:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8090/api/farmon/health"]
       interval: 30s

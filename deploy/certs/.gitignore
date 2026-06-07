@@ -1,0 +1,6 @@
+# This dir is bind-mounted read-only into the container at /certs and supplies the
+# device-facing MQTT TLS listener with fullchain.pem + privkey.pem (managed/cloud).
+# Keep the directory in the repo so the mount source exists, but NEVER commit the
+# certificate material itself.
+*
+!.gitignore
