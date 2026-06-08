@@ -1,4 +1,4 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 import { NgxEchartsDirective } from 'ngx-echarts';
 import type { EChartsOption } from 'echarts';
 import {
@@ -44,9 +44,17 @@ const CHART = {
   selector: 'app-dashboard-card',
   standalone: true,
   imports: [NgxEchartsDirective],
+  // Fill the grid cell so sibling cards in a row are the same height.
+  host: { class: 'block h-full' },
   template: `
-    <div class="bg-base-100 rounded-2xl ring-1 ring-base-300/40 hover:ring-base-300/70 transition-colors flex flex-col"
-      [class]="dense() ? 'p-3' : 'p-4 min-h-[140px]'">
+    <div class="bg-base-100 rounded-2xl transition-all flex flex-col h-full"
+      [class]="cardClass()"
+      [attr.role]="actuatable() ? 'button' : null"
+      [attr.tabindex]="actuatable() && !actuatorBusy() ? '0' : null"
+      [attr.title]="actuatable() ? holdHint() : null"
+      (click)="onCardClick()"
+      (keydown.enter)="onCardClick()"
+      (keydown.space)="onSpace($event)">
       @if (controllerLabel()) {
         <div class="flex items-center gap-1 mb-0.5 min-w-0">
           <span class="w-1.5 h-1.5 rounded-full shrink-0" [style.backgroundColor]="controllerColor()"></span>
@@ -95,21 +103,50 @@ const CHART = {
           </div>
         }
         @case ('badge') {
-          <div class="flex-1 flex items-center">
-            <span class="badge {{ badge().cls }} badge-lg">{{ badge().label }}</span>
-          </div>
+          @if (actuatorKind() === 'pump') {
+            <!-- Pump control: a pump-on-pipe glyph + state, laid out exactly like
+                 the valve card so the two control tiles standardize. -->
+            <div class="flex-1 flex items-center gap-3">
+              <span class="shrink-0 {{ pump().text }} transition-colors">
+                <svg class="h-11 w-auto" viewBox="0 0 56 46" fill="none">
+                  <line x1="2" y1="30" x2="54" y2="30" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-opacity="0.5" />
+                  <circle cx="28" cy="22" r="11" stroke="currentColor" stroke-width="2" style="fill:var(--color-base-100)" />
+                  <path d="M24 17 L34 22 L24 27 Z" fill="currentColor" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <div class="text-sm font-semibold {{ pump().text }} truncate">{{ pump().label }}</div>
+                <div class="text-[11px] text-base-content/40">{{ pump().sub }}</div>
+              </div>
+            </div>
+          } @else {
+            <div class="flex-1 flex items-center">
+              <span class="badge {{ badge().cls }} badge-lg">{{ badge().label }}</span>
+            </div>
+          }
         }
         @case ('valve') {
-          <div class="flex-1 flex flex-col justify-center gap-2">
-            <div class="flex items-baseline justify-between">
-              <span class="text-lg font-semibold {{ valve().text }}">{{ valve().label }}</span>
-              <span class="text-xs text-base-content/40 tabular-nums">{{ valve().pct }}%</span>
-            </div>
-            <div class="h-2.5 rounded-full bg-base-300/40 overflow-hidden">
-              <div class="h-full rounded-full transition-all duration-500 {{ valve().cls }}" [style.width.%]="valve().pct"></div>
-            </div>
-            <div class="flex justify-between text-[10px] text-base-content/30">
-              <span>Closed</span><span>Open</span>
+          <!-- Gate-valve glyph: the gate descends from the handwheel into the
+               pipe, and the open passage fills with water — the water height IS
+               the % open (closed = gate spans the pipe, open = gate retracted,
+               pipe full). Colour tracks state. -->
+          <div class="flex-1 flex items-center gap-3">
+            <span class="shrink-0 {{ valve().text }} transition-colors">
+              <svg class="h-11 w-auto" viewBox="0 0 56 46" fill="none">
+                <!-- pipe / chamber -->
+                <rect x="1.5" y="20" width="53" height="16" rx="3" stroke="currentColor" stroke-width="2" style="fill:var(--color-base-200)" />
+                <!-- water in the open passage; height = % open, filling from the floor up -->
+                <rect x="3" [attr.y]="35 - 0.14 * valve().pct" width="50" [attr.height]="0.14 * valve().pct" rx="2" fill="currentColor" />
+                <!-- gate, descending from the bonnet; its tip rests at the waterline -->
+                <rect x="23" y="9" width="10" [attr.height]="26 - 0.14 * valve().pct" rx="1.5" stroke="currentColor" stroke-width="1.5" style="fill:var(--color-base-300)" />
+                <!-- stem + handwheel -->
+                <line x1="28" y1="9" x2="28" y2="4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                <line x1="21" y1="4" x2="35" y2="4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+              </svg>
+            </span>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold {{ valve().text }} truncate">{{ valve().label }}</div>
+              <div class="text-[11px] text-base-content/40 tabular-nums">{{ valve().pct }}% open</div>
             </div>
           </div>
         }
@@ -129,6 +166,15 @@ const CHART = {
           </div>
         }
       }
+
+      <!-- Actuator hold (valve / pump): the card itself toggles a manual claim,
+           so there's no separate control cluster. Shows only when controllable. -->
+      @if (actuatable()) {
+        <div class="mt-2 pt-2 border-t border-base-300/20 flex items-center gap-1.5 text-[11px] select-none">
+          <span class="w-1.5 h-1.5 rounded-full shrink-0 {{ held() ? 'bg-primary animate-pulse' : 'bg-base-content/30' }}"></span>
+          <span class="truncate {{ held() ? 'text-primary font-medium' : 'text-base-content/50' }}">{{ holdHint() }}</span>
+        </div>
+      }
     </div>
   `,
 })
@@ -144,6 +190,47 @@ export class DashboardCardComponent {
   /** Owning controller's name + colour, shown only when a site has >1 controller. */
   readonly controllerLabel = input('');
   readonly controllerColor = input('#94a3b8');
+
+  /** This card maps to a controllable actuator (valve/pump) and can be toggled
+   *  right now — clicking the card holds/releases it. False ⇒ status-only. */
+  readonly actuatable = input(false);
+  /** The actuator is currently held (claimed) by this operator. */
+  readonly held = input(false);
+  /** A claim/release for this actuator is in flight. */
+  readonly actuatorBusy = input(false);
+  /** Structural actuator kind (independent of online/control state) — drives the
+   *  pump's glyph layout so it matches the valve card. '' ⇒ not an actuator. */
+  readonly actuatorKind = input<'' | 'valve' | 'pump'>('');
+  /** Click toggled the actuator hold — the page issues the claim/release. */
+  readonly toggle = output<void>();
+
+  /** Root classes: read-only status cards get a plain grey ring; actuatable
+   *  control cards are tinted (cyan accent ring, filled while held) so they
+   *  read as interactive — distinct from the surrounding status tiles. */
+  protected cardClass = computed(() => {
+    const pad = this.dense() ? 'p-3' : 'p-4 min-h-[140px]';
+    if (!this.actuatable()) return `${pad} ring-1 ring-base-300/40 hover:ring-base-300/70`;
+    if (this.actuatorBusy()) return `${pad} ring-1 ring-primary/30 opacity-60 cursor-wait`;
+    return this.held()
+      ? `${pad} ring-1 ring-primary/70 bg-primary/10 cursor-pointer`
+      : `${pad} ring-1 ring-primary/30 hover:ring-primary/60 cursor-pointer`;
+  });
+
+  /** Footer affordance copy, by actuator kind + held state. */
+  protected holdHint(): string {
+    const valve = this.widget().kind === 'valve';
+    if (this.held()) return valve ? 'Holding open · tap to close' : 'Running · tap to stop';
+    return valve ? 'Tap to open' : 'Tap to run';
+  }
+
+  protected onCardClick(): void {
+    if (this.actuatable() && !this.actuatorBusy()) this.toggle.emit();
+  }
+
+  /** Space activates the card without scrolling the page. */
+  protected onSpace(e: Event): void {
+    if (this.actuatable() && !this.actuatorBusy()) { e.preventDefault(); this.toggle.emit(); }
+  }
 
   protected statText = computed(() => {
     const r = this.row();
@@ -170,15 +257,24 @@ export class DashboardCardComponent {
     return r.reported >= 0.5 ? { label: 'On', cls: 'badge-success' } : { label: 'Off', cls: 'badge-ghost' };
   });
 
-  /** Valve position from the cover's 0..1 shadow value → bar %, label, colour. */
-  protected valve = computed<{ pct: number; label: string; cls: string; text: string }>(() => {
+  /** Pump on/off from its relay shadow (1/0) → label, sub-line, colour. Mirrors
+   *  `valve()` so the pump control tile reads the same as the valve one. */
+  protected pump = computed<{ on: boolean; label: string; sub: string; text: string }>(() => {
+    const r = this.row();
+    return r && r.reported >= 0.5
+      ? { on: true, label: 'On', sub: 'running', text: 'text-success' }
+      : { on: false, label: 'Off', sub: 'stopped', text: 'text-base-content/50' };
+  });
+
+  /** Valve position from the cover's 0..1 shadow value → glyph %, label, colour. */
+  protected valve = computed<{ pct: number; label: string; text: string }>(() => {
     const r = this.row();
     const pos = r ? Number(r.reported) : NaN;
-    if (Number.isNaN(pos)) return { pct: 0, label: '—', cls: 'bg-base-content/20', text: 'text-base-content/40' };
+    if (Number.isNaN(pos)) return { pct: 0, label: '—', text: 'text-base-content/40' };
     const pct = Math.round(Math.max(0, Math.min(1, pos)) * 100);
-    if (pct <= 2) return { pct: 0, label: 'Closed', cls: 'bg-base-content/30', text: 'text-base-content/50' };
-    if (pct >= 98) return { pct: 100, label: 'Open', cls: 'bg-success', text: 'text-success' };
-    return { pct, label: `${pct}% open`, cls: 'bg-warning', text: 'text-warning' };
+    if (pct <= 2) return { pct: 0, label: 'Closed', text: 'text-base-content/50' };
+    if (pct >= 98) return { pct: 100, label: 'Open', text: 'text-success' };
+    return { pct, label: 'Part open', text: 'text-warning' };
   });
 
   protected gaugeOption = computed<EChartsOption>(() => {

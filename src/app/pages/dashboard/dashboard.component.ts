@@ -7,6 +7,8 @@ import { ConfirmService } from '../../core/services/confirm.service';
 import { DashboardStore } from './dashboard.store';
 import { TelemetryStore } from './telemetry.store';
 import { DashboardCardComponent } from './widgets/dashboard-card.component';
+import { RouteCardComponent } from './widgets/route-card.component';
+import type { RouteControl } from '@core';
 
 /**
  * Customer dashboard for a site (`/site/:name/dashboard`, where `:name` is the
@@ -18,45 +20,47 @@ import { DashboardCardComponent } from './widgets/dashboard-card.component';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DashboardCardComponent],
+  imports: [DashboardCardComponent, RouteCardComponent],
   providers: [DashboardStore, TelemetryStore],
   host: { class: 'flex-1 overflow-auto' },
   template: `
-    <div class="max-w-6xl mx-auto w-full px-6 py-6">
+    <div class="max-w-6xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6">
       <!-- Bright hero band -->
-      <div class="relative overflow-hidden rounded-2xl mb-6 ring-1 ring-white/10
+      <div class="relative overflow-hidden rounded-2xl mb-5 sm:mb-6 ring-1 ring-white/10
                   bg-gradient-to-br from-cyan-500/15 via-sky-500/10 to-base-100">
         <div class="pointer-events-none absolute -top-16 -right-10 w-72 h-72 rounded-full bg-cyan-500/20 blur-3xl"></div>
-        <div class="relative px-6 py-6 flex items-center gap-3 flex-wrap">
+        <div class="relative px-4 py-5 sm:px-6 sm:py-6 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
           <div class="flex-1 min-w-0">
-            <h1 class="text-2xl font-bold tracking-tight truncate">{{ siteName() || 'Dashboard' }}</h1>
+            <h1 class="text-xl sm:text-2xl font-bold tracking-tight leading-tight break-words">{{ siteName() || 'Dashboard' }}</h1>
             <p class="text-sm text-base-content/60 mt-0.5">Live status &amp; control</p>
           </div>
-          <button class="btn btn-sm btn-ghost gap-1.5" (click)="openDocs()" [disabled]="docBusy()"
-                  title="Open this site's documentation">
-            @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
-            @else {
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
+          <div class="flex items-center gap-2 flex-wrap shrink-0">
+            <button class="btn btn-sm btn-ghost gap-1.5" (click)="openDocs()" [disabled]="docBusy()"
+                    title="Open this site's documentation">
+              @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
+              @else {
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+              }
+              Documentation
+            </button>
+            <!-- Real device presence (replaces the old hardcoded pill). -->
+            @if (presenceTone() === 'online') {
+              <span class="inline-flex items-center gap-1.5 text-xs text-success bg-success/10 rounded-full px-2.5 py-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span> {{ presenceLabel() }}
+              </span>
+            } @else if (presenceTone() === 'partial') {
+              <span class="inline-flex items-center gap-1.5 text-xs text-warning bg-warning/10 rounded-full px-2.5 py-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-warning"></span> {{ presenceLabel() }}
+              </span>
+            } @else {
+              <span class="inline-flex items-center gap-1.5 text-xs text-base-content/50 bg-base-content/10 rounded-full px-2.5 py-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-base-content/40"></span>
+                {{ presenceLabel() }}@if (presenceDetail()) { <span class="opacity-70">· {{ presenceDetail() }}</span> }
+              </span>
             }
-            Documentation
-          </button>
-          <!-- Real device presence (replaces the old hardcoded pill). -->
-          @if (presenceTone() === 'online') {
-            <span class="inline-flex items-center gap-1.5 text-xs text-success bg-success/10 rounded-full px-2.5 py-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span> {{ presenceLabel() }}
-            </span>
-          } @else if (presenceTone() === 'partial') {
-            <span class="inline-flex items-center gap-1.5 text-xs text-warning bg-warning/10 rounded-full px-2.5 py-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-warning"></span> {{ presenceLabel() }}
-            </span>
-          } @else {
-            <span class="inline-flex items-center gap-1.5 text-xs text-base-content/50 bg-base-content/10 rounded-full px-2.5 py-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-base-content/40"></span>
-              {{ presenceLabel() }}@if (presenceDetail()) { <span class="opacity-70">· {{ presenceDetail() }}</span> }
-            </span>
-          }
+          </div>
         </div>
       </div>
 
@@ -92,63 +96,85 @@ import { DashboardCardComponent } from './widgets/dashboard-card.component';
           </div>
         }
 
-        <!-- Command bar + manual control (hidden while an admin is read-only) -->
-        @if (canControl()) {
-        @for (c of store.spec().controllers; track c.controller) {
-          <div class="bg-base-100 rounded-2xl ring-1 ring-base-300/40 px-4 py-3 mb-4">
-            <!-- Routes -->
-            <div class="flex items-center flex-wrap gap-2">
-              <span class="w-2 h-2 rounded-full shrink-0" [class]="store.presence(c.controller).online ? 'bg-success' : 'bg-base-content/30'"
-                [title]="store.presence(c.controller).online ? 'Online' : ('Offline · ' + lastSeenText(c.controller))"></span>
-              <span class="text-xs font-semibold text-base-content/60 mr-1">{{ c.name }}</span>
-              @for (r of c.routes; track r.routeId) {
-                <div class="join">
-                  <button class="btn btn-xs join-item btn-success" [disabled]="busy().has(key(c.controller,'route_start',r.routeId))"
-                    (click)="cmd(c.controller,'route_start',r.routeId)">▶ {{ r.name }}</button>
-                  <button class="btn btn-xs join-item" [disabled]="busy().has(key(c.controller,'route_stop',r.routeId))"
-                    (click)="cmd(c.controller,'route_stop',r.routeId)">■</button>
+        <!-- Routes — the live control surface. Shown to everyone (status reads
+             even in admin read-only); the toggle is disabled, not hidden, when
+             control isn't held. Each card animates water when its route flows
+             and toggles start/stop on click. -->
+        @if (hasRoutes()) {
+          <section class="mb-6">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">Routes</h2>
+            @for (c of store.spec().controllers; track c.controller) {
+              @if (c.routes.length) {
+                <div class="mb-4 last:mb-0">
+                  <div class="flex items-center gap-2 mb-2">
+                    <span class="w-2 h-2 rounded-full shrink-0" [class]="store.presence(c.controller).online ? 'bg-success' : 'bg-base-content/30'"
+                      [title]="store.presence(c.controller).online ? 'Online' : ('Offline · ' + lastSeenText(c.controller))"></span>
+                    @if (showController()) { <span class="text-xs font-semibold text-base-content/60">{{ c.name }}</span> }
+                    <span class="grow"></span>
+                    @if (canControl()) {
+                      <button class="btn btn-xs btn-error btn-outline" [disabled]="busy().has(key(c.controller,'stop_all'))"
+                        (click)="cmd(c.controller,'stop_all')">Stop all</button>
+                      <details class="dropdown dropdown-end">
+                        <summary class="btn btn-xs btn-ghost" title="More controller actions">⋯</summary>
+                        <ul class="dropdown-content menu menu-sm z-10 mt-1 w-40 rounded-box bg-base-100 ring-1 ring-base-300/40 shadow-lg p-1">
+                          <li><button [disabled]="busy().has(key(c.controller,'reset_faults'))" (click)="cmd(c.controller,'reset_faults')">Reset faults</button></li>
+                          <li><button [disabled]="busy().has(key(c.controller,'clear_queue'))" (click)="cmd(c.controller,'clear_queue')">Clear queue</button></li>
+                        </ul>
+                      </details>
+                    }
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    @for (r of c.routes; track r.routeId) {
+                      <app-route-card
+                        [route]="r"
+                        [state]="routeState(c.controller, r.routeId)"
+                        [flowRate]="routeFlow(c.controller, r)"
+                        [online]="store.presence(c.controller).online"
+                        [busy]="routeBusy(c.controller, r.routeId)"
+                        [controllable]="canControl()"
+                        (action)="cmd(c.controller, $event, r.routeId)"
+                      />
+                    }
+                  </div>
                 </div>
               }
-              <span class="grow"></span>
-              <button class="btn btn-xs btn-error btn-outline" [disabled]="busy().has(key(c.controller,'stop_all'))"
-                (click)="cmd(c.controller,'stop_all')">Stop all</button>
-              <button class="btn btn-xs btn-ghost" [disabled]="busy().has(key(c.controller,'reset_faults'))"
-                (click)="cmd(c.controller,'reset_faults')">Reset faults</button>
-              <button class="btn btn-xs btn-ghost" [disabled]="busy().has(key(c.controller,'clear_queue'))"
-                (click)="cmd(c.controller,'clear_queue')">Clear queue</button>
-            </div>
+            }
+          </section>
+        }
 
-            <!-- Manual control: hold an actuator open/running. It releases on its
-                 own if your connection drops (the device's dead-man lease). -->
+        <!-- Commissioning (advanced): valves/pumps are held by tapping their card
+             above; the only extra control here is the safety override. Hidden
+             while an admin is read-only; collapsed by default. -->
+        @if (canControl()) {
+          @for (c of store.spec().controllers; track c.controller) {
             @if (c.actuators.length > 0) {
-              <div class="mt-3 pt-3 border-t border-base-300/30">
-                <div class="flex items-center gap-2 mb-2">
-                  <span class="text-xs font-semibold text-base-content/60">Manual control</span>
-                  <span class="text-[11px] text-base-content/40">hold to drive; releases automatically if you disconnect</span>
-                  <span class="grow"></span>
-                  <button class="btn btn-xs" [class]="overrideOn(c.controller) ? 'btn-error' : 'btn-ghost'"
-                    [disabled]="busy().has(manualKey(c.controller,'safety_override'))"
-                    (click)="toggleOverride(c.controller)">
-                    Safety override: {{ overrideOn(c.controller) ? 'ON' : 'off' }}
-                  </button>
-                </div>
-                <div class="flex flex-wrap gap-2">
-                  @for (a of c.actuators; track a.id) {
-                    <button class="btn btn-sm" [class]="isHeld(c.controller,a.id) ? 'btn-primary' : 'btn-outline'"
-                      [disabled]="busy().has(manualKey(c.controller,a.id))"
-                      (click)="toggleActuator(c.controller,a.id)">
-                      {{ a.name }}
-                      <span class="text-[10px] opacity-70 ml-1">{{ isHeld(c.controller,a.id) ? (a.kind === 'valve' ? 'holding open' : 'running') : (a.kind === 'valve' ? 'open' : 'run') }}</span>
+              <details class="mb-4 bg-base-100/60 rounded-2xl ring-1 ring-base-300/30 px-4 py-3">
+                <summary class="cursor-pointer list-none flex items-center gap-2 text-xs font-semibold text-base-content/60">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  </svg>
+                  Commissioning@if (showController()) { <span class="text-base-content/40">· {{ c.name }}</span> }
+                  <span class="text-[11px] font-normal text-base-content/40">advanced</span>
+                </summary>
+                <div class="mt-3 pt-3 border-t border-base-300/30 flex flex-col gap-2.5">
+                  <p class="text-[11px] text-base-content/50">Tap a valve or pump card above to hold it open or running; it releases automatically if you disconnect.</p>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-base-content/60">Safety override</span>
+                    <span class="grow"></span>
+                    <button class="btn btn-xs" [class]="overrideOn(c.controller) ? 'btn-error' : 'btn-ghost'"
+                      [disabled]="busy().has(manualKey(c.controller,'safety_override'))"
+                      (click)="toggleOverride(c.controller)">
+                      {{ overrideOn(c.controller) ? 'ON' : 'off' }}
                     </button>
+                  </div>
+                  @if (overrideOn(c.controller)) {
+                    <p class="text-[11px] text-warning">Safety checks are OFF: a pump can run with no route and the watchdogs are bypassed. Turn this off when you finish.</p>
                   }
                 </div>
-                @if (overrideOn(c.controller)) {
-                  <p class="text-[11px] text-warning mt-2">Safety checks are OFF: a pump can run with no route and the watchdogs are bypassed. Turn this off when you finish.</p>
-                }
-              </div>
+              </details>
             }
-          </div>
-        }
+          }
         }
 
         @if (note()) { <div class="text-xs text-base-content/50 mb-3">{{ note() }}</div> }
@@ -158,20 +184,23 @@ import { DashboardCardComponent } from './widgets/dashboard-card.component';
         @for (sec of sections(); track sec.id) {
           <section class="mb-6">
             <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ sec.label }}</h2>
-            <div [class]="sec.id === 'status'
-                ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2'
-                : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'">
+            <div [class]="gridFor(sec.id)">
               @for (w of sec.widgets; track w.id) {
                 <div [class]="w.kind === 'timeline' ? 'sm:col-span-2 lg:col-span-3' : ''">
                   <app-dashboard-card
                     [widget]="w"
-                    [dense]="sec.id === 'status'"
+                    [dense]="denseSection(sec.id)"
                     [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
                     [controllerColor]="ctrlColor(w.controller)"
                     [row]="store.rowFor(w)"
                     [totalRow]="store.row(w.controller, w.totalSensor)"
                     [series]="telemetry.seriesFor(w)"
                     [events]="store.eventsFor(w.controller)"
+                    [actuatable]="isActuatable(w)"
+                    [held]="actuatorHeld(w)"
+                    [actuatorBusy]="actuatorBusyFor(w)"
+                    [actuatorKind]="actuatorFor(w)?.kind ?? ''"
+                    (toggle)="toggleWidgetActuator(w)"
                   />
                 </div>
               }
@@ -292,16 +321,19 @@ export class DashboardComponent implements OnDestroy {
     return `${Math.round(m / 60)}h ago`;
   }
 
-  /** Section a widget belongs to — drives the grouped layout below. */
+  /** Section a widget belongs to — drives the grouped layout below. Valves and
+   *  pumps are the manual controls, so they share one section (kept out of the
+   *  read-only status strip); structural `actuatorFor` (not online/control)
+   *  decides, so cards don't jump sections when a device drops offline. */
   private category(w: DashboardWidget): 'status' | 'levels' | 'valves' | 'flow' | 'pressure' | 'activity' {
+    if (w.kind === 'timeline') return 'activity';
+    if (w.kind === 'valve' || this.actuatorFor(w)) return 'valves'; // valves + pumps = controls
     switch (w.kind) {
-      case 'timeline': return 'activity';
-      case 'valve':    return 'valves';
       case 'gauge':    return 'levels';
       case 'flow':     return 'flow';
       case 'line':     return 'pressure'; // remaining line charts are pressure/filter (psi)
       case 'stat':     return w.unit === 'L' ? 'flow' : 'status'; // stray flow totals vs queue depth
-      default:         return 'status'; // badges: system state, last stop, pump, override
+      default:         return 'status'; // badges: system state, last stop, override
     }
   }
 
@@ -319,8 +351,84 @@ export class DashboardComponent implements OnDestroy {
       arr.push(w);
       byCat.set(cat, arr);
     }
-    return order.filter((c) => byCat.has(c)).map((c) => ({ id: c, label: labels[c], widgets: byCat.get(c)! }));
+    return order.filter((c) => byCat.has(c)).map((c) => {
+      const widgets = byCat.get(c)!;
+      let label = labels[c];
+      if (c === 'valves') {
+        const hasValve = widgets.some((w) => w.kind === 'valve');
+        const hasPump = widgets.some((w) => w.kind !== 'valve'); // pumps grouped here
+        label = hasValve && hasPump ? 'Valves & pumps' : hasPump ? 'Pumps' : 'Valves';
+      }
+      return { id: c, label, widgets };
+    });
   });
+
+  // --- Routes (the live control surface) -----------------------------------
+  protected hasRoutes = computed(() => this.store.spec().controllers.some((c) => c.routes.length > 0));
+
+  /** A route's live state for its card (token + reason; empty when never seen). */
+  protected routeState(controller: string, routeId: number): { token: string; reason: string } {
+    const s = this.store.routeState(controller, routeId);
+    return { token: s?.token ?? '', reason: s?.reason ?? '' };
+  }
+
+  /** Live flow rate (L/min) for a route's primary flow sensor, null when none/unknown. */
+  protected routeFlow(controller: string, r: RouteControl): number | null {
+    if (!r.flowSensor) return null;
+    return this.store.row(controller, r.flowSensor)?.reported ?? null;
+  }
+
+  /** A start/stop/fault-reset for this route is in flight (disables the card). */
+  protected routeBusy(controller: string, routeId: number): boolean {
+    const b = this.busy();
+    return b.has(this.key(controller, 'route_start', routeId))
+      || b.has(this.key(controller, 'route_stop', routeId))
+      || b.has(this.key(controller, 'fault_reset', routeId));
+  }
+
+  // --- Widget section layout -----------------------------------------------
+  /** Valves + the status strip render as a dense glyph grid; everything else as
+   *  full cards. */
+  protected denseSection(id: string): boolean { return id === 'status' || id === 'valves'; }
+  protected gridFor(id: string): string {
+    if (id === 'status') return 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2';
+    if (id === 'valves') return 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2';
+    // Activity is a text log — cap its width so rows stay readable and the
+    // timestamp isn't marooned across a full-width card.
+    if (id === 'activity') return 'grid grid-cols-1 gap-4 max-w-2xl';
+    return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4';
+  }
+
+  // --- Inline actuator control --------------------------------------------
+  // A valve/pump widget reads the same sensor its actuator reports on, so the
+  // status card *is* the control: click to hold open / run (claim) or release.
+  // This replaces the separate manual-control button cluster.
+  /** `${controller}/${reportedSensor}` → the actuator it drives. */
+  private actuatorMap = computed(() => {
+    const m = new Map<string, ActuatorControl>();
+    for (const c of this.store.spec().controllers)
+      for (const a of c.actuators) m.set(`${c.controller}/${a.reportedSensor}`, a);
+    return m;
+  });
+  protected actuatorFor(w: DashboardWidget): ActuatorControl | undefined {
+    return w.sensor ? this.actuatorMap().get(`${w.controller}/${w.sensor}`) : undefined;
+  }
+  /** Toggleable now: an actuator exists, control is held, and the device is online. */
+  protected isActuatable(w: DashboardWidget): boolean {
+    return this.canControl() && !!this.actuatorFor(w) && this.store.presence(w.controller).online;
+  }
+  protected actuatorHeld(w: DashboardWidget): boolean {
+    const a = this.actuatorFor(w);
+    return a ? this.isHeld(w.controller, a.id) : false;
+  }
+  protected actuatorBusyFor(w: DashboardWidget): boolean {
+    const a = this.actuatorFor(w);
+    return a ? this.busy().has(this.manualKey(w.controller, a.id)) : false;
+  }
+  protected toggleWidgetActuator(w: DashboardWidget): void {
+    const a = this.actuatorFor(w);
+    if (a) void this.toggleActuator(w.controller, a.id);
+  }
 
   constructor() {
     this.siteId = this.route.snapshot.paramMap.get('name') ?? '';

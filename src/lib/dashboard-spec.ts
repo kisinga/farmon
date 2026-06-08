@@ -41,10 +41,21 @@ export interface DashboardWidget {
 }
 
 /** A route an operator can start/stop. `routeId` is the firmware's index into
- *  the controller's route table (`ROUTES[]`), the value sent as `route_id`. */
+ *  the controller's route table (`ROUTES[]`), the value sent as `route_id`. The
+ *  source/dest/pump/flow fields are presentation hints: they let the dashboard
+ *  draw the route as a `source → dest` pipe and bind a live flow readout. */
 export interface RouteControl {
   routeId: number;
   name: string;
+  /** Friendly name of the source endpoint (tank / water source). */
+  source?: string;
+  /** Friendly name of the destination endpoint. */
+  destination?: string;
+  /** True when the route crosses a pump (vs gravity-fed) — drives the glyph. */
+  crossesPump?: boolean;
+  /** Telemetry sensor id of the route's primary flow sensor, for a live L/min
+   *  readout. Undefined for unmonitored routes (no flow sensor). */
+  flowSensor?: string;
 }
 
 /** An actuator an operator can manually drive via `node_set`. `id` is the
@@ -132,6 +143,10 @@ function widgetForChannel(controller: string, ch: TelemetryChannel): DashboardWi
 export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
   const widgets: DashboardWidget[] = [];
   const controllers: ControllerControls[] = [];
+  // Friendly endpoint names can span controllers (a route may target a node
+  // owned by another controller, e.g. a delivery point), so resolve against the
+  // whole topology rather than one controller's manifest.
+  const nodeName = new Map(topology.nodes.map((n) => [n.id, n.name || n.id]));
   for (const ctrl of topology.controllers) {
     const manifest = topologyToManifestForController(topology, ctrl.id);
     const channels = collectTelemetryChannels(manifest);
@@ -167,11 +182,28 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
         actuators.push({ id: ch.node, name: ch.label ?? ch.node, kind: ch.role, reportedSensor: ch.sensor });
       }
     }
+    // node id → flow telemetry sensor, for a route's live flow readout.
+    const flowSensorByNode = new Map<string, string>();
+    for (const ch of channels) if (ch.role === 'flow' && ch.node) flowSensorByNode.set(ch.node, ch.sensor);
     controllers.push({
       controller: ctrl.id,
       name: ctrl.friendlyName ?? ctrl.id,
       // Index === firmware route_id (ROUTES[] is built in manifest.routes order).
-      routes: manifest.routes.map((r, i) => ({ routeId: i, name: r.name || r.key })),
+      routes: manifest.routes.map((r, i) => {
+        // The manifest `destination` field is the dest *tank* (for level gating)
+        // and is undefined for non-tank endpoints; the real endpoint is the last
+        // node in the route's sequence, so use that for the display label.
+        const seq = r.nodeSequence ?? [];
+        const destId = seq.length ? seq[seq.length - 1] : r.destination;
+        return {
+          routeId: i,
+          name: r.name || r.key,
+          source: r.source ? nodeName.get(r.source) ?? r.source : undefined,
+          destination: destId ? nodeName.get(destId) ?? destId : undefined,
+          crossesPump: r.crossesPump,
+          flowSensor: r.flow_sensor ? flowSensorByNode.get(r.flow_sensor) : undefined,
+        };
+      }),
       actuators,
     });
   }

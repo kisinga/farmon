@@ -100,3 +100,24 @@
 /* Pin fields have a two-step selector; the validated control is a hidden
    input. We mirror its invalid state onto the visible selects via a wrapper. */
 .pin-invalid .select { @apply select-error; }
+
+/* ── Water-flow animation ────────────────────────────────────────────────────
+   A dashed stroke marching along a pipe/valve, signalling live flow on the
+   dashboard. Same look as the SCADA export (scada-decorator). Stroke colour is
+   set by the element's text colour (currentColor); honours reduced-motion. */
+@keyframes water-flow { to { stroke-dashoffset: -24; } }
+.flow-line {
+  stroke-dasharray: 8 4;
+  animation: water-flow 1.2s linear infinite;
+}
+/* A light glint sweeping along a filled pipe — reads as water moving left→right.
+   Translate is relative to the band's own width (≈1/3 of the pipe). */
+@keyframes flow-sheen {
+  0%   { transform: translateX(-150%); }
+  100% { transform: translateX(450%); }
+}
+.flow-sheen-band { animation: flow-sheen 1.6s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .flow-line { animation: none; }
+  .flow-sheen-band { animation: none; opacity: 0; }
+}

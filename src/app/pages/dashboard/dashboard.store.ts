@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy, inject, signal } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
-import type { DashboardSpec, DashboardWidget } from '@core';
+import { SYSTEM_STATE_TOKENS, type DashboardSpec, type DashboardWidget } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
 import type { ShadowRow, StateEventRow, ControllerRow } from '../../core/models/runtime';
 
@@ -96,6 +96,19 @@ export class DashboardStore implements OnDestroy {
   /** Transitions for one controller, newest first (the timeline widget). */
   eventsFor(controller: string): StateEventRow[] {
     return this.events().filter((e) => e.controller === controller);
+  }
+
+  /** A route's current state, from the newest transition that names it. `events()`
+   *  is newest-first; we skip OUTCOME-only tokens (QUEUED/REFUSED/…) so a refusal
+   *  doesn't masquerade as a state — only a real SYSTEM_STATE token sets it. The
+   *  `reason` rides along for the fault/stop detail. Undefined ⇒ never seen (idle). */
+  routeState(controller: string, routeId: number): { token: string; reason: string; ts: string } | undefined {
+    for (const e of this.events()) {
+      if (e.controller !== controller || e.route !== routeId) continue;
+      if (!SYSTEM_STATE_TOKENS.some((t) => t === e.to)) continue;
+      return { token: e.to, reason: e.reason, ts: e.ts };
+    }
+    return undefined;
   }
 
   ngOnDestroy(): void {

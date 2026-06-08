@@ -29,6 +29,10 @@ interface DeploymentConfig {
   brokerAddress: string;
   brokerPort: number;
   mode: DeploymentMode;
+  /** Device connects over TLS (managed cloud). Local on-site brokers stay plain. */
+  brokerTls: boolean;
+  /** PEM of the CA to pin in firmware when brokerTls; empty otherwise. */
+  brokerCa: string;
 }
 import { validateAll } from '@core/rules';
 import type {
@@ -733,19 +737,22 @@ export class BackendService {
    * reach the broker; `MAJI_MQTT_PUBLIC_HOST` on the server must point at a host
    * the device can actually reach (its LAN IP / public name).
    */
-  private cloudDefaults?: { host: string; port: number; tls: boolean };
+  private cloudDefaults?: { host: string; port: number; tls: boolean; ca: string };
   /** The managed-cloud broker defaults (mqtt.majiflow.io:8883 TLS) — the Online
-   *  autofill source. Cached per session. */
-  async cloudBrokerDefaults(): Promise<{ host: string; port: number; tls: boolean }> {
+   *  autofill source, plus the CA the firmware pins when TLS. Cached per session. */
+  async cloudBrokerDefaults(): Promise<{ host: string; port: number; tls: boolean; ca: string }> {
     if (this.cloudDefaults) return this.cloudDefaults;
-    const res = await this.pb.send<{ broker_address?: string; broker_port?: number; broker_tls?: boolean }>(
-      '/api/farmon/deployment',
-      { method: 'GET' },
-    );
+    const res = await this.pb.send<{
+      broker_address?: string;
+      broker_port?: number;
+      broker_tls?: boolean;
+      broker_ca?: string;
+    }>('/api/farmon/deployment', { method: 'GET' });
     this.cloudDefaults = {
       host: res.broker_address ?? '',
       port: res.broker_port ?? 8883,
       tls: res.broker_tls ?? true,
+      ca: res.broker_ca ?? '',
     };
     return this.cloudDefaults;
   }
@@ -759,9 +766,22 @@ export class BackendService {
     const cloud = await this.cloudBrokerDefaults();
     const d = site.deployment;
     if (!d || d.mode === 'managed') {
-      return { mode: 'managed', brokerAddress: cloud.host, brokerPort: cloud.port };
+      return {
+        mode: 'managed',
+        brokerAddress: cloud.host,
+        brokerPort: cloud.port,
+        brokerTls: cloud.tls,
+        brokerCa: cloud.ca,
+      };
     }
-    return { mode: 'local', brokerAddress: d.brokerHost, brokerPort: d.brokerPort || cloud.port };
+    // Local on-site brokers stay plain (no CA); local-site TLS is a separate feature.
+    return {
+      mode: 'local',
+      brokerAddress: d.brokerHost,
+      brokerPort: d.brokerPort || cloud.port,
+      brokerTls: false,
+      brokerCa: '',
+    };
   }
 
   /** Build one controller's ESPHome files + its contribution to the source hash. */
@@ -786,6 +806,16 @@ export class BackendService {
       );
     }
 
+    // A TLS broker with no CA would bake an empty `certificate_authority` — devices
+    // couldn't verify it and would never connect. Refuse rather than ship that.
+    if (deployment.brokerTls && !deployment.brokerCa.trim()) {
+      throw new Error(
+        `Cannot generate "${ctrl.friendlyName ?? ctrl.id}": the broker uses TLS but the server ` +
+          `returned no CA. Enable TLS with a mounted cert (MAJI_MQTT_TLS_ENABLED + ` +
+          `/certs/fullchain.pem) so the firmware can pin it.`,
+      );
+    }
+
     const { board } = await this.boardLoad(ctrl.board);
     const manifest = topologyToManifestForController(topo, ctrl.id);
 
@@ -805,6 +835,8 @@ export class BackendService {
       mode: deployment.mode,
       brokerAddress: deployment.brokerAddress,
       brokerPort: deployment.brokerPort,
+      brokerTls: deployment.brokerTls,
+      brokerCa: deployment.brokerCa,
     };
 
     // Validate against the deployment mode BEFORE emitting anything — never ship

@@ -3,8 +3,10 @@ package api
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/kisinga/majiflow/internal/auth"
@@ -57,6 +59,34 @@ var routeActions = map[string]bool{
 var nodeActions = map[string]bool{"node_set": true}
 var onActions = map[string]bool{"node_set": true, "safety_override": true}
 
+// readCABlock returns the PEM of the last CERTIFICATE block in the file at path —
+// the CA/issuer at the end of a leaf+CA fullchain. Returns "" when the path is
+// empty or unreadable. The firmware pins this as its certificate_authority so the
+// broker can rotate its server leaf without re-flashing field devices.
+func readCABlock(path string) string {
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var last *pem.Block
+	for {
+		var blk *pem.Block
+		if blk, data = pem.Decode(data); blk == nil {
+			break
+		}
+		if blk.Type == "CERTIFICATE" {
+			last = blk
+		}
+	}
+	if last == nil {
+		return ""
+	}
+	return string(pem.EncodeToMemory(last))
+}
+
 // Register mounts the /api/farmon routes on the serve event's router.
 func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 	g := se.Router.Group("/api/farmon")
@@ -85,7 +115,10 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			"broker_address": cfg.MQTTPublicHost,
 			"broker_port":    cfg.MQTTPublicPort,
 			"broker_tls":     cfg.MQTTPublicTLS,
-			"mode":           firmwareMode,
+			// The CA the firmware pins as its certificate_authority — the issuer at
+			// the end of the served leaf+CA chain, so leaf rotation needs no re-flash.
+			"broker_ca": readCABlock(cfg.MQTTTLSCert),
+			"mode":      firmwareMode,
 		})
 	})
 

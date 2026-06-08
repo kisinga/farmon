@@ -84,9 +84,17 @@ TLS is a single flag so on-prem deploys need no certificates:
   `MAJI_MQTT_TLS_KEY` (PEM paths). The server refuses to start if the flag is on but the cert/key
   are missing.
 
-Mount the cert read-only (keep it **out** of the data volume). In `docker-compose.yml` an example
-mount is provided (commented); on Coolify, attach the cert/key as a secret/file mount and set the
-two path vars to match.
+Mount only the two PEMs at `/certs` (keep them **out** of the data volume): `fullchain.pem`
+(leaf + CA) and `privkey.pem`. There is no `ca.pem` to mount — the server derives the CA (the last
+cert in `fullchain.pem`) and bakes it into firmware as the device's `certificate_authority`, so the
+broker can rotate its leaf without re-flashing devices. `docker-compose.yml` does **not** bind-mount
+`/certs`: on Coolify attach the two PEMs as **file mounts** at `/certs/fullchain.pem` and
+`/certs/privkey.pem`; for a local on-prem TLS test add a `docker-compose.override.yml` with
+`- ./deploy/certs:/certs:ro` (generate them with `deploy/gen-selfsigned-certs.sh`).
+
+Cert custody: keep `ca-key.pem` **offline** (never on the server or in git) and back it up — it is
+the long-lived trust anchor. Losing the leaf key is a non-event (re-issue from the CA); the fleet is
+never bricked by a cert change because devices trust the CA, not a pinned leaf.
 
 ---
 
@@ -113,8 +121,8 @@ existing `storage/` blobs into the bucket once when you switch.
 ## Coolify
 
 1. New resource → **Docker Compose** from this repo (root `docker-compose.yml`).
-2. Set the env vars (Profile A for managed). Attach the TLS cert/key as a file/secret mount and
-   point `MAJI_MQTT_TLS_CERT` / `MAJI_MQTT_TLS_KEY` at them.
+2. Set the env vars (Profile A for managed). Attach `fullchain.pem` + `privkey.pem` as **file mounts**
+   at `/certs/fullchain.pem` and `/certs/privkey.pem` (matching `MAJI_MQTT_TLS_CERT` / `_KEY`).
 3. Map the domain to port **8090** (Coolify terminates HTTPS).
 4. Expose **1883** and **8883** as raw TCP ports for devices.
 5. The `pb_data` volume is managed by Coolify — confirm it's persistent before going live.

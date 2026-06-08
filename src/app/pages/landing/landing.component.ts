@@ -158,19 +158,15 @@ interface Deployment {
             <span class="w-3 h-3 rounded-full bg-green-400/70"></span>
             <span class="ml-3 hidden sm:block rounded-md bg-white ring-1 ring-slate-200 px-3 py-0.5 text-[11px] text-slate-400">majiflow.app / dashboard</span>
           </div>
-          <!-- TODO: replace placeholder with <img src="marketing/dashboard-desktop.png" alt="MajiFlow dashboard" class="block w-full"> -->
-          <div class="aspect-[16/9] bg-slate-50 flex flex-col items-center justify-center gap-2 text-slate-400">
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M3 9h18M8 21h8M12 17v4"/></svg>
-            <span class="text-xs font-medium">marketing/dashboard-desktop.png</span>
+          <div class="aspect-[16/10] overflow-hidden bg-slate-950">
+            <img src="marketing/desktop.png" alt="The MajiFlow dashboard showing routes, status, tank levels and valves" class="w-full object-cover object-top" />
           </div>
         </div>
         <!-- phone: overlapping frame (desktop screens only) -->
         <div class="hidden lg:block absolute -bottom-8 -right-4 w-44 rounded-[1.75rem] bg-slate-900 ring-1 ring-white/10 shadow-2xl p-1.5">
           <div class="rounded-[1.3rem] overflow-hidden bg-white">
-            <!-- TODO: replace placeholder with <img src="marketing/dashboard-mobile.png" alt="MajiFlow on mobile" class="block w-full"> -->
-            <div class="aspect-[9/19] bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-slate-400 text-center px-2">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
-              <span class="text-[10px] font-medium leading-tight">marketing/dashboard-mobile.png</span>
+            <div class="aspect-[9/19] overflow-hidden bg-slate-950">
+              <img src="marketing/mobile.png" alt="MajiFlow on a phone" class="w-full object-cover object-top" />
             </div>
           </div>
         </div>
@@ -199,12 +195,8 @@ interface Deployment {
         </div>
         <!-- the controller itself -->
         <div class="mt-8 grid gap-6 sm:grid-cols-2 items-center">
-          <div class="rounded-2xl bg-slate-900 ring-1 ring-slate-200/60 shadow-xl shadow-slate-900/10 overflow-hidden">
-            <!-- TODO: replace placeholder with <img src="marketing/device.png" alt="The controller" class="block w-full"> -->
-            <div class="aspect-[4/3] flex flex-col items-center justify-center gap-2 text-slate-500">
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 6V4M10 6V4M14 6V4M18 6V4M6 18v2M10 18v2M14 18v2M18 18v2"/></svg>
-              <span class="text-xs font-medium">marketing/device.png</span>
-            </div>
+          <div class="rounded-2xl ring-1 ring-slate-200 shadow-xl shadow-slate-900/10 overflow-hidden">
+            <img src="marketing/controller.jpg" alt="The controller that runs your site" class="block w-full aspect-[16/10] object-cover" />
           </div>
           <div>
             <h3 class="text-lg font-semibold">The controller that runs your site</h3>

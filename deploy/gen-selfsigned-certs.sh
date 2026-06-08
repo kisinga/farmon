@@ -16,10 +16,14 @@ set -eu
 
 MQTT_HOST="${1:-mqtt.majiflow.io}"
 DIR="$(cd "$(dirname "$0")/certs" && pwd)"
-DAYS=3650
+# CA = the trust anchor embedded in firmware: long-lived so it ~never changes.
+# Keep ca-key.pem OFFLINE (never on the server / in git) and back it up.
+DAYS_CA=10950   # ~30 yr
+# Leaf = the broker's server cert: re-issue from the CA anytime, no device re-flash.
+DAYS_LEAF=3650  # ~10 yr
 
 # 1) Local CA (self-signed root).
-openssl req -x509 -newkey rsa:2048 -sha256 -days "$DAYS" -nodes \
+openssl req -x509 -newkey rsa:2048 -sha256 -days "$DAYS_CA" -nodes \
   -keyout "$DIR/ca-key.pem" -out "$DIR/ca.pem" \
   -subj "/CN=MajiFlow Self-Signed CA" \
   -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
@@ -39,7 +43,7 @@ keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
 EOF
 openssl x509 -req -in "$DIR/server.csr" -CA "$DIR/ca.pem" -CAkey "$DIR/ca-key.pem" \
-  -CAcreateserial -days "$DAYS" -sha256 -extfile "$EXT" -out "$DIR/server.pem"
+  -CAcreateserial -days "$DAYS_LEAF" -sha256 -extfile "$EXT" -out "$DIR/server.pem"
 rm -f "$EXT"
 
 # 4) fullchain = leaf + CA (what the broker serves).

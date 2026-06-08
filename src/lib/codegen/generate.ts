@@ -36,6 +36,8 @@ export function createTestMetadata(overrides?: Partial<GenerationMetadata>): Gen
     mode: 'managed',
     brokerAddress: '127.0.0.1',
     brokerPort: 1883,
+    brokerTls: false,
+    brokerCa: '',
     ...overrides,
   };
 }

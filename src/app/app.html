@@ -1,7 +1,7 @@
 <div class="h-screen bg-base-200 text-base-content flex flex-col overflow-hidden">
   <!-- Global top bar (hidden on the public landing/login, which carry their own) -->
   @if (!isPublic()) {
-  <header class="navbar bg-base-100 border-b border-base-300/40 px-4 min-h-[var(--header-h)] h-[var(--header-h)]">
+  <header class="navbar relative z-20 bg-base-100 border-b border-base-300/60 shadow-lg shadow-black/30 px-4 min-h-[var(--header-h)] h-[var(--header-h)]">
     <div class="navbar-start gap-3">
       <a routerLink="/home" class="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
         <span class="w-7 h-7 block" [innerHTML]="logoSvg"></span>

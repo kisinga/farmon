@@ -76,6 +76,15 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     ? ''
     : '\ntime:\n  - platform: sntp\n    id: sntp_time\n    on_time_sync:\n      - then:\n          - lambda: \'id(time_trusted) = true;\'\n';
 
+  // Device-facing TLS. ESPHome's mqtt: speaks plain TCP unless `certificate_authority`
+  // is present, so emit the pinned CA only when the baked endpoint is TLS (8883). The
+  // CA is the issuer of the broker's leaf — devices trust the issuer, so the server
+  // can rotate its leaf with no re-flash. CA-only (no client cert): the broker
+  // authenticates the device by username + mqtt_token, not mutual TLS.
+  const tlsBlock = metadata.brokerTls
+    ? `\n  certificate_authority: |-\n${indent(metadata.brokerCa.trimEnd().split('\n'), 4)}`
+    : '';
+
   // --- Shared event helper ---------------------------------------------------
   // One lambda-local C++ helper, embedded in both the command handler and the
   // transition log, so the snprintf + publish is written once. Best-effort: it
@@ -241,7 +250,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
 mqtt:
   id: mqtt_client
   broker: "${metadata.brokerAddress}"
-  port: ${metadata.brokerPort}
+  port: ${metadata.brokerPort}${tlsBlock}
   username: "${ctrl}"
   password: !secret mqtt_token
   discovery: false

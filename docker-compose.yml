@@ -46,12 +46,12 @@ services:
     volumes:
       # The single stateful boundary: SQLite DB + uploaded files + logs + backups.
       - pb_data:/pb_data
-      # TLS cert/key for the device-facing 8883 listener. Always mounted (read-only):
-      # the dir holds fullchain.pem + privkey.pem for managed/cloud
-      # (MAJI_MQTT_TLS_ENABLED=true) and is simply empty/unread on on-prem (plain
-      # 1883, TLS off). Container paths match MAJI_MQTT_TLS_CERT / MAJI_MQTT_TLS_KEY.
-      # On Coolify, point this at a storage/file mount that supplies the two PEMs.
-      - ./deploy/certs:/certs:ro
+      # /certs (device-facing 8883 TLS: fullchain.pem + privkey.pem, paths in
+      # MAJI_MQTT_TLS_*) is supplied by the ORCHESTRATOR, not this file:
+      #   • Coolify (managed) → attach the two PEMs as file mounts at /certs/*.pem.
+      #   • Local on-prem TLS test → add a docker-compose.override.yml with
+      #     `- ./deploy/certs:/certs:ro`.
+      # On-prem default needs nothing here: plain 1883, TLS off (MAJI_MQTT_TLS_ENABLED=false).
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8090/api/farmon/health"]
       interval: 30s

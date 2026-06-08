@@ -40,4 +40,11 @@ export interface GenerationMetadata {
   brokerAddress: string;
   /** MQTT broker port (1883 plain / 8883 TLS). */
   brokerPort: number;
+  /** Device connects over TLS (8883). When true the firmware embeds `brokerCa`
+   *  and verifies the broker; when false it speaks plain TCP. */
+  brokerTls: boolean;
+  /** PEM of the CA trust anchor the device pins as ESPHome `certificate_authority`
+   *  — the issuer that signed the broker's server cert, so leaf rotation needs no
+   *  re-flash. Empty when `brokerTls` is false. */
+  brokerCa: string;
 }
