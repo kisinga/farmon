@@ -53,6 +53,15 @@ func Start(app core.App, cfg config.Config) (*Broker, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load MQTT TLS keypair: %w", err)
 		}
+		// Send only the leaf in the handshake, never the self-signed root. fullchain.pem
+		// is leaf+CA (the CA is needed to derive the firmware trust anchor), but per TLS
+		// the server must not transmit its own root — the device already pins it. Strict
+		// embedded stacks (ESP32 mbedTLS) reject a presented chain that contains a
+		// self-signed cert matching the trust anchor (X509_CERT_VERIFY_FAILED → a TLS
+		// unknown_ca alert), so drop everything after the leaf.
+		if len(cert.Certificate) > 1 {
+			cert.Certificate = cert.Certificate[:1]
+		}
 		tlsListener := listeners.NewTCP(listeners.Config{
 			ID:        "tls",
 			Address:   cfg.MQTTTLSAddr,

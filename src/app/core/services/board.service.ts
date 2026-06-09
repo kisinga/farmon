@@ -44,6 +44,14 @@ export class BoardService {
     return this.ensureLoaded(true);
   }
 
+  /** The expansion-board catalog as a promise, fetched once and shared. Build /
+   *  generate / commit MUST get it here, not via backend.expansionCatalog() — a
+   *  direct fetch races this cached one on the same `boards:expansion` request key
+   *  (the editor loads it on focus) and the SDK auto-cancels one. */
+  expansionDefs(): Promise<ExpansionBoardCatalog> {
+    return this._expansion.ensureLoaded();
+  }
+
   /** One board's full def + SVG, cached per model (shared in-flight). */
   loadResult(model: string): Promise<BoardLoadResult> {
     let p = this.boardCache.get(model);

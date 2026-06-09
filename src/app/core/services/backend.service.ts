@@ -48,17 +48,6 @@ const PB_URL: string =
 export class BackendService {
   readonly pb = new PocketBase(PB_URL);
 
-  constructor() {
-    // Disable the SDK's request auto-cancellation. It aborts an in-flight request
-    // whenever another with the same auto-key (method + path, params excluded) is
-    // issued — which fires spuriously on SPA navigation: the editor recreates on a
-    // tab change and re-issues a site/board read while the previous is still
-    // pending, surfacing as an "autocancelled" ClientResponseError. We dedup
-    // fetches ourselves (the Cached collection stores + the per-model board cache),
-    // so cancellation is redundant and only adds noise here.
-    this.pb.autoCancellation(false);
-  }
-
   // --- Sites ---------------------------------------------------------------
 
   async siteList(): Promise<SiteListEntry[]> {
@@ -386,7 +375,7 @@ export class BackendService {
   async boardLoad(model: string): Promise<BoardLoadResult> {
     const r = await this.pb
       .collection('boards')
-      .getFirstListItem(this.pb.filter('model = {:m}', { m: model }));
+      .getFirstListItem(this.pb.filter('model = {:m}', { m: model }), { requestKey: `board-def:${model}` });
     return {
       board: r['def'] as BoardDef,
       svg: r['svg'] ? this.pb.files.getURL(r, r['svg']) : null,
@@ -542,7 +531,7 @@ export class BackendService {
     try {
       const r = await this.pb
         .collection('boards')
-        .getFirstListItem(this.pb.filter('model = {:m}', { m: model }));
+        .getFirstListItem(this.pb.filter('model = {:m}', { m: model }), { requestKey: `board-svg:${model}` });
       if (!r['svg']) return '';
       const token = await this.pb.files.getToken();
       const res = await fetch(this.pb.files.getURL(r, r['svg'] as string, { token }));

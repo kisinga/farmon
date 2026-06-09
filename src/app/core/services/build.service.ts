@@ -29,6 +29,7 @@ import type {
   BoardDef,
 } from '../models/backend-api';
 import { BackendService } from './backend.service';
+import { BoardService } from './board.service';
 import { sha256Hex } from '../util/hash';
 
 /** Firmware app version stamped into generation metadata (fleet provenance). */
@@ -59,6 +60,7 @@ interface DeploymentConfig {
 @Injectable({ providedIn: 'root' })
 export class BuildService {
   private backend = inject(BackendService);
+  private boardCatalog = inject(BoardService);
   private get pb() {
     return this.backend.pb;
   }
@@ -95,7 +97,7 @@ export class BuildService {
     }
 
     const manifest = topologyToManifestForController(topo, controllerId);
-    const expansionBoards = await this.backend.expansionCatalog();
+    const expansionBoards = await this.boardCatalog.expansionDefs();
     // Validate against the site's chosen mode (online→managed, local), the same
     // mode generation bakes, so the editor surfaces exactly the cross-controller
     // errors generation enforces. Unchosen sites default to managed (online).
@@ -125,7 +127,7 @@ export class BuildService {
     const prov = await this.provision(siteId, ctrl);
     const provisioned: SecretsMap = { ota_password: prov.ota_password, mqtt_token: prov.token, udp_key: prov.udp_key };
 
-    const expansionBoards = await this.backend.expansionCatalog();
+    const expansionBoards = await this.boardCatalog.expansionDefs();
     const built = await this.buildController(topo, ctrl, siteId, expansionBoards, deployment, provisioned);
     const downloadUrl = URL.createObjectURL(this.zipBundle(built.files, true));
 
@@ -151,7 +153,7 @@ export class BuildService {
   async commit(siteId: string, note?: string): Promise<CommitResult> {
     const { topo, site } = await this.loadTopology(siteId);
 
-    const expansionBoards = await this.backend.expansionCatalog();
+    const expansionBoards = await this.boardCatalog.expansionDefs();
     const deployment = await this.resolveDeployment(site);
     const allFiles: GeneratedFile[] = [];
     const hashParts: string[] = [];

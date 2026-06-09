@@ -38,24 +38,33 @@ export function generateTimeSyncHeader(metadata: GenerationMetadata): string {
   return `// =============================================================================
 // MajiFlow — Persisted Clock (time-sync.h)
 // =============================================================================
-// Seeds the wall clock from a flash-persisted epoch on boot so a device that
-// cold-boots offline resumes a plausible time until SNTP re-syncs. No RTC.
-// The seed is an ESTIMATE: it does NOT set time_trusted, so it never drives a
-// schedule or the TTL gate (those wait for a real SNTP sync).
+// Seeds the wall clock on boot from a flash-persisted epoch, falling back to the
+// firmware build time when there is none (fresh device) so the clock is never left at
+// 1970. No RTC. The build-time floor lets TLS validate the broker offline on first boot
+// (a 1970 clock rejects the cert's future "valid-from" date). The seed is an ESTIMATE:
+// it does NOT set time_trusted, so it never drives a schedule or the TTL gate (those
+// wait for a real SNTP sync).
 // =============================================================================
 
 #include <sys/time.h>
 
-// Seed the wall clock from the persisted epoch, rejecting garbage: the clock cannot
-// predate the firmware build, and a value far in the future means corrupt flash.
+// Seed the wall clock on boot. A valid persisted epoch (between the build time and the
+// corrupt-flash ceiling) is used as-is; anything else — including a FRESH device whose
+// persisted_epoch is still 0 — falls back to the firmware build time instead of leaving
+// the clock at 1970. That floor matters for TLS: the broker cert is valid from ~build
+// time, so an unseeded 1970 clock makes mbedTLS reject the CA as "not yet valid" (a TLS
+// unknown_ca alert) until SNTP syncs — which never happens on a network that blocks NTP.
+// Flooring at build time lets the device validate the broker on its first boot, offline.
+// Still an ESTIMATE: it does NOT set time_trusted, so schedules and the command-TTL gate
+// keep waiting for a real SNTP sync.
 inline void seed_clock_from_persisted() {
   int64_t e = id(persisted_epoch);
-  if (e < ${floor}LL || e > ${ceil}LL) return;
+  if (e < ${floor}LL || e > ${ceil}LL) e = ${floor}LL;
   struct timeval tv;
   tv.tv_sec = (time_t) e;
   tv.tv_usec = 0;
   settimeofday(&tv, nullptr);
-  ESP_LOGI("time", "Clock seeded from flash (%lld) — estimate, not trusted", (long long) e);
+  ESP_LOGI("time", "Clock seeded (%lld) — estimate, not trusted", (long long) e);
 }
 `;
 }

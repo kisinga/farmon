@@ -157,12 +157,46 @@ export class WorkspaceService {
 
   // --- Load ---
 
-  async load(siteId: string): Promise<void> {
+  /** Monotonic token: each load() bumps it; awaited steps bail once superseded. */
+  private _loadSeq = 0;
+  /** Site whose load currently owns the token, or null when idle. */
+  private _loadingSiteId: string | null = null;
+  /** Shared in-flight load promise, so duplicate callers reuse it (no second fetch). */
+  private _loadInFlight: Promise<void> | null = null;
+
+  /**
+   * Load a site into the workspace. Idempotent and concurrency-safe:
+   *   - a load for the same site already in flight is SHARED, not restarted. The
+   *     editor recreates on every tab navigation (its three routes are distinct
+   *     configs), so without this its second ngOnInit fired a duplicate `siteLoad`
+   *     before the first resolved — the PB SDK auto-cancelled one, surfacing as a
+   *     console error. This is the root-cause fix for that.
+   *   - the same site already loaded and idle → no-op;
+   *   - a different site supersedes any in-flight load via the token, so a slow
+   *     earlier load can't clobber the newer site's state.
+   */
+  load(siteId: string): Promise<void> {
+    if (this._loadingSiteId === siteId && this._loadInFlight) return this._loadInFlight;
+    if (this._loadingSiteId === null && this._site()?.id === siteId) return Promise.resolve();
+
+    const seq = ++this._loadSeq;
+    this._loadingSiteId = siteId;
+    this._loadInFlight = this._load(siteId, seq).finally(() => {
+      if (seq === this._loadSeq) {
+        this._loadingSiteId = null;
+        this._loadInFlight = null;
+      }
+    });
+    return this._loadInFlight;
+  }
+
+  private async _load(siteId: string, seq: number): Promise<void> {
     this.clear();
     this._loading.set(true);
 
     try {
       const payload = await this.backend.siteLoad(siteId);
+      if (seq !== this._loadSeq) return; // superseded by a newer load
       this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName, deployment: payload.site.deployment });
       // Pull the catalog so `commissioned` (the design lock) resolves even on a
       // deep-link that skipped the Overview. Reactive — late arrival flips the lock.
@@ -183,11 +217,12 @@ export class WorkspaceService {
 
         this._siteTopology.set(topology);
 
-        // Load boards for each controller
+        // Load boards for each controller.
         const boards = new Map<string, BoardDef>();
         for (const ctrl of topology.controllers) {
           try {
             const boardResult = await this.boardCatalog.loadResult(ctrl.board);
+            if (seq !== this._loadSeq) return; // superseded mid board-load
             boards.set(ctrl.id, boardResult.board as BoardDef);
           } catch (err) {
             console.error(`[Workspace] Failed to load board "${ctrl.board}" for controller "${ctrl.id}":`, err);
@@ -215,7 +250,7 @@ export class WorkspaceService {
 
       this._dirty.set(false);
     } finally {
-      this._loading.set(false);
+      if (seq === this._loadSeq) this._loading.set(false);
     }
   }
 
