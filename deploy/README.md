@@ -87,10 +87,16 @@ TLS is a single flag so on-prem deploys need no certificates:
 Mount only the two PEMs at `/certs` (keep them **out** of the data volume): `fullchain.pem`
 (leaf + CA) and `privkey.pem`. There is no `ca.pem` to mount — the server derives the CA (the last
 cert in `fullchain.pem`) and bakes it into firmware as the device's `certificate_authority`, so the
-broker can rotate its leaf without re-flashing devices. `docker-compose.yml` does **not** bind-mount
-`/certs`: on Coolify attach the two PEMs as **file mounts** at `/certs/fullchain.pem` and
-`/certs/privkey.pem`; for a local on-prem TLS test add a `docker-compose.override.yml` with
-`- ./deploy/certs:/certs:ro` (generate them with `deploy/gen-selfsigned-certs.sh`).
+broker can rotate its leaf without re-flashing devices. `docker-compose.yml` declares the two as
+**file** bind mounts (`./deploy/certs/fullchain.pem:/certs/fullchain.pem`, same for `privkey.pem`):
+
+- **Coolify (managed):** a compose service's storage is derived from those volume lines, so the two
+  appear under **Storages → Files** — paste the cert + key contents there and Coolify writes them to
+  the source path and mounts them. (Directory/Files tabs are otherwise greyed for compose resources.)
+- **Local on-prem TLS test:** run `deploy/gen-selfsigned-certs.sh` first so the source files exist;
+  otherwise Docker creates empty directories in their place.
+
+On-prem default (TLS off) never reads `/certs`, so the empty source is harmless.
 
 Cert custody: keep `ca-key.pem` **offline** (never on the server or in git) and back it up — it is
 the long-lived trust anchor. Losing the leaf key is a non-event (re-issue from the CA); the fleet is

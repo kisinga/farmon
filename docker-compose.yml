@@ -46,12 +46,17 @@ services:
     volumes:
       # The single stateful boundary: SQLite DB + uploaded files + logs + backups.
       - pb_data:/pb_data
-      # /certs (device-facing 8883 TLS: fullchain.pem + privkey.pem, paths in
-      # MAJI_MQTT_TLS_*) is supplied by the ORCHESTRATOR, not this file:
-      #   • Coolify (managed) → attach the two PEMs as file mounts at /certs/*.pem.
-      #   • Local on-prem TLS test → add a docker-compose.override.yml with
-      #     `- ./deploy/certs:/certs:ro`.
-      # On-prem default needs nothing here: plain 1883, TLS off (MAJI_MQTT_TLS_ENABLED=false).
+      # Device-facing 8883 TLS. Declared as individual FILE bind mounts so Coolify
+      # exposes them under Storages → Files (a compose service's storage is derived
+      # from these volume lines): paste the cert + key contents there and Coolify
+      # writes them to the source path and mounts them. ONLY these two ever reach the
+      # server — never ca-key.pem (keep it OFFLINE); ca.pem is derived from
+      # fullchain.pem server-side, not mounted. Source files are git-ignored
+      # (deploy/certs/.gitignore); for a LOCAL TLS run create them first with
+      # deploy/gen-selfsigned-certs.sh, else Docker makes empty dirs in their place.
+      # On-prem default = plain 1883 (TLS off), where /certs is never read.
+      - ./deploy/certs/fullchain.pem:/certs/fullchain.pem:ro
+      - ./deploy/certs/privkey.pem:/certs/privkey.pem:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8090/api/farmon/health"]
       interval: 30s
