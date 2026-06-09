@@ -191,7 +191,7 @@ assert(
   /port:\s*1883/.test(mqttYaml) && !mqttYaml.includes("certificate_authority"),
   "Plain default: no certificate_authority, port 1883",
 );
-// A TLS endpoint with a CA pins the broker's issuer and dials 8883.
+// A TLS endpoint pins the broker's self-signed cert, skips the CN check, and dials 8883.
 const SAMPLE_CA =
   "-----BEGIN CERTIFICATE-----\nMIIBsampleCAbodyLineOne\nMIIBsampleCAbodyLineTwo\n-----END CERTIFICATE-----\n";
 const tlsFiles = generateAll(
@@ -200,7 +200,8 @@ const tlsFiles = generateAll(
 );
 const tlsMqtt = tlsFiles.find((f) => f.relativePath.endsWith("mqtt.yaml"))?.content ?? "";
 assert(tlsMqtt.includes("certificate_authority: |-"), "TLS: emits certificate_authority block");
-assert(tlsMqtt.includes("MIIBsampleCAbodyLineOne"), "TLS: embeds the CA PEM body");
+assert(tlsMqtt.includes("MIIBsampleCAbodyLineOne"), "TLS: embeds the cert PEM body");
+assert(tlsMqtt.includes("skip_cert_cn_check: true"), "TLS: emits skip_cert_cn_check (exact-cert pinning)");
 assert(/port:\s*8883/.test(tlsMqtt), "TLS: port 8883");
 
 // --- Device YAML ---

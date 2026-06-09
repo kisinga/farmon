@@ -58,10 +58,12 @@ var routeActions = map[string]bool{
 var nodeActions = map[string]bool{"node_set": true}
 var onActions = map[string]bool{"node_set": true, "safety_override": true}
 
-// readCABlock returns the PEM of the last CERTIFICATE block in the file at path —
-// the CA/issuer at the end of a leaf+CA fullchain. Returns "" when the path is
-// empty or unreadable. The firmware pins this as its certificate_authority so the
-// broker can rotate its server leaf without re-flashing field devices.
+// readCABlock returns the PEM of the last CERTIFICATE block in the file at path.
+// fullchain.pem holds a single self-signed broker cert, so this returns that cert; the
+// firmware pins it byte-for-byte as its certificate_authority. esp-idf mbedTLS trusts a
+// self-signed cert it finds identical in its store but rejects a two-tier CA chain, so
+// the pinned cert IS the served cert. Returns "" when the path is empty or unreadable.
+// (Taking the LAST block keeps it correct even if a leaf+CA chain is ever mounted.)
 func readCABlock(path string) string {
 	if path == "" {
 		return ""

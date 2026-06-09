@@ -77,12 +77,15 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     : '\ntime:\n  - platform: sntp\n    id: sntp_time\n    on_time_sync:\n      - then:\n          - lambda: \'id(time_trusted) = true;\'\n';
 
   // Device-facing TLS. ESPHome's mqtt: speaks plain TCP unless `certificate_authority`
-  // is present, so emit the pinned CA only when the baked endpoint is TLS (8883). The
-  // CA is the issuer of the broker's leaf — devices trust the issuer, so the server
-  // can rotate its leaf with no re-flash. CA-only (no client cert): the broker
-  // authenticates the device by username + mqtt_token, not mutual TLS.
+  // is present, so emit the pinned cert only when the baked endpoint is TLS (8883).
+  // The broker serves a SINGLE self-signed cert and the device pins THAT exact cert as
+  // its trust anchor: esp-idf mbedTLS rejects a two-tier self-signed CA chain
+  // (NOT_TRUSTED → -0x2700) but trusts a self-signed cert it finds byte-identical in
+  // its store. skip_cert_cn_check: hostname matching is redundant under exact-cert
+  // pinning (only this one cert is trusted) and dodges an mbedTLS CN-match edge case.
+  // No client cert: the broker authenticates the device by username + mqtt_token.
   const tlsBlock = metadata.brokerTls
-    ? `\n  certificate_authority: |-\n${indent(metadata.brokerCa.trimEnd().split('\n'), 4)}`
+    ? `\n  certificate_authority: |-\n${indent(metadata.brokerCa.trimEnd().split('\n'), 4)}\n  skip_cert_cn_check: true`
     : '';
 
   // --- Shared event helper ---------------------------------------------------

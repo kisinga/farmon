@@ -1,58 +1,42 @@
 #!/bin/sh
-# Generate a self-signed MQTT TLS chain for the device-facing 8883 listener.
+# Generate a single self-signed TLS cert for the device-facing 8883 broker listener.
 #
-# Two-tier: a long-lived local CA signs a server leaf for the broker hostname.
-# The CA cert (ca.pem) is the trust anchor that clients/firmware embed; rotating
-# the server leaf later never invalidates it (no re-flash of field devices).
+# ONE self-signed cert (issuer == subject) is BOTH the broker's server cert AND the
+# trust anchor the firmware pins. esp-idf mbedTLS rejects a two-tier self-signed CA
+# chain (NOT_TRUSTED → handshake -0x2700), but it trusts a self-signed cert it finds
+# byte-identical in its store — so devices pin THIS exact cert. CA:TRUE lets mbedTLS
+# treat it as its own trust anchor; SAN + serverAuth make it a valid TLS server cert.
+#
+# Rotating the cert re-flashes the fleet (the device pins it exactly), so it is
+# long-lived. The device does not check cert dates (CONFIG_MBEDTLS_HAVE_TIME_DATE is
+# off), so expiry never forces a reflash — only a deliberate key rotation does.
 #
 # Usage:  deploy/gen-selfsigned-certs.sh [hostname]   (default: mqtt.majiflow.io)
 #
 # Outputs into deploy/certs/ (git-ignored):
-#   privkey.pem   - server private key   -> broker MAJI_MQTT_TLS_KEY
-#   fullchain.pem - server cert + CA     -> broker MAJI_MQTT_TLS_CERT
-#   ca.pem        - CA cert; trust THIS on clients (mosquitto_sub --cafile ca.pem,
-#                   and the value to embed as the firmware certificate_authority)
+#   privkey.pem    - broker private key      -> broker MAJI_MQTT_TLS_KEY
+#   fullchain.pem  - the self-signed cert    -> broker MAJI_MQTT_TLS_CERT (the server
+#                    also derives the firmware's pinned cert from this file)
+#   ca.pem         - identical copy, for client testing (mosquitto_sub --cafile ca.pem)
 set -eu
 
 MQTT_HOST="${1:-mqtt.majiflow.io}"
 DIR="$(cd "$(dirname "$0")/certs" && pwd)"
-# CA = the trust anchor embedded in firmware: long-lived so it ~never changes.
-# Keep ca-key.pem OFFLINE (never on the server / in git) and back it up.
-DAYS_CA=10950   # ~30 yr
-# Leaf = the broker's server cert: re-issue from the CA anytime, no device re-flash.
-DAYS_LEAF=3650  # ~10 yr
+DAYS=3650   # ~10 yr; devices ignore expiry, so this only matters to non-device clients
 
-# 1) Local CA (self-signed root).
-openssl req -x509 -newkey rsa:2048 -sha256 -days "$DAYS_CA" -nodes \
-  -keyout "$DIR/ca-key.pem" -out "$DIR/ca.pem" \
-  -subj "/CN=MajiFlow Self-Signed CA" \
-  -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
-  -addext "keyUsage=critical,keyCertSign,cRLSign"
+# Single self-signed server cert: issuer == subject, CA:TRUE (so mbedTLS accepts it as
+# its own trust anchor), SAN + serverAuth EKU (so it is a valid TLS server leaf).
+openssl req -x509 -newkey rsa:2048 -sha256 -days "$DAYS" -nodes \
+  -keyout "$DIR/privkey.pem" -out "$DIR/fullchain.pem" \
+  -subj "/CN=$MQTT_HOST" \
+  -addext "subjectAltName=DNS:$MQTT_HOST" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign" \
+  -addext "extendedKeyUsage=serverAuth"
 
-# 2) Server key + CSR for the broker hostname.
-openssl req -newkey rsa:2048 -sha256 -nodes \
-  -keyout "$DIR/privkey.pem" -out "$DIR/server.csr" \
-  -subj "/CN=$MQTT_HOST"
-
-# 3) Sign the leaf with the CA, carrying SAN + serverAuth EKU.
-EXT="$(mktemp)"
-cat > "$EXT" <<EOF
-subjectAltName=DNS:$MQTT_HOST
-basicConstraints=critical,CA:FALSE
-keyUsage=critical,digitalSignature,keyEncipherment
-extendedKeyUsage=serverAuth
-EOF
-openssl x509 -req -in "$DIR/server.csr" -CA "$DIR/ca.pem" -CAkey "$DIR/ca-key.pem" \
-  -CAcreateserial -days "$DAYS_LEAF" -sha256 -extfile "$EXT" -out "$DIR/server.pem"
-rm -f "$EXT"
-
-# 4) fullchain = leaf + CA (what the broker serves).
-cat "$DIR/server.pem" "$DIR/ca.pem" > "$DIR/fullchain.pem"
-
-# Tidy intermediates (keep ca-key.pem so you can re-issue leaves later).
-rm -f "$DIR/server.csr" "$DIR/server.pem" "$DIR/ca.srl"
+cp "$DIR/fullchain.pem" "$DIR/ca.pem"
 
 echo "Wrote for $MQTT_HOST:"
 echo "  $DIR/privkey.pem    (broker key)"
-echo "  $DIR/fullchain.pem  (broker cert chain)"
-echo "  $DIR/ca.pem         (trust anchor for clients/firmware)"
+echo "  $DIR/fullchain.pem  (broker cert; firmware pins this exact cert)"
+echo "  $DIR/ca.pem         (identical copy, for client testing)"

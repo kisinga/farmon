@@ -16,6 +16,14 @@ function secret(name: string): Scalar {
   return s;
 }
 
+/** Force a double-quoted scalar — ESPHome's sdkconfig_options values must be strings,
+ *  so an int-like value (e.g. "4096") has to serialize quoted, not as a bare number. */
+function quoted(value: string): Scalar {
+  const s = new Scalar(value);
+  s.type = 'QUOTE_DOUBLE';
+  return s;
+}
+
 
 /** ESP32 strapping pins that trigger ESPHome warnings if used without acknowledgement. */
 const ESP32_STRAPPING_PINS = new Set(['GPIO0', 'GPIO2', 'GPIO5', 'GPIO12', 'GPIO15']);
@@ -30,12 +38,24 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   const sections: Record<string, unknown>[] = [];
 
   // --- MCU ---
+  // esp-idf TLS needs a large contiguous heap chunk for the handshake. Cap the inbound
+  // TLS record buffer at 4 KB (default 16 KB) so the RSA-2048 verify MPI still fits on
+  // RAM-tight boards — the 16 KB default exhausted the heap mid-handshake
+  // (MBEDTLS_ERR_MPI_ALLOC_FAILED, -0x4290) on the first managed/TLS device, even
+  // though the cert itself verified. Our broker sends small records (cert + handshake
+  // < 4 KB), so 4 KB is ample for MQTT. CAVEAT: this also caps HTTPS inbound records —
+  // when managed CA-pinned OTA-over-HTTPS lands, its origin must send <=4 KB TLS records
+  // (or negotiate max_fragment_length), else raise this for those builds.
+  const framework: Record<string, unknown> = { type: board.mcu.framework };
+  if (board.mcu.framework === 'esp-idf') {
+    framework['sdkconfig_options'] = { CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN: quoted('4096') };
+  }
   sections.push({
     esp32: {
       variant: board.mcu.variant,
       flash_size: board.mcu.flash_size,
       ...(board.mcu.cpu_frequency && { cpu_frequency: board.mcu.cpu_frequency }),
-      framework: { type: board.mcu.framework },
+      framework,
     },
   });
 

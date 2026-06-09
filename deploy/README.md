@@ -91,10 +91,13 @@ TLS is a single flag so on-prem deploys need no certificates:
   are missing.
 
 Mount only the two PEMs at `/certs` (keep them **out** of the data volume): `fullchain.pem`
-(leaf + CA) and `privkey.pem`. There is no `ca.pem` to mount — the server derives the CA (the last
-cert in `fullchain.pem`) and bakes it into firmware as the device's `certificate_authority`, so the
-broker can rotate its leaf without re-flashing devices. `docker-compose.yml` declares the two as
-**file** bind mounts (`./deploy/certs/fullchain.pem:/certs/fullchain.pem`, same for `privkey.pem`):
+(a **single self-signed** cert — issuer == subject) and `privkey.pem`. There is no `ca.pem` to mount
+— the server reads the cert from `fullchain.pem` and bakes it into firmware as the device's pinned
+`certificate_authority`. The device pins that exact cert: esp-idf mbedTLS rejects a two-tier
+self-signed CA chain but trusts a self-signed cert it finds byte-identical in its store. So
+**replacing the cert re-flashes the fleet** (no separate issuer to rotate behind). `docker-compose.yml`
+declares the two as **file** bind mounts (`./deploy/certs/fullchain.pem:/certs/fullchain.pem`, same
+for `privkey.pem`):
 
 - **Coolify (managed):** a compose service's storage is derived from those volume lines, so the two
   appear under **Storages → Files** — paste the cert + key contents there and Coolify writes them to
@@ -104,9 +107,11 @@ broker can rotate its leaf without re-flashing devices. `docker-compose.yml` dec
 
 On-prem default (TLS off) never reads `/certs`, so the empty source is harmless.
 
-Cert custody: keep `ca-key.pem` **offline** (never on the server or in git) and back it up — it is
-the long-lived trust anchor. Losing the leaf key is a non-event (re-issue from the CA); the fleet is
-never bricked by a cert change because devices trust the CA, not a pinned leaf.
+Cert custody: there is no separate CA key — `privkey.pem` is the only secret, and it lives on the
+broker (as it must to terminate TLS). Back it up offline. Devices do **not** check cert expiry
+(`CONFIG_MBEDTLS_HAVE_TIME_DATE` is off), so a 10-yr cert never forces a reflash on its own — only a
+deliberate key rotation (e.g. after compromise) does, and that re-flashes the fleet. Regenerate with
+`deploy/gen-selfsigned-certs.sh` and OTA the new cert before swapping the broker's.
 
 ---
 
