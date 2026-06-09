@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { BackendService } from '../services/backend.service';
 import type { CustomerEntry } from '../models/backend-api';
-import { Cached } from './collection-store';
+import { CollectionStore } from './collection-store';
 
 /**
  * CustomersStore — the customer-account catalog (users with role=customer). The
@@ -10,19 +10,15 @@ import { Cached } from './collection-store';
  * one fetch.
  */
 @Injectable({ providedIn: 'root' })
-export class CustomersStore {
+export class CustomersStore extends CollectionStore<CustomerEntry[]> {
   private backend = inject(BackendService);
+  readonly list = this.value;
 
-  private _list = new Cached<CustomerEntry[]>(() => this.backend.customerList(), []);
-  readonly list = this._list.value;
-  readonly loading = this._list.loading;
-  readonly error = this._list.error;
-
-  ensureLoaded(force = false): Promise<CustomerEntry[]> {
-    return this._list.ensureLoaded(force);
+  constructor() {
+    super([]);
   }
-  reload(): Promise<CustomerEntry[]> {
-    return this._list.reload();
+  protected fetch(): Promise<CustomerEntry[]> {
+    return this.backend.customerList();
   }
 
   private sorted(list: CustomerEntry[]): CustomerEntry[] {
@@ -32,18 +28,18 @@ export class CustomersStore {
   /** Create a customer and email the invite. Returns whether the invite sent. */
   async create(input: { name: string; email: string }): Promise<{ invited: boolean }> {
     const { customer, invited } = await this.backend.customerCreate(input);
-    this._list.update((list) => this.sorted([...list, customer]));
+    this.mutate((list) => this.sorted([...list, customer]));
     return { invited };
   }
 
   async update(id: string, patch: { name: string; email: string }): Promise<void> {
     await this.backend.customerUpdate(id, patch);
-    this._list.update((list) => this.sorted(list.map((c) => (c.id === id ? { ...c, ...patch } : c))));
+    this.mutate((list) => this.sorted(list.map((c) => (c.id === id ? { ...c, ...patch } : c))));
   }
 
   async remove(id: string): Promise<void> {
     await this.backend.customerDelete(id);
-    this._list.update((list) => list.filter((c) => c.id !== id));
+    this.mutate((list) => list.filter((c) => c.id !== id));
   }
 
   /** (Re)send a customer's set-password invite email. */

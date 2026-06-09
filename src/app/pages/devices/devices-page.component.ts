@@ -169,14 +169,19 @@ export class DevicesPageComponent implements OnInit {
 
   private async refresh() {
     this.loading.set(true);
-    const [, sites] = await Promise.all([
-      this.devicesStore.ensureLoaded(),
-      this.sitesStore.ensureLoaded(),
-      this.configStore.ensureLoaded(),
-    ]);
-    this.cap.set(this.configStore.cap());
-    this.siteMode.set(new Map(sites.map((s) => [s.id, s.mode !== 'local'])));
-    this.loading.set(false);
+    try {
+      const [, sites] = await Promise.all([
+        this.devicesStore.ensureLoaded(),
+        this.sitesStore.ensureLoaded(),
+        this.configStore.ensureLoaded(),
+      ]);
+      this.cap.set(this.configStore.cap());
+      this.siteMode.set(new Map(sites.map((s) => [s.id, s.mode !== 'local'])));
+    } finally {
+      // Always clear the spinner — a failed fetch lands its cause on the store's
+      // `error` signal rather than hanging the page on the loader forever.
+      this.loading.set(false);
+    }
   }
 
   protected rel(iso: string): string {

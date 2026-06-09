@@ -1,5 +1,5 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import type { PinDef, PinCap, BoardDef } from '../models/board.model';
+import type { PinCap, BoardDef } from '../models/board.model';
 import { reservedPins, exposedPins } from '../models/board.model';
 import type { ValidationResult, RuleDiagnostic, GenerateResult } from '../models/backend-api';
 import type { Controller, SiteTopology } from '@core';
@@ -66,8 +66,6 @@ export class SystemEditorService {
   readonly topology = this.workspace.activeTopology;
   readonly board = this.workspace.activeBoard;
   readonly controllerId = this.workspace.activeControllerId;
-
-  readonly dirty = this.workspace.dirty;
 
   /** Whether the site is commissioned but the admin hasn't entered design mode. */
   readonly locked = computed(() => this.workspace.commissioned() && !this._designUnlocked());
@@ -169,17 +167,6 @@ export class SystemEditorService {
     const b = this.board();
     return b ? b.pins : [];
   });
-
-  /** @deprecated Use availableChannels() — this wrapper exists for backward compat. */
-  availablePins(cap?: PinCap): (PinDef & { usedBy?: string })[] {
-    const pins = this.boardPins();
-    const reserved = this.reservedPins();
-    const used = this.usedPins();
-    return pins
-      .filter(p => !reserved.has(p.gpio))
-      .filter(p => !cap || p.caps.includes(cap))
-      .map(p => ({ ...p, usedBy: used.get(p.gpio) }));
-  }
 
   /** Enumerate channels from ALL drivers (board + providers), filtered by capability. */
   availableChannels(cap?: PinCap): Array<{
@@ -294,11 +281,6 @@ export class SystemEditorService {
 
   setValidation(result: ValidationResult): void {
     this._validation.set(result);
-  }
-
-  /** Save entire site atomically. */
-  async save(): Promise<void> {
-    await this.workspace.save();
   }
 
   /** Capture the current canvas as an SVG string. */

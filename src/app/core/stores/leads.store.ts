@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { BackendService } from '../services/backend.service';
 import type { LeadEntry } from '../models/backend-api';
-import { Cached } from './collection-store';
+import { CollectionStore } from './collection-store';
 
 /**
  * LeadsStore — captured pricing enquiries (admin pipeline). Cached list with
@@ -10,28 +10,24 @@ import { Cached } from './collection-store';
  * cached state, so it stays a direct backend call.)
  */
 @Injectable({ providedIn: 'root' })
-export class LeadsStore {
+export class LeadsStore extends CollectionStore<LeadEntry[]> {
   private backend = inject(BackendService);
+  readonly list = this.value;
 
-  private _list = new Cached<LeadEntry[]>(() => this.backend.leadList(), []);
-  readonly list = this._list.value;
-  readonly loading = this._list.loading;
-  readonly error = this._list.error;
-
-  ensureLoaded(force = false): Promise<LeadEntry[]> {
-    return this._list.ensureLoaded(force);
+  constructor() {
+    super([]);
   }
-  reload(): Promise<LeadEntry[]> {
-    return this._list.reload();
+  protected fetch(): Promise<LeadEntry[]> {
+    return this.backend.leadList();
   }
 
   async setStatus(id: string, status: string): Promise<void> {
     await this.backend.leadSetStatus(id, status);
-    this._list.update((list) => list.map((l) => (l.id === id ? { ...l, status } : l)));
+    this.mutate((list) => list.map((l) => (l.id === id ? { ...l, status } : l)));
   }
 
   async delete(id: string): Promise<void> {
     await this.backend.leadDelete(id);
-    this._list.update((list) => list.filter((l) => l.id !== id));
+    this.mutate((list) => list.filter((l) => l.id !== id));
   }
 }

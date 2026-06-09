@@ -45,11 +45,9 @@
     "ngx-echarts": "^21.0.0",
     "pocketbase": "^0.27.0",
     "rxjs": "~7.8.0",
-    "sql.js": "^1.14.1",
     "tslib": "^2.3.0",
     "yaml": "^2.8.3",
-    "zod": "^3.25.76",
-    "zone.js": "~0.15.0"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@angular/build": "^21.2.6",
@@ -57,7 +55,6 @@
     "@angular/compiler-cli": "^21.2.6",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^25.5.2",
-    "@types/sql.js": "^1.4.11",
     "daisyui": "^5.5.19",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2",

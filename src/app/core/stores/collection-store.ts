@@ -79,3 +79,51 @@ export class Cached<T> {
     }
   }
 }
+
+/**
+ * CollectionStore<T> — the shared spine for the app's signal stores. It owns a
+ * Cached<T> and exposes the read surface (value, loading, error) plus the
+ * standard lifecycle (ensureLoaded / reload / invalidate). Subclasses provide
+ * the fetcher via `fetch()` and add only their own mutations, applied through
+ * the protected `replace` / `mutate` helpers — so each store carries just its
+ * domain logic, not the caching boilerplate.
+ */
+export abstract class CollectionStore<T> {
+  /** Load the collection. Called once (then shared) by the underlying Cached. */
+  protected abstract fetch(): Promise<T>;
+
+  private readonly _cache: Cached<T>;
+  readonly value: Signal<T>;
+  readonly loading: Signal<boolean>;
+  readonly error: Signal<string | null>;
+
+  constructor(initial: T) {
+    this._cache = new Cached<T>(() => this.fetch(), initial);
+    this.value = this._cache.value;
+    this.loading = this._cache.loading;
+    this.error = this._cache.error;
+  }
+
+  ensureLoaded(force = false): Promise<T> {
+    return this._cache.ensureLoaded(force);
+  }
+  reload(): Promise<T> {
+    return this._cache.reload();
+  }
+  /** Drop the cache so the next ensureLoaded refetches (no fetch now). */
+  invalidate(): void {
+    this._cache.invalidate();
+  }
+
+  /** Optimistic patch: replace the value, marking it loaded (skips a refetch). */
+  protected replace(value: T): void {
+    this._cache.set(value);
+  }
+  /** Optimistic patch via a transform over the current value. */
+  protected mutate(fn: (current: T) => T): void {
+    this._cache.update(fn);
+  }
+  protected get snapshot(): T {
+    return this._cache.snapshot;
+  }
+}

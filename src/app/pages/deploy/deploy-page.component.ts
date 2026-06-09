@@ -2,6 +2,7 @@ import { Component, inject, signal, computed, effect } from '@angular/core';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { SystemEditorService } from '../../core/services/system-editor.service';
 import { BackendService } from '../../core/services/backend.service';
+import { BuildService } from '../../core/services/build.service';
 import { DevicesStore } from '../../core/stores/devices.store';
 import { TopologyDiagramService } from '../../core/services/topology-diagram.service';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
@@ -176,6 +177,7 @@ export class DeployPageComponent {
   private workspace = inject(WorkspaceService);
   private editor = inject(SystemEditorService);
   private backend = inject(BackendService);
+  private build = inject(BuildService);
   private devicesStore = inject(DevicesStore);
   private diagrams = inject(TopologyDiagramService);
 
@@ -257,7 +259,7 @@ export class DeployPageComponent {
     this.generating.set(true);
     this.fwError.set(null);
     try {
-      const result = await this.backend.generate(siteId, systemId);
+      const result = await this.build.generate(siteId, systemId);
       if (this.controllerId() !== systemId) return;
       this.fwFiles.set(result.files);
       this.downloadUrl.set(result.downloadUrl);

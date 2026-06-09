@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { BackendService } from '../services/backend.service';
 import { SitesStore } from './sites.store';
 import type { DeviceEntry } from '../models/backend-api';
-import { Cached } from './collection-store';
+import { CollectionStore } from './collection-store';
 
 /**
  * DevicesStore — the provisioned-device fleet (`controllers` rows). The Devices
@@ -14,23 +14,16 @@ import { Cached } from './collection-store';
  * Per-device status is a point read (firmware/deploy) and is not cached.
  */
 @Injectable({ providedIn: 'root' })
-export class DevicesStore {
+export class DevicesStore extends CollectionStore<DeviceEntry[]> {
   private backend = inject(BackendService);
   private sites = inject(SitesStore);
+  readonly list = this.value;
 
-  private _list = new Cached<DeviceEntry[]>(() => this.backend.deviceList(), []);
-  readonly list = this._list.value;
-  readonly loading = this._list.loading;
-  readonly error = this._list.error;
-
-  ensureLoaded(force = false): Promise<DeviceEntry[]> {
-    return this._list.ensureLoaded(force);
+  constructor() {
+    super([]);
   }
-  reload(): Promise<DeviceEntry[]> {
-    return this._list.reload();
-  }
-  invalidate(): void {
-    this._list.invalidate();
+  protected fetch(): Promise<DeviceEntry[]> {
+    return this.backend.deviceList();
   }
 
   /** Registry status of a single device (null until provisioned). Point read. */
@@ -40,12 +33,12 @@ export class DevicesStore {
 
   async rename(id: string, name: string): Promise<void> {
     await this.backend.deviceRename(id, name);
-    this._list.update((list) => list.map((d) => (d.id === id ? { ...d, name } : d)));
+    this.mutate((list) => list.map((d) => (d.id === id ? { ...d, name } : d)));
   }
 
   async deregister(id: string): Promise<void> {
     await this.backend.deviceDeregister(id);
-    this._list.update((list) =>
+    this.mutate((list) =>
       list.map((d) => (d.id === id ? { ...d, active: false, online: false } : d)),
     );
     this.sites.invalidate(); // freed a hosting slot → site device count changed
@@ -53,13 +46,13 @@ export class DevicesStore {
 
   async reactivate(id: string): Promise<void> {
     await this.backend.deviceReactivate(id);
-    this._list.update((list) => list.map((d) => (d.id === id ? { ...d, active: true } : d)));
+    this.mutate((list) => list.map((d) => (d.id === id ? { ...d, active: true } : d)));
     this.sites.invalidate(); // consumed a hosting slot
   }
 
   /** After a generate registers/updates a device: refetch fleet + site counts. */
   invalidateAfterProvision(): void {
-    this._list.invalidate();
+    this.invalidate();
     this.sites.invalidate();
   }
 }

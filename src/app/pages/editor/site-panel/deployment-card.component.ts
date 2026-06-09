@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { WorkspaceService } from '../../../core/services/workspace.service';
-import { BackendService } from '../../../core/services/backend.service';
+import { BuildService } from '../../../core/services/build.service';
 
 /**
  * Per-site "how your controllers connect" chooser. Two options:
@@ -128,7 +128,7 @@ import { BackendService } from '../../../core/services/backend.service';
 })
 export class DeploymentCardComponent implements OnInit {
   private workspace = inject(WorkspaceService);
-  private backend = inject(BackendService);
+  private build = inject(BuildService);
 
   // Reactive reads off the site's saved deployment — populate whenever the site
   // loads, like the other editor fields. No local copies, no ngOnInit seeding.
@@ -153,7 +153,7 @@ export class DeploymentCardComponent implements OnInit {
   });
 
   async ngOnInit(): Promise<void> {
-    this.cloud.set(await this.backend.cloudBrokerDefaults());
+    this.cloud.set(await this.build.cloudBrokerDefaults());
   }
 
   protected selectManaged(): void {

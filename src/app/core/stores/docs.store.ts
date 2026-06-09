@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { BackendService } from '../services/backend.service';
 import type { DocEntry, DocDraft } from '../models/backend-api';
-import { Cached } from './collection-store';
+import { CollectionStore } from './collection-store';
 
 /**
  * DocsStore — the `docs` collection (admin authoring of product/node prose).
@@ -10,34 +10,30 @@ import { Cached } from './collection-store';
  * so the reload after a write is preferred over hand-patching every field.
  */
 @Injectable({ providedIn: 'root' })
-export class DocsStore {
+export class DocsStore extends CollectionStore<DocEntry[]> {
   private backend = inject(BackendService);
+  readonly list = this.value;
 
-  private _list = new Cached<DocEntry[]>(() => this.backend.docList(), []);
-  readonly list = this._list.value;
-  readonly loading = this._list.loading;
-  readonly error = this._list.error;
-
-  ensureLoaded(force = false): Promise<DocEntry[]> {
-    return this._list.ensureLoaded(force);
+  constructor() {
+    super([]);
   }
-  reload(): Promise<DocEntry[]> {
-    return this._list.reload();
+  protected fetch(): Promise<DocEntry[]> {
+    return this.backend.docList();
   }
 
   async create(draft: DocDraft): Promise<{ id: string }> {
     const r = await this.backend.docCreate(draft);
-    await this._list.reload();
+    await this.reload();
     return r;
   }
 
   async save(id: string, draft: DocDraft): Promise<void> {
     await this.backend.docSave(id, draft);
-    await this._list.reload();
+    await this.reload();
   }
 
   async delete(id: string): Promise<void> {
     await this.backend.docDelete(id);
-    this._list.update((list) => list.filter((d) => d.id !== id));
+    this.mutate((list) => list.filter((d) => d.id !== id));
   }
 }

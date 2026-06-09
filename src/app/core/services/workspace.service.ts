@@ -11,7 +11,7 @@ import type {
 
 import {
   buildGraph, deriveRoutes, activeGraph, parseTopology, slug,
-  controllerClaimsSegment, migrateTopology, detectCrossControllerTalk,
+  controllerClaimsSegment, detectCrossControllerTalk, migrateToRemoteImports,
 } from '@core';
 
 @Injectable({ providedIn: 'root' })
@@ -177,7 +177,7 @@ export class WorkspaceService {
         // Pre-remoteImports drafts: derive cross-controller imports from routes.
         const stored = payload.topology as { remoteImports?: unknown };
         if (!stored.remoteImports) {
-          topology = this.migrateV15ToV18(topology);
+          topology = migrateToRemoteImports(topology);
           this._markDirty();
         }
 
@@ -295,63 +295,6 @@ export class WorkspaceService {
     clone.layout.controllers[controllerId] = position;
     this._siteTopology.set(clone);
     this._markDirty(controllerId);
-  }
-
-  // --- Migration ---
-
-  private migrateV15ToV18(topology: SiteTopology): SiteTopology {
-    const migrated = migrateTopology({
-      ...topology,
-      schema: 18,
-      remoteImports: [],
-    }) as SiteTopology;
-
-    // Auto-derive remoteImports from route analysis.
-    // For each controller, for each route it owns, import every remote node.
-    const graph = buildGraph(topology.nodes, topology.pipes);
-    const active = activeGraph(graph);
-    const allRoutes = deriveRoutes(active);
-
-    for (const controller of topology.controllers) {
-      const controllerRoutes = allRoutes.filter(r => {
-        // All actuators must be local to this controller
-        const allActuatorsLocal = r.nodeSequence.every(id => {
-          const node = topology.nodes.find(n => n.id === id);
-          if (!node) return false;
-          if (node.kind !== 'pump' && node.kind !== 'valve') return true;
-          return node.anchorId === controller.id;
-        });
-        if (!allActuatorsLocal) return false;
-
-        // Monitored: needs a local flow sensor
-        if (r.monitored) {
-          return r.flowSensors.some(id => {
-            const node = topology.nodes.find(n => n.id === id);
-            return node && node.anchorId === controller.id;
-          });
-        }
-
-        // Unmonitored: needs local destination for level-based stopping
-        const destNode = topology.nodes.find(n => n.id === r.destination);
-        return destNode && destNode.anchorId === controller.id;
-      });
-
-      for (const route of controllerRoutes) {
-        for (const nodeId of route.nodeSequence) {
-          const node = topology.nodes.find(n => n.id === nodeId);
-          if (!node) continue;
-          if (node.anchorId === controller.id) continue;
-          const exists = migrated.remoteImports.some(
-            ri => ri.controllerId === controller.id && ri.nodeId === nodeId,
-          );
-          if (!exists) {
-            migrated.remoteImports.push({ controllerId: controller.id, nodeId });
-          }
-        }
-      }
-    }
-
-    return migrated;
   }
 
   // --- Site metadata migrations ---

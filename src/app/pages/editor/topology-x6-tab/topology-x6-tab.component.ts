@@ -399,9 +399,15 @@ export class TopologyX6TabComponent {
     });
     this.canvas.nodeImportCounts = this.computeNodeImportCounts();
 
-    if (this.editor.readonly()) {
-      this.canvas.setReadonly(true);
-    }
+    // Keep canvas interactivity in lockstep with the editor's readonly state
+    // (commissioned lock / route preview / admin design-mode opt-in). A reactive
+    // effect, NOT a one-time read — so it stays correct as the sites catalog loads
+    // async and as the lock is lifted. The old imperative read froze the canvas
+    // locked under zoneless, where init runs after the catalog resolves.
+    const stopReadonly = effect(() => {
+      this.canvas?.setReadonly(this.editor.readonly());
+    }, { injector: this.injector });
+    this.destroyRef.onDestroy(() => stopReadonly.destroy());
 
     // Re-render overlays when nodes are dragged so they track position
     let ghostEdgeTimer: ReturnType<typeof setTimeout> | null = null;

@@ -165,8 +165,13 @@ export class CustomersPageComponent implements OnInit {
   });
 
   async ngOnInit() {
-    await Promise.all([this.customersStore.ensureLoaded(), this.sitesStore.ensureLoaded()]);
-    this.loading.set(false);
+    try {
+      await Promise.all([this.customersStore.ensureLoaded(), this.sitesStore.ensureLoaded()]);
+    } finally {
+      // Always clear the spinner — a failed fetch lands its cause on the store's
+      // `error` signal rather than hanging the page on the loader forever.
+      this.loading.set(false);
+    }
   }
 
   protected ini(s: string): string {

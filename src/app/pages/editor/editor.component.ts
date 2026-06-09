@@ -3,7 +3,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { SystemEditorService, PANEL_LABELS, PANEL_SLUGS, SLUG_PANELS } from '../../core/services/system-editor.service';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { BoardService } from '../../core/services/board.service';
-import { BackendService } from '../../core/services/backend.service';
+import { BuildService } from '../../core/services/build.service';
 import { TopologyX6TabComponent } from './topology-x6-tab/topology-x6-tab.component';
 import { RemotesTabComponent } from './remotes-tab/remotes-tab.component';
 import { ConfigTabComponent } from './config-tab/config-tab.component';
@@ -109,7 +109,7 @@ export class EditorComponent implements OnInit, OnDestroy {
   protected editor = inject(SystemEditorService);
   private workspace = inject(WorkspaceService);
   private boards = inject(BoardService);
-  private backend = inject(BackendService);
+  private build = inject(BuildService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
@@ -227,7 +227,7 @@ export class EditorComponent implements OnInit, OnDestroy {
     const controllerId = this.workspace.activeControllerId();
     if (!topology || !board || !controllerId) return;
     const gen = ++this.validationGen;
-    const result = await this.backend.validate({
+    const result = await this.build.validate({
       kind: 'live',
       topology,
       board,
