@@ -21,6 +21,10 @@ func init() {
 		if err != nil {
 			return err
 		}
+		controllers, err := app.FindCollectionByNameOrId("controllers")
+		if err != nil {
+			return err
+		}
 
 		// --- entity_state: add reported_text beside numeric reported ----------
 		state, err := app.FindCollectionByNameOrId("entity_state")
@@ -40,7 +44,7 @@ func init() {
 		ev := core.NewBaseCollection("state_events")
 		ev.Fields.Add(
 			&core.RelationField{Name: "site", CollectionId: sites.Id, MaxSelect: 1, Required: true, CascadeDelete: true},
-			&core.TextField{Name: "controller", Max: 100},
+			&core.RelationField{Name: "controller", CollectionId: controllers.Id, MaxSelect: 1, CascadeDelete: true},
 			&core.NumberField{Name: "route"},
 			&core.TextField{Name: "from_state", Max: 40},
 			&core.TextField{Name: "to_state", Max: 40},

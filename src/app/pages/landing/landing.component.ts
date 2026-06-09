@@ -438,7 +438,7 @@ export class LandingComponent {
     {
       name: 'Hosted',
       mode: 'Hosted by us',
-      price: 'From KES 30,000',
+      price: 'From KES 35,000',
       priceNote: 'per controller · + KES 4,000/year after year one',
       tagline: 'The simplest, lowest-cost way to get your water online. We run everything for you; you just sign in to watch and control.',
       badge: 'Most popular',
@@ -446,7 +446,7 @@ export class LandingComponent {
       features: [
         'One controller bundle: a KC868 controller, pump control, one valve, one flow sensor, one tank monitor, a power supply, and a clock that survives power cuts',
         'Add more on the same controller: about KES 3,000 a valve, 3,000 a flow sensor, 4,000 a tank monitor. One controller fits up to 7 valves, 3 flow sensors and 4 tanks',
-        'Outgrow it? Another full controller for KES 30,000. Each one runs on its own (on Hosted they do not share sensors or talk to each other)',
+        'Outgrow it? Another full controller for KES 35,000. Each one runs on its own (on Hosted they do not share sensors or talk to each other)',
         'We host it online and keep it up with an uptime guarantee; live dashboard, full history, and instant alerts',
       ],
       footnote: 'No power backup: if the mains goes out, the controller stops, then restarts on its schedule when power returns. Internet is only needed to check in while you are away.',

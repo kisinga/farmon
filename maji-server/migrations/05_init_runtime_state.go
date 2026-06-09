@@ -19,6 +19,14 @@ func init() {
 		if err != nil {
 			return err
 		}
+		controllers, err := app.FindCollectionByNameOrId("controllers")
+		if err != nil {
+			return err
+		}
+		users, err := app.FindCollectionByNameOrId("users")
+		if err != nil {
+			return err
+		}
 
 		// --- entity_state: device shadow (one row per sensor, never pruned) ---
 		// `reported` = last value the device published; `desired` = last value an
@@ -26,8 +34,8 @@ func init() {
 		// pruning never touches this, so current state stays accurate.
 		state := core.NewBaseCollection("entity_state")
 		state.Fields.Add(
-			&core.RelationField{Name: "site", CollectionId: sites.Id, MaxSelect: 1, CascadeDelete: true},
-			&core.TextField{Name: "controller", Max: 100},
+			&core.RelationField{Name: "site", CollectionId: sites.Id, MaxSelect: 1, Required: true, CascadeDelete: true},
+			&core.RelationField{Name: "controller", CollectionId: controllers.Id, MaxSelect: 1, Required: true, CascadeDelete: true},
 			&core.TextField{Name: "sensor", Max: 100},
 			&core.NumberField{Name: "reported"},
 			&core.NumberField{Name: "desired"},
@@ -48,7 +56,7 @@ func init() {
 		commands := core.NewBaseCollection("commands")
 		commands.Fields.Add(
 			&core.RelationField{Name: "site", CollectionId: sites.Id, MaxSelect: 1, Required: true, CascadeDelete: true},
-			&core.TextField{Name: "controller", Required: true, Max: 100},
+			&core.RelationField{Name: "controller", CollectionId: controllers.Id, MaxSelect: 1, Required: true, CascadeDelete: true},
 			&core.TextField{Name: "command_id", Required: true, Max: 100},
 			&core.SelectField{Name: "action", MaxSelect: 1, Values: []string{
 				"route_start", "route_stop", "fault_reset", "stop_all", "reset_faults", "clear_queue",
@@ -56,11 +64,13 @@ func init() {
 			&core.NumberField{Name: "route_id"},
 			&core.SelectField{Name: "status", MaxSelect: 1, Values: []string{"sent", "done", "failed"}},
 			&core.TextField{Name: "result", Max: 200},
-			&core.TextField{Name: "issued_by", Max: 50},
+			&core.RelationField{Name: "issued_by", CollectionId: users.Id, MaxSelect: 1},
 			&core.AutodateField{Name: "created", OnCreate: true},
 			&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 		)
 		commands.AddIndex("idx_commands_command_id", true, "command_id", "")
+		// Reconciliation lists a site's recent commands (pending → done).
+		commands.AddIndex("idx_commands_site", false, "site,created", "")
 		// Created by the command endpoint (app.Save bypasses rules); customers
 		// only read their site's commands (for pending → done reconciliation).
 		commands.ListRule = adminOrSiteOwner

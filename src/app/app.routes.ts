@@ -39,6 +39,14 @@ export const routes: Routes = [
       import('./pages/overview/overview.component').then((m) => m.OverviewComponent),
   },
   {
+    // Admin: customer accounts (users with role=customer).
+    path: 'customers',
+    canActivate: [roleGuard],
+    data: ADMIN,
+    loadComponent: () =>
+      import('./pages/customers/customers-page.component').then((m) => m.CustomersPageComponent),
+  },
+  {
     // Admin: board catalog.
     path: 'boards',
     canActivate: [roleGuard],

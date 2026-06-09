@@ -43,6 +43,19 @@ export class WorkspaceService {
   /** Effective mode for the site (defaults to managed/online when unchosen). */
   readonly deploymentMode = computed<'managed' | 'local'>(() => this._site()?.deployment?.mode ?? 'managed');
 
+  /**
+   * Whether this site is "live" — a real device has connected at least once
+   * (liveCount), or hosting has started (commenceDate). Design is free until then:
+   * drawing controllers and generating firmware never lock it; only deployed
+   * hardware does. Drives the editor's design lock (read-only until an admin opts in).
+   */
+  readonly commissioned = computed<boolean>(() => {
+    const id = this._site()?.id;
+    if (!id) return false;
+    const entry = this.sites.list().find((s) => s.id === id);
+    return !!entry && (entry.liveCount > 0 || !!entry.commenceDate);
+  });
+
   /** Live cross-controller (cross-talk) verdict for the current design. */
   readonly crossTalk = computed<CrossControllerReport | null>(() => {
     const t = this._siteTopology();
@@ -151,6 +164,9 @@ export class WorkspaceService {
     try {
       const payload = await this.backend.siteLoad(siteId);
       this._site.set({ id: payload.site.id, friendlyName: payload.site.friendlyName, deployment: payload.site.deployment });
+      // Pull the catalog so `commissioned` (the design lock) resolves even on a
+      // deep-link that skipped the Overview. Reactive — late arrival flips the lock.
+      void this.sites.ensureLoaded();
 
       if (payload.topology) {
         // Migrate the stored draft to the current schema (e.g. fold obsolete

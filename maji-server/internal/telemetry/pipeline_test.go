@@ -8,7 +8,6 @@ import (
 	"github.com/kisinga/majiflow/internal/telemetry"
 	_ "github.com/kisinga/majiflow/migrations" // register collection migrations
 
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 )
@@ -35,8 +34,9 @@ func TestIngestRollupPrune(t *testing.T) {
 	hash, _ := auth.HashToken(rawToken)
 	cc, _ := app.FindCollectionByNameOrId("controllers")
 	ctrl := core.NewRecord(cc)
+	ctrl.Id = "dev1" // device_id is the controllers primary key
 	ctrl.Set("site", site.Id)
-	ctrl.Set("device_id", "dev1")
+	ctrl.Set("active", true)
 	ctrl.Set("token_hash", hash)
 	if err := app.Save(ctrl); err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestIngestRollupPrune(t *testing.T) {
 	}
 
 	// --- ingest marked the controller online --------------------------------
-	c2, err := app.FindFirstRecordByFilter("controllers", "device_id = {:d}", dbx.Params{"d": "dev1"})
+	c2, err := app.FindRecordById("controllers", "dev1")
 	if err != nil {
 		t.Fatal(err)
 	}

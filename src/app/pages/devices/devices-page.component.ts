@@ -26,6 +26,8 @@ interface DeviceGroup {
   siteName: string;
   managed: boolean;
   atCap: boolean;
+  /** Active (registered, not deregistered) devices — what counts toward the cap. */
+  activeCount: number;
   devices: DeviceEntry[];
 }
 
@@ -66,18 +68,18 @@ interface DeviceGroup {
                 </button>
                 <span class="text-xs"
                       [class]="g.atCap ? 'text-amber-400' : 'text-base-content/50'">
-                  @if (g.managed) { {{ g.devices.length }} / {{ cap() }} devices }
-                  @else { {{ g.devices.length }} device{{ g.devices.length !== 1 ? 's' : '' }} · on-prem }
+                  @if (g.managed) { {{ g.activeCount }} / {{ cap() }} devices }
+                  @else { {{ g.activeCount }} device{{ g.activeCount !== 1 ? 's' : '' }} · on-prem }
                 </span>
               </div>
 
               <!-- Devices -->
               <div class="divide-y divide-base-300/20">
                 @for (d of g.devices; track d.id) {
-                  <div class="flex items-center gap-3 px-5 py-3">
+                  <div class="flex items-center gap-3 px-5 py-3" [class.opacity-50]="!d.active">
                     <span class="w-2 h-2 rounded-full shrink-0"
-                          [class]="d.online ? 'bg-emerald-400' : 'bg-base-content/25'"
-                          [title]="d.online ? 'Online' : 'Offline'"></span>
+                          [class]="!d.active ? 'bg-base-content/15' : (d.online ? 'bg-emerald-400' : 'bg-base-content/25')"
+                          [title]="!d.active ? 'Deregistered' : (d.online ? 'Online' : 'Offline')"></span>
                     <div class="flex-1 min-w-0">
                       @if (renamingId() === d.id) {
                         <input
@@ -88,7 +90,10 @@ interface DeviceGroup {
                           (blur)="confirmRename(d.id, $event)"
                         />
                       } @else {
-                        <p class="text-sm font-medium truncate">{{ d.name || d.deviceId }}</p>
+                        <p class="text-sm font-medium truncate">
+                          {{ d.name || d.deviceId }}
+                          @if (!d.active) { <span class="badge badge-ghost badge-xs ml-1 align-middle">deregistered</span> }
+                        </p>
                       }
                       <p class="text-[11px] text-base-content/40 font-mono truncate">{{ d.deviceId }}</p>
                     </div>
@@ -105,7 +110,11 @@ interface DeviceGroup {
                       <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300/40 z-50 w-44 p-1.5">
                         <li><button (click)="openFirmware(d)">Firmware / re-provision</button></li>
                         <li><button (click)="startRename(d.id)">Rename</button></li>
-                        <li><button class="text-error" (click)="deregister(d)">Deregister</button></li>
+                        @if (d.active) {
+                          <li><button class="text-error" (click)="deregister(d)">Deregister</button></li>
+                        } @else {
+                          <li><button (click)="reactivate(d)">Reactivate</button></li>
+                        }
                       </ul>
                     </div>
                   </div>
@@ -140,14 +149,17 @@ export class DevicesPageComponent implements OnInit {
       let g = byId.get(d.siteId);
       if (!g) {
         const managed = modeMap.get(d.siteId) ?? true; // unset mode → managed
-        g = { siteId: d.siteId, siteName: d.siteName, managed, atCap: false, devices: [] };
+        g = { siteId: d.siteId, siteName: d.siteName, managed, atCap: false, activeCount: 0, devices: [] };
         byId.set(d.siteId, g);
       }
       g.devices.push(d);
     }
     const cap = this.cap();
     const groups = [...byId.values()];
-    for (const g of groups) g.atCap = g.managed && g.devices.length >= cap;
+    for (const g of groups) {
+      g.activeCount = g.devices.filter((d) => d.active).length;
+      g.atCap = g.managed && g.activeCount >= cap;
+    }
     return groups.sort((a, b) => (a.siteName || a.siteId).localeCompare(b.siteName || b.siteId));
   });
 
@@ -197,11 +209,23 @@ export class DevicesPageComponent implements OnInit {
     const confirmed = await this.confirmService.confirm({
       title: 'Deregister device',
       message:
-        `Deregister "${d.name || d.deviceId}"? It will no longer connect to the broker and ` +
-        `frees a hosting slot on its site. The box keeps its firmware until reflashed; ` +
-        `regenerating firmware re-registers it.`,
+        `Deregister "${d.name || d.deviceId}"? It stops connecting to the broker and frees a ` +
+        `hosting slot on its site. Its history and credentials are kept — you can reactivate it ` +
+        `later. The box keeps its firmware until reflashed.`,
     });
     if (!confirmed) return;
     await this.devicesStore.deregister(d.id);
+  }
+
+  protected async reactivate(d: DeviceEntry): Promise<void> {
+    try {
+      await this.devicesStore.reactivate(d.id);
+    } catch (e) {
+      // The server rejects reactivation that would exceed the site's device cap.
+      await this.confirmService.confirm({
+        title: 'Cannot reactivate',
+        message: (e as Error)?.message || 'Reactivation failed (the site may be at its device cap).',
+      });
+    }
   }
 }

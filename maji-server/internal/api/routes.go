@@ -16,7 +16,6 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // hostingDeviceCap is the fallback device cap a managed site's yearly hosting fee
@@ -24,9 +23,9 @@ import (
 // in app_config; mirrored by HOSTING_DEVICE_CAP in core. On-prem sites are uncapped.
 const hostingDeviceCap = 5
 
-// hostingCap returns the configured managed device cap, falling back to the
+// HostingCap returns the configured managed device cap, falling back to the
 // built-in default when app_config has no usable value.
-func hostingCap(app core.App) int {
+func HostingCap(app core.App) int {
 	rec, err := app.FindFirstRecordByFilter("app_config", "id != ''")
 	if err != nil || rec == nil {
 		return hostingDeviceCap
@@ -129,7 +128,7 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			return apis.NewUnauthorizedError("authentication required", nil)
 		}
 		return e.JSON(http.StatusOK, map[string]any{
-			"hostingDeviceCap": hostingCap(e.App),
+			"hostingDeviceCap": HostingCap(e.App),
 		})
 	})
 
@@ -290,13 +289,15 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		return e.JSON(http.StatusOK, map[string]any{"command_id": commandID})
 	})
 
-	// POST /provision {site, controller, name?, board_type?, rotate?} — (re)register
-	// a controller in the controllers collection and return its MQTT token (raw),
-	// OTA password and site UDP key so the firmware generator can bake them into
-	// this build's secrets.yaml. The MQTT token is stable: minted once at first
-	// provision and reused on later builds (rotate=true forces a new one); the
-	// broker authenticates the device by username == controller (== device_id)
-	// against the token's bcrypt hash, kept in lockstep with the raw value.
+	// POST /provision {site, controller, name?, board_type?, rotate?} — register the
+	// controller (first call) and return its stable secrets (MQTT token (raw), OTA
+	// password, site UDP key) for this build's secrets.yaml. Registration lives HERE,
+	// at firmware Generate — the deliberate "make this controller a real device"
+	// step — NOT on the autosaved draft topology (a working copy that must never
+	// register devices or consume the cap). First provision creates the row and
+	// counts against the managed hosting cap; rebuilds reuse it. The MQTT token is
+	// minted once and reused (rotate=true forces a new one); the broker authenticates
+	// username == controller (== device_id == id) against the token's bcrypt hash.
 	g.POST("/provision", func(e *core.RequestEvent) error {
 		var body struct {
 			Site       string `json:"site"`
@@ -318,43 +319,28 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			return apis.NewBadRequestError("controller is required", nil)
 		}
 
-		// Site record: needed for the per-site UDP key, the managed-hosting device
-		// cap, and the hosting-start clock below.
 		siteRec, err := e.App.FindRecordById("sites", body.Site)
 		if err != nil || siteRec == nil {
 			return apis.NewApiError(http.StatusInternalServerError, "site not found", err)
 		}
+		// Cap + registration apply to managed sites. An explicit mode wins; an unset
+		// mode follows the server build shape (cloud → managed). On-prem is uncapped.
+		managed := siteRec.GetString("mode") == "managed" ||
+			(siteRec.GetString("mode") == "" && cfg.Mode == config.ModeCloud)
 
-		// Hosting (device cap + commence clock) applies to managed sites only. A
-		// site's explicit `mode` wins; an unset mode follows the server build shape
-		// (cloud → managed, edge → local). On-prem (local) sites are uncapped.
-		siteMode := siteRec.GetString("mode")
-		if siteMode == "" {
-			if cfg.Mode == config.ModeCloud {
-				siteMode = "managed"
-			} else {
-				siteMode = "local"
-			}
-		}
-		managed := siteMode == "managed"
-
-		// Identity row, upserted by device_id (globally unique). A missing row
-		// (or any lookup miss) means first provision → create; otherwise we keep
-		// the row and rotate/refresh its secrets below.
-		rec, err := e.App.FindFirstRecordByFilter(
-			"controllers", "device_id = {:d}", dbx.Params{"d": body.Controller},
-		)
+		// Find-or-create. A missing row means first provision → register: a new device
+		// on a managed site counts against the hosting cap (active rows only — a
+		// deregistered slot is free). Re-provisioning an existing device only refreshes
+		// its secrets and is never capped.
+		rec, err := e.App.FindRecordById("controllers", body.Controller)
 		if err != nil || rec == nil {
-			// A new device on a managed site counts against the hosting plan's
-			// device cap; re-provisioning an existing device only rotates its token
-			// and is never capped.
 			if managed {
-				cap := hostingCap(e.App)
-				count, cerr := e.App.CountRecords("controllers", dbx.HashExp{"site": body.Site})
+				cap := HostingCap(e.App)
+				count, cerr := e.App.CountRecords("controllers", dbx.HashExp{"site": body.Site, "active": true})
 				if cerr != nil {
 					return apis.NewApiError(http.StatusInternalServerError, "failed to count devices", cerr)
 				}
-				if count >= int64(cap) {
+				if int(count) >= cap {
 					return apis.NewBadRequestError(
 						fmt.Sprintf("hosting plan covers up to %d devices per site; remove a device or move to on-prem to add more", cap),
 						nil,
@@ -366,7 +352,8 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 				return apis.NewApiError(http.StatusInternalServerError, "controllers collection missing", cerr)
 			}
 			rec = core.NewRecord(coll)
-			rec.Set("device_id", body.Controller)
+			rec.Id = body.Controller // device_id is the primary key
+			rec.Set("active", true)
 		}
 
 		// MQTT token: stable across rebuilds. The broker authenticates a device by
@@ -388,16 +375,16 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			rec.Set("token_hash", hash)
 		}
 
-		// OTA password: generated once and reused. It must stay stable across
-		// rebuilds (ESPHome OTA authenticates the new build against the password
-		// the running device holds), so the firmware bakes the literal value —
-		// we store it raw and only mint it when the row doesn't have one yet.
+		// OTA password: minted once and reused. ESPHome OTA authenticates the new
+		// build against the password the running device holds, so the firmware bakes
+		// the literal value — store it raw, mint only when the row has none yet.
 		otaPassword := rec.GetString("ota_password")
 		if otaPassword == "" {
 			otaPassword, err = auth.GenerateToken()
 			if err != nil {
 				return apis.NewApiError(http.StatusInternalServerError, "failed to mint OTA password", err)
 			}
+			rec.Set("ota_password", otaPassword)
 		}
 
 		rec.Set("site", body.Site)
@@ -407,16 +394,14 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		if body.BoardType != "" {
 			rec.Set("board_type", body.BoardType)
 		}
-		rec.Set("ota_password", otaPassword)
 		if err := e.App.Save(rec); err != nil {
 			return apis.NewApiError(http.StatusInternalServerError, "failed to register controller", err)
 		}
 
 		// Per-site UDP coordination key (shared by every controller on the site,
-		// authenticates cross-controller claims/readings over the LAN UDP lane) and
-		// the managed hosting clock both live on the site record; mint/stamp what's
-		// missing and save once.
-		siteDirty := false
+		// authenticates cross-controller claims/readings over the LAN UDP lane); mint
+		// once and reuse. The hosting clock starts at the controller's first live
+		// connect (see telemetry.setControllerOnline), not here.
 		udpKey := siteRec.GetString("udp_key")
 		if udpKey == "" {
 			udpKey, err = auth.GenerateToken()
@@ -424,14 +409,6 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 				return apis.NewApiError(http.StatusInternalServerError, "failed to mint UDP key", err)
 			}
 			siteRec.Set("udp_key", udpKey)
-			siteDirty = true
-		}
-		// Hosting starts at the first managed provision; stamp once, never reset.
-		if managed && siteRec.GetDateTime("commence_date").IsZero() {
-			siteRec.Set("commence_date", types.NowDateTime())
-			siteDirty = true
-		}
-		if siteDirty {
 			if err := e.App.Save(siteRec); err != nil {
 				return apis.NewApiError(http.StatusInternalServerError, "failed to update site", err)
 			}

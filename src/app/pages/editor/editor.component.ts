@@ -27,7 +27,7 @@ import { WorkspaceRailComponent } from './workspace-rail.component';
   ],
   host: {
     class: 'flex-1 min-h-0 flex overflow-hidden',
-    '[class.preview]': 'isPreview()',
+    '[class.preview]': 'editor.readonly()',
   },
   template: `
     <!-- Primary navigation: which part of this site -->
@@ -57,6 +57,18 @@ import { WorkspaceRailComponent } from './workspace-rail.component';
         }
       </div>
 
+      <!-- Commissioned lock: a live site's design is read-only until the admin opts
+           in. Firmware (deploy) stays usable — that's how OTA reaches live devices. -->
+      @if (locked()) {
+        <div class="flex items-center gap-3 px-4 py-2 bg-warning/10 border-b border-warning/20 text-xs">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-warning shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          <span class="flex-1 text-base-content/70">This site is live. Design changes are locked to protect deployed devices.</span>
+          <button class="btn btn-xs btn-warning btn-outline shrink-0" (click)="editor.enterDesignMode()">Enter design mode</button>
+        </div>
+      }
+
       <!-- Content: the design canvas stays mounted (display toggle) to preserve X6 state -->
       <div class="flex flex-col flex-1 min-h-0">
         <main class="flex-1 min-h-0 min-w-0 flex flex-col"
@@ -66,7 +78,7 @@ import { WorkspaceRailComponent } from './workspace-rail.component';
 
         @if (editor.panel() !== 'design') {
           <main class="flex-1 min-h-0 min-w-0 flex flex-col overflow-auto">
-            <fieldset [disabled]="isPreview()" class="flex-1 flex flex-col min-h-0">
+            <fieldset [disabled]="editor.readonly() && editor.panel() !== 'deploy'" class="flex-1 flex flex-col min-h-0">
               @switch (editor.panel()) {
                 @case ('site') { <app-site-panel /> }
                 @case ('remotes') { <app-remotes-tab /> }
@@ -102,6 +114,10 @@ export class EditorComponent implements OnInit, OnDestroy {
   private router = inject(Router);
 
   protected isPreview = signal(false);
+
+  /** Show the commissioned-lock banner: site is live and not yet unlocked, and this
+   *  isn't a route-level preview embed (which has no unlock affordance). */
+  protected locked = computed(() => this.editor.locked() && !this.isPreview());
 
   // Sub-header state (reads off the workspace, like the other editor fields).
   protected siteName = computed(() => this.workspace.site()?.friendlyName ?? '');

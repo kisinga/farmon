@@ -52,6 +52,12 @@ export class SitesStore {
     this._list.update((list) => list.map((s) => (s.id === id ? { ...s, friendlyName } : s)));
   }
 
+  /** Reassign a site to a customer (admin-only). Patches the cached owner. */
+  async assignOwner(id: string, owner: string): Promise<void> {
+    await this.backend.siteAssignOwner(id, owner);
+    this._list.update((list) => list.map((s) => (s.id === id ? { ...s, owner } : s)));
+  }
+
   async delete(id: string): Promise<void> {
     await this.backend.siteDelete(id);
     this._list.update((list) => list.filter((s) => s.id !== id));

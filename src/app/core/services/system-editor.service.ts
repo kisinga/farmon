@@ -51,7 +51,10 @@ export class SystemEditorService {
   private boardCatalog = inject(BoardService);
 
   // --- Session-specific state (NOT in workspace) ---
+  /** Route-level preview (read-only embed). Distinct from the commissioned lock. */
   private _readonly = signal(false);
+  /** Admin opted into editing a commissioned site this session (clears on leave). */
+  private _designUnlocked = signal(false);
   private _validation = signal<ValidationResult | null>(null);
   private _generatedFiles = signal<GenerateResult | null>(null);
   private _canvasSvg = signal<string | null>(null);
@@ -66,7 +69,18 @@ export class SystemEditorService {
 
   readonly dirty = this.workspace.dirty;
 
-  readonly readonly = this._readonly.asReadonly();
+  /** Whether the site is commissioned but the admin hasn't entered design mode. */
+  readonly locked = computed(() => this.workspace.commissioned() && !this._designUnlocked());
+
+  /** True design is read-only: route preview OR an unbroken commissioned lock. */
+  readonly readonly = computed(() => this._readonly() || this.locked());
+
+  readonly designUnlocked = this._designUnlocked.asReadonly();
+
+  /** Admin opts into editing a commissioned site (lifts the lock for this session). */
+  enterDesignMode(): void {
+    this._designUnlocked.set(true);
+  }
 
   // --- Active controller computed ---
   readonly activeController = computed(() => {
@@ -260,13 +274,13 @@ export class SystemEditorService {
 
   /** Mutate the active system's topology. Marks workspace dirty. */
   updateTopology(updater: (t: SiteTopology) => void): void {
-    if (this._readonly()) return;
+    if (this.readonly()) return;
     this.workspace.updateSiteTopology(updater);
   }
 
   /** Mutate the active controller's device fields. */
   updateActiveController(updater: (ctrl: Controller) => void): void {
-    if (this._readonly()) return;
+    if (this.readonly()) return;
     const cid = this.controllerId();
     if (!cid) return;
     this.workspace.updateController(cid, updater);
@@ -274,7 +288,7 @@ export class SystemEditorService {
 
   /** Atomically swap the board for the active system. */
   changeBoard(board: BoardDef): void {
-    if (this._readonly()) return;
+    if (this.readonly()) return;
     this.workspace.changeActiveBoard(board);
   }
 
@@ -325,6 +339,7 @@ export class SystemEditorService {
   clear(): void {
     this.workspace.unfocusController();
     this._readonly.set(false);
+    this._designUnlocked.set(false);
     this._validation.set(null);
     this._generatedFiles.set(null);
     this._canvasSvg.set(null);

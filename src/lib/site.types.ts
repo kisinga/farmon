@@ -84,14 +84,19 @@ export const HOSTING_DEVICE_CAP = 5;
 export interface SiteListEntry {
   id: string;
   friendlyName: string;
+  /** Owner user id ('' if unassigned) — admins can reassign via the owner picker. */
+  owner: string;
   /** Designed controllers / nodes from the saved topology. */
   controllerCount: number;
   nodeCount: number;
   /** Deployment mode: '' (unset → treated as managed), 'managed', or 'local'. */
   mode: string;
-  /** Provisioned (commissioned) devices — the count the hosting cap measures. */
+  /** Active (registered, not deregistered) devices — the count the hosting cap measures. */
   deviceCount: number;
-  /** Hosting start (ISO), stamped at first managed provision; '' until then. */
+  /** Devices that have actually connected at least once (last_seen set) — i.e. real
+   *  deployed hardware. Drives the design lock; 0 means the site is still pre-deploy. */
+  liveCount: number;
+  /** Hosting start (ISO), stamped at first live connect; '' until then. */
   commenceDate: string;
 }
 

@@ -45,6 +45,10 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 		return e.Next()
 	})
 
+	// Device lifecycle: a controller is born when saved into a site's design.
+	// Guards site ownership, the managed device cap, and reconciles controllers.
+	registerSiteHooks(app, cfg)
+
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		seedAdmin(se.App)
 

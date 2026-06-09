@@ -45,8 +45,16 @@ export class DevicesStore {
 
   async deregister(id: string): Promise<void> {
     await this.backend.deviceDeregister(id);
-    this._list.update((list) => list.filter((d) => d.id !== id));
+    this._list.update((list) =>
+      list.map((d) => (d.id === id ? { ...d, active: false, online: false } : d)),
+    );
     this.sites.invalidate(); // freed a hosting slot → site device count changed
+  }
+
+  async reactivate(id: string): Promise<void> {
+    await this.backend.deviceReactivate(id);
+    this._list.update((list) => list.map((d) => (d.id === id ? { ...d, active: true } : d)));
+    this.sites.invalidate(); // consumed a hosting slot
   }
 
   /** After a generate registers/updates a device: refetch fleet + site counts. */

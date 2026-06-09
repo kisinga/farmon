@@ -7,6 +7,10 @@ dist-electron/
 out-tsc/
 output/
 
+# Local compose override (on-prem; re-adds plain 1883). Never commit — it must not
+# reach managed. Use docker-compose.override.example.yml as the template.
+docker-compose.override.yml
+
 # maji-server (Go backend)
 maji-server/dist/
 maji-server/maji-cloud

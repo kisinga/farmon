@@ -107,7 +107,8 @@ function toShadow(r: RecordModel): ShadowRow {
 
 function toController(r: RecordModel): ControllerRow {
   return {
-    device_id: r['device_id'],
+    device_id: r['id'], // the record id IS the device_id
+    active: r['active'] !== false,
     online: r['online'],
     last_seen: r['last_seen'],
     firmware_version: r['firmware_version'],

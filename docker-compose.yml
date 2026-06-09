@@ -2,9 +2,10 @@
 # with an embedded MQTT broker. No external DB/broker/HA services: the old
 # HA + ChirpStack + ESPHome stack is gone.
 #
-# Coolify: proxy 8090 to your domain (HTTPS handled by Coolify); expose 1883 and
-# (when TLS is on) 8883 as raw TCP for devices. Config is supplied per-variable via
-# the `environment:` block below: set the values in Coolify's env-var UI, or (local)
+# Coolify: proxy 8090 to your domain (HTTPS handled by Coolify); expose 8883 (TLS
+# MQTT) as raw TCP for devices. Plain 1883 is opt-in for local on-prem only — see
+# docker-compose.override.example.yml. Config is supplied per-variable via the
+# `environment:` block below: set the values in Coolify's env-var UI, or (local)
 # copy .env.example to .env and let Compose auto-load it. See .env.example for the
 # profiles and what each variable means.
 
@@ -41,8 +42,13 @@ services:
       MAJI_MQTT_WS: ${MAJI_MQTT_WS:-:8082}
     ports:
       - "8090:8090"   # HTTP: SPA + /api + /_/  (Coolify routes this to your domain)
-      - "1883:1883"   # plain MQTT (device-facing)
-      - "8883:8883"   # TLS MQTT  (device-facing; only serves when MAJI_MQTT_TLS_ENABLED=true)
+      - "8883:8883"   # TLS MQTT (device-facing; serves when MAJI_MQTT_TLS_ENABLED=true)
+      # Plain 1883 is intentionally NOT published — managed/cloud stays TLS-only, no
+      # plaintext on the internet. For a local/LAN on-prem box that wants plain 1883,
+      # copy docker-compose.override.example.yml → docker-compose.override.yml (Compose
+      # auto-loads it locally; Coolify uses an explicit -f so it's ignored there, and
+      # it's git-ignored regardless). The broker still binds 1883 inside the container;
+      # this only governs host exposure.
     volumes:
       # The single stateful boundary: SQLite DB + uploaded files + logs + backups.
       - pb_data:/pb_data

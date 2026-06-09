@@ -36,6 +36,8 @@ export interface TelemetryHistory {
  *  `{ctrl}` segment == a widget/spec `controller`. */
 export interface ControllerRow {
   device_id: string;
+  /** false == deregistered/decommissioned (cannot connect to the broker). */
+  active: boolean;
   online: boolean;
   last_seen: string;
   firmware_version: string;

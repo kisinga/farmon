@@ -180,13 +180,37 @@ func upsertShadowText(app core.App, site, ctrl, sensor, text string, ts time.Tim
 }
 
 func setControllerOnline(app core.App, deviceID string, online bool, ts time.Time) {
-	rec, err := app.FindFirstRecordByFilter(
-		"controllers", "device_id = {:d}", dbx.Params{"d": deviceID},
-	)
+	// device_id is the controllers primary key, so this is a direct PK lookup.
+	rec, err := app.FindRecordById("controllers", deviceID)
 	if err != nil || rec == nil {
 		return
 	}
+	wasOnline := rec.GetBool("online")
 	rec.Set("online", online)
-	rec.Set("last_seen", ts.UTC().Format(time.RFC3339))
+	rec.Set("last_seen", ts.UTC())
+	// Billing clock: a managed site's hosting year starts at its first controller's
+	// first live connect. Checked only on the offline→online edge (cheap, rare); the
+	// stamp itself is one-shot.
+	if online && !wasOnline {
+		stampCommence(app, rec.GetString("site"), ts)
+	}
 	_ = app.Save(rec)
+}
+
+// stampCommence starts a managed site's yearly hosting clock once, at first
+// connect. Local (on-prem) sites never bill and are skipped; an unset mode is
+// treated as managed (the cloud default). Never reset on later connects.
+func stampCommence(app core.App, siteID string, ts time.Time) {
+	if siteID == "" {
+		return
+	}
+	site, err := app.FindRecordById("sites", siteID)
+	if err != nil || site == nil {
+		return
+	}
+	if site.GetString("mode") == "local" || !site.GetDateTime("commence_date").IsZero() {
+		return
+	}
+	site.Set("commence_date", ts.UTC())
+	_ = app.Save(site)
 }

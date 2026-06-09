@@ -10,15 +10,15 @@
  */
 export const PRICING = {
   /** One controller bundle (KC868 + pump + 1 valve + 1 flow + 1 tank monitor + cloud). */
-  bundle: 30_000,
+  bundle: 35_000,
   /** Each extra standard (≤3/4") peripheral on the same controller. */
-  extraValve: 3_000,
-  extraFlow: 3_000,
-  extraTank: 4_000,
+  extraValve: 4_000,
+  extraFlow: 4_000,
+  extraTank: 5_000,
   /** Extra pump relay, 30A max: switches a single-phase pump up to ~2 hp (1.5 kW)
    *  at 240V directly. Bigger motors need a contactor (custom-quoted).
    *  PLACEHOLDER price, confirm. */
-  extraPumpRelay: 3_000,
+  extraPumpRelay: 4_000,
   /** Hosted backend upkeep — per site, billed yearly after the first year. */
   yearly: 4_000,
   /** On-Prem (Custom) entry point — bespoke, not estimated here. */

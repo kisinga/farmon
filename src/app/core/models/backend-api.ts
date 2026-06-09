@@ -25,7 +25,7 @@ export type { BoardDef, Route, SiteTopology };
  * load-bearing id (== topology controller id == MQTT username).
  */
 export interface DeviceEntry {
-  /** PocketBase record id (for update/delete). */
+  /** PocketBase record id (== deviceId — the device_id is the primary key). */
   id: string;
   deviceId: string;
   name: string;
@@ -33,10 +33,24 @@ export interface DeviceEntry {
   siteName: string;
   boardType: string;
   firmwareVersion: string;
+  /** false == deregistered/decommissioned: cannot connect, frees a cap slot. */
+  active: boolean;
   online: boolean;
   /** Last-seen timestamp (ISO) or '' if never seen. */
   lastSeen: string;
   /** When the device was first registered (ISO). */
+  created: string;
+}
+
+/** A customer account (users with role=customer) — assignable as a site owner
+ *  and managed from the admin Customers page. */
+export interface CustomerEntry {
+  id: string;
+  name: string;
+  email: string;
+  /** Email verified (also set when they complete the invite/reset flow). */
+  verified: boolean;
+  /** When the account was created (ISO). */
   created: string;
 }
 

@@ -6,13 +6,12 @@ import (
 	"github.com/kisinga/majiflow/internal/auth"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/packets"
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
 // deviceAuthHook authenticates MQTT devices against the controllers collection
-// (username = device_id, password = raw token verified against token_hash) and
-// confines each device to its own topic namespace.
+// (username = device_id == record id, password = raw token verified against
+// token_hash) and confines each device to its own topic namespace.
 type deviceAuthHook struct {
 	mqtt.HookBase
 	app core.App
@@ -30,10 +29,14 @@ func (h *deviceAuthHook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packe
 	if deviceID == "" || token == "" {
 		return false
 	}
-	rec, err := h.app.FindFirstRecordByFilter(
-		"controllers", "device_id = {:d}", dbx.Params{"d": deviceID},
-	)
+	// device_id is the controllers primary key — direct PK lookup.
+	rec, err := h.app.FindRecordById("controllers", deviceID)
 	if err != nil || rec == nil {
+		return false
+	}
+	// A deregistered/decommissioned controller (active=false) cannot connect: this
+	// blocks its telemetry and commands at the broker without deleting its row.
+	if !rec.GetBool("active") {
 		return false
 	}
 	return auth.VerifyToken(rec.GetString("token_hash"), token)

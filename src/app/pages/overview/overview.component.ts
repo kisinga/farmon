@@ -4,6 +4,8 @@ import { BackendService } from '../../core/services/backend.service';
 import { ConfigStore } from '../../core/stores/config.store';
 import { SitesStore } from '../../core/stores/sites.store';
 import { ConfirmService } from '../../core/services/confirm.service';
+import { AuthStore } from '../../core/services/auth.store';
+import { CustomersStore } from '../../core/stores/customers.store';
 import type { SiteListEntry } from '../../core/models/backend-api';
 import { HOSTING_DEVICE_CAP } from '@core';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
@@ -68,21 +70,24 @@ function initials(name: string): string {
           <button class="btn btn-sm rounded-full border-0 bg-cyan-400 text-slate-950 hover:bg-cyan-300 mt-5" (click)="showCreate.set(true)">New site</button>
         </div>
       } @else {
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-5">
           @for (site of entries(); track site.id) {
             <div
-              class="group relative rounded-2xl bg-base-100 ring-1 ring-base-300/40 hover:ring-cyan-400/40 transition-all hover:-translate-y-0.5 cursor-pointer"
-              (click)="openSite(site.id)"
+              class="group relative h-full flex flex-col rounded-2xl bg-base-100 ring-1 ring-base-300/40 hover:ring-cyan-400/40 transition-all hover:-translate-y-0.5 cursor-pointer"
+              (click)="openDashboard(site.id, $event)"
             >
               <!-- Decorative layer, clipped to the rounded card. Kept off the card
-                   itself so the kebab menu isn't clipped by overflow-hidden. -->
+                   itself so the kebab menu isn't clipped by overflow-hidden. A thin
+                   left accent (not a full top stripe) carries the per-site colour. -->
               <div class="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
-                <div class="absolute inset-x-0 top-0 h-1 opacity-80" [style.backgroundColor]="getColor(site.id)"></div>
+                <div class="absolute inset-y-0 left-0 w-1 opacity-70" [style.backgroundColor]="getColor(site.id)"></div>
                 <div class="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-cyan-500/0 group-hover:bg-cyan-500/10 blur-2xl transition-all duration-300"></div>
               </div>
 
-              <div class="relative p-5 flex gap-4">
-                <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-lg shadow-lg shrink-0"
+              <!-- Header: avatar + name/id, with the lifecycle badge on its own line
+                   (keeps the name full-width so it never truncates prematurely). -->
+              <div class="relative p-4 pl-5 flex items-start gap-3">
+                <div class="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold shadow-md shrink-0"
                   [style.backgroundColor]="getColor(site.id)">
                   {{ getInitials(site.friendlyName) }}
                 </div>
@@ -100,51 +105,54 @@ function initials(name: string): string {
                     <h2 class="font-semibold text-base truncate group-hover:text-cyan-300 transition-colors">{{ site.friendlyName }}</h2>
                   }
                   <p class="text-xs text-base-content/40 font-mono truncate mt-0.5">{{ site.id }}</p>
-                  <div class="flex items-center gap-4 mt-2 text-xs text-base-content/50">
-                    <span class="flex items-center gap-1.5">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                      </svg>
-                      {{ site.controllerCount }} controller{{ site.controllerCount !== 1 ? 's' : '' }}
+                  @if (status(site); as s) {
+                    <span class="inline-flex items-center gap-1.5 mt-2 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                          [class]="badgeClass(s.tone)">
+                      <span class="w-1.5 h-1.5 rounded-full" [class]="dotClass(s.tone)"></span>
+                      {{ s.label }}
                     </span>
-                    <span class="flex items-center gap-1.5">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                      </svg>
-                      {{ site.nodeCount }} node{{ site.nodeCount !== 1 ? 's' : '' }}
-                    </span>
-                  </div>
-
-                  <!-- Hosting (managed sites only): device usage vs cap + renewal clock. -->
-                  @if (hosting(site); as h) {
-                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs">
-                      <span class="flex items-center gap-1.5"
-                            [class]="h.atCap ? 'text-amber-400' : 'text-base-content/50'"
-                            [title]="h.atCap ? 'Hosting plan device limit reached' : 'Provisioned devices'">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-                        </svg>
-                        {{ site.deviceCount }} / {{ cap() }} devices
-                      </span>
-                      @if (h.commenced) {
-                        <span class="flex items-center gap-1.5"
-                              [class]="h.overdue ? 'text-red-400' : 'text-base-content/40'"
-                              [title]="'Hosting since ' + h.sinceLabel">
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {{ h.renewalLabel }}
-                        </span>
-                      } @else {
-                        <span class="text-base-content/30">Not yet commissioned</span>
-                      }
-                    </div>
                   }
                 </div>
               </div>
 
-              <!-- Footer actions -->
-              <div class="relative flex items-center gap-1 px-4 py-3 border-t border-base-300/30 bg-base-200/40 rounded-b-2xl">
+              <!-- Stat grid: fixed cells so counts never wrap. Devices is managed-only. -->
+              <div class="relative px-4 py-3 mt-1 grid divide-x divide-base-300/30 text-center border-t border-base-300/20"
+                   [class]="hosting(site) ? 'grid-cols-3' : 'grid-cols-2'">
+                <div class="px-2">
+                  <div class="text-lg font-semibold tabular-nums leading-none">{{ site.controllerCount }}</div>
+                  <div class="mt-1 text-[11px] uppercase tracking-wide text-base-content/40">Controllers</div>
+                </div>
+                <div class="px-2">
+                  <div class="text-lg font-semibold tabular-nums leading-none">{{ site.nodeCount }}</div>
+                  <div class="mt-1 text-[11px] uppercase tracking-wide text-base-content/40">Nodes</div>
+                </div>
+                @if (hosting(site); as h) {
+                  <div class="px-2"
+                       [title]="h.atCap ? 'Hosting plan device limit reached' : 'Provisioned devices'">
+                    <div class="text-lg font-semibold tabular-nums leading-none"
+                         [class]="h.atCap ? 'text-amber-400' : ''">{{ site.deviceCount }} / {{ cap() }}</div>
+                    <div class="mt-1 text-[11px] uppercase tracking-wide text-base-content/40">Devices</div>
+                  </div>
+                }
+              </div>
+
+              <!-- Renewal clock (managed + commissioned only). -->
+              @if (hosting(site); as h) {
+                @if (h.commenced) {
+                  <div class="relative px-5 pb-1 flex items-center gap-1.5 text-[11px]"
+                       [class]="h.overdue ? 'text-error' : 'text-base-content/40'"
+                       [title]="'Hosting since ' + h.sinceLabel">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {{ h.renewalLabel }}
+                  </div>
+                }
+              }
+
+              <!-- Footer actions. The card body opens Live view (the everyday action);
+                   Design is the deliberate edit path. -->
+              <div class="relative mt-auto flex items-center gap-1 px-3 py-2.5 border-t border-base-300/30 bg-base-200/40 rounded-b-2xl">
                 <button class="btn btn-xs btn-ghost gap-1.5 text-cyan-300 hover:bg-cyan-400/10"
                   (click)="openDashboard(site.id, $event)" title="Open this site's live dashboard">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -152,14 +160,32 @@ function initials(name: string): string {
                   </svg>
                   Live view
                 </button>
+                <button class="btn btn-xs btn-ghost gap-1.5 text-base-content/60 hover:text-base-content"
+                  (click)="openDesign(site.id, $event)" title="Open the design editor">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Design
+                </button>
                 <span class="flex-1"></span>
+                @if (isAdmin()) {
+                  <button class="btn btn-xs btn-ghost gap-1 px-1.5 max-w-[42%] normal-case"
+                    [class.text-amber-400]="!site.owner"
+                    (click)="openOwner(site, $event)"
+                    [title]="site.owner ? ('Owner: ' + ownerName(site.owner) + ' — click to manage') : 'Assign a customer'">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <span class="truncate">{{ site.owner ? ownerName(site.owner) : 'Assign' }}</span>
+                  </button>
+                }
                 <div class="dropdown dropdown-top dropdown-end" (click)="$event.stopPropagation()">
                   <button tabindex="0" class="btn btn-xs btn-ghost btn-square" title="More">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01" />
                     </svg>
                   </button>
-                  <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300/40 z-50 w-36 p-1.5">
+                  <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300/40 z-50 w-44 p-1.5">
                     <li><button (click)="startRename(site.id, $event)">Rename</button></li>
                     <li><button (click)="exportSite(site.id, $event)">Export</button></li>
                     <li><button class="text-error" (click)="deleteSite(site.id, site.friendlyName, $event)">Delete</button></li>
@@ -189,6 +215,52 @@ function initials(name: string): string {
         <div class="modal-backdrop" (click)="showCreate.set(false)"></div>
       </dialog>
     }
+
+    <!-- Owner management dialog (admin) -->
+    @if (ownerModalSite(); as s) {
+      <dialog class="modal modal-open">
+        <div class="modal-box max-w-md">
+          <h3 class="font-bold text-lg">Customer</h3>
+          <p class="text-xs text-base-content/50 mb-3">
+            Owner of <span class="font-medium text-base-content/80">{{ s.friendlyName }}</span> ·
+            @if (s.owner) { currently {{ ownerName(s.owner) }} } @else { unassigned }
+          </p>
+
+          <input type="text" class="input input-sm input-bordered w-full mb-3"
+                 placeholder="Search customers by name or email…"
+                 [value]="customerSearch()"
+                 (input)="customerSearch.set($any($event.target).value)" />
+
+          <div class="max-h-72 overflow-auto rounded-lg border border-base-300/40 divide-y divide-base-300/20">
+            @for (c of filteredCustomers(); track c.id) {
+              <button class="w-full flex items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-base-200/60"
+                      [class.bg-cyan-400/10]="c.id === s.owner"
+                      (click)="setOwner(s.id, c.id)">
+                <span class="flex items-center justify-center w-8 h-8 rounded-full bg-base-300 text-[11px] font-semibold shrink-0">{{ getInitials(c.name || c.email) }}</span>
+                <span class="flex-1 min-w-0">
+                  <span class="block text-sm font-medium truncate">{{ c.name || '(no name)' }}</span>
+                  <span class="block text-[11px] text-base-content/50 truncate">{{ c.email }}</span>
+                </span>
+                @if (c.id === s.owner) { <span class="text-cyan-300 text-xs shrink-0">Current &check;</span> }
+              </button>
+            } @empty {
+              <p class="px-3 py-6 text-center text-sm text-base-content/40">
+                @if (customers().length === 0) { No customers exist yet. } @else { No match. }
+              </p>
+            }
+          </div>
+
+          <div class="modal-action items-center">
+            @if (s.owner) {
+              <button class="btn btn-ghost btn-sm text-error" (click)="setOwner(s.id, '')">Unassign</button>
+            }
+            <span class="flex-1"></span>
+            <button class="btn btn-sm" (click)="ownerModalId.set(null)">Done</button>
+          </div>
+        </div>
+        <div class="modal-backdrop" (click)="ownerModalId.set(null)"></div>
+      </dialog>
+    }
   `,
 })
 export class OverviewComponent implements OnInit {
@@ -197,11 +269,40 @@ export class OverviewComponent implements OnInit {
   private sitesStore = inject(SitesStore);
   private router = inject(Router);
   private confirmService = inject(ConfirmService);
+  private auth = inject(AuthStore);
+  private customersStore = inject(CustomersStore);
 
   protected entries = computed(() => this.sitesStore.list());
   protected loading = signal(true);
   protected showCreate = signal(false);
   protected renamingId = signal<string | null>(null);
+  protected readonly isAdmin = this.auth.isAdmin;
+  /** Customers an admin can assign a site to (shared cache with the Customers page). */
+  protected customers = computed(() => this.customersStore.list());
+  /** Site whose owner-management dialog is open (tracked by id so it stays live
+   *  against the cached list after an assignment patches the owner). */
+  protected ownerModalId = signal<string | null>(null);
+  protected ownerModalSite = computed(
+    () => this.entries().find((s) => s.id === this.ownerModalId()) ?? null,
+  );
+  protected customerSearch = signal('');
+  protected filteredCustomers = computed(() => {
+    const q = this.customerSearch().trim().toLowerCase();
+    const list = this.customers();
+    return q
+      ? list.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q))
+      : list;
+  });
+  private customerById = computed(() => new Map(this.customers().map((c) => [c.id, c] as const)));
+
+  /** Resolve an owner user id to a display name. Self (an admin-owned site) reads
+   *  "You"; a customer reads their name/email; any other id falls back to "Owner"
+   *  (e.g. another admin, not in the customer list) rather than a scary "Unknown". */
+  protected ownerName(id: string): string {
+    if (id && id === this.auth.user()?.id) return 'You';
+    const c = this.customerById().get(id);
+    return c ? c.name || c.email : 'Owner';
+  }
   /** Hosting device cap, loaded from server config (HOSTING_DEVICE_CAP is the fallback). */
   protected cap = signal(HOSTING_DEVICE_CAP);
 
@@ -216,6 +317,9 @@ export class OverviewComponent implements OnInit {
       this.configStore.ensureLoaded(),
     ]);
     this.cap.set(this.configStore.cap());
+    if (this.isAdmin()) {
+      await this.customersStore.ensureLoaded().catch(() => []);
+    }
     this.loading.set(false);
   }
 
@@ -257,11 +361,40 @@ export class OverviewComponent implements OnInit {
     };
   }
 
+  /** Lifecycle badge for a site card: on-prem, awaiting commission, live, or overdue. */
+  protected status(site: SiteListEntry): { label: string; tone: 'neutral' | 'idle' | 'live' | 'overdue' } {
+    const h = this.hosting(site);
+    if (!h) return { label: 'On-prem', tone: 'neutral' };
+    if (!h.commenced) return { label: 'Not commissioned', tone: 'idle' };
+    return h.overdue ? { label: 'Renewal due', tone: 'overdue' } : { label: 'Live', tone: 'live' };
+  }
+
+  /** Tailwind pill classes per status tone. */
+  protected badgeClass(tone: 'neutral' | 'idle' | 'live' | 'overdue'): string {
+    switch (tone) {
+      case 'live': return 'bg-success/10 text-success';
+      case 'overdue': return 'bg-error/10 text-error';
+      default: return 'bg-base-200 text-base-content/60';
+    }
+  }
+
+  /** Status-dot colour per tone. */
+  protected dotClass(tone: 'neutral' | 'idle' | 'live' | 'overdue'): string {
+    switch (tone) {
+      case 'live': return 'bg-success';
+      case 'overdue': return 'bg-error';
+      case 'idle': return 'bg-base-content/30';
+      default: return 'bg-base-content/40';
+    }
+  }
+
   protected getInitials(name: string): string {
     return initials(name);
   }
 
-  protected openSite(id: string): void {
+  /** Open a site's design editor — the deliberate edit path (live view is the default). */
+  protected openDesign(id: string, event: Event): void {
+    event.stopPropagation();
     this.router.navigate(['/site', id]);
   }
 
@@ -322,6 +455,19 @@ export class OverviewComponent implements OnInit {
     } finally {
       input.value = '';
     }
+  }
+
+  /** Open the owner-management dialog for a site. */
+  protected openOwner(site: SiteListEntry, event: Event): void {
+    event.stopPropagation();
+    this.customerSearch.set('');
+    this.ownerModalId.set(site.id);
+  }
+
+  /** Assign (userId) or unassign ('') a site's owner. The store patches the cached
+   *  list, so the open dialog's "Current" marker follows automatically. */
+  protected async setOwner(siteId: string, owner: string): Promise<void> {
+    await this.sitesStore.assignOwner(siteId, owner);
   }
 
   protected async deleteSite(id: string, name: string, event: Event): Promise<void> {

@@ -30,8 +30,9 @@ function relTime(iso: string): string {
 /**
  * Firmware section. Generates the ESPHome bundle for the controller currently
  * selected in the workspace sub-header (the one switcher) — no local controller
- * picker. Generation is a deliberate button press: it re-provisions the device
- * (bakes its credentials), so it must not fire just from opening the page.
+ * picker. The controller is registered when its design is saved; generation is a
+ * deliberate button press that downloads its build and bakes its secrets, so it
+ * must not fire just from opening the page.
  */
 @Component({
   selector: 'app-deploy-page',
@@ -70,12 +71,12 @@ function relTime(iso: string): string {
             </div>
           } @else {
             <p class="mt-2 text-xs text-base-content/50">
-              Not yet registered. Generating firmware registers this device on the platform.
+              Not registered yet. Save the site design to register this controller, then generate its firmware.
             </p>
           }
 
           <p class="text-xs text-base-content/50 mt-3 leading-relaxed border-t border-base-300/30 pt-3">
-            Generating firmware <span class="text-base-content/70">(re)provisions</span> this device: it bakes the
+            Generating firmware downloads the build for this registered controller: it bakes the
             controller's stable MQTT token and OTA password into
             <code class="text-[10px] px-1 py-0.5 rounded bg-base-200">secrets.yaml</code>.
             These stay the same across rebuilds, so a flashed device keeps connecting.
@@ -222,8 +223,8 @@ export class DeployPageComponent {
 
   constructor() {
     // On controller switch: reset the panel and refresh the (read-only)
-    // registration status. Generation is NOT auto-run — it re-provisions the
-    // device (bakes credentials), so it stays a deliberate button press.
+    // registration status. Generation is NOT auto-run — it downloads the build and
+    // bakes the controller's secrets, so it stays a deliberate button press.
     let lastId: string | null = null;
     effect(() => {
       const id = this.controllerId();
@@ -260,7 +261,7 @@ export class DeployPageComponent {
       if (this.controllerId() !== systemId) return;
       this.fwFiles.set(result.files);
       this.downloadUrl.set(result.downloadUrl);
-      void this.loadDevice(); // generation registers/updates the device row
+      void this.loadDevice(); // generation refreshed the device's secrets
       this.devicesStore.invalidateAfterProvision(); // fleet list + site counts changed
 
     } catch (err) {

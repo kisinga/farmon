@@ -50,6 +50,7 @@ import type {
   VersionEntry,
   CommitResult,
   DeviceEntry,
+  CustomerEntry,
   AppConfig,
   AppConfigRecord,
   LeadEntry,
@@ -92,13 +93,17 @@ export class BackendService {
     // Devices page fires in parallel don't auto-cancel each other.
     const devices = await this.pb
       .collection('controllers')
-      .getFullList({ fields: 'site', requestKey: 'controllers:counts' });
-    const deviceCounts = new Map<string, number>();
+      .getFullList({ fields: 'site,active,last_seen', requestKey: 'controllers:counts' });
+    const deviceCounts = new Map<string, number>(); // active (registered) → hosting cap
+    const liveCounts = new Map<string, number>(); // ever-connected → the design lock
     for (const d of devices) {
       const sid = d['site'] as string;
-      deviceCounts.set(sid, (deviceCounts.get(sid) ?? 0) + 1);
+      if (d['active'] !== false) deviceCounts.set(sid, (deviceCounts.get(sid) ?? 0) + 1);
+      if (d['last_seen']) liveCounts.set(sid, (liveCounts.get(sid) ?? 0) + 1);
     }
-    return records.map((r) => this.toListEntry(r, deviceCounts.get(r['id']) ?? 0));
+    return records.map((r) =>
+      this.toListEntry(r, deviceCounts.get(r['id']) ?? 0, liveCounts.get(r['id']) ?? 0),
+    );
   }
 
   async siteLoad(id: string): Promise<SiteFullPayload> {
@@ -141,6 +146,75 @@ export class BackendService {
 
   async siteRename(id: string, friendlyName: string): Promise<void> {
     await this.pb.collection('sites').update(id, { name: friendlyName });
+  }
+
+  /** Customers an admin can hand a site to (users with role=customer). */
+  async customerList(): Promise<CustomerEntry[]> {
+    const records = await this.pb.collection('users').getFullList({
+      filter: this.pb.filter('role = {:r}', { r: 'customer' }),
+      sort: 'name',
+      requestKey: 'users:customers',
+    });
+    return records.map((r) => this.toCustomerEntry(r));
+  }
+
+  /** Create a customer account and email them an invite (a set-password link).
+   *  `invited` is false if the email send failed (e.g. SMTP not configured) — the
+   *  account still exists; use customerInvite to retry. Admin-only server-side. */
+  async customerCreate(input: { name: string; email: string }): Promise<{ customer: CustomerEntry; invited: boolean }> {
+    const password = this.randomPassword(); // never used by the customer; they set their own via the invite
+    const r = await this.pb.collection('users').create({
+      name: input.name,
+      email: input.email,
+      emailVisibility: true,
+      password,
+      passwordConfirm: password,
+      role: 'customer',
+    });
+    let invited = true;
+    try {
+      await this.pb.collection('users').requestPasswordReset(input.email);
+    } catch {
+      invited = false;
+    }
+    return { customer: this.toCustomerEntry(r), invited };
+  }
+
+  async customerUpdate(id: string, patch: { name: string; email: string }): Promise<void> {
+    await this.pb.collection('users').update(id, patch);
+  }
+
+  async customerDelete(id: string): Promise<void> {
+    await this.pb.collection('users').delete(id);
+  }
+
+  /** (Re)send a customer their set-password invite email. */
+  async customerInvite(email: string): Promise<void> {
+    await this.pb.collection('users').requestPasswordReset(email);
+  }
+
+  private toCustomerEntry(r: RecordModel): CustomerEntry {
+    return {
+      id: r['id'],
+      name: (r['name'] ?? '') as string,
+      email: (r['email'] ?? '') as string,
+      verified: !!r['verified'],
+      created: (r['created'] ?? '') as string,
+    };
+  }
+
+  /** A throwaway password that satisfies the min-length rule; the customer never
+   *  sees it (they set their own via the invite link). */
+  private randomPassword(): string {
+    const bytes = new Uint8Array(18);
+    crypto.getRandomValues(bytes);
+    return btoa(String.fromCharCode(...bytes)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 20) + 'A1';
+  }
+
+  /** Assign a site to a customer (admin-only; the owner-change guard rejects
+   *  non-admins server-side). */
+  async siteAssignOwner(siteId: string, userId: string): Promise<void> {
+    await this.pb.collection('sites').update(siteId, { owner: userId });
   }
 
   async siteDelete(id: string): Promise<void> {
@@ -224,13 +298,11 @@ export class BackendService {
     return records.map((r) => this.toDeviceEntry(r));
   }
 
-  /** Registry status of one device by its device_id (== controller id), or null
-   *  if it has not been provisioned yet (no firmware generated). */
+  /** Registry status of one device by its device_id (== controller record id), or
+   *  null if its design has not been saved yet (no controllers row). */
   async deviceStatus(deviceId: string): Promise<DeviceEntry | null> {
     try {
-      const r = await this.pb
-        .collection('controllers')
-        .getFirstListItem(this.pb.filter('device_id = {:d}', { d: deviceId }), { expand: 'site' });
+      const r = await this.pb.collection('controllers').getOne(deviceId, { expand: 'site' });
       return this.toDeviceEntry(r);
     } catch {
       return null; // 404 → not yet registered
@@ -241,10 +313,18 @@ export class BackendService {
     await this.pb.collection('controllers').update(id, { name });
   }
 
-  /** Deregister a device: removes its identity row so it can no longer connect
-   *  (frees a hosting-cap slot). The physical box keeps its firmware until reflashed. */
+  /** Deregister a device: marks it inactive (active=false) so the broker rejects
+   *  its connection and a hosting-cap slot frees. The row, history and secrets are
+   *  kept — reversible via deviceReactivate. The physical box keeps its firmware
+   *  until reflashed. */
   async deviceDeregister(id: string): Promise<void> {
-    await this.pb.collection('controllers').delete(id);
+    await this.pb.collection('controllers').update(id, { active: false });
+  }
+
+  /** Reactivate a deregistered device. Subject to the hosting device cap on
+   *  managed sites (enforced server-side), so it can fail with a cap error. */
+  async deviceReactivate(id: string): Promise<void> {
+    await this.pb.collection('controllers').update(id, { active: true });
   }
 
   /** The editable app_config singleton (admin settings page). Reads the row
@@ -915,15 +995,17 @@ export class BackendService {
 
   // --- Helpers -------------------------------------------------------------
 
-  private toListEntry(r: RecordModel, deviceCount = 0): SiteListEntry {
+  private toListEntry(r: RecordModel, deviceCount = 0, liveCount = 0): SiteListEntry {
     const topo = r['draft_topology'] as SiteTopology | null;
     return {
       id: r['id'],
       friendlyName: r['name'],
+      owner: (r['owner'] ?? '') as string,
       controllerCount: topo?.controllers?.length ?? 0,
       nodeCount: topo?.nodes?.length ?? 0,
       mode: (r['mode'] ?? '') as string,
       deviceCount,
+      liveCount,
       commenceDate: (r['commence_date'] ?? '') as string,
     };
   }
@@ -932,12 +1014,13 @@ export class BackendService {
     const site = r['expand']?.['site'] as RecordModel | undefined;
     return {
       id: r['id'],
-      deviceId: (r['device_id'] ?? '') as string,
+      deviceId: r['id'] as string, // the record id IS the device_id
       name: (r['name'] ?? '') as string,
       siteId: (r['site'] ?? '') as string,
       siteName: (site?.['name'] ?? '') as string,
       boardType: (r['board_type'] ?? '') as string,
       firmwareVersion: (r['firmware_version'] ?? '') as string,
+      active: !!r['active'],
       online: !!r['online'],
       lastSeen: (r['last_seen'] ?? '') as string,
       created: (r['created'] ?? '') as string,

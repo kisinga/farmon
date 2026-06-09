@@ -43,8 +43,14 @@ Open `http://localhost:8090` and log in with `MAJI_ADMIN_EMAIL` / `MAJI_ADMIN_PA
 | Port | Purpose | Exposure |
 |------|---------|----------|
 | 8090 | HTTP — SPA, `/api/farmon`, `/_/` admin | Behind Coolify's HTTPS proxy → your domain |
-| 1883 | Plain MQTT (device-facing) | Raw TCP. On-prem/LAN, or internet only if you accept plaintext |
-| 8883 | TLS MQTT (device-facing) | Raw TCP. Managed/cloud; only serves when `MAJI_MQTT_TLS_ENABLED=true` |
+| 8883 | TLS MQTT (device-facing) | Raw TCP. Published by default; serves when `MAJI_MQTT_TLS_ENABLED=true` |
+| 1883 | Plain MQTT (device-facing) | **Not published by default** — opt-in for local/LAN via the override below |
+
+The base `docker-compose.yml` publishes only 8090 + 8883, so managed/cloud is TLS-only (no plaintext on
+the internet). For a trusted-LAN on-prem box that wants plain 1883, copy
+[`docker-compose.override.example.yml`](../docker-compose.override.example.yml) → `docker-compose.override.yml`
+(git-ignored; auto-merged by local `docker compose`, ignored by Coolify's explicit `-f`). The broker
+always binds 1883 inside the container; the override only re-exposes it on the host.
 
 The browser MQTT-over-WebSocket listener (`:8082`) is not used by the SPA and is not exposed.
 
@@ -129,8 +135,10 @@ existing `storage/` blobs into the bucket once when you switch.
 1. New resource → **Docker Compose** from this repo (root `docker-compose.yml`).
 2. Set the env vars (Profile A for managed). Attach `fullchain.pem` + `privkey.pem` as **file mounts**
    at `/certs/fullchain.pem` and `/certs/privkey.pem` (matching `MAJI_MQTT_TLS_CERT` / `_KEY`).
-3. Map the domain to port **8090** (Coolify terminates HTTPS).
-4. Expose **1883** and **8883** as raw TCP ports for devices.
+3. Map the domain to port **8090** (Coolify terminates HTTPS). Do **not** add the MQTT host as a
+   Coolify domain — it's raw TCP, not HTTP, and the proxy can't carry it (it'll error).
+4. Open **8883** in the VPS firewall (raw TCP). Managed is TLS-only — do **not** open 1883.
+   Cloudflare: the MQTT subdomain must be **DNS-only (grey)**; it bypasses the proxy to the host port.
 5. The `pb_data` volume is managed by Coolify — confirm it's persistent before going live.
 6. Deploy. Coolify rebuilds and redeploys on every push (no CI/CD config needed here).
 
