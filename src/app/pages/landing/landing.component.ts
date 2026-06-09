@@ -70,10 +70,13 @@ interface Deployment {
     .ripple      { animation: ripple-pulse 5s ease-in-out infinite; transform-origin:center; }
     .glow-blob   { animation: float-glow 14s ease-in-out infinite; }
     .ripple-ring { animation: ripple-ring 4s ease-out infinite; transform-origin:center; }
+    @media (prefers-reduced-motion: reduce) {
+      .ripple, .glow-blob, .ripple-ring { animation: none; }
+    }
   `],
   template: `
     <!-- ============================= NAV ============================= -->
-    <nav class="sticky top-0 z-30 backdrop-blur-md bg-slate-950/80 border-b border-white/10">
+    <nav class="sticky top-0 z-30 backdrop-blur-sm bg-slate-950/85 border-b border-white/10">
       <div class="max-w-6xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
         <a href="./" class="flex items-center gap-2.5 group">
           <span class="w-8 h-8 block" [innerHTML]="logo"></span>
@@ -93,8 +96,8 @@ interface Deployment {
     <!-- ============================= HERO ============================= -->
     <header class="relative overflow-hidden bg-slate-950 text-white">
       <!-- decorative water-light blobs -->
-      <div class="glow-blob pointer-events-none absolute -top-24 -left-16 w-[28rem] h-[28rem] rounded-full bg-cyan-500/25 blur-3xl"></div>
-      <div class="glow-blob pointer-events-none absolute top-10 right-0 w-[24rem] h-[24rem] rounded-full bg-sky-500/20 blur-3xl" style="animation-delay:-6s"></div>
+      <div class="glow-blob pointer-events-none absolute -top-24 -left-16 w-[28rem] h-[28rem] rounded-full bg-radial from-cyan-500/30 to-transparent to-70%"></div>
+      <div class="glow-blob pointer-events-none absolute top-10 right-0 w-[24rem] h-[24rem] rounded-full bg-radial from-sky-500/25 to-transparent to-70%" style="animation-delay:-6s"></div>
 
       <div class="relative max-w-5xl mx-auto px-5 sm:px-8 pt-16 sm:pt-24 pb-20 sm:pb-28 text-center">
         <div class="relative mx-auto mb-9 w-28 h-28 sm:w-32 sm:h-32 flex items-center justify-center">
@@ -149,24 +152,41 @@ interface Deployment {
         </p>
       </div>
 
-      <div class="relative max-w-5xl mx-auto mt-10 sm:mt-12">
-        <!-- desktop: browser-chrome frame -->
+      <div class="relative max-w-sm sm:max-w-5xl mx-auto mt-10 sm:mt-12">
+        <!-- hero screenshot: phone dashboard on small screens, desktop on sm+ -->
         <div class="rounded-2xl bg-white ring-1 ring-slate-200 shadow-2xl shadow-slate-900/10 overflow-hidden">
-          <div class="flex items-center gap-1.5 px-4 h-9 bg-slate-100 border-b border-slate-200">
+          <!-- fake browser chrome only fits the desktop screenshot -->
+          <div class="hidden sm:flex items-center gap-1.5 px-4 h-9 bg-slate-100 border-b border-slate-200">
             <span class="w-3 h-3 rounded-full bg-red-400/70"></span>
             <span class="w-3 h-3 rounded-full bg-amber-400/70"></span>
             <span class="w-3 h-3 rounded-full bg-green-400/70"></span>
             <span class="ml-3 hidden sm:block rounded-md bg-white ring-1 ring-slate-200 px-3 py-0.5 text-[11px] text-slate-400">majiflow.app / dashboard</span>
           </div>
-          <div class="aspect-[16/10] overflow-hidden bg-slate-950">
-            <img src="marketing/desktop.png" alt="The MajiFlow dashboard showing routes, status, tank levels and valves" class="w-full object-cover object-top" />
+          <!-- One image per viewport. <source media> means only the matching
+               screenshot is downloaded — the phone shot on mobile, never both. -->
+          <div class="aspect-[9/19] sm:aspect-[16/10] overflow-hidden bg-slate-950">
+            <picture>
+              <source media="(max-width: 639px)" srcset="marketing/mobile.avif" type="image/avif" />
+              <source media="(max-width: 639px)" srcset="marketing/mobile.webp" type="image/webp" />
+              <source srcset="marketing/desktop.avif" type="image/avif" />
+              <source srcset="marketing/desktop.webp" type="image/webp" />
+              <img src="marketing/desktop.png" alt="The MajiFlow dashboard showing routes, status, tank levels and valves"
+                   width="1591" height="1361" fetchpriority="high" decoding="async"
+                   class="w-full h-full object-cover object-top" />
+            </picture>
           </div>
         </div>
         <!-- phone: overlapping frame (desktop screens only) -->
         <div class="hidden lg:block absolute -bottom-8 -right-4 w-44 rounded-[1.75rem] bg-slate-900 ring-1 ring-white/10 shadow-2xl p-1.5">
           <div class="rounded-[1.3rem] overflow-hidden bg-white">
             <div class="aspect-[9/19] overflow-hidden bg-slate-950">
-              <img src="marketing/mobile.png" alt="MajiFlow on a phone" class="w-full object-cover object-top" />
+              <picture>
+                <source srcset="marketing/mobile.avif" type="image/avif" />
+                <source srcset="marketing/mobile.webp" type="image/webp" />
+                <img src="marketing/mobile.png" alt="MajiFlow on a phone"
+                     width="388" height="842" loading="lazy" decoding="async"
+                     class="w-full object-cover object-top" />
+              </picture>
             </div>
           </div>
         </div>
@@ -196,7 +216,13 @@ interface Deployment {
         <!-- the controller itself -->
         <div class="mt-8 grid gap-6 sm:grid-cols-2 items-center">
           <div class="rounded-2xl ring-1 ring-slate-200 shadow-xl shadow-slate-900/10 overflow-hidden">
-            <img src="marketing/controller.jpg" alt="The controller that runs your site" class="block w-full aspect-[16/10] object-cover" />
+            <picture>
+              <source srcset="marketing/controller.avif" type="image/avif" />
+              <source srcset="marketing/controller.webp" type="image/webp" />
+              <img src="marketing/controller.jpg" alt="The controller that runs your site"
+                   width="1400" height="787" loading="lazy" decoding="async"
+                   class="block w-full aspect-[16/10] object-cover" />
+            </picture>
           </div>
           <div>
             <h3 class="text-lg font-semibold">The controller that runs your site</h3>
@@ -298,7 +324,7 @@ interface Deployment {
 
     <!-- ===================== RESILIENCE BAND ===================== -->
     <section class="relative overflow-hidden bg-slate-950 text-white px-5 sm:px-8 py-16 sm:py-20">
-      <div class="glow-blob pointer-events-none absolute -bottom-24 right-1/4 w-[26rem] h-[26rem] rounded-full bg-cyan-500/15 blur-3xl"></div>
+      <div class="glow-blob pointer-events-none absolute -bottom-24 right-1/4 w-[26rem] h-[26rem] rounded-full bg-radial from-cyan-500/20 to-transparent to-70%"></div>
       <div class="relative max-w-5xl mx-auto text-center">
         <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Built to keep going</h2>
         <p class="mt-3 text-white/60 max-w-2xl mx-auto text-sm sm:text-base leading-relaxed">
@@ -361,7 +387,13 @@ interface Deployment {
               <!-- the design (topology render) -->
               <div class="bg-white border-b border-slate-100">
                 @if (d.design) {
-                  <img [src]="d.design" [alt]="d.title + ' design'" class="block w-full aspect-[16/10] object-contain bg-slate-50" />
+                  <picture>
+                    <source [srcset]="avif(d.design)" type="image/avif" />
+                    <source [srcset]="webp(d.design)" type="image/webp" />
+                    <img [src]="d.design" [alt]="d.title + ' design'"
+                         width="1000" height="741" loading="lazy" decoding="async"
+                         class="block w-full aspect-[16/10] object-contain bg-slate-50" />
+                  </picture>
                 } @else {
                   <div class="aspect-[16/10] bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-slate-400">
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -433,6 +465,16 @@ export class LandingComponent {
 
   /** Sanitizer-trusted brand mark (static SVG), rendered via [innerHTML]. */
   protected readonly logo: SafeHtml = inject(DomSanitizer).bypassSecurityTrustHtml(BRAND_LOGO_SVG);
+
+  // Derive the modern-format siblings of a marketing image for <picture> sources.
+  // Every referenced image ships .avif + .webp next to its .png/.jpg fallback
+  // (generated by `npm run images:optimize`), so format negotiation is safe.
+  protected avif(src: string): string {
+    return src.replace(/\.(png|jpe?g)$/i, '.avif');
+  }
+  protected webp(src: string): string {
+    return src.replace(/\.(png|jpe?g)$/i, '.webp');
+  }
 
   protected readonly plans: Plan[] = [
     {
