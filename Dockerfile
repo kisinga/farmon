@@ -6,7 +6,7 @@
 # native deps (rollup/lightningcss/tailwind-oxide + their @emnapi/@napi-rs WASM
 # fallback) which a glibc-generated lockfile omits → `npm ci` aborts "out of sync".
 # This stage is throwaway anyway: only the built SPA is copied to the alpine runtime.
-FROM node:24-slim AS web
+FROM node:24.16-slim AS web
 WORKDIR /build
 # Install deps against the lockfile first (cached unless deps change).
 COPY package.json package-lock.json ./
