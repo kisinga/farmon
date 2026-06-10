@@ -1,6 +1,7 @@
 import type { Manifest } from '@core';
 import {
   MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic,
+  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR,
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
   COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
@@ -59,6 +60,9 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
   const site = metadata.siteId;
   const ctrl = metadata.controllerId;
   const ev = eventTopic(site, ctrl);
+  // ESPHome's auto-publish prefix, segregated from our telemetry/event scheme.
+  // Single-sourced so topic_prefix and the raw log topic below can't desync.
+  const topicPrefix = `${MQTT_ROOT}/${site}/${ctrl}/esphome`;
   const NS = SYSTEM_STATE_TOKENS.length;
   const NF = FAULT_TOKENS.length;
   const NR = STOP_REASON_TOKENS.length;
@@ -201,6 +205,11 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     'auto *mc = id(mqtt_client);',
     'if (!mc->is_connected()) return;',
     ...channels.map(c => publishStmt(c, telemetryTopic(site, ctrl, c.sensor))),
+    // Free heap is the binding constraint on these builds (a starved heap is what
+    // bootloops a controller on MQTT connect). Publish current + low-water free
+    // heap so the server can chart it and flag a controller trending toward the cliff.
+    `mc->publish("${telemetryTopic(site, ctrl, HEAP_FREE_SENSOR)}", to_string(esp_get_free_heap_size()));`,
+    `mc->publish("${telemetryTopic(site, ctrl, HEAP_MIN_SENSOR)}", to_string(esp_get_minimum_free_heap_size()));`,
   ];
 
   // --- Transition log (per-slot edge detection, 1s) -------------------------
@@ -290,7 +299,14 @@ mqtt:
   # we segregate those under .../esphome/* so they never collide with our scheme
   # (the server's parsers key on the 4th segment being telemetry/event/status).
   # An empty prefix is no longer accepted by ESPHome (cv.publish_topic).
-  topic_prefix: "${MQTT_ROOT}/${site}/${ctrl}/esphome"
+  topic_prefix: "${topicPrefix}"
+  # Raw log stream gated to WARN+. At DEBUG every log line publishes to .../debug,
+  # and a dropped publish logs an error that is itself published -> a feedback storm
+  # that exhausts heap and reboots. WARN+ keeps real problems on the wire; routine
+  # state rides the structured telemetry/event topics; UART keeps full detail.
+  log_topic:
+    topic: "${topicPrefix}/debug"
+    level: WARN
   birth_message:
     topic: "${statusTopic(site, ctrl)}"
     payload: "1"

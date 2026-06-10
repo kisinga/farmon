@@ -61,7 +61,7 @@ export { nodesByKind, validAutomations } from './manifest.types';
 export { getNodesByKind, getNodeByKind } from './topology.types';
 
 // --- YAML fragment utilities ---
-export { indent, joinYamlItems } from './yaml-fragment';
+export { indent, joinYamlItems, yamlString } from './yaml-fragment';
 
 // --- Home Assistant integration ---
 export {
@@ -84,6 +84,13 @@ export type { BuildHaMetaOptions } from './ha-meta';
 // --- Telemetry channels (shared by firmware codegen + dashboard chart spec) ---
 export { collectTelemetryChannels } from './telemetry-channels';
 export type { TelemetryChannel, TelemetryChannelKind } from './telemetry-channels';
+
+// --- Device heap health (shared by firmware codegen + dashboard health pill) ---
+export {
+  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, HEAP_CRIT_BYTES,
+  HEALTH_SEVERITY, controllerHealth, worstHealth,
+} from './health';
+export type { HealthLevel } from './health';
 
 // --- Dashboard chart spec (derived from the saved topology, in the browser) ---
 export { buildDashboardSpec } from './dashboard-spec';

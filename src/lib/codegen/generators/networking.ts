@@ -51,8 +51,8 @@ function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
   //     interface (esphome/issues#4333, confirmed empirically — nothing serves
   //     at 192.168.4.1 without it); captive_portal is the only ESPHome component
   //     that serves HTTP on the AP. POST /wifisave writes creds to NVS.
-  //   - improv (emitImprov below) — the modern BLE / serial provisioning path,
-  //     preferred when a Chromium browser is handy.
+  //   - improv_serial (emitImprov below) — USB/WebSerial provisioning via
+  //     improv-wifi.com, preferred when a cable + Chromium browser are handy.
   // Because no creds live in YAML, the captive_portal blank-page degradation
   // (esphome/issues#6784, creds-in-YAML only) does not apply here.
   //
@@ -75,31 +75,20 @@ function emitWifi(manualIp?: ManualIp): Record<string, unknown>[] {
   ];
 }
 
-// Improv = upstream-supported credential-recovery flow that bypasses
-// the broken captive_portal. Two transports, both emitted together:
+// Wifi (re)provisioning over USB serial: the user opens improv-wifi.com via
+// WebSerial on the flashing cable and sends SSID + password. Works even when
+// the device can't reach any AP. Requires `wifi:` configured. Pairs with
+// captive_portal (emitWifi) for the no-cable path — the device falls back to
+// its open `<name> Setup` AP and serves the setup page there.
 //
-//   esp32_improv  — provisioning over BLE (any ESP32 has BLE radio).
-//                   User opens improv-wifi.com on a Chromium browser
-//                   (or the ESPHome / HA companion app), pairs over
-//                   BLE, sends SSID + password. Works without USB.
-//   improv_serial — provisioning over the USB-UART. User opens
-//                   improv-wifi.com via WebSerial and provisions over
-//                   the same cable used for flashing. Works even when
-//                   BLE is disabled or the device is bench-bound.
-//
-// Both require `wifi:` configured. authorizer: none = no physical
-// button required to accept new creds (we don't expose a dedicated
-// provisioning button on either board); change to `pin:` if a board
-// gains one in future.
-function emitImprov(board: BoardDef): Record<string, unknown>[] {
-  const sections: Record<string, unknown>[] = [];
-  // esp32_improv depends on the ESP32 BLE stack — only emit on ESP32 family.
-  if (board.mcu.variant.startsWith('esp32')) {
-    sections.push({ esp32_improv: { authorizer: 'none' } });
-  }
+// BLE provisioning (esp32_improv) is intentionally NOT emitted. The ESP32 BLE
+// stack costs ~95 KB of heap; on managed/TLS builds (web_server + MQTT over
+// esp-idf/TLS) that left almost no free heap, so the MQTT-connect state burst
+// exhausted it and bootlooped the device. captive_portal + serial improv cover
+// provisioning without that cost. See docs-content/troubleshooting.md.
+function emitImprov(): Record<string, unknown>[] {
   // improv_serial is MCU-agnostic (UART-only), always safe to emit.
-  sections.push({ improv_serial: null });
-  return sections;
+  return [{ improv_serial: null }];
 }
 
 function emitWebServer(): Record<string, unknown> {
@@ -170,7 +159,7 @@ export function emitConnectionProfile(
   const sections =
     transport === 'ethernet'
       ? [emitEthernet(board.peripherals.ethernet!, manualIp)]
-      : [...emitWifi(manualIp), ...emitImprov(board)];
+      : [...emitWifi(manualIp), ...emitImprov()];
   sections.push(emitWebServer());
   sections.push(emitTransportTextSensors(supported, transport));
   return sections;

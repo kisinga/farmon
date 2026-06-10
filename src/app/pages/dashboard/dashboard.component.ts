@@ -1,6 +1,6 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, type CommandAction, type DashboardWidget, type ActuatorControl, type AutomationControl } from '@core';
+import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, controllerHealth, worstHealth, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, type CommandAction, type DashboardWidget, type ActuatorControl, type AutomationControl, type HealthLevel } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
 import { ConfirmService } from '../../core/services/confirm.service';
@@ -25,43 +25,43 @@ import type { RouteControl } from '@core';
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="max-w-6xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6">
-      <!-- Bright hero band -->
-      <div class="relative overflow-hidden rounded-2xl mb-5 sm:mb-6 ring-1 ring-white/10
-                  bg-gradient-to-br from-cyan-500/15 via-sky-500/10 to-base-100">
-        <div class="pointer-events-none absolute -top-16 -right-10 w-72 h-72 rounded-full bg-cyan-500/20 blur-3xl"></div>
-        <div class="relative px-4 py-5 sm:px-6 sm:py-6 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-          <div class="flex-1 min-w-0">
-            <h1 class="text-xl sm:text-2xl font-bold tracking-tight leading-tight break-words">{{ siteName() || 'Dashboard' }}</h1>
-            <p class="text-sm text-base-content/60 mt-0.5">Live status &amp; control</p>
-          </div>
-          <div class="flex items-center gap-2 flex-wrap shrink-0">
-            <button class="btn btn-sm btn-ghost gap-1.5" (click)="openDocs()" [disabled]="docBusy()"
-                    title="Open this site's documentation">
-              @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
-              @else {
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-              }
-              Documentation
-            </button>
-            <!-- Real device presence (replaces the old hardcoded pill). -->
-            @if (presenceTone() === 'online') {
-              <span class="inline-flex items-center gap-1.5 text-xs text-success bg-success/10 rounded-full px-2.5 py-1">
-                <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span> {{ presenceLabel() }}
-              </span>
-            } @else if (presenceTone() === 'partial') {
-              <span class="inline-flex items-center gap-1.5 text-xs text-warning bg-warning/10 rounded-full px-2.5 py-1">
-                <span class="w-1.5 h-1.5 rounded-full bg-warning"></span> {{ presenceLabel() }}
-              </span>
-            } @else {
-              <span class="inline-flex items-center gap-1.5 text-xs text-base-content/50 bg-base-content/10 rounded-full px-2.5 py-1">
-                <span class="w-1.5 h-1.5 rounded-full bg-base-content/40"></span>
-                {{ presenceLabel() }}@if (presenceDetail()) { <span class="opacity-70">· {{ presenceDetail() }}</span> }
-              </span>
+      <!-- Compact status bar: site + presence on the left; a health pill (online +
+           heap headroom, expandable to per-controller free heap) and Docs at right. -->
+      <div class="flex items-center gap-3 mb-5 sm:mb-6">
+        <h1 class="text-lg sm:text-xl font-bold tracking-tight leading-tight truncate min-w-0">{{ siteName() || 'Dashboard' }}</h1>
+        @if (totalControllers()) {
+          <span class="text-xs text-base-content/50 shrink-0 whitespace-nowrap">{{ onlineCount() }}/{{ totalControllers() }} online</span>
+        }
+        <span class="grow"></span>
+        <!-- Health: aggregate pill; click for each controller's free heap. -->
+        <details class="dropdown dropdown-end shrink-0">
+          <summary class="list-none inline-flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 cursor-pointer ring-1 ring-inset"
+                   [class]="healthUi().chip" [title]="'Device health: ' + healthUi().label">
+            <span class="w-1.5 h-1.5 rounded-full" [class]="healthUi().dot" [class.animate-pulse]="siteHealth() === 'healthy'"></span>
+            {{ healthUi().label }}
+          </summary>
+          <div class="dropdown-content z-10 mt-1 w-64 rounded-box bg-base-100 ring-1 ring-base-300/40 shadow-lg p-2">
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/40 px-1 pb-1">Controller heap</div>
+            @for (c of store.spec().controllers; track c.controller) {
+              <div class="flex items-center gap-2 px-1 py-1 text-xs">
+                <span class="w-1.5 h-1.5 rounded-full shrink-0" [class]="healthDot(c.controller)"></span>
+                <span class="truncate flex-1">{{ c.name }}</span>
+                <span class="font-mono text-base-content/60 shrink-0">{{ heapText(c.controller) }}</span>
+              </div>
             }
+            <p class="text-[11px] text-base-content/40 px-1 pt-1.5 leading-snug">Free RAM. Low heap is the main failure risk; under {{ heapWarnKb() }} KB shows a warning.</p>
           </div>
-        </div>
+        </details>
+        <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="openDocs()" [disabled]="docBusy()"
+                title="Open this site's documentation">
+          @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
+          @else {
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+          }
+          <span class="hidden sm:inline">Docs</span>
+        </button>
       </div>
 
       @if (store.loading()) {
@@ -329,29 +329,50 @@ export class DashboardComponent implements OnDestroy {
   protected ctrlName(id: string): string { return this.ctrlMeta().get(id)?.name ?? id; }
   protected ctrlColor(id: string): string { return this.ctrlMeta().get(id)?.color ?? '#94a3b8'; }
 
-  // --- Device presence (aggregate, for the hero pill) ----------------------
-  private onlineCount = computed(() =>
+  // --- Device presence + health (the compact status bar) -------------------
+  protected onlineCount = computed(() =>
     this.store.spec().controllers.filter((c) => this.store.presence(c.controller).online).length,
   );
-  protected presenceTone = computed<'online' | 'offline' | 'partial'>(() => {
-    const total = this.store.spec().controllers.length;
-    if (total === 0) return 'offline';
-    const on = this.onlineCount();
-    return on === total ? 'online' : on === 0 ? 'offline' : 'partial';
-  });
-  protected presenceLabel = computed(() => {
-    const total = this.store.spec().controllers.length;
-    if (this.presenceTone() === 'online') return 'Live';
-    if (this.presenceTone() === 'partial') return `${this.onlineCount()}/${total} online`;
-    return 'Offline';
-  });
-  /** Single-controller offline detail ("last seen 3m ago"). */
-  protected presenceDetail = computed(() => {
+  protected totalControllers = computed(() => this.store.spec().controllers.length);
+
+  /** daisyUI tone tokens per health level (UI mapping kept out of @core). */
+  private static readonly HEALTH_UI: Record<HealthLevel, { dot: string; label: string; chip: string }> = {
+    healthy:  { dot: 'bg-success',         label: 'Healthy',  chip: 'text-success bg-success/10 ring-success/20' },
+    warning:  { dot: 'bg-warning',         label: 'Degraded', chip: 'text-warning bg-warning/10 ring-warning/20' },
+    critical: { dot: 'bg-error',           label: 'Critical', chip: 'text-error bg-error/10 ring-error/20' },
+    offline:  { dot: 'bg-base-content/40', label: 'Offline',  chip: 'text-base-content/50 bg-base-content/10 ring-base-content/15' },
+  };
+
+  /** Last-known free / min-free heap (bytes), null if the controller never reported it. */
+  private heapFree(controller: string): number | null { return this.store.row(controller, HEAP_FREE_SENSOR)?.reported ?? null; }
+  private heapMin(controller: string): number | null { return this.store.row(controller, HEAP_MIN_SENSOR)?.reported ?? null; }
+
+  /** One controller's health (offline / critical / warning / healthy). */
+  private health(controller: string): HealthLevel {
+    return controllerHealth({ online: this.store.presence(controller).online, heapFree: this.heapFree(controller) });
+  }
+  /** Site health = worst among ONLINE controllers; offline only when none are up,
+   *  and at least a warning when some are dark (so a 1/2-online site never reads
+   *  a flat "Offline" next to its "1/2 online" count). */
+  protected siteHealth = computed<HealthLevel>(() => {
     const ctrls = this.store.spec().controllers;
-    if (ctrls.length !== 1 || this.presenceTone() === 'online') return '';
-    const seen = this.store.presence(ctrls[0].controller).lastSeen;
-    return seen ? `last seen ${this.ago(seen)}` : '';
+    const online = ctrls.filter((c) => this.store.presence(c.controller).online);
+    if (online.length === 0) return 'offline';
+    const level = worstHealth(online.map((c) => this.health(c.controller)));
+    return level === 'healthy' && online.length < ctrls.length ? 'warning' : level;
   });
+  protected healthUi = computed(() => DashboardComponent.HEALTH_UI[this.siteHealth()]);
+  protected healthDot(controller: string): string { return DashboardComponent.HEALTH_UI[this.health(controller)].dot; }
+
+  /** Free heap as "94 KB · min 90" for the per-controller detail; — / offline when unknown. */
+  protected heapText(controller: string): string {
+    const free = this.heapFree(controller);
+    if (free === null) return this.store.presence(controller).online ? '—' : 'offline';
+    const kb = (b: number) => `${Math.round(b / 1000)} KB`;
+    const min = this.heapMin(controller);
+    return min !== null ? `${kb(free)} · min ${Math.round(min / 1000)}` : kb(free);
+  }
+  protected heapWarnKb(): number { return Math.round(HEAP_WARN_BYTES / 1000); }
 
   protected lastSeenText(controller: string): string {
     const seen = this.store.presence(controller).lastSeen;

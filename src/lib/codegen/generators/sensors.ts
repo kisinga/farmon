@@ -25,7 +25,8 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   initial_value: ${Math.max(1, Math.round(r.max_runtime_seconds / 60))}
   optimistic: true
   restore_value: true
-  entity_category: config`);
+  entity_category: config
+  update_interval: never`);
 
   // Per-route safety thresholds — adjustable from HA, persisted across reboots.
   // Emitted only when the route's tank endpoint actually has a level reading;
@@ -46,7 +47,8 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   initial_value: ${r.source_min_pct}
   optimistic: true
   restore_value: true
-  entity_category: config`);
+  entity_category: config
+  update_interval: never`);
     }
     if (r.dest_has_level) {
       safetyThresholdBlocks.push(`\
@@ -61,7 +63,8 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   initial_value: ${r.dest_max_pct}
   optimistic: true
   restore_value: true
-  entity_category: config`);
+  entity_category: config
+  update_interval: never`);
     }
   });
 
@@ -85,8 +88,12 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   initial_value: ${p.initial}
   optimistic: true
   restore_value: true
-  entity_category: config`);
+  entity_category: config
+  update_interval: never`);
 
+  // Tunable numbers use `update_interval: never`: they rarely change, so they
+  // publish on set (command) and on connect, not on a needless periodic poll.
+  // Still settable — the MQTT command topic stays subscribed.
   const numberBlocks = [...runtimeBlocks, ...safetyThresholdBlocks, ...safetyBlocks, ...(collected.sections['number'] ?? [])];
   const binarySensorBlocks = [...(collected.sections['binary_sensor'] ?? [])];
   binarySensorBlocks.push(`\

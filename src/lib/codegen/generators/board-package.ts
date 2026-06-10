@@ -60,7 +60,24 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   });
 
   // --- Logger ---
-  sections.push({ logger: { hardware_uart: "UART0" } });
+  // INFO floor drops the per-cycle DEBUG firehose (every sensor/cover/number
+  // reprinting each loop); the chatty ESPHome component tags are pinned to WARN.
+  // Firmware tags (ctrl/safety) stay at INFO via the floor. Also starves the
+  // logger->MQTT feedback path that storms the broker (see mqtt.ts log_topic).
+  sections.push({
+    logger: {
+      hardware_uart: "UART0",
+      level: "INFO",
+      logs: {
+        sensor: "WARN",
+        text_sensor: "WARN",
+        pulse_counter: "WARN",
+        switch: "WARN",
+        cover: "WARN",
+        number: "WARN",
+      },
+    },
+  });
 
   // --- Connection (transport + IP + dashboard) ---
   // Compute transport once and reuse for diagnostic sensors so they always

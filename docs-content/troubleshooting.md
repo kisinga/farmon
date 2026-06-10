@@ -41,3 +41,19 @@ When a controller drives an actuator on behalf of a peer (a cross-controller rou
 3. **Reset faults** from the dashboard to leave FAULT.
 4. For a stuck valve, use **Manual control** to drive it (it releases on its own if your connection drops), or the per-valve coils for a bench test.
 5. If a controller is offline, check power and network first — a controller with no server connection still enforces every on-device safety rule and resumes publishing when it reconnects.
+
+## Re-pointing a controller's Wi-Fi
+
+A controller stores its Wi-Fi credentials on the device itself, not in the firmware, so moving it to a different network never needs a re-flash. It keeps running all local control and safety no matter the Wi-Fi state; losing the network only stops it reaching the server.
+
+To move a controller to a different or stronger network:
+
+1. When the controller cannot join its saved network it automatically starts its own open Wi-Fi access point named **`<controller name> Setup`**. It does not reboot while doing this (the reboot-on-Wi-Fi-loss timeout is disabled).
+2. Connect a phone or laptop to that **Setup** access point. A setup page opens automatically; if it does not, browse to `192.168.4.1`.
+3. Enter the new Wi-Fi name and password. The controller saves them to its own flash and joins the new network.
+
+Cable alternative: connect the controller over USB and use [improv-wifi.com](https://www.improv-wifi.com) in a Chromium browser (WebSerial) to send the credentials over the same cable used for flashing.
+
+### Known limit: very weak Wi-Fi
+
+A controller needs a usable Wi-Fi signal to reach the server. On a persistently very weak signal the link is unreliable and the controller shows as offline in the dashboard even though it is still running locally. There is no on-device fix for a signal that is simply too weak. Relocate the controller or the access point, add a repeater, or re-point the controller to a stronger network using the steps above. Bluetooth provisioning is not available; use the Setup access point or the USB cable.
