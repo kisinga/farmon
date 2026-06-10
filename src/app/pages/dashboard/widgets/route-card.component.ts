@@ -1,5 +1,6 @@
 import { Component, computed, input, output } from '@angular/core';
-import { describeState, FAULT_MEANINGS, STOP_REASON_MEANINGS, type RouteControl } from '@core';
+import { describeState, FAULT_MEANINGS, STOP_REASON_MEANINGS, type RouteControl, type CommandPhase } from '@core';
+import { phaseUi } from './command-phase';
 
 /** The command a route card emits when toggled — a subset of CommandAction. */
 export type RouteAction = 'route_start' | 'route_stop' | 'fault_reset';
@@ -49,7 +50,7 @@ interface RouteView {
       type="button"
       class="group relative w-full text-left bg-base-100 rounded-2xl ring-1 transition-all overflow-hidden
              p-4 min-h-[140px] flex flex-col gap-2 disabled:cursor-not-allowed"
-      [class]="view().ring"
+      [class]="cmd()?.alert ? 'ring-error/60' : view().ring"
       [class.opacity-60]="!online()"
       [disabled]="disabled()"
       [title]="title()"
@@ -64,9 +65,9 @@ interface RouteView {
       <!-- state + action affordance (single line; label truncates so the card
            height never changes between states) -->
       <div class="relative flex items-center justify-between gap-2">
-        <span class="inline-flex items-center gap-1.5 min-w-0 text-xs font-semibold {{ view().textCls }}">
+        <span class="inline-flex items-center gap-1.5 min-w-0 text-xs font-semibold {{ cmd()?.tone || view().textCls }}">
           <span class="w-1.5 h-1.5 rounded-full shrink-0 {{ view().dotCls }}" [class.animate-pulse]="view().pulse"></span>
-          <span class="truncate">{{ view().label }}</span>
+          <span class="truncate">{{ labelText() }}</span>
         </span>
         @if (controllable() && online()) {
           <span class="shrink-0 text-[11px] font-semibold {{ view().textCls }} opacity-70 group-hover:opacity-100 inline-flex items-center gap-1">
@@ -101,9 +102,9 @@ interface RouteView {
                      w-12 h-12 rounded-full bg-base-100 shadow-lg shadow-black/30 transition-all duration-300
                      group-hover:scale-105 {{ view().textCls }}">
           <!-- progress / activity ring -->
-          <svg class="col-start-1 row-start-1 w-full h-full" [class.animate-spin]="view().spin" viewBox="0 0 48 48" fill="none">
+          <svg class="col-start-1 row-start-1 w-full h-full" [class.animate-spin]="view().spin || cmd()?.spin" viewBox="0 0 48 48" fill="none">
             <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-opacity="0.18" stroke-width="3" />
-            @if (view().spin) {
+            @if (view().spin || cmd()?.spin) {
               <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-dasharray="30 126" />
             } @else if (view().ringFull) {
               <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
@@ -140,14 +141,37 @@ export class RouteCardComponent {
   /** Live flow rate (L/min) from the route's flow sensor, or null when unknown. */
   readonly flowRate = input<number | null>(null);
   readonly online = input(true);
-  /** A command for this route is in flight. */
-  readonly busy = input(false);
+  /** Live command phase from the lifecycle store; null ⇒ no command in flight (the
+   *  state view drives). `pending` ⇒ "Sending…" + spinner; `refused`/`expired` ⇒
+   *  surface the reason. */
+  readonly phase = input<CommandPhase | null>(null);
+  /** Refusal/stop reason token accompanying a `refused` phase (best-effort). */
+  readonly phaseReason = input('');
   /** False (admin read-only) → state still shows, the toggle is disabled. */
   readonly controllable = input(true);
 
   readonly action = output<RouteAction>();
 
-  protected disabled = computed(() => this.busy() || !this.online() || !this.controllable());
+  protected disabled = computed(() => this.phase() === 'pending' || !this.online() || !this.controllable());
+
+  /** Command-phase overlay (spinner / alert) layered over the token-driven view. */
+  protected cmd = computed(() => { const p = this.phase(); return p ? phaseUi(p) : null; });
+
+  /** State line text: the command phase wins while a command resolves (instant
+   *  "Sending…", then the reason on refusal/timeout), else the token-derived label. */
+  protected labelText = computed(() => {
+    switch (this.phase()) {
+      case 'pending': return 'Sending…';
+      case 'refused': return this.reasonLabel();
+      case 'expired': return 'No response';
+      default:        return this.view().label;
+    }
+  });
+
+  private reasonLabel(): string {
+    const r = this.phaseReason();
+    return r ? describeState(ROUTE_REASONS, r).label : 'Blocked';
+  }
 
   protected flowText(): string {
     const v = this.flowRate();

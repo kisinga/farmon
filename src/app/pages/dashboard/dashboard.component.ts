@@ -1,11 +1,12 @@
-import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, type CommandAction, type DashboardWidget, type ActuatorControl, type AutomationControl, type HealthLevel, type StateKind, type StateMeaning } from '@core';
+import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type AutomationControl, type HealthLevel, type StateKind, type StateMeaning } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { DashboardStore } from './dashboard.store';
 import { TelemetryStore } from './telemetry.store';
+import { CommandLifecycleStore } from './command-lifecycle.store';
 import { DashboardCardComponent } from './widgets/dashboard-card.component';
 import { RouteCardComponent } from './widgets/route-card.component';
 import { SiteThresholdsComponent } from './widgets/site-thresholds.component';
@@ -23,7 +24,7 @@ import type { RouteControl } from '@core';
   selector: 'app-dashboard',
   standalone: true,
   imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent, RouteSetpointsComponent],
-  providers: [DashboardStore, TelemetryStore],
+  providers: [DashboardStore, TelemetryStore, CommandLifecycleStore],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="max-w-6xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6">
@@ -140,13 +141,16 @@ import type { RouteControl } from '@core';
                     @if (showController()) { <span class="text-xs font-semibold text-base-content/60">{{ c.name }}</span> }
                     <span class="grow"></span>
                     @if (canControl()) {
-                      <button class="btn btn-xs btn-error btn-outline" [disabled]="busy().has(key(c.controller,'stop_all'))"
-                        (click)="cmd(c.controller,'stop_all')">Stop all</button>
+                      <button class="btn btn-xs btn-error btn-outline gap-1" [disabled]="sysBusy(c.controller,'stop_all')"
+                        (click)="sysCmd(c.controller,'stop_all')">
+                        @if (sysBusy(c.controller,'stop_all')) { <span class="loading loading-spinner loading-xs"></span> }
+                        Stop all
+                      </button>
                       <details class="dropdown dropdown-end">
                         <summary class="btn btn-xs btn-ghost" title="More controller actions">⋯</summary>
                         <ul class="dropdown-content menu menu-sm z-10 mt-1 w-40 rounded-box bg-base-100 ring-1 ring-base-300/40 shadow-lg p-1">
-                          <li><button [disabled]="busy().has(key(c.controller,'reset_faults'))" (click)="cmd(c.controller,'reset_faults')">Reset faults</button></li>
-                          <li><button [disabled]="busy().has(key(c.controller,'clear_queue'))" (click)="cmd(c.controller,'clear_queue')">Clear queue</button></li>
+                          <li><button [disabled]="sysBusy(c.controller,'reset_faults')" (click)="sysCmd(c.controller,'reset_faults')">Reset faults</button></li>
+                          <li><button [disabled]="sysBusy(c.controller,'clear_queue')" (click)="sysCmd(c.controller,'clear_queue')">Clear queue</button></li>
                         </ul>
                       </details>
                     }
@@ -158,9 +162,10 @@ import type { RouteControl } from '@core';
                         [state]="routeState(c.controller, r.routeId)"
                         [flowRate]="routeFlow(c.controller, r)"
                         [online]="store.presence(c.controller).online"
-                        [busy]="routeBusy(c.controller, r.routeId)"
+                        [phase]="routePhase(c.controller, r.routeId)?.phase ?? null"
+                        [phaseReason]="routePhase(c.controller, r.routeId)?.reason ?? ''"
                         [controllable]="canControl()"
-                        (action)="cmd(c.controller, $event, r.routeId)"
+                        (action)="routeCmd(c.controller, $event, r)"
                       />
                     }
                   </div>
@@ -221,7 +226,7 @@ import type { RouteControl } from '@core';
         @if (siteId) {
           <section class="mb-6">
             <app-site-thresholds [siteId]="siteId" [canEdit]="canControl()" />
-            <app-route-setpoints [siteId]="siteId" [controllers]="store.spec().controllers" [canEdit]="canControl()" />
+            <app-route-setpoints [controllers]="store.spec().controllers" [canEdit]="canControl()" />
           </section>
         }
 
@@ -245,9 +250,10 @@ import type { RouteControl } from '@core';
                   <div class="flex items-center gap-2">
                     <span class="text-xs text-base-content/60">Safety override</span>
                     <span class="grow"></span>
-                    <button class="btn btn-xs" [class]="overrideOn(c.controller) ? 'btn-error' : 'btn-ghost'"
-                      [disabled]="busy().has(manualKey(c.controller,'safety_override'))"
+                    <button class="btn btn-xs gap-1" [class]="overrideOn(c.controller) ? 'btn-error' : 'btn-ghost'"
+                      [disabled]="overrideBusy(c.controller)"
                       (click)="toggleOverride(c.controller)">
+                      @if (overrideBusy(c.controller)) { <span class="loading loading-spinner loading-xs"></span> }
                       {{ overrideOn(c.controller) ? 'ON' : 'off' }}
                     </button>
                   </div>
@@ -283,7 +289,8 @@ import type { RouteControl } from '@core';
                     [events]="store.eventsFor(w.controller)"
                     [actuatable]="isActuatable(w)"
                     [held]="actuatorHeld(w)"
-                    [actuatorBusy]="actuatorBusyFor(w)"
+                    [phase]="actuatorPhase(w)?.phase ?? null"
+                    [phaseReason]="actuatorPhase(w)?.reason ?? ''"
                     [actuatorKind]="actuatorFor(w)?.kind ?? ''"
                     (toggle)="toggleWidgetActuator(w)"
                     (spanChange)="onSpanChange(w, $event)"
@@ -297,17 +304,17 @@ import type { RouteControl } from '@core';
     </div>
   `,
 })
-export class DashboardComponent implements OnDestroy {
+export class DashboardComponent {
   private route = inject(ActivatedRoute);
   private backend = inject(BackendService);
   private auth = inject(AuthStore);
   private confirm = inject(ConfirmService);
   protected store = inject(DashboardStore);
   protected telemetry = inject(TelemetryStore);
+  protected lifecycle = inject(CommandLifecycleStore);
 
   protected siteId = '';
   protected siteName = signal('');
-  protected busy = signal<Set<string>>(new Set());
   protected note = signal<string | null>(null);
   /** Building/opening the site documentation. */
   protected docBusy = signal(false);
@@ -334,17 +341,6 @@ export class DashboardComponent implements OnDestroy {
 
   /** Stale-command window in minutes, for the offline warning copy. */
   private readonly ttlMin = Math.max(1, Math.round(COMMAND_TTL_S / 60));
-
-  /** Actuators we are actively holding (heartbeating), keyed `${ctrl}::${node}`. */
-  protected manualHeld = signal<Set<string>>(new Set());
-  /** Re-claim timers for held actuators, same key — cleared on release/destroy. */
-  private heartbeats = new Map<string, number>();
-  /** When each actuator was first claimed — a grace window before reconciling its
-   *  reported state (the device needs a tick or two to start + report). */
-  private claimedAt = new Map<string, number>();
-  /** Polls held actuators against their reported state to catch a device-side
-   *  refusal/latch, so a blocked toggle stops showing "held". */
-  private reconcileTimer?: number;
 
   /** True when an admin is viewing a site they don't own (support/validation). */
   protected adminViewing = signal(false);
@@ -521,8 +517,8 @@ export class DashboardComponent implements OnDestroy {
   // --- Schedules (runtime pause/resume of baked automations) ---------------
   protected hasAutomations = computed(() => this.store.spec().controllers.some((c) => c.automations.length > 0));
 
-  private automationKey(controller: string, id: string): string {
-    return `${controller}/automation_set/${id}`;
+  private autoKey(controller: string, id: string): string {
+    return `${controller}/auto/${id}`;
   }
 
   /** Live enabled state from the shadow (the device's enable switch). Defaults to
@@ -534,7 +530,7 @@ export class DashboardComponent implements OnDestroy {
   }
 
   protected automationBusy(controller: string, id: string): boolean {
-    return this.busy().has(this.automationKey(controller, id));
+    return this.lifecycle.isBusy(this.autoKey(controller, id));
   }
 
   /** Pause/resume a baked schedule. Pausing suppresses future triggers only — if
@@ -544,11 +540,12 @@ export class DashboardComponent implements OnDestroy {
     const on = !this.automationEnabled(controller, auto.enableSensor);
     const token = this.routeState(controller, auto.routeId).token;
     const running = token === 'PREPARING' || token === 'RUNNING' || token === 'STOPPING';
-    const ok = await this.run(controller, 'automation_set', { automationId: auto.id, on }, this.automationKey(controller, auto.id));
-    // Replace run()'s generic "sent" note with the behaviour-specific one when a
-    // pause lands while the schedule's route is mid-run.
+    const ok = await this.lifecycle.dispatch(this.autoKey(controller, auto.id), controller, 'automation_set', { automation: auto, on });
+    // Pausing a schedule whose route is mid-run only stops FUTURE runs — say so.
     if (ok && !on && running) {
       this.note.set(`Schedule paused. "${auto.routeName}" is running now and keeps going; use its Stop control to end it.`);
+    } else {
+      this.offlineNote(controller);
     }
   }
 
@@ -564,12 +561,14 @@ export class DashboardComponent implements OnDestroy {
     return this.store.row(controller, r.flowSensor)?.reported ?? null;
   }
 
-  /** A start/stop/fault-reset for this route is in flight (disables the card). */
-  protected routeBusy(controller: string, routeId: number): boolean {
-    const b = this.busy();
-    return b.has(this.key(controller, 'route_start', routeId))
-      || b.has(this.key(controller, 'route_stop', routeId))
-      || b.has(this.key(controller, 'fault_reset', routeId));
+  private routeKey(controller: string, routeId: number): string {
+    return `${controller}/route/${routeId}`;
+  }
+
+  /** The route's live command phase (pending/refused/…) for the card overlay, or
+   *  null when no command is in flight (the card's state view drives). */
+  protected routePhase(controller: string, routeId: number): { phase: CommandPhase; reason: string } | null {
+    return this.lifecycle.phaseFor(this.routeKey(controller, routeId));
   }
 
   // --- Widget section layout -----------------------------------------------
@@ -601,29 +600,26 @@ export class DashboardComponent implements OnDestroy {
   protected isActuatable(w: DashboardWidget): boolean {
     return this.canControl() && !!this.actuatorFor(w) && this.store.presence(w.controller).online;
   }
+  private nodeKey(controller: string, nodeId: string): string {
+    return `${controller}/node/${nodeId}`;
+  }
   protected actuatorHeld(w: DashboardWidget): boolean {
     const a = this.actuatorFor(w);
-    return a ? this.isHeld(w.controller, a.id) : false;
+    return a ? this.lifecycle.isHeld(this.nodeKey(w.controller, a.id)) : false;
   }
-  protected actuatorBusyFor(w: DashboardWidget): boolean {
+  /** The actuator's live command phase for the card overlay, null when idle. */
+  protected actuatorPhase(w: DashboardWidget): { phase: CommandPhase; reason: string } | null {
     const a = this.actuatorFor(w);
-    return a ? this.busy().has(this.manualKey(w.controller, a.id)) : false;
+    return a ? this.lifecycle.phaseFor(this.nodeKey(w.controller, a.id)) : null;
   }
   protected toggleWidgetActuator(w: DashboardWidget): void {
     const a = this.actuatorFor(w);
-    if (a) void this.toggleActuator(w.controller, a.id);
+    if (a && this.canControl()) void this.lifecycle.toggleClaim(this.nodeKey(w.controller, a.id), w.controller, a);
   }
 
   constructor() {
     this.siteId = this.route.snapshot.paramMap.get('name') ?? '';
     if (this.siteId) void this.load();
-    this.reconcileTimer = window.setInterval(() => this.reconcileHeld(), 3000);
-  }
-
-  ngOnDestroy(): void {
-    for (const h of this.heartbeats.values()) clearInterval(h);
-    this.heartbeats.clear();
-    if (this.reconcileTimer) clearInterval(this.reconcileTimer);
   }
 
   private async load(): Promise<void> {
@@ -650,107 +646,50 @@ export class DashboardComponent implements OnDestroy {
     if (this.siteId) void this.telemetry.setSpan(this.siteId, w, hours);
   }
 
-  protected key(controller: string, action: CommandAction, routeId?: number): string {
-    return `${controller}/${action}/${routeId ?? ''}`;
-  }
-
-  protected manualKey(controller: string, node: string): string {
-    return `${controller}::${node}`;
-  }
-
-  protected isHeld(controller: string, node: string): boolean {
-    return this.manualHeld().has(this.manualKey(controller, node));
-  }
-
   /** Safety override reported state, read from the shadow (the device switch). */
   protected overrideOn(controller: string): boolean {
     const r = this.store.row(controller, 'safety_override');
     return !!r && r.reported >= 0.5;
   }
 
-  /** Send a command + reconcile the note (warns when the target reads offline). */
-  private async run(
-    controller: string,
-    action: CommandAction,
-    args: { routeId?: number; nodeId?: string; automationId?: string; on?: boolean },
-    busyKey: string,
-  ): Promise<boolean> {
-    if (!this.canControl()) return false;
-    this.busy.update((s) => new Set(s).add(busyKey));
-    this.note.set(null);
-    try {
-      await this.backend.sendCommand(this.siteId, controller, action, args);
-      this.note.set(
-        this.store.presence(controller).online
-          ? `Sent to ${this.ctrlName(controller)} — watching for the device to confirm.`
-          : `${this.ctrlName(controller)} looks offline — the command expires in ~${this.ttlMin} min if it doesn't reconnect.`,
-      );
-      return true;
-    } catch (err) {
-      this.note.set(String(err));
-      return false;
-    } finally {
-      this.busy.update((s) => {
-        const n = new Set(s);
-        n.delete(busyKey);
-        return n;
-      });
-    }
+  // --- Command dispatch — every control routes through the lifecycle store, which
+  //     tracks the command by command_id and exposes the phase the cards render. --
+
+  private sysKey(controller: string, action: CommandAction): string {
+    return `${controller}/sys/${action}`;
+  }
+  private overrideKey(controller: string): string {
+    return `${controller}/override`;
+  }
+  protected sysBusy(controller: string, action: CommandAction): boolean {
+    return this.lifecycle.isBusy(this.sysKey(controller, action));
+  }
+  protected overrideBusy(controller: string): boolean {
+    return this.lifecycle.isBusy(this.overrideKey(controller));
   }
 
-  protected async cmd(controller: string, action: CommandAction, routeId?: number): Promise<void> {
-    await this.run(controller, action, { routeId }, this.key(controller, action, routeId));
+  /** Warn (only) when the target reads offline — the per-control phase is the
+   *  primary feedback; this keeps the "expires in ~Nm" copy for a dark device. */
+  private offlineNote(controller: string): void {
+    this.note.set(
+      this.store.presence(controller).online
+        ? null
+        : `${this.ctrlName(controller)} looks offline — the command expires in ~${this.ttlMin} min if it doesn't reconnect.`,
+    );
   }
 
-  /** Toggle a manual claim on an actuator. On → claim + heartbeat; off → release. */
-  protected async toggleActuator(controller: string, node: string): Promise<void> {
-    const key = this.manualKey(controller, node);
-    if (this.manualHeld().has(key)) {
-      this.stopHeartbeat(key);
-      this.claimedAt.delete(key);
-      this.manualHeld.update((s) => { const n = new Set(s); n.delete(key); return n; });
-      await this.run(controller, 'node_set', { nodeId: node, on: false }, key);
-    } else if (await this.run(controller, 'node_set', { nodeId: node, on: true }, key)) {
-      this.claimedAt.set(key, Date.now());
-      this.manualHeld.update((s) => new Set(s).add(key));
-      this.startHeartbeat(controller, node, key);
-    }
+  /** Start/stop/fault-reset a route (the route-card emits one of these). */
+  protected async routeCmd(controller: string, action: CommandAction, route: RouteControl): Promise<void> {
+    if (!this.canControl()) return;
+    await this.lifecycle.dispatch(this.routeKey(controller, route.routeId), controller, action, { route });
+    this.offlineNote(controller);
   }
 
-  /** Find the actuator + its controller for a manual-hold key. */
-  private actuatorByKey(key: string): { controller: string; actuator: ActuatorControl } | undefined {
-    for (const c of this.store.spec().controllers)
-      for (const actuator of c.actuators)
-        if (this.manualKey(c.controller, actuator.id) === key) return { controller: c.controller, actuator };
-    return undefined;
-  }
-
-  /** Locally drop a hold the device refused/latched: stop heartbeat + tell the
-   *  device to release (which clears its latch so a retry starts clean). */
-  private releaseHeld(controller: string, node: string, key: string): void {
-    this.stopHeartbeat(key);
-    this.claimedAt.delete(key);
-    this.manualHeld.update((s) => { const n = new Set(s); n.delete(key); return n; });
-    void this.backend.sendCommand(this.siteId, controller, 'node_set', { nodeId: node, on: false }).catch(() => {});
-  }
-
-  /** Poll: an ONLINE controller reporting a held actuator OFF (past the start
-   *  grace) means a safety guard refused/latched it — revert the toggle so it
-   *  stops lying, and surface why. Offline controllers are left alone (can't judge;
-   *  the device's dead-man lease is the safety there). */
-  private reconcileHeld(): void {
-    const held = this.manualHeld();
-    if (held.size === 0) return;
-    const now = Date.now();
-    for (const key of held) {
-      if (now - (this.claimedAt.get(key) ?? 0) < 8000) continue;
-      const found = this.actuatorByKey(key);
-      if (!found || !this.store.presence(found.controller).online) continue;
-      const row = this.store.row(found.controller, found.actuator.reportedSensor);
-      if (row && row.reported >= 0.5) continue; // actually running — fine
-      this.releaseHeld(found.controller, found.actuator.id, key);
-      this.note.set(`${found.actuator.name} on ${this.ctrlName(found.controller)} stopped — blocked by a safety check (no flow, source low, or runtime). See Activity. Safety override is commissioning-only.`);
-    }
+  /** Fan-out / system command (stop_all, reset_faults, clear_queue). */
+  protected async sysCmd(controller: string, action: CommandAction): Promise<void> {
+    if (!this.canControl()) return;
+    await this.lifecycle.dispatch(this.sysKey(controller, action), controller, action);
+    this.offlineNote(controller);
   }
 
   /** Toggle the commissioning safety-override switch; enabling it is gated by a
@@ -767,21 +706,7 @@ export class DashboardComponent implements OnDestroy {
       });
       if (!ok) return;
     }
-    await this.run(controller, 'safety_override', { on: turningOn }, this.manualKey(controller, 'safety_override'));
-  }
-
-  /** Re-claim a held actuator every 60s (the lease is ~90s) so it stays driven
-   *  while the operator holds it; stopping the heartbeat lets it fail-safe stop. */
-  private startHeartbeat(controller: string, node: string, key: string): void {
-    this.stopHeartbeat(key);
-    const h = window.setInterval(() => {
-      void this.backend.sendCommand(this.siteId, controller, 'node_set', { nodeId: node, on: true }).catch(() => {});
-    }, 60_000);
-    this.heartbeats.set(key, h);
-  }
-
-  private stopHeartbeat(key: string): void {
-    const h = this.heartbeats.get(key);
-    if (h) { clearInterval(h); this.heartbeats.delete(key); }
+    await this.lifecycle.dispatch(this.overrideKey(controller), controller, 'safety_override', { on: turningOn });
+    this.offlineNote(controller);
   }
 }

@@ -96,6 +96,10 @@ export type { HealthLevel } from './health';
 export { buildDashboardSpec } from './dashboard-spec';
 export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, AutomationControl, SetpointControl } from './dashboard-spec';
 
+// --- Command confirmation (desired→reported convergence; one shape, all controls) ---
+export { confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S } from './command-confirm';
+export type { ConfirmDescriptor, ConfirmObservation, CommandPhase } from './command-confirm';
+
 // --- Codegen IDs ---
 export {
   pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId,

@@ -4,10 +4,11 @@ import type { EChartsOption } from 'echarts';
 import {
   describeState,
   SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, FAULT_MEANINGS, OUTCOME_MEANINGS,
-  type DashboardWidget, type StateKind,
+  type DashboardWidget, type StateKind, type CommandPhase,
 } from '@core';
 import type { ShadowRow, TelemetryPoint, StateEventRow } from '../../../core/models/runtime';
 import { SPAN_PRESETS, DEFAULT_SPAN_HOURS } from '../telemetry.store';
+import { phaseUi } from './command-phase';
 
 /** A history point's numeric value. `end` selects the bucket edge for a
  *  cumulative counter: 'lo' (min) for a window start, 'hi' (max) for its end;
@@ -60,7 +61,7 @@ const CHART = {
     <div class="bg-base-100 rounded-2xl transition-all flex flex-col h-full"
       [class]="cardClass()"
       [attr.role]="actuatable() ? 'button' : null"
-      [attr.tabindex]="actuatable() && !actuatorBusy() ? '0' : null"
+      [attr.tabindex]="actuatable() && !busy() ? '0' : null"
       [attr.title]="actuatable() ? holdHint() : null"
       (click)="onCardClick()"
       (keydown.enter)="onCardClick()"
@@ -200,9 +201,13 @@ const CHART = {
       <!-- Actuator hold (valve / pump): the card itself toggles a manual claim,
            so there's no separate control cluster. Shows only when controllable. -->
       @if (actuatable()) {
-        <div class="mt-2 pt-2 border-t border-base-300/20 flex items-center gap-1.5 text-[11px] select-none">
-          <span class="w-1.5 h-1.5 rounded-full shrink-0 {{ held() ? 'bg-primary animate-pulse' : 'bg-base-content/30' }}"></span>
-          <span class="truncate {{ held() ? 'text-primary font-medium' : 'text-base-content/50' }}">{{ holdHint() }}</span>
+        <div class="mt-2 pt-2 border-t border-base-300/20 flex items-center gap-1.5 text-[11px] select-none {{ footerTone() }}">
+          @if (cmd()?.spin) {
+            <span class="loading loading-spinner loading-xs shrink-0"></span>
+          } @else {
+            <span class="w-1.5 h-1.5 rounded-full shrink-0 {{ footerDot() }}"></span>
+          }
+          <span class="truncate">{{ footerText() }}</span>
         </div>
       }
     </div>
@@ -233,13 +238,20 @@ export class DashboardCardComponent {
   readonly actuatable = input(false);
   /** The actuator is currently held (claimed) by this operator. */
   readonly held = input(false);
-  /** A claim/release for this actuator is in flight. */
-  readonly actuatorBusy = input(false);
+  /** Live command phase for this actuator's claim/release (null ⇒ none in flight). */
+  readonly phase = input<CommandPhase | null>(null);
+  /** Refusal reason token accompanying a `refused` phase (best-effort). */
+  readonly phaseReason = input('');
   /** Structural actuator kind (independent of online/control state) — drives the
    *  pump's glyph layout so it matches the valve card. '' ⇒ not an actuator. */
   readonly actuatorKind = input<'' | 'valve' | 'pump'>('');
   /** Click toggled the actuator hold — the page issues the claim/release. */
   readonly toggle = output<void>();
+
+  /** A claim/release is in flight (pending) — disables the card + shows a spinner. */
+  protected busy = computed(() => this.phase() === 'pending');
+  /** Command-phase presentation (spinner / alert), null when idle. */
+  protected cmd = computed(() => { const p = this.phase(); return p ? phaseUi(p) : null; });
 
   /** Root classes: read-only status cards get a plain grey ring; actuatable
    *  control cards are tinted (cyan accent ring, filled while held) so they
@@ -247,7 +259,8 @@ export class DashboardCardComponent {
   protected cardClass = computed(() => {
     const pad = this.dense() ? 'p-3' : 'p-4 min-h-[140px]';
     if (!this.actuatable()) return `${pad} ring-1 ring-base-300/40 hover:ring-base-300/70`;
-    if (this.actuatorBusy()) return `${pad} ring-1 ring-primary/30 opacity-60 cursor-wait`;
+    if (this.cmd()?.alert) return `${pad} ring-1 ring-error/60 cursor-pointer`;
+    if (this.busy()) return `${pad} ring-1 ring-primary/30 opacity-60 cursor-wait`;
     return this.held()
       ? `${pad} ring-1 ring-primary/70 bg-primary/10 cursor-pointer`
       : `${pad} ring-1 ring-primary/30 hover:ring-primary/60 cursor-pointer`;
@@ -261,12 +274,38 @@ export class DashboardCardComponent {
   }
 
   protected onCardClick(): void {
-    if (this.actuatable() && !this.actuatorBusy()) this.toggle.emit();
+    if (this.actuatable() && !this.busy()) this.toggle.emit();
   }
 
   /** Space activates the card without scrolling the page. */
   protected onSpace(e: Event): void {
-    if (this.actuatable() && !this.actuatorBusy()) { e.preventDefault(); this.toggle.emit(); }
+    if (this.actuatable() && !this.busy()) { e.preventDefault(); this.toggle.emit(); }
+  }
+
+  // --- Footer (actuator hold) presentation — command phase overrides the resting
+  //     hold hint so the operator sees Sending… / a refusal reason inline. --------
+  /** Footer line: phase copy while a command resolves, else the hold affordance. */
+  protected footerText = computed(() => {
+    switch (this.phase()) {
+      case 'pending': return 'Sending…';
+      case 'refused': return this.reasonText();
+      case 'expired': return 'No response';
+      default:        return this.holdHint();
+    }
+  });
+  protected footerTone = computed(() => {
+    const c = this.cmd();
+    if (c?.alert) return 'text-error';
+    if (c?.spin) return 'text-warning';
+    return this.held() ? 'text-primary font-medium' : 'text-base-content/50';
+  });
+  protected footerDot = computed(() => {
+    if (this.cmd()?.alert) return 'bg-error';
+    return this.held() ? 'bg-primary animate-pulse' : 'bg-base-content/30';
+  });
+  private reasonText(): string {
+    const r = this.phaseReason();
+    return r ? describeState(ANY_MEANING, r).label : 'Blocked — safety check';
   }
 
   protected statText = computed(() => {

@@ -1,15 +1,15 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
-import type { ControllerControls, SetpointControl } from '@core';
-import { BackendService } from '../../../core/services/backend.service';
+import type { ControllerControls, SetpointControl, CommandPhase } from '@core';
 import { DashboardStore } from '../dashboard.store';
+import { CommandLifecycleStore } from '../command-lifecycle.store';
 
 /**
  * RouteSetpointsComponent — live editor for per-route control setpoints (a
  * route's source-min / dest-max tank %). Reads the current effective value from
  * the shadow (the device publishes each setpoint's `number:` state) and writes
- * back with a `config_set` command; the device persists it (restore_value) and
- * re-publishes. Sits beside the alert thresholds: same per-site config surface,
- * but these are device control values, not server-side alert config.
+ * back with a `config_set` command routed through the command-lifecycle store, so
+ * each field shows the same pending → confirmed feedback as every other control
+ * (confirmation = the device re-publishes the new value).
  *
  * Distinct from SiteThresholdsComponent on purpose: alert thresholds drive the
  * email sweep + bell (server-stored, matter while everything is off); these
@@ -45,13 +45,20 @@ import { DashboardStore } from '../dashboard.store';
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 @for (sp of g.setpoints; track sp.key) {
                   <label class="flex flex-col gap-1">
-                    <span class="text-[11px] text-base-content/60 truncate">
+                    <span class="text-[11px] text-base-content/60 truncate flex items-center gap-1">
                       {{ sp.routeName }} · {{ sp.label }} <span class="text-base-content/30">({{ sp.unit }})</span>
+                      @if (fieldPhase(g.controller, sp); as ph) {
+                        @switch (ph.phase) {
+                          @case ('pending') { <span class="loading loading-spinner loading-xs text-warning shrink-0"></span> }
+                          @case ('confirmed') { <span class="text-success shrink-0">✓</span> }
+                          @default { <span class="text-error truncate">{{ ph.reason || 'not applied' }}</span> }
+                        }
+                      }
                     </span>
                     <input type="number" [min]="sp.min" [max]="sp.max" step="1"
                       class="input input-sm input-bordered"
                       [value]="display(g.controller, sp)"
-                      [disabled]="!canEdit() || !online(g.controller) || saving()"
+                      [disabled]="!canEdit() || !online(g.controller)"
                       [placeholder]="sp.default"
                       (input)="onInput(g.controller, sp, $event)" />
                   </label>
@@ -62,11 +69,10 @@ import { DashboardStore } from '../dashboard.store';
 
           @if (canEdit()) {
             <div class="flex items-center gap-2">
-              <button class="btn btn-sm btn-primary w-24" [disabled]="saving() || !hasSendableEdit()" (click)="save()">
-                @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } @else { Save }
+              <button class="btn btn-sm btn-primary w-24" [disabled]="!hasSendableEdit()" (click)="save()">
+                @if (anyPending()) { <span class="loading loading-spinner loading-xs"></span> } @else { Save }
               </button>
-              @if (saved()) { <span class="text-xs text-success">Sent</span> }
-              @if (err()) { <span class="text-xs text-error">{{ err() }}</span> }
+              <span class="text-[11px] text-base-content/40">Each field confirms when the device re-publishes its value.</span>
             </div>
           } @else {
             <p class="text-[11px] text-base-content/40">Read-only — take control to edit.</p>
@@ -77,21 +83,17 @@ import { DashboardStore } from '../dashboard.store';
   `,
 })
 export class RouteSetpointsComponent {
-  readonly siteId = input.required<string>();
   readonly controllers = input.required<ControllerControls[]>();
   readonly canEdit = input(true);
 
-  private backend = inject(BackendService);
   private store = inject(DashboardStore);
+  private lifecycle = inject(CommandLifecycleStore);
 
   /** Only controllers that actually expose setpoints. */
   protected groups = computed(() => this.controllers().filter((c) => c.setpoints.length > 0));
 
   /** In-progress edits, keyed `${controller}/${key}`. */
   private edited = signal<Map<string, number>>(new Map());
-  protected saving = signal(false);
-  protected saved = signal(false);
-  protected err = signal<string | null>(null);
 
   protected online(controller: string): boolean {
     return this.store.presence(controller).online;
@@ -110,6 +112,23 @@ export class RouteSetpointsComponent {
     }
     return false;
   });
+
+  // --- Per-field command phase (the shared lifecycle, keyed per setpoint) -------
+  private key(controller: string, sp: SetpointControl): string {
+    return `${controller}/cfg/${sp.key}`;
+  }
+  protected fieldPhase(controller: string, sp: SetpointControl): { phase: CommandPhase; reason: string } | null {
+    return this.lifecycle.phaseFor(this.key(controller, sp));
+  }
+  protected fieldBusy(controller: string, sp: SetpointControl): boolean {
+    return this.lifecycle.isBusy(this.key(controller, sp));
+  }
+  protected anyPending(): boolean {
+    for (const g of this.groups()) {
+      for (const sp of g.setpoints) if (this.fieldBusy(g.controller, sp)) return true;
+    }
+    return false;
+  }
 
   /** Current effective value from the shadow (rounded), or null when unknown. */
   private current(controller: string, sp: SetpointControl): number | null {
@@ -134,17 +153,12 @@ export class RouteSetpointsComponent {
     });
   }
 
-  protected async save(): Promise<void> {
-    if (this.edited().size === 0) return;
-    this.saving.set(true);
-    this.saved.set(false);
-    this.err.set(null);
-
-    // Send each dirty edit on an ONLINE controller; offline ones stay pending.
-    // Track which keys actually went out so a partial failure only retries the
-    // ones that didn't send, and the rest clear.
+  /** Push each dirty setpoint on an ONLINE controller as its own `config_set`;
+   *  the per-field phase then drives the feedback (pending → ✓ when the device
+   *  re-publishes the value). Offline edits stay in the buffer until reconnect. */
+  protected save(): void {
+    if (!this.canEdit() || this.edited().size === 0) return;
     const sent: string[] = [];
-    const sends: Promise<unknown>[] = [];
     for (const g of this.groups()) {
       if (!this.online(g.controller)) continue;
       for (const sp of g.setpoints) {
@@ -152,29 +166,16 @@ export class RouteSetpointsComponent {
         const v = this.edited().get(ek);
         if (v === undefined || Number.isNaN(v)) continue;
         const clamped = Math.max(sp.min, Math.min(sp.max, v));
-        sends.push(
-          this.backend
-            .sendCommand(this.siteId(), g.controller, 'config_set', { key: sp.key, value: clamped })
-            .then(() => { sent.push(ek); }),
-        );
+        void this.lifecycle.dispatch(this.key(g.controller, sp), g.controller, 'config_set', { setpoint: sp, value: clamped });
+        sent.push(ek);
       }
     }
-
-    try {
-      await Promise.allSettled(sends);
-      if (sent.length) {
-        this.edited.update((m) => {
-          const n = new Map(m);
-          for (const k of sent) n.delete(k);
-          return n;
-        });
-        this.saved.set(true);
-        setTimeout(() => this.saved.set(false), 2500);
-      }
-      const failed = sends.length - sent.length;
-      if (failed > 0) this.err.set(`${failed} change${failed > 1 ? 's' : ''} didn't send — try again`);
-    } finally {
-      this.saving.set(false);
+    if (sent.length) {
+      this.edited.update((m) => {
+        const n = new Map(m);
+        for (const k of sent) n.delete(k);
+        return n;
+      });
     }
   }
 }
