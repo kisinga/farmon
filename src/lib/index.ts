@@ -153,6 +153,7 @@ export {
   type DocScope, type SiteVarCtx, type NodeVarCtx,
 } from './docs/vars';
 export { extractSlots, unknownSlots } from './docs/validate';
+export { parseFrontmatter, parseDocFile, type ParsedDoc } from './docs/frontmatter';
 
 // --- Static ---
 export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';

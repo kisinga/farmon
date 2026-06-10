@@ -8,6 +8,7 @@ import { DashboardStore } from './dashboard.store';
 import { TelemetryStore } from './telemetry.store';
 import { DashboardCardComponent } from './widgets/dashboard-card.component';
 import { RouteCardComponent } from './widgets/route-card.component';
+import { SiteThresholdsComponent } from './widgets/site-thresholds.component';
 import type { RouteControl } from '@core';
 
 /**
@@ -20,7 +21,7 @@ import type { RouteControl } from '@core';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DashboardCardComponent, RouteCardComponent],
+  imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent],
   providers: [DashboardStore, TelemetryStore],
   host: { class: 'flex-1 overflow-auto' },
   template: `
@@ -213,6 +214,14 @@ import type { RouteControl } from '@core';
           </section>
         }
 
+        <!-- Per-site alert thresholds (tank low/high, offline timeout). Owner/admin
+             editable; read-only otherwise. Feeds the bell + the email sweep. -->
+        @if (siteId) {
+          <section class="mb-6">
+            <app-site-thresholds [siteId]="siteId" [canEdit]="canControl()" />
+          </section>
+        }
+
         <!-- Commissioning (advanced): valves/pumps are held by tapping their card
              above; the only extra control here is the safety override. Hidden
              while an admin is read-only; collapsed by default. -->
@@ -290,7 +299,7 @@ export class DashboardComponent implements OnDestroy {
   protected store = inject(DashboardStore);
   protected telemetry = inject(TelemetryStore);
 
-  private siteId = '';
+  protected siteId = '';
   protected siteName = signal('');
   protected busy = signal<Set<string>>(new Set());
   protected note = signal<string | null>(null);

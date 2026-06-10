@@ -31,6 +31,13 @@ export const routes: Routes = [
       import('./pages/home/home.component').then((m) => m.HomeComponent),
   },
   {
+    // Any signed-in user: their own notification preferences.
+    path: 'account',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/account/account-page.component').then((m) => m.AccountPageComponent),
+  },
+  {
     // Admin: sites catalog.
     path: 'overview',
     canActivate: [roleGuard],

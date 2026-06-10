@@ -1,4 +1,4 @@
-import { Injectable, OnDestroy, inject, signal } from '@angular/core';
+import { Injectable, OnDestroy, effect, inject, signal } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
 import { SYSTEM_STATE_TOKENS, routeStateSensor, type DashboardSpec, type DashboardWidget } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
@@ -20,6 +20,9 @@ const PRESENCE_FRESH_MS = 60_000;
 export class DashboardStore implements OnDestroy {
   private realtime = inject(RealtimeService);
 
+  /** Live SSE stream state, surfaced for the global reconnect banner. */
+  readonly connection = this.realtime.connection;
+
   readonly spec = signal<DashboardSpec>({ widgets: [], controllers: [] });
   /** Keyed by `${controller}/${sensor}` (== a widget's id). */
   readonly shadow = signal<Map<string, ShadowRow>>(new Map());
@@ -33,21 +36,43 @@ export class DashboardStore implements OnDestroy {
 
   private unsubs: UnsubscribeFunc[] = [];
   private clock = 0;
+  private siteId = '';
+
+  constructor() {
+    // The SDK auto-reconnects after a dropped stream; when it does, re-pull the
+    // shadow/events/controllers so the gap that opened while offline is filled.
+    // Skip the first connect — init()'s own fetch already covered it.
+    let prev = this.realtime.connection();
+    effect(() => {
+      const c = this.realtime.connection();
+      if (c === 'connected' && prev === 'disconnected' && this.siteId) {
+        void this.resync(this.siteId).catch(() => {});
+      }
+      prev = c;
+    });
+  }
+
+  /** Pull the current shadow, recent transitions, and presence for a site. Runs
+   *  on init and again on every realtime reconnect to close the offline gap. */
+  private async resync(siteId: string): Promise<void> {
+    const rows = await this.realtime.latest(siteId);
+    const map = new Map<string, ShadowRow>();
+    for (const r of rows) map.set(`${r.controller}/${r.sensor}`, r);
+    this.shadow.set(map);
+
+    this.events.set(await this.realtime.recentEvents(siteId, 100));
+
+    const ctrls = await this.realtime.controllers(siteId);
+    this.controllers.set(new Map(ctrls.map((c) => [c.device_id, c])));
+  }
 
   async init(siteId: string, spec: DashboardSpec): Promise<void> {
+    this.siteId = siteId;
     this.spec.set(spec);
     this.loading.set(true);
     this.error.set(null);
     try {
-      const rows = await this.realtime.latest(siteId);
-      const map = new Map<string, ShadowRow>();
-      for (const r of rows) map.set(`${r.controller}/${r.sensor}`, r);
-      this.shadow.set(map);
-
-      this.events.set(await this.realtime.recentEvents(siteId, 100));
-
-      const ctrls = await this.realtime.controllers(siteId);
-      this.controllers.set(new Map(ctrls.map((c) => [c.device_id, c])));
+      await this.resync(siteId);
 
       this.unsubs.push(
         await this.realtime.subscribeShadow(siteId, (row) => {

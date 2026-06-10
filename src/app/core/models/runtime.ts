@@ -36,6 +36,9 @@ export interface TelemetryHistory {
  *  `{ctrl}` segment == a widget/spec `controller`. */
 export interface ControllerRow {
   device_id: string;
+  /** Owning site id — needed to attribute cross-site alerts and resolve
+   *  per-site thresholds. Empty when read from a site-scoped query. */
+  site: string;
   /** false == deregistered/decommissioned (cannot connect to the broker). */
   active: boolean;
   online: boolean;

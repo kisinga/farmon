@@ -1,21 +1,22 @@
 # docs-content
 
-Git-committed snapshot of the **non-developer documentation** that the app shows in every site's
+The **source of truth** for the non-developer documentation the app shows in every site's
 generated document (operation, troubleshooting, the wiring guide, per-node-kind notes, glossary).
 
-The **database `docs` collection is the source of truth** — it's authored at runtime in the app
-(admin → **Docs**). These files are the human-readable mirror for history and review; the sync is
-manual, by design.
+These `.md` files are authoritative; the database `docs` collection is a disposable projection that
+the per-site document assembler reads at view time. Edit the docs **here**, in the repo — never in
+the app.
 
-## Round-trip
+## Loading a deployment
 
-```sh
-# load these files into the DB (upsert by slug — idempotent; also the one-time migration vehicle)
-maji-cloud docs import [dir]      # default dir: docs-content
+There is no CLI and no in-app editing. To load or update a deployment's docs:
 
-# dump the DB back to these files after editing in the app
-maji-cloud docs export [dir]
-```
+1. Sign in as an admin → **Docs**.
+2. Click **Import from .md** and drop these `docs-content/*.md` files.
+3. Review the plan — each file shows as **create** / **update** (matched by slug), with any unknown
+   `{{slot}}` flagged as a warning. To make the DB mirror the files exactly, tick the (default-off)
+   option to remove docs that are in the DB but not in the import.
+4. Confirm. The import upserts by slug, so re-running is idempotent.
 
 ## File format
 

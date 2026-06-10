@@ -3,11 +3,27 @@ import { BackendService } from '../services/backend.service';
 import type { DocEntry, DocDraft } from '../models/backend-api';
 import { CollectionStore } from './collection-store';
 
+/** The DB changes to apply in one import — derived in-browser from dropped files. */
+export interface ImportPlan {
+  creates: DocDraft[];
+  updates: { id: string; draft: DocDraft }[];
+  /** Orphans (in DB, not in the import) — pruned only when the user opts in. */
+  deletes: { id: string; slug: string }[];
+}
+
+/** Outcome of a single doc in an import, for the results summary. */
+export interface ImportResult {
+  slug: string;
+  action: 'created' | 'updated' | 'deleted' | 'error';
+  error?: string;
+}
+
 /**
- * DocsStore — the `docs` collection (admin authoring of product/node prose).
- * Cached list; create/save reload it so server-rendered fields (id, updated
- * timestamp) stay accurate; delete patches in place. Low-traffic admin data,
- * so the reload after a write is preferred over hand-patching every field.
+ * DocsStore — the `docs` collection (product/node prose). The repo
+ * `docs-content/*.md` files are the source of truth; this store is the
+ * disposable DB projection the doc assembler reads. It is read-only except for
+ * {@link bulkApply}, which syncs the DB from a set of imported files. Low-traffic
+ * admin data, so a single reload after the batch is preferred over hand-patching.
  */
 @Injectable({ providedIn: 'root' })
 export class DocsStore extends CollectionStore<DocEntry[]> {
@@ -21,19 +37,41 @@ export class DocsStore extends CollectionStore<DocEntry[]> {
     return this.backend.docList();
   }
 
-  async create(draft: DocDraft): Promise<{ id: string }> {
-    const r = await this.backend.docCreate(draft);
-    await this.reload();
-    return r;
-  }
+  /**
+   * Apply an import plan: create/update/delete each entry, continue on error
+   * (collecting per-doc results), then reload once so the cached list reflects
+   * server-rendered fields (id, updated). No transaction by design — there's no
+   * sensitive data and the import is idempotent and re-runnable.
+   */
+  async bulkApply(plan: ImportPlan): Promise<ImportResult[]> {
+    const results: ImportResult[] = [];
 
-  async save(id: string, draft: DocDraft): Promise<void> {
-    await this.backend.docSave(id, draft);
-    await this.reload();
-  }
+    for (const draft of plan.creates) {
+      try {
+        await this.backend.docCreate(draft);
+        results.push({ slug: draft.slug, action: 'created' });
+      } catch (err) {
+        results.push({ slug: draft.slug, action: 'error', error: String(err) });
+      }
+    }
+    for (const { id, draft } of plan.updates) {
+      try {
+        await this.backend.docSave(id, draft);
+        results.push({ slug: draft.slug, action: 'updated' });
+      } catch (err) {
+        results.push({ slug: draft.slug, action: 'error', error: String(err) });
+      }
+    }
+    for (const { id, slug } of plan.deletes) {
+      try {
+        await this.backend.docDelete(id);
+        results.push({ slug, action: 'deleted' });
+      } catch (err) {
+        results.push({ slug, action: 'error', error: String(err) });
+      }
+    }
 
-  async delete(id: string): Promise<void> {
-    await this.backend.docDelete(id);
-    this.mutate((list) => list.filter((d) => d.id !== id));
+    await this.reload();
+    return results;
   }
 }

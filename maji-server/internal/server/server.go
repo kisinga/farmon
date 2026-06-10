@@ -5,6 +5,7 @@ package server
 import (
 	"os"
 
+	"github.com/kisinga/majiflow/internal/alerts"
 	"github.com/kisinga/majiflow/internal/api"
 	"github.com/kisinga/majiflow/internal/config"
 	"github.com/kisinga/majiflow/internal/mqtt"
@@ -27,9 +28,6 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
 		Automigrate: true,
 	})
-
-	// `docs export` — snapshot the runtime-authored docs collection to git.
-	registerDocsCmd(app)
 
 	// Public lead form guard: drop obvious bot spam (honeypot tripped) and never
 	// store an enquiry without explicit consent. Runs before the `leads` record
@@ -58,6 +56,7 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 		}
 
 		go telemetry.RunScheduler(se.App)
+		go alerts.RunSweeper(se.App)
 
 		api.Register(se, cfg, broker.Server)
 

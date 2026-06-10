@@ -14,6 +14,7 @@ import {
   parseTopology, buildGraph, deriveRoutes, type SiteTopology,
   siteVars, boardVars, nodeVars, vocabFor,
   extractSlots, unknownSlots,
+  parseFrontmatter, parseDocFile,
   type SiteVarCtx, type DocScope,
 } from "@core";
 import { fillVars, renderDoc } from "@core/docs";
@@ -26,20 +27,6 @@ let failed = 0;
 function assert(condition: boolean, name: string, detail?: string) {
   if (condition) { console.log(`  ✓ ${name}`); passed++; }
   else { console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); failed++; }
-}
-
-/** Minimal frontmatter split, mirroring the Go importer. */
-function parseFrontmatter(s: string): { fm: Record<string, string>; body: string } {
-  s = s.replace(/\r\n/g, "\n");
-  const fm: Record<string, string> = {};
-  if (!s.startsWith("---\n")) return { fm, body: s };
-  const end = s.indexOf("\n---", 4);
-  if (end < 0) return { fm, body: s };
-  for (const line of s.slice(4, end).split("\n")) {
-    const i = line.indexOf(":");
-    if (i >= 0) fm[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-  }
-  return { fm, body: s.slice(end + 4).replace(/^\n+/, "") };
 }
 
 function sampleTopology(): SiteTopology {
@@ -130,14 +117,28 @@ async function run() {
   assert(html.includes("<h1") && html.includes("Demo Site") && html.includes("<strong>30s</strong>"),
     "renderDoc fills then renders markdown→HTML", html);
 
+  // --- frontmatter parser (the docs import path) ------------------------------
+  {
+    const sample = "---\nslug: op\ntitle: Operation\ncategory: narrative\norder: 10\n---\n\nBody {{site_name}}\n";
+    const { fm, body } = parseFrontmatter(sample);
+    assert(fm["slug"] === "op" && fm["order"] === "10", "parseFrontmatter reads scalar keys");
+    assert(body === "Body {{site_name}}\n", "parseFrontmatter strips the block, keeps the body");
+    assert(parseFrontmatter("# no frontmatter").fm["category"] === undefined, "parseFrontmatter: none → empty fm");
+
+    const doc = parseDocFile("operation.md", sample);
+    assert(doc?.slug === "op" && doc?.category === "narrative" && doc?.order === 10, "parseDocFile maps frontmatter → doc");
+    assert(parseDocFile("readme.md", "no frontmatter here") === null, "parseDocFile: no category → null (skipped)");
+    assert(parseDocFile("valve.md", "---\ntitle: Valve\ncategory: node\n---\nx")?.slug === "valve", "parseDocFile: slug falls back to filename");
+  }
+
   // --- migrated content: every docs-content/*.md slot must be in scope --------
   const contentDir = path.resolve(DEFAULTS, "..", "docs-content");
   if (fs.existsSync(contentDir)) {
     for (const f of fs.readdirSync(contentDir).filter(n => n.endsWith(".md"))) {
-      const { fm, body } = parseFrontmatter(fs.readFileSync(path.join(contentDir, f), "utf-8"));
-      if (!fm["category"]) continue; // not a doc (e.g. README) — no frontmatter
-      const scope: DocScope = fm["category"] === "node" ? "node" : "narrative";
-      const bad = unknownSlots(body, scope);
+      const doc = parseDocFile(f, fs.readFileSync(path.join(contentDir, f), "utf-8"));
+      if (!doc) continue; // not a doc (e.g. README) — no frontmatter
+      const scope: DocScope = doc.category === "node" ? "node" : "narrative";
+      const bad = unknownSlots(doc.body, scope);
       assert(bad.length === 0, `docs-content/${f}: slots valid for ${scope} scope`, bad.join(", "));
     }
   }

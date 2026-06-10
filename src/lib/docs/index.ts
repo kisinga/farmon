@@ -12,4 +12,5 @@ export {
 } from './vars';
 export { fillVars, renderDoc, previewDoc } from './render';
 export { extractSlots, unknownSlots } from './validate';
+export { parseFrontmatter, parseDocFile, type ParsedDoc } from './frontmatter';
 export { assembleSiteDoc, type DocRecord, type SiteDocInput } from './assemble';
