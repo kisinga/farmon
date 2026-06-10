@@ -305,6 +305,12 @@ mqtt:
   username: "${ctrl}"
   password: !secret mqtt_token
   discovery: false
+  # Persistent session (ESPHome's default, pinned here so it's load-bearing by
+  # intent, not by an upstream default): with the QoS 1 command subscription below,
+  # the broker keeps this device's session and queues commands across a reconnect
+  # instead of dropping them — that, plus the issued_at TTL gate, is what kills the
+  # "command lost until you retry" race.
+  clean_session: false
   # Controller runs local control (routes, safety, UDP peer coordination)
   # autonomously and is an island when the server is down. An unreachable or
   # rejecting broker must never reboot it. 0s disables ESPHome's 15-min default.

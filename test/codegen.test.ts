@@ -225,6 +225,10 @@ assert(
   mqttYaml.includes("on_json_message") && /qos:\s*1/.test(mqttYaml),
   "Command subscription at QoS 1 — broker queues commands across a reconnect (no lost-on-first-try race)",
 );
+assert(
+  /clean_session:\s*false/.test(mqttYaml),
+  "Persistent session pinned (clean_session: false) — QoS 1 command queuing isn't left to an upstream default",
+);
 
 // --- Device-facing TLS (certificate_authority embedding) ---
 console.log("\nMQTT TLS embedding:");

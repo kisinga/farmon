@@ -558,11 +558,9 @@ export class DashboardComponent implements OnDestroy {
   }
 
   // --- Widget section layout -----------------------------------------------
-  /** Valves + the status strip render as a dense glyph grid; everything else as
-   *  full cards. */
-  protected denseSection(id: string): boolean { return id === 'status' || id === 'valves'; }
+  /** Valves render as a dense glyph grid; everything else as full cards. */
+  protected denseSection(id: string): boolean { return id === 'valves'; }
   protected gridFor(id: string): string {
-    if (id === 'status') return 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2';
     if (id === 'valves') return 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2';
     // Activity is a text log — cap its width so rows stay readable and the
     // timestamp isn't marooned across a full-width card.
