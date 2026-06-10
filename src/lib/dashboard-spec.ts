@@ -14,7 +14,7 @@ import { validAutomations, type ManifestAutomation, type Route } from './manifes
 import {
   SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR,
   SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS,
-  automationEnableSwitchId,
+  automationEnableSwitchId, collectConfigSetpoints,
   type StateMeaning, type TelemetryRole,
 } from './codegen-ids';
 import { collectTelemetryChannels, type TelemetryChannel } from './telemetry-channels';
@@ -92,6 +92,25 @@ export interface AutomationControl {
   enableSensor: string;
 }
 
+/** A runtime-tunable route setpoint an operator can edit via `config_set`. `key`
+ *  is the device's `number:` id — also the config_set key AND the telemetry sensor
+ *  the live value publishes under, so the editor reads the current value from the
+ *  shadow and writes back to the same name. `default` is the topology-baked
+ *  fallback the firmware uses when the override is unset. */
+export interface SetpointControl {
+  key: string;
+  routeId: number;
+  routeName: string;
+  field: 'source_min_pct' | 'dest_max_pct';
+  /** Short editor label, e.g. "Source min" / "Dest max". */
+  label: string;
+  /** Topology-baked default — shown as the input placeholder. */
+  default: number;
+  min: number;
+  max: number;
+  unit: string;
+}
+
 /** The controllable routes + actuators + schedules for one controller. */
 export interface ControllerControls {
   controller: string;
@@ -99,6 +118,8 @@ export interface ControllerControls {
   routes: RouteControl[];
   actuators: ActuatorControl[];
   automations: AutomationControl[];
+  /** Per-route tank-% setpoints, live-tunable via config_set. */
+  setpoints: SetpointControl[];
 }
 
 export interface DashboardSpec {
@@ -251,6 +272,23 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
         };
       }),
       actuators,
+      // Per-route tank-% setpoints, live-tunable via config_set. Gated on the
+      // same source/dest level flags the firmware emits the number entities under.
+      setpoints: collectConfigSetpoints(manifest.routes).map((sp) => {
+        const r = manifest.routes[sp.routeId];
+        const isSource = sp.field === 'source_min_pct';
+        return {
+          key: sp.key,
+          routeId: sp.routeId,
+          routeName: r?.name || r?.key || `Route ${sp.routeId}`,
+          field: sp.field,
+          label: isSource ? 'Source min' : 'Dest max',
+          default: (isSource ? r?.source_min_pct : r?.dest_max_pct) ?? 0,
+          min: 0,
+          max: 100,
+          unit: '%',
+        };
+      }),
       // Baked schedules an operator can pause/resume at runtime (automation_set).
       automations: autos.map((a) => ({
         id: a.id,

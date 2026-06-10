@@ -947,6 +947,16 @@ assert(
 );
 assert(!mqttYamlSched.includes("auto_off_enabled"), "mqtt: disabled automation is not dispatchable");
 
+// MQTT command handler dispatches config_set into a route's setpoint number, and
+// the telemetry publisher re-publishes the current value so the dashboard shows it.
+assert(mqttYamlSched.includes('strcmp(action, "config_set")'), "mqtt: handles the config_set command");
+assert(
+  mqttYamlSched.includes('strcmp(key, "route_0_source_min_pct")') &&
+    mqttYamlSched.includes("id(route_0_source_min_pct).make_call().set_value(value).perform()"),
+  "mqtt: config_set writes the matching route setpoint number",
+);
+assert(mqttYamlSched.includes("id(route_0_source_min_pct).state"), "mqtt: publishes the current setpoint value");
+
 // Telemetry: a bool enable channel per baked automation, none for disabled.
 const schedChannels = collectTelemetryChannels(schedManifest);
 assert(
@@ -963,6 +973,11 @@ assert(!schedChannels.some((c) => c.sensor === "auto_off_enabled"), "telemetry: 
 const schedSpec = buildDashboardSpec(scheduledTopo);
 const schedCtrl = schedSpec.controllers[0];
 assert(schedCtrl.automations.length === 3, "dashboard: three baked schedules exposed (disabled excluded)");
+// Route setpoints surface as controls keyed by the device's number id.
+assert(
+  schedCtrl.setpoints.some((s) => s.key === "route_0_source_min_pct" && s.field === "source_min_pct"),
+  "dashboard: route source-min exposed as a setpoint control",
+);
 assert(
   schedCtrl.automations.some((a) => a.id === "auto_time1" && a.enableSensor === "auto_time1_enabled"),
   "dashboard: time automation control built with its enable sensor",

@@ -94,7 +94,7 @@ export type { HealthLevel } from './health';
 
 // --- Dashboard chart spec (derived from the saved topology, in the browser) ---
 export { buildDashboardSpec } from './dashboard-spec';
-export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, AutomationControl } from './dashboard-spec';
+export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, AutomationControl, SetpointControl } from './dashboard-spec';
 
 // --- Codegen IDs ---
 export {
@@ -111,10 +111,11 @@ export {
 export {
   MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic,
   telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, routeStateSensor, COMMAND_TTL_S,
+  routeSourceMinNumber, routeDestMaxNumber, collectConfigSetpoints,
   COORD_MSG, COORD_TYPE,
 } from './codegen-ids';
 export type {
-  DeploymentMode, CommandAction, CommandEnvelope, CoordMessage, TelemetryRole,
+  DeploymentMode, CommandAction, CommandEnvelope, CoordMessage, TelemetryRole, ConfigSetpoint,
 } from './codegen-ids';
 
 // --- Runtime contract: state/fault/reason vocabulary + meanings ---

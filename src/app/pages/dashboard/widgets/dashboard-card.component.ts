@@ -7,6 +7,16 @@ import {
   type DashboardWidget, type StateKind,
 } from '@core';
 import type { ShadowRow, TelemetryPoint, StateEventRow } from '../../../core/models/runtime';
+import { SPAN_PRESETS, DEFAULT_SPAN_HOURS } from '../telemetry.store';
+
+/** A history point's numeric value. `end` selects the bucket edge for a
+ *  cumulative counter: 'lo' (min) for a window start, 'hi' (max) for its end;
+ *  raw points carry a single `value`. */
+function ptVal(p: TelemetryPoint, end: 'lo' | 'hi'): number {
+  if (p.value !== undefined) return p.value;
+  if (end === 'lo') return p.min ?? p.avg ?? NaN;
+  return p.max ?? p.avg ?? NaN;
+}
 
 /** Combined token → meaning lookup for a transition `reason`/state (any vocab). */
 const ANY_MEANING = { ...STOP_REASON_MEANINGS, ...FAULT_MEANINGS, ...OUTCOME_MEANINGS, ...SYSTEM_STATE_MEANINGS };
@@ -63,7 +73,21 @@ const CHART = {
       }
       <div class="flex items-baseline justify-between gap-2 mb-2">
         <span class="text-xs font-medium text-base-content/60 truncate">{{ widget().title }}</span>
-        @if (widget().unit && widget().kind !== 'gauge' && widget().kind !== 'valve') {
+        @if (isCharted()) {
+          <!-- Unit + per-chart timescale. Spans are capped at the 30d retention
+               ceiling (see SPAN_PRESETS), so every option returns real data. -->
+          <div class="flex items-center gap-1 shrink-0">
+            @if (widget().unit) {
+              <span class="text-[10px] text-base-content/40">{{ widget().unit }}</span>
+            }
+            <select class="select select-xs select-ghost h-5 min-h-0 px-1 -my-1 text-[10px] text-base-content/50"
+              [value]="span()" (change)="onSpanChange($event)" (click)="$event.stopPropagation()">
+              @for (p of spanPresets; track p.hours) {
+                <option [value]="p.hours">{{ p.label }}</option>
+              }
+            </select>
+          </div>
+        } @else if (widget().unit && widget().kind !== 'gauge' && widget().kind !== 'valve') {
           <span class="text-[10px] text-base-content/40 shrink-0">{{ widget().unit }}</span>
         }
       </div>
@@ -94,6 +118,12 @@ const CHART = {
               <span class="text-[11px] text-base-content/50">Total</span>
               <span class="text-lg font-semibold tabular-nums">{{ flowTotal() }}<span class="text-xs font-normal text-base-content/40 ml-1">L</span></span>
             </div>
+            @if (windowUsed() !== null) {
+              <div class="flex items-baseline justify-between mt-1">
+                <span class="text-[11px] text-base-content/50">Used · {{ spanLabel() }}</span>
+                <span class="text-sm font-semibold tabular-nums">{{ fmtUsed() }}<span class="text-xs font-normal text-base-content/40 ml-1">L</span></span>
+              </div>
+            }
           </div>
         }
         @case ('stat') {
@@ -184,7 +214,14 @@ export class DashboardCardComponent {
   /** Companion cumulative-total shadow row for a `flow` widget. */
   readonly totalRow = input<ShadowRow | undefined>(undefined);
   readonly series = input<TelemetryPoint[]>([]);
+  /** Cumulative-total series for a `flow` widget, over the selected span — drives
+   *  the "used in window" readout. */
+  readonly totalSeries = input<TelemetryPoint[]>([]);
   readonly events = input<StateEventRow[]>([]);
+  /** Current chart span in hours (line/flow only). */
+  readonly span = input<number>(DEFAULT_SPAN_HOURS);
+  /** Operator picked a new span for this chart. */
+  readonly spanChange = output<number>();
   /** Compact rendering for the dense status strip (small chips, no min height). */
   readonly dense = input(false);
   /** Owning controller's name + colour, shown only when a site has >1 controller. */
@@ -241,6 +278,33 @@ export class DashboardCardComponent {
   protected flowTotal = computed(() => {
     const r = this.totalRow();
     return r ? fmt(r.reported) : '—';
+  });
+
+  /** Span selector data + helpers (line/flow charts only). */
+  protected readonly spanPresets = SPAN_PRESETS;
+  protected isCharted = computed(() => this.widget().kind === 'line' || this.widget().kind === 'flow');
+  protected spanLabel = computed(() =>
+    SPAN_PRESETS.find((p) => p.hours === this.span())?.label ?? `${this.span()}h`,
+  );
+  protected onSpanChange(e: Event): void {
+    const hours = Number((e.target as HTMLSelectElement).value);
+    if (Number.isFinite(hours) && hours > 0) this.spanChange.emit(hours);
+  }
+
+  /** Water used over the selected window: cumulative-total delta (last − first),
+   *  clamped at 0 so a counter reset on reboot reads as no usage rather than a
+   *  large negative. null when there isn't enough of the total series to span. */
+  protected windowUsed = computed<number | null>(() => {
+    const s = this.totalSeries();
+    if (s.length < 2) return null;
+    const first = ptVal(s[0], 'lo');
+    const last = ptVal(s[s.length - 1], 'hi');
+    if (Number.isNaN(first) || Number.isNaN(last)) return null;
+    return Math.max(0, last - first);
+  });
+  protected fmtUsed = computed(() => {
+    const u = this.windowUsed();
+    return u === null ? '—' : fmt(u);
   });
 
   protected badge = computed<{ label: string; cls: string }>(() => {

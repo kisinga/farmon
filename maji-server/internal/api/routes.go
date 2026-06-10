@@ -47,6 +47,7 @@ var commandActions = map[string]bool{
 	"route_start": true, "route_stop": true, "fault_reset": true,
 	"stop_all": true, "reset_faults": true, "clear_queue": true,
 	"node_set": true, "safety_override": true, "automation_set": true,
+	"config_set": true,
 }
 
 // routeActions are the commands that require a route_id.
@@ -59,6 +60,9 @@ var routeActions = map[string]bool{
 var nodeActions = map[string]bool{"node_set": true}
 var automationActions = map[string]bool{"automation_set": true}
 var onActions = map[string]bool{"node_set": true, "safety_override": true, "automation_set": true}
+
+// configActions require a key (which number entity) + value (the new setpoint).
+var configActions = map[string]bool{"config_set": true}
 
 // readCABlock returns the PEM of the last CERTIFICATE block in the file at path.
 // fullchain.pem holds a single self-signed broker cert, so this returns that cert; the
@@ -218,13 +222,15 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 	// the command (audit), then publish it to the device over MQTT.
 	g.POST("/command", func(e *core.RequestEvent) error {
 		var body struct {
-			Site         string `json:"site"`
-			Controller   string `json:"controller"`
-			Action       string `json:"action"`
-			RouteID      *int   `json:"route_id"`
-			NodeID       string `json:"node_id"`
-			AutomationID string `json:"automation_id"`
-			On           *bool  `json:"on"`
+			Site         string   `json:"site"`
+			Controller   string   `json:"controller"`
+			Action       string   `json:"action"`
+			RouteID      *int     `json:"route_id"`
+			NodeID       string   `json:"node_id"`
+			AutomationID string   `json:"automation_id"`
+			On           *bool    `json:"on"`
+			Key          string   `json:"key"`
+			Value        *float64 `json:"value"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return apis.NewBadRequestError("invalid body", err)
@@ -247,6 +253,9 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		if onActions[body.Action] && body.On == nil {
 			return apis.NewBadRequestError("on is required for "+body.Action, nil)
 		}
+		if configActions[body.Action] && (body.Key == "" || body.Value == nil) {
+			return apis.NewBadRequestError("key and value are required for "+body.Action, nil)
+		}
 
 		commandID := security.RandomString(15)
 
@@ -264,6 +273,12 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		}
 		if body.AutomationID != "" {
 			rec.Set("automation_id", body.AutomationID)
+		}
+		if body.Key != "" {
+			rec.Set("config_key", body.Key)
+		}
+		if body.Value != nil {
+			rec.Set("config_value", *body.Value)
 		}
 		rec.Set("status", "sent")
 		rec.Set("issued_by", e.Auth.Id)
@@ -292,6 +307,12 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		}
 		if body.On != nil {
 			envelope["on"] = *body.On
+		}
+		if body.Key != "" {
+			envelope["key"] = body.Key
+		}
+		if body.Value != nil {
+			envelope["value"] = *body.Value
 		}
 		payload, _ := json.Marshal(envelope)
 		if err := pub.Publish(telemetry.CommandTopic(body.Site, body.Controller), payload, false, 1); err != nil {

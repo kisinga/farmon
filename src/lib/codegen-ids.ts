@@ -213,6 +213,41 @@ export const STOP_REASON_SENSOR = 'stop_reason';
  *  the firmware ROUTES[] index (== the dashboard's routeId). */
 export const routeStateSensor = (routeId: number): string => `route_${routeId}_state`;
 
+/** ESPHome `number:` id for a route's runtime-tunable tank-% setpoints. This one
+ *  string is the firmware entity id, the `config_set` payload key, the telemetry
+ *  sensor the current value is published under, AND the id the dashboard editor
+ *  reads/writes — single-sourced so none of those four can drift. */
+export const routeSourceMinNumber = (routeId: number): string => `route_${routeId}_source_min_pct`;
+export const routeDestMaxNumber = (routeId: number): string => `route_${routeId}_dest_max_pct`;
+
+/** A runtime-settable config number: `key` is its ESPHome number id (also the
+ *  config_set key + the telemetry sensor it publishes under); `routeId`/`field`
+ *  let the UI label it and seed the placeholder from the route's baked default. */
+export interface ConfigSetpoint {
+  key: string;
+  routeId: number;
+  field: 'source_min_pct' | 'dest_max_pct';
+}
+
+/** Enumerate the per-route setpoints a controller exposes for live tuning, in
+ *  stable route order. One list drives the config_set dispatch, the config
+ *  telemetry publish, and the dashboard editor — so they can never disagree.
+ *
+ *  A setpoint exists only when its tank endpoint has a level reading: the
+ *  firmware emits the `number:` entity under the SAME `source_has_level` /
+ *  `dest_has_level` gate (sensors.ts), so enumerating an ungated route would name
+ *  an `id()` that was never declared. Pass the manifest routes, not a count. */
+export function collectConfigSetpoints(
+  routes: ReadonlyArray<{ source_has_level?: boolean; dest_has_level?: boolean }>,
+): ConfigSetpoint[] {
+  const out: ConfigSetpoint[] = [];
+  routes.forEach((r, i) => {
+    if (r.source_has_level) out.push({ key: routeSourceMinNumber(i), routeId: i, field: 'source_min_pct' });
+    if (r.dest_has_level) out.push({ key: routeDestMaxNumber(i), routeId: i, field: 'dest_max_pct' });
+  });
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Command vocabulary — issued by the dashboard, relayed + audited by the
 // server, handled by the firmware. Mirrors the legacy HA api: services and the
@@ -229,7 +264,8 @@ export type CommandAction =
   | 'clear_queue'      // (no args)
   | 'node_set'         // { node_id, on } — manual claim/release of any actuator
   | 'safety_override'  // { on } — toggle the commissioning bypass switch (see note)
-  | 'automation_set';  // { automation_id, on } — pause/resume a baked schedule (see note)
+  | 'automation_set'   // { automation_id, on } — pause/resume a baked schedule (see note)
+  | 'config_set';      // { key, value } — set a runtime number entity (see note)
 
 /**
  * Commands older than this many seconds (now - issued_at, by the device's SNTP
@@ -262,6 +298,11 @@ export type CommandEnvelope = { command_id: string; issued_at: number } & (
   // alone. The on/off state PERSISTS across reboot/OTA (the on-device switch
   // restores its last value), so a pause stays until explicitly resumed.
   | { action: 'automation_set'; automation_id: string; on: boolean }
+  // config_set: write a runtime-tunable `number:` entity by its id (`key`) — e.g.
+  // a route's source-min / dest-max tank-% setpoint (see collectConfigSetpoints).
+  // The device persists it (restore_value) and re-publishes the value; an
+  // out-of-range value falls back to the topology-baked default in the getter.
+  | { action: 'config_set'; key: string; value: number }
 );
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import { TelemetryStore } from './telemetry.store';
 import { DashboardCardComponent } from './widgets/dashboard-card.component';
 import { RouteCardComponent } from './widgets/route-card.component';
 import { SiteThresholdsComponent } from './widgets/site-thresholds.component';
+import { RouteSetpointsComponent } from './widgets/route-setpoints.component';
 import type { RouteControl } from '@core';
 
 /**
@@ -21,7 +22,7 @@ import type { RouteControl } from '@core';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent],
+  imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent, RouteSetpointsComponent],
   providers: [DashboardStore, TelemetryStore],
   host: { class: 'flex-1 overflow-auto' },
   template: `
@@ -214,11 +215,13 @@ import type { RouteControl } from '@core';
           </section>
         }
 
-        <!-- Per-site alert thresholds (tank low/high, offline timeout). Owner/admin
-             editable; read-only otherwise. Feeds the bell + the email sweep. -->
+        <!-- Per-site config: alert thresholds (server-stored, feed the bell + email
+             sweep) and route setpoints (device control values, pushed live over
+             MQTT). Co-located, distinct backends. Owner/admin editable. -->
         @if (siteId) {
           <section class="mb-6">
             <app-site-thresholds [siteId]="siteId" [canEdit]="canControl()" />
+            <app-route-setpoints [siteId]="siteId" [controllers]="store.spec().controllers" [canEdit]="canControl()" />
           </section>
         }
 
@@ -275,12 +278,15 @@ import type { RouteControl } from '@core';
                     [row]="store.rowFor(w)"
                     [totalRow]="store.row(w.controller, w.totalSensor)"
                     [series]="telemetry.seriesFor(w)"
+                    [totalSeries]="telemetry.totalSeriesFor(w)"
+                    [span]="telemetry.spanFor(w)"
                     [events]="store.eventsFor(w.controller)"
                     [actuatable]="isActuatable(w)"
                     [held]="actuatorHeld(w)"
                     [actuatorBusy]="actuatorBusyFor(w)"
                     [actuatorKind]="actuatorFor(w)?.kind ?? ''"
                     (toggle)="toggleWidgetActuator(w)"
+                    (spanChange)="onSpanChange(w, $event)"
                   />
                 </div>
               }
@@ -632,10 +638,16 @@ export class DashboardComponent implements OnDestroy {
     }
     const spec = buildDashboardSpec(parseTopology(topology));
     await this.store.init(this.siteId, spec);
-    // Backfill history for the charted widgets (line + flow rate).
+    // Backfill history for the charted widgets (line + flow rate). Each uses its
+    // own remembered span (telemetry.load defaults to the widget's stored span).
     for (const w of spec.widgets) {
       if (w.kind === 'line' || w.kind === 'flow') void this.telemetry.load(this.siteId, w);
     }
+  }
+
+  /** Operator picked a new timescale for a chart — reload it at that span. */
+  protected onSpanChange(w: DashboardWidget, hours: number): void {
+    if (this.siteId) void this.telemetry.setSpan(this.siteId, w, hours);
   }
 
   protected key(controller: string, action: CommandAction, routeId?: number): string {

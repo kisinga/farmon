@@ -576,7 +576,7 @@ export class BackendService {
     siteId: string,
     controller: string,
     action: CommandAction,
-    args: { routeId?: number; nodeId?: string; automationId?: string; on?: boolean } = {},
+    args: { routeId?: number; nodeId?: string; automationId?: string; on?: boolean; key?: string; value?: number } = {},
   ): Promise<string> {
     const res = await this.pb.send<{ command_id?: string }>('/api/farmon/command', {
       method: 'POST',
@@ -588,6 +588,8 @@ export class BackendService {
         node_id: args.nodeId,
         automation_id: args.automationId,
         on: args.on,
+        key: args.key,
+        value: args.value,
       },
     });
     if (!res.command_id) throw new Error('Command was not accepted.');
