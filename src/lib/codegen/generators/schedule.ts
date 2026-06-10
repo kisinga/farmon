@@ -1,17 +1,11 @@
 import type { Manifest } from '@core';
-import { findRouteAutomationSensor, pressureSensorLevelId } from '@core';
+import {
+  findRouteAutomationSensor, pressureSensorLevelId,
+  validAutomations, automationEnableSwitchId, yamlString,
+} from '@core';
 
 /** ESPHome day token (MON..SUN) from a day name ("Monday"/"mon" → "MON"). */
 const DAY3 = (d: string) => d.toUpperCase().slice(0, 3);
-
-/** Enabled, valid schedule automations (name + resolvable route). */
-function validAutomations(m: Manifest) {
-  return m.automations.filter(
-    (a) =>
-      a.enabled && a.name && a.route_key &&
-      a.route_index >= 0 && a.route_index < m.routes.length,
-  );
-}
 
 /** True when the device has at least one enabled, valid schedule automation. */
 export function hasSchedule(m: Manifest): boolean {
@@ -43,6 +37,14 @@ export function hasTimeSchedule(m: Manifest): boolean {
  * Known simplifications vs the old HA automations (intentional, not silent): the
  * HA `for_minutes` debounce and per-trigger weekday filter on *level* triggers
  * are not applied on-device yet; time triggers keep their weekday filter.
+ *
+ * Each baked automation also gets a persistent template switch (id from
+ * automationEnableSwitchId) that GATES its trigger, so an operator can pause /
+ * resume it at runtime from the dashboard (over MQTT, action `automation_set`)
+ * without a rebuild. restore_mode RESTORE_DEFAULT_ON: enabled on first flash
+ * (design intent), then restores the last runtime value across reboot/OTA — a
+ * pause stays paused. Pausing gates FUTURE triggers only; a running route is
+ * unaffected.
  */
 export function generateSchedule(m: Manifest): string | null {
   const valid = validAutomations(m);
@@ -57,9 +59,26 @@ export function generateSchedule(m: Manifest): string | null {
     '# AUTO-GENERATED. Replaces Home Assistant schedule automations: triggers fire on',
     '# the ESP32 and call try_route_start(); the state machine decides whether the',
     '# start is safe. No external scheduler required.',
+    '#',
+    '# Each automation has an enable switch that gates its trigger; the dashboard',
+    '# flips it over MQTT (action automation_set) to pause/resume without a rebuild.',
     '# =============================================================================',
     '',
   ];
+
+  // Per-automation enable switch (persists across reboot; merges with the
+  // switch: block in control.yaml). Default ON = the design-time enabled state
+  // these baked automations already carry.
+  out.push('switch:');
+  for (const a of valid) {
+    out.push(`  # ${a.name} — gates the trigger for route ${a.route_index} [${a.route_name}]`);
+    out.push('  - platform: template');
+    out.push(`    name: ${yamlString(`Schedule: ${a.name}`)}`);
+    out.push(`    id: ${automationEnableSwitchId(a.id)}`);
+    out.push('    optimistic: true');
+    out.push('    restore_mode: RESTORE_DEFAULT_ON');
+  }
+  out.push('');
 
   if (timeAutos.length > 0) {
     out.push('time:');
@@ -82,7 +101,7 @@ export function generateSchedule(m: Manifest): string | null {
         out.push(`        days_of_week: [${a.days_of_week.map(DAY3).join(', ')}]`);
       }
       out.push('        then:');
-      out.push(`          - lambda: 'if (id(time_trusted)) try_route_start(${a.route_index}, "");'`);
+      out.push(`          - lambda: 'if (id(time_trusted) && id(${automationEnableSwitchId(a.id)}).state) try_route_start(${a.route_index}, "");'`);
     }
     out.push('');
   }
@@ -104,14 +123,20 @@ export function generateSchedule(m: Manifest): string | null {
         );
       }
       const levelId = pressureSensorLevelId({ id: found.sensorId });
+      const sw = automationEnableSwitchId(a.id);
       const thr = route.source_min_pct;
-      body.push(`// ${a.name}: start route ${a.route_index} [${a.route_name}] when ${levelId} rises above ${thr}%`);
+      body.push(`// ${a.name}: start route ${a.route_index} [${a.route_name}] when ${levelId} rises above ${thr}% (gated by ${sw})`);
       body.push('{');
       body.push(`  static bool armed_${i} = true;`);
       body.push(`  float v = id(${levelId}).state;`);
       body.push('  if (!std::isnan(v)) {');
-      body.push(`    if (v > ${thr}.0f && armed_${i}) { try_route_start(${a.route_index}, ""); armed_${i} = false; }`);
-      body.push(`    else if (v <= ${thr}.0f) armed_${i} = true;`);
+      body.push(`    if (v > ${thr}.0f) {`);
+      // Fire only when enabled, but disarm on high REGARDLESS — so resuming a
+      // paused schedule never retroactively starts for a crossing that happened
+      // while it was paused; it waits for a fresh rise above the threshold.
+      body.push(`      if (armed_${i} && id(${sw}).state) try_route_start(${a.route_index}, "");`);
+      body.push(`      armed_${i} = false;`);
+      body.push(`    } else armed_${i} = true;`);
       body.push('  }');
       body.push('}');
     });

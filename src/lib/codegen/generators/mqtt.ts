@@ -4,7 +4,7 @@ import {
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
   COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
-  localNodesWithFlag,
+  localNodesWithFlag, validAutomations, automationEnableSwitchId,
 } from '@core';
 import type { GenerationMetadata } from "../backends/types";
 import { hasTimeSchedule } from "./schedule";
@@ -68,6 +68,22 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
   // publishes and what the UI reads can never drift.
   const channels = collectTelemetryChannels(m);
   const hasManualPumps = localNodesWithFlag(m, 'isPump').length > 0;
+  const autos = validAutomations(m);
+
+  // automation_set: pause (off) / resume (on) a baked schedule by its stable id,
+  // by flipping its persistent enable switch (schedule.yaml). One strcmp per baked
+  // automation; the switch restores across reboot, so the pause sticks. Emitted
+  // only when there are baked automations to toggle.
+  const automationCases = autos.length === 0 ? [] : [
+    '} else if (strcmp(action, "automation_set") == 0) {',
+    '  const char* aid = x["automation_id"] | "";',
+    '  bool on = x["on"] | false;',
+    ...autos.map((a, i) => {
+      const sw = automationEnableSwitchId(a.id);
+      const lead = i === 0 ? 'if' : 'else if';
+      return `  ${lead} (strcmp(aid, "${a.id}") == 0) { if (on) id(${sw}).turn_on(); else id(${sw}).turn_off(); }`;
+    }),
+  ];
 
   // SNTP wall clock for the command TTL gate. Emit it here UNLESS an on-device
   // time schedule already declares `time: sntp` (id: sntp_time) — that way there
@@ -171,6 +187,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     '  }',
     '} else if (strcmp(action, "safety_override") == 0) {',
     '  if (x["on"] | false) id(safety_override).turn_on(); else id(safety_override).turn_off();',
+    ...automationCases,
     '} else {',
     '  ESP_LOGW("cmd", "unknown action: %s", action);',
     '}',
@@ -261,6 +278,13 @@ mqtt:
   # autonomously and is an island when the server is down. An unreachable or
   # rejecting broker must never reboot it. 0s disables ESPHome's 15-min default.
   reboot_timeout: 0s
+  # Publish from a dedicated MQTT task, not the main loop. ESPHome republishes
+  # every entity's state on connect; run synchronously on the main loop that
+  # burst can exceed the 5s task watchdog and reboot the controller (relays drop)
+  # — a weak link only widens the window. Async = the loop enqueues and the mqtt
+  # task sends; a stalled link drops messages instead of rebooting. esp-idf/esp32
+  # only, which this firmware targets exclusively (no arduino/esp8266 backend).
+  idf_send_async: true
   # We publish our own telemetry/event/status on absolute topics (in the lambdas
   # below). ESPHome still auto-publishes each entity's state under topic_prefix;
   # we segregate those under .../esphome/* so they never collide with our scheme

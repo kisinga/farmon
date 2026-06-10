@@ -46,7 +46,7 @@ type Publisher interface {
 var commandActions = map[string]bool{
 	"route_start": true, "route_stop": true, "fault_reset": true,
 	"stop_all": true, "reset_faults": true, "clear_queue": true,
-	"node_set": true, "safety_override": true,
+	"node_set": true, "safety_override": true, "automation_set": true,
 }
 
 // routeActions are the commands that require a route_id.
@@ -54,9 +54,11 @@ var routeActions = map[string]bool{
 	"route_start": true, "route_stop": true, "fault_reset": true,
 }
 
-// nodeActions require a node_id (which actuator); onActions require an on bool.
+// nodeActions require a node_id (which actuator); automationActions require an
+// automation_id (which schedule); onActions require an on bool.
 var nodeActions = map[string]bool{"node_set": true}
-var onActions = map[string]bool{"node_set": true, "safety_override": true}
+var automationActions = map[string]bool{"automation_set": true}
+var onActions = map[string]bool{"node_set": true, "safety_override": true, "automation_set": true}
 
 // readCABlock returns the PEM of the last CERTIFICATE block in the file at path.
 // fullchain.pem holds a single self-signed broker cert, so this returns that cert; the
@@ -216,12 +218,13 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 	// the command (audit), then publish it to the device over MQTT.
 	g.POST("/command", func(e *core.RequestEvent) error {
 		var body struct {
-			Site       string `json:"site"`
-			Controller string `json:"controller"`
-			Action     string `json:"action"`
-			RouteID    *int   `json:"route_id"`
-			NodeID     string `json:"node_id"`
-			On         *bool  `json:"on"`
+			Site         string `json:"site"`
+			Controller   string `json:"controller"`
+			Action       string `json:"action"`
+			RouteID      *int   `json:"route_id"`
+			NodeID       string `json:"node_id"`
+			AutomationID string `json:"automation_id"`
+			On           *bool  `json:"on"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return apis.NewBadRequestError("invalid body", err)
@@ -237,6 +240,9 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		}
 		if nodeActions[body.Action] && body.NodeID == "" {
 			return apis.NewBadRequestError("node_id is required for "+body.Action, nil)
+		}
+		if automationActions[body.Action] && body.AutomationID == "" {
+			return apis.NewBadRequestError("automation_id is required for "+body.Action, nil)
 		}
 		if onActions[body.Action] && body.On == nil {
 			return apis.NewBadRequestError("on is required for "+body.Action, nil)
@@ -255,6 +261,9 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		rec.Set("action", body.Action)
 		if body.RouteID != nil {
 			rec.Set("route_id", *body.RouteID)
+		}
+		if body.AutomationID != "" {
+			rec.Set("automation_id", body.AutomationID)
 		}
 		rec.Set("status", "sent")
 		rec.Set("issued_by", e.Auth.Id)
@@ -277,6 +286,9 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		}
 		if body.NodeID != "" {
 			envelope["node_id"] = body.NodeID
+		}
+		if body.AutomationID != "" {
+			envelope["automation_id"] = body.AutomationID
 		}
 		if body.On != nil {
 			envelope["on"] = *body.On

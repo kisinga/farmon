@@ -23,7 +23,11 @@ export function generateDeviceYaml(
 
   // --- Substitutions (inline, not a separate file) ---
   const subs: Record<string, string> = {
-    device_name: m.device.name,
+    // ESPHome `name:` is the device hostname (mDNS / DHCP). Underscores there are
+    // discouraged (esphome.io faq — they trip some DHCP / local-name services), so
+    // hyphenate for the hostname only. The controller IDENTITY (MQTT username,
+    // topic segment, device_id) is metadata.controllerId and is untouched.
+    device_name: m.device.name.replace(/_/g, '-'),
     friendly_name: m.device.friendly_name,
     update_interval: `${m.timing.update_interval}s`,
   };

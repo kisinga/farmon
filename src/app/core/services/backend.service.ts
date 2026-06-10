@@ -576,7 +576,7 @@ export class BackendService {
     siteId: string,
     controller: string,
     action: CommandAction,
-    args: { routeId?: number; nodeId?: string; on?: boolean } = {},
+    args: { routeId?: number; nodeId?: string; automationId?: string; on?: boolean } = {},
   ): Promise<string> {
     const res = await this.pb.send<{ command_id?: string }>('/api/farmon/command', {
       method: 'POST',
@@ -586,6 +586,7 @@ export class BackendService {
         action,
         route_id: args.routeId,
         node_id: args.nodeId,
+        automation_id: args.automationId,
         on: args.on,
       },
     });

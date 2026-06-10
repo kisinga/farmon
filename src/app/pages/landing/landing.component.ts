@@ -480,7 +480,7 @@ export class LandingComponent {
     {
       name: 'Hosted',
       mode: 'Hosted by us',
-      price: 'From KES 35,000',
+      price: 'From KES 55,000',
       priceNote: 'per controller · + KES 4,000/year after year one',
       tagline: 'The simplest, lowest-cost way to get your water online. We run everything for you; you just sign in to watch and control.',
       badge: 'Most popular',

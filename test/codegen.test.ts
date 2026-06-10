@@ -8,7 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifestForController, reservedPins } from "@core";
+import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifestForController, reservedPins, collectTelemetryChannels, buildDashboardSpec } from "@core";
 import { type BoardDef } from "@core";
 import { loadBoard } from "./helpers";
 import { validateAll } from "@core/rules";
@@ -171,9 +171,31 @@ assert(boardPkg.includes("font_top_bar"), "OLED font (board has OLED)");
 assert(boardPkg.includes("wifi_dbm"), "WiFi signal sensor");
 assert(boardPkg.includes("uptime_sec"), "Uptime sensor");
 
+// --- Logging hygiene (INFO floor + noisy tags at WARN) ---
+// Default DEBUG reprints every sensor/cover/number each loop — a firehose that
+// also fed a logger->MQTT storm. INFO floor + per-tag WARN trims it; firmware
+// tags (ctrl/safety) stay loud via the floor.
+assert(
+  /level:\s*INFO/.test(boardPkg) && /sensor:\s*WARN/.test(boardPkg),
+  "Logger trimmed — INFO floor, chatty component tags at WARN",
+);
+
+// --- Provisioning surfaces (BLE dropped for heap) ---
+// esp32_improv (BLE) costs ~95KB heap and bootlooped managed/TLS builds; dropped.
+// captive_portal (AP) + improv_serial (USB) remain as the wifi (re)provision paths.
+assert(
+  !boardPkg.includes("esp32_improv") && boardPkg.includes("improv_serial"),
+  "BLE provisioning dropped, serial-improv kept (heap reclaim)",
+);
+assert(
+  boardPkg.includes("captive_portal"),
+  "captive_portal kept — AP-mode wifi reprovision path",
+);
+
 // --- Server-unavailability reboot safety ---
 // A controller runs local control autonomously and is an island when upstream
-// is down; neither a dead AP nor a rejecting/unreachable broker may reboot it.
+// is down; neither a dead AP nor a rejecting/unreachable broker may reboot it,
+// nor may a weak/congested link stall the main loop into a watchdog reset.
 assert(
   /reboot_timeout:\s*['"]?0s['"]?/.test(boardPkg),
   "WiFi reboot_timeout disabled (0s) — AP loss never reboots",
@@ -182,6 +204,18 @@ const mqttYaml = getFile("mqtt.yaml");
 assert(
   /reboot_timeout:\s*['"]?0s['"]?/.test(mqttYaml),
   "MQTT reboot_timeout disabled (0s) — broker loss never reboots",
+);
+assert(
+  /idf_send_async:\s*true/.test(mqttYaml),
+  "MQTT idf_send_async on — publish off the main loop, weak link never trips the task watchdog",
+);
+assert(
+  mqttYaml.includes("log_topic:") && /level:\s*WARN/.test(mqttYaml),
+  "MQTT raw log_topic gated to WARN+ — can't feedback-storm the broker into heap exhaustion",
+);
+assert(
+  /telemetry\/heap_free/.test(mqttYaml),
+  "Heap telemetry published — free heap is the binding constraint; watch it fleet-wide",
 );
 
 // --- Device-facing TLS (certificate_authority embedding) ---
@@ -209,6 +243,10 @@ assert(/port:\s*8883/.test(tlsMqtt), "TLS: port 8883");
 console.log("\ndevice YAML (generated):");
 const deviceYaml = getFile("pump-controller.yaml");
 assert(deviceYaml.includes("name: ${device_name}"), "ESPHome name sub");
+// Hostname (esphome name) must avoid underscores (DHCP/mDNS warning) — the
+// friendly_name "Pump-ctrl" slugs to "pump_ctrl"; the device_name sub hyphenates.
+assert(deviceYaml.includes("device_name: pump-ctrl"), "ESPHome name sub hyphenates hostname");
+assert(!deviceYaml.includes("device_name: pump_ctrl"), "No underscore in device hostname");
 assert(deviceYaml.includes("packages/routes.h"), "Includes routes.h");
 assert(deviceYaml.includes("common/board.yaml"), "Includes board package");
 assert(deviceYaml.includes("packages/control.yaml"), "Includes control");
@@ -619,7 +657,7 @@ assert(kcBoardPkgWifi.includes("wifi:"), "transport=wifi: has wifi: section");
 // captive_portal exist solely as a credential-recovery hatch alongside
 // Improv (which is the preferred modern path).
 assert(kcBoardPkgWifi.includes("captive_portal"), "transport=wifi: has captive_portal (only AP-mode HTTP surface)");
-assert(kcBoardPkgWifi.includes("esp32_improv"), "transport=wifi: has esp32_improv (BLE recovery)");
+assert(!kcBoardPkgWifi.includes("esp32_improv"), "transport=wifi: no esp32_improv (BLE provisioning dropped for heap)");
 assert(kcBoardPkgWifi.includes("improv_serial"), "transport=wifi: has improv_serial (USB recovery)");
 assert(kcBoardPkgWifi.includes("ap:"), "transport=wifi: has ap: fallback hotspot");
 assert(kcBoardPkgWifi.includes("web_server:"), "transport=wifi: has web_server");
@@ -827,6 +865,105 @@ assert(pumpRoutes.includes('ri_dst_tank'), "Routes dispatch uses ri_dst_tank for
 // Local hardware should still be generated for pump-ctrl's own nodes
 assert(pumpCollect.switches.some(y => y.includes('pump1_relay')), "Local pump1 relay generated");
 assert(pumpCollect.sensors.some(y => y.includes('id: flow1')), "Local flow sensor generated");
+
+// =============================================================================
+// Schedules — runtime pause/resume of baked automations
+// =============================================================================
+
+console.log("\nSchedules (runtime pause/resume):");
+
+// A topology with a time + a level automation (both enabled) plus one disabled,
+// over the proven pumped-pressure route. The disabled one must NOT be baked.
+const scheduledTopo = parseTopology({
+  ...pumpedPressureTopology(true, true),
+  automations: [
+    { id: 'auto_time1', name: 'Morning Fill', route: 'source_tank>dest_tank#route_valve',
+      trigger: { type: 'time', at: '06:00' }, days_of_week: ['MON', 'WED', 'FRI'], enabled: true },
+    { id: 'auto_lvl1', name: 'Top Up', route: 'source_tank>dest_tank#route_valve',
+      trigger: { type: 'level' }, days_of_week: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'], enabled: true },
+    // Name with a double-quote — the switch name: must stay valid YAML (yamlString).
+    { id: 'auto_q', name: 'Night "deep" fill', route: 'source_tank>dest_tank#route_valve',
+      trigger: { type: 'time', at: '23:00' }, days_of_week: ['SUN'], enabled: true },
+    { id: 'auto_off', name: 'Disabled One', route: 'source_tank>dest_tank#route_valve',
+      trigger: { type: 'time', at: '08:00' }, days_of_week: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'], enabled: false },
+  ],
+});
+
+const schedManifest = topologyToManifestForController(scheduledTopo, 'pressure-runtime');
+const schedFiles = generateAll(schedManifest, board, 'sched-site', undefined, createTestMetadata(), {});
+const schedMap = new Map(schedFiles.map((f) => [f.relativePath, f.content]));
+const getSched = (suffix: string): string => {
+  for (const [k, v] of schedMap) if (k.endsWith(suffix)) return v;
+  throw new Error(`No generated file ending with "${suffix}"`);
+};
+
+const scheduleYaml = getSched("schedule.yaml");
+const mqttYamlSched = getSched("mqtt.yaml");
+
+// Both files must still be parseable YAML after the additions.
+for (const [suffix, content] of [["schedule.yaml", scheduleYaml], ["mqtt.yaml", mqttYamlSched]] as const) {
+  let ok = true;
+  try { parseYaml(content); } catch { ok = false; }
+  assert(ok, `${suffix} is valid YAML`);
+}
+
+// Enable switch per baked automation (persists across reboot), none for disabled.
+assert(scheduleYaml.includes("id: auto_time1_enabled"), "schedule: enable switch for the time automation");
+assert(scheduleYaml.includes("id: auto_lvl1_enabled"), "schedule: enable switch for the level automation");
+assert(!scheduleYaml.includes("auto_off_enabled"), "schedule: no switch for the disabled automation");
+assert(
+  (scheduleYaml.match(/restore_mode: RESTORE_DEFAULT_ON/g) ?? []).length === 3,
+  "schedule: enable switches persist across reboot (RESTORE_DEFAULT_ON)",
+);
+// A double-quote in a schedule name must be escaped, not break the YAML.
+assert(
+  scheduleYaml.includes('name: "Schedule: Night \\"deep\\" fill"'),
+  "schedule: user name with a quote is YAML-escaped",
+);
+// Triggers gated on the switch.
+assert(
+  scheduleYaml.includes("id(time_trusted) && id(auto_time1_enabled).state"),
+  "schedule: time trigger gated on its enable switch",
+);
+assert(scheduleYaml.includes("id(auto_lvl1_enabled).state"), "schedule: level trigger gated on its enable switch");
+
+// MQTT command handler dispatches automation_set into the switch.
+assert(mqttYamlSched.includes('strcmp(action, "automation_set")'), "mqtt: handles the automation_set command");
+assert(
+  mqttYamlSched.includes('strcmp(aid, "auto_time1")') && mqttYamlSched.includes("id(auto_time1_enabled).turn_on()"),
+  "mqtt: automation_set flips the matching enable switch",
+);
+assert(!mqttYamlSched.includes("auto_off_enabled"), "mqtt: disabled automation is not dispatchable");
+
+// Telemetry: a bool enable channel per baked automation, none for disabled.
+const schedChannels = collectTelemetryChannels(schedManifest);
+assert(
+  schedChannels.some((c) => c.sensor === "auto_time1_enabled" && c.kind === "bool"),
+  "telemetry: bool enable channel for the time automation",
+);
+assert(
+  schedChannels.some((c) => c.sensor === "auto_lvl1_enabled" && c.kind === "bool"),
+  "telemetry: bool enable channel for the level automation",
+);
+assert(!schedChannels.some((c) => c.sensor === "auto_off_enabled"), "telemetry: no channel for the disabled automation");
+
+// Dashboard spec: baked schedules become controls (not chart widgets).
+const schedSpec = buildDashboardSpec(scheduledTopo);
+const schedCtrl = schedSpec.controllers[0];
+assert(schedCtrl.automations.length === 3, "dashboard: three baked schedules exposed (disabled excluded)");
+assert(
+  schedCtrl.automations.some((a) => a.id === "auto_time1" && a.enableSensor === "auto_time1_enabled"),
+  "dashboard: time automation control built with its enable sensor",
+);
+assert(schedCtrl.automations.some((a) => a.trigger.includes("06:00")), "dashboard: time trigger summarised");
+assert(
+  schedCtrl.automations.some((a) => a.trigger.toLowerCase().includes("source")),
+  "dashboard: level trigger summarised",
+);
+assert(
+  !schedSpec.widgets.some((w) => w.sensor === "auto_time1_enabled" || w.sensor === "auto_lvl1_enabled"),
+  "dashboard: enable channels are controls, not chart widgets",
+);
 
 // --- Summary ---
 

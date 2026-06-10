@@ -123,3 +123,18 @@ export function nodesByKind<K extends TopologyNode['kind'], T extends { kind: st
 ): Extract<T, { kind: K }>[] {
   return nodes.filter((n): n is Extract<T, { kind: K }> => n.kind === kind);
 }
+
+/**
+ * The automations that actually get baked into firmware: enabled, named, and
+ * pointing at a route that resolves. This is the SINGLE definition of the baked
+ * set — schedule codegen emits triggers + enable switches for exactly these,
+ * telemetry publishes an enable channel for each, and the dashboard shows a
+ * toggle per one. Sharing it guarantees those three never drift.
+ */
+export function validAutomations(m: Manifest): ManifestAutomation[] {
+  return m.automations.filter(
+    (a) =>
+      a.enabled && a.name && a.route_key &&
+      a.route_index >= 0 && a.route_index < m.routes.length,
+  );
+}

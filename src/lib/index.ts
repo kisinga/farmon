@@ -57,7 +57,7 @@ export { measureConnectors, svgViewBox } from './board-pinout-measure';
 export { reservedPins, exposedPins, pinsWithCap, pinsWithCapability } from './board.types';
 export { UI_COLORS } from './colors';
 export { entityColor } from './entity-registry';
-export { nodesByKind } from './manifest.types';
+export { nodesByKind, validAutomations } from './manifest.types';
 export { getNodesByKind, getNodeByKind } from './topology.types';
 
 // --- YAML fragment utilities ---
@@ -87,7 +87,7 @@ export type { TelemetryChannel, TelemetryChannelKind } from './telemetry-channel
 
 // --- Dashboard chart spec (derived from the saved topology, in the browser) ---
 export { buildDashboardSpec } from './dashboard-spec';
-export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl } from './dashboard-spec';
+export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, AutomationControl } from './dashboard-spec';
 
 // --- Codegen IDs ---
 export {
@@ -97,6 +97,7 @@ export {
   pressureSensorCalEmptyId, pressureSensorCalFullId, pressureSensorLevelId,
   waterSourcePressureId,
   dosingPumpSwitchId, filterInletPressureId, filterOutletPressureId, filterDeltaPressureId,
+  automationEnableSwitchId,
 } from './codegen-ids';
 
 // --- Runtime contract: deployment mode, MQTT topics, command vocabulary ---

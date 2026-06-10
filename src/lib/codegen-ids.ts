@@ -66,6 +66,20 @@ export const filterOutletPressureId = (node: { id: string }) => `${node.id}_outl
 export const filterDeltaPressureId = (node: { id: string }) => `${node.id}_delta_pressure`;
 
 // ---------------------------------------------------------------------------
+// Component IDs — automation (schedule)
+// ---------------------------------------------------------------------------
+
+/**
+ * The on-device template-switch id that gates a baked schedule's triggers — also
+ * the `sensor` segment its enable state publishes on (telemetry bool channel).
+ * The argument is the stable topology automation id (`auto_<base36>`), so the
+ * runtime toggle survives reordering/rebuilds. One definition: schedule codegen
+ * declares the switch, mqtt codegen flips it, telemetry publishes it, the
+ * dashboard reads + toggles it.
+ */
+export const automationEnableSwitchId = (id: string) => `${id}_enabled`;
+
+// ---------------------------------------------------------------------------
 // Pin resolution — maps a logical pin name to an ESPHome YAML pin block
 // ---------------------------------------------------------------------------
 
@@ -208,7 +222,8 @@ export type CommandAction =
   | 'reset_faults'     // (no args)
   | 'clear_queue'      // (no args)
   | 'node_set'         // { node_id, on } — manual claim/release of any actuator
-  | 'safety_override'; // { on } — toggle the commissioning bypass switch (see note)
+  | 'safety_override'  // { on } — toggle the commissioning bypass switch (see note)
+  | 'automation_set';  // { automation_id, on } — pause/resume a baked schedule (see note)
 
 /**
  * Commands older than this many seconds (now - issued_at, by the device's SNTP
@@ -236,6 +251,11 @@ export type CommandEnvelope = { command_id: string; issued_at: number } & (
   // and lets a pump run without an owning route. Enabling it is dangerous — gate
   // behind a hard confirm. Reverts to OFF on device reboot.
   | { action: 'safety_override'; on: boolean }
+  // automation_set: pause (off) / resume (on) a baked schedule by its stable
+  // automation id. Gates FUTURE triggers only — a route already running is left
+  // alone. The on/off state PERSISTS across reboot/OTA (the on-device switch
+  // restores its last value), so a pause stays until explicitly resumed.
+  | { action: 'automation_set'; automation_id: string; on: boolean }
 );
 
 // ---------------------------------------------------------------------------

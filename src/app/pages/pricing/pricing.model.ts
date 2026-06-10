@@ -10,7 +10,7 @@
  */
 export const PRICING = {
   /** One controller bundle (KC868 + pump + 1 valve + 1 flow + 1 tank monitor + cloud). */
-  bundle: 35_000,
+  bundle: 55_000,
   /** Each extra standard (≤3/4") peripheral on the same controller. */
   extraValve: 4_000,
   extraFlow: 4_000,
