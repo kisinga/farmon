@@ -207,6 +207,12 @@ export const eventTopic = (site: string, ctrl: string) =>
 export const SYSTEM_STATE_SENSOR = 'system_state';
 export const STOP_REASON_SENSOR = 'stop_reason';
 
+/** Telemetry `sensor` segment for a route's self-healing current state
+ *  (`route_<id>_state`). Published every interval and read by the dashboard, so a
+ *  dropped one-shot transition event never strands the route card. `routeId` is
+ *  the firmware ROUTES[] index (== the dashboard's routeId). */
+export const routeStateSensor = (routeId: number): string => `route_${routeId}_state`;
+
 // ---------------------------------------------------------------------------
 // Command vocabulary — issued by the dashboard, relayed + audited by the
 // server, handled by the firmware. Mirrors the legacy HA api: services and the

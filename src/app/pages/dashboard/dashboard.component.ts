@@ -1,6 +1,6 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, controllerHealth, worstHealth, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, type CommandAction, type DashboardWidget, type ActuatorControl, type AutomationControl, type HealthLevel } from '@core';
+import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, type CommandAction, type DashboardWidget, type ActuatorControl, type AutomationControl, type HealthLevel, type StateKind, type StateMeaning } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
 import { ConfirmService } from '../../core/services/confirm.service';
@@ -25,31 +25,57 @@ import type { RouteControl } from '@core';
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="max-w-6xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6">
-      <!-- Compact status bar: site + presence on the left; a health pill (online +
-           heap headroom, expandable to per-controller free heap) and Docs at right. -->
-      <div class="flex items-center gap-3 mb-5 sm:mb-6">
+      <!-- Compact status bar. Two pills, two questions: operational state (what the
+           system is doing) and health (is the hardware well). Safety-override shows
+           only while ON; the health pill expands to the full per-controller panel. -->
+      <div class="flex items-center gap-2 sm:gap-3 mb-5 sm:mb-6">
         <h1 class="text-lg sm:text-xl font-bold tracking-tight leading-tight truncate min-w-0">{{ siteName() || 'Dashboard' }}</h1>
-        @if (totalControllers()) {
+        @if (showController()) {
           <span class="text-xs text-base-content/50 shrink-0 whitespace-nowrap">{{ onlineCount() }}/{{ totalControllers() }} online</span>
         }
         <span class="grow"></span>
-        <!-- Health: aggregate pill; click for each controller's free heap. -->
+        @if (anyOverride()) {
+          <span class="inline-flex items-center gap-1 text-xs rounded-full px-2.5 py-1 ring-1 ring-inset text-error bg-error/10 ring-error/20 shrink-0"
+                title="Safety checks bypassed on a controller">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            </svg>
+            Override ON
+          </span>
+        }
+        <!-- Operational state (what it's doing): aggregate, hidden when nothing is online. -->
+        @if (systemChip(); as sys) {
+          <span class="inline-flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 ring-1 ring-inset shrink-0"
+                [class]="sys.chip" [title]="'System: ' + sys.label">
+            <span class="w-1.5 h-1.5 rounded-full" [class]="sys.dot"></span>
+            {{ sys.label }}
+          </span>
+        }
+        <!-- Health (is the box well): online + heap; click for the per-controller panel. -->
         <details class="dropdown dropdown-end shrink-0">
           <summary class="list-none inline-flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 cursor-pointer ring-1 ring-inset"
                    [class]="healthUi().chip" [title]="'Device health: ' + healthUi().label">
             <span class="w-1.5 h-1.5 rounded-full" [class]="healthUi().dot" [class.animate-pulse]="siteHealth() === 'healthy'"></span>
             {{ healthUi().label }}
           </summary>
-          <div class="dropdown-content z-10 mt-1 w-64 rounded-box bg-base-100 ring-1 ring-base-300/40 shadow-lg p-2">
-            <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/40 px-1 pb-1">Controller heap</div>
+          <div class="dropdown-content z-10 mt-1 w-72 rounded-box bg-base-100 ring-1 ring-base-300/40 shadow-lg p-2">
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/40 px-1 pb-1">Controllers</div>
             @for (c of store.spec().controllers; track c.controller) {
-              <div class="flex items-center gap-2 px-1 py-1 text-xs">
-                <span class="w-1.5 h-1.5 rounded-full shrink-0" [class]="healthDot(c.controller)"></span>
-                <span class="truncate flex-1">{{ c.name }}</span>
-                <span class="font-mono text-base-content/60 shrink-0">{{ heapText(c.controller) }}</span>
+              <div class="px-1 py-1.5 border-b border-base-300/20 last:border-0">
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="w-1.5 h-1.5 rounded-full shrink-0" [class]="healthDot(c.controller)"></span>
+                  <span class="font-medium truncate flex-1">{{ ctrlName(c.controller) }}</span>
+                  <span class="font-mono text-base-content/60 shrink-0">{{ heapText(c.controller) }}</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 pl-3.5 text-[11px] text-base-content/50">
+                  <span>{{ systemLabel(c.controller) }}</span>
+                  <span>Queue {{ queueText(c.controller) }}</span>
+                  <span>Last stop: {{ lastStopText(c.controller) }}</span>
+                  @if (overrideOn(c.controller)) { <span class="text-error font-medium">Override ON</span> }
+                </div>
               </div>
             }
-            <p class="text-[11px] text-base-content/40 px-1 pt-1.5 leading-snug">Free RAM. Low heap is the main failure risk; under {{ heapWarnKb() }} KB shows a warning.</p>
+            <p class="text-[11px] text-base-content/40 px-1 pt-1.5 leading-snug">Free RAM. Under {{ heapWarnKb() }} KB shows a warning.</p>
           </div>
         </details>
         <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="openDocs()" [disabled]="docBusy()"
@@ -374,6 +400,49 @@ export class DashboardComponent implements OnDestroy {
   }
   protected heapWarnKb(): number { return Math.round(HEAP_WARN_BYTES / 1000); }
 
+  // --- Operational state (System chip + per-controller drill-down) ---------
+  private static readonly STATE_RANK: Record<StateKind, number> = { normal: 0, active: 1, warn: 2, fault: 3 };
+  /** State kind → header-chip tones (consistent with the health pill styling). */
+  private static readonly STATE_CHIP: Record<StateKind, { dot: string; chip: string }> = {
+    active: { dot: 'bg-success',         chip: 'text-success bg-success/10 ring-success/20' },
+    warn:   { dot: 'bg-warning',         chip: 'text-warning bg-warning/10 ring-warning/20' },
+    fault:  { dot: 'bg-error',           chip: 'text-error bg-error/10 ring-error/20' },
+    normal: { dot: 'bg-base-content/40', chip: 'text-base-content/60 bg-base-content/10 ring-base-content/15' },
+  };
+
+  private systemMeaning(controller: string): StateMeaning {
+    return describeState(SYSTEM_STATE_MEANINGS, this.store.row(controller, SYSTEM_STATE_SENSOR)?.reported_text ?? 'IDLE');
+  }
+  /** Per-controller operational state label (drill-down). */
+  protected systemLabel(controller: string): string { return this.systemMeaning(controller).label; }
+  /** Queue depth as text; '—' when never reported. */
+  protected queueText(controller: string): string {
+    const q = this.store.row(controller, 'queue_depth')?.reported;
+    return q == null ? '—' : String(Math.round(q));
+  }
+  /** Last stop reason label; 'None' when never reported. */
+  protected lastStopText(controller: string): string {
+    const t = this.store.row(controller, STOP_REASON_SENSOR)?.reported_text;
+    return t ? describeState(STOP_REASON_MEANINGS, t).label : 'None';
+  }
+  /** Any controller running with safety checks bypassed (a danger flag). */
+  protected anyOverride = computed(() =>
+    this.store.spec().controllers.some((c) => this.overrideOn(c.controller)),
+  );
+  /** Aggregate operational state for the header chip: the most significant state
+   *  across ONLINE controllers (an offline controller's last state is stale).
+   *  Null when nothing is online (the health pill already says "Offline"). */
+  protected systemChip = computed<{ label: string; dot: string; chip: string } | null>(() => {
+    const online = this.store.spec().controllers.filter((c) => this.store.presence(c.controller).online);
+    if (online.length === 0) return null;
+    let best: StateMeaning | null = null;
+    for (const c of online) {
+      const m = this.systemMeaning(c.controller);
+      if (!best || DashboardComponent.STATE_RANK[m.kind] > DashboardComponent.STATE_RANK[best.kind]) best = m;
+    }
+    return best ? { label: best.label, ...DashboardComponent.STATE_CHIP[best.kind] } : null;
+  });
+
   protected lastSeenText(controller: string): string {
     const seen = this.store.presence(controller).lastSeen;
     return seen ? this.ago(seen) : 'never seen';
@@ -405,11 +474,13 @@ export class DashboardComponent implements OnDestroy {
 
   /** Widgets grouped into ordered, labelled sections (empty sections dropped). */
   protected sections = computed(() => {
+    // 'status' (system / last stop / queue / safety override) is relocated to the
+    // header bar + its per-controller panel, so it is intentionally not a section.
     const labels: Record<string, string> = {
-      status: 'Status', levels: 'Tank levels', valves: 'Valves',
+      levels: 'Tank levels', valves: 'Valves',
       flow: 'Flow', pressure: 'Pressure', activity: 'Activity',
     };
-    const order = ['status', 'levels', 'valves', 'flow', 'pressure', 'activity'] as const;
+    const order = ['levels', 'valves', 'flow', 'pressure', 'activity'] as const;
     const byCat = new Map<string, DashboardWidget[]>();
     for (const w of this.store.spec().widgets) {
       const cat = this.category(w);

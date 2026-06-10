@@ -217,6 +217,10 @@ assert(
   /telemetry\/heap_free/.test(mqttYaml),
   "Heap telemetry published — free heap is the binding constraint; watch it fleet-wide",
 );
+assert(
+  /telemetry\/route_0_state/.test(mqttYaml),
+  "Per-route state published as self-healing telemetry — a dropped transition event can't strand the route card",
+);
 
 // --- Device-facing TLS (certificate_authority embedding) ---
 console.log("\nMQTT TLS embedding:");

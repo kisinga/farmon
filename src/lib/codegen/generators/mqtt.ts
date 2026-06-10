@@ -1,7 +1,7 @@
 import type { Manifest } from '@core';
 import {
   MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic,
-  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR,
+  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, routeStateSensor,
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
   COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
@@ -210,6 +210,16 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     // heap so the server can chart it and flag a controller trending toward the cliff.
     `mc->publish("${telemetryTopic(site, ctrl, HEAP_FREE_SENSOR)}", to_string(esp_get_free_heap_size()));`,
     `mc->publish("${telemetryTopic(site, ctrl, HEAP_MIN_SENSOR)}", to_string(esp_get_minimum_free_heap_size()));`,
+    // Per-route current state, re-asserted every interval (self-healing) so a dropped
+    // one-shot transition event can't strand the dashboard's route card. Reads slots[]
+    // (routes.h); IDLE (0) when the route has no active slot. The event log stays the
+    // edge-triggered timeline; this is the reliable current-state source.
+    ...(m.routes.length
+      ? [`static const char* RTSTATE[] = {${SYSTEM_STATE_TOKENS.map((t) => `"${t}"`).join(', ')}};`]
+      : []),
+    ...m.routes.map((_r, i) =>
+      `{ int s = find_slot_by_route(${i}); int v = (s >= 0) ? slots[s].state : 0; ` +
+      `if (v >= 0 && v < ${NS}) mc->publish("${telemetryTopic(site, ctrl, routeStateSensor(i))}", RTSTATE[v]); }`),
   ];
 
   // --- Transition log (per-slot edge detection, 1s) -------------------------

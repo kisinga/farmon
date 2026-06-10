@@ -110,7 +110,7 @@ export {
 // --- Runtime contract: deployment mode, MQTT topics, command vocabulary ---
 export {
   MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic,
-  telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, COMMAND_TTL_S,
+  telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, routeStateSensor, COMMAND_TTL_S,
   COORD_MSG, COORD_TYPE,
 } from './codegen-ids';
 export type {
