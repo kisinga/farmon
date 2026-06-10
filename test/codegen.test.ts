@@ -221,6 +221,10 @@ assert(
   /telemetry\/route_0_state/.test(mqttYaml),
   "Per-route state published as self-healing telemetry — a dropped transition event can't strand the route card",
 );
+assert(
+  mqttYaml.includes("on_json_message") && /qos:\s*1/.test(mqttYaml),
+  "Command subscription at QoS 1 — broker queues commands across a reconnect (no lost-on-first-try race)",
+);
 
 // --- Device-facing TLS (certificate_authority embedding) ---
 console.log("\nMQTT TLS embedding:");

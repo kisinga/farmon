@@ -273,14 +273,26 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
 # =============================================================================
 # AUTO-GENERATED. Replaces Home Assistant as the runtime transport.
 #
+# Reliability model: current STATE rides self-healing telemetry (re-asserted every
+# interval, so a dropped sample self-corrects on the next tick); EVENTS are
+# edge-triggered and best-effort (with idf_send_async a full publish pool drops
+# them). Nothing authoritative reads state from events, so a dropped event is at
+# worst a cosmetic gap in the activity timeline or a missed refusal reason — never
+# a wrong state. (The async drop is at the device's pool, before the broker, so QoS
+# can't help that direction; self-healing telemetry is the fix.)
+#
 # - Telemetry: published explicitly on majiflow/${site}/${ctrl}/telemetry/<id>
 #   (absolute topics, set in the lambdas below). Numbers ride as numbers;
-#   system_state / stop_reason ride as human-readable tokens.
+#   system_state / stop_reason / route_<id>_state ride as human-readable tokens.
+#   This is the authoritative, self-healing current-state source.
 # - Events:    each state change is appended on majiflow/${site}/${ctrl}/event
-#   as a StateEvent JSON (route, from, to, reason, command_id).
-# - Commands:  operator actions arrive as JSON on the command topic and are
-#   dispatched into the existing route/queue functions (routes.h / control); a
-#   refused/queued command emits a transition event carrying the reason.
+#   as a StateEvent JSON (route, from, to, reason, command_id). Edge-triggered and
+#   best-effort: the activity timeline + transient command-outcome reasons, not a
+#   state-of-record.
+# - Commands:  operator actions arrive as JSON on the command topic (QoS 1 over a
+#   persistent session, so the broker queues across a reconnect; stale ones gated
+#   by issued_at) and dispatch into the route/queue functions (routes.h / control);
+#   a refused/queued command emits a (best-effort) transition event with the reason.
 # - Status:    retained birth/will on the status topic for online/offline.
 #
 # Mode: ${metadata.mode}. Broker: ${metadata.brokerAddress}:${metadata.brokerPort}.
@@ -326,7 +338,12 @@ mqtt:
     payload: "0"
     retain: true
   on_json_message:
+    # QoS 1 over the (default) persistent session: the broker queues a command sent
+    # during the device's reconnect window or a brief drop and delivers it on
+    # reconnect, instead of losing it. The issued_at TTL gate (below) discards any
+    # that went stale. The server already publishes commands at QoS 1.
     - topic: "${commandTopic(site, ctrl)}"
+      qos: 1
       then:
         - lambda: |-
 ${indent(cmdBody, 12)}
