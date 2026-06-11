@@ -78,8 +78,6 @@ export class WorkspaceRailComponent {
       icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
     { id: 'config',      hint: 'Board, pins, buses and safety timings',
       icon: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z' },
-    { id: 'automations', hint: 'When routes run, on the device',
-      icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
     { id: 'remotes',     hint: 'Share sensors between controllers (own-server only)',
       icon: 'M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244' },
     { id: 'deploy',      hint: 'Generate the controller firmware bundle',
@@ -117,7 +115,6 @@ export class WorkspaceRailComponent {
     m.set('design', (t?.nodes?.length ?? 0) > 0 && (t?.pipes?.length ?? 0) > 0 ? 'complete' : 'untouched');
     const device = this.editor.controllerDevice();
     m.set('config', device?.name && device?.board ? 'complete' : 'untouched');
-    m.set('automations', (t?.automations?.length ?? 0) > 0 ? 'complete' : 'untouched');
     m.set('remotes', (t?.remoteImports?.length ?? 0) > 0 ? 'complete' : 'untouched');
     m.set('deploy', 'untouched');
     m.set(this.editor.panel(), 'active');

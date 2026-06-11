@@ -15,7 +15,7 @@ import {
   routeStateSensor, COMMAND_TTL_S,
   type CommandAction,
 } from './codegen-ids';
-import type { RouteControl, ActuatorControl, AutomationControl, SetpointControl } from './dashboard-spec';
+import type { RouteControl, ActuatorControl, SetpointControl } from './dashboard-spec';
 
 /** Lifecycle phase a control renders. `pending` = in flight / not yet reflected;
  *  `confirmed` = the device acted; `refused` = a guard/queue rejected it (carries a
@@ -86,7 +86,6 @@ export function confirmDescriptor(
   ctx: {
     route?: RouteControl;
     actuator?: ActuatorControl;
-    automation?: AutomationControl;
     setpoint?: SetpointControl;
     /** Generic config_set target (any tunable number id); preferred over `setpoint`. */
     configKey?: string;
@@ -172,14 +171,12 @@ export function confirmDescriptor(
       };
     }
 
-    // --- Bool switches: confirmed when the reported switch matches desired. -------
-    case 'safety_override':
-    case 'automation_set': {
+    // --- Bool switch: confirmed when the reported switch matches desired. -------
+    case 'safety_override': {
       const on = ctx.on === true;
-      const sensor = action === 'safety_override' ? 'safety_override' : ctx.automation?.enableSensor;
       return {
         ...base,
-        sensor,
+        sensor: 'safety_override',
         classify: (obs) => {
           if (obs.reported != null && isOn(obs.reported) === on) return { phase: 'confirmed' };
           if (expiredIf(obs)) return { phase: 'expired' };

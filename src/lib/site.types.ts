@@ -41,7 +41,7 @@ export interface SiteMetadata {
 // Stored site topology (the JSON blob on disk)
 // ---------------------------------------------------------------------------
 
-import type { TopologyNode, PipeSegment, RouteOverride, Automation, UartBus, IoProviderDef, NetworkConfig, Controller } from './topology.types';
+import type { TopologyNode, PipeSegment, RouteOverride, UartBus, IoProviderDef, NetworkConfig, Controller } from './topology.types';
 
 export interface StoredSiteTopology {
   schema: number;
@@ -56,7 +56,6 @@ export interface StoredSiteTopology {
     flow_threshold: number;
     update_interval: number;
   };
-  automations: Automation[];
 }
 
 // ---------------------------------------------------------------------------

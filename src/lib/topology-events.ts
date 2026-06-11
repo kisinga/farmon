@@ -15,7 +15,7 @@ import {
   RemoteImportSchema,
   migrateTopology,
 } from './topology-schema';
-import { AutomationSchema, PositionSchema } from './schemas';
+import { PositionSchema } from './schemas';
 
 // ---------------------------------------------------------------------------
 // Event type literals
@@ -33,9 +33,6 @@ export type TopologyEventType =
   | 'timing_changed'
   | 'route_override_set'
   | 'route_override_cleared'
-  | 'automation_created'
-  | 'automation_deleted'
-  | 'automation_modified'
   | 'controller_added'
   | 'controller_removed'
   | 'controller_modified'
@@ -118,19 +115,6 @@ const RouteOverrideClearedPayloadSchema = z.object({
   old: RouteOverrideSchema.optional(),
 });
 
-const AutomationCreatedPayloadSchema = z.object({
-  automation: AutomationSchema,
-});
-
-const AutomationModifiedPayloadSchema = z.object({
-  automation: AutomationSchema,
-});
-
-const AutomationDeletedPayloadSchema = z.object({
-  automationId: z.string().min(1),
-  automationSnapshot: AutomationSchema.optional(),
-});
-
 const ControllerAddedPayloadSchema = z.object({
   controller: ControllerSchema,
 });
@@ -177,9 +161,6 @@ const BaseTopologyEventSchema = z.discriminatedUnion('eventType', [
   z.object({ eventType: z.literal('timing_changed'), payload: TimingChangedPayloadSchema }),
   z.object({ eventType: z.literal('route_override_set'), payload: RouteOverrideSetPayloadSchema }),
   z.object({ eventType: z.literal('route_override_cleared'), payload: RouteOverrideClearedPayloadSchema }),
-  z.object({ eventType: z.literal('automation_created'), payload: AutomationCreatedPayloadSchema }),
-  z.object({ eventType: z.literal('automation_modified'), payload: AutomationModifiedPayloadSchema }),
-  z.object({ eventType: z.literal('automation_deleted'), payload: AutomationDeletedPayloadSchema }),
   z.object({ eventType: z.literal('controller_added'), payload: ControllerAddedPayloadSchema }),
   z.object({ eventType: z.literal('controller_removed'), payload: ControllerRemovedPayloadSchema }),
   z.object({ eventType: z.literal('controller_modified'), payload: ControllerModifiedPayloadSchema }),

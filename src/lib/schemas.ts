@@ -120,23 +120,6 @@ export const TimingSchema = z.object({
   update_interval: z.number().gt(1).default(5),
 });
 
-export const AutomationTriggerSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("time"), at: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:MM format') }),
-  z.object({
-    type: z.literal("level"),
-    for_minutes: z.number().gt(1).optional(),
-  }),
-]);
-
-export const AutomationSchema = z.object({
-  id: ComponentId,
-  name: z.string().default(''),
-  route: z.string().default(''),
-  trigger: AutomationTriggerSchema,
-  days_of_week: z.array(z.enum(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']))
-    .default(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']),
-  enabled: z.boolean().default(true),
-});
 
 // ---------------------------------------------------------------------------
 // XML/SVG utility

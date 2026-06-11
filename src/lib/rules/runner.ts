@@ -3,7 +3,7 @@ import type { Manifest } from "@core";
 import type { BoardDef, ExpansionBoardCatalog } from "@core";
 import type { TopologyRule, ManifestRule, RuleDiagnostic } from "./rule.types";
 import { z } from 'zod';
-import { NODE_REGISTRY, REGISTRY_RULES, buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateRouteRules, evaluateEscalations, type ValidationResult, type TopologyNode, type DeploymentMode } from '@core';
+import { NODE_REGISTRY, REGISTRY_RULES, buildGraph, activeGraph, deriveRoutes, evaluateConstraints, evaluateRouteRules, type ValidationResult, type TopologyNode, type DeploymentMode } from '@core';
 
 export type { ValidationResult } from '@core';
 
@@ -179,15 +179,13 @@ export function validateAll(
   // Layer 2: Manifest + board
   const manifestResult = runManifestRules(manifest, board, manifestRules, opts);
 
-  // Layer 3: Escalation — automated routes promote warnings to errors
-  const escalated = evaluateEscalations(topoDiags, routes, topology.automations ?? []);
-  const escalatedBaseIds = new Set(
-    escalated.map(d => `${d.target}:${d.ruleId.replace(':escalated', '')}`),
-  );
-  const filteredTopo = topoDiags.filter(
-    d => !escalatedBaseIds.has(`${d.target}:${d.ruleId}`),
-  );
-
-  const allDiagnostics = [...filteredTopo, ...escalated, ...manifestResult.diagnostics];
+  // NOTE: there used to be a Layer 3 that escalated a route's warnings to errors
+  // when an automation targeted it (automated routes had to be safer). Automations
+  // are now runtime data in the `automations` collection, so build-time validation
+  // can't know which routes are automated. Safety isn't lost: every automated start
+  // still goes through try_route_start's firmware pre-checks (source-low / dest-full
+  // / flow watchdog / max-runtime) at run time. Re-home the build-time escalation
+  // server-side (against the automations collection) only if that tightening matters.
+  const allDiagnostics = [...topoDiags, ...manifestResult.diagnostics];
   return toResult(allDiagnostics);
 }

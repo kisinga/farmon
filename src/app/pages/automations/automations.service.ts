@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
 import { BackendService } from '../../core/services/backend.service';
-import { topologyAutomationsToRows, type NewAutomationRow, type SiteTopology, type StoredSiteTopology } from '@core';
+import { type NewAutomationRow } from '@core';
 
 /** An automation row as stored in the `automations` collection (create shape + id). */
 export interface AutomationRecord extends NewAutomationRow {
@@ -45,22 +45,5 @@ export class AutomationsService {
     return this.pb.collection('automations').subscribe('*', () => cb(), {
       filter: this.pb.filter('site = {:s}', { s: siteId }),
     });
-  }
-
-  /**
-   * One-time import of legacy `topology.automations[]` into the collection, then
-   * clears the legacy field so it never re-imports. Idempotent: callers gate on an
-   * empty collection, and the cleared field is the durable marker. Returns the
-   * number imported.
-   */
-  async importLegacy(siteId: string, topology: SiteTopology, rawTopology: StoredSiteTopology): Promise<number> {
-    const rows = topologyAutomationsToRows(topology, siteId);
-    for (const row of rows) await this.create(row);
-    // Clear the legacy field so the import banner doesn't reappear. A normal owner
-    // update; the codegen ignores it post-cutover regardless.
-    await this.pb.collection('sites').update(siteId, {
-      draft_topology: { ...rawTopology, automations: [] },
-    });
-    return rows.length;
   }
 }

@@ -11,10 +11,10 @@
  * Each channel mirrors an entity's emit conditions exactly, so we never name an
  * `id()` that the other generators didn't create.
  */
-import { type Manifest, type LocalManifestNode, validAutomations } from './manifest.types';
+import { type Manifest, type LocalManifestNode } from './manifest.types';
 import {
   telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR,
-  SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, automationEnableSwitchId,
+  SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS,
   type TelemetryRole,
 } from './codegen-ids';
 
@@ -87,21 +87,10 @@ function collectNodeChannels(m: Manifest): TelemetryChannel[] {
   return channels;
 }
 
-/** Enable-state channel for each baked schedule (the on-device gate switch),
- *  published as a bool so the dashboard can show + toggle pause/resume. The
- *  sensor id IS the switch id (automationEnableSwitchId); mirrors safety_override. */
-function collectAutomationChannels(m: Manifest): TelemetryChannel[] {
-  return validAutomations(m).map((a) => {
-    const id = automationEnableSwitchId(a.id);
-    return { sensor: id, ref: id, kind: 'bool', label: `Schedule: ${a.name}` };
-  });
-}
-
 /**
  * The full channel list for a controller: system-wide channels first
  * (system_state / stop_reason as enum tokens, queue depth, safety override),
- * then per-schedule enable channels, then per-node channels. The order is the
- * wire/UI order and must stay stable.
+ * then per-node channels. The order is the wire/UI order and must stay stable.
  */
 export function collectTelemetryChannels(m: Manifest): TelemetryChannel[] {
   return [
@@ -109,7 +98,6 @@ export function collectTelemetryChannels(m: Manifest): TelemetryChannel[] {
     { sensor: STOP_REASON_SENSOR, ref: 'stop_reason', kind: 'enum', tokens: STOP_REASON_TOKENS, label: 'Last Stop' },
     { sensor: 'queue_depth', ref: 'queue_depth', kind: 'state', label: 'Queue' },
     { sensor: 'safety_override', ref: 'safety_override', kind: 'bool', label: 'Safety Override' },
-    ...collectAutomationChannels(m),
     ...collectNodeChannels(m),
   ];
 }

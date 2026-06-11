@@ -3,7 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { UnsubscribeFunc } from 'pocketbase';
 import {
   parseTopology, listAutomatableRoutes, buildDashboardSpec, MAX_AUTOMATIONS,
-  type SiteTopology, type StoredSiteTopology, type AutomatableRoute, type NewAutomationRow,
+  type SiteTopology, type AutomatableRoute, type NewAutomationRow,
 } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
@@ -77,15 +77,6 @@ function blankDraft(): NewAutomationRow & { id?: string } {
       </header>
 
       @if (error()) { <div role="alert" class="alert alert-error text-sm py-2">{{ error() }}</div> }
-
-      @if (legacyCount() > 0 && rows().length === 0 && canEdit()) {
-        <div class="rounded-xl ring-1 ring-info/30 bg-info/5 px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
-          <span class="text-base-content/70">{{ legacyCount() }} legacy schedule{{ legacyCount() === 1 ? '' : 's' }} can be imported.</span>
-          <button class="btn btn-xs btn-info btn-outline" (click)="importLegacy()" [disabled]="importing()">
-            @if (importing()) { <span class="loading loading-spinner loading-xs"></span> } Import
-          </button>
-        </div>
-      }
 
       <!-- Route defaults (top): the per-route values an automation inherits unless
            it overrides them. Collapsed by default, edit-gated — same as the dashboard. -->
@@ -255,13 +246,11 @@ export class AutomationsComponent {
   protected draft = signal<(NewAutomationRow & { id?: string }) | null>(null);
   protected loading = signal(true);
   protected saving = signal(false);
-  protected importing = signal(false);
   protected error = signal('');
   protected readonly dayLabels = DAY_LABELS;
   protected readonly maxAutomations = MAX_AUTOMATIONS;
 
   private topology: SiteTopology | null = null;
-  private rawTopology: StoredSiteTopology | null = null;
   private isOwner = false;
   private unsub?: UnsubscribeFunc;
 
@@ -269,7 +258,6 @@ export class AutomationsComponent {
   protected atCap = computed(() => this.rows().length >= MAX_AUTOMATIONS);
   /** Any per-route tunable exists (drives the "Route defaults" disclosure). */
   protected hasRouteTuning = computed(() => this.dash.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));
-  protected legacyCount = computed(() => (this.topology?.automations?.length ?? 0));
   protected selectedRoute = computed(() => this.routes().find((r) => r.routeKey === this.draft()?.route_key));
   protected overrideFields = computed(() =>
     OVERRIDE_FIELDS.filter((f) => !f.monitoredOnly || this.selectedRoute()?.monitored),
@@ -296,7 +284,6 @@ export class AutomationsComponent {
       this.siteName.set(site.friendlyName);
       this.isOwner = site.owner === this.auth.user()?.id;
       if (topology) {
-        this.rawTopology = topology;
         this.topology = parseTopology(topology);
         this.routes.set(listAutomatableRoutes(this.topology));
         // Live per-route tunables (the "Route defaults" the automations override)
@@ -374,20 +361,6 @@ export class AutomationsComponent {
     if (!confirm(`Delete automation "${a.name || 'unnamed'}"?`)) return;
     try { await this.svc.remove(a.id); await this.refresh(); }
     catch (e) { this.error.set(e instanceof Error ? e.message : 'Delete failed.'); }
-  }
-
-  protected async importLegacy(): Promise<void> {
-    if (!this.topology || !this.rawTopology) return;
-    this.importing.set(true);
-    try {
-      await this.svc.importLegacy(this.siteId, this.topology, this.rawTopology);
-      if (this.topology) this.topology = { ...this.topology, automations: [] };
-      await this.refresh();
-    } catch (e) {
-      this.error.set(e instanceof Error ? e.message : 'Import failed.');
-    } finally {
-      this.importing.set(false);
-    }
   }
 
   // --- list display ---

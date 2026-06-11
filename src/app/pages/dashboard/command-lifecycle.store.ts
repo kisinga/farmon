@@ -3,7 +3,7 @@ import { ActivatedRoute } from '@angular/router';
 import {
   confirmDescriptor, HOLD_RECLAIM_MS,
   type CommandAction, type CommandPhase, type ConfirmDescriptor, type ConfirmObservation,
-  type RouteControl, type ActuatorControl, type AutomationControl, type SetpointControl,
+  type RouteControl, type ActuatorControl, type SetpointControl,
 } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { DashboardStore } from './dashboard.store';
@@ -18,7 +18,6 @@ const LINGER_ERR_MS = 4_000;
 export interface CommandCtx {
   route?: RouteControl;
   actuator?: ActuatorControl;
-  automation?: AutomationControl;
   setpoint?: SetpointControl;
   /** Generic config_set target (any tunable number id); preferred over `setpoint`. */
   configKey?: string;
@@ -204,7 +203,7 @@ export class CommandLifecycleStore implements OnDestroy {
   }
 
   /** Build the `sendCommand` wire args from the action + ctx. */
-  private wireArgs(action: CommandAction, ctx: CommandCtx): { routeId?: number; nodeId?: string; automationId?: string; on?: boolean; key?: string; value?: number } {
+  private wireArgs(action: CommandAction, ctx: CommandCtx): { routeId?: number; nodeId?: string; on?: boolean; key?: string; value?: number } {
     switch (action) {
       case 'route_start':
       case 'route_stop':
@@ -212,8 +211,6 @@ export class CommandLifecycleStore implements OnDestroy {
         return { routeId: ctx.route?.routeId };
       case 'node_set':
         return { nodeId: ctx.actuator?.id, on: ctx.on };
-      case 'automation_set':
-        return { automationId: ctx.automation?.id, on: ctx.on };
       case 'safety_override':
         return { on: ctx.on };
       case 'config_set':

@@ -10,11 +10,10 @@
  * so the renderer prettifies wire tokens without decoding them.
  */
 import type { SiteTopology } from './topology.types';
-import { validAutomations, type ManifestAutomation, type Route } from './manifest.types';
 import {
   SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR,
   SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS,
-  automationEnableSwitchId, collectConfigSetpoints,
+  collectConfigSetpoints,
   type StateMeaning, type TelemetryRole,
 } from './codegen-ids';
 import { collectTelemetryChannels, type TelemetryChannel } from './telemetry-channels';
@@ -75,25 +74,6 @@ export interface ActuatorControl {
   reportedSensor: string;
 }
 
-/** A baked schedule an operator can pause/resume at runtime via `automation_set`.
- *  `id` is the stable topology automation id (the toggle target). `enableSensor`
- *  is the telemetry bool channel reporting the on-device enable switch — the
- *  shadow the dashboard reads to show the live state and reconciles a toggle
- *  against. `routeId` lets the UI warn that pausing won't stop a route the
- *  schedule has already started (it suppresses future triggers only). */
-export interface AutomationControl {
-  id: string;
-  name: string;
-  /** Firmware route index this schedule starts (== RouteControl.routeId). */
-  routeId: number;
-  /** Friendly name of the route the schedule starts. */
-  routeName: string;
-  /** Human trigger summary, e.g. "Daily 06:00" or "When source rises above 30%". */
-  trigger: string;
-  /** Telemetry bool channel id reporting the live enabled state. */
-  enableSensor: string;
-}
-
 /** A runtime-tunable route setpoint an operator can edit via `config_set`. `key`
  *  is the device's `number:` id — also the config_set key AND the telemetry sensor
  *  the live value publishes under, so the editor reads the current value from the
@@ -143,7 +123,6 @@ export interface ControllerControls {
   name: string;
   routes: RouteControl[];
   actuators: ActuatorControl[];
-  automations: AutomationControl[];
   /** Per-route tank-% setpoints, live-tunable via config_set. */
   setpoints: SetpointControl[];
   /** Every runtime-tunable device number (timings, runtime, setpoints,
@@ -188,25 +167,6 @@ function composeTitle(label: string, noun?: string): string {
   return label.toLowerCase().includes(noun.toLowerCase()) ? label : `${label} ${noun}`;
 }
 
-/** Wire day token (MON..SUN) → short title-case label for the schedule summary. */
-const DAY_LABEL: Record<string, string> = {
-  MON: 'Mon', TUE: 'Tue', WED: 'Wed', THU: 'Thu', FRI: 'Fri', SAT: 'Sat', SUN: 'Sun',
-};
-
-/** Human one-liner for a schedule's trigger, shown beside its toggle. */
-function automationTriggerSummary(a: ManifestAutomation, route: Route | undefined): string {
-  if (a.trigger.type === 'time') {
-    // 0 or 7 days means every day (schedule.ts emits no weekday filter then).
-    const everyDay = a.days_of_week.length === 0 || a.days_of_week.length === 7;
-    const days = everyDay ? 'Daily' : a.days_of_week.map((d) => DAY_LABEL[d] ?? d).join(', ');
-    return `${days} ${a.trigger.at}`;
-  }
-  // Level trigger fires when the source tank rises above the route's min level.
-  return route?.source_min_pct != null
-    ? `When source rises above ${route.source_min_pct}%`
-    : 'On source level';
-}
-
 function widgetForChannel(controller: string, ch: TelemetryChannel): DashboardWidget {
   const base = { id: `${controller}/${ch.sensor}`, controller, sensor: ch.sensor };
   const label = ch.label ?? ch.sensor;
@@ -244,10 +204,6 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
   for (const ctrl of topology.controllers) {
     const manifest = topologyToManifestForController(topology, ctrl.id);
     const channels = collectTelemetryChannels(manifest);
-    // Schedule enable channels power the Schedules control + shadow, not a chart
-    // widget — skip them in the widget loop (like flow_total is absorbed below).
-    const autos = validAutomations(manifest);
-    const enableSensors = new Set(autos.map((a) => automationEnableSwitchId(a.id)));
     // A flow sensor emits two channels (rate + cumulative total) for the same
     // node. Merge them into ONE `flow` widget: the rate chart with its total
     // beneath it, instead of two disconnected cards.
@@ -256,7 +212,6 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
       if (ch.role === 'flow_total' && ch.node) totalByNode.set(ch.node, ch.sensor);
     }
     for (const ch of channels) {
-      if (enableSensors.has(ch.sensor)) continue; // schedule toggle, not a widget
       if (ch.role === 'flow_total') continue; // absorbed into the flow widget below
       if (ch.role === 'flow') {
         const base = widgetForChannel(ctrl.id, ch);
@@ -321,15 +276,6 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
           unit: '%',
         };
       }),
-      // Baked schedules an operator can pause/resume at runtime (automation_set).
-      automations: autos.map((a) => ({
-        id: a.id,
-        name: a.name,
-        routeId: a.route_index,
-        routeName: a.route_name || manifest.routes[a.route_index]?.name || a.route_key,
-        trigger: automationTriggerSummary(a, manifest.routes[a.route_index]),
-        enableSensor: automationEnableSwitchId(a.id),
-      })),
       // Every runtime-tunable number this controller exposes (operator-mode editors).
       tunables: collectTunableNumbers(manifest),
       // Per level-monitored tank: physical-model calibration (same emit condition as

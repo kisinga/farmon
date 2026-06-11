@@ -10,14 +10,13 @@ import { WorkspaceService } from './workspace.service';
 import { BoardService } from './board.service';
 
 /** The selectable aspect panels of the site workspace. */
-export type EditorPanel = 'site' | 'design' | 'remotes' | 'config' | 'automations' | 'deploy';
+export type EditorPanel = 'site' | 'design' | 'remotes' | 'config' | 'deploy';
 
 /** Plain-language label per panel — the single source the rail + breadcrumb share. */
 export const PANEL_LABELS: Record<EditorPanel, string> = {
   site: 'Overview',
   design: 'Design',
   config: 'Config',
-  automations: 'Schedules',
   remotes: 'Sharing',
   deploy: 'Firmware',
 };
@@ -31,16 +30,16 @@ export const PANEL_LABELS: Record<EditorPanel, string> = {
 export const PANEL_SLUGS: Record<Exclude<EditorPanel, 'site'>, string> = {
   design: 'design',
   config: 'config',
-  automations: 'schedules',
   remotes: 'sharing',
   deploy: 'firmware',
 };
 
-/** Inverse of {@link PANEL_SLUGS}: a URL `:section` slug → the panel it selects. */
+/** Inverse of {@link PANEL_SLUGS}: a URL `:section` slug → the panel it selects.
+ *  The legacy `schedules` slug is intentionally absent — it now falls back to
+ *  'design' (automations moved to the operator /automations page). */
 export const SLUG_PANELS: Record<string, EditorPanel> = {
   design: 'design',
   config: 'config',
-  schedules: 'automations',
   sharing: 'remotes',
   firmware: 'deploy',
 };

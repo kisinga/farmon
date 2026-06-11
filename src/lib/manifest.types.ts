@@ -47,17 +47,6 @@ export type ImportedManifestNode = TopologyNode & {
 export type ManifestNode = LocalManifestNode | ImportedManifestNode;
 
 
-export interface ManifestAutomation {
-  id: string;
-  name: string;
-  route_index: number;      // resolved index into routes[]
-  route_key: string;        // original key for display
-  route_name: string;       // human-readable route name
-  trigger: { type: 'time'; at: string } | { type: 'level'; for_minutes?: number };
-  days_of_week: string[];
-  enabled: boolean;
-}
-
 export interface Manifest {
   /** The controller ID this manifest was built for (set by topologyToManifestForController). */
   controllerId?: string;
@@ -68,7 +57,6 @@ export interface Manifest {
   imports: ImportedManifestNode[];
   routes: Route[];
   timing: Timing;
-  automations: ManifestAutomation[];
 }
 
 export interface Route {
@@ -122,19 +110,4 @@ export function nodesByKind<K extends TopologyNode['kind'], T extends { kind: st
   kind: K,
 ): Extract<T, { kind: K }>[] {
   return nodes.filter((n): n is Extract<T, { kind: K }> => n.kind === kind);
-}
-
-/**
- * The automations that actually get baked into firmware: enabled, named, and
- * pointing at a route that resolves. This is the SINGLE definition of the baked
- * set — schedule codegen emits triggers + enable switches for exactly these,
- * telemetry publishes an enable channel for each, and the dashboard shows a
- * toggle per one. Sharing it guarantees those three never drift.
- */
-export function validAutomations(m: Manifest): ManifestAutomation[] {
-  return m.automations.filter(
-    (a) =>
-      a.enabled && a.name && a.route_key &&
-      a.route_index >= 0 && a.route_index < m.routes.length,
-  );
 }

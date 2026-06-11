@@ -7,7 +7,6 @@ import { BuildService } from '../../core/services/build.service';
 import { TopologyX6TabComponent } from './topology-x6-tab/topology-x6-tab.component';
 import { RemotesTabComponent } from './remotes-tab/remotes-tab.component';
 import { ConfigTabComponent } from './config-tab/config-tab.component';
-import { AutomationsTabComponent } from './automations-tab/automations-tab.component';
 import { SitePanelComponent } from './site-panel/site-panel.component';
 import { DeployPageComponent } from '../deploy/deploy-page.component';
 import { WorkspaceRailComponent } from './workspace-rail.component';
@@ -21,7 +20,6 @@ import { WorkspaceRailComponent } from './workspace-rail.component';
     TopologyX6TabComponent,
     RemotesTabComponent,
     ConfigTabComponent,
-    AutomationsTabComponent,
     SitePanelComponent,
     DeployPageComponent,
   ],
@@ -83,7 +81,6 @@ import { WorkspaceRailComponent } from './workspace-rail.component';
                 @case ('site') { <app-site-panel /> }
                 @case ('remotes') { <app-remotes-tab /> }
                 @case ('config') { <app-config-tab /> }
-                @case ('automations') { <app-automations-tab /> }
                 @case ('deploy') { <app-deploy-page /> }
               }
             </fieldset>

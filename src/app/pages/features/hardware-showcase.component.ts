@@ -213,5 +213,14 @@ export class HardwareShowcaseComponent {
       angles: ['marketing/valve5.jpg', 'marketing/valve1.jpg', 'marketing/valve6.jpg'],
       specs: ['Brass body', '3-wire', 'Motorised', 'DN20 / DN25'],
     },
+    {
+      index: '03',
+      name: 'Pressure sensor',
+      kicker: 'EARLY WARNING FOR THE LINE',
+      body: 'Watches the pressure in a line and flags a blockage or a burst before it becomes a flood. Screws into the pipe, three wires, no moving parts to wear out.',
+      main: 'marketing/pressure-sensor1.jpg',
+      angles: ['marketing/pressure-sensor4.jpg', 'marketing/pressure-sensor2.jpg', 'marketing/pressure-sensor3.jpg'],
+      specs: ['Stainless steel', 'Threaded port', '3-wire', 'Analog out'],
+    },
   ];
 }

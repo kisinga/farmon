@@ -9,13 +9,13 @@
 // --- Types ---
 export type {
   SiteTopology, TopologyNode, PipeSegment, RouteOverride,
-  Automation, AutomationTrigger, UartBus, NetworkConfig, NetworkTransport,
+  UartBus, NetworkConfig, NetworkTransport,
   TankNode, PumpNode, EndpointNode, ValveNode,
   FlowSensorNode, WaterSourceNode, FilterNode, DosingPumpNode, VfdNode,
   Port, Position, Controller, RemoteImport,
 } from './topology.types';
 export { effectiveTransport } from './topology.types';
-export type { Manifest, ManifestNode, LocalManifestNode, ImportedManifestNode, ManifestAutomation, Device, Timing } from './manifest.types';
+export type { Manifest, ManifestNode, LocalManifestNode, ImportedManifestNode, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, DocSection, PinDef, PinCap, ExpanderDef, EthernetDef, ExpansionBoardDef, ExpansionBoardChannelDef, ExpansionBoardCatalog } from './board.types';
 export { boardSupportedTransports } from './board.types';
@@ -36,7 +36,7 @@ export { HOSTING_DEVICE_CAP } from './site.types';
 export { TopologySchema, RouteOverrideSchema, parseTopology, parsePortRef, portRef, migrateTopology, CURRENT_SCHEMA_VERSION, type Topology } from './topology-schema';
 export { migrateToRemoteImports } from './topology-migrate';
 export { TopologyEventSchema, parseTopologyEvent, type TopologyEvent, type TopologyEventType } from './topology-events';
-export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, AutomationSchema, AutomationTriggerSchema, UartBusSchema, IoProviderDefSchema, IoProviderInstanceConfigSchema, NetworkConfigSchema, AnchorIdSchema, parseDurationMs, escXml } from './schemas';
+export { GpioPin, ComponentId, COMPONENT_ID_POLICY, PortSchema, PositionSchema, DeviceSchema, TimingSchema, UartBusSchema, IoProviderDefSchema, IoProviderInstanceConfigSchema, NetworkConfigSchema, AnchorIdSchema, parseDurationMs, escXml } from './schemas';
 export { BoardDefSchema, ExpansionBoardDefSchema, parseBoardDef, parseExpansionBoardDef } from './board-schema';
 export { parseSiteImport, type ParsedSiteImport } from './site-schema';
 export { type InputPolicy, policyString } from './input-policy';
@@ -57,7 +57,7 @@ export { measureConnectors, svgViewBox } from './board-pinout-measure';
 export { reservedPins, exposedPins, pinsWithCap, pinsWithCapability } from './board.types';
 export { UI_COLORS } from './colors';
 export { entityColor } from './entity-registry';
-export { nodesByKind, validAutomations } from './manifest.types';
+export { nodesByKind } from './manifest.types';
 export { getNodesByKind, getNodeByKind } from './topology.types';
 
 // --- YAML fragment utilities ---
@@ -95,7 +95,7 @@ export type { HealthLevel } from './health';
 
 // --- Dashboard chart spec (derived from the saved topology, in the browser) ---
 export { buildDashboardSpec } from './dashboard-spec';
-export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, AutomationControl, SetpointControl, CalibrationControl } from './dashboard-spec';
+export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, SetpointControl, CalibrationControl } from './dashboard-spec';
 
 // --- Command confirmation (desired→reported convergence; one shape, all controls) ---
 export { confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S } from './command-confirm';
@@ -108,9 +108,7 @@ export {
   routeSetVersion, serializeAutomationSet,
 } from './automation-wire';
 export type { WireAutomation, TriggerKind } from './automation-wire';
-export {
-  listAutomatableRoutes, topologyAutomationsToRows, daysToMask, hmToMin,
-} from './automation-routes';
+export { listAutomatableRoutes } from './automation-routes';
 export type { AutomatableRoute, NewAutomationRow } from './automation-routes';
 export type { TunableNumber, TunableScope, TunableTier, TunableField } from './tunable-numbers';
 
@@ -122,7 +120,6 @@ export {
   pressureSensorCalEmptyId, pressureSensorCalFullId, pressureSensorLevelId,
   waterSourcePressureId,
   dosingPumpSwitchId, filterInletPressureId, filterOutletPressureId, filterDeltaPressureId,
-  automationEnableSwitchId,
 } from './codegen-ids';
 
 // --- Runtime contract: deployment mode, MQTT topics, command vocabulary ---
@@ -200,11 +197,9 @@ export { buildGraph, type TopologyGraph, type NodeAttrs, type EdgeAttrs } from '
 export { activeGraph, isNodeActive } from './graph/active-graph';
 export { deriveRoutes, parseRouteKey, controllerClaimsSegment, type Route } from './graph/routes';
 export { detectCrossControllerTalk, type CrossControllerReport } from './cross-controller';
-export { findRouteAutomationSensor, type RouteAutomationSensor } from './tank-level';
 export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes } from './graph/highlight';
 export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './graph/constraints';
 export { evaluateConstraints } from './graph/evaluate-constraints';
 export { evaluateRouteRules } from './graph/evaluate-route-rules';
 export { detectConflicts, type ConflictManifest, type RouteConflict, type SharedResource } from './graph/conflicts';
-export { evaluateEscalations } from './graph/evaluate-escalations';
 

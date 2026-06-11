@@ -14,6 +14,12 @@ import { TunableNumbersComponent } from './widgets/tunable-numbers.component';
 import { TankCalibrationComponent } from './widgets/tank-calibration.component';
 import type { RouteControl } from '@core';
 
+/** `reset_reason` tokens (esp_reset_reason) that mean a firmware fault — the controller
+ *  crashed. BROWNOUT is deliberately excluded: it's a power-supply fault (a different
+ *  responsibility — site wiring / supply / pump inrush), surfaced separately. A
+ *  recurring crash is the bootloop tell. */
+const FIRMWARE_CRASH_REASONS = new Set(['PANIC', 'INT_WDT', 'TASK_WDT', 'WDT']);
+
 /**
  * Customer dashboard for a site (`/site/:name/dashboard`, where `:name` is the
  * site id). Builds the chart spec in the browser from the saved topology, then
@@ -81,7 +87,19 @@ import type { RouteControl } from '@core';
                   @if (wifiText(c.controller); as w) { <span title="WiFi signal">{{ w }}</span> }
                   @if (uptimeText(c.controller); as u) { <span title="Uptime">Up {{ u }}</span> }
                   @if (tempText(c.controller); as t) { <span title="Controller temperature">{{ t }}</span> }
+                  @if (restartText(c.controller); as rt) {
+                    <span [class.text-error]="restartIsCrash(c.controller)"
+                          [class.text-warning]="restartIsBrownout(c.controller)"
+                          [class.font-medium]="restartIsCrash(c.controller) || restartIsBrownout(c.controller)"
+                          [title]="restartHint(c.controller)">{{ rt }}</span>
+                  }
                 </div>
+                @if (deviceConsoleUrl(c.controller); as url) {
+                  <div class="mt-0.5 pl-3.5 text-[11px]">
+                    <a [href]="url" target="_blank" rel="noopener" class="link link-hover text-base-content/50"
+                       title="Opens the controller's built-in live-log console — same network only">Live logs ↗</a>
+                  </div>
+                }
               </div>
             }
             <p class="text-[11px] text-base-content/40 px-1 pt-1.5 leading-snug">Free RAM. Under {{ heapWarnKb() }} KB shows a warning.</p>
@@ -426,6 +444,45 @@ export class DashboardComponent {
     const c = this.store.row(controller, TEMP_SENSOR)?.reported;
     if (c === undefined || !Number.isFinite(c)) return '';
     return `${Math.round(c)} °C`;
+  }
+
+  /** Why the controller last restarted, as a friendly label — '' when unreported.
+   *  Firmware faults collapse to "Crash"; a brownout (power fault) reads "Power dip".
+   *  These are different responsibilities (firmware vs site power); the raw token and
+   *  the owning domain ride the tooltip (restartHint). */
+  protected restartText(controller: string): string {
+    const r = this.restartReason(controller);
+    if (!r) return '';
+    if (FIRMWARE_CRASH_REASONS.has(r)) return 'Crash';
+    if (r === 'BROWNOUT') return 'Power dip';
+    if (r === 'DEEPSLEEP') return 'Wake';
+    if (r === 'POWERON' || r === 'EXT') return 'Power-on';
+    return 'Restart'; // SW / UNKNOWN / SDIO
+  }
+  /** Firmware fault (panic / watchdog) — a controller-software problem. */
+  protected restartIsCrash(controller: string): boolean {
+    return FIRMWARE_CRASH_REASONS.has(this.restartReason(controller));
+  }
+  /** Power-supply fault (brownout) — a site power / wiring problem, not firmware. */
+  protected restartIsBrownout(controller: string): boolean {
+    return this.restartReason(controller) === 'BROWNOUT';
+  }
+  /** Tooltip naming the restart cause and who owns it (firmware vs site power). */
+  protected restartHint(controller: string): string {
+    const r = this.restartReason(controller);
+    if (FIRMWARE_CRASH_REASONS.has(r)) return `Firmware crash (${r}) — check device logs`;
+    if (r === 'BROWNOUT') return 'Brownout — supply voltage dipped; check power / wiring / pump inrush';
+    return `Last restart: ${r}`;
+  }
+  /** Raw reset_reason token. */
+  protected restartReason(controller: string): string {
+    return this.store.row(controller, 'reset_reason')?.reported_text ?? '';
+  }
+
+  /** The controller's built-in web log console URL (local network only), '' when no IP. */
+  protected deviceConsoleUrl(controller: string): string {
+    const ip = this.store.row(controller, 'ip')?.reported_text;
+    return ip ? `http://${ip}/` : '';
   }
 
   // --- Operational state (System chip + per-controller drill-down) ---------

@@ -907,7 +907,7 @@ const getSched = (suffix: string): string => {
 };
 const mqttYamlSched = getSched("mqtt.yaml");
 
-assert(schedManifest.automations.length === 0, "manifest carries no automations (collection-managed now)");
+assert(!("automations" in schedManifest), "manifest has no automations field (collection-managed now)");
 assert(![...schedMap.keys()].some((k) => k.endsWith("schedule.yaml")), "no baked schedule.yaml is emitted");
 assert([...schedMap.keys()].some((k) => k.endsWith("automation-engine.yaml")), "automation-engine package is emitted");
 assert([...schedMap.keys()].some((k) => k.endsWith("automation-engine.h")), "automation-engine header is emitted");
@@ -939,7 +939,7 @@ assert(
 // Dashboard spec: no baked automation controls; route setpoints still surface.
 const schedSpec = buildDashboardSpec(scheduledTopo);
 const schedCtrl = schedSpec.controllers[0];
-assert(schedCtrl.automations.length === 0, "dashboard: no baked automation controls (managed on the automations page)");
+assert(!("automations" in schedCtrl), "dashboard: no baked automation controls (managed on the automations page)");
 assert(
   schedCtrl.setpoints.some((s) => s.key === "route_0_source_min_pct" && s.field === "source_min_pct"),
   "dashboard: route source-min exposed as a setpoint control",

@@ -17,4 +17,3 @@ export { evaluateRouteRules } from './evaluate-route-rules';
 export { detectConflicts, type ConflictManifest, type RouteConflict, type SharedResource } from './conflicts';
 
 // Escalation
-export { evaluateEscalations } from './evaluate-escalations';

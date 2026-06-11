@@ -189,10 +189,9 @@ export function topologyToManifestForController(
     };
   });
 
-  // Automations are no longer baked into the manifest/firmware — they live in the
-  // `automations` PocketBase collection and reach the device as a retained runtime
-  // set (see automation-engine.ts). The manifest carries an empty list so the
-  // schedule-derived dashboard controls and telemetry enable-channels stay empty.
+  // Automations are not part of the manifest — they live in the `automations`
+  // PocketBase collection and reach the device as a retained runtime set (see
+  // automation-engine.ts), not baked firmware.
 
   const controller = topology.controllers.find(c => c.id === controllerId);
 
@@ -211,6 +210,5 @@ export function topologyToManifestForController(
     imports: importedNodes,
     routes: manifestRoutes,
     timing: { ...topology.timing },
-    automations: [],
   };
 }

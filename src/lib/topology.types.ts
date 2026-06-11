@@ -68,23 +68,6 @@ export interface RouteOverride {
 }
 
 // ---------------------------------------------------------------------------
-// Automations
-// ---------------------------------------------------------------------------
-
-export type AutomationTrigger =
-  | { type: 'time'; at: string }
-  | { type: 'level'; for_minutes?: number };
-
-export interface Automation {
-  id: string;
-  name: string;
-  route: string;          // route key e.g. "tank1>tank2"
-  trigger: AutomationTrigger;
-  days_of_week: ('MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN')[];
-  enabled: boolean;
-}
-
-// ---------------------------------------------------------------------------
 // Topology (top-level document)
 // ---------------------------------------------------------------------------
 
@@ -170,7 +153,6 @@ export interface SiteTopology {
     flow_threshold: number;
     update_interval: number;
   };
-  automations: Automation[];
   remoteImports: RemoteImport[];
   layout?: {
     controllers: Record<string, { x: number; y: number }>;

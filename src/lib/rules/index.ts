@@ -27,7 +27,6 @@ import { pinCapabilities } from "./manifest/pin-capabilities";
 import { gpioBudget } from "./manifest/gpio-budget";
 import { routeNames } from "./manifest/route-names";
 import { routeConcurrency } from "./manifest/route-concurrency";
-import { automationRouteRef } from "./manifest/automation-route-ref";
 import { routeCount } from "./manifest/route-count";
 import { timingSanity } from "./manifest/timing-sanity";
 import { boardCapacity } from "./manifest/board-capacity";
@@ -55,7 +54,6 @@ export const ALL_MANIFEST_RULES: ManifestRule[] = [
   gpioBudget,
   routeNames,
   routeConcurrency,
-  automationRouteRef,
   timingSanity,
   boardCapacity,
   providerReferences,

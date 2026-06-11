@@ -16,7 +16,7 @@ import { WaterSourceNodeSchema } from './entities/water-source';
 import { FilterNodeSchema } from './entities/filter';
 import { DosingPumpNodeSchema } from './entities/dosing-pump';
 import { VfdNodeSchema } from './entities/vfd';
-import { DeviceSchema, TimingSchema, AutomationSchema, NetworkConfigSchema, parseDurationMs } from './schemas';
+import { DeviceSchema, TimingSchema, NetworkConfigSchema, parseDurationMs } from './schemas';
 import { buildGraph, deriveRoutes } from './graph/index';
 import type { SiteTopology } from './topology.types';
 
@@ -95,7 +95,6 @@ export const TopologySchema = z.object({
   pipes: z.array(PipeSegmentSchema).default([]),
   route_overrides: z.record(z.string(), RouteOverrideSchema).default({}),
   timing: TimingSchema.default({}),
-  automations: z.array(AutomationSchema).default([]),
   remoteImports: z.array(RemoteImportSchema).default([]),
   layout: z.object({
     controllers: z.record(z.object({ x: z.number(), y: z.number() })),
@@ -198,8 +197,12 @@ export const CURRENT_SCHEMA_VERSION = 18;
 
 type SchemaMigration = (data: Record<string, unknown>) => Record<string, unknown>;
 
+// NOTE: steps that read `data['automations']` below run ONLY on legacy stored
+// blobs (schema < current) — automations are no longer part of the topology type.
+// They survive to backfill `route_overrides` etc. from old data; the automations
+// field itself is dropped on the final TopologySchema.parse (unknown keys stripped).
 const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
-  5: (data) => { data['schema'] = 6; data['automations'] = data['automations'] ?? []; return data; },
+  5: (data) => { data['schema'] = 6; return data; },
   6: (data) => {
     data['schema'] = 7;
     const overrides = (data['route_overrides'] ?? {}) as Record<string, Record<string, unknown>>;

@@ -243,7 +243,6 @@ export class WorkspaceService {
             flow_threshold: 0.5,
             update_interval: 30,
           },
-          automations: [],
           remoteImports: [],
         });
       }
@@ -423,13 +422,6 @@ export class WorkspaceService {
         Object.entries(clone.route_overrides).filter(([key]) => !removedNodeIds.has(key))
       );
     }
-
-    // Clean up automations referencing removed nodes
-    clone.automations = clone.automations.filter((a: any) => {
-      if (a.route && removedNodeIds.has(a.route)) return false;
-      if (a.nodes && a.nodes.some((id: string) => removedNodeIds.has(id))) return false;
-      return true;
-    });
 
     const boards = new Map(this._boards());
     boards.delete(controllerId);

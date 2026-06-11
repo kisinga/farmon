@@ -5,11 +5,11 @@ import (
 	m "github.com/pocketbase/pocketbase/migrations"
 )
 
-// commands.action gains automation_set, and commands gains an automation_id
-// field, so the dashboard's runtime schedule pause/resume passes the SelectField
-// validation and records which schedule it targeted (route_id is null for these).
-// Mirrors the CommandAction union in src/lib/codegen-ids.ts. Without the enum
-// value the record Save is rejected and the command endpoint returns 500.
+// commands.action gains automation_set, and commands gains an automation_id field.
+// HISTORICAL: this shipped for the baked-schedule pause/resume command. That command
+// is gone (automations are first-class runtime data now) — migration 24 drops the
+// enum value + field again. Kept intact so PB's applied-migration history stays
+// consistent on databases that already ran it.
 
 var commandActionsV19 = append(append([]string{}, commandActionsV10...), "automation_set")
 

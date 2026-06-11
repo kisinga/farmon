@@ -11,7 +11,7 @@
 import {
   confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S, COMMAND_TTL_S,
   type ConfirmObservation,
-  type RouteControl, type ActuatorControl, type SetpointControl, type AutomationControl,
+  type RouteControl, type ActuatorControl, type SetpointControl,
 } from "@core";
 
 let passed = 0;
@@ -28,10 +28,6 @@ const setpoint: SetpointControl = {
   key: "route_0_source_min_pct", routeId: 0, routeName: "R", field: "source_min_pct",
   label: "Source min", default: 20, min: 0, max: 100, unit: "%",
 };
-const automation: AutomationControl = {
-  id: "a1", name: "Daily", routeId: 0, routeName: "R", trigger: "Daily 06:00", enableSensor: "auto_a1_enable",
-};
-
 /** Build an observation with sane defaults (online, fresh). */
 function obs(o: Partial<ConfirmObservation> = {}): ConfirmObservation {
   return { ageMs: 0, online: true, ...o };
@@ -97,9 +93,6 @@ function obs(o: Partial<ConfirmObservation> = {}): ConfirmObservation {
   const on = confirmDescriptor("safety_override", { on: true });
   assert(on.classify(obs({ reported: 1 })).phase === "confirmed", "override on, reported on → confirmed");
   assert(on.classify(obs({ reported: 0 })).phase === "pending", "override on, reported off → pending");
-  const auto = confirmDescriptor("automation_set", { automation, on: false });
-  assert(auto.sensor === automation.enableSensor, "automation_set watches the enable sensor");
-  assert(auto.classify(obs({ reported: 0 })).phase === "confirmed", "automation off, reported off → confirmed");
 }
 
 // --- Fan-out / fire-and-forget (named exceptions) --------------------------

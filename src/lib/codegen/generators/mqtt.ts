@@ -5,7 +5,7 @@ import {
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
   COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
-  localNodesWithFlag, validAutomations, automationEnableSwitchId,
+  localNodesWithFlag,
   collectTunableNumbers, boardSupportedTransports, effectiveTransport,
 } from '@core';
 import type { GenerationMetadata } from "../backends/types";
@@ -13,6 +13,15 @@ import type { GenerationMetadata } from "../backends/types";
 /** C++ printf format for a StateEvent JSON line: route, from, to, reason, command_id. */
 const EVENT_FMT =
   '{\\"route\\":%d,\\"from\\":\\"%s\\",\\"to\\":\\"%s\\",\\"reason\\":\\"%s\\",\\"command_id\\":\\"%s\\"}';
+
+/** esp-idf `esp_reset_reason()` enum (values 0..10) → wire token; index === enum value.
+ *  Published retained on connect so the dashboard can show why a controller last
+ *  rebooted. A firmware crash (PANIC / *_WDT) is the panic signal — a recurring one is
+ *  the bootloop tell; BROWNOUT is a separate power-supply fault, not a crash. */
+const RESET_REASON_TOKENS = [
+  'UNKNOWN', 'POWERON', 'EXT', 'SW', 'PANIC',
+  'INT_WDT', 'TASK_WDT', 'WDT', 'DEEPSLEEP', 'BROWNOUT', 'SDIO',
+] as const;
 
 /** A C++ `static const char* NAME[] = {"a", "b"};` literal from a token list. */
 const cppTokenArray = (name: string, toks: readonly string[]) =>
@@ -76,23 +85,6 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // publishes and what the UI reads can never drift.
   const channels = collectTelemetryChannels(m);
   const hasManualPumps = localNodesWithFlag(m, 'isPump').length > 0;
-  const autos = validAutomations(m);
-
-  // automation_set: pause (off) / resume (on) a baked schedule by its stable id,
-  // by flipping its persistent enable switch (schedule.yaml). One strcmp per baked
-  // automation; the switch restores across reboot, so the pause sticks. Emitted
-  // only when there are baked automations to toggle.
-  const automationCases = autos.length === 0 ? [] : [
-    '} else if (strcmp(action, "automation_set") == 0) {',
-    '  const char* aid = x["automation_id"] | "";',
-    '  bool on = x["on"] | false;',
-    ...autos.map((a, i) => {
-      const sw = automationEnableSwitchId(a.id);
-      const lead = i === 0 ? 'if' : 'else if';
-      return `  ${lead} (strcmp(aid, "${a.id}") == 0) { if (on) id(${sw}).turn_on(); else id(${sw}).turn_off(); }`;
-    }),
-  ];
-
   // config_set: write any runtime-tunable number entity (level setpoints, route
   // max-runtime, controller safety timings, pressure calibration) by id.
   // set_value().perform() fires the number's restore so the change persists across
@@ -211,7 +203,6 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     '  }',
     '} else if (strcmp(action, "safety_override") == 0) {',
     '  if (x["on"] | false) id(safety_override).turn_on(); else id(safety_override).turn_off();',
-    ...automationCases,
     ...configCases,
     '} else {',
     '  ESP_LOGW("cmd", "unknown action: %s", action);',
@@ -303,6 +294,23 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     ] : []),
   ];
 
+  // --- On-connect retained facts ---------------------------------------------
+  // Published once per (re)connect, retained:
+  //  - identity: chip base MAC (duplicate-firmware tripwire; the server binds the
+  //    controller to the first MAC it sees and flags a different board on the same id).
+  //  - reset_reason: why the device last rebooted (esp_reset_reason → token). A crash
+  //    reason after an unexpected restart is the panic/bootloop signal on the dashboard.
+  //  - ip: current device IP, so the dashboard can deep-link the controller's built-in
+  //    web log console (full live logs, on the local network).
+  // reset_reason/ip ride the existing telemetry→string-shadow path; no server change.
+  const onConnectBody = [
+    `id(mqtt_client).publish("${identityTopic(site, ctrl)}", get_mac_address(), 0, true);`,
+    cppTokenArray('RR_TOK', RESET_REASON_TOKENS),
+    'int rr = (int) esp_reset_reason();',
+    `id(mqtt_client).publish("${telemetryTopic(site, ctrl, 'reset_reason')}", (rr >= 0 && rr < ${RESET_REASON_TOKENS.length}) ? RR_TOK[rr] : "UNKNOWN", 0, true);`,
+    `id(mqtt_client).publish("${telemetryTopic(site, ctrl, 'ip')}", id(ip_addr).state, 0, true);`,
+  ];
+
   return `# =============================================================================
 # MajiFlow — MQTT Runtime
 # =============================================================================
@@ -379,13 +387,17 @@ mqtt:
     payload: "0"
     retain: true
   on_connect:
-    # Hardware-identity tripwire: publish this chip's base MAC, retained, on every
-    # connect. The server binds the controller to the first MAC it sees and flags a
-    # later board reporting a different one — catches the same firmware (one baked
-    # identity) flashed to two boards. get_mac_address() (not wifi_info) so it works
-    # on ethernet boards too.
+    # Retained facts published once per (re)connect:
+    #  - identity (chip base MAC): duplicate-firmware tripwire — the server binds the
+    #    controller to the first MAC it sees and flags a later board reporting a different
+    #    one (same baked identity flashed to two boards). get_mac_address() (not wifi_info)
+    #    so it works on ethernet boards too.
+    #  - reset_reason: why the device last rebooted (POWERON/SW = clean; PANIC/*_WDT =
+    #    firmware crash; BROWNOUT = power-supply fault). Read from the string shadow on the
+    #    dashboard to show the restart cause and who owns it.
+    #  - ip: current device IP, for the dashboard's deep-link to the on-device web log console.
     - lambda: |-
-        id(mqtt_client).publish("${identityTopic(site, ctrl)}", get_mac_address(), 0, true);
+${indent(onConnectBody, 8)}
   on_json_message:
     # QoS 1 over the (default) persistent session: the broker queues a command sent
     # during the device's reconnect window or a brief drop and delivers it on
