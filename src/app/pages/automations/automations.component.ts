@@ -2,11 +2,14 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { UnsubscribeFunc } from 'pocketbase';
 import {
-  parseTopology, listAutomatableRoutes, MAX_AUTOMATIONS,
+  parseTopology, listAutomatableRoutes, buildDashboardSpec, MAX_AUTOMATIONS,
   type SiteTopology, type StoredSiteTopology, type AutomatableRoute, type NewAutomationRow,
 } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
+import { DashboardStore } from '../dashboard/dashboard.store';
+import { CommandLifecycleStore } from '../dashboard/command-lifecycle.store';
+import { TunableNumbersComponent } from '../dashboard/widgets/tunable-numbers.component';
 import { AutomationsService, type AutomationRecord } from './automations.service';
 
 const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -52,7 +55,8 @@ function blankDraft(): NewAutomationRow & { id?: string } {
 @Component({
   selector: 'app-automations',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, TunableNumbersComponent],
+  providers: [DashboardStore, CommandLifecycleStore],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="max-w-6xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6 flex flex-col gap-5">
@@ -83,16 +87,34 @@ function blankDraft(): NewAutomationRow & { id?: string } {
         </div>
       }
 
+      <!-- Route defaults (top): the per-route values an automation inherits unless
+           it overrides them. Collapsed by default, edit-gated — same as the dashboard. -->
+      @if (hasRouteTuning()) {
+        <details class="group rounded-2xl ring-1 ring-base-300/40 bg-base-100 overflow-hidden">
+          <summary class="cursor-pointer list-none flex items-center justify-between gap-3 px-4 h-12 hover:bg-base-200/30 transition-colors">
+            <span class="flex items-baseline gap-2 min-w-0">
+              <span class="text-sm font-semibold">Route defaults</span>
+              <span class="text-xs text-base-content/40 truncate hidden sm:inline">per-route runtime, volume, duration &amp; levels</span>
+            </span>
+            <svg class="w-4 h-4 text-base-content/40 shrink-0 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+          </summary>
+          <div class="px-4 pb-4 pt-3 border-t border-base-300/40">
+            <app-tunable-numbers [controllers]="dash.spec().controllers" [canEdit]="canEdit()" scope="route" />
+          </div>
+        </details>
+      }
+
       <!-- Editor -->
       @if (draft(); as d) {
-        <section class="w-full max-w-3xl rounded-2xl ring-1 ring-primary/40 bg-base-100 shadow-lg overflow-hidden">
+        <section class="rounded-2xl ring-1 ring-primary/40 bg-base-100 shadow-lg overflow-hidden">
           <div class="flex items-center justify-between px-4 h-11 border-b border-base-300/40">
             <h2 class="text-sm font-semibold">{{ d.id ? 'Edit automation' : 'New automation' }}</h2>
             <button class="btn btn-ghost btn-xs btn-circle" (click)="cancel()" title="Cancel">✕</button>
           </div>
 
-          <div class="p-4 flex flex-col gap-4">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="p-4 grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-5">
+            <!-- Left: identity + trigger -->
+            <div class="flex flex-col gap-4">
               <label class="flex flex-col gap-1">
                 <span class="text-[11px] font-medium text-base-content/50">Name</span>
                 <input class="input input-sm input-bordered" [value]="d.name" (input)="set('name', $any($event.target).value)" placeholder="Morning fill" />
@@ -112,38 +134,37 @@ function blankDraft(): NewAutomationRow & { id?: string } {
                   }
                 </select>
               </label>
-            </div>
 
-            <!-- When -->
-            <div class="flex flex-col gap-2">
-              <span class="text-[11px] font-semibold uppercase tracking-wider text-base-content/40">When</span>
-              <div class="inline-flex w-fit rounded-lg bg-base-200 p-0.5">
-                <button class="btn btn-xs btn-ghost rounded-md normal-case" [class.bg-base-100]="d.trigger_type === 'time'" [class.shadow-sm]="d.trigger_type === 'time'" (click)="set('trigger_type', 'time')">Time of day</button>
-                <button class="btn btn-xs btn-ghost rounded-md normal-case" [class.bg-base-100]="d.trigger_type === 'level'" [class.shadow-sm]="d.trigger_type === 'level'" [disabled]="!selectedRoute()?.hasLevelSource" (click)="set('trigger_type', 'level')">Tank level</button>
-              </div>
-              @if (d.trigger_type === 'time') {
-                <div class="flex items-center gap-2 flex-wrap pt-0.5">
-                  <input type="time" class="input input-sm input-bordered w-32" [value]="hhmm(d.time_min)" (input)="setTime($any($event.target).value)" />
-                  <div class="flex gap-1">
-                    @for (day of dayLabels; track day; let i = $index) {
-                      <button class="btn btn-xs btn-circle font-normal" [class.btn-primary]="dayOn(d.days_mask, i)" [class.btn-ghost]="!dayOn(d.days_mask, i)" (click)="toggleDay(i)" [title]="day">{{ day.charAt(0) }}</button>
-                    }
+              <div class="flex flex-col gap-2">
+                <span class="text-[11px] font-semibold uppercase tracking-wider text-base-content/40">When</span>
+                <div class="inline-flex w-fit rounded-lg bg-base-200 p-0.5">
+                  <button class="btn btn-xs btn-ghost rounded-md normal-case" [class.bg-base-100]="d.trigger_type === 'time'" [class.shadow-sm]="d.trigger_type === 'time'" (click)="set('trigger_type', 'time')">Time of day</button>
+                  <button class="btn btn-xs btn-ghost rounded-md normal-case" [class.bg-base-100]="d.trigger_type === 'level'" [class.shadow-sm]="d.trigger_type === 'level'" [disabled]="!selectedRoute()?.hasLevelSource" (click)="set('trigger_type', 'level')">Tank level</button>
+                </div>
+                @if (d.trigger_type === 'time') {
+                  <div class="flex items-center gap-2 flex-wrap pt-0.5">
+                    <input type="time" class="input input-sm input-bordered w-32" [value]="hhmm(d.time_min)" (input)="setTime($any($event.target).value)" />
+                    <div class="flex gap-1">
+                      @for (day of dayLabels; track day; let i = $index) {
+                        <button class="btn btn-xs btn-circle font-normal" [class.btn-primary]="dayOn(d.days_mask, i)" [class.btn-ghost]="!dayOn(d.days_mask, i)" (click)="toggleDay(i)" [title]="day">{{ day.charAt(0) }}</button>
+                      }
+                    </div>
+                    @if (d.days_mask === 0) { <span class="text-[11px] text-base-content/40">every day</span> }
                   </div>
-                  @if (d.days_mask === 0) { <span class="text-[11px] text-base-content/40">every day</span> }
-                </div>
-              } @else {
-                <div class="flex items-center gap-2 text-sm pt-0.5">
-                  <span class="text-base-content/60">Start when source tank rises above</span>
-                  <input type="number" min="0" max="100" class="input input-sm input-bordered w-20 text-right" [value]="d.level_threshold_pct" (input)="set('level_threshold_pct', num($event))" />
-                  <span class="text-base-content/40">%</span>
-                </div>
-              }
+                } @else {
+                  <div class="flex items-center gap-2 text-sm pt-0.5">
+                    <span class="text-base-content/60">When source rises above</span>
+                    <input type="number" min="0" max="100" class="input input-sm input-bordered w-20 text-right" [value]="d.level_threshold_pct" (input)="set('level_threshold_pct', num($event))" />
+                    <span class="text-base-content/40">%</span>
+                  </div>
+                }
+              </div>
             </div>
 
-            <!-- Run settings -->
-            <div class="flex flex-col gap-1">
+            <!-- Right: run settings -->
+            <div class="flex flex-col gap-2">
               <span class="text-[11px] font-semibold uppercase tracking-wider text-base-content/40">Run settings</span>
-              <div class="divide-y divide-base-300/40">
+              <div class="rounded-xl ring-1 ring-base-300/40 px-3 divide-y divide-base-300/40">
                 @for (f of overrideFields(); track f.key) {
                   <div class="flex items-center gap-3 py-2">
                     <label class="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer select-none">
@@ -164,7 +185,7 @@ function blankDraft(): NewAutomationRow & { id?: string } {
             </div>
 
             <!-- Footer -->
-            <div class="flex items-center justify-between gap-2 pt-1">
+            <div class="lg:col-span-2 flex items-center justify-between gap-2 pt-3 border-t border-base-300/40">
               <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
                 <input type="checkbox" class="toggle toggle-sm toggle-success" [checked]="d.enabled" (change)="set('enabled', $any($event.target).checked)" />
                 <span class="text-base-content/70">{{ d.enabled ? 'Enabled' : 'Paused' }}</span>
@@ -225,6 +246,7 @@ export class AutomationsComponent {
   private backend = inject(BackendService);
   private auth = inject(AuthStore);
   private svc = inject(AutomationsService);
+  protected dash = inject(DashboardStore);
 
   protected siteId = '';
   protected siteName = signal('');
@@ -245,6 +267,8 @@ export class AutomationsComponent {
 
   protected canEdit = computed(() => this.isOwner || this.auth.isAdmin());
   protected atCap = computed(() => this.rows().length >= MAX_AUTOMATIONS);
+  /** Any per-route tunable exists (drives the "Route defaults" disclosure). */
+  protected hasRouteTuning = computed(() => this.dash.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));
   protected legacyCount = computed(() => (this.topology?.automations?.length ?? 0));
   protected selectedRoute = computed(() => this.routes().find((r) => r.routeKey === this.draft()?.route_key));
   protected overrideFields = computed(() =>
@@ -275,6 +299,9 @@ export class AutomationsComponent {
         this.rawTopology = topology;
         this.topology = parseTopology(topology);
         this.routes.set(listAutomatableRoutes(this.topology));
+        // Live per-route tunables (the "Route defaults" the automations override)
+        // ride the same dashboard store + config_set pipe as on the dashboard.
+        await this.dash.init(this.siteId, buildDashboardSpec(this.topology));
       }
       this.rows.set(await this.svc.list(this.siteId));
       this.unsub = await this.svc.subscribe(this.siteId, () => void this.refresh());

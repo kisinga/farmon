@@ -48,7 +48,7 @@ interface RouteView {
   template: `
     <button
       type="button"
-      class="group relative w-full text-left bg-base-100 rounded-2xl ring-1 transition-all overflow-hidden
+      class="group relative isolate w-full text-left bg-base-100 rounded-2xl ring-1 transition-all overflow-hidden
              p-4 min-h-[140px] flex flex-col gap-2 disabled:cursor-not-allowed"
       [class]="cmd()?.alert ? 'ring-error/60' : view().ring"
       [class.opacity-60]="!online()"

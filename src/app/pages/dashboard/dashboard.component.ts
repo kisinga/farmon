@@ -173,19 +173,6 @@ import type { RouteControl } from '@core';
                 </div>
               }
             }
-            <!-- Per-route timers (max runtime + level start/stop), gated by a
-                 collapsed disclosure and by control. Belong to the routes above. -->
-            @if (hasRouteTuning()) {
-              <details class="mt-2 bg-base-100/40 rounded-2xl ring-1 ring-base-300/30 px-4 py-3">
-                <summary class="cursor-pointer list-none flex items-center gap-2 text-xs font-semibold text-base-content/60">
-                  Route timers
-                  <span class="text-[11px] font-normal text-base-content/40">max runtime + level start/stop, per route</span>
-                </summary>
-                <div class="mt-3 pt-3 border-t border-base-300/30">
-                  <app-tunable-numbers [controllers]="store.spec().controllers" [canEdit]="canControl()" scope="route" />
-                </div>
-              </details>
-            }
           </section>
         }
 
@@ -514,8 +501,6 @@ export class DashboardComponent {
   protected hasRoutes = computed(() => this.store.spec().controllers.some((c) => c.routes.length > 0));
 
   // --- Operator-mode tiers -------------------------------------------------
-  /** Any per-route timer exists (drives the "Route timers" disclosure in Routes). */
-  protected hasRouteTuning = computed(() => this.store.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));
   /** Any operator-mode control exists: controller safety timings, pressure
    *  calibration, or a manual actuator. */
   protected hasOperatorControls = computed(() => this.store.spec().controllers.some((c) =>
