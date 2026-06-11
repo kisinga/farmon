@@ -24,6 +24,12 @@ export const routes: Routes = [
       import('./pages/pricing/pricing.component').then((m) => m.PricingComponent),
   },
   {
+    // Public features overview.
+    path: 'features',
+    loadComponent: () =>
+      import('./pages/features/features.component').then((m) => m.FeaturesComponent),
+  },
+  {
     // Role-aware landing: admins → /overview, customers → their dashboard.
     path: 'home',
     canActivate: [authGuard],

@@ -3,6 +3,7 @@
 package server
 
 import (
+	"errors"
 	"os"
 
 	"github.com/kisinga/majiflow/internal/alerts"
@@ -15,6 +16,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
+	"github.com/pocketbase/pocketbase/tools/router"
 
 	// Side-effect import: registers the Go migrations that define collections.
 	_ "github.com/kisinga/majiflow/migrations"
@@ -60,10 +62,22 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 
 		api.Register(se, cfg, broker.Server)
 
-		// Serve the built SPA (index fallback for client-side routing) when a
-		// directory is configured.
+		// Serve the built SPA when a directory is configured. Prerendered marketing
+		// pages (/, /pricing, /features) resolve to their own index.html; every
+		// other path is an authenticated SPA route, so it falls back to the bare
+		// client shell (index.csr.html) instead of the prerendered landing page.
+		// Falling back to the landing page would boot the app over landing markup
+		// and trigger a hydration mismatch and the wrong document title.
 		if cfg.SPADir != "" {
-			se.Router.GET("/{path...}", apis.Static(os.DirFS(cfg.SPADir), true))
+			spaFS := os.DirFS(cfg.SPADir)
+			serveStatic := apis.Static(spaFS, false)
+			se.Router.GET("/{path...}", func(e *core.RequestEvent) error {
+				err := serveStatic(e)
+				if err != nil && errors.Is(err, router.ErrFileNotFound) {
+					return e.FileFS(spaFS, "index.csr.html")
+				}
+				return err
+			})
 		}
 
 		return se.Next()

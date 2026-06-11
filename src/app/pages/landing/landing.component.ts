@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { BRAND_LOGO_SVG } from '../../shared/brand-logo';
+import { applyPageSeo } from '../../shared/seo';
 
 const GITHUB_URL = 'https://github.com/kisinga/majiflow';
 
@@ -52,11 +53,14 @@ interface Deployment {
 /**
  * Public landing page (route `''`). Renders full-bleed; the app shell hides its
  * chrome on this route, so this component owns the nav, scroll, and footer.
+ * Prerendered to static HTML at build time (see app.routes.server.ts) so search
+ * and social crawlers get the full page.
  *
  * Carries the brand-level story the old static homepage held (designer →
  * generate → monitor, the verticals, the use-cases) reconciled to the current
  * managed/local model: internet is for offsite eyes, the controller stays
- * autonomous on link loss, and you choose who runs the backend.
+ * autonomous on link loss, and you choose who runs the backend. Leads with the
+ * water-monitoring-and-control keyword and a water-conservation throughline.
  */
 @Component({
   selector: 'app-landing',
@@ -83,6 +87,8 @@ interface Deployment {
           <span class="text-lg font-bold tracking-tight text-white">MajiFlow</span>
         </a>
         <div class="flex items-center gap-2 sm:gap-3">
+          <a routerLink="/features"
+             class="text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">Features</a>
           <a routerLink="/pricing"
              class="text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">Pricing</a>
           <a [href]="github" target="_blank" rel="noopener"
@@ -109,7 +115,7 @@ interface Deployment {
           </span>
         </div>
         <span class="inline-flex items-center gap-2 rounded-full bg-white/10 ring-1 ring-white/15 px-3 py-1 text-xs font-medium text-cyan-200 mb-6">
-          <span class="w-1.5 h-1.5 rounded-full bg-cyan-300"></span> Plan it · We build it · You watch it
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-300"></span> Water monitoring and automation
         </span>
         <h1 class="text-4xl sm:text-6xl font-bold leading-[1.05] tracking-tight">
           Watch and control your
@@ -117,9 +123,9 @@ interface Deployment {
           from anywhere.
         </h1>
         <p class="mt-7 text-base sm:text-xl text-white/70 max-w-2xl mx-auto leading-relaxed">
-          For farms, hotels, greenhouses and boreholes. Anywhere water really matters.
-          Lay out your tanks, pumps, valves and sensors on the screen, and we set up the
-          controllers, build your live dashboard, and hand you a clear wiring guide.
+          Water is money, and untracked water is money gone. MajiFlow meters every litre, runs your pumps
+          and valves on a schedule or to an exact volume, and shows where it all goes: by field, by tank,
+          by customer. No more checking tanks by hand or driving out to start a pump.
         </p>
         <div class="mt-9 flex flex-wrap gap-3 justify-center">
           <a routerLink="/login"
@@ -145,10 +151,10 @@ interface Deployment {
     <!-- ===================== DASHBOARD PEEK ===================== -->
     <section class="px-5 sm:px-8 pt-12 sm:pt-16 pb-4">
       <div class="max-w-5xl mx-auto text-center">
-        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Your whole site, on one screen</h2>
+        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">See every tank, pump and valve on one screen</h2>
         <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed max-w-2xl mx-auto">
-          Live tank levels, water flow and valve positions in a single view. Watch it from
-          your laptop or your phone, on-site or across the country.
+          Live tank levels, water flow and valve positions in a single view. Watch your farm or site
+          from your laptop or your phone, on-site or across the country.
         </p>
       </div>
 
@@ -160,7 +166,7 @@ interface Deployment {
             <span class="w-3 h-3 rounded-full bg-red-400/70"></span>
             <span class="w-3 h-3 rounded-full bg-amber-400/70"></span>
             <span class="w-3 h-3 rounded-full bg-green-400/70"></span>
-            <span class="ml-3 hidden sm:block rounded-md bg-white ring-1 ring-slate-200 px-3 py-0.5 text-[11px] text-slate-400">majiflow.app / dashboard</span>
+            <span class="ml-3 hidden sm:block rounded-md bg-white ring-1 ring-slate-200 px-3 py-0.5 text-[11px] text-slate-400">majiflow.io / dashboard</span>
           </div>
           <!-- One image per viewport. <source media> means only the matching
                screenshot is downloaded — the phone shot on mobile, never both. -->
@@ -170,7 +176,7 @@ interface Deployment {
               <source media="(max-width: 639px)" srcset="marketing/mobile.webp" type="image/webp" />
               <source srcset="marketing/desktop.avif" type="image/avif" />
               <source srcset="marketing/desktop.webp" type="image/webp" />
-              <img src="marketing/desktop.png" alt="The MajiFlow dashboard showing routes, status, tank levels and valves"
+              <img src="marketing/desktop.png" alt="The MajiFlow water monitoring dashboard showing routes, status, tank levels and valves"
                    width="1591" height="1361" fetchpriority="high" decoding="async"
                    class="w-full h-full object-cover object-top" />
             </picture>
@@ -183,11 +189,42 @@ interface Deployment {
               <picture>
                 <source srcset="marketing/mobile.avif" type="image/avif" />
                 <source srcset="marketing/mobile.webp" type="image/webp" />
-                <img src="marketing/mobile.png" alt="MajiFlow on a phone"
+                <img src="marketing/mobile.png" alt="MajiFlow water dashboard on a phone"
                      width="388" height="842" loading="lazy" decoding="async"
                      class="w-full object-cover object-top" />
               </picture>
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== SAVE WATER (CONSERVATION) ===================== -->
+    <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-50">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-center max-w-2xl mx-auto">
+          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Water you can see is water you don't waste</h2>
+          <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
+            On a farm, every litre counts. Most water is lost where no one is looking. A valve left open,
+            a tank overflowing at night, a slow leak underground. MajiFlow puts a number on all of it.
+          </p>
+        </div>
+        <div class="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="rounded-xl p-6 bg-white ring-1 ring-slate-200">
+            <h3 class="font-semibold text-cyan-700">Catch leaks early</h3>
+            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Flow sensors spot a line that should be still and warn you the same day, before it drains a tank or floods a field.</p>
+          </div>
+          <div class="rounded-xl p-6 bg-white ring-1 ring-slate-200">
+            <h3 class="font-semibold text-cyan-700">Use only what you need</h3>
+            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Tanks fill to a set level and stop, so nothing overflows and no crop is over-watered.</p>
+          </div>
+          <div class="rounded-xl p-6 bg-white ring-1 ring-slate-200">
+            <h3 class="font-semibold text-cyan-700">Know your usage</h3>
+            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">"Field A used 10,300 litres this week" turns guesswork into numbers you can plan around and cut.</p>
+          </div>
+          <div class="rounded-xl p-6 bg-white ring-1 ring-slate-200">
+            <h3 class="font-semibold text-cyan-700">Pump on sun, not diesel</h3>
+            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Solar-run sites water the land on clean power and cut fuel, cost and carbon.</p>
           </div>
         </div>
       </div>
@@ -219,7 +256,7 @@ interface Deployment {
             <picture>
               <source srcset="marketing/controller.avif" type="image/avif" />
               <source srcset="marketing/controller.webp" type="image/webp" />
-              <img src="marketing/controller.jpg" alt="The controller that runs your site"
+              <img src="marketing/controller.jpg" alt="The MajiFlow controller that runs your farm or site"
                    width="1400" height="787" loading="lazy" decoding="async"
                    class="block w-full aspect-[16/10] object-cover" />
             </picture>
@@ -258,13 +295,95 @@ interface Deployment {
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           </div>
           <h3 class="font-semibold">3. You watch it</h3>
-          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">See tank levels, water flow and valve positions in one place. Know what is happening even when you are miles away.</p>
+          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">See tank levels, water flow and valve positions in one place. Know what your farm is doing even when you are miles away.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== WHAT YOU CAN DO ===================== -->
+    <section class="px-5 sm:px-8 py-16 sm:py-20">
+      <div class="max-w-5xl mx-auto">
+        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-center">What you can do with it</h2>
+        <div class="mt-10 grid gap-5 sm:grid-cols-2">
+          @for (c of capabilities; track c.title) {
+            <div class="rounded-xl p-6 bg-slate-50 ring-1 ring-slate-200 hover:ring-cyan-300 transition-colors">
+              <h3 class="font-semibold text-slate-900">{{ c.title }}</h3>
+              <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">{{ c.body }}</p>
+            </div>
+          }
+        </div>
+        <div class="mt-8 text-center">
+          <a routerLink="/features" class="text-sm font-semibold text-cyan-600 hover:text-cyan-700">See everything MajiFlow does →</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== FROM DESIGN TO THE FIELD ===================== -->
+    <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-50">
+      <div class="max-w-6xl mx-auto">
+        <div class="text-center max-w-2xl mx-auto">
+          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">From design to the field</h2>
+          <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
+            Real sites we have planned and built. The same layout you draw on the screen
+            becomes the controllers, pumps and valves running on the ground.
+          </p>
+        </div>
+        <div class="mt-12 grid gap-6 md:grid-cols-3">
+          @for (d of deployments; track d.title) {
+            <div class="rounded-2xl bg-white ring-1 ring-slate-200 shadow-sm overflow-hidden">
+              <!-- the design (topology render) -->
+              <div class="bg-white border-b border-slate-100">
+                @if (d.design) {
+                  <picture>
+                    <source [srcset]="avif(d.design)" type="image/avif" />
+                    <source [srcset]="webp(d.design)" type="image/webp" />
+                    <img [src]="d.design" [alt]="d.title + ' design'"
+                         width="1000" height="741" loading="lazy" decoding="async"
+                         class="block w-full aspect-[16/10] object-contain bg-slate-50" />
+                  </picture>
+                } @else {
+                  <div class="aspect-[16/10] bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-slate-400">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                    <span class="text-[10px] font-medium">{{ d.designSlot }}</span>
+                  </div>
+                }
+              </div>
+              <!-- the install (real field photo) -->
+              @if (d.photo) {
+                <img [src]="d.photo" [alt]="d.title + ' installed'" class="block w-full aspect-[16/10] object-cover" />
+              } @else {
+                <div class="aspect-[16/10] bg-slate-100 flex flex-col items-center justify-center gap-1.5 text-slate-400">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5L9 20"/></svg>
+                  <span class="text-[10px] font-medium">{{ d.photoSlot }}</span>
+                </div>
+              }
+              <div class="p-5">
+                <h3 class="font-semibold text-slate-900">{{ d.title }}</h3>
+                <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">{{ d.body }}</p>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== WORKS IN ===================== -->
+    <section class="px-5 sm:px-8 py-16 sm:py-20">
+      <div class="max-w-5xl mx-auto">
+        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-center">Water monitoring for farms, hotels, greenhouses and boreholes</h2>
+        <div class="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          @for (v of verticals; track v.title) {
+            <div class="rounded-xl p-6 bg-slate-50 ring-1 ring-slate-200">
+              <h3 class="font-semibold text-cyan-700">{{ v.title }}</h3>
+              <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">{{ v.body }}</p>
+            </div>
+          }
         </div>
       </div>
     </section>
 
     <!-- ===================== TWO WAYS TO RUN IT (PLANS) ===================== -->
-    <section class="px-5 sm:px-8 py-16 sm:py-24">
+    <section class="px-5 sm:px-8 py-16 sm:py-24 bg-slate-50">
       <div class="max-w-6xl mx-auto">
         <div class="text-center max-w-2xl mx-auto">
           <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Two ways to run it</h2>
@@ -328,7 +447,7 @@ interface Deployment {
       <div class="relative max-w-5xl mx-auto text-center">
         <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Built to keep going</h2>
         <p class="mt-3 text-white/60 max-w-2xl mx-auto text-sm sm:text-base leading-relaxed">
-          Water cannot wait. Your site keeps running even when things go wrong.
+          Water cannot wait, and neither can a thirsty crop. Your site keeps running even when things go wrong.
         </p>
         <div class="mt-10 grid gap-6 sm:grid-cols-3 text-left">
           <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-6">
@@ -336,7 +455,7 @@ interface Deployment {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
             </div>
             <h3 class="font-semibold">Battery and solar</h3>
-            <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Add the on-site setup and battery plus solar keep things running right through a power cut.</p>
+            <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Add the on-site setup and battery plus solar keep things running right through a power cut, cleaner and cheaper than a diesel pump.</p>
           </div>
           <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-6">
             <div class="w-10 h-10 rounded-lg bg-cyan-400/15 text-cyan-300 flex items-center justify-center mb-3">
@@ -356,90 +475,11 @@ interface Deployment {
       </div>
     </section>
 
-    <!-- ===================== WHAT YOU CAN DO ===================== -->
-    <section class="px-5 sm:px-8 py-16 sm:py-20">
-      <div class="max-w-5xl mx-auto">
-        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-center">What you can do with it</h2>
-        <div class="mt-10 grid gap-5 sm:grid-cols-2">
-          @for (c of capabilities; track c.title) {
-            <div class="rounded-xl p-6 bg-slate-50 ring-1 ring-slate-200 hover:ring-cyan-300 transition-colors">
-              <h3 class="font-semibold text-slate-900">{{ c.title }}</h3>
-              <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">{{ c.body }}</p>
-            </div>
-          }
-        </div>
-      </div>
-    </section>
-
-    <!-- ===================== FROM DESIGN TO THE FIELD ===================== -->
-    <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-50">
-      <div class="max-w-6xl mx-auto">
-        <div class="text-center max-w-2xl mx-auto">
-          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">From design to the field</h2>
-          <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
-            Real sites we have planned and built. The same layout you draw on the screen
-            becomes the controllers, pumps and valves running on the ground.
-          </p>
-        </div>
-        <div class="mt-12 grid gap-6 md:grid-cols-3">
-          @for (d of deployments; track d.title) {
-            <div class="rounded-2xl bg-white ring-1 ring-slate-200 shadow-sm overflow-hidden">
-              <!-- the design (topology render) -->
-              <div class="bg-white border-b border-slate-100">
-                @if (d.design) {
-                  <picture>
-                    <source [srcset]="avif(d.design)" type="image/avif" />
-                    <source [srcset]="webp(d.design)" type="image/webp" />
-                    <img [src]="d.design" [alt]="d.title + ' design'"
-                         width="1000" height="741" loading="lazy" decoding="async"
-                         class="block w-full aspect-[16/10] object-contain bg-slate-50" />
-                  </picture>
-                } @else {
-                  <div class="aspect-[16/10] bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-slate-400">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                    <span class="text-[10px] font-medium">{{ d.designSlot }}</span>
-                  </div>
-                }
-              </div>
-              <!-- the install (real field photo) -->
-              @if (d.photo) {
-                <img [src]="d.photo" [alt]="d.title + ' installed'" class="block w-full aspect-[16/10] object-cover" />
-              } @else {
-                <div class="aspect-[16/10] bg-slate-100 flex flex-col items-center justify-center gap-1.5 text-slate-400">
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5L9 20"/></svg>
-                  <span class="text-[10px] font-medium">{{ d.photoSlot }}</span>
-                </div>
-              }
-              <div class="p-5">
-                <h3 class="font-semibold text-slate-900">{{ d.title }}</h3>
-                <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">{{ d.body }}</p>
-              </div>
-            </div>
-          }
-        </div>
-      </div>
-    </section>
-
-    <!-- ===================== WORKS IN ===================== -->
-    <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-50">
-      <div class="max-w-5xl mx-auto">
-        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-center">Works in</h2>
-        <div class="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          @for (v of verticals; track v.title) {
-            <div class="rounded-xl p-6 bg-white ring-1 ring-slate-200">
-              <h3 class="font-semibold text-cyan-700">{{ v.title }}</h3>
-              <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">{{ v.body }}</p>
-            </div>
-          }
-        </div>
-      </div>
-    </section>
-
     <!-- ===================== CTA BAND ===================== -->
     <section class="px-5 sm:px-8 py-20">
       <div class="max-w-4xl mx-auto rounded-3xl bg-gradient-to-br from-cyan-500 via-sky-600 to-blue-700 px-8 py-14 text-center text-white shadow-2xl shadow-cyan-500/20">
         <h2 class="text-2xl sm:text-4xl font-bold tracking-tight">Ready to plan your site?</h2>
-        <p class="mt-3 text-white/85 max-w-xl mx-auto">Draw your site on the screen, and we will get everything ready to build and run it.</p>
+        <p class="mt-3 text-white/85 max-w-xl mx-auto">Draw your farm or site on the screen, and we will get everything ready to build and run it.</p>
         <div class="mt-8 flex flex-wrap gap-3 justify-center">
           <a routerLink="/login" class="rounded-full px-6 py-3 text-sm font-semibold bg-white text-slate-900 hover:bg-slate-100 transition-colors">Get started</a>
           <a [href]="github" target="_blank" rel="noopener" class="rounded-full px-6 py-3 text-sm font-semibold ring-1 ring-white/40 text-white hover:bg-white/10 transition-colors">View on GitHub</a>
@@ -454,7 +494,7 @@ interface Deployment {
           <span class="w-6 h-6 block" [innerHTML]="logo"></span>
           <span class="font-semibold text-white">MajiFlow</span>
         </div>
-        <p class="text-sm text-center">Started on a dry-land farm. Built where water is critical.</p>
+        <p class="text-sm text-center">Started on a dry-land farm, where every drop counts.</p>
         <a [href]="github" target="_blank" rel="noopener" class="text-sm hover:text-white transition-colors">Open source on GitHub →</a>
       </div>
     </footer>
@@ -465,6 +505,15 @@ export class LandingComponent {
 
   /** Sanitizer-trusted brand mark (static SVG), rendered via [innerHTML]. */
   protected readonly logo: SafeHtml = inject(DomSanitizer).bypassSecurityTrustHtml(BRAND_LOGO_SVG);
+
+  constructor() {
+    applyPageSeo({
+      title: 'Water monitoring and control for farms, hotels and boreholes | MajiFlow',
+      description:
+        'Water monitoring and control for farms, hotels, greenhouses and boreholes. See tank levels, water flow, pumps and valves live, catch leaks early, and run your site from anywhere.',
+      path: '',
+    });
+  }
 
   // Derive the modern-format siblings of a marketing image for <picture> sources.
   // Every referenced image ships .avif + .webp next to its .png/.jpg fallback
@@ -500,7 +549,7 @@ export class LandingComponent {
       mode: 'Runs on-site · you own it',
       price: 'From KES 200,000',
       priceNote: 'tailored to your site',
-      tagline: 'Keep everything on your own property and own it outright. Built to keep going no matter what.',
+      tagline: 'Keep everything on your own land and own it outright. Built to keep going no matter what.',
       features: [
         'An on-site hub runs your whole site by itself, even with no internet',
         'Battery and solar keep it working straight through power cuts',
@@ -514,17 +563,17 @@ export class LandingComponent {
   ];
 
   protected readonly capabilities: Capability[] = [
-    { title: 'Keep an eye from anywhere', body: 'Tank levels, water flow and valve positions in one dashboard, whether you are on-site or across the country.' },
+    { title: 'Keep an eye from anywhere', body: 'Tank levels, water flow and valve positions in one dashboard, whether you are walking the farm or away in town.' },
     { title: 'Know how much you use', body: 'Field A used 10,300 litres this week. The main tank has held 85% for two days. See it all in one place.' },
-    { title: 'Take action from your phone', body: 'Reservoir down to 8%? Switch on the pump from your phone. No need to drive out to the site.' },
-    { title: 'Let the routine run itself', body: 'Fill the reservoir at 6 AM on Mondays, or whenever it drops below 30%. Set it once and forget it.' },
+    { title: 'Take action from your phone', body: 'Reservoir down to 8%? Switch on the borehole pump from your phone. No need to drive out to the farm.' },
+    { title: 'Let the routine run itself', body: 'Water the field at 6 AM on Mondays, or whenever the tank drops below 30%. Set it once and forget it.' },
   ];
 
   protected readonly verticals: Vertical[] = [
-    { title: 'Farms', body: 'Automatic irrigation and remote pump control, for small plots and large commercial farms alike.' },
+    { title: 'Farms', body: 'Automatic irrigation and remote pump control, so every drop reaches the crop, on small plots and large commercial farms alike.' },
     { title: 'Hotels and lodges', body: 'Balanced tanks, steady water pressure, and early leak warnings for guest sites.' },
-    { title: 'Greenhouses', body: 'Automatic feeding and dosing, with watering that follows the weather.' },
-    { title: 'Remote sites', body: 'Solar-powered monitoring for boreholes, dams, and places with no grid power.' },
+    { title: 'Greenhouses', body: 'Automatic feeding and dosing, with watering that follows the weather so plants get just what they need.' },
+    { title: 'Remote sites', body: 'Solar-powered monitoring for boreholes, dams, and places with no grid power, and it keeps boreholes from being over-pumped.' },
   ];
 
   protected readonly deployments: Deployment[] = [

@@ -1,0 +1,15 @@
+# Public marketing pages (/, /pricing) are crawlable; the authenticated app is not.
+User-agent: *
+Disallow: /login
+Disallow: /home
+Disallow: /overview
+Disallow: /customers
+Disallow: /boards
+Disallow: /devices
+Disallow: /leads
+Disallow: /settings
+Disallow: /docs
+Disallow: /account
+Disallow: /site/
+
+Sitemap: https://majiflow.io/sitemap.xml

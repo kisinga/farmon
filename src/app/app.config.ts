@@ -5,6 +5,7 @@ import { provideServiceWorker } from '@angular/service-worker';
 import { provideEchartsCore } from 'ngx-echarts';
 
 import { routes } from './app.routes';
+import { provideClientHydration, withEventReplay } from '@angular/platform-browser';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -23,5 +24,8 @@ export const appConfig: ApplicationConfig = {
       enabled: !isDevMode(),
       registrationStrategy: 'registerWhenStable:30000',
     }),
+    // Hydrate the prerendered public pages (landing + pricing) instead of
+    // re-rendering them; withEventReplay buffers early clicks during hydration.
+    provideClientHydration(withEventReplay()),
   ]
 };

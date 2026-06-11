@@ -4,6 +4,7 @@ import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { BRAND_LOGO_SVG } from '../../shared/brand-logo';
 import { BackendService } from '../../core/services/backend.service';
 import { PRICING, estimate, kes, type EstimateInput } from './pricing.model';
+import { applyPageSeo } from '../../shared/seo';
 
 type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 
@@ -244,6 +245,15 @@ export class PricingComponent {
   private readonly backend = inject(BackendService);
   protected readonly logo: SafeHtml = inject(DomSanitizer).bypassSecurityTrustHtml(BRAND_LOGO_SVG);
   protected readonly caps = PRICING.caps;
+
+  constructor() {
+    applyPageSeo({
+      title: 'Pricing | MajiFlow water monitoring and control',
+      description:
+        'See what water monitoring and control costs for your site. Answer three questions for a live estimate of the hosted plan. Every shilling traces to real hardware on your farm or site.',
+      path: 'pricing',
+    });
+  }
 
   // --- Estimator inputs ---
   protected readonly pumps = signal(1);

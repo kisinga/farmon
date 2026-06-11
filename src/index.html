@@ -2,13 +2,67 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- App-shell default title (shown on authenticated SPA routes via index.csr.html).
+       The public pages override it at prerender time through applyPageSeo. -->
   <title>MajiFlow</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- SEO: default tags for the homepage; per-route pages override these at
+       build time via applyPageSeo (src/app/shared/seo.ts). -->
+  <meta name="description" content="Water monitoring and control for farms, hotels, greenhouses and boreholes. See tank levels, water flow, pumps and valves live, catch leaks early, and run your site from anywhere.">
+  <link rel="canonical" href="https://majiflow.io/">
+
+  <!-- Open Graph (Facebook, WhatsApp, LinkedIn) -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="MajiFlow">
+  <meta property="og:title" content="Water monitoring and control for farms, hotels and boreholes">
+  <meta property="og:description" content="See tank levels, water flow, pumps and valves live, catch leaks early, and run your site from anywhere. Water you can see is water you don't waste.">
+  <meta property="og:url" content="https://majiflow.io/">
+  <meta property="og:image" content="https://majiflow.io/marketing/og-card.png">
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Water monitoring and control for farms, hotels and boreholes">
+  <meta name="twitter:description" content="See tank levels, water flow, pumps and valves live, catch leaks early, and run your site from anywhere.">
+  <meta name="twitter:image" content="https://majiflow.io/marketing/og-card.png">
+
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#0f172a">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+  <!-- Structured data: organization + the product, for rich results. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://majiflow.io/#organization",
+        "name": "MajiFlow",
+        "url": "https://majiflow.io/",
+        "logo": "https://majiflow.io/icons/icon-512.png",
+        "description": "Water monitoring and control for farms, hotels, greenhouses and boreholes.",
+        "areaServed": "KE"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "MajiFlow",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "url": "https://majiflow.io/",
+        "description": "Design your water site on screen, then watch and control tank levels, water flow, pumps and valves live from anywhere. Catches leaks early and runs on its own when the internet drops.",
+        "publisher": { "@id": "https://majiflow.io/#organization" },
+        "offers": {
+          "@type": "Offer",
+          "priceCurrency": "KES",
+          "price": "55000"
+        }
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <app-root></app-root>
