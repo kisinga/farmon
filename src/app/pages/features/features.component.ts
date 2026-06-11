@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { BRAND_LOGO_SVG } from '../../shared/brand-logo';
 import { applyPageSeo } from '../../shared/seo';
+import { HardwareShowcaseComponent } from './hardware-showcase.component';
 
 const GITHUB_URL = 'https://github.com/kisinga/majiflow';
 
@@ -22,14 +23,6 @@ interface UseCase {
   solution: string;
 }
 
-/** A physical hardware component shown in the interlacing gallery. */
-interface HardwareItem {
-  name: string;
-  body: string;
-  /** Image path under public/; '' renders a 'photo coming' placeholder. */
-  image: string;
-}
-
 /**
  * Public features page (route `/features`). Prerendered to static HTML so each
  * capability heading can rank for its own long-tail term (water metering, usage
@@ -43,19 +36,8 @@ interface HardwareItem {
 @Component({
   selector: 'app-features',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, HardwareShowcaseComponent],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
-  styles: [`
-    @keyframes reveal-in { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
-    /* Scroll-driven entry, only where supported, so SSR / no-JS / older browsers
-       keep the content visible by default (no opacity:0 fallback). */
-    @supports (animation-timeline: view()) {
-      .reveal { animation: reveal-in linear both; animation-timeline: view(); animation-range: entry 0% entry 45%; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .reveal { animation: none; opacity: 1; transform: none; }
-    }
-  `],
   template: `
     <!-- NAV -->
     <nav class="sticky top-0 z-30 backdrop-blur-sm bg-slate-950/85 border-b border-white/10">
@@ -107,46 +89,8 @@ interface HardwareItem {
       </section>
     }
 
-    <!-- HARDWARE (interlacing image/text rows) -->
-    <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-50">
-      <div class="max-w-5xl mx-auto">
-        <div class="text-center max-w-2xl mx-auto">
-          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">The hardware, up close</h2>
-          <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
-            Off-the-shelf parts a plumber can fit. Here is what goes on the wall and in the line.
-          </p>
-        </div>
-        <div class="mt-14 space-y-16 sm:space-y-24">
-          @for (h of hardware; track h.name; let i = $index) {
-            <div class="reveal flex flex-col gap-6 sm:gap-10 items-center md:flex-row"
-                 [class.md:flex-row-reverse]="i % 2 === 1">
-              <div class="w-full md:w-1/2">
-                @if (h.image) {
-                  <div class="rounded-2xl ring-1 ring-slate-200 shadow-xl shadow-slate-900/10 overflow-hidden bg-white">
-                    <picture>
-                      <source [srcset]="avif(h.image)" type="image/avif" />
-                      <source [srcset]="webp(h.image)" type="image/webp" />
-                      <img [src]="h.image" [alt]="h.name"
-                           width="1400" height="787" loading="lazy" decoding="async"
-                           class="block w-full aspect-[16/10] object-cover" />
-                    </picture>
-                  </div>
-                } @else {
-                  <div class="rounded-2xl ring-1 ring-slate-200 bg-white aspect-[16/10] flex flex-col items-center justify-center gap-2 text-slate-400">
-                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5L9 20"/></svg>
-                    <span class="text-xs font-medium">Photo coming</span>
-                  </div>
-                }
-              </div>
-              <div class="w-full md:w-1/2">
-                <h3 class="text-xl font-bold tracking-tight text-slate-900">{{ h.name }}</h3>
-                <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">{{ h.body }}</p>
-              </div>
-            </div>
-          }
-        </div>
-      </div>
-    </section>
+    <!-- HARDWARE (animated showcase) -->
+    <app-hardware-showcase />
 
     <!-- USE CASES -->
     <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-950 text-white">
@@ -206,37 +150,6 @@ export class FeaturesComponent {
       path: 'features',
     });
   }
-
-  // Modern-format siblings for <picture> (see landing.component.ts).
-  protected avif(src: string): string {
-    return src.replace(/\.(png|jpe?g)$/i, '.avif');
-  }
-  protected webp(src: string): string {
-    return src.replace(/\.(png|jpe?g)$/i, '.webp');
-  }
-
-  protected readonly hardware: HardwareItem[] = [
-    {
-      name: 'The controller',
-      body: 'The brain on the wall. It reads your sensors, switches your pumps and valves, and reports back to your dashboard. Off-the-shelf and rail-mounted, wired once and left alone.',
-      image: 'marketing/controller.jpg',
-    },
-    {
-      name: 'Motorised valve',
-      body: 'Opens and closes a water line on its own, on a schedule or on command. No one has to stand at the tap to start or stop a zone.',
-      image: '',
-    },
-    {
-      name: 'Flow sensor',
-      body: 'Counts every litre that passes, so the water you use, sell or lose turns into real numbers you can act on.',
-      image: '',
-    },
-    {
-      name: 'Pressure sensor',
-      body: 'Keeps an eye on line pressure and flags a blockage or a burst before it becomes a flood.',
-      image: '',
-    },
-  ];
 
   protected readonly groups: FeatureGroup[] = [
     {
