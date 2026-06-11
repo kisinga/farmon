@@ -247,21 +247,21 @@ import type { RouteControl } from '@core';
              default; opening the disclosure IS entering operator mode (enables
              holds); destructive writes still hard-confirm. -->
         @if (canControl() && hasOperatorControls()) {
-          <details class="mb-6 bg-base-100/40 rounded-2xl ring-1 ring-base-300/30 px-4 py-3" (toggle)="onOperatorToggle($event)">
+          <details class="mb-6 bg-base-100/40 rounded-2xl ring-1 ring-base-300/30 px-4 py-3">
             <summary class="cursor-pointer list-none flex items-center gap-2 text-xs font-semibold text-base-content/60">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
               </svg>
               Operator mode
-              <span class="text-[11px] font-normal text-base-content/40">advanced — calibration, safety override, manual holds</span>
+              <span class="text-[11px] font-normal text-base-content/40">advanced — calibration, safety timings, override</span>
             </summary>
             <div class="mt-3 pt-3 border-t border-base-300/30 flex flex-col gap-3">
               <div class="alert alert-warning text-xs py-2">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                 </svg>
-                <span>Calibration, safety override and manual holds are live and change device behaviour. Collapse this when you're done.</span>
+                <span>Calibration and safety settings change device behaviour — set them only when commissioning.</span>
               </div>
               <!-- Controller-wide safety timings (flow watchdog/confirm/threshold, claim lease). -->
               <div class="bg-base-100/60 rounded-2xl ring-1 ring-base-300/30 px-4 py-3.5">
@@ -381,10 +381,6 @@ export class DashboardComponent {
   protected controlEnabled = signal(false);
   /** Command bar is shown to owners always, and to admins only after Take control. */
   protected canControl = computed(() => !this.adminViewing() || this.controlEnabled());
-  /** Operator mode: an explicit unlock that reveals the high-safety controls
-   *  (calibration, safety override) and enables manual actuator holds. Destructive
-   *  writes still hard-confirm; this just gates them off the default view. */
-  protected operatorMode = signal(false);
 
   /** Stable per-controller identity colours (matches the editor's palette feel). */
   private static readonly CTRL_COLORS = ['#22d3ee', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#38bdf8'];
@@ -641,10 +637,11 @@ export class DashboardComponent {
   protected actuatorFor(w: DashboardWidget): ActuatorControl | undefined {
     return w.sensor ? this.actuatorMap().get(`${w.controller}/${w.sensor}`) : undefined;
   }
-  /** Toggleable now: an actuator exists, control is held, the device is online, AND
-   *  operator mode is unlocked (manual holds are an operator-mode action). */
+  /** Toggleable now: an actuator exists, control is held, and the device is online.
+   *  (Manual holds are a normal control under "take control" — NOT gated by operator
+   *  mode; only calibration + safety override live behind that.) */
   protected isActuatable(w: DashboardWidget): boolean {
-    return this.canControl() && this.operatorMode() && !!this.actuatorFor(w) && this.store.presence(w.controller).online;
+    return this.canControl() && !!this.actuatorFor(w) && this.store.presence(w.controller).online;
   }
   private nodeKey(controller: string, nodeId: string): string {
     return `${controller}/node/${nodeId}`;
@@ -742,13 +739,6 @@ export class DashboardComponent {
     if (!this.canControl()) return;
     await this.lifecycle.dispatch(this.sysKey(controller, action), controller, action);
     this.offlineNote(controller);
-  }
-
-  /** Opening the operator-mode disclosure IS entering operator mode — sync the
-   *  signal that gates the manual actuator holds (which live on the valve/pump
-   *  cards, outside this section). */
-  protected onOperatorToggle(e: Event): void {
-    this.operatorMode.set((e.target as HTMLDetailsElement).open);
   }
 
   /** Toggle the commissioning safety-override switch; enabling it is gated by a
