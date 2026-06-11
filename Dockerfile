@@ -12,7 +12,7 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci
 # Source needed for the production build.
-COPY angular.json tsconfig.json tsconfig.app.json .postcssrc.json ./
+COPY angular.json tsconfig.json tsconfig.app.json .postcssrc.json ngsw-config.json ./
 COPY src ./src
 COPY public ./public
 RUN npm run build
