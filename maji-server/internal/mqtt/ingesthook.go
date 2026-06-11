@@ -17,6 +17,7 @@ import (
 //   - telemetry/{sensor} token    → text shadow (categorical, e.g. "RUNNING")
 //   - event                       → append a transition to state_events
 //   - status  ("1"/"0")           → controller online/offline
+//   - identity (chip MAC)         → bind/flag hardware (duplicate-firmware tripwire)
 // Anything else passes through untouched.
 type ingestHook struct {
 	mqtt.HookBase
@@ -51,6 +52,13 @@ func (h *ingestHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pack
 
 	if _, ctrl, ok := telemetry.ParseStatusTopic(topic); ok {
 		_ = telemetry.SetOnline(h.app, ctrl, strings.TrimSpace(string(pk.Payload)) == "1", now)
+		return pk, nil
+	}
+
+	if _, ctrl, ok := telemetry.ParseIdentityTopic(topic); ok {
+		// Retained chip MAC: bind on first connect, flag a different board on the same
+		// identity (duplicate-firmware tripwire). Detection only, never disconnects.
+		_ = telemetry.BindOrCheckMac(h.app, ctrl, string(pk.Payload))
 		return pk, nil
 	}
 

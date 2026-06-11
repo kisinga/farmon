@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type HealthLevel, type StateKind, type StateMeaning } from '@core';
+import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, WIFI_SIGNAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type HealthLevel, type StateKind, type StateMeaning } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
 import { ConfirmService } from '../../core/services/confirm.service';
@@ -76,6 +76,11 @@ import type { RouteControl } from '@core';
                   <span>Queue {{ queueText(c.controller) }}</span>
                   <span>Last stop: {{ lastStopText(c.controller) }}</span>
                   @if (overrideOn(c.controller)) { <span class="text-error font-medium">Override ON</span> }
+                </div>
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 pl-3.5 text-[11px] text-base-content/50">
+                  @if (wifiText(c.controller); as w) { <span title="WiFi signal">{{ w }}</span> }
+                  @if (uptimeText(c.controller); as u) { <span title="Uptime">Up {{ u }}</span> }
+                  @if (tempText(c.controller); as t) { <span title="Controller temperature">{{ t }}</span> }
                 </div>
               </div>
             }
@@ -396,6 +401,32 @@ export class DashboardComponent {
     return min !== null ? `${kb(free)} · min ${Math.round(min / 1000)}` : kb(free);
   }
   protected heapWarnKb(): number { return Math.round(HEAP_WARN_BYTES / 1000); }
+
+  /** WiFi signal as "−55 dBm · strong", or '' when the controller never reported
+   *  it (ethernet, older firmware, or not yet seen) so the row hides cleanly. */
+  protected wifiText(controller: string): string {
+    const dbm = this.store.row(controller, WIFI_SIGNAL_SENSOR)?.reported;
+    if (dbm === undefined || !Number.isFinite(dbm)) return '';
+    const quality = dbm >= -60 ? 'strong' : dbm >= -70 ? 'good' : dbm >= -80 ? 'fair' : 'weak';
+    return `${Math.round(dbm)} dBm · ${quality}`;
+  }
+
+  /** Uptime as a coarse "3d 4h" / "5h 12m" / "8m" string, '' when unreported. */
+  protected uptimeText(controller: string): string {
+    const s = this.store.row(controller, UPTIME_SENSOR)?.reported;
+    if (s === undefined || !Number.isFinite(s) || s < 0) return '';
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  /** SoC temperature as "48 °C", '' when unreported. */
+  protected tempText(controller: string): string {
+    const c = this.store.row(controller, TEMP_SENSOR)?.reported;
+    if (c === undefined || !Number.isFinite(c)) return '';
+    return `${Math.round(c)} °C`;
+  }
 
   // --- Operational state (System chip + per-controller drill-down) ---------
   private static readonly STATE_RANK: Record<StateKind, number> = { normal: 0, active: 1, warn: 2, fault: 3 };

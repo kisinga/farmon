@@ -8,6 +8,11 @@
 # This stage is throwaway anyway: only the built SPA is copied to the alpine runtime.
 FROM node:24.16-slim AS web
 WORKDIR /build
+# Pin npm to the version that generated package-lock.json. The base image bundles
+# a newer npm whose peer-dep resolution wants top-level @emnapi entries an older
+# npm omits, so `npm ci` rejects the lockfile as "out of sync". Rule: this version
+# must match the npm you run `npm install` with locally; bump both together.
+RUN npm i -g npm@11.6.2
 # Install deps against the lockfile first (cached unless deps change).
 COPY package.json package-lock.json ./
 RUN npm ci

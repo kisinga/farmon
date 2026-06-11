@@ -14,6 +14,17 @@ export const HEAP_FREE_SENSOR = 'heap_free';
 export const HEAP_MIN_SENSOR = 'heap_min';
 
 /**
+ * The other on-device diagnostics the firmware ships alongside heap: wifi signal
+ * strength (dBm; wifi transport only), uptime (seconds), and SoC temperature
+ * (°C). Same single-source contract as the heap channels — the MQTT generator
+ * publishes these `sensor` names and the dashboard's controller panel reads the
+ * matching shadow rows, so the two can never drift.
+ */
+export const WIFI_SIGNAL_SENSOR = 'wifi_signal';
+export const UPTIME_SENSOR = 'uptime';
+export const TEMP_SENSOR = 'esp_temp';
+
+/**
  * Free-heap thresholds in bytes — tune here. Sized from the esp32 + TLS +
  * web_server build: a healthy controller idles ~90-110 KB free; the bootloop
  * cliff was ~1.5 KB. WARN leaves generous margin before trouble; CRIT is the

@@ -1,12 +1,12 @@
-import type { Manifest } from '@core';
+import type { Manifest, BoardDef } from '@core';
 import {
-  MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic,
-  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, routeStateSensor,
+  MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic, identityTopic,
+  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, WIFI_SIGNAL_SENSOR, routeStateSensor,
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
   COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
   localNodesWithFlag, validAutomations, automationEnableSwitchId,
-  collectTunableNumbers,
+  collectTunableNumbers, boardSupportedTransports, effectiveTransport,
 } from '@core';
 import type { GenerationMetadata } from "../backends/types";
 
@@ -56,9 +56,13 @@ function publishStmt(c: TelemetryChannel, topic: string): string {
  * value used as the `{ctrl}` topic segment and as the device_id the broker
  * authenticates and confines by ACL.
  */
-export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string {
+export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: BoardDef): string {
   const site = metadata.siteId;
   const ctrl = metadata.controllerId;
+  // wifi_signal exists on-device only on the wifi transport (ethernet link is
+  // binary; board-package.ts emits no wifi_dbm sensor there), so gate its publish
+  // to avoid referencing an id that wasn't generated.
+  const hasWifi = effectiveTransport(m.device.network, boardSupportedTransports(board)) === 'wifi';
   const ev = eventTopic(site, ctrl);
   // ESPHome's auto-publish prefix, segregated from our telemetry/event scheme.
   // Single-sourced so topic_prefix and the raw log topic below can't desync.
@@ -227,6 +231,15 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     // heap so the server can chart it and flag a controller trending toward the cliff.
     `mc->publish("${telemetryTopic(site, ctrl, HEAP_FREE_SENSOR)}", to_string(esp_get_free_heap_size()));`,
     `mc->publish("${telemetryTopic(site, ctrl, HEAP_MIN_SENSOR)}", to_string(esp_get_minimum_free_heap_size()));`,
+    // Connection-quality + liveness diagnostics for the dashboard's controller
+    // panel: uptime (s) and SoC temperature (°C) always; wifi signal (dBm) only
+    // when the active transport is wifi. The on-device sensors are board-package /
+    // networking components (uptime_sec / esp_temp / wifi_dbm).
+    `if (!std::isnan(id(uptime_sec).state)) mc->publish("${telemetryTopic(site, ctrl, UPTIME_SENSOR)}", to_string(id(uptime_sec).state));`,
+    `if (!std::isnan(id(esp_temp).state)) mc->publish("${telemetryTopic(site, ctrl, TEMP_SENSOR)}", to_string(id(esp_temp).state));`,
+    ...(hasWifi
+      ? [`if (!std::isnan(id(wifi_dbm).state)) mc->publish("${telemetryTopic(site, ctrl, WIFI_SIGNAL_SENSOR)}", to_string(id(wifi_dbm).state));`]
+      : []),
     // Per-route current state, re-asserted every interval (self-healing) so a dropped
     // one-shot transition event can't strand the dashboard's route card. Reads slots[]
     // (routes.h); IDLE (0) when the route has no active slot. The event log stays the
@@ -365,6 +378,14 @@ mqtt:
     topic: "${statusTopic(site, ctrl)}"
     payload: "0"
     retain: true
+  on_connect:
+    # Hardware-identity tripwire: publish this chip's base MAC, retained, on every
+    # connect. The server binds the controller to the first MAC it sees and flags a
+    # later board reporting a different one — catches the same firmware (one baked
+    # identity) flashed to two boards. get_mac_address() (not wifi_info) so it works
+    # on ethernet boards too.
+    - lambda: |-
+        id(mqtt_client).publish("${identityTopic(site, ctrl)}", get_mac_address(), 0, true);
   on_json_message:
     # QoS 1 over the (default) persistent session: the broker queues a command sent
     # during the device's reconnect window or a brief drop and delivers it on

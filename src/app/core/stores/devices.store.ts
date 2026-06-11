@@ -50,6 +50,14 @@ export class DevicesStore extends CollectionStore<DeviceEntry[]> {
     this.sites.invalidate(); // consumed a hosting slot
   }
 
+  /** Clear a flagged MAC conflict (legit board swap) so the next board re-binds. */
+  async clearMacBinding(id: string): Promise<void> {
+    await this.backend.deviceClearMacBinding(id);
+    this.mutate((list) =>
+      list.map((d) => (d.id === id ? { ...d, macConflict: false, conflictMac: '' } : d)),
+    );
+  }
+
   /** After a generate registers/updates a device: refetch fleet + site counts. */
   invalidateAfterProvision(): void {
     this.invalidate();

@@ -40,6 +40,12 @@ export interface DeviceEntry {
   lastSeen: string;
   /** When the device was first registered (ISO). */
   created: string;
+  /** true when a second board has connected under this identity reporting a
+   *  different chip MAC than the bound one — the same firmware flashed to two
+   *  boards. Detection only; cleared by an admin rebind. */
+  macConflict: boolean;
+  /** The conflicting board's MAC, when `macConflict` is set (else ''). */
+  conflictMac: string;
 }
 
 /** A customer account (users with role=customer) — assignable as a site owner

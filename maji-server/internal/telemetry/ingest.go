@@ -46,6 +46,11 @@ func ParseStatusTopic(topic string) (site, ctrl string, ok bool) {
 	return parseFour(topic, "status")
 }
 
+// ParseIdentityTopic extracts site/ctrl from `majiflow/{site}/{ctrl}/identity`.
+func ParseIdentityTopic(topic string) (site, ctrl string, ok bool) {
+	return parseFour(topic, "identity")
+}
+
 func parseFour(topic, last string) (site, ctrl string, ok bool) {
 	parts := strings.Split(topic, "/")
 	if len(parts) != 4 || parts[0] != "majiflow" || parts[3] != last {
@@ -138,6 +143,51 @@ func IngestEvent(app core.App, site, ctrl string, payload []byte, ts time.Time) 
 // SetOnline records a controller's online/offline status (retained birth/will).
 func SetOnline(app core.App, deviceID string, online bool, ts time.Time) error {
 	setControllerOnline(app, deviceID, online, ts)
+	return nil
+}
+
+// BindOrCheckMac is the duplicate-firmware tripwire. A controller's identity (MQTT
+// username + baked token) is fixed at build time, so two boards flashed with the
+// same firmware are indistinguishable to the broker's connect-time auth. The chip
+// MAC, published retained on connect, is the only physical distinguisher: we bind
+// the controller to the FIRST MAC seen and flag any later board reporting a
+// different one.
+//
+// Detection only — both boards hold the valid token, so we flag + log, never
+// disconnect (kicking the "impostor" just feeds the connect/disconnect flap, and
+// we can't tell which board is wrong). The binding is sticky: a matching MAC is a
+// no-op, and a conflict clears only via an explicit admin rebind (first_mac reset),
+// so a legitimate board swap is a deliberate action, not a silent re-bind.
+// Best-effort like the other ingest helpers: a failure never drops the connection.
+func BindOrCheckMac(app core.App, ctrl, mac string) error {
+	mac = strings.TrimSpace(mac)
+	if ctrl == "" || mac == "" {
+		return nil
+	}
+	// device_id is the controllers primary key — direct PK lookup.
+	rec, err := app.FindRecordById("controllers", ctrl)
+	if err != nil || rec == nil {
+		return nil
+	}
+	first := rec.GetString("first_mac")
+	switch {
+	case first == "":
+		// First board to connect under this identity — bind it.
+		rec.Set("first_mac", mac)
+		rec.Set("mac_conflict", false)
+		rec.Set("conflict_mac", "")
+	case first == mac:
+		return nil // same board (or already-bound, reconnecting) — nothing to do
+	case rec.GetBool("mac_conflict") && rec.GetString("conflict_mac") == mac:
+		return nil // already flagged for this same impostor — idempotent
+	default:
+		// A different board is claiming this identity. Flag it; leave both online.
+		rec.Set("mac_conflict", true)
+		rec.Set("conflict_mac", mac)
+		app.Logger().Warn("controller MAC conflict: two boards share one identity",
+			"controller", ctrl, "bound_mac", first, "conflict_mac", mac)
+	}
+	_ = app.Save(rec)
 	return nil
 }
 

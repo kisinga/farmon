@@ -4,6 +4,8 @@ import { SystemEditorService } from '../../core/services/system-editor.service';
 import { BackendService } from '../../core/services/backend.service';
 import { BuildService } from '../../core/services/build.service';
 import { DevicesStore } from '../../core/stores/devices.store';
+import { AuthStore } from '../../core/services/auth.store';
+import { ConfirmService } from '../../core/services/confirm.service';
 import { TopologyDiagramService } from '../../core/services/topology-diagram.service';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
 import type { DeviceEntry } from '../../core/models/backend-api';
@@ -74,6 +76,27 @@ function relTime(iso: string): string {
             <p class="mt-2 text-xs text-base-content/50">
               Not registered yet. Save the site design to register this controller, then generate its firmware.
             </p>
+          }
+
+          @if (device(); as d) {
+            @if (d.macConflict) {
+              <div class="mt-3 rounded-lg border border-error/40 bg-error/10 p-3">
+                <p class="text-xs font-semibold text-error">⚠ Duplicate hardware detected</p>
+                <p class="text-[11px] text-base-content/70 mt-1 leading-relaxed">
+                  A second board is connecting as this controller with a different chip MAC
+                  (<code class="text-[10px] px-1 py-0.5 rounded bg-base-200">{{ d.conflictMac }}</code>) — almost
+                  always the same firmware flashed to two boards. They will fight over the connection and their
+                  data will mix. Reflash one board with its own build. If you replaced the board, clear the
+                  binding to bind the new one.
+                </p>
+                @if (isAdmin()) {
+                  <button class="btn btn-warning btn-xs mt-2 gap-1.5" (click)="clearMacBinding()" [disabled]="clearingBinding()">
+                    @if (clearingBinding()) { <span class="loading loading-spinner loading-xs"></span> }
+                    Clear hardware binding
+                  </button>
+                }
+              </div>
+            }
           }
 
           <p class="text-xs text-base-content/50 mt-3 leading-relaxed border-t border-base-300/30 pt-3">
@@ -179,6 +202,9 @@ export class DeployPageComponent {
   private backend = inject(BackendService);
   private build = inject(BuildService);
   private devicesStore = inject(DevicesStore);
+  private auth = inject(AuthStore);
+  protected isAdmin = this.auth.isAdmin;
+  private confirmService = inject(ConfirmService);
   private diagrams = inject(TopologyDiagramService);
 
   /** The controller selected in the sub-header — the one switcher. */
@@ -193,6 +219,7 @@ export class DeployPageComponent {
   protected downloadUrl = signal<string | null>(null);
   /** This controller's registry status (null until provisioned). */
   protected device = signal<DeviceEntry | null>(null);
+  protected clearingBinding = signal(false);
 
   /** Building the whole-site documentation (render diagrams → publish → open). */
   protected docBusy = signal(false);
@@ -249,6 +276,28 @@ export class DeployPageComponent {
     const id = this.controllerId();
     if (!id) return;
     this.device.set(await this.devicesStore.status(id));
+  }
+
+  /** Clear the hardware binding after a legit board swap, then refresh status.
+   *  Admin-only (the button is gated and the collection rule enforces it). */
+  protected async clearMacBinding() {
+    const id = this.controllerId();
+    if (!id || this.clearingBinding()) return;
+    const confirmed = await this.confirmService.confirm({
+      title: 'Clear hardware binding',
+      message:
+        `Clear the hardware binding for "${this.controllerName()}"? Do this only if the board was ` +
+        `replaced. The next board to connect becomes the new bound device. If two boards are still ` +
+        `running this firmware, the conflict will simply re-trigger.`,
+    });
+    if (!confirmed) return;
+    this.clearingBinding.set(true);
+    try {
+      await this.devicesStore.clearMacBinding(id);
+      await this.loadDevice();
+    } finally {
+      this.clearingBinding.set(false);
+    }
   }
 
   async generate() {

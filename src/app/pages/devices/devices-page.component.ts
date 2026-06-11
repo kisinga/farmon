@@ -93,6 +93,10 @@ interface DeviceGroup {
                         <p class="text-sm font-medium truncate">
                           {{ d.name || d.deviceId }}
                           @if (!d.active) { <span class="badge badge-ghost badge-xs ml-1 align-middle">deregistered</span> }
+                          @if (d.macConflict) {
+                            <span class="badge badge-error badge-xs ml-1 align-middle"
+                                  title="Another board is connecting as this controller with a different chip MAC ({{ d.conflictMac }}) — likely the same firmware flashed to two boards.">⚠ duplicate hardware</span>
+                          }
                         </p>
                       }
                       <p class="text-[11px] text-base-content/40 font-mono truncate">{{ d.deviceId }}</p>
@@ -114,6 +118,9 @@ interface DeviceGroup {
                           <li><button class="text-error" (click)="deregister(d)">Deregister</button></li>
                         } @else {
                           <li><button (click)="reactivate(d)">Reactivate</button></li>
+                        }
+                        @if (d.macConflict) {
+                          <li><button class="text-warning" (click)="clearMacBinding(d)">Clear hardware binding</button></li>
                         }
                       </ul>
                     </div>
@@ -232,5 +239,20 @@ export class DevicesPageComponent implements OnInit {
         message: (e as Error)?.message || 'Reactivation failed (the site may be at its device cap).',
       });
     }
+  }
+
+  /** Clear the hardware binding after a legit board swap. Re-binds to the next
+   *  board that connects, so confirm it's an intentional replacement (not the same
+   *  firmware accidentally on two live boards). */
+  protected async clearMacBinding(d: DeviceEntry): Promise<void> {
+    const confirmed = await this.confirmService.confirm({
+      title: 'Clear hardware binding',
+      message:
+        `Clear the hardware binding for "${d.name || d.deviceId}"? Do this only if the board was ` +
+        `replaced. The next board to connect becomes the new bound device. If two boards are still ` +
+        `running this firmware, the conflict will simply re-trigger.`,
+    });
+    if (!confirmed) return;
+    await this.devicesStore.clearMacBinding(d.id);
   }
 }

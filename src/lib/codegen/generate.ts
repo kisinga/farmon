@@ -215,7 +215,7 @@ export function generateEsphome(
     {
       relativePath: `${deviceDir}/packages/mqtt.yaml`,
       description: "MQTT runtime: telemetry publish, command subscribe, status",
-      content: generateMqtt(m, metadata),
+      content: generateMqtt(m, metadata, board),
     },
     {
       relativePath: `${deviceDir}/packages/routes.h`,

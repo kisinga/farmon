@@ -88,6 +88,7 @@ export type { TelemetryChannel, TelemetryChannelKind } from './telemetry-channel
 // --- Device heap health (shared by firmware codegen + dashboard health pill) ---
 export {
   HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, HEAP_CRIT_BYTES,
+  WIFI_SIGNAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR,
   HEALTH_SEVERITY, controllerHealth, worstHealth,
 } from './health';
 export type { HealthLevel } from './health';
@@ -126,7 +127,7 @@ export {
 
 // --- Runtime contract: deployment mode, MQTT topics, command vocabulary ---
 export {
-  MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic,
+  MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic, identityTopic,
   telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, routeStateSensor, COMMAND_TTL_S,
   routeSourceMinNumber, routeDestMaxNumber, collectConfigSetpoints,
   COORD_MSG, COORD_TYPE,

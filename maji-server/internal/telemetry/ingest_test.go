@@ -23,3 +23,26 @@ func TestParseTopic(t *testing.T) {
 		}
 	}
 }
+
+func TestParseIdentityTopic(t *testing.T) {
+	cases := []struct {
+		topic      string
+		ok         bool
+		site, ctrl string
+	}{
+		{"majiflow/site1/dev1/identity", true, "site1", "dev1"},
+		{"majiflow/s/c/identity", true, "s", "c"},
+		{"majiflow/site1/dev1/status", false, "", ""},
+		{"majiflow/site1/dev1/identity/extra", false, "", ""},
+		{"other/site1/dev1/identity", false, "", ""},
+		{"majiflow//dev1/identity", false, "", ""},
+		{"majiflow/site1//identity", false, "", ""},
+	}
+	for _, c := range cases {
+		site, ctrl, ok := ParseIdentityTopic(c.topic)
+		if ok != c.ok || site != c.site || ctrl != c.ctrl {
+			t.Errorf("ParseIdentityTopic(%q) = (%q,%q,%v), want (%q,%q,%v)",
+				c.topic, site, ctrl, ok, c.site, c.ctrl, c.ok)
+		}
+	}
+}

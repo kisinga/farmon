@@ -204,6 +204,17 @@ export const statusTopic = (site: string, ctrl: string) =>
   `${MQTT_ROOT}/${site}/${ctrl}/status`;
 
 /**
+ * Retained hardware-identity topic (device → broker):
+ *   majiflow/{site}/{ctrl}/identity   payload = the chip's base MAC (get_mac_address()).
+ * Published RETAINED on every connect. The server binds a controller to the first MAC it
+ * sees and flags any later board reporting a different one — the duplicate-firmware
+ * tripwire (two boards flashed with one baked identity). Inside the device ACL namespace,
+ * and deliberately outside `…/telemetry/…` so the numeric ingest hook ignores it.
+ */
+export const identityTopic = (site: string, ctrl: string) =>
+  `${MQTT_ROOT}/${site}/${ctrl}/identity`;
+
+/**
  * Transition-event topic (append-only state log, device → broker → ingest):
  *   majiflow/{site}/{ctrl}/event
  * The JSON payload is a StateEvent. Deliberately outside the `…/telemetry/…`

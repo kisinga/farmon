@@ -294,6 +294,15 @@ export class BackendService {
     await this.pb.collection('controllers').update(id, { active: true });
   }
 
+  /** Clear a controller's hardware binding after a flagged MAC conflict — use when
+   *  the board was legitimately replaced (RMA). The next board to connect re-binds
+   *  `first_mac` fresh. Admin-only (controllers UpdateRule). */
+  async deviceClearMacBinding(id: string): Promise<void> {
+    await this.pb
+      .collection('controllers')
+      .update(id, { first_mac: '', mac_conflict: false, conflict_mac: '' });
+  }
+
   /** The editable app_config singleton (admin settings page). Reads the row
    *  directly (admin-gated collection) since editing needs the record id. */
   async configForEdit(): Promise<AppConfigRecord> {
@@ -627,6 +636,8 @@ export class BackendService {
       online: !!r['online'],
       lastSeen: (r['last_seen'] ?? '') as string,
       created: (r['created'] ?? '') as string,
+      macConflict: !!r['mac_conflict'],
+      conflictMac: (r['conflict_mac'] ?? '') as string,
     };
   }
 
