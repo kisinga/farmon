@@ -10,7 +10,8 @@ import { CommandLifecycleStore } from './command-lifecycle.store';
 import { DashboardCardComponent } from './widgets/dashboard-card.component';
 import { RouteCardComponent } from './widgets/route-card.component';
 import { SiteThresholdsComponent } from './widgets/site-thresholds.component';
-import { RouteSetpointsComponent } from './widgets/route-setpoints.component';
+import { TunableNumbersComponent } from './widgets/tunable-numbers.component';
+import { TankCalibrationComponent } from './widgets/tank-calibration.component';
 import type { RouteControl } from '@core';
 
 /**
@@ -23,7 +24,7 @@ import type { RouteControl } from '@core';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent, RouteSetpointsComponent],
+  imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent, TunableNumbersComponent, TankCalibrationComponent],
   providers: [DashboardStore, TelemetryStore, CommandLifecycleStore],
   host: { class: 'flex-1 overflow-auto' },
   template: `
@@ -172,6 +173,19 @@ import type { RouteControl } from '@core';
                 </div>
               }
             }
+            <!-- Per-route timers (max runtime + level start/stop), gated by a
+                 collapsed disclosure and by control. Belong to the routes above. -->
+            @if (hasRouteTuning()) {
+              <details class="mt-2 bg-base-100/40 rounded-2xl ring-1 ring-base-300/30 px-4 py-3">
+                <summary class="cursor-pointer list-none flex items-center gap-2 text-xs font-semibold text-base-content/60">
+                  Route timers
+                  <span class="text-[11px] font-normal text-base-content/40">max runtime + level start/stop, per route</span>
+                </summary>
+                <div class="mt-3 pt-3 border-t border-base-300/30">
+                  <app-tunable-numbers [controllers]="store.spec().controllers" [canEdit]="canControl()" scope="route" />
+                </div>
+              </details>
+            }
           </section>
         }
 
@@ -220,50 +234,67 @@ import type { RouteControl } from '@core';
           </section>
         }
 
-        <!-- Per-site config: alert thresholds (server-stored, feed the bell + email
-             sweep) and route setpoints (device control values, pushed live over
-             MQTT). Co-located, distinct backends. Owner/admin editable. -->
+        <!-- Alerts: per-site thresholds (server-stored; feed the bell + email sweep).
+             Owner/admin — a server write, not a device command, so the lowest gate. -->
         @if (siteId) {
           <section class="mb-6">
             <app-site-thresholds [siteId]="siteId" [canEdit]="canControl()" />
-            <app-route-setpoints [controllers]="store.spec().controllers" [canEdit]="canControl()" />
           </section>
         }
 
-        <!-- Commissioning (advanced): valves/pumps are held by tapping their card
-             above; the only extra control here is the safety override. Hidden
-             while an admin is read-only; collapsed by default. -->
-        @if (canControl()) {
-          @for (c of store.spec().controllers; track c.controller) {
-            @if (c.actuators.length > 0) {
-              <details class="mb-4 bg-base-100/60 rounded-2xl ring-1 ring-base-300/30 px-4 py-3">
-                <summary class="cursor-pointer list-none flex items-center gap-2 text-xs font-semibold text-base-content/60">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                  </svg>
-                  Commissioning@if (showController()) { <span class="text-base-content/40">· {{ c.name }}</span> }
-                  <span class="text-[11px] font-normal text-base-content/40">advanced</span>
-                </summary>
-                <div class="mt-3 pt-3 border-t border-base-300/30 flex flex-col gap-2.5">
-                  <p class="text-[11px] text-base-content/50">Tap a valve or pump card above to hold it open or running; it releases automatically if you disconnect.</p>
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs text-base-content/60">Safety override</span>
-                    <span class="grow"></span>
-                    <button class="btn btn-xs gap-1" [class]="overrideOn(c.controller) ? 'btn-error' : 'btn-ghost'"
-                      [disabled]="overrideBusy(c.controller)"
-                      (click)="toggleOverride(c.controller)">
-                      @if (overrideBusy(c.controller)) { <span class="loading loading-spinner loading-xs"></span> }
-                      {{ overrideOn(c.controller) ? 'ON' : 'off' }}
-                    </button>
+        <!-- Operator mode: install-time + safety-critical controls (pressure
+             calibration, safety override, manual valve/pump holds). Collapsed by
+             default; opening the disclosure IS entering operator mode (enables
+             holds); destructive writes still hard-confirm. -->
+        @if (canControl() && hasOperatorControls()) {
+          <details class="mb-6 bg-base-100/40 rounded-2xl ring-1 ring-base-300/30 px-4 py-3" (toggle)="onOperatorToggle($event)">
+            <summary class="cursor-pointer list-none flex items-center gap-2 text-xs font-semibold text-base-content/60">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+              Operator mode
+              <span class="text-[11px] font-normal text-base-content/40">advanced — calibration, safety override, manual holds</span>
+            </summary>
+            <div class="mt-3 pt-3 border-t border-base-300/30 flex flex-col gap-3">
+              <div class="alert alert-warning text-xs py-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                </svg>
+                <span>Calibration, safety override and manual holds are live and change device behaviour. Collapse this when you're done.</span>
+              </div>
+              <!-- Controller-wide safety timings (flow watchdog/confirm/threshold, claim lease). -->
+              <div class="bg-base-100/60 rounded-2xl ring-1 ring-base-300/30 px-4 py-3.5">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/40 mb-2">Safety timings</div>
+                <app-tunable-numbers [controllers]="store.spec().controllers" scope="controller" [canEdit]="canControl()" />
+              </div>
+              @for (c of store.spec().controllers; track c.controller) {
+                @if (c.calibrations.length || c.actuators.length) {
+                  <div class="bg-base-100/60 rounded-2xl ring-1 ring-base-300/30 px-4 py-3.5 flex flex-col gap-3">
+                    @if (showController()) { <div class="text-xs font-semibold text-base-content/60">{{ c.name }}</div> }
+                    @for (cal of c.calibrations; track cal.nodeId) {
+                      <app-tank-calibration [cal]="cal" [controller]="c.controller" [canEdit]="canControl()" />
+                    }
+                    @if (c.actuators.length) {
+                      <div class="flex items-center gap-2 pt-1 border-t border-base-300/30">
+                        <span class="text-xs text-base-content/60">Safety override</span>
+                        <span class="grow"></span>
+                        <button class="btn btn-xs gap-1" [class]="overrideOn(c.controller) ? 'btn-error' : 'btn-ghost'"
+                          [disabled]="overrideBusy(c.controller)" (click)="toggleOverride(c.controller)">
+                          @if (overrideBusy(c.controller)) { <span class="loading loading-spinner loading-xs"></span> }
+                          {{ overrideOn(c.controller) ? 'ON' : 'off' }}
+                        </button>
+                      </div>
+                      @if (overrideOn(c.controller)) {
+                        <p class="text-[11px] text-warning">Safety checks are OFF: a pump can run with no route and the watchdogs are bypassed. Turn this off when you finish.</p>
+                      }
+                      <p class="text-[11px] text-base-content/50">Tap a valve or pump card above to hold it open or running; it releases automatically if you disconnect.</p>
+                    }
                   </div>
-                  @if (overrideOn(c.controller)) {
-                    <p class="text-[11px] text-warning">Safety checks are OFF: a pump can run with no route and the watchdogs are bypassed. Turn this off when you finish.</p>
-                  }
-                </div>
-              </details>
-            }
-          }
+                }
+              }
+            </div>
+          </details>
         }
 
         @if (note()) { <div class="text-xs text-base-content/50 mb-3">{{ note() }}</div> }
@@ -292,8 +323,10 @@ import type { RouteControl } from '@core';
                     [phase]="actuatorPhase(w)?.phase ?? null"
                     [phaseReason]="actuatorPhase(w)?.reason ?? ''"
                     [actuatorKind]="actuatorFor(w)?.kind ?? ''"
+                    [historyLoaded]="telemetry.loadedFor(w)"
                     (toggle)="toggleWidgetActuator(w)"
                     (spanChange)="onSpanChange(w, $event)"
+                    (expand)="onExpand(w)"
                   />
                 </div>
               }
@@ -348,6 +381,10 @@ export class DashboardComponent {
   protected controlEnabled = signal(false);
   /** Command bar is shown to owners always, and to admins only after Take control. */
   protected canControl = computed(() => !this.adminViewing() || this.controlEnabled());
+  /** Operator mode: an explicit unlock that reveals the high-safety controls
+   *  (calibration, safety override) and enables manual actuator holds. Destructive
+   *  writes still hard-confirm; this just gates them off the default view. */
+  protected operatorMode = signal(false);
 
   /** Stable per-controller identity colours (matches the editor's palette feel). */
   private static readonly CTRL_COLORS = ['#22d3ee', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#38bdf8'];
@@ -475,7 +512,7 @@ export class DashboardComponent {
     if (w.kind === 'timeline') return 'activity';
     if (w.kind === 'valve' || this.actuatorFor(w)) return 'valves'; // valves + pumps = controls
     switch (w.kind) {
-      case 'gauge':    return 'levels';
+      case 'tank':     return 'levels';
       case 'flow':     return 'flow';
       case 'line':     return 'pressure'; // remaining line charts are pressure/filter (psi)
       case 'stat':     return w.unit === 'L' ? 'flow' : 'status'; // stray flow totals vs queue depth
@@ -516,6 +553,14 @@ export class DashboardComponent {
 
   // --- Schedules (runtime pause/resume of baked automations) ---------------
   protected hasAutomations = computed(() => this.store.spec().controllers.some((c) => c.automations.length > 0));
+
+  // --- Operator-mode tiers -------------------------------------------------
+  /** Any per-route timer exists (drives the "Route timers" disclosure in Routes). */
+  protected hasRouteTuning = computed(() => this.store.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));
+  /** Any operator-mode control exists: controller safety timings, pressure
+   *  calibration, or a manual actuator. */
+  protected hasOperatorControls = computed(() => this.store.spec().controllers.some((c) =>
+    c.tunables.some((t) => t.scope === 'controller') || c.calibrations.length > 0 || c.actuators.length > 0));
 
   private autoKey(controller: string, id: string): string {
     return `${controller}/auto/${id}`;
@@ -596,9 +641,10 @@ export class DashboardComponent {
   protected actuatorFor(w: DashboardWidget): ActuatorControl | undefined {
     return w.sensor ? this.actuatorMap().get(`${w.controller}/${w.sensor}`) : undefined;
   }
-  /** Toggleable now: an actuator exists, control is held, and the device is online. */
+  /** Toggleable now: an actuator exists, control is held, the device is online, AND
+   *  operator mode is unlocked (manual holds are an operator-mode action). */
   protected isActuatable(w: DashboardWidget): boolean {
-    return this.canControl() && !!this.actuatorFor(w) && this.store.presence(w.controller).online;
+    return this.canControl() && this.operatorMode() && !!this.actuatorFor(w) && this.store.presence(w.controller).online;
   }
   private nodeKey(controller: string, nodeId: string): string {
     return `${controller}/node/${nodeId}`;
@@ -646,6 +692,12 @@ export class DashboardComponent {
     if (this.siteId) void this.telemetry.setSpan(this.siteId, w, hours);
   }
 
+  /** Tank history panel opened for the first time — backfill its series (lazy, so
+   *  we don't fetch history for every tank up front the way flow/line do). */
+  protected onExpand(w: DashboardWidget): void {
+    if (this.siteId) void this.telemetry.load(this.siteId, w);
+  }
+
   /** Safety override reported state, read from the shadow (the device switch). */
   protected overrideOn(controller: string): boolean {
     const r = this.store.row(controller, 'safety_override');
@@ -690,6 +742,13 @@ export class DashboardComponent {
     if (!this.canControl()) return;
     await this.lifecycle.dispatch(this.sysKey(controller, action), controller, action);
     this.offlineNote(controller);
+  }
+
+  /** Opening the operator-mode disclosure IS entering operator mode — sync the
+   *  signal that gates the manual actuator holds (which live on the valve/pump
+   *  cards, outside this section). */
+  protected onOperatorToggle(e: Event): void {
+    this.operatorMode.set((e.target as HTMLDetailsElement).open);
   }
 
   /** Toggle the commissioning safety-override switch; enabling it is gated by a

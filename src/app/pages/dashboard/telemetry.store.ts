@@ -36,6 +36,9 @@ export class TelemetryStore {
   private series = signal<Map<string, TelemetryPoint[]>>(new Map());
   private totals = signal<Map<string, TelemetryPoint[]>>(new Map());
   private spans = signal<Map<string, number>>(new Map());
+  /** Widget ids whose history fetch has completed at least once — lets a chart
+   *  distinguish "still loading" from "loaded but empty". */
+  private loaded = signal<Set<string>>(new Set());
   /** Per-widget request counter: a load applies its result only if it is still
    *  the latest in flight, so rapid span switches can't land a slow stale
    *  response on top of a newer one. */
@@ -49,6 +52,11 @@ export class TelemetryStore {
   /** The loaded cumulative-total series for a flow widget (empty otherwise). */
   totalSeriesFor(widget: DashboardWidget): TelemetryPoint[] {
     return this.totals().get(widget.id) ?? [];
+  }
+
+  /** Whether a history fetch for this widget has completed (regardless of result). */
+  loadedFor(widget: DashboardWidget): boolean {
+    return this.loaded().has(widget.id);
   }
 
   /** The widget's current span in hours — its remembered value or the default. */
@@ -88,5 +96,6 @@ export class TelemetryStore {
 
     this.series.update((m) => new Map(m).set(widget.id, hist.samples));
     if (tot) this.totals.update((m) => new Map(m).set(widget.id, tot.samples));
+    this.loaded.update((s) => new Set(s).add(widget.id));
   }
 }

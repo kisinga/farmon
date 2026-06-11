@@ -20,6 +20,8 @@ export interface CommandCtx {
   actuator?: ActuatorControl;
   automation?: AutomationControl;
   setpoint?: SetpointControl;
+  /** Generic config_set target (any tunable number id); preferred over `setpoint`. */
+  configKey?: string;
   on?: boolean;
   value?: number;
 }
@@ -215,7 +217,7 @@ export class CommandLifecycleStore implements OnDestroy {
       case 'safety_override':
         return { on: ctx.on };
       case 'config_set':
-        return { key: ctx.setpoint?.key, value: ctx.value };
+        return { key: ctx.configKey ?? ctx.setpoint?.key, value: ctx.value };
       default:
         return {};
     }

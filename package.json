@@ -15,6 +15,8 @@
     "test:docs": "npx tsx test/docs-vars.test.ts",
     "test:pinout": "npx tsx test/board-pinout.test.ts",
     "test:confirm": "npx tsx test/command-confirm.test.ts",
+    "test:tunables": "npx tsx test/tunable-numbers.test.ts",
+    "test:calibration": "npx tsx test/calibration.test.ts",
     "images:optimize": "bash scripts/optimize-marketing-images.sh",
     "docs:build": "npx tsx scripts/docs-build.ts",
     "docs:check": "npm run docs:build && git diff --exit-code docs/"

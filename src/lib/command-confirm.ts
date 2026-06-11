@@ -88,6 +88,8 @@ export function confirmDescriptor(
     actuator?: ActuatorControl;
     automation?: AutomationControl;
     setpoint?: SetpointControl;
+    /** Generic config_set target (any tunable number id); preferred over `setpoint`. */
+    configKey?: string;
     on?: boolean;
     value?: number;
   } = {},
@@ -192,7 +194,7 @@ export function confirmDescriptor(
       const target = ctx.value ?? 0;
       return {
         ...base,
-        sensor: ctx.setpoint?.key,
+        sensor: ctx.configKey ?? ctx.setpoint?.key,
         classify: (obs) => {
           if (obs.reported != null && Math.round(obs.reported) === Math.round(target)) {
             return { phase: 'confirmed' };

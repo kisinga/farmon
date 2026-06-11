@@ -1,6 +1,8 @@
 import { Component, computed, input, output } from '@angular/core';
 import { NgxEchartsDirective } from 'ngx-echarts';
 import type { EChartsOption } from 'echarts';
+import { TankCardComponent } from './tank-card.component';
+import { SpanSelectorComponent } from './span-selector.component';
 import {
   describeState,
   SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, FAULT_MEANINGS, OUTCOME_MEANINGS,
@@ -54,7 +56,7 @@ const CHART = {
 @Component({
   selector: 'app-dashboard-card',
   standalone: true,
-  imports: [NgxEchartsDirective],
+  imports: [NgxEchartsDirective, TankCardComponent, SpanSelectorComponent],
   // Fill the grid cell so sibling cards in a row are the same height.
   host: { class: 'block h-full' },
   template: `
@@ -75,20 +77,15 @@ const CHART = {
       <div class="flex items-baseline justify-between gap-2 mb-2">
         <span class="text-xs font-medium text-base-content/60 truncate">{{ widget().title }}</span>
         @if (isCharted()) {
-          <!-- Unit + per-chart timescale. Spans are capped at the 30d retention
-               ceiling (see SPAN_PRESETS), so every option returns real data. -->
-          <div class="flex items-center gap-1 shrink-0">
+          <!-- Unit + per-chart timescale (segment buttons, not a native select whose
+               popup floats over the chart). Spans cap at the 30d retention ceiling. -->
+          <div class="flex items-center gap-1.5 shrink-0">
             @if (widget().unit) {
               <span class="text-[10px] text-base-content/40">{{ widget().unit }}</span>
             }
-            <select class="select select-xs select-ghost h-5 min-h-0 px-1 -my-1 text-[10px] text-base-content/50"
-              [value]="span()" (change)="onSpanChange($event)" (click)="$event.stopPropagation()">
-              @for (p of spanPresets; track p.hours) {
-                <option [value]="p.hours">{{ p.label }}</option>
-              }
-            </select>
+            <app-span-selector [span]="span()" (spanChange)="spanChange.emit($event)" />
           </div>
-        } @else if (widget().unit && widget().kind !== 'gauge' && widget().kind !== 'valve') {
+        } @else if (widget().unit && widget().kind !== 'gauge' && widget().kind !== 'valve' && widget().kind !== 'tank') {
           <span class="text-[10px] text-base-content/40 shrink-0">{{ widget().unit }}</span>
         }
       </div>
@@ -96,6 +93,16 @@ const CHART = {
       @switch (widget().kind) {
         @case ('gauge') {
           <div echarts [options]="gaugeOption()" [autoResize]="true" class="flex-1 min-h-[120px]"></div>
+        }
+        @case ('tank') {
+          <app-tank-card
+            [widget]="widget()"
+            [row]="row()"
+            [series]="series()"
+            [span]="span()"
+            [historyLoaded]="historyLoaded()"
+            (expand)="expand.emit()"
+            (spanChange)="spanChange.emit($event)" />
         }
         @case ('line') {
           @if (series().length > 0) {
@@ -247,6 +254,10 @@ export class DashboardCardComponent {
   readonly actuatorKind = input<'' | 'valve' | 'pump'>('');
   /** Click toggled the actuator hold — the page issues the claim/release. */
   readonly toggle = output<void>();
+  /** First time the tank's history view is opened — the page loads its series. */
+  readonly expand = output<void>();
+  /** History fetch completed (forwarded to the tank card to distinguish loading from empty). */
+  readonly historyLoaded = input(false);
 
   /** A claim/release is in flight (pending) — disables the card + shows a spinner. */
   protected busy = computed(() => this.phase() === 'pending');
@@ -319,16 +330,11 @@ export class DashboardCardComponent {
     return r ? fmt(r.reported) : '—';
   });
 
-  /** Span selector data + helpers (line/flow charts only). */
-  protected readonly spanPresets = SPAN_PRESETS;
+  /** Charted kinds show the span selector + history chart (line/flow only). */
   protected isCharted = computed(() => this.widget().kind === 'line' || this.widget().kind === 'flow');
   protected spanLabel = computed(() =>
     SPAN_PRESETS.find((p) => p.hours === this.span())?.label ?? `${this.span()}h`,
   );
-  protected onSpanChange(e: Event): void {
-    const hours = Number((e.target as HTMLSelectElement).value);
-    if (Number.isFinite(hours) && hours > 0) this.spanChange.emit(hours);
-  }
 
   /** Water used over the selected window: cumulative-total delta (last − first),
    *  clamped at 0 so a counter reset on reboot reads as no usage rather than a

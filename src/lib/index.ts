@@ -94,11 +94,15 @@ export type { HealthLevel } from './health';
 
 // --- Dashboard chart spec (derived from the saved topology, in the browser) ---
 export { buildDashboardSpec } from './dashboard-spec';
-export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, AutomationControl, SetpointControl } from './dashboard-spec';
+export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, AutomationControl, SetpointControl, CalibrationControl } from './dashboard-spec';
 
 // --- Command confirmation (desired→reported convergence; one shape, all controls) ---
 export { confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S } from './command-confirm';
 export type { ConfirmDescriptor, ConfirmObservation, CommandPhase } from './command-confirm';
+
+// --- Runtime-tunable device numbers (config_set surface; firmware + UI + drift test) ---
+export { collectTunableNumbers } from './tunable-numbers';
+export type { TunableNumber, TunableScope, TunableTier, TunableField } from './tunable-numbers';
 
 // --- Codegen IDs ---
 export {
@@ -165,9 +169,9 @@ export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';
 
 // --- Units ---
 export {
-  PSI_PER_M, STANDARD_PSI, recommendSensorMaxPsi, deriveTankCalibration,
+  PSI_PER_M, STANDARD_PSI, recommendSensorMaxPsi, deriveTankCalibration, tankCalibrationToPhysical,
 } from './units';
-export type { TankCalibration } from './units';
+export type { TankCalibration, TankPhysical } from './units';
 
 // --- Pressure sensor shared helpers ---
 export {

@@ -18,9 +18,11 @@ import {
   type StateMeaning, type TelemetryRole,
 } from './codegen-ids';
 import { collectTelemetryChannels, type TelemetryChannel } from './telemetry-channels';
+import { collectTunableNumbers, type TunableNumber } from './tunable-numbers';
+import { getPressureSensorIds } from './pressure-sensor-shared';
 import { topologyToManifestForController } from './topology-to-manifest';
 
-export type WidgetKind = 'gauge' | 'line' | 'stat' | 'badge' | 'timeline' | 'valve' | 'flow';
+export type WidgetKind = 'gauge' | 'tank' | 'line' | 'stat' | 'badge' | 'timeline' | 'valve' | 'flow';
 
 export interface DashboardWidget {
   /** Stable id: `${controller}/${sensor}`, or `${controller}/timeline`. */
@@ -111,6 +113,30 @@ export interface SetpointControl {
   unit: string;
 }
 
+/** A level-monitored tank's pressure-sensor calibration, presented to the operator
+ *  in physical terms. The physical fields are the saved topology's design inputs —
+ *  a *lens* the editor seeds from and translates to the device's psi anchors via
+ *  `deriveTankCalibration` (and back via `tankCalibrationToPhysical`); the dashboard
+ *  never writes them back to topology. The editor writes the psi `*Key` numbers via
+ *  config_set and reads the live values (device cal + level %) from the shadow. */
+export interface CalibrationControl {
+  nodeId: string;
+  nodeName: string;
+  /** Design inputs (topology): tank height, sensor drop below tank, sensor full-scale. */
+  tankHeightM: number;
+  sensorDropM: number;
+  sensorMaxPsi: number;
+  /** Device `number:` ids written via config_set. */
+  calEmptyKey: string;
+  calFullKey: string;
+  rangeMinKey: string;
+  rangeMaxKey: string;
+  /** Live telemetry ids: level % (published) and raw pressure (published only if
+   *  the raw sensor channel is emitted). */
+  levelSensor: string;
+  pressureSensor: string;
+}
+
 /** The controllable routes + actuators + schedules for one controller. */
 export interface ControllerControls {
   controller: string;
@@ -120,6 +146,12 @@ export interface ControllerControls {
   automations: AutomationControl[];
   /** Per-route tank-% setpoints, live-tunable via config_set. */
   setpoints: SetpointControl[];
+  /** Every runtime-tunable device number (timings, runtime, setpoints,
+   *  calibration), for the operator-mode editors. `setpoints` above is the
+   *  per-route level subset (also surfaced by the Tuning editor). */
+  tunables: TunableNumber[];
+  /** Per level-monitored tank pressure-sensor calibration (physical-model editor). */
+  calibrations: CalibrationControl[];
 }
 
 export interface DashboardSpec {
@@ -140,7 +172,7 @@ interface RolePresentation {
 const ROLE_PRESENTATION: Record<TelemetryRole, RolePresentation> = {
   flow:          { kind: 'line',  unit: 'L/min', noun: 'Flow' },
   flow_total:    { kind: 'stat',  unit: 'L',     noun: 'Total' },
-  level:         { kind: 'gauge', unit: '%',     noun: 'Level', min: 0, max: 100 },
+  level:         { kind: 'tank',  unit: '%',     noun: 'Level', min: 0, max: 100 },
   pressure:      { kind: 'line',  unit: 'psi',   noun: 'Pressure' },
   pump:          { kind: 'badge' },
   valve:         { kind: 'valve', noun: 'Valve' },
@@ -298,6 +330,28 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
         trigger: automationTriggerSummary(a, manifest.routes[a.route_index]),
         enableSensor: automationEnableSwitchId(a.id),
       })),
+      // Every runtime-tunable number this controller exposes (operator-mode editors).
+      tunables: collectTunableNumbers(manifest),
+      // Per level-monitored tank: physical-model calibration (same emit condition as
+      // the cal numbers — pressure_pin + sensor_max_psi set).
+      calibrations: manifest.nodes
+        .filter((node) => node.kind === 'tank' && node['pressure_pin'] && typeof node['pressure_sensor_max_psi'] === 'number')
+        .map((node) => {
+          const ids = getPressureSensorIds({ id: node.id });
+          return {
+            nodeId: node.id,
+            nodeName: node.name,
+            tankHeightM: (node['height_m'] as number | undefined) ?? 0,
+            sensorDropM: (node['pressure_elevation_m'] as number | undefined) ?? 0,
+            sensorMaxPsi: node['pressure_sensor_max_psi'] as number,
+            calEmptyKey: ids.calEmpty,
+            calFullKey: ids.calFull,
+            rangeMinKey: ids.rangeMin,
+            rangeMaxKey: ids.rangeMax,
+            levelSensor: ids.levelId,
+            pressureSensor: ids.sId,
+          };
+        }),
     });
   }
   return { widgets, controllers };

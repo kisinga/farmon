@@ -6,7 +6,7 @@ import {
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
   COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
   localNodesWithFlag, validAutomations, automationEnableSwitchId,
-  collectConfigSetpoints,
+  collectTunableNumbers,
 } from '@core';
 import type { GenerationMetadata } from "../backends/types";
 import { hasTimeSchedule } from "./schedule";
@@ -90,19 +90,20 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     }),
   ];
 
-  // config_set: write a runtime-tunable number entity (a route's source-min /
-  // dest-max setpoint) by id. set_value().perform() fires the number's restore so
-  // the change persists across reboot; the getter clamps an out-of-range value
-  // back to the topology-baked default. The new value re-publishes on the next
-  // telemetry tick (see the config block in the publisher below).
-  const configSetpoints = collectConfigSetpoints(m.routes);
-  const configCases = configSetpoints.length === 0 ? [] : [
+  // config_set: write any runtime-tunable number entity (level setpoints, route
+  // max-runtime, controller safety timings, pressure calibration) by id.
+  // set_value().perform() fires the number's restore so the change persists across
+  // reboot; out-of-range values clamp to the topology-baked default in the getter.
+  // The new value re-publishes on the next telemetry tick (see the publisher below).
+  // The allow-list is the enumerated tunables — ESPHome can't id() by runtime string.
+  const tunables = collectTunableNumbers(m);
+  const configCases = tunables.length === 0 ? [] : [
     '} else if (strcmp(action, "config_set") == 0) {',
     '  const char* key = x["key"] | "";',
     '  float value = x["value"] | 0.0f;',
-    ...configSetpoints.map((sp, i) => {
+    ...tunables.map((t, i) => {
       const lead = i === 0 ? 'if' : 'else if';
-      return `  ${lead} (strcmp(key, "${sp.key}") == 0) { id(${sp.key}).make_call().set_value(value).perform(); }`;
+      return `  ${lead} (strcmp(key, "${t.key}") == 0) { id(${t.key}).make_call().set_value(value).perform(); }`;
     }),
   ];
 
@@ -238,11 +239,11 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     ...m.routes.map((_r, i) =>
       `{ int s = find_slot_by_route(${i}); int v = (s >= 0) ? slots[s].state : 0; ` +
       `if (v >= 0 && v < ${NS}) mc->publish("${telemetryTopic(site, ctrl, routeStateSensor(i))}", RTSTATE[v]); }`),
-    // Current value of each runtime-tunable setpoint, so the dashboard's config
-    // editor shows the live effective value (via the shadow) and reflects a
+    // Current value of each runtime-tunable number, so the dashboard's operator
+    // editors show the live effective value (via the shadow) and reflect a
     // config_set without a round-trip to the device's own API.
-    ...configSetpoints.map((sp) =>
-      `if (!std::isnan(id(${sp.key}).state)) mc->publish("${telemetryTopic(site, ctrl, sp.key)}", to_string(id(${sp.key}).state));`),
+    ...tunables.map((t) =>
+      `if (!std::isnan(id(${t.key}).state)) mc->publish("${telemetryTopic(site, ctrl, t.key)}", to_string(id(${t.key}).state));`),
   ];
 
   // --- Transition log (per-slot edge detection, 1s) -------------------------

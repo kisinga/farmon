@@ -49,3 +49,23 @@ export function deriveTankCalibration(
     working_span_psi: p_full_psi - p_empty_psi,
   };
 }
+
+/** The physical tank geometry behind a pair of psi cal anchors. */
+export interface TankPhysical {
+  /** Vertical drop from the tank outlet down to the sensor (the empty-tank head). */
+  elevation_m: number;
+  /** Water column height the tank fill spans (full − empty). */
+  tank_height_m: number;
+}
+
+/**
+ * Inverse of {@link deriveTankCalibration}: recover the physical geometry implied
+ * by the device's current empty/full psi anchors. Lets the operator UI present
+ * (and reconcile against) the device's actual calibration in physical terms.
+ */
+export function tankCalibrationToPhysical(p_empty_psi: number, p_full_psi: number): TankPhysical {
+  return {
+    elevation_m: p_empty_psi / PSI_PER_M,
+    tank_height_m: (p_full_psi - p_empty_psi) / PSI_PER_M,
+  };
+}
