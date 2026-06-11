@@ -1,5 +1,5 @@
-import type { Manifest, LocalManifestNode, ImportedManifestNode, ManifestAutomation, Route as ManifestRoute } from "./manifest.types";
-import type { SiteTopology, TopologyNode, AutomationTrigger } from "./topology.types";
+import type { Manifest, LocalManifestNode, ImportedManifestNode, Route as ManifestRoute } from "./manifest.types";
+import type { SiteTopology, TopologyNode } from "./topology.types";
 import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
 import { deriveRemoteHaEntityId } from "./remote-ha-entity";
 import { slug } from "./slug";
@@ -9,14 +9,6 @@ function assertSourceKind(kind: TopologyNode['kind']): asserts kind is 'tank' | 
   if (kind !== 'tank' && kind !== 'water_source') {
     throw new Error(`Invalid source kind: ${kind}`);
   }
-}
-
-function mapTrigger(trigger: AutomationTrigger): ManifestAutomation['trigger'] {
-  if (trigger.type === 'time') {
-    if (!trigger.at) throw new Error('Time trigger missing "at"');
-    return { type: 'time', at: trigger.at };
-  }
-  return { type: 'level', for_minutes: trigger.for_minutes };
 }
 
 // ---------------------------------------------------------------------------
@@ -197,31 +189,10 @@ export function topologyToManifestForController(
     };
   });
 
-  // --- Automation resolution ---
-
-  const routeKeyToIndex = new Map(manifestRoutes.map((r, i) => [r.key, i]));
-
-  const automations: ManifestAutomation[] = (topology.automations ?? [])
-    .filter(a => {
-      if (!routeKeyToIndex.has(a.route)) {
-        console.warn(`Automation "${a.id}" references unknown route "${a.route}" — skipped`);
-        return false;
-      }
-      return true;
-    })
-    .map(a => {
-      const idx = routeKeyToIndex.get(a.route)!;
-      return {
-        id: a.id,
-        name: a.name,
-        route_index: idx,
-        route_key: a.route,
-        route_name: manifestRoutes[idx].name,
-        trigger: mapTrigger(a.trigger),
-        days_of_week: a.days_of_week,
-        enabled: a.enabled,
-      };
-    });
+  // Automations are no longer baked into the manifest/firmware — they live in the
+  // `automations` PocketBase collection and reach the device as a retained runtime
+  // set (see automation-engine.ts). The manifest carries an empty list so the
+  // schedule-derived dashboard controls and telemetry enable-channels stay empty.
 
   const controller = topology.controllers.find(c => c.id === controllerId);
 
@@ -240,6 +211,6 @@ export function topologyToManifestForController(
     imports: importedNodes,
     routes: manifestRoutes,
     timing: { ...topology.timing },
-    automations,
+    automations: [],
   };
 }

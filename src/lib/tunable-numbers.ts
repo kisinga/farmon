@@ -30,6 +30,7 @@ export type TunableTier = 'tuning' | 'calibration';
 export type TunableField =
   | 'flow_watchdog' | 'flow_confirm' | 'flow_threshold' | 'claim_lease'
   | 'max_runtime' | 'source_min_pct' | 'dest_max_pct'
+  | 'target_volume_l' | 'target_duration_s'
   | 'range_min' | 'range_max' | 'cal_empty' | 'cal_full'
   | 'travel_time';
 
@@ -56,6 +57,23 @@ export interface TunableNumber {
 
 const SYS = SYSTEM_ENTITY_NAMES;
 
+/**
+ * Whether a route may expose a volume target. True only when it's monitored AND
+ * no other route can run concurrently on the same flow sensor — i.e. no sibling
+ * shares both the flow sensor and the destination. Different-destination siblings
+ * are already mutually exclusive via the firmware conflict mask, so they never
+ * read the sensor at the same time; same-destination siblings can, which would
+ * make the per-route volume delta double-count. Duration targets have no such
+ * constraint (they don't read a sensor). Used by both the tunable enumeration and
+ * the YAML emission so the two never disagree (drift-guard).
+ */
+export function routeVolumeEligible(r: Manifest['routes'][number], routes: Manifest['routes']): boolean {
+  if (!r.monitored || !r.flow_sensor) return false;
+  return !routes.some((o) =>
+    o.key !== r.key && o.flow_sensor === r.flow_sensor && (o.destination ?? '') === (r.destination ?? ''),
+  );
+}
+
 /** Enumerate every runtime-tunable number a controller exposes, in a stable order
  *  (controller, then per-route, then per-sensor). Mirrors the codegen emit
  *  conditions exactly — see the drift-guard test. */
@@ -75,6 +93,14 @@ export function collectTunableNumbers(m: Manifest): TunableNumber[] {
     const names = routeEntityNames(r);
     const routeName = r.name || r.key;
     out.push({ key: `route_${i}_max_runtime`, scope: 'route', tier: 'tuning', field: 'max_runtime', label: names.maxRuntime.name, unit: 'min', min: 1, max: 120, step: 1, default: Math.max(1, Math.round(r.max_runtime_seconds / 60)), routeIndex: i, routeName });
+    // Timed-open target — clean stop after N seconds. Any route (no flow sensor
+    // needed). 0 = off. max_runtime stays the safety backstop above it.
+    out.push({ key: `route_${i}_target_duration_s`, scope: 'route', tier: 'tuning', field: 'target_duration_s', label: names.targetDuration.name, unit: 's', min: 0, max: 7200, step: 1, default: 0, routeIndex: i, routeName });
+    // Volume target — clean stop after N litres delivered. Only where the flow
+    // sensor isn't shared with a concurrent sibling (see routeVolumeEligible). 0 = off.
+    if (routeVolumeEligible(r, m.routes)) {
+      out.push({ key: `route_${i}_target_volume_l`, scope: 'route', tier: 'tuning', field: 'target_volume_l', label: names.targetVolume.name, unit: 'L', min: 0, max: 100000, step: 1, default: 0, routeIndex: i, routeName });
+    }
     if (r.source_has_level) {
       out.push({ key: routeSourceMinNumber(i), scope: 'route', tier: 'tuning', field: 'source_min_pct', label: names.sourceMinLevel.name, unit: '%', min: 0, max: 100, step: 1, default: r.source_min_pct, routeIndex: i, routeName });
     }

@@ -184,6 +184,17 @@ export const commandTopic = (site: string, ctrl: string) =>
   `${MQTT_ROOT}/${site}/${ctrl}/command`;
 
 /**
+ * Retained automation-set topic (server → broker → device):
+ *   majiflow/{site}/{ctrl}/automations
+ * One RETAINED packed-binary message per controller (see automation-wire.ts).
+ * Retained = a rebooting/reprovisioning device pulls the current set on connect.
+ * The server republishes the whole set on any automation change; the device
+ * memcpy's it into its runtime table. Inside the device ACL namespace.
+ */
+export const automationsTopic = (site: string, ctrl: string) =>
+  `${MQTT_ROOT}/${site}/${ctrl}/automations`;
+
+/**
  * Online/offline status topic (retained birth/will, device → broker):
  *   majiflow/{site}/{ctrl}/status   payload "1" (online) / "0" (offline)
  * Deliberately outside the `…/telemetry/…` namespace so the telemetry ingest
@@ -442,9 +453,10 @@ export const FAULT_TOKENS = [
   'NONE', 'NO_FLOW', 'MAX_RUNTIME', 'CONTROL_LOST',
 ] as const;
 
-/** Stop reason, indexed by the firmware's `stop_reason` (0..6). */
+/** Stop reason, indexed by the firmware's `stop_reason` (0..8). */
 export const STOP_REASON_TOKENS = [
   'NONE', 'MANUAL', 'TANK_FULL', 'NO_FLOW', 'MAX_RUNTIME', 'CONTROL_LOST', 'SOURCE_LOW',
+  'VOLUME_REACHED', 'DURATION_REACHED',
 ] as const;
 
 export type SystemStateToken = (typeof SYSTEM_STATE_TOKENS)[number];
@@ -467,13 +479,15 @@ export const FAULT_MEANINGS: Record<FaultToken, StateMeaning> = {
 };
 
 export const STOP_REASON_MEANINGS: Record<StopReasonToken, StateMeaning> = {
-  NONE:         { label: 'None',                  kind: 'normal' },
-  MANUAL:       { label: 'Manual stop',           kind: 'normal' },
-  TANK_FULL:    { label: 'Tank full',             kind: 'normal' },
-  NO_FLOW:      { label: 'No flow detected',      kind: 'warn' },
-  MAX_RUNTIME:  { label: 'Max runtime exceeded',  kind: 'warn' },
-  CONTROL_LOST: { label: 'Control link lost',     kind: 'warn' },
-  SOURCE_LOW:   { label: 'Source tank low',       kind: 'warn' },
+  NONE:             { label: 'None',                  kind: 'normal' },
+  MANUAL:           { label: 'Manual stop',           kind: 'normal' },
+  TANK_FULL:        { label: 'Tank full',             kind: 'normal' },
+  NO_FLOW:          { label: 'No flow detected',      kind: 'warn' },
+  MAX_RUNTIME:      { label: 'Max runtime exceeded',  kind: 'warn' },
+  CONTROL_LOST:     { label: 'Control link lost',     kind: 'warn' },
+  SOURCE_LOW:       { label: 'Source tank low',       kind: 'warn' },
+  VOLUME_REACHED:   { label: 'Target volume reached', kind: 'normal' },
+  DURATION_REACHED: { label: 'Timed run complete',    kind: 'normal' },
 };
 
 /**

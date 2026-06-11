@@ -1,6 +1,6 @@
 import type { Manifest } from '@core';
-import { nodesByKind, nodesWithFlag, allNodes, pumpSwitchId } from '@core';
-import { valveCoverId, valveTravelTimeId, pressureSensorLevelId, flowSensorId, parseRouteKey } from '@core';
+import { nodesByKind, nodesWithFlag, allNodes, pumpSwitchId, routeVolumeEligible, routeSetVersion } from '@core';
+import { valveCoverId, valveTravelTimeId, pressureSensorLevelId, flowSensorId, flowTotalId, parseRouteKey } from '@core';
 import { generateDeadman } from './deadman';
 
 // ---------------------------------------------------------------------------
@@ -269,6 +269,18 @@ export function generateRoutes(m: Manifest): string {
       return `    case ${i}: return id(${flowSensorId(nid(f))}).state;`;
     })
     .join("\n");
+  // Cumulative volume (L) per flow sensor — the integration total. Remote
+  // sensors have no mirrored total, so they return -1.0f and a volume stop on a
+  // remote-sourced route never trips (a build rule already steers volume targets
+  // to local, unshared sensors).
+  const flowTotalCases = flowSensors
+    .map((f, i) => {
+      if (f['remoteHaEntityId']) {
+        return `    case ${i}: return -1.0f; // remote: ${f['name']} (no total mirror)`;
+      }
+      return `    case ${i}: return id(${flowTotalId(nid(f))}).state;`;
+    })
+    .join("\n");
 
   // Route max-runtime is operator-facing in minutes; convert to seconds for
   // the firmware control loop. Bound check in minutes — anything below 1 min
@@ -278,6 +290,24 @@ export function generateRoutes(m: Manifest): string {
       float v = id(route_${i}_max_runtime).state;
       return (!std::isnan(v) && v >= 1.0f) ? (uint16_t)(v * 60.0f) : ROUTES[${i}].max_runtime_s;
     }`)
+    .join("\n");
+
+  // Per-route intent stops (clean completion). Duration applies to any route;
+  // volume only to monitored routes (others have no number entity → 0 = off).
+  const targetDurationCases = m.routes
+    .map((_, i) => `    case ${i}: {
+      float v = id(route_${i}_target_duration_s).state;
+      return (!std::isnan(v) && v >= 0.0f) ? (uint16_t)v : 0;
+    }`)
+    .join("\n");
+
+  const targetVolumeCases = m.routes
+    .map((r, i) => routeVolumeEligible(r, m.routes)
+      ? `    case ${i}: {
+      float v = id(route_${i}_target_volume_l).state;
+      return (!std::isnan(v) && v >= 0.0f) ? (uint32_t)v : 0;
+    }`
+      : `    case ${i}: return 0;`)
     .join("\n");
 
   // Pre-start safety thresholds — read from HA tunables when present, fall
@@ -391,6 +421,11 @@ static const int NUM_WATER_SOURCES = ${waterSources.length};
 static const int NUM_FLOW_SENSORS  = ${flowSensors.length};
 static const int NUM_ROUTES        = ${m.routes.length};
 
+// Stable hash of the ordered route-key list. The runtime automation engine
+// refuses any set stamped with a different value (an index could otherwise point
+// at the wrong route after a topology change). See automation-wire.ts.
+static const uint16_t ROUTE_SET_VERSION = ${routeSetVersion(m)};
+
 // --- Fault codes -------------------------------------------------------------
 
 static const int FAULT_NONE        = 0;
@@ -407,8 +442,31 @@ static const int STOP_NO_FLOW      = 3;
 static const int STOP_MAX_RUNTIME  = 4;
 static const int STOP_CONTROL_LOST = 5;  // reserved: local-mode control-link loss (Phase 2)
 static const int STOP_SOURCE_LOW   = 6;
+static const int STOP_VOLUME_REACHED   = 7;  // clean: target volume delivered (intent stop)
+static const int STOP_DURATION_REACHED = 8;  // clean: timed run elapsed (intent stop)
 
 static const int FAULT_TO_STOP_OFFSET = 2;
+
+// --- Run-parameter override (sparse overlay) ---------------------------------
+// A start may carry a sparse override of the per-route run-params; only the bits
+// set in override_mask apply, everything else inherits the route's live tunable.
+// One mechanism for the per-route default (mask 0), a manual one-off, and an
+// automation. STOPSPEC_INHERIT = "use the route tunables for everything".
+static const uint8_t OV_SOURCE_MIN = 1 << 0;
+static const uint8_t OV_DEST_MAX   = 1 << 1;
+static const uint8_t OV_MAX_RT     = 1 << 2;
+static const uint8_t OV_DURATION   = 1 << 3;
+static const uint8_t OV_VOLUME     = 1 << 4;
+
+struct StopSpec {
+  uint8_t  override_mask;
+  uint8_t  ov_source_min_pct;
+  uint8_t  ov_dest_max_pct;
+  uint16_t ov_max_runtime_min;
+  uint16_t ov_target_duration_s;
+  uint32_t ov_target_volume_l;
+};
+static const StopSpec STOPSPEC_INHERIT = {0, 0, 0, 0, 0, 0};
 
 // --- Route descriptor --------------------------------------------------------
 
@@ -455,6 +513,13 @@ struct RouteSlot {
   int      stop_reason;
   bool     flow_confirmed;
   bool     tank_full_detected;
+  float    volume_at_start;  // flow-sensor total (L) snapshot at RUNNING entry; baseline for volume stop
+  uint8_t  override_mask;    // sparse run-param override carried from the start (0 = inherit all)
+  uint8_t  ov_source_min_pct;
+  uint8_t  ov_dest_max_pct;
+  uint16_t ov_max_runtime_min;
+  uint16_t ov_target_duration_s;
+  uint32_t ov_target_volume_l;
 };
 
 static RouteSlot slots[MAX_CONCURRENT_ROUTES];
@@ -588,28 +653,32 @@ inline void reconcile_valves() {
 
 // --- Queue (circular buffer) -------------------------------------------------
 
-static int route_queue[MAX_QUEUE_SIZE];
+// A queued start carries its StopSpec so a deferred run honours the same override
+// (volume/duration/etc.) it would have had if a slot were free immediately.
+struct QueueEntry { int route_id; StopSpec spec; };
+static QueueEntry route_queue[MAX_QUEUE_SIZE];
 static int queue_head = 0;
 static int queue_count = 0;
 
-inline bool queue_push(int rid) {
+inline bool queue_push(int rid, const StopSpec& spec) {
   if (queue_count >= MAX_QUEUE_SIZE) return false;
-  route_queue[(queue_head + queue_count) % MAX_QUEUE_SIZE] = rid;
+  route_queue[(queue_head + queue_count) % MAX_QUEUE_SIZE] = {rid, spec};
   queue_count++;
   return true;
 }
 
-inline int queue_pop() {
-  if (queue_count == 0) return -1;
-  int v = route_queue[queue_head];
+inline QueueEntry queue_pop() {
+  if (queue_count == 0) return {-1, STOPSPEC_INHERIT};
+  QueueEntry v = route_queue[queue_head];
   queue_head = (queue_head + 1) % MAX_QUEUE_SIZE;
   queue_count--;
   return v;
 }
 
+// Route id at queue position i (for conflict checks), or -1 if out of range.
 inline int queue_peek(int i) {
   if (i >= queue_count) return -1;
-  return route_queue[(queue_head + i) % MAX_QUEUE_SIZE];
+  return route_queue[(queue_head + i) % MAX_QUEUE_SIZE].route_id;
 }
 
 // --- Hardware dispatch -------------------------------------------------------
@@ -645,6 +714,15 @@ ${tankCases}
 inline float get_flow_rate(int idx) {
   switch (idx) {
 ${flowCases}
+    default: return -1.0f;
+  }
+}
+
+// Cumulative delivered volume (L) per flow sensor — the integration total.
+// -1.0f when unavailable (remote sensor / bad idx) so volume-stop callers skip.
+inline float get_flow_total(int idx) {
+  switch (idx) {
+${flowTotalCases}
     default: return -1.0f;
   }
 }
@@ -697,6 +775,51 @@ ${destMaxCases}
   }
 }
 
+// Per-route intent-stop targets (clean completion). 0 = off. Duration is any
+// route; volume is monitored-only (0 for the rest).
+inline uint16_t get_route_target_duration_s(int route_id) {
+  switch (route_id) {
+${targetDurationCases}
+    default: return 0;
+  }
+}
+
+inline uint32_t get_route_target_volume_l(int route_id) {
+  switch (route_id) {
+${targetVolumeCases}
+    default: return 0;
+  }
+}
+
+// --- Effective run-params (3-layer cascade) ----------------------------------
+// effective = slot override (when its bit is set) else the route's live tunable.
+// Inherited fields stay live (operator can retune mid-run); overridden fields are
+// fixed for the run. max_runtime override is clamped to the tunable ceiling.
+inline uint8_t effective_source_min_pct(int s) {
+  return (slots[s].override_mask & OV_SOURCE_MIN) ? slots[s].ov_source_min_pct
+                                                  : get_route_source_min_pct(slots[s].route_id);
+}
+inline uint8_t effective_dest_max_pct(int s) {
+  return (slots[s].override_mask & OV_DEST_MAX) ? slots[s].ov_dest_max_pct
+                                                : get_route_dest_max_pct(slots[s].route_id);
+}
+inline uint16_t effective_max_runtime_s(int s) {
+  if (!(slots[s].override_mask & OV_MAX_RT)) return get_max_runtime_s(slots[s].route_id);
+  // Clamp mirrors the max_runtime tunable bounds in tunable-numbers.ts ([1,120] min).
+  uint16_t mins = slots[s].ov_max_runtime_min;
+  if (mins < 1) mins = 1;
+  if (mins > 120) mins = 120;
+  return (uint16_t)(mins * 60);
+}
+inline uint16_t effective_target_duration_s(int s) {
+  return (slots[s].override_mask & OV_DURATION) ? slots[s].ov_target_duration_s
+                                                : get_route_target_duration_s(slots[s].route_id);
+}
+inline uint32_t effective_target_volume_l(int s) {
+  return (slots[s].override_mask & OV_VOLUME) ? slots[s].ov_target_volume_l
+                                              : get_route_target_volume_l(slots[s].route_id);
+}
+
 // --- Pre-start guard (shared by routes + manual pump claims) ------------------
 // Value-based so try_route_start and manual_pump_precheck use ONE impl. src_idx/
 // dst_idx are tank indices (0xFF = skip); src_min/dst_max are %. safety_override
@@ -716,30 +839,47 @@ inline int check_precheck(uint8_t src_idx, uint8_t src_min, uint8_t dst_idx, uin
 
 ${manualGuardCpp}
 
+// Set a free slot to PREPARING for a route, carrying its run-param override.
+// Shared by try_route_start and the queue drain so both honour the same spec.
+inline void activate_slot(int slot, int route_id, const StopSpec& spec) {
+  init_slot(slot);
+  slots[slot].route_id            = route_id;
+  slots[slot].state               = 1;  // PREPARING
+  slots[slot].start_time          = millis();
+  slots[slot].override_mask       = spec.override_mask;
+  slots[slot].ov_source_min_pct   = spec.ov_source_min_pct;
+  slots[slot].ov_dest_max_pct     = spec.ov_dest_max_pct;
+  slots[slot].ov_max_runtime_min  = spec.ov_max_runtime_min;
+  slots[slot].ov_target_duration_s= spec.ov_target_duration_s;
+  slots[slot].ov_target_volume_l  = spec.ov_target_volume_l;
+  // Valves open via the reconciler on the next 1s tick.
+}
+
 // --- Route start/stop (shared by API services + button entities) -------------
 //
-// Returns: 0=started, 1=queued, 2=rejected (invalid/duplicate/full),
-//          3=rejected (source low), 4=rejected (dest full), 5=rejected (partitioned)
-inline int try_route_start(int route_id, const char* command_id) {
+// spec carries an optional sparse run-param override (STOPSPEC_INHERIT = use the
+// route tunables). Returns: 0=started, 1=queued, 2=rejected (invalid/duplicate/
+// full), 3=rejected (source low), 4=rejected (dest full).
+inline int try_route_start(int route_id, const char* command_id, const StopSpec& spec = STOPSPEC_INHERIT) {
   if (route_id < 0 || route_id >= NUM_ROUTES) return 2;
   if (is_duplicate_command(command_id)) return 0;  // idempotent success
   if (find_slot_by_route(route_id) != -1) return 2;  // already active
 
   if (has_conflict(route_id) || find_free_slot() == -1) {
-    return queue_push(route_id) ? 1 : 2;
+    return queue_push(route_id, spec) ? 1 : 2;
   }
 
+  // Pre-check with the EFFECTIVE thresholds the override would apply.
   const Route& r = ROUTES[route_id];
-  int pc = check_precheck(r.source_tank, get_route_source_min_pct(route_id),
-                          r.dest_tank, get_route_dest_max_pct(route_id));
+  uint8_t eff_src_min = (spec.override_mask & OV_SOURCE_MIN) ? spec.ov_source_min_pct
+                                                            : get_route_source_min_pct(route_id);
+  uint8_t eff_dst_max = (spec.override_mask & OV_DEST_MAX) ? spec.ov_dest_max_pct
+                                                           : get_route_dest_max_pct(route_id);
+  int pc = check_precheck(r.source_tank, eff_src_min, r.dest_tank, eff_dst_max);
   if (pc != 0) return pc;
 
   int slot = find_free_slot();
-  init_slot(slot);
-  slots[slot].route_id = route_id;
-  slots[slot].state = 1;  // PREPARING
-  slots[slot].start_time = millis();
-  // Valves open via the reconciler on the next 1s tick.
+  activate_slot(slot, route_id, spec);
   if (id(active_slot) == -1) id(active_slot) = slot;
   id(system_state) = derived_system_state();
   return 0;

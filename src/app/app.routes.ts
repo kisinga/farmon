@@ -109,6 +109,14 @@ export const routes: Routes = [
       import('./pages/dashboard/dashboard.component').then((m) => m.DashboardComponent),
   },
   {
+    // Customer + admin: operator automations manager (runtime, not design — edits
+    // the automations collection, never the topology).
+    path: 'site/:name/automations',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/automations/automations.component').then((m) => m.AutomationsComponent),
+  },
+  {
     // Admin: the unified workspace (site overview panel + shared canvas).
     path: 'site/:name',
     canActivate: [roleGuard],

@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type AutomationControl, type HealthLevel, type StateKind, type StateMeaning } from '@core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type HealthLevel, type StateKind, type StateMeaning } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
 import { ConfirmService } from '../../core/services/confirm.service';
@@ -24,7 +24,7 @@ import type { RouteControl } from '@core';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent, TunableNumbersComponent, TankCalibrationComponent],
+  imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent, TunableNumbersComponent, TankCalibrationComponent, RouterLink],
   providers: [DashboardStore, TelemetryStore, CommandLifecycleStore],
   host: { class: 'flex-1 overflow-auto' },
   template: `
@@ -189,50 +189,16 @@ import type { RouteControl } from '@core';
           </section>
         }
 
-        <!-- Schedules — pause/resume baked automations at runtime (over MQTT, no
-             rebuild). Shown to everyone (state reads even in admin read-only);
-             the toggle is disabled, not hidden, when control isn't held or the
-             controller is offline. -->
-        @if (hasAutomations()) {
-          <section class="mb-6">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">Schedules</h2>
-            @for (c of store.spec().controllers; track c.controller) {
-              @if (c.automations.length) {
-                <div class="mb-4 last:mb-0">
-                  @if (showController()) {
-                    <div class="flex items-center gap-2 mb-2">
-                      <span class="w-2 h-2 rounded-full shrink-0" [class]="store.presence(c.controller).online ? 'bg-success' : 'bg-base-content/30'"></span>
-                      <span class="text-xs font-semibold text-base-content/60">{{ c.name }}</span>
-                    </div>
-                  }
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    @for (a of c.automations; track a.id) {
-                      <div class="bg-base-100 rounded-2xl ring-1 ring-base-300/40 p-3.5 flex items-center gap-3"
-                           [class.opacity-60]="!store.presence(c.controller).online">
-                        <div class="min-w-0 flex-1">
-                          <div class="flex items-center gap-1.5">
-                            <span class="w-1.5 h-1.5 rounded-full shrink-0"
-                                  [class]="automationEnabled(c.controller, a.enableSensor) ? 'bg-success' : 'bg-base-content/30'"></span>
-                            <span class="text-sm font-semibold truncate">{{ a.name }}</span>
-                          </div>
-                          <p class="text-xs text-base-content/50 truncate mt-0.5">{{ a.trigger }} → {{ a.routeName }}</p>
-                        </div>
-                        <button class="btn btn-xs shrink-0 w-20"
-                                [class]="automationEnabled(c.controller, a.enableSensor) ? 'btn-success btn-outline' : 'btn-ghost'"
-                                [disabled]="!canControl() || !store.presence(c.controller).online || automationBusy(c.controller, a.id)"
-                                (click)="toggleAutomation(c.controller, a)">
-                          @if (automationBusy(c.controller, a.id)) { <span class="loading loading-spinner loading-xs"></span> }
-                          @else { {{ automationEnabled(c.controller, a.enableSensor) ? 'On' : 'Paused' }} }
-                        </button>
-                      </div>
-                    }
-                  </div>
-                  <p class="text-[11px] text-base-content/40 mt-1.5">Pausing stops future runs only; a route already running keeps going (use its Stop control).</p>
-                </div>
-              }
-            }
-          </section>
-        }
+        <!-- Automations — created and managed on the dedicated page (runtime data,
+             no rebuild): schedule routes by time or tank level, optionally to a
+             target volume or duration. -->
+        <section class="mb-6">
+          <div class="flex items-center justify-between mb-2.5">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Automations</h2>
+            <a [routerLink]="['/site', siteId, 'automations']" class="btn btn-xs btn-ghost">Manage →</a>
+          </div>
+          <p class="text-xs text-base-content/50">Run routes on a schedule (time or tank level), stopping at a target volume or duration.</p>
+        </section>
 
         <!-- Alerts: per-site thresholds (server-stored; feed the bell + email sweep).
              Owner/admin — a server write, not a device command, so the lowest gate. -->
@@ -547,9 +513,6 @@ export class DashboardComponent {
   // --- Routes (the live control surface) -----------------------------------
   protected hasRoutes = computed(() => this.store.spec().controllers.some((c) => c.routes.length > 0));
 
-  // --- Schedules (runtime pause/resume of baked automations) ---------------
-  protected hasAutomations = computed(() => this.store.spec().controllers.some((c) => c.automations.length > 0));
-
   // --- Operator-mode tiers -------------------------------------------------
   /** Any per-route timer exists (drives the "Route timers" disclosure in Routes). */
   protected hasRouteTuning = computed(() => this.store.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));
@@ -557,38 +520,6 @@ export class DashboardComponent {
    *  calibration, or a manual actuator. */
   protected hasOperatorControls = computed(() => this.store.spec().controllers.some((c) =>
     c.tunables.some((t) => t.scope === 'controller') || c.calibrations.length > 0 || c.actuators.length > 0));
-
-  private autoKey(controller: string, id: string): string {
-    return `${controller}/auto/${id}`;
-  }
-
-  /** Live enabled state from the shadow (the device's enable switch). Defaults to
-   *  ON when never reported — baked schedules ship enabled (RESTORE_DEFAULT_ON),
-   *  so "not yet seen" reads as on, not a misleading paused. */
-  protected automationEnabled(controller: string, enableSensor: string): boolean {
-    const r = this.store.row(controller, enableSensor);
-    return r ? r.reported >= 0.5 : true;
-  }
-
-  protected automationBusy(controller: string, id: string): boolean {
-    return this.lifecycle.isBusy(this.autoKey(controller, id));
-  }
-
-  /** Pause/resume a baked schedule. Pausing suppresses future triggers only — if
-   *  the schedule's route is running right now, say so (the run keeps going). */
-  protected async toggleAutomation(controller: string, auto: AutomationControl): Promise<void> {
-    if (!this.canControl()) return;
-    const on = !this.automationEnabled(controller, auto.enableSensor);
-    const token = this.routeState(controller, auto.routeId).token;
-    const running = token === 'PREPARING' || token === 'RUNNING' || token === 'STOPPING';
-    const ok = await this.lifecycle.dispatch(this.autoKey(controller, auto.id), controller, 'automation_set', { automation: auto, on });
-    // Pausing a schedule whose route is mid-run only stops FUTURE runs — say so.
-    if (ok && !on && running) {
-      this.note.set(`Schedule paused. "${auto.routeName}" is running now and keeps going; use its Stop control to end it.`);
-    } else {
-      this.offlineNote(controller);
-    }
-  }
 
   /** A route's live state for its card (token + reason; empty when never seen). */
   protected routeState(controller: string, routeId: number): { token: string; reason: string } {

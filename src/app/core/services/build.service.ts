@@ -6,6 +6,7 @@ import {
   deriveRoutes,
   parseTopology,
   topologyToManifestForController,
+  listAutomatableRoutes,
   CURRENT_SCHEMA_VERSION,
 } from '@core';
 import type { ExpansionBoardCatalog, DeploymentMode } from '@core';
@@ -190,7 +191,45 @@ export class BuildService {
     fd.set('bundle', new File([blob], `bundle-v${nextVersion}.zip`, { type: 'application/zip' }));
 
     const rec = await this.pb.collection('topology_versions').create(fd);
+
+    // Re-align the site's automations to the just-built route tables. A route
+    // reorder shifts route_index and changes route_set_version, so existing rows
+    // must be re-stamped or the device refuses the whole set (version guard). The
+    // device keeps its last-good set until it's reflashed to this version, so the
+    // re-stamp is safe to publish ahead of the flash.
+    await this.restampAutomations(siteId, topo).catch((e) => console.warn('automation re-stamp failed', e));
+
     return { id: rec['id'], version: nextVersion, deduped: false };
+  }
+
+  /**
+   * Re-resolve every automation row's owning route against the current topology.
+   * route_key is the stable identity; route_index + route_set_version are derived,
+   * so they're refreshed when routes change. A route_key no longer present on its
+   * controller (deleted, or moved to another controller) can't run — the row is
+   * paused rather than silently pointing at the wrong route.
+   */
+  private async restampAutomations(siteId: string, topo: SiteTopology): Promise<void> {
+    const byKey = new Map(
+      listAutomatableRoutes(topo).map((r) => [`${r.controllerId} ${r.routeKey}`, r]),
+    );
+    const rows = await this.pb.collection('automations').getFullList({
+      filter: this.pb.filter('site = {:s}', { s: siteId }),
+      requestKey: `automations:restamp:${siteId}`,
+    });
+    for (const row of rows) {
+      const match = byKey.get(`${row['controller']} ${row['route_key']}`);
+      if (!match) {
+        if (row['enabled']) await this.pb.collection('automations').update(row['id'], { enabled: false });
+        continue;
+      }
+      if (row['route_index'] !== match.routeIndex || row['route_set_version'] !== match.routeSetVersion) {
+        await this.pb.collection('automations').update(row['id'], {
+          route_index: match.routeIndex,
+          route_set_version: match.routeSetVersion,
+        });
+      }
+    }
   }
 
   /** List a site's committed versions, newest first. */

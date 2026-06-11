@@ -879,13 +879,15 @@ assert(pumpCollect.switches.some(y => y.includes('pump1_relay')), "Local pump1 r
 assert(pumpCollect.sensors.some(y => y.includes('id: flow1')), "Local flow sensor generated");
 
 // =============================================================================
-// Schedules — runtime pause/resume of baked automations
+// Automations are runtime data, not baked — the manifest carries none
 // =============================================================================
 
-console.log("\nSchedules (runtime pause/resume):");
+console.log("\nAutomations (runtime engine, not baked):");
 
-// A topology with a time + a level automation (both enabled) plus one disabled,
-// over the proven pumped-pressure route. The disabled one must NOT be baked.
+// A topology that still carries legacy in-topology automations. Post-cutover they
+// are IGNORED by codegen — automations live in the `automations` collection and
+// reach the device as a retained runtime set (automation-engine.h). The manifest
+// must carry none, so no baked schedule / enable switches / dashboard toggles.
 const scheduledTopo = parseTopology({
   ...pumpedPressureTopology(true, true),
   automations: [
@@ -893,11 +895,6 @@ const scheduledTopo = parseTopology({
       trigger: { type: 'time', at: '06:00' }, days_of_week: ['MON', 'WED', 'FRI'], enabled: true },
     { id: 'auto_lvl1', name: 'Top Up', route: 'source_tank>dest_tank#route_valve',
       trigger: { type: 'level' }, days_of_week: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'], enabled: true },
-    // Name with a double-quote — the switch name: must stay valid YAML (yamlString).
-    { id: 'auto_q', name: 'Night "deep" fill', route: 'source_tank>dest_tank#route_valve',
-      trigger: { type: 'time', at: '23:00' }, days_of_week: ['SUN'], enabled: true },
-    { id: 'auto_off', name: 'Disabled One', route: 'source_tank>dest_tank#route_valve',
-      trigger: { type: 'time', at: '08:00' }, days_of_week: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'], enabled: false },
   ],
 });
 
@@ -908,47 +905,22 @@ const getSched = (suffix: string): string => {
   for (const [k, v] of schedMap) if (k.endsWith(suffix)) return v;
   throw new Error(`No generated file ending with "${suffix}"`);
 };
-
-const scheduleYaml = getSched("schedule.yaml");
 const mqttYamlSched = getSched("mqtt.yaml");
 
-// Both files must still be parseable YAML after the additions.
-for (const [suffix, content] of [["schedule.yaml", scheduleYaml], ["mqtt.yaml", mqttYamlSched]] as const) {
-  let ok = true;
-  try { parseYaml(content); } catch { ok = false; }
-  assert(ok, `${suffix} is valid YAML`);
-}
+assert(schedManifest.automations.length === 0, "manifest carries no automations (collection-managed now)");
+assert(![...schedMap.keys()].some((k) => k.endsWith("schedule.yaml")), "no baked schedule.yaml is emitted");
+assert([...schedMap.keys()].some((k) => k.endsWith("automation-engine.yaml")), "automation-engine package is emitted");
+assert([...schedMap.keys()].some((k) => k.endsWith("automation-engine.h")), "automation-engine header is emitted");
 
-// Enable switch per baked automation (persists across reboot), none for disabled.
-assert(scheduleYaml.includes("id: auto_time1_enabled"), "schedule: enable switch for the time automation");
-assert(scheduleYaml.includes("id: auto_lvl1_enabled"), "schedule: enable switch for the level automation");
-assert(!scheduleYaml.includes("auto_off_enabled"), "schedule: no switch for the disabled automation");
-assert(
-  (scheduleYaml.match(/restore_mode: RESTORE_DEFAULT_ON/g) ?? []).length === 3,
-  "schedule: enable switches persist across reboot (RESTORE_DEFAULT_ON)",
-);
-// A double-quote in a schedule name must be escaped, not break the YAML.
-assert(
-  scheduleYaml.includes('name: "Schedule: Night \\"deep\\" fill"'),
-  "schedule: user name with a quote is YAML-escaped",
-);
-// Triggers gated on the switch.
-assert(
-  scheduleYaml.includes("id(time_trusted) && id(auto_time1_enabled).state"),
-  "schedule: time trigger gated on its enable switch",
-);
-assert(scheduleYaml.includes("id(auto_lvl1_enabled).state"), "schedule: level trigger gated on its enable switch");
+let mqttOk = true; try { parseYaml(mqttYamlSched); } catch { mqttOk = false; }
+assert(mqttOk, "mqtt.yaml is valid YAML");
+// The baked schedule used to declare sntp_time; mqtt.yaml now emits the single one
+// unconditionally (the engine's time triggers + the command-TTL gate need it).
+assert((mqttYamlSched.match(/id: sntp_time/g) ?? []).length === 1, "mqtt: exactly one sntp_time, emitted unconditionally");
+assert(mqttYamlSched.includes("apply_automation_set"), "mqtt: subscribes to the retained automation set");
+assert(!mqttYamlSched.includes("auto_time1_enabled"), "mqtt: no baked automation enable-switch dispatch");
 
-// MQTT command handler dispatches automation_set into the switch.
-assert(mqttYamlSched.includes('strcmp(action, "automation_set")'), "mqtt: handles the automation_set command");
-assert(
-  mqttYamlSched.includes('strcmp(aid, "auto_time1")') && mqttYamlSched.includes("id(auto_time1_enabled).turn_on()"),
-  "mqtt: automation_set flips the matching enable switch",
-);
-assert(!mqttYamlSched.includes("auto_off_enabled"), "mqtt: disabled automation is not dispatchable");
-
-// MQTT command handler dispatches config_set into a route's setpoint number, and
-// the telemetry publisher re-publishes the current value so the dashboard shows it.
+// config_set still works (unchanged by the cutover).
 assert(mqttYamlSched.includes('strcmp(action, "config_set")'), "mqtt: handles the config_set command");
 assert(
   mqttYamlSched.includes('strcmp(key, "route_0_source_min_pct")') &&
@@ -957,39 +929,20 @@ assert(
 );
 assert(mqttYamlSched.includes("id(route_0_source_min_pct).state"), "mqtt: publishes the current setpoint value");
 
-// Telemetry: a bool enable channel per baked automation, none for disabled.
+// Telemetry: no baked automation enable channels.
 const schedChannels = collectTelemetryChannels(schedManifest);
 assert(
-  schedChannels.some((c) => c.sensor === "auto_time1_enabled" && c.kind === "bool"),
-  "telemetry: bool enable channel for the time automation",
+  !schedChannels.some((c) => c.sensor.startsWith("auto_") && c.sensor.endsWith("_enabled")),
+  "telemetry: no baked automation enable channels",
 );
-assert(
-  schedChannels.some((c) => c.sensor === "auto_lvl1_enabled" && c.kind === "bool"),
-  "telemetry: bool enable channel for the level automation",
-);
-assert(!schedChannels.some((c) => c.sensor === "auto_off_enabled"), "telemetry: no channel for the disabled automation");
 
-// Dashboard spec: baked schedules become controls (not chart widgets).
+// Dashboard spec: no baked automation controls; route setpoints still surface.
 const schedSpec = buildDashboardSpec(scheduledTopo);
 const schedCtrl = schedSpec.controllers[0];
-assert(schedCtrl.automations.length === 3, "dashboard: three baked schedules exposed (disabled excluded)");
-// Route setpoints surface as controls keyed by the device's number id.
+assert(schedCtrl.automations.length === 0, "dashboard: no baked automation controls (managed on the automations page)");
 assert(
   schedCtrl.setpoints.some((s) => s.key === "route_0_source_min_pct" && s.field === "source_min_pct"),
   "dashboard: route source-min exposed as a setpoint control",
-);
-assert(
-  schedCtrl.automations.some((a) => a.id === "auto_time1" && a.enableSensor === "auto_time1_enabled"),
-  "dashboard: time automation control built with its enable sensor",
-);
-assert(schedCtrl.automations.some((a) => a.trigger.includes("06:00")), "dashboard: time trigger summarised");
-assert(
-  schedCtrl.automations.some((a) => a.trigger.toLowerCase().includes("source")),
-  "dashboard: level trigger summarised",
-);
-assert(
-  !schedSpec.widgets.some((w) => w.sensor === "auto_time1_enabled" || w.sensor === "auto_lvl1_enabled"),
-  "dashboard: enable channels are controls, not chart widgets",
 );
 
 // --- Summary ---

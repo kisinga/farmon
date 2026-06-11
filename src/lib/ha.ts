@@ -177,6 +177,8 @@ export function routeEntityNames(route: { name: string }): {
   maxRuntime: SystemEntitySpec;
   sourceMinLevel: SystemEntitySpec;
   destMaxLevel: SystemEntitySpec;
+  targetVolume: SystemEntitySpec;
+  targetDuration: SystemEntitySpec;
 } {
   return {
     status:         { domain: 'sensor', name: `Route: ${route.name}` },
@@ -185,6 +187,8 @@ export function routeEntityNames(route: { name: string }): {
     maxRuntime:     { domain: 'number', name: `Route: ${route.name} Max Runtime (min)` },
     sourceMinLevel: { domain: 'number', name: `Route: ${route.name} Source Min (%)` },
     destMaxLevel:   { domain: 'number', name: `Route: ${route.name} Dest Max (%)` },
+    targetVolume:   { domain: 'number', name: `Route: ${route.name} Target Volume (L)` },
+    targetDuration: { domain: 'number', name: `Route: ${route.name} Target Duration (s)` },
   };
 }
 

@@ -175,6 +175,10 @@ interval:
                 slots[s].flow_active_since = 0;
                 slots[s].last_flow_time = now;
                 slots[s].flow_confirmed = false;
+                // Baseline for the volume stop — same-uptime delta vs the flow
+                // sensor's integration total. -1.0f for unmonitored routes.
+                slots[s].volume_at_start =
+                  (ROUTES[rid].flow_sensor != 0xFF) ? get_flow_total(ROUTES[rid].flow_sensor) : -1.0f;
                 ESP_LOGI("ctrl", "RUNNING slot %d route %d [%s]", s, rid, ROUTES[rid].name);
               }
             }
@@ -201,14 +205,11 @@ ${pumpMgmt}
             if (next < 0 || next >= NUM_ROUTES) { queue_pop(); continue; }
             if (find_slot_by_route(next) != -1) { queue_pop(); continue; }
             if (has_conflict(next) || find_free_slot() == -1) break;
-            queue_pop();
+            QueueEntry qe = queue_pop();
             int slot = find_free_slot();
-            init_slot(slot);
-            slots[slot].route_id = next;
-            slots[slot].state = 1;
-            slots[slot].start_time = millis();
-            // Valves open via the reconciler at the end of this tick.
-            ESP_LOGI("ctrl", "Queue -> slot %d route %d [%s]", slot, next, ROUTES[next].name);
+            // Carry the queued start's run-param override into the slot.
+            activate_slot(slot, qe.route_id, qe.spec);
+            ESP_LOGI("ctrl", "Queue -> slot %d route %d [%s]", slot, qe.route_id, ROUTES[qe.route_id].name);
           }
 
           // --- Update derived state ---
@@ -294,8 +295,8 @@ ${pumpMgmt}
             // check". safety_override bypasses the runtime stops the same
             // way it bypasses the pre-start guards in try_route_start.
             if (slots[s].fault_code == 0 && r.runtime_level_ok && !id(safety_override).state) {
-              uint8_t src_min = get_route_source_min_pct(slots[s].route_id);
-              uint8_t dst_max = get_route_dest_max_pct(slots[s].route_id);
+              uint8_t src_min = effective_source_min_pct(s);
+              uint8_t dst_max = effective_dest_max_pct(s);
               if (src_min > 0 && r.source_tank != 0xFF) {
                 float src = get_tank_level(r.source_tank);
                 if (!std::isnan(src) && src < (float)src_min) {
@@ -318,10 +319,41 @@ ${pumpMgmt}
               }
             }
 
-            // --- PER-ROUTE MAX RUNTIME ---
+            // --- INTENT STOPS (clean completion) ---
+            // Volume (monitored routes): delta vs the run-start baseline.
+            // Duration (any route): elapsed run time. Both clean-stop (STOPPING),
+            // distinct from the max_runtime FAULT below; whichever target is hit
+            // first wins. safety_override already skipped the whole monitor.
+            if (slots[s].state == 2 && slots[s].fault_code == 0) {
+              uint32_t eff_vol = effective_target_volume_l(s);
+              if (eff_vol > 0 && r.flow_sensor != 0xFF && slots[s].volume_at_start >= 0.0f) {
+                float total = get_flow_total(r.flow_sensor);
+                if (!std::isnan(total) && (total - slots[s].volume_at_start) >= (float)eff_vol) {
+                  slots[s].stop_reason = STOP_VOLUME_REACHED;
+                  slots[s].state = 3;
+                  slots[s].stop_time = now;
+                  ESP_LOGI("ctrl", "Target volume %uL reached — clean stop slot %d route [%s]",
+                           eff_vol, s, r.name);
+                }
+              }
+            }
+            if (slots[s].state == 2 && slots[s].fault_code == 0) {
+              uint16_t eff_dur = effective_target_duration_s(s);
+              if (eff_dur > 0 && runtime >= ((uint32_t)eff_dur * 1000U)) {
+                slots[s].stop_reason = STOP_DURATION_REACHED;
+                slots[s].state = 3;
+                slots[s].stop_time = now;
+                ESP_LOGI("ctrl", "Timed run %us elapsed — clean stop slot %d route [%s]",
+                         eff_dur, s, r.name);
+              }
+            }
+
+            // --- PER-ROUTE MAX RUNTIME (safety backstop, faults) ---
+            // Guarded by state==2 so a clean intent stop registered this tick is
+            // not overwritten into a FAULT.
             {
-              uint16_t max_rt = get_max_runtime_s(slots[s].route_id);
-              if (slots[s].fault_code == 0 && runtime > ((uint32_t)max_rt * 1000U)) {
+              uint16_t max_rt = effective_max_runtime_s(s);
+              if (slots[s].state == 2 && slots[s].fault_code == 0 && runtime > ((uint32_t)max_rt * 1000U)) {
                 ESP_LOGE("safety", "Max runtime %us exceeded on slot %d route [%s]",
                          max_rt, s, r.name);
                 slots[s].fault_code = FAULT_MAX_RUNTIME;

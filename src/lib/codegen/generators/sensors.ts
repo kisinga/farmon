@@ -1,6 +1,6 @@
 import type { Manifest } from '@core';
 import { nodesWithFlag } from '@core';
-import { pressureSensorLevelId, joinYamlItems, SYSTEM_ENTITY_NAMES, routeEntityNames } from '@core';
+import { pressureSensorLevelId, joinYamlItems, SYSTEM_ENTITY_NAMES, routeEntityNames, routeVolumeEligible } from '@core';
 import type { CollectedCodegen } from "./collect";
 
 const SYS = SYSTEM_ENTITY_NAMES;
@@ -27,6 +27,44 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   restore_value: true
   entity_category: config
   update_interval: never`);
+
+  // Per-route intent stops — clean completion (not faults). Duration applies to
+  // any route (no sensor); volume only to monitored routes. 0 = off. Mirror
+  // collectTunableNumbers() exactly (drift-guard asserts this).
+  const targetStopBlocks: string[] = [];
+  m.routes.forEach((r, i) => {
+    const names = routeEntityNames(r);
+    targetStopBlocks.push(`\
+- platform: template
+  name: "${names.targetDuration.name}"
+  id: route_${i}_target_duration_s
+  icon: "mdi:timer-sand"
+  unit_of_measurement: "s"
+  min_value: 0
+  max_value: 7200
+  step: 1
+  initial_value: 0
+  optimistic: true
+  restore_value: true
+  entity_category: config
+  update_interval: never`);
+    if (routeVolumeEligible(r, m.routes)) {
+      targetStopBlocks.push(`\
+- platform: template
+  name: "${names.targetVolume.name}"
+  id: route_${i}_target_volume_l
+  icon: "mdi:water-check"
+  unit_of_measurement: "L"
+  min_value: 0
+  max_value: 100000
+  step: 1
+  initial_value: 0
+  optimistic: true
+  restore_value: true
+  entity_category: config
+  update_interval: never`);
+    }
+  });
 
   // Per-route safety thresholds — adjustable from HA, persisted across reboots.
   // Emitted only when the route's tank endpoint actually has a level reading;
@@ -94,7 +132,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   // Tunable numbers use `update_interval: never`: they rarely change, so they
   // publish on set (command) and on connect, not on a needless periodic poll.
   // Still settable — the MQTT command topic stays subscribed.
-  const numberBlocks = [...runtimeBlocks, ...safetyThresholdBlocks, ...safetyBlocks, ...(collected.sections['number'] ?? [])];
+  const numberBlocks = [...runtimeBlocks, ...targetStopBlocks, ...safetyThresholdBlocks, ...safetyBlocks, ...(collected.sections['number'] ?? [])];
   const binarySensorBlocks = [...(collected.sections['binary_sensor'] ?? [])];
   binarySensorBlocks.push(`\
 - platform: template

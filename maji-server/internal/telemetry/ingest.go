@@ -63,6 +63,12 @@ func CommandTopic(site, ctrl string) string {
 	return "majiflow/" + site + "/" + ctrl + "/command"
 }
 
+// AutomationsTopic is the retained automation-set topic for a controller.
+// Mirrors automationsTopic() in src/lib/codegen-ids.ts — keep both in sync.
+func AutomationsTopic(site, ctrl string) string {
+	return "majiflow/" + site + "/" + ctrl + "/automations"
+}
+
 // Ingest writes a raw numeric sample (local-first), updates the shadow, and
 // marks the publishing controller online.
 func Ingest(app core.App, r Reading) error {

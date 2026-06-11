@@ -7,7 +7,7 @@ import { generateBoardPackage } from "./generators/board-package";
 import { generateDeviceYaml } from "./generators/device-yaml";
 import { generateControl } from "./generators/control";
 import { generateMqtt } from "./generators/mqtt";
-import { generateSchedule } from "./generators/schedule";
+import { generateAutomationEngineHeader, generateAutomationEngineYaml } from "./generators/automation-engine";
 import { generateCoordination, generateCoordinationHeader } from "./generators/coordination";
 import { generateTimeSync, generateTimeSyncHeader } from "./generators/time-sync";
 
@@ -223,6 +223,16 @@ export function generateEsphome(
       content: generateRoutes(m),
     },
     {
+      relativePath: `${deviceDir}/packages/automation-engine.h`,
+      description: "C++ runtime automation table + generic trigger evaluator",
+      content: generateAutomationEngineHeader(m),
+    },
+    {
+      relativePath: `${deviceDir}/packages/automation-engine.yaml`,
+      description: "Runtime automation engine: 5s evaluator interval",
+      content: generateAutomationEngineYaml(),
+    },
+    {
       relativePath: `${deviceDir}/packages/coordination.h`,
       description: "C++ cross-controller coordination (UDP HMAC, message build/parse, dispatcher)",
       content: generateCoordinationHeader(m, metadata),
@@ -263,15 +273,6 @@ export function generateEsphome(
       content: generateCompileScript(dir),
     },
   ];
-
-  const scheduleYaml = generateSchedule(m);
-  if (scheduleYaml) {
-    files.push({
-      relativePath: `${deviceDir}/packages/schedule.yaml`,
-      description: "On-device schedule (time / level triggers → route start)",
-      content: scheduleYaml,
-    });
-  }
 
   return files;
 }

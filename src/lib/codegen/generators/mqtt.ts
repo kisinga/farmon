@@ -1,6 +1,6 @@
 import type { Manifest } from '@core';
 import {
-  MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic,
+  MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic,
   HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, routeStateSensor,
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
@@ -9,7 +9,6 @@ import {
   collectTunableNumbers,
 } from '@core';
 import type { GenerationMetadata } from "../backends/types";
-import { hasTimeSchedule } from "./schedule";
 
 /** C++ printf format for a StateEvent JSON line: route, from, to, reason, command_id. */
 const EVENT_FMT =
@@ -107,12 +106,11 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata): string 
     }),
   ];
 
-  // SNTP wall clock for the command TTL gate. Emit it here UNLESS an on-device
-  // time schedule already declares `time: sntp` (id: sntp_time) — that way there
-  // is exactly one sntp_time and we never depend on ESPHome package merge-by-id.
-  const timeBlock = hasTimeSchedule(m)
-    ? ''
-    : '\ntime:\n  - platform: sntp\n    id: sntp_time\n    on_time_sync:\n      - then:\n          - lambda: \'id(time_trusted) = true;\'\n';
+  // SNTP wall clock — the single `time: sntp` (id: sntp_time) on every device.
+  // Drives the command-TTL gate and the runtime automation engine's time triggers
+  // (both gate on time_trusted, set by on_time_sync). Always emitted now that the
+  // baked schedule (which used to declare it) is gone.
+  const timeBlock = '\ntime:\n  - platform: sntp\n    id: sntp_time\n    on_time_sync:\n      - then:\n          - lambda: \'id(time_trusted) = true;\'\n';
 
   // Device-facing TLS. ESPHome's mqtt: speaks plain TCP unless `certificate_authority`
   // is present, so emit the pinned cert only when the baked endpoint is TLS (8883).
@@ -377,6 +375,15 @@ mqtt:
       then:
         - lambda: |-
 ${indent(cmdBody, 12)}
+  on_message:
+    # Retained automation set (packed binary). Delivered on connect (retained
+    # replay) and on every server-side change. The handler validates magic +
+    # route_set_version and memcpy's it into the runtime table.
+    - topic: "${automationsTopic(site, ctrl)}"
+      qos: 1
+      then:
+        - lambda: |-
+            apply_automation_set((const uint8_t *) x.data(), x.size());
 ${timeBlock}
 interval:
   # Telemetry: publish every channel each update interval while connected.

@@ -4,7 +4,6 @@ import type { Manifest } from '@core';
 import { nodesWithFlag } from '@core';
 import type { CollectedCodegen } from "./collect";
 import type { GenerationMetadata } from "../backends/types";
-import { hasSchedule } from "./schedule";
 
 /**
  * Generate the ESPHome device YAML from board definition + system manifest.
@@ -155,9 +154,7 @@ export function generateDeviceYaml(
   lines.push("  mqtt: !include packages/mqtt.yaml");
   lines.push("  coordination: !include packages/coordination.yaml");
   lines.push("  time_sync: !include packages/time-sync.yaml");
-  if (hasSchedule(m)) {
-    lines.push("  schedule: !include packages/schedule.yaml");
-  }
+  lines.push("  automation_engine: !include packages/automation-engine.yaml");
   if (metadata) {
     lines.push("  metadata: !include packages/metadata.yaml");
   }
@@ -204,6 +201,8 @@ export function generateDeviceYaml(
   lines.push(`  friendly_name: \${friendly_name}`);
   lines.push("  includes:");
   lines.push("    - packages/routes.h");
+  // After routes.h — the evaluator calls try_route_start and reads ROUTES[]/ROUTE_SET_VERSION.
+  lines.push("    - packages/automation-engine.h");
   // After routes.h — the coordination dispatcher calls extend_deadman/drop_claim.
   lines.push("    - packages/coordination.h");
   // Persisted-clock boot seed (no-RTC time across reboots).

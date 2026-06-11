@@ -8,6 +8,7 @@ import (
 
 	"github.com/kisinga/majiflow/internal/alerts"
 	"github.com/kisinga/majiflow/internal/api"
+	"github.com/kisinga/majiflow/internal/automations"
 	"github.com/kisinga/majiflow/internal/config"
 	"github.com/kisinga/majiflow/internal/mqtt"
 	"github.com/kisinga/majiflow/internal/telemetry"
@@ -49,6 +50,9 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 	// Guards site ownership, the managed device cap, and reconciles controllers.
 	registerSiteHooks(app, cfg)
 
+	// Automation write guards: controller-belongs-to-site + per-controller cap.
+	automations.RegisterGuards(app)
+
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		seedAdmin(se.App)
 
@@ -61,6 +65,10 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 		go alerts.RunSweeper(se.App)
 
 		api.Register(se, cfg, broker.Server)
+
+		// Republish a controller's retained automation set on any change to the
+		// automations collection (DB is source of truth; device is a mirror).
+		automations.Register(se.App, broker.Server)
 
 		// Serve the built SPA when a directory is configured. Prerendered marketing
 		// pages (/, /pricing, /features) resolve to their own index.html; every

@@ -101,7 +101,16 @@ export { confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S 
 export type { ConfirmDescriptor, ConfirmObservation, CommandPhase } from './command-confirm';
 
 // --- Runtime-tunable device numbers (config_set surface; firmware + UI + drift test) ---
-export { collectTunableNumbers } from './tunable-numbers';
+export { collectTunableNumbers, routeVolumeEligible } from './tunable-numbers';
+export {
+  AUTOMATION_WIRE_MAGIC, AUTOMATION_HEADER_BYTES, AUTOMATION_RECORD_BYTES, MAX_AUTOMATIONS,
+  routeSetVersion, serializeAutomationSet,
+} from './automation-wire';
+export type { WireAutomation, TriggerKind } from './automation-wire';
+export {
+  listAutomatableRoutes, topologyAutomationsToRows, daysToMask, hmToMin,
+} from './automation-routes';
+export type { AutomatableRoute, NewAutomationRow } from './automation-routes';
 export type { TunableNumber, TunableScope, TunableTier, TunableField } from './tunable-numbers';
 
 // --- Codegen IDs ---
@@ -117,7 +126,7 @@ export {
 
 // --- Runtime contract: deployment mode, MQTT topics, command vocabulary ---
 export {
-  MQTT_ROOT, telemetryTopic, commandTopic, statusTopic, eventTopic,
+  MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic,
   telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, routeStateSensor, COMMAND_TTL_S,
   routeSourceMinNumber, routeDestMaxNumber, collectConfigSetpoints,
   COORD_MSG, COORD_TYPE,
