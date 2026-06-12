@@ -47,7 +47,7 @@ where and what must be replaced with software equivalents.
 | `interlock: [a, b]` | Mutual exclusion for valve open/close pairs | Yes | Yes | **NO** |
 | `interlock_wait_time` | Delay between interlock transitions | Yes | Yes | **NO** |
 | `restore_mode: ALWAYS_OFF` | Safe power-on state (relays de-energized) | Yes | Yes | **NO** |
-| `internal: true` | Hide from HA frontend | Yes | Yes | Yes |
+| `internal: true` | Hide from the published entity set | Yes | Yes | Yes |
 | `on_turn_on` / `on_turn_off` | Automation triggers (pump refcount guard) | Yes | Yes | Yes |
 
 ### Sensor Attributes (sensors.yaml — sensor: section)
@@ -59,7 +59,7 @@ These attributes work on **all** platforms:
 |-----------|---------|-------|-----------------|---------------------|-------------|-----------|
 | `filters:` | Median, calibration, lambda | Yes | Yes | Yes | Yes | Yes |
 | `on_value:` | Fault detection, flow confirm | Yes | Yes | Yes | Yes | Yes |
-| `unit_of_measurement` | HA display | Yes | Yes | Yes | Yes | Yes |
+| `unit_of_measurement` | Dashboard display | Yes | Yes | Yes | Yes | Yes |
 | `update_interval` | Polling rate | Yes | Yes | Yes* | Yes | Yes |
 
 *`modbus_controller` sensors default to the controller's global interval but can override per-sensor.
@@ -151,7 +151,7 @@ Before shipping a driver PR, verify:
 ### 1. Create the driver file
 
 ```
-packages/core/src/io-providers/{transport}-driver.ts
+src/lib/io-providers/{transport}-driver.ts
 ```
 
 Export a factory function:
@@ -168,7 +168,7 @@ export function createXxxDriver(config: XxxConfig): IoProviderDriver {
 
 ### 2. Register in the driver registry
 
-When the second driver ships, introduce `packages/core/src/io-providers/registry.ts`
+When the second driver ships, introduce `src/lib/io-providers/registry.ts`
 with a `Map<string, (config) => IoProviderDriver>`. Until then, the board driver
 is the only driver and needs no registry.
 

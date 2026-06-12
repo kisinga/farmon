@@ -30,8 +30,8 @@ The firmware uses this per-route: a route that does not cross a pump always trus
 
 `Tank height (m)` and `Tank capacity (L)` live on the tank itself. When a pressure sensor downstream of a tank is used as that tank's level source, calibration (`Cal Empty`, `Cal Full`) is derived automatically from the tank's height plus the sensor's `Sensor drop below tank (m)`.
 
-For pressure sensors used purely for line-pressure monitoring (no upstream tank in their path), tank dimensions are irrelevant and `Cal Empty` / `Cal Full` start at 0 / sensor max — set them by hand in Home Assistant if needed.
+For pressure sensors used purely for line-pressure monitoring (no upstream tank in their path), tank dimensions are irrelevant and `Cal Empty` / `Cal Full` start at 0 / sensor max — adjust them live from the dashboard if needed.
 
 ## Per-route metadata
 
-The generated manifest exposes a per-route `inline_pressure_sensors` list — the IDs of any pressure sensors that lie on the route's path. Firmware does not consume this list; it is exposed so site documentation and Home Assistant dashboards can surface "this route involves these sensors" without having to re-walk the topology.
+The generated manifest exposes a per-route `inline_pressure_sensors` list — the IDs of any pressure sensors that lie on the route's path. Firmware does not consume this list; it is exposed so site documentation and the dashboard can surface "this route involves these sensors" without having to re-walk the topology.

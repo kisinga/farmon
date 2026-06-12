@@ -1,9 +1,8 @@
-<!-- generated from packages/core/src/templates/pages/docs/development/architecture.hbs — do not edit -->
 # MajiFlow — Architecture
 
 ## Overview
 
-MajiFlow is a water network design tool. Users create **sites** (a physical location), add **systems** (individual ESP32 controllers), design each system's **topology** (tanks, pumps, valves, sensors connected by pipes), then generate and deploy ESPHome firmware + Home Assistant dashboards.
+MajiFlow is a water network design tool. Users create **sites** (a physical location), add **systems** (individual ESP32 controllers), design each system's **topology** (tanks, pumps, valves, sensors connected by pipes), then generate and deploy ESPHome firmware. The running fleet reports over MQTT to the server, and operators watch and control it from the web dashboard.
 
 ```
 Site (workspace)
@@ -17,8 +16,9 @@ Site (workspace)
 - **Angular 21** — standalone components, signals, computed, effects
 - **Tailwind CSS 4 + DaisyUI 5** — styling and component library
 - **AntV X6** — topology canvas (node/edge graph visualization)
-- **Electron** — desktop shell, file I/O, ESPHome CLI integration
-- **@far-mon/core** — shared TypeScript library (types, graph algorithms, codegen)
+- **PocketBase + Go** — backend: auth, database, REST (`/api/farmon`), and the embedded MQTT broker
+- **Firmware delivery** — the generated ESPHome project is downloaded as a zip and built locally via the bundled `compile.sh` (no desktop app)
+- **@core** — shared TypeScript library inlined at `src/lib` (types, graph algorithms, codegen)
 
 ---
 
@@ -52,7 +52,7 @@ Tab components (`DeviceTab`, `AutomationsTab`, etc.) inject `SystemEditorService
 - **LibraryService** — CRUD for system config files (templates + user configs)
 - **SiteLibraryService** — CRUD for site files
 - **BoardService** — board list + active board SVG for the pinout diagram
-- **ElectronService** — thin IPC wrapper, no state
+- **BackendService** — PocketBase client + `/api/farmon` calls (the single network seam)
 
 ---
 
@@ -161,7 +161,7 @@ Classes: `.nav-label-overview`, `.nav-label-site`, `.nav-label-system` (text col
 
 ---
 
-## @far-mon/core
+## @core
 
 Shared library with no Angular dependency. Key exports:
 
@@ -175,11 +175,11 @@ Shared library with no Angular dependency. Key exports:
 
 ## Safety Override (firmware)
 
-Generated firmware exposes a single template switch `safety_override` ([electron/lib/generators/control.ts](../../../../../../../electron/lib/generators/control.ts)) wired into the runtime as a global bypass:
+Generated firmware exposes a single template switch `safety_override` ([src/lib/codegen/generators/control.ts](../../src/lib/codegen/generators/control.ts)) wired into the runtime as a global bypass:
 
-- **Pre-start gates** — guarded inline in `try_route_start` ([electron/lib/generators/routes.ts](../../../../../../../electron/lib/generators/routes.ts)): `if (!id(safety_override).state && …) return FAULT;` for source-low and dest-full.
+- **Pre-start gates** — guarded inline in `try_route_start` ([src/lib/codegen/generators/routes.ts](../../src/lib/codegen/generators/routes.ts)): `if (!id(safety_override).state && …) return FAULT;` for source-low and dest-full.
 - **2 s safety monitor** — the per-slot watchdog loop in `control.ts` short-circuits with `if (id(safety_override).state) return;` at the top, so flow watchdog, runtime level stops, and per-route max runtime are all suppressed for as long as the switch is ON.
-- **Pump-without-route gate** — the pump relay's `on_turn_on` handler ([packages/core/src/entities/pump.ts](../../../../../../../packages/core/src/entities/pump.ts)) immediately turns the pump back off if no route owns it; this check is also skipped when `safety_override` is ON so operators can commission or bench-test the pump alone.
+- **Pump-without-route gate** — the pump relay's `on_turn_on` handler ([src/lib/entities/pump.ts](../../src/lib/entities/pump.ts)) immediately turns the pump back off if no route owns it; this check is also skipped when `safety_override` is ON so operators can commission or bench-test the pump alone.
 - **Default-safe** — declared `restore_mode: ALWAYS_OFF`; never persists across reboots.
 
 When adding a new safety check, decide explicitly whether it sits inside the monitor loop (override-bypassable) or outside it (always-on, e.g. hardware float-switch interlocks). Document the choice on the new entity/automation.
@@ -188,9 +188,9 @@ When adding a new safety check, decide explicitly whether it sits inside the mon
 
 ## Valve actuation (firmware)
 
-Valves are operated through ESPHome `time_based` cover entities — one cover per valve, with `open_action` and `close_action` firing the corresponding coil switch. The coil pair is hardware-interlocked (`interlock:` block in [packages/core/src/entities/valve.ts](../../../../../../../packages/core/src/entities/valve.ts)) so both coils can never be energised simultaneously.
+Valves are operated through ESPHome `time_based` cover entities — one cover per valve, with `open_action` and `close_action` firing the corresponding coil switch. The coil pair is hardware-interlocked (`interlock:` block in [src/lib/entities/valve.ts](../../src/lib/entities/valve.ts)) so both coils can never be energised simultaneously.
 
-The route layer drives covers via a **level-triggered reconciler**, not edge-driven open/close calls. Every 1 s tick, `reconcile_valves` ([electron/lib/generators/routes.ts](../../../../../../../electron/lib/generators/routes.ts)):
+The route layer drives covers via a **level-triggered reconciler**, not edge-driven open/close calls. Every 1 s tick, `reconcile_valves` ([src/lib/codegen/generators/routes.ts](../../src/lib/codegen/generators/routes.ts)):
 
 1. Computes `desired_valve_mask` = union of `valve_claim_mask(s)` across all slots. A slot's claim is its route's `valve_mask` while it is `PREPARING` / `RUNNING`, or while it is `STOPPING` / `FAULT` and within `DEPRESSURIZE_MS` of its `stop_time`. Outside those windows the claim is 0.
 2. Diffs `desired ^ commanded_valve_mask`. `commanded_valve_mask` is updated only by the reconciler itself, so it stays a faithful proxy for ESPHome's cover state as long as nothing else drives the covers.
@@ -198,14 +198,14 @@ The route layer drives covers via a **level-triggered reconciler**, not edge-dri
 
 This expresses valve refcounting as a mask union: a valve stays open as long as **any** active slot claims it, and closes only when the last claim drops. The previous edge-driven model used an explicit `safe_close_mask` / `valves_closing` flag pair; the union form is simpler and harder to get wrong.
 
-**PREPARING → RUNNING timing** waits `travel_time + 1 s` from `start_time` ([electron/lib/generators/control.ts](../../../../../../../electron/lib/generators/control.ts)). Only on entry to RUNNING does the slot stamp `run_start_time = now` and clear `flow_confirmed`; the `flow_confirm_ms` window ([packages/core/src/entities/flow-sensor.ts](../../../../../../../packages/core/src/entities/flow-sensor.ts)) is measured from that stamp, not from command issue. So the total budget before a missing-flow fault trips is `travel_time + 1 s + flow_confirm_ms` — the confirm window stacks on top of valve travel, it does not overlap it.
+**PREPARING → RUNNING timing** waits `travel_time + 1 s` from `start_time` ([src/lib/codegen/generators/control.ts](../../src/lib/codegen/generators/control.ts)). Only on entry to RUNNING does the slot stamp `run_start_time = now` and clear `flow_confirmed`; the `flow_confirm_ms` window ([src/lib/entities/flow-sensor.ts](../../src/lib/entities/flow-sensor.ts)) is measured from that stamp, not from command issue. So the total budget before a missing-flow fault trips is `travel_time + 1 s + flow_confirm_ms` — the confirm window stacks on top of valve travel, it does not overlap it.
 
-**STOPPING → IDLE timing** waits `DEPRESSURIZE_MS + travel_time + 1 s` from `stop_time` ([electron/lib/generators/control.ts](../../../../../../../electron/lib/generators/control.ts)). That window covers depressurise + the actual close travel + a small safety margin, so the slot only declares itself idle once the valves have physically had time to close. The reconciler handles the close itself once the slot's claim drops at the depressurise boundary.
+**STOPPING → IDLE timing** waits `DEPRESSURIZE_MS + travel_time + 1 s` from `stop_time` ([src/lib/codegen/generators/control.ts](../../src/lib/codegen/generators/control.ts)). That window covers depressurise + the actual close travel + a small safety margin, so the slot only declares itself idle once the valves have physically had time to close. The reconciler handles the close itself once the slot's claim drops at the depressurise boundary.
 
-**FAULT path uses `stop_valve_hw`** ([routes.ts:361-365](../../../../../../../electron/lib/generators/routes.ts#L361-L365)) — `cover.stop_cover` — on every valve in the faulted route, immediately on FAULT entry. This force-resyncs ESPHome's internal cover position estimate before the depressurise window expires; without it, the close that follows can be filtered as a no-op when the cover already thinks it is at position 0.
+**FAULT path uses `stop_valve_hw`** ([routes.ts:361-365](../../src/lib/codegen/generators/routes.ts#L361-L365)) — `cover.stop_cover` — on every valve in the faulted route, immediately on FAULT entry. This force-resyncs ESPHome's internal cover position estimate before the depressurise window expires; without it, the close that follows can be filtered as a no-op when the cover already thinks it is at position 0.
 
-**External cover writes are silent.** The reconciler never reads cover state, only writes it. If something else (a user via the HA UI, a stray automation) closes a cover during a running route, `commanded_valve_mask` does not update, the diff stays at 0, and the reconciler does not react. The route loses flow and faults via the flow watchdog after `flow_watchdog_ms`. This is the same blind spot the edge-driven model had, and it is the reason manual cover close is *not* a substitute for route-stop.
+**External cover writes are silent.** The reconciler never reads cover state, only writes it. If something else (a user via the dashboard, a stray automation) closes a cover during a running route, `commanded_valve_mask` does not update, the diff stays at 0, and the reconciler does not react. The route loses flow and faults via the flow watchdog after `flow_watchdog_ms`. This is the same blind spot the edge-driven model had, and it is the reason manual cover close is *not* a substitute for route-stop.
 
-**Raw coil writes bypass the cover.** The cover's position estimate updates only when its own `open_action` / `close_action` fires; toggling `<valve> Open Coil` or `<valve> Close Coil` directly drives the coil but leaves the cover unaware. The HA Manual tab exposes coils for diagnostics; after firing one, call `cover.stop_cover` on the same valve to resync.
+**Raw coil writes bypass the cover.** The cover's position estimate updates only when its own `open_action` / `close_action` fires; toggling `<valve> Open Coil` or `<valve> Close Coil` directly drives the coil but leaves the cover unaware. The dashboard's manual controls expose coils for diagnostics; after firing one, call `cover.stop_cover` on the same valve to resync.
 
 When adding a new actuator (dosing pump, VFD, etc.), decide whether it fits the same level-triggered pattern (compute desired mask each tick, diff vs. last commanded, emit only on change) or whether it needs explicit edge handling. Prefer the reconciler model — it composes with multi-slot concurrency without per-slot tracking.

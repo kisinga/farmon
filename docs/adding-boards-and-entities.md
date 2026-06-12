@@ -75,7 +75,7 @@ Boards in `defaults/boards/` are automatically copied to the user store on app s
 ### 1. Create the entity file
 
 ```
-packages/core/src/entities/{entity-name}.ts
+src/lib/entities/{entity-name}.ts
 ```
 
 Each entity is self-describing. A single file contains everything: Zod schema, UI rendering, sidebar fields, codegen templates, and validation rules.
@@ -131,7 +131,7 @@ export const myEntityDescriptor: NodeDescriptor = {
 
 ### 4. Register in the entity registry
 
-In `packages/core/src/entity-registry.ts`:
+In `src/lib/entity-registry.ts`:
 
 ```typescript
 import { myEntityDescriptor } from './entities/my-entity';
@@ -144,7 +144,7 @@ export const ALL_DESCRIPTORS: readonly NodeDescriptor[] = [
 
 ### 5. Export from index
 
-In `packages/core/src/index.ts`, add the type export if needed.
+In `src/lib/index.ts`, add the type export if needed.
 
 ### 6. Codegen with pin resolution
 
@@ -181,13 +181,13 @@ Then import and use in both the entity codegen and the generator.
 
 | File | Purpose |
 |------|---------|
-| `packages/core/src/codegen-ids.ts` | Shared component IDs + pin resolution |
-| `packages/core/src/entity-registry.ts` | Entity descriptor interface, registry |
-| `packages/core/src/schemas.ts` | Shared Zod primitives (GpioPin, ComponentId) |
-| `packages/core/src/board.types.ts` | Board definition types (PinDef, ExpanderDef, EthernetDef) |
-| `electron/lib/board.ts` | Board Zod schema + loading |
-| `electron/lib/generators/collect.ts` | Single-pass codegen collector |
-| `electron/lib/generators/board-package.ts` | Board-specific ESPHome config |
-| `electron/lib/generators/hardware.ts` | Actuator YAML (switches, covers) |
-| `electron/lib/generators/sensors.ts` | Sensor YAML + state exposure |
-| `electron/lib/rules/` | Validation rules |
+| `src/lib/codegen-ids.ts` | Shared component IDs + pin resolution |
+| `src/lib/entity-registry.ts` | Entity descriptor interface, registry |
+| `src/lib/schemas.ts` | Shared Zod primitives (GpioPin, ComponentId) |
+| `src/lib/board.types.ts` | Board definition types (PinDef, ExpanderDef, EthernetDef) |
+| `src/lib/board-schema.ts` | Board Zod schema + loading |
+| `src/lib/codegen/generators/collect.ts` | Single-pass codegen collector |
+| `src/lib/codegen/generators/board-package.ts` | Board-specific ESPHome config |
+| `src/lib/codegen/generators/hardware.ts` | Actuator YAML (switches, covers) |
+| `src/lib/codegen/generators/sensors.ts` | Sensor YAML + state exposure |
+| `src/lib/rules/` | Validation rules |

@@ -1,7 +1,6 @@
-<!-- generated from packages/core/src/templates/pages/docs/README.hbs — do not edit -->
 # MajiFlow documentation
 
-MajiFlow is a water-orchestration platform for any installation that pumps, stores, or distributes water — irrigation systems, hospitality (hotels, resorts, lodges), greenhouses and nurseries, commercial buildings, livestock and aquaculture operations, schools and campuses, anywhere reliable water flow is critical. The same topology model, codegen pipeline, and Home Assistant integration apply across all of them; only the named tanks, valves, and routes change.
+MajiFlow is a water-orchestration platform for any installation that pumps, stores, or distributes water — irrigation systems, hospitality (hotels, resorts, lodges), greenhouses and nurseries, commercial buildings, livestock and aquaculture operations, schools and campuses, anywhere reliable water flow is critical. The same topology model, codegen pipeline, and MQTT telemetry apply across all of them; only the named tanks, valves, and routes change.
 
 Three audiences, three folders. One shared glossary.
 

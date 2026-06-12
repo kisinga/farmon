@@ -66,10 +66,10 @@ The embedded microcontroller executing the generated firmware, covering the runt
 
 | Innovation | Key Files |
 |---|---|
-| Sensor vs actuator conflict dichotomy (queue vs refcount) | `packages/core/src/graph/conflicts.ts` |
-| Tank level suppression during pump operation | `packages/core/src/entities/tank.ts` |
-| Full topology-to-safety-firmware pipeline | `electron/lib/generate.ts` → `generators/*` |
-| Bitmask valve/conflict dispatch from graph | `electron/lib/generators/routes.ts` |
+| Sensor vs actuator conflict dichotomy (queue vs refcount) | `src/lib/graph/conflicts.ts` |
+| Tank level suppression during pump operation | `src/lib/entities/tank.ts` |
+| Full topology-to-safety-firmware pipeline | `src/lib/codegen/generate.ts` → `generators/*` |
+| Bitmask valve/conflict dispatch from graph | `src/lib/codegen/generators/routes.ts` |
 
 ### Limited Prior Art (MajiFlow is distinguishable)
 
@@ -139,24 +139,24 @@ Favorable under August 2025 USPTO memo (preponderance standard) and Ex parte Des
 
 | Layer | Files |
 |---|---|
-| Route derivation | `packages/core/src/graph/routes.ts` |
-| Conflict detection | `packages/core/src/graph/conflicts.ts` |
-| Constraint engine | `packages/core/src/graph/constraints.ts`, `evaluate-constraints.ts`, `evaluate-escalations.ts` |
-| Entity registry | `packages/core/src/entity-registry.ts`, `packages/core/src/entities/*.ts` |
-| Manifest conversion | `packages/core/src/topology-to-manifest.ts` |
-| Codegen orchestrator | `electron/lib/generate.ts` |
-| Route table + dispatch | `electron/lib/generators/routes.ts` |
-| State machine + watchdogs | `electron/lib/generators/control.ts` |
-| Sensor codegen | `electron/lib/generators/sensors.ts` |
-| Hardware codegen | `electron/lib/generators/hardware.ts` |
-| Board package | `electron/lib/generators/board-package.ts` |
-| Device + OLED | `electron/lib/generators/device-yaml.ts` |
-| Pin resolution | `packages/core/src/codegen-ids.ts` |
+| Route derivation | `src/lib/graph/routes.ts` |
+| Conflict detection | `src/lib/graph/conflicts.ts` |
+| Constraint engine | `src/lib/graph/constraints.ts`, `evaluate-constraints.ts`, `evaluate-escalations.ts` |
+| Entity registry | `src/lib/entity-registry.ts`, `src/lib/entities/*.ts` |
+| Manifest conversion | `src/lib/topology-to-manifest.ts` |
+| Codegen orchestrator | `src/lib/codegen/generate.ts` |
+| Route table + dispatch | `src/lib/codegen/generators/routes.ts` |
+| State machine + watchdogs | `src/lib/codegen/generators/control.ts` |
+| Sensor codegen | `src/lib/codegen/generators/sensors.ts` |
+| Hardware codegen | `src/lib/codegen/generators/hardware.ts` |
+| Board package | `src/lib/codegen/generators/board-package.ts` |
+| Device + OLED | `src/lib/codegen/generators/device-yaml.ts` |
+| Pin resolution | `src/lib/codegen-ids.ts` |
 | Board definitions | `defaults/boards/heltec-v3/board.yaml`, `defaults/boards/kc868-a16/board.yaml` |
-| Validation rules | `electron/lib/rules/manifest/*.ts` |
-| Composite graph | `packages/core/src/graph/composite-graph.ts` |
-| Dashboard generation | `electron/lib/generators/dashboard.ts` |
-| Automation generation | `electron/lib/generators/automations.ts` |
+| Validation rules | `src/lib/rules/manifest/*.ts` |
+| Composite graph | `src/lib/graph/composite-graph.ts` |
+| Dashboard generation | `src/lib/codegen/generators/dashboard.ts` |
+| Automation generation | `src/lib/codegen/generators/automation-engine.ts` |
 
 ---
 
