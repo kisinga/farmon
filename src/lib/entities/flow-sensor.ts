@@ -5,7 +5,6 @@ import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields, deriveHaEntityId } from '../ha';
 import { udpSensorImport } from '../remote-proxy';
 
 const COLOR = '#16a34a'; // green
@@ -24,16 +23,14 @@ export const FlowSensorNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
-  ...HaNodeFields,
   anchorId: AnchorIdSchema,
 });
 
 export type FlowSensorNode = z.infer<typeof FlowSensorNodeSchema>;
 
-// Single source of truth for flow sensor HA entity names. Both firmware emit
-// (codegen.sensors / extraComponents) and HA reference (codegen.haEntityIds)
-// read from this — including the Water Flow → Total Usage rename rule, which
-// previously lived independently in dashboard.ts and drifted from this file.
+// Single source of truth for the flow sensor's emitted entity names, read by
+// the firmware-emit side (codegen.sensors / extraComponents) — including the
+// Water Flow → Total Usage rename rule.
 const haNames = (node: FlowSensorNode) => ({
   flow:        node.name,
   total:       node.name.replace('Water Flow', 'Total Usage').replace('Flow', 'Total'),
@@ -54,9 +51,6 @@ export const flowSensorDescriptor: NodeDescriptor = {
   group: 'sensor',
   helpUrl: 'docs/installation/power-and-wiring.md#sensor-cables',
   schema: FlowSensorNodeSchema,
-  haDomain: 'sensor',
-  defaultHaActions: [{ id: 'more-info', label: 'More info' }],
-  defaultBinds: { label: 'state|format:number:1' },
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
@@ -219,15 +213,6 @@ ${header}
 - id: ${faultId}
   type: int
   initial_value: '0'`;
-    },
-
-    haEntityIds: (node: FlowSensorNode, device) => {
-      const n = haNames(node);
-      return {
-        flow:        deriveHaEntityId('sensor',        device, n.flow),
-        total:       deriveHaEntityId('sensor',        device, n.total),
-        sensorFault: deriveHaEntityId('binary_sensor', device, n.sensorFault),
-      };
     },
 
     remoteProxy: (node) => [

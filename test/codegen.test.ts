@@ -852,10 +852,10 @@ assert(!!srcTank, "Remote source tank included in pump-ctrl manifest");
 assert(!!dstTank, "Remote dest tank included in pump-ctrl manifest");
 assert(!!flowNode, "Local flow sensor included in pump-ctrl manifest");
 assert(!!pumpNode, "Local pump included in pump-ctrl manifest");
-assert(srcTank?.remoteHaEntityId === 'sensor.tank_controller_source_tank_level', "Remote src tank HA entity resolved from its intrinsic level: got " + srcTank?.remoteHaEntityId);
-assert(dstTank?.remoteHaEntityId === 'sensor.tank_controller_dest_tank_level', "Remote dst tank HA entity resolved from its intrinsic level: got " + dstTank?.remoteHaEntityId);
-assert(!flowNode?.remoteHaEntityId, "Local flow sensor has no remote HA entity");
-assert(!pumpNode?.remoteHaEntityId, "Local pump has no remote HA entity");
+assert(srcTank?.remoteSourceRef === 'src_tank', "Remote src tank marked with its cross-controller source ref (ri_<id> key): got " + srcTank?.remoteSourceRef);
+assert(dstTank?.remoteSourceRef === 'dst_tank', "Remote dst tank marked with its cross-controller source ref (ri_<id> key): got " + dstTank?.remoteSourceRef);
+assert(!flowNode?.remoteSourceRef, "Local flow sensor has no remote source ref");
+assert(!pumpNode?.remoteSourceRef, "Local pump has no remote source ref");
 
 // Collect: remote tanks emit UDP-fed template sensors (ri_<id>). Cross-controller
 // reads ride UDP now (coordination publishes into these), not a homeassistant: import.
@@ -949,3 +949,4 @@ assert(
 
 console.log(`\n${"=".repeat(40)}`);
 console.log(`${passed} passed, ${failed} failed`);
+process.exit(failed > 0 ? 1 : 0);

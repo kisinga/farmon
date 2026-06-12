@@ -14,7 +14,6 @@ import type { FlowConstraint } from './graph/constraints';
 import type { TopologyGraph } from './graph/topology-graph';
 import type { Route } from './graph/routes';
 import type { RuleDiagnostic } from './validation.types';
-import type { HaActionSpec, HaSlotSpec } from './ha';
 import type { InputPolicy } from './input-policy';
 import type { TopologyNode } from './topology.types';
 import type { Manifest } from './manifest.types';
@@ -98,24 +97,6 @@ export interface EntityCodegen<T extends Record<string, any> = Record<string, an
    */
   extraComponents?: (node: T, index: number, ctx: CodegenContext) => Record<string, string>;
   /**
-   * The HA entity_ids this entity contributes, keyed by a stable role name
-   * (e.g. `level`, `rawVoltage`, `calEmpty`, `calFull` for a level sensor).
-   *
-   * Single source of truth for HA references: dashboard / automations /
-   * site-dashboard / ha-meta consume these instead of reconstructing entity_id
-   * strings. Each implementation must reuse the same name strings its
-   * `sensors` / `extraComponents` / `hardware` functions emit, so a rename
-   * is impossible to forget on either side.
-   *
-   * Returned record's keys may include conditional entries that resolve to
-   * `undefined` when the entity-feature isn't configured (e.g. VFD power
-   * sensor only exists if `power_register` is set).
-   */
-  haEntityIds?: (
-    node: T,
-    device: { friendly_name: string },
-  ) => Record<string, string | undefined>;
-  /**
    * Remote proxy YAML sections for imported nodes.
    * Called by collect.ts instead of local hardware. Each returned section is
    * emitted into the corresponding ESPHome YAML section.
@@ -126,11 +107,6 @@ export interface EntityCodegen<T extends Record<string, any> = Record<string, an
    * only the node is needed.
    */
   remoteProxy?: (node: T) => Array<{ section: string; yaml: string }> | null;
-  /**
-   * HA entity IDs created by the proxy. Used by dashboard generators
-   * to reference imported actuators correctly.
-   */
-  proxyEntityIds?: (node: T, device: { friendly_name: string }) => Record<string, string | undefined>;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,10 +192,10 @@ export interface NodeDescriptor {
   /** Zod schema for this node kind. Source of truth for the TypeScript type. */
   schema: z.ZodTypeAny;
 
-  /** Codegen templates — only consumed by electron generators. */
+  /** Codegen templates — consumed by the firmware codegen generators. */
   codegen?: EntityCodegen<any>;
 
-  /** Per-entity validation rules — only consumed by electron rule runner. */
+  /** Per-entity validation rules — consumed by the manifest rule runner. */
   rules?: EntityRule[];
 
   /** Route-aware validation rules — checked per-node per-route. */
@@ -230,31 +206,6 @@ export interface NodeDescriptor {
 
   /** Safety profile for this entity kind. Drives firmware dead-man behavior and validation. */
   safetyProfile?: SafetyProfile;
-
-  // --- Home Assistant integration (consumed by TopologyRenderer.exportHa + farm-scada-card) ---
-
-  /**
-   * Default HA domain for this kind, used to suggest entity IDs and pick
-   * fallback services (e.g. `switch` → `switch.toggle`).
-   */
-  haDomain?: string;
-  /**
-   * Default action list for this kind. Resolved at export time; a node's
-   * `haActions` overrides these. Each action becomes a menu item in the card.
-   */
-  defaultHaActions?: HaActionSpec[];
-  /**
-   * Declared slots this entity's rendered SVG exposes. The exporter injects
-   * a `<text data-slot="<name>">` at the given local-coord position for any
-   * node that has a matching `binds` entry. Omit to accept the default label
-   * slot below the node.
-   */
-  slots?: Record<string, HaSlotSpec>;
-  /**
-   * Default bind expressions to apply when a node sets `entityId` but does
-   * not specify bindings. Keys must match `slots` keys (or 'label' default).
-   */
-  defaultBinds?: Record<string, string>;
 
   // --- Dispatch flags — tell the graph layer and generators what this entity does ---
 

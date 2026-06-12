@@ -26,8 +26,8 @@ export type Timing = SiteTopology['timing'];
 
 /** Local topology node with manifest-only extensions. */
 export type LocalManifestNode = TopologyNode & {
-  /** HA entity_id for remote reads — set when this node's primary value lives on another controller (e.g. tank with remote level source). */
-  remoteHaEntityId?: string;
+  /** Ref to the cross-controller source (the `ri_<id>` read-import key) — set when this node's primary value lives on another controller (e.g. tank with remote level source). */
+  remoteSourceRef?: string;
   remoteDeviceName?: string;
   /** Allow dynamic field access for sidebar field iteration. */
   [key: string]: unknown;
@@ -35,8 +35,8 @@ export type LocalManifestNode = TopologyNode & {
 
 /** Imported node — anchored to another controller, proxied locally. */
 export type ImportedManifestNode = TopologyNode & {
-  /** HA entity_id of the canonical entity on the owning controller. */
-  remoteHaEntityId: string;
+  /** Ref to the cross-controller source (the `ri_<id>` read-import key) on the owning controller. Absent for kinds with no mirrored value. */
+  remoteSourceRef?: string;
   /** Slug of the controller that owns this node. */
   remoteDeviceName: string;
   /** Allow dynamic field access for sidebar field iteration. */

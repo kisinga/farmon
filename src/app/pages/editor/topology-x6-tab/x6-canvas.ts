@@ -13,9 +13,8 @@ import { UI_COLORS } from '../../../core/models/colors.model';
 import type { RenderableTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
 import type { TopologyGraph } from '../shared/derive-routes';
-import { pipesFromSource, pipesToDestination, connectedPipes, deriveHaEntityId } from '@core';
+import { pipesFromSource, pipesToDestination, connectedPipes } from '@core';
 import type { Selection } from '../shared/selection';
-import { decorateScadaSvg } from './scada-decorator';
 
 export type { Selection };
 
@@ -162,15 +161,8 @@ export class X6Canvas {
       }
     }
 
-    const entityById = new Map<string, string>();
-    for (const n of topology.nodes) {
-      const desc = NODE_REGISTRY.get(n.kind);
-      if (topology.device && desc?.haDomain) {
-        entityById.set(n.id, deriveHaEntityId(desc.haDomain, topology.device, n.name));
-      }
-    }
     for (const pipe of topology.pipes) {
-      const cfg = this.toEdgeConfig(pipe, entityById);
+      const cfg = this.toEdgeConfig(pipe);
       if (cfg) desiredEdges.set(String(cfg['id']), cfg);
     }
 
@@ -325,14 +317,8 @@ export class X6Canvas {
    * when the default misses content — e.g. Manhattan-router intermediate points
    * live in the DOM but not in X6's cell model, so callers can measure the live
    * stage via `getBBox()` and pass the result here.
-   *
-   * `scada: true` decorates the SVG with SCADA identity attributes, hit rects,
-   * label slots, and a state/flow <style> block for consumption by
-   * `farm-scada-card` on Home Assistant. Off by default — docs exports remain
-   * byte-compatible with prior behavior.
    */
-  exportSvg(viewBox?: { x: number; y: number; width: number; height: number }, opts?: { scada?: boolean }): Promise<string> {
-    const scada = opts?.scada === true;
+  exportSvg(viewBox?: { x: number; y: number; width: number; height: number }): Promise<string> {
     return new Promise((resolve) => {
       this.graph.toSVG((svg: string) => {
         resolve(svg);
@@ -384,16 +370,6 @@ export class X6Canvas {
             img.parentNode!.replaceChild(g, img);
           }
 
-          if (scada) {
-            decorateScadaSvg(_svg, {
-              getCellData: (cellId: string) => {
-                const cell = this.graph.getCellById(cellId);
-                if (!cell) return null;
-                const d = cell.getData() as Record<string, unknown> | undefined;
-                return d ?? null;
-              },
-            });
-          }
           return _svg;
         },
       });
@@ -487,15 +463,12 @@ export class X6Canvas {
     return buildNodeConfig(desc, node.id, extractNodeData(node), pos.x, pos.y, ports, this.activeControllerId, importCount);
   }
 
-  private toEdgeConfig(pipe: PipeSegment, entityById?: Map<string, string>): X6Edge.Metadata | null {
+  private toEdgeConfig(pipe: PipeSegment): X6Edge.Metadata | null {
     const [fromNode, fromPort] = pipe.from.split(':');
     const [toNode, toPort] = pipe.to.split(':');
     if (!fromNode || !fromPort || !toNode || !toPort) return null;
     if (!this.nodeIds.has(fromNode) || !this.nodeIds.has(toNode)) return null;
-    const fromEntity = entityById?.get(fromNode);
-    const toEntity = entityById?.get(toNode);
-    const data = (fromEntity || toEntity) ? { pipeId: pipe.id, fromEntity, toEntity } : undefined;
-    return buildEdgeConfig(`pipe-${pipe.id}`, `node-${fromNode}`, fromPort, `node-${toNode}`, toPort, data);
+    return buildEdgeConfig(`pipe-${pipe.id}`, `node-${fromNode}`, fromPort, `node-${toNode}`, toPort);
   }
 
   private persistNodePositions(): void {

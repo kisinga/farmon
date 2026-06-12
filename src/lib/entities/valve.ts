@@ -4,7 +4,6 @@ import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPola
 import { AnchorIdSchema } from '../schemas';
 import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields, deriveHaEntityId } from '../ha';
 import { udpCoverProxy, udpCoverProxyLeaseInterval } from '../remote-proxy';
 
 const COLOR = '#e11d48'; // rose
@@ -23,15 +22,13 @@ export const ValveNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
-  ...HaNodeFields,
   anchorId: AnchorIdSchema,
 });
 
 export type ValveNode = z.infer<typeof ValveNodeSchema>;
 
-// Single source of truth for valve HA entity names. Both the firmware-emit
-// side (codegen.hardware / codegen.extraComponents) and the HA-reference side
-// (codegen.haEntityIds) read from this — they cannot drift.
+// Single source of truth for the valve's emitted entity names, read by the
+// firmware-emit side (codegen.hardware / codegen.extraComponents).
 const haNames = (node: ValveNode) => ({
   openCoil:   `${node.name} Open Coil`,
   closeCoil:  `${node.name} Close Coil`,
@@ -52,14 +49,6 @@ export const valveDescriptor: NodeDescriptor = {
   category: 'actuator',
   helpUrl: 'docs/installation/power-and-wiring.md',
   schema: ValveNodeSchema,
-  haDomain: 'cover',
-  defaultHaActions: [
-    { id: 'more-info', label: 'More info' },
-    { id: 'open', label: 'Open', service: 'cover.open_cover' },
-    { id: 'close', label: 'Close', service: 'cover.close_cover' },
-    { id: 'stop', label: 'Stop', service: 'cover.stop_cover' },
-  ],
-  defaultBinds: { label: 'state' },
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
@@ -155,23 +144,10 @@ ${closeHeader}
 
     substitutions: () => [],
 
-    haEntityIds: (node: ValveNode, device) => {
-      const n = haNames(node);
-      return {
-        cover:      deriveHaEntityId('cover',  device, n.cover),
-        openCoil:   deriveHaEntityId('switch', device, n.openCoil),
-        closeCoil:  deriveHaEntityId('switch', device, n.closeCoil),
-        travelTime: deriveHaEntityId('number', device, n.travelTime),
-      };
-    },
-
     remoteProxy: (node) => [
       { section: 'cover', yaml: udpCoverProxy(valveCoverId(node), node.name, node.id) },
       { section: 'interval', yaml: udpCoverProxyLeaseInterval(valveCoverId(node), node.id) },
     ],
-    proxyEntityIds: (node: ValveNode, device) => ({
-      cover: deriveHaEntityId('cover', device, `Remote ${node.name}`),
-    }),
 
   },
 

@@ -5,7 +5,6 @@ import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields, deriveHaEntityId } from '../ha';
 import { udpSwitchProxy, udpSwitchProxyLeaseInterval } from '../remote-proxy';
 
 const COLOR = '#7c3aed'; // violet
@@ -36,15 +35,13 @@ export const VfdNodeSchema = z.object({
       { message: 'VFD must have exactly one inlet and one outlet port' },
     ),
   position: PositionSchema,
-  ...HaNodeFields,
   anchorId: AnchorIdSchema,
 });
 
 export type VfdNode = z.infer<typeof VfdNodeSchema>;
 
-// Single source of truth for VFD HA entity names. Each sub-entity is gated
-// on its corresponding Modbus register being configured; both firmware emit
-// and HA reference apply the same gate.
+// Single source of truth for the VFD's emitted entity names. Each sub-entity
+// is gated on its corresponding Modbus register being configured.
 const haNames = (node: VfdNode) => ({
   switch:        node.name,
   power:         `${node.name} Power`,
@@ -67,12 +64,6 @@ export const vfdDescriptor: NodeDescriptor = {
   category: 'actuator',
   group: 'pump',
   schema: VfdNodeSchema,
-  haDomain: 'switch',
-  defaultHaActions: [
-    { id: 'more-info', label: 'More info' },
-    { id: 'toggle', label: 'Toggle', service: 'switch.toggle' },
-  ],
-  defaultBinds: { label: 'state' },
   defaultPorts: [
     { id: 'in', label: 'Inlet', direction: 'inlet' },
     { id: 'out', label: 'Outlet', direction: 'outlet' },
@@ -215,23 +206,6 @@ ${header}
 
     substitutions: () => [],
 
-    haEntityIds: (node: VfdNode, device) => {
-      const n = haNames(node);
-      return {
-        switch:        deriveHaEntityId('switch', device, n.switch),
-        power:         node.power_register != null
-          ? deriveHaEntityId('sensor', device, n.power) : undefined,
-        frequency:     node.frequency_register != null
-          ? deriveHaEntityId('sensor', device, n.frequency) : undefined,
-        faultCode:     node.fault_register != null
-          ? deriveHaEntityId('sensor', device, n.faultCode) : undefined,
-        speedSetpoint: node.speed_register != null
-          ? deriveHaEntityId('number', device, n.speedSetpoint) : undefined,
-        faultReset:    node.fault_reset_register != null
-          ? deriveHaEntityId('button', device, n.faultReset) : undefined,
-      };
-    },
-
     remoteProxy: (node) => {
       const proxyId = pumpSwitchId(node.id);
       return [
@@ -239,8 +213,5 @@ ${header}
         { section: 'interval', yaml: udpSwitchProxyLeaseInterval(proxyId, node.id) },
       ];
     },
-    proxyEntityIds: (node: VfdNode, device) => ({
-      switch: deriveHaEntityId('switch', device, `Remote ${node.name}`),
-    }),
   },
 };

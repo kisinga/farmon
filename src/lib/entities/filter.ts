@@ -6,7 +6,6 @@ import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { filterInletPressureId, filterOutletPressureId, filterDeltaPressureId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#78716c'; // stone
 const W = 50, H = 36;
@@ -22,15 +21,14 @@ export const FilterNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
-  ...HaNodeFields,
   anchorId: AnchorIdSchema,
 });
 
 export type FilterNode = z.infer<typeof FilterNodeSchema>;
 
-// Single source of truth for filter HA entity names. Each entry is conditional
-// on the corresponding pressure pin being configured; both firmware emit and
-// HA reference gate identically.
+// Single source of truth for the filter's emitted entity names, read by the
+// firmware-emit side (codegen.sensors). Each entry is conditional on the
+// corresponding pressure pin being configured.
 const haNames = (node: FilterNode) => ({
   inletPressure:  `${node.name} Inlet Pressure`,
   outletPressure: `${node.name} Outlet Pressure`,
@@ -131,18 +129,6 @@ ${header}
     },
 
     substitutions: () => [],
-
-    haEntityIds: (node: FilterNode, device) => {
-      const n = haNames(node);
-      return {
-        inletPressure:  node.inlet_pressure_pin
-          ? deriveHaEntityId('sensor', device, n.inletPressure) : undefined,
-        outletPressure: node.outlet_pressure_pin
-          ? deriveHaEntityId('sensor', device, n.outletPressure) : undefined,
-        deltaPressure:  (node.inlet_pressure_pin && node.outlet_pressure_pin)
-          ? deriveHaEntityId('sensor', device, n.deltaPressure) : undefined,
-      };
-    },
   },
 
   rules: [{

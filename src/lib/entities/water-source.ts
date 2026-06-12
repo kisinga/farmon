@@ -5,7 +5,6 @@ import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import { waterSourcePressureId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields, deriveHaEntityId } from '../ha';
 
 const COLOR = '#0ea5e9'; // sky blue
 const W = 120, H = 50;
@@ -24,15 +23,13 @@ export const WaterSourceNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
-  ...HaNodeFields,
   anchorId: AnchorIdSchema,
 });
 
 export type WaterSourceNode = z.infer<typeof WaterSourceNodeSchema>;
 
-// Single source of truth for water source HA entity names. The pressure
-// entity is conditional on `pressure_pin`; both firmware emit and HA
-// reference gate it identically.
+// Single source of truth for the water source's emitted entity name. The
+// pressure entity is conditional on `pressure_pin`.
 const haNames = (node: WaterSourceNode) => ({
   pressure: `${node.name} Pressure`,
 });
@@ -49,9 +46,6 @@ export const waterSourceDescriptor: NodeDescriptor = {
   category: 'source',
   helpUrl: 'docs/installation/power-and-wiring.md',
   schema: WaterSourceNodeSchema,
-  haDomain: 'sensor',
-  defaultHaActions: [{ id: 'more-info', label: 'More info' }],
-  defaultBinds: { label: 'state|format:number:2' },
   defaultPorts: [
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
   ],
@@ -96,12 +90,6 @@ ${header}
     },
 
     substitutions: () => [],
-
-    haEntityIds: (node: WaterSourceNode, device) => ({
-      pressure: node.pressure_pin
-        ? deriveHaEntityId('sensor', device, haNames(node).pressure)
-        : undefined,
-    }),
   },
 
   // --- Validation ---

@@ -3,13 +3,11 @@ import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
-import { HaNodeFields, deriveHaEntityId } from '../ha';
 import { udpSensorImport } from '../remote-proxy';
 import {
   PressureSensorConfigSchema,
   emitPressureSensorYaml,
   emitPressureCalNumbers,
-  pressureSensorHaNames,
   evaluatePressureSensorUndersized,
   evaluatePressureSensorElevatedLowResolution,
 } from '../pressure-sensor-shared';
@@ -40,7 +38,6 @@ export const TankNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
-  ...HaNodeFields,
   anchorId: AnchorIdSchema,
 });
 
@@ -57,15 +54,6 @@ export const tankDescriptor: NodeDescriptor = {
   routeSource: true,
   category: 'source',
   schema: TankNodeSchema,
-  haDomain: 'sensor',
-  defaultHaActions: [
-    { id: 'more-info', label: 'More info' },
-  ],
-  slots: {
-    label: { x: W / 2, y: H + 14, textAnchor: 'middle', cls: 'label-primary' },
-    value: { x: W / 2, y: H + 28, textAnchor: 'middle', cls: 'label-secondary' },
-  },
-  defaultBinds: { value: 'state|format:percent' },
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
@@ -120,21 +108,6 @@ export const tankDescriptor: NodeDescriptor = {
     },
 
     substitutions: () => [],
-
-    haEntityIds: (node: TankNode, device) => {
-      // The tank only has a canonical HA entity when it has an intrinsic
-      // pressure sensor (level_monitored === true with pressure_pin set).
-      if (!node.pressure_pin) return {};
-      const n = pressureSensorHaNames(node);
-      return {
-        level: deriveHaEntityId('sensor', device, n.level),
-        pressure: deriveHaEntityId('sensor', device, n.pressure),
-        rangeMin: deriveHaEntityId('number', device, n.rangeMin),
-        rangeMax: deriveHaEntityId('number', device, n.rangeMax),
-        calEmpty: deriveHaEntityId('number', device, n.calEmpty),
-        calFull: deriveHaEntityId('number', device, n.calFull),
-      };
-    },
 
     remoteProxy: (node) => [
       { section: 'sensor', yaml: udpSensorImport(node.id) },

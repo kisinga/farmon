@@ -2,7 +2,7 @@
  * Unit conversions and constants for tank pressure-sensor calibration.
  *
  * Pressure is psi everywhere — schema, codegen, ESPHome `unit_of_measurement`,
- * HA entity labels, dashboards. No conversion at any seam.
+ * dashboards. No conversion at any seam.
  */
 
 /** psi exerted by a 1 m water column at room temperature (ρ·g·h, ρ=1000, g=9.81). */
@@ -27,8 +27,8 @@ export function recommendSensorMaxPsi(p_full_psi: number): number {
 
 /**
  * Calibration anchors derived purely from tank geometry. The result feeds
- * both the seeded HA Number entities and the live readout panel in the
- * editor sidebar.
+ * both the firmware's calibration Number entities and the live readout panel
+ * in the editor sidebar.
  */
 export interface TankCalibration {
   p_empty_psi: number;

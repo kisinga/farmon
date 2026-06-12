@@ -4,7 +4,6 @@ import { ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
-import { HaNodeFields } from '../ha';
 
 const COLOR = '#d97706'; // amber
 const W = 120, H = 50;
@@ -18,7 +17,6 @@ export const EndpointNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
-  ...HaNodeFields,
   anchorId: AnchorIdSchema,
 });
 

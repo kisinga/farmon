@@ -28,15 +28,15 @@ export const ComponentId = policyString(COMPONENT_ID_POLICY);
 /**
  * A user-facing name that must produce a non-empty slug — i.e. contain at
  * least one ASCII alphanumeric character. Required because the slug becomes
- * part of HA entity_ids (`<domain>.<friendly_name_slug>_<name_slug>`).
+ * part of each emitted entity's id (the ESPHome object_id / MQTT sensor key).
  * Without this, an all-emoji or all-Cyrillic name slugs to empty and silently
- * collides with other empty-slug entities in HA.
+ * collides with other empty-slug entities.
  */
 export const EntityName = z
   .string()
   .min(1)
   .refine((s) => slug(s).length > 0, {
-    message: 'Name must contain at least one ASCII letter or digit (used to derive HA entity_id)',
+    message: 'Name must contain at least one ASCII letter or digit (used to derive the entity id)',
   });
 
 export const PortSchema = z.object({
@@ -102,8 +102,8 @@ export const IoProviderDefSchema = z.object({
 
 export const DeviceSchema = z.object({
   name: z.string().min(1),
-  // friendly_name's slug becomes the HA entity_id prefix for every entity on
-  // the device — must contain at least one ASCII alphanumeric character.
+  // friendly_name's slug prefixes every emitted entity name on the device —
+  // must contain at least one ASCII alphanumeric character.
   friendly_name: EntityName,
   board: z.string().min(1),
   directory: z.string().optional(),

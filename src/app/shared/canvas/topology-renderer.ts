@@ -6,13 +6,9 @@
  * there is no cross-render contamination and only one place knows about the
  * paint-cycle timing.
  */
-import type { HaMeta, SiteTopology, Device } from '@core';
 import type { RenderableTopology } from '../../core/models/topology.model';
-import { NODE_REGISTRY, buildHaMeta } from '@core';
+import { NODE_REGISTRY } from '@core';
 import { X6Canvas, type CanvasEvents } from '../../pages/editor/topology-x6-tab/x6-canvas';
-
-// HaMeta is referenced in the exportHa return type.
-export type { HaMeta };
 
 const CANVAS_PADDING = 200;
 const MIN_CANVAS_SIZE = 400;
@@ -63,48 +59,10 @@ export class TopologyRenderer {
     return this.canvas.exportSvg(measureStageViewBox(graph));
   }
 
-  /**
-   * Export the topology as a (decorated SVG, meta sidecar) pair matching the
-   * SCADA v1 contract consumed by farm-scada-card.
-   *
-   * Behavior:
-   *  - SVG is wrapped with `data-node-id`/`data-pipe-id`/`data-kind`/class hooks,
-   *    hit rects, label slots, and a state+flow <style> block.
-   *  - Meta carries per-node entityId + resolved actions + bind expressions,
-   *    and per-pipe endpoint entity refs + flow predicate.
-   *  - Output is deterministic: nodes and pipes iterate in sorted order; coords
-   *    are rounded.
-   *  - Throws if a node declares a `binds` key whose slot isn't emitted in the
-   *    SVG (catches drift between descriptor slots and meta bindings early).
-   */
-  async exportHa(topology: SiteTopology, device: Device): Promise<{ svg: string; meta: HaMeta }> {
-    const { width, height } = canvasSizeFor(topology);
-    this.canvas.resize(width, height);
-
-    const graph = this.canvas.graphInstance;
-    graph.clearCells();
-    graph.scale(1, 1);
-    graph.translate(0, 0);
-    this.canvas.render(topology);
-    await nextPaint();
-
-    const viewBox = measureStageViewBox(graph);
-    const svg = await this.canvas.exportSvg(viewBox, { scada: true });
-
-    const vbTuple: [number, number, number, number] = viewBox
-      ? [round(viewBox.x), round(viewBox.y), round(viewBox.width), round(viewBox.height)]
-      : [0, 0, round(width), round(height)];
-
-    const meta = buildHaMeta(topology, device, { viewBox: vbTuple });
-    return { svg, meta };
-  }
-
   destroy(): void {
     this.canvas.destroy();
   }
 }
-
-function round(n: number): number { return Math.round(n); }
 
 /** Compute hidden-canvas dimensions that contain the topology + margin. */
 function canvasSizeFor(topology: RenderableTopology): { width: number; height: number } {

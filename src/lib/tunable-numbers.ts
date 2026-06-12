@@ -13,7 +13,7 @@
  * live value from the shadow under the same id.
  */
 import type { Manifest } from './manifest.types';
-import { SYSTEM_ENTITY_NAMES, routeEntityNames } from './ha';
+import { SYSTEM_ENTITY_NAMES, routeEntityNames } from './entity-names';
 import {
   routeSourceMinNumber, routeDestMaxNumber, valveTravelTimeId,
   pressureSensorRangeMinId, pressureSensorRangeMaxId,

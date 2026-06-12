@@ -401,7 +401,7 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
       node['anchorId'] = controllerId;
       if ('remote' in node) {
         console.warn(`[topology migration] Node "${node['id']}" has remote bindings that are not supported in schema 15. Remote configuration will be removed. ` +
-          `TODO(anchor-mesh): reimplement remote bindings as endpoint HA imports.`);
+          `TODO(anchor-mesh): reimplement remote bindings as endpoint UDP imports.`);
         delete node['remote'];
       }
     }

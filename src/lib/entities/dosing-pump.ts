@@ -6,7 +6,6 @@ import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { dosingPumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields, deriveHaEntityId } from '../ha';
 import { udpSwitchProxy, udpSwitchProxyLeaseInterval } from '../remote-proxy';
 
 const COLOR = '#ea580c'; // orange
@@ -24,17 +23,13 @@ export const DosingPumpNodeSchema = z.object({
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
-  ...HaNodeFields,
   anchorId: AnchorIdSchema,
 });
 
 export type DosingPumpNode = z.infer<typeof DosingPumpNodeSchema>;
 
-// Single source of truth for dosing pump HA entity names. Note: the
-// firmware-emitted switch is currently `internal: true`, which suppresses
-// HA discovery. The dashboard references this entity_id anyway — that
-// pre-existing inconsistency will be surfaced by the cross-validation test
-// as a real bug to fix outside this refactor.
+// Single source of truth for the dosing pump's emitted entity name, read by
+// the firmware-emit side (codegen.hardware).
 const haNames = (node: DosingPumpNode) => ({
   relay: `${node.name} Relay`,
 });
@@ -55,12 +50,6 @@ export const dosingPumpDescriptor: NodeDescriptor = {
   group: 'pump',
   experimental: true,
   schema: DosingPumpNodeSchema,
-  haDomain: 'switch',
-  defaultHaActions: [
-    { id: 'more-info', label: 'More info' },
-    { id: 'toggle', label: 'Toggle', service: 'switch.toggle' },
-  ],
-  defaultBinds: { label: 'state' },
   defaultPorts: [
     { id: 'inlet', label: 'Inlet', direction: 'inlet' },
     { id: 'outlet', label: 'Outlet', direction: 'outlet' },
@@ -118,10 +107,6 @@ ${header}
 
     substitutions: () => [],
 
-    haEntityIds: (node: DosingPumpNode, device) => ({
-      relay: deriveHaEntityId('switch', device, haNames(node).relay),
-    }),
-
     remoteProxy: (node) => {
       const proxyId = dosingPumpSwitchId(node);
       return [
@@ -129,9 +114,6 @@ ${header}
         { section: 'interval', yaml: udpSwitchProxyLeaseInterval(proxyId, node.id) },
       ];
     },
-    proxyEntityIds: (node: DosingPumpNode, device) => ({
-      relay: deriveHaEntityId('switch', device, `Remote ${node.name}`),
-    }),
 
   },
 

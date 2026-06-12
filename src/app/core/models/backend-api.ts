@@ -160,7 +160,7 @@ export interface BoardLoadResult {
 
 // --- Generation ---
 
-export type GenerationType = 'esphome' | 'ha';
+export type GenerationType = 'esphome';
 
 /**
  * Result of a client-side generation + commit. `files` is the human-readable

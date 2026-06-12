@@ -6,7 +6,6 @@ import { UI_COLORS } from '../colors';
 import type { FlowConstraint } from '../graph/constraints';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
-import { HaNodeFields, deriveHaEntityId } from '../ha';
 import { udpSwitchProxy, udpSwitchProxyLeaseInterval } from '../remote-proxy';
 
 const COLOR = '#dc2626'; // red
@@ -31,15 +30,13 @@ export const PumpNodeSchema = z.object({
       { message: 'Pump must have exactly one inlet and one outlet port' },
     ),
   position: PositionSchema,
-  ...HaNodeFields,
   anchorId: AnchorIdSchema,
 });
 
 export type PumpNode = z.infer<typeof PumpNodeSchema>;
 
-// Single source of truth for pump HA entity names. Both the firmware-emit
-// side (codegen.hardware) and the HA-reference side (codegen.haEntityIds)
-// read from this — they cannot drift.
+// Single source of truth for the pump's emitted entity name, read by the
+// firmware-emit side (codegen.hardware).
 const haNames = (_node: PumpNode) => ({
   relay: 'Pump Relay',
 });
@@ -57,12 +54,6 @@ export const pumpDescriptor: NodeDescriptor = {
   category: 'actuator',
   group: 'pump',
   schema: PumpNodeSchema,
-  haDomain: 'switch',
-  defaultHaActions: [
-    { id: 'more-info', label: 'More info' },
-    { id: 'toggle', label: 'Toggle', service: 'switch.toggle' },
-  ],
-  defaultBinds: { label: 'state' },
   defaultPorts: [
     { id: 'in', label: 'Inlet', direction: 'inlet' },
     { id: 'out', label: 'Outlet', direction: 'outlet' },
@@ -148,10 +139,6 @@ ${header}
 
     substitutions: () => [],
 
-    haEntityIds: (node: PumpNode, device) => ({
-      relay: deriveHaEntityId('switch', device, haNames(node).relay),
-    }),
-
     remoteProxy: (node) => {
       const proxyId = pumpSwitchId(node.id);
       return [
@@ -159,9 +146,6 @@ ${header}
         { section: 'interval', yaml: udpSwitchProxyLeaseInterval(proxyId, node.id) },
       ];
     },
-    proxyEntityIds: (node: PumpNode, device) => ({
-      relay: deriveHaEntityId('switch', device, `Remote ${node.name ?? 'Pump'}`),
-    }),
 
   },
 

@@ -88,7 +88,7 @@ function generateMetadataYaml(m: Manifest, metadata: GenerationMetadata): string
   lines.push(`# MajiFlow — Fleet Metadata Sensors`);
   lines.push(`# =============================================================================`);
   lines.push(`# Embedded provenance for drift detection and fleet management.`);
-  lines.push(`# These sensors publish to Home Assistant as diagnostic entities.`);
+  lines.push(`# These sensors publish as diagnostic telemetry.`);
   lines.push(`# =============================================================================`);
   lines.push(``);
 
@@ -161,11 +161,7 @@ function generateMetadataYaml(m: Manifest, metadata: GenerationMetadata): string
  * Returns the relative path prefix for everything a site generates.
  * `sites/{siteId}/...` is the single root for site-scoped artifacts:
  *   - `esphome/{deviceDir}/...`     — ESPHome firmware
- *   - `homeassistant/dashboards/{siteId}.yaml`        — site dashboard
- *   - `homeassistant/dashboards/dashboard.yaml`       — single-system convenience (tests)
- *   - `homeassistant/automations/{deviceDir}.yaml`    — per-device automations
- *   - `homeassistant/www/farm/{name}.{svg,meta.json}` — SCADA artifacts
- *   - `site-documentation.html`                       — generated docs
+ *   - `site-documentation.html`     — generated docs
  *
  * Self-test artifacts live in a separate `selftest/{model}/` tree and bypass
  * this prefix entirely — they are not site-scoped.

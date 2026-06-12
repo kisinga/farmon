@@ -6,7 +6,7 @@ import { ValidationPanelComponent } from '../../../shared/validation-panel/valid
 import type { RuleDiagnostic } from '../../../core/models/backend-api';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
 import type { DerivedRoute } from './derive-routes';
-import { buildGraph, activeGraph, deriveRoutes, RouteOverrideSchema, deriveHaEntityId, deriveTankCalibration, recommendSensorMaxPsi } from '@core';
+import { buildGraph, activeGraph, deriveRoutes, RouteOverrideSchema, deriveTankCalibration, recommendSensorMaxPsi } from '@core';
 import type { PinCap, FieldDef } from '@core';
 import type { RouteOverride, TopologyNode } from '../../../core/models/topology.model';
 import { routeLevelInfo } from './route-level-info';
@@ -210,19 +210,6 @@ export type { Selection };
           }
         }
 
-        <!-- Home Assistant entity mapping (SCADA export) — derived, not editable. -->
-        @if (sn.desc.haDomain && device(); as dev) {
-          <div class="mt-3 pt-3 border-t border-base-300/30">
-            <h4 class="sidebar-title">Home Assistant</h4>
-            <div class="sidebar-fields">
-              <label class="sidebar-label">Entity ID</label>
-              <code class="text-xs font-mono text-base-content/70 select-all break-all">{{ deriveHaEntityId(sn.desc.haDomain, dev, $any(sn.node).name) }}</code>
-            </div>
-            <div class="text-[10px] text-base-content/40 mt-1">
-              Auto-derived from friendly name. Edit the entity's name to change.
-            </div>
-          </div>
-        }
 
         <!-- Remote imports — read-only info showing which controllers import this local node. -->
         @if (!isRemoteNode(sn.node) && nodeImporterNames(sn.node.id).length > 0) {
@@ -406,8 +393,6 @@ export class TopologySidebarComponent {
   protected editor = inject(SystemEditorService);
   private workspace = inject(WorkspaceService);
   protected routeOverrideSchema = RouteOverrideSchema;
-  protected deriveHaEntityId = deriveHaEntityId;
-  protected device = computed(() => this.editor.controllerDevice() ?? null);
 
   private expandedSections = signal<Set<string>>(new Set(['node', 'pipe', 'routes']));
 

@@ -1,7 +1,7 @@
 import type { Manifest, LocalManifestNode, ImportedManifestNode, Route as ManifestRoute } from "./manifest.types";
 import type { SiteTopology, TopologyNode } from "./topology.types";
 import { buildGraph, activeGraph, deriveRoutes } from "./graph/index";
-import { deriveRemoteHaEntityId } from "./remote-ha-entity";
+import { deriveRemoteSourceRef } from "./remote-source";
 import { slug } from "./slug";
 import { NODE_REGISTRY } from './entity-registry';
 
@@ -120,11 +120,11 @@ export function topologyToManifestForController(
     .filter(n => isIncludedNode(n) && isLocalNode(n))
     .map(node => {
       const manifestNode: LocalManifestNode = { ...node };
-      // Derive remote HA entity for nodes whose primary value lives elsewhere
+      // Mark nodes whose primary value lives on another controller (read over UDP).
       const origNode = nodeMap.get(manifestNode.id);
       if (origNode) {
-        const remoteHaEntityId = deriveRemoteHaEntityId(origNode, controllerId, topology);
-        if (remoteHaEntityId) manifestNode.remoteHaEntityId = remoteHaEntityId;
+        const remoteSourceRef = deriveRemoteSourceRef(origNode, controllerId);
+        if (remoteSourceRef) manifestNode.remoteSourceRef = remoteSourceRef;
       }
       return manifestNode;
     });
@@ -135,8 +135,8 @@ export function topologyToManifestForController(
       const manifestNode: ImportedManifestNode = { ...node } as ImportedManifestNode;
       const origNode = nodeMap.get(manifestNode.id);
       if (origNode) {
-        const remoteHaEntityId = deriveRemoteHaEntityId(origNode, controllerId, topology);
-        if (remoteHaEntityId) manifestNode.remoteHaEntityId = remoteHaEntityId;
+        const remoteSourceRef = deriveRemoteSourceRef(origNode, controllerId);
+        if (remoteSourceRef) manifestNode.remoteSourceRef = remoteSourceRef;
         const providerController = topology.controllers.find(c => c.id === origNode.anchorId);
         if (providerController) {
           manifestNode.remoteDeviceName = slug(providerController.friendlyName ?? providerController.id);

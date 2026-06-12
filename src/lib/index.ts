@@ -63,23 +63,14 @@ export { getNodesByKind, getNodeByKind } from './topology.types';
 // --- YAML fragment utilities ---
 export { indent, joinYamlItems, yamlString } from './yaml-fragment';
 
-// --- Home Assistant integration ---
+// --- Entity-name catalogs (firmware codegen SSOT for emitted entity names) ---
 export {
-  HA_SCHEMA_VERSION, HA_SERVICE_POLICY, HaActionSpecSchema, HaNodeFields,
-  defaultStateBucket, isValidBindExpr, parseFlowPredicate,
-  deriveHaEntityId, esphomeServicePrefix,
   SYSTEM_ENTITY_NAMES, NETWORK_ENTITY_NAMES, BATTERY_ENTITY_NAMES,
   routeEntityNames,
-  networkHaEntityIds, batteryHaEntityIds,
-  automationHaEntityId,
-} from './ha';
+} from './entity-names';
 export type {
-  HaActionSpec, StateBucket, HaSlotSpec, HaMetaNode, HaMetaPipe, HaMeta, ParsedFlowPredicate,
   SystemEntitySpec, SystemEntityKey, NetworkEntityKey, BatteryEntityKey,
-  NetworkHaEntityIds, BatteryHaEntityIds,
-} from './ha';
-export { buildHaMeta } from './ha-meta';
-export type { BuildHaMetaOptions } from './ha-meta';
+} from './entity-names';
 
 // --- Telemetry channels (shared by firmware codegen + dashboard chart spec) ---
 export { collectTelemetryChannels } from './telemetry-channels';
@@ -151,7 +142,7 @@ export {
   udpSwitchProxy, udpSwitchProxyLeaseInterval,
   udpCoverProxy, udpCoverProxyLeaseInterval,
 } from './remote-proxy';
-export { deriveRemoteHaEntityId } from './remote-ha-entity';
+export { deriveRemoteSourceRef } from './remote-source';
 
 // --- I/O Providers ---
 export { createBoardDriver } from './io-providers/board-driver';

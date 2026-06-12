@@ -76,8 +76,8 @@ export function collectEntityCodegen(
   for (const node of m.nodes) {
     const desc = NODE_REGISTRY.get(node.kind);
 
-    // Remote proxy for local nodes with remote HA entity (e.g. tank with remote level source).
-    if (node.remoteHaEntityId) {
+    // Remote proxy for local nodes sourced from another controller (e.g. tank with remote level source).
+    if (node.remoteSourceRef) {
       const proxies = desc?.codegen?.remoteProxy?.(node);
       if (proxies) {
         for (const proxy of proxies) {

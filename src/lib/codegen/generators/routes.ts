@@ -254,7 +254,7 @@ export function generateRoutes(m: Manifest): string {
   // pressure sensor; unmonitored tanks return -1.0f.
   const tankCases = tanks
     .map((t, i) => {
-      if (t['remoteHaEntityId']) {
+      if (t['remoteSourceRef']) {
         return `    case ${i}: return id(ri_${t['id']}).state; // remote: ${t['name']}`;
       }
       if (!t['level_monitored']) return `    case ${i}: return -1.0f; // ${t['id']}: no level monitoring`;
@@ -263,7 +263,7 @@ export function generateRoutes(m: Manifest): string {
     .join("\n");
   const flowCases = flowSensors
     .map((f, i) => {
-      if (f['remoteHaEntityId']) {
+      if (f['remoteSourceRef']) {
         return `    case ${i}: return id(ri_${f['id']}).state; // remote: ${f['name']}`;
       }
       return `    case ${i}: return id(${flowSensorId(nid(f))}).state;`;
@@ -275,7 +275,7 @@ export function generateRoutes(m: Manifest): string {
   // to local, unshared sensors).
   const flowTotalCases = flowSensors
     .map((f, i) => {
-      if (f['remoteHaEntityId']) {
+      if (f['remoteSourceRef']) {
         return `    case ${i}: return -1.0f; // remote: ${f['name']} (no total mirror)`;
       }
       return `    case ${i}: return id(${flowTotalId(nid(f))}).state;`;
