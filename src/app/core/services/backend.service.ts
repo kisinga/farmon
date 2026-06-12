@@ -504,7 +504,16 @@ export class BackendService {
     // published, drop them rather than show a diagram that no longer matches.
     if (!override?.diagrams) {
       const currentHash = await sha256Hex(JSON.stringify(topo));
-      if (diagrams.topoHash !== currentHash) diagrams = { composite: '', controllers: {}, boardPinouts: {} };
+      if (diagrams.topoHash !== currentHash) {
+        const neverPublished = !diagrams.topoHash && Object.keys(diagrams.controllers).length === 0;
+        console.warn(
+          `[site-docs] no diagrams shown for site ${siteId}: ` +
+          (neverPublished
+            ? 'none have been published yet — open the deploy page and click "Generate docs".'
+            : `the cached diagrams are stale (topology changed since they were published) — regenerate from the deploy page.`),
+        );
+        diagrams = { composite: '', controllers: {}, boardPinouts: {} };
+      }
     }
     const boards = await this.boardDefsForModels(new Set(topo.controllers.map((c) => c.board)));
     const docs = await this.docList();

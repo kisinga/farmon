@@ -33,14 +33,17 @@ export class TopologyDiagramService {
       let composite = '';
       if (topo.controllers.length > 1) {
         try { composite = await renderer.export({ nodes: topo.nodes, pipes: topo.pipes }); }
-        catch { /* keep going — a missing composite is better than no doc */ }
+        catch (e) { console.warn('[site-docs] composite diagram render failed', e); }
       }
 
       const controllers: Record<string, string> = {};
       const boardPinouts: Record<string, string> = {};
       for (const c of topo.controllers) {
         const nodes = topo.nodes.filter((n) => n.anchorId === c.id);
-        if (nodes.length === 0) continue;
+        if (nodes.length === 0) {
+          console.warn(`[site-docs] controller "${c.id}" has no anchored nodes — no diagram or pinout`);
+          continue;
+        }
         const ids = new Set(nodes.map((n) => n.id));
         const pipes = topo.pipes.filter(
           (p) => ids.has(p.from.split(':')[0]) && ids.has(p.to.split(':')[0]),
@@ -50,12 +53,13 @@ export class TopologyDiagramService {
           controllers[c.id] = await renderer.export({
             nodes, pipes, device: { friendly_name: c.friendlyName ?? c.id },
           });
-        } catch { /* skip this controller's diagram */ }
+        } catch (e) { console.warn(`[site-docs] topology diagram render failed for controller "${c.id}"`, e); }
 
         try {
-          const pinout = this.renderBoardPinout(boards[c.board], nodes, container);
+          const bundle = boards[c.board];
+          const pinout = this.renderBoardPinout(bundle, nodes, container, c.id);
           if (pinout) boardPinouts[c.id] = pinout;
-        } catch { /* skip this controller's pinout */ }
+        } catch (e) { console.warn(`[site-docs] board pinout render failed for controller "${c.id}"`, e); }
       }
       return { composite, controllers, boardPinouts };
     } finally {
@@ -70,10 +74,16 @@ export class TopologyDiagramService {
    * lists everything). Measures connector geometry from a throwaway render inside
    * the supplied (laid-out, hidden) container.
    */
-  private renderBoardPinout(bundle: BoardBundle | undefined, nodes: SiteTopology['nodes'], container: HTMLElement): string {
-    if (!bundle?.svg.includes('<svg')) return '';
+  private renderBoardPinout(bundle: BoardBundle | undefined, nodes: SiteTopology['nodes'], container: HTMLElement, controllerId: string): string {
+    if (!bundle?.svg.includes('<svg')) {
+      console.warn(`[site-docs] pinout "${controllerId}": board has no SVG in the catalog (hasBundle=${!!bundle})`);
+      return '';
+    }
     const labels = calloutLabelsFor(bundle.def, collectPins(nodes));
-    if (!labels.length) return '';
+    if (!labels.length) {
+      console.warn(`[site-docs] pinout "${controllerId}": no connected pin maps to a board connector — all pins are off-board (expander/mux) channels?`);
+      return '';
+    }
 
     const host = document.createElement('div');
     host.style.cssText = 'width:1000px;height:1000px;';
@@ -81,9 +91,18 @@ export class TopologyDiagramService {
     try {
       host.innerHTML = bundle.svg;
       const svg = host.querySelector('svg');
-      if (!svg) return '';
+      if (!svg) {
+        console.warn(`[site-docs] pinout "${controllerId}": board SVG markup did not parse to an <svg> element`);
+        return '';
+      }
       const geoms = measureConnectors(svg, labels.map((l) => l.connector));
-      if (!geoms.length) return '';
+      if (!geoms.length) {
+        console.warn(
+          `[site-docs] pinout "${controllerId}": measured 0 of ${labels.length} connectors in the board SVG ` +
+          `(getScreenCTM=${svg.getScreenCTM() ? 'ok' : 'null'}; connectors=${labels.map((l) => l.connector).join(',')})`,
+        );
+        return '';
+      }
       const placement = layoutCallouts(geoms, labels, svgViewBox(svg));
       return emitPinoutSvg(bundle.svg, placement);
     } finally {
