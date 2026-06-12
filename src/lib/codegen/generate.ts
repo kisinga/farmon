@@ -170,6 +170,54 @@ export function siteRoot(siteId: string): string {
   return `sites/${siteId}`;
 }
 
+/**
+ * Mark every emitted ESPHome entity `internal: true` in one post-pass.
+ *
+ * ESPHome auto-publishes each named entity's state to `<topic_prefix>/…/esphome/*`
+ * on every update. Nothing reads that stream — the server ingests only our telemetry
+ * lambda's topics (telemetry/event/status/identity); it's a vestige of the removed HA
+ * model and the duplicate publish was overflowing the device's MQTT outbox on weak
+ * links. `internal` stops that auto-publish while leaving the component fully usable
+ * via id() (telemetry lambda, control logic, OLED); paired with
+ * `web_server: include_internal: true` the states stay visible on the device's local
+ * web page. Done as a single pass so the flag isn't threaded through every emitter.
+ *
+ * Only top-level entity sections are touched. Infrastructure (output/i2c/spi/display/…)
+ * is skipped via section-gating; multi-sensor platforms (wifi_info/ethernet_info — whose
+ * `internal` belongs on their sub-sensors, and which publish only on connect) are left
+ * alone (extend MULTI_SENSOR_PLATFORMS when adding any platform that emits sub-sensors,
+ * e.g. bme280); and block-scalar bodies (`lambda: |-` C++) are skipped so a `- platform:`
+ * inside a lambda can't be mistaken for an entity declaration.
+ */
+const INTERNAL_ENTITY_SECTIONS = new Set([
+  'sensor', 'binary_sensor', 'text_sensor', 'switch', 'cover', 'number', 'button',
+]);
+const MULTI_SENSOR_PLATFORMS = new Set(['wifi_info', 'ethernet_info']);
+
+function internalizeEntities(yaml: string): string {
+  const out: string[] = [];
+  let inEntitySection = false;
+  let scalarIndent = -1; // indent of the key owning an open block scalar; -1 = none
+  for (const line of yaml.split('\n')) {
+    const indent = line.search(/\S/);
+    // A block scalar body ends when a non-blank line dedents to/under its owner key.
+    if (scalarIndent >= 0 && indent >= 0 && indent <= scalarIndent) scalarIndent = -1;
+    const section = /^([a-zA-Z_]\w*):\s*$/.exec(line);
+    if (section) { inEntitySection = INTERNAL_ENTITY_SECTIONS.has(section[1]); scalarIndent = -1; }
+    out.push(line);
+    if (scalarIndent >= 0) continue; // inside a lambda/block-scalar body — never an entity
+    // Opening a block scalar (`key: |-`, `key: >` …)? Skip its body on following lines.
+    const scalar = /^(\s*)\S.*:\s*[|>][+-]?\s*$/.exec(line);
+    if (scalar) { scalarIndent = scalar[1].length; continue; }
+    if (!inEntitySection) continue;
+    const plat = /^(\s*)- platform:\s*(\S+)/.exec(line);
+    if (plat && !MULTI_SENSOR_PLATFORMS.has(plat[2])) {
+      out.push(`${plat[1]}  internal: true`);
+    }
+  }
+  return out.join('\n');
+}
+
 export function generateEsphome(
   m: Manifest,
   board: BoardDef,
@@ -186,7 +234,7 @@ export function generateEsphome(
     {
       relativePath: `${deviceDir}/common/board.yaml`,
       description: `${board.label} board package (buses, battery, LED, diagnostics)`,
-      content: generateBoardPackage(board, m.device.network),
+      content: internalizeEntities(generateBoardPackage(board, m.device.network)),
     },
     {
       relativePath: `${deviceDir}/common/images/logo.svg`,
@@ -196,7 +244,7 @@ export function generateEsphome(
     {
       relativePath: `${deviceDir}/${dir}.yaml`,
       description: "Device config (substitutions, boot, OLED display)",
-      content: generateDeviceYaml(board, m, collected, metadata),
+      content: internalizeEntities(generateDeviceYaml(board, m, collected, metadata)),
     },
     {
       relativePath: `${deviceDir}/secrets.yaml`,
@@ -251,17 +299,17 @@ export function generateEsphome(
     {
       relativePath: `${deviceDir}/packages/hardware.yaml`,
       description: "Pump relay, valve switches + covers",
-      content: generateHardware(m, collected),
+      content: internalizeEntities(generateHardware(m, collected)),
     },
     {
       relativePath: `${deviceDir}/packages/sensors.yaml`,
       description: "Flow sensors, tank levels, calibration, state text",
-      content: generateSensors(m, collected),
+      content: internalizeEntities(generateSensors(m, collected)),
     },
     {
       relativePath: `${deviceDir}/packages/metadata.yaml`,
       description: "Fleet metadata sensors (SHA, version, build timestamp)",
-      content: generateMetadataYaml(m, metadata),
+      content: internalizeEntities(generateMetadataYaml(m, metadata)),
     },
     {
       relativePath: `${deviceDir}/compile.sh`,

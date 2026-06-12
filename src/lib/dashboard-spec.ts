@@ -177,6 +177,12 @@ function widgetForChannel(controller: string, ch: TelemetryChannel): DashboardWi
     return { ...base, kind: 'badge', title: label, meanings };
   }
 
+  // Free-text channel (e.g. ordered queue contents) → a badge showing the raw
+  // string verbatim (no meanings dictionary; the renderer displays the value).
+  if (ch.kind === 'text') {
+    return { ...base, kind: 'badge', title: label };
+  }
+
   // Per-node channels (have a role) → the role presentation table.
   if (ch.role) {
     const p = ROLE_PRESENTATION[ch.role];

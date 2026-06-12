@@ -216,11 +216,11 @@ export class HardwareShowcaseComponent {
     {
       index: '03',
       name: 'Pressure sensor',
-      kicker: 'EARLY WARNING FOR THE LINE',
-      body: 'Watches the pressure in a line and flags a blockage or a burst before it becomes a flood. Screws into the pipe, three wires, no moving parts to wear out.',
+      kicker: 'READS HOW FULL THE TANK IS',
+      body: 'Sits at the bottom of a tank and reads the weight of water above it. The deeper the water, the higher the pressure, so once it is set from empty to full it reports exactly how full the tank is. No float to stick, nothing moving to wear out.',
       main: 'marketing/pressure-sensor1.jpg',
       angles: ['marketing/pressure-sensor4.jpg', 'marketing/pressure-sensor2.jpg', 'marketing/pressure-sensor3.jpg'],
-      specs: ['Stainless steel', 'Threaded port', '3-wire', 'Analog out'],
+      specs: ['Stainless steel', 'Threaded port', '3-wire', 'Reads tank level'],
     },
   ];
 }

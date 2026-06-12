@@ -46,6 +46,8 @@ function publishStmt(c: TelemetryChannel, topic: string): string {
       return `{ static const char* T[] = {${arr}}; int v = id(${c.ref}); ` +
         `if (v >= 0 && v < ${toks.length}) mc->publish("${topic}", T[v]); }`;
     }
+    case 'text':
+      return `mc->publish("${topic}", id(${c.ref}).state);`;
   }
 }
 

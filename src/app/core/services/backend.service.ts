@@ -651,7 +651,11 @@ export class BackendService {
 
   private newControllerId(friendlyName: string): string {
     const base = this.slugify(friendlyName) || 'controller';
-    return `${base}-${Math.random().toString(36).slice(2, 8)}`;
+    // Suffix is a slice of a v4 UUID (crypto, secure context) so two controllers
+    // sharing a friendly name still get distinct ids — the id is the MQTT username
+    // and PK, and /provision find-or-creates by it, so a collision would silently
+    // merge two designs into one identity.
+    return `${base}-${crypto.randomUUID().slice(0, 8)}`;
   }
 
   private slugify(name: string): string {

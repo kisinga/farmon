@@ -92,7 +92,11 @@ function emitImprov(): Record<string, unknown>[] {
 }
 
 function emitWebServer(): Record<string, unknown> {
-  return { web_server: { port: 80, version: 3 } };
+  // include_internal: every runtime entity is `internal: true` so it stops the
+  // dead per-entity MQTT auto-publish (the server reads only our telemetry lambda's
+  // topics); include_internal keeps those states visible on the on-device web page
+  // for local diagnostics when the server/internet is unreachable.
+  return { web_server: { port: 80, version: 3, include_internal: true } };
 }
 
 /**

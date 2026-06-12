@@ -331,8 +331,11 @@ export class DashboardCardComponent {
       const m = describeState(w.meanings, token);
       return { label: m.label, cls: kindClass(m.kind) };
     }
-    // Boolean channel (pump / dosing / safety override): numeric 1/0.
     if (!r) return { label: '—', cls: 'badge-ghost' };
+    // Free-text channel (e.g. ordered queue contents): a non-numeric shadow rides in
+    // reported_text (bool channels publish 1/0, so theirs stays empty).
+    if (r.reported_text) return { label: r.reported_text, cls: 'badge-ghost' };
+    // Boolean channel (pump / dosing / safety override): numeric 1/0.
     return r.reported >= 0.5 ? { label: 'On', cls: 'badge-success' } : { label: 'Off', cls: 'badge-ghost' };
   });
 

@@ -25,8 +25,10 @@ import {
  *  - `cover`  reads `id(<sensor>).position` (time_based cover; NaN-guarded)
  *  - `enum`   reads `id(<global>)` (int) and publishes the matching wire token
  *             from `tokens` (index === code), e.g. system_state 2 → "RUNNING"
+ *  - `text`   reads `id(<text_sensor>).state` (string) and publishes it verbatim
+ *             (server shadows it as a categorical/text value)
  */
-export type TelemetryChannelKind = 'state' | 'bool' | 'cover' | 'enum';
+export type TelemetryChannelKind = 'state' | 'bool' | 'cover' | 'enum' | 'text';
 
 export interface TelemetryChannel {
   /** The `sensor` segment on the wire — also the ESPHome component id. */
@@ -97,6 +99,9 @@ export function collectTelemetryChannels(m: Manifest): TelemetryChannel[] {
     { sensor: SYSTEM_STATE_SENSOR, ref: 'system_state', kind: 'enum', tokens: SYSTEM_STATE_TOKENS, label: 'System' },
     { sensor: STOP_REASON_SENSOR, ref: 'stop_reason', kind: 'enum', tokens: STOP_REASON_TOKENS, label: 'Last Stop' },
     { sensor: 'queue_depth', ref: 'queue_depth', kind: 'state', label: 'Queue' },
+    // Ordered queue contents ("RouteA > RouteB"): the one display state not derivable
+    // from the structured channels (queue_depth is only the count). Rides as text.
+    { sensor: 'route_queue', ref: 'route_queue_text', kind: 'text', label: 'Queue Order' },
     { sensor: 'safety_override', ref: 'safety_override', kind: 'bool', label: 'Safety Override' },
     ...collectNodeChannels(m),
   ];
