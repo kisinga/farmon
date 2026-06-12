@@ -1,10 +1,6 @@
 /**
- * Unified route derivation.
- *
- * Replaces:
- *   - src/app/pages/editor/shared/derive-routes.ts  (DerivedRoute + BFS)
- *   - electron/lib/rules/trace-route-sequence.ts     (RouteSequence + BFS)
- *   - electron/lib/topology-to-manifest.ts           (TracedRoute + BFS)
+ * Unified route derivation. Single BFS/path source for the editor's derived
+ * routes, the manifest's traced routes, and route-sequence rules.
  *
  * Uses graphology's allSimplePaths for cycle-free path enumeration.
  */

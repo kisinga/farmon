@@ -1,6 +1,5 @@
 /**
- * Shared test helpers. Replaces the deleted `electron/lib/board.ts` loader the
- * old harness imported; the board loader is now a thin read + `parseBoardDef`.
+ * Shared test helpers. The board loader is a thin file read + `parseBoardDef`.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
