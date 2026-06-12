@@ -32,9 +32,6 @@ export interface DashboardWidget {
   controller: string;
   /** The wire sensor id the widget reads (absent only for `timeline`). */
   sensor?: string;
-  /** For a `flow` widget: the companion cumulative-total sensor, shown beneath
-   *  the rate chart in the same card (so rate + total read as one thing). */
-  totalSensor?: string;
   unit?: string;
   /** Gauge bounds. */
   min?: number;
@@ -204,18 +201,13 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
   for (const ctrl of topology.controllers) {
     const manifest = topologyToManifestForController(topology, ctrl.id);
     const channels = collectTelemetryChannels(manifest);
-    // A flow sensor emits two channels (rate + cumulative total) for the same
-    // node. Merge them into ONE `flow` widget: the rate chart with its total
-    // beneath it, instead of two disconnected cards.
-    const totalByNode = new Map<string, string>();
+    // A flow sensor emits two channels (rate + cumulative total). The card shows
+    // a `flow` widget — the rate chart, with windowed usage integrated from that
+    // rate — so the device's cumulative-total channel is dropped here.
     for (const ch of channels) {
-      if (ch.role === 'flow_total' && ch.node) totalByNode.set(ch.node, ch.sensor);
-    }
-    for (const ch of channels) {
-      if (ch.role === 'flow_total') continue; // absorbed into the flow widget below
+      if (ch.role === 'flow_total') continue; // usage is integrated from the rate
       if (ch.role === 'flow') {
-        const base = widgetForChannel(ctrl.id, ch);
-        widgets.push({ ...base, kind: 'flow', totalSensor: ch.node ? totalByNode.get(ch.node) : undefined });
+        widgets.push({ ...widgetForChannel(ctrl.id, ch), kind: 'flow' });
         continue;
       }
       widgets.push(widgetForChannel(ctrl.id, ch));

@@ -25,8 +25,8 @@ const spanKey = (widgetId: string) => `mf:span:${widgetId}`;
  * history here, live tiles + badges read the shadow there.
  *
  * Each widget carries its own span (persisted in localStorage), so operators can
- * range each chart independently. Flow widgets also load their companion
- * cumulative-total series so the card can show usage over the picked window.
+ * range each chart independently. A flow widget's windowed usage is integrated
+ * from this same rate series by the card — no separate total series is fetched.
  *
  * Runtime state group — never imports the editor services.
  */
@@ -34,7 +34,6 @@ const spanKey = (widgetId: string) => `mf:span:${widgetId}`;
 export class TelemetryStore {
   private realtime = inject(RealtimeService);
   private series = signal<Map<string, TelemetryPoint[]>>(new Map());
-  private totals = signal<Map<string, TelemetryPoint[]>>(new Map());
   private spans = signal<Map<string, number>>(new Map());
   /** Widget ids whose history fetch has completed at least once — lets a chart
    *  distinguish "still loading" from "loaded but empty". */
@@ -47,11 +46,6 @@ export class TelemetryStore {
   /** The loaded rate series for a widget (empty until `load` resolves). */
   seriesFor(widget: DashboardWidget): TelemetryPoint[] {
     return this.series().get(widget.id) ?? [];
-  }
-
-  /** The loaded cumulative-total series for a flow widget (empty otherwise). */
-  totalSeriesFor(widget: DashboardWidget): TelemetryPoint[] {
-    return this.totals().get(widget.id) ?? [];
   }
 
   /** Whether a history fetch for this widget has completed (regardless of result). */
@@ -75,9 +69,8 @@ export class TelemetryStore {
   }
 
   /** Load history for a widget at the given span (defaults to its remembered
-   *  span). Flow widgets additionally load their cumulative-total series (fetched
-   *  in parallel). A response is dropped if a newer load for the same widget has
-   *  since started (see `reqSeq`). */
+   *  span). A response is dropped if a newer load for the same widget has since
+   *  started (see `reqSeq`). */
   async load(siteId: string, widget: DashboardWidget, hours = this.spanFor(widget)): Promise<void> {
     if (!widget.sensor) return;
     const token = (this.reqSeq.get(widget.id) ?? 0) + 1;
@@ -85,17 +78,10 @@ export class TelemetryStore {
     const to = new Date();
     const from = new Date(to.getTime() - hours * 3_600_000);
 
-    const wantsTotal = widget.kind === 'flow' && !!widget.totalSensor;
-    const [hist, tot] = await Promise.all([
-      this.realtime.history(siteId, widget.controller, widget.sensor, from, to),
-      wantsTotal
-        ? this.realtime.history(siteId, widget.controller, widget.totalSensor!, from, to)
-        : Promise.resolve(null),
-    ]);
+    const hist = await this.realtime.history(siteId, widget.controller, widget.sensor, from, to);
     if (this.reqSeq.get(widget.id) !== token) return; // superseded by a newer load
 
     this.series.update((m) => new Map(m).set(widget.id, hist.samples));
-    if (tot) this.totals.update((m) => new Map(m).set(widget.id, tot.samples));
     this.loaded.update((s) => new Set(s).add(widget.id));
   }
 }

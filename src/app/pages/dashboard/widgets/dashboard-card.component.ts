@@ -10,16 +10,8 @@ import {
 } from '@core';
 import type { ShadowRow, TelemetryPoint, StateEventRow } from '../../../core/models/runtime';
 import { SPAN_PRESETS, DEFAULT_SPAN_HOURS } from '../telemetry.store';
+import { integrateLiters } from '../flow-usage';
 import { phaseUi } from './command-phase';
-
-/** A history point's numeric value. `end` selects the bucket edge for a
- *  cumulative counter: 'lo' (min) for a window start, 'hi' (max) for its end;
- *  raw points carry a single `value`. */
-function ptVal(p: TelemetryPoint, end: 'lo' | 'hi'): number {
-  if (p.value !== undefined) return p.value;
-  if (end === 'lo') return p.min ?? p.avg ?? NaN;
-  return p.max ?? p.avg ?? NaN;
-}
 
 /** Combined token → meaning lookup for a transition `reason`/state (any vocab). */
 const ANY_MEANING = { ...STOP_REASON_MEANINGS, ...FAULT_MEANINGS, ...OUTCOME_MEANINGS, ...SYSTEM_STATE_MEANINGS };
@@ -122,14 +114,10 @@ const CHART = {
                 <span class="text-xs text-base-content/30">No flow yet</span>
               </div>
             }
-            <div class="flex items-baseline justify-between mt-2 pt-2 border-t border-base-300/30">
-              <span class="text-[11px] text-base-content/50">Total</span>
-              <span class="text-lg font-semibold tabular-nums">{{ flowTotal() }}<span class="text-xs font-normal text-base-content/40 ml-1">L</span></span>
-            </div>
             @if (windowUsed() !== null) {
-              <div class="flex items-baseline justify-between mt-1">
+              <div class="flex items-baseline justify-between mt-2 pt-2 border-t border-base-300/30">
                 <span class="text-[11px] text-base-content/50">Used · {{ spanLabel() }}</span>
-                <span class="text-sm font-semibold tabular-nums">{{ fmtUsed() }}<span class="text-xs font-normal text-base-content/40 ml-1">L</span></span>
+                <span class="text-lg font-semibold tabular-nums">{{ fmtUsed() }}<span class="text-xs font-normal text-base-content/40 ml-1">L</span></span>
               </div>
             }
           </div>
@@ -223,12 +211,7 @@ const CHART = {
 export class DashboardCardComponent {
   readonly widget = input.required<DashboardWidget>();
   readonly row = input<ShadowRow | undefined>(undefined);
-  /** Companion cumulative-total shadow row for a `flow` widget. */
-  readonly totalRow = input<ShadowRow | undefined>(undefined);
   readonly series = input<TelemetryPoint[]>([]);
-  /** Cumulative-total series for a `flow` widget, over the selected span — drives
-   *  the "used in window" readout. */
-  readonly totalSeries = input<TelemetryPoint[]>([]);
   readonly events = input<StateEventRow[]>([]);
   /** Current chart span in hours (line/flow only). */
   readonly span = input<number>(DEFAULT_SPAN_HOURS);
@@ -324,29 +307,16 @@ export class DashboardCardComponent {
     return r ? fmt(r.reported) : '—';
   });
 
-  /** Cumulative volume for the `flow` widget's total footer. */
-  protected flowTotal = computed(() => {
-    const r = this.totalRow();
-    return r ? fmt(r.reported) : '—';
-  });
-
   /** Charted kinds show the span selector + history chart (line/flow only). */
   protected isCharted = computed(() => this.widget().kind === 'line' || this.widget().kind === 'flow');
   protected spanLabel = computed(() =>
     SPAN_PRESETS.find((p) => p.hours === this.span())?.label ?? `${this.span()}h`,
   );
 
-  /** Water used over the selected window: cumulative-total delta (last − first),
-   *  clamped at 0 so a counter reset on reboot reads as no usage rather than a
-   *  large negative. null when there isn't enough of the total series to span. */
-  protected windowUsed = computed<number | null>(() => {
-    const s = this.totalSeries();
-    if (s.length < 2) return null;
-    const first = ptVal(s[0], 'lo');
-    const last = ptVal(s[s.length - 1], 'hi');
-    if (Number.isNaN(first) || Number.isNaN(last)) return null;
-    return Math.max(0, last - first);
-  });
+  /** Water used over the selected window: the rate series integrated over time
+   *  (see integrateLiters). Reboot-immune — no device counter to reset. null when
+   *  there aren't two usable points to span. */
+  protected windowUsed = computed<number | null>(() => integrateLiters(this.series()));
   protected fmtUsed = computed(() => {
     const u = this.windowUsed();
     return u === null ? '—' : fmt(u);
