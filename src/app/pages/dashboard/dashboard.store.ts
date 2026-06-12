@@ -128,6 +128,12 @@ export class DashboardStore implements OnDestroy {
     return sensor ? this.shadow().get(`${controller}/${sensor}`) : undefined;
   }
 
+  /** Safety override reported state, read from the shadow (the device switch). */
+  overrideOn(controller: string): boolean {
+    const r = this.row(controller, 'safety_override');
+    return !!r && r.reported >= 0.5;
+  }
+
   /** Transitions for one controller, newest first (the timeline widget). */
   eventsFor(controller: string): StateEventRow[] {
     return this.events().filter((e) => e.controller === controller);

@@ -1,16 +1,14 @@
 import { Component, inject, ElementRef, viewChild, afterNextRender, DestroyRef, computed, signal, effect, Injector } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
-import { Router } from '@angular/router';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
-import { BoardService } from '../../../core/services/board.service';
 import { BackendService } from '../../../core/services/backend.service';
 import type { SiteTopology, TopologyNode, RouteOverride } from '../../../core/models/topology.model';
-import type { TemplateListEntry } from '../../../core/models/backend-api';
 import { NODE_REGISTRY, legendSvgFor, type NodeDescriptor } from '../../../core/models/entities.model';
 import { X6Canvas, type Selection } from './x6-canvas';
 import type { Node as X6Node } from '@antv/x6';
 import { TopologySidebarComponent } from '../shared/topology-sidebar.component';
+import { AddControllerComponent } from './add-controller.component';
 import { buildGraph, activeGraph, downstreamNodes } from '@core';
 import { renderPerSystemOverlays } from '../../../shared/canvas/topology-overlays';
 import { renderControllerOverlays } from '../../../shared/canvas/controller-overlay-renderer';
@@ -18,7 +16,7 @@ import { renderControllerOverlays } from '../../../shared/canvas/controller-over
 @Component({
   selector: 'app-topology-x6-tab',
   standalone: true,
-  imports: [TopologySidebarComponent],
+  imports: [TopologySidebarComponent, AddControllerComponent],
   host: {
     '(document:keydown.escape)': 'closePopup()',
     '(document:keydown.control.z)': 'doUndo()',
@@ -53,18 +51,7 @@ import { renderControllerOverlays } from '../../../shared/canvas/controller-over
             }
           </ul>
         </div>
-        <div class="dropdown dropdown-end">
-          <div tabindex="0" role="button" class="btn btn-ghost btn-xs gap-1">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
-            </svg>
-            Add Controller
-          </div>
-          <ul tabindex="0" class="dropdown-content menu menu-xs bg-base-200 rounded-lg shadow-lg z-30 w-48 p-1">
-            <li><a (click)="openBlankControllerModal()">Blank Controller…</a></li>
-            <li><a (click)="openTemplateModal()">From Template…</a></li>
-          </ul>
-        </div>
+        <app-add-controller />
         <div class="divider divider-horizontal mx-0 h-4"></div>
         <button class="btn btn-ghost btn-xs" title="Undo" (click)="doUndo()">&#x21A9;</button>
         <button class="btn btn-ghost btn-xs" title="Redo" (click)="doRedo()">&#x21AA;</button>
@@ -101,81 +88,6 @@ import { renderControllerOverlays } from '../../../shared/canvas/controller-over
             }
           </ul>
         </div>
-      }
-
-      <!-- Blank Controller Modal -->
-      @if (showBlankModal()) {
-        <dialog class="modal modal-open" style="position: fixed;">
-          <div class="modal-box max-w-sm">
-            <h3 class="font-bold text-lg mb-4">Add Blank Controller</h3>
-
-            <div class="space-y-3">
-              <div>
-                <label class="label text-xs">Friendly Name</label>
-                <input type="text" class="input input-sm input-bordered w-full"
-                  placeholder="e.g. Main Pump Controller"
-                  [value]="blankName()"
-                  (input)="blankName.set($any($event.target).value)"
-                  (keydown.enter)="createBlankController()" />
-              </div>
-
-              <div>
-                <label class="label text-xs">Board</label>
-                <select class="select select-sm select-bordered w-full"
-                  [value]="blankBoard()"
-                  (change)="blankBoard.set($any($event.target).value)">
-                  <option value="">-- select board --</option>
-                  @for (b of boards.boards(); track b.model) {
-                    <option [value]="b.model">{{ b.label }}</option>
-                  }
-                </select>
-              </div>
-            </div>
-
-            <div class="modal-action">
-              <button class="btn btn-ghost btn-sm" (click)="showBlankModal.set(false)">Cancel</button>
-              <button class="btn btn-primary btn-sm" [disabled]="!blankName().trim() || !blankBoard()" (click)="createBlankController()">
-                @if (addingController()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                }
-                Create
-              </button>
-            </div>
-          </div>
-          <div class="modal-backdrop" (click)="showBlankModal.set(false)"></div>
-        </dialog>
-      }
-
-      <!-- Template Modal -->
-      @if (showTemplateModal()) {
-        <dialog class="modal modal-open" style="position: fixed;">
-          <div class="modal-box max-w-md">
-            <h3 class="font-bold text-lg mb-4">Add Controller from Template</h3>
-
-            @if (templates().length === 0) {
-              <p class="text-sm text-base-content/40 py-6 text-center">No templates available.</p>
-            } @else {
-              <p class="text-xs text-base-content/40 mb-2">Create a controller from a template.</p>
-              <div class="space-y-1 max-h-60 overflow-auto">
-                @for (entry of templates(); track entry.name) {
-                  <button
-                    class="btn btn-ghost btn-sm w-full justify-start gap-3 font-normal"
-                    [disabled]="addingController()"
-                    (click)="addFromTemplate(entry.name)"
-                  >
-                    <span class="font-medium">{{ entry.friendlyName || entry.name }}</span>
-                    <span class="text-xs text-base-content/40 font-mono">{{ entry.board }}</span>
-                  </button>
-                }
-              </div>
-            }
-
-            <div class="modal-action">
-              <button class="btn btn-ghost btn-sm" (click)="showTemplateModal.set(false)">Cancel</button>
-            </div>
-          </div>
-          <div class="modal-backdrop" (click)="showTemplateModal.set(false)"></div>
-        </dialog>
       }
 
       <!-- Sidebar -->
@@ -230,9 +142,7 @@ import { renderControllerOverlays } from '../../../shared/canvas/controller-over
 export class TopologyX6TabComponent {
   protected editor = inject(SystemEditorService);
   protected workspace = inject(WorkspaceService);
-  protected boards = inject(BoardService);
   private backend = inject(BackendService);
-  private router = inject(Router);
   private sanitizer = inject(DomSanitizer);
   private injector = inject(Injector);
   private destroyRef = inject(DestroyRef);
@@ -240,14 +150,6 @@ export class TopologyX6TabComponent {
 
   private canvas: X6Canvas | null = null;
   private get c(): X6Canvas { return this.canvas!; }
-
-  // --- Controller creation modals ---
-  protected showBlankModal = signal(false);
-  protected showTemplateModal = signal(false);
-  protected blankName = signal('');
-  protected blankBoard = signal('');
-  protected addingController = signal(false);
-  protected templates = signal<TemplateListEntry[]>([]);
 
   // Registry arrays for template iteration
   protected nodeDescs: NodeDescriptor[] = Array.from(NODE_REGISTRY.values());
@@ -623,51 +525,6 @@ export class TopologyX6TabComponent {
       friendlyNames,
       positions: siteTopology.layout?.controllers,
     });
-  }
-
-  // --- Controller creation ---
-
-  protected openBlankControllerModal() {
-    this.blankName.set('');
-    this.blankBoard.set('');
-    this.showBlankModal.set(true);
-  }
-
-  protected async createBlankController() {
-    const name = this.blankName().trim();
-    const board = this.blankBoard();
-    if (!name || !board) return;
-
-    this.addingController.set(true);
-    try {
-      const controllerId = await this.workspace.addBlankController(name, board);
-      this.showBlankModal.set(false);
-      const siteId = this.workspace.site()?.id;
-      if (siteId) {
-        this.router.navigate(['/site', siteId, 'system', controllerId]);
-      }
-    } finally {
-      this.addingController.set(false);
-    }
-  }
-
-  protected async openTemplateModal() {
-    this.templates.set([]);
-    this.showTemplateModal.set(true);
-  }
-
-  protected async addFromTemplate(templateName: string) {
-    this.addingController.set(true);
-    try {
-      const controllerId = await this.workspace.addControllerFromTemplate(templateName);
-      this.showTemplateModal.set(false);
-      const siteId = this.workspace.site()?.id;
-      if (siteId) {
-        this.router.navigate(['/site', siteId, 'system', controllerId]);
-      }
-    } finally {
-      this.addingController.set(false);
-    }
   }
 
 }
