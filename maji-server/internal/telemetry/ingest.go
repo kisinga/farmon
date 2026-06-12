@@ -146,6 +146,32 @@ func SetOnline(app core.App, deviceID string, online bool, ts time.Time) error {
 	return nil
 }
 
+// SetOffline flips a controller's presence flag to false when the broker observes
+// its connection drop. It exists because the device's Last-Will never reaches the
+// ingest path: Mochi publishes a will via publishToSubscribers (bypassing the
+// OnPublish hook), so the status-topic "0" is never seen server-side and the flag
+// would otherwise be write-once-true. The drop is signalled by the broker's
+// OnDisconnect instead.
+//
+// last_seen is intentionally left untouched — it records the last message heard,
+// not the moment of the drop, so the dashboard's "last seen Xm ago" stays honest.
+// Idempotent (no write when already offline) and best-effort.
+func SetOffline(app core.App, deviceID string) error {
+	if deviceID == "" {
+		return nil
+	}
+	// device_id is the controllers primary key — direct PK lookup.
+	rec, err := app.FindRecordById("controllers", deviceID)
+	if err != nil || rec == nil {
+		return err
+	}
+	if !rec.GetBool("online") {
+		return nil
+	}
+	rec.Set("online", false)
+	return app.Save(rec)
+}
+
 // BindOrCheckMac is the duplicate-firmware tripwire. A controller's identity (MQTT
 // username + baked token) is fixed at build time, so two boards flashed with the
 // same firmware are indistinguishable to the broker's connect-time auth. The chip

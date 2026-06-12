@@ -90,6 +90,16 @@ export class RealtimeService {
     return items.map(toController);
   }
 
+  /** The site's configured offline timeout in seconds (0/unset → caller defaults).
+   *  Drives the dashboard's presence freshness window so it matches the alert
+   *  staleness threshold — one number, no drift. */
+  async siteOfflineSeconds(siteId: string): Promise<number> {
+    const r = await this.pb
+      .collection('sites')
+      .getOne(siteId, { requestKey: `site:offline:${siteId}` });
+    return Number(r['offline_timeout_s']) || 0;
+  }
+
   /** Live controller presence updates for a site. Returns an unsubscribe function. */
   subscribeControllers(siteId: string, cb: (row: ControllerRow) => void): Promise<UnsubscribeFunc> {
     this.wireConnection();

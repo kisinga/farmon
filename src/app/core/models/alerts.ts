@@ -62,10 +62,34 @@ export function prefKeyFor(type: AlertType): keyof NotificationPrefs {
   }
 }
 
+// Defaults for an unconfigured user. Most alert types default ON, but
+// `alert_device_offline` is OPT-IN: a device on flaky rural wifi/cellular drops
+// and reconnects constantly, so offline would be the noisiest alert — and presence
+// is already visible on the dashboard. A user must explicitly enable it (and email)
+// to be notified of disconnects.
 export const DEFAULT_NOTIFICATION_PREFS: Omit<NotificationPrefs, 'user'> = {
-  alert_device_offline: true,
+  alert_device_offline: false,
   alert_fault: true,
   alert_tank: true,
   alert_command_failed: true,
   channel_email: false,
 };
+
+/** The single "no data this long → offline" threshold, in seconds. Applied for a
+ *  site that hasn't set its own `offline_timeout_s` (the 0/unset sentinel). */
+export const OFFLINE_DEFAULT_S = 180;
+/** Floor for a positive `offline_timeout_s`: it must stay well above the telemetry
+ *  cadence (update_interval, capped at 60s) so a healthy device's normal gap
+ *  between samples can never read as offline and flap the dashboard/alerts. */
+export const OFFLINE_FLOOR_S = 120;
+
+/** Resolve a site's configured `offline_timeout_s` (seconds) to milliseconds — the
+ *  ONE freshness/staleness window shared by the dashboard presence check, the alert
+ *  bell, and (mirrored) the backend email sweep. 0/unset → default; a positive value
+ *  is floored at {@link OFFLINE_FLOOR_S}. Mirror of resolveSite() in
+ *  maji-server/internal/alerts/email_sweep.go — keep both in sync. */
+export function resolveOfflineMs(rawSeconds: number | null | undefined): number {
+  const s = Number(rawSeconds);
+  if (!Number.isFinite(s) || s <= 0) return OFFLINE_DEFAULT_S * 1000;
+  return Math.max(s, OFFLINE_FLOOR_S) * 1000;
+}

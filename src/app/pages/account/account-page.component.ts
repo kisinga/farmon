@@ -78,8 +78,10 @@ export class AccountPageComponent implements OnInit {
 
   // The four alert-type toggles. The email channel is tracked separately in
   // `channelEmail`, so it deliberately isn't part of this map.
+  // Offline is opt-in (default off); the rest default on. See
+  // DEFAULT_NOTIFICATION_PREFS for why.
   private flags = signal<Record<string, boolean>>({
-    alert_device_offline: true,
+    alert_device_offline: false,
     alert_fault: true,
     alert_tank: true,
     alert_command_failed: true,
@@ -103,7 +105,7 @@ export class AccountPageComponent implements OnInit {
         .getFirstListItem(this.backend.pb.filter('user = {:u}', { u: user.id }), { requestKey: 'prefs:edit' });
       this.recordId = r['id'];
       this.flags.set({
-        alert_device_offline: r['alert_device_offline'] !== false,
+        alert_device_offline: r['alert_device_offline'] === true, // opt-in
         alert_fault: r['alert_fault'] !== false,
         alert_tank: r['alert_tank'] !== false,
         alert_command_failed: r['alert_command_failed'] !== false,

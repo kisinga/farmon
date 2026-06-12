@@ -11,6 +11,7 @@ import {
   type NotificationPrefs,
   DEFAULT_NOTIFICATION_PREFS,
   prefKeyFor,
+  resolveOfflineMs,
 } from '../models/alerts';
 
 /** Per-site alert config, read from the `sites` collection with safe defaults
@@ -22,7 +23,6 @@ interface SiteAlertCfg {
   offlineMs: number;
 }
 const DEFAULT_LOW_PCT = 20;
-const DEFAULT_OFFLINE_S = 180;
 /** Hysteresis margin (percentage points) so a level hovering on the threshold
  *  doesn't flap the alert on and off. */
 const TANK_MARGIN = 5;
@@ -189,19 +189,19 @@ export class AlertsStore implements OnDestroy {
     const out: DerivedAlert[] = [];
 
     const cfgFor = (siteId: string): SiteAlertCfg =>
-      cfg.get(siteId) ?? { name: 'Site', lowPct: DEFAULT_LOW_PCT, highPct: null, offlineMs: DEFAULT_OFFLINE_S * 1000 };
+      cfg.get(siteId) ?? { name: 'Site', lowPct: DEFAULT_LOW_PCT, highPct: null, offlineMs: resolveOfflineMs(null) };
 
-    // 1) Device offline — a registered controller that is flagged offline OR has
-    //    gone stale past its site's timeout.
+    // 1) Device offline — staleness only. The `online` flag is NOT consulted: it
+    //    flips false on any brief broker drop (a fast reconnect re-sets it), so
+    //    alerting on it would fire on every transient blip. last_seen aging past the
+    //    site timeout is the naturally-debounced signal; a never-seen device (NaN)
+    //    can't be stale, so it's correctly not an incident (no commissioning spam).
     for (const c of controllers.values()) {
       if (!c.active) continue;
       const sc = cfgFor(c.site);
       const seen = Date.parse(c.last_seen);
-      const everSeen = Number.isFinite(seen);
-      const stale = everSeen && now - seen > sc.offlineMs;
-      // Only a controller that has connected at least once can be "offline" — a
-      // provisioned-but-never-seen device isn't an incident (avoids commissioning spam).
-      if (everSeen && (!c.online || stale)) {
+      const stale = Number.isFinite(seen) && now - seen > sc.offlineMs;
+      if (stale) {
         out.push({
           key: `device_offline:${c.device_id}`,
           type: 'device_offline',
@@ -346,19 +346,20 @@ export class AlertsStore implements OnDestroy {
 function toSiteCfg(r: RecordModel): SiteAlertCfg {
   const low = Number(r['tank_low_pct']);
   const high = Number(r['tank_high_pct']);
-  const off = Number(r['offline_timeout_s']);
   return {
     name: (r['name'] || r['friendlyName'] || 'Site') as string,
     lowPct: Number.isFinite(low) && low > 0 ? low : DEFAULT_LOW_PCT,
     highPct: Number.isFinite(high) && high > 0 ? high : null,
-    offlineMs: (Number.isFinite(off) && off > 0 ? off : DEFAULT_OFFLINE_S) * 1000,
+    offlineMs: resolveOfflineMs(r['offline_timeout_s'] as number),
   };
 }
 
 function toPrefs(r: RecordModel, userId: string): NotificationPrefs {
   return {
     user: userId,
-    alert_device_offline: r['alert_device_offline'] !== false,
+    // Opt-in: offline only when explicitly enabled (missing/false → off), unlike
+    // the other types which default on (`!== false`). See DEFAULT_NOTIFICATION_PREFS.
+    alert_device_offline: r['alert_device_offline'] === true,
     alert_fault: r['alert_fault'] !== false,
     alert_tank: r['alert_tank'] !== false,
     alert_command_failed: r['alert_command_failed'] !== false,

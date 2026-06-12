@@ -241,7 +241,7 @@ export class WorkspaceService {
             flow_watchdog: 30,
             flow_confirm: 10,
             flow_threshold: 0.5,
-            update_interval: 30,
+            update_interval: 10,
           },
           remoteImports: [],
         });

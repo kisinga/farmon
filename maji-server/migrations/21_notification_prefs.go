@@ -11,7 +11,8 @@ import (
 // account page (one row per user, enforced by the unique index) and read by the
 // server email sweep to decide whom to mail. The in-app center also reads it to
 // filter the bell. Bool fields default to false/zero in the DB; the readers
-// treat "no row" as all-on, and the account page writes explicit values.
+// treat "no row" as all-on EXCEPT alert_device_offline, which is opt-in (default
+// off — a flaky link drops constantly). The account page writes explicit values.
 func init() {
 	m.Register(func(app core.App) error {
 		users, err := app.FindCollectionByNameOrId("users")

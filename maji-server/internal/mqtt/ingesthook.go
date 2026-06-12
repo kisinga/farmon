@@ -16,9 +16,13 @@ import (
 //   - telemetry/{sensor} numeric  → rollups + numeric shadow
 //   - telemetry/{sensor} token    → text shadow (categorical, e.g. "RUNNING")
 //   - event                       → append a transition to state_events
-//   - status  ("1"/"0")           → controller online/offline
+//   - status  ("1")               → controller online (retained birth)
 //   - identity (chip MAC)         → bind/flag hardware (duplicate-firmware tripwire)
 // Anything else passes through untouched.
+//
+// Offline is NOT driven by the status topic: a device's Last-Will ("0") is published
+// by Mochi via publishToSubscribers, which bypasses OnPublish, so the will never
+// reaches this hook. The broker's OnDisconnect (below) flips the flag instead.
 type ingestHook struct {
 	mqtt.HookBase
 	app core.App
@@ -26,7 +30,22 @@ type ingestHook struct {
 
 func (h *ingestHook) ID() string { return "maji-ingest" }
 
-func (h *ingestHook) Provides(b byte) bool { return b == mqtt.OnPublish }
+func (h *ingestHook) Provides(b byte) bool {
+	return b == mqtt.OnPublish || b == mqtt.OnDisconnect
+}
+
+// OnDisconnect marks the controller offline when the broker loses its connection
+// (the only reliable offline signal — see SetOffline). A reconnect "takes over" the
+// old session and fires this for the now-orphaned one; the device is already live on
+// the new connection (its birth re-set online=true), so skip the takeover case to
+// avoid flapping a freshly-reconnected device back to offline.
+func (h *ingestHook) OnDisconnect(cl *mqtt.Client, _ error, _ bool) {
+	if cl.IsTakenOver() {
+		return
+	}
+	// Username == device_id == controller id (see deviceAuthHook).
+	_ = telemetry.SetOffline(h.app, string(cl.Properties.Username))
+}
 
 func (h *ingestHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
 	topic := pk.TopicName

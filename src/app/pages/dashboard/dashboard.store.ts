@@ -3,10 +3,7 @@ import type { UnsubscribeFunc } from 'pocketbase';
 import { SYSTEM_STATE_TOKENS, routeStateSensor, type DashboardSpec, type DashboardWidget } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
 import type { ShadowRow, StateEventRow, ControllerRow } from '../../core/models/runtime';
-
-/** A controller counts as online only if the server flag is set AND its last
- *  sample is fresh — covers an abrupt power loss the will message can't. */
-const PRESENCE_FRESH_MS = 60_000;
+import { resolveOfflineMs } from '../../core/models/alerts';
 
 /**
  * DashboardStore — the customer dashboard's "current state": the chart spec, the
@@ -33,6 +30,11 @@ export class DashboardStore implements OnDestroy {
   readonly now = signal(Date.now());
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
+
+  /** Presence freshness window (ms) = the site's `offline_timeout_s`, the SAME
+   *  threshold the alert bell + email sweep use, so the dashboard never disagrees
+   *  with them. Resolved from the site record in init(); the default until then. */
+  private offlineMs = resolveOfflineMs(null);
 
   private unsubs: UnsubscribeFunc[] = [];
   private clock = 0;
@@ -72,6 +74,11 @@ export class DashboardStore implements OnDestroy {
     this.loading.set(true);
     this.error.set(null);
     try {
+      // Best-effort: a failed threshold read just keeps the default window.
+      try {
+        this.offlineMs = resolveOfflineMs(await this.realtime.siteOfflineSeconds(siteId));
+      } catch { /* keep default */ }
+
       await this.resync(siteId);
 
       this.unsubs.push(
@@ -99,12 +106,15 @@ export class DashboardStore implements OnDestroy {
   }
 
   /** Live presence for a controller: server `online` AND a fresh `last_seen`,
-   *  plus the parsed last-seen timestamp (0 when unknown) for the UI. */
+   *  plus the parsed last-seen timestamp (0 when unknown) for the UI. The `online`
+   *  flag (reliable now the broker flips it on disconnect) gives a fast offline on a
+   *  real drop; the freshness window catches a connected-but-silent device and uses
+   *  the same `offline_timeout_s` the alerts do, so the views never disagree. */
   presence(controller: string): { online: boolean; lastSeen: number } {
     const r = this.controllers().get(controller);
     if (!r) return { online: false, lastSeen: 0 };
     const seen = Date.parse(r.last_seen);
-    const fresh = Number.isFinite(seen) && this.now() - seen < PRESENCE_FRESH_MS;
+    const fresh = Number.isFinite(seen) && this.now() - seen < this.offlineMs;
     return { online: !!r.online && fresh, lastSeen: Number.isFinite(seen) ? seen : 0 };
   }
 

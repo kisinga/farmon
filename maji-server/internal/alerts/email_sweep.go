@@ -25,6 +25,10 @@ const (
 	sweepInterval     = 60 * time.Second
 	defaultLowPct     = 20.0
 	defaultOfflineSec = 180.0
+	// Floor for a positive offline_timeout_s: it must stay well above the telemetry
+	// cadence (update_interval, capped at 60s) so a healthy device's normal gap
+	// between samples can never read as offline. 0 still means "use the default".
+	offlineFloorSec = 120.0
 	// Re-notify window: one email per incident at most this often, so a stuck
 	// condition doesn't spam the owner every tick.
 	cooldown = 30 * time.Minute
@@ -135,6 +139,8 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 	offMs := site.GetFloat("offline_timeout_s")
 	if offMs <= 0 {
 		offMs = defaultOfflineSec
+	} else if offMs < offlineFloorSec {
+		offMs = offlineFloorSec
 	}
 
 	return siteCtx{
@@ -153,7 +159,9 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 func resolvePrefs(app core.App, userID string) prefs {
 	rec, err := app.FindFirstRecordByFilter("notification_prefs", "user = {:u}", dbx.Params{"u": userID})
 	if err != nil || rec == nil {
-		return prefs{offline: true, fault: true, tank: true, email: false}
+		// Offline is opt-in (a flaky link drops constantly → noisiest alert); the
+		// rest default on. Mirrors DEFAULT_NOTIFICATION_PREFS in the frontend.
+		return prefs{offline: false, fault: true, tank: true, email: false}
 	}
 	return prefs{
 		offline: rec.GetBool("alert_device_offline"),
@@ -173,10 +181,13 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time) {
 	}
 	for _, c := range ctrls {
 		seen := c.GetDateTime("last_seen").Time()
+		// Staleness only — the `online` flag is NOT consulted here. The flag flips
+		// false on any brief broker drop (a fast reconnect re-sets it), so alerting on
+		// it would email on every transient blip; last_seen aging past the timeout is
+		// the naturally-debounced signal. A zero last_seen (provisioned, never seen)
+		// can't be stale, so a never-connected device is correctly not an incident.
 		stale := !seen.IsZero() && now.Sub(seen) > time.Duration(sc.offlineMs)*time.Millisecond
-		// Only a controller that has connected at least once can be "offline" —
-		// a provisioned-but-never-seen device isn't an incident.
-		if !seen.IsZero() && (!c.GetBool("online") || stale) {
+		if stale {
 			s.notify(app, sc, now, "offline:"+c.Id, "Controller offline",
 				fmt.Sprintf("%s on %s has gone offline (last seen %s).", c.Id, sc.name, lastSeenText(seen)))
 		}

@@ -1,5 +1,5 @@
 /**
- * Shared Zod primitives — used by entity files and electron topology parser.
+ * Shared Zod primitives — used by entity files and the topology parser.
  * Single source of truth for validation patterns.
  */
 import { z } from 'zod';
@@ -67,7 +67,7 @@ export type Position = z.infer<typeof PositionSchema>;
 export const AnchorIdSchema = z.string().min(1);
 
 // ---------------------------------------------------------------------------
-// Device & timing schemas (previously in electron/lib/shared-schema.ts)
+// Device & timing schemas
 // ---------------------------------------------------------------------------
 
 export const UartBusSchema = z.object({
@@ -117,7 +117,10 @@ export const TimingSchema = z.object({
   flow_watchdog: z.number().gt(1).default(30),
   flow_confirm: z.number().gt(1).default(15),
   flow_threshold: z.number().gt(0).default(0.5),
-  update_interval: z.number().gt(1).default(5),
+  // Telemetry/sensor cadence. Capped at 60s so it can never exceed the offline
+  // freshness floor (120s) and make a healthy device read as offline. 10s balances
+  // a live dashboard against MQTT traffic/heap; still per-device tunable at runtime.
+  update_interval: z.number().gt(1).max(60).default(10),
 });
 
 
