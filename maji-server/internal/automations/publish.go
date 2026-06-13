@@ -21,6 +21,7 @@ const (
 	wireMagic      uint16 = 0xa001
 	headerBytes           = 6
 	recordBytes           = 20
+	idBytes               = 16 // whole automation id, null-padded, appended after the records
 	maxAutomations        = 32
 )
 
@@ -33,6 +34,7 @@ type Publisher interface {
 // independent of PocketBase so the byte layout is testable against the TS golden
 // vector (test/automation-wire.test.ts).
 type Item struct {
+	ID                string // whole PocketBase id, echoed back as a route's origin actor
 	Enabled           bool
 	Trigger           string // "time" | "level"
 	DaysMask          int
@@ -49,6 +51,7 @@ type Item struct {
 
 func itemFromRecord(r *core.Record) Item {
 	return Item{
+		ID:                r.Id,
 		Enabled:           r.GetBool("enabled"),
 		Trigger:           r.GetString("trigger_type"),
 		DaysMask:          r.GetInt("days_mask"),
@@ -72,7 +75,7 @@ func EncodeItems(routeSetVersion uint16, items []Item) []byte {
 	if count > maxAutomations {
 		count = maxAutomations
 	}
-	buf := make([]byte, headerBytes+count*recordBytes)
+	buf := make([]byte, headerBytes+count*recordBytes+count*idBytes)
 	binary.LittleEndian.PutUint16(buf[0:], wireMagic)
 	binary.LittleEndian.PutUint16(buf[2:], routeSetVersion)
 	buf[4] = byte(count)
@@ -95,6 +98,14 @@ func EncodeItems(routeSetVersion uint16, items []Item) []byte {
 		binary.LittleEndian.PutUint16(b[14:], uint16(a.OvTargetDurationS))
 		binary.LittleEndian.PutUint32(b[16:], uint32(a.OvTargetVolumeL))
 		o += recordBytes
+	}
+	// Trailing id block: one fixed 16-byte ascii field per record (null-padded).
+	for i := 0; i < count; i++ {
+		id := items[i].ID
+		for j := 0; j < idBytes-1 && j < len(id); j++ {
+			buf[o+j] = id[j] & 0x7f
+		}
+		o += idBytes
 	}
 	return buf
 }

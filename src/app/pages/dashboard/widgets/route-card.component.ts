@@ -125,9 +125,12 @@ interface RouteView {
 
       <!-- live flow rate — the row is always present (fixed height) so the card
            never changes height between idle and running. -->
-      <div class="relative flex items-center justify-center h-5">
+      <div class="relative flex items-center justify-center gap-2 h-5">
         @if (view().running && route().flowSensor && flowRate() !== null) {
           <span class="text-sm font-semibold tabular-nums {{ view().textCls }}">{{ flowText() }}<span class="text-[10px] font-normal text-base-content/40 ml-0.5">L/min</span></span>
+        }
+        @if (originText()) {
+          <span class="text-[10px] text-base-content/40 truncate max-w-[60%]" [title]="originText()">{{ originText() }}</span>
         }
       </div>
     </button>
@@ -135,9 +138,19 @@ interface RouteView {
 })
 export class RouteCardComponent {
   readonly route = input.required<RouteControl>();
-  /** The route's live state: a SYSTEM_STATE `token` ('' ⇒ never seen ⇒ idle) and
-   *  the `reason` token carried by the latest transition (for the fault detail). */
-  readonly state = input<{ token: string; reason: string }>({ token: '', reason: '' });
+  /** The route's live state: a SYSTEM_STATE `token` ('' ⇒ never seen ⇒ idle), the
+   *  `reason` token carried by the latest transition (for the fault detail), and
+   *  who/what started the run (`origin` + resolved `actorLabel`). */
+  readonly state = input<{ token: string; reason: string; origin?: string; actorLabel?: string }>({ token: '', reason: '' });
+
+  /** "by Jane" / "Automation: Morning" while a run is active, else ''. */
+  protected originText = computed(() => {
+    const s = this.state();
+    if (!s.token || s.token === 'IDLE') return '';
+    if (s.origin === 'AUTOMATION') return s.actorLabel ? `Automation: ${s.actorLabel}` : 'Automation';
+    if (s.origin === 'MANUAL') return s.actorLabel ? `by ${s.actorLabel}` : 'Manual';
+    return '';
+  });
   /** Live flow rate (L/min) from the route's flow sensor, or null when unknown. */
   readonly flowRate = input<number | null>(null);
   readonly online = input(true);

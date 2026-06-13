@@ -2,8 +2,13 @@ import { Injectable, OnDestroy, effect, inject, signal } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
 import { SYSTEM_STATE_TOKENS, routeStateSensor, type DashboardSpec, type DashboardWidget } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
-import type { ShadowRow, StateEventRow, ControllerRow } from '../../core/models/runtime';
+import type { ShadowRow, StateEventRow, ControllerRow, CommandOutcomeRow } from '../../core/models/runtime';
 import { resolveOfflineMs } from '../../core/models/alerts';
+
+/** Cap on retained command outcomes — only the in-flight command's id is ever
+ *  read, so this just bounds the map against a long-open page (the device ring is
+ *  4 deep, so far fewer are ever live at once). */
+const MAX_TRACKED_OUTCOMES = 100;
 
 /**
  * DashboardStore — the customer dashboard's "current state": the chart spec, the
@@ -24,6 +29,10 @@ export class DashboardStore implements OnDestroy {
   /** Keyed by `${controller}/${sensor}` (== a widget's id). */
   readonly shadow = signal<Map<string, ShadowRow>>(new Map());
   readonly events = signal<StateEventRow[]>([]);
+  /** Latest command result per `command_id` (the snapshot's re-asserted `outcomes`).
+   *  The reliable refusal/queued/applied channel the lifecycle correlates against —
+   *  events are derived now and carry no command_id. */
+  readonly commandOutcomes = signal<Map<string, CommandOutcomeRow>>(new Map());
   /** Presence rows keyed by controller id (== device_id). */
   readonly controllers = signal<Map<string, ControllerRow>>(new Map());
   /** Ticks every 15s so the freshness check (and "last seen Xm") re-evaluates. */
@@ -55,16 +64,20 @@ export class DashboardStore implements OnDestroy {
   }
 
   /** Pull the current shadow, recent transitions, and presence for a site. Runs
-   *  on init and again on every realtime reconnect to close the offline gap. */
+   *  on init and again on every realtime reconnect to close the offline gap. The
+   *  three reads are independent, so they fire concurrently — one round-trip of
+   *  latency instead of three (it adds up through the Cloudflare proxy). */
   private async resync(siteId: string): Promise<void> {
-    const rows = await this.realtime.latest(siteId);
+    const [{ rows, outcomes }, evts, ctrls] = await Promise.all([
+      this.realtime.latest(siteId),
+      this.realtime.recentEvents(siteId, 100),
+      this.realtime.controllers(siteId),
+    ]);
     const map = new Map<string, ShadowRow>();
     for (const r of rows) map.set(`${r.controller}/${r.sensor}`, r);
     this.shadow.set(map);
-
-    this.events.set(await this.realtime.recentEvents(siteId, 100));
-
-    const ctrls = await this.realtime.controllers(siteId);
+    this.mergeOutcomes(outcomes);
+    this.events.set(evts);
     this.controllers.set(new Map(ctrls.map((c) => [c.device_id, c])));
   }
 
@@ -74,16 +87,23 @@ export class DashboardStore implements OnDestroy {
     this.loading.set(true);
     this.error.set(null);
     try {
-      // Best-effort: a failed threshold read just keeps the default window.
-      try {
-        this.offlineMs = resolveOfflineMs(await this.realtime.siteOfflineSeconds(siteId));
-      } catch { /* keep default */ }
-
-      await this.resync(siteId);
+      // The presence-threshold read is independent of the shadow/events/presence
+      // pull, so run it alongside resync rather than gating on it. Best-effort:
+      // a failed threshold read just keeps the default window.
+      const [offlineS] = await Promise.all([
+        this.realtime.siteOfflineSeconds(siteId).catch(() => null),
+        this.resync(siteId),
+      ]);
+      this.offlineMs = resolveOfflineMs(offlineS);
 
       this.unsubs.push(
-        await this.realtime.subscribeShadow(siteId, (row) => {
-          this.shadow.update((m) => new Map(m).set(`${row.controller}/${row.sensor}`, row));
+        await this.realtime.subscribeShadow(siteId, (rows, outcomes) => {
+          this.shadow.update((m) => {
+            const n = new Map(m);
+            for (const row of rows) n.set(`${row.controller}/${row.sensor}`, row);
+            return n;
+          });
+          this.mergeOutcomes(outcomes);
         }),
       );
       this.unsubs.push(
@@ -145,14 +165,40 @@ export class DashboardStore implements OnDestroy {
    *  matching transition event (best-effort fault/stop detail). `events()` is
    *  newest-first; OUTCOME-only tokens (QUEUED/REFUSED/…) are skipped so a refusal
    *  never masquerades as a state. Undefined ⇒ neither source has anything yet. */
-  routeState(controller: string, routeId: number): { token: string; reason: string; ts: string } | undefined {
-    const token = this.shadow().get(`${controller}/${routeStateSensor(routeId)}`)?.reported_text ?? '';
+  routeState(controller: string, routeId: number): { token: string; reason: string; ts: string; origin?: string; actorLabel?: string } | undefined {
+    const row = this.shadow().get(`${controller}/${routeStateSensor(routeId)}`);
+    const token = row?.reported_text ?? '';
+    const origin = row?.origin;
+    const actorLabel = row?.actorLabel;
     for (const e of this.events()) {
       if (e.controller !== controller || e.route !== routeId) continue;
       if (!SYSTEM_STATE_TOKENS.some((t) => t === e.to)) continue;
-      return { token: token || e.to, reason: e.reason, ts: e.ts };
+      return { token: token || e.to, reason: e.reason, ts: e.ts, origin, actorLabel };
     }
-    return token ? { token, reason: '', ts: '' } : undefined;
+    return token ? { token, reason: '', ts: '', origin, actorLabel } : undefined;
+  }
+
+  /** The device's latest result for a dispatched command, by `command_id`, shaped
+   *  for the lifecycle's `correlated` channel (`to` = the outcome token). Undefined
+   *  until the controller re-asserts it in a snapshot. */
+  commandOutcome(commandId: string): { to: string; reason: string } | undefined {
+    const o = this.commandOutcomes().get(commandId);
+    return o ? { to: o.result, reason: o.reason } : undefined;
+  }
+
+  /** Fold a snapshot's re-asserted outcomes into the by-id map (latest wins),
+   *  capped to the most recent ids so a long-lived page (e.g. a held actuator
+   *  re-asserting a fresh command_id every cycle) can't grow it unbounded —
+   *  Map insertion order makes the oldest the first key. The lifecycle only ever
+   *  reads the in-flight command's id, so evicting old ones is safe. */
+  private mergeOutcomes(outcomes: CommandOutcomeRow[]): void {
+    if (!outcomes.length) return;
+    this.commandOutcomes.update((m) => {
+      const n = new Map(m);
+      for (const o of outcomes) n.set(o.command_id, o);
+      while (n.size > MAX_TRACKED_OUTCOMES) n.delete(n.keys().next().value!);
+      return n;
+    });
   }
 
   ngOnDestroy(): void {

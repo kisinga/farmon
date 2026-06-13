@@ -1,7 +1,6 @@
 package mqtt
 
 import (
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,9 +12,8 @@ import (
 
 // ingestHook persists everything devices publish under `majiflow/{site}/{ctrl}/…`
 // (local-first) and tracks online/offline. It routes by topic:
-//   - telemetry/{sensor} numeric  → rollups + numeric shadow
-//   - telemetry/{sensor} token    → text shadow (categorical, e.g. "RUNNING")
-//   - event                       → append a transition to state_events
+//   - state    → project the controller snapshot (the single source of truth):
+//                raw history + shadow + derived timeline + command reconcile
 //   - status  ("1")               → controller online (retained birth)
 //   - identity (chip MAC)         → bind/flag hardware (duplicate-firmware tripwire)
 // Anything else passes through untouched.
@@ -51,21 +49,10 @@ func (h *ingestHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pack
 	topic := pk.TopicName
 	now := time.Now()
 
-	if site, ctrl, sensor, ok := telemetry.ParseTopic(topic); ok {
-		payload := strings.TrimSpace(string(pk.Payload))
-		if v, err := strconv.ParseFloat(payload, 64); err == nil {
-			_ = telemetry.Ingest(h.app, telemetry.Reading{
-				Site: site, Ctrl: ctrl, Sensor: sensor, Value: v, TS: now,
-			})
-		} else if payload != "" {
-			// Categorical channel (state token) — shadow only, no rollups.
-			_ = telemetry.IngestString(h.app, site, ctrl, sensor, payload, now)
-		}
-		return pk, nil
-	}
-
-	if site, ctrl, ok := telemetry.ParseEventTopic(topic); ok {
-		_ = telemetry.IngestEvent(h.app, site, ctrl, pk.Payload, now)
+	if site, ctrl, ok := telemetry.ParseSnapshotTopic(topic); ok {
+		// The single source of truth: project the snapshot into raw history, the
+		// shadow, the derived timeline, and command reconciliation.
+		_ = telemetry.IngestSnapshot(h.app, site, ctrl, pk.Payload, now)
 		return pk, nil
 	}
 

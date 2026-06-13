@@ -152,19 +152,18 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			filter += " && controller = {:c}"
 			params["c"] = ctrl
 		}
-		recs, err := e.App.FindRecordsByFilter("entity_state", filter, "controller,sensor", 5000, 0, params)
+		// One latest-snapshot doc per controller; the browser explodes it into its
+		// per-channel view (the same shape the realtime controller_state stream gives).
+		recs, err := e.App.FindRecordsByFilter("controller_state", filter, "controller", 500, 0, params)
 		if err != nil {
 			return apis.NewBadRequestError("query failed", err)
 		}
 		out := make([]map[string]any, 0, len(recs))
 		for _, r := range recs {
 			out = append(out, map[string]any{
-				"controller":    r.GetString("controller"),
-				"sensor":        r.GetString("sensor"),
-				"reported":      r.GetFloat("reported"),
-				"reported_text": r.GetString("reported_text"),
-				"desired":       r.GetFloat("desired"),
-				"ts":            r.GetString("ts"),
+				"controller": r.GetString("controller"),
+				"snapshot":   r.GetString("snapshot"),
+				"ts":         r.GetString("ts"),
 			})
 		}
 		return e.JSON(http.StatusOK, out)
@@ -287,6 +286,9 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			"command_id": commandID,
 			"action":     body.Action,
 			"issued_at":  time.Now().Unix(),
+			// The issuing user id — the device stores it on the run's slot and
+			// re-publishes it as the route's origin so the dashboard shows "by <name>".
+			"actor": e.Auth.Id,
 		}
 		if body.RouteID != nil {
 			envelope["route_id"] = *body.RouteID

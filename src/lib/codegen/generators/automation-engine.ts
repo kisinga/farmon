@@ -1,5 +1,5 @@
 import type { Manifest } from '@core';
-import { AUTOMATION_WIRE_MAGIC, AUTOMATION_RECORD_BYTES, MAX_AUTOMATIONS } from '@core';
+import { AUTOMATION_WIRE_MAGIC, AUTOMATION_RECORD_BYTES, AUTOMATION_ID_BYTES, MAX_AUTOMATIONS } from '@core';
 
 /**
  * Runtime automation engine — the firmware replacement for the baked schedule.
@@ -17,8 +17,9 @@ import { AUTOMATION_WIRE_MAGIC, AUTOMATION_RECORD_BYTES, MAX_AUTOMATIONS } from 
  *    estimate, and fire once per matching day-minute.
  *  - Level triggers edge-arm: fire when the route's source tank rises above the
  *    automation's OWN threshold, re-arm when it falls back below.
- *  - Each fire carries the automation's sparse run-param override (StopSpec) and a
- *    synthetic command_id so the activity timeline attributes the run to it.
+ *  - Each fire carries the automation's sparse run-param override (StopSpec) and
+ *    sets the route slot's origin = AUTOMATION + actor = the automation's whole id
+ *    (from the trailing id block), so the snapshot attributes the run to it.
  *
  * The wire layout is the single spec in [automation-wire.ts]; the struct below
  * carries a static_assert against it so the two never drift.
@@ -76,6 +77,7 @@ static_assert(sizeof(RuntimeAutomation) == ${AUTOMATION_RECORD_BYTES}, "RuntimeA
 // in loop() — MQTT receives are not async even with idf_send_async (only sends are).
 // If that ever changes, guard g_autos/g_auto_count.
 static RuntimeAutomation g_autos[MAX_AUTOMATIONS];
+static char     g_auto_ids[MAX_AUTOMATIONS][${AUTOMATION_ID_BYTES}]; // whole id per automation, echoed as a route's origin actor
 static uint8_t  g_auto_count = 0;
 static bool     g_auto_armed[MAX_AUTOMATIONS];      // level edge-arm
 static int      g_auto_last_yday[MAX_AUTOMATIONS];  // time fire-once-per-day
@@ -106,6 +108,7 @@ inline void apply_automation_set(const uint8_t* data, size_t len) {
   // must take effect even if route_set_version drifted (no indices to misapply).
   if (count == 0) {
     g_auto_count = 0;
+    memset(g_auto_ids, 0, sizeof(g_auto_ids));
     g_applied_route_set_version = hdr.route_set_version;
     g_automation_set_stale = false;
     reset_automation_edges();
@@ -125,6 +128,16 @@ inline void apply_automation_set(const uint8_t* data, size_t len) {
     return;
   }
   memcpy(g_autos, data + sizeof(AutomationSetHeader), (size_t) count * sizeof(RuntimeAutomation));
+  // Trailing id block (optional): one fixed ${AUTOMATION_ID_BYTES}-byte ascii field per
+  // record, the automation's whole id. A reader without it just stops after the records.
+  memset(g_auto_ids, 0, sizeof(g_auto_ids));
+  size_t ids_off = sizeof(AutomationSetHeader) + (size_t) count * sizeof(RuntimeAutomation);
+  if (len >= ids_off + (size_t) count * ${AUTOMATION_ID_BYTES}) {
+    for (uint8_t i = 0; i < count; i++) {
+      memcpy(g_auto_ids[i], data + ids_off + (size_t) i * ${AUTOMATION_ID_BYTES}, ${AUTOMATION_ID_BYTES});
+      g_auto_ids[i][${AUTOMATION_ID_BYTES} - 1] = '\\0';
+    }
+  }
   g_auto_count = count;
   g_applied_route_set_version = hdr.route_set_version;
   g_automation_set_stale = false;
@@ -148,7 +161,7 @@ inline StopSpec automation_stopspec(const RuntimeAutomation& a) {
 
 // Generic evaluator — runs every 5s. Time triggers need TRUSTED time; level
 // triggers read the route's source tank via get_tank_level. A fire goes through
-// try_route_start (all pre-checks apply) with a synthetic command_id.
+// try_route_start (all pre-checks apply), tagged origin=AUTOMATION + the whole id.
 inline void evaluate_automations() {
   auto t = id(sntp_time).now();
   bool time_ok = id(time_trusted) && t.is_valid();
@@ -167,9 +180,7 @@ inline void evaluate_automations() {
       bool day_ok = (a.days_mask == 0) || (a.days_mask & (1 << cur_bit));
       if (day_ok && cur_min == (int) a.time_min && g_auto_last_yday[i] != cur_yday) {
         g_auto_last_yday[i] = cur_yday;   // fire once for this day-minute
-        char cmd[24];
-        snprintf(cmd, sizeof(cmd), "auto%d_%u", i, (unsigned) t.timestamp);
-        int rc = try_route_start(rid, cmd, automation_stopspec(a));
+        int rc = try_route_start(rid, "", automation_stopspec(a), ORIGIN_AUTOMATION, g_auto_ids[i]);
         ESP_LOGI("auto", "Time automation %d -> route %d rc=%d", i, rid, rc);
       }
     } else {                              // LEVEL
@@ -177,9 +188,7 @@ inline void evaluate_automations() {
       if (std::isnan(lvl) || lvl < 0.0f) continue;   // no level source
       if (lvl > (float) a.level_threshold_pct) {
         if (g_auto_armed[i]) {
-          char cmd[24];
-          snprintf(cmd, sizeof(cmd), "auto%d_%u", i, (unsigned) millis());
-          int rc = try_route_start(rid, cmd, automation_stopspec(a));
+          int rc = try_route_start(rid, "", automation_stopspec(a), ORIGIN_AUTOMATION, g_auto_ids[i]);
           ESP_LOGI("auto", "Level automation %d (%.0f%% > %u%%) -> route %d rc=%d",
                    i, lvl, a.level_threshold_pct, rid, rc);
         }

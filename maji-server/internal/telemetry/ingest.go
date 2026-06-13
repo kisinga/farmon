@@ -51,6 +51,11 @@ func ParseIdentityTopic(topic string) (site, ctrl string, ok bool) {
 	return parseFour(topic, "identity")
 }
 
+// ParseSnapshotTopic extracts site/ctrl from `majiflow/{site}/{ctrl}/state`.
+func ParseSnapshotTopic(topic string) (site, ctrl string, ok bool) {
+	return parseFour(topic, "state")
+}
+
 func parseFour(topic, last string) (site, ctrl string, ok bool) {
 	parts := strings.Split(topic, "/")
 	if len(parts) != 4 || parts[0] != "majiflow" || parts[3] != last {
@@ -295,4 +300,170 @@ func stampCommence(app core.App, siteID string, ts time.Time) {
 	}
 	site.Set("commence_date", ts.UTC())
 	_ = app.Save(site)
+}
+
+// --- Controller snapshot (the single source of truth) -----------------------
+
+type snapRoute struct {
+	ID     int    `json:"id"`
+	State  string `json:"state"`
+	Origin string `json:"origin"`
+	Actor  string `json:"actor"`
+	Reason string `json:"reason"`
+	// ActorLabel is filled server-side (the resolved display name) and stored in
+	// the controller_state doc so the dashboard shows "by Jane" / "Automation: …".
+	ActorLabel string `json:"actorLabel,omitempty"`
+}
+
+type snapOutcome struct {
+	CommandID string `json:"command_id"`
+	Result    string `json:"result"`
+	Reason    string `json:"reason"`
+}
+
+type controllerSnapshot struct {
+	TS       int64              `json:"ts"`
+	Readings map[string]float64 `json:"readings"`
+	Text     map[string]string  `json:"text"`
+	System   struct {
+		State  string  `json:"state"`
+		Queue  float64 `json:"queue"`
+		Safety bool    `json:"safety"`
+	} `json:"system"`
+	Routes   []snapRoute   `json:"routes"`
+	Outcomes []snapOutcome `json:"outcomes"`
+}
+
+// IngestSnapshot projects one controller snapshot — the single source of truth —
+// into the existing stores: numeric readings → telemetry_raw (rollups) + shadow,
+// text/system → shadow, each route's current run → shadow (with the resolved
+// origin label) plus a derived state_events row on any change, and command
+// outcomes → the matching commands record. One server-stamped ts for the whole
+// sample set, so the rollup buckets cleanly. Malformed payloads are ignored.
+func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Time) error {
+	var s controllerSnapshot
+	if err := json.Unmarshal(payload, &s); err != nil {
+		return nil
+	}
+	tsStr := now.UTC().Format(time.RFC3339)
+
+	// Load the prior doc once: its routes are the "from" states for the timeline.
+	doc, _ := app.FindFirstRecordByFilter("controller_state",
+		"controller = {:c}", dbx.Params{"c": ctrl})
+	prevState := map[int]string{}
+	if doc != nil {
+		var prev controllerSnapshot
+		if json.Unmarshal([]byte(doc.GetString("snapshot")), &prev) == nil {
+			for _, r := range prev.Routes {
+				prevState[r.ID] = r.State
+			}
+		}
+	}
+
+	// Numeric readings → raw history (rollups), one ts across the whole set.
+	if raw, err := app.FindCollectionByNameOrId("telemetry_raw"); err == nil {
+		for sensor, v := range s.Readings {
+			rec := core.NewRecord(raw)
+			rec.Set("site", site)
+			rec.Set("controller", ctrl)
+			rec.Set("sensor", sensor)
+			rec.Set("value", v)
+			rec.Set("ts", tsStr)
+			_ = app.Save(rec)
+		}
+	}
+
+	// Resolve each route's origin actor to a display name (stored in the doc) and
+	// derive a state_events row on any state change.
+	for i := range s.Routes {
+		r := &s.Routes[i]
+		r.ActorLabel = resolveActorLabel(app, r.Origin, r.Actor)
+		if p, ok := prevState[r.ID]; ok && p != "" && p != r.State {
+			appendDerivedEvent(app, site, ctrl, r.ID, p, r.State, r.Reason, tsStr)
+		}
+	}
+
+	// Upsert the single latest-snapshot doc (the per-sensor shadow, collapsed).
+	if coll, err := app.FindCollectionByNameOrId("controller_state"); err == nil {
+		if doc == nil {
+			doc = core.NewRecord(coll)
+			doc.Set("site", site)
+			doc.Set("controller", ctrl)
+		}
+		if blob, err := json.Marshal(s); err == nil {
+			doc.Set("snapshot", string(blob))
+		}
+		doc.Set("ts", tsStr)
+		_ = app.Save(doc)
+	}
+
+	// Command outcomes → reconcile the commands record (idempotent).
+	for _, o := range s.Outcomes {
+		reconcileCommand(app, o.CommandID, o.Result, o.Reason)
+	}
+	setControllerOnline(app, ctrl, true, now)
+	return nil
+}
+
+// resolveActorLabel turns a route's origin+actor (whole ids) into a display label:
+// MANUAL → the user's name/email; AUTOMATION → the automation's name; else "".
+func resolveActorLabel(app core.App, origin, actor string) string {
+	if actor == "" {
+		return ""
+	}
+	switch origin {
+	case "MANUAL":
+		if u, err := app.FindRecordById("users", actor); err == nil && u != nil {
+			if n := u.GetString("name"); n != "" {
+				return n
+			}
+			return u.GetString("email")
+		}
+	case "AUTOMATION":
+		if a, err := app.FindRecordById("automations", actor); err == nil && a != nil {
+			if n := a.GetString("name"); n != "" {
+				return n
+			}
+			return "Automation"
+		}
+	}
+	return ""
+}
+
+func appendDerivedEvent(app core.App, site, ctrl string, route int, from, to, reason, tsStr string) {
+	coll, err := app.FindCollectionByNameOrId("state_events")
+	if err != nil {
+		return
+	}
+	rec := core.NewRecord(coll)
+	rec.Set("site", site)
+	rec.Set("controller", ctrl)
+	rec.Set("route", route)
+	rec.Set("from_state", from)
+	rec.Set("to_state", to)
+	rec.Set("reason", reason)
+	rec.Set("ts", tsStr)
+	_ = app.Save(rec)
+}
+
+// reconcileCommand moves a command's audit row to its terminal state from the
+// device's re-asserted outcome. Idempotent — a repeated outcome is a no-op.
+func reconcileCommand(app core.App, commandID, result, reason string) {
+	if commandID == "" {
+		return
+	}
+	rec, _ := app.FindFirstRecordByFilter("commands", "command_id = {:c}", dbx.Params{"c": commandID})
+	if rec == nil {
+		return
+	}
+	status := "done"
+	if result == "REFUSED" || result == "REJECTED" {
+		status = "failed"
+	}
+	if rec.GetString("status") == status && rec.GetString("result") == reason {
+		return
+	}
+	rec.Set("status", status)
+	rec.Set("result", reason)
+	_ = app.Save(rec)
 }

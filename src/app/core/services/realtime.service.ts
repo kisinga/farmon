@@ -1,7 +1,8 @@
 import { Injectable, inject, signal } from '@angular/core';
 import type { RecordModel, UnsubscribeFunc } from 'pocketbase';
+import type { ControllerSnapshot } from '@core';
 import { BackendService } from './backend.service';
-import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow } from '../models/runtime';
+import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow } from '../models/runtime';
 
 /** Liveness of the PocketBase realtime SSE stream. `connecting` is the idle
  *  state before anything subscribes; the dashboard banner only reacts to
@@ -43,12 +44,24 @@ export class RealtimeService {
     };
   }
 
-  /** Current shadow (last-known value per channel) for a site. */
-  latest(siteId: string): Promise<ShadowRow[]> {
-    return this.pb.send<ShadowRow[]>(
+  /** Current shadow for a site: one controller_state doc per controller, exploded
+   *  back into the per-channel rows the dashboard reads, plus the re-asserted
+   *  command `outcomes` (the reliable "did my command land" channel) so a result
+   *  that arrived before page load is seeded too. */
+  async latest(siteId: string): Promise<{ rows: ShadowRow[]; outcomes: CommandOutcomeRow[] }> {
+    const docs = await this.pb.send<{ controller: string; snapshot: string; ts: string }[]>(
       `/api/farmon/latest?site=${encodeURIComponent(siteId)}`,
       { method: 'GET' },
     );
+    const rows: ShadowRow[] = [];
+    const outcomes: CommandOutcomeRow[] = [];
+    for (const d of docs) {
+      const snap = parseSnap(d.snapshot);
+      if (!snap) continue;
+      rows.push(...explodeSnapshot(d.controller, snap, d.ts));
+      outcomes.push(...snapOutcomes(d.controller, snap));
+    }
+    return { rows, outcomes };
   }
 
   /** Numeric history for a channel; the server picks the tier from the span. */
@@ -110,12 +123,20 @@ export class RealtimeService {
     );
   }
 
-  /** Live shadow updates for a site. Returns an unsubscribe function. */
-  subscribeShadow(siteId: string, cb: (row: ShadowRow) => void): Promise<UnsubscribeFunc> {
+  /** Live shadow updates for a site: one controller_state doc per controller per
+   *  interval, exploded into its per-channel rows plus the snapshot's re-asserted
+   *  command `outcomes`. Returns an unsubscribe function. */
+  subscribeShadow(
+    siteId: string,
+    cb: (rows: ShadowRow[], outcomes: CommandOutcomeRow[]) => void,
+  ): Promise<UnsubscribeFunc> {
     this.wireConnection();
-    return this.pb.collection('entity_state').subscribe(
+    return this.pb.collection('controller_state').subscribe(
       '*',
-      (e) => cb(toShadow(e.record)),
+      (e) => {
+        const snap = parseSnap(e.record['snapshot']);
+        if (snap) cb(explodeSnapshot(e.record['controller'], snap, e.record['ts']), snapOutcomes(e.record['controller'], snap));
+      },
       { filter: this.pb.filter('site = {:s}', { s: siteId }) },
     );
   }
@@ -169,36 +190,80 @@ export class RealtimeService {
     });
   }
 
-  /** Current tank-level shadows across all visible sites. Server-filtered to
-   *  `*_level` channels so the alerts store never pulls the full shadow. */
-  async levelShadows(): Promise<ShadowRow[]> {
-    const items = await this.pb.collection('entity_state').getFullList({
-      filter: this.pb.filter('sensor ~ {:s}', { s: '_level' }),
-      requestKey: 'shadow:levels',
-    });
-    return items.map(toShadow);
+  /** Current tank-level shadows + command outcomes across all visible sites, from
+   *  the one controller_state stream the alerts bell already taps. Levels are
+   *  filtered to `*_level` so the store never holds the full shadow; outcomes ride
+   *  along for the "command did not apply" warning. */
+  async levelShadows(): Promise<{ levels: ShadowRow[]; outcomes: CommandOutcomeRow[] }> {
+    const docs = await this.pb.collection('controller_state').getFullList({ requestKey: 'shadow:levels' });
+    const levels: ShadowRow[] = [];
+    const outcomes: CommandOutcomeRow[] = [];
+    for (const d of docs) {
+      const snap = parseSnap(d['snapshot']);
+      if (!snap) continue;
+      for (const r of explodeSnapshot(d['controller'], snap, d['ts'])) {
+        if (r.sensor.endsWith('_level')) levels.push(r);
+      }
+      outcomes.push(...snapOutcomes(d['controller'], snap));
+    }
+    return { levels, outcomes };
   }
 
-  /** Live tank-level shadow updates across all visible sites. */
-  subscribeLevelShadows(cb: (row: ShadowRow) => void): Promise<UnsubscribeFunc> {
+  /** Live tank-level shadow + command-outcome updates across all visible sites.
+   *  Delivers one doc at a time: its level rows and its re-asserted outcomes. */
+  subscribeLevelShadows(
+    cb: (levels: ShadowRow[], outcomes: CommandOutcomeRow[]) => void,
+  ): Promise<UnsubscribeFunc> {
     this.wireConnection();
-    return this.pb.collection('entity_state').subscribe(
-      '*',
-      (e) => cb(toShadow(e.record)),
-      { filter: this.pb.filter('sensor ~ {:s}', { s: '_level' }) },
-    );
+    return this.pb.collection('controller_state').subscribe('*', (e) => {
+      const snap = parseSnap(e.record['snapshot']);
+      if (!snap) return;
+      const levels = explodeSnapshot(e.record['controller'], snap, e.record['ts'])
+        .filter((r) => r.sensor.endsWith('_level'));
+      cb(levels, snapOutcomes(e.record['controller'], snap));
+    });
   }
 }
 
-function toShadow(r: RecordModel): ShadowRow {
-  return {
-    controller: r['controller'],
-    sensor: r['sensor'],
-    reported: r['reported'],
-    reported_text: r['reported_text'],
-    desired: r['desired'],
-    ts: r['ts'],
-  };
+/** A controller_state.snapshot is JSON text over the API and a parsed object over
+ *  realtime — accept both. */
+function parseSnap(v: unknown): ControllerSnapshot | null {
+  try {
+    const o = typeof v === 'string' ? JSON.parse(v) : v;
+    return o && typeof o === 'object' ? (o as ControllerSnapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Explode one controller snapshot into the per-channel ShadowRows the widgets read
+ *  (keyed `${controller}/${sensor}`), so the collapsed doc keeps the same read API. */
+function explodeSnapshot(controller: string, snap: ControllerSnapshot, ts: string): ShadowRow[] {
+  const rows: ShadowRow[] = [];
+  const num = (sensor: string, reported: number) => rows.push({ controller, sensor, reported, reported_text: '', ts });
+  const txt = (sensor: string, reported_text: string) => rows.push({ controller, sensor, reported: 0, reported_text, ts });
+  for (const [s, v] of Object.entries(snap.readings ?? {})) num(s, v);
+  for (const [s, v] of Object.entries(snap.text ?? {})) txt(s, v);
+  if (snap.system) {
+    txt('system_state', snap.system.state);
+    num('queue_depth', snap.system.queue);
+    num('safety_override', snap.system.safety ? 1 : 0);
+  }
+  for (const r of snap.routes ?? []) {
+    rows.push({ controller, sensor: `route_${r.id}_state`, reported: 0, reported_text: r.state, ts, origin: r.origin, actorLabel: r.actorLabel });
+  }
+  return rows;
+}
+
+/** Pull a snapshot's re-asserted command outcomes into per-controller rows (the
+ *  reliable "did my command land" channel — see {@link CommandOutcomeRow}). */
+function snapOutcomes(controller: string, snap: ControllerSnapshot): CommandOutcomeRow[] {
+  return (snap.outcomes ?? []).map((o) => ({
+    controller,
+    command_id: o.command_id,
+    result: o.result,
+    reason: o.reason,
+  }));
 }
 
 function toController(r: RecordModel): ControllerRow {

@@ -14,7 +14,7 @@ import { parse as parseYaml } from "yaml";
 import {
   parseTopology, topologyToManifestForController, routeSetVersion,
   serializeAutomationSet, AUTOMATION_HEADER_BYTES, AUTOMATION_RECORD_BYTES,
-  AUTOMATION_WIRE_MAGIC, type Manifest, type WireAutomation,
+  AUTOMATION_ID_BYTES, AUTOMATION_WIRE_MAGIC, type Manifest, type WireAutomation,
 } from "@core";
 import { generateAll, createTestMetadata } from "@core/codegen";
 import { loadBoard } from "./helpers";
@@ -37,7 +37,9 @@ assert(AUTOMATION_HEADER_BYTES === 6, "header is 6 bytes");
 assert(AUTOMATION_RECORD_BYTES === 20, "record is 20 bytes");
 
 // --- Golden vector: one fully-populated automation, exact bytes per offset ---
+const AUTO_ID = "abc123def456ghi"; // 15-char PocketBase id
 const a: WireAutomation = {
+  id: AUTO_ID,
   enabled: true, trigger_type: 0, days_mask: 0b0101010 /* Mon,Wed,Fri = bits 0,2,4 */,
   level_threshold_pct: 80, route_index: 3, time_min: 6 * 60 + 30 /* 06:30 = 390 */,
   override_mask: 0b10001 /* OV_SOURCE_MIN | OV_VOLUME */,
@@ -46,7 +48,7 @@ const a: WireAutomation = {
 };
 const bytes = serializeAutomationSet(0x0d52, [a]);
 const dv = new DataView(bytes.buffer);
-assert(bytes.length === 26, "header + 1 record = 26 bytes", `got ${bytes.length}`);
+assert(bytes.length === 6 + 20 + 16, "header + 1 record + 1 id = 42 bytes", `got ${bytes.length}`);
 // header
 assert(dv.getUint16(0, true) === AUTOMATION_WIRE_MAGIC, "magic_version @0");
 assert(dv.getUint16(2, true) === 0x0d52, "route_set_version @2");
@@ -65,6 +67,12 @@ assert(dv.getUint8(17) === 0, "_pad @17");
 assert(dv.getUint16(18, true) === 45, "ov_max_runtime_min @18");
 assert(dv.getUint16(20, true) === 1800, "ov_target_duration_s @20");
 assert(dv.getUint32(22, true) === 500, "ov_target_volume_l @22");
+// trailing id block @26: the whole id as ascii, null-padded to 16
+const idOff = AUTOMATION_HEADER_BYTES + AUTOMATION_RECORD_BYTES;
+let idStr = "";
+for (let j = 0; j < AUTOMATION_ID_BYTES && bytes[idOff + j] !== 0; j++) idStr += String.fromCharCode(bytes[idOff + j]);
+assert(idStr === AUTO_ID, "automation id @26 round-trips", `got "${idStr}"`);
+assert(bytes[idOff + AUTOMATION_ID_BYTES - 1] === 0, "id field null-padded");
 
 // --- Empty set: a valid 6-byte header with count 0 (never zero-length) ---
 const empty = serializeAutomationSet(0x0d52, []);

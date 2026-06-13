@@ -137,7 +137,8 @@ ${m.routes.map((r, i) => `\
     on_press:
       - lambda: |-
           const char* res[] = {"started","queued","rejected","source low","dest full","partitioned"};
-          int rc = try_route_start(${i}, "");
+          // Physical button = a local manual action with no remote user id.
+          int rc = try_route_start(${i}, "", STOPSPEC_INHERIT, ORIGIN_MANUAL, "");
           ESP_LOGI("btn", "Route ${i} [${r.name}] start: %s", res[rc]);
   - platform: template
     name: "${routeEntityNames(r).stop.name}"
@@ -207,8 +208,8 @@ ${pumpMgmt}
             if (has_conflict(next) || find_free_slot() == -1) break;
             QueueEntry qe = queue_pop();
             int slot = find_free_slot();
-            // Carry the queued start's run-param override into the slot.
-            activate_slot(slot, qe.route_id, qe.spec);
+            // Carry the queued start's run-param override + origin into the slot.
+            activate_slot(slot, qe.route_id, qe.spec, qe.origin, qe.actor);
             ESP_LOGI("ctrl", "Queue -> slot %d route %d [%s]", slot, qe.route_id, ROUTES[qe.route_id].name);
           }
 

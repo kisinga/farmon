@@ -183,14 +183,17 @@ export class CommandLifecycleStore implements OnDestroy {
     });
   }
 
-  /** Live observation for a descriptor, anchored at `since` (issue/claim time). */
+  /** Live observation for a descriptor, anchored at `since` (issue/claim time). The
+   *  refusal/queued/applied channel reads the device's re-asserted command outcome
+   *  (by command_id) off the snapshot shadow — derived state_events carry no
+   *  command_id and a refusal makes no transition, so the outcome is the only
+   *  reliable, self-healing source. */
   private observe(controller: string, descriptor: ConfirmDescriptor, since: number, commandId?: string): ConfirmObservation {
     const row = descriptor.sensor ? this.dash.row(controller, descriptor.sensor) : undefined;
-    const ev = commandId ? this.dash.events().find((e) => e.command_id === commandId) : undefined;
     return {
       reported: row?.reported,
       reportedText: row?.reported_text,
-      correlated: ev ? { to: ev.to, reason: ev.reason } : undefined,
+      correlated: commandId ? this.dash.commandOutcome(commandId) : undefined,
       ageMs: Date.now() - since,
       online: this.dash.presence(controller).online,
     };

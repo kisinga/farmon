@@ -380,10 +380,10 @@ export class DashboardComponent {
   protected hasOperatorControls = computed(() => this.store.spec().controllers.some((c) =>
     c.tunables.some((t) => t.scope === 'controller') || c.calibrations.length > 0 || c.actuators.length > 0));
 
-  /** A route's live state for its card (token + reason; empty when never seen). */
-  protected routeState(controller: string, routeId: number): { token: string; reason: string } {
+  /** A route's live state for its card (token + reason + origin; empty when never seen). */
+  protected routeState(controller: string, routeId: number): { token: string; reason: string; origin?: string; actorLabel?: string } {
     const s = this.store.routeState(controller, routeId);
-    return { token: s?.token ?? '', reason: s?.reason ?? '' };
+    return { token: s?.token ?? '', reason: s?.reason ?? '', origin: s?.origin, actorLabel: s?.actorLabel };
   }
 
   /** Live flow rate (L/min) for a route's primary flow sensor, null when none/unknown. */

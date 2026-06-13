@@ -399,6 +399,41 @@ inline bool is_duplicate_command(const char* command_id) {
   return false;
 }
 
+// --- Command outcomes (re-asserted in the snapshot) --------------------------
+// The result of each handled command, kept in a small ring and re-published with
+// every snapshot so a dropped one isn't lost. The server reconciles the matching
+// commands record; the dashboard reads the reason for a refused command.
+struct CmdOutcome { char command_id[20]; char result[16]; char reason[16]; };
+static const int MAX_OUTCOMES = 4;
+static CmdOutcome g_outcomes[MAX_OUTCOMES];
+static uint8_t g_outcome_head = 0;
+
+// Escape a string for embedding as a JSON value (quotes/backslashes/control chars).
+// Single static buffer — the snapshot builder calls it once per field, immediately,
+// on the main loop only. A name with a stray quote would otherwise break the whole
+// snapshot's JSON and the server would drop it.
+inline const char* json_esc(const char* s) {
+  static char out[160];
+  int o = 0;
+  for (int i = 0; s && s[i] && o < (int) sizeof(out) - 2; i++) {
+    char c = s[i];
+    if (c == '"' || c == '\\\\') { out[o++] = '\\\\'; out[o++] = c; }
+    else if (c >= 0 && c < 0x20) { /* drop control chars */ }
+    else out[o++] = c;
+  }
+  out[o] = '\\0';
+  return out;
+}
+
+inline void record_outcome(const char* command_id, const char* result, const char* reason) {
+  if (!command_id || command_id[0] == '\\0') return;  // automations/local: no command_id to ack
+  CmdOutcome& o = g_outcomes[g_outcome_head];
+  snprintf(o.command_id, sizeof(o.command_id), "%s", command_id);
+  snprintf(o.result, sizeof(o.result), "%s", result ? result : "");
+  snprintf(o.reason, sizeof(o.reason), "%s", reason ? reason : "");
+  g_outcome_head = (g_outcome_head + 1) % MAX_OUTCOMES;
+}
+
 // --- Constants ---------------------------------------------------------------
 
 static const int MAX_CONCURRENT_ROUTES = 2;
@@ -520,7 +555,17 @@ struct RouteSlot {
   uint16_t ov_max_runtime_min;
   uint16_t ov_target_duration_s;
   uint32_t ov_target_volume_l;
+  // Who/what started this run (ORIGIN_* below). Reported on the snapshot so the
+  // dashboard can show "by <name>" / "Automation: <name>"; actor is a whole id
+  // (a user id for MANUAL, an automation id for AUTOMATION, "" for SYSTEM/local).
+  uint8_t  origin;
+  char     actor[16];
 };
+
+// Run-origin codes — mirror ORIGIN_TOKENS in codegen-ids.ts (index == value).
+static const uint8_t ORIGIN_SYSTEM     = 0;
+static const uint8_t ORIGIN_MANUAL     = 1;
+static const uint8_t ORIGIN_AUTOMATION = 2;
 
 static RouteSlot slots[MAX_CONCURRENT_ROUTES];
 
@@ -654,21 +699,26 @@ inline void reconcile_valves() {
 // --- Queue (circular buffer) -------------------------------------------------
 
 // A queued start carries its StopSpec so a deferred run honours the same override
-// (volume/duration/etc.) it would have had if a slot were free immediately.
-struct QueueEntry { int route_id; StopSpec spec; };
+// (volume/duration/etc.) it would have had if a slot were free immediately, plus
+// its origin (who/what queued it) so the run is attributed correctly when it drains.
+struct QueueEntry { int route_id; StopSpec spec; uint8_t origin; char actor[16]; };
 static QueueEntry route_queue[MAX_QUEUE_SIZE];
 static int queue_head = 0;
 static int queue_count = 0;
 
-inline bool queue_push(int rid, const StopSpec& spec) {
+inline bool queue_push(int rid, const StopSpec& spec, uint8_t origin = ORIGIN_SYSTEM, const char* actor = "") {
   if (queue_count >= MAX_QUEUE_SIZE) return false;
-  route_queue[(queue_head + queue_count) % MAX_QUEUE_SIZE] = {rid, spec};
+  QueueEntry& e = route_queue[(queue_head + queue_count) % MAX_QUEUE_SIZE];
+  e.route_id = rid;
+  e.spec = spec;
+  e.origin = origin;
+  snprintf(e.actor, sizeof(e.actor), "%s", actor ? actor : "");
   queue_count++;
   return true;
 }
 
 inline QueueEntry queue_pop() {
-  if (queue_count == 0) return {-1, STOPSPEC_INHERIT};
+  if (queue_count == 0) return {-1, STOPSPEC_INHERIT, ORIGIN_SYSTEM, ""};
   QueueEntry v = route_queue[queue_head];
   queue_head = (queue_head + 1) % MAX_QUEUE_SIZE;
   queue_count--;
@@ -840,8 +890,9 @@ inline int check_precheck(uint8_t src_idx, uint8_t src_min, uint8_t dst_idx, uin
 ${manualGuardCpp}
 
 // Set a free slot to PREPARING for a route, carrying its run-param override.
-// Shared by try_route_start and the queue drain so both honour the same spec.
-inline void activate_slot(int slot, int route_id, const StopSpec& spec) {
+// Shared by try_route_start and the queue drain so both honour the same spec and
+// origin (who/what started this run).
+inline void activate_slot(int slot, int route_id, const StopSpec& spec, uint8_t origin, const char* actor) {
   init_slot(slot);
   slots[slot].route_id            = route_id;
   slots[slot].state               = 1;  // PREPARING
@@ -852,6 +903,8 @@ inline void activate_slot(int slot, int route_id, const StopSpec& spec) {
   slots[slot].ov_max_runtime_min  = spec.ov_max_runtime_min;
   slots[slot].ov_target_duration_s= spec.ov_target_duration_s;
   slots[slot].ov_target_volume_l  = spec.ov_target_volume_l;
+  slots[slot].origin              = origin;
+  snprintf(slots[slot].actor, sizeof(slots[slot].actor), "%s", actor ? actor : "");
   // Valves open via the reconciler on the next 1s tick.
 }
 
@@ -860,13 +913,14 @@ inline void activate_slot(int slot, int route_id, const StopSpec& spec) {
 // spec carries an optional sparse run-param override (STOPSPEC_INHERIT = use the
 // route tunables). Returns: 0=started, 1=queued, 2=rejected (invalid/duplicate/
 // full), 3=rejected (source low), 4=rejected (dest full).
-inline int try_route_start(int route_id, const char* command_id, const StopSpec& spec = STOPSPEC_INHERIT) {
+inline int try_route_start(int route_id, const char* command_id, const StopSpec& spec = STOPSPEC_INHERIT,
+                           uint8_t origin = ORIGIN_SYSTEM, const char* actor = "") {
   if (route_id < 0 || route_id >= NUM_ROUTES) return 2;
   if (is_duplicate_command(command_id)) return 0;  // idempotent success
   if (find_slot_by_route(route_id) != -1) return 2;  // already active
 
   if (has_conflict(route_id) || find_free_slot() == -1) {
-    return queue_push(route_id, spec) ? 1 : 2;
+    return queue_push(route_id, spec, origin, actor) ? 1 : 2;
   }
 
   // Pre-check with the EFFECTIVE thresholds the override would apply.
@@ -879,7 +933,7 @@ inline int try_route_start(int route_id, const char* command_id, const StopSpec&
   if (pc != 0) return pc;
 
   int slot = find_free_slot();
-  activate_slot(slot, route_id, spec);
+  activate_slot(slot, route_id, spec, origin, actor);
   if (id(active_slot) == -1) id(active_slot) = slot;
   id(system_state) = derived_system_state();
   return 0;

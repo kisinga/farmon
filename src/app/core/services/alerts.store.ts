@@ -4,7 +4,7 @@ import { FAULT_MEANINGS, STOP_REASON_MEANINGS, OUTCOME_MEANINGS } from '@core';
 import { RealtimeService } from './realtime.service';
 import { BackendService } from './backend.service';
 import { AuthStore } from './auth.store';
-import type { ControllerRow, ShadowRow, StateEventRow } from '../models/runtime';
+import type { ControllerRow, ShadowRow, StateEventRow, CommandOutcomeRow } from '../models/runtime';
 import {
   type AlertSeverity,
   type DerivedAlert,
@@ -57,6 +57,10 @@ export class AlertsStore implements OnDestroy {
   private controllers = signal<Map<string, ControllerRow>>(new Map());
   private events = signal<StateEventRow[]>([]);
   private levels = signal<Map<string, ShadowRow>>(new Map());
+  /** Failed-command outcomes (the snapshot's re-asserted `outcomes[]`), keyed by
+   *  command_id with the client first-seen time — outcomes carry no server ts and
+   *  re-assert every interval, so first-seen anchors the display window. */
+  private commandFails = signal<Map<string, { row: CommandOutcomeRow; firstSeen: number }>>(new Map());
   private siteCfg = signal<Map<string, SiteAlertCfg>>(new Map());
   private now = signal(Date.now());
 
@@ -104,8 +108,9 @@ export class AlertsStore implements OnDestroy {
       const ctrls = await this.realtime.allControllers();
       this.controllers.set(new Map(ctrls.map((c) => [c.device_id, c])));
       this.events.set(await this.realtime.recentEventsAll(200));
-      const levels = await this.realtime.levelShadows();
+      const { levels, outcomes } = await this.realtime.levelShadows();
       this.levels.set(new Map(levels.map((r) => [`${r.controller}/${r.sensor}`, r])));
+      this.mergeOutcomes(outcomes);
 
       this.unsubs.push(
         await this.realtime.subscribeAllControllers((row) =>
@@ -114,9 +119,14 @@ export class AlertsStore implements OnDestroy {
         await this.realtime.subscribeAllEvents((row) =>
           this.events.update((l) => [row, ...l].slice(0, 200)),
         ),
-        await this.realtime.subscribeLevelShadows((row) =>
-          this.levels.update((m) => new Map(m).set(`${row.controller}/${row.sensor}`, row)),
-        ),
+        await this.realtime.subscribeLevelShadows((rows, outcomes) => {
+          this.levels.update((m) => {
+            const n = new Map(m);
+            for (const row of rows) n.set(`${row.controller}/${row.sensor}`, row);
+            return n;
+          });
+          this.mergeOutcomes(outcomes);
+        }),
         await this.backend.pb.collection('sites').subscribe('*', (e) => this.applySite(e.record)),
       );
 
@@ -135,10 +145,27 @@ export class AlertsStore implements OnDestroy {
     this.controllers.set(new Map());
     this.events.set([]);
     this.levels.set(new Map());
+    this.commandFails.set(new Map());
     this.siteCfg.set(new Map());
     this.lowLatched.clear();
     this.highLatched.clear();
     this.started = false;
+  }
+
+  /** Fold a snapshot's re-asserted outcomes into the failed-command map. First-seen
+   *  is preserved across re-asserts (it anchors the display window); entries past
+   *  the window are pruned so the map can't grow unbounded over a long session. */
+  private mergeOutcomes(outcomes: CommandOutcomeRow[]): void {
+    const now = Date.now();
+    this.commandFails.update((m) => {
+      const n = new Map(m);
+      for (const [id, v] of n) if (now - v.firstSeen >= COMMAND_FAIL_WINDOW_MS) n.delete(id);
+      for (const row of outcomes) {
+        if (!FAIL_OUTCOMES.has(row.result) && !FAIL_OUTCOMES.has(row.reason)) continue;
+        if (!n.has(row.command_id)) n.set(row.command_id, { row, firstSeen: now });
+      }
+      return n;
+    });
   }
 
   private async loadSiteCfg(): Promise<void> {
@@ -216,46 +243,45 @@ export class AlertsStore implements OnDestroy {
       }
     }
 
-    // 2) Faults & 3) command failures — both ride the transition stream.
-    const seenRoute = new Set<string>(); // latest-wins per controller+route
+    // 2) Faults — ride the (derived) transition stream; latest-wins per route.
+    const seenRoute = new Set<string>();
     for (const e of this.events()) {
+      const routeKey = `${e.controller}:${e.route}`;
+      if (seenRoute.has(routeKey) || e.to !== 'FAULT') continue;
+      seenRoute.add(routeKey);
       const sc = cfgFor(controllers.get(e.controller)?.site ?? '');
       const ets = Date.parse(e.ts);
+      out.push({
+        key: `fault:${routeKey}`,
+        type: 'fault',
+        severity: 'critical',
+        site: controllers.get(e.controller)?.site ?? '',
+        siteName: sc.name,
+        controller: e.controller,
+        title: e.route < 0 ? 'Controller fault' : `Route ${e.route} fault`,
+        message: `${e.controller} — ${reasonText(e.reason)}`,
+        ts: Number.isFinite(ets) ? ets : now,
+      });
+    }
 
-      const routeKey = `${e.controller}:${e.route}`;
-      if (!seenRoute.has(routeKey)) {
-        seenRoute.add(routeKey);
-        if (e.to === 'FAULT') {
-          out.push({
-            key: `fault:${routeKey}`,
-            type: 'fault',
-            severity: 'critical',
-            site: controllers.get(e.controller)?.site ?? '',
-            siteName: sc.name,
-            controller: e.controller,
-            title: e.route < 0 ? 'Controller fault' : `Route ${e.route} fault`,
-            message: `${e.controller} — ${reasonText(e.reason)}`,
-            ts: Number.isFinite(ets) ? ets : now,
-          });
-        }
-      }
-
-      if (
-        Number.isFinite(ets) && now - ets < COMMAND_FAIL_WINDOW_MS &&
-        (FAIL_OUTCOMES.has(e.to) || FAIL_OUTCOMES.has(e.reason))
-      ) {
-        out.push({
-          key: `command_failed:${e.controller}:${e.ts}:${e.command_id}`,
-          type: 'command_failed',
-          severity: 'warning',
-          site: controllers.get(e.controller)?.site ?? '',
-          siteName: sc.name,
-          controller: e.controller,
-          title: 'Command did not apply',
-          message: `${e.controller} — ${reasonText(e.to !== '' ? e.to : e.reason)}`,
-          ts: ets,
-        });
-      }
+    // 3) Command failures — from the snapshot's re-asserted command outcomes (the
+    //    reliable channel; derived events carry no command_id). Windowed from the
+    //    client first-seen time so a stale ring entry doesn't linger forever.
+    for (const { row, firstSeen } of this.commandFails().values()) {
+      if (now - firstSeen >= COMMAND_FAIL_WINDOW_MS) continue;
+      if (!FAIL_OUTCOMES.has(row.result) && !FAIL_OUTCOMES.has(row.reason)) continue;
+      const sc = cfgFor(controllers.get(row.controller)?.site ?? '');
+      out.push({
+        key: `command_failed:${row.controller}:${row.command_id}`,
+        type: 'command_failed',
+        severity: 'warning',
+        site: controllers.get(row.controller)?.site ?? '',
+        siteName: sc.name,
+        controller: row.controller,
+        title: 'Command did not apply',
+        message: `${row.controller} — ${reasonText(row.reason || row.result)}`,
+        ts: firstSeen,
+      });
     }
 
     // 4) Tank thresholds — latched with hysteresis so a level on the line is steady.

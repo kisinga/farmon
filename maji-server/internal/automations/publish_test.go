@@ -10,6 +10,7 @@ import (
 // identical case asserted in test/automation-wire.test.ts.
 func TestEncodeItemsGoldenVector(t *testing.T) {
 	item := Item{
+		ID:      "abc123def456ghi", // 15-char id, null-padded to 16 in the trailing block
 		Enabled: true, Trigger: "time", DaysMask: 0b0101010, LevelThresholdPct: 80,
 		RouteIndex: 3, TimeMin: 6*60 + 30, OverrideMask: 0b10001,
 		OvSourceMinPct: 20, OvDestMaxPct: 95,
@@ -36,6 +37,8 @@ func TestEncodeItemsGoldenVector(t *testing.T) {
 		45, 0x00, // ov_max_runtime_min 45 LE
 		0x08, 0x07, // ov_target_duration_s 1800 LE
 		0xf4, 0x01, 0x00, 0x00, // ov_target_volume_l 500 LE
+		// trailing id block: "abc123def456ghi" + NUL pad to 16
+		'a', 'b', 'c', '1', '2', '3', 'd', 'e', 'f', '4', '5', '6', 'g', 'h', 'i', 0x00,
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("encoded bytes mismatch\n got: % x\nwant: % x", got, want)
@@ -55,7 +58,7 @@ func TestEncodeItemsCaps(t *testing.T) {
 	if got[4] != byte(maxAutomations) {
 		t.Fatalf("count should cap at %d, got %d", maxAutomations, got[4])
 	}
-	if len(got) != headerBytes+maxAutomations*recordBytes {
+	if len(got) != headerBytes+maxAutomations*recordBytes+maxAutomations*idBytes {
 		t.Fatalf("payload should cap at %d records", maxAutomations)
 	}
 }

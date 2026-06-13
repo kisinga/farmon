@@ -9,6 +9,7 @@
 package alerts
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/mail"
@@ -229,23 +230,30 @@ func (s *sweeper) sweepTanks(app core.App, sc siteCtx, now time.Time) {
 	if len(sc.tankTo) == 0 {
 		return
 	}
-	rows, err := app.FindRecordsByFilter("entity_state", "site = {:s} && sensor ~ {:x}", "", 0, 0,
-		dbx.Params{"s": sc.id, "x": "_level"})
+	// Tank levels live in each controller's latest snapshot (readings ending _level).
+	docs, err := app.FindRecordsByFilter("controller_state", "site = {:s}", "", 0, 0,
+		dbx.Params{"s": sc.id})
 	if err != nil {
 		return
 	}
-	for _, r := range rows {
-		sensor := r.GetString("sensor")
-		if !strings.HasSuffix(sensor, "_level") {
+	for _, d := range docs {
+		var snap struct {
+			Readings map[string]float64 `json:"readings"`
+		}
+		if json.Unmarshal([]byte(d.GetString("snapshot")), &snap) != nil {
 			continue
 		}
-		v := r.GetFloat("reported")
-		if v <= sc.lowPct {
-			s.notify(app, sc.tankTo, now, "tanklow:"+sc.id+":"+sensor, "Tank low",
-				fmt.Sprintf("%s on %s is at %.0f%% (low threshold %.0f%%).", tankName(sensor), sc.name, v, sc.lowPct))
-		} else if sc.highPct > 0 && v >= sc.highPct {
-			s.notify(app, sc.tankTo, now, "tankhigh:"+sc.id+":"+sensor, "Tank full",
-				fmt.Sprintf("%s on %s is at %.0f%% (high threshold %.0f%%).", tankName(sensor), sc.name, v, sc.highPct))
+		for sensor, v := range snap.Readings {
+			if !strings.HasSuffix(sensor, "_level") {
+				continue
+			}
+			if v <= sc.lowPct {
+				s.notify(app, sc.tankTo, now, "tanklow:"+sc.id+":"+sensor, "Tank low",
+					fmt.Sprintf("%s on %s is at %.0f%% (low threshold %.0f%%).", tankName(sensor), sc.name, v, sc.lowPct))
+			} else if sc.highPct > 0 && v >= sc.highPct {
+				s.notify(app, sc.tankTo, now, "tankhigh:"+sc.id+":"+sensor, "Tank full",
+					fmt.Sprintf("%s on %s is at %.0f%% (high threshold %.0f%%).", tankName(sensor), sc.name, v, sc.highPct))
+			}
 		}
 	}
 }

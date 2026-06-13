@@ -39,11 +39,19 @@ export const AUTOMATION_WIRE_MAGIC = 0xa001;
 export const AUTOMATION_HEADER_BYTES = 6;
 export const AUTOMATION_RECORD_BYTES = 20;
 export const MAX_AUTOMATIONS = 32;
+/** Fixed-width id field appended once per record AFTER the record block: the
+ *  automation's whole PocketBase id (15 chars), null-padded to 16. The device
+ *  echoes it as a route's origin actor so a fired automation resolves to a name.
+ *  A reader that doesn't know about it stops after the records and ignores the
+ *  trailing block. */
+export const AUTOMATION_ID_BYTES = 16;
 
 export type TriggerKind = 'time' | 'level';
 
 /** One automation as the wire carries it — already route-resolved (route_index). */
 export interface WireAutomation {
+  /** The automation's whole PocketBase id, echoed back as a route's origin actor. */
+  id: string;
   enabled: boolean;
   trigger_type: 0 | 1;          // 0=time 1=level
   days_mask: number;            // bit0=MON..bit6=SUN; 0 = every day
@@ -83,8 +91,11 @@ export function routeSetVersion(m: Manifest): number {
  */
 export function serializeAutomationSet(routeSetVer: number, autos: WireAutomation[]): Uint8Array {
   const count = Math.min(autos.length, MAX_AUTOMATIONS);
-  const buf = new ArrayBuffer(AUTOMATION_HEADER_BYTES + count * AUTOMATION_RECORD_BYTES);
+  const buf = new ArrayBuffer(
+    AUTOMATION_HEADER_BYTES + count * AUTOMATION_RECORD_BYTES + count * AUTOMATION_ID_BYTES,
+  );
   const dv = new DataView(buf);
+  const bytes = new Uint8Array(buf);
   dv.setUint16(0, AUTOMATION_WIRE_MAGIC, true);
   dv.setUint16(2, routeSetVer & 0xffff, true);
   dv.setUint8(4, count);
@@ -106,6 +117,14 @@ export function serializeAutomationSet(routeSetVer: number, autos: WireAutomatio
     dv.setUint16(o + 14, a.ov_target_duration_s & 0xffff, true);
     dv.setUint32(o + 16, a.ov_target_volume_l >>> 0, true);
     o += AUTOMATION_RECORD_BYTES;
+  }
+  // Trailing id block: one fixed 16-byte ascii field per record (null-padded).
+  for (let i = 0; i < count; i++) {
+    const id = autos[i].id ?? '';
+    for (let j = 0; j < AUTOMATION_ID_BYTES - 1 && j < id.length; j++) {
+      bytes[o + j] = id.charCodeAt(j) & 0x7f;
+    }
+    o += AUTOMATION_ID_BYTES;
   }
   return new Uint8Array(buf);
 }

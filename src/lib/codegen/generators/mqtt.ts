@@ -1,21 +1,16 @@
 import type { Manifest, BoardDef } from '@core';
 import {
-  MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic, identityTopic,
-  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, WIFI_SIGNAL_SENSOR, routeStateSensor,
+  MQTT_ROOT, commandTopic, automationsTopic, statusTopic, identityTopic, snapshotTopic,
+  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, WIFI_SIGNAL_SENSOR,
   collectTelemetryChannels, type TelemetryChannel,
-  SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS,
+  SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS, ORIGIN_TOKENS,
   COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
-  localNodesWithFlag,
   collectTunableNumbers, boardSupportedTransports, effectiveTransport,
 } from '@core';
 import type { GenerationMetadata } from "../backends/types";
 
-/** C++ printf format for a StateEvent JSON line: route, from, to, reason, command_id. */
-const EVENT_FMT =
-  '{\\"route\\":%d,\\"from\\":\\"%s\\",\\"to\\":\\"%s\\",\\"reason\\":\\"%s\\",\\"command_id\\":\\"%s\\"}';
-
 /** esp-idf `esp_reset_reason()` enum (values 0..10) → wire token; index === enum value.
- *  Published retained on connect so the dashboard can show why a controller last
+ *  Rides the snapshot's `text` so the dashboard can show why a controller last
  *  rebooted. A firmware crash (PANIC / *_WDT) is the panic signal — a recurring one is
  *  the bootloop tell; BROWNOUT is a separate power-supply fault, not a crash. */
 const RESET_REASON_TOKENS = [
@@ -30,26 +25,6 @@ const cppTokenArray = (name: string, toks: readonly string[]) =>
 /** Indent each non-empty C++ line to a column (YAML block-scalar body). */
 const indent = (lines: string[], n: number) =>
   lines.map(l => (l === '' ? '' : ' '.repeat(n) + l)).join('\n');
-
-/** One bare C++ publish statement for a channel, against the precomputed topic. */
-function publishStmt(c: TelemetryChannel, topic: string): string {
-  switch (c.kind) {
-    case 'state':
-      return `if (!std::isnan(id(${c.ref}).state)) mc->publish("${topic}", to_string(id(${c.ref}).state));`;
-    case 'cover':
-      return `if (!std::isnan(id(${c.ref}).position)) mc->publish("${topic}", to_string(id(${c.ref}).position));`;
-    case 'bool':
-      return `mc->publish("${topic}", id(${c.ref}).state ? "1" : "0");`;
-    case 'enum': {
-      const toks = c.tokens ?? [];
-      const arr = toks.map(t => `"${t}"`).join(', ');
-      return `{ static const char* T[] = {${arr}}; int v = id(${c.ref}); ` +
-        `if (v >= 0 && v < ${toks.length}) mc->publish("${topic}", T[v]); }`;
-    }
-    case 'text':
-      return `mc->publish("${topic}", id(${c.ref}).state);`;
-  }
-}
 
 /**
  * Generate the MQTT runtime package: broker connection, explicit telemetry
@@ -74,8 +49,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // binary; board-package.ts emits no wifi_dbm sensor there), so gate its publish
   // to avoid referencing an id that wasn't generated.
   const hasWifi = effectiveTransport(m.device.network, boardSupportedTransports(board)) === 'wifi';
-  const ev = eventTopic(site, ctrl);
-  // ESPHome's auto-publish prefix, segregated from our telemetry/event scheme.
+  // ESPHome's auto-publish prefix, segregated from our scheme.
   // Single-sourced so topic_prefix and the raw log topic below can't desync.
   const topicPrefix = `${MQTT_ROOT}/${site}/${ctrl}/esphome`;
   const NS = SYSTEM_STATE_TOKENS.length;
@@ -86,7 +60,6 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // same list the dashboard chart spec builds widgets from, so what the firmware
   // publishes and what the UI reads can never drift.
   const channels = collectTelemetryChannels(m);
-  const hasManualPumps = localNodesWithFlag(m, 'isPump').length > 0;
   // config_set: write any runtime-tunable number entity (level setpoints, route
   // max-runtime, controller safety timings, pressure calibration) by id.
   // set_value().perform() fires the number's restore so the change persists across
@@ -102,6 +75,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
       const lead = i === 0 ? 'if' : 'else if';
       return `  ${lead} (strcmp(key, "${t.key}") == 0) { id(${t.key}).make_call().set_value(value).perform(); }`;
     }),
+    '  record_outcome(command_id, "APPLIED", "");',
   ];
 
   // SNTP wall clock — the single `time: sntp` (id: sntp_time) on every device.
@@ -122,29 +96,16 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     ? `\n  certificate_authority: |-\n${indent(metadata.brokerCa.trimEnd().split('\n'), 4)}\n  skip_cert_cn_check: true`
     : '';
 
-  // --- Shared event helper ---------------------------------------------------
-  // One lambda-local C++ helper, embedded in both the command handler and the
-  // transition log, so the snprintf + publish is written once. Best-effort: it
-  // skips silently when the broker is disconnected.
-  const publishEventHelper = [
-    'auto publish_event = [](int route, const char* from, const char* to, const char* reason, const char* cid) {',
-    '  auto *mc = id(mqtt_client);',
-    '  if (!mc->is_connected()) return;',
-    '  char payload[192];',
-    `  snprintf(payload, sizeof(payload), "${EVENT_FMT}", route, from, to, reason, cid);`,
-    `  mc->publish("${ev}", payload);`,
-    '};',
-  ];
-
   // --- Operator command handler (JSON on the command topic) ------------------
-  // A stale command (issued before the TTL window) is refused outright. Route
-  // refusals/queues become a transition event carrying the reason via the rc →
-  // {to, reason} tables from core (no magic numbers); a successful start (rc 0)
-  // needs no event here — the transition log below catches the PREPARING edge.
+  // Each handled command calls record_outcome (routes.h), which rides re-asserted
+  // in the snapshot — the server reconciles the `commands` record and the dashboard
+  // reads the reason. A manual command is tagged origin=MANUAL + the issuing user id
+  // (`actor`) so the run is attributed on the snapshot. A stale command (older than
+  // the TTL window) is refused outright.
   const cmdBody = [
-    ...publishEventHelper,
     'const char* action = x["action"] | "";',
     'const char* command_id = x["command_id"] | "";',
+    'const char* actor = x["actor"] | "";',
     '',
     '// TTL gate: once time is TRUSTED (a real SNTP sync, not the flash-seeded boot',
     '// estimate), drop a command older than the window (e.g. one queued while the link',
@@ -152,7 +113,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     'auto _t = id(sntp_time).now();',
     'long long issued_at = x["issued_at"] | 0LL;',
     `if (id(time_trusted) && issued_at > 0 && (long long)_t.timestamp - issued_at > ${COMMAND_TTL_S}) {`,
-    '  publish_event(-1, "", "REFUSED", "STALE", command_id);',
+    '  record_outcome(command_id, "REFUSED", "STALE");',
     '  return;',
     '}',
     '',
@@ -160,21 +121,22 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     'if (strcmp(action, "route_start") == 0) {',
     `  ${cppTokenArray('RS_TO', ROUTE_START_RESULTS.map(r => r.to))}`,
     `  ${cppTokenArray('RS_REASON', ROUTE_START_RESULTS.map(r => r.reason))}`,
-    '  int rc = try_route_start(route_id, command_id);',
-    `  if (rc > 0 && rc < ${ROUTE_START_RESULTS.length}) publish_event(route_id, "", RS_TO[rc], RS_REASON[rc], command_id);`,
+    '  int rc = try_route_start(route_id, command_id, STOPSPEC_INHERIT, ORIGIN_MANUAL, actor);',
+    `  record_outcome(command_id, rc == 0 ? "APPLIED" : RS_TO[rc], rc == 0 ? "" : RS_REASON[rc]);`,
     '} else if (strcmp(action, "route_stop") == 0) {',
     `  ${cppTokenArray('RST_REASON', ROUTE_STOP_RESULTS.map(r => r.reason))}`,
     '  int rc = try_route_stop(route_id, command_id);',
-    `  if (rc > 0 && rc < ${ROUTE_STOP_RESULTS.length}) publish_event(route_id, "", "REFUSED", RST_REASON[rc], command_id);`,
+    `  record_outcome(command_id, rc == 0 ? "APPLIED" : "REFUSED", rc == 0 ? "" : RST_REASON[rc]);`,
     '} else if (strcmp(action, "fault_reset") == 0) {',
     '  int s = find_slot_by_route(route_id);',
     '  if (s >= 0 && slots[s].state == 4) { init_slot(s); id(system_state) = derived_system_state(); }',
+    '  record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "stop_all") == 0) {',
-    '  id(btn_stop_all).press();',
+    '  id(btn_stop_all).press(); record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "reset_faults") == 0) {',
-    '  id(btn_reset_faults).press();',
+    '  id(btn_reset_faults).press(); record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "clear_queue") == 0) {',
-    '  id(btn_clear_queue).press();',
+    '  id(btn_clear_queue).press(); record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "node_set") == 0) {',
     '  // Manual claim/release via the dead-man registry the reconciler honours. A pump',
     '  // claim is GUARDED (manual_pump_precheck: source-low / dry-run-unprotectable) and',
@@ -189,22 +151,23 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     '    int k = manual_pump_slot(node_id);',
     '    drop_claim(node_id, "manual");',
     '    if (k >= 0) manual_clear_latch(k);',
-    '    publish_event(-1, "", NS_TO[0], NS_REASON[0], command_id);',
+    '    record_outcome(command_id, NS_TO[0], NS_REASON[0]);',
     '  } else {',
     '    int k = manual_pump_slot(node_id);',
     '    if (k >= 0) {',
     '      int rc = manual_pump_precheck(k);   // 0 ok, 1 source-low, 2 no local flow sensor',
     '      if (rc == 0) extend_deadman(node_id, "manual", 0);',
-    '      publish_event(-1, "", NS_TO[rc], NS_REASON[rc], command_id);',
+    '      record_outcome(command_id, NS_TO[rc], NS_REASON[rc]);',
     '    } else if (is_valve_node(node_id)) {',
     '      extend_deadman(node_id, "manual", 0);',
-    '      publish_event(-1, "", NS_TO[0], NS_REASON[0], command_id);',
+    '      record_outcome(command_id, NS_TO[0], NS_REASON[0]);',
     '    } else {',
-    '      publish_event(-1, "", NS_TO[3], NS_REASON[3], command_id);  // no local actuator',
+    '      record_outcome(command_id, NS_TO[3], NS_REASON[3]);  // no local actuator',
     '    }',
     '  }',
     '} else if (strcmp(action, "safety_override") == 0) {',
     '  if (x["on"] | false) id(safety_override).turn_on(); else id(safety_override).turn_off();',
+    '  record_outcome(command_id, "APPLIED", "");',
     ...configCases,
     '} else {',
     '  ESP_LOGW("cmd", "unknown action: %s", action);',
@@ -214,86 +177,78 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // MQTT here is the device↔server pipe: telemetry up, commands down. Cross-controller
   // coordination is device↔device over UDP (packages/coordination.{h,yaml}).
 
-  // --- Telemetry publisher (every update interval) ---------------------------
-  const telemetryBody = [
-    'auto *mc = id(mqtt_client);',
-    'if (!mc->is_connected()) return;',
-    ...channels.map(c => publishStmt(c, telemetryTopic(site, ctrl, c.sensor))),
-    // Free heap is the binding constraint on these builds (a starved heap is what
-    // bootloops a controller on MQTT connect). Publish current + low-water free
-    // heap so the server can chart it and flag a controller trending toward the cliff.
-    `mc->publish("${telemetryTopic(site, ctrl, HEAP_FREE_SENSOR)}", to_string(esp_get_free_heap_size()));`,
-    `mc->publish("${telemetryTopic(site, ctrl, HEAP_MIN_SENSOR)}", to_string(esp_get_minimum_free_heap_size()));`,
-    // Connection-quality + liveness diagnostics for the dashboard's controller
-    // panel: uptime (s) and SoC temperature (°C) always; wifi signal (dBm) only
-    // when the active transport is wifi. The on-device sensors are board-package /
-    // networking components (uptime_sec / esp_temp / wifi_dbm).
-    `if (!std::isnan(id(uptime_sec).state)) mc->publish("${telemetryTopic(site, ctrl, UPTIME_SENSOR)}", to_string(id(uptime_sec).state));`,
-    `if (!std::isnan(id(esp_temp).state)) mc->publish("${telemetryTopic(site, ctrl, TEMP_SENSOR)}", to_string(id(esp_temp).state));`,
-    ...(hasWifi
-      ? [`if (!std::isnan(id(wifi_dbm).state)) mc->publish("${telemetryTopic(site, ctrl, WIFI_SIGNAL_SENSOR)}", to_string(id(wifi_dbm).state));`]
-      : []),
-    // Per-route current state, re-asserted every interval (self-healing) so a dropped
-    // one-shot transition event can't strand the dashboard's route card. Reads slots[]
-    // (routes.h); IDLE (0) when the route has no active slot. The event log stays the
-    // edge-triggered timeline; this is the reliable current-state source.
-    ...(m.routes.length
-      ? [`static const char* RTSTATE[] = {${SYSTEM_STATE_TOKENS.map((t) => `"${t}"`).join(', ')}};`]
-      : []),
-    ...m.routes.map((_r, i) =>
-      `{ int s = find_slot_by_route(${i}); int v = (s >= 0) ? slots[s].state : 0; ` +
-      `if (v >= 0 && v < ${NS}) mc->publish("${telemetryTopic(site, ctrl, routeStateSensor(i))}", RTSTATE[v]); }`),
-    // Current value of each runtime-tunable number, so the dashboard's operator
-    // editors show the live effective value (via the shadow) and reflect a
-    // config_set without a round-trip to the device's own API.
-    ...tunables.map((t) =>
-      `if (!std::isnan(id(${t.key}).state)) mc->publish("${telemetryTopic(site, ctrl, t.key)}", to_string(id(${t.key}).state));`),
-  ];
+  // --- Controller snapshot (one JSON, re-asserted every interval) -----------
+  // The single source of truth. ONE message carries: numeric readings (charts +
+  // rollups), text channels, system state, per-route current run (with origin +
+  // actor), and the recent command outcomes. The server projects it (latest doc,
+  // batched raw history, transitions derived from changes, command reconcile).
+  // Replaces the per-sensor telemetry, the route-state tokens, AND the lossy
+  // transition-event log — nothing authoritative reads a one-shot message now.
+  const SYS_SENSORS = new Set(['system_state', 'queue_depth', 'safety_override']);
+  const readingCh = channels.filter(c => !SYS_SENSORS.has(c.sensor) && (c.kind === 'state' || c.kind === 'bool' || c.kind === 'cover'));
+  const textCh = channels.filter(c => !SYS_SENSORS.has(c.sensor) && (c.kind === 'enum' || c.kind === 'text'));
+  const BUFSZ = Math.max(2048, (readingCh.length + textCh.length + tunables.length) * 44 + m.routes.length * 192 + 1024);
 
-  // --- Transition log (per-slot edge detection, 1s) -------------------------
-  // Diffs each slot's state against the previous tick and emits one StateEvent
-  // per change. The reason rides only on terminal states (FAULT → fault token,
-  // STOPPING/IDLE → stop reason). last_route survives the slot resetting to -1
-  // so a stop event still names the route that just ran.
-  const eventBody = [
-    ...publishEventHelper,
+  const readingLine = (c: TelemetryChannel): string => {
+    if (c.kind === 'bool') return `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":%d", sep(), id(${c.ref}).state ? 1 : 0));`;
+    if (c.kind === 'cover') return `if (!std::isnan(id(${c.ref}).position)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":%g", sep(), id(${c.ref}).position));`;
+    return `if (!std::isnan(id(${c.ref}).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":%g", sep(), id(${c.ref}).state));`;
+  };
+  const textLine = (c: TelemetryChannel): string => {
+    if (c.kind === 'enum') {
+      const toks = c.tokens ?? [];
+      return `{ ${cppTokenArray('TT', toks)} int v = id(${c.ref}); if (v >= 0 && v < ${toks.length}) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":\\"%s\\"", sep(), TT[v])); }`;
+    }
+    return `if (id(${c.ref}).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":\\"%s\\"", sep(), json_esc(id(${c.ref}).state.c_str())));`;
+  };
+  const routeLine = (i: number): string =>
+    `{ int s = find_slot_by_route(${i}); int st = (s >= 0) ? slots[s].state : 0; ` +
+    `const char* o = "SYSTEM"; const char* ac = ""; const char* rs = ""; ` +
+    `if (s >= 0) { o = (slots[s].origin < 3) ? ORIGIN_TOK[slots[s].origin] : "SYSTEM"; ac = slots[s].actor; ` +
+    `if (st == 4) { int f = slots[s].fault_code; if (f >= 0 && f < ${NF}) rs = FAULT_TOK[f]; } ` +
+    `else if (st == 3 || st == 0) { int r = slots[s].stop_reason; if (r >= 0 && r < ${NR}) rs = STOP_TOK[r]; } } ` +
+    `put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"id\\":${i},\\"state\\":\\"%s\\",\\"origin\\":\\"%s\\",\\"actor\\":\\"%s\\",\\"reason\\":\\"%s\\"}", sep(), ` +
+    `(st >= 0 && st < ${NS}) ? SYS_TOK[st] : "", o, ac, rs)); }`;
+
+  const snapshotBody = [
     'auto *mc = id(mqtt_client);',
     'if (!mc->is_connected()) return;',
     cppTokenArray('SYS_TOK', SYSTEM_STATE_TOKENS),
     cppTokenArray('STOP_TOK', STOP_REASON_TOKENS),
     cppTokenArray('FAULT_TOK', FAULT_TOKENS),
-    'static int last_state[MAX_CONCURRENT_ROUTES];',
-    'static int last_route[MAX_CONCURRENT_ROUTES];',
-    'static bool seeded = false;',
-    'if (!seeded) {',
-    '  for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) { last_state[i] = slots[i].state; last_route[i] = slots[i].route_id; }',
-    '  seeded = true;',
-    '  return;',
-    '}',
-    'for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {',
-    '  int cur = slots[s].state;',
-    '  if (cur == last_state[s]) continue;',
-    '  int rid = slots[s].route_id >= 0 ? slots[s].route_id : last_route[s];',
-    `  const char* from = (last_state[s] >= 0 && last_state[s] < ${NS}) ? SYS_TOK[last_state[s]] : "";`,
-    `  const char* to = (cur >= 0 && cur < ${NS}) ? SYS_TOK[cur] : "";`,
-    '  const char* reason = "";',
-    `  if (cur == 4) { int f = slots[s].fault_code; if (f >= 0 && f < ${NF}) reason = FAULT_TOK[f]; }`,
-    `  else if (cur == 3 || cur == 0) { int r = slots[s].stop_reason; if (r >= 0 && r < ${NR}) reason = STOP_TOK[r]; }`,
-    '  publish_event(rid, from, to, reason, "");',
-    '  last_state[s] = cur;',
-    '}',
-    'for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) { if (slots[s].route_id >= 0) last_route[s] = slots[s].route_id; }',
-    // Manual/claim pump guard latch transitions → timeline. The node-identified
-    // truth is the relay shadow (telemetry); this carries the reason. No command_id
-    // (the trip is async, the original command is long gone).
-    ...(hasManualPumps ? [
-      'static int last_latch[NUM_MANUAL_PUMPS];',
-      'for (int k = 0; k < NUM_MANUAL_PUMPS; k++) {',
-      '  if (manual_latch[k] == last_latch[k]) continue;',
-      `  if (manual_latch[k] > 0 && manual_latch[k] < ${NR}) publish_event(-1, "", "REFUSED", STOP_TOK[manual_latch[k]], "");`,
-      '  last_latch[k] = manual_latch[k];',
-      '}',
-    ] : []),
+    cppTokenArray('ORIGIN_TOK', ORIGIN_TOKENS),
+    cppTokenArray('RR_TOK', RESET_REASON_TOKENS),
+    `char buf[${BUFSZ}];`,
+    'int n = 0;',
+    'bool first = true;',
+    'auto sep = [&]() -> const char* { const char* s = first ? "" : ","; first = false; return s; };',
+    // Bounds-safe accumulate: snprintf returns the WOULD-BE length, so a naive
+    // `n += snprintf(...)` can push n past the buffer and the next call then writes
+    // out of bounds (sizeof-n underflows). put() clamps n to [0, sizeof(buf)-1], so
+    // a truncated snapshot is simply dropped server-side (self-heals next interval).
+    'auto put = [&](int w) { int rem = (int) sizeof(buf) - n; if (w < 0) w = 0; n += (w < rem) ? w : (rem > 0 ? rem - 1 : 0); };',
+    'long long ts = id(time_trusted) ? (long long) id(sntp_time).now().timestamp : 0;',
+    'put(snprintf(buf+n, sizeof(buf)-n, "{\\"ts\\":%lld,\\"readings\\":{", ts));',
+    ...readingCh.map(readingLine),
+    ...tunables.map(t => `if (!std::isnan(id(${t.key}).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${t.key}\\":%g", sep(), id(${t.key}).state));`),
+    `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${HEAP_FREE_SENSOR}\\":%u", sep(), (unsigned) esp_get_free_heap_size()));`,
+    `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${HEAP_MIN_SENSOR}\\":%u", sep(), (unsigned) esp_get_minimum_free_heap_size()));`,
+    `if (!std::isnan(id(uptime_sec).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${UPTIME_SENSOR}\\":%g", sep(), id(uptime_sec).state));`,
+    `if (!std::isnan(id(esp_temp).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${TEMP_SENSOR}\\":%g", sep(), id(esp_temp).state));`,
+    ...(hasWifi ? [`if (!std::isnan(id(wifi_dbm).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${WIFI_SIGNAL_SENSOR}\\":%g", sep(), id(wifi_dbm).state));`] : []),
+    'put(snprintf(buf+n, sizeof(buf)-n, "},\\"text\\":{"));',
+    'first = true;',
+    ...textCh.map(textLine),
+    `{ int rr = (int) esp_reset_reason(); put(snprintf(buf+n, sizeof(buf)-n, "%s\\"reset_reason\\":\\"%s\\"", sep(), (rr >= 0 && rr < ${RESET_REASON_TOKENS.length}) ? RR_TOK[rr] : "UNKNOWN")); }`,
+    'if (id(ip_addr).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"ip\\":\\"%s\\"", sep(), json_esc(id(ip_addr).state.c_str())));',
+    `put(snprintf(buf+n, sizeof(buf)-n, "},\\"system\\":{\\"state\\":\\"%s\\",\\"queue\\":%d,\\"safety\\":%s},\\"routes\\":[", (id(system_state) >= 0 && id(system_state) < ${NS}) ? SYS_TOK[id(system_state)] : "", (int) id(queue_depth).state, id(safety_override).state ? "true" : "false"));`,
+    'first = true;',
+    ...m.routes.map((_r, i) => routeLine(i)),
+    'put(snprintf(buf+n, sizeof(buf)-n, "],\\"outcomes\\":["));',
+    'first = true;',
+    'for (int k = 0; k < MAX_OUTCOMES; k++) { if (g_outcomes[k].command_id[0]) put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"command_id\\":\\"%s\\",\\"result\\":\\"%s\\",\\"reason\\":\\"%s\\"}", sep(), g_outcomes[k].command_id, g_outcomes[k].result, g_outcomes[k].reason)); }',
+    'put(snprintf(buf+n, sizeof(buf)-n, "]}"));',
+    `mc->publish("${snapshotTopic(site, ctrl)}", buf);`,
   ];
 
   // --- On-connect retained facts ---------------------------------------------
@@ -301,16 +256,11 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   //  - identity: chip base MAC (duplicate-firmware tripwire; the server binds the
   //    controller to the first MAC it sees and flags a different board on the same id).
   //  - reset_reason: why the device last rebooted (esp_reset_reason → token). A crash
-  //    reason after an unexpected restart is the panic/bootloop signal on the dashboard.
-  //  - ip: current device IP, so the dashboard can deep-link the controller's built-in
-  //    web log console (full live logs, on the local network).
-  // reset_reason/ip ride the existing telemetry→string-shadow path; no server change.
+  // Only the retained identity (chip MAC) is published here now — reset_reason and
+  // ip ride the snapshot's `text` (re-asserted every interval), so the server has
+  // them from the latest snapshot doc without a separate retained publish.
   const onConnectBody = [
     `id(mqtt_client).publish("${identityTopic(site, ctrl)}", get_mac_address(), 0, true);`,
-    cppTokenArray('RR_TOK', RESET_REASON_TOKENS),
-    'int rr = (int) esp_reset_reason();',
-    `id(mqtt_client).publish("${telemetryTopic(site, ctrl, 'reset_reason')}", (rr >= 0 && rr < ${RESET_REASON_TOKENS.length}) ? RR_TOK[rr] : "UNKNOWN", 0, true);`,
-    `id(mqtt_client).publish("${telemetryTopic(site, ctrl, 'ip')}", id(ip_addr).state, 0, true);`,
   ];
 
   return `# =============================================================================
@@ -318,27 +268,22 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
 # =============================================================================
 # AUTO-GENERATED. Replaces Home Assistant as the runtime transport.
 #
-# Reliability model: current STATE rides self-healing telemetry (re-asserted every
-# interval, so a dropped sample self-corrects on the next tick); EVENTS are
-# edge-triggered and best-effort (with idf_send_async a full publish pool drops
-# them). Nothing authoritative reads state from events, so a dropped event is at
-# worst a cosmetic gap in the activity timeline or a missed refusal reason — never
-# a wrong state. (The async drop is at the device's pool, before the broker, so QoS
-# can't help that direction; self-healing telemetry is the fix.)
+# Reliability model: the device re-asserts ONE state snapshot every interval — the
+# single source of truth. A dropped snapshot self-corrects on the next tick. No
+# one-shot message is load-bearing; the server derives everything else (history,
+# transition timeline, command outcomes) from the snapshot stream.
 #
-# - Telemetry: published explicitly on majiflow/${site}/${ctrl}/telemetry/<id>
-#   (absolute topics, set in the lambdas below). Numbers ride as numbers;
-#   system_state / stop_reason / route_<id>_state ride as human-readable tokens.
-#   This is the authoritative, self-healing current-state source.
-# - Events:    each state change is appended on majiflow/${site}/${ctrl}/event
-#   as a StateEvent JSON (route, from, to, reason, command_id). Edge-triggered and
-#   best-effort: the activity timeline + transient command-outcome reasons, not a
-#   state-of-record.
+# - Snapshot: ONE JSON on majiflow/${site}/${ctrl}/state every interval — readings
+#   (numbers), text channels, system state, per-route current run (state + origin +
+#   actor), and the recent command outcomes. The server projects it into the latest
+#   doc, batched numeric history (rollups), a derived transition timeline, and
+#   command reconciliation.
 # - Commands:  operator actions arrive as JSON on the command topic (QoS 1 over a
 #   persistent session, so the broker queues across a reconnect; stale ones gated
 #   by issued_at) and dispatch into the route/queue functions (routes.h / control);
-#   a refused/queued command emits a (best-effort) transition event with the reason.
-# - Status:    retained birth/will on the status topic for online/offline.
+#   each handled command records an outcome that rides the next snapshot.
+# - Status:    retained birth/will on the status topic for online/offline; the
+#   retained identity (chip MAC) is the duplicate-firmware tripwire.
 #
 # Mode: ${metadata.mode}. Broker: ${metadata.brokerAddress}:${metadata.brokerPort}.
 # =============================================================================
@@ -367,16 +312,16 @@ mqtt:
   # task sends; a stalled link drops messages instead of rebooting. esp-idf/esp32
   # only, which this firmware targets exclusively (no arduino/esp8266 backend).
   idf_send_async: true
-  # We publish our own telemetry/event/status on absolute topics (in the lambdas
-  # below). ESPHome still auto-publishes each entity's state under topic_prefix;
-  # we segregate those under .../esphome/* so they never collide with our scheme
-  # (the server's parsers key on the 4th segment being telemetry/event/status).
+  # We publish our own snapshot/status on absolute topics (in the lambdas below).
+  # ESPHome still auto-publishes each entity's state under topic_prefix; we segregate
+  # those under .../esphome/* so they never collide with our scheme (the server's
+  # parsers key on the 4th segment: state / status / identity).
   # An empty prefix is no longer accepted by ESPHome (cv.publish_topic).
   topic_prefix: "${topicPrefix}"
   # Raw log stream gated to WARN+. At DEBUG every log line publishes to .../debug,
   # and a dropped publish logs an error that is itself published -> a feedback storm
   # that exhausts heap and reboots. WARN+ keeps real problems on the wire; routine
-  # state rides the structured telemetry/event topics; UART keeps full detail.
+  # state rides the structured snapshot topic; UART keeps full detail.
   log_topic:
     topic: "${topicPrefix}/debug"
     level: WARN
@@ -421,16 +366,12 @@ ${indent(cmdBody, 12)}
             apply_automation_set((const uint8_t *) x.data(), x.size());
 ${timeBlock}
 interval:
-  # Telemetry: publish every channel each update interval while connected.
+  # Snapshot: publish the whole controller state every update interval while
+  # connected. Re-asserted (self-healing) — the single source of truth; the server
+  # projects it. No separate per-sensor or transition-event publishing.
   - interval: \${update_interval}
     then:
       - lambda: |-
-${indent(telemetryBody, 10)}
-
-  # Transitions: detect per-slot state edges every second and append events.
-  - interval: 1s
-    then:
-      - lambda: |-
-${indent(eventBody, 10)}
+${indent(snapshotBody, 10)}
 `;
 }

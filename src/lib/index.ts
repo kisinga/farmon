@@ -95,8 +95,8 @@ export type { ConfirmDescriptor, ConfirmObservation, CommandPhase } from './comm
 // --- Runtime-tunable device numbers (config_set surface; firmware + UI + drift test) ---
 export { collectTunableNumbers, routeVolumeEligible } from './tunable-numbers';
 export {
-  AUTOMATION_WIRE_MAGIC, AUTOMATION_HEADER_BYTES, AUTOMATION_RECORD_BYTES, MAX_AUTOMATIONS,
-  routeSetVersion, serializeAutomationSet,
+  AUTOMATION_WIRE_MAGIC, AUTOMATION_HEADER_BYTES, AUTOMATION_RECORD_BYTES, AUTOMATION_ID_BYTES,
+  MAX_AUTOMATIONS, routeSetVersion, serializeAutomationSet,
 } from './automation-wire';
 export type { WireAutomation, TriggerKind } from './automation-wire';
 export { listAutomatableRoutes } from './automation-routes';
@@ -116,24 +116,26 @@ export {
 // --- Runtime contract: deployment mode, MQTT topics, command vocabulary ---
 export {
   MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic, identityTopic,
+  snapshotTopic,
   telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, routeStateSensor, COMMAND_TTL_S,
   routeSourceMinNumber, routeDestMaxNumber, collectConfigSetpoints,
   COORD_MSG, COORD_TYPE,
 } from './codegen-ids';
 export type {
   DeploymentMode, CommandAction, CommandEnvelope, CoordMessage, TelemetryRole, ConfigSetpoint,
+  ControllerSnapshot, RouteSnapshot, CommandOutcome,
 } from './codegen-ids';
 
 // --- Runtime contract: state/fault/reason vocabulary + meanings ---
 export {
-  SYSTEM_STATE_TOKENS, FAULT_TOKENS, STOP_REASON_TOKENS, OUTCOME_TOKENS,
+  SYSTEM_STATE_TOKENS, FAULT_TOKENS, STOP_REASON_TOKENS, OUTCOME_TOKENS, ORIGIN_TOKENS,
   SYSTEM_STATE_MEANINGS, FAULT_MEANINGS, STOP_REASON_MEANINGS, OUTCOME_MEANINGS,
   ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
   describeState,
 } from './codegen-ids';
 export type {
   StateKind, StateMeaning,
-  SystemStateToken, FaultToken, StopReasonToken, OutcomeToken, StateEvent,
+  SystemStateToken, FaultToken, StopReasonToken, OutcomeToken, OriginToken, StateEvent,
 } from './codegen-ids';
 
 // --- Remote Proxy ---

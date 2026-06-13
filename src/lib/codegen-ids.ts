@@ -215,6 +215,19 @@ export const identityTopic = (site: string, ctrl: string) =>
 export const eventTopic = (site: string, ctrl: string) =>
   `${MQTT_ROOT}/${site}/${ctrl}/event`;
 
+/**
+ * Controller state snapshot topic (device → broker → ingest):
+ *   majiflow/{site}/{ctrl}/state
+ * ONE JSON {@link ControllerSnapshot} re-asserted every interval — the single
+ * source of truth. The server projects it: latest → controller_state doc, numeric
+ * readings → telemetry_raw (rollups), route/system changes → derived state_events.
+ * Replaces the per-sensor telemetry topic, the route-state token, and the lossy
+ * event log. Inside the device ACL namespace.
+ */
+export const snapshotTopic = (site: string, ctrl: string) =>
+  `${MQTT_ROOT}/${site}/${ctrl}/state`;
+
+
 /** Fixed (non-node) telemetry sensor ids the firmware always publishes. */
 export const SYSTEM_STATE_SENSOR = 'system_state';
 export const STOP_REASON_SENSOR = 'stop_reason';
@@ -291,8 +304,10 @@ export const COMMAND_TTL_S = 120;
  * device's reported result so the dashboard can show a pending → done state.
  * `issued_at` (unix seconds, stamped by the server) is the staleness clock the
  * device checks against COMMAND_TTL_S — see the TTL gate in the firmware handler.
+ * `actor` is the issuing user's id; the device stores it on the run's slot and
+ * re-publishes it as the route's origin so the dashboard can show "by <name>".
  */
-export type CommandEnvelope = { command_id: string; issued_at: number } & (
+export type CommandEnvelope = { command_id: string; issued_at: number; actor?: string } & (
   | { action: 'route_start' | 'route_stop' | 'fault_reset'; route_id: number }
   | { action: 'stop_all' | 'reset_faults' | 'clear_queue' }
   // node_set: claim (on) / release (off) any actuator via the dead-man registry
@@ -443,6 +458,12 @@ export const SYSTEM_STATE_TOKENS = [
   'IDLE', 'PREPARING', 'RUNNING', 'STOPPING', 'FAULT',
 ] as const;
 
+/** Run origin, indexed by the firmware's `slots[].origin` (0..2). Pairs with an
+ *  actor (a user id for MANUAL, an automation index for AUTOMATION) on the
+ *  route-origin telemetry channel. */
+export const ORIGIN_TOKENS = ['SYSTEM', 'MANUAL', 'AUTOMATION'] as const;
+export type OriginToken = (typeof ORIGIN_TOKENS)[number];
+
 /** Fault code, indexed by the firmware's `fault_code` (0..3). */
 export const FAULT_TOKENS = [
   'NONE', 'NO_FLOW', 'MAX_RUNTIME', 'CONTROL_LOST',
@@ -556,13 +577,59 @@ export function describeState(
 }
 
 // ---------------------------------------------------------------------------
-// Transition event — the JSON body on eventTopic(). One state change, emitted
-// edge-triggered by the firmware. `site`/`controller`/`ts` are added by the
-// server from the topic + receive time; the device sends the change itself.
-// `from`/`to`/`reason` are wire tokens (typed `string`: the consumer must
-// tolerate an unrecognised one). `command_id` correlates a transition back to
-// the operator command that caused it, when there is one.
+// Controller snapshot — the ONE JSON body on snapshotTopic(), re-asserted every
+// interval. The single source of truth: the server projects it into the latest
+// doc, numeric history (rollups), and a derived transition timeline. `site`/
+// `controller` come from the topic; `ts` is device-stamped. All token fields are
+// typed `string`/union — consumers must tolerate an unrecognised one.
 // ---------------------------------------------------------------------------
+
+/** One route's current run inside a {@link ControllerSnapshot}. */
+export interface RouteSnapshot {
+  /** Firmware ROUTES[] index (== the dashboard's routeId). */
+  id: number;
+  /** Current state token (SYSTEM_STATE_TOKENS). */
+  state: string;
+  /** Who/what started the active run. */
+  origin: OriginToken;
+  /** Whole id of the actor: a user id (MANUAL), an automation id (AUTOMATION),
+   *  '' for SYSTEM/idle. The server resolves it to a display name. */
+  actor: string;
+  /** Stop/fault reason token explaining the last change, '' when none. */
+  reason: string;
+  /** Filled server-side at ingest: the actor's display name ("Jane" / "Morning").
+   *  Absent on the device wire; present in the stored controller_state doc. */
+  actorLabel?: string;
+}
+
+export interface ControllerSnapshot {
+  /** Device-stamped sample time (unix seconds) — one ts for the whole snapshot. */
+  ts: number;
+  /** Numeric sensor readings keyed by sensor id (telemetrySensorId), incl. health
+   *  numerics (heap/uptime/temp/wifi). The server writes these to telemetry_raw. */
+  readings: Record<string, number>;
+  /** Categorical/text channels keyed by sensor id (reset_reason, ip, queue text…).
+   *  Shadow-only; no history rows. */
+  text?: Record<string, string>;
+  /** System-wide state (the former system_state / queue_depth / safety_override). */
+  system: { state: string; queue: number; safety: boolean };
+  /** Per-route current run — the source for the dashboard route cards + the
+   *  server-derived transition timeline. */
+  routes: RouteSnapshot[];
+  /** Results of the last few commands the device handled — re-asserted with the
+   *  snapshot so a dropped one isn't lost. The server reconciles each matching
+   *  `commands` record and surfaces the reason for the command UI. */
+  outcomes?: CommandOutcome[];
+}
+
+/** Result of a command the device handled (rides in {@link ControllerSnapshot}). */
+export interface CommandOutcome {
+  command_id: string;
+  /** Outcome token (e.g. APPLIED / QUEUED / REFUSED). */
+  result: string;
+  /** Reason token when refused/queued, '' otherwise. */
+  reason: string;
+}
 
 export interface StateEvent {
   /** Route id the transition is about, or -1 for a system-wide change. */

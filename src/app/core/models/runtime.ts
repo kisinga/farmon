@@ -5,14 +5,17 @@
  */
 
 /** A channel's last-known value: numeric `reported` for charts, plus the
- *  human-readable `reported_text` token for categorical channels. */
+ *  human-readable `reported_text` token for categorical channels. For a route's
+ *  `route_<id>_state` row, `origin`/`actorLabel` carry who/what started the run
+ *  (resolved server-side), so the dashboard can show "by Jane" / "Automation: …". */
 export interface ShadowRow {
   controller: string;
   sensor: string;
   reported: number;
   reported_text: string;
-  desired: number;
   ts: string;
+  origin?: string;
+  actorLabel?: string;
 }
 
 /** One history sample. The raw tier carries `value`; rollup tiers carry avg/min/max. */
@@ -44,6 +47,18 @@ export interface ControllerRow {
   online: boolean;
   last_seen: string;
   firmware_version: string;
+}
+
+/** One command result re-asserted in a controller snapshot's `outcomes[]`. The
+ *  reliable, self-healing channel for "did my command land": `result` is the
+ *  device outcome token (APPLIED/QUEUED/REFUSED/…), `reason` the detail token.
+ *  The dashboard correlates by `command_id`; the alerts bell attributes via
+ *  `controller`. */
+export interface CommandOutcomeRow {
+  controller: string;
+  command_id: string;
+  result: string;
+  reason: string;
 }
 
 /** One transition from the append-only `state_events` log (DB `from_state`/

@@ -214,12 +214,16 @@ assert(
   "MQTT raw log_topic gated to WARN+ — can't feedback-storm the broker into heap exhaustion",
 );
 assert(
-  /telemetry\/heap_free/.test(mqttYaml),
-  "Heap telemetry published — free heap is the binding constraint; watch it fleet-wide",
+  /\\"heap_free\\":/.test(mqttYaml),
+  "Heap reading rides the snapshot — free heap is the binding constraint; watch it fleet-wide",
 );
 assert(
-  /telemetry\/route_0_state/.test(mqttYaml),
-  "Per-route state published as self-healing telemetry — a dropped transition event can't strand the route card",
+  /\/state"/.test(mqttYaml) && /\\"routes\\":\[/.test(mqttYaml),
+  "One controller snapshot to .../state carries the per-route current run (state + origin + actor)",
+);
+assert(
+  !/telemetry\//.test(mqttYaml) && !/\/event"/.test(mqttYaml),
+  "No per-sensor telemetry topic and no lossy event topic — the snapshot is the single source of truth",
 );
 assert(
   mqttYaml.includes("on_json_message") && /qos:\s*1/.test(mqttYaml),
