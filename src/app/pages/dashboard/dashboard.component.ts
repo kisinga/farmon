@@ -458,8 +458,9 @@ export class DashboardComponent {
   private async load(): Promise<void> {
     const { site, topology } = await this.backend.siteLoad(this.siteId);
     this.siteName.set(site.friendlyName);
-    // Admin looking at a site they don't own → start read-only.
-    this.adminViewing.set(this.auth.isAdmin() && site.owner !== this.auth.user()?.id);
+    // Admin looking at a site they're not a co-owner of → start read-only.
+    const me = this.auth.user()?.id;
+    this.adminViewing.set(this.auth.isAdmin() && !(!!me && (site.owners?.includes(me) ?? false)));
     if (!topology) {
       this.store.error.set('Site has no topology yet.');
       this.store.loading.set(false);

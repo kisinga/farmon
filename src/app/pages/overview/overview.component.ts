@@ -9,6 +9,7 @@ import { CustomersStore } from '../../core/stores/customers.store';
 import type { SiteListEntry } from '../../core/models/backend-api';
 import { HOSTING_DEVICE_CAP } from '@core';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
+import { AssignPickerComponent, type AssignItem } from '../../shared/assign-picker/assign-picker.component';
 
 /** Generate a stable color from a string for site card visuals. */
 function siteColor(name: string): string {
@@ -33,7 +34,7 @@ function initials(name: string): string {
 @Component({
   selector: 'app-overview',
   standalone: true,
-  imports: [SectionHeaderComponent],
+  imports: [SectionHeaderComponent, AssignPickerComponent],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="content-pane space-y-6">
@@ -169,15 +170,26 @@ function initials(name: string): string {
                 </button>
                 <span class="flex-1"></span>
                 @if (isAdmin()) {
-                  <button class="btn btn-xs btn-ghost gap-1 px-1.5 max-w-[42%] normal-case"
-                    [class.text-amber-400]="!site.owner"
-                    (click)="openOwner(site, $event)"
-                    [title]="site.owner ? ('Owner: ' + ownerName(site.owner) + ' — click to manage') : 'Assign a customer'">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    <span class="truncate">{{ site.owner ? ownerName(site.owner) : 'Assign' }}</span>
-                  </button>
+                  @if (site.owners.length) {
+                    <button class="flex items-center -space-x-2 hover:opacity-80 transition-opacity pr-1"
+                      (click)="openOwner(site, $event)"
+                      [title]="ownersTitle(site.owners)">
+                      @for (id of site.owners.slice(0, 3); track id) {
+                        <span class="flex items-center justify-center w-6 h-6 rounded-full bg-base-300 ring-2 ring-base-100 text-[10px] font-semibold">{{ getInitials(ownerName(id)) }}</span>
+                      }
+                      @if (site.owners.length > 3) {
+                        <span class="flex items-center justify-center w-6 h-6 rounded-full bg-cyan-400/20 text-cyan-300 ring-2 ring-base-100 text-[10px] font-semibold">+{{ site.owners.length - 3 }}</span>
+                      }
+                    </button>
+                  } @else {
+                    <button class="btn btn-xs btn-ghost gap-1 px-1.5 text-amber-400 normal-case"
+                      (click)="openOwner(site, $event)" title="Assign customers to this site">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <span class="truncate">Assign</span>
+                    </button>
+                  }
                 }
                 <div class="dropdown dropdown-top dropdown-end" (click)="$event.stopPropagation()">
                   <button tabindex="0" class="btn btn-xs btn-ghost btn-square" title="More">
@@ -216,50 +228,18 @@ function initials(name: string): string {
       </dialog>
     }
 
-    <!-- Owner management dialog (admin) -->
+    <!-- Co-owner assignment dialog (admin): assign any number of customers to this site -->
     @if (ownerModalSite(); as s) {
-      <dialog class="modal modal-open">
-        <div class="modal-box max-w-md">
-          <h3 class="font-bold text-lg">Customer</h3>
-          <p class="text-xs text-base-content/50 mb-3">
-            Owner of <span class="font-medium text-base-content/80">{{ s.friendlyName }}</span> ·
-            @if (s.owner) { currently {{ ownerName(s.owner) }} } @else { unassigned }
-          </p>
-
-          <input type="text" class="input input-sm input-bordered w-full mb-3"
-                 placeholder="Search customers by name or email…"
-                 [value]="customerSearch()"
-                 (input)="customerSearch.set($any($event.target).value)" />
-
-          <div class="max-h-72 overflow-auto rounded-lg border border-base-300/40 divide-y divide-base-300/20">
-            @for (c of filteredCustomers(); track c.id) {
-              <button class="w-full flex items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-base-200/60"
-                      [class.bg-cyan-400/10]="c.id === s.owner"
-                      (click)="setOwner(s.id, c.id)">
-                <span class="flex items-center justify-center w-8 h-8 rounded-full bg-base-300 text-[11px] font-semibold shrink-0">{{ getInitials(c.name || c.email) }}</span>
-                <span class="flex-1 min-w-0">
-                  <span class="block text-sm font-medium truncate">{{ c.name || '(no name)' }}</span>
-                  <span class="block text-[11px] text-base-content/50 truncate">{{ c.email }}</span>
-                </span>
-                @if (c.id === s.owner) { <span class="text-cyan-300 text-xs shrink-0">Current &check;</span> }
-              </button>
-            } @empty {
-              <p class="px-3 py-6 text-center text-sm text-base-content/40">
-                @if (customers().length === 0) { No customers exist yet. } @else { No match. }
-              </p>
-            }
-          </div>
-
-          <div class="modal-action items-center">
-            @if (s.owner) {
-              <button class="btn btn-ghost btn-sm text-error" (click)="setOwner(s.id, '')">Unassign</button>
-            }
-            <span class="flex-1"></span>
-            <button class="btn btn-sm" (click)="ownerModalId.set(null)">Done</button>
-          </div>
-        </div>
-        <div class="modal-backdrop" (click)="ownerModalId.set(null)"></div>
-      </dialog>
+      <app-assign-picker
+        [title]="'Assign customers'"
+        [subtitle]="s.friendlyName"
+        searchPlaceholder="Search customers by name or email…"
+        emptyText="No customers exist yet — add them on the Customers page."
+        [items]="customerItems()"
+        [selectedIds]="ownerSet()"
+        (toggle)="onOwnerToggle(s.id, $event)"
+        (clear)="setOwners(s.id, [])"
+        (close)="ownerModalId.set(null)" />
     }
   `,
 })
@@ -285,23 +265,28 @@ export class OverviewComponent implements OnInit {
   protected ownerModalSite = computed(
     () => this.entries().find((s) => s.id === this.ownerModalId()) ?? null,
   );
-  protected customerSearch = signal('');
-  protected filteredCustomers = computed(() => {
-    const q = this.customerSearch().trim().toLowerCase();
-    const list = this.customers();
-    return q
-      ? list.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q))
-      : list;
-  });
+  /** Customers shaped as picker rows (name primary, email secondary). */
+  protected customerItems = computed<AssignItem[]>(() =>
+    this.customers().map((c) => ({ id: c.id, label: c.name, sub: c.email })),
+  );
+  /** The open site's co-owner ids as a Set, for the picker's selected state. */
+  protected ownerSet = computed(() => new Set(this.ownerModalSite()?.owners ?? []));
   private customerById = computed(() => new Map(this.customers().map((c) => [c.id, c] as const)));
 
-  /** Resolve an owner user id to a display name. Self (an admin-owned site) reads
+  /** Resolve a co-owner user id to a display name. Self (an admin-owned site) reads
    *  "You"; a customer reads their name/email; any other id falls back to "Owner"
    *  (e.g. another admin, not in the customer list) rather than a scary "Unknown". */
   protected ownerName(id: string): string {
     if (id && id === this.auth.user()?.id) return 'You';
     const c = this.customerById().get(id);
     return c ? c.name || c.email : 'Owner';
+  }
+
+  /** Hover summary for a card's co-owner avatar stack. */
+  protected ownersTitle(ids: string[]): string {
+    return ids.length
+      ? 'Assigned: ' + ids.map((id) => this.ownerName(id)).join(', ') + ' — click to manage'
+      : 'Assign customers to this site';
   }
   /** Hosting device cap, loaded from server config (HOSTING_DEVICE_CAP is the fallback). */
   protected cap = signal(HOSTING_DEVICE_CAP);
@@ -457,17 +442,21 @@ export class OverviewComponent implements OnInit {
     }
   }
 
-  /** Open the owner-management dialog for a site. */
+  /** Open the co-owner assignment dialog for a site. */
   protected openOwner(site: SiteListEntry, event: Event): void {
     event.stopPropagation();
-    this.customerSearch.set('');
     this.ownerModalId.set(site.id);
   }
 
-  /** Assign (userId) or unassign ('') a site's owner. The store patches the cached
-   *  list, so the open dialog's "Current" marker follows automatically. */
-  protected async setOwner(siteId: string, owner: string): Promise<void> {
-    await this.sitesStore.assignOwner(siteId, owner);
+  /** Add or remove one customer from a site's co-owner set. The store patches the
+   *  cached list, so the picker's checkmarks follow automatically. */
+  protected onOwnerToggle(siteId: string, e: { id: string; selected: boolean }): Promise<void> {
+    return this.sitesStore.toggleOwner(siteId, e.id, e.selected);
+  }
+
+  /** Replace a site's whole co-owner set (used by the picker's "Clear all"). */
+  protected setOwners(siteId: string, owners: string[]): Promise<void> {
+    return this.sitesStore.setOwners(siteId, owners);
   }
 
   protected async deleteSite(id: string, name: string, event: Event): Promise<void> {

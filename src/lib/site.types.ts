@@ -30,11 +30,11 @@ export interface SiteMetadata {
   /** Undefined until the installer picks Online/Local for the site. */
   deployment?: SiteDeployment;
   /**
-   * Owning user id (a plain string — no auth coupling). Populated on load so the
-   * dashboard can tell an owner apart from an admin viewing someone else's site
+   * Co-owner user ids (plain strings — no auth coupling). Populated on load so the
+   * dashboard can tell a co-owner apart from an admin viewing someone else's site
    * (read-only + "Take control"). Not written back on save (set at create).
    */
-  owner?: string;
+  owners?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -83,8 +83,9 @@ export const HOSTING_DEVICE_CAP = 5;
 export interface SiteListEntry {
   id: string;
   friendlyName: string;
-  /** Owner user id ('' if unassigned) — admins can reassign via the owner picker. */
-  owner: string;
+  /** Co-owner user ids (empty if unassigned). A site can be shared by several
+   *  users, each with equal, full access; admins manage the set via the picker. */
+  owners: string[];
   /** Designed controllers / nodes from the saved topology. */
   controllerCount: number;
   nodeCount: number;

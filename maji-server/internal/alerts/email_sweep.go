@@ -71,27 +71,32 @@ func (s *sweeper) markSent(key string, now time.Time) {
 	s.lastSent[key] = now
 }
 
-// notify sends one alert email if the key is off cooldown, stamping the cooldown
-// only when the send actually succeeds.
-func (s *sweeper) notify(app core.App, sc siteCtx, now time.Time, key, subject, body string) {
-	if !s.shouldSend(key, now) {
+// notify sends one alert email to `to` if the key is off cooldown, stamping the
+// cooldown only when the send actually succeeds. A nil/empty `to` is a no-op.
+func (s *sweeper) notify(app core.App, to []string, now time.Time, key, subject, body string) {
+	if len(to) == 0 || !s.shouldSend(key, now) {
 		return
 	}
-	if err := s.send(app, sc, subject, body); err != nil {
-		log.Printf("alerts: email to %s: %v", sc.email, err)
+	if err := s.send(app, to, subject, body); err != nil {
+		log.Printf("alerts: email to %v: %v", to, err)
 		return
 	}
 	s.markSent(key, now)
 }
 
+// siteCtx carries a site's thresholds plus the per-alert recipient lists — the
+// co-owners who turned on email and that specific alert type. A site has a set of
+// equal co-owners, each with their own notification prefs, so the same incident
+// reaches exactly those who asked for it.
 type siteCtx struct {
 	id        string
 	name      string
-	email     string
 	lowPct    float64
 	highPct   float64 // 0 == no high alert
 	offlineMs float64
-	prefs     prefs
+	offlineTo []string
+	faultTo   []string
+	tankTo    []string
 }
 
 type prefs struct {
@@ -110,8 +115,8 @@ func (s *sweeper) run(app core.App, now time.Time) error {
 	}
 	for _, site := range sites {
 		sc, ok := resolveSite(app, site)
-		if !ok || !sc.prefs.email {
-			continue // no owner email, or owner hasn't opted in
+		if !ok {
+			continue // no co-owner opted into any email alert
 		}
 		s.sweepOffline(app, sc, now)
 		s.sweepTanks(app, sc, now)
@@ -120,15 +125,40 @@ func (s *sweeper) run(app core.App, now time.Time) error {
 	return nil
 }
 
-// resolveSite gathers the owner email, thresholds, and notification prefs for a
-// site. ok is false when there is no owner or no owner email.
+// resolveSite gathers a site's thresholds and the per-alert recipient lists. Each
+// co-owner contributes their email to the alert types they enabled (with email on
+// as the master switch). ok is false when no co-owner wants any email alert.
 func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
-	ownerID := site.GetString("owner")
-	if ownerID == "" {
+	ownerIDs := site.GetStringSlice("owner")
+	if len(ownerIDs) == 0 {
 		return siteCtx{}, false
 	}
-	owner, err := app.FindRecordById("users", ownerID)
-	if err != nil || owner.GetString("email") == "" {
+
+	var offlineTo, faultTo, tankTo []string
+	for _, ownerID := range ownerIDs {
+		owner, err := app.FindRecordById("users", ownerID)
+		if err != nil {
+			continue
+		}
+		email := owner.GetString("email")
+		if email == "" {
+			continue
+		}
+		p := resolvePrefs(app, ownerID)
+		if !p.email {
+			continue // email channel off — this co-owner gets nothing
+		}
+		if p.offline {
+			offlineTo = append(offlineTo, email)
+		}
+		if p.fault {
+			faultTo = append(faultTo, email)
+		}
+		if p.tank {
+			tankTo = append(tankTo, email)
+		}
+	}
+	if len(offlineTo) == 0 && len(faultTo) == 0 && len(tankTo) == 0 {
 		return siteCtx{}, false
 	}
 
@@ -146,11 +176,12 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 	return siteCtx{
 		id:        site.Id,
 		name:      siteName(site),
-		email:     owner.GetString("email"),
 		lowPct:    low,
 		highPct:   site.GetFloat("tank_high_pct"), // 0 disables high alerts
 		offlineMs: offMs * 1000,
-		prefs:     resolvePrefs(app, ownerID),
+		offlineTo: offlineTo,
+		faultTo:   faultTo,
+		tankTo:    tankTo,
 	}, true
 }
 
@@ -172,7 +203,7 @@ func resolvePrefs(app core.App, userID string) prefs {
 }
 
 func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time) {
-	if !sc.prefs.offline {
+	if len(sc.offlineTo) == 0 {
 		return
 	}
 	ctrls, err := app.FindRecordsByFilter("controllers", "site = {:s} && active = true", "", 0, 0, dbx.Params{"s": sc.id})
@@ -188,14 +219,14 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time) {
 		// can't be stale, so a never-connected device is correctly not an incident.
 		stale := !seen.IsZero() && now.Sub(seen) > time.Duration(sc.offlineMs)*time.Millisecond
 		if stale {
-			s.notify(app, sc, now, "offline:"+c.Id, "Controller offline",
+			s.notify(app, sc.offlineTo, now, "offline:"+c.Id, "Controller offline",
 				fmt.Sprintf("%s on %s has gone offline (last seen %s).", c.Id, sc.name, lastSeenText(seen)))
 		}
 	}
 }
 
 func (s *sweeper) sweepTanks(app core.App, sc siteCtx, now time.Time) {
-	if !sc.prefs.tank {
+	if len(sc.tankTo) == 0 {
 		return
 	}
 	rows, err := app.FindRecordsByFilter("entity_state", "site = {:s} && sensor ~ {:x}", "", 0, 0,
@@ -210,17 +241,17 @@ func (s *sweeper) sweepTanks(app core.App, sc siteCtx, now time.Time) {
 		}
 		v := r.GetFloat("reported")
 		if v <= sc.lowPct {
-			s.notify(app, sc, now, "tanklow:"+sc.id+":"+sensor, "Tank low",
+			s.notify(app, sc.tankTo, now, "tanklow:"+sc.id+":"+sensor, "Tank low",
 				fmt.Sprintf("%s on %s is at %.0f%% (low threshold %.0f%%).", tankName(sensor), sc.name, v, sc.lowPct))
 		} else if sc.highPct > 0 && v >= sc.highPct {
-			s.notify(app, sc, now, "tankhigh:"+sc.id+":"+sensor, "Tank full",
+			s.notify(app, sc.tankTo, now, "tankhigh:"+sc.id+":"+sensor, "Tank full",
 				fmt.Sprintf("%s on %s is at %.0f%% (high threshold %.0f%%).", tankName(sensor), sc.name, v, sc.highPct))
 		}
 	}
 }
 
 func (s *sweeper) sweepFaults(app core.App, sc siteCtx, now time.Time) {
-	if !sc.prefs.fault {
+	if len(sc.faultTo) == 0 {
 		return
 	}
 	// Scan ALL recent transitions (not just FAULT rows) and keep the latest per
@@ -244,18 +275,23 @@ func (s *sweeper) sweepFaults(app core.App, sc siteCtx, now time.Time) {
 		if ts.IsZero() || now.Sub(ts) > faultRecent {
 			continue
 		}
-		s.notify(app, sc, now, "fault:"+sc.id+":"+rk, "Fault",
+		s.notify(app, sc.faultTo, now, "fault:"+sc.id+":"+rk, "Fault",
 			fmt.Sprintf("%s on %s reported a fault: %s.", e.GetString("controller"), sc.name, reasonText(e.GetString("reason"))))
 	}
 }
 
-// send dispatches one alert email to the site owner. The caller (notify) decides
-// whether to stamp the cooldown based on the returned error, so a flaky SMTP
-// server retries next tick instead of suppressing the alert.
-func (s *sweeper) send(app core.App, sc siteCtx, subject, body string) error {
+// send dispatches one alert email to every recipient (the site's co-owners who
+// opted into this alert). The caller (notify) decides whether to stamp the
+// cooldown based on the returned error, so a flaky SMTP server retries next tick
+// instead of suppressing the alert.
+func (s *sweeper) send(app core.App, to []string, subject, body string) error {
+	addrs := make([]mail.Address, len(to))
+	for i, a := range to {
+		addrs[i] = mail.Address{Address: a}
+	}
 	msg := &mailer.Message{
 		From:    mail.Address{Address: app.Settings().Meta.SenderAddress, Name: app.Settings().Meta.SenderName},
-		To:      []mail.Address{{Address: sc.email}},
+		To:      addrs,
 		Subject: "MajiFlow alert: " + subject,
 		HTML:    fmt.Sprintf("<p>%s</p><p style=\"color:#64748b;font-size:12px\">You're receiving this because email alerts are on for your account. Manage them on your account page.</p>", body),
 		Text:    body,

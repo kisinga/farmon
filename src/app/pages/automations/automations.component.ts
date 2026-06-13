@@ -282,7 +282,8 @@ export class AutomationsComponent {
     try {
       const { site, topology } = await this.backend.siteLoad(this.siteId);
       this.siteName.set(site.friendlyName);
-      this.isOwner = site.owner === this.auth.user()?.id;
+      const me = this.auth.user()?.id;
+      this.isOwner = !!me && (site.owners?.includes(me) ?? false);
       if (topology) {
         this.topology = parseTopology(topology);
         this.routes.set(listAutomatableRoutes(this.topology));

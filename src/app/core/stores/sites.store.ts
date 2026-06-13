@@ -45,10 +45,35 @@ export class SitesStore extends CollectionStore<SiteListEntry[]> {
     this.mutate((list) => list.map((s) => (s.id === id ? { ...s, friendlyName } : s)));
   }
 
-  /** Reassign a site to a customer (admin-only). Patches the cached owner. */
-  async assignOwner(id: string, owner: string): Promise<void> {
-    await this.backend.siteAssignOwner(id, owner);
-    this.mutate((list) => list.map((s) => (s.id === id ? { ...s, owner } : s)));
+  /** Replace a site's co-owner set (admin-only). Patches the cached list. */
+  async setOwners(id: string, owners: string[]): Promise<void> {
+    await this.backend.siteSetOwners(id, owners);
+    this.mutate((list) => list.map((s) => (s.id === id ? { ...s, owners } : s)));
+  }
+
+  /** Per-site serialization for toggleOwner — see below. */
+  private ownerOps = new Map<string, Promise<void>>();
+
+  /** Add or remove one user from a site's co-owner set, computed from the cached
+   *  list. A no-op if already in the desired state. Used by both assignment
+   *  directions (a site's user picker and a customer's site picker).
+   *
+   *  Toggles on the same site are serialized: each `owner` PATCH replaces the
+   *  whole set, so two overlapping toggles would both read the same pre-mutation
+   *  cache and the second would clobber the first (a lost co-owner). Chaining per
+   *  site means each toggle reads the cache the previous one already patched. */
+  toggleOwner(siteId: string, userId: string, assigned: boolean): Promise<void> {
+    const prior = this.ownerOps.get(siteId) ?? Promise.resolve();
+    const next = prior.catch(() => {}).then(async () => {
+      const current = this.list().find((s) => s.id === siteId)?.owners ?? [];
+      if (current.includes(userId) === assigned) return; // already in desired state
+      const updated = assigned ? [...current, userId] : current.filter((id) => id !== userId);
+      await this.setOwners(siteId, updated);
+    });
+    this.ownerOps.set(siteId, next);
+    return next.finally(() => {
+      if (this.ownerOps.get(siteId) === next) this.ownerOps.delete(siteId);
+    });
   }
 
   async delete(id: string): Promise<void> {

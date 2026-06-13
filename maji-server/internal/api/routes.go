@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/kisinga/majiflow/internal/auth"
@@ -469,7 +470,8 @@ func requireSiteAccess(e *core.RequestEvent, siteID string) error {
 	if err != nil {
 		return apis.NewNotFoundError("site not found", nil)
 	}
-	if site.GetString("owner") != e.Auth.Id {
+	// owner is a set of co-owners (multi-relation); access is granted to any of them.
+	if !slices.Contains(site.GetStringSlice("owner"), e.Auth.Id) {
 		return apis.NewForbiddenError("you do not own this site", nil)
 	}
 	return nil

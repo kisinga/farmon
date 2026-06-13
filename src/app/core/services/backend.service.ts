@@ -85,7 +85,7 @@ export class BackendService {
         }
       : undefined;
     return {
-      site: { id: r['id'], friendlyName: r['name'], deployment, owner: (r['owner'] ?? '') as string },
+      site: { id: r['id'], friendlyName: r['name'], deployment, owners: (r['owner'] ?? []) as string[] },
       topology: (r['draft_topology'] ?? null) as SiteFullPayload['topology'],
     };
   }
@@ -102,11 +102,12 @@ export class BackendService {
   }
 
   async siteCreate(slug: string, friendlyName: string): Promise<{ id: string }> {
+    const me = this.pb.authStore.record?.id;
     const r = await this.pb.collection('sites').create({
       name: friendlyName,
       slug,
       draft_topology: null,
-      owner: this.pb.authStore.record?.id ?? null,
+      owner: me ? [me] : [],
     });
     return { id: r['id'] };
   }
@@ -178,10 +179,10 @@ export class BackendService {
     return btoa(String.fromCharCode(...bytes)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 20) + 'A1';
   }
 
-  /** Assign a site to a customer (admin-only; the owner-change guard rejects
-   *  non-admins server-side). */
-  async siteAssignOwner(siteId: string, userId: string): Promise<void> {
-    await this.pb.collection('sites').update(siteId, { owner: userId });
+  /** Set a site's full co-owner set (admin-only; the owner-change guard rejects
+   *  non-admins server-side). Pass the complete list — it replaces the current set. */
+  async siteSetOwners(siteId: string, userIds: string[]): Promise<void> {
+    await this.pb.collection('sites').update(siteId, { owner: userIds });
   }
 
   async siteDelete(id: string): Promise<void> {
@@ -197,11 +198,12 @@ export class BackendService {
     // Validate + migrate the payload via core (throws on malformed JSON/graph)
     // instead of trusting a raw cast.
     const parsed = parseSiteImport(JSON.parse(text));
+    const me = this.pb.authStore.record?.id;
     const r = await this.pb.collection('sites').create({
       name: parsed.friendlyName,
       slug: this.slugify(parsed.friendlyName),
       draft_topology: parsed.topology,
-      owner: this.pb.authStore.record?.id ?? null,
+      owner: me ? [me] : [],
     });
     return { id: r['id'] };
   }
@@ -620,7 +622,7 @@ export class BackendService {
     return {
       id: r['id'],
       friendlyName: r['name'],
-      owner: (r['owner'] ?? '') as string,
+      owners: (r['owner'] ?? []) as string[],
       controllerCount: topo?.controllers?.length ?? 0,
       nodeCount: topo?.nodes?.length ?? 0,
       mode: (r['mode'] ?? '') as string,

@@ -4,6 +4,7 @@ import { SitesStore } from '../../core/stores/sites.store';
 import { ConfirmService } from '../../core/services/confirm.service';
 import type { CustomerEntry } from '../../core/models/backend-api';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
+import { AssignPickerComponent, type AssignItem } from '../../shared/assign-picker/assign-picker.component';
 
 /** Initials (up to 2 chars) for an avatar. */
 function initials(s: string): string {
@@ -32,7 +33,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 @Component({
   selector: 'app-customers-page',
   standalone: true,
-  imports: [SectionHeaderComponent],
+  imports: [SectionHeaderComponent, AssignPickerComponent],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="content-pane space-y-6">
@@ -81,7 +82,10 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                 <p class="text-[11px] text-base-content/50 truncate">{{ c.email }}</p>
               </div>
               <div class="hidden sm:flex flex-col items-end text-[11px] text-base-content/50 shrink-0">
-                <span>{{ siteCount(c.id) }} site{{ siteCount(c.id) !== 1 ? 's' : '' }}</span>
+                <button class="link link-hover font-medium text-base-content/70" (click)="openSites(c)"
+                        title="Manage which sites this customer is assigned to">
+                  {{ siteCount(c.id) }} site{{ siteCount(c.id) !== 1 ? 's' : '' }}
+                </button>
                 @if (c.created) { <span>since {{ date(c.created) }}</span> }
               </div>
               <div class="dropdown dropdown-end shrink-0">
@@ -91,6 +95,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                   </svg>
                 </button>
                 <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300/40 z-50 w-44 p-1.5">
+                  <li><button (click)="openSites(c)">Manage sites</button></li>
                   <li><button (click)="openEdit(c)">Edit</button></li>
                   <li><button (click)="resend(c)">Resend invite</button></li>
                   <li><button class="text-error" (click)="remove(c)">Delete</button></li>
@@ -131,6 +136,20 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         <div class="modal-backdrop" (click)="closeForm()"></div>
       </dialog>
     }
+
+    <!-- Manage which sites this customer is assigned to (the user→sites direction) -->
+    @if (managingSites(); as c) {
+      <app-assign-picker
+        [title]="'Assign sites'"
+        [subtitle]="(c.name || c.email) + ' — sites they can access'"
+        searchPlaceholder="Search sites by name…"
+        emptyText="No sites exist yet."
+        [items]="siteItems()"
+        [selectedIds]="managedSiteSet()"
+        (toggle)="onSiteToggle(c.id, $event)"
+        (clear)="clearSites(c.id)"
+        (close)="managingSites.set(null)" />
+    }
   `,
 })
 export class CustomersPageComponent implements OnInit {
@@ -147,11 +166,11 @@ export class CustomersPageComponent implements OnInit {
   protected formError = signal<string | null>(null);
   protected status = signal<{ ok: boolean; text: string } | null>(null);
 
-  /** ownerId → number of sites owned (for the per-row count). */
+  /** userId → number of sites they co-own (for the per-row count). */
   private siteCounts = computed(() => {
     const m = new Map<string, number>();
     for (const s of this.sitesStore.list()) {
-      if (s.owner) m.set(s.owner, (m.get(s.owner) ?? 0) + 1);
+      for (const owner of s.owners) m.set(owner, (m.get(owner) ?? 0) + 1);
     }
     return m;
   });
@@ -163,6 +182,39 @@ export class CustomersPageComponent implements OnInit {
       ? list.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q))
       : list;
   });
+
+  /** The customer whose "assign sites" dialog is open (the user→sites direction). */
+  protected managingSites = signal<CustomerEntry | null>(null);
+  /** All sites as picker rows, with a small co-owner-count hint as the subline. */
+  protected siteItems = computed<AssignItem[]>(() =>
+    this.sitesStore.list().map((s) => ({
+      id: s.id,
+      label: s.friendlyName,
+      sub: s.owners.length === 1 ? '1 user assigned' : `${s.owners.length} users assigned`,
+    })),
+  );
+  /** Sites the open customer is currently a co-owner of, as a Set for the picker. */
+  protected managedSiteSet = computed(() => {
+    const id = this.managingSites()?.id;
+    return new Set(id ? this.sitesStore.list().filter((s) => s.owners.includes(id)).map((s) => s.id) : []);
+  });
+
+  protected openSites(c: CustomerEntry): void {
+    this.managingSites.set(c);
+  }
+
+  /** Add/remove this customer from one site's co-owner set. */
+  protected onSiteToggle(customerId: string, e: { id: string; selected: boolean }): Promise<void> {
+    return this.sitesStore.toggleOwner(e.id, customerId, e.selected);
+  }
+
+  /** Remove this customer from every site they're assigned to ("Clear all"). */
+  protected async clearSites(customerId: string): Promise<void> {
+    const sites = this.sitesStore.list().filter((s) => s.owners.includes(customerId));
+    for (const s of sites) {
+      await this.sitesStore.toggleOwner(s.id, customerId, false);
+    }
+  }
 
   async ngOnInit() {
     try {

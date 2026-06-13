@@ -47,19 +47,24 @@ func isAdmin(auth *core.Record) bool {
 	return auth != nil && auth.GetString("role") == "admin"
 }
 
-// guardOwnerCreate stops a customer from creating a site owned by someone else.
+// guardOwnerCreate stops a customer from creating a site with anyone but
+// themselves among its owners. owner is a multi-relation (co-owners), so a
+// non-admin may seed only an empty set or one containing solely themselves.
 func guardOwnerCreate(e *core.RecordRequestEvent) error {
 	if isAdmin(e.Auth) || e.Auth == nil {
 		return nil
 	}
-	if owner := e.Record.GetString("owner"); owner != "" && owner != e.Auth.Id {
-		return apis.NewForbiddenError("cannot assign a site to another user", nil)
+	for _, owner := range e.Record.GetStringSlice("owner") {
+		if owner != e.Auth.Id {
+			return apis.NewForbiddenError("cannot assign a site to another user", nil)
+		}
 	}
 	return nil
 }
 
-// guardOwnerUpdate stops a customer from reassigning their site away (owner has no
-// field rule, so without this a customer could rewrite owner and lose access).
+// guardOwnerUpdate stops a customer from changing a site's co-owner set (owner has
+// no field rule, so without this a customer could rewrite it and lock others out
+// or remove themselves). Only admins assign co-owners; order is irrelevant.
 func guardOwnerUpdate(e *core.RecordRequestEvent) error {
 	if isAdmin(e.Auth) {
 		return nil
@@ -68,10 +73,27 @@ func guardOwnerUpdate(e *core.RecordRequestEvent) error {
 	if err != nil {
 		return nil // missing record — let the normal flow surface it
 	}
-	if e.Record.GetString("owner") != old.GetString("owner") {
+	if !sameOwnerSet(e.Record.GetStringSlice("owner"), old.GetStringSlice("owner")) {
 		return apis.NewForbiddenError("only an admin can reassign a site", nil)
 	}
 	return nil
+}
+
+// sameOwnerSet reports whether two owner id lists hold the same members,
+// ignoring order and duplicates.
+func sameOwnerSet(a, b []string) bool {
+	set := make(map[string]struct{}, len(a))
+	for _, id := range a {
+		set[id] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(b))
+	for _, id := range b {
+		if _, ok := set[id]; !ok {
+			return false
+		}
+		seen[id] = struct{}{}
+	}
+	return len(seen) == len(set)
 }
 
 // capReactivation enforces the hosting device cap when a controller is flipped
