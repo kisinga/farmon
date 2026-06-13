@@ -2,7 +2,7 @@ import { Component, inject, signal, computed, effect } from '@angular/core';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { SystemEditorService } from '../../core/services/system-editor.service';
 import { BackendService } from '../../core/services/backend.service';
-import { BuildService } from '../../core/services/build.service';
+import { BuildService, type FirmwareRelease } from '../../core/services/build.service';
 import { DevicesStore } from '../../core/stores/devices.store';
 import { AuthStore } from '../../core/services/auth.store';
 import { ConfirmService } from '../../core/services/confirm.service';
@@ -46,6 +46,41 @@ function relTime(iso: string): string {
       <app-section-header
         title="Firmware"
         subtitle="Generate the ESPHome bundle for this controller: device YAML plus C++ headers. Download the ZIP, then build and flash it with esphome." />
+
+      <!-- Site documentation (whole-site) — the lead action: renders + publishes
+           the topology diagrams the customer sees, independent of any one
+           controller. Stays usable on a live site (publishing the cached diagrams
+           doesn't touch the locked topology). -->
+      <div class="surface p-5 border-l-2 border-primary/40">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h3 class="font-semibold text-sm">Site documentation</h3>
+            <p class="text-xs text-base-content/50 mt-0.5">
+              Render this site's topology diagrams and open the full installer + operator document.
+              This also publishes the diagrams so the customer can view their docs.
+            </p>
+            <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              @if (docMeta(); as m) {
+                @if (m.published) {
+                  <span class="text-base-content/60">
+                    @if (m.generatedAt) { Last generated {{ rel(m.generatedAt) }} } @else { Published }
+                  </span>
+                  @if (m.stale) {
+                    <span class="badge badge-warning badge-xs gap-1" title="Topology changed since these were published — the customer sees no diagrams until you regenerate.">topology changed since</span>
+                  }
+                } @else {
+                  <span class="text-base-content/40">Not generated yet — the customer can't see diagrams.</span>
+                }
+              }
+            </div>
+          </div>
+          <button class="btn btn-outline btn-sm gap-1.5 shrink-0" (click)="generateDocs()" [disabled]="docBusy()">
+            @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
+            {{ docMeta()?.published ? 'Regenerate' : 'Generate docs' }}
+          </button>
+        </div>
+        @if (docError()) { <div class="mt-3 text-xs text-error">{{ docError() }}</div> }
+      </div>
 
       @if (!controllerId()) {
         <div class="surface px-6 py-12 text-center">
@@ -170,28 +205,65 @@ function relTime(iso: string): string {
             <div>bash compile.sh</div>
             <div class="pt-1"><span class="text-base-content/40"># build + flash (USB or OTA)</span></div>
             <div>bash compile.sh flash</div>
+            <div class="pt-1"><span class="text-base-content/40"># build + isolate the image for an OTA upload (./ota/)</span></div>
+            <div>bash compile.sh ota</div>
             <div class="pt-1"><span class="text-base-content/40"># tail device logs</span></div>
             <div>bash compile.sh logs</div>
           </div>
         </div>
 
-        <!-- Site documentation (whole-site) -->
+        <!-- Over-the-air update -->
         <div class="surface p-5">
-          <div class="flex items-center justify-between gap-3">
+          <div class="flex items-start justify-between gap-3">
             <div>
-              <h3 class="font-semibold text-sm">Site documentation</h3>
+              <h3 class="font-semibold text-sm">Over-the-air update</h3>
               <p class="text-xs text-base-content/50 mt-0.5">
-                Render this site's topology diagrams and open the full installer + operator document.
-                This also publishes the diagrams so the customer can view their docs.
+                Build with <code class="text-[10px] px-1 py-0.5 rounded bg-base-200">bash compile.sh ota</code>,
+                upload the image it writes to <code class="text-[10px] px-1 py-0.5 rounded bg-base-200">./ota/</code>,
+                then deploy — the device pulls and flashes itself over MQTT.
               </p>
             </div>
-            <button class="btn btn-outline btn-sm gap-1.5" (click)="generateDocs()" [disabled]="docBusy()">
-              @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
-              Generate docs
-            </button>
+            @if (release(); as r) {
+              <span class="badge badge-sm shrink-0" [class]="statusClass(r.status)">{{ r.status }}</span>
+            }
           </div>
-          @if (docError()) { <div class="mt-3 text-xs text-error">{{ docError() }}</div> }
+
+          @if (isAdmin()) {
+            <div class="mt-3 flex flex-wrap items-end gap-2">
+              <label class="text-xs text-base-content/50">
+                Firmware image (.bin)
+                <input type="file" accept=".bin"
+                  class="file-input file-input-bordered file-input-sm w-full mt-1"
+                  (change)="onOtaFile($event)" />
+              </label>
+              <label class="text-xs text-base-content/50">
+                Version
+                <input type="text" #verInput [value]="otaVersion()" (input)="otaVersion.set(verInput.value)"
+                  class="input input-bordered input-sm w-40 mt-1" placeholder="e.g. a3f7b2d1" />
+              </label>
+              <button class="btn btn-outline btn-sm gap-1.5" (click)="uploadOta()"
+                      [disabled]="!otaFile() || !otaVersion().trim() || uploading()">
+                @if (uploading()) { <span class="loading loading-spinner loading-xs"></span> }
+                Upload
+              </button>
+              <button class="btn btn-primary btn-sm gap-1.5" (click)="deployOta()" [disabled]="!release() || deploying()">
+                @if (deploying()) { <span class="loading loading-spinner loading-xs"></span> }
+                Deploy to device
+              </button>
+            </div>
+            @if (release(); as r) {
+              <p class="mt-2 text-[11px] text-base-content/50">
+                Latest: <span class="font-mono">{{ r.version || '—' }}</span> ·
+                md5 <span class="font-mono">{{ r.md5 }}</span> · {{ r.status }}
+                @if (r.status === 'confirmed') { · running on device }
+              </p>
+            }
+            @if (otaError()) { <div class="mt-2 text-xs text-error">{{ otaError() }}</div> }
+          } @else {
+            <p class="mt-2 text-xs text-base-content/50">OTA upload and deploy are admin-only.</p>
+          }
         </div>
+
       }
     </div>
   `,
@@ -221,9 +293,19 @@ export class DeployPageComponent {
   protected device = signal<DeviceEntry | null>(null);
   protected clearingBinding = signal(false);
 
+  /** OTA: the picked image, its version, and the latest release row for status. */
+  protected otaFile = signal<File | null>(null);
+  protected otaVersion = signal('');
+  protected uploading = signal(false);
+  protected deploying = signal(false);
+  protected otaError = signal<string | null>(null);
+  protected release = signal<FirmwareRelease | null>(null);
+
   /** Building the whole-site documentation (render diagrams → publish → open). */
   protected docBusy = signal(false);
   protected docError = signal<string | null>(null);
+  /** Last-published status (when, and whether the topology has drifted since). */
+  protected docMeta = signal<{ generatedAt?: string; published: boolean; stale: boolean } | null>(null);
 
   /**
    * Render the site's topology diagrams (same X6 engine as the editor), cache
@@ -243,6 +325,7 @@ export class DeployPageComponent {
       const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      void this.loadDocMeta();
     } catch (err) {
       this.docError.set(String(err));
     } finally {
@@ -250,10 +333,33 @@ export class DeployPageComponent {
     }
   }
 
+  /** Refresh the doc publication status for the current site (best-effort). */
+  private async loadDocMeta(): Promise<void> {
+    const siteId = this.workspace.site()?.id;
+    if (!siteId) return;
+    try {
+      this.docMeta.set(await this.backend.docStatus(siteId));
+    } catch {
+      this.docMeta.set(null);
+    }
+  }
+
   constructor() {
     // On controller switch: reset the panel and refresh the (read-only)
     // registration status. Generation is NOT auto-run — it downloads the build and
     // bakes the controller's secrets, so it stays a deliberate button press.
+    // Site-level: load the doc publication status once the site resolves (and on
+    // a site switch). Independent of the per-controller refresh below.
+    let lastSite: string | null = null;
+    effect(() => {
+      const siteId = this.workspace.site()?.id ?? null;
+      if (siteId && siteId !== lastSite) {
+        lastSite = siteId;
+        this.docMeta.set(null);
+        void this.loadDocMeta();
+      }
+    });
+
     let lastId: string | null = null;
     effect(() => {
       const id = this.controllerId();
@@ -263,7 +369,12 @@ export class DeployPageComponent {
         this.fwError.set(null);
         this.downloadUrl.set(null);
         this.device.set(null);
+        this.otaFile.set(null);
+        this.otaVersion.set('');
+        this.otaError.set(null);
+        this.release.set(null);
         void this.loadDevice();
+        void this.loadRelease();
       }
     });
   }
@@ -276,6 +387,84 @@ export class DeployPageComponent {
     const id = this.controllerId();
     if (!id) return;
     this.device.set(await this.devicesStore.status(id));
+  }
+
+  private async loadRelease() {
+    const id = this.controllerId();
+    if (!id) return;
+    try {
+      const r = await this.build.latestRelease(id);
+      if (this.controllerId() === id) this.release.set(r);
+    } catch {
+      /* no releases yet — leave null */
+    }
+  }
+
+  /** File picked for OTA. compile.sh writes `<device>-<version>.bin`, so pre-fill
+   *  the version field from the filename (still editable). */
+  protected onOtaFile(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0] ?? null;
+    this.otaFile.set(file);
+    if (file) {
+      const m = /-([^-/\\]+)\.bin$/.exec(file.name);
+      if (m) this.otaVersion.set(m[1]);
+    }
+  }
+
+  /** Upload the built binary as a firmware release (no device contact yet). */
+  protected async uploadOta() {
+    const ctrl = this.controllerId();
+    const siteId = this.workspace.site()?.id;
+    const file = this.otaFile();
+    if (!ctrl || !siteId || !file || this.uploading()) return;
+    this.uploading.set(true);
+    this.otaError.set(null);
+    try {
+      await this.build.uploadFirmware(siteId, ctrl, this.otaVersion(), file);
+      await this.loadRelease();
+    } catch (err) {
+      this.otaError.set(String(err));
+    } finally {
+      this.uploading.set(false);
+    }
+  }
+
+  /** Publish the firmware_update command — the device pulls + flashes. Confirmed. */
+  protected async deployOta() {
+    const ctrl = this.controllerId();
+    const siteId = this.workspace.site()?.id;
+    const rel = this.release();
+    if (!ctrl || !siteId || !rel || this.deploying()) return;
+    const confirmed = await this.confirmService.confirm({
+      title: 'Deploy firmware over the air',
+      message:
+        `Tell "${this.controllerName()}" to download and flash version ` +
+        `${rel.version || rel.md5.slice(0, 8)} now? The device reboots into the new image.`,
+    });
+    if (!confirmed) return;
+    this.deploying.set(true);
+    this.otaError.set(null);
+    try {
+      await this.build.deployFirmware(siteId, ctrl, rel.id);
+      await this.loadRelease();
+    } catch (err) {
+      this.otaError.set(String(err));
+    } finally {
+      this.deploying.set(false);
+    }
+  }
+
+  protected statusClass(status?: string): string {
+    switch (status) {
+      case 'confirmed':
+        return 'badge-success';
+      case 'deployed':
+        return 'badge-warning';
+      case 'failed':
+        return 'badge-error';
+      default:
+        return 'badge-ghost';
+    }
   }
 
   /** Clear the hardware binding after a legit board swap, then refresh status.

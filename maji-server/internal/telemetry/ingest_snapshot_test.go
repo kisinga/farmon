@@ -106,6 +106,10 @@ func TestIngestSnapshot(t *testing.T) {
 	if rawCount != 1 {
 		t.Errorf("expected 1 raw row, got %d", rawCount)
 	}
+	// Ingest marks the publishing controller online (presence).
+	if c, _ := app.FindRecordById("controllers", "dev1"); c == nil || !c.GetBool("online") {
+		t.Error("controller should be marked online after snapshot ingest")
+	}
 
 	// Snapshot 2: route 0 RUNNING, started manually by Jane; command c123 applied.
 	ing(fmt.Sprintf(`{"ts":2,"readings":{},"system":{"state":"RUNNING","queue":0,"safety":false},"routes":[{"id":0,"state":"RUNNING","origin":"MANUAL","actor":%q,"reason":""}],"outcomes":[{"command_id":"c123","result":"APPLIED","reason":""}]}`, user.Id))

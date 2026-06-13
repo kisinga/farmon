@@ -36,6 +36,17 @@ import { sha256Hex } from '../util/hash';
 /** Firmware app version stamped into generation metadata (fleet provenance). */
 const APP_VERSION = '1.0.0';
 
+/** An OTA firmware release row (subset the Deploy page reads). */
+export interface FirmwareRelease {
+  id: string;
+  version: string;
+  md5: string;
+  size?: number;
+  status?: 'uploaded' | 'deployed' | 'confirmed' | 'failed';
+  deployed_at?: string;
+  created?: string;
+}
+
 /** Firmware deployment config (server-level): where devices reach the broker. */
 interface DeploymentConfig {
   brokerAddress: string;
@@ -289,6 +300,44 @@ export class BuildService {
     });
     if (!res.token || !res.ota_password || !res.udp_key) throw new Error('Provisioning did not return the device secrets.');
     return { token: res.token, ota_password: res.ota_password, udp_key: res.udp_key };
+  }
+
+  /**
+   * Upload a manually-built firmware binary for one controller. Authorized by the
+   * admin's session (the server's requireSiteAccess) — NEVER a device secret. The
+   * server computes the md5 and records a `firmware_releases` row (status
+   * `uploaded`); nothing reaches the device until {@link deployFirmware}.
+   */
+  async uploadFirmware(siteId: string, controllerId: string, version: string, file: File): Promise<FirmwareRelease> {
+    const fd = new FormData();
+    fd.set('site', siteId);
+    fd.set('controller', controllerId);
+    fd.set('version', version);
+    fd.set('firmware_bin', file);
+    return this.pb.send<FirmwareRelease>('/api/farmon/firmware', { method: 'POST', body: fd });
+  }
+
+  /**
+   * Tell the device to pull + flash a previously-uploaded release. The server mints
+   * a short-lived download token, publishes the firmware_update command over MQTT,
+   * and marks the release `deployed`; the device confirms by re-reporting the version.
+   */
+  async deployFirmware(siteId: string, controllerId: string, releaseId: string): Promise<{ command_id: string; status: string }> {
+    return this.pb.send('/api/farmon/firmware/deploy', {
+      method: 'POST',
+      body: { site: siteId, controller: controllerId, release_id: releaseId },
+    });
+  }
+
+  /** Latest firmware release for a controller — drives the Deploy page status chip. */
+  async latestRelease(controllerId: string): Promise<FirmwareRelease | null> {
+    const list = await this.pb.collection('firmware_releases').getList(1, 1, {
+      // Param-bound (not string-interpolated) so an exotic controller id can't break
+      // or inject into the filter.
+      filter: this.pb.filter('controller = {:c}', { c: controllerId }),
+      sort: '-created',
+    });
+    return (list.items[0] as unknown as FirmwareRelease) ?? null;
   }
 
   /**

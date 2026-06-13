@@ -324,6 +324,12 @@ export type CommandEnvelope = { command_id: string; issued_at: number; actor?: s
   // The device persists it (restore_value) and re-publishes the value; an
   // out-of-range value falls back to the topology-baked default in the getter.
   | { action: 'config_set'; key: string; value: number }
+  // firmware_update: pull-OTA. NOT an operator /command action — it is published
+  // only by the server's /firmware/deploy endpoint, so it is absent from the generic
+  // commandActions allow-list. The device fetches the image at `url` and flashes it
+  // after verifying it against `md5` (delivered over this trusted lane); it no-ops if
+  // `version` already matches the running build. See the firmware_update handler.
+  | { action: 'firmware_update'; version: string; url: string; md5: string }
 );
 
 // ---------------------------------------------------------------------------

@@ -481,14 +481,33 @@ export class BackendService {
       controllers: d?.controllers ?? {},
       boardPinouts: d?.boardPinouts ?? {},
       topoHash: d?.topoHash,
+      generatedAt: d?.generatedAt,
     };
   }
 
   /** Cache the admin-rendered diagrams on the site (for the customer view),
-   *  stamped with the topology hash they were rendered from. */
+   *  stamped with the topology hash they were rendered from and the time. */
   async saveSiteDiagrams(siteId: string, topo: SiteTopology, diagrams: SiteDiagrams): Promise<void> {
     const topoHash = await sha256Hex(JSON.stringify(topo));
-    await this.pb.collection('sites').update(siteId, { doc_diagrams: { ...diagrams, topoHash } });
+    const generatedAt = new Date().toISOString();
+    await this.pb.collection('sites').update(siteId, { doc_diagrams: { ...diagrams, topoHash, generatedAt } });
+  }
+
+  /** Publication status of a site's docs for the deploy page: when they were last
+   *  generated, whether anything is published, and whether the topology has
+   *  changed since (stale — customer sees no diagrams until regenerated). The
+   *  stale check needs Web Crypto; if it's unavailable it's skipped, never wrong. */
+  async docStatus(siteId: string): Promise<{ generatedAt?: string; published: boolean; stale: boolean }> {
+    const d = await this.loadSiteDiagrams(siteId);
+    const published = !!(d.topoHash || d.composite || Object.keys(d.controllers).length > 0);
+    let stale = false;
+    if (published && d.topoHash) {
+      try {
+        const topo = await this.siteTopology(siteId);
+        stale = (await sha256Hex(JSON.stringify(topo))) !== d.topoHash;
+      } catch { /* can't compare (e.g. non-secure context) → don't claim stale */ }
+    }
+    return { generatedAt: d.generatedAt, published, stale };
   }
 
   /**

@@ -168,6 +168,25 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     '} else if (strcmp(action, "safety_override") == 0) {',
     '  if (x["on"] | false) id(safety_override).turn_on(); else id(safety_override).turn_off();',
     '  record_outcome(command_id, "APPLIED", "");',
+    '} else if (strcmp(action, "firmware_update") == 0) {',
+    '  // OTA pull: fetch + flash the image at `url`, verifying it against `md5` (which',
+    '  // arrived over this cert-pinned, TTL-gated lane — the integrity anchor, so the',
+    '  // download channel itself need not be trusted). Idempotent: if we already run the',
+    '  // target version, ack without reflashing. The url/md5 hop through globals because',
+    '  // ota.http_request.flash takes them at runtime via the do_ota_flash script.',
+    '  const char* url = x["url"] | "";',
+    '  const char* md5 = x["md5"] | "";',
+    '  const char* version = x["version"] | "";',
+    '  if (url[0] == 0 || md5[0] == 0) {',
+    '    record_outcome(command_id, "REFUSED", "BAD_PARAMS");',
+    '  } else if (strcmp(version, id(majiflow_generation_version).state.c_str()) == 0) {',
+    '    record_outcome(command_id, "APPLIED", "ALREADY");',
+    '  } else {',
+    '    id(ota_url) = url;',
+    '    id(ota_md5) = md5;',
+    '    record_outcome(command_id, "APPLIED", "");  // ack before the flash reboots us',
+    '    id(do_ota_flash).execute();',
+    '  }',
     ...configCases,
     '} else {',
     '  ESP_LOGW("cmd", "unknown action: %s", action);',
@@ -241,6 +260,9 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     ...textCh.map(textLine),
     `{ int rr = (int) esp_reset_reason(); put(snprintf(buf+n, sizeof(buf)-n, "%s\\"reset_reason\\":\\"%s\\"", sep(), (rr >= 0 && rr < ${RESET_REASON_TOKENS.length}) ? RR_TOK[rr] : "UNKNOWN")); }`,
     'if (id(ip_addr).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"ip\\":\\"%s\\"", sep(), json_esc(id(ip_addr).state.c_str())));',
+    '// Running firmware version (metadata sensor) — the server confirms an OTA release',
+    '// once the device re-reports the version it was told to flash (see reconcileFirmware).',
+    'if (id(majiflow_generation_version).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"fw_version\\":\\"%s\\"", sep(), json_esc(id(majiflow_generation_version).state.c_str())));',
     `put(snprintf(buf+n, sizeof(buf)-n, "},\\"system\\":{\\"state\\":\\"%s\\",\\"queue\\":%d,\\"safety\\":%s},\\"routes\\":[", (id(system_state) >= 0 && id(system_state) < ${NS}) ? SYS_TOK[id(system_state)] : "", (int) id(queue_depth).state, id(safety_override).state ? "true" : "false"));`,
     'first = true;',
     ...m.routes.map((_r, i) => routeLine(i)),
@@ -373,5 +395,22 @@ interval:
     then:
       - lambda: |-
 ${indent(snapshotBody, 10)}
+
+# --- OTA pull (firmware_update command) --------------------------------------
+# The command handler stows the image url + md5 here, then runs do_ota_flash.
+# ota.http_request.flash takes the url/md5 at runtime, so the lambda can't pass
+# them inline — the global + script hop is ESPHome's idiom for a dynamic OTA.
+globals:
+  - id: ota_url
+    type: std::string
+  - id: ota_md5
+    type: std::string
+
+script:
+  - id: do_ota_flash
+    then:
+      - ota.http_request.flash:
+          url: !lambda 'return id(ota_url);'
+          md5: !lambda 'return id(ota_md5);'
 `;
 }

@@ -14,33 +14,6 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// Reading is a single parsed numeric telemetry sample.
-type Reading struct {
-	Site   string
-	Ctrl   string // device_id
-	Sensor string
-	Value  float64
-	TS     time.Time
-}
-
-// ParseTopic extracts site/ctrl/sensor from
-// `majiflow/{site}/{ctrl}/telemetry/{sensor}`.
-func ParseTopic(topic string) (site, ctrl, sensor string, ok bool) {
-	parts := strings.Split(topic, "/")
-	if len(parts) != 5 || parts[0] != "majiflow" || parts[3] != "telemetry" {
-		return "", "", "", false
-	}
-	if parts[1] == "" || parts[2] == "" || parts[4] == "" {
-		return "", "", "", false
-	}
-	return parts[1], parts[2], parts[4], true
-}
-
-// ParseEventTopic extracts site/ctrl from `majiflow/{site}/{ctrl}/event`.
-func ParseEventTopic(topic string) (site, ctrl string, ok bool) {
-	return parseFour(topic, "event")
-}
-
 // ParseStatusTopic extracts site/ctrl from `majiflow/{site}/{ctrl}/status`.
 func ParseStatusTopic(topic string) (site, ctrl string, ok bool) {
 	return parseFour(topic, "status")
@@ -77,72 +50,6 @@ func CommandTopic(site, ctrl string) string {
 // Mirrors automationsTopic() in src/lib/codegen-ids.ts — keep both in sync.
 func AutomationsTopic(site, ctrl string) string {
 	return "majiflow/" + site + "/" + ctrl + "/automations"
-}
-
-// Ingest writes a raw numeric sample (local-first), updates the shadow, and
-// marks the publishing controller online.
-func Ingest(app core.App, r Reading) error {
-	coll, err := app.FindCollectionByNameOrId("telemetry_raw")
-	if err != nil {
-		return err
-	}
-	rec := core.NewRecord(coll)
-	rec.Set("site", r.Site)
-	rec.Set("controller", r.Ctrl)
-	rec.Set("sensor", r.Sensor)
-	rec.Set("value", r.Value)
-	rec.Set("ts", r.TS.UTC().Format(time.RFC3339))
-	if err := app.Save(rec); err != nil {
-		return err
-	}
-	upsertShadowNumber(app, r.Site, r.Ctrl, r.Sensor, r.Value, r.TS)
-	setControllerOnline(app, r.Ctrl, true, r.TS)
-	return nil
-}
-
-// IngestString records a categorical channel value (a token like "RUNNING").
-// It updates the shadow's text column only — tokens are never rolled up.
-func IngestString(app core.App, site, ctrl, sensor, text string, ts time.Time) error {
-	upsertShadowText(app, site, ctrl, sensor, text, ts)
-	setControllerOnline(app, ctrl, true, ts)
-	return nil
-}
-
-// stateEventPayload is the wire body on the event topic (see StateEvent in
-// src/lib/codegen-ids.ts). `from`/`to` map to the from_state/to_state columns.
-type stateEventPayload struct {
-	Route     int    `json:"route"`
-	From      string `json:"from"`
-	To        string `json:"to"`
-	Reason    string `json:"reason"`
-	CommandID string `json:"command_id"`
-}
-
-// IngestEvent appends one transition to state_events and marks the controller
-// online. Malformed payloads are ignored (never drop the connection).
-func IngestEvent(app core.App, site, ctrl string, payload []byte, ts time.Time) error {
-	var ev stateEventPayload
-	if err := json.Unmarshal(payload, &ev); err != nil {
-		return nil
-	}
-	coll, err := app.FindCollectionByNameOrId("state_events")
-	if err != nil {
-		return err
-	}
-	rec := core.NewRecord(coll)
-	rec.Set("site", site)
-	rec.Set("controller", ctrl)
-	rec.Set("route", ev.Route)
-	rec.Set("from_state", ev.From)
-	rec.Set("to_state", ev.To)
-	rec.Set("reason", ev.Reason)
-	rec.Set("command_id", ev.CommandID)
-	rec.Set("ts", ts.UTC().Format(time.RFC3339))
-	if err := app.Save(rec); err != nil {
-		return err
-	}
-	setControllerOnline(app, ctrl, true, ts)
-	return nil
 }
 
 // SetOnline records a controller's online/offline status (retained birth/will).
@@ -220,50 +127,6 @@ func BindOrCheckMac(app core.App, ctrl, mac string) error {
 	}
 	_ = app.Save(rec)
 	return nil
-}
-
-// findOrCreateShadow returns the never-pruned shadow row for a channel,
-// creating it if absent. Returns nil only if the collection is missing.
-func findOrCreateShadow(app core.App, site, ctrl, sensor string) *core.Record {
-	rec, _ := app.FindFirstRecordByFilter(
-		"entity_state",
-		"site = {:s} && controller = {:c} && sensor = {:n}",
-		dbx.Params{"s": site, "c": ctrl, "n": sensor},
-	)
-	if rec == nil {
-		coll, err := app.FindCollectionByNameOrId("entity_state")
-		if err != nil {
-			return nil
-		}
-		rec = core.NewRecord(coll)
-		rec.Set("site", site)
-		rec.Set("controller", ctrl)
-		rec.Set("sensor", sensor)
-	}
-	return rec
-}
-
-// upsertShadowNumber keeps the never-pruned last-known number current.
-// Best-effort: a shadow failure must not drop the raw sample.
-func upsertShadowNumber(app core.App, site, ctrl, sensor string, value float64, ts time.Time) {
-	rec := findOrCreateShadow(app, site, ctrl, sensor)
-	if rec == nil {
-		return
-	}
-	rec.Set("reported", value)
-	rec.Set("ts", ts.UTC().Format(time.RFC3339))
-	_ = app.Save(rec)
-}
-
-// upsertShadowText keeps the never-pruned last-known token current.
-func upsertShadowText(app core.App, site, ctrl, sensor, text string, ts time.Time) {
-	rec := findOrCreateShadow(app, site, ctrl, sensor)
-	if rec == nil {
-		return
-	}
-	rec.Set("reported_text", text)
-	rec.Set("ts", ts.UTC().Format(time.RFC3339))
-	_ = app.Save(rec)
 }
 
 func setControllerOnline(app core.App, deviceID string, online bool, ts time.Time) {
@@ -401,8 +264,35 @@ func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Ti
 	for _, o := range s.Outcomes {
 		reconcileCommand(app, o.CommandID, o.Result, o.Reason)
 	}
+	// Running firmware version (from the device's metadata sensor) → confirm an OTA
+	// release once the device reports the version it was told to flash. Version match
+	// after reboot is the reliable success signal (the pre-reboot command ack can be
+	// lost when the flash reboots the device before the next snapshot publishes).
+	if fw := s.Text["fw_version"]; fw != "" {
+		reconcileFirmware(app, ctrl, fw)
+	}
 	setControllerOnline(app, ctrl, true, now)
 	return nil
+}
+
+// reconcileFirmware records the controller's running firmware version and flips any
+// release it was deploying to "confirmed" once the device reports that version.
+// Idempotent — a repeated snapshot with an unchanged version is a no-op.
+func reconcileFirmware(app core.App, ctrl, version string) {
+	if c, err := app.FindRecordById("controllers", ctrl); err == nil && c != nil {
+		if c.GetString("firmware_version") != version {
+			c.Set("firmware_version", version)
+			_ = app.Save(c)
+		}
+	}
+	rec, _ := app.FindFirstRecordByFilter("firmware_releases",
+		"controller = {:c} && version = {:v} && status = 'deployed'",
+		dbx.Params{"c": ctrl, "v": version})
+	if rec == nil {
+		return
+	}
+	rec.Set("status", "confirmed")
+	_ = app.Save(rec)
 }
 
 // resolveActorLabel turns a route's origin+actor (whole ids) into a display label:

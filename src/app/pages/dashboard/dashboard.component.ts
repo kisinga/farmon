@@ -226,7 +226,7 @@ import type { RouteControl } from '@core';
                     [row]="store.rowFor(w)"
                     [series]="telemetry.seriesFor(w)"
                     [span]="telemetry.spanFor(w)"
-                    [events]="store.eventsFor(w.controller)"
+                    [items]="store.activityFor(w.controller)"
                     [actuatable]="isActuatable(w)"
                     [held]="actuatorHeld(w)"
                     [phase]="actuatorPhase(w)?.phase ?? null"

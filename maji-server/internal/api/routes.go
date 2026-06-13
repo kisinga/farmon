@@ -2,12 +2,17 @@
 package api
 
 import (
+	"crypto/md5"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/kisinga/majiflow/internal/auth"
@@ -16,6 +21,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"github.com/pocketbase/pocketbase/tools/security"
 )
 
@@ -42,6 +48,11 @@ func HostingCap(app core.App) int {
 type Publisher interface {
 	Publish(topic string, payload []byte, retain bool, qos byte) error
 }
+
+// otaDownloadTTL bounds how long a deploy's firmware download token stays valid.
+// It must outlast the gap between publishing the (QoS 1, queued) firmware_update
+// command and an offline device reconnecting to consume it and fetch the image.
+const otaDownloadTTL = 24 * time.Hour
 
 // commandActions mirrors CommandAction in src/lib/codegen-ids.ts.
 var commandActions = map[string]bool{
@@ -265,6 +276,12 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		if body.RouteID != nil {
 			rec.Set("route_id", *body.RouteID)
 		}
+		if body.NodeID != "" {
+			rec.Set("node_id", body.NodeID)
+		}
+		if body.On != nil {
+			rec.Set("node_on", *body.On)
+		}
 		if body.Key != "" {
 			rec.Set("config_key", body.Key)
 		}
@@ -442,6 +459,213 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 
 		return e.JSON(http.StatusOK, map[string]any{"token": token, "ota_password": otaPassword, "udp_key": udpKey})
 	})
+
+	// POST /firmware (multipart: site, controller, version, firmware_bin) — an admin
+	// uploads a compiled binary for one controller. Gated by the admin's session
+	// (requireSiteAccess), NEVER the device secret: that secret is baked into firmware
+	// and extractable from any device/bundle, so it must not authorize pushing code.
+	// The md5 is computed HERE (an uploader-supplied checksum is meaningless) and the
+	// device later verifies the image against it. Uploading never reflashes — Deploy does.
+	// Older binaries for the controller are pruned (history rows kept, bins dropped) so
+	// storage stays latest-only.
+	g.POST("/firmware", func(e *core.RequestEvent) error {
+		site := e.Request.FormValue("site")
+		controller := e.Request.FormValue("controller")
+		version := e.Request.FormValue("version")
+		if err := requireSiteAccess(e, site); err != nil {
+			return err
+		}
+		if controller == "" {
+			return apis.NewBadRequestError("controller is required", nil)
+		}
+		// Version is required: it's the device-side idempotency key (the firmware_update
+		// no-op compares it to the running build) and the signal that confirms a release.
+		// A blank version would reflash on every deploy and never confirm.
+		if version == "" {
+			return apis.NewBadRequestError("version is required", nil)
+		}
+		_, fh, err := e.Request.FormFile("firmware_bin")
+		if err != nil {
+			return apis.NewBadRequestError("firmware_bin file is required", err)
+		}
+		// md5 + size from a fresh read of the upload (authoritative, server-computed).
+		src, err := fh.Open()
+		if err != nil {
+			return apis.NewBadRequestError("cannot read upload", err)
+		}
+		h := md5.New()
+		size, err := io.Copy(h, src)
+		_ = src.Close()
+		if err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "failed to hash upload", err)
+		}
+		if size == 0 {
+			return apis.NewBadRequestError("firmware_bin is empty", nil)
+		}
+		md5hex := hex.EncodeToString(h.Sum(nil))
+
+		file, err := filesystem.NewFileFromMultipart(fh)
+		if err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "failed to read upload", err)
+		}
+		coll, err := e.App.FindCollectionByNameOrId("firmware_releases")
+		if err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "firmware_releases collection missing", err)
+		}
+		rec := core.NewRecord(coll)
+		rec.Set("site", site)
+		rec.Set("controller", controller)
+		rec.Set("version", version)
+		rec.Set("md5", md5hex)
+		rec.Set("size", size)
+		rec.Set("uploaded_by", e.Auth.Id)
+		rec.Set("status", "uploaded")
+		rec.Set("firmware_bin", file)
+		if err := e.App.Save(rec); err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "failed to store firmware", err)
+		}
+
+		// Prune: keep the release history rows, but drop every other binary for this
+		// controller so only the latest image occupies storage.
+		older, _ := e.App.FindRecordsByFilter("firmware_releases",
+			"controller = {:c} && id != {:id}", "-created", 0, 0,
+			dbx.Params{"c": controller, "id": rec.Id})
+		for _, o := range older {
+			if o.GetString("firmware_bin") != "" {
+				o.Set("firmware_bin", "")
+				_ = e.App.Save(o)
+			}
+		}
+
+		return e.JSON(http.StatusOK, map[string]any{
+			"id": rec.Id, "md5": md5hex, "version": version, "size": size,
+		})
+	})
+
+	// POST /firmware/deploy {site, controller, release_id} — tell the device to pull
+	// and flash a previously-uploaded release. Mints a single-purpose, expiring download
+	// token (the device has no session), records the imperative in the shared `commands`
+	// audit, and publishes a firmware_update command on the device's command topic. The
+	// md5 rides the cert-pinned, replay-protected command lane, so the download channel
+	// itself need not be trusted — a swapped binary fails the md5 the device received here.
+	g.POST("/firmware/deploy", func(e *core.RequestEvent) error {
+		var body struct {
+			Site       string `json:"site"`
+			Controller string `json:"controller"`
+			ReleaseID  string `json:"release_id"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return apis.NewBadRequestError("invalid body", err)
+		}
+		if err := requireSiteAccess(e, body.Site); err != nil {
+			return err
+		}
+		rec, err := e.App.FindRecordById("firmware_releases", body.ReleaseID)
+		if err != nil || rec == nil {
+			return apis.NewNotFoundError("release not found", nil)
+		}
+		if rec.GetString("site") != body.Site || rec.GetString("controller") != body.Controller {
+			return apis.NewBadRequestError("release does not match site/controller", nil)
+		}
+		if rec.GetString("firmware_bin") == "" {
+			return apis.NewBadRequestError("release binary no longer available; re-upload", nil)
+		}
+
+		token, err := auth.GenerateToken()
+		if err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "failed to mint download token", err)
+		}
+		rec.Set("download_token", token)
+		// Outlive an offline device: the firmware_update command is queued (QoS 1,
+		// persistent session) and may not deliver until the device reconnects, so the
+		// download token has to still be valid then — not just for an online device.
+		rec.Set("download_expires", time.Now().Add(otaDownloadTTL).UTC())
+		rec.Set("status", "deployed")
+		rec.Set("deployed_at", time.Now().UTC())
+		if err := e.App.Save(rec); err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "failed to mark deployed", err)
+		}
+
+		commandID := security.RandomString(15)
+		if coll, cerr := e.App.FindCollectionByNameOrId("commands"); cerr == nil {
+			audit := core.NewRecord(coll)
+			audit.Set("site", body.Site)
+			audit.Set("controller", body.Controller)
+			audit.Set("command_id", commandID)
+			audit.Set("action", "firmware_update")
+			audit.Set("status", "sent")
+			audit.Set("issued_by", e.Auth.Id)
+			audit.Set("issued_role", e.Auth.GetString("role"))
+			_ = e.App.Save(audit)
+		}
+
+		url := publicBaseURL(cfg, e) + "/api/farmon/firmware/" + rec.Id + "?t=" + token
+		payload, _ := json.Marshal(map[string]any{
+			"command_id": commandID,
+			"action":     "firmware_update",
+			"issued_at":  time.Now().Unix(),
+			"actor":      e.Auth.Id,
+			"version":    rec.GetString("version"),
+			"url":        url,
+			"md5":        rec.GetString("md5"),
+		})
+		if err := pub.Publish(telemetry.CommandTopic(body.Site, body.Controller), payload, false, 1); err != nil {
+			// The command never went out — don't leave the release reading "deployed".
+			// Mark it failed so the UI reflects reality and the admin re-deploys.
+			rec.Set("status", "failed")
+			_ = e.App.Save(rec)
+			return apis.NewApiError(http.StatusBadGateway, "failed to publish command", err)
+		}
+		return e.JSON(http.StatusOK, map[string]any{"command_id": commandID, "status": "deployed"})
+	})
+
+	// GET /firmware/{id}?t=<token> — the device's download endpoint. No session: the
+	// device proves nothing but a single-purpose, expiring capability token minted at
+	// deploy time. Constant-time compare; expiry enforced. Kept inside /api/farmon so
+	// the device fetches from the same host it already trusts.
+	g.GET("/firmware/{id}", func(e *core.RequestEvent) error {
+		rec, err := e.App.FindRecordById("firmware_releases", e.Request.PathValue("id"))
+		if err != nil || rec == nil {
+			return apis.NewNotFoundError("not found", nil)
+		}
+		want := rec.GetString("download_token")
+		got := e.Request.URL.Query().Get("t")
+		if want == "" || subtle.ConstantTimeCompare([]byte(want), []byte(got)) != 1 {
+			return apis.NewForbiddenError("invalid token", nil)
+		}
+		if exp := rec.GetDateTime("download_expires"); exp.IsZero() || exp.Time().Before(time.Now()) {
+			return apis.NewForbiddenError("token expired", nil)
+		}
+		name := rec.GetString("firmware_bin")
+		if name == "" {
+			return apis.NewNotFoundError("binary unavailable", nil)
+		}
+		fsys, err := e.App.NewFilesystem()
+		if err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "storage unavailable", err)
+		}
+		defer fsys.Close()
+		return fsys.Serve(e.Response, e.Request, rec.BaseFilesPath()+"/"+name, name)
+	})
+}
+
+// publicBaseURL is the externally-reachable origin the device fetches firmware from.
+// An explicit cfg.HTTPPublicURL wins (the reliable answer behind a TLS-terminating
+// proxy or when the device reaches a different host than the admin). Otherwise it
+// reconstructs the origin from the admin's request — the web app is served by this
+// same server, so its host is usually what the device must reach too — honoring a
+// reverse proxy's X-Forwarded-Proto for the scheme.
+func publicBaseURL(cfg config.Config, e *core.RequestEvent) string {
+	if cfg.HTTPPublicURL != "" {
+		return strings.TrimRight(cfg.HTTPPublicURL, "/")
+	}
+	scheme := "https"
+	if p := e.Request.Header.Get("X-Forwarded-Proto"); p != "" {
+		scheme = p
+	} else if e.Request.TLS == nil {
+		scheme = "http"
+	}
+	return scheme + "://" + e.Request.Host
 }
 
 // pickTier maps a requested time span to the storage tier that serves it

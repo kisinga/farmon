@@ -141,6 +141,9 @@ export interface SiteDiagrams {
   /** Hash of the topology these were rendered from — lets the customer path
    *  detect a stale cache (topology edited but diagrams not re-published). */
   topoHash?: string;
+  /** ISO timestamp of the last generation/publish — shown on the deploy page so
+   *  the admin knows how fresh the customer-visible docs are. */
+  generatedAt?: string;
 }
 
 // --- Boards ---

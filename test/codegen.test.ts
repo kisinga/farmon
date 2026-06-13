@@ -254,6 +254,37 @@ assert(tlsMqtt.includes("MIIBsampleCAbodyLineOne"), "TLS: embeds the cert PEM bo
 assert(tlsMqtt.includes("skip_cert_cn_check: true"), "TLS: emits skip_cert_cn_check (exact-cert pinning)");
 assert(/port:\s*8883/.test(tlsMqtt), "TLS: port 8883");
 
+// --- OTA (pull-update path) ---
+console.log("\nOTA pull-update:");
+// Board package keeps push OTA (bench flashing) AND adds the http_request pull
+// platform, the http_request client, and safe_mode recovery.
+assert(boardPkg.includes("platform: esphome"), "OTA: esphome push platform retained");
+assert(boardPkg.includes("platform: http_request"), "OTA: http_request pull platform added");
+assert(/^http_request:/m.test(boardPkg), "OTA: http_request component emitted");
+assert(boardPkg.includes("safe_mode:"), "OTA: safe_mode recovery emitted");
+// mqtt.yaml carries the firmware_update command branch, the version no-op guard,
+// the url/md5 globals, and the do_ota_flash script that performs the flash.
+assert(
+  mqttYaml.includes('strcmp(action, "firmware_update")'),
+  "OTA: mqtt handles the firmware_update command",
+);
+assert(
+  mqttYaml.includes("id(majiflow_generation_version).state.c_str()"),
+  "OTA: firmware_update no-ops when already on the target version",
+);
+assert(
+  mqttYaml.includes("id(do_ota_flash).execute()"),
+  "OTA: firmware_update triggers the do_ota_flash script",
+);
+assert(
+  /ota\.http_request\.flash:/.test(mqttYaml) && mqttYaml.includes("id: do_ota_flash"),
+  "OTA: do_ota_flash script flashes via ota.http_request.flash",
+);
+assert(
+  /\\"fw_version\\":/.test(mqttYaml),
+  "OTA: running fw_version rides the snapshot (server confirms the release)",
+);
+
 // --- Device YAML ---
 
 console.log("\ndevice YAML (generated):");

@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import type { RecordModel, UnsubscribeFunc } from 'pocketbase';
 import type { ControllerSnapshot } from '@core';
 import { BackendService } from './backend.service';
-import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow } from '../models/runtime';
+import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow } from '../models/runtime';
 
 /** Liveness of the PocketBase realtime SSE stream. `connecting` is the idle
  *  state before anything subscribes; the dashboard banner only reacts to
@@ -153,6 +153,35 @@ export class RealtimeService {
     );
   }
 
+  /** Recent operator commands for a site (newest first) — the audit feed behind
+   *  the Activity timeline. Expands `issued_by` so history rows can name the
+   *  initiator. */
+  async recentCommands(siteId: string, limit = 100): Promise<CommandLogRow[]> {
+    const res = await this.pb.collection('commands').getList(1, limit, {
+      filter: this.pb.filter('site = {:s}', { s: siteId }),
+      sort: '-created',
+      expand: 'issued_by',
+      requestKey: `commands:${siteId}`,
+    });
+    return res.items.map((r) => toCommandLog(r, this.meId()));
+  }
+
+  /** Live command inserts/updates for a site (a command lands as `sent`, then the
+   *  device outcome reconciles it to done/failed). Returns an unsubscribe function. */
+  subscribeCommands(siteId: string, cb: (row: CommandLogRow) => void): Promise<UnsubscribeFunc> {
+    this.wireConnection();
+    return this.pb.collection('commands').subscribe(
+      '*',
+      (e) => cb(toCommandLog(e.record, this.meId())),
+      { filter: this.pb.filter('site = {:s}', { s: siteId }) },
+    );
+  }
+
+  /** The signed-in user's id, for the "you" attribution in the command feed. */
+  private meId(): string {
+    return this.pb.authStore.record?.id ?? '';
+  }
+
   // --- Cross-site reads for the global alerts center ---------------------------
   // These omit the per-site filter; PocketBase view rules already scope every
   // collection to the rows the signed-in user may see (their sites, or all for
@@ -286,5 +315,34 @@ function toEvent(r: RecordModel): StateEventRow {
     reason: r['reason'],
     command_id: r['command_id'],
     ts: r['ts'],
+  };
+}
+
+/** Map a `commands` record to a display row, resolving the initiator. An admin
+ *  action on a customer's site (issued_role 'admin', the Take-control flow) is
+ *  labelled support so it's unmistakable; otherwise the viewer's own action reads
+ *  "you", a co-owner's the expanded name (history fetch), unresolved "operator". */
+function toCommandLog(r: RecordModel, meId: string): CommandLogRow {
+  const bySupport = r['issued_role'] === 'admin';
+  const issuedBy = r['issued_by'];
+  const expanded = (r['expand'] as Record<string, RecordModel> | undefined)?.['issued_by'];
+  const name = expanded?.['name'] || expanded?.['email'];
+  let actor: string;
+  if (bySupport) actor = 'Support';
+  else if (issuedBy && issuedBy === meId) actor = 'you';
+  else actor = name || 'operator';
+  return {
+    id: r['id'],
+    controller: r['controller'],
+    action: r['action'],
+    routeId: r['route_id'] ?? undefined,
+    nodeId: r['node_id'] || undefined,
+    on: typeof r['node_on'] === 'boolean' ? r['node_on'] : undefined,
+    configKey: r['config_key'] || undefined,
+    status: r['status'] ?? 'sent',
+    result: r['result'] || '',
+    actor,
+    bySupport,
+    ts: r['created'],
   };
 }

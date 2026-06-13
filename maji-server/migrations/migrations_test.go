@@ -43,6 +43,13 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 			t.Error("commands.action still offers automation_set (migration 25)")
 		}
 	}
+	// 30_command_node added the actuator-target fields the command history reads.
+	if commands.Fields.GetByName("node_id") == nil {
+		t.Error("commands.node_id should exist (migration 30)")
+	}
+	if commands.Fields.GetByName("node_on") == nil {
+		t.Error("commands.node_on should exist (migration 30)")
+	}
 }
 
 // Each migration file must have a unique NN_ number. Two files sharing a number

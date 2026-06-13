@@ -48,6 +48,13 @@ type Config struct {
 	// The managed cloud broker (mqtt.majiflow.io:8883) is TLS; a local on-site
 	// broker may not be. Baked into firmware and offered as the Online autofill.
 	MQTTPublicTLS bool
+	// HTTPPublicURL is the externally-reachable origin (scheme://host[:port]) that
+	// DEVICES use to reach this server's HTTP API — currently the OTA firmware
+	// download. Empty falls back to reconstructing the origin from the admin's
+	// request, which is correct when the device and admin reach the same host; set
+	// it explicitly when a TLS-terminating proxy hides the scheme or the device
+	// reaches a different host than the admin's browser.
+	HTTPPublicURL string
 }
 
 // Load resolves configuration from the environment for the given mode. The
@@ -66,6 +73,7 @@ func Load(mode Mode) Config {
 		MQTTPublicHost: env("MAJI_MQTT_PUBLIC_HOST", "mqtt.majiflow.io"),
 		MQTTPublicPort: envInt("MAJI_MQTT_PUBLIC_PORT", 8883),
 		MQTTPublicTLS:  envBool("MAJI_MQTT_PUBLIC_TLS", true),
+		HTTPPublicURL:  env("MAJI_HTTP_PUBLIC_URL", ""),
 	}
 }
 

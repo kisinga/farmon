@@ -8,7 +8,7 @@ import {
   SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, FAULT_MEANINGS, OUTCOME_MEANINGS,
   type DashboardWidget, type StateKind, type CommandPhase,
 } from '@core';
-import type { ShadowRow, TelemetryPoint, StateEventRow } from '../../../core/models/runtime';
+import type { ShadowRow, TelemetryPoint, ActivityItem } from '../../../core/models/runtime';
 import { SPAN_PRESETS, DEFAULT_SPAN_HOURS } from '../telemetry.store';
 import { integrateLiters } from '../flow-usage';
 import { phaseUi } from './command-phase';
@@ -98,9 +98,9 @@ const CHART = {
         }
         @case ('line') {
           @if (series().length > 0) {
-            <div echarts [options]="lineOption()" [autoResize]="true" class="flex-1 min-h-[100px]"></div>
+            <div echarts [options]="lineOption()" [autoResize]="true" class="flex-1 min-h-[120px]"></div>
           } @else {
-            <div class="flex-1 min-h-[100px] flex items-center justify-center">
+            <div class="flex-1 min-h-[120px] flex items-center justify-center">
               <span class="text-xs text-base-content/30">No data yet</span>
             </div>
           }
@@ -108,9 +108,9 @@ const CHART = {
         @case ('flow') {
           <div class="flex-1 flex flex-col">
             @if (series().length > 0) {
-              <div echarts [options]="lineOption()" [autoResize]="true" class="flex-1 min-h-[90px]"></div>
+              <div echarts [options]="lineOption()" [autoResize]="true" class="flex-1 min-h-[110px]"></div>
             } @else {
-              <div class="flex-1 min-h-[90px] flex items-center justify-center">
+              <div class="flex-1 min-h-[110px] flex items-center justify-center">
                 <span class="text-xs text-base-content/30">No flow yet</span>
               </div>
             }
@@ -178,15 +178,19 @@ const CHART = {
         }
         @case ('timeline') {
           <div class="flex-1 overflow-auto max-h-[200px] -mx-1">
-            @if (events().length === 0) {
+            @if (items().length === 0) {
               <p class="text-xs text-base-content/30 px-1 py-2">No activity yet.</p>
             }
-            @for (e of events(); track e.ts + e.route) {
-              <div class="px-1 py-1 border-b border-base-300/20 last:border-0 flex items-center gap-2 text-[11px]">
-                <span class="badge badge-xs {{ kindOf(e.to) }}">{{ pretty(e.to) }}</span>
-                <span class="text-base-content/50">route {{ e.route }}</span>
-                @if (e.reason) { <span class="text-base-content/40">· {{ pretty(e.reason) }}</span> }
-                <span class="ml-auto text-base-content/30 tabular-nums">{{ shortTime(e.ts) }}</span>
+            @for (it of items(); track it.ts + it.label) {
+              <div class="px-1 py-1 border-b border-base-300/20 last:border-0 flex items-center gap-2 text-[11px]"
+                   [class.text-error]="it.ok === false">
+                @if (it.token) { <span class="badge badge-xs {{ kindOf(it.token) }}">{{ pretty(it.token) }}</span> }
+                <span class="text-base-content/60 truncate">{{ it.label }}</span>
+                @if (it.detail) { <span class="text-base-content/40 shrink-0">· {{ pretty(it.detail) }}</span> }
+                @if (it.actor) {
+                  <span class="shrink-0 {{ it.bySupport ? 'text-warning' : 'text-base-content/40' }}">· {{ it.actor }}</span>
+                }
+                <span class="ml-auto text-base-content/30 tabular-nums shrink-0">{{ shortTime(it.ts) }}</span>
               </div>
             }
           </div>
@@ -212,7 +216,7 @@ export class DashboardCardComponent {
   readonly widget = input.required<DashboardWidget>();
   readonly row = input<ShadowRow | undefined>(undefined);
   readonly series = input<TelemetryPoint[]>([]);
-  readonly events = input<StateEventRow[]>([]);
+  readonly items = input<ActivityItem[]>([]);
   /** Current chart span in hours (line/flow only). */
   readonly span = input<number>(DEFAULT_SPAN_HOURS);
   /** Operator picked a new span for this chart. */
@@ -404,7 +408,8 @@ export class DashboardCardComponent {
     const data = this.series().map((p) => [p.ts, p.value ?? p.avg ?? null]);
     return {
       textStyle: { color: CHART.label },
-      grid: { left: 44, right: 12, top: 12, bottom: 24 },
+      // Extra bottom room for the zoom slider, matching the tank chart.
+      grid: { left: 44, right: 12, top: 12, bottom: 40 },
       xAxis: {
         type: 'time',
         axisLine: { lineStyle: { color: CHART.axis } },
@@ -418,6 +423,18 @@ export class DashboardCardComponent {
         splitLine: { lineStyle: { color: CHART.axis } },
       },
       tooltip: { trigger: 'axis' },
+      // Drag/scroll to zoom the time window (same affordance as the tank chart).
+      dataZoom: [
+        { type: 'inside', throttle: 50 },
+        {
+          type: 'slider', height: 16, bottom: 6,
+          borderColor: 'transparent',
+          fillerColor: 'rgba(34,211,238,0.15)',
+          handleStyle: { color: CHART.accent },
+          textStyle: { color: CHART.label },
+          dataBackground: { lineStyle: { color: CHART.axis }, areaStyle: { color: 'rgba(34,211,238,0.08)' } },
+        },
+      ],
       series: [{
         type: 'line', showSymbol: false, smooth: true, data,
         lineStyle: { color: CHART.accent },

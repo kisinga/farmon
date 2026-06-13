@@ -72,3 +72,39 @@ export interface StateEventRow {
   command_id: string;
   ts: string;
 }
+
+/** One operator command from the `commands` audit collection, mapped for display.
+ *  `status` is sent→done/failed (reconciled from the device outcome echo); `result`
+ *  carries the failure/detail reason. `actor` is the resolved initiator ("you" / a
+ *  co-owner's name / a support label); `bySupport` flags an admin-on-behalf action
+ *  (the "Take control" flow) so the customer can tell it apart from their own. */
+export interface CommandLogRow {
+  id: string;
+  controller: string;
+  action: string;
+  routeId?: number;
+  nodeId?: string;
+  on?: boolean;
+  configKey?: string;
+  status: string;
+  result: string;
+  actor: string;
+  bySupport: boolean;
+  ts: string;
+}
+
+/** A unified Activity-timeline row: a device state transition OR an operator
+ *  command, merged into one chronological feed. `token` is a badge token the
+ *  widget colours via the shared meanings dictionary ('' ⇒ no badge); `label` is
+ *  the human line ("route 0" / "Opened Valve 1"); `ok===false` tints the row as a
+ *  failure. */
+export interface ActivityItem {
+  ts: string;
+  kind: 'transition' | 'command';
+  token: string;
+  label: string;
+  detail?: string;
+  actor?: string;
+  bySupport?: boolean;
+  ok?: boolean;
+}

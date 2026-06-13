@@ -85,8 +85,26 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   const transport = effectiveTransport(network, boardSupportedTransports(board));
   sections.push(...emitConnectionProfile(board, network));
 
+  // OTA: the esphome platform stays for bench flashing (push from a workstation);
+  // http_request adds server-driven pull OTA — the device fetches + flashes an image
+  // on a firmware_update command (see mqtt.ts do_ota_flash). safe_mode boots a
+  // recovery image after repeated boot loops so a bad pull can't brick the device.
   sections.push({
-    ota: [{ platform: "esphome", password: secret('ota_password') }],
+    ota: [
+      { platform: "esphome", password: secret('ota_password') },
+      { platform: "http_request" },
+    ],
+    safe_mode: {},
+  });
+  // HTTP client used by the pull-OTA flash. Image integrity is the md5 delivered over
+  // the cert-pinned command lane, NOT the transport — so verify_ssl is off to avoid
+  // shipping a download-host CA to the device (the cloud host is public-CA anyway, and
+  // on-prem self-signed would otherwise fail). A swapped binary still fails the md5.
+  // NOTE: this is the device's SHARED http_request client — verify_ssl:false applies to
+  // every future http_request consumer too. OTA is the only one today and is md5-anchored;
+  // any other use (no such anchor) must NOT inherit unverified TLS blindly.
+  sections.push({
+    http_request: { verify_ssl: false, timeout: "60s" },
   });
 
   // --- Buses ---
