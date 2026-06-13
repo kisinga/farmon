@@ -41,42 +41,29 @@ func init() {
 		if err := app.Save(sites); err != nil {
 			return err
 		}
+		// NOTE: changing the relation single→multi makes PocketBase rewrite the
+		// owner column itself (json_array(owner) per row), so no per-record save is
+		// needed here — and must NOT be attempted: app.Save() re-validates the
+		// relation, and a legacy cell that converts to a quoted id (see migration 27)
+		// would fail that validation and roll back the whole migration. Column
+		// repair for those legacy rows is handled separately by migration 27.
 
-		// 2. Normalize stored values to array form so a pre-existing single owner
-		//    (stored under MaxSelect=1) reads back cleanly as a one-element set.
-		records, err := app.FindAllRecords("sites")
-		if err != nil {
-			return err
-		}
-		for _, r := range records {
-			r.Set("owner", r.GetStringSlice("owner"))
-			if err := app.Save(r); err != nil {
-				return err
-			}
-		}
-
-		// 3. Rewrite the ownership match operator on every collection rule.
+		// 2. Rewrite the ownership match operator on every collection rule.
 		return rewriteOwnerRules(app, oldOwnerMatch, newOwnerMatch)
 	}, func(app core.App) error {
-		// Down: re-collapse to a single owner (first co-owner wins) and restore the
-		// equality operator.
+		// Down: restore the equality operator and re-collapse to a single owner
+		// (first co-owner wins). Raw column SQL — no per-record re-validation.
 		if err := rewriteOwnerRules(app, newOwnerMatch, oldOwnerMatch); err != nil {
 			return err
 		}
-		records, err := app.FindAllRecords("sites")
-		if err != nil {
+		if _, err := app.DB().NewQuery(
+			`UPDATE sites SET owner = CASE
+			    WHEN owner IS NULL OR owner = '' OR owner = '[]' THEN ''
+			    WHEN json_valid(owner) AND json_type(owner) = 'array' THEN COALESCE(json_extract(owner, '$[0]'), '')
+			    ELSE owner
+			 END`,
+		).Execute(); err != nil {
 			return err
-		}
-		for _, r := range records {
-			owners := r.GetStringSlice("owner")
-			first := ""
-			if len(owners) > 0 {
-				first = owners[0]
-			}
-			r.Set("owner", first)
-			if err := app.Save(r); err != nil {
-				return err
-			}
 		}
 		sites, err := app.FindCollectionByNameOrId("sites")
 		if err != nil {
