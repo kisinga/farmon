@@ -197,7 +197,10 @@ export class DashboardStore implements OnDestroy {
       if (isRouteCmd && c.status === 'done') continue;
       items.push(commandToActivity(c, routeName));
     }
-    return items.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0)).slice(0, 100);
+    // Newest first, by parsed epoch — commands and transitions arrive as ISO strings
+    // but with differing precision, so a raw string compare mis-orders them (and
+    // would bury one source below the other, dropping it past the 100-item cap).
+    return items.sort((a, b) => tsEpoch(b.ts) - tsEpoch(a.ts)).slice(0, 100);
   }
 
   /** A route's human identity ("Borehole → Tank") from the spec, harmonised with
@@ -258,6 +261,14 @@ export class DashboardStore implements OnDestroy {
 /** A state transition → an Activity row (the badge token is the destination state;
  *  the widget colours it via the shared meanings). `routeName` resolves the route's
  *  human identity (shared with the route cards). */
+/** Activity timestamp → epoch ms for the chronological merge sort; 0 when
+ *  unparseable (sorts oldest). Both sources arrive as ISO strings but at differing
+ *  precision, so a numeric key is the only safe way to interleave them. */
+function tsEpoch(ts: string): number {
+  const t = Date.parse(ts);
+  return Number.isNaN(t) ? 0 : t;
+}
+
 function eventToActivity(e: StateEventRow, routeName: (routeId: number) => string): ActivityItem {
   return {
     ts: e.ts,

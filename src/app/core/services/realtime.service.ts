@@ -357,6 +357,16 @@ function toCommandLog(r: RecordModel, meId: string): CommandLogRow {
     result: r['result'] || '',
     actor,
     bySupport,
-    ts: r['created'],
+    // Normalise PocketBase's space-separated autodate ("2026-…14 20:47:01.123Z")
+    // to ISO 8601 so it parses + sorts identically to the RFC3339 transition
+    // timestamps it's merged with in the activity feed (see DashboardStore.activityFor).
+    ts: toIso(r['created']),
   };
+}
+
+/** PocketBase autodate ("YYYY-MM-DD HH:MM:SS.sssZ") → ISO 8601 (T-separated). The
+ *  activity feed merges these with RFC3339 transition timestamps; a space-separated
+ *  string is not valid ISO and parses inconsistently across engines, so normalise. */
+function toIso(ts: string): string {
+  return typeof ts === 'string' ? ts.replace(' ', 'T') : ts;
 }
