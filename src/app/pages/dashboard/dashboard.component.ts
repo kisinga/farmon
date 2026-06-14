@@ -381,9 +381,9 @@ export class DashboardComponent {
     c.tunables.some((t) => t.scope === 'controller') || c.calibrations.length > 0 || c.actuators.length > 0));
 
   /** A route's live state for its card (token + reason + origin; empty when never seen). */
-  protected routeState(controller: string, routeId: number): { token: string; reason: string; origin?: string; actorLabel?: string } {
+  protected routeState(controller: string, routeId: number): { token: string; reason: string; origin?: string; initiator?: { label: string; support: boolean } } {
     const s = this.store.routeState(controller, routeId);
-    return { token: s?.token ?? '', reason: s?.reason ?? '', origin: s?.origin, actorLabel: s?.actorLabel };
+    return { token: s?.token ?? '', reason: s?.reason ?? '', origin: s?.origin, initiator: s?.initiator };
   }
 
   /** Live flow rate (L/min) for a route's primary flow sensor, null when none/unknown. */
@@ -468,7 +468,7 @@ export class DashboardComponent {
     }
     const topo = parseTopology(topology);
     const spec = buildDashboardSpec(topo);
-    await this.store.init(this.siteId, spec, { update_interval: topo.timing.update_interval });
+    await this.store.init(this.siteId, spec, { update_interval: topo.timing.update_interval }, site.owners ?? []);
     // Backfill history for the charted widgets (line + flow rate). Each uses its
     // own remembered span (telemetry.load defaults to the widget's stored span).
     for (const w of spec.widgets) {

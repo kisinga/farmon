@@ -141,15 +141,19 @@ export class RouteCardComponent {
   readonly route = input.required<RouteControl>();
   /** The route's live state: a SYSTEM_STATE `token` ('' ⇒ never seen ⇒ idle), the
    *  `reason` token carried by the latest transition (for the fault detail), and
-   *  who/what started the run (`origin` + resolved `actorLabel`). */
-  readonly state = input<{ token: string; reason: string; origin?: string; actorLabel?: string }>({ token: '', reason: '' });
+   *  who/what started the run (`origin` + the viewer-resolved `initiator`). */
+  readonly state = input<{ token: string; reason: string; origin?: string; initiator?: { label: string; support: boolean } }>({ token: '', reason: '' });
 
-  /** "by Jane" / "Automation: Morning" while a run is active, else '' — via the
-   *  shared {@link formatInitiator} so it matches the activity timeline's chip. */
+  /** "by Jane" / "Automation: Morning" / "Support" while a run is active, else ''.
+   *  Mirrors the activity chip (resolveInitiator → formatInitiator) so the card and
+   *  the timeline never disagree on who's running it. */
   protected originText = computed(() => {
     const s = this.state();
     if (!s.token || s.token === 'IDLE') return '';
-    return formatInitiator(s.origin, s.actorLabel);
+    const init = s.initiator;
+    if (!init || !init.label) return '';
+    if (init.support) return init.label;
+    return formatInitiator(s.origin, init.label);
   });
   /** Live flow rate (L/min) from the route's flow sensor, or null when unknown. */
   readonly flowRate = input<number | null>(null);

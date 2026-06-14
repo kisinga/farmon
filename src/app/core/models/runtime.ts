@@ -15,6 +15,10 @@ export interface ShadowRow {
   reported_text: string;
   ts: string;
   origin?: string;
+  /** Raw initiator user id of the route's current run (route_<id>_state rows) —
+   *  resolved to a viewer-relative label against the owner set, same as the feed. */
+  actorId?: string;
+  /** Server-resolved display name for the actor (used for a co-owner / automation). */
   actorLabel?: string;
 }
 
@@ -76,17 +80,21 @@ export interface StateEventRow {
    *  ingest. Lets the timeline attribute a route run the way the commands ledger
    *  attributes a node action. Absent on older rows / SYSTEM transitions. */
   origin?: string;
-  /** Resolved initiator for display ("you" / a co-owner's name / an automation's
-   *  name), '' when none. The `origin` decides how it's prefixed ("by …" vs
-   *  "Automation: …"), shared with the route card. */
-  actorLabel?: string;
+  /** Raw initiator user id (the route run's actor). Resolved to a viewer-relative
+   *  label downstream against the site's owner set (you / co-owner / Support). */
+  actorId?: string;
+  /** Server-resolved display name for the actor (a user's name/email, an
+   *  automation's name) — used as-is for a co-owner or automation; ignored for an
+   *  outsider (shown as "Support"). */
+  actorName?: string;
 }
 
 /** One operator command from the `commands` audit collection, mapped for display.
  *  `status` is sent→done/failed (reconciled from the device outcome echo); `result`
- *  carries the failure/detail reason. `actor` is the resolved initiator ("you" / a
- *  co-owner's name / a support label); `bySupport` flags an admin-on-behalf action
- *  (the "Take control" flow) so the customer can tell it apart from their own. */
+ *  carries the failure/detail reason. `actorId`/`actorName` are the raw initiator
+ *  (the issuing user id + resolved name); the viewer-relative label
+ *  ("you" / a co-owner's name / "Support") is derived downstream against the site's
+ *  owner set, so commands and route transitions resolve identically. */
 export interface CommandLogRow {
   id: string;
   controller: string;
@@ -97,8 +105,8 @@ export interface CommandLogRow {
   configKey?: string;
   status: string;
   result: string;
-  actor: string;
-  bySupport: boolean;
+  actorId?: string;
+  actorName?: string;
   ts: string;
 }
 
@@ -120,6 +128,9 @@ export interface ActivityItem {
   /** How `actor` is prefixed, harmonised with the route card: 'AUTOMATION' ⇒
    *  "Automation: <actor>"; 'MANUAL'/undefined ⇒ "you" or "by <actor>". */
   origin?: string;
+  /** The actor is an outsider — not the viewer and not a site co-owner, i.e. an
+   *  admin who took control. `actor` reads "Support" and the chip is styled as such.
+   *  Derived from the owner set, not a role flag. */
   bySupport?: boolean;
   ok?: boolean;
 }

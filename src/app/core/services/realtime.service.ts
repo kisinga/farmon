@@ -91,7 +91,7 @@ export class RealtimeService {
       sort: '-ts',
       requestKey: `events:${siteId}`,
     });
-    return res.items.map((r) => toEvent(r, this.meId()));
+    return res.items.map((r) => toEvent(r));
   }
 
   /** Controller presence rows (online + last_seen) for a site. */
@@ -147,7 +147,7 @@ export class RealtimeService {
     return this.pb.collection('state_events').subscribe(
       '*',
       (e) => {
-        if (e.action === 'create') cb(toEvent(e.record, this.meId()));
+        if (e.action === 'create') cb(toEvent(e.record));
       },
       { filter: this.pb.filter('site = {:s}', { s: siteId }) },
     );
@@ -163,7 +163,7 @@ export class RealtimeService {
       expand: 'issued_by',
       requestKey: `commands:${siteId}`,
     });
-    return res.items.map((r) => toCommandLog(r, this.meId()));
+    return res.items.map((r) => toCommandLog(r));
   }
 
   /** Live command inserts/updates for a site (a command lands as `sent`, then the
@@ -172,14 +172,9 @@ export class RealtimeService {
     this.wireConnection();
     return this.pb.collection('commands').subscribe(
       '*',
-      (e) => cb(toCommandLog(e.record, this.meId())),
+      (e) => cb(toCommandLog(e.record)),
       { filter: this.pb.filter('site = {:s}', { s: siteId }) },
     );
-  }
-
-  /** The signed-in user's id, for the "you" attribution in the command feed. */
-  private meId(): string {
-    return this.pb.authStore.record?.id ?? '';
   }
 
   // --- Cross-site reads for the global alerts center ---------------------------
@@ -208,14 +203,14 @@ export class RealtimeService {
       sort: '-ts',
       requestKey: 'events:all',
     });
-    return res.items.map((r) => toEvent(r, this.meId()));
+    return res.items.map((r) => toEvent(r));
   }
 
   /** Live transition inserts across all visible sites. */
   subscribeAllEvents(cb: (row: StateEventRow) => void): Promise<UnsubscribeFunc> {
     this.wireConnection();
     return this.pb.collection('state_events').subscribe('*', (e) => {
-      if (e.action === 'create') cb(toEvent(e.record, this.meId()));
+      if (e.action === 'create') cb(toEvent(e.record));
     });
   }
 
@@ -279,7 +274,7 @@ function explodeSnapshot(controller: string, snap: ControllerSnapshot, ts: strin
     num('safety_override', snap.system.safety ? 1 : 0);
   }
   for (const r of snap.routes ?? []) {
-    rows.push({ controller, sensor: `route_${r.id}_state`, reported: 0, reported_text: r.state, ts, origin: r.origin, actorLabel: r.actorLabel });
+    rows.push({ controller, sensor: `route_${r.id}_state`, reported: 0, reported_text: r.state, ts, origin: r.origin, actorId: r.actor, actorLabel: r.actorLabel });
   }
   return rows;
 }
@@ -306,19 +301,10 @@ function toController(r: RecordModel): ControllerRow {
   };
 }
 
-function toEvent(r: RecordModel, meId: string): StateEventRow {
-  // Resolve the initiator's NAME once (or "you" for the viewer's own manual
-  // action), mirroring toCommandLog. Just the bare name — the shared formatInitiator
-  // adds the "by …" / "Automation: …" prefix and the no-name fallbacks, so a route
-  // transition reads the same as a node command and can't drift from the route card.
-  const origin: string | undefined = r['origin'] || undefined;
-  const actorId = r['actor'];
-  const label = r['actor_label'];
-  let display: string | undefined;
-  if (actorId) {
-    if (origin === 'MANUAL' && actorId === meId) display = 'you';
-    else display = label || undefined;
-  }
+function toEvent(r: RecordModel): StateEventRow {
+  // Raw facts only — the viewer-relative label (you / co-owner / Support) is
+  // resolved downstream against the site owner set, so transitions and commands
+  // resolve through one rule (see DashboardStore / resolveInitiator).
   return {
     controller: r['controller'],
     route: r['route'],
@@ -327,24 +313,20 @@ function toEvent(r: RecordModel, meId: string): StateEventRow {
     reason: r['reason'],
     command_id: r['command_id'],
     ts: r['ts'],
-    origin,
-    actorLabel: display,
+    origin: r['origin'] || undefined,
+    actorId: r['actor'] || undefined,
+    actorName: r['actor_label'] || undefined,
   };
 }
 
-/** Map a `commands` record to a display row, resolving the initiator. An admin
- *  action on a customer's site (issued_role 'admin', the Take-control flow) is
- *  labelled support so it's unmistakable; otherwise the viewer's own action reads
- *  "you", a co-owner's the expanded name (history fetch), unresolved "operator". */
-function toCommandLog(r: RecordModel, meId: string): CommandLogRow {
-  const bySupport = r['issued_role'] === 'admin';
-  const issuedBy = r['issued_by'];
+/** Map a `commands` record to a display row carrying raw facts only — the issuing
+ *  user id (`issued_by`) + the expanded display name. The viewer-relative label
+ *  (you / co-owner / Support) is resolved downstream against the site owner set, so
+ *  a node command and a route transition read the same. `expand: 'issued_by'` on the
+ *  history fetch supplies the name. */
+function toCommandLog(r: RecordModel): CommandLogRow {
   const expanded = (r['expand'] as Record<string, RecordModel> | undefined)?.['issued_by'];
   const name = expanded?.['name'] || expanded?.['email'];
-  let actor: string;
-  if (bySupport) actor = 'Support';
-  else if (issuedBy && issuedBy === meId) actor = 'you';
-  else actor = name || 'operator';
   return {
     id: r['id'],
     controller: r['controller'],
@@ -355,8 +337,8 @@ function toCommandLog(r: RecordModel, meId: string): CommandLogRow {
     configKey: r['config_key'] || undefined,
     status: r['status'] ?? 'sent',
     result: r['result'] || '',
-    actor,
-    bySupport,
+    actorId: r['issued_by'] || undefined,
+    actorName: name || undefined,
     // Normalise PocketBase's space-separated autodate ("2026-…14 20:47:01.123Z")
     // to ISO 8601 so it parses + sorts identically to the RFC3339 transition
     // timestamps it's merged with in the activity feed (see DashboardStore.activityFor).

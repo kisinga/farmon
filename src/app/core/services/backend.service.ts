@@ -618,6 +618,11 @@ export class BackendService {
     args: { routeId?: number; nodeId?: string; on?: boolean; key?: string; value?: number } = {},
   ): Promise<string> {
     const res = await this.pb.send<{ command_id?: string }>('/api/farmon/command', {
+      // No auto-cancellation: commands fan out concurrently (e.g. a calibration
+      // save writes three config_set at once), and they'd otherwise share the
+      // method+path auto-key and abort each other ("request was autocancelled").
+      // Every command must reach the server, so opt this request out entirely.
+      requestKey: null,
       method: 'POST',
       body: {
         site: siteId,

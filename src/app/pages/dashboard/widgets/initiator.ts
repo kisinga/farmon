@@ -19,3 +19,32 @@ export function formatInitiator(origin: string | undefined, label: string | unde
   if (origin === 'MANUAL') return label ? `by ${label}` : 'Manual';
   return label ? `by ${label}` : '';
 }
+
+/** The viewer's identity + their site's owner set — the context every "who did it"
+ *  decision is relative to. `owners` is the full co-owner id set (multi-owner sites);
+ *  anyone outside it (and not the viewer) is an outsider, i.e. Support. */
+export interface InitiatorCtx {
+  meId: string;
+  owners: ReadonlySet<string>;
+}
+
+/** Resolve a raw actor (user id + server-resolved name + origin) to the viewer-
+ *  relative identity, the SINGLE rule shared by commands, route transitions, and the
+ *  live route card:
+ *   - an automation        → its name (origin carries the "Automation:" prefix later)
+ *   - the viewer themselves → "you"
+ *   - another co-owner      → their name
+ *   - an outsider (admin who took control) → "Support" (never their name — no leak)
+ *   - no actor (SYSTEM)     → ''
+ *  Returns the bare label plus `support` for the warning-chip styling; the phrasing
+ *  ("by …" / "Automation: …") is added afterwards by {@link formatInitiator}. */
+export function resolveInitiator(
+  a: { origin?: string; actorId?: string; actorName?: string },
+  ctx: InitiatorCtx,
+): { label: string; support: boolean } {
+  if (a.origin === 'AUTOMATION') return { label: a.actorName ?? '', support: false };
+  if (!a.actorId) return { label: '', support: false };
+  if (a.actorId === ctx.meId) return { label: 'you', support: false };
+  if (ctx.owners.has(a.actorId)) return { label: a.actorName || 'operator', support: false };
+  return { label: 'Support', support: true };
+}

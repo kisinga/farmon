@@ -2,8 +2,10 @@ import { Injectable, OnDestroy, effect, inject, signal } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
 import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, type DashboardSpec, type DashboardWidget } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
+import { AuthStore } from '../../core/services/auth.store';
 import type { ShadowRow, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ActivityItem } from '../../core/models/runtime';
 import { resolveOfflineMs } from '../../core/models/alerts';
+import { resolveInitiator, type InitiatorCtx } from './widgets/initiator';
 
 /** Cap on retained command outcomes — only the in-flight command's id is ever
  *  read, so this just bounds the map against a long-open page (the device ring is
@@ -27,6 +29,12 @@ export interface SiteTiming {
 @Injectable()
 export class DashboardStore implements OnDestroy {
   private realtime = inject(RealtimeService);
+  private auth = inject(AuthStore);
+
+  /** The site's co-owner ids, set at init(). Drives the viewer-relative initiator
+   *  resolution (you / co-owner / Support) for the activity feed; an actor outside
+   *  this set (and not the viewer) reads as "Support". */
+  private owners = new Set<string>();
 
   /** Live SSE stream state, surfaced for the global reconnect banner. */
   readonly connection = this.realtime.connection;
@@ -95,10 +103,11 @@ export class DashboardStore implements OnDestroy {
     this.commands.set(new Map(cmds.map((c) => [c.id, c])));
   }
 
-  async init(siteId: string, spec: DashboardSpec, timing?: SiteTiming): Promise<void> {
+  async init(siteId: string, spec: DashboardSpec, timing?: SiteTiming, owners: string[] = []): Promise<void> {
     this.siteId = siteId;
     this.spec.set(spec);
     this.timing.set(timing ?? null);
+    this.owners = new Set(owners);
     this.loading.set(true);
     this.error.set(null);
     try {
@@ -182,9 +191,10 @@ export class DashboardStore implements OnDestroy {
    *  carry who initiated them. */
   activityFor(controller: string): ActivityItem[] {
     const routeName = (routeId: number) => this.routeName(controller, routeId);
+    const ctx = this.viewerCtx();
     const items: ActivityItem[] = [];
     for (const e of this.events()) {
-      if (e.controller === controller) items.push(eventToActivity(e, routeName));
+      if (e.controller === controller) items.push(eventToActivity(e, routeName, ctx));
     }
     for (const c of this.commands().values()) {
       if (c.controller !== controller) continue;
@@ -195,12 +205,18 @@ export class DashboardStore implements OnDestroy {
       // render (they have no transition of their own).
       const isRouteCmd = c.action === 'route_start' || c.action === 'route_stop';
       if (isRouteCmd && c.status === 'done') continue;
-      items.push(commandToActivity(c, routeName));
+      items.push(commandToActivity(c, routeName, ctx));
     }
     // Newest first, by parsed epoch — commands and transitions arrive as ISO strings
     // but with differing precision, so a raw string compare mis-orders them (and
     // would bury one source below the other, dropping it past the 100-item cap).
     return items.sort((a, b) => tsEpoch(b.ts) - tsEpoch(a.ts)).slice(0, 100);
+  }
+
+  /** The viewer-relative resolution context: the signed-in user's id + the site's
+   *  owner set. One context for every "who did it" decision in the feed. */
+  private viewerCtx(): InitiatorCtx {
+    return { meId: this.auth.user()?.id ?? '', owners: this.owners };
   }
 
   /** A route's human identity ("Borehole → Tank") from the spec, harmonised with
@@ -215,17 +231,19 @@ export class DashboardStore implements OnDestroy {
    *  matching transition event (best-effort fault/stop detail). `events()` is
    *  newest-first; OUTCOME-only tokens (QUEUED/REFUSED/…) are skipped so a refusal
    *  never masquerades as a state. Undefined ⇒ neither source has anything yet. */
-  routeState(controller: string, routeId: number): { token: string; reason: string; ts: string; origin?: string; actorLabel?: string } | undefined {
+  routeState(controller: string, routeId: number): { token: string; reason: string; ts: string; origin?: string; initiator?: { label: string; support: boolean } } | undefined {
     const row = this.shadow().get(`${controller}/${routeStateSensor(routeId)}`);
     const token = row?.reported_text ?? '';
     const origin = row?.origin;
-    const actorLabel = row?.actorLabel;
+    // Resolve who's running it through the SAME rule as the activity feed, so the
+    // card and the timeline never disagree (and a take-control run reads "Support").
+    const initiator = row ? resolveInitiator({ origin, actorId: row.actorId, actorName: row.actorLabel }, this.viewerCtx()) : undefined;
     for (const e of this.events()) {
       if (e.controller !== controller || e.route !== routeId) continue;
       if (!SYSTEM_STATE_TOKENS.some((t) => t === e.to)) continue;
-      return { token: token || e.to, reason: e.reason, ts: e.ts, origin, actorLabel };
+      return { token: token || e.to, reason: e.reason, ts: e.ts, origin, initiator };
     }
-    return token ? { token, reason: '', ts: '', origin, actorLabel } : undefined;
+    return token ? { token, reason: '', ts: '', origin, initiator } : undefined;
   }
 
   /** The device's latest result for a dispatched command, by `command_id`, shaped
@@ -258,9 +276,6 @@ export class DashboardStore implements OnDestroy {
   }
 }
 
-/** A state transition → an Activity row (the badge token is the destination state;
- *  the widget colours it via the shared meanings). `routeName` resolves the route's
- *  human identity (shared with the route cards). */
 /** Activity timestamp → epoch ms for the chronological merge sort; 0 when
  *  unparseable (sorts oldest). Both sources arrive as ISO strings but at differing
  *  precision, so a numeric key is the only safe way to interleave them. */
@@ -269,33 +284,38 @@ function tsEpoch(ts: string): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
-function eventToActivity(e: StateEventRow, routeName: (routeId: number) => string): ActivityItem {
+/** A state transition → an Activity row (the badge token is the destination state;
+ *  the widget colours it via the shared meanings). `routeName` resolves the route's
+ *  human identity; `ctx` resolves the initiator (you / co-owner / Support) the same
+ *  way as a command, so routes and nodes never disagree. */
+function eventToActivity(e: StateEventRow, routeName: (routeId: number) => string, ctx: InitiatorCtx): ActivityItem {
+  const who = resolveInitiator({ origin: e.origin, actorId: e.actorId, actorName: e.actorName }, ctx);
   return {
     ts: e.ts,
     kind: 'transition',
     token: e.to,
     label: e.route < 0 ? 'controller' : routeName(e.route),
     detail: e.reason || undefined,
-    // Who/what caused the transition — carried from the route snapshot through
-    // ingest, rendered by the same chip as commands. origin decides the prefix.
-    actor: e.actorLabel || undefined,
+    actor: who.label || undefined,
     origin: e.origin,
+    bySupport: who.support,
   };
 }
 
 /** An operator command → an Activity row. The badge token is the reconciled
- *  outcome (APPLIED / the failure reason); the label names the action + target;
- *  `actor`/`bySupport` carry the initiator. A still-`sent` command has no outcome
- *  badge yet — it fills in when the device echo reconciles it. */
-function commandToActivity(c: CommandLogRow, routeName: (routeId: number) => string): ActivityItem {
+ *  outcome (APPLIED / the failure reason); the label names the action + target.
+ *  The initiator is resolved through the SAME `ctx` rule as a transition. A still-
+ *  `sent` command has no outcome badge yet — it fills in when the device reconciles. */
+function commandToActivity(c: CommandLogRow, routeName: (routeId: number) => string, ctx: InitiatorCtx): ActivityItem {
   const token = c.status === 'failed' ? (c.result || 'REFUSED') : c.status === 'done' ? 'APPLIED' : '';
+  const who = resolveInitiator({ actorId: c.actorId, actorName: c.actorName }, ctx);
   return {
     ts: c.ts,
     kind: 'command',
     token,
     label: commandLabel(c, routeName),
-    actor: c.actor,
-    bySupport: c.bySupport,
+    actor: who.label || undefined,
+    bySupport: who.support,
     ok: c.status !== 'failed',
   };
 }
