@@ -190,7 +190,12 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     ...configCases,
     '} else {',
     '  ESP_LOGW("cmd", "unknown action: %s", action);',
+    '  return;  // nothing handled — no outcome to fast-path',
     '}',
+    '// Fast-path hint: publish a snapshot now so the dashboard sees this command outcome',
+    '// + current state immediately, not on the next periodic interval. A dropped publish',
+    '// self-heals on the next interval (the snapshot stays the single source of truth).',
+    'id(publish_snapshot).execute();',
   ];
 
   // MQTT here is the device↔server pipe: telemetry up, commands down. Cross-controller
@@ -393,8 +398,7 @@ interval:
   # projects it. No separate per-sensor or transition-event publishing.
   - interval: \${update_interval}
     then:
-      - lambda: |-
-${indent(snapshotBody, 10)}
+      - script.execute: publish_snapshot
 
 # --- OTA pull (firmware_update command) --------------------------------------
 # The command handler stows the image url + md5 here, then runs do_ota_flash.
@@ -407,6 +411,15 @@ globals:
     type: std::string
 
 script:
+  # Build + publish the full state snapshot. Run on the periodic interval AND
+  # immediately after each handled command (fast-path hint). mode: single — the
+  # interval and a command never run concurrently (one main loop) and a dropped
+  # duplicate self-heals on the next interval.
+  - id: publish_snapshot
+    mode: single
+    then:
+      - lambda: |-
+${indent(snapshotBody, 10)}
   - id: do_ota_flash
     then:
       - ota.http_request.flash:

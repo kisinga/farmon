@@ -466,8 +466,9 @@ export class DashboardComponent {
       this.store.loading.set(false);
       return;
     }
-    const spec = buildDashboardSpec(parseTopology(topology));
-    await this.store.init(this.siteId, spec);
+    const topo = parseTopology(topology);
+    const spec = buildDashboardSpec(topo);
+    await this.store.init(this.siteId, spec, { update_interval: topo.timing.update_interval });
     // Backfill history for the charted widgets (line + flow rate). Each uses its
     // own remembered span (telemetry.load defaults to the widget's stored span).
     for (const w of spec.widgets) {

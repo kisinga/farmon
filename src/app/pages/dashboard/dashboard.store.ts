@@ -10,6 +10,12 @@ import { resolveOfflineMs } from '../../core/models/alerts';
  *  4 deep, so far fewer are ever live at once). */
 const MAX_TRACKED_OUTCOMES = 100;
 
+/** Site-wide telemetry timing the dashboard needs at runtime (from topology). */
+export interface SiteTiming {
+  /** Snapshot publish cadence (seconds); drives the command-lifecycle grace floor. */
+  update_interval: number;
+}
+
 /**
  * DashboardStore — the customer dashboard's "current state": the chart spec, the
  * live shadow (last-known value per channel), and the recent transition log.
@@ -38,6 +44,9 @@ export class DashboardStore implements OnDestroy {
   readonly commands = signal<Map<string, CommandLogRow>>(new Map());
   /** Presence rows keyed by controller id (== device_id). */
   readonly controllers = signal<Map<string, ControllerRow>>(new Map());
+  /** Site-wide telemetry timing (from topology) — the command lifecycle derives a
+   *  hold's grace from `update_interval`. Null until init sets it. */
+  readonly timing = signal<SiteTiming | null>(null);
   /** Ticks every 15s so the freshness check (and "last seen Xm") re-evaluates. */
   readonly now = signal(Date.now());
   readonly loading = signal(true);
@@ -86,9 +95,10 @@ export class DashboardStore implements OnDestroy {
     this.commands.set(new Map(cmds.map((c) => [c.id, c])));
   }
 
-  async init(siteId: string, spec: DashboardSpec): Promise<void> {
+  async init(siteId: string, spec: DashboardSpec, timing?: SiteTiming): Promise<void> {
     this.siteId = siteId;
     this.spec.set(spec);
+    this.timing.set(timing ?? null);
     this.loading.set(true);
     this.error.set(null);
     try {

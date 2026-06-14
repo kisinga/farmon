@@ -57,6 +57,21 @@ const TTL_MS = COMMAND_TTL_S * 1000;
  *  legacy reconcile grace; see the dead-man invariants. */
 export const HOLD_GRACE_MS = 8_000;
 
+/** Network/propagation slack added on top of one snapshot interval when deriving a
+ *  hold's grace — device→broker→server→stream→browser, plus the dashboard's own
+ *  reconcile tick. */
+export const GRACE_MARGIN_MS = 5_000;
+
+/** Grace floor for a sustained claim, derived from the controller's telemetry
+ *  `update_interval` (seconds). A held claim must not be judged blocked before the
+ *  device's NEXT periodic snapshot could re-assert the outcome — otherwise a dropped
+ *  fast-path hint false-blocks an open that actually landed. Floors at HOLD_GRACE_MS;
+ *  falls back to it when the interval is unknown. */
+export function graceFloorMs(updateIntervalS?: number): number {
+  if (updateIntervalS == null || !Number.isFinite(updateIntervalS)) return HOLD_GRACE_MS;
+  return Math.max(HOLD_GRACE_MS, updateIntervalS * 1000 + GRACE_MARGIN_MS);
+}
+
 /** The firmware dead-man lease floor — the minimum `claim_lease_s` an operator can
  *  set on the device (mirrors the `number:` bounds in codegen sensors). A held
  *  actuator must be re-claimed faster than this or it lapses. The device value
@@ -91,9 +106,12 @@ export function confirmDescriptor(
     configKey?: string;
     on?: boolean;
     value?: number;
+    /** Derived sustained-claim grace (ms); defaults to HOLD_GRACE_MS when absent. */
+    graceMs?: number;
   } = {},
 ): ConfirmDescriptor {
-  const base = { sustained: false, ttlMs: TTL_MS, graceMs: HOLD_GRACE_MS };
+  const graceMs = ctx.graceMs ?? HOLD_GRACE_MS;
+  const base = { sustained: false, ttlMs: TTL_MS, graceMs };
 
   switch (action) {
     // --- Routes: confirmed once the route's state token reflects the command. The
@@ -158,7 +176,7 @@ export function confirmDescriptor(
           if (on) {
             if (isOn(obs.reported)) return { phase: 'confirmed' };
             // Blocked: online, past grace, and still not running (incl. no row at all).
-            if (obs.online && obs.ageMs > HOLD_GRACE_MS) {
+            if (obs.online && obs.ageMs > graceMs) {
               return { phase: 'refused', reason: obs.correlated?.reason || '' };
             }
             return { phase: 'pending' };

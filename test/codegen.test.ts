@@ -234,6 +234,26 @@ assert(
   "Persistent session pinned (clean_session: false) — QoS 1 command queuing isn't left to an upstream default",
 );
 
+// --- Immediate snapshot (A2): the snapshot is a shared script run by the periodic
+// interval AND fired right after each handled command, so a command's outcome
+// reaches the dashboard at once instead of waiting up to one interval. ---
+assert(
+  mqttYaml.includes("id: publish_snapshot"),
+  "A2: snapshot factored into a shared publish_snapshot script",
+);
+assert(
+  /script\.execute:\s*publish_snapshot/.test(mqttYaml),
+  "A2: periodic interval runs publish_snapshot (snapshot body de-inlined from the interval)",
+);
+assert(
+  mqttYaml.includes("id(publish_snapshot).execute()"),
+  "A2: command handler fires an immediate snapshot after handling a command",
+);
+assert(
+  (mqttYaml.match(/mc->publish\("majiflow\//g) ?? []).length === 1,
+  "A2: snapshot publish lives in one place (script body moved, not duplicated)",
+);
+
 // --- Device-facing TLS (certificate_authority embedding) ---
 console.log("\nMQTT TLS embedding:");
 // Default metadata is plain 1883 → no certificate_authority (on-prem byte-stability).

@@ -1,7 +1,7 @@
 import { Injectable, OnDestroy, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import {
-  confirmDescriptor, HOLD_RECLAIM_MS,
+  confirmDescriptor, HOLD_RECLAIM_MS, graceFloorMs,
   type CommandAction, type CommandPhase, type ConfirmDescriptor, type ConfirmObservation,
   type RouteControl, type ActuatorControl, type SetpointControl,
 } from '@core';
@@ -23,6 +23,9 @@ export interface CommandCtx {
   configKey?: string;
   on?: boolean;
   value?: number;
+  /** Derived sustained-claim grace (ms); computed in dispatch from the site's
+   *  telemetry update_interval. Absent ⇒ confirmDescriptor falls back to HOLD_GRACE_MS. */
+  graceMs?: number;
 }
 
 /** A dispatched command tracked through its lifecycle. */
@@ -109,7 +112,10 @@ export class CommandLifecycleStore implements OnDestroy {
    * a `node_set { on:false }` releases one. Returns false if the POST was rejected.
    */
   async dispatch(key: string, controller: string, action: CommandAction, ctx: CommandCtx = {}): Promise<boolean> {
-    const descriptor = confirmDescriptor(action, ctx);
+    // Grace is derived from the controller's snapshot cadence so a held claim is never
+    // judged blocked before the device's next periodic snapshot could re-confirm it.
+    const graceMs = graceFloorMs(this.dash.timing()?.update_interval);
+    const descriptor = confirmDescriptor(action, { ...ctx, graceMs });
     // Release: drop the held desire up front so its re-assert stops immediately.
     if (action === 'node_set' && ctx.on === false) this.dropSustained(key);
 

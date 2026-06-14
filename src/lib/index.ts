@@ -89,7 +89,7 @@ export { buildDashboardSpec, routeLabel, findRoute } from './dashboard-spec';
 export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, SetpointControl, CalibrationControl } from './dashboard-spec';
 
 // --- Command confirmation (desired→reported convergence; one shape, all controls) ---
-export { confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S } from './command-confirm';
+export { confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S, GRACE_MARGIN_MS, graceFloorMs } from './command-confirm';
 export type { ConfirmDescriptor, ConfirmObservation, CommandPhase } from './command-confirm';
 
 // --- Runtime-tunable device numbers (config_set surface; firmware + UI + drift test) ---

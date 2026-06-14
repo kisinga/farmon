@@ -10,6 +10,7 @@
  */
 import {
   confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S, COMMAND_TTL_S,
+  GRACE_MARGIN_MS, graceFloorMs,
   type ConfirmObservation,
   type RouteControl, type ActuatorControl, type SetpointControl,
 } from "@core";
@@ -80,6 +81,21 @@ function obs(o: Partial<ConfirmObservation> = {}): ConfirmObservation {
   const ref = d.classify(obs({ reported: 0, ageMs: HOLD_GRACE_MS + 1_000, correlated: { to: "REFUSED", reason: "NO_FLOW" } }));
   assert(ref.phase === "refused" && ref.reason === "NO_FLOW", "claim REFUSED event supplies the reason");
 }
+// --- Derived grace (B1): a hold's grace tracks the controller's update_interval so
+// the dashboard doesn't false-block before the next periodic snapshot can confirm. ---
+{
+  // update_interval 10s → grace = max(8000, 10*1000 + 5000) = 15000ms.
+  const d = confirmDescriptor("node_set", { actuator: pump, on: true, graceMs: graceFloorMs(10) });
+  assert(d.graceMs === 15_000, "derived grace = update_interval + margin (10s → 15000ms)");
+  assert(d.classify(obs({ reported: 0, ageMs: 9_000 })).phase === "pending", "claim not-on at 9s with 15s grace → pending (was refused under the old fixed 8s — the false-block fix)");
+  assert(d.classify(obs({ reported: 0, ageMs: 16_000 })).phase === "refused", "claim not-on past derived grace → refused");
+}
+
+// --- graceFloorMs policy ---------------------------------------------------
+assert(graceFloorMs(undefined) === HOLD_GRACE_MS, "graceFloorMs(undefined) → HOLD_GRACE_MS fallback");
+assert(graceFloorMs(10) === 10 * 1000 + GRACE_MARGIN_MS, "graceFloorMs(10s) → interval + margin");
+assert(graceFloorMs(2) === HOLD_GRACE_MS, "graceFloorMs(2s) → floored at HOLD_GRACE_MS");
+
 {
   const d = confirmDescriptor("node_set", { actuator: pump, on: false });
   assert(d.sustained === false, "node_set off is not sustained");
