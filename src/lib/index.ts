@@ -76,6 +76,10 @@ export type {
 export { collectTelemetryChannels } from './telemetry-channels';
 export type { TelemetryChannel, TelemetryChannelKind } from './telemetry-channels';
 
+// --- Node runtime state (node-centric live-state projection: the live map's SSOT) ---
+export { stateBucket, bucketReading, channelPriority, applyStateClass } from './node-runtime';
+export type { RuntimeState, NodeRuntime, ChannelReading } from './node-runtime';
+
 // --- Device heap health (shared by firmware codegen + dashboard health pill) ---
 export {
   HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, HEAP_CRIT_BYTES,

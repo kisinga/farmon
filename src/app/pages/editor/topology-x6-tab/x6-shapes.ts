@@ -32,7 +32,7 @@ const portGroup = (side: 'left' | 'right') => ({
   label: { position: side },
 });
 
-const PORT_GROUPS = {
+export const PORT_GROUPS = {
   inlet: portGroup('left'),
   outlet: portGroup('right'),
   'inlet-abs': { ...portGroup('left'), position: 'absolute' as const },
@@ -43,7 +43,7 @@ const PORT_GROUPS = {
 
 export type PortItem = { id: string; group: string; args?: { x?: number; y?: number } };
 
-function spacePorts(ports: PortItem[], nodeHeight: number): PortItem[] {
+export function spacePorts(ports: PortItem[], nodeHeight: number): PortItem[] {
   const byGroup = new Map<string, PortItem[]>();
   for (const p of ports) {
     const list = byGroup.get(p.group) ?? [];

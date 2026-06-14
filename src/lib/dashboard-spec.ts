@@ -20,6 +20,9 @@ import { collectTelemetryChannels, type TelemetryChannel } from './telemetry-cha
 import { collectTunableNumbers, type TunableNumber } from './tunable-numbers';
 import { getPressureSensorIds } from './pressure-sensor-shared';
 import { topologyToManifestForController } from './topology-to-manifest';
+import { buildGraph } from './graph/topology-graph';
+import { activeGraph } from './graph/active-graph';
+import { pipesFromSource, pipesToDestination } from './graph/highlight';
 
 export type WidgetKind = 'gauge' | 'tank' | 'line' | 'stat' | 'badge' | 'timeline' | 'valve' | 'flow';
 
@@ -56,6 +59,11 @@ export interface RouteControl {
   /** Telemetry sensor id of the route's primary flow sensor, for a live L/min
    *  readout. Undefined for unmonitored routes (no flow sensor). */
   flowSensor?: string;
+  /** Topology pipe ids this route flows through (source→destination), traced once
+   *  here via the shared graph helpers — the SAME set the editor highlights. Lets
+   *  the live map animate a route's pipes while it runs without re-walking the graph.
+   *  Always set by `buildDashboardSpec`; optional so non-spec literals stay valid. */
+  pipeIds?: string[];
 }
 
 /** Human identity for a route, harmonised across every consumer that names one
@@ -142,6 +150,11 @@ export interface ControllerControls {
   name: string;
   routes: RouteControl[];
   actuators: ActuatorControl[];
+  /** The controller's full telemetry enumeration — the node↔sensor↔role binding
+   *  `collectTelemetryChannels` produces. Carried (not discarded) so node-centric
+   *  consumers — the live map's runtime projection — read the SAME source the
+   *  widgets/actuators derive from, instead of re-joining node→sensor→shadow. */
+  channels: TelemetryChannel[];
   /** Per-route tank-% setpoints, live-tunable via config_set. */
   setpoints: SetpointControl[];
   /** Every runtime-tunable device number (timings, runtime, setpoints,
@@ -226,6 +239,9 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
   // owned by another controller, e.g. a delivery point), so resolve against the
   // whole topology rather than one controller's manifest.
   const nodeName = new Map(topology.nodes.map((n) => [n.id, n.name || n.id]));
+  // One graph for the whole site, to trace each route's pipes (source→dest) — the
+  // same `activeGraph` + intersection the editor's route highlight uses.
+  const tg = activeGraph(buildGraph(topology.nodes, topology.pipes));
   for (const ctrl of topology.controllers) {
     const manifest = topologyToManifestForController(topology, ctrl.id);
     const channels = collectTelemetryChannels(manifest);
@@ -269,6 +285,11 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
         // node in the route's sequence, so use that for the display label.
         const seq = r.nodeSequence ?? [];
         const destId = seq.length ? seq[seq.length - 1] : r.destination;
+        // Pipes on this route = those leaving the source AND reaching the dest.
+        const fromSource = new Set(r.source ? pipesFromSource(tg, r.source) : []);
+        const pipeIds = destId
+          ? pipesToDestination(tg, destId).filter((id) => fromSource.has(id))
+          : [];
         return {
           routeId: i,
           name: r.name || r.key,
@@ -276,9 +297,11 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
           destination: destId ? nodeName.get(destId) ?? destId : undefined,
           crossesPump: r.crossesPump,
           flowSensor: r.flow_sensor ? flowSensorByNode.get(r.flow_sensor) : undefined,
+          pipeIds,
         };
       }),
       actuators,
+      channels,
       // Per-route tank-% setpoints, live-tunable via config_set. Gated on the
       // same source/dest level flags the firmware emits the number entities under.
       setpoints: collectConfigSetpoints(manifest.routes).map((sp) => {

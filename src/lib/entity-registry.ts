@@ -185,6 +185,16 @@ export interface NodeDescriptor {
   defaultData: (index: number) => Record<string, any>;
   /** Returns a raw SVG string for the canvas element. Receives full node data. */
   renderSvg: (data: Record<string, any>) => string;
+  /**
+   * Optional CSS for the live map: how this kind's glyph reacts to live state.
+   * Co-located with `renderSvg` so a kind's whole visual identity — static shape
+   * and live behaviour — lives in one file. The live canvas concatenates every
+   * descriptor's `liveStyles` into one stylesheet; rules key on the shared
+   * `state-*` / `kind-*` classes and the sub-part classes this `renderSvg` emits
+   * (e.g. `.kind-pump.state-on .impeller { … }`). Shared primitives
+   * (`@keyframes`, base `state-unavailable`) stay in the canvas.
+   */
+  liveStyles?: string;
   /** Optional fixed port y-positions keyed by port id. Used for entities like tanks where inlet/outlet height matters. */
   portLayout?: Record<string, { y: number }>;
   sidebarFields: FieldDef[];

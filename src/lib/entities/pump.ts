@@ -78,9 +78,16 @@ export const pumpDescriptor: NodeDescriptor = {
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2.5"/>
       <line x1="${cx + r}" y1="${cy}" x2="${S}" y2="${cy}" stroke="${COLOR}" stroke-width="3" stroke-linecap="round"/>
       <line x1="0" y1="${cy}" x2="${cx - r}" y2="${cy}" stroke="${COLOR}" stroke-width="3" stroke-linecap="round"/>
-      <g transform="translate(${cx},${cy})">${vanes}<circle r="3" fill="${COLOR}"/></g>
+      <g class="impeller" transform="translate(${cx},${cy})">${vanes}<circle r="3" fill="${COLOR}"/></g>
     </svg>`;
   },
+
+  // Live map: spin the impeller while the relay reads on. `fill-box` pivots on the
+  // impeller group's own centre (not the SVG viewport), so only the vanes turn —
+  // the body and inlet/outlet stubs stay put. `x6-spin` is the canvas's shared keyframe.
+  liveStyles: `
+    .kind-pump .impeller { transform-box: fill-box; transform-origin: center; }
+    .kind-pump.state-on .impeller { animation: x6-spin 1.1s linear infinite; }`,
 
   sidebarFields: [
     { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42', pinCap: 'digital', polarityKey: 'relay_polarity' },

@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl } from '@core';
+import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type RuntimeState } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
 import { ConfirmService } from '../../core/services/confirm.service';
@@ -13,6 +13,8 @@ import { SiteThresholdsComponent } from './widgets/site-thresholds.component';
 import { TunableNumbersComponent } from './widgets/tunable-numbers.component';
 import { TankCalibrationComponent } from './widgets/tank-calibration.component';
 import { ControllerHealthComponent } from './widgets/controller-health.component';
+import { LiveMapComponent } from './canvas/live-map.component';
+import type { SiteTopology } from '../../core/models/topology.model';
 import type { RouteControl } from '@core';
 
 /**
@@ -25,7 +27,7 @@ import type { RouteControl } from '@core';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent, TunableNumbersComponent, TankCalibrationComponent, ControllerHealthComponent, RouterLink],
+  imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent, TunableNumbersComponent, TankCalibrationComponent, ControllerHealthComponent, LiveMapComponent, RouterLink],
   providers: [DashboardStore, TelemetryStore, CommandLifecycleStore],
   host: { class: 'flex-1 overflow-auto' },
   template: `
@@ -40,6 +42,14 @@ import type { RouteControl } from '@core';
         }
         <span class="grow"></span>
         <app-controller-health />
+        <!-- Experimental live SCADA map vs. the card grid. Default-on for admins. -->
+        <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="useCanvas.set(!useCanvas())"
+                [class.btn-active]="useCanvas()" title="Toggle the live system map">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          </svg>
+          <span class="hidden sm:inline">Map</span>
+        </button>
         <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="openDocs()" [disabled]="docBusy()"
                 title="Open this site's documentation">
           @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
@@ -210,37 +220,48 @@ import type { RouteControl } from '@core';
 
         @if (note()) { <div class="text-xs text-base-content/50 mb-3">{{ note() }}</div> }
 
-        <!-- Widgets, grouped into sections so status / levels / valves / flow /
-             activity read as distinct zones instead of one jumbled grid. -->
-        @for (sec of sections(); track sec.id) {
+        <!-- Live system map (experimental): the same topology the editor draws,
+             rendered read-only with live state animating each node. Replaces the
+             status widget grid; routes/operator controls above stay put. -->
+        @if (useCanvas() && topology()) {
           <section class="mb-6">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ sec.label }}</h2>
-            <div [class]="gridFor(sec.id)">
-              @for (w of sec.widgets; track w.id) {
-                <div [class]="w.kind === 'timeline' ? 'sm:col-span-2 lg:col-span-3' : ''">
-                  <app-dashboard-card
-                    [widget]="w"
-                    [dense]="denseSection(sec.id)"
-                    [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
-                    [controllerColor]="ctrlColor(w.controller)"
-                    [row]="store.rowFor(w)"
-                    [series]="telemetry.seriesFor(w)"
-                    [span]="telemetry.spanFor(w)"
-                    [items]="store.activityFor(w.controller)"
-                    [actuatable]="isActuatable(w)"
-                    [held]="actuatorHeld(w)"
-                    [phase]="actuatorPhase(w)?.phase ?? null"
-                    [phaseReason]="actuatorPhase(w)?.reason ?? ''"
-                    [actuatorKind]="actuatorFor(w)?.kind ?? ''"
-                    [historyLoaded]="telemetry.loadedFor(w)"
-                    (toggle)="toggleWidgetActuator(w)"
-                    (spanChange)="onSpanChange(w, $event)"
-                    (expand)="onExpand(w)"
-                  />
-                </div>
-              }
-            </div>
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">System map</h2>
+            <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [flow]="flowPipes()" />
           </section>
+        } @else {
+          <!-- Widgets, grouped into sections so status / levels / valves / flow /
+               activity read as distinct zones instead of one jumbled grid. -->
+          @for (sec of sections(); track sec.id) {
+            <section class="mb-6">
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ sec.label }}</h2>
+              <div [class]="gridFor(sec.id)">
+                @for (w of sec.widgets; track w.id) {
+                  <div [class]="w.kind === 'timeline' ? 'sm:col-span-2 lg:col-span-3' : ''">
+                    <app-dashboard-card
+                      [widget]="w"
+                      [dense]="denseSection(sec.id)"
+                      [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
+                      [controllerColor]="ctrlColor(w.controller)"
+                      [row]="store.rowFor(w)"
+                      [state]="cardState(w)"
+                      [series]="telemetry.seriesFor(w)"
+                      [span]="telemetry.spanFor(w)"
+                      [items]="store.activityFor(w.controller)"
+                      [actuatable]="isActuatable(w)"
+                      [held]="actuatorHeld(w)"
+                      [phase]="actuatorPhase(w)?.phase ?? null"
+                      [phaseReason]="actuatorPhase(w)?.reason ?? ''"
+                      [actuatorKind]="actuatorFor(w)?.kind ?? ''"
+                      [historyLoaded]="telemetry.loadedFor(w)"
+                      (toggle)="toggleWidgetActuator(w)"
+                      (spanChange)="onSpanChange(w, $event)"
+                      (expand)="onExpand(w)"
+                    />
+                  </div>
+                }
+              </div>
+            </section>
+          }
         }
       }
     </div>
@@ -258,6 +279,27 @@ export class DashboardComponent {
   protected siteId = '';
   protected siteName = signal('');
   protected note = signal<string | null>(null);
+
+  /** Parsed topology, kept for the live map (the card spec is derived separately). */
+  protected topology = signal<SiteTopology | null>(null);
+  /** Experimental live SCADA map vs. the card grid. Default-on for admins. */
+  protected useCanvas = signal(this.auth.isAdmin());
+
+  /** Route states that mean water is moving (matches the route card's `running`). */
+  private static readonly ACTIVE_ROUTE_TOKENS = new Set(['PREPARING', 'RUNNING', 'STOPPING']);
+  /** Pipe ids of every currently-running route — the live map animates these as
+   *  flowing. Reactive to route state; the route→pipes set is precomputed on the
+   *  spec (`RouteControl.pipeIds`), so this just unions the active ones. */
+  protected flowPipes = computed<Set<string>>(() => {
+    const out = new Set<string>();
+    for (const c of this.store.spec().controllers) {
+      for (const r of c.routes) {
+        const token = this.store.routeState(c.controller, r.routeId)?.token ?? '';
+        if (DashboardComponent.ACTIVE_ROUTE_TOKENS.has(token)) for (const p of r.pipeIds ?? []) out.add(p);
+      }
+    }
+    return out;
+  });
   /** Building/opening the site documentation. */
   protected docBusy = signal(false);
 
@@ -426,6 +468,12 @@ export class DashboardComponent {
   });
   protected actuatorFor(w: DashboardWidget): ActuatorControl | undefined {
     return w.sensor ? this.actuatorMap().get(`${w.controller}/${w.sensor}`) : undefined;
+  }
+  /** Canonical node state for an actuator card, from the shared projection — so
+   *  the card and the live map agree on on/off. Null for non-node widgets. */
+  protected cardState(w: DashboardWidget): RuntimeState | null {
+    const a = this.actuatorFor(w);
+    return a ? this.store.nodeRuntime().get(a.id)?.state ?? null : null;
   }
   /** Toggleable now: an actuator exists, control is held, and the device is online.
    *  (Manual holds are a normal control under "take control" — NOT gated by operator

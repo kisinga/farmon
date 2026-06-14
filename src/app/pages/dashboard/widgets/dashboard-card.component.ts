@@ -6,7 +6,7 @@ import { SpanSelectorComponent } from './span-selector.component';
 import {
   describeState,
   SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, FAULT_MEANINGS, OUTCOME_MEANINGS,
-  type DashboardWidget, type StateKind, type CommandPhase,
+  type DashboardWidget, type StateKind, type CommandPhase, type RuntimeState,
 } from '@core';
 import type { ShadowRow, TelemetryPoint, ActivityItem } from '../../../core/models/runtime';
 import { formatInitiator } from './initiator';
@@ -245,6 +245,11 @@ const CHART = {
 export class DashboardCardComponent {
   readonly widget = input.required<DashboardWidget>();
   readonly row = input<ShadowRow | undefined>(undefined);
+  /** Canonical node state from the shared projection (`store.nodeRuntime`), when
+   *  this card maps to a topology node. Drives the boolean on/off (pump + bool
+   *  badge) so the card and the live map agree; the valve keeps its own position
+   *  math (finer than on/off). Null ⇒ fall back to the shadow. */
+  readonly state = input<RuntimeState | null>(null);
   readonly series = input<TelemetryPoint[]>([]);
   readonly items = input<ActivityItem[]>([]);
   /** Current chart span in hours (line/flow only). */
@@ -369,18 +374,27 @@ export class DashboardCardComponent {
     // Free-text channel (e.g. ordered queue contents): a non-numeric shadow rides in
     // reported_text (bool channels publish 1/0, so theirs stays empty).
     if (r.reported_text) return { label: r.reported_text, cls: 'badge-ghost' };
-    // Boolean channel (pump / dosing / safety override): numeric 1/0.
-    return r.reported >= 0.5 ? { label: 'On', cls: 'badge-success' } : { label: 'Off', cls: 'badge-ghost' };
+    // Boolean channel (pump / dosing / safety override): on/off via the shared rule.
+    return this.isOn() ? { label: 'On', cls: 'badge-success' } : { label: 'Off', cls: 'badge-ghost' };
   });
 
-  /** Pump on/off from its relay shadow (1/0) → label, sub-line, colour. Mirrors
-   *  `valve()` so the pump control tile reads the same as the valve one. */
-  protected pump = computed<{ on: boolean; label: string; sub: string; text: string }>(() => {
+  /** Canonical on/off: the shared node projection (`state`) when this card maps to
+   *  a node, else the relay-shadow threshold. One definition of "on", shared with
+   *  the live map, instead of re-deriving `reported >= 0.5` per card. */
+  protected isOn = computed<boolean>(() => {
+    const s = this.state();
+    if (s) return s === 'on';
     const r = this.row();
-    return r && r.reported >= 0.5
-      ? { on: true, label: 'On', sub: 'running', text: 'text-success' }
-      : { on: false, label: 'Off', sub: 'stopped', text: 'text-base-content/50' };
+    return !!r && r.reported >= 0.5;
   });
+
+  /** Pump on/off → label, sub-line, colour. Mirrors `valve()` so the pump control
+   *  tile reads the same as the valve one. */
+  protected pump = computed<{ on: boolean; label: string; sub: string; text: string }>(() =>
+    this.isOn()
+      ? { on: true, label: 'On', sub: 'running', text: 'text-success' }
+      : { on: false, label: 'Off', sub: 'stopped', text: 'text-base-content/50' },
+  );
 
   /** Valve position from the cover's 0..1 shadow value → glyph %, label, colour. */
   protected valve = computed<{ pct: number; label: string; text: string }>(() => {

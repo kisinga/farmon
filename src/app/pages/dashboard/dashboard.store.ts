@@ -1,6 +1,6 @@
-import { Injectable, OnDestroy, effect, inject, signal } from '@angular/core';
+import { Injectable, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
-import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, type DashboardSpec, type DashboardWidget } from '@core';
+import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, bucketReading, channelPriority, type DashboardSpec, type DashboardWidget, type NodeRuntime } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { AuthStore } from '../../core/services/auth.store';
 import type { ShadowRow, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ActivityItem } from '../../core/models/runtime';
@@ -183,6 +183,30 @@ export class DashboardStore implements OnDestroy {
   row(controller: string, sensor?: string): ShadowRow | undefined {
     return sensor ? this.shadow().get(`${controller}/${sensor}`) : undefined;
   }
+
+  /**
+   * Live state per topology node, keyed by node id — the single node-centric
+   * projection the live map consumes. Derived from the SAME channel enumeration
+   * the widgets/actuators come from (carried on `spec.controllers[].channels`),
+   * so there's no parallel node→sensor join: pick each node's primary channel
+   * (`channelPriority`), bucket its shadow reading, and fold in presence
+   * (an offline controller reads `unavailable`). Reactive to shadow + presence.
+   */
+  readonly nodeRuntime = computed<Map<string, NodeRuntime>>(() => {
+    const out = new Map<string, NodeRuntime>();
+    const best = new Map<string, number>(); // node id → priority of the channel chosen
+    for (const c of this.spec().controllers) {
+      const online = this.presence(c.controller).online;
+      for (const ch of c.channels) {
+        if (!ch.node) continue;
+        const prio = channelPriority(ch.role);
+        if (prio <= (best.get(ch.node) ?? -1)) continue;
+        best.set(ch.node, prio);
+        out.set(ch.node, bucketReading(ch, this.shadow().get(`${c.controller}/${ch.sensor}`), online));
+      }
+    }
+    return out;
+  });
 
   /** Safety override reported state, read from the shadow (the device switch). */
   overrideOn(controller: string): boolean {
