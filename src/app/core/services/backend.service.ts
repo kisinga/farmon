@@ -74,7 +74,13 @@ export class BackendService {
   }
 
   async siteLoad(id: string): Promise<SiteFullPayload> {
-    const r = await this.pb.collection('sites').getOne(id);
+    // Expand `owner` to a contact directory — name + email for each co-owner the
+    // viewer may read (same-site, per migration 32). Best-effort: records the rule
+    // hides simply don't appear; the activity feed falls back to the owner-id set.
+    const r = await this.pb.collection('sites').getOne(id, { expand: 'owner' });
+    const owners = (r['owner'] ?? []) as string[];
+    const ownerRecords = ((r['expand'] as Record<string, RecordModel[]> | undefined)?.['owner'] ?? []);
+    const people = ownerRecords.map((u) => ({ id: u['id'] as string, name: u['name'] as string | undefined, email: u['email'] as string | undefined }));
     const mode = r['mode'];
     const deployment = (mode === 'managed' || mode === 'local')
       ? {
@@ -85,7 +91,7 @@ export class BackendService {
         }
       : undefined;
     return {
-      site: { id: r['id'], friendlyName: r['name'], deployment, owners: (r['owner'] ?? []) as string[] },
+      site: { id: r['id'], friendlyName: r['name'], deployment, owners, people },
       topology: (r['draft_topology'] ?? null) as SiteFullPayload['topology'],
     };
   }

@@ -132,5 +132,8 @@ export interface ActivityItem {
    *  admin who took control. `actor` reads "Support" and the chip is styled as such.
    *  Derived from the owner set, not a role flag. */
   bySupport?: boolean;
+  /** Hover detail for the initiator chip — "name · email · co-owner" / the viewer's
+   *  email / the Support explainer. '' or absent ⇒ no tooltip. */
+  actorTitle?: string;
   ok?: boolean;
 }

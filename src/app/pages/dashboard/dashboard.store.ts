@@ -31,10 +31,14 @@ export class DashboardStore implements OnDestroy {
   private realtime = inject(RealtimeService);
   private auth = inject(AuthStore);
 
-  /** The site's co-owner ids, set at init(). Drives the viewer-relative initiator
-   *  resolution (you / co-owner / Support) for the activity feed; an actor outside
-   *  this set (and not the viewer) reads as "Support". */
+  /** The site's co-owner ids, set at init() — the membership test behind the
+   *  viewer-relative initiator resolution (you / co-owner / Support). An actor
+   *  outside this set (and not the viewer) reads as "Support". */
   private owners = new Set<string>();
+  /** Best-effort co-owner contact directory (id → name/email) for the activity
+   *  feed's hover detail. May be partial/empty (the users read rule); `owners` —
+   *  not this — decides membership, so a missing entry never mislabels a co-owner. */
+  private people = new Map<string, { name?: string; email?: string }>();
 
   /** Live SSE stream state, surfaced for the global reconnect banner. */
   readonly connection = this.realtime.connection;
@@ -103,11 +107,12 @@ export class DashboardStore implements OnDestroy {
     this.commands.set(new Map(cmds.map((c) => [c.id, c])));
   }
 
-  async init(siteId: string, spec: DashboardSpec, timing?: SiteTiming, owners: string[] = []): Promise<void> {
+  async init(siteId: string, spec: DashboardSpec, timing?: SiteTiming, owners: string[] = [], people: { id: string; name?: string; email?: string }[] = []): Promise<void> {
     this.siteId = siteId;
     this.spec.set(spec);
     this.timing.set(timing ?? null);
     this.owners = new Set(owners);
+    this.people = new Map(people.map((p) => [p.id, { name: p.name, email: p.email }]));
     this.loading.set(true);
     this.error.set(null);
     try {
@@ -216,7 +221,8 @@ export class DashboardStore implements OnDestroy {
   /** The viewer-relative resolution context: the signed-in user's id + the site's
    *  owner set. One context for every "who did it" decision in the feed. */
   private viewerCtx(): InitiatorCtx {
-    return { meId: this.auth.user()?.id ?? '', owners: this.owners };
+    const me = this.auth.user();
+    return { meId: me?.id ?? '', meEmail: me?.email, owners: this.owners, people: this.people };
   }
 
   /** A route's human identity ("Borehole → Tank") from the spec, harmonised with
@@ -231,7 +237,7 @@ export class DashboardStore implements OnDestroy {
    *  matching transition event (best-effort fault/stop detail). `events()` is
    *  newest-first; OUTCOME-only tokens (QUEUED/REFUSED/…) are skipped so a refusal
    *  never masquerades as a state. Undefined ⇒ neither source has anything yet. */
-  routeState(controller: string, routeId: number): { token: string; reason: string; ts: string; origin?: string; initiator?: { label: string; support: boolean } } | undefined {
+  routeState(controller: string, routeId: number): { token: string; reason: string; ts: string; origin?: string; initiator?: { label: string; support: boolean; title: string } } | undefined {
     const row = this.shadow().get(`${controller}/${routeStateSensor(routeId)}`);
     const token = row?.reported_text ?? '';
     const origin = row?.origin;
@@ -299,6 +305,7 @@ function eventToActivity(e: StateEventRow, routeName: (routeId: number) => strin
     actor: who.label || undefined,
     origin: e.origin,
     bySupport: who.support,
+    actorTitle: who.title || undefined,
   };
 }
 
@@ -316,6 +323,7 @@ function commandToActivity(c: CommandLogRow, routeName: (routeId: number) => str
     label: commandLabel(c, routeName),
     actor: who.label || undefined,
     bySupport: who.support,
+    actorTitle: who.title || undefined,
     ok: c.status !== 'failed',
   };
 }

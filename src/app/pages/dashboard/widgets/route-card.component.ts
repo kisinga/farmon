@@ -131,7 +131,7 @@ interface RouteView {
           <span class="text-sm font-semibold tabular-nums {{ view().textCls }}">{{ flowText() }}<span class="text-[10px] font-normal text-base-content/40 ml-0.5">L/min</span></span>
         }
         @if (originText()) {
-          <span class="text-[10px] text-base-content/40 truncate max-w-[60%]" [title]="originText()">{{ originText() }}</span>
+          <span class="text-[10px] text-base-content/40 truncate max-w-[60%] cursor-help" [title]="originTitle()">{{ originText() }}</span>
         }
       </div>
     </button>
@@ -142,7 +142,7 @@ export class RouteCardComponent {
   /** The route's live state: a SYSTEM_STATE `token` ('' ⇒ never seen ⇒ idle), the
    *  `reason` token carried by the latest transition (for the fault detail), and
    *  who/what started the run (`origin` + the viewer-resolved `initiator`). */
-  readonly state = input<{ token: string; reason: string; origin?: string; initiator?: { label: string; support: boolean } }>({ token: '', reason: '' });
+  readonly state = input<{ token: string; reason: string; origin?: string; initiator?: { label: string; support: boolean; title: string } }>({ token: '', reason: '' });
 
   /** "by Jane" / "Automation: Morning" / "Support" while a run is active, else ''.
    *  Mirrors the activity chip (resolveInitiator → formatInitiator) so the card and
@@ -154,6 +154,13 @@ export class RouteCardComponent {
     if (!init || !init.label) return '';
     if (init.support) return init.label;
     return formatInitiator(s.origin, init.label);
+  });
+  /** Hover detail for the initiator line — name · email · co-owner / Support
+   *  explainer, resolved alongside the label so it matches the activity chip. */
+  protected originTitle = computed(() => {
+    const s = this.state();
+    if (!s.token || s.token === 'IDLE') return '';
+    return s.initiator?.title ?? '';
   });
   /** Live flow rate (L/min) from the route's flow sensor, or null when unknown. */
   readonly flowRate = input<number | null>(null);

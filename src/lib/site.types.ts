@@ -35,6 +35,14 @@ export interface SiteMetadata {
    * (read-only + "Take control"). Not written back on save (set at create).
    */
   owners?: string[];
+  /**
+   * Co-owner contact directory (id → name/email), populated on load via the
+   * `owner` relation expand. Best-effort: only records the viewer may read
+   * (same-site co-owners — see migration 32). Drives the activity feed's
+   * "who did it" detail (name + email on hover); membership still keys off
+   * `owners` so an empty/partial directory never mislabels a co-owner.
+   */
+  people?: { id: string; name?: string; email?: string }[];
 }
 
 // ---------------------------------------------------------------------------

@@ -209,11 +209,11 @@ const CHART = {
                       <span class="ml-auto shrink-0 flex items-center gap-2">
                         @if (actorText(it); as at) {
                           @if (it.bySupport) {
-                            <span class="px-1.5 py-px rounded text-[10px] font-medium bg-warning/15 text-warning">{{ at }}</span>
+                            <span class="px-1.5 py-px rounded text-[10px] font-medium bg-warning/15 text-warning cursor-help" [title]="it.actorTitle ?? ''">{{ at }}</span>
                           } @else if (it.origin === 'AUTOMATION') {
-                            <span class="text-[10px] text-info/65">{{ at }}</span>
+                            <span class="text-[10px] text-info/65 cursor-help" [title]="it.actorTitle ?? ''">{{ at }}</span>
                           } @else {
-                            <span class="text-[10px] text-base-content/45">{{ at }}</span>
+                            <span class="text-[10px] text-base-content/45 cursor-help" [title]="it.actorTitle ?? ''">{{ at }}</span>
                           }
                         }
                         <span class="text-[10px] text-base-content/30 tabular-nums">{{ shortTime(it.ts) }}</span>
