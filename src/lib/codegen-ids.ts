@@ -588,6 +588,10 @@ export function describeState(
 // doc, numeric history (rollups), and a derived transition timeline. `site`/
 // `controller` come from the topic; `ts` is device-stamped. All token fields are
 // typed `string`/union — consumers must tolerate an unrecognised one.
+//
+// This obeys the soft-state telemetry contract (every field re-asserted each
+// interval, survives reboot, fail-safe on silence) — see
+// docs/development/architecture.md § "Telemetry & coordination (soft state)".
 // ---------------------------------------------------------------------------
 
 /** One route's current run inside a {@link ControllerSnapshot}. */

@@ -91,7 +91,7 @@ export class RealtimeService {
       sort: '-ts',
       requestKey: `events:${siteId}`,
     });
-    return res.items.map(toEvent);
+    return res.items.map((r) => toEvent(r, this.meId()));
   }
 
   /** Controller presence rows (online + last_seen) for a site. */
@@ -147,7 +147,7 @@ export class RealtimeService {
     return this.pb.collection('state_events').subscribe(
       '*',
       (e) => {
-        if (e.action === 'create') cb(toEvent(e.record));
+        if (e.action === 'create') cb(toEvent(e.record, this.meId()));
       },
       { filter: this.pb.filter('site = {:s}', { s: siteId }) },
     );
@@ -208,14 +208,14 @@ export class RealtimeService {
       sort: '-ts',
       requestKey: 'events:all',
     });
-    return res.items.map(toEvent);
+    return res.items.map((r) => toEvent(r, this.meId()));
   }
 
   /** Live transition inserts across all visible sites. */
   subscribeAllEvents(cb: (row: StateEventRow) => void): Promise<UnsubscribeFunc> {
     this.wireConnection();
     return this.pb.collection('state_events').subscribe('*', (e) => {
-      if (e.action === 'create') cb(toEvent(e.record));
+      if (e.action === 'create') cb(toEvent(e.record, this.meId()));
     });
   }
 
@@ -306,7 +306,19 @@ function toController(r: RecordModel): ControllerRow {
   };
 }
 
-function toEvent(r: RecordModel): StateEventRow {
+function toEvent(r: RecordModel, meId: string): StateEventRow {
+  // Resolve the initiator for display once, mirroring toCommandLog so a route
+  // transition reads the same as a node command: the viewer's own manual action is
+  // "you"; everyone/everything else uses the server-resolved label (a co-owner's
+  // name, an automation's name). origin decides the prefix in the template.
+  const origin: string | undefined = r['origin'] || undefined;
+  const actorId = r['actor'];
+  const label = r['actor_label'];
+  let display: string | undefined;
+  if (actorId) {
+    if (origin === 'MANUAL' && actorId === meId) display = 'you';
+    else display = label || (origin === 'AUTOMATION' ? 'Automation' : 'operator');
+  }
   return {
     controller: r['controller'],
     route: r['route'],
@@ -315,6 +327,8 @@ function toEvent(r: RecordModel): StateEventRow {
     reason: r['reason'],
     command_id: r['command_id'],
     ts: r['ts'],
+    origin,
+    actorLabel: display,
   };
 }
 

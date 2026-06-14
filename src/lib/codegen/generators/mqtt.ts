@@ -125,7 +125,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     `  record_outcome(command_id, rc == 0 ? "APPLIED" : RS_TO[rc], rc == 0 ? "" : RS_REASON[rc]);`,
     '} else if (strcmp(action, "route_stop") == 0) {',
     `  ${cppTokenArray('RST_REASON', ROUTE_STOP_RESULTS.map(r => r.reason))}`,
-    '  int rc = try_route_stop(route_id, command_id);',
+    '  int rc = try_route_stop(route_id, command_id, ORIGIN_MANUAL, actor);',
     `  record_outcome(command_id, rc == 0 ? "APPLIED" : "REFUSED", rc == 0 ? "" : RST_REASON[rc]);`,
     '} else if (strcmp(action, "fault_reset") == 0) {',
     '  int s = find_slot_by_route(route_id);',
@@ -225,10 +225,15 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     }
     return `if (id(${c.ref}).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":\\"%s\\"", sep(), json_esc(id(${c.ref}).state.c_str())));`;
   };
+  // origin/actor come from the per-route attribution (route_origin/route_actor),
+  // which outlives the slot — so a finished run still reports who/what is
+  // responsible for the route's current (idle) state until the next run rebinds it.
+  // state/reason ride the live slot while one exists.
   const routeLine = (i: number): string =>
     `{ int s = find_slot_by_route(${i}); int st = (s >= 0) ? slots[s].state : 0; ` +
-    `const char* o = "SYSTEM"; const char* ac = ""; const char* rs = ""; ` +
-    `if (s >= 0) { o = (slots[s].origin < 3) ? ORIGIN_TOK[slots[s].origin] : "SYSTEM"; ac = slots[s].actor; ` +
+    `const char* o = (route_origin[${i}] < 3) ? ORIGIN_TOK[route_origin[${i}]] : "SYSTEM"; ` +
+    `const char* ac = route_actor[${i}]; const char* rs = ""; ` +
+    `if (s >= 0) { ` +
     `if (st == 4) { int f = slots[s].fault_code; if (f >= 0 && f < ${NF}) rs = FAULT_TOK[f]; } ` +
     `else if (st == 3 || st == 0) { int r = slots[s].stop_reason; if (r >= 0 && r < ${NR}) rs = STOP_TOK[r]; } } ` +
     `put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"id\\":${i},\\"state\\":\\"%s\\",\\"origin\\":\\"%s\\",\\"actor\\":\\"%s\\",\\"reason\\":\\"%s\\"}", sep(), ` +

@@ -206,11 +206,13 @@ const CHART = {
                       @if (it.token) { <span class="shrink-0 {{ tokenClass(it.token) }}">{{ pretty(it.token) }}</span> }
                       @if (it.detail) { <span class="shrink-0 text-base-content/35 truncate hidden sm:inline">· {{ pretty(it.detail) }}</span> }
                       <span class="ml-auto shrink-0 flex items-center gap-2">
-                        @if (it.actor) {
+                        @if (actorText(it); as at) {
                           @if (it.bySupport) {
-                            <span class="px-1.5 py-px rounded text-[10px] font-medium bg-warning/15 text-warning">{{ it.actor }}</span>
+                            <span class="px-1.5 py-px rounded text-[10px] font-medium bg-warning/15 text-warning">{{ at }}</span>
+                          } @else if (it.origin === 'AUTOMATION') {
+                            <span class="text-[10px] text-info/65">{{ at }}</span>
                           } @else {
-                            <span class="text-[10px] text-base-content/45">{{ it.actor }}</span>
+                            <span class="text-[10px] text-base-content/45">{{ at }}</span>
                           }
                         }
                         <span class="text-[10px] text-base-content/30 tabular-nums">{{ shortTime(it.ts) }}</span>
@@ -490,5 +492,17 @@ export class DashboardCardComponent {
   protected shortTime(ts: string): string {
     const d = new Date(ts);
     return Number.isNaN(d.getTime()) ? ts : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /** The initiator chip text, harmonised with the route card's originText so a
+   *  command and a route transition read the same: a support action stays as-is
+   *  ("Support"); an automation reads "Automation: <name>"; a manual action reads
+   *  "you" or "by <name>". '' ⇒ no chip (SYSTEM / unattributed). */
+  protected actorText(it: ActivityItem): string {
+    const a = it.actor;
+    if (!a) return '';
+    if (it.bySupport) return a;
+    if (it.origin === 'AUTOMATION') return a === 'Automation' ? a : `Automation: ${a}`;
+    return a === 'you' ? a : `by ${a}`;
   }
 }

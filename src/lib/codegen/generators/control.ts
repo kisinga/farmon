@@ -147,7 +147,8 @@ ${m.routes.map((r, i) => `\
     on_press:
       - lambda: |-
           const char* res[] = {"stopping","not active","already idle"};
-          int rc = try_route_stop(${i}, "");
+          // Physical button = a local manual action with no remote user id.
+          int rc = try_route_stop(${i}, "", ORIGIN_MANUAL, "");
           ESP_LOGI("btn", "Route ${i} [${r.name}] stop: %s", res[rc]);`).join("\n")}
 
 # --- 1s Transition Interval --------------------------------------------------
@@ -163,6 +164,7 @@ interval:
     then:
       - lambda: |-
           uint32_t now = millis();
+          bool transitioned = false;  // a route changed state this tick → nudge a snapshot
 
           for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
             int rid = slots[s].route_id;
@@ -172,6 +174,7 @@ interval:
             if (slots[s].state == 1) {
               if (now - slots[s].start_time > get_route_travel_ms(rid) + 1000) {
                 slots[s].state = 2;
+                transitioned = true;
                 slots[s].run_start_time = now;
                 slots[s].flow_active_since = 0;
                 slots[s].last_flow_time = now;
@@ -192,6 +195,7 @@ interval:
                 id(stop_reason) = slots[s].stop_reason;
                 ESP_LOGI("ctrl", "IDLE slot %d (reason=%d)", s, slots[s].stop_reason);
                 init_slot(s);
+                transitioned = true;
               }
             }
 
@@ -210,6 +214,7 @@ ${pumpMgmt}
             int slot = find_free_slot();
             // Carry the queued start's run-param override + origin into the slot.
             activate_slot(slot, qe.route_id, qe.spec, qe.origin, qe.actor);
+            transitioned = true;
             ESP_LOGI("ctrl", "Queue -> slot %d route %d [%s]", slot, qe.route_id, ROUTES[qe.route_id].name);
           }
 
@@ -223,6 +228,12 @@ ${pumpMgmt}
 
           // --- Valve reconciliation (level-triggered, last step) ---
           reconcile_valves();
+
+          // Triggered update: a device-internal transition (RUNNING / IDLE / queue
+          // drain) has no operator command to fast-path it, so nudge a snapshot now
+          // rather than wait up to one update_interval. The 1s tick + publish_snapshot
+          // mode:single self-rate-limit this; a dropped publish self-heals next interval.
+          if (transitioned) id(publish_snapshot).execute();
 
   # --- 2s Safety Monitor -------------------------------------------------------
   # Per-slot watchdogs: flow, max runtime.

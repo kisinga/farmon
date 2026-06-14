@@ -71,6 +71,15 @@ export interface StateEventRow {
   reason: string;
   command_id: string;
   ts: string;
+  /** Who/what caused this transition — the same attribution the route snapshot
+   *  carries (origin token + a resolved display label), recorded onto the event at
+   *  ingest. Lets the timeline attribute a route run the way the commands ledger
+   *  attributes a node action. Absent on older rows / SYSTEM transitions. */
+  origin?: string;
+  /** Resolved initiator for display ("you" / a co-owner's name / an automation's
+   *  name), '' when none. The `origin` decides how it's prefixed ("by …" vs
+   *  "Automation: …"), shared with the route card. */
+  actorLabel?: string;
 }
 
 /** One operator command from the `commands` audit collection, mapped for display.
@@ -104,7 +113,13 @@ export interface ActivityItem {
   token: string;
   label: string;
   detail?: string;
+  /** Resolved initiator for the chip ("you" / a name / an automation's name), the
+   *  bare label without a prefix. Present for any attributed row (command or
+   *  transition); absent ⇒ no chip. */
   actor?: string;
+  /** How `actor` is prefixed, harmonised with the route card: 'AUTOMATION' ⇒
+   *  "Automation: <actor>"; 'MANUAL'/undefined ⇒ "you" or "by <actor>". */
+  origin?: string;
   bySupport?: boolean;
   ok?: boolean;
 }

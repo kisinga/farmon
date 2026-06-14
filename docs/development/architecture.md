@@ -209,3 +209,34 @@ This expresses valve refcounting as a mask union: a valve stays open as long as 
 **Raw coil writes bypass the cover.** The cover's position estimate updates only when its own `open_action` / `close_action` fires; toggling `<valve> Open Coil` or `<valve> Close Coil` directly drives the coil but leaves the cover unaware. The dashboard's manual controls expose coils for diagnostics; after firing one, call `cover.stop_cover` on the same valve to resync.
 
 When adding a new actuator (dosing pump, VFD, etc.), decide whether it fits the same level-triggered pattern (compute desired mask each tick, diff vs. last commanded, emit only on change) or whether it needs explicit edge handling. Prefer the reconciler model — it composes with multi-slot concurrency without per-slot tracking.
+
+---
+
+## Telemetry & coordination (soft state)
+
+Both communication lanes — device→server (MQTT) and device→device (UDP LAN, [src/lib/codegen/generators/coordination.ts](../../src/lib/codegen/generators/coordination.ts)) — follow one model: **the periodically re-asserted full state is the source of truth; events only accelerate it.** This is level-triggered, not edge-triggered — the same principle the valve reconciler uses, applied to the wire. Because the transport is fire-and-forget (no delivery guarantee), making truth depend on a single event means one dropped packet causes permanent divergence; making truth the full state re-asserted on a timer bounds the worst case to one stale interval, never divergence.
+
+**The contract — every telemetry field must obey all five:**
+
+1. **Truth is full current state, re-asserted on a timer.** A change may trigger an immediate extra send to shrink latency, but losing that send never loses information — the next interval re-states it.
+2. **Every field is re-asserted each interval and survives reboot.** No field may depend on an event having been delivered. (E.g. a route's `origin`/`actor` ride the snapshot every interval, not a one-shot "started" event.)
+3. **Fail safe on silence.** Past the lease / staleness bound, go to the safe state — never trust last-known-good forever. (A dead-man claim whose heartbeat stops expires and the owner stops within one tick.)
+4. **Idempotent; order by sequence, not arrival.** Re-applying the same message is a no-op; where ordering matters, carry a monotonic counter and compare it, don't trust arrival order.
+5. **Triggered sends are rate-limited.** An immediate-on-change publish must be damped (at most one per window) so a flapping signal can't flood the lane. The periodic send stays the floor.
+
+Same philosophy, transport-appropriate mechanism:
+
+| | device ↔ server | device ↔ device |
+|---|---|---|
+| Truth | one `ControllerSnapshot` re-asserted every interval ([src/lib/codegen-ids.ts](../../src/lib/codegen-ids.ts)) | granular `claim` / `reading` messages, re-asserted every 10 s |
+| Freshness / safety | MQTT retained + last-will (online/offline) + snapshot `ts` | 90 s app-level dead-man lease |
+| Ordering | n/a (single latest doc) | per-sender monotonic counter `c` (also anti-replay) |
+
+**Attribution rides this model.** A route's `origin`/`actor` is bound to the route's *state* on the device and re-asserted every snapshot, kept until the next transition rebinds it (per-transition: a manual stop of an automation run reports the stopper). The server records it onto each derived `state_events` row at ingest ([maji-server/internal/telemetry/ingest.go](../../maji-server/internal/telemetry/ingest.go)) — it is a pure recorder, it never invents attribution. The activity timeline then shows "who" for routes the same way the commands ledger does for node actions.
+
+Attribution is *live state*, not reboot-persisted: a reboot clears the slots, so a route that was attributed pre-reboot reports `SYSTEM`/idle until it next runs. That's correct — there is no live run to attribute — and the historical attribution already lives in the server's `state_events`. This is the one field exempt from "survives reboot": there is nothing to survive once the run is gone.
+
+**Deliberately out of scope (avoid over-engineering):**
+
+- **No `origin`/`actor` on the UDP claim lane.** When controller A's automation drives B's pump, the *route* (with attribution) lives on A and reaches the dashboard via A's own snapshot; the claim B receives only needs "A wants this node held." Adding attribution to claims is redundant until a device needs a *local* who-based decision.
+- **No flash-persisted replay counter.** The 90 s lease already bounds a replayed claim to one lease of an intent the importer recently held; claims are not secret. Persisting the counter across reboots buys little against that.

@@ -187,7 +187,15 @@ export class DashboardStore implements OnDestroy {
       if (e.controller === controller) items.push(eventToActivity(e, routeName));
     }
     for (const c of this.commands().values()) {
-      if (c.controller === controller) items.push(commandToActivity(c, routeName));
+      if (c.controller !== controller) continue;
+      // Ownership rule: a route speaks through its (now-attributed) transitions, so
+      // a SUCCESSFUL route_start/route_stop is already represented there — drop the
+      // redundant command row. A failed/refused or still-in-flight one has no
+      // transition to stand in for it, so it's kept. Node + system commands always
+      // render (they have no transition of their own).
+      const isRouteCmd = c.action === 'route_start' || c.action === 'route_stop';
+      if (isRouteCmd && c.status === 'done') continue;
+      items.push(commandToActivity(c, routeName));
     }
     return items.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0)).slice(0, 100);
   }
@@ -257,6 +265,10 @@ function eventToActivity(e: StateEventRow, routeName: (routeId: number) => strin
     token: e.to,
     label: e.route < 0 ? 'controller' : routeName(e.route),
     detail: e.reason || undefined,
+    // Who/what caused the transition — carried from the route snapshot through
+    // ingest, rendered by the same chip as commands. origin decides the prefix.
+    actor: e.actorLabel || undefined,
+    origin: e.origin,
   };
 }
 

@@ -168,6 +168,7 @@ inline void evaluate_automations() {
   int cur_min  = time_ok ? (t.hour * 60 + t.minute) : -1;
   int cur_bit  = time_ok ? dow_to_bit(t.day_of_week) : -1;
   int cur_yday = time_ok ? t.day_of_year : -1;
+  bool fired = false;  // a start this pass → nudge an immediate snapshot at the end
 
   for (int i = 0; i < g_auto_count; i++) {
     RuntimeAutomation& a = g_autos[i];
@@ -181,6 +182,7 @@ inline void evaluate_automations() {
       if (day_ok && cur_min == (int) a.time_min && g_auto_last_yday[i] != cur_yday) {
         g_auto_last_yday[i] = cur_yday;   // fire once for this day-minute
         int rc = try_route_start(rid, "", automation_stopspec(a), ORIGIN_AUTOMATION, g_auto_ids[i]);
+        if (rc == 0) fired = true;
         ESP_LOGI("auto", "Time automation %d -> route %d rc=%d", i, rid, rc);
       }
     } else {                              // LEVEL
@@ -189,6 +191,7 @@ inline void evaluate_automations() {
       if (lvl > (float) a.level_threshold_pct) {
         if (g_auto_armed[i]) {
           int rc = try_route_start(rid, "", automation_stopspec(a), ORIGIN_AUTOMATION, g_auto_ids[i]);
+          if (rc == 0) fired = true;
           ESP_LOGI("auto", "Level automation %d (%.0f%% > %u%%) -> route %d rc=%d",
                    i, lvl, a.level_threshold_pct, rid, rc);
         }
@@ -198,6 +201,11 @@ inline void evaluate_automations() {
       }
     }
   }
+  // Triggered update: an automation start happened on-device with no operator
+  // command to fast-path it, so nudge a snapshot now instead of waiting up to one
+  // update_interval. publish_snapshot is mode:single and this runs at most once per
+  // 5s eval, so it self-rate-limits; a dropped publish self-heals next interval.
+  if (fired) id(publish_snapshot).execute();
 }
 `;
 }

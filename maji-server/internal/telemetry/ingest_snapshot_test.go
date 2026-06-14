@@ -123,6 +123,12 @@ func TestIngestSnapshot(t *testing.T) {
 	if ev == nil || ev.GetString("from_state") != "IDLE" {
 		t.Errorf("derived IDLE->RUNNING event missing")
 	}
+	// The derived event carries the run's attribution (so the timeline can show
+	// who/what caused it, like the commands ledger does for node actions).
+	if ev != nil && (ev.GetString("origin") != "MANUAL" || ev.GetString("actor") != user.Id || ev.GetString("actor_label") != "Jane") {
+		t.Errorf("derived event attribution wrong: origin=%q actor=%q label=%q",
+			ev.GetString("origin"), ev.GetString("actor"), ev.GetString("actor_label"))
+	}
 	cmd2, _ := app.FindFirstRecordByFilter("commands", "command_id = {:c}", dbx.Params{"c": "c123"})
 	if cmd2 == nil || cmd2.GetString("status") != "done" {
 		t.Errorf("command not reconciled to done: %v", cmd2)
@@ -133,5 +139,12 @@ func TestIngestSnapshot(t *testing.T) {
 	r = loadSnap().Routes[0]
 	if r.Origin != "AUTOMATION" || r.ActorLabel != "Morning" {
 		t.Errorf("automation label wrong: %+v", r)
+	}
+	// The RUNNING->PREPARING transition is derived with the automation's attribution
+	// (the timeline shows "Automation: Morning" for a run no operator command exists for).
+	aev, _ := app.FindFirstRecordByFilter("state_events",
+		"controller = {:c} && to_state = {:s}", dbx.Params{"c": "dev1", "s": "PREPARING"})
+	if aev == nil || aev.GetString("origin") != "AUTOMATION" || aev.GetString("actor") != auto.Id || aev.GetString("actor_label") != "Morning" {
+		t.Errorf("automation-derived event attribution wrong: %v", aev)
 	}
 }

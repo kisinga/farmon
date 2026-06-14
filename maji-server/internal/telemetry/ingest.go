@@ -242,7 +242,7 @@ func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Ti
 		r := &s.Routes[i]
 		r.ActorLabel = resolveActorLabel(app, r.Origin, r.Actor)
 		if p, ok := prevState[r.ID]; ok && p != "" && p != r.State {
-			appendDerivedEvent(app, site, ctrl, r.ID, p, r.State, r.Reason, tsStr)
+			appendDerivedEvent(app, site, ctrl, r.ID, p, r.State, r.Reason, tsStr, r.Origin, r.Actor, r.ActorLabel)
 		}
 	}
 
@@ -320,7 +320,13 @@ func resolveActorLabel(app core.App, origin, actor string) string {
 	return ""
 }
 
-func appendDerivedEvent(app core.App, site, ctrl string, route int, from, to, reason, tsStr string) {
+// appendDerivedEvent records one route transition with the attribution the device
+// bound to that run (origin/actor) plus the server-resolved actor_label, so the
+// timeline can say who/what caused it — the same "who" the commands ledger gives
+// node actions. The device keeps origin/actor bound to the route's state until the
+// next transition rebinds it (per-transition attribution: a manual stop of an
+// automation run reports the stopper), so the terminal IDLE event is attributed too.
+func appendDerivedEvent(app core.App, site, ctrl string, route int, from, to, reason, tsStr, origin, actor, actorLabel string) {
 	coll, err := app.FindCollectionByNameOrId("state_events")
 	if err != nil {
 		return
@@ -333,6 +339,9 @@ func appendDerivedEvent(app core.App, site, ctrl string, route int, from, to, re
 	rec.Set("to_state", to)
 	rec.Set("reason", reason)
 	rec.Set("ts", tsStr)
+	rec.Set("origin", origin)
+	rec.Set("actor", actor)
+	rec.Set("actor_label", actorLabel)
 	_ = app.Save(rec)
 }
 

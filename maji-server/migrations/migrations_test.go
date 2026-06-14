@@ -50,6 +50,18 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 	if commands.Fields.GetByName("node_on") == nil {
 		t.Error("commands.node_on should exist (migration 30)")
 	}
+
+	// 31_state_events_origin added the attribution fields the timeline reads to
+	// show who/what caused each route transition.
+	events, err := app.FindCollectionByNameOrId("state_events")
+	if err != nil {
+		t.Fatalf("state_events collection missing: %v", err)
+	}
+	for _, f := range []string{"origin", "actor", "actor_label"} {
+		if events.Fields.GetByName(f) == nil {
+			t.Errorf("state_events.%s should exist (migration 31)", f)
+		}
+	}
 }
 
 // Each migration file must have a unique NN_ number. Two files sharing a number

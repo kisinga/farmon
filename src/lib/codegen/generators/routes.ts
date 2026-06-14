@@ -555,11 +555,6 @@ struct RouteSlot {
   uint16_t ov_max_runtime_min;
   uint16_t ov_target_duration_s;
   uint32_t ov_target_volume_l;
-  // Who/what started this run (ORIGIN_* below). Reported on the snapshot so the
-  // dashboard can show "by <name>" / "Automation: <name>"; actor is a whole id
-  // (a user id for MANUAL, an automation id for AUTOMATION, "" for SYSTEM/local).
-  uint8_t  origin;
-  char     actor[16];
 };
 
 // Run-origin codes — mirror ORIGIN_TOKENS in codegen-ids.ts (index == value).
@@ -568,6 +563,25 @@ static const uint8_t ORIGIN_MANUAL     = 1;
 static const uint8_t ORIGIN_AUTOMATION = 2;
 
 static RouteSlot slots[MAX_CONCURRENT_ROUTES];
+
+// Per-route attribution that OUTLIVES the slot — who/what is responsible for the
+// route's current state. Stamped at each actor-driven transition (the starter at
+// activate_slot, the stopper at a manual try_route_stop) and read by the snapshot
+// even after the slot is freed at IDLE, so a finished run still reports "by Jane" /
+// "Automation: <name>" until the next run rebinds it (per-transition attribution).
+// Device-internal stops (level reached, watchdog, fault) do NOT rebind: the run
+// stays owned by whoever started it; the reason token explains why it ended.
+// Zero-init = ORIGIN_SYSTEM / "" — a route that has never run since boot. Indexed
+// by route id (survives slot reuse, which is keyed differently), so the snapshot's
+// per-route line is the single source of truth re-asserted every interval.
+static uint8_t route_origin[NUM_ROUTES];
+static char    route_actor[NUM_ROUTES][16];
+
+inline void bind_route_actor(int route_id, uint8_t origin, const char* actor) {
+  if (route_id < 0 || route_id >= NUM_ROUTES) return;
+  route_origin[route_id] = origin;
+  snprintf(route_actor[route_id], sizeof(route_actor[route_id]), "%s", actor ? actor : "");
+}
 
 // --- Slot helpers ------------------------------------------------------------
 
@@ -903,8 +917,8 @@ inline void activate_slot(int slot, int route_id, const StopSpec& spec, uint8_t 
   slots[slot].ov_max_runtime_min  = spec.ov_max_runtime_min;
   slots[slot].ov_target_duration_s= spec.ov_target_duration_s;
   slots[slot].ov_target_volume_l  = spec.ov_target_volume_l;
-  slots[slot].origin              = origin;
-  snprintf(slots[slot].actor, sizeof(slots[slot].actor), "%s", actor ? actor : "");
+  // The starter owns the route's state until the next transition rebinds it.
+  bind_route_actor(route_id, origin, actor);
   // Valves open via the reconciler on the next 1s tick.
 }
 
@@ -942,7 +956,11 @@ inline int try_route_start(int route_id, const char* command_id, const StopSpec&
 // Returns: 0=stopping, 1=not active, 2=already stopping/idle/faulted
 // FAULT (state==4) is rejected — only fault_reset clears a fault, so the
 // per-route fault registration isn't silently overwritten by a Stop press.
-inline int try_route_stop(int route_id, const char* command_id) {
+// origin/actor attribute WHO stopped it (per-transition): the stopper takes over
+// ownership of the route's state, so a manual stop of an automation run reports
+// the person, not the automation. Defaults to MANUAL for the local-button path.
+inline int try_route_stop(int route_id, const char* command_id,
+                          uint8_t origin = ORIGIN_MANUAL, const char* actor = "") {
   if (is_duplicate_command(command_id)) return 0;  // idempotent success
   int s = find_slot_by_route(route_id);
   if (s < 0) return 1;
@@ -950,6 +968,7 @@ inline int try_route_stop(int route_id, const char* command_id) {
   slots[s].stop_reason = STOP_MANUAL;
   slots[s].state = 3;  // STOPPING
   slots[s].stop_time = millis();
+  bind_route_actor(route_id, origin, actor);
   id(system_state) = derived_system_state();
   return 0;
 }
