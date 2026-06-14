@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy, effect, inject, signal } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
-import { SYSTEM_STATE_TOKENS, routeStateSensor, type DashboardSpec, type DashboardWidget } from '@core';
+import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, type DashboardSpec, type DashboardWidget } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
 import type { ShadowRow, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ActivityItem } from '../../core/models/runtime';
 import { resolveOfflineMs } from '../../core/models/alerts';
@@ -171,14 +171,21 @@ export class DashboardStore implements OnDestroy {
    *  only trace of a manual valve/pump action (they make no route transition), and
    *  carry who initiated them. */
   activityFor(controller: string): ActivityItem[] {
+    const routeName = (routeId: number) => this.routeName(controller, routeId);
     const items: ActivityItem[] = [];
     for (const e of this.events()) {
-      if (e.controller === controller) items.push(eventToActivity(e));
+      if (e.controller === controller) items.push(eventToActivity(e, routeName));
     }
     for (const c of this.commands().values()) {
-      if (c.controller === controller) items.push(commandToActivity(c));
+      if (c.controller === controller) items.push(commandToActivity(c, routeName));
     }
     return items.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0)).slice(0, 100);
+  }
+
+  /** A route's human identity ("Borehole → Tank") from the spec, harmonised with
+   *  the route cards via the shared {@link routeLabel}. Falls back to "route N". */
+  routeName(controller: string, routeId: number): string {
+    return routeLabel(findRoute(this.spec(), controller, routeId), routeId);
   }
 
   /** A route's current state. The `token` comes from the self-healing telemetry
@@ -231,13 +238,14 @@ export class DashboardStore implements OnDestroy {
 }
 
 /** A state transition → an Activity row (the badge token is the destination state;
- *  the widget colours it via the shared meanings). */
-function eventToActivity(e: StateEventRow): ActivityItem {
+ *  the widget colours it via the shared meanings). `routeName` resolves the route's
+ *  human identity (shared with the route cards). */
+function eventToActivity(e: StateEventRow, routeName: (routeId: number) => string): ActivityItem {
   return {
     ts: e.ts,
     kind: 'transition',
     token: e.to,
-    label: e.route < 0 ? 'controller' : `route ${e.route}`,
+    label: e.route < 0 ? 'controller' : routeName(e.route),
     detail: e.reason || undefined,
   };
 }
@@ -246,26 +254,28 @@ function eventToActivity(e: StateEventRow): ActivityItem {
  *  outcome (APPLIED / the failure reason); the label names the action + target;
  *  `actor`/`bySupport` carry the initiator. A still-`sent` command has no outcome
  *  badge yet — it fills in when the device echo reconciles it. */
-function commandToActivity(c: CommandLogRow): ActivityItem {
+function commandToActivity(c: CommandLogRow, routeName: (routeId: number) => string): ActivityItem {
   const token = c.status === 'failed' ? (c.result || 'REFUSED') : c.status === 'done' ? 'APPLIED' : '';
   return {
     ts: c.ts,
     kind: 'command',
     token,
-    label: commandLabel(c),
+    label: commandLabel(c, routeName),
     actor: c.actor,
     bySupport: c.bySupport,
     ok: c.status !== 'failed',
   };
 }
 
-/** Human action line for a command row. */
-function commandLabel(c: CommandLogRow): string {
+/** Human action line for a command row. Routes are named via the shared resolver
+ *  so the feed reads "Start Borehole → Tank", consistent with the route cards. */
+function commandLabel(c: CommandLogRow, routeName: (routeId: number) => string): string {
+  const route = () => routeName(c.routeId ?? -1);
   switch (c.action) {
     case 'node_set': return `${c.on ? 'Opened' : 'Closed'} ${prettyNode(c.nodeId)}`;
-    case 'route_start': return `Start route ${c.routeId}`;
-    case 'route_stop': return `Stop route ${c.routeId}`;
-    case 'fault_reset': return `Reset route ${c.routeId} fault`;
+    case 'route_start': return `Start ${route()}`;
+    case 'route_stop': return `Stop ${route()}`;
+    case 'fault_reset': return `Reset ${route()} fault`;
     case 'safety_override': return `Safety override ${c.on ? 'on' : 'off'}`;
     case 'config_set': return `Set ${c.configKey ?? 'value'}`;
     case 'stop_all': return 'Stop all';

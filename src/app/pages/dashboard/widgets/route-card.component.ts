@@ -1,5 +1,5 @@
 import { Component, computed, input, output } from '@angular/core';
-import { describeState, FAULT_MEANINGS, STOP_REASON_MEANINGS, type RouteControl, type CommandPhase } from '@core';
+import { describeState, routeLabel, FAULT_MEANINGS, STOP_REASON_MEANINGS, type RouteControl, type CommandPhase } from '@core';
 import { phaseUi } from './command-phase';
 
 /** The command a route card emits when toggled — a subset of CommandAction. */
@@ -194,7 +194,7 @@ export class RouteCardComponent {
 
   protected title = computed(() => {
     const v = this.view();
-    const parts = [`${this.route().name}: ${v.label}`];
+    const parts = [`${routeLabel(this.route(), this.route().routeId)}: ${v.label}`];
     const reason = this.state().reason;
     if (reason) parts.push(describeState(ROUTE_REASONS, reason).label);
     if (!this.online()) parts.push('controller offline');

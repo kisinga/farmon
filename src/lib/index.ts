@@ -85,7 +85,7 @@ export {
 export type { HealthLevel } from './health';
 
 // --- Dashboard chart spec (derived from the saved topology, in the browser) ---
-export { buildDashboardSpec } from './dashboard-spec';
+export { buildDashboardSpec, routeLabel, findRoute } from './dashboard-spec';
 export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, SetpointControl, CalibrationControl } from './dashboard-spec';
 
 // --- Command confirmation (desired→reported convergence; one shape, all controls) ---

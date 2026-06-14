@@ -26,6 +26,15 @@ function kindClass(kind: StateKind): string {
   }
 }
 
+/** Severity `kind` → activity-rail dot / inline-token colours (shared so the dot
+ *  and the state word always agree). */
+const DOT_CLASS: Record<string, string> = {
+  active: 'bg-success', warn: 'bg-warning', fault: 'bg-error', normal: 'bg-base-content/25',
+};
+const TOKEN_CLASS: Record<string, string> = {
+  active: 'text-success', warn: 'text-warning', fault: 'text-error', normal: 'text-base-content/40',
+};
+
 function fmt(n: number): string {
   if (Number.isNaN(n)) return '—';
   return Math.abs(n) >= 100 || Number.isInteger(n) ? String(Math.round(n)) : n.toFixed(1);
@@ -177,21 +186,39 @@ const CHART = {
           </div>
         }
         @case ('timeline') {
-          <div class="flex-1 overflow-auto max-h-[200px] -mx-1">
+          <div class="flex-1 overflow-auto max-h-60 -mr-1.5 pr-1.5">
             @if (items().length === 0) {
-              <p class="text-xs text-base-content/30 px-1 py-2">No activity yet.</p>
-            }
-            @for (it of items(); track it.ts + it.label) {
-              <div class="px-1 py-1 border-b border-base-300/20 last:border-0 flex items-center gap-2 text-[11px]"
-                   [class.text-error]="it.ok === false">
-                @if (it.token) { <span class="badge badge-xs {{ kindOf(it.token) }}">{{ pretty(it.token) }}</span> }
-                <span class="text-base-content/60 truncate">{{ it.label }}</span>
-                @if (it.detail) { <span class="text-base-content/40 shrink-0">· {{ pretty(it.detail) }}</span> }
-                @if (it.actor) {
-                  <span class="shrink-0 {{ it.bySupport ? 'text-warning' : 'text-base-content/40' }}">· {{ it.actor }}</span>
-                }
-                <span class="ml-auto text-base-content/30 tabular-nums shrink-0">{{ shortTime(it.ts) }}</span>
+              <div class="h-full min-h-18 flex items-center justify-center">
+                <span class="text-xs text-base-content/25">No activity yet</span>
               </div>
+            } @else {
+              <ol>
+                @for (it of items(); track it.ts + it.label; let last = $last) {
+                  <li class="flex gap-2.5">
+                    <!-- timeline rail: a severity-coloured dot, connected to the next -->
+                    <div class="flex flex-col items-center shrink-0">
+                      <span class="w-1.5 h-1.5 rounded-full mt-1.5 {{ dotClass(it) }}"></span>
+                      @if (!last) { <span class="w-px grow bg-base-300/25 my-0.5"></span> }
+                    </div>
+                    <!-- content -->
+                    <div class="min-w-0 flex-1 flex items-center gap-2 text-xs py-1 {{ last ? '' : 'pb-2' }}">
+                      <span class="truncate {{ it.ok === false ? 'text-error/90' : 'text-base-content/80' }}">{{ it.label }}</span>
+                      @if (it.token) { <span class="shrink-0 {{ tokenClass(it.token) }}">{{ pretty(it.token) }}</span> }
+                      @if (it.detail) { <span class="shrink-0 text-base-content/35 truncate hidden sm:inline">· {{ pretty(it.detail) }}</span> }
+                      <span class="ml-auto shrink-0 flex items-center gap-2">
+                        @if (it.actor) {
+                          @if (it.bySupport) {
+                            <span class="px-1.5 py-px rounded text-[10px] font-medium bg-warning/15 text-warning">{{ it.actor }}</span>
+                          } @else {
+                            <span class="text-[10px] text-base-content/45">{{ it.actor }}</span>
+                          }
+                        }
+                        <span class="text-[10px] text-base-content/30 tabular-nums">{{ shortTime(it.ts) }}</span>
+                      </span>
+                    </div>
+                  </li>
+                }
+              </ol>
             }
           </div>
         }
@@ -448,8 +475,16 @@ export class DashboardCardComponent {
     return token ? describeState(ANY_MEANING, token).label : '';
   }
 
-  protected kindOf(token: string): string {
-    return token ? kindClass(describeState(ANY_MEANING, token).kind) : 'badge-ghost';
+  /** Activity-rail dot colour: a failed command or fault is red, otherwise the
+   *  token's severity (active green / warn amber), else a neutral dot. */
+  protected dotClass(it: ActivityItem): string {
+    if (it.ok === false) return 'bg-error';
+    return DOT_CLASS[it.token ? describeState(ANY_MEANING, it.token).kind : 'normal'] ?? 'bg-base-content/25';
+  }
+
+  /** Inline token colour matching the rail dot, for the state/outcome word. */
+  protected tokenClass(token: string): string {
+    return TOKEN_CLASS[describeState(ANY_MEANING, token).kind] ?? 'text-base-content/40';
   }
 
   protected shortTime(ts: string): string {

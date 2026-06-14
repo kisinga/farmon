@@ -58,6 +58,28 @@ export interface RouteControl {
   flowSensor?: string;
 }
 
+/** Human identity for a route, harmonised across every consumer that names one
+ *  (route cards, the activity timeline, …) so they never disagree: its
+ *  `source → destination` when both endpoints are known, else its name/key, else
+ *  the positional id. Pure — compose with {@link findRoute} to resolve from a spec. */
+export function routeLabel(route: RouteControl | undefined, routeId: number): string {
+  if (route?.source && route?.destination) return `${route.source} → ${route.destination}`;
+  return route?.name || `route ${routeId}`;
+}
+
+/** Look up a controller's route control in a built {@link DashboardSpec}, by the
+ *  firmware route id. Pairs with {@link routeLabel} to name a route from just an
+ *  `(controller, routeId)` — the form events/commands carry. */
+export function findRoute(
+  spec: DashboardSpec,
+  controller: string,
+  routeId: number,
+): RouteControl | undefined {
+  return spec.controllers
+    .find((c) => c.controller === controller)
+    ?.routes.find((r) => r.routeId === routeId);
+}
+
 /** An actuator an operator can manually drive via `node_set`. `id` is the
  *  topology node id — the claim key the firmware's dead-man registry uses
  *  (a valve opens / a pump runs while claimed; the lease expiring stops it). */
