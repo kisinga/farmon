@@ -681,6 +681,15 @@ func pickTier(span time.Duration) (table, timeCol string) {
 	}
 }
 
+// IsAdmin reports whether the caller has full-platform privileges. A PocketBase
+// superuser counts as admin: it sits above app roles and already bypasses
+// collection rules, so request hooks must treat it the same (the check is on the
+// authenticated collection and server-set role field, neither client-spoofable).
+// Canonical privilege check — use this instead of testing role == "admin" directly.
+func IsAdmin(auth *core.Record) bool {
+	return auth != nil && (auth.IsSuperuser() || auth.GetString("role") == "admin")
+}
+
 // requireSiteAccess enforces authentication and site ownership (admins bypass).
 func requireSiteAccess(e *core.RequestEvent, siteID string) error {
 	if e.Auth == nil {
@@ -689,7 +698,7 @@ func requireSiteAccess(e *core.RequestEvent, siteID string) error {
 	if siteID == "" {
 		return apis.NewBadRequestError("site is required", nil)
 	}
-	if e.Auth.GetString("role") == "admin" {
+	if IsAdmin(e.Auth) {
 		return nil
 	}
 	site, err := e.App.FindRecordById("sites", siteID)

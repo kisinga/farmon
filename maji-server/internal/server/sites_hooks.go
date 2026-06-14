@@ -43,15 +43,11 @@ func registerSiteHooks(app core.App, cfg config.Config) {
 	})
 }
 
-func isAdmin(auth *core.Record) bool {
-	return auth != nil && auth.GetString("role") == "admin"
-}
-
 // guardOwnerCreate stops a customer from creating a site with anyone but
 // themselves among its owners. owner is a multi-relation (co-owners), so a
 // non-admin may seed only an empty set or one containing solely themselves.
 func guardOwnerCreate(e *core.RecordRequestEvent) error {
-	if isAdmin(e.Auth) || e.Auth == nil {
+	if api.IsAdmin(e.Auth) || e.Auth == nil {
 		return nil
 	}
 	for _, owner := range e.Record.GetStringSlice("owner") {
@@ -66,7 +62,7 @@ func guardOwnerCreate(e *core.RecordRequestEvent) error {
 // no field rule, so without this a customer could rewrite it and lock others out
 // or remove themselves). Only admins assign co-owners; order is irrelevant.
 func guardOwnerUpdate(e *core.RecordRequestEvent) error {
-	if isAdmin(e.Auth) {
+	if api.IsAdmin(e.Auth) {
 		return nil
 	}
 	old, err := e.App.FindRecordById("sites", e.Record.Id)
