@@ -1,6 +1,7 @@
 import { Component, computed, input, output } from '@angular/core';
 import { describeState, routeLabel, FAULT_MEANINGS, STOP_REASON_MEANINGS, type RouteControl, type CommandPhase } from '@core';
 import { phaseUi } from './command-phase';
+import { formatInitiator } from './initiator';
 
 /** The command a route card emits when toggled — a subset of CommandAction. */
 export type RouteAction = 'route_start' | 'route_stop' | 'fault_reset';
@@ -143,13 +144,12 @@ export class RouteCardComponent {
    *  who/what started the run (`origin` + resolved `actorLabel`). */
   readonly state = input<{ token: string; reason: string; origin?: string; actorLabel?: string }>({ token: '', reason: '' });
 
-  /** "by Jane" / "Automation: Morning" while a run is active, else ''. */
+  /** "by Jane" / "Automation: Morning" while a run is active, else '' — via the
+   *  shared {@link formatInitiator} so it matches the activity timeline's chip. */
   protected originText = computed(() => {
     const s = this.state();
     if (!s.token || s.token === 'IDLE') return '';
-    if (s.origin === 'AUTOMATION') return s.actorLabel ? `Automation: ${s.actorLabel}` : 'Automation';
-    if (s.origin === 'MANUAL') return s.actorLabel ? `by ${s.actorLabel}` : 'Manual';
-    return '';
+    return formatInitiator(s.origin, s.actorLabel);
   });
   /** Live flow rate (L/min) from the route's flow sensor, or null when unknown. */
   readonly flowRate = input<number | null>(null);

@@ -307,17 +307,17 @@ function toController(r: RecordModel): ControllerRow {
 }
 
 function toEvent(r: RecordModel, meId: string): StateEventRow {
-  // Resolve the initiator for display once, mirroring toCommandLog so a route
-  // transition reads the same as a node command: the viewer's own manual action is
-  // "you"; everyone/everything else uses the server-resolved label (a co-owner's
-  // name, an automation's name). origin decides the prefix in the template.
+  // Resolve the initiator's NAME once (or "you" for the viewer's own manual
+  // action), mirroring toCommandLog. Just the bare name — the shared formatInitiator
+  // adds the "by …" / "Automation: …" prefix and the no-name fallbacks, so a route
+  // transition reads the same as a node command and can't drift from the route card.
   const origin: string | undefined = r['origin'] || undefined;
   const actorId = r['actor'];
   const label = r['actor_label'];
   let display: string | undefined;
   if (actorId) {
     if (origin === 'MANUAL' && actorId === meId) display = 'you';
-    else display = label || (origin === 'AUTOMATION' ? 'Automation' : 'operator');
+    else display = label || undefined;
   }
   return {
     controller: r['controller'],

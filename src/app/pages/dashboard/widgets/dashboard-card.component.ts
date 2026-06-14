@@ -9,6 +9,7 @@ import {
   type DashboardWidget, type StateKind, type CommandPhase,
 } from '@core';
 import type { ShadowRow, TelemetryPoint, ActivityItem } from '../../../core/models/runtime';
+import { formatInitiator } from './initiator';
 import { SPAN_PRESETS, DEFAULT_SPAN_HOURS } from '../telemetry.store';
 import { integrateLiters } from '../flow-usage';
 import { phaseUi } from './command-phase';
@@ -494,15 +495,11 @@ export class DashboardCardComponent {
     return Number.isNaN(d.getTime()) ? ts : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  /** The initiator chip text, harmonised with the route card's originText so a
-   *  command and a route transition read the same: a support action stays as-is
-   *  ("Support"); an automation reads "Automation: <name>"; a manual action reads
-   *  "you" or "by <name>". '' ⇒ no chip (SYSTEM / unattributed). */
+  /** The initiator chip text via the shared {@link formatInitiator} vocabulary, so
+   *  a command and a route transition read the same. A support action (admin-on-
+   *  behalf) keeps its own warning chip and passes its label through unchanged. */
   protected actorText(it: ActivityItem): string {
-    const a = it.actor;
-    if (!a) return '';
-    if (it.bySupport) return a;
-    if (it.origin === 'AUTOMATION') return a === 'Automation' ? a : `Automation: ${a}`;
-    return a === 'you' ? a : `by ${a}`;
+    if (it.bySupport) return it.actor ?? '';
+    return formatInitiator(it.origin, it.actor);
   }
 }
