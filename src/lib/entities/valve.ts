@@ -58,13 +58,24 @@ export const valveDescriptor: NodeDescriptor = {
   renderSvg: (_data) => {
     const cx = W / 2, cy = H / 2;
     const hx = 17, hy = 12;
+    // `.valve-body` (the bowtie) is the live-state hook: the canvas recolours it
+    // green when the cover reports open. The stem/handle stay rose (the actuator).
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-      <path d="M ${cx - hx} ${cy - hy} L ${cx} ${cy} L ${cx - hx} ${cy + hy} Z" fill="${COLOR}" fill-opacity="0.15" stroke="${COLOR}" stroke-width="2.5" stroke-linejoin="round"/>
-      <path d="M ${cx + hx} ${cy - hy} L ${cx} ${cy} L ${cx + hx} ${cy + hy} Z" fill="${COLOR}" fill-opacity="0.15" stroke="${COLOR}" stroke-width="2.5" stroke-linejoin="round"/>
+      <g class="valve-body">
+        <path d="M ${cx - hx} ${cy - hy} L ${cx} ${cy} L ${cx - hx} ${cy + hy} Z" fill="${COLOR}" fill-opacity="0.15" stroke="${COLOR}" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M ${cx + hx} ${cy - hy} L ${cx} ${cy} L ${cx + hx} ${cy + hy} Z" fill="${COLOR}" fill-opacity="0.15" stroke="${COLOR}" stroke-width="2.5" stroke-linejoin="round"/>
+      </g>
       <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - hy - 2}" stroke="${COLOR}" stroke-width="2.5" stroke-linecap="round"/>
       <line x1="${cx - 6}" y1="${cy - hy - 2}" x2="${cx + 6}" y2="${cy - hy - 2}" stroke="${COLOR}" stroke-width="2.5" stroke-linecap="round"/>
     </svg>`;
   },
+
+  // Live map: open (cover reports on) recolours the bowtie emerald and fills it;
+  // closed/unknown stay the default rose. CSS overrides the inline presentation
+  // attrs, and the transition makes a manual open/close visibly morph.
+  liveStyles: `
+    .kind-valve .valve-body path { transition: fill .25s ease, stroke .25s ease, fill-opacity .25s ease; }
+    .kind-valve.state-on .valve-body path { fill: #10b981; stroke: #10b981; fill-opacity: .4; }`,
 
   sidebarFields: [
     { key: 'open_pin', label: 'Open Pin', type: 'pin', placeholder: 'GPIO4', pinCap: 'digital', polarityKey: 'coil_polarity' },

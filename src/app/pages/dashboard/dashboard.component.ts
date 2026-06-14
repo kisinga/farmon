@@ -17,6 +17,12 @@ import { LiveMapComponent } from './canvas/live-map.component';
 import type { SiteTopology } from '../../core/models/topology.model';
 import type { RouteControl } from '@core';
 
+/** A widget section as `sections()` produces it. */
+interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
+/** One row of the dashboard body: a card section, or the live map standing in for
+ *  the section(s) it absorbs when the canvas is on. */
+type LayoutRow = { kind: 'map'; key: string } | { kind: 'section'; key: string; section: DashSection };
+
 /**
  * Customer dashboard for a site (`/site/:name/dashboard`, where `:name` is the
  * site id). Builds the chart spec in the browser from the saved topology, then
@@ -220,26 +226,24 @@ import type { RouteControl } from '@core';
 
         @if (note()) { <div class="text-xs text-base-content/50 mb-3">{{ note() }}</div> }
 
-        <!-- Live system map (experimental): the same topology the editor draws,
-             rendered read-only with live state animating each node. Replaces the
-             status widget grid; routes/operator controls above stay put. -->
-        @if (useCanvas() && topology()) {
-          <section class="mb-6">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">System map</h2>
-            <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [flow]="flowPipes()" />
-          </section>
-        } @else {
-          <!-- Widgets, grouped into sections so status / levels / valves / flow /
-               activity read as distinct zones instead of one jumbled grid. -->
-          @for (sec of sections(); track sec.id) {
+        <!-- Body: card sections grouped by zone (levels / valves / flow / pressure /
+             activity). When the canvas is on, the live system map stands in for the
+             "Valves & pumps" section in place; the rest stay as cards. -->
+        @for (row of layout(); track row.key) {
+          @if (row.kind === 'map') {
             <section class="mb-6">
-              <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ sec.label }}</h2>
-              <div [class]="gridFor(sec.id)">
-                @for (w of sec.widgets; track w.id) {
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">System map</h2>
+              <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [flow]="flowPipes()" />
+            </section>
+          } @else {
+            <section class="mb-6">
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ row.section.label }}</h2>
+              <div [class]="gridFor(row.section.id)">
+                @for (w of row.section.widgets; track w.id) {
                   <div [class]="w.kind === 'timeline' ? 'sm:col-span-2 lg:col-span-3' : ''">
                     <app-dashboard-card
                       [widget]="w"
-                      [dense]="denseSection(sec.id)"
+                      [dense]="denseSection(row.section.id)"
                       [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
                       [controllerColor]="ctrlColor(w.controller)"
                       [row]="store.rowFor(w)"
@@ -284,6 +288,33 @@ export class DashboardComponent {
   protected topology = signal<SiteTopology | null>(null);
   /** Experimental live SCADA map vs. the card grid. Default-on for admins. */
   protected useCanvas = signal(this.auth.isAdmin());
+
+  /** Card sections the system map stands in for when the canvas is on. The map
+   *  draws the whole topology, but in the layout it takes these sections' place —
+   *  start with the actuators; add 'levels' once tank levels render on the map. */
+  private static readonly MAP_ABSORBS = new Set(['valves']);
+
+  /** The dashboard body as an ordered list of card-sections and (when the canvas
+   *  is on) the map, which collapses the absorbed sections into one block at their
+   *  first slot. Other sections (flow, pressure, activity) stay as cards. */
+  protected layout = computed<LayoutRow[]>(() => {
+    const secs = this.sections();
+    if (!(this.useCanvas() && this.topology())) {
+      return secs.map((section) => ({ kind: 'section', key: section.id, section }));
+    }
+    const rows: LayoutRow[] = [];
+    let placed = false;
+    for (const section of secs) {
+      if (DashboardComponent.MAP_ABSORBS.has(section.id)) {
+        if (!placed) { rows.push({ kind: 'map', key: 'system-map' }); placed = true; }
+        continue; // absorbed into the map
+      }
+      rows.push({ kind: 'section', key: section.id, section });
+    }
+    // Canvas on but nothing to absorb (no valves/pumps): still show the map, up top.
+    if (!placed) rows.unshift({ kind: 'map', key: 'system-map' });
+    return rows;
+  });
 
   /** Route states that mean water is moving (matches the route card's `running`). */
   private static readonly ACTIVE_ROUTE_TOKENS = new Set(['PREPARING', 'RUNNING', 'STOPPING']);
