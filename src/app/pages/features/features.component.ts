@@ -1,11 +1,12 @@
-import { Component, inject } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
-import { BRAND_LOGO_SVG } from '../../shared/brand-logo';
+import { Component } from '@angular/core';
 import { applyPageSeo } from '../../shared/seo';
-import { HardwareShowcaseComponent } from './hardware-showcase.component';
-
-const GITHUB_URL = 'https://github.com/kisinga/majiflow';
+import {
+  HardwareShowcaseComponent,
+  HARDWARE_DEVICES,
+} from '../../shared/hardware-showcase/hardware-showcase.component';
+import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
+import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
+import { MarketingCtaComponent, type CtaButton } from '../../shared/marketing/marketing-cta.component';
 
 /** A capability group: one keyword-bearing heading and the things under it. */
 interface FeatureGroup {
@@ -36,26 +37,16 @@ interface UseCase {
 @Component({
   selector: 'app-features',
   standalone: true,
-  imports: [RouterLink, HardwareShowcaseComponent],
+  imports: [
+    HardwareShowcaseComponent,
+    MarketingNavComponent,
+    MarketingFooterComponent,
+    MarketingCtaComponent,
+  ],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   template: `
     <!-- NAV -->
-    <nav class="sticky top-0 z-30 backdrop-blur-sm bg-slate-950/85 border-b border-white/10">
-      <div class="max-w-6xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-        <a routerLink="/" class="flex items-center gap-2.5">
-          <span class="w-8 h-8 block" [innerHTML]="logo"></span>
-          <span class="text-lg font-bold tracking-tight text-white">MajiFlow</span>
-        </a>
-        <div class="flex items-center gap-2 sm:gap-3">
-          <a routerLink="/pricing"
-             class="text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">Pricing</a>
-          <a [href]="github" target="_blank" rel="noopener"
-             class="hidden sm:inline-flex text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">GitHub</a>
-          <a routerLink="/login"
-             class="text-sm font-semibold rounded-full px-4 py-2 bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">Sign in</a>
-        </div>
-      </div>
-    </nav>
+    <app-marketing-nav />
 
     <!-- HERO -->
     <header class="bg-slate-950 text-white px-5 sm:px-8 pt-16 pb-14 text-center">
@@ -90,7 +81,7 @@ interface UseCase {
     }
 
     <!-- HARDWARE (animated showcase) -->
-    <app-hardware-showcase />
+    <app-hardware-showcase [devices]="devices" variant="full" />
 
     <!-- USE CASES -->
     <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-950 text-white">
@@ -114,33 +105,21 @@ interface UseCase {
     </section>
 
     <!-- CTA BAND -->
-    <section class="px-5 sm:px-8 py-20">
-      <div class="max-w-4xl mx-auto rounded-3xl bg-gradient-to-br from-cyan-500 via-sky-600 to-blue-700 px-8 py-14 text-center text-white shadow-2xl shadow-cyan-500/20">
-        <h2 class="text-2xl sm:text-4xl font-bold tracking-tight">See it on your own site</h2>
-        <p class="mt-3 text-white/85 max-w-xl mx-auto">Answer three questions for a live estimate, or draw your site and we will get it ready to build.</p>
-        <div class="mt-8 flex flex-wrap gap-3 justify-center">
-          <a routerLink="/pricing" class="rounded-full px-6 py-3 text-sm font-semibold bg-white text-slate-900 hover:bg-slate-100 transition-colors">See what your site costs</a>
-          <a routerLink="/login" class="rounded-full px-6 py-3 text-sm font-semibold ring-1 ring-white/40 text-white hover:bg-white/10 transition-colors">Get started</a>
-        </div>
-      </div>
-    </section>
+    <app-marketing-cta
+      heading="See it on your own site"
+      blurb="Answer three questions for a live estimate, or draw your site and we will get it ready to build."
+      [buttons]="ctaButtons" />
 
     <!-- FOOTER -->
-    <footer class="bg-slate-950 text-slate-400 px-5 sm:px-8 py-10">
-      <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-        <a routerLink="/" class="flex items-center gap-2.5">
-          <span class="w-6 h-6 block" [innerHTML]="logo"></span>
-          <span class="font-semibold text-white">MajiFlow</span>
-        </a>
-        <p class="text-sm text-center">Started on a dry-land farm, where every drop counts.</p>
-        <a routerLink="/" class="text-sm hover:text-white transition-colors">← Back to home</a>
-      </div>
-    </footer>
+    <app-marketing-footer />
   `,
 })
 export class FeaturesComponent {
-  protected readonly github = GITHUB_URL;
-  protected readonly logo: SafeHtml = inject(DomSanitizer).bypassSecurityTrustHtml(BRAND_LOGO_SVG);
+  protected readonly devices = HARDWARE_DEVICES;
+  protected readonly ctaButtons: CtaButton[] = [
+    { label: 'See what your site costs', route: '/pricing' },
+    { label: 'Get started', route: '/login' },
+  ];
 
   constructor() {
     applyPageSeo({

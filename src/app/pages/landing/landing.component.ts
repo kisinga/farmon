@@ -3,8 +3,14 @@ import { RouterLink } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { BRAND_LOGO_SVG } from '../../shared/brand-logo';
 import { applyPageSeo } from '../../shared/seo';
-
-const GITHUB_URL = 'https://github.com/kisinga/majiflow';
+import { avifSrc, webpSrc } from '../../shared/marketing-image';
+import {
+  HardwareShowcaseComponent,
+  HARDWARE_DEVICES,
+} from '../../shared/hardware-showcase/hardware-showcase.component';
+import { MarketingNavComponent, GITHUB_URL } from '../../shared/marketing/marketing-nav.component';
+import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
+import { MarketingCtaComponent, type CtaButton } from '../../shared/marketing/marketing-cta.component';
 
 /** A way to run MajiFlow, shown side by side so the cloud-vs-own-it trade is honest. */
 interface Plan {
@@ -65,7 +71,13 @@ interface Deployment {
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterLink],
+  imports: [
+    RouterLink,
+    HardwareShowcaseComponent,
+    MarketingNavComponent,
+    MarketingFooterComponent,
+    MarketingCtaComponent,
+  ],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   styles: [`
     @keyframes ripple-pulse { 0%,100% { opacity:.6; transform:scale(1);} 50% { opacity:1; transform:scale(1.05);} }
@@ -80,24 +92,7 @@ interface Deployment {
   `],
   template: `
     <!-- ============================= NAV ============================= -->
-    <nav class="sticky top-0 z-30 backdrop-blur-sm bg-slate-950/85 border-b border-white/10">
-      <div class="max-w-6xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-        <a href="./" class="flex items-center gap-2.5 group">
-          <span class="w-8 h-8 block" [innerHTML]="logo"></span>
-          <span class="text-lg font-bold tracking-tight text-white">MajiFlow</span>
-        </a>
-        <div class="flex items-center gap-2 sm:gap-3">
-          <a routerLink="/features"
-             class="text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">Features</a>
-          <a routerLink="/pricing"
-             class="text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">Pricing</a>
-          <a [href]="github" target="_blank" rel="noopener"
-             class="hidden sm:inline-flex text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">GitHub</a>
-          <a routerLink="/login"
-             class="text-sm font-semibold rounded-full px-4 py-2 bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">Sign in</a>
-        </div>
-      </div>
-    </nav>
+    <app-marketing-nav />
 
     <!-- ============================= HERO ============================= -->
     <header class="relative overflow-hidden bg-slate-950 text-white">
@@ -250,25 +245,10 @@ interface Deployment {
             <p class="mt-2 text-sm text-slate-600 leading-relaxed">Off-the-shelf controllers, sensors, pumps and valves. No special parts to hunt down. A plumber can do most of the install, and an electrician handles the pump wiring. Everything is documented.</p>
           </div>
         </div>
-        <!-- the controller itself -->
-        <div class="mt-8 grid gap-6 sm:grid-cols-2 items-center">
-          <div class="rounded-2xl ring-1 ring-slate-200 shadow-xl shadow-slate-900/10 overflow-hidden">
-            <picture>
-              <source srcset="marketing/controller.avif" type="image/avif" />
-              <source srcset="marketing/controller.webp" type="image/webp" />
-              <img src="marketing/controller.jpg" alt="The MajiFlow controller that runs your farm or site"
-                   width="1400" height="787" loading="lazy" decoding="async"
-                   class="block w-full aspect-[16/10] object-cover" />
-            </picture>
-          </div>
-          <div>
-            <h3 class="text-lg font-semibold">The controller that runs your site</h3>
-            <p class="mt-2 text-sm text-slate-600 leading-relaxed">
-              Out in the field, each controller reads your sensors, switches your pumps and valves,
-              and reports back to your dashboard. Mount it on a wall or a rail, wire it once, and
-              leave it. Let us host it online for the lowest cost, or keep everything on-site and own it yourself.
-            </p>
-          </div>
+        <!-- the controller itself, on the cinematic hardware stage -->
+        <app-hardware-showcase class="block mt-8" variant="hero" [devices]="heroDevices" [showHeader]="false" />
+        <div class="mt-6 text-center">
+          <a routerLink="/features" class="text-sm font-semibold text-cyan-600 hover:text-cyan-700">See the full hardware lineup →</a>
         </div>
       </div>
     </section>
@@ -476,28 +456,13 @@ interface Deployment {
     </section>
 
     <!-- ===================== CTA BAND ===================== -->
-    <section class="px-5 sm:px-8 py-20">
-      <div class="max-w-4xl mx-auto rounded-3xl bg-gradient-to-br from-cyan-500 via-sky-600 to-blue-700 px-8 py-14 text-center text-white shadow-2xl shadow-cyan-500/20">
-        <h2 class="text-2xl sm:text-4xl font-bold tracking-tight">Ready to plan your site?</h2>
-        <p class="mt-3 text-white/85 max-w-xl mx-auto">Draw your farm or site on the screen, and we will get everything ready to build and run it.</p>
-        <div class="mt-8 flex flex-wrap gap-3 justify-center">
-          <a routerLink="/login" class="rounded-full px-6 py-3 text-sm font-semibold bg-white text-slate-900 hover:bg-slate-100 transition-colors">Get started</a>
-          <a [href]="github" target="_blank" rel="noopener" class="rounded-full px-6 py-3 text-sm font-semibold ring-1 ring-white/40 text-white hover:bg-white/10 transition-colors">View on GitHub</a>
-        </div>
-      </div>
-    </section>
+    <app-marketing-cta
+      heading="Ready to plan your site?"
+      blurb="Draw your farm or site on the screen, and we will get everything ready to build and run it."
+      [buttons]="ctaButtons" />
 
     <!-- ===================== FOOTER ===================== -->
-    <footer class="bg-slate-950 text-slate-400 px-5 sm:px-8 py-10">
-      <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div class="flex items-center gap-2.5">
-          <span class="w-6 h-6 block" [innerHTML]="logo"></span>
-          <span class="font-semibold text-white">MajiFlow</span>
-        </div>
-        <p class="text-sm text-center">Started on a dry-land farm, where every drop counts.</p>
-        <a [href]="github" target="_blank" rel="noopener" class="text-sm hover:text-white transition-colors">Open source on GitHub →</a>
-      </div>
-    </footer>
+    <app-marketing-footer />
   `,
 })
 export class LandingComponent {
@@ -515,15 +480,17 @@ export class LandingComponent {
     });
   }
 
-  // Derive the modern-format siblings of a marketing image for <picture> sources.
-  // Every referenced image ships .avif + .webp next to its .png/.jpg fallback
-  // (generated by `npm run images:optimize`), so format negotiation is safe.
-  protected avif(src: string): string {
-    return src.replace(/\.(png|jpe?g)$/i, '.avif');
-  }
-  protected webp(src: string): string {
-    return src.replace(/\.(png|jpe?g)$/i, '.webp');
-  }
+  // Modern-format siblings for <picture> sources (see ../../shared/marketing-image).
+  protected readonly avif = avifSrc;
+  protected readonly webp = webpSrc;
+
+  /** The controller, on the shared cinematic stage as a one-device hero. */
+  protected readonly heroDevices = [HARDWARE_DEVICES[0]];
+
+  protected readonly ctaButtons: CtaButton[] = [
+    { label: 'Get started', route: '/login' },
+    { label: 'View on GitHub', href: GITHUB_URL },
+  ];
 
   protected readonly plans: Plan[] = [
     {

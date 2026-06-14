@@ -1,10 +1,10 @@
 import { Component, computed, inject, signal, type WritableSignal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
-import { BRAND_LOGO_SVG } from '../../shared/brand-logo';
 import { BackendService } from '../../core/services/backend.service';
 import { PRICING, estimate, kes, type EstimateInput } from './pricing.model';
 import { applyPageSeo } from '../../shared/seo';
+import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
+import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
 
 type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 
@@ -20,20 +20,11 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 @Component({
   selector: 'app-pricing',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, MarketingNavComponent, MarketingFooterComponent],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   template: `
     <!-- NAV -->
-    <nav class="sticky top-0 z-30 backdrop-blur-md bg-slate-950/80 border-b border-white/10">
-      <div class="max-w-5xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-        <a routerLink="/" class="flex items-center gap-2.5">
-          <span class="w-8 h-8 block" [innerHTML]="logo"></span>
-          <span class="text-lg font-bold tracking-tight text-white">MajiFlow</span>
-        </a>
-        <a routerLink="/login"
-           class="text-sm font-semibold rounded-full px-4 py-2 bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">Sign in</a>
-      </div>
-    </nav>
+    <app-marketing-nav />
 
     <!-- HERO -->
     <header class="bg-slate-950 text-white px-5 sm:px-8 pt-14 pb-12 text-center">
@@ -229,21 +220,11 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
     </section>
 
     <!-- FOOTER -->
-    <footer class="bg-slate-950 text-slate-400 px-5 sm:px-8 py-10">
-      <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-        <a routerLink="/" class="flex items-center gap-2.5">
-          <span class="w-6 h-6 block" [innerHTML]="logo"></span>
-          <span class="font-semibold text-white">MajiFlow</span>
-        </a>
-        <p class="text-sm text-center">Honest pricing. No surprises.</p>
-        <a routerLink="/" class="text-sm hover:text-white transition-colors">← Back to home</a>
-      </div>
-    </footer>
+    <app-marketing-footer tagline="Honest pricing. No surprises." />
   `,
 })
 export class PricingComponent {
   private readonly backend = inject(BackendService);
-  protected readonly logo: SafeHtml = inject(DomSanitizer).bypassSecurityTrustHtml(BRAND_LOGO_SVG);
   protected readonly caps = PRICING.caps;
 
   constructor() {
