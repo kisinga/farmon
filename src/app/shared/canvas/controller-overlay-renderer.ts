@@ -6,7 +6,7 @@ const CONTROLLER_WIDTH = 120;
 const CONTROLLER_HEIGHT = 36;
 const GAP_ABOVE_CLUSTER = 16;
 
-interface ControllerOverlayOptions {
+export interface ControllerOverlayOptions {
   controllers?: Array<{ id: string }>;
   friendlyNames?: Map<string, string>;
   positions?: Record<string, { x: number; y: number }>;

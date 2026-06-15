@@ -22,6 +22,7 @@ import { applyStateClass, formatReading, SYMBOL, type NodeRuntime } from '@core'
 import { UI_COLORS, STATE_COLORS } from '../../../core/models/colors.model';
 import { buildEdgeConfig, type PortItem } from '../../editor/topology-x6-tab/x6-shapes';
 import { ensureLiveNodeRegistered, buildLiveNodeConfig } from './live-shapes';
+import { renderControllerOverlays, type ControllerOverlayOptions } from '../../../shared/canvas/controller-overlay-renderer';
 
 // --- One generated stylesheet: the whole live visual language ---
 //
@@ -64,8 +65,10 @@ function ensureLiveStyles(): void {
 .state-on [data-part=gate], .state-on [data-part=gate] *,
 .engaged [data-part=gate], .engaged [data-part=gate] * { fill: ${active}; stroke: ${active}; fill-opacity: .4; }
 
-/* Value readout — overlaid by the binding; one style, hidden when empty. */
-.value-label { font: 600 9px ui-monospace, monospace; fill: ${UI_COLORS.text}; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #0f172a; stroke-width: 3px; stroke-linejoin: round; }
+/* Value readout — overlaid by the binding; one style, hidden when empty. Sized
+   from the SYMBOL token, with a heavy dark halo so it stays legible over pipes
+   and the dark grid. */
+.value-label { font: 700 ${SYMBOL.font.value}px ${SYMBOL.font.family}; letter-spacing: .02em; fill: #f1f5f9; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #0f172a; stroke-width: 4px; stroke-linejoin: round; }
 .value-label:empty { display: none; }`;
   document.head.appendChild(style);
 }
@@ -75,26 +78,34 @@ function extractNodeData(node: TopologyNode): Record<string, unknown> {
   return data;
 }
 
-/** The engaged path: the nodes + pipes of every currently-running route. An
- *  element in here is "live" regardless of its own telemetry, so the whole path
- *  lights as one unit. */
+/** The route overlay: nodes + pipes a route contributes, bucketed by its live
+ *  state. An element in `nodes`/`pipes` is "engaged" (a running route) and reads
+ *  live regardless of its own telemetry; an element in `faultNodes`/`faultPipes`
+ *  belongs to a FAULTED route and reads fault. The whole path lights as one unit. */
 export interface ActivePath {
   nodes: Set<string>;
   pipes: Set<string>;
+  faultNodes: Set<string>;
+  faultPipes: Set<string>;
 }
 
 export class LiveCanvas {
+  /** Shared fit band — used by the structural auto-fit and the explicit fit button. */
+  private static readonly FIT_OPTS = { padding: 48, maxScale: 1.4, minScale: 0.3 };
+
   private graph: Graph;
   private nodeIds = new Set<string>();
   /** Last runtime pushed, re-applied after each render so new nodes pick it up. */
   private runtime = new Map<string, NodeRuntime>();
-  /** The engaged path (nodes + pipes of running routes), re-applied after render. */
-  private engaged: ActivePath = { nodes: new Set(), pipes: new Set() };
+  /** The route overlay (active + faulted nodes/pipes), re-applied after render. */
+  private engaged: ActivePath = { nodes: new Set(), pipes: new Set(), faultNodes: new Set(), faultPipes: new Set() };
   /** What's actually on the DOM, so live updates only touch what changed (the
    *  runtime/path signals hand us fresh objects every shadow tick). The applied
    *  signature folds state + value + fill + engagement so any change repaints just that node. */
   private appliedNode = new Map<string, string>();
-  private appliedFlow = new Set<string>();
+  /** pipeId → applied flow style ('flow' | 'fault' | 'rest'), so only edges whose
+   *  membership changed get rewritten. */
+  private appliedFlow = new Map<string, string>();
   /** Node-set signature of the last render — refit only when the structure changes,
    *  so live updates never yank the operator's pan/zoom. */
   private lastNodeSig = '';
@@ -109,14 +120,19 @@ export class LiveCanvas {
       async: false,
       interacting: false, // no drag, no magnet-connect
       panning: { enabled: true, eventTypes: ['leftMouseDown'] },
-      mousewheel: { enabled: true, factor: 1.1, minScale: 0.3, maxScale: 3 },
+      // Wheel-zoom is OFF by design: the map lives inside a scrolling dashboard,
+      // so the wheel must scroll the page, never zoom the map by accident. Zoom
+      // is driven only by the explicit +/−/fit buttons (see zoomIn/zoomOut/fit).
+      mousewheel: { enabled: false },
       background: { color: '#0f172a' },
       grid: { visible: true, type: 'dot', args: [{ color: '#1e293b' }] },
     });
   }
 
-  /** Replace the rendered topology. Cheap full redraw — maps are small. */
-  render(topology: RenderableTopology): void {
+  /** Replace the rendered topology. Cheap full redraw — maps are small. The
+   *  optional `controllers` draws the owning-controller boxes + wires, exactly as
+   *  the editor canvas does (shared renderer), so the live map matches the design view. */
+  render(topology: RenderableTopology, controllers?: ControllerOverlayOptions): void {
     this.graph.startBatch('render');
     this.graph.clearCells();
     this.nodeIds.clear();
@@ -130,7 +146,7 @@ export class LiveCanvas {
       const fallback = { x: (i % 4) * 160 + 50, y: Math.floor(i / 4) * 120 + 50 };
       const pos = node.position ?? fallback;
       const cell = this.graph.addNode(
-        buildLiveNodeConfig(desc, node.id, pos.x, pos.y, this.portsFor(node)),
+        buildLiveNodeConfig(desc, node.id, pos.x, pos.y, this.portsFor(node), node.anchorId),
       );
       this.injectGlyph(cell, desc, extractNodeData(node));
       this.nodeIds.add(node.id);
@@ -146,6 +162,10 @@ export class LiveCanvas {
       );
     }
 
+    // Controller boxes + dashed wires to their owned nodes (same shared renderer
+    // the editor uses). Drawn before stopBatch so they're part of this redraw.
+    if (controllers) renderControllerOverlays(this.graph, controllers);
+
     this.graph.stopBatch('render');
     this.applyRuntime(); // newly added nodes need current state
     this.applyFlow();
@@ -155,7 +175,7 @@ export class LiveCanvas {
     const sig = [...this.nodeIds].sort().join(',');
     if (sig !== this.lastNodeSig) {
       this.lastNodeSig = sig;
-      this.graph.zoomToFit({ padding: 48, maxScale: 1.4, minScale: 0.3 });
+      this.graph.zoomToFit(LiveCanvas.FIT_OPTS);
     }
   }
 
@@ -176,6 +196,12 @@ export class LiveCanvas {
   resize(w: number, h: number): void {
     if (w > 0 && h > 0) this.graph.resize(w, h);
   }
+
+  /** Explicit zoom controls (wheel-zoom is locked). Step is a relative delta;
+   *  X6 clamps to the same scale band the fit uses. */
+  zoomIn(): void { this.graph.zoom(0.2, { minScale: 0.3, maxScale: 3 }); }
+  zoomOut(): void { this.graph.zoom(-0.2, { minScale: 0.3, maxScale: 3 }); }
+  fit(): void { this.graph.zoomToFit(LiveCanvas.FIT_OPTS); }
 
   destroy(): void {
     this.graph.dispose();
@@ -215,7 +241,7 @@ export class LiveCanvas {
       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       label.setAttribute('class', 'value-label');
       label.setAttribute('x', String(desc.size.width / 2));
-      label.setAttribute('y', String(desc.size.height + 9));
+      label.setAttribute('y', String(desc.size.height + 15));
       glyph.appendChild(label);
     }
   }
@@ -227,8 +253,11 @@ export class LiveCanvas {
   private applyRuntime(): void {
     for (const id of this.nodeIds) {
       const rt = this.runtime.get(id);
-      const state = rt?.state ?? 'unknown';
+      // A faulted route's path overrides the node's own telemetry (which carries no
+      // fault) — the whole route reads red. Otherwise: engaged ⇒ live, else self-state.
+      const faulted = this.engaged.faultNodes.has(id);
       const engaged = this.engaged.nodes.has(id);
+      const state = faulted ? 'fault' : (rt?.state ?? 'unknown');
       const sig = `${state}|${engaged}|${rt?.value ?? ''}|${rt?.fill ?? ''}|${rt?.unit ?? ''}`;
       if (this.appliedNode.get(id) === sig) continue;
       // The `.live-glyph` group carries `data-node-id` + `kind-*`; the live
@@ -247,18 +276,24 @@ export class LiveCanvas {
     }
   }
 
-  /** Animate flowing pipes (water-tinted, marching) vs. resting (static), reusing
-   *  the editor's `x6-flow` keyframe. Only edges whose flow membership flipped are
-   *  rewritten, so this stays cheap on every route-state tick. */
+  /** Style each pipe by its route membership: flowing (water-tinted, marching, via
+   *  the editor's `x6-flow` keyframe), fault (solid red), or resting (static). Only
+   *  edges whose membership changed are rewritten, so this stays cheap per tick.
+   *  Controller wires (`wire-*`) are left to the overlay renderer — skipped here. */
   private applyFlow(): void {
+    const FLOW = { line: { stroke: UI_COLORS.water, strokeWidth: SYMBOL.stroke + 0.5, strokeDasharray: 8, style: { animation: 'x6-flow 20s infinite linear' } } };
+    const FAULT = { line: { stroke: STATE_COLORS.fault, strokeWidth: SYMBOL.stroke + 0.5, strokeDasharray: 0, style: { animation: '' } } };
+    const REST = { line: { stroke: UI_COLORS.pipe, strokeWidth: SYMBOL.stroke, strokeDasharray: 0, style: { animation: '' } } };
     for (const edge of this.graph.getEdges()) {
-      const pipeId = String(edge.id).replace(/^pipe-/, '');
-      const flowing = this.engaged.pipes.has(pipeId);
-      if (flowing === this.appliedFlow.has(pipeId)) continue;
-      edge.setAttrs(flowing
-        ? { line: { stroke: UI_COLORS.water, strokeWidth: SYMBOL.stroke + 0.5, strokeDasharray: 8, style: { animation: 'x6-flow 20s infinite linear' } } }
-        : { line: { stroke: UI_COLORS.pipe, strokeWidth: SYMBOL.stroke, strokeDasharray: 0, style: { animation: '' } } });
-      if (flowing) this.appliedFlow.add(pipeId); else this.appliedFlow.delete(pipeId);
+      const id = String(edge.id);
+      if (!id.startsWith('pipe-')) continue; // controller wires keep their own style
+      const pipeId = id.slice('pipe-'.length);
+      const sig = this.engaged.faultPipes.has(pipeId) ? 'fault'
+        : this.engaged.pipes.has(pipeId) ? 'flow'
+        : 'rest';
+      if (this.appliedFlow.get(pipeId) === sig) continue;
+      edge.setAttrs(sig === 'flow' ? FLOW : sig === 'fault' ? FAULT : REST);
+      this.appliedFlow.set(pipeId, sig);
     }
   }
 }

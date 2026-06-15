@@ -60,23 +60,28 @@ export const flowSensorDescriptor: NodeDescriptor = {
 
   renderSvg: (_data) => {
     const cx = W / 2, cy = H / 2, r = 14;
+    // Blades drawn around the ORIGIN; the outer group translates them onto the
+    // body centre. Same pattern as the pump impeller: an inner `data-part=spin`
+    // with no transform of its own, so the shared `[data-part=spin]` rule
+    // (fill-box + center) rotates it cleanly in place. An EVEN blade count keeps
+    // the group's bbox 2-fold-symmetric, so its centre is the true hub — a 3-fold
+    // wheel's bbox is off-centre and would wobble.
     const blade = (angle: number) => {
       const rad = (angle * Math.PI) / 180;
       const tip = 10, spread = 4;
-      const tx = cx + tip * Math.cos(rad), ty = cy + tip * Math.sin(rad);
-      const lx = cx + spread * Math.cos(rad + 1.2), ly = cy + spread * Math.sin(rad + 1.2);
-      const rx = cx + spread * Math.cos(rad - 1.2), ry = cy + spread * Math.sin(rad - 1.2);
-      return `M ${cx} ${cy} Q ${lx} ${ly} ${tx} ${ty} Q ${rx} ${ry} ${cx} ${cy}`;
+      const tx = (tip * Math.cos(rad)).toFixed(2), ty = (tip * Math.sin(rad)).toFixed(2);
+      const lx = (spread * Math.cos(rad + 1.2)).toFixed(2), ly = (spread * Math.sin(rad + 1.2)).toFixed(2);
+      const rx = (spread * Math.cos(rad - 1.2)).toFixed(2), ry = (spread * Math.sin(rad - 1.2)).toFixed(2);
+      return `M 0 0 Q ${lx} ${ly} ${tx} ${ty} Q ${rx} ${ry} 0 0`;
     };
-    // Body takes the state accent; the paddle wheel (`data-part=spin`, drawn
-    // around its centre) turns while flowing. The L/min label is overlaid by the
-    // canvas (live.value). Blades + hub are one group so they spin together.
+    // Body takes the state accent; the paddle wheel turns while flowing. The
+    // L/min label is overlaid by the canvas (live.value).
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
       <circle data-part="body" cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}"/>
-      <g data-part="spin">
-        <path d="${blade(0)} ${blade(120)} ${blade(240)}" fill="${COLOR}" fill-opacity="0.7"/>
-        <circle cx="${cx}" cy="${cy}" r="2.5" fill="${COLOR}"/>
-      </g>
+      <g transform="translate(${cx},${cy})"><g data-part="spin">
+        <path d="${blade(0)} ${blade(90)} ${blade(180)} ${blade(270)}" fill="${COLOR}" fill-opacity="0.7"/>
+        <circle r="2.5" fill="${COLOR}"/>
+      </g></g>
     </svg>`;
   },
 

@@ -53,6 +53,7 @@ export function buildLiveNodeConfig(
   x: number,
   y: number,
   ports: PortItem[],
+  anchorId?: string,
 ): Node.Metadata {
   const { width, height } = desc.size;
   return {
@@ -69,8 +70,9 @@ export function buildLiveNodeConfig(
       [GLYPH_SELECTOR]: { class: `live-glyph kind-${desc.kind}`, 'data-node-id': id, 'data-kind': desc.kind },
     },
     ports: { groups: PORT_GROUPS, items: spacePorts(ports, height) },
-    // No `data`: the read-only map has no click handlers, and the glyph is injected
-    // from the descriptor at render time. The cell id (`node-${id}`) and the
-    // `data-node-id` attribute are the only ids the canvas needs.
+    // The map is read-only (no click handlers), but `anchorId` rides along so the
+    // shared controller-overlay renderer can group nodes by their owning controller
+    // and draw the wires — exactly as the editor canvas does.
+    data: { anchorId },
   };
 }

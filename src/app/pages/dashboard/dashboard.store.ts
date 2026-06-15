@@ -212,24 +212,32 @@ export class DashboardStore implements OnDestroy {
   private static readonly ACTIVE_ROUTE_TOKENS = new Set(['PREPARING', 'RUNNING', 'STOPPING']);
 
   /**
-   * The active path — the union of every currently-running route's participants:
-   * the nodes it traverses (`pathNodeIds`) and the pipes between them (`pipeIds`).
-   * One projection joining the route's static path with its live token, so the
-   * map can light an entire running route — nodes AND pipes — as one unit, instead
-   * of hoping each node's own telemetry coincides. Reactive to route state.
+   * The route overlay — every route's participants projected onto the map by its
+   * live token: a RUNNING route's nodes/pipes light active (`nodes`/`pipes`); a
+   * FAULTED route's light fault (`faultNodes`/`faultPipes`). One projection joining
+   * each route's static path (`pathNodeIds`/`pipeIds`) with its live state, so the
+   * map can render a whole route — nodes AND pipes — as one unit, instead of hoping
+   * each node's own telemetry coincides (node channels carry no fault). A route is
+   * only ever in one bucket (FAULT ∉ the active tokens). Reactive to route state.
    */
-  readonly activePath = computed<{ nodes: Set<string>; pipes: Set<string> }>(() => {
+  readonly activePath = computed<{ nodes: Set<string>; pipes: Set<string>; faultNodes: Set<string>; faultPipes: Set<string> }>(() => {
     const nodes = new Set<string>();
     const pipes = new Set<string>();
+    const faultNodes = new Set<string>();
+    const faultPipes = new Set<string>();
     for (const c of this.spec().controllers) {
       for (const r of c.routes) {
         const token = this.routeState(c.controller, r.routeId)?.token ?? '';
-        if (!DashboardStore.ACTIVE_ROUTE_TOKENS.has(token)) continue;
-        for (const n of r.pathNodeIds ?? []) nodes.add(n);
-        for (const p of r.pipeIds ?? []) pipes.add(p);
+        const [nset, pset] =
+          DashboardStore.ACTIVE_ROUTE_TOKENS.has(token) ? [nodes, pipes]
+          : token === 'FAULT' ? [faultNodes, faultPipes]
+          : [null, null];
+        if (!nset || !pset) continue;
+        for (const n of r.pathNodeIds ?? []) nset.add(n);
+        for (const p of r.pipeIds ?? []) pset.add(p);
       }
     }
-    return { nodes, pipes };
+    return { nodes, pipes, faultNodes, faultPipes };
   });
 
   /** Safety override reported state, read from the shadow (the device switch). */

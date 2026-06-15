@@ -19,9 +19,6 @@ import type { RouteControl } from '@core';
 
 /** A widget section as `sections()` produces it. */
 interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
-/** One row of the dashboard body: a card section, or the live map standing in for
- *  the section(s) it absorbs when the canvas is on. */
-type LayoutRow = { kind: 'map'; key: string } | { kind: 'section'; key: string; section: DashSection };
 
 /**
  * Customer dashboard for a site (`/site/:name/dashboard`, where `:name` is the
@@ -48,7 +45,7 @@ type LayoutRow = { kind: 'map'; key: string } | { kind: 'section'; key: string; 
         }
         <span class="grow"></span>
         <app-controller-health />
-        <!-- Experimental live SCADA map vs. the card grid. Default-on for admins. -->
+        <!-- Live SCADA map vs. the card grid. Default-on for everyone; toggle to cards. -->
         <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="useCanvas.set(!useCanvas())"
                 [class.btn-active]="useCanvas()" title="Toggle the live system map">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -130,7 +127,7 @@ type LayoutRow = { kind: 'map'; key: string } | { kind: 'section'; key: string; 
                       </details>
                     }
                   </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     @for (r of c.routes; track r.routeId) {
                       <app-route-card
                         [route]="r"
@@ -147,6 +144,16 @@ type LayoutRow = { kind: 'map'; key: string } | { kind: 'section'; key: string; 
                 </div>
               }
             }
+          </section>
+        }
+
+        <!-- Live system map — the hero, directly below the route controls. Draws
+             the whole topology and lights the running route's path; stands in for
+             the actuator/level card sections (see layout()). -->
+        @if (showMap()) {
+          <section class="mb-6">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">System map</h2>
+            <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [activePath]="store.activePath()" />
           </section>
         }
 
@@ -226,24 +233,18 @@ type LayoutRow = { kind: 'map'; key: string } | { kind: 'section'; key: string; 
 
         @if (note()) { <div class="text-xs text-base-content/50 mb-3">{{ note() }}</div> }
 
-        <!-- Body: card sections grouped by zone (levels / valves / flow / pressure /
-             activity). When the canvas is on, the live system map stands in for the
-             "Valves & pumps" section in place; the rest stay as cards. -->
-        @for (row of layout(); track row.key) {
-          @if (row.kind === 'map') {
+        <!-- Body: card sections grouped by zone (valves / flow / pressure /
+             activity). When the canvas is on, the live system map (above) stands in
+             for the actuator + tank-level sections; the rest stay as cards. -->
+        @for (section of layout(); track section.id) {
             <section class="mb-6">
-              <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">System map</h2>
-              <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [activePath]="store.activePath()" />
-            </section>
-          } @else {
-            <section class="mb-6">
-              <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ row.section.label }}</h2>
-              <div [class]="gridFor(row.section.id)">
-                @for (w of row.section.widgets; track w.id) {
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ section.label }}</h2>
+              <div [class]="gridFor(section.id)">
+                @for (w of section.widgets; track w.id) {
                   <div [class]="w.kind === 'timeline' ? 'sm:col-span-2 lg:col-span-3' : ''">
                     <app-dashboard-card
                       [widget]="w"
-                      [dense]="denseSection(row.section.id)"
+                      [dense]="denseSection(section.id)"
                       [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
                       [controllerColor]="ctrlColor(w.controller)"
                       [row]="store.rowFor(w)"
@@ -265,7 +266,6 @@ type LayoutRow = { kind: 'map'; key: string } | { kind: 'section'; key: string; 
                 }
               </div>
             </section>
-          }
         }
       }
     </div>
@@ -286,34 +286,25 @@ export class DashboardComponent {
 
   /** Parsed topology, kept for the live map (the card spec is derived separately). */
   protected topology = signal<SiteTopology | null>(null);
-  /** Experimental live SCADA map vs. the card grid. Default-on for admins. */
-  protected useCanvas = signal(this.auth.isAdmin());
+  /** Live SCADA map vs. the card grid. Default-on for everyone; the header
+   *  toggle still lets any user fall back to the card grid. */
+  protected useCanvas = signal(true);
 
   /** Card sections the system map stands in for when the canvas is on. The map
-   *  draws the whole topology, but in the layout it takes these sections' place —
-   *  start with the actuators; add 'levels' once tank levels render on the map. */
-  private static readonly MAP_ABSORBS = new Set(['valves']);
+   *  draws the whole topology, so it replaces both the actuator controls and the
+   *  tank-level cards — those nodes (and their live level) render on the map. */
+  private static readonly MAP_ABSORBS = new Set(['valves', 'levels']);
 
-  /** The dashboard body as an ordered list of card-sections and (when the canvas
-   *  is on) the map, which collapses the absorbed sections into one block at their
-   *  first slot. Other sections (flow, pressure, activity) stay as cards. */
-  protected layout = computed<LayoutRow[]>(() => {
+  /** The live map shows whenever the canvas is on and we have a topology to draw. */
+  protected showMap = computed(() => this.useCanvas() && !!this.topology());
+
+  /** The dashboard body's card-sections. When the canvas is on it stands in (above
+   *  the body) for the absorbed sections, so those are dropped here; the rest
+   *  (flow, pressure, activity) stay as cards. */
+  protected layout = computed<DashSection[]>(() => {
     const secs = this.sections();
-    if (!(this.useCanvas() && this.topology())) {
-      return secs.map((section) => ({ kind: 'section', key: section.id, section }));
-    }
-    const rows: LayoutRow[] = [];
-    let placed = false;
-    for (const section of secs) {
-      if (DashboardComponent.MAP_ABSORBS.has(section.id)) {
-        if (!placed) { rows.push({ kind: 'map', key: 'system-map' }); placed = true; }
-        continue; // absorbed into the map
-      }
-      rows.push({ kind: 'section', key: section.id, section });
-    }
-    // Canvas on but nothing to absorb (no valves/pumps): still show the map, up top.
-    if (!placed) rows.unshift({ kind: 'map', key: 'system-map' });
-    return rows;
+    if (!this.showMap()) return secs;
+    return secs.filter((section) => !DashboardComponent.MAP_ABSORBS.has(section.id));
   });
 
   /** Building/opening the site documentation. */

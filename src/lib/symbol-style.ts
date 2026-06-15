@@ -19,6 +19,8 @@ export const SYMBOL = {
   radius: 8,
   /** Port magnet radius. */
   port: 5,
-  /** Typography for the node name and the live value readout. */
-  font: { name: 12, value: 9, family: 'ui-monospace, monospace', weight: 600 },
+  /** Typography for the node name and the live value readout. The value readout
+   *  rides below the glyph on the live map, so it's set a touch larger/bolder
+   *  than the in-glyph name to stay legible at the map's fit-zoom. */
+  font: { name: 12, value: 13, family: 'ui-monospace, monospace', weight: 600 },
 } as const;

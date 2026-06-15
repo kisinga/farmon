@@ -10,11 +10,10 @@ export type RouteAction = 'route_start' | 'route_stop' | 'fault_reset';
 const ROUTE_REASONS = { ...FAULT_MEANINGS, ...STOP_REASON_MEANINGS };
 
 /** The state-derived presentation of a route card: copy, colours, the central
- *  control's morph state, the pipe animation, and which command a click sends. */
+ *  control's morph state, and which command a click sends. */
 interface RouteView {
   label: string;
-  /** True while the route is doing something (preparing/running/stopping); also
-   *  drives the pipe animation. */
+  /** True while the route is doing something (preparing/running/stopping). */
   running: boolean;
   /** Pulse the small state dot (transient states). */
   pulse: boolean;
@@ -24,14 +23,12 @@ interface RouteView {
   spin: boolean;
   /** Completed progress ring around the button (running / fault). */
   ringFull: boolean;
-  /** Tint filling the pipe while active. */
-  pipeFill: string;
   /** Card ring colour. */
   ring: string;
   textCls: string;
   dotCls: string;
+  /** Verb for the tooltip ("tap to stop"). */
   actionLabel: string;
-  actionIcon: string;
   action: RouteAction;
 }
 
@@ -47,93 +44,60 @@ interface RouteView {
   selector: 'app-route-card',
   standalone: true,
   template: `
+    <!-- Compact strip: control · source → destination · state/flow, on one row.
+         The morphing control button is the action affordance (play↔stop↔reset);
+         colours, dot and ring all track live state. Folds three per row so the
+         live system map above stays the hero. -->
     <button
       type="button"
-      class="group relative isolate w-full text-left bg-base-100 rounded-2xl ring-1 transition-all overflow-hidden
-             p-4 min-h-[140px] flex flex-col gap-2 disabled:cursor-not-allowed"
+      class="group relative isolate w-full text-left bg-base-100 rounded-xl ring-1 transition-all overflow-hidden
+             px-3 py-2 flex items-center gap-3 disabled:cursor-not-allowed"
       [class]="cmd()?.alert ? 'ring-error/60' : view().ring"
       [class.opacity-60]="!online()"
       [disabled]="disabled()"
       [title]="title()"
       (click)="action.emit(view().action)">
 
-      <!-- faint running glow so an active route visibly stands out -->
-      @if (view().running) {
-        <span class="pointer-events-none absolute -top-12 -right-8 w-40 h-40 rounded-full {{ view().textCls }} opacity-10 blur-2xl"
-              [style.backgroundColor]="'currentColor'"></span>
-      }
+      <!-- control — compact morphing glyph (play↔stop↔reset) with the same rings -->
+      <span class="relative shrink-0 grid place-items-center w-9 h-9 rounded-full bg-base-100 ring-1 ring-base-300/40
+                   transition-all group-hover:scale-105 {{ view().textCls }}">
+        <svg class="col-start-1 row-start-1 w-full h-full" [class.animate-spin]="view().spin || cmd()?.spin" viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-opacity="0.18" stroke-width="3" />
+          @if (view().spin || cmd()?.spin) {
+            <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-dasharray="30 126" />
+          } @else if (view().ringFull) {
+            <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+          }
+        </svg>
+        <svg class="col-start-1 row-start-1 h-4 w-4 translate-x-px transition-all duration-300 {{ view().glyph === 'play' ? 'opacity-100 scale-100' : 'opacity-0 scale-50' }}" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5 L12.5 8 L5 12.5 Z" /></svg>
+        <svg class="col-start-1 row-start-1 h-3.5 w-3.5 transition-all duration-300 {{ view().glyph === 'stop' ? 'opacity-100 scale-100' : 'opacity-0 scale-50' }}" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="2.5" /></svg>
+        <svg class="col-start-1 row-start-1 h-4 w-4 transition-all duration-300 {{ view().glyph === 'reset' ? 'opacity-100 scale-100' : 'opacity-0 scale-50' }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.708L3 8" /><path d="M3 3v5h5" /></svg>
+      </span>
 
-      <!-- state + action affordance (single line; label truncates so the card
-           height never changes between states) -->
-      <div class="relative flex items-center justify-between gap-2">
-        <span class="inline-flex items-center gap-1.5 min-w-0 text-xs font-semibold {{ cmd()?.tone || view().textCls }}">
+      <!-- source → destination + state line. The morphing control IS the action
+           affordance, so no separate Start/Stop label — keeps the strip narrow
+           enough for three per row. -->
+      <span class="min-w-0 flex-1 flex flex-col gap-0.5">
+        <span class="flex items-center gap-1 min-w-0 text-[13px] font-bold tracking-tight leading-tight">
+          <span class="truncate" [title]="route().source || ''">{{ route().source || '—' }}</span>
+          <svg class="shrink-0 h-3 w-3 text-base-content/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <span class="truncate" [title]="route().destination || ''">{{ route().destination || '—' }}</span>
+        </span>
+        <span class="inline-flex items-center gap-1.5 min-w-0 text-[11px] font-semibold leading-tight {{ cmd()?.tone || view().textCls }}">
           <span class="w-1.5 h-1.5 rounded-full shrink-0 {{ view().dotCls }}" [class.animate-pulse]="view().pulse"></span>
           <span class="truncate">{{ labelText() }}</span>
-        </span>
-        @if (controllable() && online()) {
-          <span class="shrink-0 text-[11px] font-semibold {{ view().textCls }} opacity-70 group-hover:opacity-100 inline-flex items-center gap-1">
-            {{ view().actionIcon }} {{ view().actionLabel }}
-          </span>
-        } @else if (!online()) {
-          <span class="shrink-0 text-[11px] text-base-content/40">offline</span>
-        }
-      </div>
-
-      <!-- source ─[ flow ]─ destination as ONE continuous channel: the labels
-           overlap the pipe ends and a light sheen sweeps left→right while
-           active, so it reads as water moving from source to destination. -->
-      <div class="relative flex-1 min-h-[64px]">
-        <!-- pipe channel: fills with tinted water + a sweeping sheen when active -->
-        <span class="absolute inset-x-0 top-1/2 -translate-y-1/2 h-2.5 rounded-full overflow-hidden transition-colors duration-500
-                     {{ view().running ? view().pipeFill : 'bg-base-300/40' }}">
-          @if (view().running) {
-            <span class="absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-white/55 to-transparent flow-sheen-band"></span>
+          @if (originText()) {
+            <span class="text-base-content/40 font-normal truncate cursor-help" [title]="originTitle()">· {{ originText() }}</span>
           }
         </span>
+      </span>
 
-        <!-- source label, overlapping the channel's left end. A blurred, slightly
-             opaque backing smudges the pipe behind it and lifts text contrast. -->
-        <span class="absolute left-0 top-1/2 -translate-y-1/2 z-10 max-w-[40%] truncate px-1.5 py-0.5 rounded-lg
-                     bg-base-100/45 backdrop-blur-[3px] text-sm sm:text-base font-bold tracking-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
-              [title]="route().source || ''">{{ route().source || '—' }}</span>
-
-        <!-- central control — a button whose glyph morphs play↔stop, with a
-             spinner arc while starting/stopping and a full ring while running -->
-        <span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 grid place-items-center
-                     w-12 h-12 rounded-full bg-base-100 shadow-lg shadow-black/30 transition-all duration-300
-                     group-hover:scale-105 {{ view().textCls }}">
-          <!-- progress / activity ring -->
-          <svg class="col-start-1 row-start-1 w-full h-full" [class.animate-spin]="view().spin || cmd()?.spin" viewBox="0 0 48 48" fill="none">
-            <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-opacity="0.18" stroke-width="3" />
-            @if (view().spin || cmd()?.spin) {
-              <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-dasharray="30 126" />
-            } @else if (view().ringFull) {
-              <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-            }
-          </svg>
-          <!-- morphing glyphs (stacked; cross-fade + scale on transition) -->
-          <svg class="col-start-1 row-start-1 h-5 w-5 translate-x-px transition-all duration-300 {{ view().glyph === 'play' ? 'opacity-100 scale-100' : 'opacity-0 scale-50' }}" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5 L12.5 8 L5 12.5 Z" /></svg>
-          <svg class="col-start-1 row-start-1 h-4 w-4 transition-all duration-300 {{ view().glyph === 'stop' ? 'opacity-100 scale-100' : 'opacity-0 scale-50' }}" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="2.5" /></svg>
-          <svg class="col-start-1 row-start-1 h-5 w-5 transition-all duration-300 {{ view().glyph === 'reset' ? 'opacity-100 scale-100' : 'opacity-0 scale-50' }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.708L3 8" /><path d="M3 3v5h5" /></svg>
-        </span>
-
-        <!-- destination label, overlapping the channel's right end (same blurred
-             contrast backing as the source). -->
-        <span class="absolute right-0 top-1/2 -translate-y-1/2 z-10 max-w-[40%] truncate text-right px-1.5 py-0.5 rounded-lg
-                     bg-base-100/45 backdrop-blur-[3px] text-sm sm:text-base font-bold tracking-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
-              [title]="route().destination || ''">{{ route().destination || '—' }}</span>
-      </div>
-
-      <!-- live flow rate — the row is always present (fixed height) so the card
-           never changes height between idle and running. -->
-      <div class="relative flex items-center justify-center gap-2 h-5">
-        @if (view().running && route().flowSensor && flowRate() !== null) {
-          <span class="text-sm font-semibold tabular-nums {{ view().textCls }}">{{ flowText() }}<span class="text-[10px] font-normal text-base-content/40 ml-0.5">L/min</span></span>
-        }
-        @if (originText()) {
-          <span class="text-[10px] text-base-content/40 truncate max-w-[60%] cursor-help" [title]="originTitle()">{{ originText() }}</span>
-        }
-      </div>
+      <!-- live flow rate (running) or an offline marker -->
+      @if (view().running && route().flowSensor && flowRate() !== null) {
+        <span class="shrink-0 text-right text-sm font-semibold tabular-nums {{ view().textCls }}">{{ flowText() }}<span class="block text-[9px] font-normal text-base-content/40 -mt-0.5">L/min</span></span>
+      } @else if (!online()) {
+        <span class="shrink-0 text-[10px] text-base-content/40">offline</span>
+      }
     </button>
   `,
 })
@@ -219,33 +183,33 @@ export class RouteCardComponent {
     switch (token) {
       case 'PREPARING':
         return { label: 'Starting…', running: true, pulse: true,
-          glyph: 'play', spin: true, ringFull: false, pipeFill: 'bg-warning/25',
+          glyph: 'play', spin: true, ringFull: false,
           ring: 'ring-warning/40', textCls: 'text-warning', dotCls: 'bg-warning',
-          actionLabel: 'Stop', actionIcon: '■', action: 'route_stop' };
+          actionLabel: 'Stop', action: 'route_stop' };
       case 'RUNNING':
         return { label: 'Flowing', running: true, pulse: false,
-          glyph: 'stop', spin: false, ringFull: true, pipeFill: 'bg-primary/25',
+          glyph: 'stop', spin: false, ringFull: true,
           ring: 'ring-primary/50', textCls: 'text-primary', dotCls: 'bg-primary',
-          actionLabel: 'Stop', actionIcon: '■', action: 'route_stop' };
+          actionLabel: 'Stop', action: 'route_stop' };
       case 'STOPPING':
         return { label: 'Stopping…', running: true, pulse: true,
-          glyph: 'stop', spin: true, ringFull: false, pipeFill: 'bg-warning/25',
+          glyph: 'stop', spin: true, ringFull: false,
           ring: 'ring-warning/40', textCls: 'text-warning', dotCls: 'bg-warning',
-          actionLabel: 'Stop', actionIcon: '■', action: 'route_stop' };
+          actionLabel: 'Stop', action: 'route_stop' };
       case 'FAULT': {
         const r = this.state().reason;
         const label = r ? describeState(ROUTE_REASONS, r).label : 'Fault';
         return { label, running: false, pulse: true,
-          glyph: 'reset', spin: false, ringFull: true, pipeFill: '',
+          glyph: 'reset', spin: false, ringFull: true,
           ring: 'ring-error/50', textCls: 'text-error', dotCls: 'bg-error',
-          actionLabel: 'Reset', actionIcon: '↻', action: 'fault_reset' };
+          actionLabel: 'Reset', action: 'fault_reset' };
       }
       default: // '' or IDLE
         return { label: 'Idle', running: false, pulse: false,
-          glyph: 'play', spin: false, ringFull: false, pipeFill: '',
+          glyph: 'play', spin: false, ringFull: false,
           ring: 'ring-base-300/40 hover:ring-base-300/70', textCls: 'text-base-content/50',
           dotCls: 'bg-base-content/30',
-          actionLabel: 'Start', actionIcon: '▶', action: 'route_start' };
+          actionLabel: 'Start', action: 'route_start' };
     }
   });
 }

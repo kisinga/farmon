@@ -110,14 +110,6 @@
   stroke-dasharray: 8 4;
   animation: water-flow 1.2s linear infinite;
 }
-/* A light glint sweeping along a filled pipe — reads as water moving left→right.
-   Translate is relative to the band's own width (≈1/3 of the pipe). */
-@keyframes flow-sheen {
-  0%   { transform: translateX(-150%); }
-  100% { transform: translateX(450%); }
-}
-.flow-sheen-band { animation: flow-sheen 1.6s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
   .flow-line { animation: none; }
-  .flow-sheen-band { animation: none; opacity: 0; }
 }
