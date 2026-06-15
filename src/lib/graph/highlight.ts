@@ -101,6 +101,25 @@ export function connectedPipes(graph: TopologyGraph, pipeId: string): string[] {
 }
 
 /**
+ * Pipe IDs along an EXACT node path (consecutive pairs), in flow order.
+ *
+ * Unlike {@link pipesFromSource}/{@link pipesToDestination} — which BFS the whole
+ * reachable set — this follows the specific path, so parallel routes between the
+ * same endpoints (differing only by which valves they cross) stay distinct. Pass
+ * a route's `nodeSequence`; you get exactly that route's pipes.
+ */
+export function pipesAlongPath(graph: TopologyGraph, path: string[]): string[] {
+  const ids: string[] = [];
+  for (let i = 0; i + 1 < path.length; i++) {
+    const a = path[i], b = path[i + 1];
+    // The graph is directed in flow order, but tolerate a reversed pipe orientation.
+    if (graph.hasEdge(a, b)) ids.push(graph.getEdgeAttribute(a, b, 'pipeId'));
+    else if (graph.hasEdge(b, a)) ids.push(graph.getEdgeAttribute(b, a, 'pipeId'));
+  }
+  return ids;
+}
+
+/**
  * BFS forward from a start node. Returns all reachable downstream node IDs.
  * Does not stop at terminals — collects everything reachable.
  */

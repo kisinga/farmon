@@ -13,7 +13,7 @@ import { UI_COLORS } from '../../../core/models/colors.model';
 import type { RenderableTopology, PipeSegment, TopologyNode } from '../../../core/models/topology.model';
 import { buildNodeConfig, buildEdgeConfig, buildDragEdgeAttrs, MANHATTAN_ROUTER } from './x6-shapes';
 import type { TopologyGraph } from '../shared/derive-routes';
-import { pipesFromSource, pipesToDestination, connectedPipes } from '@core';
+import { pipesFromSource, pipesToDestination, connectedPipes, pipesAlongPath } from '@core';
 import type { Selection } from '../shared/selection';
 
 export type { Selection };
@@ -252,9 +252,9 @@ export class X6Canvas {
     }
 
     if (selection.kind === 'route') {
-      const fromSource = new Set(pipesFromSource(tg, selection.route.source));
-      const routePipes = pipesToDestination(tg, selection.route.destination)
-        .filter(id => fromSource.has(id));
+      // Highlight the route's EXACT path, not every pipe between its endpoints —
+      // otherwise parallel routes (same source/dest, different valves) all light up.
+      const routePipes = pipesAlongPath(tg, selection.route.nodeSequence);
       for (const pid of routePipes) {
         this.highlightEdge(pid, UI_COLORS.selected, 2.5, 0.8, true);
       }

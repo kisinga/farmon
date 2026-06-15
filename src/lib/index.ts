@@ -194,7 +194,7 @@ export { buildGraph, type TopologyGraph, type NodeAttrs, type EdgeAttrs } from '
 export { activeGraph, isNodeActive } from './graph/active-graph';
 export { deriveRoutes, parseRouteKey, controllerClaimsSegment, type Route } from './graph/routes';
 export { detectCrossControllerTalk, type CrossControllerReport } from './cross-controller';
-export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes } from './graph/highlight';
+export { pipesFromSource, pipesToDestination, connectedPipes, downstreamNodes, pipesAlongPath } from './graph/highlight';
 export type { FlowConstraint, PresenceConstraint, OrderingConstraint } from './graph/constraints';
 export { evaluateConstraints } from './graph/evaluate-constraints';
 export { evaluateRouteRules } from './graph/evaluate-route-rules';

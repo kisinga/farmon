@@ -21,8 +21,7 @@ import { collectTunableNumbers, type TunableNumber } from './tunable-numbers';
 import { getPressureSensorIds } from './pressure-sensor-shared';
 import { topologyToManifestForController } from './topology-to-manifest';
 import { buildGraph } from './graph/topology-graph';
-import { activeGraph } from './graph/active-graph';
-import { pipesFromSource, pipesToDestination } from './graph/highlight';
+import { pipesAlongPath } from './graph/highlight';
 
 export type WidgetKind = 'gauge' | 'tank' | 'line' | 'stat' | 'badge' | 'timeline' | 'valve' | 'flow';
 
@@ -239,9 +238,8 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
   // owned by another controller, e.g. a delivery point), so resolve against the
   // whole topology rather than one controller's manifest.
   const nodeName = new Map(topology.nodes.map((n) => [n.id, n.name || n.id]));
-  // One graph for the whole site, to trace each route's pipes (source→dest) — the
-  // same `activeGraph` + intersection the editor's route highlight uses.
-  const tg = activeGraph(buildGraph(topology.nodes, topology.pipes));
+  // One graph for the whole site, to trace each route's pipes along its exact path.
+  const tg = buildGraph(topology.nodes, topology.pipes);
   for (const ctrl of topology.controllers) {
     const manifest = topologyToManifestForController(topology, ctrl.id);
     const channels = collectTelemetryChannels(manifest);
@@ -285,11 +283,10 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
         // node in the route's sequence, so use that for the display label.
         const seq = r.nodeSequence ?? [];
         const destId = seq.length ? seq[seq.length - 1] : r.destination;
-        // Pipes on this route = those leaving the source AND reaching the dest.
-        const fromSource = new Set(r.source ? pipesFromSource(tg, r.source) : []);
-        const pipeIds = destId
-          ? pipesToDestination(tg, destId).filter((id) => fromSource.has(id))
-          : [];
+        // This route's pipes = the pipes along its exact node path. Parallel routes
+        // between the same endpoints (different valves) stay distinct — endpoint
+        // reachability would conflate them and light up the wrong branch.
+        const pipeIds = pipesAlongPath(tg, seq);
         return {
           routeId: i,
           name: r.name || r.key,
