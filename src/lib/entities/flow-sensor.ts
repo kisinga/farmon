@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { SYMBOL } from '../symbol-style';
 import { flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { udpSensorImport } from '../remote-proxy';
@@ -67,12 +68,20 @@ export const flowSensorDescriptor: NodeDescriptor = {
       const rx = cx + spread * Math.cos(rad - 1.2), ry = cy + spread * Math.sin(rad - 1.2);
       return `M ${cx} ${cy} Q ${lx} ${ly} ${tx} ${ty} Q ${rx} ${ry} ${cx} ${cy}`;
     };
+    // Body takes the state accent; the paddle wheel (`data-part=spin`, drawn
+    // around its centre) turns while flowing. The L/min label is overlaid by the
+    // canvas (live.value). Blades + hub are one group so they spin together.
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2.5"/>
-      <path d="${blade(0)} ${blade(120)} ${blade(240)}" fill="${COLOR}" fill-opacity="0.7"/>
-      <circle cx="${cx}" cy="${cy}" r="2.5" fill="${COLOR}"/>
+      <circle data-part="body" cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}"/>
+      <g data-part="spin">
+        <path d="${blade(0)} ${blade(120)} ${blade(240)}" fill="${COLOR}" fill-opacity="0.7"/>
+        <circle cx="${cx}" cy="${cy}" r="2.5" fill="${COLOR}"/>
+      </g>
     </svg>`;
   },
+
+  // Live map: paddle wheel spins while flowing (value>0 → state-on); L/min readout.
+  live: { spin: true, value: true },
 
   sidebarFields: [
     { key: 'signal_type', label: 'Signal', type: 'select', options: [

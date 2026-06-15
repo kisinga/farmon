@@ -11,7 +11,7 @@ import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import Graph from "graphology";
 import {
-  pipesAlongPath, buildGraph, deriveRoutes, parseTopology, type TopologyGraph,
+  pipesAlongPath, buildGraph, deriveRoutes, parseTopology, buildDashboardSpec, type TopologyGraph,
 } from "@core";
 import { makeAsserter } from "./helpers";
 
@@ -89,5 +89,22 @@ for (const [ends, sets] of byEndpoints) {
   }
 }
 console.log(`  (checked ${parallelPairs} same-endpoint route pair(s))`);
+
+// ---------------------------------------------------------------------------
+// Engagement model: each RouteControl carries its full path (pathNodeIds) and
+// the pipes between them, so the map can light the whole running route as one
+// unit. A contiguous path has exactly one pipe per step.
+// ---------------------------------------------------------------------------
+console.log("\nEngagement — route carries its path (nodes + pipes):");
+const spec = buildDashboardSpec(topo);
+let routesChecked = 0;
+for (const c of spec.controllers) {
+  for (const r of c.routes) {
+    routesChecked++;
+    assert((r.pathNodeIds?.length ?? 0) >= 2, `route ${r.routeId}: pathNodeIds has the traversed nodes`);
+    assert((r.pipeIds?.length ?? 0) === (r.pathNodeIds?.length ?? 0) - 1, `route ${r.routeId}: one pipe per path step`);
+  }
+}
+assert(routesChecked > 0, `checked ${routesChecked} route control(s)`);
 
 done();

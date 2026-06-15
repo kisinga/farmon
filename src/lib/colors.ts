@@ -22,3 +22,15 @@ export const UI_COLORS = {
   reserved: '#6b7280',  // gray-500 (board-svg pin)
   available: '#d1d5db', // gray-300 (board-svg pin)
 } as const;
+
+// ---------------------------------------------------------------------------
+// Live state palette — the single visual vocabulary for the live map. The
+// canvas binding maps a node's RuntimeState to exactly one of these (one
+// treatment per state, applied uniformly to every kind). Not for static glyphs.
+// ---------------------------------------------------------------------------
+
+export const STATE_COLORS = {
+  active: '#10b981',  // emerald-500 — running / open / flowing
+  fault:  '#ef4444',  // red-500     — faulted
+  warn:   '#f59e0b',  // amber-500   — caution
+} as const;

@@ -165,6 +165,20 @@ export interface SafetyProfile {
   deadManAction: DeadManAction;
 }
 
+/** The live facets a symbol opts into. Each maps to a `data-part` hook in
+ *  `renderSvg` and a generic treatment the canvas applies (no per-kind CSS).
+ *  Every kind gets the state accent on `[data-part=body]` for free. */
+export interface LiveFacets {
+  /** `[data-part=spin]` rotates while the node is active (pump/flow wheel). */
+  spin?: boolean;
+  /** `[data-part=fill]` height tracks the normalised value 0..1 (tank level). */
+  fill?: boolean;
+  /** `[data-part=gate]` recolours when open (valve). */
+  gate?: boolean;
+  /** Show the primary value readout below the symbol (unit from the role). */
+  value?: boolean;
+}
+
 export interface NodeDescriptor {
   kind: EntityKind;
   label: string;
@@ -183,18 +197,21 @@ export interface NodeDescriptor {
   helpUrl?: string;
   defaultPorts: Array<{ id: string; label: string; direction: 'inlet' | 'outlet' }>;
   defaultData: (index: number) => Record<string, any>;
-  /** Returns a raw SVG string for the canvas element. Receives full node data. */
-  renderSvg: (data: Record<string, any>) => string;
   /**
-   * Optional CSS for the live map: how this kind's glyph reacts to live state.
-   * Co-located with `renderSvg` so a kind's whole visual identity — static shape
-   * and live behaviour — lives in one file. The live canvas concatenates every
-   * descriptor's `liveStyles` into one stylesheet; rules key on the shared
-   * `state-*` / `kind-*` classes and the sub-part classes this `renderSvg` emits
-   * (e.g. `.kind-pump.state-on .impeller { … }`). Shared primitives
-   * (`@keyframes`, base `state-unavailable`) stay in the canvas.
+   * Returns a raw SVG string for the glyph. Receives full node data.
+   * For the live map, tag the relevant sub-parts with `data-part`:
+   *   - `body`  — the main outline that takes the state accent (every kind).
+   *   - `spin`  — a part that rotates while active (drawn around its own centre).
+   *   - `fill`  — a region whose height tracks the value (`--fill`, bottom-anchored).
+   *   - `gate`  — a part recoloured when open (valve).
+   * The canvas binds these generically from {@link live}; static consumers
+   * (editor image, legend, docs) ignore the attributes.
    */
-  liveStyles?: string;
+  renderSvg: (data: Record<string, any>) => string;
+  /** Which live facets this symbol supports — the typed contract the live canvas
+   *  reads. Parts are found via the `data-part` hooks in {@link renderSvg}; the
+   *  value's unit/range come from the channel role's `ROLE_META`. */
+  live?: LiveFacets;
   /** Optional fixed port y-positions keyed by port id. Used for entities like tanks where inlet/outlet height matters. */
   portLayout?: Record<string, { y: number }>;
   sidebarFields: FieldDef[];

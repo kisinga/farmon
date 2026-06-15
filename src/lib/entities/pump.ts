@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { SYMBOL } from '../symbol-style';
 import type { FlowConstraint } from '../graph/constraints';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
@@ -72,27 +73,20 @@ export const pumpDescriptor: NodeDescriptor = {
       const cpRad = rad + Math.PI / 3;
       const cpx = Math.round(Math.cos(cpRad) * v * 0.55);
       const cpy = Math.round(Math.sin(cpRad) * v * 0.55);
-      return `<path d="M 0 0 Q ${cpx} ${cpy} ${ex} ${ey}" fill="none" stroke="${COLOR}" stroke-width="2" stroke-linecap="round"/>`;
+      return `<path d="M 0 0 Q ${cpx} ${cpy} ${ex} ${ey}" fill="none" stroke="${COLOR}" stroke-width="${SYMBOL.detail}" stroke-linecap="round"/>`;
     }).join('');
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}">
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2.5"/>
-      <line x1="${cx + r}" y1="${cy}" x2="${S}" y2="${cy}" stroke="${COLOR}" stroke-width="3" stroke-linecap="round"/>
-      <line x1="0" y1="${cy}" x2="${cx - r}" y2="${cy}" stroke="${COLOR}" stroke-width="3" stroke-linecap="round"/>
-      <g transform="translate(${cx},${cy})"><g class="impeller">${vanes}<circle r="3" fill="${COLOR}"/></g></g>
+      <circle data-part="body" cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}"/>
+      <line x1="${cx + r}" y1="${cy}" x2="${S}" y2="${cy}" stroke="${COLOR}" stroke-width="${SYMBOL.stub}" stroke-linecap="round"/>
+      <line x1="0" y1="${cy}" x2="${cx - r}" y2="${cy}" stroke="${COLOR}" stroke-width="${SYMBOL.stub}" stroke-linecap="round"/>
+      <g transform="translate(${cx},${cy})"><g data-part="spin">${vanes}<circle r="3" fill="${COLOR}"/></g></g>
     </svg>`;
   },
 
-  // Live map: spin the impeller while the relay reads on.
-  //
-  // The impeller is an INNER group with no transform of its own — the outer group
-  // carries the `translate(cx,cy)` that centres it. This nesting matters: a CSS
-  // `transform: rotate()` REPLACES (does not compose with) an element's own SVG
-  // `transform` attribute, so animating a translated group would wipe its
-  // translate and fling the vanes to the SVG origin. The vanes are drawn around
-  // (0,0), so `fill-box` + `center` pivots on their own centre → a clean in-place spin.
-  liveStyles: `
-    .kind-pump .impeller { transform-box: fill-box; transform-origin: center; }
-    .kind-pump.state-on .impeller { animation: x6-spin 1.1s linear infinite; }`,
+  // Live map: the impeller spins while running. It's an inner group with no
+  // transform of its own (the outer group centres it), so the shared
+  // `[data-part=spin]` rule (`fill-box`+`center`) rotates it cleanly in place.
+  live: { spin: true },
 
   sidebarFields: [
     { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42', pinCap: 'digital', polarityKey: 'relay_polarity' },

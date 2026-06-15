@@ -1,6 +1,7 @@
 /**
  * Live-canvas node shape: a read-only SCADA glyph whose SVG sub-parts stay
- * individually CSS-targetable (so e.g. a pump's `.impeller` can spin).
+ * individually targetable, so the canvas can bind live state to the descriptor's
+ * `data-part` hooks (`body`/`spin`/`fill`/`gate`).
  *
  * The editor renders nodes as `shape: 'image'` with an opaque SVG data-URI
  * (`x6-shapes.ts:buildNodeConfig`) — perfect for export, but its internals are

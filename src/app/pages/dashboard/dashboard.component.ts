@@ -233,7 +233,7 @@ type LayoutRow = { kind: 'map'; key: string } | { kind: 'section'; key: string; 
           @if (row.kind === 'map') {
             <section class="mb-6">
               <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">System map</h2>
-              <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [flow]="flowPipes()" />
+              <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [activePath]="store.activePath()" />
             </section>
           } @else {
             <section class="mb-6">
@@ -316,21 +316,6 @@ export class DashboardComponent {
     return rows;
   });
 
-  /** Route states that mean water is moving (matches the route card's `running`). */
-  private static readonly ACTIVE_ROUTE_TOKENS = new Set(['PREPARING', 'RUNNING', 'STOPPING']);
-  /** Pipe ids of every currently-running route — the live map animates these as
-   *  flowing. Reactive to route state; the route→pipes set is precomputed on the
-   *  spec (`RouteControl.pipeIds`), so this just unions the active ones. */
-  protected flowPipes = computed<Set<string>>(() => {
-    const out = new Set<string>();
-    for (const c of this.store.spec().controllers) {
-      for (const r of c.routes) {
-        const token = this.store.routeState(c.controller, r.routeId)?.token ?? '';
-        if (DashboardComponent.ACTIVE_ROUTE_TOKENS.has(token)) for (const p of r.pipeIds ?? []) out.add(p);
-      }
-    }
-    return out;
-  });
   /** Building/opening the site documentation. */
   protected docBusy = signal(false);
 

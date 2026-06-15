@@ -21,7 +21,9 @@ export type { BoardDef, DocSection, PinDef, PinCap, ExpanderDef, EthernetDef, Ex
 export { boardSupportedTransports } from './board.types';
 export type { IoProviderDef, IoProviderInstanceConfig } from './topology.types';
 export type { ValidationResult, RuleDiagnostic, Severity } from './validation.types';
-export type { NodeDescriptor, FieldDef, EntityCodegen, EntityRule, RouteRule, CodegenContext, TypedDescriptor, EntityKind, HaEntityKey } from './entity-registry';
+export type { NodeDescriptor, LiveFacets, FieldDef, EntityCodegen, EntityRule, RouteRule, CodegenContext, TypedDescriptor, EntityKind, HaEntityKey } from './entity-registry';
+export { ROLE_META } from './codegen-ids';
+export type { RoleMeta, RoleStateKind } from './codegen-ids';
 export type { ChannelUsage, ResolvedChannel, IoChannel, IoProviderDriver } from './io-provider.types';
 export type { PinUsage } from './pin-collect';
 export type { PinOverlayData } from './board-pin-overlays';
@@ -55,7 +57,8 @@ export { calloutLabelsFor, layoutCallouts, buildCalloutMarkup, emitPinoutSvg } f
 export type { ConnectorGeom, CalloutLabel, ViewBox, PlacedBox, PinoutPlacement, LayoutOptions } from './board-pinout-layout';
 export { measureConnectors, svgViewBox } from './board-pinout-measure';
 export { reservedPins, exposedPins, pinsWithCap, pinsWithCapability } from './board.types';
-export { UI_COLORS } from './colors';
+export { UI_COLORS, STATE_COLORS } from './colors';
+export { SYMBOL } from './symbol-style';
 export { entityColor } from './entity-registry';
 export { nodesByKind } from './manifest.types';
 export { getNodesByKind, getNodeByKind } from './topology.types';
@@ -77,7 +80,7 @@ export { collectTelemetryChannels } from './telemetry-channels';
 export type { TelemetryChannel, TelemetryChannelKind } from './telemetry-channels';
 
 // --- Node runtime state (node-centric live-state projection: the live map's SSOT) ---
-export { stateBucket, bucketReading, channelPriority, applyStateClass } from './node-runtime';
+export { stateBucket, bucketReading, channelPriority, applyStateClass, formatNumber, formatReading } from './node-runtime';
 export type { RuntimeState, NodeRuntime, ChannelReading } from './node-runtime';
 
 // --- Device heap health (shared by firmware codegen + dashboard health pill) ---

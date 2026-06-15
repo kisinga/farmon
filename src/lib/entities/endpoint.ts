@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { SYMBOL } from '../symbol-style';
 import type { FlowConstraint } from '../graph/constraints';
 
 const COLOR = '#d97706'; // amber
@@ -41,10 +42,10 @@ export const endpointDescriptor: NodeDescriptor = {
     const name = data['name'] ?? 'Endpoint';
     const icy = H / 2;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-      <rect x="1.5" y="1.5" width="${W - 3}" height="${H - 3}" rx="8" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2"/>
-      <path d="M 28 ${icy - 9} Q 17 ${icy} 28 ${icy + 9}" fill="none" stroke="${COLOR}" stroke-width="2.5" stroke-linecap="round"/>
-      <path d="M 21 ${icy - 7} Q 12 ${icy} 21 ${icy + 7}" fill="none" stroke="${COLOR}" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
-      <text x="38" y="${icy}" text-anchor="start" dominant-baseline="middle" font-size="12" font-family="ui-monospace, monospace" font-weight="600" fill="${UI_COLORS.text}">${escXml(name)}</text>
+      <rect data-part="body" x="1.5" y="1.5" width="${W - 3}" height="${H - 3}" rx="${SYMBOL.radius}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}"/>
+      <path d="M 14 ${icy} L 27 ${icy - 11} L 40 ${icy} M 17 ${icy - 2.5} L 17 ${icy + 11} L 37 ${icy + 11} L 37 ${icy - 2.5}" fill="none" stroke="${COLOR}" stroke-width="${SYMBOL.detail}" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="24" y="${icy + 3}" width="6" height="8" fill="${COLOR}" opacity="0.6"/>
+      <text x="50" y="${icy}" text-anchor="start" dominant-baseline="middle" font-size="${SYMBOL.font.name}" font-family="${SYMBOL.font.family}" font-weight="${SYMBOL.font.weight}" fill="${UI_COLORS.text}">${escXml(name)}</text>
     </svg>`;
   },
 

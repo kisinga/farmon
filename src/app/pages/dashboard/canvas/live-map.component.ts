@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import type { SiteTopology } from '../../../core/models/topology.model';
 import type { NodeRuntime } from '@core';
-import { LiveCanvas } from './live-canvas';
+import { LiveCanvas, type ActivePath } from './live-canvas';
 
 /**
  * Dumb host for the live SCADA map. Owns the `LiveCanvas` lifecycle and pushes
@@ -28,8 +28,8 @@ import { LiveCanvas } from './live-canvas';
 export class LiveMapComponent implements OnDestroy {
   readonly topology = input<SiteTopology | null>(null);
   readonly runtime = input<Map<string, NodeRuntime>>(new Map());
-  /** Pipe ids of currently-running routes — animated as flowing. */
-  readonly flow = input<Set<string>>(new Set());
+  /** Nodes + pipes of currently-running routes — the engaged path the map lights. */
+  readonly activePath = input<ActivePath>({ nodes: new Set(), pipes: new Set() });
 
   private readonly host = viewChild.required<ElementRef<HTMLElement>>('host');
   private canvas: LiveCanvas | null = null;
@@ -56,10 +56,10 @@ export class LiveMapComponent implements OnDestroy {
       this.canvas?.setState(runtime);
     });
 
-    // Animate flowing pipes as routes start/stop.
+    // Light the engaged path (nodes + pipes) as routes start/stop.
     effect(() => {
-      const flow = this.flow();
-      this.canvas?.setFlow(flow);
+      const path = this.activePath();
+      this.canvas?.setActivePath(path);
     });
   }
 
@@ -75,6 +75,6 @@ export class LiveMapComponent implements OnDestroy {
     // reset the operator's pan/zoom on unrelated re-renders.
     this.canvas.render(topo);
     this.canvas.setState(this.runtime());
-    this.canvas.setFlow(this.flow());
+    this.canvas.setActivePath(this.activePath());
   }
 }

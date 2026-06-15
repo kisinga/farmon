@@ -4,8 +4,10 @@
  * Composes the editor's X6 helpers (ports, edges, router) and the node-glyph
  * SSOT (`NODE_REGISTRY[].renderSvg`) but is deliberately *not* `X6Canvas`: it
  * carries none of the editor's write concerns (history, snapline, connecting,
- * drag/position persistence). It draws the topology and binds live device state
- * to CSS classes on each node's DOM — e.g. a running pump's impeller spins.
+ * drag/position persistence). It draws the topology and paints two live inputs
+ * onto each glyph's `data-part` hooks via one generated stylesheet: per-node
+ * telemetry (`setState`) and the engaged path of running routes (`setActivePath`).
+ * A node reads live when engaged OR self-active. The canvas names no kind.
  *
  * Rendering is synchronous (`async: false`): the maps are small and static, so
  * views mount on `addNode` and we can inject glyphs / apply state immediately,
@@ -14,34 +16,57 @@
 import { Graph } from '@antv/x6';
 import type { Node } from '@antv/x6';
 import { NODE_REGISTRY } from '../../../core/models/entities.model';
+import type { NodeDescriptor } from '../../../core/models/entities.model';
 import type { RenderableTopology, TopologyNode } from '../../../core/models/topology.model';
-import { applyStateClass, type NodeRuntime } from '@core';
-import { UI_COLORS } from '../../../core/models/colors.model';
+import { applyStateClass, formatReading, SYMBOL, type NodeRuntime } from '@core';
+import { UI_COLORS, STATE_COLORS } from '../../../core/models/colors.model';
 import { buildEdgeConfig, type PortItem } from '../../editor/topology-x6-tab/x6-shapes';
 import { ensureLiveNodeRegistered, buildLiveNodeConfig } from './live-shapes';
 
-// --- One-time CSS (mirrors x6-canvas.ts `ensureFlowStyles`) ---
+// --- One generated stylesheet: the whole live visual language ---
 //
-// Shared primitives only — the keyframes, base glyph rules, and the generic
-// `state-*` reactions. Each kind contributes its OWN live rules via
-// `descriptor.liveStyles` (composed in below), so the canvas names no kind and
-// a new animation is a one-file edit in that entity's descriptor.
+// Keyed only on the shared `state-*` classes + `[data-part]` hooks — NOT per
+// kind. Every glyph reacts the same way: the body takes a state accent, a
+// `spin`/`fill`/`gate` part reacts if the symbol has one, and the value label
+// is styled uniformly. Adding a kind needs no CSS — only its `live` facets.
 
 const LIVE_STYLE_ID = 'x6-live-animation';
 function ensureLiveStyles(): void {
   if (document.getElementById(LIVE_STYLE_ID)) return;
+  const { active, fault } = STATE_COLORS;
   const style = document.createElement('style');
   style.id = LIVE_STYLE_ID;
-  const perKind = Array.from(NODE_REGISTRY.values())
-    .map((d) => d.liveStyles ?? '')
-    .filter(Boolean)
-    .join('\n');
   style.textContent = `
-@keyframes x6-spin { to { transform: rotate(360deg); } }
-@keyframes x6-flow { to { stroke-dashoffset: -1000; } }
+@keyframes x6-spin  { to { transform: rotate(360deg); } }
+@keyframes x6-flow  { to { stroke-dashoffset: -1000; } }
+@keyframes x6-pulse { 50% { opacity: .45; } }
 .live-glyph { overflow: visible; }
-.state-unavailable { opacity: 0.4; }
-${perKind}`;
+
+/* State accent — uniform on every kind's [data-part=body]. A glow keeps the
+   entity's identity colour while signalling live/fault the same way. A node is
+   live when it's engaged (on a running route) OR its own actuator is active. */
+[data-part=body] { transition: filter .25s ease; }
+.state-on [data-part=body], .engaged [data-part=body] { filter: drop-shadow(0 0 3.5px ${active}); }
+.state-fault [data-part=body] { filter: drop-shadow(0 0 3.5px ${fault}); animation: x6-pulse 1.1s ease-in-out infinite; }
+.state-unavailable { opacity: .4; }
+
+/* Motion — live.spin. Part is drawn around its own centre, so this spins in
+   place. Spins when live (engaged on a running route, or self-active). */
+[data-part=spin] { transform-box: fill-box; transform-origin: center; }
+.state-on [data-part=spin], .engaged [data-part=spin] { animation: x6-spin 1.1s linear infinite; }
+
+/* Fill — live.fill. Height tracks --fill (0..1), bottom-anchored. */
+[data-part=fill] { transform-box: fill-box; transform-origin: bottom; transform: scaleY(var(--fill, .5)); transition: transform .4s ease; }
+
+/* Gate — live.gate. Recolours when open (live). Targets the part AND its child
+   shapes, so a group whose paths carry their own fill/stroke still recolours. */
+[data-part=gate], [data-part=gate] * { transition: fill .25s ease, stroke .25s ease, fill-opacity .25s ease; }
+.state-on [data-part=gate], .state-on [data-part=gate] *,
+.engaged [data-part=gate], .engaged [data-part=gate] * { fill: ${active}; stroke: ${active}; fill-opacity: .4; }
+
+/* Value readout — overlaid by the binding; one style, hidden when empty. */
+.value-label { font: 600 9px ui-monospace, monospace; fill: ${UI_COLORS.text}; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #0f172a; stroke-width: 3px; stroke-linejoin: round; }
+.value-label:empty { display: none; }`;
   document.head.appendChild(style);
 }
 
@@ -50,16 +75,25 @@ function extractNodeData(node: TopologyNode): Record<string, unknown> {
   return data;
 }
 
+/** The engaged path: the nodes + pipes of every currently-running route. An
+ *  element in here is "live" regardless of its own telemetry, so the whole path
+ *  lights as one unit. */
+export interface ActivePath {
+  nodes: Set<string>;
+  pipes: Set<string>;
+}
+
 export class LiveCanvas {
   private graph: Graph;
   private nodeIds = new Set<string>();
   /** Last runtime pushed, re-applied after each render so new nodes pick it up. */
   private runtime = new Map<string, NodeRuntime>();
-  /** Pipe ids currently flowing (active route), re-applied after each render. */
-  private flow = new Set<string>();
+  /** The engaged path (nodes + pipes of running routes), re-applied after render. */
+  private engaged: ActivePath = { nodes: new Set(), pipes: new Set() };
   /** What's actually on the DOM, so live updates only touch what changed (the
-   *  runtime/flow signals hand us a fresh object every shadow tick). */
-  private appliedState = new Map<string, NodeRuntime['state']>();
+   *  runtime/path signals hand us fresh objects every shadow tick). The applied
+   *  signature folds state + value + fill + engagement so any change repaints just that node. */
+  private appliedNode = new Map<string, string>();
   private appliedFlow = new Set<string>();
   /** Node-set signature of the last render — refit only when the structure changes,
    *  so live updates never yank the operator's pan/zoom. */
@@ -87,7 +121,7 @@ export class LiveCanvas {
     this.graph.clearCells();
     this.nodeIds.clear();
     // Cells are gone — what we believed was applied no longer is.
-    this.appliedState.clear();
+    this.appliedNode.clear();
     this.appliedFlow.clear();
 
     topology.nodes.forEach((node, i) => {
@@ -98,7 +132,7 @@ export class LiveCanvas {
       const cell = this.graph.addNode(
         buildLiveNodeConfig(desc, node.id, pos.x, pos.y, this.portsFor(node)),
       );
-      this.injectGlyph(cell, desc.renderSvg(extractNodeData(node)));
+      this.injectGlyph(cell, desc, extractNodeData(node));
       this.nodeIds.add(node.id);
     });
 
@@ -125,15 +159,17 @@ export class LiveCanvas {
     }
   }
 
-  /** Push the node runtime projection; toggles `state-*` classes on each glyph. */
+  /** Push the per-node telemetry projection (state / value / fill). */
   setState(runtime: Map<string, NodeRuntime>): void {
     this.runtime = runtime;
     this.applyRuntime();
   }
 
-  /** Push the set of flowing pipe ids; animates those edges, resets the rest. */
-  setFlow(active: Set<string>): void {
-    this.flow = active;
+  /** Push the engaged path (running routes' nodes + pipes). Lights the whole path:
+   *  pipes flow, and path nodes read live even if their own telemetry is idle. */
+  setActivePath(path: ActivePath): void {
+    this.engaged = path;
+    this.applyRuntime(); // node engagement rides the per-node paint
     this.applyFlow();
   }
 
@@ -163,32 +199,51 @@ export class LiveCanvas {
   }
 
   /**
-   * Inject the descriptor's SVG string into the node's `.live-glyph` group as
-   * live DOM. DOMParser + importNode keeps the SVG namespace correct (more
-   * robust than setting `innerHTML` on an SVG element).
+   * Inject the descriptor's SVG (its `data-part` hooks become live DOM via
+   * DOMParser + importNode — namespace-correct), then, if the symbol declares
+   * `live.value`, overlay a `.value-label` centred below it — placement is one
+   * shared rule, not hand-coded per kind.
    */
-  private injectGlyph(cell: Node, svg: string): void {
+  private injectGlyph(cell: Node, desc: NodeDescriptor, data: Record<string, unknown>): void {
     const glyph = this.graph.findViewByCell(cell)?.container.querySelector('.live-glyph');
     if (!glyph) return;
-    const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+    const doc = new DOMParser().parseFromString(desc.renderSvg(data), 'image/svg+xml');
     const root = doc.documentElement;
     if (root.nodeName === 'parsererror') return;
     glyph.replaceChildren(document.importNode(root, true));
+    if (desc.live?.value) {
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('class', 'value-label');
+      label.setAttribute('x', String(desc.size.width / 2));
+      label.setAttribute('y', String(desc.size.height + 9));
+      glyph.appendChild(label);
+    }
   }
 
-  /** Toggle each node's `state-*` class — but only where the bucket changed since
-   *  last apply, so a shadow tick that moves one node doesn't touch the rest. */
+  /** Paint each node's live state onto its glyph — the `state-*` class, the
+   *  `engaged` class (on a running route), the `--fill` var (bounded values), and
+   *  the `.value-label` readout. Skips nodes whose combined signature is unchanged,
+   *  so a shadow / route tick only touches what moved. */
   private applyRuntime(): void {
     for (const id of this.nodeIds) {
-      const state = this.runtime.get(id)?.state ?? 'unknown';
-      if (this.appliedState.get(id) === state) continue;
+      const rt = this.runtime.get(id);
+      const state = rt?.state ?? 'unknown';
+      const engaged = this.engaged.nodes.has(id);
+      const sig = `${state}|${engaged}|${rt?.value ?? ''}|${rt?.fill ?? ''}|${rt?.unit ?? ''}`;
+      if (this.appliedNode.get(id) === sig) continue;
       // The `.live-glyph` group carries `data-node-id` + `kind-*`; the live
-      // `state-*` class rides the same element (the scada contract).
+      // `state-*` / `engaged` classes ride the same element (the scada contract).
       const glyph = this.graph.findViewByCell(`node-${id}`)?.container.querySelector('.live-glyph');
-      if (glyph) {
-        applyStateClass(glyph, state);
-        this.appliedState.set(id, state);
-      }
+      if (!glyph) continue;
+      applyStateClass(glyph, state);
+      glyph.classList.toggle('engaged', engaged);
+      // Reset when null so a tank that loses its reading falls back to the CSS
+      // default rather than freezing at its last level.
+      if (rt?.fill != null) (glyph as SVGElement).style.setProperty('--fill', String(rt.fill));
+      else (glyph as SVGElement).style.removeProperty('--fill');
+      const label = glyph.querySelector('.value-label');
+      if (label) label.textContent = rt?.value != null ? formatReading(rt.value, rt.unit) : '';
+      this.appliedNode.set(id, sig);
     }
   }
 
@@ -198,11 +253,11 @@ export class LiveCanvas {
   private applyFlow(): void {
     for (const edge of this.graph.getEdges()) {
       const pipeId = String(edge.id).replace(/^pipe-/, '');
-      const flowing = this.flow.has(pipeId);
+      const flowing = this.engaged.pipes.has(pipeId);
       if (flowing === this.appliedFlow.has(pipeId)) continue;
       edge.setAttrs(flowing
-        ? { line: { stroke: UI_COLORS.water, strokeWidth: 3, strokeDasharray: 8, style: { animation: 'x6-flow 20s infinite linear' } } }
-        : { line: { stroke: UI_COLORS.pipe, strokeWidth: 2.5, strokeDasharray: 0, style: { animation: '' } } });
+        ? { line: { stroke: UI_COLORS.water, strokeWidth: SYMBOL.stroke + 0.5, strokeDasharray: 8, style: { animation: 'x6-flow 20s infinite linear' } } }
+        : { line: { stroke: UI_COLORS.pipe, strokeWidth: SYMBOL.stroke, strokeDasharray: 0, style: { animation: '' } } });
       if (flowing) this.appliedFlow.add(pipeId); else this.appliedFlow.delete(pipeId);
     }
   }

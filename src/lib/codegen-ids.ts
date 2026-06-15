@@ -394,6 +394,41 @@ export type TelemetryRole =
   | 'filter_outlet' // filter outlet pressure (filter)
   | 'filter_delta'; // filter delta pressure  (filter)
 
+/** How a role's reading becomes a live state:
+ *  - `binary`   on/off from a relay/cover (energised / open).
+ *  - `positive` numeric where >0 means active (flow rate flowing).
+ *  - `value`    numeric carrying no on/off — the magnitude is the meaning (level, pressure). */
+export type RoleStateKind = 'binary' | 'positive' | 'value';
+
+/** A telemetry role's complete SEMANTIC profile — facts a non-UI consumer shares
+ *  (firmware emits these units; alarms compare these ranges; `stateKind` is what
+ *  the reading means). Single source for unit/range/state/salience; carries no
+ *  pixels. The dashboard's `ROLE_PRESENTATION` derives unit/range from here, and
+ *  the live projection derives state/active/fill from here. */
+export interface RoleMeta {
+  /** Display/engineering unit, e.g. 'L/min', '%', 'psi'. */
+  unit?: string;
+  /** Value bounds (for normalised fill / gauges). */
+  min?: number;
+  max?: number;
+  /** Which channel best represents a node that emits several (higher wins). */
+  salience: number;
+  stateKind: RoleStateKind;
+}
+
+export const ROLE_META: Record<TelemetryRole, RoleMeta> = {
+  pump:          { salience: 3, stateKind: 'binary' },
+  valve:         { salience: 3, stateKind: 'binary' },
+  dosing:        { salience: 3, stateKind: 'binary' },
+  flow:          { unit: 'L/min', salience: 2, stateKind: 'positive' },
+  level:         { unit: '%', min: 0, max: 100, salience: 1, stateKind: 'value' },
+  pressure:      { unit: 'psi', salience: 1, stateKind: 'value' },
+  filter_inlet:  { unit: 'psi', salience: 1, stateKind: 'value' },
+  filter_outlet: { unit: 'psi', salience: 1, stateKind: 'value' },
+  filter_delta:  { unit: 'psi', salience: 1, stateKind: 'value' },
+  flow_total:    { unit: 'L', salience: 0, stateKind: 'value' },
+};
+
 /**
  * The published `sensor` id for a node's telemetry channel. Throws on a
  * kind/role mismatch rather than guessing — callers must pass a role the node

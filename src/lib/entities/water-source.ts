@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { SYMBOL } from '../symbol-style';
 import { waterSourcePressureId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 
@@ -55,12 +56,15 @@ export const waterSourceDescriptor: NodeDescriptor = {
     const name = data['name'] ?? 'Source';
     const icy = H / 2;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-      <rect x="1.5" y="1.5" width="${W - 3}" height="${H - 3}" rx="8" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2"/>
+      <rect data-part="body" x="1.5" y="1.5" width="${W - 3}" height="${H - 3}" rx="${SYMBOL.radius}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}"/>
       <path d="M 14 ${icy - 9} Q 25 ${icy} 14 ${icy + 9}" fill="none" stroke="${COLOR}" stroke-width="2.5" stroke-linecap="round"/>
       <path d="M 21 ${icy - 7} Q 30 ${icy} 21 ${icy + 7}" fill="none" stroke="${COLOR}" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
       <text x="40" y="${icy}" text-anchor="start" dominant-baseline="middle" font-size="12" font-family="ui-monospace, monospace" font-weight="600" fill="${UI_COLORS.text}">${escXml(name)}</text>
     </svg>`;
   },
+
+  // Live map: pressure readout (when instrumented); accent on the body.
+  live: { value: true },
 
   sidebarFields: [
     {

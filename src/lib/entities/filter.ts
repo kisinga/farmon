@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { SYMBOL } from '../symbol-style';
 import type { FlowConstraint } from '../graph/constraints';
 import { filterInletPressureId, filterOutletPressureId, filterDeltaPressureId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
@@ -54,10 +55,9 @@ export const filterDescriptor: NodeDescriptor = {
   defaultData: (n) => ({ name: `Filter ${n}`, inlet_pressure_pin: '', outlet_pressure_pin: '' }),
 
   renderSvg: (_data) => {
-    const cx = W / 2, cy = H / 2;
     // Grid/mesh pattern inside a rectangle
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-      <rect x="5" y="4" width="${W - 10}" height="${H - 8}" rx="3" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2.5"/>
+      <rect data-part="body" x="5" y="4" width="${W - 10}" height="${H - 8}" rx="3" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}"/>
       <line x1="15" y1="4" x2="15" y2="${H - 4}" stroke="${COLOR}" stroke-width="1.5" opacity="0.4"/>
       <line x1="25" y1="4" x2="25" y2="${H - 4}" stroke="${COLOR}" stroke-width="1.5" opacity="0.4"/>
       <line x1="35" y1="4" x2="35" y2="${H - 4}" stroke="${COLOR}" stroke-width="1.5" opacity="0.4"/>
@@ -65,6 +65,9 @@ export const filterDescriptor: NodeDescriptor = {
       <line x1="5" y1="24" x2="${W - 5}" y2="24" stroke="${COLOR}" stroke-width="1.5" opacity="0.4"/>
     </svg>`;
   },
+
+  // Live map: pressure readout (Δ/inlet, when instrumented); accent on the body.
+  live: { value: true },
 
   sidebarFields: [
     { key: 'inlet_pressure_pin', label: 'Inlet Pressure', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc' },

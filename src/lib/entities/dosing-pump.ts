@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { SYMBOL } from '../symbol-style';
 import type { FlowConstraint } from '../graph/constraints';
 import { dosingPumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
@@ -60,7 +61,7 @@ export const dosingPumpDescriptor: NodeDescriptor = {
     const cx = S / 2, cy = S / 2, r = S / 2 - 5;
     // Circle with droplet icon — distinguishes from main pump's play triangle
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}">
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2.5"/>
+      <circle data-part="body" cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}"/>
       <path d="M ${cx} ${cy - 10} Q ${cx + 6} ${cy - 2} ${cx + 6} ${cy + 2} A 6 6 0 0 1 ${cx - 6} ${cy + 2} Q ${cx - 6} ${cy - 2} ${cx} ${cy - 10}" fill="${COLOR}" fill-opacity="0.6"/>
     </svg>`;
   },

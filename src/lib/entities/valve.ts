@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { NodeDescriptor } from '../entity-registry';
 import { GpioPin, ComponentId, EntityName, PortSchema, PositionSchema, RelayPolaritySchema } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
+import { SYMBOL } from '../symbol-style';
 import { valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { udpCoverProxy, udpCoverProxyLeaseInterval } from '../remote-proxy';
@@ -58,24 +59,22 @@ export const valveDescriptor: NodeDescriptor = {
   renderSvg: (_data) => {
     const cx = W / 2, cy = H / 2;
     const hx = 17, hy = 12;
-    // `.valve-body` (the bowtie) is the live-state hook: the canvas recolours it
-    // green when the cover reports open. The stem/handle stay rose (the actuator).
+    // `data-part=body` (whole symbol) takes the state-accent glow; `data-part=gate`
+    // (the bowtie) recolours emerald when the cover reports open.
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-      <g class="valve-body">
-        <path d="M ${cx - hx} ${cy - hy} L ${cx} ${cy} L ${cx - hx} ${cy + hy} Z" fill="${COLOR}" fill-opacity="0.15" stroke="${COLOR}" stroke-width="2.5" stroke-linejoin="round"/>
-        <path d="M ${cx + hx} ${cy - hy} L ${cx} ${cy} L ${cx + hx} ${cy + hy} Z" fill="${COLOR}" fill-opacity="0.15" stroke="${COLOR}" stroke-width="2.5" stroke-linejoin="round"/>
+      <g data-part="body">
+        <g data-part="gate">
+          <path d="M ${cx - hx} ${cy - hy} L ${cx} ${cy} L ${cx - hx} ${cy + hy} Z" fill="${COLOR}" fill-opacity="0.15" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}" stroke-linejoin="round"/>
+          <path d="M ${cx + hx} ${cy - hy} L ${cx} ${cy} L ${cx + hx} ${cy + hy} Z" fill="${COLOR}" fill-opacity="0.15" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}" stroke-linejoin="round"/>
+        </g>
+        <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - hy + 1}" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}" stroke-linecap="round"/>
+        <circle cx="${cx}" cy="${cy - hy - 2}" r="3" fill="none" stroke="${COLOR}" stroke-width="${SYMBOL.detail}"/>
       </g>
-      <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - hy - 2}" stroke="${COLOR}" stroke-width="2.5" stroke-linecap="round"/>
-      <line x1="${cx - 6}" y1="${cy - hy - 2}" x2="${cx + 6}" y2="${cy - hy - 2}" stroke="${COLOR}" stroke-width="2.5" stroke-linecap="round"/>
     </svg>`;
   },
 
-  // Live map: open (cover reports on) recolours the bowtie emerald and fills it;
-  // closed/unknown stay the default rose. CSS overrides the inline presentation
-  // attrs, and the transition makes a manual open/close visibly morph.
-  liveStyles: `
-    .kind-valve .valve-body path { transition: fill .25s ease, stroke .25s ease, fill-opacity .25s ease; }
-    .kind-valve.state-on .valve-body path { fill: #10b981; stroke: #10b981; fill-opacity: .4; }`,
+  // Live map: open → the bowtie recolours emerald (shared `[data-part=gate]` rule).
+  live: { gate: true },
 
   sidebarFields: [
     { key: 'open_pin', label: 'Open Pin', type: 'pin', placeholder: 'GPIO4', pinCap: 'digital', polarityKey: 'coil_polarity' },

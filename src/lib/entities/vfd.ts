@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, EntityName, PortSchema, PositionSchema } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { SYMBOL } from '../symbol-style';
 import { pumpSwitchId } from '../codegen-ids';
 import { resolveComponentHeader } from '../io-providers/resolve-channel';
 import { udpSwitchProxy, udpSwitchProxyLeaseInterval } from '../remote-proxy';
@@ -75,8 +76,8 @@ export const vfdDescriptor: NodeDescriptor = {
     // Sine wave inside circle — represents frequency drive
     const wave = `M ${cx - 12} ${cy} Q ${cx - 6} ${cy - 10} ${cx} ${cy} Q ${cx + 6} ${cy + 10} ${cx + 12} ${cy}`;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}">
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="2.5"/>
-      <path d="${wave}" fill="none" stroke="${COLOR}" stroke-width="2.5" stroke-linecap="round"/>
+      <circle data-part="body" cx="${cx}" cy="${cy}" r="${r}" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}"/>
+      <path d="${wave}" fill="none" stroke="${COLOR}" stroke-width="${SYMBOL.detail}" stroke-linecap="round"/>
       <text x="${cx}" y="${cy + r - 2}" text-anchor="middle" font-size="8" font-family="ui-monospace, monospace" fill="${COLOR}">VFD</text>
     </svg>`;
   },

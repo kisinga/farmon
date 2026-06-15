@@ -3,6 +3,7 @@ import type { NodeDescriptor } from '../entity-registry';
 import { ComponentId, EntityName, PortSchema, PositionSchema, escXml } from '../schemas';
 import { AnchorIdSchema } from '../schemas';
 import { UI_COLORS } from '../colors';
+import { SYMBOL } from '../symbol-style';
 import { udpSensorImport } from '../remote-proxy';
 import {
   PressureSensorConfigSchema,
@@ -63,12 +64,21 @@ export const tankDescriptor: NodeDescriptor = {
 
   renderSvg: (data) => {
     const name = data['name'] ?? 'Tank';
+    // `data-part=fill` (the water) scales from the bottom by `--fill` (level %);
+    // `data-part=body` (the shell) takes the state accent. The level readout is
+    // overlaid by the canvas (live.value).
+    // `data-part=fill` (water) fills most of the interior and scales from the
+    // bottom by the live level; `data-part=body` is the cylinder + rim cap.
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-      <rect x="5" y="30" width="${W - 10}" height="${H - 33}" rx="2" fill="${UI_COLORS.water}" opacity="0.5"/>
-      <path d="M 3 8 L 3 ${H - 3} Q 3 ${H} 9 ${H} L ${W - 9} ${H} Q ${W - 3} ${H} ${W - 3} ${H - 3} L ${W - 3} 8" fill="none" stroke="${COLOR}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="${W / 2}" y="20" text-anchor="middle" dominant-baseline="middle" font-size="12" font-family="ui-monospace, monospace" font-weight="600" fill="${UI_COLORS.text}">${escXml(name)}</text>
+      <rect data-part="fill" x="6" y="14" width="${W - 12}" height="${H - 17}" rx="3" fill="${UI_COLORS.water}" opacity="0.5"/>
+      <path data-part="body" d="M 4 10 L 4 ${H - 4} Q 4 ${H} 10 ${H} L ${W - 10} ${H} Q ${W - 4} ${H} ${W - 4} ${H - 4} L ${W - 4} 10" fill="none" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}" stroke-linecap="round" stroke-linejoin="round"/>
+      <ellipse cx="${W / 2}" cy="10" rx="${W / 2 - 4}" ry="5" fill="${UI_COLORS.bg}" stroke="${COLOR}" stroke-width="${SYMBOL.stroke}"/>
+      <text x="${W / 2}" y="26" text-anchor="middle" dominant-baseline="middle" font-size="${SYMBOL.font.name}" font-family="${SYMBOL.font.family}" font-weight="${SYMBOL.font.weight}" fill="${UI_COLORS.text}">${escXml(name)}</text>
     </svg>`;
   },
+
+  // Live map: water rises to the reported level; level % readout below.
+  live: { fill: true, value: true },
 
   sidebarFields: [
     { key: 'height_m', label: 'Tank height (m)', type: 'number', hint: 'Drives pressure-sensor calibration when the tank has an intrinsic pressure sensor.' },

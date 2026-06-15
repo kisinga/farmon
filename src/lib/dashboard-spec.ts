@@ -13,7 +13,7 @@ import type { SiteTopology } from './topology.types';
 import {
   SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR,
   SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS,
-  collectConfigSetpoints,
+  collectConfigSetpoints, ROLE_META,
   type StateMeaning, type TelemetryRole,
 } from './codegen-ids';
 import { collectTelemetryChannels, type TelemetryChannel } from './telemetry-channels';
@@ -58,10 +58,12 @@ export interface RouteControl {
   /** Telemetry sensor id of the route's primary flow sensor, for a live L/min
    *  readout. Undefined for unmonitored routes (no flow sensor). */
   flowSensor?: string;
-  /** Topology pipe ids this route flows through (source→destination), traced once
-   *  here via the shared graph helpers — the SAME set the editor highlights. Lets
-   *  the live map animate a route's pipes while it runs without re-walking the graph.
-   *  Always set by `buildDashboardSpec`; optional so non-spec literals stay valid. */
+  /** The route's path: the ordered node ids it traverses (source→destination) and
+   *  the pipe ids between them. Together these are the route's *participants* — the
+   *  elements that become "engaged" while it runs, so the map can light the whole
+   *  path (nodes + pipes) as one unit. Always set by `buildDashboardSpec`; optional
+   *  so non-spec literals stay valid. */
+  pathNodeIds?: string[];
   pipeIds?: string[];
 }
 
@@ -171,25 +173,23 @@ export interface DashboardSpec {
 
 interface RolePresentation {
   kind: WidgetKind;
-  unit?: string;
   /** Suffix appended to the node name for the widget title (e.g. "Level"). */
   noun?: string;
-  min?: number;
-  max?: number;
 }
 
-/** How each node role is presented. One table, the single role→widget mapping. */
+/** How each node role maps to a WIDGET. Unit/range are NOT here — they're domain
+ *  facts read from `ROLE_META`; this table is the view-only kind/noun mapping. */
 const ROLE_PRESENTATION: Record<TelemetryRole, RolePresentation> = {
-  flow:          { kind: 'line',  unit: 'L/min', noun: 'Flow' },
-  flow_total:    { kind: 'stat',  unit: 'L',     noun: 'Total' },
-  level:         { kind: 'tank',  unit: '%',     noun: 'Level', min: 0, max: 100 },
-  pressure:      { kind: 'line',  unit: 'psi',   noun: 'Pressure' },
+  flow:          { kind: 'line',  noun: 'Flow' },
+  flow_total:    { kind: 'stat',  noun: 'Total' },
+  level:         { kind: 'tank',  noun: 'Level' },
+  pressure:      { kind: 'line',  noun: 'Pressure' },
   pump:          { kind: 'badge' },
   valve:         { kind: 'valve', noun: 'Valve' },
   dosing:        { kind: 'badge' },
-  filter_inlet:  { kind: 'line',  unit: 'psi',   noun: 'Inlet' },
-  filter_outlet: { kind: 'line',  unit: 'psi',   noun: 'Outlet' },
-  filter_delta:  { kind: 'line',  unit: 'psi',   noun: 'Δ Pressure' },
+  filter_inlet:  { kind: 'line',  noun: 'Inlet' },
+  filter_outlet: { kind: 'line',  noun: 'Outlet' },
+  filter_delta:  { kind: 'line',  noun: 'Δ Pressure' },
 };
 
 /** `${label} ${noun}`, but drop the noun when the name already implies it. */
@@ -217,10 +217,12 @@ function widgetForChannel(controller: string, ch: TelemetryChannel): DashboardWi
     return { ...base, kind: 'badge', title: label };
   }
 
-  // Per-node channels (have a role) → the role presentation table.
+  // Per-node channels (have a role): widget kind/noun from ROLE_PRESENTATION,
+  // unit/range from the role's semantic profile (ROLE_META).
   if (ch.role) {
     const p = ROLE_PRESENTATION[ch.role];
-    return { ...base, kind: p.kind, title: composeTitle(label, p.noun), unit: p.unit, min: p.min, max: p.max };
+    const m = ROLE_META[ch.role];
+    return { ...base, kind: p.kind, title: composeTitle(label, p.noun), unit: m.unit, min: m.min, max: m.max };
   }
 
   // System-wide numeric/bool channels (queue_depth → stat, safety_override → badge).
@@ -294,6 +296,7 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
           destination: destId ? nodeName.get(destId) ?? destId : undefined,
           crossesPump: r.crossesPump,
           flowSensor: r.flow_sensor ? flowSensorByNode.get(r.flow_sensor) : undefined,
+          pathNodeIds: seq,
           pipeIds,
         };
       }),

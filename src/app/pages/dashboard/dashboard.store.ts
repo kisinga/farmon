@@ -208,6 +208,30 @@ export class DashboardStore implements OnDestroy {
     return out;
   });
 
+  /** Route states that mean water is moving (matches the route card's `running`). */
+  private static readonly ACTIVE_ROUTE_TOKENS = new Set(['PREPARING', 'RUNNING', 'STOPPING']);
+
+  /**
+   * The active path — the union of every currently-running route's participants:
+   * the nodes it traverses (`pathNodeIds`) and the pipes between them (`pipeIds`).
+   * One projection joining the route's static path with its live token, so the
+   * map can light an entire running route — nodes AND pipes — as one unit, instead
+   * of hoping each node's own telemetry coincides. Reactive to route state.
+   */
+  readonly activePath = computed<{ nodes: Set<string>; pipes: Set<string> }>(() => {
+    const nodes = new Set<string>();
+    const pipes = new Set<string>();
+    for (const c of this.spec().controllers) {
+      for (const r of c.routes) {
+        const token = this.routeState(c.controller, r.routeId)?.token ?? '';
+        if (!DashboardStore.ACTIVE_ROUTE_TOKENS.has(token)) continue;
+        for (const n of r.pathNodeIds ?? []) nodes.add(n);
+        for (const p of r.pipeIds ?? []) pipes.add(p);
+      }
+    }
+    return { nodes, pipes };
+  });
+
   /** Safety override reported state, read from the shadow (the device switch). */
   overrideOn(controller: string): boolean {
     const r = this.row(controller, 'safety_override');

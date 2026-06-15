@@ -6,6 +6,7 @@ import { Shape } from '@antv/x6';
 import type { Node, Edge } from '@antv/x6';
 import type { NodeDescriptor } from '../../../core/models/entities.model';
 import { UI_COLORS } from '../../../core/models/colors.model';
+import { SYMBOL } from '@core';
 import { svgDataUri } from './scada-shape';
 
 // --- Shared router config (used by edges and drag connections) ---
@@ -26,7 +27,7 @@ export const MANHATTAN_ROUTER = {
 const portGroup = (side: 'left' | 'right') => ({
   position: side,
   attrs: {
-    circle: { r: 6, fill: UI_COLORS.port, stroke: '#fff', strokeWidth: 2, magnet: true },
+    circle: { r: SYMBOL.port, fill: UI_COLORS.port, stroke: '#fff', strokeWidth: 2, magnet: true },
     text: { fontSize: 9, fill: UI_COLORS.text },
   },
   label: { position: side },
@@ -119,7 +120,7 @@ export function buildEdgeConfig(
     attrs: {
       line: {
         stroke: UI_COLORS.pipe,
-        strokeWidth: 2.5,
+        strokeWidth: SYMBOL.stroke,
         targetMarker: { name: 'classic', size: 8 },
       },
     },
@@ -136,7 +137,7 @@ export function buildDragEdgeAttrs(): Edge.Metadata {
     attrs: {
       line: {
         stroke: UI_COLORS.pipe,
-        strokeWidth: 2.5,
+        strokeWidth: SYMBOL.stroke,
         strokeDasharray: '8,4',
         targetMarker: { name: 'classic', size: 8 },
       },
