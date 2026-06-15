@@ -594,7 +594,31 @@ export function migrateTopology(data: unknown): unknown {
  * Applies schema-version migrations and legacy-key cleanup before validation.
  */
 export function parseTopology(data: unknown): SiteTopology {
-  return TopologySchema.parse(migrateLegacyTopology(migrateTopology(data))) as SiteTopology;
+  return dedupePipeIds(TopologySchema.parse(migrateLegacyTopology(migrateTopology(data))) as SiteTopology);
+}
+
+/**
+ * Guarantee unique pipe ids — a structural invariant the graph and canvas rely
+ * on (an edge and the live map both key by pipe id). A duplicate silently
+ * collapses two pipes into one, so a route's flow lights the wrong branch.
+ *
+ * Pipe ids are not referenced anywhere else (routes carry `nodeSequence`, not
+ * pipe ids), so renaming a collision to a fresh `pipe<n>` is safe and self-heals
+ * any topology — seed config or saved site — on load. The first occurrence keeps
+ * its id; later duplicates are reassigned.
+ */
+function dedupePipeIds(topo: SiteTopology): SiteTopology {
+  let max = 0;
+  for (const p of topo.pipes) {
+    const m = /^pipe(\d+)$/.exec(p.id);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  const seen = new Set<string>();
+  for (const p of topo.pipes) {
+    if (seen.has(p.id)) p.id = `pipe${++max}`;
+    seen.add(p.id);
+  }
+  return topo;
 }
 
 // ---------------------------------------------------------------------------

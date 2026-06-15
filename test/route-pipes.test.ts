@@ -55,6 +55,19 @@ const routes = deriveRoutes(rg);
 const realPipes = new Set(topo.pipes.map((p) => p.id));
 assert(routes.length > 0, `derived ${routes.length} route(s)`);
 
+// Pipe ids MUST be unique — a duplicate collapses two pipes into one graph edge,
+// so a route's flow lights the wrong branch (the bug this guards). parseTopology
+// dedupes, so even a corrupted seed/site self-heals on load.
+const dupIds = topo.pipes.map((p) => p.id).filter((id, i, a) => a.indexOf(id) !== i);
+assert(dupIds.length === 0, "pipe ids are unique after parse", `dupes: ${dupIds.join(",")}`);
+const injected: any = parseYaml(fs.readFileSync(CONFIG, "utf-8"));
+injected.pipes[1].id = injected.pipes[0].id; // force a collision
+const healed = parseTopology(injected);
+assert(
+  new Set(healed.pipes.map((p) => p.id)).size === healed.pipes.length,
+  "parseTopology heals an injected duplicate pipe id",
+);
+
 const byEndpoints = new Map<string, string[][]>();
 for (const r of routes) {
   const pipes = pipesAlongPath(rg, r.nodeSequence);

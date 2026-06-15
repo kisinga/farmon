@@ -174,7 +174,7 @@ pipes:
   - id: pipe4
     from: valve2:outlet
     to: pump:in
-  - id: pipe4
+  - id: pipe10
     from: pump:out
     to: valve3:inlet
   - id: pipe5
