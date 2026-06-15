@@ -67,8 +67,10 @@ function ensureLiveStyles(): void {
 
 /* Value readout — overlaid by the binding; one style, hidden when empty. Sized
    from the SYMBOL token, with a heavy dark halo so it stays legible over pipes
-   and the dark grid. */
-.value-label { font: 700 ${SYMBOL.font.value}px ${SYMBOL.font.family}; letter-spacing: .02em; fill: #f1f5f9; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #0f172a; stroke-width: 4px; stroke-linejoin: round; }
+   and the dark grid. Font + halo are divided by --map-zoom (the live canvas scale)
+   so the readout keeps a constant on-screen size instead of ballooning/shrinking
+   as you zoom — see syncLabelScale(). */
+.value-label { font-weight: 700; font-family: ${SYMBOL.font.family}; font-size: calc(${SYMBOL.font.value}px / var(--map-zoom, 1)); letter-spacing: .02em; fill: #f1f5f9; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #0f172a; stroke-width: calc(4px / var(--map-zoom, 1)); stroke-linejoin: round; }
 .value-label:empty { display: none; }`;
   document.head.appendChild(style);
 }
@@ -127,6 +129,15 @@ export class LiveCanvas {
       background: { color: '#0f172a' },
       grid: { visible: true, type: 'dot', args: [{ color: '#1e293b' }] },
     });
+    // Keep value labels a constant on-screen size: publish the scale as --map-zoom
+    // and let the CSS divide font/halo by it. Fires on every zoom (buttons + fit).
+    this.graph.on('scale', () => this.syncLabelScale());
+    this.syncLabelScale();
+  }
+
+  /** Publish the current canvas scale so the label CSS can counter-scale by 1/zoom. */
+  private syncLabelScale(): void {
+    this.graph.container.style.setProperty('--map-zoom', String(this.graph.zoom() || 1));
   }
 
   /** Replace the rendered topology. Cheap full redraw — maps are small. The

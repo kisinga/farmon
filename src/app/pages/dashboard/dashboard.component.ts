@@ -45,14 +45,6 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
         }
         <span class="grow"></span>
         <app-controller-health />
-        <!-- Live SCADA map vs. the card grid. Default-on for everyone; toggle to cards. -->
-        <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="useCanvas.set(!useCanvas())"
-                [class.btn-active]="useCanvas()" title="Toggle the live system map">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-          </svg>
-          <span class="hidden sm:inline">Map</span>
-        </button>
         <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="openDocs()" [disabled]="docBusy()"
                 title="Open this site's documentation">
           @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
@@ -147,13 +139,70 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
           </section>
         }
 
-        <!-- Live system map — the hero, directly below the route controls. Draws
-             the whole topology and lights the running route's path; stands in for
-             the actuator/level card sections (see layout()). -->
-        @if (showMap()) {
+        <!-- System view — directly below the route controls, where the swap it
+             controls actually happens. The Map/Cards toggle sits in this header
+             so it's obvious it governs what's right below (the live map, or the
+             valve/tank cards it stands in for). Map draws the whole topology and
+             lights the running route's path. -->
+        @if (topology()) {
           <section class="mb-6">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">System map</h2>
-            <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [activePath]="store.activePath()" />
+            <div class="flex items-center gap-2 mb-2.5">
+              <!-- Map mode is self-titled here; cards mode keeps each sub-section's
+                   own label (Tank levels / Valves) below, so no title here. -->
+              @if (useCanvas()) {
+                <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40">System map</h2>
+              }
+              <span class="grow"></span>
+              <div class="join shrink-0" role="group" aria-label="System view">
+                <button type="button" class="join-item btn btn-sm gap-1.5" [class.btn-active]="useCanvas()"
+                        [attr.aria-pressed]="useCanvas()" (click)="useCanvas.set(true)" title="Live system map">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                  </svg>
+                  <span>Map</span>
+                </button>
+                <button type="button" class="join-item btn btn-sm gap-1.5" [class.btn-active]="!useCanvas()"
+                        [attr.aria-pressed]="!useCanvas()" (click)="useCanvas.set(false)" title="Status cards">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM13 5a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1h-5a1 1 0 01-1-1V5zM4 14a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1v-5zM13 14a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5z" />
+                  </svg>
+                  <span>Cards</span>
+                </button>
+              </div>
+            </div>
+            @if (useCanvas()) {
+              <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [activePath]="store.activePath()" />
+            } @else {
+              @for (section of systemSections(); track section.id) {
+                <div class="mb-4 last:mb-0">
+                  <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ section.label }}</h2>
+                  <div [class]="gridFor(section.id)">
+                  @for (w of section.widgets; track w.id) {
+                    <app-dashboard-card
+                      [widget]="w"
+                      [dense]="denseSection(section.id)"
+                      [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
+                      [controllerColor]="ctrlColor(w.controller)"
+                      [row]="store.rowFor(w)"
+                      [state]="cardState(w)"
+                      [series]="telemetry.seriesFor(w)"
+                      [span]="telemetry.spanFor(w)"
+                      [items]="store.activityFor(w.controller)"
+                      [actuatable]="isActuatable(w)"
+                      [held]="actuatorHeld(w)"
+                      [phase]="actuatorPhase(w)?.phase ?? null"
+                      [phaseReason]="actuatorPhase(w)?.reason ?? ''"
+                      [actuatorKind]="actuatorFor(w)?.kind ?? ''"
+                      [historyLoaded]="telemetry.loadedFor(w)"
+                      (toggle)="toggleWidgetActuator(w)"
+                      (spanChange)="onSpanChange(w, $event)"
+                      (expand)="onExpand(w)"
+                    />
+                  }
+                  </div>
+                </div>
+              }
+            }
           </section>
         }
 
@@ -233,9 +282,9 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
 
         @if (note()) { <div class="text-xs text-base-content/50 mb-3">{{ note() }}</div> }
 
-        <!-- Body: card sections grouped by zone (valves / flow / pressure /
-             activity). When the canvas is on, the live system map (above) stands in
-             for the actuator + tank-level sections; the rest stay as cards. -->
+        <!-- Body: the remaining card sections (flow / pressure / activity). The
+             valve + tank-level sections live in the System view above (as the map,
+             or as cards); only when there's no topology do they fall through here. -->
         @for (section of layout(); track section.id) {
             <section class="mb-6">
               <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ section.label }}</h2>
@@ -286,24 +335,28 @@ export class DashboardComponent {
 
   /** Parsed topology, kept for the live map (the card spec is derived separately). */
   protected topology = signal<SiteTopology | null>(null);
-  /** Live SCADA map vs. the card grid. Default-on for everyone; the header
-   *  toggle still lets any user fall back to the card grid. */
-  protected useCanvas = signal(true);
+  /** Live SCADA map vs. the card grid, toggled in the System view header. Defaults
+   *  to the map on tablet/desktop but to cards on mobile (the map's pan/zoom is
+   *  awkward on a small touch screen); `<640px` is Tailwind's `sm` breakpoint.
+   *  `typeof window` guards SSR — the server has no viewport, so it renders cards. */
+  protected useCanvas = signal(typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches);
 
   /** Card sections the system map stands in for when the canvas is on. The map
    *  draws the whole topology, so it replaces both the actuator controls and the
    *  tank-level cards — those nodes (and their live level) render on the map. */
   private static readonly MAP_ABSORBS = new Set(['valves', 'levels']);
 
-  /** The live map shows whenever the canvas is on and we have a topology to draw. */
-  protected showMap = computed(() => this.useCanvas() && !!this.topology());
+  /** The sections shown inside the System view's cards mode (valves + tank levels)
+   *  — the card alternative to the live map. The map stands in for exactly these. */
+  protected systemSections = computed<DashSection[]>(() =>
+    this.sections().filter((section) => DashboardComponent.MAP_ABSORBS.has(section.id)));
 
-  /** The dashboard body's card-sections. When the canvas is on it stands in (above
-   *  the body) for the absorbed sections, so those are dropped here; the rest
-   *  (flow, pressure, activity) stay as cards. */
+  /** The remaining body card-sections (flow, pressure, activity). The absorbed
+   *  sections render in the System view above, so they're dropped here — except
+   *  when there's no topology (no System view), where everything falls through. */
   protected layout = computed<DashSection[]>(() => {
     const secs = this.sections();
-    if (!this.showMap()) return secs;
+    if (!this.topology()) return secs;
     return secs.filter((section) => !DashboardComponent.MAP_ABSORBS.has(section.id));
   });
 
