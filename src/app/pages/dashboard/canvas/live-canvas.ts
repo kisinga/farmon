@@ -140,9 +140,13 @@ export class LiveCanvas {
     this.appliedNode.clear();
     this.appliedFlow.clear();
 
+    // Disabled nodes are skipped entirely: they're dropped from the firmware and
+    // play no part in live operation (no telemetry, never on a route path), so the
+    // live map shows only the running system. Pipes touching a skipped node fall
+    // out via the membership guard below.
     topology.nodes.forEach((node, i) => {
       const desc = NODE_REGISTRY.get(node.kind);
-      if (!desc) return;
+      if (!desc || node.disabled) return;
       const fallback = { x: (i % 4) * 160 + 50, y: Math.floor(i / 4) * 120 + 50 };
       const pos = node.position ?? fallback;
       const cell = this.graph.addNode(
