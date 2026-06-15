@@ -62,7 +62,7 @@ const CHART = {
   // Fill the grid cell so sibling cards in a row are the same height.
   host: { class: 'block h-full' },
   template: `
-    <div class="bg-base-100 rounded-2xl transition-all flex flex-col h-full"
+    <div class="bg-base-100 rounded-xl transition-all flex flex-col h-full"
       [class]="cardClass()"
       [attr.role]="actuatable() ? 'button' : null"
       [attr.tabindex]="actuatable() && !busy() ? '0' : null"
@@ -76,8 +76,8 @@ const CHART = {
           <span class="text-[9px] uppercase tracking-wide text-base-content/40 truncate" [title]="controllerLabel()">{{ controllerLabel() }}</span>
         </div>
       }
-      <div class="flex items-baseline justify-between gap-2 mb-2">
-        <span class="text-xs font-medium text-base-content/60 truncate">{{ widget().title }}</span>
+      <div class="flex items-baseline justify-between gap-2 mb-1.5">
+        <span class="text-xs font-semibold text-base-content/70 truncate">{{ widget().title }}</span>
         @if (isCharted()) {
           <!-- Unit + per-chart timescale (segment buttons, not a native select whose
                popup floats over the chart). Spans cap at the 30d retention ceiling. -->
@@ -290,7 +290,7 @@ export class DashboardCardComponent {
    *  control cards are tinted (cyan accent ring, filled while held) so they
    *  read as interactive — distinct from the surrounding status tiles. */
   protected cardClass = computed(() => {
-    const pad = this.dense() ? 'p-3' : 'p-4 min-h-[140px]';
+    const pad = this.dense() ? 'p-3' : 'p-3 min-h-[128px]';
     if (!this.actuatable()) return `${pad} ring-1 ring-base-300/40 hover:ring-base-300/70`;
     if (this.cmd()?.alert) return `${pad} ring-1 ring-error/60 cursor-pointer`;
     if (this.busy()) return `${pad} ring-1 ring-primary/30 opacity-60 cursor-wait`;

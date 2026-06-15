@@ -65,13 +65,14 @@ function ensureLiveStyles(): void {
 .state-on [data-part=gate], .state-on [data-part=gate] *,
 .engaged [data-part=gate], .engaged [data-part=gate] * { fill: ${active}; stroke: ${active}; fill-opacity: .4; }
 
-/* Value readout — overlaid by the binding; one style, hidden when empty. Sized
-   from the SYMBOL token, with a heavy dark halo so it stays legible over pipes
-   and the dark grid. Font + halo are divided by --map-zoom (the live canvas scale)
-   so the readout keeps a constant on-screen size instead of ballooning/shrinking
-   as you zoom — see syncLabelScale(). */
-.value-label { font-weight: 700; font-family: ${SYMBOL.font.family}; font-size: calc(${SYMBOL.font.value}px / var(--map-zoom, 1)); letter-spacing: .02em; fill: #f1f5f9; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #0f172a; stroke-width: calc(4px / var(--map-zoom, 1)); stroke-linejoin: round; }
-.value-label:empty { display: none; }`;
+/* Value readout — an HTML overlay in *screen space* (a sibling layer X6's zoom
+   transform never touches), so it stays crisp and a constant on-screen size at
+   any zoom, and can never clip or rotate. positionLabels() places each one over
+   its node; a layered dark text-shadow gives the halo (no SVG stroke needed). */
+.live-label-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.value-label-html { position: absolute; top: 0; left: 0; will-change: transform; pointer-events: none; white-space: nowrap;
+  font-weight: 700; font-size: ${SYMBOL.font.value}px; font-family: ${SYMBOL.font.family}; letter-spacing: .02em;
+  color: #f1f5f9; text-shadow: 0 0 2px #0f172a, 0 0 4px #0f172a, 0 1px 2px #0f172a; }`;
   document.head.appendChild(style);
 }
 
@@ -111,6 +112,11 @@ export class LiveCanvas {
   /** Node-set signature of the last render — refit only when the structure changes,
    *  so live updates never yank the operator's pan/zoom. */
   private lastNodeSig = '';
+  /** Screen-space HTML label overlay (a sibling layer outside X6's zoom transform)
+   *  + per-node entries with their local anchor, so value readouts stay crisp and
+   *  constant-size; positionLabels() maps each anchor through the view transform. */
+  private labelLayer: HTMLDivElement;
+  private labels = new Map<string, { el: HTMLDivElement; ax: number; ay: number }>();
 
   constructor(container: HTMLElement) {
     ensureLiveStyles();
@@ -129,15 +135,35 @@ export class LiveCanvas {
       background: { color: '#0f172a' },
       grid: { visible: true, type: 'dot', args: [{ color: '#1e293b' }] },
     });
-    // Keep value labels a constant on-screen size: publish the scale as --map-zoom
-    // and let the CSS divide font/halo by it. Fires on every zoom (buttons + fit).
-    this.graph.on('scale', () => this.syncLabelScale());
-    this.syncLabelScale();
+    // Screen-space label overlay: a sibling layer X6's zoom transform never touches,
+    // so readouts stay crisp + constant-size. Reposition over the nodes on any view
+    // change (pan / zoom / resize). The host is position:absolute, so inset-0 fits it.
+    this.labelLayer = document.createElement('div');
+    this.labelLayer.className = 'live-label-layer';
+    container.appendChild(this.labelLayer);
+    const reposition = () => this.positionLabels();
+    this.graph.on('scale', reposition);
+    this.graph.on('translate', reposition);
+    this.graph.on('resize', reposition);
   }
 
-  /** Publish the current canvas scale so the label CSS can counter-scale by 1/zoom. */
-  private syncLabelScale(): void {
-    this.graph.container.style.setProperty('--map-zoom', String(this.graph.zoom() || 1));
+  /** Re-place every HTML label over its node, mapping the node's local anchor
+   *  (bottom-centre) through the current view transform. The +6px is a constant
+   *  screen-space gap below the glyph. */
+  private positionLabels(): void {
+    const m = this.graph.matrix();
+    for (const { el, ax, ay } of this.labels.values()) {
+      el.style.transform = `translate(${ax * m.a + m.e}px, ${ay * m.d + m.f}px) translate(-50%, 6px)`;
+    }
+  }
+
+  /** Create a node's HTML value label, anchored to its bottom-centre (local coords). */
+  private addLabel(id: string, pos: { x: number; y: number }, size: { width: number; height: number }): void {
+    const el = document.createElement('div');
+    el.className = 'value-label-html';
+    el.style.display = 'none'; // shown once it carries a reading
+    this.labelLayer.appendChild(el);
+    this.labels.set(id, { el, ax: pos.x + size.width / 2, ay: pos.y + size.height });
   }
 
   /** Replace the rendered topology. Cheap full redraw — maps are small. The
@@ -150,6 +176,8 @@ export class LiveCanvas {
     // Cells are gone — what we believed was applied no longer is.
     this.appliedNode.clear();
     this.appliedFlow.clear();
+    this.labelLayer.replaceChildren();
+    this.labels.clear();
 
     // Disabled nodes are skipped entirely: they're dropped from the firmware and
     // play no part in live operation (no telemetry, never on a route path), so the
@@ -165,6 +193,7 @@ export class LiveCanvas {
       );
       this.injectGlyph(cell, desc, extractNodeData(node));
       this.nodeIds.add(node.id);
+      if (desc.live?.value) this.addLabel(node.id, pos, desc.size);
     });
 
     for (const pipe of topology.pipes) {
@@ -192,6 +221,7 @@ export class LiveCanvas {
       this.lastNodeSig = sig;
       this.graph.zoomToFit(LiveCanvas.FIT_OPTS);
     }
+    this.positionLabels(); // place labels for this render (fit also fires events)
   }
 
   /** Push the per-node telemetry projection (state / value / fill). */
@@ -219,6 +249,7 @@ export class LiveCanvas {
   fit(): void { this.graph.zoomToFit(LiveCanvas.FIT_OPTS); }
 
   destroy(): void {
+    this.labelLayer.remove();
     this.graph.dispose();
   }
 
@@ -241,9 +272,8 @@ export class LiveCanvas {
 
   /**
    * Inject the descriptor's SVG (its `data-part` hooks become live DOM via
-   * DOMParser + importNode — namespace-correct), then, if the symbol declares
-   * `live.value`, overlay a `.value-label` centred below it — placement is one
-   * shared rule, not hand-coded per kind.
+   * DOMParser + importNode — namespace-correct). The value readout is a separate
+   * HTML overlay (see addLabel / positionLabels), not part of the glyph.
    */
   private injectGlyph(cell: Node, desc: NodeDescriptor, data: Record<string, unknown>): void {
     const glyph = this.graph.findViewByCell(cell)?.container.querySelector('.live-glyph');
@@ -252,18 +282,11 @@ export class LiveCanvas {
     const root = doc.documentElement;
     if (root.nodeName === 'parsererror') return;
     glyph.replaceChildren(document.importNode(root, true));
-    if (desc.live?.value) {
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('class', 'value-label');
-      label.setAttribute('x', String(desc.size.width / 2));
-      label.setAttribute('y', String(desc.size.height + 15));
-      glyph.appendChild(label);
-    }
   }
 
   /** Paint each node's live state onto its glyph — the `state-*` class, the
    *  `engaged` class (on a running route), the `--fill` var (bounded values), and
-   *  the `.value-label` readout. Skips nodes whose combined signature is unchanged,
+   *  its HTML value readout. Skips nodes whose combined signature is unchanged,
    *  so a shadow / route tick only touches what moved. */
   private applyRuntime(): void {
     for (const id of this.nodeIds) {
@@ -285,8 +308,12 @@ export class LiveCanvas {
       // default rather than freezing at its last level.
       if (rt?.fill != null) (glyph as SVGElement).style.setProperty('--fill', String(rt.fill));
       else (glyph as SVGElement).style.removeProperty('--fill');
-      const label = glyph.querySelector('.value-label');
-      if (label) label.textContent = rt?.value != null ? formatReading(rt.value, rt.unit) : '';
+      const entry = this.labels.get(id);
+      if (entry) {
+        const text = rt?.value != null ? formatReading(rt.value, rt.unit) : '';
+        entry.el.textContent = text;
+        entry.el.style.display = text ? '' : 'none';
+      }
       this.appliedNode.set(id, sig);
     }
   }

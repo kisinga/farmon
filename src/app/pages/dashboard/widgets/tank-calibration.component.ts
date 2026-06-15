@@ -22,7 +22,7 @@ const SYNC_TOL = 0.05;
   selector: 'app-tank-calibration',
   standalone: true,
   template: `
-    <div class="rounded-xl ring-1 ring-base-300/30 bg-base-100/40 p-3 flex flex-col gap-3">
+    <div class="rounded-xl ring-1 ring-base-300/40 bg-base-100/40 p-3 flex flex-col gap-3">
       <div class="flex items-center gap-2">
         <span class="text-sm font-semibold truncate">{{ cal().nodeName }}</span>
         <span class="grow"></span>
