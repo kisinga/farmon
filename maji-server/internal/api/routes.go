@@ -239,6 +239,8 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			On           *bool    `json:"on"`
 			Key          string   `json:"key"`
 			Value        *float64 `json:"value"`
+			CommandID    string   `json:"command_id"`
+			Reclaim      bool     `json:"reclaim"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return apis.NewBadRequestError("invalid body", err)
@@ -260,6 +262,35 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		}
 		if configActions[body.Action] && (body.Key == "" || body.Value == nil) {
 			return apis.NewBadRequestError("key and value are required for "+body.Action, nil)
+		}
+
+		// Reclaim: a publish-only keepalive that re-asserts an existing hold's
+		// command_id to refresh the device's dead-man lease. We republish with a
+		// fresh issued_at (so it clears the firmware staleness gate) but write no
+		// new audit row — the original command stays the single ledger entry, and
+		// the device's outcome reconciles it by the reused command_id. Keeps the
+		// re-assert path O(1) with zero DB writes, which is what lets it scale.
+		if body.Reclaim {
+			if body.CommandID == "" {
+				return apis.NewBadRequestError("command_id is required for a reclaim", nil)
+			}
+			envelope := map[string]any{
+				"command_id": body.CommandID,
+				"action":     body.Action,
+				"issued_at":  time.Now().Unix(),
+				"actor":      e.Auth.Id,
+			}
+			if body.NodeID != "" {
+				envelope["node_id"] = body.NodeID
+			}
+			if body.On != nil {
+				envelope["on"] = *body.On
+			}
+			payload, _ := json.Marshal(envelope)
+			if err := pub.Publish(telemetry.CommandTopic(body.Site, body.Controller), payload, false, 1); err != nil {
+				return apis.NewApiError(http.StatusBadGateway, "failed to publish reclaim", err)
+			}
+			return e.JSON(http.StatusOK, map[string]any{"command_id": body.CommandID})
 		}
 
 		commandID := security.RandomString(15)

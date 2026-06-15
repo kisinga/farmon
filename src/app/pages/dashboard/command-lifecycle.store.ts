@@ -248,10 +248,13 @@ export class CommandLifecycleStore implements OnDestroy {
       }
       // Re-assert regardless of presence (a failed offline send is harmless and we
       // re-claim on reconnect); only the divergence JUDGEMENT above is online-gated.
-      if (now - d.lastReclaimAt >= HOLD_RECLAIM_MS) {
+      if (now - d.lastReclaimAt >= HOLD_RECLAIM_MS && d.lastCommandId) {
         d.lastReclaimAt = now;
-        void this.backend.sendCommand(this.siteId, d.controller, 'node_set', { nodeId: d.nodeId, on: true })
-          .then((id) => { d.lastCommandId = id; })
+        // Publish-only keepalive: reuse the original command_id so the device
+        // refreshes its dead-man lease and its outcome reconciles the original
+        // audit row — no new command row is written. Keep lastCommandId pinned
+        // to the original so observe() keeps tracking that row's outcome.
+        void this.backend.sendCommand(this.siteId, d.controller, 'node_set', { nodeId: d.nodeId, on: true, commandId: d.lastCommandId, reclaim: true })
           .catch(() => {});
       }
     }

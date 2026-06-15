@@ -621,7 +621,7 @@ export class BackendService {
     siteId: string,
     controller: string,
     action: CommandAction,
-    args: { routeId?: number; nodeId?: string; on?: boolean; key?: string; value?: number } = {},
+    args: { routeId?: number; nodeId?: string; on?: boolean; key?: string; value?: number; commandId?: string; reclaim?: boolean } = {},
   ): Promise<string> {
     const res = await this.pb.send<{ command_id?: string }>('/api/farmon/command', {
       // No auto-cancellation: commands fan out concurrently (e.g. a calibration
@@ -639,6 +639,11 @@ export class BackendService {
         on: args.on,
         key: args.key,
         value: args.value,
+        // A reclaim re-asserts an existing hold's command_id as a publish-only
+        // keepalive: the server republishes it (fresh issued_at) to refresh the
+        // device dead-man lease, but records no new audit row.
+        command_id: args.commandId,
+        reclaim: args.reclaim,
       },
     });
     if (!res.command_id) throw new Error('Command was not accepted.');
