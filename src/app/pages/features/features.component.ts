@@ -7,6 +7,11 @@ import {
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
 import { MarketingCtaComponent, type CtaButton } from '../../shared/marketing/marketing-cta.component';
+import {
+  MktHeroComponent,
+  MktSectionComponent,
+  MktFeatureGridComponent,
+} from '../../shared/marketing/ui';
 
 /** A capability group: one keyword-bearing heading and the things under it. */
 interface FeatureGroup {
@@ -42,6 +47,9 @@ interface UseCase {
     MarketingNavComponent,
     MarketingFooterComponent,
     MarketingCtaComponent,
+    MktHeroComponent,
+    MktSectionComponent,
+    MktFeatureGridComponent,
   ],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   template: `
@@ -49,60 +57,40 @@ interface UseCase {
     <app-marketing-nav />
 
     <!-- HERO -->
-    <header class="bg-slate-950 text-white px-5 sm:px-8 pt-16 pb-14 text-center">
-      <span class="inline-flex items-center gap-2 rounded-full bg-white/10 ring-1 ring-white/15 px-3 py-1 text-xs font-medium text-cyan-200 mb-6">
+    <mkt-hero size="md">
+      <span class="mkt-eyebrow mb-6">
         <span class="w-1.5 h-1.5 rounded-full bg-cyan-300"></span> Water monitoring and automation
       </span>
-      <h1 class="text-3xl sm:text-5xl font-bold tracking-tight leading-[1.05]">Know where every drop goes, and let the rest run itself.</h1>
-      <p class="mt-5 text-base sm:text-xl text-white/70 max-w-2xl mx-auto leading-relaxed">
+      <h1 class="mkt-h1 text-3xl sm:text-5xl">Know where every drop goes, and let the rest run itself.</h1>
+      <p class="mt-5 mkt-lead text-white/70 max-w-2xl mx-auto">
         MajiFlow meters your water, accounts for it by field, tank and customer, and runs your pumps
         and valves on a schedule or to an exact volume. Here is everything it does for your site.
       </p>
-    </header>
+    </mkt-hero>
 
     <!-- FEATURE GROUPS -->
     @for (g of groups; track g.title) {
-      <section class="px-5 sm:px-8 py-16 sm:py-20" [class.bg-slate-50]="g.tint">
-        <div class="max-w-5xl mx-auto">
-          <div class="max-w-2xl">
-            <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">{{ g.title }}</h2>
-            <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">{{ g.intro }}</p>
-          </div>
-          <div class="mt-10 grid gap-5 sm:grid-cols-2">
-            @for (it of g.items; track it.title) {
-              <div class="rounded-xl p-6 bg-white ring-1 ring-slate-200">
-                <h3 class="font-semibold text-slate-900">{{ it.title }}</h3>
-                <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">{{ it.body }}</p>
-              </div>
-            }
-          </div>
-        </div>
-      </section>
+      <mkt-section align="left" [tint]="g.tint" [heading]="g.title" [subhead]="g.intro">
+        <mkt-feature-grid [items]="g.items" [cols]="2" />
+      </mkt-section>
     }
 
     <!-- HARDWARE (animated showcase) -->
     <app-hardware-showcase [devices]="devices" variant="full" />
 
     <!-- USE CASES -->
-    <section class="px-5 sm:px-8 py-16 sm:py-20 bg-slate-950 text-white">
-      <div class="max-w-5xl mx-auto">
-        <div class="text-center max-w-2xl mx-auto">
-          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Built for real sites</h2>
-          <p class="mt-3 text-white/60 text-sm sm:text-base leading-relaxed">
-            The same controllers and dashboard, put to work where water is money and labour.
-          </p>
-        </div>
-        <div class="mt-12 grid gap-6 md:grid-cols-2">
-          @for (u of useCases; track u.title) {
-            <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-6">
-              <h3 class="font-semibold text-cyan-300">{{ u.title }}</h3>
-              <p class="mt-2 text-sm text-white/55 leading-relaxed italic">{{ u.scene }}</p>
-              <p class="mt-3 text-sm text-white/80 leading-relaxed">{{ u.solution }}</p>
-            </div>
-          }
-        </div>
+    <mkt-section [dark]="true" heading="Built for real sites"
+      subhead="The same controllers and dashboard, put to work where water is money and labour.">
+      <div class="grid gap-6 md:grid-cols-2">
+        @for (u of useCases; track u.title) {
+          <div class="mkt-card-dark">
+            <h3 class="font-semibold text-cyan-300">{{ u.title }}</h3>
+            <p class="mt-2 text-sm text-white/55 leading-relaxed italic">{{ u.scene }}</p>
+            <p class="mt-3 text-sm text-white/80 leading-relaxed">{{ u.solution }}</p>
+          </div>
+        }
       </div>
-    </section>
+    </mkt-section>
 
     <!-- CTA BAND -->
     <app-marketing-cta

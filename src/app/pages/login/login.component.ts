@@ -15,22 +15,16 @@ import { BRAND_LOGO_SVG } from '../../shared/brand-logo';
   standalone: true,
   imports: [FormsModule, RouterLink],
   host: { class: 'flex-1 overflow-y-auto bg-slate-950 text-white' },
-  styles: [`
-    @keyframes ripple-pulse { 0%,100% { opacity:.6; transform:scale(1);} 50% { opacity:1; transform:scale(1.05);} }
-    @keyframes float-glow   { 0%,100% { transform:translate(0,0) scale(1);} 50% { transform:translate(2rem,-1.5rem) scale(1.12);} }
-    .ripple    { animation: ripple-pulse 5s ease-in-out infinite; transform-origin:center; }
-    .glow-blob { animation: float-glow 14s ease-in-out infinite; }
-  `],
   template: `
     <div class="relative min-h-full flex items-center justify-center p-4 overflow-hidden">
-      <!-- water-light glow -->
-      <div class="glow-blob pointer-events-none absolute -top-20 -left-16 w-[26rem] h-[26rem] rounded-full bg-cyan-500/20 blur-3xl"></div>
-      <div class="glow-blob pointer-events-none absolute -bottom-24 right-0 w-[24rem] h-[24rem] rounded-full bg-sky-500/15 blur-3xl" style="animation-delay:-6s"></div>
+      <!-- water-light glow (shared marketing decoration utilities) -->
+      <div class="mkt-glow-blob pointer-events-none absolute -top-20 -left-16 w-[26rem] h-[26rem] rounded-full bg-cyan-500/20 blur-3xl"></div>
+      <div class="mkt-glow-blob pointer-events-none absolute -bottom-24 right-0 w-[24rem] h-[24rem] rounded-full bg-sky-500/15 blur-3xl" style="animation-delay:-6s"></div>
 
       <div class="relative w-full max-w-sm">
         <!-- brand -->
         <a routerLink="/" class="flex flex-col items-center gap-3 mb-8">
-          <span class="ripple block w-14 h-14" [innerHTML]="logo"></span>
+          <span class="mkt-ripple block w-14 h-14" [innerHTML]="logo"></span>
           <span class="text-xl font-bold tracking-tight">MajiFlow</span>
         </a>
 

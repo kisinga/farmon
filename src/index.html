@@ -32,6 +32,11 @@
   <meta name="theme-color" content="#0f172a">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
+  <!-- Preload the above-the-fold brand faces (body + hero display) so they paint
+       without a flash on the prerendered public pages. @font-face in styles.css. -->
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/inter-latin-400-normal.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/satoshi-700-normal.woff2">
+
   <!-- Structured data: organization + the product, for rich results. -->
   <script type="application/ld+json">
   {

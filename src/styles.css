@@ -3,11 +3,68 @@
   themes: false; /* drop bundled themes; majiflow below is the only one */
 }
 
+/* ── Brand typefaces (self-hosted, under public/fonts) ────────────────────────
+   Satoshi = display (headings/wordmark) — a warm, refined grotesque with a touch
+   of personality; Inter = body/UI. font-display:swap so text paints immediately;
+   the two above-the-fold weights are preloaded in index.html. Wired to
+   --font-display / --font-body in @theme below. */
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/inter-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/inter-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/inter-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/inter-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Satoshi"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/satoshi-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Satoshi"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/satoshi-700-normal.woff2") format("woff2"); }
+
+/* ── Brand ramp — the single source of truth ─────────────────────────────────
+   One place defines the brand hexes; both the marketing site (raw utilities +
+   .mkt-* recipes below) and the DaisyUI theme (which recolours the whole app)
+   reference these tokens, so the two halves can't silently drift apart.
+   Registered in @theme so Tailwind also exposes utilities (bg-brand-cyan,
+   text-mkt-fg-muted, rounded-mkt-card, shadow-mkt-pop, max-w-mkt, font-display). */
+@theme {
+  /* Brand accent ramp (Tailwind cyan/sky hexes) */
+  --color-brand-cyan: #22d3ee;        /* cyan-400 — primary accent */
+  --color-brand-cyan-bright: #67e8f9; /* cyan-300 — accent / hover */
+  --color-brand-sky: #38bdf8;         /* sky-400 — secondary */
+  --color-brand-deep: #0369a1;        /* sky-700 — gradient end */
+  --color-ink: #0f172a;               /* slate-900 — dark surface base */
+  --color-ink-deep: #020617;          /* slate-950 — darkest sections */
+
+  /* Marketing semantic surfaces (light pages) */
+  --color-mkt-surface: #ffffff;       /* page / light card */
+  --color-mkt-surface-muted: #f8fafc; /* slate-50 — alt sections */
+  --color-mkt-line: #e2e8f0;          /* slate-200 — ring */
+  --color-mkt-fg: #0f172a;            /* slate-900 — heading */
+  --color-mkt-fg-muted: #475569;      /* slate-600 — body */
+
+  /* Radius scale (marketing) */
+  --radius-mkt-card: 0.75rem;         /* rounded-xl light cards */
+  --radius-mkt-panel: 1rem;           /* rounded-2xl medium/dark cards */
+  --radius-mkt-band: 1.5rem;          /* rounded-3xl CTA band / stage */
+
+  /* Shadow scale (marketing) */
+  --shadow-mkt-card: 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-mkt-pop: 0 25px 50px -12px rgb(15 23 42 / 0.10);   /* screenshots */
+  --shadow-mkt-accent: 0 10px 30px -5px rgb(34 211 238 / 0.25); /* cyan button */
+
+  /* Container widths (marketing) */
+  --container-mkt: 64rem;             /* max-w-5xl — dominant width */
+  --container-mkt-wide: 72rem;        /* max-w-6xl — deployment/hardware grids */
+  --container-mkt-narrow: 56rem;      /* max-w-4xl — CTA / pricing card */
+
+  /* Type families — the self-hosted brand pairing (faces declared above), with a
+     system fallback while they load. Consumed by .mkt-h1/.mkt-h2 (display) and
+     the public-page body rule below (body). */
+  --font-display: "Satoshi", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
 /* ── MajiFlow theme ──────────────────────────────────────────────────────────
    Dark "slate pro" workspace, harmonised with the public landing/login
    (slate-950 + cyan-400). The admin uses daisyUI semantic classes, so these
    tokens recolour the whole app at once. Landing/login use raw slate/cyan
-   classes and are unaffected. Palette = Tailwind slate/cyan hexes. */
+   classes and are unaffected. Palette = Tailwind slate/cyan hexes.
+   Brand-aligned colours reference the ramp above (anti-drift). */
 @plugin "daisyui/theme" {
   name: "majiflow";
   default: true;
@@ -15,15 +72,15 @@
   color-scheme: dark;
 
   --color-base-100: #1e293b;        /* slate-800 — cards, bars, navbar (surfaces) */
-  --color-base-200: #0f172a;        /* slate-900 — app shell bg, insets, hovers */
+  --color-base-200: var(--color-ink); /* slate-900 — app shell bg, insets, hovers */
   --color-base-300: #475569;        /* slate-600 — borders / dividers (visible) */
   --color-base-content: #f1f5f9;    /* slate-100 — text */
 
-  --color-primary: #22d3ee;         /* cyan-400 */
+  --color-primary: var(--color-brand-cyan);          /* cyan-400 */
   --color-primary-content: #042c38; /* deep teal on cyan */
-  --color-secondary: #38bdf8;       /* sky-400 */
+  --color-secondary: var(--color-brand-sky);         /* sky-400 */
   --color-secondary-content: #04252f;
-  --color-accent: #67e8f9;          /* cyan-300 */
+  --color-accent: var(--color-brand-cyan-bright);    /* cyan-300 */
   --color-accent-content: #04252f;
   --color-neutral: #1e293b;         /* slate-800 */
   --color-neutral-content: #e2e8f0;
@@ -56,6 +113,9 @@
   --nav-layer-overview: #818cf8; /* indigo-400 — top level */
   --nav-layer-site: #38bdf8;     /* sky-400 — site level */
   --nav-layer-system: #34d399;   /* emerald-400 — system level */
+
+  /* Marketing section rhythm + signature gradient (CTA band / hero text). */
+  --gradient-brand: linear-gradient(135deg, #06b6d4, #0284c7, #1d4ed8);
 }
 
 /* Consistent content pane for form/workflow tabs */
@@ -74,6 +134,45 @@
   .sub-header {
     @apply flex items-center gap-3 px-4 h-12 shrink-0 bg-base-100 border-b border-base-300/40;
   }
+}
+
+/* ── Marketing recipes ───────────────────────────────────────────────────────
+   One-element paint for the public pages — section padding, containers,
+   headings, cards, buttons, chips. Structure stays in templates/components;
+   these just collapse the class strings that were copy-pasted across landing,
+   features, pricing and login into single names a designer can retune here.
+   (Compositions with slots/state live in src/app/shared/marketing/ui/.) */
+@layer components {
+  /* Layout */
+  .mkt-section       { @apply px-5 sm:px-8 py-16 sm:py-20; }
+  .mkt-section-tight { @apply px-5 sm:px-8 py-12 sm:py-16; }
+  .mkt-container     { @apply max-w-5xl mx-auto; }
+
+  /* Typography (display family applied via token; system stack today).
+     Colour is left to the consumer so leads work on both dark and light. */
+  .mkt-h1      { @apply text-4xl sm:text-6xl font-bold leading-[1.05] tracking-tight; font-family: var(--font-display); }
+  .mkt-h2      { @apply text-2xl sm:text-3xl font-bold tracking-tight; font-family: var(--font-display); }
+  .mkt-lead    { @apply text-base sm:text-xl leading-relaxed; }   /* hero lead */
+  .mkt-subhead { @apply text-sm sm:text-base leading-relaxed; }   /* section subhead */
+
+  /* Surfaces */
+  .mkt-card        { @apply rounded-xl p-6 bg-white ring-1 ring-slate-200; }
+  .mkt-card-muted  { @apply rounded-2xl p-7 bg-slate-50 ring-1 ring-slate-200; }
+  .mkt-card-dark   { @apply rounded-2xl p-6 bg-white/5 ring-1 ring-white/10; }
+  .mkt-eyebrow     { @apply inline-flex items-center gap-2 rounded-full bg-white/10 ring-1 ring-white/15 px-3 py-1 text-xs font-medium text-cyan-200; }
+  .mkt-chip        { @apply w-11 h-11 rounded-xl flex items-center justify-center; }
+
+  /* Buttons — base pill + variants */
+  .mkt-btn         { @apply inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-semibold transition-all; }
+  .mkt-btn-primary { @apply bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/25 hover:bg-cyan-300 hover:-translate-y-0.5; }
+  .mkt-btn-ghost   { @apply ring-1 ring-white/25 text-white hover:bg-white/10; }
+}
+
+/* Public-page body font (Inter). Scoped to the marketing routes this pass; the
+   authenticated app keeps the system stack until it adopts the tokens. Headings
+   pick up the display face via .mkt-h1/.mkt-h2. */
+app-landing, app-features, app-pricing, app-login {
+  font-family: var(--font-body);
 }
 
 /* Themed scrollbars so the dark surfaces don't get bright native gutters. */
@@ -112,4 +211,18 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .flow-line { animation: none; }
+}
+
+/* ── Marketing decoration animations ─────────────────────────────────────────
+   The water-light hero motion, hoisted here so landing and login share one
+   definition (was duplicated in both). Per-instance stagger stays inline via
+   `style="animation-delay:…"`. Honours reduced-motion. */
+@keyframes mkt-ripple-pulse { 0%,100% { opacity:.6; transform:scale(1); } 50% { opacity:1; transform:scale(1.05); } }
+@keyframes mkt-float-glow   { 0%,100% { transform:translate(0,0) scale(1); } 50% { transform:translate(2rem,-1.5rem) scale(1.12); } }
+@keyframes mkt-ripple-ring  { 0% { transform:scale(.5); opacity:.55; } 80% { opacity:0; } 100% { transform:scale(1.75); opacity:0; } }
+.mkt-ripple      { animation: mkt-ripple-pulse 5s ease-in-out infinite; transform-origin:center; }
+.mkt-glow-blob   { animation: mkt-float-glow 14s ease-in-out infinite; }
+.mkt-ripple-ring { animation: mkt-ripple-ring 4s ease-out infinite; transform-origin:center; }
+@media (prefers-reduced-motion: reduce) {
+  .mkt-ripple, .mkt-glow-blob, .mkt-ripple-ring { animation: none; }
 }

@@ -5,6 +5,7 @@ import { PRICING, SEGMENT_PACKS, estimate, kes, type EstimateInput, type Segment
 import { applyPageSeo } from '../../shared/seo';
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
+import { MktHeroComponent } from '../../shared/marketing/ui';
 
 type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 
@@ -20,24 +21,24 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 @Component({
   selector: 'app-pricing',
   standalone: true,
-  imports: [RouterLink, MarketingNavComponent, MarketingFooterComponent],
+  imports: [RouterLink, MarketingNavComponent, MarketingFooterComponent, MktHeroComponent],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   template: `
     <!-- NAV -->
     <app-marketing-nav />
 
     <!-- HERO -->
-    <header class="bg-slate-950 text-white px-5 sm:px-8 pt-14 pb-12 text-center">
-      <h1 class="text-3xl sm:text-5xl font-bold tracking-tight">What will it cost?</h1>
+    <mkt-hero size="md">
+      <h1 class="mkt-h1 text-3xl sm:text-5xl">What will it cost?</h1>
       <p class="mt-4 text-white/70 max-w-2xl mx-auto text-sm sm:text-lg leading-relaxed">
         No mystery pricing. Answer three questions and see your monthly plan straight away,
         plus the one-time kit that runs it.
       </p>
       <p class="mt-3 text-xs text-cyan-200/80">Your monthly plan, plus a one-time hardware kit and installation priced to your site.</p>
-    </header>
+    </mkt-hero>
 
     <!-- ESTIMATOR -->
-    <section class="px-5 sm:px-8 py-12 sm:py-16">
+    <section class="mkt-section-tight">
       <div class="max-w-5xl mx-auto grid gap-8 lg:grid-cols-5">
 
         <!-- Questions -->
