@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal, type WritableSignal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { BackendService } from '../../core/services/backend.service';
-import { PRICING, estimate, kes, type EstimateInput } from './pricing.model';
+import { PRICING, SEGMENT_PACKS, estimate, kes, type EstimateInput, type Segment } from './pricing.model';
 import { applyPageSeo } from '../../shared/seo';
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
@@ -30,10 +30,10 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
     <header class="bg-slate-950 text-white px-5 sm:px-8 pt-14 pb-12 text-center">
       <h1 class="text-3xl sm:text-5xl font-bold tracking-tight">What will it cost?</h1>
       <p class="mt-4 text-white/70 max-w-2xl mx-auto text-sm sm:text-lg leading-relaxed">
-        No mystery pricing. Answer three questions and see the figure straight away.
-        Every shilling traces to real hardware on your site.
+        No mystery pricing. Answer three questions and see your monthly plan straight away,
+        plus the one-time kit that runs it.
       </p>
-      <p class="mt-3 text-xs text-cyan-200/80">This is for the Hosted plan. On-site, own-it builds are priced per site. <a routerLink="/" class="underline hover:text-white">See both plans.</a></p>
+      <p class="mt-3 text-xs text-cyan-200/80">Your monthly plan, plus a one-time hardware kit and installation priced to your site.</p>
     </header>
 
     <!-- ESTIMATOR -->
@@ -43,6 +43,21 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
         <!-- Questions -->
         <div class="lg:col-span-3 space-y-5">
           <h2 class="text-xl font-bold tracking-tight">Tell us about your site</h2>
+
+          <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-5">
+            <h3 class="font-semibold text-slate-900">What is this site for?</h3>
+            <p class="mt-1 text-sm text-slate-600 leading-relaxed">Sets up the right dashboard and the add-on that fits. It never limits what you can buy.</p>
+            <div class="mt-3 grid gap-2 sm:grid-cols-3">
+              @for (s of segments; track s.key) {
+                <button type="button" (click)="segment.set(s.key)"
+                        class="text-left rounded-xl px-3 py-2.5 ring-1 transition-colors"
+                        [class]="segment() === s.key ? 'bg-cyan-500 text-white ring-cyan-500' : 'bg-white text-slate-700 ring-slate-300 hover:ring-cyan-400'">
+                  <span class="block text-sm font-semibold">{{ s.label }}</span>
+                  <span class="block text-xs" [class]="segment() === s.key ? 'text-white/80' : 'text-slate-500'">{{ s.blurb }}</span>
+                </button>
+              }
+            </div>
+          </div>
 
           @for (q of questions; track q.key) {
             <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-5">
@@ -64,6 +79,18 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
               </div>
             </div>
           }
+
+          <label class="flex items-start gap-3 rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-5 cursor-pointer">
+            <input type="checkbox" [checked]="spread()" (change)="spread.set(isChecked($event))"
+                   class="mt-1 w-4 h-4 accent-cyan-500" />
+            <span>
+              <span class="font-semibold text-slate-900">Is your gear spread out, more than ~100m apart?</span>
+              <span class="block mt-1 text-sm text-slate-600 leading-relaxed">
+                Close together, one controller runs the lot and extra tanks ride a metering hub. Spread
+                out, we drop in another controller near the far cluster instead of running a long wire.
+              </span>
+            </span>
+          </label>
 
           <label class="flex items-start gap-3 rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-5 cursor-pointer">
             <input type="checkbox" [checked]="largeSize()" (change)="largeSize.set(isChecked($event))"
@@ -107,30 +134,49 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
         <!-- Live estimate -->
         <div class="lg:col-span-2">
           <div class="sticky top-24 rounded-2xl bg-slate-950 text-white p-6 shadow-xl">
-            <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Your estimate</p>
-            <p class="mt-2 text-4xl font-bold tracking-tight">{{ money(est().oneTime) }}</p>
-            <p class="text-sm text-white/60">one-time setup</p>
-            <p class="mt-1 text-sm text-white/80">+ {{ money(est().yearly) }} / year after year one</p>
+            <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Your plan</p>
+            <p class="mt-1 text-sm text-white/55">{{ est().tier }} · {{ est().summary }}</p>
 
-            <ul class="mt-5 space-y-2 text-sm border-t border-white/10 pt-4">
-              @for (l of est().lines; track l.label) {
-                <li class="flex justify-between gap-3">
-                  <span class="text-white/70">{{ l.label }}@if (l.qty > 1 && l.label.startsWith('Extra')) { <span class="text-white/40"> × {{ l.qty }}</span> }</span>
-                  <span class="tabular-nums">{{ money(l.total) }}</span>
-                </li>
-              }
-            </ul>
+            <!-- HERO: the monthly subscription, the product -->
+            <p class="mt-3 text-4xl font-bold tracking-tight">{{ money(est().monthly) }}<span class="text-lg font-medium text-white/50"> / month</span></p>
+            <p class="text-sm text-white/60">{{ est().tier }} plan · {{ est().controllers }} controller{{ est().controllers > 1 ? 's' : '' }}</p>
+
+            <!-- the pack, optional, also monthly -->
+            <div class="mt-4 flex justify-between gap-3 text-sm border-t border-white/10 pt-4">
+              <span class="text-white/70">{{ est().pack.label }} pack <span class="text-white/40">· optional</span></span>
+              <span class="tabular-nums">+ {{ packPrice() }}</span>
+            </div>
+
+            <!-- one-time kit, demoted: hardware, near cost -->
+            <div class="mt-4 border-t border-white/10 pt-4">
+              <div class="flex justify-between gap-3 text-sm">
+                <span class="text-white/70">One-time kit </span>
+                <span class="tabular-nums">{{ money(est().oneTime) }}</span>
+              </div>
+              <ul class="mt-2 space-y-1.5 text-xs text-white/50">
+                @for (l of est().lines; track l.label) {
+                  <li class="flex justify-between gap-3">
+                    <span>{{ l.label }}@if (l.qty > 1) { <span class="text-white/35"> × {{ l.qty }}</span> }</span>
+                    <span class="tabular-nums">{{ money(l.total) }}</span>
+                  </li>
+                }
+              </ul>
+            </div>
 
             <p class="mt-4 text-xs text-white/45 leading-relaxed">
+              The monthly is the platform: offsite access, graphs, alerts, and automations you build online. On-site it still works without it: local control, pump safety and your saved automations keep running, no subscription.
+            </p>
+
+            <p class="mt-3 text-xs text-white/45 leading-relaxed">
               {{ est().controllers }} controller{{ est().controllers > 1 ? 's' : '' }} ·
-              each has 16 relays (a valve uses 2{{ threePhase() ? '' : ', a pump 1' }}), {{ caps.flow }} flow sensors, {{ caps.tanks }} tanks.
+              each has 16 relays (a valve uses 2{{ threePhase() ? '' : ', a pump 1' }}), {{ caps.flow }} flow sensors, {{ caps.tanks }} tanks onboard, plus more on a metering hub.
             </p>
 
             @if (est().multiController) {
               <p class="mt-3 rounded-lg bg-amber-400/10 ring-1 ring-amber-300/30 text-amber-200 text-xs p-3 leading-relaxed">
-                Your site needs more than one controller. On Hosted each one runs on its own, so
-                they don't share sensors or coordinate. If you need them to work together, that's the
-                on-site, own-it build. <a routerLink="/" class="underline">Let's talk.</a>
+                Your site needs more than one controller. Each runs on its own and shares one dashboard;
+                they don't coordinate or share sensors. Need them to work as one?
+                <a routerLink="/" class="underline">Let's talk.</a>
               </p>
             }
             @if (largeSize()) {
@@ -237,23 +283,33 @@ export class PricingComponent {
   }
 
   // --- Estimator inputs ---
+  protected readonly segment = signal<Segment>('farm');
   protected readonly pumps = signal(1);
   protected readonly valves = signal(1);
   protected readonly flow = signal(1);
   protected readonly tanks = signal(1);
+  protected readonly spread = signal(false);
   protected readonly largeSize = signal(false);
   protected readonly bigPump = signal(false);
   protected readonly threePhase = signal(false);
+
+  // The framing question. Picks the dashboard a customer would get and the pack we
+  // pitch — never gates what they can buy.
+  protected readonly segments = [
+    { key: 'farm' as Segment, label: 'Farm', blurb: 'Grow more with less' },
+    { key: 'property' as Segment, label: 'Property or estate', blurb: 'Bill tenants, protect supply' },
+    { key: 'water_supply' as Segment, label: 'Water supply', blurb: 'Meter and sell water' },
+  ] as const;
 
   protected readonly questions = [
     { key: 'pumps', title: 'Pumps to switch', help: 'Pumps the system turns on and off. Most sites have one.', sig: this.pumps },
     { key: 'valves', title: 'Water lines to control', help: 'Valves that open and close on their own, like zones, outlets and fill lines.', sig: this.valves },
     { key: 'flow', title: 'Points to measure flow', help: 'Where you want to see how much water is moving.', sig: this.flow },
-    { key: 'tanks', title: 'Tanks to monitor', help: 'Tanks whose level you want to watch.', sig: this.tanks },
+    { key: 'tanks', title: 'Tanks to monitor', help: 'Tanks whose level you want to watch. No hard limit; extra tanks ride a metering hub.', sig: this.tanks },
   ] as const;
 
   protected readonly est = computed(() =>
-    estimate({ pumps: this.pumps(), valves: this.valves(), flow: this.flow(), tanks: this.tanks(), largeSize: this.largeSize(), bigPump: this.bigPump(), threePhase: this.threePhase() } satisfies EstimateInput),
+    estimate({ pumps: this.pumps(), valves: this.valves(), flow: this.flow(), tanks: this.tanks(), segment: this.segment(), spread: this.spread(), largeSize: this.largeSize(), bigPump: this.bigPump(), threePhase: this.threePhase() } satisfies EstimateInput),
   );
 
   // --- Lead form ---
@@ -271,6 +327,12 @@ export class PricingComponent {
 
   protected money(n: number): string {
     return kes(n);
+  }
+
+  /** The pitched pack's price line: "from KES X / mo", or "on request" until set. */
+  protected packPrice(): string {
+    const p = this.est().pack.fromMonthly;
+    return p !== null ? 'from ' + kes(p) + ' / mo' : 'on request';
   }
 
   protected step(sig: WritableSignal<number>, delta: number): void {

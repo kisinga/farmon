@@ -72,9 +72,11 @@ const STATUSES = ['new', 'contacted', 'closed'] as const;
                   <span>{{ est.input.flow }} flow</span>
                   <span>{{ est.input.tanks }} tank{{ est.input.tanks !== 1 ? 's' : '' }}</span>
                   <span class="text-base-content/30">|</span>
-                  <span>{{ est.controllers }} controller{{ est.controllers !== 1 ? 's' : '' }}</span>
-                  <span class="text-base-content/80 font-medium">{{ kes(est.oneTime) }}</span>
-                  <span>+ {{ kes(est.yearly) }}/yr</span>
+                  <span>{{ est.controllers }} controller{{ est.controllers !== 1 ? 's' : '' }}@if (est.tier) { · {{ est.tier }} }</span>
+                  @if (est.monthly !== undefined) {
+                    <span class="text-base-content/80 font-medium">{{ kes(est.monthly) }}/mo</span>
+                  }
+                  <span>kit {{ kes(est.oneTime) }}</span>
                 </div>
               }
             </div>

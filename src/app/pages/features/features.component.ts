@@ -170,9 +170,9 @@ export class FeaturesComponent {
       tint: true,
       items: [
         { title: 'Works off-grid', body: 'Battery and solar keep the controllers and pumps running straight through a power cut.' },
-        { title: 'Runs without internet', body: 'Each controller follows its own schedule and safety checks on its own. The internet is just for watching from afar.' },
+        { title: 'Runs without internet or a subscription', body: 'On-site, each controller follows its own schedule and safety checks with no internet and no subscription. The plan is for watching and controlling from afar.' },
         { title: 'Saves water by default', body: 'Tanks stop at a set level and leaks raise a flag, so nothing overflows or drains away unseen.' },
-        { title: 'Grows with the site', body: 'Add controllers as you grow and they all work together in the same dashboard.' },
+        { title: 'Grows with the site', body: 'Fill one controller, add tanks by the wire with a metering hub, or drop in another controller for a far cluster. Every controller shows in one dashboard.' },
       ],
     },
   ];

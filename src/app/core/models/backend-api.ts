@@ -71,11 +71,13 @@ export interface AppConfigRecord {
   hostingDeviceCap: number;
 }
 
-/** The configuration a pricing-page visitor submitted alongside a lead. */
+/** The configuration a pricing-page visitor submitted alongside a lead. `tier` and
+ *  `monthly` are absent on snapshots captured before the platform-first pricing change. */
 export interface LeadEstimate {
   controllers: number;
   oneTime: number;
-  yearly: number;
+  monthly?: number;
+  tier?: string;
   input: { pumps: number; valves: number; flow: number; tanks: number };
 }
 

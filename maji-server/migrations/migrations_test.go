@@ -62,6 +62,29 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 			t.Errorf("state_events.%s should exist (migration 31)", f)
 		}
 	}
+
+	// 33 dropped the dead commercial tier and added the segment + entitlement fields;
+	// 34 added the packs relation.
+	sites, err := app.FindCollectionByNameOrId("sites")
+	if err != nil {
+		t.Fatalf("sites collection missing: %v", err)
+	}
+	if sites.Fields.GetByName("tier") != nil {
+		t.Error("sites.tier should have been dropped (migration 33)")
+	}
+	for _, f := range []string{"segment", "price_override", "addons", "packs"} {
+		if sites.Fields.GetByName(f) == nil {
+			t.Errorf("sites.%s should exist (migrations 33/34)", f)
+		}
+	}
+	// 34 created the entitlement catalog.
+	packs, err := app.FindCollectionByNameOrId("packs")
+	if err != nil {
+		t.Fatalf("packs collection missing (migration 34): %v", err)
+	}
+	if packs.Fields.GetByName("key") == nil {
+		t.Error("packs.key should exist (migration 34)")
+	}
 }
 
 // Each migration file must have a unique NN_ number. Two files sharing a number

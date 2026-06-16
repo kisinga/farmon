@@ -23,11 +23,17 @@ func registerSiteHooks(app core.App, cfg config.Config) {
 		if err := guardOwnerCreate(e); err != nil {
 			return err
 		}
+		if err := guardEntitlementWrite(e); err != nil {
+			return err
+		}
 		return e.Next()
 	})
 
 	app.OnRecordUpdateRequest("sites").BindFunc(func(e *core.RecordRequestEvent) error {
 		if err := guardOwnerUpdate(e); err != nil {
+			return err
+		}
+		if err := guardEntitlementWrite(e); err != nil {
 			return err
 		}
 		return e.Next()
@@ -69,15 +75,15 @@ func guardOwnerUpdate(e *core.RecordRequestEvent) error {
 	if err != nil {
 		return nil // missing record — let the normal flow surface it
 	}
-	if !sameOwnerSet(e.Record.GetStringSlice("owner"), old.GetStringSlice("owner")) {
+	if !sameStringSet(e.Record.GetStringSlice("owner"), old.GetStringSlice("owner")) {
 		return apis.NewForbiddenError("only an admin can reassign a site", nil)
 	}
 	return nil
 }
 
-// sameOwnerSet reports whether two owner id lists hold the same members,
-// ignoring order and duplicates.
-func sameOwnerSet(a, b []string) bool {
+// sameStringSet reports whether two string lists hold the same members, ignoring
+// order and duplicates. Used to detect ownership and entitlement changes.
+func sameStringSet(a, b []string) bool {
 	set := make(map[string]struct{}, len(a))
 	for _, id := range a {
 		set[id] = struct{}{}
@@ -122,4 +128,44 @@ func isManaged(site *core.Record, cfg config.Config) bool {
 		return mode == "managed"
 	}
 	return cfg.Mode == config.ModeCloud
+}
+
+// guardEntitlementWrite blocks a non-admin from setting or changing the sold
+// entitlement fields (packs, addons, price_override). The site UpdateRule lets an
+// owner edit their own site, so without this a customer could self-grant paid
+// features. segment is intentionally exempt — it is the dashboard skin a customer
+// picks at onboarding, not a paid lever.
+func guardEntitlementWrite(e *core.RecordRequestEvent) error {
+	if api.IsAdmin(e.Auth) {
+		return nil
+	}
+	var old *core.Record
+	if e.Record.Id != "" {
+		old, _ = e.App.FindRecordById("sites", e.Record.Id)
+	}
+	oldPacks, oldAddons, oldOverride := entitlementFields(old)
+	newPacks, newAddons, newOverride := entitlementFields(e.Record)
+
+	if !sameStringSet(newPacks, oldPacks) {
+		return apis.NewForbiddenError("only an admin can change a site's packs", nil)
+	}
+	if !sameStringSet(newAddons, oldAddons) {
+		return apis.NewForbiddenError("only an admin can change a site's addons", nil)
+	}
+	if newOverride != oldOverride {
+		return apis.NewForbiddenError("only an admin can set a site's price override", nil)
+	}
+	return nil
+}
+
+// entitlementFields reads the three sold fields off a site record; a nil record
+// (a create) yields zero values, so an attempt to seed any of them is rejected.
+func entitlementFields(r *core.Record) (packs, addons []string, priceOverride float64) {
+	if r == nil {
+		return nil, nil, 0
+	}
+	packs = r.GetStringSlice("packs")
+	_ = r.UnmarshalJSONField("addons", &addons)
+	priceOverride = r.GetFloat("price_override")
+	return packs, addons, priceOverride
 }

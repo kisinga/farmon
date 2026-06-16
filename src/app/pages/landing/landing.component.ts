@@ -11,24 +11,7 @@ import {
 import { MarketingNavComponent, GITHUB_URL } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
 import { MarketingCtaComponent, type CtaButton } from '../../shared/marketing/marketing-cta.component';
-
-/** A way to run MajiFlow, shown side by side so the cloud-vs-own-it trade is honest. */
-interface Plan {
-  name: string;
-  mode: string;
-  tagline: string;
-  features: string[];
-  /** Headline figure, e.g. "From KES 30,000". */
-  price?: string;
-  /** Small print under the price, e.g. "per controller · + KES 4,000/year". */
-  priceNote?: string;
-  footnote?: string;
-  badge?: string;
-  highlighted?: boolean;
-  /** Call-to-action: defaults to "Get started" → /login. */
-  ctaLabel?: string;
-  ctaLink?: string;
-}
+import { PRICING, kes } from '../pricing/pricing.model';
 
 /** A short "what you can do with it" capability. */
 interface Capability {
@@ -62,11 +45,12 @@ interface Deployment {
  * Prerendered to static HTML at build time (see app.routes.server.ts) so search
  * and social crawlers get the full page.
  *
- * Carries the brand-level story the old static homepage held (designer →
- * generate → monitor, the verticals, the use-cases) reconciled to the current
- * managed/local model: internet is for offsite eyes, the controller stays
- * autonomous on link loss, and you choose who runs the backend. Leads with the
- * water-monitoring-and-control keyword and a water-conservation throughline.
+ * Carries the brand-level story (designer → generate → monitor, the verticals,
+ * the use-cases): the hosted platform is the product, sold as a per-controller
+ * monthly subscription plus a one-time near-cost hardware kit. The controller
+ * stays autonomous on link loss — local control works without the subscription.
+ * Leads with the water-monitoring-and-control keyword and a water-conservation
+ * throughline.
  */
 @Component({
   selector: 'app-landing',
@@ -362,62 +346,67 @@ interface Deployment {
       </div>
     </section>
 
-    <!-- ===================== TWO WAYS TO RUN IT (PLANS) ===================== -->
+    <!-- ===================== PRICING ===================== -->
     <section class="px-5 sm:px-8 py-16 sm:py-24 bg-slate-50">
-      <div class="max-w-6xl mx-auto">
+      <div class="max-w-4xl mx-auto">
         <div class="text-center max-w-2xl mx-auto">
-          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Two ways to run it</h2>
+          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Simple, honest pricing</h2>
           <p class="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
-            Same app, same dashboard. The choice is simple: let us host it for you online,
-            or keep everything on-site and own it. Here is what each one costs and includes.
+            Pay monthly for the platform. Add a one-time kit to run it. Nothing hidden, no lock-in.
           </p>
         </div>
 
-        <div class="mt-12 grid gap-6 md:grid-cols-2 max-w-3xl mx-auto items-start">
-          @for (plan of plans; track plan.name) {
-            <div class="relative rounded-2xl bg-white p-7 transition-all hover:-translate-y-1"
-                 [class]="plan.highlighted
-                   ? 'ring-2 ring-cyan-500 shadow-2xl shadow-cyan-500/15'
-                   : 'ring-1 ring-slate-200 shadow-sm'">
-              @if (plan.badge) {
-                <span class="absolute -top-3 left-7 rounded-full bg-cyan-500 text-white text-xs font-semibold px-3 py-1 shadow">{{ plan.badge }}</span>
-              }
-              <p class="text-xs font-semibold uppercase tracking-wider text-cyan-600">{{ plan.mode }}</p>
-              <h3 class="mt-1 text-xl font-bold">{{ plan.name }}</h3>
-              @if (plan.price) {
-                <p class="mt-3 text-3xl font-bold tracking-tight">{{ plan.price }}</p>
-                @if (plan.priceNote) {
-                  <p class="text-xs text-slate-500">{{ plan.priceNote }}</p>
-                }
-              }
-              <p class="mt-3 text-sm text-slate-600 leading-relaxed">{{ plan.tagline }}</p>
-              <ul class="mt-5 space-y-2.5 text-sm">
-                @for (f of plan.features; track f) {
-                  <li class="flex gap-2.5">
-                    <svg class="shrink-0 mt-0.5 text-cyan-500" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    <span class="text-slate-700">{{ f }}</span>
-                  </li>
-                }
-              </ul>
-              @if (plan.footnote) {
-                <p class="mt-5 pt-4 border-t border-slate-100 text-xs text-slate-500">{{ plan.footnote }}</p>
-              }
-              <a [routerLink]="plan.ctaLink ?? '/login'"
-                 class="mt-6 block text-center rounded-full px-5 py-2.5 text-sm font-semibold transition-colors"
-                 [class]="plan.highlighted
-                   ? 'bg-cyan-500 text-white hover:bg-cyan-400'
-                   : 'ring-1 ring-slate-300 text-slate-800 hover:bg-slate-50'">
-                {{ plan.ctaLabel ?? 'Get started' }}
-              </a>
-            </div>
-          }
-        </div>
+        <div class="mt-12 rounded-2xl bg-white ring-1 ring-slate-200 shadow-sm p-7 sm:p-9 max-w-2xl mx-auto">
+          <p class="text-xs font-semibold uppercase tracking-wider text-cyan-600">Hosted by us</p>
+          <h3 class="mt-1 text-xl font-bold">The platform</h3>
+          <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+            One app for your whole water system, reachable from anywhere. Alerts, automation and usage
+            history. We host it and keep it running.
+          </p>
 
-        <p class="mt-8 text-center text-sm text-slate-500 max-w-2xl mx-auto">
-          Either way, you only need internet to check in while you are away. On-site, your
-          controllers keep working on their own. Want exact numbers for the hosted plan?
-          <a routerLink="/pricing" class="font-semibold text-cyan-600 hover:text-cyan-700">See what your site costs.</a>
-        </p>
+          <!-- Monthly subscription, by tier -->
+          <div class="mt-6">
+            <div class="flex items-baseline justify-between">
+              <p class="text-sm font-semibold text-slate-900">Monthly, per controller</p>
+              <p class="text-xs text-slate-400">graduated</p>
+            </div>
+            <ul class="mt-3 divide-y divide-slate-100">
+              @for (t of tiers; track t.name) {
+                <li class="flex items-center justify-between py-2.5">
+                  <span class="text-sm text-slate-700">{{ t.name }} <span class="text-slate-400">· {{ t.range }}</span></span>
+                  <span class="text-sm font-semibold tabular-nums">{{ money(t.rate) }} <span class="font-normal text-slate-400">{{ t.suffix }}</span></span>
+                </li>
+              }
+            </ul>
+            <p class="mt-2 text-xs text-slate-500 leading-relaxed">More controllers, less each. Adding tanks, valves or flow to a controller never raises the monthly.</p>
+          </div>
+
+          <!-- One-time cost -->
+          <div class="mt-6 pt-5 border-t border-slate-100">
+            <p class="text-sm font-semibold text-slate-900">One-time, per site</p>
+            <p class="mt-1 text-sm text-slate-600 leading-relaxed">The hardware kit, sold near cost, plus installation. Priced to your site after a quick survey.</p>
+          </div>
+
+          <!-- What the platform includes -->
+          <ul class="mt-6 space-y-2.5 text-sm">
+            @for (f of platformIncludes; track f) {
+              <li class="flex gap-2.5">
+                <svg class="shrink-0 mt-0.5 text-cyan-500" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span class="text-slate-700">{{ f }}</span>
+              </li>
+            }
+          </ul>
+
+          <p class="mt-5 pt-4 border-t border-slate-100 text-xs text-slate-500 leading-relaxed">
+            No lock-in: on-site your controllers keep working without the subscription. Local control, pump
+            safety and saved automations run on their own.
+          </p>
+
+          <a routerLink="/pricing"
+             class="mt-6 block text-center rounded-full px-5 py-2.5 text-sm font-semibold bg-cyan-500 text-white hover:bg-cyan-400 transition-colors">
+            Estimate your site
+          </a>
+        </div>
       </div>
     </section>
 
@@ -435,14 +424,14 @@ interface Deployment {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
             </div>
             <h3 class="font-semibold">Battery and solar</h3>
-            <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Add the on-site setup and battery plus solar keep things running right through a power cut, cleaner and cheaper than a diesel pump.</p>
+            <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Add battery and solar and your site runs right through a power cut, cleaner and cheaper than a diesel pump.</p>
           </div>
           <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-6">
             <div class="w-10 h-10 rounded-lg bg-cyan-400/15 text-cyan-300 flex items-center justify-center mb-3">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.86a10 10 0 0 1 14 0"/><path d="M8.5 16.43a5 5 0 0 1 7 0"/></svg>
             </div>
-            <h3 class="font-semibold">Works without internet</h3>
-            <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Every controller follows its own watering schedule and safety checks. Lose the internet and your site simply carries on.</p>
+            <h3 class="font-semibold">Works offline, even unsubscribed</h3>
+            <p class="mt-1.5 text-sm text-white/60 leading-relaxed">On-site, local control, pump safety and your saved automations keep running with no internet and no subscription. The plan adds the offsite half: remote access, graphs, alerts, and automations you build online.</p>
           </div>
           <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-6">
             <div class="w-10 h-10 rounded-lg bg-cyan-400/15 text-cyan-300 flex items-center justify-center mb-3">
@@ -492,41 +481,24 @@ export class LandingComponent {
     { label: 'View on GitHub', href: GITHUB_URL },
   ];
 
-  protected readonly plans: Plan[] = [
-    {
-      name: 'Hosted',
-      mode: 'Hosted by us',
-      price: 'From KES 55,000',
-      priceNote: 'per controller · + KES 4,000/year after year one',
-      tagline: 'The simplest, lowest-cost way to get your water online. We run everything for you; you just sign in to watch and control.',
-      badge: 'Most popular',
-      highlighted: true,
-      features: [
-        'One controller bundle: The core controller, pump control, one valve, one flow sensor, one tank monitor, a power supply, and a clock that survives power cuts',
-        'Add more on the same controller: valves (max 7/controller), more flow sensors (max 3/controller), tank monitors(max 4/controller).',
-        'Outgrow it? Add more controller bundles as your site grows, and they all work together in the same dashboard',
-        'We host it online and keep it up with an uptime guarantee; live dashboard, full history, and instant alerts',
-      ],
-      footnote: 'No power backup: if the mains goes out, the controller stops, then restarts on its schedule when power returns. Internet is only needed to check in while you are away.',
-      ctaLabel: 'See what your site costs',
-      ctaLink: '/pricing',
-    },
-    {
-      name: 'On-site, own it',
-      mode: 'Runs on-site · you own it',
-      price: 'From KES 200,000',
-      priceNote: 'tailored to your site',
-      tagline: 'Keep everything on your own land and own it outright. Built to keep going no matter what.',
-      features: [
-        'An on-site hub runs your whole site by itself, even with no internet',
-        'Battery and solar keep it working straight through power cuts',
-        'Your controllers work together and share sensors across the whole site',
-        'Reach it from anywhere over your own private connection, so your data never passes through us',
-        'You own everything; nothing depends on us to keep your site running day to day',
-      ],
-      footnote: 'A build sized to your site, so the price is tailored. You still need internet to check in while you are away.',
-      ctaLabel: 'Talk to us',
-    },
+  protected money(n: number): string {
+    return kes(n);
+  }
+
+  /** Monthly subscription tiers (per controller), with rates pulled from the pricing
+   *  model so the landing and the estimator never disagree. */
+  protected readonly tiers = [
+    { name: 'Lite', range: '1 controller', rate: PRICING.subscription[0].rate, suffix: '/ mo' },
+    { name: 'Plus', range: '2 to 4', rate: PRICING.subscription[1].rate, suffix: 'each / mo' },
+    { name: 'Pro', range: '5 to 10', rate: PRICING.subscription[2].rate, suffix: 'each / mo' },
+    { name: 'Scale', range: '11 or more', rate: PRICING.subscription[3].rate, suffix: 'each / mo' },
+  ];
+
+  protected readonly platformIncludes = [
+    'Live dashboard, full history and instant alerts, on every device',
+    'Automations you build online keep running on the controller, even offline',
+    'Grow freely: more tanks, valves and flow per controller, then more controllers',
+    'Hosted by us with an uptime guarantee',
   ];
 
   protected readonly capabilities: Capability[] = [
