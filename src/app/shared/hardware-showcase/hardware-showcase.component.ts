@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
-import { avifSrc, webpSrc } from '../marketing-image';
 
 /** One physical device on the cinematic hardware stage. */
 export interface HardwareDevice {
@@ -7,7 +6,7 @@ export interface HardwareDevice {
   name: string;
   kicker: string;
   body: string;
-  /** Hero image path under public/ (.jpg; <picture> derives .avif/.webp). */
+  /** Hero image path under public/ (.webp — the single committed format). */
   main: string;
   /** Other angle shots, shown as thumbnails that swap the hero on hover. */
   angles: string[];
@@ -22,8 +21,8 @@ export const HARDWARE_DEVICES: HardwareDevice[] = [
     name: 'The controller',
     kicker: 'THE BRAIN ON THE WALL',
     body: 'Reads your sensors, switches your pumps and valves, and reports back to your dashboard. Rail-mounted, wired once, then left alone for years.',
-    main: 'marketing/Controller4.jpg',
-    angles: ['marketing/Controller1.jpg', 'marketing/Controller5.jpg'],
+    main: 'marketing/Controller4.webp',
+    angles: ['marketing/Controller1.webp', 'marketing/Controller5.webp'],
     specs: ['16 relays', 'USB-C', '12V DC', 'Rail mount'],
   },
   {
@@ -31,8 +30,8 @@ export const HARDWARE_DEVICES: HardwareDevice[] = [
     name: 'Motorised valve',
     kicker: 'OPENS AND CLOSES ON COMMAND',
     body: 'Opens and closes a water line on its own, on a schedule or on command. Brass body, three-wire control, no one standing at the tap.',
-    main: 'marketing/valve3.jpg',
-    angles: ['marketing/valve5.jpg', 'marketing/valve1.jpg', 'marketing/valve6.jpg'],
+    main: 'marketing/valve3.webp',
+    angles: ['marketing/valve5.webp', 'marketing/valve1.webp', 'marketing/valve6.webp'],
     specs: ['Brass body', '3-wire', 'Motorised', 'DN20 / DN25'],
   },
   {
@@ -40,8 +39,8 @@ export const HARDWARE_DEVICES: HardwareDevice[] = [
     name: 'Pressure sensor',
     kicker: 'READS HOW FULL THE TANK IS',
     body: 'Sits at the bottom of a tank and reads the weight of water above it. The deeper the water, the higher the pressure, so once it is set from empty to full it reports exactly how full the tank is. No float to stick, nothing moving to wear out.',
-    main: 'marketing/pressure-sensor1.jpg',
-    angles: ['marketing/pressure-sensor4.jpg', 'marketing/pressure-sensor2.jpg', 'marketing/pressure-sensor3.jpg'],
+    main: 'marketing/pressure-sensor1.webp',
+    angles: ['marketing/pressure-sensor4.webp', 'marketing/pressure-sensor2.webp', 'marketing/pressure-sensor3.webp'],
     specs: ['Stainless steel', 'Threaded port', '3-wire', 'Reads tank level'],
   },
 ];
@@ -70,7 +69,6 @@ export const HARDWARE_DEVICES: HardwareDevice[] = [
   styles: [`
     :host { --cyan: #22d3ee; }
 
-    @keyframes grid-pan { to { background-position: 80px 80px; } }
     /* opacity-only: scaling a large radial gradient repaints a huge area each frame */
     @keyframes glow-pulse { 0%,100% { opacity:.45; } 50% { opacity:.8; } }
     @keyframes float-bob { 0%,100% { transform: translateY(0) rotate(-.4deg);} 50% { transform: translateY(-14px) rotate(.4deg);} }
@@ -84,7 +82,6 @@ export const HARDWARE_DEVICES: HardwareDevice[] = [
         linear-gradient(to right, rgba(34,211,238,.07) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(34,211,238,.07) 1px, transparent 1px);
       background-size: 40px 40px;
-      animation: grid-pan 6s linear infinite;
       mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 30%, transparent 75%);
     }
     .hw-glow { animation: glow-pulse 5s ease-in-out infinite; }
@@ -111,7 +108,7 @@ export const HARDWARE_DEVICES: HardwareDevice[] = [
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .hw-grid, .hw-glow, .hw-float, .hw-scan, .hw-chip, .hw-bracket { animation: none; }
+      .hw-glow, .hw-float, .hw-scan, .hw-chip, .hw-bracket { animation: none; }
       .hw-anim { animation: none; opacity: 1; transform: none; }
       .hw-scan { display: none; }
       .hw-tilt { transition: none; transform: none; }
@@ -153,18 +150,14 @@ export const HARDWARE_DEVICES: HardwareDevice[] = [
 
                 <div class="hw-tilt relative mx-auto max-w-md">
                   <!-- glass plate -->
-                  <div class="relative rounded-[2rem] bg-white/[0.04] ring-1 ring-white/10 backdrop-blur-sm p-6 sm:p-8 overflow-hidden">
+                  <div class="relative rounded-[2rem] bg-white/[0.06] ring-1 ring-white/10 p-6 sm:p-8 overflow-hidden">
                     <!-- scan sweep -->
                     <div class="hw-scan pointer-events-none absolute inset-x-0 -top-1/3 h-1/3 bg-gradient-to-b from-transparent via-cyan-300/45 to-transparent"></div>
 
                     <!-- hero device -->
                     <div class="hw-float">
-                      <picture>
-                        <source [srcset]="avifSrc(heroImg)" type="image/avif" />
-                        <source [srcset]="webpSrc(heroImg)" type="image/webp" />
-                        <img [src]="heroImg" [alt]="it.name"
-                             class="hw-device block w-full aspect-[4/3] object-contain" decoding="async" />
-                      </picture>
+                      <img [src]="heroImg" [alt]="it.name"
+                           class="hw-device block w-full aspect-[4/3] object-contain" loading="lazy" decoding="async" />
                     </div>
 
                     <!-- HUD corner brackets -->
@@ -176,14 +169,14 @@ export const HARDWARE_DEVICES: HardwareDevice[] = [
 
                   <!-- floating spec chips -->
                   @for (s of chipsFor(it); track s; let k = $index) {
-                    <span class="hw-chip absolute font-mono text-[11px] tracking-wider text-cyan-100 bg-slate-900/70 ring-1 ring-cyan-300/30 rounded-full px-3 py-1 backdrop-blur-sm shadow-lg shadow-cyan-500/10"
+                    <span class="hw-chip absolute font-mono text-[11px] tracking-wider text-cyan-100 bg-slate-900/85 ring-1 ring-cyan-300/30 rounded-full px-3 py-1 shadow-lg shadow-cyan-500/10"
                           [class]="chipPos[k]">{{ s }}</span>
                   }
                 </div>
 
                 <!-- angle thumbnails (hero shot first, then alternate angles) -->
                 <div class="mt-7 flex justify-center gap-3">
-                  @for (a of [it.main, ...it.angles]; track a) {
+                  @for (a of thumbsFor(it); track a) {
                     <button type="button" (mouseenter)="setHero(i, a)" (focus)="setHero(i, a)"
                             class="w-16 h-12 rounded-lg overflow-hidden ring-1 transition-all"
                             [class]="heroImg === a ? 'ring-cyan-400' : 'ring-white/15 opacity-60 hover:opacity-100'">
@@ -216,11 +209,19 @@ export class HardwareShowcaseComponent {
   readonly kicker = input('THE HARDWARE');
   readonly subhead = input('Off-the-shelf parts a plumber can fit. No mystery boxes, nothing you cannot replace.');
 
-  protected readonly avifSrc = avifSrc;
-  protected readonly webpSrc = webpSrc;
-
   /** Which hero image is active per row index (defaults to each device's main). */
   private readonly hero = signal<Record<number, string>>({});
+
+  /** Stable `[main, ...angles]` per device, so @for doesn't re-diff a fresh array each CD. */
+  private readonly thumbCache = new WeakMap<HardwareDevice, string[]>();
+  protected thumbsFor(it: HardwareDevice): string[] {
+    let t = this.thumbCache.get(it);
+    if (!t) {
+      t = [it.main, ...it.angles];
+      this.thumbCache.set(it, t);
+    }
+    return t;
+  }
 
   /** rAF-coalesced tilt state, so pointermove writes the transform once per frame. */
   private rafId = 0;

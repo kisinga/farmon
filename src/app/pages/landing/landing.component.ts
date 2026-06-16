@@ -3,7 +3,6 @@ import { RouterLink } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { BRAND_LOGO_SVG } from '../../shared/brand-logo';
 import { applyPageSeo } from '../../shared/seo';
-import { avifSrc, webpSrc } from '../../shared/marketing-image';
 import {
   HardwareShowcaseComponent,
   HARDWARE_DEVICES,
@@ -147,15 +146,12 @@ interface Deployment {
             <span class="w-3 h-3 rounded-full bg-green-400/70"></span>
             <span class="ml-3 hidden sm:block rounded-md bg-white ring-1 ring-slate-200 px-3 py-0.5 text-[11px] text-slate-400">majiflow.io / dashboard</span>
           </div>
-          <!-- One image per viewport. <source media> means only the matching
-               screenshot is downloaded — the phone shot on mobile, never both. -->
+          <!-- Art direction by viewport: <source media> downloads only the matching
+               screenshot — the phone shot on mobile, the desktop shot otherwise. -->
           <div class="aspect-[9/19] sm:aspect-[16/10] overflow-hidden bg-slate-950">
             <picture>
-              <source media="(max-width: 639px)" srcset="marketing/mobile.avif" type="image/avif" />
               <source media="(max-width: 639px)" srcset="marketing/mobile.webp" type="image/webp" />
-              <source srcset="marketing/desktop.avif" type="image/avif" />
-              <source srcset="marketing/desktop.webp" type="image/webp" />
-              <img src="marketing/desktop.png" alt="The MajiFlow water monitoring dashboard showing routes, status, tank levels and valves"
+              <img src="marketing/desktop.webp" alt="The MajiFlow water monitoring dashboard showing routes, status, tank levels and valves"
                    width="1591" height="1361" fetchpriority="high" decoding="async"
                    class="w-full h-full object-cover object-top" />
             </picture>
@@ -165,13 +161,9 @@ interface Deployment {
         <div class="hidden lg:block absolute -bottom-8 -right-4 w-44 rounded-[1.75rem] bg-slate-900 ring-1 ring-white/10 shadow-2xl p-1.5">
           <div class="rounded-[1.3rem] overflow-hidden bg-white">
             <div class="aspect-[9/19] overflow-hidden bg-slate-950">
-              <picture>
-                <source srcset="marketing/mobile.avif" type="image/avif" />
-                <source srcset="marketing/mobile.webp" type="image/webp" />
-                <img src="marketing/mobile.png" alt="MajiFlow water dashboard on a phone"
-                     width="388" height="842" loading="lazy" decoding="async"
-                     class="w-full object-cover object-top" />
-              </picture>
+              <img src="marketing/mobile.webp" alt="MajiFlow water dashboard on a phone"
+                   width="388" height="842" loading="lazy" decoding="async"
+                   class="w-full object-cover object-top" />
             </div>
           </div>
         </div>
@@ -298,13 +290,9 @@ interface Deployment {
               <!-- the design (topology render) -->
               <div class="bg-white border-b border-slate-100">
                 @if (d.design) {
-                  <picture>
-                    <source [srcset]="avif(d.design)" type="image/avif" />
-                    <source [srcset]="webp(d.design)" type="image/webp" />
-                    <img [src]="d.design" [alt]="d.title + ' design'"
-                         width="1000" height="741" loading="lazy" decoding="async"
-                         class="block w-full aspect-[16/10] object-contain bg-slate-50" />
-                  </picture>
+                  <img [src]="d.design" [alt]="d.title + ' design'"
+                       width="1000" height="741" loading="lazy" decoding="async"
+                       class="block w-full aspect-[16/10] object-contain bg-slate-50" />
                 } @else {
                   <div class="aspect-[16/10] bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-slate-400">
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -469,10 +457,6 @@ export class LandingComponent {
     });
   }
 
-  // Modern-format siblings for <picture> sources (see ../../shared/marketing-image).
-  protected readonly avif = avifSrc;
-  protected readonly webp = webpSrc;
-
   /** The controller, on the shared cinematic stage as a one-device hero. */
   protected readonly heroDevices = [HARDWARE_DEVICES[0]];
 
@@ -519,7 +503,7 @@ export class LandingComponent {
     {
       title: 'Dryland farm',
       body: 'Rain tank and borehole feeding two fields through a shared pump and valves.',
-      design: 'marketing/deploy-1-design.png',
+      design: 'marketing/deploy-1-design.webp',
       photo: '',
       designSlot: '',
       photoSlot: 'marketing/deploy-1-install.png',

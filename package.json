@@ -15,8 +15,7 @@
     "test:pinout": "npx tsx test/board-pinout.test.ts",
     "test:confirm": "npx tsx test/command-confirm.test.ts",
     "test:tunables": "npx tsx test/tunable-numbers.test.ts",
-    "test:calibration": "npx tsx test/calibration.test.ts",
-    "images:optimize": "bash scripts/optimize-marketing-images.sh"
+    "test:calibration": "npx tsx test/calibration.test.ts"
   },
   "private": true,
   "license": "AGPL-3.0-or-later",
