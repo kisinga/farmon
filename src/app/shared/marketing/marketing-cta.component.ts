@@ -20,8 +20,8 @@ export interface CtaButton {
   imports: [RouterLink],
   host: { class: 'contents' },
   template: `
-    <section class="px-5 sm:px-8 py-20">
-      <div class="max-w-4xl mx-auto rounded-3xl bg-gradient-to-br from-cyan-500 via-sky-600 to-blue-700 px-8 py-14 text-center text-white shadow-2xl shadow-cyan-500/20">
+    <section class="px-5 sm:px-8 py-16 sm:py-20">
+      <div class="max-w-4xl mx-auto rounded-3xl bg-gradient-to-br from-cyan-500 via-sky-600 to-blue-700 px-6 sm:px-8 py-12 sm:py-14 text-center text-white shadow-2xl shadow-cyan-500/20">
         <h2 class="text-2xl sm:text-4xl font-bold tracking-tight">{{ heading() }}</h2>
         <p class="mt-3 text-white/85 max-w-xl mx-auto">{{ blurb() }}</p>
         <div class="mt-8 flex flex-wrap gap-3 justify-center">

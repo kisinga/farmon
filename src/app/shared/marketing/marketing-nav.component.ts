@@ -31,23 +31,23 @@ const DEFAULT_LINKS: NavLink[] = [
   host: { class: 'contents' },
   template: `
     <nav class="sticky top-0 z-30 backdrop-blur-sm bg-slate-950/85 border-b border-white/10">
-      <div class="max-w-6xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-        <a routerLink="/" class="flex items-center gap-2.5">
+      <div class="max-w-6xl mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-2">
+        <a routerLink="/" class="flex items-center gap-2.5 shrink-0">
           <span class="w-8 h-8 block" [innerHTML]="logo"></span>
           <span class="text-lg font-bold tracking-tight text-white">MajiFlow</span>
         </a>
-        <div class="flex items-center gap-2 sm:gap-3">
+        <div class="flex items-center gap-0.5 sm:gap-3">
           @for (l of links(); track l.label) {
             @if (l.href) {
               <a [href]="l.href" target="_blank" rel="noopener"
                  class="hidden sm:inline-flex text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">{{ l.label }}</a>
             } @else {
               <a [routerLink]="l.route"
-                 class="text-sm font-medium text-white/70 hover:text-white transition-colors px-3 py-2">{{ l.label }}</a>
+                 class="text-sm font-medium text-white/70 hover:text-white transition-colors px-2 sm:px-3 py-2">{{ l.label }}</a>
             }
           }
           <a routerLink="/login"
-             class="text-sm font-semibold rounded-full px-4 py-2 bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">Sign in</a>
+             class="shrink-0 text-sm font-semibold rounded-full px-3.5 sm:px-4 py-2 bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">Sign in</a>
         </div>
       </div>
     </nav>
