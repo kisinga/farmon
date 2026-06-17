@@ -1,22 +1,20 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import type { UnsubscribeFunc } from 'pocketbase';
 import { DashboardStore } from '../dashboard.store';
 import { CommandLifecycleStore } from '../command-lifecycle.store';
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { AutomationsService, type AutomationRecord } from '../../automations/automations.service';
+import { AutomationsManagerComponent } from '../../automations/automations-manager.component';
 import { TunableNumbersComponent } from './tunable-numbers.component';
 import { TankCalibrationComponent } from './tank-calibration.component';
 
-const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-
 /**
- * SiteControlsComponent — the dashboard's quiet utility actions: two icon buttons,
+ * SiteControlsComponent - the dashboard's quiet utility actions: two icon buttons,
  * Automations and Setup, that live in the page header beside Docs and each open a
  * focused modal. Rendered with `display:contents` so the buttons participate
  * directly in the header's flex row instead of nesting under a wrapper box.
  *
- * Alerts moved out entirely — alert thresholds are configured per-site on the
+ * Alerts moved out entirely - alert thresholds are configured per-site on the
  * account/notifications page now, gated by the matching notification toggle.
  * Automations is the everyday action; Setup is the outlier (rare commissioning,
  * operator-gated, shown only when there's something to commission). Runs inside the
@@ -25,12 +23,12 @@ const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 @Component({
   selector: 'app-site-controls',
   standalone: true,
-  imports: [RouterLink, TunableNumbersComponent, TankCalibrationComponent],
-  // display:contents — the host box drops out so the two buttons are direct flex
+  imports: [AutomationsManagerComponent, TunableNumbersComponent, TankCalibrationComponent],
+  // display:contents - the host box drops out so the two buttons are direct flex
   // items of the header row they're slotted into.
   host: { class: 'contents' },
   template: `
-    <!-- Automations — the everyday action. The badge counts the active ones. -->
+    <!-- Automations - the everyday action. The badge counts the active ones. -->
     <button type="button" (click)="open.set('automations')" class="btn btn-sm btn-ghost btn-square relative shrink-0"
       [title]="autoTotal() ? autoEnabled() + ' of ' + autoTotal() + ' automations active' : 'Automations'" aria-label="Automations">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
@@ -41,11 +39,11 @@ const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
       }
     </button>
 
-    <!-- Setup — the outlier: rare commissioning, operator-only. A red dot warns
+    <!-- Setup - the outlier: rare commissioning, operator-only. A red dot warns
          when a safety override is live. -->
     @if (showSetup()) {
       <button type="button" (click)="open.set('setup')" class="btn btn-sm btn-ghost btn-square relative shrink-0"
-        [title]="anyOverride() ? 'Setup — safety override ON' : 'Setup'" aria-label="Setup">
+        [title]="anyOverride() ? 'Setup: safety override ON' : 'Setup'" aria-label="Setup">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
           <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -60,36 +58,13 @@ const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
     @switch (open()) {
       @case ('automations') {
         <dialog class="modal modal-open" style="position: fixed;">
-          <div class="modal-box max-w-md">
+          <div class="modal-box max-w-2xl">
             <div class="flex items-center justify-between gap-3">
               <h3 class="font-bold text-base">Automations</h3>
               <button class="btn btn-ghost btn-xs btn-circle" (click)="open.set(null)" aria-label="Close">✕</button>
             </div>
-            <p class="text-xs text-base-content/50 mt-0.5 mb-3">Run a route on a schedule, stopping at a target volume or time.</p>
-            @if (autos().length) {
-              <ul class="flex flex-col gap-2">
-                @for (a of autos(); track a.id) {
-                  <li class="rounded-xl ring-1 ring-base-300/40 px-3 py-2.5 flex items-center gap-3" [class.opacity-55]="!a.enabled">
-                    <span class="w-2 h-2 rounded-full shrink-0" [class]="a.enabled ? 'bg-success' : 'bg-base-content/25'"></span>
-                    <div class="min-w-0 flex-1">
-                      <div class="text-sm font-medium truncate">{{ a.name || 'Untitled automation' }}</div>
-                      <div class="text-[11px] text-base-content/50 truncate">{{ triggerSummary(a) }}</div>
-                    </div>
-                    @if (canControl()) {
-                      <input type="checkbox" class="toggle toggle-sm toggle-success shrink-0" [checked]="a.enabled"
-                        [disabled]="busyId() === a.id" (change)="toggleEnabled(a)" [title]="a.enabled ? 'Pause' : 'Resume'" />
-                    }
-                  </li>
-                }
-              </ul>
-            } @else {
-              <p class="text-sm text-base-content/50 text-center py-6">No automations yet.</p>
-            }
-            <div class="modal-action mt-4">
-              <a [routerLink]="['/site', siteId(), 'automations']" class="btn btn-primary btn-sm">
-                {{ autos().length ? 'Manage automations →' : 'Create automation →' }}
-              </a>
-            </div>
+            <p class="text-xs text-base-content/50 mt-0.5 mb-4">Run a route on a schedule, stopping at a target volume or time.</p>
+            <app-automations-manager [siteId]="siteId()" />
           </div>
           <div class="modal-backdrop" (click)="open.set(null)"></div>
         </dialog>
@@ -97,16 +72,17 @@ const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
       @case ('setup') {
         <dialog class="modal modal-open" style="position: fixed;">
-          <div class="modal-box max-w-lg">
+          <div class="modal-box max-w-2xl">
             <div class="flex items-center justify-between gap-3">
               <h3 class="font-bold text-base">Setup</h3>
               <button class="btn btn-ghost btn-xs btn-circle" (click)="open.set(null)" aria-label="Close">✕</button>
             </div>
-            <div class="alert alert-warning text-xs py-2 mt-3">
+            <p class="text-xs text-base-content/50 mt-0.5 mb-4">Calibration, safety timings, and manual override for this site.</p>
+            <div class="alert alert-warning text-xs py-2">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
               </svg>
-              <span>Calibration and safety settings change device behaviour — set them only when commissioning.</span>
+              <span>These change device behaviour, so set them only when commissioning.</span>
             </div>
 
             @if (hasSafetyTimings()) {
@@ -174,9 +150,8 @@ export class SiteControlsComponent {
 
   protected open = signal<'automations' | 'setup' | null>(null);
 
-  // --- Automations ---------------------------------------------------------
+  // --- Automations (badge only; full CRUD lives in the modal's manager) -----
   protected autos = signal<AutomationRecord[]>([]);
-  protected busyId = signal<string | null>(null);
   protected autoTotal = computed(() => this.autos().length);
   protected autoEnabled = computed(() => this.autos().filter((a) => a.enabled).length);
 
@@ -203,21 +178,6 @@ export class SiteControlsComponent {
   }
   private async refreshAutos(): Promise<void> {
     try { this.autos.set(await this.autoSvc.list(this.siteId())); } catch { /* transient */ }
-  }
-
-  protected async toggleEnabled(a: AutomationRecord): Promise<void> {
-    if (!this.canControl()) return;
-    this.busyId.set(a.id);
-    try { await this.autoSvc.update(a.id, { enabled: !a.enabled }); await this.refreshAutos(); }
-    catch { /* surfaced by realtime drift */ }
-    finally { this.busyId.set(null); }
-  }
-
-  protected triggerSummary(a: AutomationRecord): string {
-    if (a.trigger_type === 'level') return `when source > ${a.level_threshold_pct}%`;
-    const days = a.days_mask === 0 ? 'daily' : DAY_LABELS.filter((_, i) => a.days_mask & (1 << i)).join(' ');
-    const h = Math.floor(a.time_min / 60), m = a.time_min % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${days}`;
   }
 
   // --- Safety override (the live, hard-confirmed control) -------------------

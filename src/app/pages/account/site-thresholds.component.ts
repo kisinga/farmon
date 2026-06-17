@@ -60,9 +60,9 @@ import { BackendService } from '../../core/services/backend.service';
 export class SiteThresholdsComponent {
   readonly siteId = input.required<string>();
   readonly canEdit = input(true);
-  /** Show the tank low/full fields — gated by the user's tank-level alert pref. */
+  /** Show the tank low/full fields - gated by the user's tank-level alert pref. */
   readonly showTank = input(true);
-  /** Show the offline-timeout field — gated by the controller-offline alert pref. */
+  /** Show the offline-timeout field - gated by the controller-offline alert pref. */
   readonly showOffline = input(true);
 
   private backend = inject(BackendService);
@@ -105,7 +105,7 @@ export class SiteThresholdsComponent {
     this.saving.set(true);
     this.saved.set(false);
     this.err.set(null);
-    // Only write the fields this editor is showing — a disabled alert type's
+    // Only write the fields this editor is showing - a disabled alert type's
     // stored threshold is left untouched, not zeroed.
     const body: Record<string, number> = {};
     if (this.showTank()) {

@@ -36,8 +36,7 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
     <div class="max-w-6xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6">
       <!-- Top bar: site name + online count on the left; on the right the health
            pill (expands to the full per-controller panel) and the quiet utility
-           actions — Automations, Setup (operator-gated), and Docs. -->
-
+           actions - Automations, Setup (operator-gated), and Docs. -->
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-5 sm:mb-6">
         <div class="flex items-baseline gap-2 min-w-0 flex-1">
           <h1 class="app-title text-lg sm:text-xl font-bold leading-tight truncate min-w-0">{{ siteName() || 'Dashboard' }}</h1>
@@ -100,7 +99,7 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
           </div>
         }
 
-        <!-- Routes — the live control surface. Shown to everyone (status reads
+        <!-- Routes - the live control surface. Shown to everyone (status reads
              even in admin read-only); the toggle is disabled, not hidden, when
              control isn't held. Each card animates water when its route flows
              and toggles start/stop on click. -->
@@ -124,7 +123,7 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
 
           <section class="mb-6">
             <!-- Section header. A single-controller site hosts Stop all / ⋯ right
-                 here — its per-controller row would otherwise be a lone presence dot
+                 here - its per-controller row would otherwise be a lone presence dot
                  and the buttons stranded across an empty strip. Online state already
                  lives in the page-header pill, so no dot is repeated. Multi-controller
                  sites keep the dot + name + actions on each controller's row below. -->

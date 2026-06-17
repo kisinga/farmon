@@ -8,7 +8,7 @@ import { SiteThresholdsComponent } from './site-thresholds.component';
 interface OwnedSite { id: string; name: string }
 
 /**
- * Account / notifications page — per-user notification preferences plus the
+ * Account / notifications page - per-user notification preferences plus the
  * per-site alert thresholds the enabled types depend on.
  *
  * The toggles (one `notification_prefs` row per user, find-or-create) gate which
@@ -92,7 +92,7 @@ interface OwnedSite { id: string; name: string }
                 }
               </div>
             } @else {
-              <p class="text-sm text-base-content/50 py-2">No sites yet — thresholds appear here once you own a site.</p>
+              <p class="text-sm text-base-content/50 py-2">No sites yet. Thresholds appear here once you own a site.</p>
             }
           </section>
         }
@@ -129,7 +129,7 @@ export class AccountPageComponent implements OnInit {
   protected channelEmail = signal(DEFAULT_NOTIFICATION_PREFS.channel_email);
   private recordId = '';
 
-  /** Sites the user owns — each gets a threshold editor in the section below. */
+  /** Sites the user owns - each gets a threshold editor in the section below. */
   protected sites = signal<OwnedSite[]>([]);
 
   // The thresholds section follows the live toggle state (immediate feedback),
@@ -166,7 +166,7 @@ export class AccountPageComponent implements OnInit {
       });
       this.channelEmail.set(r['channel_email'] === true);
     } catch {
-      // No row yet — defaults already loaded.
+      // No row yet - defaults already loaded.
     } finally {
       this.loading.set(false);
     }
@@ -186,7 +186,7 @@ export class AccountPageComponent implements OnInit {
       });
       this.sites.set(rows.map((r) => ({ id: r['id'], name: (r['name'] as string) || r['id'] })));
     } catch {
-      // Leave empty — the thresholds section shows a gentle empty state.
+      // Leave empty - the thresholds section shows a gentle empty state.
     }
   }
 
