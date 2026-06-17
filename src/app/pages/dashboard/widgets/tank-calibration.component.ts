@@ -87,22 +87,27 @@ const SYNC_TOL = 0.05;
         </div>
       </div>
 
-      <!-- What the model resolves to, as a picture: where empty→full sit inside the
-           sensor's 0…max range. Device anchors overlay as ticks when they diverge. -->
+      <!-- The model as a picture: the empty→full range (neutral) inside the sensor's
+           0…max, the live pressure riding it in the same cyan as the Live readout (so
+           cyan = "now" everywhere), and, while you have unsaved edits, the device's
+           current anchors in amber so you can see what Save will change. -->
       <div class="flex flex-col gap-1.5">
         <div class="relative h-2.5 rounded-full bg-base-200">
-          <div class="absolute inset-y-0 rounded-full transition-all" [class]="valid() ? 'bg-primary/45' : 'bg-error/40'"
+          <div class="absolute inset-y-0 rounded-full transition-all" [class]="valid() ? 'bg-base-content/20' : 'bg-error/30'"
             [style.left.%]="pct(derived().p_empty_psi)" [style.right.%]="100 - pct(derived().p_full_psi)"></div>
-          <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.75 h-4 rounded-full" [class]="valid() ? 'bg-primary' : 'bg-error'" [style.left.%]="pct(derived().p_empty_psi)"></div>
-          <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.75 h-4 rounded-full" [class]="valid() ? 'bg-primary' : 'bg-error'" [style.left.%]="pct(derived().p_full_psi)"></div>
+          <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.75 h-4 rounded-full" [class]="valid() ? 'bg-base-content/45' : 'bg-error'" [style.left.%]="pct(derived().p_empty_psi)"></div>
+          <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.75 h-4 rounded-full" [class]="valid() ? 'bg-base-content/45' : 'bg-error'" [style.left.%]="pct(derived().p_full_psi)"></div>
           @if (diverged()) {
             <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.5 h-4 bg-warning/80" [style.left.%]="pct(deviceEmpty()!)"></div>
             <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.5 h-4 bg-warning/80" [style.left.%]="pct(deviceFull()!)"></div>
           }
+          @if (pressurePsi() !== null) {
+            <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-base-100 shadow transition-all" [style.left.%]="pct(pressurePsi()!)"></div>
+          }
         </div>
         <div class="flex items-center justify-between text-[10px] text-base-content/45 tabular-nums">
           <span>0</span>
-          <span [class]="valid() ? 'text-base-content/60' : 'text-error'">
+          <span [class]="valid() ? 'text-base-content/55' : 'text-error'">
             empty <span class="font-semibold">{{ derived().p_empty_psi.toFixed(2) }}</span> · full <span class="font-semibold">{{ derived().p_full_psi.toFixed(2) }}</span> psi
           </span>
           <span>{{ maxPsi() }}</span>
@@ -114,7 +119,7 @@ const SYNC_TOL = 0.05;
       } @else if (diverged()) {
         <p class="text-[11px] text-warning flex items-center gap-1.5">
           <span class="w-2 h-0.5 bg-warning/80 shrink-0"></span>
-          Device is calibrated differently (empty {{ deviceEmpty()!.toFixed(2) }} · full {{ deviceFull()!.toFixed(2) }} psi).
+          Unsaved change. The device still reads empty {{ deviceEmpty()!.toFixed(2) }} · full {{ deviceFull()!.toFixed(2) }} psi until you save.
         </p>
       }
 
@@ -124,8 +129,8 @@ const SYNC_TOL = 0.05;
             @if (saving()) { <span class="loading loading-spinner loading-xs"></span> }
             Save calibration
           </button>
-          @if (diverged()) {
-            <button class="btn btn-sm btn-ghost" (click)="matchDevice()">Match device</button>
+          @if (dirty()) {
+            <button class="btn btn-sm btn-ghost" (click)="discard()">Discard</button>
           }
           @if (phase(); as ph) {
             @switch (ph.phase) {
@@ -135,6 +140,9 @@ const SYNC_TOL = 0.05;
               @default {}
             }
           }
+          <span class="grow"></span>
+          <button class="btn btn-xs btn-ghost text-base-content/50" (click)="loadDesign()"
+            title="Fill the fields from the topology design values">Use design values</button>
         </div>
       }
     </div>
@@ -159,9 +167,23 @@ export class TankCalibrationComponent {
   private edits = signal<{ height?: number; drop?: number; maxPsi?: number }>({});
   protected saving = signal(false);
 
-  protected height = computed(() => this.edits().height ?? this.cal().tankHeightM);
-  protected drop = computed(() => this.edits().drop ?? this.cal().sensorDropM);
-  protected maxPsi = computed(() => this.edits().maxPsi ?? this.cal().sensorMaxPsi);
+  /** The physical model the editor sits on when there are no edits: the device's
+   *  live calibration (its psi anchors run back through the inverse), falling back
+   *  to the topology design only until the device reports. The device is the source
+   *  of truth for the *current* calibration, so after a save the model tracks what
+   *  was written and the divergence clears; topology is just the initial seed. */
+  protected baseline = computed<{ height: number; drop: number; maxPsi: number }>(() => {
+    const cal = this.cal();
+    const maxPsi = this.deviceVal(cal.rangeMaxKey) ?? cal.sensorMaxPsi;
+    const de = this.deviceEmpty(), df = this.deviceFull();
+    if (de === null || df === null) return { height: cal.tankHeightM, drop: cal.sensorDropM, maxPsi };
+    const phys = tankCalibrationToPhysical(de, df);
+    return { height: phys.tank_height_m, drop: phys.elevation_m, maxPsi };
+  });
+
+  protected height = computed(() => this.edits().height ?? this.baseline().height);
+  protected drop = computed(() => this.edits().drop ?? this.baseline().drop);
+  protected maxPsi = computed(() => this.edits().maxPsi ?? this.baseline().maxPsi);
   protected dirty = computed(() => Object.keys(this.edits()).length > 0);
 
   /** psi anchors implied by the current physical inputs. */
@@ -250,12 +272,14 @@ export class TankCalibrationComponent {
     });
   }
 
-  /** Pull the physical model from the device's current anchors (the inverse). */
-  protected matchDevice(): void {
-    const de = this.deviceEmpty(), df = this.deviceFull();
-    if (de === null || df === null) return;
-    const phys = tankCalibrationToPhysical(de, df);
-    this.edits.set({ height: round2(phys.tank_height_m), drop: round2(phys.elevation_m) });
+  /** Drop pending edits and fall back to the device baseline (what's live now). */
+  protected discard(): void { this.edits.set({}); }
+
+  /** Seed the form from the topology design geometry, for first-time calibration on
+   *  a device that has no (or only a default) calibration yet. */
+  protected loadDesign(): void {
+    const cal = this.cal();
+    this.edits.set({ height: cal.tankHeightM, drop: cal.sensorDropM, maxPsi: cal.sensorMaxPsi });
   }
 
   /** Write the derived anchors (+ sensor range) via config_set, behind a hard confirm. */
