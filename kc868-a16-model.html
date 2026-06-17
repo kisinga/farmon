@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>KC868-A16 - Interactive 3D Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg-0: #070b14; --bg-1: #0d1626;
+    --panel: rgba(17, 26, 43, 0.72);
+    --panel-brd: rgba(120, 160, 210, 0.14);
+    --text: #e8eef7; --text-dim: #93a4bd;
+    --accent: #34e0d4; --accent-2: #5aa9ff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif; color: var(--text);
+    background:
+      radial-gradient(1200px 800px at 72% 18%, #1a2c47 0%, rgba(26,44,71,0) 55%),
+      radial-gradient(1000px 900px at 18% 90%, #11324a 0%, rgba(17,50,74,0) 60%),
+      linear-gradient(160deg, var(--bg-1) 0%, var(--bg-0) 70%);
+    -webkit-font-smoothing: antialiased;
+  }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  .header { position: fixed; top: 22px; left: 26px; z-index: 20; pointer-events: none; user-select: none; }
+  .header .kicker { font-size: 11px; letter-spacing: 3.5px; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 6px; }
+  .header h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.5px; line-height: 1;
+    background: linear-gradient(100deg, #ffffff, #b9d6ff 70%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .header p { font-size: 13px; color: var(--text-dim); margin-top: 8px; max-width: 320px; }
+
+  .panel { position: fixed; top: 22px; right: 22px; z-index: 20; width: 312px; padding: 18px 18px 14px;
+    background: var(--panel); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid var(--panel-brd); border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05); }
+  .panel .sec { margin-bottom: 16px; } .panel .sec:last-child { margin-bottom: 4px; }
+  .sec-title { font-size: 10px; letter-spacing: 2.2px; text-transform: uppercase; color: var(--text-dim); font-weight: 600; margin-bottom: 11px; display: flex; align-items: center; gap: 7px; }
+  .sec-title::before { content:''; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .ctrl { margin-bottom: 13px; } .ctrl:last-child { margin-bottom: 0; }
+  .ctrl .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
+  .ctrl label { font-size: 12.5px; font-weight: 500; color: var(--text); }
+  .ctrl .val { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 5px; border-radius: 4px; outline: none; cursor: pointer;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent) var(--p,40%), rgba(255,255,255,0.10) var(--p,40%)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; cursor: pointer;
+    box-shadow: 0 0 0 4px rgba(52,224,212,0.22), 0 2px 6px rgba(0,0,0,0.4); transition: box-shadow .15s; }
+  input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 0 0 6px rgba(52,224,212,0.30), 0 2px 6px rgba(0,0,0,0.4); }
+  input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border: none; border-radius: 50%; background:#fff; box-shadow: 0 0 0 4px rgba(52,224,212,0.22); }
+  .btn-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; } .btn-grid.two { grid-template-columns: repeat(2, 1fr); }
+  .btn { font-family: inherit; font-size: 11.5px; font-weight: 600; color: var(--text-dim); padding: 9px 4px; border-radius: 10px; cursor: pointer; text-align: center;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); transition: all .16s ease; user-select: none; }
+  .btn:hover { color: var(--text); background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.16); }
+  .btn.active { color: #04201d; background: linear-gradient(135deg, var(--accent), #25b8ad); border-color: transparent; box-shadow: 0 4px 14px rgba(52,224,212,0.30); }
+
+  .label { font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600; color: var(--text); white-space: nowrap; padding: 4px 9px 4px 8px;
+    background: rgba(10,16,28,0.82); border: 1px solid rgba(120,160,210,0.22); border-radius: 20px; backdrop-filter: blur(6px);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4); pointer-events: none; display: flex; align-items: center; gap: 6px; transition: opacity .3s; }
+  .label .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 7px var(--accent); flex: none; }
+  .label .sub { color: var(--text-dim); font-weight: 500; font-size: 10px; }
+  .labels-hidden .label { opacity: 0; }
+
+  .hint { position: fixed; bottom: 18px; left: 26px; z-index: 20; pointer-events: none; font-size: 11.5px; color: var(--text-dim); display: flex; gap: 18px; }
+  .hint b { color: var(--text); font-weight: 600; }
+  #loading { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; background: var(--bg-0); transition: opacity .6s; color: var(--text-dim); }
+  #loading .ring { width: 38px; height: 38px; border: 3px solid rgba(255,255,255,0.12); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 720px) { .panel { width: calc(100% - 24px); right: 12px; top: auto; bottom: 12px; } .header { top: 14px; left: 16px; } .header h1 { font-size: 22px; } .header p, .hint { display: none; } }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="loading"><div class="ring"></div><div>Assembling KC868-A16…</div></div>
+
+  <div class="header">
+    <div class="kicker">KinCony · ESP32 Automation</div>
+    <h1>KC868-A16</h1>
+    <p>16-channel MOSFET controller, REV 1.4. Drag to orbit, scroll to zoom, and use the sliders to explode, rotate, and energize the outputs.</p>
+  </div>
+
+  <div class="panel">
+    <div class="sec">
+      <div class="sec-title">Assembly</div>
+      <div class="ctrl"><div class="row"><label>Exploded view</label><span class="val" id="v-explode">0%</span></div><input type="range" id="explode" min="0" max="100" value="0" /></div>
+    </div>
+    <div class="sec">
+      <div class="sec-title">Camera</div>
+      <div class="ctrl"><div class="row"><label>Orbit</label><span class="val" id="v-orbit">-38°</span></div><input type="range" id="orbit" min="-180" max="180" value="-38" /></div>
+      <div class="ctrl"><div class="row"><label>Tilt</label><span class="val" id="v-tilt">56°</span></div><input type="range" id="tilt" min="6" max="89" value="56" /></div>
+      <div class="ctrl"><div class="row"><label>Zoom</label><span class="val" id="v-zoom">30</span></div><input type="range" id="zoom" min="16" max="58" value="30" /></div>
+      <div class="btn-grid">
+        <div class="btn" data-view="iso">Iso</div><div class="btn" data-view="top">Top</div>
+        <div class="btn" data-view="front">Front</div><div class="btn" data-view="side">Side</div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="sec-title">State</div>
+      <div class="ctrl"><div class="row"><label>Active outputs</label><span class="val" id="v-out">6 / 16</span></div><input type="range" id="outputs" min="0" max="16" value="6" /></div>
+      <div class="btn-grid two">
+        <div class="btn" data-toggle="sequence">▶ Sequence</div>
+        <div class="btn active" data-toggle="spin">↻ Auto-spin</div>
+        <div class="btn active" data-toggle="labels">Labels</div>
+        <div class="btn active" data-toggle="lid">Enclosure</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hint">
+    <span><b>Drag</b> orbit</span><span><b>Scroll</b> zoom</span><span><b>Sliders</b> explode &amp; energize</span>
+  </div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ===================================================================
+   SCALE: 1 unit = 10 mm.  Board ~ 190 x 140 x 1.6 mm (KC868-A16 rev1.4)
+=================================================================== */
+const BW = 19, BD = 15, BT = 0.16;     // board width(X) / depth(Z) / thickness(Y), ~190x150mm
+const TOP = BT / 2;                      // top surface of the PCB
+
+/* ----------------------- renderer / scene ----------------------- */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+app.appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', top: '0', left: '0', pointerEvents: 'none' });
+app.appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 500);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+/* ----------------------- lighting ----------------------- */
+scene.add(new THREE.HemisphereLight(0xbfd6ff, 0x0a1018, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 2.4);
+key.position.set(16, 28, 14); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 1; key.shadow.camera.far = 100;
+const sd = 26;
+key.shadow.camera.left = -sd; key.shadow.camera.right = sd; key.shadow.camera.top = sd; key.shadow.camera.bottom = -sd;
+key.shadow.bias = -0.0002; key.shadow.radius = 6;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x5aa9ff, 1.1); rim.position.set(-18, 9, -16); scene.add(rim);
+const fill = new THREE.DirectionalLight(0x34e0d4, 0.32); fill.position.set(0, 6, 20); scene.add(fill);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.ShadowMaterial({ opacity: 0.38 }));
+ground.rotation.x = -Math.PI / 2; ground.position.y = -7.2; ground.receiveShadow = true;
+scene.add(ground);
+
+/* ----------------------- materials ----------------------- */
+const M = {
+  pcb:        new THREE.MeshPhysicalMaterial({ color: 0x12592f, roughness: 0.5, metalness: 0.05, clearcoat: 0.55, clearcoatRoughness: 0.35 }),
+  pcbEdge:    new THREE.MeshStandardMaterial({ color: 0x0c3d20, roughness: 0.6 }),
+  solderPad:  new THREE.MeshStandardMaterial({ color: 0xcdd2d8, roughness: 0.35, metalness: 0.9 }),
+  termGreen:  new THREE.MeshPhysicalMaterial({ color: 0x1fae54, roughness: 0.45, clearcoat: 0.4 }),
+  termGreenD: new THREE.MeshStandardMaterial({ color: 0x14753a, roughness: 0.6 }),
+  termBlue:   new THREE.MeshPhysicalMaterial({ color: 0x2563c9, roughness: 0.45, clearcoat: 0.4 }),
+  metal:      new THREE.MeshStandardMaterial({ color: 0xc7ccd4, roughness: 0.28, metalness: 1.0 }),
+  metalDark:  new THREE.MeshStandardMaterial({ color: 0x8a929e, roughness: 0.4, metalness: 1.0 }),
+  black:      new THREE.MeshStandardMaterial({ color: 0x14181f, roughness: 0.5, metalness: 0.25 }),
+  ic:         new THREE.MeshStandardMaterial({ color: 0x1b2027, roughness: 0.45, metalness: 0.3 }),
+  gold:       new THREE.MeshStandardMaterial({ color: 0xd8a93a, roughness: 0.35, metalness: 0.95 }),
+  capBody:    new THREE.MeshStandardMaterial({ color: 0x1b2530, roughness: 0.45, metalness: 0.3 }),
+  capTop:     new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.35, metalness: 0.9 }),
+  resistor:   new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.5 }),
+  resTan:     new THREE.MeshStandardMaterial({ color: 0xc9a96a, roughness: 0.55 }),
+  white:      new THREE.MeshStandardMaterial({ color: 0xeef2f6, roughness: 0.6 }),
+  enclosure:  new THREE.MeshPhysicalMaterial({ color: 0x202730, roughness: 0.5, metalness: 0.2, clearcoat: 0.3 }),
+  lid:        new THREE.MeshPhysicalMaterial({ color: 0x8fd3ff, roughness: 0.08, metalness: 0, transmission: 0.92, transparent: true, opacity: 0.3, thickness: 0.6, ior: 1.4, clearcoat: 1 }),
+  screw:      new THREE.MeshStandardMaterial({ color: 0xb9bec7, roughness: 0.3, metalness: 1.0 }),
+  holeDark:   new THREE.MeshStandardMaterial({ color: 0x07120a, roughness: 0.8 }),
+};
+const ledMat = c => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0, roughness: 0.3 });
+
+/* ----------------------- geometry helpers ----------------------- */
+function box(w, h, dp, mat, x = 0, y = 0, z = 0) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dp), mat);
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; return m;
+}
+function cyl(r, h, mat, x = 0, y = 0, z = 0, seg = 20) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg), mat);
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; return m;
+}
+function textTexture(text, { w = 256, h = 128, color = '#dfe8f5', size = 60, font = 700, family = 'Inter' } = {}) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.fillStyle = color; g.font = `${font} ${size}px ${family}, sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2);
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4; t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function silk(text, w, h, opts = {}) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: textTexture(text, opts), transparent: true }));
+  m.rotation.x = -Math.PI / 2; return m;
+}
+function cssLabel(text, sub, x, y, z) {
+  const div = document.createElement('div'); div.className = 'label';
+  div.innerHTML = `<span class="dot"></span>${text}${sub ? `<span class="sub">${sub}</span>` : ''}`;
+  const o = new CSS2DObject(div); o.position.set(x, y, z); return o;
+}
+
+/* ----------------------- explosion layer groups ----------------------- */
+const groups = {};
+function makeGroup(name, eo) { const g = new THREE.Group(); g.userData.eo = new THREE.Vector3(...eo); groups[name] = g; scene.add(g); return g; }
+const gBase  = makeGroup('base',  [0, -4.0, 0]);
+const gPCB   = makeGroup('pcb',   [0,  0,   0]);
+const gLow   = makeGroup('low',   [0,  2.2, 0]);
+const gConn  = makeGroup('conn',  [0,  3.0, 0]);
+const gESP   = makeGroup('esp',   [0,  3.7, 0]);
+const gTerm  = makeGroup('term',  [0,  4.5, 0]);
+const gLid   = makeGroup('lid',   [0,  8.6, 0]);
+
+/* ============================ PCB ============================ */
+(function buildPCB() {
+  gPCB.add(box(BW, BT, BD, M.pcb, 0, 0, 0));
+  gPCB.add(box(BW + 0.04, BT * 0.5, BD + 0.04, M.pcbEdge, 0, -BT * 0.25, 0));
+  // corner mounting holes
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const x = sx * (BW / 2 - 0.7), z = sz * (BD / 2 - 0.7);
+    gPCB.add(cyl(0.38, BT + 0.04, M.gold, x, 0, z, 20));
+    gPCB.add(cyl(0.2, BT + 0.08, M.holeDark, x, 0, z, 20));
+  }
+  // silkscreen branding (just left of the ESP32, matching the real board)
+  const b1 = silk('KC868-A16   REV:1.4', 4.0, 0.55, { w: 600, h: 80, size: 46, color: '#dfe9f2' });
+  b1.position.set(5.4, TOP + 0.012, -2.4); gPCB.add(b1);
+  const b2 = silk('Designed By KINCONY', 3.4, 0.42, { w: 600, h: 60, size: 34, color: '#9fc0a8' });
+  b2.position.set(5.3, TOP + 0.012, -1.75); gPCB.add(b2);
+})();
+
+/* ===================== terminal blocks ===================== */
+// poles laid along +X, centered. Screws on top, wire holes face +Z.
+function terminalBlock(poles, { pitch = 0.5, H = 1.5, mat = M.termGreen, dp } = {}) {
+  const g = new THREE.Group();
+  const W = poles * pitch;
+  dp = dp ?? Math.max(0.8, pitch * 1.9);          // body depth scales with pitch
+  const sr = pitch * 0.34, hr = pitch * 0.26;     // screw / hole radius scale with pitch
+  g.add(box(W, H, dp, mat, 0, TOP + H / 2, 0));
+  g.add(box(W, 0.16, 0.22, M.termGreenD, 0, TOP + H - 0.02, -dp / 2 + 0.14)); // back ridge
+  for (let i = 0; i < poles; i++) {
+    const x = -W / 2 + pitch * (i + 0.5);
+    const hole = cyl(hr, 0.34, M.holeDark, x, TOP + H * 0.4, dp / 2 - 0.05, 12); hole.rotation.x = Math.PI / 2; g.add(hole);
+    g.add(cyl(sr, 0.07, M.screw, x, TOP + H + 0.02, -0.13, 14));
+    g.add(box(sr * 1.5, 0.03, 0.05, M.holeDark, x, TOP + H + 0.06, -0.13));   // screw slot
+    if (i) g.add(box(0.025, H * 0.66, dp, M.termGreenD, -W / 2 + pitch * i, TOP + H * 0.55, 0)); // groove
+  }
+  g.castShadow = true; return g;
+}
+function place(group, x, z, rotY = 0) { group.position.set(x, 0, z); group.rotation.y = rotY; gTerm.add(group); return group; }
+
+// Centers, counts and pitches below are measured pixel-for-pixel from the rev1.4 photo.
+const BACK = -BD / 2 + 0.62, FRONT = BD / 2 - 0.62;
+const PIN = 0.422, POUT = 0.561;                  // input vs output terminal pitch (~3.81 / 5.08 mm)
+// --- top edge: digital inputs + signal cluster (holes face back, rotate PI) ---
+place(terminalBlock(9, { pitch: PIN }), -6.55, BACK, Math.PI);             // Digital Input 1-8 + GND
+place(terminalBlock(9, { pitch: PIN }), -2.30, BACK, Math.PI);             // Digital Input 9-16 + GND
+place(terminalBlock(2, { pitch: PIN, H: 1.3 }), 0.60, BACK, Math.PI);      // RS485 A B
+place(terminalBlock(5, { pitch: PIN, H: 1.3 }), 2.60, BACK, Math.PI);      // Analog GND + 1-4
+place(terminalBlock(5, { pitch: PIN, H: 1.3 }), 4.90, BACK, Math.PI);      // GPIO GND 1-3 + 3.3V
+// --- bottom edge: two 10-pole output connectors (8 outputs + 2 integrated 12/24V each) ---
+place(terminalBlock(10, { pitch: POUT }), -5.60, FRONT);                   // Output 16-9 + 12/24V
+place(terminalBlock(10, { pitch: POUT }), 0.17, FRONT);                    // Output 8-1 + 12/24V
+// --- 12V DC power input (bottom-right corner) ---
+place(terminalBlock(2, { mat: M.termBlue, H: 1.55, pitch: 0.6 }), 8.2, FRONT);
+
+/* ===================== component rows (z bands measured from photo) ===================== */
+const Z = { inRes: -4.6, inIc: -3.85, logic: -0.5, opto: 1.3, led: 2.05, mos: 2.65 };
+const OX0 = -8.07, OX1 = 3.78;   // 16 output channels span
+const IX0 = -8.2,  IX1 = -0.6;   // 16 input channels span (under the input blocks)
+
+/* outputs: gate-drive optocoupler + status LED + MOSFET, one per channel */
+const leds = [];
+(function buildOutputs() {
+  const N = 16, step = (OX1 - OX0) / (N - 1);
+  for (let i = 0; i < N; i++) {
+    const x = OX0 + i * step;
+    // gate-drive optocoupler (cream SOP-4)
+    gLow.add(box(0.46, 0.2, 0.6, M.white, x, TOP + 0.1, Z.opto));
+    // output status LED
+    const lm = ledMat(0xff5436);
+    gLow.add(box(0.2, 0.13, 0.34, lm, x, TOP + 0.07, Z.led));
+    const glow = new THREE.PointLight(0xff5436, 0, 1.6, 2); glow.position.set(x, TOP + 0.4, Z.led);
+    gLow.add(glow);
+    leds.push({ mat: lm, light: glow });
+    // MOSFET (DPAK / TO-252): tab + body + 3 legs
+    gLow.add(box(0.6, 0.5, 0.72, M.black, x, TOP + 0.25, Z.mos));
+    gLow.add(box(0.5, 0.06, 0.56, M.metalDark, x, TOP + 0.5, Z.mos - 0.04));
+    for (const lx of [-0.18, 0, 0.18]) gLow.add(box(0.07, 0.05, 0.2, M.gold, x + lx, TOP + 0.03, Z.mos + 0.45));
+  }
+})();
+
+/* inputs: protection + opto + current-limit resistor, under the input terminals */
+(function buildInputs() {
+  const N = 16, step = (IX1 - IX0) / (N - 1);
+  for (let i = 0; i < N; i++) {
+    const x = IX0 + i * step;
+    gLow.add(box(0.4, 0.18, 0.5, M.ic, x, TOP + 0.1, Z.inIc));         // input opto / transistor
+    gLow.add(box(0.16, 0.1, 0.26, ledMat(0x6fd0ff), x, TOP + 0.06, Z.inIc + 0.62)); // input LED
+    gLow.add(box(0.28, 0.08, 0.14, M.resTan, x, TOP + 0.05, Z.inRes)); // resistor array element
+  }
+})();
+
+/* center logic: PCF8574 I/O-expanders + support ICs, at measured centres [x, z, w, depth] */
+(function buildLogic() {
+  const chips = [
+    [-3.50, -0.20, 1.05, 0.55],   // PCF8574 I/O-expander (U32)
+    [ 1.28, -0.30, 1.20, 0.55],   // PCF8574 I/O-expander
+    [-1.46, -2.10, 1.10, 0.55],   // main SOIC (U1)
+    [ 4.09, -0.57, 0.90, 0.50],   // right-side SOIC
+    [ 3.31, -3.83, 0.85, 0.45],   // U21
+    [ 1.51, -2.60, 0.80, 0.40],   // U30
+  ];
+  for (const [x, z, w, dp] of chips) {
+    gLow.add(box(w, 0.22, dp, M.ic, x, TOP + 0.11, z));
+    gLow.add(cyl(0.04, 0.02, M.white, x - w / 2 + 0.12, TOP + 0.23, z - dp / 2 + 0.1, 8)); // pin-1 dot
+  }
+  // resistor-network arrays scattered through the back, skipping the chip footprints
+  const occupied = (x, z) => chips.some(([cx, cz, w, dp]) => Math.abs(x - cx) < w / 2 + 0.2 && Math.abs(z - cz) < dp / 2 + 0.2);
+  let s = 7;
+  const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i = 0; i < 70; i++) {
+    const x = -8.3 + rnd() * 12, z = -4.6 + rnd() * 4.4;
+    if (occupied(x, z)) continue;
+    gLow.add(box(0.24, 0.07, 0.12, rnd() > 0.5 ? M.resTan : M.resistor, x, TOP + 0.04, z));
+  }
+})();
+
+/* ===================== ESP32-WROOM-32 (right side, antenna toward front) ===================== */
+(function buildESP() {
+  const x = 7.5, z0 = -1.0, t = 0.1;                 // module centre
+  gESP.add(box(1.8, t, 2.55, M.black, x, TOP + t / 2, z0));               // module PCB
+  gESP.add(box(1.66, 0.26, 1.78, M.metal, x, TOP + t + 0.13, z0 - 0.32)); // RF shield (toward back)
+  gESP.add(box(1.5, 0.02, 1.62, M.metalDark, x, TOP + t + 0.27, z0 - 0.32));
+  // meandered antenna on the front bare-PCB section (+Z)
+  for (let i = 0; i < 6; i++) gESP.add(box(0.16, 0.02, 0.5, M.gold, x - 0.6 + i * 0.24, TOP + t + 0.012, z0 + 1.0));
+  // castellated pads down both long edges
+  for (let i = 0; i < 10; i++) {
+    const pz = z0 - 1.1 + i * 0.24;
+    gESP.add(box(0.16, 0.04, 0.1, M.gold, x - 0.86, TOP + t + 0.01, pz));
+    gESP.add(box(0.16, 0.04, 0.1, M.gold, x + 0.86, TOP + t + 0.01, pz));
+  }
+  const lab = silk('ESP32', 1.2, 0.45, { w: 240, h: 90, size: 54, color: '#aab8cc' });
+  lab.position.set(x, TOP + t + 0.28, z0 - 0.32); gESP.add(lab);
+  gESP.add(cssLabel('ESP32-WROOM-32', 'WiFi + BT', x, TOP + 1.6, z0 - 0.3));
+})();
+
+/* ===================== connectors: RJ45 / USB-C / buttons ===================== */
+(function buildConnectors() {
+  // Ethernet RJ45 (HanRun), back-right corner, opening faces back (-Z)
+  const ex = 7.85, ez = -5.35;
+  gConn.add(box(1.7, 1.35, 2.4, M.metal, ex, TOP + 0.68, ez));
+  gConn.add(box(1.3, 0.95, 0.12, M.black, ex, TOP + 0.6, ez - 1.18));      // jack mouth
+  gConn.add(box(0.16, 0.16, 0.04, ledMat(0x46ff7a), ex - 0.48, TOP + 1.05, ez - 1.2)); // link LEDs
+  gConn.add(box(0.16, 0.16, 0.04, ledMat(0xffb454), ex + 0.48, TOP + 1.05, ez - 1.2));
+  gConn.add(cssLabel('Ethernet', 'RJ45 / LAN8720', ex, TOP + 2.0, ez));
+
+  // USB-C (front edge, opening faces front)
+  const ux = 6.3, uz = 6.4;
+  gConn.add(box(0.92, 0.34, 0.72, M.metal, ux, TOP + 0.2, uz));
+  gConn.add(box(0.7, 0.2, 0.08, M.black, ux, TOP + 0.2, uz + 0.38));
+  gConn.add(cssLabel('USB-C', 'flash / power', ux, TOP + 1.0, uz));
+
+  // Reset + Download tactile buttons
+  for (const bx of [3.7, 5.0]) {
+    gConn.add(box(0.58, 0.3, 0.58, M.metalDark, bx, TOP + 0.15, 5.0));
+    gConn.add(cyl(0.15, 0.12, M.black, bx, TOP + 0.32, 5.0, 14));
+  }
+})();
+
+/* ===================== passives: caps, inductor, regulators, RF, I2C ===================== */
+(function buildMisc() {
+  // electrolytic capacitors (power / ESP section)
+  for (const [x, z, r, h] of [[4.2, -1.3, 0.3, 1.0], [5.4, -1.3, 0.3, 1.0], [6.6, 1.0, 0.42, 1.35]]) {
+    gLow.add(cyl(r, h, M.capBody, x, TOP + h / 2, z, 22));
+    gLow.add(cyl(r, 0.04, M.capTop, x, TOP + h, z, 22));
+  }
+  // power inductor (L1)
+  gLow.add(box(0.8, 0.62, 0.8, M.capBody, 7.0, TOP + 0.31, 0.75));
+  // voltage regulators (SOT-223)
+  for (const x of [3.6, 4.35, 5.1]) gLow.add(box(0.42, 0.26, 0.52, M.black, x, TOP + 0.13, 0.5));
+  // 433MHz RF transmitter + receiver headers (left-centre)
+  for (const z of [-2.4, -3.4]) {
+    gLow.add(box(0.95, 0.18, 0.5, M.pcbEdge, -6.9, TOP + 0.09, z));
+    for (let i = 0; i < 4; i++) gLow.add(box(0.07, 0.3, 0.07, M.gold, -7.3 + i * 0.26, TOP + 0.2, z));
+  }
+  // I2C 4-pin header (centre): 3V3 / GND / SCL / SDA
+  gLow.add(box(0.95, 0.42, 0.42, M.white, -0.3, TOP + 0.2, 0.45));
+  for (let i = 0; i < 4; i++) gLow.add(box(0.07, 0.34, 0.07, M.gold, -0.66 + i * 0.24, TOP + 0.22, 0.45));
+  // programming / expansion connector on the left edge (J5)
+  gLow.add(box(0.55, 0.42, 1.1, M.black, -9.15, TOP + 0.2, -1.6));
+})();
+
+/* ===================== enclosure ===================== */
+(function buildEnclosure() {
+  const w = BW + 1.2, dp = BD + 1.2, wall = 0.35, hh = 2.0;
+  gBase.add(box(w, 0.35, dp, M.enclosure, 0, -1.4, 0));
+  for (const [a, b, c, x, y, z] of [
+    [w, hh, wall, 0, -1.4 + hh / 2, -dp / 2 + wall / 2], [w, hh, wall, 0, -1.4 + hh / 2, dp / 2 - wall / 2],
+    [wall, hh, dp, -w / 2 + wall / 2, -1.4 + hh / 2, 0], [wall, hh, dp, w / 2 - wall / 2, -1.4 + hh / 2, 0],
+  ]) gBase.add(box(a, b, c, M.enclosure, x, y, z));
+  for (const sx of [-1, 1]) gBase.add(box(2.4, 0.45, 1.0, M.black, sx * (w / 2 - 2), -1.75, 0)); // DIN feet
+
+  gLid.add(box(w, 0.28, dp, M.lid, 0, 3.1, 0));
+  for (const [a, b, c, x, y, z] of [
+    [w, 1.8, wall, 0, 2.2, -dp / 2 + wall / 2], [w, 1.8, wall, 0, 2.2, dp / 2 - wall / 2],
+    [wall, 1.8, dp, -w / 2 + wall / 2, 2.2, 0], [wall, 1.8, dp, w / 2 - wall / 2, 2.2, 0],
+  ]) gLid.add(box(a, b, c, M.lid, x, y, z));
+})();
+
+/* ===================== section labels ===================== */
+gTerm.add(cssLabel('Digital Inputs', '1-16, opto-isolated', -4.4, TOP + 1.9, BACK));
+gTerm.add(cssLabel('Signal Bus', 'RS485 · Analog · GPIO', 2.7, TOP + 1.7, BACK));
+gTerm.add(cssLabel('Relay Outputs', '16× MOSFET + 12/24V', -2.7, TOP + 1.8, FRONT));
+gTerm.add(cssLabel('Power In', 'DC 12V', 8.2, TOP + 2.0, FRONT));
+gLow.add(cssLabel('I/O Expanders', 'PCF8574', -1.1, TOP + 1.1, -0.25));
+
+/* ===================================================================
+   smooth state (eased toward targets each frame)
+=================================================================== */
+const cam = {
+  theta: THREE.MathUtils.degToRad(-38), thetaT: THREE.MathUtils.degToRad(-38),
+  phi: THREE.MathUtils.degToRad(56), phiT: THREE.MathUtils.degToRad(56),
+  r: 30, rT: 30, target: new THREE.Vector3(0, 0.6, 0),
+};
+let explode = 0, explodeT = 0, outActive = 6, outActiveT = 6, seqClock = 0;
+const state = { spin: true, labels: true, lid: true, sequence: false };
+
+function applyCamera() {
+  const sp = Math.sin(cam.phi);
+  camera.position.set(
+    cam.target.x + cam.r * sp * Math.sin(cam.theta),
+    cam.target.y + cam.r * Math.cos(cam.phi),
+    cam.target.z + cam.r * sp * Math.cos(cam.theta));
+  camera.lookAt(cam.target);
+}
+
+/* ----------------------- orbit controls (drag + wheel) ----------------------- */
+let dragging = false, lastX = 0, lastY = 0;
+const el = renderer.domElement; el.style.touchAction = 'none';
+el.addEventListener('pointerdown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; el.setPointerCapture(e.pointerId); state.spin = false; setBtn('spin', false); });
+el.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  cam.thetaT -= (e.clientX - lastX) * 0.006;
+  cam.phiT = THREE.MathUtils.clamp(cam.phiT - (e.clientY - lastY) * 0.006, THREE.MathUtils.degToRad(6), THREE.MathUtils.degToRad(89));
+  lastX = e.clientX; lastY = e.clientY; syncCamSliders();
+});
+addEventListener('pointerup', () => dragging = false);
+el.addEventListener('wheel', e => { e.preventDefault(); cam.rT = THREE.MathUtils.clamp(cam.rT * (1 + e.deltaY * 0.0011), 16, 58); syncCamSliders(); }, { passive: false });
+
+/* ----------------------- UI ----------------------- */
+const $ = id => document.getElementById(id);
+const setFill = i => i.style.setProperty('--p', ((i.value - i.min) / (i.max - i.min) * 100) + '%');
+const bind = (id, fn) => { const i = $(id); setFill(i); i.addEventListener('input', () => { setFill(i); fn(+i.value); }); };
+
+bind('explode', v => { explodeT = v / 100; $('v-explode').textContent = v + '%'; });
+bind('orbit', v => { cam.thetaT = THREE.MathUtils.degToRad(v); $('v-orbit').textContent = v + '°'; });
+bind('tilt', v => { cam.phiT = THREE.MathUtils.degToRad(v); $('v-tilt').textContent = v + '°'; });
+bind('zoom', v => { cam.rT = v; $('v-zoom').textContent = v; });
+bind('outputs', v => { outActiveT = v; state.sequence = false; setBtn('sequence', false); $('v-out').textContent = v + ' / 16'; });
+
+function syncCamSliders() {
+  const o = $('orbit'), t = $('tilt'), z = $('zoom');
+  o.value = ((Math.round(THREE.MathUtils.radToDeg(cam.thetaT)) + 180 + 360) % 360) - 180; setFill(o); $('v-orbit').textContent = o.value + '°';
+  t.value = THREE.MathUtils.clamp(Math.round(THREE.MathUtils.radToDeg(cam.phiT)), 6, 89); setFill(t); $('v-tilt').textContent = t.value + '°';
+  z.value = Math.round(cam.rT); setFill(z); $('v-zoom').textContent = z.value;
+}
+const VIEWS = { iso: { t: -38, p: 56, r: 30 }, top: { t: 0, p: 7, r: 27 }, front: { t: 0, p: 82, r: 31 }, side: { t: -90, p: 70, r: 31 } };
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
+  const v = VIEWS[b.dataset.view];
+  cam.thetaT = THREE.MathUtils.degToRad(v.t); cam.phiT = THREE.MathUtils.degToRad(v.p); cam.rT = v.r;
+  state.spin = false; setBtn('spin', false); syncCamSliders();
+}));
+function setBtn(name, on) { const b = document.querySelector(`[data-toggle="${name}"]`); if (b) b.classList.toggle('active', on); }
+document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => {
+  const k = b.dataset.toggle; state[k] = !state[k]; b.classList.toggle('active', state[k]);
+  if (k === 'labels') document.body.classList.toggle('labels-hidden', !state.labels);
+  if (k === 'sequence' && state.sequence) seqClock = 0;
+}));
+
+/* ----------------------- animate ----------------------- */
+const lerp = (a, b, t) => a + (b - a) * t;
+function tick() {
+  requestAnimationFrame(tick);
+  if (state.spin && !dragging) cam.thetaT += 0.0022;
+  cam.theta = lerp(cam.theta, cam.thetaT, 0.1);
+  cam.phi = lerp(cam.phi, cam.phiT, 0.1);
+  cam.r = lerp(cam.r, cam.rT, 0.1);
+  applyCamera();
+
+  explode = lerp(explode, explodeT, 0.12);
+  for (const k in groups) groups[k].position.copy(groups[k].userData.eo).multiplyScalar(explode);
+  gLid.visible = state.lid;
+  M.lid.opacity = 0.3 * (1 - explode * 0.45);
+
+  if (state.sequence) {
+    seqClock += 0.012;
+    outActiveT = (Math.sin(seqClock) * 0.5 + 0.5) * 16;
+    $('v-out').textContent = Math.round(outActiveT) + ' / 16';
+    const rs = $('outputs'); rs.value = Math.round(outActiveT); setFill(rs);
+  }
+  outActive = lerp(outActive, outActiveT, 0.15);
+  for (let i = 0; i < leds.length; i++) {
+    const on = THREE.MathUtils.clamp(outActive - i, 0, 1);
+    const { mat, light } = leds[i];
+    const hex = on > 0.5 ? 0x46ff7a : 0xff5436;
+    mat.emissiveIntensity = lerp(mat.emissiveIntensity, on * 2.4, 0.2);
+    mat.color.setHex(hex); mat.emissive.setHex(hex);
+    light.intensity = lerp(light.intensity, on * 1.2, 0.2); light.color.setHex(hex);
+  }
+
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); labelRenderer.setSize(innerWidth, innerHeight);
+});
+applyCamera(); tick();
+setTimeout(() => { const l = $('loading'); l.style.opacity = '0'; setTimeout(() => l.remove(), 600); }, 500);
+</script>
+</body>
+</html>
