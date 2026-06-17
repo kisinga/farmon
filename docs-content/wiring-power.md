@@ -31,13 +31,15 @@ The controller board, every 12 V DC solenoid valve, and every sensor draw from o
 
 MajiFlow's default valve type is a **2-wire motorized valve**: the controller energizes an OPEN or CLOSE motor for ~{{valve_travel_time}} s of travel, then the valve mechanically latches and draws zero current. Steady-state load is essentially just the board.
 
-Concurrent valve activations are firmware-capped at 2 (briefly 3 during a route handoff). With motorized valves, worst-case demand is short and modest:
+All the valves on a route's path energize **together** when it starts, travel for ~{{valve_travel_time}} s, then latch and draw nothing. Up to **2 routes** run at once (the firmware concurrency cap), so the brief peak is the motors on the busiest route, doubled only for the instant of a route handoff. Each traveling motor pulls ~0.4 A on top of the board's ~0.25 A:
 
-| Installation | Steady (no valves moving) | Peak (handoff: pump on + 2 motors traveling) |
+| Valves traveling together | Steady (no valves moving) | Peak for ~{{valve_travel_time}} s |
 |---|---|---|
-| Any size, 1–8 valves | ~0.25 A | ~1.0 A for ~{{valve_travel_time}} s |
+| 1 | ~0.25 A | ~0.65 A |
+| 2 | ~0.25 A | ~1.0 A |
+| 4 | ~0.25 A | ~1.85 A |
 
-**One-line rule:** *A 12 V / 2 A regulated supply (24 W) covers any single-controller install with motorized valves. **Direct-wired DC solenoid valves are different — each holds ~0.6 A continuously while open, so an install with those needs 12 V / 5 A (60 W) instead.***
+**One-line rule:** *A 12 V / 2 A regulated supply (24 W) covers a typical single-controller install with motorized valves (up to ~4 valves traveling at once). If a single route opens more valves than that, or several routes run concurrently, size up: budget ~0.4 A per motor in travel. **Direct-wired DC solenoid valves are different — each holds ~0.6 A continuously while open, so an install with those needs 12 V / 5 A (60 W) instead.***
 
 Use a **regulated** supply (SMPS), not an unregulated wall-wart. Motor start and any solenoid inrush will sag an unregulated 12 V brick below the ESP32's brown-out threshold.
 

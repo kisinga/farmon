@@ -16,7 +16,7 @@ IDLE → PREPARING → RUNNING → STOPPING → IDLE
                      └──→ FAULT (latched) ──→ IDLE  (Reset faults)
 ```
 
-Tank level readings are **suppressed during PREPARING / RUNNING / STOPPING** (pump pressure and valve movement create artifacts) and valid in IDLE / FAULT.
+While a route is active (PREPARING / RUNNING / STOPPING) an ordinary tank reading is **disturbed by pump pressure**, so the controller does not gate on it; readings are trusted in IDLE / FAULT. The exception is a sensor marked **pump-safe** (pump-rated): it stays trusted during a run, which is what enables the runtime tank-full / source-low stops below.
 
 ## Runtime safety checks
 
@@ -24,11 +24,12 @@ Tank level readings are **suppressed during PREPARING / RUNNING / STOPPING** (pu
 |---|---|---|---|
 | 1 | Flow watchdog | `no_flow` | No pulses for {{flow_watchdog}} s after the {{flow_confirm}} s confirm window |
 | 2 | Per-route max runtime | `max_runtime` | The route's configured time ceiling |
+| 3 | Control link lost | `control_lost` | A held actuator's claim lease expires (the peer driving it stops renewing). See **Control-loss fail-safe** below |
 
 ## Fault vs clean stop
 
 - **Fault** — kill the pump, close all valves, latch **FAULT**, and publish the fault over MQTT to the server. Clear the cause, then send **Reset faults** from the dashboard to return to IDLE.
-- **Clean stop** — kill the pump, depressurize briefly, close all valves, return to **IDLE**. The stop reason (manual, tank full) is published over MQTT.
+- **Clean stop** — kill the pump, depressurize briefly, close all valves, return to **IDLE**. The stop reason (manual stop, destination full, source low, or a target volume / run time reached) is published over MQTT.
 
 ## Control-loss fail-safe (local mode)
 

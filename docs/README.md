@@ -2,30 +2,26 @@
 
 MajiFlow is a water-orchestration platform for any installation that pumps, stores, or distributes water — irrigation systems, hospitality (hotels, resorts, lodges), greenhouses and nurseries, commercial buildings, livestock and aquaculture operations, schools and campuses, anywhere reliable water flow is critical. The same topology model, codegen pipeline, and MQTT telemetry apply across all of them; only the named tanks, valves, and routes change.
 
-Three audiences, three folders. One shared glossary.
+Two audiences. This folder (`docs/`) is for **contributors building MajiFlow itself**. The **installer / operator** documentation that ships inside each site's generated document lives in [`docs-content/`](../docs-content/) (operation, troubleshooting, power & wiring, per-node notes, glossary); that is its own source of truth, loaded into the app by import.
 
-## [installation/](installation/) — installers, electricians, site operators
-
-You're putting MajiFlow on site — a farm, a hotel rooftop, a greenhouse, a commercial water-storage room.
-
-- [power-and-wiring.md](installation/power-and-wiring.md) — PSU sizing, DC cable lengths, pump branch, BOM
-- [kc868-a16.md](installation/kc868-a16.md) — board capacity, calibration, Ethernet & RS485 usage
-
-## [development/](development/) — contributors building MajiFlow itself
+## Development — contributors
 
 You're changing the codegen, adding a board, writing a driver.
 
-- [architecture.md](development/architecture.md) — system overview
-- [adding-boards-and-entities.md](development/adding-boards-and-entities.md) — extending hardware support
-- [transport-driver-framework.md](development/transport-driver-framework.md) — driver safety baseline
-- [io-providers-next-steps.md](development/io-providers-next-steps.md) — refactor TODOs
-- [journal.md](development/journal.md) — history and lessons learned
+- [development/architecture.md](development/architecture.md) — system overview
+- [development/adding-boards-and-entities.md](development/adding-boards-and-entities.md) — extending hardware support
+- [development/transport-driver-framework.md](development/transport-driver-framework.md) — driver safety baseline
+- [sensors.md](sensors.md) — sensor placement model and the pump-safe flag
+- [tunable-defaults.md](tunable-defaults.md) — the install-value-plus-live-override pattern
+- [development/built.md](development/built.md) — the system as it stands today
+- [development/status.md](development/status.md) — what's left to build
+- [development/journal.md](development/journal.md) — history and lessons learned
 
-## [business/](business/) — strategy, IP
+## Installer / operator docs
 
-- [market-analysis.md](business/market-analysis.md)
-- [patent-research.md](business/patent-research.md)
+Wiring, operation, calibration, troubleshooting and per-node notes are in [`docs-content/`](../docs-content/) (see its [README](../docs-content/README.md) for the import flow). The canonical glossary is [docs-content/glossary.md](../docs-content/glossary.md) — used by the UI, the codebase, and every other doc.
 
-## Shared
+## Business — strategy, IP
 
-- [glossary.md](glossary.md) — canonical terminology (site, system, topology, route, manifest). Used by every other doc, the UI, and the codebase.
+- [MARKET_ANALYSIS.md](MARKET_ANALYSIS.md)
+- [PATENT_RESEARCH.md](PATENT_RESEARCH.md)

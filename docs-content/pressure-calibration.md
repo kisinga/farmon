@@ -12,7 +12,7 @@ A pressure sensor on a tank's outlet pipe reads tank level. Installers enter **g
 A sensor plumbed into the outlet sees the pressure of the water column above it:
 
 ```
-P [psi] = 1.4223 · h [m]      (ρ·g·h, water, converted Pa → psi)
+P [psi] = 1.42233 · h [m]      (ρ·g·h, water, converted Pa → psi)
 ```
 
 The controller usually sits low (by the pump) with the tank above. The vertical pipe from tank bottom to sensor stays primed, so the sensor reads a constant non-zero pressure even when the tank is empty — an offset that depends only on the **elevation** (drop from tank bottom to sensor).
@@ -29,8 +29,8 @@ The controller usually sits low (by the pump) with the tank above. The vertical 
 ## What it derives
 
 ```
-P_empty = 1.4223 · elevation
-P_full  = 1.4223 · (elevation + tank_height)
+P_empty = 1.42233 · elevation
+P_full  = 1.42233 · (elevation + tank_height)
 ```
 
 These seed the per-sensor dashboard number controls:
@@ -43,12 +43,16 @@ These seed the per-sensor dashboard number controls:
 
 `Tank Level (%)` is then `clamp((pressure − cal_empty) / (cal_full − cal_empty) · 100, 0, 100)`.
 
+## Editing on a live site
+
+On a commissioned site the editor shows the controller's **live** calibration alongside the sensor's current pressure, so you can see what the device actually believes before you change anything. **Use design values** reloads the geometry-derived figures above; **Discard** drops an unsaved change. The controller keeps using its stored calibration until you save, so set these deliberately, from known readings.
+
 ## Worked example
 
 A 5 m tank on a 2 m platform, sensor at the pump 2 m below the tank bottom:
 
-- **P_empty** = 1.4223 × 2 ≈ **2.84 psi**
-- **P_full** = 1.4223 × 7 ≈ **9.96 psi**
+- **P_empty** = 1.42233 × 2 ≈ **2.84 psi**
+- **P_full** = 1.42233 × 7 ≈ **9.96 psi**
 - **Recommended sensor max** ≥ 1.5 × 9.96 ≈ 14.9 → **15 psi**, using ~47 % of its range with comfortable headroom.
 
 For elevated tanks, check the utilisation: a high empty-pressure with a small fill swing gives poor resolution even when the range is safe. Use a lower-range protected sensor or move the sensing point.

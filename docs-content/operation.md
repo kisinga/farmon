@@ -12,8 +12,9 @@ For the site operator — what each controller does day to day, the controls you
 
 Each controller publishes its state to the server over MQTT; you drive it from the site dashboard:
 
-- **Route Start / Stop** — start or stop a configured path from a source to a destination. Start runs the pre-flight checks first; Stop sequences a clean shutdown.
+- **Route Start / Stop** — start or stop a configured path from a source to a destination. Start runs the pre-flight checks first; Stop sequences a clean shutdown. A route can carry a **stop target** (a litre volume or a run time) that ends the run cleanly on its own.
 - **Stop all / Reset faults / Clear queue** — per-controller commands. **Reset faults** returns a latched controller to IDLE after you've cleared the cause.
+- **Automations** — start a route by schedule (a time of day on chosen weekdays) or by tank level, without anyone at the dashboard. Automated runs pass the same safety checks as a manual Start. See **Automations**.
 - **Manual control** — hold an actuator (pump or valve) open while you watch it. It is leased: if your connection drops, the device releases it on its own (the dead-man lease), so nothing is left running by accident.
 - **Tank calibration** — set each level-monitored tank's empty / full calibration from the dashboard number controls.
 - **Safety Override** — a single global bypass. While ON, every runtime safety check is skipped and the pump may run without an owning route. It reverts to OFF on reboot. Use it only for commissioning and recovery.
