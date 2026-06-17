@@ -22,7 +22,9 @@
    Registered in @theme so Tailwind also exposes utilities (bg-brand-cyan,
    text-mkt-fg-muted, rounded-mkt-card, shadow-mkt-pop, max-w-mkt, font-display). */
 @theme {
-  /* Brand accent ramp (Tailwind cyan/sky hexes) */
+  /* Brand accent ramp. MIRROR of BRAND/NEUTRAL in src/lib/colors.ts (the
+     canonical cross-stack palette, which codegen/SVG-export also use). CSS can't
+     import TS, so test/brand-palette.test.ts fails the build if these drift. */
   --color-brand-cyan: #22d3ee;        /* cyan-400 — primary accent */
   --color-brand-cyan-bright: #67e8f9; /* cyan-300 — accent / hover */
   --color-brand-sky: #38bdf8;         /* sky-400 — secondary */
@@ -116,6 +118,14 @@
 
   /* Marketing section rhythm + signature gradient (CTA band / hero text). */
   --gradient-brand: linear-gradient(135deg, #06b6d4, #0284c7, #1d4ed8);
+
+  /* Stacking scale — one place so overlays layer predictably (navbar < dropdown
+     < overlay < modal < toast). Apply via the .z-* utilities below. */
+  --z-sticky:   20;  /* sticky chrome (navbar) */
+  --z-dropdown: 30;  /* menus / popovers */
+  --z-overlay:  40;  /* scrims behind modals */
+  --z-modal:    50;  /* dialogs */
+  --z-toast:    60;  /* transient toasts (top of everything) */
 }
 
 /* Consistent content pane for form/workflow tabs */
@@ -134,7 +144,25 @@
   .sub-header {
     @apply flex items-center gap-3 px-4 h-12 shrink-0 bg-base-100 border-b border-base-300/40;
   }
+  /* Page/section TITLE — the only place Satoshi appears in the app (titles,
+     not data). The app-side analog of .mkt-h1/.mkt-h2. */
+  .app-title {
+    font-family: var(--font-display);
+    @apply tracking-tight;
+  }
+  /* The uppercase mini-label that heads dashboard widget sections. One class so
+     the four copy-pasted strings stay in sync. */
+  .section-label {
+    @apply text-xs font-semibold uppercase tracking-wider text-base-content/40;
+  }
 }
+
+/* Stacking utilities driven by the --z-* scale above. */
+.z-sticky   { z-index: var(--z-sticky); }
+.z-dropdown { z-index: var(--z-dropdown); }
+.z-overlay  { z-index: var(--z-overlay); }
+.z-modal    { z-index: var(--z-modal); }
+.z-toast    { z-index: var(--z-toast); }
 
 /* ── Marketing recipes ───────────────────────────────────────────────────────
    One-element paint for the public pages — section padding, containers,
@@ -168,11 +196,19 @@
   .mkt-btn-ghost   { @apply ring-1 ring-white/25 text-white hover:bg-white/10; }
 }
 
-/* Public-page body font (Inter). Scoped to the marketing routes this pass; the
-   authenticated app keeps the system stack until it adopts the tokens. Headings
-   pick up the display face via .mkt-h1/.mkt-h2. */
-app-landing, app-features, app-pricing, app-login {
+/* Body font (Inter) for the whole app — marketing and authenticated alike.
+   Headings pick up the display face (Satoshi) via .mkt-h1/.mkt-h2 (marketing)
+   and .app-title (app). */
+app-root {
   font-family: var(--font-body);
+}
+
+/* GUARD: pin the X6 topology canvas to the system stack. Its SVG node labels
+   (x6-shapes.ts) declare no font-family and inherit; swapping in Inter would
+   re-measure label widths and shift node layout. Keep them on today's font. */
+.x6-graph,
+.x6-graph text {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 /* Themed scrollbars so the dark surfaces don't get bright native gutters. */

@@ -46,7 +46,7 @@ interface TuningGroup {
                   @for (t of sec.items; track t.key) {
                     <label class="flex flex-col gap-1">
                       <span class="text-[11px] text-base-content/60 truncate flex items-center gap-1">
-                        {{ t.label }} <span class="text-base-content/30">({{ t.unit }})</span>
+                        {{ t.label }} @if (showUnit(t)) { <span class="text-base-content/30">({{ t.unit }})</span> }
                         @if (fieldPhase(g.controller, t); as ph) {
                           @switch (ph.phase) {
                             @case ('pending') { <span class="loading loading-spinner loading-xs text-warning shrink-0"></span> }
@@ -117,6 +117,13 @@ export class TunableNumbersComponent {
       })
       .filter((g): g is TuningGroup => g !== null);
   });
+
+  /** Some labels already carry their unit (HA entity names like "Flow Watchdog
+   *  (s)"); only append the unit chip when the label doesn't already show it, so
+   *  we never render "Flow Watchdog (s) (s)". */
+  protected showUnit(t: TunableNumber): boolean {
+    return !!t.unit && !t.label.includes(`(${t.unit})`);
+  }
 
   private key(controller: string, t: TunableNumber): string {
     return `${controller}/cfg/${t.key}`;

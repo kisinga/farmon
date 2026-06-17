@@ -58,6 +58,11 @@ export class LiveMapComponent implements OnDestroy {
   /** Nodes + pipes a route contributes, bucketed by state (active / fault) — the
    *  overlay the map lights. */
   readonly activePath = input<ActivePath>({ nodes: new Set(), pipes: new Set(), faultNodes: new Set(), faultPipes: new Set() });
+  /** Draw the owning-controller boxes + wires. Off on the customer live dashboard:
+   *  the controller is an engineering grouping with no operational meaning here, so
+   *  the map shows only the plumbing (nodes + pipes stand on their own). The editor's
+   *  design canvas keeps them; this live map opts in only if a host asks. */
+  readonly showControllers = input(false);
 
   private readonly host = viewChild.required<ElementRef<HTMLElement>>('host');
   private canvas: LiveCanvas | null = null;
@@ -106,13 +111,13 @@ export class LiveMapComponent implements OnDestroy {
     if (!this.canvas || !topo) return;
     // render() refits itself when the node set changes; don't fit here or we'd
     // reset the operator's pan/zoom on unrelated re-renders.
-    const friendlyNames = new Map<string, string>();
-    for (const c of topo.controllers ?? []) friendlyNames.set(c.id, c.friendlyName ?? c.id);
-    this.canvas.render(topo, {
-      controllers: topo.controllers,
-      friendlyNames,
-      positions: topo.layout?.controllers,
-    });
+    let overlays;
+    if (this.showControllers()) {
+      const friendlyNames = new Map<string, string>();
+      for (const c of topo.controllers ?? []) friendlyNames.set(c.id, c.friendlyName ?? c.id);
+      overlays = { controllers: topo.controllers, friendlyNames, positions: topo.layout?.controllers };
+    }
+    this.canvas.render(topo, overlays);
     this.canvas.setState(this.runtime());
     this.canvas.setActivePath(this.activePath());
   }

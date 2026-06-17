@@ -10,19 +10,7 @@ import type { SiteListEntry } from '../../core/models/backend-api';
 import { HOSTING_DEVICE_CAP } from '@core';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
 import { AssignPickerComponent, type AssignItem } from '../../shared/assign-picker/assign-picker.component';
-
-/** Generate a stable color from a string for site card visuals. */
-function siteColor(name: string): string {
-  const COLORS = ['#0EA5E9', '#22D3EE', '#34D399', '#A78BFA', '#F472B6', '#FBBF24'];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-  return COLORS[Math.abs(hash) % COLORS.length];
-}
-
-/** Extract initials (up to 2 chars) from a friendly name. */
-function initials(name: string): string {
-  return name.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('');
-}
+import { siteColor, initials } from '../../core/util/site-colors';
 
 /**
  * Sites catalog (admin home). A bright cyan-gradient hero band (title + primary

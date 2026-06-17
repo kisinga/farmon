@@ -3,13 +3,10 @@ import { unknownSlots, type DocScope } from '@core';
 import { parseDocFile } from '@core/docs';
 import { DocsStore, type ImportPlan, type ImportResult } from '../../core/stores/docs.store';
 import type { DocDraft, DocEntry } from '../../core/models/backend-api';
+import { docCatColor } from './doc-colors';
 
 const CATEGORIES = ['narrative', 'node', 'wiring', 'glossary'] as const;
 type Category = (typeof CATEGORIES)[number];
-
-const CAT_COLOR: Record<string, string> = {
-  narrative: '#22d3ee', node: '#34d399', wiring: '#fbbf24', glossary: '#a78bfa',
-};
 
 /** One dropped file, classified against the current DB state. */
 interface Row {
@@ -164,7 +161,7 @@ export class DocsImportComponent {
   });
   protected orphanSlugs = computed(() => this.orphans().map((d) => d.slug).join(', '));
 
-  protected catColor(c: string): string { return CAT_COLOR[c] ?? '#94a3b8'; }
+  protected catColor(c: string): string { return docCatColor(c); }
 
   protected onPick(e: Event) {
     const files = (e.target as HTMLInputElement).files;

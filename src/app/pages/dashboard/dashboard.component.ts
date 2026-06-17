@@ -1,19 +1,18 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { NgTemplateOutlet } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type RuntimeState } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
-import { ConfirmService } from '../../core/services/confirm.service';
 import { DashboardStore } from './dashboard.store';
 import { TelemetryStore } from './telemetry.store';
 import { CommandLifecycleStore } from './command-lifecycle.store';
 import { DashboardCardComponent } from './widgets/dashboard-card.component';
 import { RouteCardComponent } from './widgets/route-card.component';
-import { SiteThresholdsComponent } from './widgets/site-thresholds.component';
-import { TunableNumbersComponent } from './widgets/tunable-numbers.component';
-import { TankCalibrationComponent } from './widgets/tank-calibration.component';
+import { SiteControlsComponent } from './widgets/site-controls.component';
 import { ControllerHealthComponent } from './widgets/controller-health.component';
 import { LiveMapComponent } from './canvas/live-map.component';
+import { CONTROLLER_PALETTE } from '../../core/util/site-colors';
 import type { SiteTopology } from '../../core/models/topology.model';
 import type { RouteControl } from '@core';
 
@@ -30,23 +29,34 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DashboardCardComponent, RouteCardComponent, SiteThresholdsComponent, TunableNumbersComponent, TankCalibrationComponent, ControllerHealthComponent, LiveMapComponent, RouterLink],
+  imports: [NgTemplateOutlet, DashboardCardComponent, RouteCardComponent, SiteControlsComponent, ControllerHealthComponent, LiveMapComponent],
   providers: [DashboardStore, TelemetryStore, CommandLifecycleStore],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="max-w-6xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6">
-      <!-- Compact status bar. Two pills, two questions: operational state (what the
-           system is doing) and health (is the hardware well). Safety-override shows
-           only while ON; the health pill expands to the full per-controller panel. -->
-      <div class="flex items-center gap-2 sm:gap-3 mb-5 sm:mb-6">
-        <h1 class="text-lg sm:text-xl font-bold tracking-tight leading-tight truncate min-w-0">{{ siteName() || 'Dashboard' }}</h1>
-        @if (showController()) {
-          <span class="text-xs text-base-content/50 shrink-0 whitespace-nowrap">{{ onlineCount() }}/{{ totalControllers() }} online</span>
+      <!-- Top bar: site name + online count on the left; on the right the health
+           pill (expands to the full per-controller panel) and the quiet utility
+           actions — Automations, Setup (operator-gated), and Docs. -->
+
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-5 sm:mb-6">
+        <div class="flex items-baseline gap-2 min-w-0 flex-1">
+          <h1 class="app-title text-lg sm:text-xl font-bold leading-tight truncate min-w-0">{{ siteName() || 'Dashboard' }}</h1>
+          @if (showController()) {
+            <span class="text-xs text-base-content/50 shrink-0 whitespace-nowrap">{{ onlineCount() }}/{{ totalControllers() }} online</span>
+          }
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+        @if (adminViewing()) {
+          <span class="badge badge-sm gap-1 shrink-0" [class]="controlEnabled() ? 'badge-warning' : 'badge-info'">{{ controlEnabled() ? 'Controlling' : 'Read-only' }}</span>
         }
-        <span class="grow"></span>
         <app-controller-health />
+        <!-- Automations + Setup: quiet icon actions slotted in beside Docs (they
+             render with display:contents, so they sit directly in this flex row). -->
+        @if (siteId) {
+          <app-site-controls [siteId]="siteId" [canControl]="canControl()" />
+        }
         <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="openDocs()" [disabled]="docBusy()"
-                title="Open this site's documentation">
+                title="Open this site's documentation" aria-label="Open documentation">
           @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
           @else {
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -55,6 +65,7 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
           }
           <span class="hidden sm:inline">Docs</span>
         </button>
+        </div>
       </div>
 
       @if (store.loading()) {
@@ -94,31 +105,56 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
              control isn't held. Each card animates water when its route flows
              and toggles start/stop on click. -->
         @if (hasRoutes()) {
+          <!-- One controller's actions (Stop all + the more menu), shared by the
+               Routes header (single-controller sites) and each controller's own
+               row (multi-controller) so the two placements can't drift. -->
+          <ng-template #ctrlActions let-cid="cid">
+            <button class="btn btn-xs btn-error btn-outline gap-1" [disabled]="sysBusy(cid,'stop_all')" (click)="sysCmd(cid,'stop_all')">
+              @if (sysBusy(cid,'stop_all')) { <span class="loading loading-spinner loading-xs"></span> }
+              Stop all
+            </button>
+            <details class="dropdown dropdown-end">
+              <summary class="btn btn-xs btn-ghost" title="More controller actions">⋯</summary>
+              <ul class="dropdown-content menu menu-sm z-10 mt-1 w-40 rounded-box bg-base-100 ring-1 ring-base-300/40 shadow-lg p-1">
+                <li><button [disabled]="sysBusy(cid,'reset_faults')" (click)="sysCmd(cid,'reset_faults')">Reset faults</button></li>
+                <li><button [disabled]="sysBusy(cid,'clear_queue')" (click)="sysCmd(cid,'clear_queue')">Clear queue</button></li>
+              </ul>
+            </details>
+          </ng-template>
+
           <section class="mb-6">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">Routes</h2>
+            <!-- Section header. A single-controller site hosts Stop all / ⋯ right
+                 here — its per-controller row would otherwise be a lone presence dot
+                 and the buttons stranded across an empty strip. Online state already
+                 lives in the page-header pill, so no dot is repeated. Multi-controller
+                 sites keep the dot + name + actions on each controller's row below. -->
+            <div class="flex items-center gap-2 mb-3">
+              <span class="w-1 h-3.5 rounded-full bg-primary/70 shrink-0"></span>
+              <h2 class="section-label">Routes</h2>
+              <span class="grow"></span>
+              @if (soloController(); as cid) {
+                @if (canControl()) {
+                  <ng-container [ngTemplateOutlet]="ctrlActions" [ngTemplateOutletContext]="{ cid }" />
+                }
+              }
+            </div>
+            @if (adminViewing() && !controlEnabled()) {
+              <p class="text-[11px] text-base-content/50 -mt-2 mb-3">Viewing read-only — <button type="button" class="link link-primary font-medium" (click)="controlEnabled.set(true)">take control</button> to operate.</p>
+            }
             @for (c of store.spec().controllers; track c.controller) {
               @if (c.routes.length) {
                 <div class="mb-4 last:mb-0">
-                  <div class="flex items-center gap-2 mb-2">
-                    <span class="w-2 h-2 rounded-full shrink-0" [class]="store.presence(c.controller).online ? 'bg-success' : 'bg-base-content/30'"
-                      [title]="store.presence(c.controller).online ? 'Online' : ('Offline · ' + lastSeenText(c.controller))"></span>
-                    @if (showController()) { <span class="text-xs font-semibold text-base-content/60">{{ c.name }}</span> }
-                    <span class="grow"></span>
-                    @if (canControl()) {
-                      <button class="btn btn-xs btn-error btn-outline gap-1" [disabled]="sysBusy(c.controller,'stop_all')"
-                        (click)="sysCmd(c.controller,'stop_all')">
-                        @if (sysBusy(c.controller,'stop_all')) { <span class="loading loading-spinner loading-xs"></span> }
-                        Stop all
-                      </button>
-                      <details class="dropdown dropdown-end">
-                        <summary class="btn btn-xs btn-ghost" title="More controller actions">⋯</summary>
-                        <ul class="dropdown-content menu menu-sm z-10 mt-1 w-40 rounded-box bg-base-100 ring-1 ring-base-300/40 shadow-lg p-1">
-                          <li><button [disabled]="sysBusy(c.controller,'reset_faults')" (click)="sysCmd(c.controller,'reset_faults')">Reset faults</button></li>
-                          <li><button [disabled]="sysBusy(c.controller,'clear_queue')" (click)="sysCmd(c.controller,'clear_queue')">Clear queue</button></li>
-                        </ul>
-                      </details>
-                    }
-                  </div>
+                  @if (showController()) {
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="w-2 h-2 rounded-full shrink-0" [class]="store.presence(c.controller).online ? 'bg-success' : 'bg-base-content/30'"
+                        [title]="store.presence(c.controller).online ? 'Online' : ('Offline · ' + lastSeenText(c.controller))"></span>
+                      <span class="text-xs font-semibold text-base-content/60">{{ c.name }}</span>
+                      <span class="grow"></span>
+                      @if (canControl()) {
+                        <ng-container [ngTemplateOutlet]="ctrlActions" [ngTemplateOutletContext]="{ cid: c.controller }" />
+                      }
+                    </div>
+                  }
                   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     @for (r of c.routes; track r.routeId) {
                       <app-route-card
@@ -146,11 +182,11 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
              lights the running route's path. -->
         @if (topology()) {
           <section class="mb-6">
-            <div class="flex items-center gap-2 mb-2.5">
+            <div class="flex items-center gap-2 mb-3">
               <!-- Map mode is self-titled here; cards mode keeps each sub-section's
                    own label (Tank levels / Valves) below, so no title here. -->
               @if (useCanvas()) {
-                <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40">System map</h2>
+                <h2 class="section-label">System map</h2>
               }
               <span class="grow"></span>
               <div class="join shrink-0" role="group" aria-label="System view">
@@ -175,8 +211,8 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
             } @else {
               @for (section of systemSections(); track section.id) {
                 <div class="mb-4 last:mb-0">
-                  <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ section.label }}</h2>
-                  <div [class]="gridFor(section.id)">
+                  <h2 class="section-label mb-3">{{ section.label }}</h2>
+                  <div [class]="gridFor(section.id, section.widgets.length)">
                   @for (w of section.widgets; track w.id) {
                     <app-dashboard-card
                       [widget]="w"
@@ -206,84 +242,6 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
           </section>
         }
 
-        <!-- Automations — managed on the dedicated page (runtime data, no rebuild).
-             A single compact actionable row (matches the route strips) rather than a
-             header + paragraph, so it states what it is and links out in one line. -->
-        <a [routerLink]="['/site', siteId, 'automations']"
-           class="group flex items-center gap-3 mb-6 rounded-xl ring-1 ring-base-300/40 bg-base-100 px-3 py-2.5 transition-all hover:ring-base-300/70">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 text-base-content/40 group-hover:text-base-content/60 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div class="min-w-0 flex-1">
-            <div class="text-[13px] font-bold tracking-tight leading-tight">Automations</div>
-            <div class="text-[11px] text-base-content/50 leading-tight truncate">Run routes on a schedule — time or tank level, to a target volume or duration.</div>
-          </div>
-          <span class="shrink-0 text-[11px] font-semibold text-base-content/50 group-hover:text-base-content/80 transition-colors">Manage →</span>
-        </a>
-
-        <!-- Alerts: per-site thresholds (server-stored; feed the bell + email sweep).
-             Owner/admin — a server write, not a device command, so the lowest gate. -->
-        @if (siteId) {
-          <section class="mb-6">
-            <app-site-thresholds [siteId]="siteId" [canEdit]="canControl()" />
-          </section>
-        }
-
-        <!-- Operator mode: install-time + safety-critical controls (pressure
-             calibration, safety override, manual valve/pump holds). Collapsed by
-             default; opening the disclosure IS entering operator mode (enables
-             holds); destructive writes still hard-confirm. -->
-        @if (canControl() && hasOperatorControls()) {
-          <details class="mb-6 bg-base-100/40 rounded-xl ring-1 ring-base-300/40 px-4 py-3">
-            <summary class="cursor-pointer list-none flex items-center gap-2 text-xs font-semibold text-base-content/60">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-              </svg>
-              Operator mode
-              <span class="text-[11px] font-normal text-base-content/40">advanced — calibration, safety timings, override</span>
-            </summary>
-            <div class="mt-3 pt-3 border-t border-base-300/30 flex flex-col gap-3">
-              <div class="alert alert-warning text-xs py-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                </svg>
-                <span>Calibration and safety settings change device behaviour — set them only when commissioning.</span>
-              </div>
-              <!-- Controller-wide safety timings (flow watchdog/confirm/threshold, claim lease). -->
-              <div class="bg-base-100/60 rounded-xl ring-1 ring-base-300/40 px-4 py-3.5">
-                <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/40 mb-2">Safety timings</div>
-                <app-tunable-numbers [controllers]="store.spec().controllers" scope="controller" [canEdit]="canControl()" />
-              </div>
-              @for (c of store.spec().controllers; track c.controller) {
-                @if (c.calibrations.length || c.actuators.length) {
-                  <div class="bg-base-100/60 rounded-xl ring-1 ring-base-300/40 px-4 py-3.5 flex flex-col gap-3">
-                    @if (showController()) { <div class="text-xs font-semibold text-base-content/60">{{ c.name }}</div> }
-                    @for (cal of c.calibrations; track cal.nodeId) {
-                      <app-tank-calibration [cal]="cal" [controller]="c.controller" [canEdit]="canControl()" />
-                    }
-                    @if (c.actuators.length) {
-                      <div class="flex items-center gap-2 pt-1 border-t border-base-300/30">
-                        <span class="text-xs text-base-content/60">Safety override</span>
-                        <span class="grow"></span>
-                        <button class="btn btn-xs gap-1" [class]="store.overrideOn(c.controller) ? 'btn-error' : 'btn-ghost'"
-                          [disabled]="overrideBusy(c.controller)" (click)="toggleOverride(c.controller)">
-                          @if (overrideBusy(c.controller)) { <span class="loading loading-spinner loading-xs"></span> }
-                          {{ store.overrideOn(c.controller) ? 'ON' : 'off' }}
-                        </button>
-                      </div>
-                      @if (store.overrideOn(c.controller)) {
-                        <p class="text-[11px] text-warning">Safety checks are OFF: a pump can run with no route and the watchdogs are bypassed. Turn this off when you finish.</p>
-                      }
-                      <p class="text-[11px] text-base-content/50">Tap a valve or pump card above to hold it open or running; it releases automatically if you disconnect.</p>
-                    }
-                  </div>
-                }
-              }
-            </div>
-          </details>
-        }
-
         @if (note()) { <div class="text-xs text-base-content/50 mb-3">{{ note() }}</div> }
 
         <!-- Body: the remaining card sections (flow / pressure / activity). The
@@ -291,31 +249,29 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
              or as cards); only when there's no topology do they fall through here. -->
         @for (section of layout(); track section.id) {
             <section class="mb-6">
-              <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2.5">{{ section.label }}</h2>
-              <div [class]="gridFor(section.id)">
+              <h2 class="section-label mb-3">{{ section.label }}</h2>
+              <div [class]="gridFor(section.id, section.widgets.length)">
                 @for (w of section.widgets; track w.id) {
-                  <div [class]="w.kind === 'timeline' ? 'sm:col-span-2 lg:col-span-3' : ''">
-                    <app-dashboard-card
-                      [widget]="w"
-                      [dense]="denseSection(section.id)"
-                      [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
-                      [controllerColor]="ctrlColor(w.controller)"
-                      [row]="store.rowFor(w)"
-                      [state]="cardState(w)"
-                      [series]="telemetry.seriesFor(w)"
-                      [span]="telemetry.spanFor(w)"
-                      [items]="store.activityFor(w.controller)"
-                      [actuatable]="isActuatable(w)"
-                      [held]="actuatorHeld(w)"
-                      [phase]="actuatorPhase(w)?.phase ?? null"
-                      [phaseReason]="actuatorPhase(w)?.reason ?? ''"
-                      [actuatorKind]="actuatorFor(w)?.kind ?? ''"
-                      [historyLoaded]="telemetry.loadedFor(w)"
-                      (toggle)="toggleWidgetActuator(w)"
-                      (spanChange)="onSpanChange(w, $event)"
-                      (expand)="onExpand(w)"
-                    />
-                  </div>
+                  <app-dashboard-card
+                    [widget]="w"
+                    [dense]="denseSection(section.id)"
+                    [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
+                    [controllerColor]="ctrlColor(w.controller)"
+                    [row]="store.rowFor(w)"
+                    [state]="cardState(w)"
+                    [series]="telemetry.seriesFor(w)"
+                    [span]="telemetry.spanFor(w)"
+                    [items]="store.activityFor(w.controller)"
+                    [actuatable]="isActuatable(w)"
+                    [held]="actuatorHeld(w)"
+                    [phase]="actuatorPhase(w)?.phase ?? null"
+                    [phaseReason]="actuatorPhase(w)?.reason ?? ''"
+                    [actuatorKind]="actuatorFor(w)?.kind ?? ''"
+                    [historyLoaded]="telemetry.loadedFor(w)"
+                    (toggle)="toggleWidgetActuator(w)"
+                    (spanChange)="onSpanChange(w, $event)"
+                    (expand)="onExpand(w)"
+                  />
                 }
               </div>
             </section>
@@ -328,7 +284,6 @@ export class DashboardComponent {
   private route = inject(ActivatedRoute);
   private backend = inject(BackendService);
   private auth = inject(AuthStore);
-  private confirm = inject(ConfirmService);
   protected store = inject(DashboardStore);
   protected telemetry = inject(TelemetryStore);
   protected lifecycle = inject(CommandLifecycleStore);
@@ -397,20 +352,24 @@ export class DashboardComponent {
   /** Command bar is shown to owners always, and to admins only after Take control. */
   protected canControl = computed(() => !this.adminViewing() || this.controlEnabled());
 
-  /** Stable per-controller identity colours (matches the editor's palette feel). */
-  private static readonly CTRL_COLORS = ['#22d3ee', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#38bdf8'];
-
   /** id → { name, colour } for every controller in the spec. */
   private ctrlMeta = computed(() => {
     const m = new Map<string, { name: string; color: string }>();
     this.store.spec().controllers.forEach((c, i) =>
-      m.set(c.controller, { name: c.name, color: DashboardComponent.CTRL_COLORS[i % DashboardComponent.CTRL_COLORS.length] }),
+      m.set(c.controller, { name: c.name, color: CONTROLLER_PALETTE[i % CONTROLLER_PALETTE.length] }),
     );
     return m;
   });
 
   /** Only label widgets by controller when the site actually has more than one. */
   protected showController = computed(() => this.store.spec().controllers.length > 1);
+  /** The id of the only controller when a site has exactly one (else null). Lets the
+   *  Routes header host that controller's Stop all / ⋯ instead of leaving a lone
+   *  presence dot stranded in an otherwise-empty per-controller row. */
+  protected soloController = computed(() => {
+    const cs = this.store.spec().controllers;
+    return cs.length === 1 ? cs[0].controller : null;
+  });
   protected ctrlName(id: string): string { return this.ctrlMeta().get(id)?.name ?? id; }
   protected ctrlColor(id: string): string { return this.ctrlMeta().get(id)?.color ?? '#94a3b8'; }
 
@@ -480,12 +439,6 @@ export class DashboardComponent {
   // --- Routes (the live control surface) -----------------------------------
   protected hasRoutes = computed(() => this.store.spec().controllers.some((c) => c.routes.length > 0));
 
-  // --- Operator-mode tiers -------------------------------------------------
-  /** Any operator-mode control exists: controller safety timings, pressure
-   *  calibration, or a manual actuator. */
-  protected hasOperatorControls = computed(() => this.store.spec().controllers.some((c) =>
-    c.tunables.some((t) => t.scope === 'controller') || c.calibrations.length > 0 || c.actuators.length > 0));
-
   /** A route's live state for its card (token + reason + origin; empty when never seen). */
   protected routeState(controller: string, routeId: number): { token: string; reason: string; origin?: string; initiator?: { label: string; support: boolean; title: string } } {
     const s = this.store.routeState(controller, routeId);
@@ -511,13 +464,15 @@ export class DashboardComponent {
   // --- Widget section layout -----------------------------------------------
   /** Valves render as a dense glyph grid; everything else as full cards. */
   protected denseSection(id: string): boolean { return id === 'valves'; }
-  protected gridFor(id: string): string {
+  protected gridFor(id: string, count = 0): string {
     if (id === 'valves') return 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2';
-    // Activity is a text log — cap its width so rows stay readable and the
-    // timestamp isn't marooned across a full-width card.
-    if (id === 'activity') return 'grid grid-cols-1 gap-3 max-w-2xl';
-    // Tighter gap than before (gap-3) to match the route strips' density and fit
-    // more cards per row without crowding.
+    // Activity is a single full-width log per controller — span the section like
+    // every other one (label left, timestamp right) so its width matches the page.
+    if (id === 'activity') return 'grid grid-cols-1 gap-3';
+    // Pick the column count to the widget count so a sparse section fills its
+    // row instead of leaving empty columns (1 → capped, 2 → halves, 3+ → thirds).
+    if (count === 1) return 'grid grid-cols-1 gap-3 max-w-md';
+    if (count === 2) return 'grid grid-cols-1 sm:grid-cols-2 gap-3';
     return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
   }
 
@@ -608,14 +563,8 @@ export class DashboardComponent {
   private sysKey(controller: string, action: CommandAction): string {
     return `${controller}/sys/${action}`;
   }
-  private overrideKey(controller: string): string {
-    return `${controller}/override`;
-  }
   protected sysBusy(controller: string, action: CommandAction): boolean {
     return this.lifecycle.isBusy(this.sysKey(controller, action));
-  }
-  protected overrideBusy(controller: string): boolean {
-    return this.lifecycle.isBusy(this.overrideKey(controller));
   }
 
   /** Warn (only) when the target reads offline — the per-control phase is the
@@ -639,24 +588,6 @@ export class DashboardComponent {
   protected async sysCmd(controller: string, action: CommandAction): Promise<void> {
     if (!this.canControl()) return;
     await this.lifecycle.dispatch(this.sysKey(controller, action), controller, action);
-    this.offlineNote(controller);
-  }
-
-  /** Toggle the commissioning safety-override switch; enabling it is gated by a
-   *  hard confirm (it disables every runtime safety check). */
-  protected async toggleOverride(controller: string): Promise<void> {
-    if (!this.canControl()) return;
-    const turningOn = !this.store.overrideOn(controller);
-    if (turningOn) {
-      const ok = await this.confirm.confirm({
-        title: 'Disable all safety checks?',
-        message: `Safety override turns OFF every runtime safety check on ${this.ctrlName(controller)}: tank-level gates, the no-flow watchdog, runtime level stops and the max-runtime limit. A pump can run with no route and no protection. Use it only for commissioning or manual recovery. It reverts to off when the device reboots.`,
-        confirmLabel: 'Disable safety',
-        variant: 'error',
-      });
-      if (!ok) return;
-    }
-    await this.lifecycle.dispatch(this.overrideKey(controller), controller, 'safety_override', { on: turningOn });
     this.offlineNote(controller);
   }
 }

@@ -5,7 +5,7 @@ import { PRICING, SEGMENT_PACKS, estimate, kes, type EstimateInput, type Segment
 import { applyPageSeo } from '../../shared/seo';
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
-import { MktHeroComponent } from '../../shared/marketing/ui';
+import { MktHeroComponent, MktPlanLevelsComponent } from '../../shared/marketing/ui';
 
 type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 
@@ -21,7 +21,7 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 @Component({
   selector: 'app-pricing',
   standalone: true,
-  imports: [RouterLink, MarketingNavComponent, MarketingFooterComponent, MktHeroComponent],
+  imports: [RouterLink, MarketingNavComponent, MarketingFooterComponent, MktHeroComponent, MktPlanLevelsComponent],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   template: `
     <!-- NAV -->
@@ -36,6 +36,22 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
       </p>
       <p class="mt-3 text-xs text-cyan-200/80">Your monthly plan, plus a one-time hardware kit and installation priced to your site.</p>
     </mkt-hero>
+
+    <!-- PLAN LEVELS -->
+    <section class="mkt-section-tight">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-center max-w-2xl mx-auto">
+          <h2 class="text-2xl font-bold tracking-tight">What's in each plan</h2>
+          <p class="mt-3 text-sm text-slate-600 leading-relaxed">
+            Start with everything a single site needs. Bigger plans add what only matters once
+            you run several controllers or sell water. Then estimate your numbers below.
+          </p>
+        </div>
+        <div class="mt-8">
+          <mkt-plan-levels />
+        </div>
+      </div>
+    </section>
 
     <!-- ESTIMATOR -->
     <section class="mkt-section-tight">

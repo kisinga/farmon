@@ -13,6 +13,7 @@ import { formatInitiator } from './initiator';
 import { SPAN_PRESETS, DEFAULT_SPAN_HOURS } from '../telemetry.store';
 import { integrateLiters } from '../flow-usage';
 import { phaseUi } from './command-phase';
+import { CHART, historyLineOption } from '../../../core/util/chart-theme';
 
 /** Combined token → meaning lookup for a transition `reason`/state (any vocab). */
 const ANY_MEANING = { ...STOP_REASON_MEANINGS, ...FAULT_MEANINGS, ...OUTCOME_MEANINGS, ...SYSTEM_STATE_MEANINGS };
@@ -40,14 +41,6 @@ function fmt(n: number): string {
   if (Number.isNaN(n)) return '—';
   return Math.abs(n) >= 100 || Number.isInteger(n) ? String(Math.round(n)) : n.toFixed(1);
 }
-
-/** Dark-theme chart colours, matching the app's slate + cyan tokens. */
-const CHART = {
-  axis: '#334155',   // slate-700 — axis/split lines
-  label: '#94a3b8',  // slate-400 — tick labels
-  accent: '#22d3ee', // cyan-400 — series + gauge progress
-  text: '#e2e8f0',   // slate-200 — value readout
-} as const;
 
 /**
  * One dashboard widget. Presentational: it takes its spec + already-resolved
@@ -109,9 +102,12 @@ const CHART = {
         @case ('line') {
           @if (series().length > 0) {
             <div echarts [options]="lineOption()" [autoResize]="true" class="flex-1 min-h-[120px]"></div>
+          } @else if (!historyLoaded()) {
+            <div class="flex-1 min-h-[120px] skeleton rounded-lg opacity-40"></div>
           } @else {
-            <div class="flex-1 min-h-[120px] flex items-center justify-center">
-              <span class="text-xs text-base-content/30">No data yet</span>
+            <div class="flex-1 min-h-[110px] flex flex-col items-center justify-center gap-1.5 text-base-content/25">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 17l5-5 4 4 8-8"/></svg>
+              <span class="text-[11px]">No data yet</span>
             </div>
           }
         }
@@ -119,9 +115,12 @@ const CHART = {
           <div class="flex-1 flex flex-col">
             @if (series().length > 0) {
               <div echarts [options]="lineOption()" [autoResize]="true" class="flex-1 min-h-[110px]"></div>
+            } @else if (!historyLoaded()) {
+              <div class="flex-1 min-h-[110px] skeleton rounded-lg opacity-40"></div>
             } @else {
-              <div class="flex-1 min-h-[110px] flex items-center justify-center">
-                <span class="text-xs text-base-content/30">No flow yet</span>
+              <div class="flex-1 min-h-[110px] flex flex-col items-center justify-center gap-1.5 text-base-content/25">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 17l5-5 4 4 8-8"/></svg>
+                <span class="text-[11px]">No flow yet</span>
               </div>
             }
             @if (windowUsed() !== null) {
@@ -189,8 +188,9 @@ const CHART = {
         @case ('timeline') {
           <div class="flex-1 overflow-auto max-h-60 -mr-1.5 pr-1.5">
             @if (items().length === 0) {
-              <div class="h-full min-h-18 flex items-center justify-center">
-                <span class="text-xs text-base-content/25">No activity yet</span>
+              <div class="min-h-[88px] flex flex-col items-center justify-center gap-1.5 text-base-content/25">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span class="text-[11px]">No activity yet</span>
               </div>
             } @else {
               <ol>
@@ -290,7 +290,11 @@ export class DashboardCardComponent {
    *  control cards are tinted (cyan accent ring, filled while held) so they
    *  read as interactive — distinct from the surrounding status tiles. */
   protected cardClass = computed(() => {
-    const pad = this.dense() ? 'p-3' : 'p-3 min-h-[128px]';
+    // Dense actuatable tiles (valve/pump) get a min height so the tap target
+    // clears ~44px incl. the hold footer; dense status tiles stay tight.
+    const pad = this.dense()
+      ? (this.actuatable() ? 'p-3 min-h-[64px]' : 'p-3')
+      : 'p-3 min-h-[128px]';
     if (!this.actuatable()) return `${pad} ring-1 ring-base-300/40 hover:ring-base-300/70`;
     if (this.cmd()?.alert) return `${pad} ring-1 ring-error/60 cursor-pointer`;
     if (this.busy()) return `${pad} ring-1 ring-primary/30 opacity-60 cursor-wait`;
@@ -450,42 +454,8 @@ export class DashboardCardComponent {
 
   protected lineOption = computed<EChartsOption>(() => {
     const data = this.series().map((p) => [p.ts, p.value ?? p.avg ?? null]);
-    return {
-      textStyle: { color: CHART.label },
-      // Extra bottom room for the zoom slider, matching the tank chart.
-      grid: { left: 44, right: 12, top: 12, bottom: 40 },
-      xAxis: {
-        type: 'time',
-        axisLine: { lineStyle: { color: CHART.axis } },
-        axisLabel: { color: CHART.label },
-        splitLine: { show: false },
-      },
-      yAxis: {
-        type: 'value',
-        axisLine: { show: false },
-        axisLabel: { color: CHART.label },
-        splitLine: { lineStyle: { color: CHART.axis } },
-      },
-      tooltip: { trigger: 'axis' },
-      // Drag/scroll to zoom the time window (same affordance as the tank chart).
-      dataZoom: [
-        { type: 'inside', throttle: 50 },
-        {
-          type: 'slider', height: 16, bottom: 6,
-          borderColor: 'transparent',
-          fillerColor: 'rgba(34,211,238,0.15)',
-          handleStyle: { color: CHART.accent },
-          textStyle: { color: CHART.label },
-          dataBackground: { lineStyle: { color: CHART.axis }, areaStyle: { color: 'rgba(34,211,238,0.08)' } },
-        },
-      ],
-      series: [{
-        type: 'line', showSymbol: false, smooth: true, data,
-        lineStyle: { color: CHART.accent },
-        itemStyle: { color: CHART.accent },
-        areaStyle: { color: 'rgba(34,211,238,0.12)' },
-      }],
-    };
+    // Same shared history-chart look as the tank card; flow/line use an auto scale.
+    return historyLineOption(data);
   });
 
   protected pretty(token: string): string {

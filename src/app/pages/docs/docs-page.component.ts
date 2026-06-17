@@ -2,11 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { DocsStore } from '../../core/stores/docs.store';
 import { DocsImportComponent } from './docs-import.component';
 import type { DocEntry } from '../../core/models/backend-api';
-
-/** Accent colour per category, for the list. */
-const CAT_COLOR: Record<string, string> = {
-  narrative: '#22d3ee', node: '#34d399', wiring: '#fbbf24', glossary: '#a78bfa',
-};
+import { docCatColor } from './doc-colors';
 
 /**
  * Documentation (admin). Read-only view of the `docs` collection — the product
@@ -106,7 +102,7 @@ export class DocsPageComponent implements OnInit {
   protected previewHtml = signal('');
   protected showImport = signal(false);
 
-  protected catColor(c: string): string { return CAT_COLOR[c] ?? '#94a3b8'; }
+  protected catColor(c: string): string { return docCatColor(c); }
 
   protected fmtDate(iso: string): string {
     if (!iso) return '—';

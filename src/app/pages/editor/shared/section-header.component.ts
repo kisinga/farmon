@@ -13,7 +13,7 @@ import { Component, input } from '@angular/core';
     <header>
       <div class="flex items-center gap-2.5">
         <span class="w-1 h-5 rounded-full bg-primary/80 shrink-0"></span>
-        <h1 class="text-xl font-semibold tracking-tight">{{ title() }}</h1>
+        <h1 class="app-title text-xl font-semibold">{{ title() }}</h1>
       </div>
       @if (subtitle()) {
         <p class="text-sm text-base-content/50 mt-1.5 max-w-2xl leading-relaxed">{{ subtitle() }}</p>

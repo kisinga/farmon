@@ -236,3 +236,103 @@ export function estimate(raw: EstimateInput): Estimate {
 export function kes(n: number): string {
   return 'KES ' + n.toLocaleString('en-KE');
 }
+
+// ----------------------------------------------------------------------------
+// Plan levels (display only — NOT enforced)
+//
+// A separate axis from the Lite/Plus/Pro/Scale brackets above. Those brackets are
+// the *volume discount* on one subscription (more controllers, less each). These
+// three LEVELS describe what the platform does at different stages of a site:
+//   - Base    — every site gets this (mirrors the backend CoreCapabilities). All live.
+//   - Scale   — only meaningful once a site spans several controllers.
+//   - Enterprise — add-on packs and commercial promises; sold "talk to us".
+//
+// `status: 'soon'` marks a feature that is NOT built yet. The UI must render it as
+// "coming soon" and never as a working, checked feature. This is the one rule that
+// keeps the page honest — see entitlements.go for where enforcement will eventually
+// live (Can() is not wired today, so nothing here gates anything).
+// ----------------------------------------------------------------------------
+
+/** A single feature row under a plan level. `soon` = announced but not built. */
+export interface PlanFeature {
+  label: string;
+  status: 'live' | 'soon';
+}
+
+/** One of the three feature levels shown on the landing and pricing pages. */
+export interface PlanLevel {
+  name: string;
+  /** One line on who it's for / when it starts to matter. */
+  tagline: string;
+  /** How this level is priced, in plain words (no hard number where there isn't one). */
+  price: string;
+  features: PlanFeature[];
+}
+
+export const PLAN_LEVELS: PlanLevel[] = [
+  {
+    name: 'Base',
+    tagline: 'Every site, any size. Everything you need to run one place well.',
+    price: 'Per controller, monthly',
+    features: [
+      { label: 'Live dashboard: tanks, flow, pumps and valves', status: 'live' },
+      { label: 'Remote pump and valve control', status: 'live' },
+      { label: 'Schedules and level-based automations', status: 'live' },
+      { label: 'In-app and email alerts, with tank thresholds', status: 'live' },
+      { label: 'Usage history (about 30 days)', status: 'live' },
+      { label: 'Pump safety and offline local control', status: 'live' },
+      { label: 'Phone and laptop access', status: 'live' },
+    ],
+  },
+  {
+    name: 'Scale',
+    tagline: 'For sites that grow onto several controllers.',
+    price: 'Lower rate per controller as you add more',
+    features: [
+      { label: 'All of Base', status: 'live' },
+      { label: 'One dashboard across all your sites', status: 'live' },
+      { label: 'More team members and shared site access', status: 'live' },
+      { label: 'Cross-site analytics and trends', status: 'soon' },
+      { label: 'Longer usage history', status: 'soon' },
+    ],
+  },
+  {
+    name: 'Enterprise',
+    tagline: 'For operators who sell water or run many sites. Talk to us.',
+    price: 'Custom — contact us',
+    features: [
+      { label: 'All of Scale', status: 'live' },
+      { label: 'Uptime SLA', status: 'live' },
+      { label: 'Priority support', status: 'live' },
+      { label: 'WhatsApp alerts', status: 'soon' },
+      { label: 'Bill your own customers, mass email', status: 'soon' },
+      { label: 'Advanced reports and export', status: 'soon' },
+    ],
+  },
+];
+
+/** The biggest per-controller saving versus the first-controller (Lite) rate, as a
+ *  whole-number percent — derived from PRICING.subscription so it can never drift
+ *  from the estimator. E.g. 2,500 → 1,000 floor = 60. */
+export function maxVolumeDiscountPct(): number {
+  const rates = PRICING.subscription.map((b) => b.rate);
+  const top = rates[0];
+  const floor = rates[rates.length - 1];
+  return Math.round(((top - floor) / top) * 100);
+}
+
+/** The graduated per-controller subscription as display rows: the controller-count
+ *  range, the monthly rate each controller in that range costs, and the saving versus
+ *  the first-controller rate. Labelled by count (not Lite/Plus/Pro/Scale) so it never
+ *  collides with the Base/Scale/Enterprise feature levels. Derived from
+ *  PRICING.subscription, so the page can never disagree with the estimator. */
+export function subscriptionBrackets(): { range: string; rate: number; savePct: number }[] {
+  const top = PRICING.subscription[0].rate;
+  let prev = 0;
+  return PRICING.subscription.map((b) => {
+    const from = prev + 1;
+    const range = b.upTo === Infinity ? `${from}+` : from === b.upTo ? `${from}` : `${from}–${b.upTo}`;
+    if (b.upTo !== Infinity) prev = b.upTo;
+    return { range, rate: b.rate, savePct: Math.round(((top - b.rate) / top) * 100) };
+  });
+}

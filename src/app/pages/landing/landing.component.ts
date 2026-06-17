@@ -1,5 +1,4 @@
 import { Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { applyPageSeo } from '../../shared/seo';
 import {
   HardwareShowcaseComponent,
@@ -14,19 +13,10 @@ import {
   MktButtonComponent,
   MktIconChipComponent,
   MktFeatureGridComponent,
-  MktMetricBandComponent,
-  MktTestimonialComponent,
+  MktPlanLevelsComponent,
   type MktFeatureItem,
-  type MktMetric,
 } from '../../shared/marketing/ui';
 import { LiveDashboardComponent } from '../../shared/marketing/modules/live-dashboard.component';
-import { PRICING, kes } from '../pricing/pricing.model';
-
-/** A short "what you can do with it" capability. */
-interface Capability {
-  title: string;
-  body: string;
-}
 
 /** An industry MajiFlow fits, with a one-line use. */
 interface Vertical {
@@ -65,7 +55,6 @@ interface Deployment {
   selector: 'app-landing',
   standalone: true,
   imports: [
-    RouterLink,
     HardwareShowcaseComponent,
     MarketingNavComponent,
     MarketingFooterComponent,
@@ -75,8 +64,7 @@ interface Deployment {
     MktButtonComponent,
     MktIconChipComponent,
     MktFeatureGridComponent,
-    MktMetricBandComponent,
-    MktTestimonialComponent,
+    MktPlanLevelsComponent,
     LiveDashboardComponent,
   ],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
@@ -95,13 +83,13 @@ interface Deployment {
         from anywhere.
       </h1>
       <p class="mt-7 mkt-lead text-white/70 max-w-2xl mx-auto">
-        Water is money, and untracked water is money gone. MajiFlow meters every litre, runs your pumps
-        and valves on a schedule or to an exact volume, and shows where it all goes: by field, by tank,
-        by customer. No more checking tanks by hand or driving out to start a pump.
+        Water is money, and untracked water is money gone. MajiFlow meters every litre and runs your
+        pumps and valves to the exact volume you set. No more checking tanks by hand or driving out to
+        start a pump.
       </p>
       <div class="mt-9 flex flex-wrap gap-3 justify-center">
         <mkt-button variant="primary" route="/pricing">Estimate your site</mkt-button>
-        <mkt-button variant="ghost" route="/login">Get started</mkt-button>
+        <mkt-button variant="ghost" route="/login">Sign in</mkt-button>
       </div>
       <p class="mt-6 text-xs text-white/45">
         Your controllers keep working on their own, whether the internet is up or not.
@@ -117,81 +105,54 @@ interface Deployment {
       </div>
     </mkt-section>
 
-    <!-- ===================== PROOF METRICS ===================== -->
-    <!-- PLACEHOLDER figures — replace with real numbers before launch. -->
-    <mkt-metric-band [metrics]="metrics" />
-
-    <!-- ===================== SAVE WATER (CONSERVATION) ===================== -->
+    <!-- ===================== WHAT YOU CAN DO / SAVE WATER ===================== -->
     <mkt-section [tint]="true"
       heading="Water you can see is water you don't waste"
-      subhead="On a farm, every litre counts. Most water is lost where no one is looking. A valve left open, a tank overflowing at night, a slow leak underground. MajiFlow puts a number on all of it.">
-      <mkt-feature-grid [items]="conservation" [cols]="4" titleTone="brand" />
-    </mkt-section>
-
-    <!-- ===================== SOFTWARE + HARDWARE ===================== -->
-    <mkt-section heading="Software and hardware, designed together">
-      <div class="grid gap-5 md:grid-cols-2">
-        <div class="mkt-card-muted">
-          <mkt-icon-chip tone="cyan" class="mb-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          </mkt-icon-chip>
-          <h3 class="text-lg font-semibold">The software</h3>
-          <p class="mt-2 text-sm text-slate-600 leading-relaxed">Draw your tanks, pumps and sensors on the screen. MajiFlow checks your design and flags wiring mistakes <em>before</em> you spend a shilling, then gets the controllers and your dashboard ready.</p>
-        </div>
-        <div class="mkt-card-muted">
-          <mkt-icon-chip tone="sky" class="mb-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-          </mkt-icon-chip>
-          <h3 class="text-lg font-semibold">The hardware</h3>
-          <p class="mt-2 text-sm text-slate-600 leading-relaxed">Off-the-shelf controllers, sensors, pumps and valves. No special parts to hunt down. A plumber can do most of the install, and an electrician handles the pump wiring. Everything is documented.</p>
-        </div>
-      </div>
-      <!-- the controller itself, on the cinematic hardware stage -->
-      <app-hardware-showcase class="block mt-8" variant="hero" [devices]="heroDevices" [showHeader]="false" />
-      <div class="mt-6 text-center">
-        <mkt-button variant="link" route="/features">See the full hardware lineup →</mkt-button>
+      subhead="Most water is lost where no one is looking: a valve left open, a tank overflowing at night, a slow leak underground. MajiFlow puts a number on all of it, and lets you act on it.">
+      <mkt-feature-grid [items]="capabilities" [cols]="3" tone="muted" titleTone="brand" [interactive]="true" />
+      <div class="mt-8 text-center">
+        <mkt-button variant="link" route="/features">See everything MajiFlow does →</mkt-button>
       </div>
     </mkt-section>
 
-    <!-- ===================== DESIGN / SET UP / MONITOR ===================== -->
-    <mkt-section [tint]="true">
+    <!-- ===================== HOW IT WORKS (SOFTWARE + HARDWARE) ===================== -->
+    <mkt-section
+      heading="Software and hardware, designed together"
+      subhead="One system, end to end: the app, the controllers, and off-the-shelf parts a plumber and electrician can install. No coding. Three steps from idea to running site:">
       <div class="grid gap-6 sm:grid-cols-3">
         <div class="text-center sm:text-left">
           <mkt-icon-chip tone="on-light" class="mx-auto sm:mx-0 mb-4">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
           </mkt-icon-chip>
           <h3 class="font-semibold">1. Design it</h3>
-          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Lay out your tanks, pumps, valves and sensors on the screen. We check it and catch mistakes before you spend money.</p>
+          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Lay out your tanks, pumps, valves and sensors on the screen. MajiFlow checks the design and flags wiring mistakes <em>before</em> you spend a shilling.</p>
         </div>
         <div class="text-center sm:text-left">
           <mkt-icon-chip tone="on-light" class="mx-auto sm:mx-0 mb-4">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
           </mkt-icon-chip>
           <h3 class="font-semibold">2. We set it up</h3>
-          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">We get your controllers ready to switch on, build your dashboard, and write the wiring guide. No coding, ever.</p>
+          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">We get your controllers ready to switch on, build your dashboard, and write the wiring guide. A plumber does most of the install; an electrician handles the pump.</p>
         </div>
         <div class="text-center sm:text-left">
           <mkt-icon-chip tone="on-light" class="mx-auto sm:mx-0 mb-4">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           </mkt-icon-chip>
-          <h3 class="font-semibold">3. You watch it</h3>
-          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">See tank levels, water flow and valve positions in one place. Know what your farm is doing even when you are miles away.</p>
+          <h3 class="font-semibold">3. You run it</h3>
+          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Watch levels, flow and valves, switch pumps on, and let your schedules run themselves, from the farm or from town.</p>
         </div>
       </div>
-    </mkt-section>
-
-    <!-- ===================== WHAT YOU CAN DO ===================== -->
-    <mkt-section heading="What you can do with it">
-      <mkt-feature-grid [items]="capabilities" [cols]="2" tone="muted" [interactive]="true" />
-      <div class="mt-8 text-center">
-        <mkt-button variant="link" route="/features">See everything MajiFlow does →</mkt-button>
+      <!-- the controller itself, on the cinematic hardware stage -->
+      <app-hardware-showcase class="block mt-10" variant="hero" [devices]="heroDevices" [showHeader]="false" />
+      <div class="mt-6 text-center">
+        <mkt-button variant="link" route="/features">See the full hardware lineup →</mkt-button>
       </div>
     </mkt-section>
 
     <!-- ===================== FROM DESIGN TO THE FIELD ===================== -->
     <mkt-section [tint]="true" width="wide"
       heading="From design to the field"
-      subhead="Real sites we have planned and built. The same layout you draw on the screen becomes the controllers, pumps and valves running on the ground.">
+      subhead="Those same three steps, on real sites we have planned and built. The layout on your screen, now the pumps and valves running on the ground.">
       <div class="grid gap-6 md:grid-cols-3">
         @for (d of deployments; track d.title) {
           <div class="rounded-2xl bg-white ring-1 ring-slate-200 shadow-sm overflow-hidden">
@@ -232,59 +193,12 @@ interface Deployment {
     </mkt-section>
 
     <!-- ===================== PRICING ===================== -->
-    <mkt-section [tint]="true" width="narrow"
+    <mkt-section [tint]="true"
       heading="Simple, honest pricing"
-      subhead="Pay monthly for the platform. Add a one-time kit to run it. Nothing hidden, no lock-in.">
-      <div class="rounded-2xl bg-white ring-1 ring-slate-200 shadow-sm p-7 sm:p-9 max-w-2xl mx-auto">
-        <p class="text-xs font-semibold uppercase tracking-wider text-cyan-600">Hosted by us</p>
-        <h3 class="mt-1 text-xl font-bold">The platform</h3>
-        <p class="mt-2 text-sm text-slate-600 leading-relaxed">
-          One app for your whole water system, reachable from anywhere. Alerts, automation and usage
-          history. We host it and keep it running.
-        </p>
-
-        <!-- Monthly subscription, by tier -->
-        <div class="mt-6">
-          <div class="flex items-baseline justify-between">
-            <p class="text-sm font-semibold text-slate-900">Monthly, per controller</p>
-            <p class="text-xs text-slate-400">graduated</p>
-          </div>
-          <ul class="mt-3 divide-y divide-slate-100">
-            @for (t of tiers; track t.name) {
-              <li class="flex items-center justify-between py-2.5">
-                <span class="text-sm text-slate-700">{{ t.name }} <span class="text-slate-400">· {{ t.range }}</span></span>
-                <span class="text-sm font-semibold tabular-nums">{{ money(t.rate) }} <span class="font-normal text-slate-400">{{ t.suffix }}</span></span>
-              </li>
-            }
-          </ul>
-          <p class="mt-2 text-xs text-slate-500 leading-relaxed">More controllers, less each. Adding tanks, valves or flow to a controller never raises the monthly.</p>
-        </div>
-
-        <!-- One-time cost -->
-        <div class="mt-6 pt-5 border-t border-slate-100">
-          <p class="text-sm font-semibold text-slate-900">One-time, per site</p>
-          <p class="mt-1 text-sm text-slate-600 leading-relaxed">The hardware kit, sold near cost, plus installation. Priced to your site after a quick survey.</p>
-        </div>
-
-        <!-- What the platform includes -->
-        <ul class="mt-6 space-y-2.5 text-sm">
-          @for (f of platformIncludes; track f) {
-            <li class="flex gap-2.5">
-              <svg class="shrink-0 mt-0.5 text-cyan-500" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              <span class="text-slate-700">{{ f }}</span>
-            </li>
-          }
-        </ul>
-
-        <p class="mt-5 pt-4 border-t border-slate-100 text-xs text-slate-500 leading-relaxed">
-          No lock-in: on-site your controllers keep working without the subscription. Local control, pump
-          safety and saved automations run on their own.
-        </p>
-
-        <a routerLink="/pricing"
-           class="mt-6 block text-center rounded-full px-5 py-2.5 text-sm font-semibold bg-cyan-500 text-white hover:bg-cyan-400 transition-colors">
-          Estimate your site
-        </a>
+      subhead="One monthly subscription per controller, plus a one-time kit sold near cost. Start with everything a single site needs and add more as you grow. No lock-in.">
+      <mkt-plan-levels [compact]="true" />
+      <div class="mt-8 text-center">
+        <mkt-button variant="primary" route="/pricing">Estimate your site</mkt-button>
       </div>
     </mkt-section>
 
@@ -318,11 +232,13 @@ interface Deployment {
     </mkt-section>
 
     <!-- ===================== TESTIMONIAL ===================== -->
-    <!-- PLACEHOLDER quote — replace with a real customer quote before launch. -->
+    <!-- Hidden until we have a REAL quote from an early adopter (with permission).
+         To restore: re-add MktTestimonialComponent to imports and uncomment.
     <mkt-testimonial
-      quote="The borehole used to run dry before anyone noticed. Now it switches on by itself and I watch the tanks from my phone in town. I have not driven out at night in months."
-      author="James Mwangi"
-      role="Borehole on solar · Laikipia" />
+      quote="…real early-adopter quote…"
+      author="…their name…"
+      role="…site · location…" />
+    -->
 
     <!-- ===================== CTA BAND ===================== -->
     <app-marketing-cta
@@ -349,49 +265,20 @@ export class LandingComponent {
 
   protected readonly ctaButtons: CtaButton[] = [
     { label: 'Estimate your site', route: '/pricing' },
-    { label: 'Get started', route: '/login' },
+    { label: 'Sign in', route: '/login' },
   ];
 
-  /** Proof figures for the metric band. PLACEHOLDERS — swap for real numbers. */
-  protected readonly metrics: MktMetric[] = [
-    { value: '1.2M+', label: 'Litres metered' },
-    { value: '40+', label: 'Sites running' },
-    { value: '99.9%', label: 'Platform uptime' },
-    { value: '30%', label: 'Avg. water saved' },
-  ];
-
-  protected money(n: number): string {
-    return kes(n);
-  }
-
-  /** Monthly subscription tiers (per controller), with rates pulled from the pricing
-   *  model so the landing and the estimator never disagree. */
-  protected readonly tiers = [
-    { name: 'Lite', range: '1 controller', rate: PRICING.subscription[0].rate, suffix: '/ mo' },
-    { name: 'Plus', range: '2 to 4', rate: PRICING.subscription[1].rate, suffix: 'each / mo' },
-    { name: 'Pro', range: '5 to 10', rate: PRICING.subscription[2].rate, suffix: 'each / mo' },
-    { name: 'Scale', range: '11 or more', rate: PRICING.subscription[3].rate, suffix: 'each / mo' },
-  ];
-
-  protected readonly platformIncludes = [
-    'Live dashboard, full history and instant alerts, on every device',
-    'Automations you build online keep running on the controller, even offline',
-    'Grow freely: more tanks, valves and flow per controller, then more controllers',
-    'Hosted by us with an uptime guarantee',
-  ];
-
-  protected readonly conservation: MktFeatureItem[] = [
+  /** The "what you can do / save water" grid — the conservation (money) angle and the
+   *  day-to-day capabilities, merged into one deduped set so each idea is said once.
+   *  "See it from anywhere" lives in the hero and the live dashboard, so it is not
+   *  repeated here. */
+  protected readonly capabilities: MktFeatureItem[] = [
     { title: 'Catch leaks early', body: 'Flow sensors spot a line that should be still and warn you the same day, before it drains a tank or floods a field.' },
     { title: 'Use only what you need', body: 'Tanks fill to a set level and stop, so nothing overflows and no crop is over-watered.' },
     { title: 'Know your usage', body: '"Field A used 10,300 litres this week" turns guesswork into numbers you can plan around and cut.' },
-    { title: 'Pump on sun, not diesel', body: 'Solar-run sites water the land on clean power and cut fuel, cost and carbon.' },
-  ];
-
-  protected readonly capabilities: Capability[] = [
-    { title: 'Keep an eye from anywhere', body: 'Tank levels, water flow and valve positions in one dashboard, whether you are walking the farm or away in town.' },
-    { title: 'Know how much you use', body: 'Field A used 10,300 litres this week. The main tank has held 85% for two days. See it all in one place.' },
     { title: 'Take action from your phone', body: 'Reservoir down to 8%? Switch on the borehole pump from your phone. No need to drive out to the farm.' },
     { title: 'Let the routine run itself', body: 'Water the field at 6 AM on Mondays, or whenever the tank drops below 30%. Set it once and forget it.' },
+    { title: 'Pump on sun, not diesel', body: 'Solar-run sites water the land on clean power and cut fuel, cost and carbon.' },
   ];
 
   protected readonly verticals: Vertical[] = [

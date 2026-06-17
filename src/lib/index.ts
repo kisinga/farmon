@@ -57,7 +57,7 @@ export { calloutLabelsFor, layoutCallouts, buildCalloutMarkup, emitPinoutSvg } f
 export type { ConnectorGeom, CalloutLabel, ViewBox, PlacedBox, PinoutPlacement, LayoutOptions } from './board-pinout-layout';
 export { measureConnectors, svgViewBox } from './board-pinout-measure';
 export { reservedPins, exposedPins, pinsWithCap, pinsWithCapability } from './board.types';
-export { UI_COLORS, STATE_COLORS } from './colors';
+export { UI_COLORS, STATE_COLORS, BRAND, NEUTRAL } from './colors';
 export { SYMBOL } from './symbol-style';
 export { entityColor } from './entity-registry';
 export { nodesByKind } from './manifest.types';

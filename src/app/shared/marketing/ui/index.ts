@@ -7,3 +7,4 @@ export { MktIconChipComponent } from './mkt-icon-chip.component';
 export { MktFeatureGridComponent, type MktFeatureItem } from './mkt-feature-grid.component';
 export { MktMetricBandComponent, type MktMetric } from './mkt-metric-band.component';
 export { MktTestimonialComponent } from './mkt-testimonial.component';
+export { MktPlanLevelsComponent } from './mkt-plan-levels.component';

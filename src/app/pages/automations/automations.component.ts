@@ -7,6 +7,7 @@ import {
 } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
+import { ConfirmService } from '../../core/services/confirm.service';
 import { DashboardStore } from '../dashboard/dashboard.store';
 import { CommandLifecycleStore } from '../dashboard/command-lifecycle.store';
 import { TunableNumbersComponent } from '../dashboard/widgets/tunable-numbers.component';
@@ -64,7 +65,7 @@ function blankDraft(): NewAutomationRow & { id?: string } {
       <header class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <a [routerLink]="['/site', siteId, 'dashboard']" class="text-xs text-base-content/50 hover:text-base-content/80 transition-colors">← {{ siteName() || 'Site' }}</a>
-          <h1 class="text-xl font-semibold mt-0.5">Automations</h1>
+          <h1 class="app-title text-xl font-semibold mt-0.5">Automations</h1>
           <p class="text-sm text-base-content/50 mt-0.5">Run a route on a schedule, stopping at a target volume or time.</p>
         </div>
         @if (canEdit()) {
@@ -100,7 +101,7 @@ function blankDraft(): NewAutomationRow & { id?: string } {
         <section class="rounded-2xl ring-1 ring-primary/40 bg-base-100 shadow-lg overflow-hidden">
           <div class="flex items-center justify-between px-4 h-11 border-b border-base-300/40">
             <h2 class="text-sm font-semibold">{{ d.id ? 'Edit automation' : 'New automation' }}</h2>
-            <button class="btn btn-ghost btn-xs btn-circle" (click)="cancel()" title="Cancel">✕</button>
+            <button class="btn btn-ghost btn-xs btn-circle" (click)="cancel()" title="Cancel" aria-label="Cancel">✕</button>
           </div>
 
           <div class="p-4 grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-5">
@@ -135,9 +136,9 @@ function blankDraft(): NewAutomationRow & { id?: string } {
                 @if (d.trigger_type === 'time') {
                   <div class="flex items-center gap-2 flex-wrap pt-0.5">
                     <input type="time" class="input input-sm input-bordered w-32" [value]="hhmm(d.time_min)" (input)="setTime($any($event.target).value)" />
-                    <div class="flex gap-1">
+                    <div class="flex flex-wrap gap-1">
                       @for (day of dayLabels; track day; let i = $index) {
-                        <button class="btn btn-xs btn-circle font-normal" [class.btn-primary]="dayOn(d.days_mask, i)" [class.btn-ghost]="!dayOn(d.days_mask, i)" (click)="toggleDay(i)" [title]="day">{{ day.charAt(0) }}</button>
+                        <button class="btn btn-xs btn-circle w-8 h-8 min-h-0 font-normal" [class.btn-primary]="dayOn(d.days_mask, i)" [class.btn-ghost]="!dayOn(d.days_mask, i)" (click)="toggleDay(i)" [title]="day">{{ day.charAt(0) }}</button>
                       }
                     </div>
                     @if (d.days_mask === 0) { <span class="text-[11px] text-base-content/40">every day</span> }
@@ -176,16 +177,23 @@ function blankDraft(): NewAutomationRow & { id?: string } {
             </div>
 
             <!-- Footer -->
-            <div class="lg:col-span-2 flex items-center justify-between gap-2 pt-3 border-t border-base-300/40">
-              <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-                <input type="checkbox" class="toggle toggle-sm toggle-success" [checked]="d.enabled" (change)="set('enabled', $any($event.target).checked)" />
-                <span class="text-base-content/70">{{ d.enabled ? 'Enabled' : 'Paused' }}</span>
-              </label>
-              <div class="flex gap-2">
-                <button class="btn btn-ghost btn-sm" (click)="cancel()">Cancel</button>
-                <button class="btn btn-primary btn-sm min-w-20" (click)="save()" [disabled]="!d.route_key || saving()">
-                  @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } Save
-                </button>
+            <div class="lg:col-span-2 pt-3 border-t border-base-300/40">
+              @if (draftIssues().length) {
+                <ul class="mb-3 text-[11px] text-error/90 list-disc pl-4 space-y-0.5">
+                  @for (e of draftIssues(); track e) { <li>{{ e }}</li> }
+                </ul>
+              }
+              <div class="flex items-center justify-between gap-2">
+                <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+                  <input type="checkbox" class="toggle toggle-sm toggle-success" [checked]="d.enabled" (change)="set('enabled', $any($event.target).checked)" />
+                  <span class="text-base-content/70">{{ d.enabled ? 'Enabled' : 'Paused' }}</span>
+                </label>
+                <div class="flex gap-2">
+                  <button class="btn btn-ghost btn-sm" (click)="cancel()">Cancel</button>
+                  <button class="btn btn-primary btn-sm min-w-20" (click)="save()" [disabled]="draftIssues().length > 0 || saving()">
+                    @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } Save
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -237,6 +245,7 @@ export class AutomationsComponent {
   private backend = inject(BackendService);
   private auth = inject(AuthStore);
   private svc = inject(AutomationsService);
+  private confirm = inject(ConfirmService);
   protected dash = inject(DashboardStore);
 
   protected siteId = '';
@@ -272,6 +281,24 @@ export class AutomationsComponent {
     return [...groups.entries()].map(([controller, routes]) => ({ controller, routes }));
   });
   protected multiController = computed(() => this.routeGroups().length > 1);
+
+  /** Pre-submit validation: what still blocks Save, in plain words. */
+  protected draftIssues = computed<string[]>(() => {
+    const d = this.draft();
+    if (!d) return [];
+    const issues: string[] = [];
+    if (!d.route_key) issues.push('Pick a route.');
+    if (d.trigger_type === 'level') {
+      const t = d.level_threshold_pct;
+      if (t == null || Number.isNaN(t) || t < 0 || t > 100) issues.push('Tank level must be between 0 and 100%.');
+    }
+    for (const f of this.overrideFields()) {
+      if (!this.ovOn(d.override_mask, f.bit)) continue;
+      const v = Number(d[f.key]);
+      if (Number.isNaN(v) || v < f.min || v > f.max) issues.push(`${f.label} must be ${f.min}–${f.max} ${f.unit}.`);
+    }
+    return issues;
+  });
 
   constructor() {
     this.siteId = this.route.snapshot.paramMap.get('name') ?? '';
@@ -359,7 +386,13 @@ export class AutomationsComponent {
   }
 
   protected async remove(a: AutomationRecord): Promise<void> {
-    if (!confirm(`Delete automation "${a.name || 'unnamed'}"?`)) return;
+    const ok = await this.confirm.confirm({
+      title: 'Delete automation',
+      message: `Delete automation "${a.name || 'unnamed'}"? This can't be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'error',
+    });
+    if (!ok) return;
     try { await this.svc.remove(a.id); await this.refresh(); }
     catch (e) { this.error.set(e instanceof Error ? e.message : 'Delete failed.'); }
   }

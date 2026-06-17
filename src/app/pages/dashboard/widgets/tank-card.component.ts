@@ -5,9 +5,7 @@ import type { DashboardWidget } from '@core';
 import type { ShadowRow, TelemetryPoint } from '../../../core/models/runtime';
 import { SPAN_PRESETS } from '../telemetry.store';
 import { SpanSelectorComponent } from './span-selector.component';
-
-/** Dark-theme chart colours (shared look with the other cards). */
-const CHART = { axis: '#334155', label: '#94a3b8', accent: '#22d3ee' } as const;
+import { historyLineOption } from '../../../core/util/chart-theme';
 
 let uidSeq = 0;
 
@@ -144,39 +142,12 @@ export class TankCardComponent {
 
   protected chartOption = computed<EChartsOption>(() => {
     const data = this.series().map((p) => [p.ts, p.value ?? p.avg ?? null]);
-    return {
-      textStyle: { color: CHART.label },
-      grid: { left: 40, right: 14, top: 12, bottom: 52 },
-      xAxis: {
-        type: 'time',
-        axisLine: { lineStyle: { color: CHART.axis } },
-        axisLabel: { color: CHART.label },
-        splitLine: { show: false },
-      },
-      yAxis: {
-        type: 'value', min: 0, max: 100,
-        axisLine: { show: false },
-        axisLabel: { color: CHART.label, formatter: '{value}%' },
-        splitLine: { lineStyle: { color: CHART.axis } },
-      },
-      tooltip: { trigger: 'axis', valueFormatter: (v) => `${Math.round(Number(v))}%` },
-      dataZoom: [
-        { type: 'inside', throttle: 50 },
-        {
-          type: 'slider', height: 18, bottom: 8,
-          borderColor: 'transparent',
-          fillerColor: 'rgba(34,211,238,0.15)',
-          handleStyle: { color: CHART.accent },
-          textStyle: { color: CHART.label },
-          dataBackground: { lineStyle: { color: CHART.axis }, areaStyle: { color: 'rgba(34,211,238,0.08)' } },
-        },
-      ],
-      series: [{
-        type: 'line', showSymbol: false, smooth: true, data,
-        lineStyle: { color: CHART.accent, width: 2 },
-        itemStyle: { color: CHART.accent },
-        areaStyle: { color: 'rgba(34,211,238,0.16)' },
-      }],
-    };
+    // Tank level is always a 0–100% scale; everything else is the shared look.
+    return historyLineOption(data, {
+      yMin: 0,
+      yMax: 100,
+      yAxisFormatter: '{value}%',
+      tooltipValueFormatter: (v) => `${Math.round(Number(v))}%`,
+    });
   });
 }

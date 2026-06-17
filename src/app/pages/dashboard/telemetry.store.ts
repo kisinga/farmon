@@ -78,10 +78,14 @@ export class TelemetryStore {
     const to = new Date();
     const from = new Date(to.getTime() - hours * 3_600_000);
 
-    const hist = await this.realtime.history(siteId, widget.controller, widget.sensor, from, to);
+    // Null on failure: we still mark the widget "loaded" so the card falls from
+    // its loading skeleton to "No data yet" rather than spinning forever.
+    const hist = await this.realtime
+      .history(siteId, widget.controller, widget.sensor, from, to)
+      .catch(() => null);
     if (this.reqSeq.get(widget.id) !== token) return; // superseded by a newer load
 
-    this.series.update((m) => new Map(m).set(widget.id, hist.samples));
+    if (hist) this.series.update((m) => new Map(m).set(widget.id, hist.samples));
     this.loaded.update((s) => new Set(s).add(widget.id));
   }
 }
