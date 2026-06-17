@@ -260,11 +260,14 @@ export class AutomationsManagerComponent {
   protected readonly maxAutomations = MAX_AUTOMATIONS;
 
   private topology: SiteTopology | null = null;
-  private isOwner = false;
+  /** Signal (not a plain field) so `canEdit` recomputes once `load()` resolves
+   *  ownership. As a plain field it stayed stale in the modal, where auth is
+   *  already settled and nothing else forced the computed to re-run. */
+  private isOwner = signal(false);
   private started = false;
   private unsub?: UnsubscribeFunc;
 
-  protected canEdit = computed(() => this.isOwner || this.auth.isAdmin());
+  protected canEdit = computed(() => this.isOwner() || this.auth.isAdmin());
   protected atCap = computed(() => this.rows().length >= MAX_AUTOMATIONS);
   /** Any per-route tunable exists (drives the "Route defaults" disclosure). */
   protected hasRouteTuning = computed(() => this.dash.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));
@@ -313,7 +316,7 @@ export class AutomationsManagerComponent {
     try {
       const { site, topology } = await this.backend.siteLoad(siteId);
       const me = this.auth.user()?.id;
-      this.isOwner = !!me && (site.owners?.includes(me) ?? false);
+      this.isOwner.set(!!me && (site.owners?.includes(me) ?? false));
       if (topology) {
         this.topology = parseTopology(topology);
         this.routes.set(listAutomatableRoutes(this.topology));
