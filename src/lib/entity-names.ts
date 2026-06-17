@@ -112,6 +112,7 @@ export function routeEntityNames(route: { name: string }): {
   destMaxLevel: SystemEntitySpec;
   targetVolume: SystemEntitySpec;
   targetDuration: SystemEntitySpec;
+  flowStall: SystemEntitySpec;
 } {
   return {
     status:         { domain: 'sensor', name: `Route: ${route.name}` },
@@ -122,5 +123,6 @@ export function routeEntityNames(route: { name: string }): {
     destMaxLevel:   { domain: 'number', name: `Route: ${route.name} Dest Max (%)` },
     targetVolume:   { domain: 'number', name: `Route: ${route.name} Target Volume (L)` },
     targetDuration: { domain: 'number', name: `Route: ${route.name} Target Duration (s)` },
+    flowStall:      { domain: 'number', name: `Route: ${route.name} Flow-Stall Detect` },
   };
 }

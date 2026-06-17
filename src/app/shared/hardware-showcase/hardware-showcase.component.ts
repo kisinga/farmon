@@ -6,7 +6,7 @@ export interface HardwareDevice {
   name: string;
   kicker: string;
   body: string;
-  /** Hero image path under public/ (.webp — the single committed format). */
+  /** Hero image path under public/ (.webp or .avif). */
   main: string;
   /** Other angle shots, shown as thumbnails that swap the hero on hover. */
   angles: string[];
@@ -21,8 +21,8 @@ export const HARDWARE_DEVICES: HardwareDevice[] = [
     name: 'The controller',
     kicker: 'THE BRAIN ON THE WALL',
     body: 'Reads your sensors, switches your pumps and valves, and reports back to your dashboard. Rail-mounted, wired once, then left alone for years.',
-    main: 'marketing/Controller4.webp',
-    angles: ['marketing/Controller1.webp', 'marketing/Controller5.webp'],
+    main: 'marketing/controller.avif',
+    angles: ['marketing/controller2.avif'],
     specs: ['16 relays', 'USB-C', '12V DC', 'Rail mount'],
   },
   {
@@ -30,8 +30,8 @@ export const HARDWARE_DEVICES: HardwareDevice[] = [
     name: 'Motorised valve',
     kicker: 'OPENS AND CLOSES ON COMMAND',
     body: 'Opens and closes a water line on its own, on a schedule or on command. Brass body, three-wire control, no one standing at the tap.',
-    main: 'marketing/valve3.webp',
-    angles: ['marketing/valve5.webp', 'marketing/valve1.webp', 'marketing/valve6.webp'],
+    main: 'marketing/valve.avif',
+    angles: ['marketing/valve2.avif', 'marketing/valve3.avif'],
     specs: ['Brass body', '3-wire', 'Motorised', 'DN20 / DN25'],
   },
   {

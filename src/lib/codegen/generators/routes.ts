@@ -330,6 +330,18 @@ export function generateRoutes(m: Manifest): string {
       : `    case ${i}: return ROUTES[${i}].dest_max_pct;`)
     .join("\n");
 
+  // Flow-stall full-detection toggle — monitored routes read the HA number
+  // (NaN/missing → enabled, the baseline). Unmonitored routes can't stall-detect
+  // (no flow sensor) → 0.
+  const flowStallCases = m.routes
+    .map((r, i) => r.flow_sensor
+      ? `    case ${i}: {
+      float v = id(route_${i}_flow_stall_enable).state;
+      return std::isnan(v) ? 1 : (v >= 0.5f ? 1 : 0);
+    }`
+      : `    case ${i}: return 0;`)
+    .join("\n");
+
   // Valve travel time is operator-facing in seconds; convert to ms for the
   // ESPHome time-based cover. Bound check in seconds — anything below 1 s
   // falls back to the firmware default (already in ms).
@@ -851,6 +863,16 @@ ${targetDurationCases}
 inline uint32_t get_route_target_volume_l(int route_id) {
   switch (route_id) {
 ${targetVolumeCases}
+    default: return 0;
+  }
+}
+
+// Flow-stall full-detection toggle — 1 = a confirmed-then-ceased flow is treated
+// as tank-full. 0 = ignore the stall (rely on level / volume / duration / max
+// runtime). Does NOT gate the no-flow dry-run fault, which is unconditional.
+inline uint8_t get_route_flow_stall_enable(int route_id) {
+  switch (route_id) {
+${flowStallCases}
     default: return 0;
   }
 }
