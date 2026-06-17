@@ -42,11 +42,11 @@ interface TuningGroup {
                 @if (sec.label) {
                   <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/40">{{ sec.label }}</div>
                 }
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2.5">
                   @for (t of sec.items; track t.key) {
                     <label class="flex flex-col gap-1">
                       <span class="text-[11px] text-base-content/60 truncate flex items-center gap-1">
-                        {{ t.label }} @if (showUnit(t)) { <span class="text-base-content/30">({{ t.unit }})</span> }
+                        {{ itemLabel(t) }} @if (showUnit(t)) { <span class="text-base-content/30">({{ t.unit }})</span> }
                         @if (fieldPhase(g.controller, t); as ph) {
                           @switch (ph.phase) {
                             @case ('pending') { <span class="loading loading-spinner loading-xs text-warning shrink-0"></span> }
@@ -123,6 +123,17 @@ export class TunableNumbersComponent {
    *  we never render "Flow Watchdog (s) (s)". */
   protected showUnit(t: TunableNumber): boolean {
     return !!t.unit && !t.label.includes(`(${t.unit})`);
+  }
+
+  /** Field label trimmed for display. Route-scoped tunables carry the full
+   *  "Route: <route> <field>" name, but the section header already shows the
+   *  route, so we strip that prefix down to just "<field>" (e.g. "Max Runtime
+   *  (min)"). Controller-scoped labels pass through unchanged. */
+  protected itemLabel(t: TunableNumber): string {
+    if (t.scope !== 'route') return t.label;
+    let s = t.label.replace(/^Route:\s*/, '');
+    if (t.routeName && s.startsWith(t.routeName)) s = s.slice(t.routeName.length).trimStart();
+    return s;
   }
 
   private key(controller: string, t: TunableNumber): string {

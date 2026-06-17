@@ -58,13 +58,17 @@ import { TankCalibrationComponent } from './tank-calibration.component';
     @switch (open()) {
       @case ('automations') {
         <dialog class="modal modal-open" style="position: fixed;">
-          <div class="modal-box max-w-2xl">
-            <div class="flex items-center justify-between gap-3">
-              <h3 class="font-bold text-base">Automations</h3>
-              <button class="btn btn-ghost btn-xs btn-circle" (click)="open.set(null)" aria-label="Close">✕</button>
+          <div class="modal-box max-w-4xl flex flex-col max-h-[85vh] p-0">
+            <div class="flex items-start justify-between gap-3 px-6 pt-5 pb-3 border-b border-base-300/30 shrink-0">
+              <div class="min-w-0">
+                <h3 class="font-bold text-base">Automations</h3>
+                <p class="text-xs text-base-content/50 mt-0.5">Run a route on a schedule, stopping at a target volume or time.</p>
+              </div>
+              <button class="btn btn-ghost btn-xs btn-circle shrink-0" (click)="open.set(null)" aria-label="Close">✕</button>
             </div>
-            <p class="text-xs text-base-content/50 mt-0.5 mb-4">Run a route on a schedule, stopping at a target volume or time.</p>
-            <app-automations-manager [siteId]="siteId()" />
+            <div class="px-6 py-4 overflow-y-auto">
+              <app-automations-manager [siteId]="siteId()" />
+            </div>
           </div>
           <div class="modal-backdrop" (click)="open.set(null)"></div>
         </dialog>
@@ -72,12 +76,15 @@ import { TankCalibrationComponent } from './tank-calibration.component';
 
       @case ('setup') {
         <dialog class="modal modal-open" style="position: fixed;">
-          <div class="modal-box max-w-2xl">
-            <div class="flex items-center justify-between gap-3">
-              <h3 class="font-bold text-base">Setup</h3>
-              <button class="btn btn-ghost btn-xs btn-circle" (click)="open.set(null)" aria-label="Close">✕</button>
+          <div class="modal-box max-w-4xl flex flex-col max-h-[85vh] p-0">
+            <div class="flex items-start justify-between gap-3 px-6 pt-5 pb-3 border-b border-base-300/30 shrink-0">
+              <div class="min-w-0">
+                <h3 class="font-bold text-base">Setup</h3>
+                <p class="text-xs text-base-content/50 mt-0.5">Calibration, safety timings, and manual override for this site.</p>
+              </div>
+              <button class="btn btn-ghost btn-xs btn-circle shrink-0" (click)="open.set(null)" aria-label="Close">✕</button>
             </div>
-            <p class="text-xs text-base-content/50 mt-0.5 mb-4">Calibration, safety timings, and manual override for this site.</p>
+            <div class="px-6 py-4 overflow-y-auto">
             <div class="alert alert-warning text-xs py-2">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
@@ -132,6 +139,7 @@ import { TankCalibrationComponent } from './tank-calibration.component';
                 </div>
               }
             }
+            </div>
           </div>
           <div class="modal-backdrop" (click)="open.set(null)"></div>
         </dialog>

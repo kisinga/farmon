@@ -26,8 +26,17 @@ const SYNC_TOL = 0.05;
       <div class="flex items-center gap-2">
         <span class="text-sm font-semibold truncate">{{ cal().nodeName }}</span>
         <span class="grow"></span>
-        @if (level() !== null) {
-          <span class="inline-flex items-baseline gap-1 text-xs text-base-content/50">Live <span class="font-semibold tabular-nums text-primary text-sm">{{ level() }}%</span></span>
+        @if (level() !== null || pressurePsi() !== null) {
+          <span class="inline-flex items-baseline gap-1.5 text-xs text-base-content/50">
+            <span>Live</span>
+            @if (level() !== null) {
+              <span class="font-semibold tabular-nums text-primary text-sm">{{ level() }}%</span>
+            }
+            @if (level() !== null && pressurePsi() !== null) { <span class="text-base-content/25">·</span> }
+            @if (pressurePsi() !== null) {
+              <span class="font-semibold tabular-nums text-primary text-sm">{{ pressurePsi()!.toFixed(2) }} <span class="text-[11px] font-normal text-base-content/40">psi</span></span>
+            }
+          </span>
         }
       </div>
 
@@ -177,9 +186,29 @@ export class TankCalibrationComponent {
   }
   protected deviceEmpty = computed(() => this.deviceVal(this.cal().calEmptyKey));
   protected deviceFull = computed(() => this.deviceVal(this.cal().calFullKey));
-  protected level = computed(() => {
+  /** Live level as a 0..100 reading (unrounded), for display and pressure reconstruction. */
+  private levelRaw = computed(() => {
     const r = this.store.row(this.controller(), this.cal().levelSensor);
-    return r && Number.isFinite(r.reported) ? Math.round(r.reported) : null;
+    return r && Number.isFinite(r.reported) ? r.reported : null;
+  });
+  protected level = computed(() => {
+    const l = this.levelRaw();
+    return l === null ? null : Math.round(l);
+  });
+  /** Live sensor pressure (psi): the raw channel when the device emits it, else
+   *  reconstructed from the live level % and the active anchors, since
+   *  level % = (p - empty) / (full - empty). Shown even without a raw channel. */
+  protected pressurePsi = computed<number | null>(() => {
+    const key = this.cal().pressureSensor;
+    if (key) {
+      const r = this.store.row(this.controller(), key);
+      if (r && Number.isFinite(r.reported)) return r.reported;
+    }
+    const l = this.levelRaw();
+    if (l === null) return null;
+    const empty = this.deviceEmpty() ?? this.derived().p_empty_psi;
+    const full = this.deviceFull() ?? this.derived().p_full_psi;
+    return empty + (l / 100) * (full - empty);
   });
 
   protected valid = computed(() => {

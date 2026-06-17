@@ -92,7 +92,7 @@ interface Deployment {
         <mkt-button variant="ghost" route="/login">Sign in</mkt-button>
       </div>
       <p class="mt-6 text-xs text-white/45">
-        Your controllers keep working on their own, whether the internet is up or not.
+        Your controller runs on its own, online or not. The cloud is what brings it to your phone.
       </p>
     </mkt-hero>
 
@@ -218,8 +218,8 @@ interface Deployment {
           <mkt-icon-chip tone="on-dark" size="sm" class="mb-3">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.86a10 10 0 0 1 14 0"/><path d="M8.5 16.43a5 5 0 0 1 7 0"/></svg>
           </mkt-icon-chip>
-          <h3 class="font-semibold">Works offline, even unsubscribed</h3>
-          <p class="mt-1.5 text-sm text-white/60 leading-relaxed">On-site, local control, pump safety and your saved automations keep running with no internet and no subscription. The plan adds the offsite half: remote access, graphs, alerts, and automations you build online.</p>
+          <h3 class="font-semibold">Runs on its own, subscription or not</h3>
+          <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Local control, pump safety and saved automations keep running with no internet and no subscription. The plan adds the view from anywhere, not the water itself.</p>
         </div>
         <div class="mkt-card-dark">
           <mkt-icon-chip tone="on-dark" size="sm" class="mb-3">
