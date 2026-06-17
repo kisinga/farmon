@@ -25,7 +25,9 @@ Canonical definitions for the water-system model. Code, config, and UI use these
 
 **Flow sensor** — A pulse-counter inline on a pipe, measuring rate (L/min). Every pumped path needs exactly one for safety monitoring.
 
-**Route** — A path from a source to a destination, **computed by traversing the graph**, never hand-defined. Includes the source, destination, valves on the path, the flow sensor, and overrides (name, max runtime).
+**Route** — A path from a source to a destination, **computed by traversing the graph**, never hand-defined. Includes the source, destination, valves on the path, the flow sensor, and overrides (name, max runtime, and optional stop targets: target volume in litres, target run time).
+
+**Automation** — A saved rule that starts a route on its own: on a time-of-day schedule, or when the route's source tank reaches a level. Runs on the controller and fires through the same safety checks as a manual start; it carries its own optional stop targets for that run.
 
 **Passive path** — A graph path that does not cross a pump (e.g. gravity-fed). Visualized but generates no pump route; flow sensors on it still publish monitoring.
 
