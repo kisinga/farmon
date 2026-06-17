@@ -64,6 +64,23 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   entity_category: config
   update_interval: never`);
     }
+    // Flow-stall full-detection toggle (monitored routes only). 1 = on. Mirrors
+    // collectTunableNumbers() exactly (drift-guard asserts this).
+    if (r.flow_sensor) {
+      targetStopBlocks.push(`\
+- platform: template
+  name: "${names.flowStall.name}"
+  id: route_${i}_flow_stall_enable
+  icon: "mdi:waves-arrow-right"
+  min_value: 0
+  max_value: 1
+  step: 1
+  initial_value: 1
+  optimistic: true
+  restore_value: true
+  entity_category: config
+  update_interval: never`);
+    }
   });
 
   // Per-route safety thresholds — adjustable from HA, persisted across reboots.

@@ -30,7 +30,7 @@ export type TunableTier = 'tuning' | 'calibration';
 export type TunableField =
   | 'flow_watchdog' | 'flow_confirm' | 'flow_threshold' | 'claim_lease'
   | 'max_runtime' | 'source_min_pct' | 'dest_max_pct'
-  | 'target_volume_l' | 'target_duration_s'
+  | 'target_volume_l' | 'target_duration_s' | 'flow_stall_enable'
   | 'range_min' | 'range_max' | 'cal_empty' | 'cal_full'
   | 'travel_time';
 
@@ -48,6 +48,11 @@ export interface TunableNumber {
   step: number;
   /** Topology-baked initial value (UI placeholder / physical-lens seed). */
   default: number;
+  /** Render hint for the operator editor. 'toggle' = a 0/1 boolean shown as a
+   *  switch rather than a number spinner (min 0, max 1, step 1). */
+  display?: 'toggle';
+  /** One-line plain-language explanation, shown as a tooltip in the editor. */
+  hint?: string;
   // grouping context for the editor:
   routeIndex?: number;
   routeName?: string;
@@ -96,6 +101,12 @@ export function collectTunableNumbers(m: Manifest): TunableNumber[] {
     // Timed-open target — clean stop after N seconds. Any route (no flow sensor
     // needed). 0 = off. max_runtime stays the safety backstop above it.
     out.push({ key: `route_${i}_target_duration_s`, scope: 'route', tier: 'tuning', field: 'target_duration_s', label: names.targetDuration.name, unit: 's', min: 0, max: 7200, step: 1, default: 0, routeIndex: i, routeName });
+    // Flow-stall full-detection toggle — only on monitored routes (needs a flow
+    // sensor to observe a stall). 1 = on (default, preserves baseline behaviour),
+    // 0 = off. The no-flow dry-run fault is independent and stays on regardless.
+    if (r.flow_sensor) {
+      out.push({ key: `route_${i}_flow_stall_enable`, scope: 'route', tier: 'tuning', field: 'flow_stall_enable', label: names.flowStall.name, unit: '', min: 0, max: 1, step: 1, default: 1, display: 'toggle', hint: 'Flow that started then stopped is read as a full tank, so the pump stops. Turn off to stop on tank level, volume, or time instead. Dry-run protection (flow never started) stays on regardless.', routeIndex: i, routeName });
+    }
     // Volume target — clean stop after N litres delivered. Only where the flow
     // sensor isn't shared with a concurrent sibling (see routeVolumeEligible). 0 = off.
     if (routeVolumeEligible(r, m.routes)) {

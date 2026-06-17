@@ -33,6 +33,7 @@ import { boardCapacity } from "./manifest/board-capacity";
 import { providerReferences } from "./manifest/provider-references";
 import { pinTransportConsistency } from "./manifest/pin-transport-consistency";
 import { remoteNodes } from "./manifest/remote-nodes";
+import { fullDetectionMethods } from "./manifest/full-detection-methods";
 
 // Entity-specific topology rules are registered on NodeDescriptor.rules
 // and collected by the runner via NODE_REGISTRY. No imports needed here.
@@ -59,6 +60,7 @@ export const ALL_MANIFEST_RULES: ManifestRule[] = [
   providerReferences,
   pinTransportConsistency,
   remoteNodes,
+  fullDetectionMethods,
 ];
 
 // Convenience wrappers with default rule sets

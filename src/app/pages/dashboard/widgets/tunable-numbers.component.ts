@@ -45,8 +45,16 @@ interface TuningGroup {
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2.5">
                   @for (t of sec.items; track t.key) {
                     <label class="flex flex-col gap-1">
-                      <span class="text-[11px] text-base-content/60 truncate flex items-center gap-1">
-                        {{ itemLabel(t) }} @if (showUnit(t)) { <span class="text-base-content/30">({{ t.unit }})</span> }
+                      <span class="text-[11px] text-base-content/60 flex items-center gap-1 min-w-0">
+                        <span class="truncate">{{ itemLabel(t) }}</span>
+                        @if (showUnit(t)) { <span class="text-base-content/30 shrink-0">({{ t.unit }})</span> }
+                        @if (t.hint) {
+                          <span class="shrink-0 cursor-help text-base-content/30 hover:text-base-content/60" [title]="t.hint">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5 block">
+                              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                            </svg>
+                          </span>
+                        }
                         @if (fieldPhase(g.controller, t); as ph) {
                           @switch (ph.phase) {
                             @case ('pending') { <span class="loading loading-spinner loading-xs text-warning shrink-0"></span> }
@@ -55,12 +63,22 @@ interface TuningGroup {
                           }
                         }
                       </span>
-                      <input type="number" [min]="t.min" [max]="t.max" [step]="t.step"
-                        class="input input-sm input-bordered"
-                        [value]="display(g.controller, t)"
-                        [disabled]="!canEdit() || !g.online"
-                        [placeholder]="t.default"
-                        (input)="onInput(g.controller, t, $event)" />
+                      @if (t.display === 'toggle') {
+                        <div class="flex h-8 items-center gap-2">
+                          <input type="checkbox" class="toggle toggle-sm toggle-primary"
+                            [checked]="isOn(g.controller, t)"
+                            [disabled]="!canEdit() || !g.online"
+                            (change)="onToggle(g.controller, t, $event)" />
+                          <span class="text-xs text-base-content/50">{{ isOn(g.controller, t) ? 'On' : 'Off' }}</span>
+                        </div>
+                      } @else {
+                        <input type="number" [min]="t.min" [max]="t.max" [step]="t.step"
+                          class="input input-sm input-bordered"
+                          [value]="display(g.controller, t)"
+                          [disabled]="!canEdit() || !g.online"
+                          [placeholder]="t.default"
+                          (input)="onInput(g.controller, t, $event)" />
+                      }
                     </label>
                   }
                 </div>
@@ -154,6 +172,22 @@ export class TunableNumbersComponent {
   }
   protected display(controller: string, t: TunableNumber): number | string {
     return this.edited().get(`${controller}/${t.key}`) ?? this.current(controller, t) ?? '';
+  }
+
+  /** Boolean view of a 0/1 toggle tunable — pending edit wins, else the live
+   *  value, else the topology-baked default. */
+  protected isOn(controller: string, t: TunableNumber): boolean {
+    const v = this.edited().get(`${controller}/${t.key}`) ?? this.current(controller, t) ?? t.default;
+    return v >= 0.5;
+  }
+
+  protected onToggle(controller: string, t: TunableNumber, ev: Event): void {
+    const on = (ev.target as HTMLInputElement).checked;
+    this.edited.update((m) => {
+      const n = new Map(m);
+      n.set(`${controller}/${t.key}`, on ? 1 : 0);
+      return n;
+    });
   }
 
   protected onInput(controller: string, t: TunableNumber, ev: Event): void {

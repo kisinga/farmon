@@ -284,10 +284,15 @@ ${pumpMgmt}
                 uint32_t age = now - slots[s].last_flow_time;
                 if (age > flow_watchdog) {
                   if (slots[s].flow_confirmed) {
-                    // Flow was established then stopped → tank full
-                    ESP_LOGI("safety", "Tank full on slot %d route [%s]: flow stopped %us ago",
-                             s, r.name, age / 1000);
-                    slots[s].tank_full_detected = true;
+                    // Flow was established then stopped. Treat as tank-full only if
+                    // the flow-stall method is enabled for this route; otherwise let
+                    // the level / volume / duration / max-runtime stops handle it.
+                    // The no-flow fault below is NOT gated — dry-run protection always on.
+                    if (get_route_flow_stall_enable(rid)) {
+                      ESP_LOGI("safety", "Tank full on slot %d route [%s]: flow stopped %us ago",
+                               s, r.name, age / 1000);
+                      slots[s].tank_full_detected = true;
+                    }
                   } else {
                     // Flow was never established → genuine fault
                     ESP_LOGE("safety", "No flow for %us on slot %d route [%s]",
