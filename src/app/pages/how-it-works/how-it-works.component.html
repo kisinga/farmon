@@ -1,0 +1,142 @@
+<svg id="scene" viewBox="0 0 2600 1000" [attr.preserveAspectRatio]="scenePAR()">
+  <defs>
+    <linearGradient id="gWater" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0369a1" />
+      <stop offset="55%" stop-color="#22d3ee" />
+      <stop offset="100%" stop-color="#67e8f9" />
+    </linearGradient>
+    <linearGradient id="gTank" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#67e8f9" />
+      <stop offset="100%" stop-color="#0369a1" />
+    </linearGradient>
+    <linearGradient id="gPCB" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16713a" />
+      <stop offset="100%" stop-color="#0c4a26" />
+    </linearGradient>
+    <linearGradient id="gSoil" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a2a1a" />
+      <stop offset="100%" stop-color="#211710" />
+    </linearGradient>
+    <radialGradient id="gGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#67e8f9" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0" />
+    </radialGradient>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="b" />
+      <feMerge>
+        <feMergeNode in="b" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g id="world" [style.transform]="worldTransform()">
+    <!-- ground / horizon for the physical site (inside #world so it tracks the camera) -->
+    <path d="M1380 770 L2600 770 L2600 1000 L1380 1000 Z" fill="url(#gSoil)" opacity="0.55" />
+    <line x1="1380" y1="770" x2="2600" y2="770" stroke="rgba(120,170,220,.18)" stroke-width="1.5" />
+
+    <!-- ===== SIGNAL / WATER PATHS (drawn first, sit behind nodes) ===== -->
+    <!-- command + telemetry signal corridor (visual guide line) -->
+    <path d="M 340 470 C 470 470 470 392 580 392 L 760 392 C 880 392 920 430 1010 452" fill="none" stroke="rgba(120,170,220,.16)" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round" />
+    <!-- parallel trigger: an automation feeds the platform alongside the phone -->
+    <path id="pAuto" d="M 447 280 C 447 332 502 350 558 366" fill="none" stroke="rgba(120,170,220,.16)" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round" />
+    <!-- control wire: controller -> valve -->
+    <path id="pControl" d="M 1190 620 L 1190 712 C 1190 740 1210 752 1248 752 L 2002 752 C 2024 752 2034 738 2034 700" fill="none" stroke="#1f6f3c" stroke-width="6" stroke-linecap="round" opacity="0.9" />
+    <path d="M 1190 620 L 1190 712 C 1190 740 1210 752 1248 752 L 2002 752 C 2024 752 2034 738 2034 700" fill="none" stroke="rgba(70,255,122,.0)" stroke-width="2" stroke-linecap="round" />
+    <!-- signal wire: flow sensor -> controller -->
+    <path id="pSignalUp" d="M 2236 706 L 2236 660 C 2236 640 2218 636 2186 636 L 1276 636 C 1252 636 1244 632 1244 618" fill="none" stroke="#365f86" stroke-width="4" stroke-linecap="round" opacity="0.8" stroke-dasharray="1 7" />
+
+    <!-- the pipe (structure) -->
+    <path id="pPipe" d="M 1490 700 L 1490 752 L 2360 752 L 2360 700" fill="none" stroke="#2a3850" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M 1490 700 L 1490 752 L 2360 752 L 2360 700" fill="none" stroke="#1a2638" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- water inside pipe (revealed when flowing) -->
+    <path id="waterFill" d="M 1490 700 L 1490 752 L 2360 752 L 2360 700" pathLength="100" fill="none" stroke="url(#gWater)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="100" stroke-dashoffset="100" opacity="0" />
+    <path id="waterFlow" d="M 1490 700 L 1490 752 L 2360 752 L 2360 700" fill="none" stroke="#bdf3ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 34" stroke-dashoffset="0" opacity="0" />
+
+    <!-- ===== ZONES ===== -->
+    <g mfScenePhone [dim]="isDim('phone')" [tank]="tankText()" [flow]="flowText()" [litres]="litresText()" [running]="running()"></g>
+
+    <!-- automations (parallel trigger): small static zone, inline -->
+    <g class="zone" [class.dim]="isDim('auto')">
+      <rect x="372" y="200" width="152" height="80" rx="13" fill="#0d1830" stroke="rgba(120,170,220,.22)" stroke-width="2" />
+      <circle cx="396" cy="230" r="10" fill="none" stroke="var(--cyan)" stroke-width="2" />
+      <path d="M396 230 L396 223 M396 230 L401 234" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round" />
+      <text x="416" y="227" class="nsub" font-size="10.5">Schedule</text>
+      <text x="416" y="243" class="nsub" font-size="10.5">Tank level</text>
+      <text x="448" y="270" class="tag" font-size="9" text-anchor="middle">AUTOMATIONS</text>
+    </g>
+
+    <g mfScenePlatform [dim]="isDim('server')"></g>
+    <g mfSceneController [dim]="isDim('controller')" [showCheck]="checkVisible()"></g>
+    <g mfSceneSite [dim]="isDim('site')" [tankTop]="tankTop()" [valveText]="valveText()" [flowRateText]="flowRateText()"></g>
+    <g mfScenePackets></g>
+  </g>
+</svg>
+
+<!-- ===== chrome ===== -->
+<div class="header">
+  <a class="home-link" routerLink="/" title="Back to MajiFlow home" aria-label="Back to MajiFlow home">
+  <div class="brandrow">
+    <span class="back-chevron" aria-hidden="true">‹</span>
+    <svg class="mark" viewBox="-90 -90 180 180" aria-hidden="true">
+      <defs>
+        <linearGradient id="m1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#22D3EE" />
+          <stop offset="100%" stop-color="#0369A1" />
+        </linearGradient>
+        <linearGradient id="m2" x1="1" y1="0.5" x2="0" y2="1">
+          <stop offset="0%" stop-color="#38BDF8" />
+          <stop offset="100%" stop-color="#0369A1" />
+        </linearGradient>
+        <linearGradient id="m3" x1="0" y1="1" x2="0.5" y2="0">
+          <stop offset="0%" stop-color="#06B6D4" />
+          <stop offset="100%" stop-color="#0284C7" />
+        </linearGradient>
+      </defs>
+      <g transform="rotate(-30)">
+        <path d="M-78,0 C-55,-10 -28,10 -10,0 C-2,-3 2,0 5,0" fill="none" stroke="url(#m1)" stroke-width="3" stroke-linecap="round" opacity="0.45" />
+        <path d="M-74,9 C-50,-1 -26,18 -8,9 C2,4 5,8 7,6" fill="none" stroke="url(#m1)" stroke-width="5" stroke-linecap="round" opacity="0.65" />
+        <path d="M-70,20 C-48,10 -22,28 -4,20 C6,16 8,20 10,16" fill="none" stroke="url(#m1)" stroke-width="8" stroke-linecap="round" opacity="0.85" />
+      </g>
+      <g transform="rotate(90)">
+        <path d="M-78,0 C-55,-10 -28,10 -10,0 C-2,-3 2,0 5,0" fill="none" stroke="url(#m2)" stroke-width="3" stroke-linecap="round" opacity="0.45" />
+        <path d="M-74,9 C-50,-1 -26,18 -8,9 C2,4 5,8 7,6" fill="none" stroke="url(#m2)" stroke-width="5" stroke-linecap="round" opacity="0.65" />
+        <path d="M-70,20 C-48,10 -22,28 -4,20 C6,16 8,20 10,16" fill="none" stroke="url(#m2)" stroke-width="8" stroke-linecap="round" opacity="0.85" />
+      </g>
+      <g transform="rotate(210)">
+        <path d="M-70,20 C-48,10 -22,28 -4,20 C6,16 8,20 10,16" fill="none" stroke="url(#m3)" stroke-width="8" stroke-linecap="round" opacity="0.85" />
+      </g>
+    </svg>
+    <span class="wm">MajiFlow</span>
+  </div>
+  </a>
+  <div class="kicker"><span class="livedot"></span>Live Site Simulation</div>
+  <h1>From a tap on your phone to water in the field</h1>
+</div>
+
+<!-- marketing payoff -->
+<div id="outro" [class.show]="outroShown()">
+  <div class="outro-card">
+    <div class="otag">design it · run it · from anywhere</div>
+    <h2>Your browser to your field, watched and controlled from anywhere</h2>
+    <p>
+      MajiFlow turns a water plan into controller firmware, a live dashboard, and installation docs.
+      The subscription brings your metrics, history and alerts to your phone from anywhere; the
+      controller runs your schedules and safety on its own, with or without it.
+    </p>
+    <div class="ostat"><b>{{ outLitresText() }}</b><span>litres delivered this run · flow confirmed · no faults</span></div>
+    <button class="obtn" (click)="replay()">↻ Replay the journey</button>
+  </div>
+</div>
+
+<sim-stage-rail [stages]="stages" [active]="idx()" (select)="onSelect($event)" />
+
+<sim-caption [stage]="stage()" />
+
+<sim-transport
+  [playing]="playing()"
+  [progress]="progress()"
+  [label]="label()"
+  (toggle)="onToggle()"
+  (next)="next()"
+  (prev)="prev()" />

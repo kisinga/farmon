@@ -6,6 +6,7 @@ export const serverRoutes: ServerRoute[] = [
   { path: '', renderMode: RenderMode.Prerender },
   { path: 'pricing', renderMode: RenderMode.Prerender },
   { path: 'features', renderMode: RenderMode.Prerender },
+  { path: 'how-it-works', renderMode: RenderMode.Prerender },
   // Everything else is the authenticated app: client-rendered, no prerender.
   { path: '**', renderMode: RenderMode.Client },
 ];

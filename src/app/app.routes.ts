@@ -30,6 +30,12 @@ export const routes: Routes = [
       import('./pages/features/features.component').then((m) => m.FeaturesComponent),
   },
   {
+    // Public, full-screen cinematic walkthrough of the whole stack.
+    path: 'how-it-works',
+    loadComponent: () =>
+      import('./pages/how-it-works/how-it-works.component').then((m) => m.HowItWorksComponent),
+  },
+  {
     // Role-aware landing: admins → /overview, customers → their dashboard.
     path: 'home',
     canActivate: [authGuard],

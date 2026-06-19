@@ -38,7 +38,7 @@ export class App implements OnInit {
   // layout, so the app shell hides its top bar there.
   protected isPublic = computed(() => {
     const url = this.currentUrl();
-    return url === '/' || url === '' || url.startsWith('/login') || url.startsWith('/pricing') || url.startsWith('/features');
+    return url === '/' || url === '' || url.startsWith('/login') || url.startsWith('/pricing') || url.startsWith('/features') || url.startsWith('/how-it-works');
   });
 
   constructor() {

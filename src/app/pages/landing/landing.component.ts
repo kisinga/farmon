@@ -96,12 +96,15 @@ interface Deployment {
       </p>
     </mkt-hero>
 
-    <!-- ===================== LIVE DASHBOARD ===================== -->
+    <!-- ===================== SEE HOW IT WORKS (teaser → /how-it-works) ===================== -->
     <mkt-section
-      heading="See every tank, pump and valve on one screen"
-      subhead="Live tank levels, water flow and valve positions in a single view. Watch your farm or site from your laptop or your phone, on-site or across the country.">
+      heading="See your whole system work, end to end"
+      subhead="From a tap on your phone to water in the field: the dashboard, the platform, the controller’s on-device safety checks, the valve and pump, real measured flow, and the reading back. Watch the whole journey play out.">
       <div class="max-w-3xl sm:max-w-4xl mx-auto">
         <mkt-live-dashboard />
+      </div>
+      <div class="mt-8 text-center">
+        <mkt-button variant="primary" route="/how-it-works">Watch how it works →</mkt-button>
       </div>
     </mkt-section>
 
@@ -115,35 +118,12 @@ interface Deployment {
       </div>
     </mkt-section>
 
-    <!-- ===================== HOW IT WORKS (SOFTWARE + HARDWARE) ===================== -->
+    <!-- ===================== SOFTWARE + HARDWARE ===================== -->
     <mkt-section
       heading="Software and hardware, designed together"
-      subhead="One system, end to end: the app, the controllers, and off-the-shelf parts a plumber and electrician can install. No coding. Three steps from idea to running site:">
-      <div class="grid gap-6 sm:grid-cols-3">
-        <div class="text-center sm:text-left">
-          <mkt-icon-chip tone="on-light" class="mx-auto sm:mx-0 mb-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-          </mkt-icon-chip>
-          <h3 class="font-semibold">1. Design it</h3>
-          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Lay out your tanks, pumps, valves and sensors on the screen. MajiFlow checks the design and flags wiring mistakes <em>before</em> you spend a shilling.</p>
-        </div>
-        <div class="text-center sm:text-left">
-          <mkt-icon-chip tone="on-light" class="mx-auto sm:mx-0 mb-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-          </mkt-icon-chip>
-          <h3 class="font-semibold">2. We set it up</h3>
-          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">We get your controllers ready to switch on, build your dashboard, and write the wiring guide. A plumber does most of the install; an electrician handles the pump.</p>
-        </div>
-        <div class="text-center sm:text-left">
-          <mkt-icon-chip tone="on-light" class="mx-auto sm:mx-0 mb-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-          </mkt-icon-chip>
-          <h3 class="font-semibold">3. You run it</h3>
-          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Watch levels, flow and valves, switch pumps on, and let your schedules run themselves, from the farm or from town.</p>
-        </div>
-      </div>
+      subhead="One system, end to end: the app, the controllers, and off-the-shelf parts a plumber and electrician can install. No coding. You design it on the screen, we set it up, and you run it from the farm or from town.">
       <!-- the controller itself, on the cinematic hardware stage -->
-      <app-hardware-showcase class="block mt-10" variant="hero" [devices]="heroDevices" [showHeader]="false" />
+      <app-hardware-showcase class="block" variant="hero" [devices]="heroDevices" [showHeader]="false" />
       <div class="mt-6 text-center">
         <mkt-button variant="link" route="/features">See the full hardware lineup →</mkt-button>
       </div>
