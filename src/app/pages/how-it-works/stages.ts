@@ -100,7 +100,7 @@ export const STAGES: Stage[] = [
     cam: cam(1192, 520, 1.55),
     focus: ['controller'],
     title: 'Pre-flight checks, on the device',
-    body: 'The KC868-A16 controller receives the command and runs the safety checks itself: does the source have water, does the destination have room?',
+    body: 'The controller receives the command and runs the safety checks itself: does the source have water, does the destination have room?',
     why: 'Every start, manual or automated, passes the same checks, and they run on the controller, not the platform. A lost connection can never disable a safety check.',
     dur: 5400,
     fx: 'check',

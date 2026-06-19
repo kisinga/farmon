@@ -38,7 +38,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
     <svg:text x="1192" y="498" class="nsub" font-size="10.5">opto-isolated I/O</svg:text>
     <svg:text x="1192" y="516" class="nsub" font-size="10.5">Ethernet · WiFi · RS485</svg:text>
     <!-- node label -->
-    <svg:text x="1192" y="672" class="nlabel" text-anchor="middle">KC868-A16 controller</svg:text>
+    <svg:text x="1192" y="672" class="nlabel" text-anchor="middle">The controller</svg:text>
     <svg:text x="1192" y="693" class="nsub" text-anchor="middle">runs its own schedule + safety checks</svg:text>
     <!-- pre-flight check badge -->
     <svg:g id="checkBadge" [class.show]="showCheck()">
