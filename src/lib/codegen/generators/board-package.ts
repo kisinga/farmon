@@ -38,17 +38,21 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   const sections: Record<string, unknown>[] = [];
 
   // --- MCU ---
-  // esp-idf TLS needs a large contiguous heap chunk for the handshake. Cap the inbound
-  // TLS record buffer at 4 KB (default 16 KB) so the RSA-2048 verify MPI still fits on
-  // RAM-tight boards — the 16 KB default exhausted the heap mid-handshake
-  // (MBEDTLS_ERR_MPI_ALLOC_FAILED, -0x4290) on the first managed/TLS device, even
-  // though the cert itself verified. Our broker sends small records (cert + handshake
-  // < 4 KB), so 4 KB is ample for MQTT. CAVEAT: this also caps HTTPS inbound records —
-  // when managed CA-pinned OTA-over-HTTPS lands, its origin must send <=4 KB TLS records
-  // (or negotiate max_fragment_length), else raise this for those builds.
+  // esp-idf TLS inbound record buffer. A flat 4 KB cap (default 16 KB) once kept the
+  // RSA-2048 verify MPI on RAM-tight boards (the 16 KB default exhausted heap mid-handshake,
+  // MBEDTLS_ERR_MPI_ALLOC_FAILED -0x4290), but it broke pull-OTA: the firmware origin
+  // (majiflow.io) is Cloudflare-fronted and sends TLS records up to 16 KB, which overflow a
+  // 4 KB buffer (MBEDTLS_ERR_SSL_INVALID_RECORD -0x7200) and abort the download on the first
+  // record. Fix: size for 16 KB records AND enable the dynamic buffer, which allocates the
+  // large record buffer only during an active TLS read and frees it between reads — so OTA
+  // gets its 16 KB without paying the MQTT idle / connect-burst heap that caused -0x4290.
+  // (The esp-idf-recommended pattern for MQTT + HTTPS-OTA on tight heap.)
   const framework: Record<string, unknown> = { type: board.mcu.framework };
   if (board.mcu.framework === 'esp-idf') {
-    framework['sdkconfig_options'] = { CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN: quoted('4096') };
+    framework['sdkconfig_options'] = {
+      CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN: quoted('16384'),
+      CONFIG_MBEDTLS_DYNAMIC_BUFFER: quoted('y'),
+    };
   }
   sections.push({
     esp32: {
