@@ -15,9 +15,10 @@ import { BuildService } from '../../../core/services/build.service';
  * loading. (Earlier it copied into local signals in ngOnInit and went stale when
  * load() resolved after the card mounted.)
  *
- * Shows a live verdict driven by the design's cross-controller "cross-talk":
- * picking Cloud while the layout needs controllers to share data is an error
- * (that only works on your own server).
+ * Shows a live verdict driven by the design's cross-controller "cross-talk".
+ * Coordination is LAN-UDP and never touches the cloud, so sharing works in both
+ * modes — the verdict only reminds that shared controllers must sit on the same
+ * local network; it is never a mode error.
  */
 @Component({
   selector: 'app-deployment-card',

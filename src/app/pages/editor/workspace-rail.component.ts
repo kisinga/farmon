@@ -66,8 +66,6 @@ export class WorkspaceRailComponent {
 
   protected readonly labels = PANEL_LABELS;
 
-  /** Sharing (cross-controller) is meaningless in managed/cloud mode. */
-  private managed = computed(() => this.workspace.deploymentMode() === 'managed');
   private siteId = computed(() => this.workspace.site()?.id ?? '');
   private ctrlId = this.editor.controllerId;
 
@@ -78,7 +76,7 @@ export class WorkspaceRailComponent {
       icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
     { id: 'config',      hint: 'Board, pins, buses and safety timings',
       icon: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z' },
-    { id: 'remotes',     hint: 'Share sensors between controllers (own-server only)',
+    { id: 'remotes',     hint: 'Share sensors between controllers on the same LAN',
       icon: 'M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244' },
     { id: 'deploy',      hint: 'Generate the controller firmware bundle',
       icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
@@ -95,16 +93,14 @@ export class WorkspaceRailComponent {
   }
 
   protected isDisabled(id: EditorPanel): boolean {
-    if (id === 'remotes' && this.managed()) return true;
-    // Per-controller sections need a controller selected.
+    // Per-controller sections need a controller selected. Sharing (remotes) is
+    // cross-controller LAN-UDP that never touches the cloud, so it works in cloud +
+    // own-server alike — it is NOT gated by deployment mode.
     if (id !== 'site' && !this.ctrlId()) return true;
     return false;
   }
 
-  protected disabledHint(id: EditorPanel): string {
-    if (id === 'remotes' && this.managed()) {
-      return 'Sharing sensors between controllers only works on your own server';
-    }
+  protected disabledHint(_id: EditorPanel): string {
     return 'Add a controller in Design first';
   }
 
