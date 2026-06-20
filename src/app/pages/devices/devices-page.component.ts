@@ -224,6 +224,8 @@ export class DevicesPageComponent implements OnInit {
         `Deregister "${d.name || d.deviceId}"? It stops connecting to the broker and frees a ` +
         `hosting slot on its site. Its history and credentials are kept — you can reactivate it ` +
         `later. The box keeps its firmware until reflashed.`,
+      confirmLabel: 'Deregister',
+      variant: 'error',
     });
     if (!confirmed) return;
     await this.devicesStore.deregister(d.id);
@@ -237,6 +239,8 @@ export class DevicesPageComponent implements OnInit {
       await this.confirmService.confirm({
         title: 'Cannot reactivate',
         message: (e as Error)?.message || 'Reactivation failed (the site may be at its device cap).',
+        confirmLabel: 'OK',
+        acknowledge: true,
       });
     }
   }
@@ -251,6 +255,8 @@ export class DevicesPageComponent implements OnInit {
         `Clear the hardware binding for "${d.name || d.deviceId}"? Do this only if the board was ` +
         `replaced. The next board to connect becomes the new bound device. If two boards are still ` +
         `running this firmware, the conflict will simply re-trigger.`,
+      confirmLabel: 'Clear binding',
+      variant: 'warning',
     });
     if (!confirmed) return;
     await this.devicesStore.clearMacBinding(d.id);

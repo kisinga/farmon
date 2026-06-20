@@ -298,6 +298,8 @@ export class CustomersPageComponent implements OnInit {
       message:
         `Delete "${c.name || c.email}"? They lose access immediately.` +
         (owned > 0 ? ` The ${owned} site${owned !== 1 ? 's' : ''} they own will become unassigned.` : ''),
+      confirmLabel: 'Delete',
+      variant: 'error',
     });
     if (!confirmed) return;
     try {

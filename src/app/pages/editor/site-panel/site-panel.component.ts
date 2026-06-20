@@ -80,7 +80,7 @@ import { SectionHeaderComponent } from '../shared/section-header.component';
                 <div class="flex items-center gap-1 shrink-0">
                   <span class="text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">Open ›</span>
                   <button
-                    class="btn btn-ghost btn-xs btn-square text-error opacity-0 group-hover:opacity-100 transition-opacity"
+                    class="btn btn-ghost btn-xs btn-square text-error opacity-50 hover:opacity-100 transition-opacity"
                     (click)="deleteSystem(entry.id, entry.friendlyName, $event)"
                     title="Delete controller">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -225,6 +225,8 @@ export class SitePanelComponent {
     const confirmed = await this.confirmService.confirm({
       title: 'Delete Controller',
       message: `Delete "${friendlyName}"? All pipes to/from this controller will also be removed.`,
+      confirmLabel: 'Delete',
+      variant: 'error',
     });
     if (!confirmed) return;
     if (this.workspace.activeControllerId() === systemId) {

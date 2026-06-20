@@ -11,13 +11,16 @@ import { ConfirmService } from '../../core/services/confirm.service';
           <h3 class="font-bold text-lg">{{ s.title }}</h3>
           <p class="py-4 text-sm text-base-content/70">{{ s.message }}</p>
           <div class="modal-action">
-            <button class="btn btn-ghost" (click)="confirm.respond(false)">Cancel</button>
+            @if (!s.acknowledge) {
+              <button class="btn btn-ghost" (click)="confirm.respond(false)">Cancel</button>
+            }
             <button
               class="btn"
-              [class.btn-error]="(s.variant ?? 'error') === 'error'"
+              [class.btn-error]="s.variant === 'error'"
               [class.btn-warning]="s.variant === 'warning'"
+              [class.btn-primary]="(s.variant ?? 'primary') === 'primary'"
               (click)="confirm.respond(true)"
-            >{{ s.confirmLabel ?? 'Delete' }}</button>
+            >{{ s.confirmLabel ?? 'Confirm' }}</button>
           </div>
         </div>
         <div class="modal-backdrop" (click)="confirm.respond(false)"></div>

@@ -452,6 +452,8 @@ export class OverviewComponent implements OnInit {
     const confirmed = await this.confirmService.confirm({
       title: 'Delete Site',
       message: `Delete "${name}"? All controllers and links in this site will be permanently removed.`,
+      confirmLabel: 'Delete',
+      variant: 'error',
     });
     if (!confirmed) return;
     await this.sitesStore.delete(id);

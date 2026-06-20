@@ -52,8 +52,11 @@ export class SystemEditorService {
   // --- Session-specific state (NOT in workspace) ---
   /** Route-level preview (read-only embed). Distinct from the commissioned lock. */
   private _readonly = signal(false);
-  /** Admin opted into editing a commissioned site this session (clears on leave). */
-  private _designUnlocked = signal(false);
+  /** Sites the admin opted into editing this session, by id. Per-site so unlocking one
+   *  live site never unlocks another, and (unlike the old single flag) it survives
+   *  navigating away from and back to the editor — it resets only on a full reload, which
+   *  re-locks commissioned sites by design. */
+  private _unlockedSites = signal<ReadonlySet<string>>(new Set());
   private _validation = signal<ValidationResult | null>(null);
   private _generatedFiles = signal<GenerateResult | null>(null);
   private _canvasSvg = signal<string | null>(null);
@@ -67,16 +70,25 @@ export class SystemEditorService {
   readonly controllerId = this.workspace.activeControllerId;
 
   /** Whether the site is commissioned but the admin hasn't entered design mode. */
-  readonly locked = computed(() => this.workspace.commissioned() && !this._designUnlocked());
+  readonly locked = computed(() => {
+    const siteId = this.workspace.site()?.id;
+    return this.workspace.commissioned() && (!siteId || !this._unlockedSites().has(siteId));
+  });
 
   /** True design is read-only: route preview OR an unbroken commissioned lock. */
   readonly readonly = computed(() => this._readonly() || this.locked());
 
-  readonly designUnlocked = this._designUnlocked.asReadonly();
+  /** Admin has lifted the lock for the active site this session. */
+  readonly designUnlocked = computed(() => {
+    const siteId = this.workspace.site()?.id;
+    return !!siteId && this._unlockedSites().has(siteId);
+  });
 
-  /** Admin opts into editing a commissioned site (lifts the lock for this session). */
+  /** Admin opts into editing the active commissioned site (lifts its lock this session). */
   enterDesignMode(): void {
-    this._designUnlocked.set(true);
+    const siteId = this.workspace.site()?.id;
+    if (!siteId) return;
+    this._unlockedSites.update(s => new Set(s).add(siteId));
   }
 
   // --- Active controller computed ---
@@ -320,7 +332,8 @@ export class SystemEditorService {
   clear(): void {
     this.workspace.unfocusController();
     this._readonly.set(false);
-    this._designUnlocked.set(false);
+    // Design-unlock is deliberately NOT cleared here: it's per-site session state that must
+    // survive navigating away from and back to the editor (it resets only on a full reload).
     this._validation.set(null);
     this._generatedFiles.set(null);
     this._canvasSvg.set(null);

@@ -138,6 +138,8 @@ export class LeadsPageComponent implements OnInit {
     const confirmed = await this.confirmService.confirm({
       title: 'Delete lead',
       message: `Delete the enquiry from "${l.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'error',
     });
     if (!confirmed) return;
     await this.leadsStore.delete(l.id);

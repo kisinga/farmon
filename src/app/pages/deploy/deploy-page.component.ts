@@ -440,6 +440,8 @@ export class DeployPageComponent {
       message:
         `Tell "${this.controllerName()}" to download and flash version ` +
         `${rel.version || rel.md5.slice(0, 8)} now? The device reboots into the new image.`,
+      confirmLabel: 'Deploy',
+      variant: 'warning',
     });
     if (!confirmed) return;
     this.deploying.set(true);
@@ -478,6 +480,8 @@ export class DeployPageComponent {
         `Clear the hardware binding for "${this.controllerName()}"? Do this only if the board was ` +
         `replaced. The next board to connect becomes the new bound device. If two boards are still ` +
         `running this firmware, the conflict will simply re-trigger.`,
+      confirmLabel: 'Clear binding',
+      variant: 'warning',
     });
     if (!confirmed) return;
     this.clearingBinding.set(true);

@@ -4,7 +4,13 @@ export interface ConfirmOptions {
   title: string;
   message: string;
   confirmLabel?: string;
-  variant?: 'error' | 'warning';
+  /** Action-button intent. Defaults to 'primary' (a safe, non-destructive button) so a
+   *  caller that forgets to set it never renders a red "Delete" by accident. Use 'error'
+   *  for destructive actions, 'warning' for significant-but-reversible ones. */
+  variant?: 'primary' | 'warning' | 'error';
+  /** Info/acknowledge dialog: a single button, no Cancel. Still awaitable, but there is
+   *  nothing to cancel — for "you can't do X" messages, not yes/no decisions. */
+  acknowledge?: boolean;
 }
 
 interface ConfirmState extends ConfirmOptions {
