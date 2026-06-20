@@ -72,13 +72,13 @@ import { BuildService } from '../../../core/services/build.service';
           </div>
         } @else {
           <div class="flex flex-wrap items-end gap-2">
-            <label class="form-control">
+            <label class="flex flex-col">
               <span class="text-[11px] text-base-content/50 mb-0.5">On-site server address</span>
               <input type="text" class="input input-bordered input-sm w-56 font-mono"
                 placeholder="majiflow.local or 192.168.1.50"
                 [ngModel]="host()" (ngModelChange)="setHost($event)" />
             </label>
-            <label class="form-control">
+            <label class="flex flex-col">
               <span class="text-[11px] text-base-content/50 mb-0.5">Port</span>
               <input type="number" class="input input-bordered input-sm w-20 font-mono"
                 placeholder="1883" [ngModel]="port()" (ngModelChange)="setPort(+$event)" />

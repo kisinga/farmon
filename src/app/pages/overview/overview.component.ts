@@ -203,7 +203,7 @@ import { siteColor, initials } from '../../core/util/site-colors';
       <dialog class="modal modal-open">
         <div class="modal-box max-w-sm">
           <h3 class="font-bold text-lg mb-4">New site</h3>
-          <label class="form-control">
+          <label class="flex flex-col">
             <span class="label-text mb-1">Site name</span>
             <input type="text" class="input input-bordered w-full" placeholder="e.g. Riverside Farm" #newName (keydown.enter)="createSite(newName.value)" />
           </label>

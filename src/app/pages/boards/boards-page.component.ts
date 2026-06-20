@@ -70,16 +70,25 @@ type BoardKind = 'main' | 'expansion';
         </div>
       }
 
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        @for (b of boards(); track b.model) {
-          <div class="card bg-base-100 border border-base-300/50">
-            <div class="card-body">
-              <h2 class="card-title text-sm">{{ b.label }}</h2>
-              <p class="text-xs text-base-content/50 font-mono">{{ b.model }}</p>
+      @if (loading()) {
+        <div class="flex items-center justify-center py-24"><span class="loading loading-spinner loading-lg text-cyan-400"></span></div>
+      } @else if (boards().length === 0) {
+        <div class="rounded-2xl border border-dashed border-base-300/50 py-16 text-center">
+          <p class="text-base font-medium">No boards yet</p>
+          <p class="text-sm text-base-content/50 mt-1">Import a board definition to add it to the catalog.</p>
+        </div>
+      } @else {
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          @for (b of boards(); track b.model) {
+            <div class="card bg-base-100 border border-base-300/50">
+              <div class="card-body">
+                <h2 class="card-title text-sm">{{ b.label }}</h2>
+                <p class="text-xs text-base-content/50 font-mono">{{ b.model }}</p>
+              </div>
             </div>
-          </div>
-        }
-      </div>
+          }
+        </div>
+      }
     </div>
   `,
 })
@@ -89,6 +98,7 @@ export class BoardsPageComponent implements OnInit {
   protected boards = computed(() =>
     this.boardCatalog.boards().map((b) => ({ model: b.model, label: b.label })),
   );
+  protected loading = this.boardCatalog.boardsLoading;
 
   protected showImport = signal(false);
   protected kind = signal<BoardKind>('expansion');

@@ -43,7 +43,7 @@ const TIMING_FIELDS: TimingField[] = [
         <div class="card surface">
           <div class="card-body gap-4">
             <h2 class="card-title text-base">Device Identity</h2>
-            <label class="form-control">
+            <label class="flex flex-col">
               <div class="label"><span class="label-text font-medium">Friendly Name</span></div>
               <app-zod-input
                 [schema]="deviceSchema"
@@ -61,7 +61,7 @@ const TIMING_FIELDS: TimingField[] = [
         <div class="card surface">
           <div class="card-body gap-4">
             <h2 class="card-title text-base">Target Board</h2>
-            <label class="form-control">
+            <label class="flex flex-col">
               <div class="label"><span class="label-text font-medium">Board</span></div>
               <select
                 class="select select-bordered select-sm"
@@ -149,19 +149,19 @@ const TIMING_FIELDS: TimingField[] = [
                   </div>
                 </div>
                 <div class="grid grid-cols-4 gap-2">
-                  <label class="form-control">
+                  <label class="flex flex-col">
                     <span class="label-text text-xs">TX Pin</span>
                     <span class="text-xs font-mono">{{ bus.tx_pin }}</span>
                   </label>
-                  <label class="form-control">
+                  <label class="flex flex-col">
                     <span class="label-text text-xs">RX Pin</span>
                     <span class="text-xs font-mono">{{ bus.rx_pin }}</span>
                   </label>
-                  <label class="form-control">
+                  <label class="flex flex-col">
                     <span class="label-text text-xs">DE Pin</span>
                     <span class="text-xs font-mono">{{ bus.de_pin ?? '—' }}</span>
                   </label>
-                  <label class="form-control">
+                  <label class="flex flex-col">
                     <span class="label-text text-xs">Baud Rate</span>
                     <span class="text-xs font-mono">{{ bus.baud_rate }}</span>
                   </label>
@@ -180,25 +180,25 @@ const TIMING_FIELDS: TimingField[] = [
                   <button class="btn btn-ghost btn-xs text-error" (click)="removeUartBus(bus.id)">Remove</button>
                 </div>
                 <div class="grid grid-cols-4 gap-2">
-                  <label class="form-control">
+                  <label class="flex flex-col">
                     <span class="label-text text-xs">TX Pin</span>
                     <input type="text" class="input input-xs input-bordered font-mono"
                       [ngModel]="bus.tx_pin"
                       (ngModelChange)="updateUartBusField(bus.id, 'tx_pin', $event)" />
                   </label>
-                  <label class="form-control">
+                  <label class="flex flex-col">
                     <span class="label-text text-xs">RX Pin</span>
                     <input type="text" class="input input-xs input-bordered font-mono"
                       [ngModel]="bus.rx_pin"
                       (ngModelChange)="updateUartBusField(bus.id, 'rx_pin', $event)" />
                   </label>
-                  <label class="form-control">
+                  <label class="flex flex-col">
                     <span class="label-text text-xs">DE Pin</span>
                     <input type="text" class="input input-xs input-bordered font-mono"
                       [ngModel]="bus.de_pin ?? ''"
                       (ngModelChange)="updateUartBusField(bus.id, 'de_pin', $event || undefined)" />
                   </label>
-                  <label class="form-control">
+                  <label class="flex flex-col">
                     <span class="label-text text-xs">Baud Rate</span>
                     <input type="number" class="input input-xs input-bordered font-mono"
                       [ngModel]="bus.baud_rate"
@@ -243,7 +243,7 @@ const TIMING_FIELDS: TimingField[] = [
                   <button class="btn btn-ghost btn-xs text-error" (click)="removeProvider(prov.id)">Remove</button>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
-                  <label class="form-control">
+                  <label class="flex flex-col">
                     <span class="label-text text-xs">UART Bus</span>
                     <select class="select select-xs select-bordered font-mono"
                       [ngModel]="$any(prov.config)['bus']"
@@ -259,7 +259,7 @@ const TIMING_FIELDS: TimingField[] = [
                       }
                     </select>
                   </label>
-                  <label class="form-control">
+                  <label class="flex flex-col">
                     <span class="label-text text-xs">Address</span>
                     <input type="number" class="input input-xs input-bordered font-mono"
                       [ngModel]="$any(prov.config)['address']"

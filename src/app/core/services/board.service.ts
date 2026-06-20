@@ -27,6 +27,7 @@ export class BoardService {
   private _activeBoard = signal<BoardDef | null>(null);
 
   readonly boards = this._boards.value;
+  readonly boardsLoading = this._boards.loading;
   readonly expansionCatalog = this._expansion.value;
   readonly activeSvg = this._activeSvg.asReadonly();
   readonly activeBoard = this._activeBoard.asReadonly();

@@ -23,7 +23,7 @@ import { SectionHeaderComponent } from '../editor/shared/section-header.componen
         <div class="surface p-5 space-y-4">
           <h3 class="font-semibold text-sm">Hosting</h3>
 
-          <label class="form-control">
+          <label class="flex flex-col">
             <span class="label-text text-xs text-base-content/60 mb-1">Devices per managed site</span>
             <input
               type="number" min="1" max="50"

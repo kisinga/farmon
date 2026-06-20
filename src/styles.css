@@ -141,9 +141,12 @@
 
 /* ── Shared surface helpers (compose, don't build a component library) ─────── */
 @layer components {
-  /* A slate card surface with a subtle ring — the workspace's default panel. */
+  /* The workspace's default panel. A slate card lifted off the dark shell with a
+     soft shadow + ring + a faint top sheen, so panels read as floating cards (the
+     depth + 2xl radius of the marketing cards) rather than flat boxes. */
   .surface {
-    @apply bg-base-100 rounded-xl ring-1 ring-base-300/40;
+    @apply bg-base-100 rounded-2xl ring-1 ring-base-300/40 shadow-lg shadow-black/25;
+    background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.025), transparent 40%);
   }
   /* Section sub-header bar (breadcrumb + controller switcher live here). */
   .sub-header {

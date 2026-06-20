@@ -1,6 +1,6 @@
 import { Component, inject, OnInit, OnDestroy, signal, computed, effect } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { SystemEditorService, PANEL_LABELS, PANEL_SLUGS, SLUG_PANELS } from '../../core/services/system-editor.service';
+import { SystemEditorService, PANEL_LABELS, SLUG_PANELS } from '../../core/services/system-editor.service';
 import { WorkspaceService } from '../../core/services/workspace.service';
 import { BoardService } from '../../core/services/board.service';
 import { BuildService } from '../../core/services/build.service';
@@ -10,6 +10,7 @@ import { ConfigTabComponent } from './config-tab/config-tab.component';
 import { SitePanelComponent } from './site-panel/site-panel.component';
 import { DeployPageComponent } from '../deploy/deploy-page.component';
 import { WorkspaceRailComponent } from './workspace-rail.component';
+import { ControllerSelectComponent } from './shared/controller-select.component';
 
 @Component({
   selector: 'app-editor',
@@ -17,6 +18,7 @@ import { WorkspaceRailComponent } from './workspace-rail.component';
   imports: [
     RouterLink,
     WorkspaceRailComponent,
+    ControllerSelectComponent,
     TopologyX6TabComponent,
     RemotesTabComponent,
     ConfigTabComponent,
@@ -44,14 +46,8 @@ import { WorkspaceRailComponent } from './workspace-rail.component';
 
         <div class="flex-1"></div>
 
-        @if (editor.panel() !== 'site' && controllers().length > 0) {
-          <span class="text-xs text-base-content/50 shrink-0">Controller</span>
-          <select class="select select-sm select-bordered font-mono text-xs"
-            [value]="activeControllerId()" (change)="switchController($event)">
-            @for (c of controllers(); track c.id) {
-              <option [value]="c.id">{{ c.friendlyName }}</option>
-            }
-          </select>
+        @if (editor.panel() !== 'site') {
+          <app-controller-select />
         }
       </div>
 
@@ -120,14 +116,6 @@ export class EditorComponent implements OnInit, OnDestroy {
   protected siteName = computed(() => this.workspace.site()?.friendlyName ?? '');
   protected siteId = computed(() => this.workspace.site()?.id ?? '');
   protected sectionLabel = computed(() => PANEL_LABELS[this.editor.panel()]);
-  protected activeControllerId = this.workspace.activeControllerId;
-  protected controllers = computed(() =>
-    (this.workspace.siteTopology()?.controllers ?? []).map((c) => ({
-      id: c.id,
-      friendlyName: c.friendlyName ?? c.id,
-    })),
-  );
-
   // Save cue (moved here from the shell so the global top bar carries no editor state).
   protected saveToastVisible = signal(false);
   private saveToastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -182,16 +170,6 @@ export class EditorComponent implements OnInit, OnDestroy {
         await this.focusController(target, preview);
       }
     });
-  }
-
-  /** The ONE controller switcher (sub-header). Navigates, preserving the section. */
-  protected switchController(event: Event): void {
-    const id = (event.target as HTMLSelectElement).value;
-    const siteId = this.workspace.site()?.id;
-    if (!siteId || !id) return;
-    const panel = this.editor.panel();
-    const slug = panel === 'site' ? PANEL_SLUGS.design : PANEL_SLUGS[panel];
-    this.router.navigate(['/site', siteId, 'system', id, slug]);
   }
 
   private async focusController(systemId: string, preview: boolean) {

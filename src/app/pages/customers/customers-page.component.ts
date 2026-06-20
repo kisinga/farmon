@@ -114,11 +114,11 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       <dialog class="modal modal-open">
         <div class="modal-box max-w-sm">
           <h3 class="font-bold text-lg mb-4">{{ editing() ? 'Edit customer' : 'New customer' }}</h3>
-          <label class="form-control mb-3">
+          <label class="flex flex-col mb-3">
             <span class="label-text mb-1">Name</span>
             <input type="text" class="input input-bordered w-full" placeholder="e.g. Jane Mwangi" #nameI [value]="editing()?.name ?? ''" />
           </label>
-          <label class="form-control">
+          <label class="flex flex-col">
             <span class="label-text mb-1">Email</span>
             <input type="email" class="input input-bordered w-full" placeholder="jane@example.com" #emailI [value]="editing()?.email ?? ''" />
           </label>
