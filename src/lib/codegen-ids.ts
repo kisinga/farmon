@@ -364,9 +364,9 @@ export const COORD_TYPE = {
 
 /**
  * The JSON body of every coordination udp.write. `from` is the sender controller
- * id (== the dead-man registry's claim-holder key). A claim/release drives
- * `extend_deadman`/`drop_claim` on the owner; a reading populates the importer's
- * `ri_<node_id>` mirror sensor.
+ * id (== the maji_claims registry's claim-holder key). A claim/release drives
+ * `id(claims).extend`/`id(claims).drop` on the owner; a reading populates the
+ * importer's `ri_<node_id>` mirror sensor.
  */
 export type CoordMessage = { from: string; c: number; mac: string } & (
   | { t: 'claim'; node_id: string }

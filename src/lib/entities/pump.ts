@@ -126,21 +126,14 @@ export const pumpDescriptor: NodeDescriptor = {
       const header = resolveComponentHeader(ctx, node.pin, { purpose: 'digital_out', inverted });
       return `\
 # --- Pump relay ------------------------------------------------------------
+# Driven exclusively by the maji_control engine (apply_pumps_ each 1s tick): the relay
+# runs when a route needs it or a guarded manual/peer claim is live, and is turned off
+# otherwise. No on_turn_on interlock — the engine is the sole authority for this relay.
 ${header}
   id: ${id}
   name: "${haNames(node).relay}"
   icon: "mdi:water-pump"
-  restore_mode: ALWAYS_OFF
-  on_turn_on:
-    - if:
-        condition:
-          # Claims are keyed by the topology node id (the registry key extend_deadman
-          # uses), NOT the relay id — a cross-controller claim on a non-brain owner
-          # (pump_ref_count==0) must be seen here or this interlock fights pumpMgmt.
-          lambda: 'return pump_ref_count(pump_index_for_id("${id}")) == 0 && !has_live_claim("${node.id}") && !id(safety_override).state;'
-        then:
-          - switch.turn_off: ${id}
-          - logger.log: {level: WARN, format: "BLOCKED: pump only runs during a route or when safety_override is ON"}`;
+  restore_mode: ALWAYS_OFF`;
     },
 
     substitutions: () => [],

@@ -374,8 +374,8 @@ export class BackendService {
   // --- Boards (DB catalog) ------------------------------------------------
   //
   // The `boards` collection is the source of truth. Records are keyed by
-  // `model` (the id controllers reference); `def` holds the parsed board.yaml
-  // and `svg` an optional diagram file.
+  // `model` (the id controllers reference); `def` holds the parsed board
+  // definition (imported from board.json) and `svg` an optional diagram file.
 
   async boardList(): Promise<BoardListEntry[]> {
     const records = await this.pb

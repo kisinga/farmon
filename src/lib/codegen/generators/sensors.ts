@@ -157,7 +157,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   name: "${SYS.queueFull.name}"
   icon: "mdi:tray-full"
   lambda: |-
-    return queue_count >= MAX_QUEUE_SIZE;`);
+    return id(control).state().queue_count >= maji_ctl::MAX_QUEUE_SIZE;`);
   return `\
 # =============================================================================
 # MajiFlow — Sensor & Measurement Layer
@@ -192,7 +192,7 @@ ${tanksWithLevel.map(t => `\
     icon: "mdi:counter"
     update_interval: 2s
     lambda: |-
-      return (float)queue_count;
+      return (float) id(control).state().queue_count;
 
 ${numberBlocks.length > 0 ? `# --- Adjustable numbers (persisted, editable from HA) -------------------------
 
@@ -220,13 +220,14 @@ text_sensor:
     lambda: |-
       const char* faults[] = {"","No flow detected","Max runtime exceeded","HA connection lost"};
       std::string msg;
-      for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
-        if (slots[s].fault_code == 0) continue;
+      auto &cs = id(control).state();
+      for (int s = 0; s < maji_ctl::MAX_CONCURRENT_ROUTES; s++) {
+        if (cs.slots[s].fault_code == 0) continue;
         if (msg.length() > 0) msg += " | ";
-        int f = slots[s].fault_code;
+        int f = cs.slots[s].fault_code;
         msg += (f >= 1 && f <= 3) ? faults[f] : "Unknown";
-        if (slots[s].route_id >= 0 && slots[s].route_id < NUM_ROUTES) {
-          msg += " ("; msg += ROUTES[slots[s].route_id].name; msg += ")";
+        if (cs.slots[s].route_id >= 0 && cs.slots[s].route_id < (int) cs.routes.size()) {
+          msg += " ("; msg += cs.routes[cs.slots[s].route_id].name; msg += ")";
         }
       }
       return msg.empty() ? std::string("None") : msg;
@@ -257,10 +258,11 @@ text_sensor:
     lambda: |-
       const char* st[] = {"","PREP","RUN","STOP"};
       std::string s;
-      for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) {
-        if (slots[i].state < 1 || slots[i].state > 3 || slots[i].route_id < 0) continue;
+      auto &cs = id(control).state();
+      for (int i = 0; i < maji_ctl::MAX_CONCURRENT_ROUTES; i++) {
+        if (cs.slots[i].state < 1 || cs.slots[i].state > 3 || cs.slots[i].route_id < 0) continue;
         if (s.length() > 0) s += " | ";
-        s += st[slots[i].state]; s += ":"; s += ROUTES[slots[i].route_id].name;
+        s += st[cs.slots[i].state]; s += ":"; s += cs.routes[cs.slots[i].route_id].name;
       }
       return s.empty() ? std::string("Idle") : s;
 
@@ -270,12 +272,13 @@ text_sensor:
     icon: "mdi:tray-full"
     update_interval: 2s
     lambda: |-
-      if (queue_count == 0) return std::string("Empty");
+      auto &cs = id(control).state();
+      if (cs.queue_count == 0) return std::string("Empty");
       std::string s;
-      for (int i = 0; i < queue_count; i++) {
-        int rid = queue_peek(i);
+      for (int i = 0; i < cs.queue_count; i++) {
+        int rid = maji_ctl::queue_peek(cs, i);
         if (i > 0) s += " > ";
-        if (rid >= 0 && rid < NUM_ROUTES) s += ROUTES[rid].name;
+        if (rid >= 0 && rid < (int) cs.routes.size()) s += cs.routes[rid].name;
       }
       return s;
 
@@ -287,10 +290,11 @@ ${m.routes.map((r, i) => `\
     icon: "mdi:routes"
     update_interval: 2s
     lambda: |-
-      int s = find_slot_by_route(${i});
+      auto &cs = id(control).state();
+      int s = maji_ctl::find_slot_by_route(cs, ${i});
       if (s < 0) return std::string("Idle");
       const char* st[] = {"Idle","Preparing","Running","Stopping","Fault"};
-      return std::string((slots[s].state >= 0 && slots[s].state <= 4) ? st[slots[s].state] : "Unknown");`).join("\n\n")}
+      return std::string((cs.slots[s].state >= 0 && cs.slots[s].state <= 4) ? st[cs.slots[s].state] : "Unknown");`).join("\n\n")}
 ${collected.globals.length > 0 ? `
 # --- Sensor fault detection --------------------------------------------------
 

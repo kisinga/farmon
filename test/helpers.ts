@@ -3,12 +3,13 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parse as parseYaml } from "yaml";
 import { type BoardDef, parseBoardDef } from "@core";
 
-/** Load + parse a board.yaml from a board directory. */
+/** Load + parse a board.json from a board directory — the canonical board definition
+ *  (the same JSON shape the frontend imports into the DB catalog), so tests exercise
+ *  the exact artifact production consumes. */
 export function loadBoard(boardDir: string): BoardDef {
-  return parseBoardDef(parseYaml(fs.readFileSync(path.join(boardDir, "board.yaml"), "utf-8")));
+  return parseBoardDef(JSON.parse(fs.readFileSync(path.join(boardDir, "board.json"), "utf-8")));
 }
 
 /**

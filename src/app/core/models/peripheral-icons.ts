@@ -1,6 +1,6 @@
 /**
  * Icon categories for board peripherals.
- * Each peripheral in board.yaml can specify `icon: "display"` etc.
+ * Each peripheral in the board definition can specify `icon: "display"` etc.
  * If omitted, the key name is matched against this map, falling back to "chip".
  *
  * Categories:

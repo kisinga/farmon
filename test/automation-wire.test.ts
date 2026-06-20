@@ -14,7 +14,7 @@ import { parse as parseYaml } from "yaml";
 import {
   parseTopology, topologyToManifestForController, routeSetVersion,
   serializeAutomationSet, AUTOMATION_HEADER_BYTES, AUTOMATION_RECORD_BYTES,
-  AUTOMATION_ID_BYTES, AUTOMATION_WIRE_MAGIC, type Manifest, type WireAutomation,
+  AUTOMATION_ID_BYTES, AUTOMATION_WIRE_MAGIC, MAX_AUTOMATIONS, type Manifest, type WireAutomation,
 } from "@core";
 import { generateAll, createTestMetadata } from "@core/codegen";
 import { loadBoard } from "./helpers";
@@ -83,21 +83,31 @@ const topology = parseTopology(parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8")))
 const manifest: Manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? "default");
 const files = generateAll(manifest, loadBoard(BOARD_DIR), "test-site", undefined, createTestMetadata(), {});
 const get = (n: string) => files.find((f) => f.relativePath.endsWith(n))?.content ?? "";
-const engine = get("automation-engine.h");
-const routesH = get("routes.h");
 
-assert(engine.includes(`static_assert(sizeof(RuntimeAutomation) == ${AUTOMATION_RECORD_BYTES}`), "firmware static_assert matches record size");
-assert(engine.includes(`AUTOMATION_WIRE_MAGIC = 0x${AUTOMATION_WIRE_MAGIC.toString(16)}`), "firmware magic matches");
-// field order in the struct (the bytes above assume exactly this order)
+// The struct + static_assert + wire constants now live in the vendored maji_automations
+// component (a fixed file shared by every site), not the generated header. Pin the
+// component source's constants against the @core SSOT so the firmware layout can't drift.
+const ROOT = path.resolve(new URL(".", import.meta.url).pathname, "..");
+const CORE_H = fs.readFileSync(path.join(ROOT, "firmware/components/maji_automations/core.h"), "utf-8");
+
+assert(CORE_H.includes(`AUTOMATION_RECORD_BYTES = ${AUTOMATION_RECORD_BYTES}`), "component record size matches SSOT");
+assert(CORE_H.includes(`AUTOMATION_WIRE_MAGIC = 0x${AUTOMATION_WIRE_MAGIC.toString(16)}`), "component magic matches SSOT");
+assert(CORE_H.includes(`AUTOMATION_ID_BYTES = ${AUTOMATION_ID_BYTES}`), "component id-bytes match SSOT");
+assert(CORE_H.includes(`MAX_AUTOMATIONS = ${MAX_AUTOMATIONS}`), "component max-automations matches SSOT");
+assert(CORE_H.includes("static_assert(sizeof(RuntimeAutomation) == AUTOMATION_RECORD_BYTES"), "component static_assert pins the record size");
+// field order in the struct (the golden vector above assumes exactly this order)
 const order = ["enabled", "trigger_type", "days_mask", "level_threshold_pct", "route_index",
   "time_min", "override_mask", "ov_source_min_pct", "ov_dest_max_pct", "_pad",
   "ov_max_runtime_min", "ov_target_duration_s", "ov_target_volume_l"];
-const structBody = engine.slice(engine.indexOf("struct RuntimeAutomation"), engine.indexOf("#pragma pack(pop)"));
+const structBody = CORE_H.slice(CORE_H.indexOf("struct RuntimeAutomation"), CORE_H.indexOf("#pragma pack(pop)"));
 let lastIdx = -1, ordered = true;
 for (const f of order) { const idx = structBody.indexOf(` ${f};`); if (idx < lastIdx) ordered = false; lastIdx = idx; }
-assert(ordered, "firmware struct field order matches the wire layout");
+assert(ordered, "component struct field order matches the wire layout");
 
-assert(routesH.includes(`ROUTE_SET_VERSION = ${routeSetVersion(manifest)};`), "routes.h bakes the matching route_set_version");
+// The device gates a delivered set against its baked route_set_version — now config, not a
+// header constant. Assert the generated maji_automations config carries the matching value.
+const autoYaml = get("automation-engine.yaml");
+assert(autoYaml.includes(`route_set_version: ${routeSetVersion(manifest)}`), "automation-engine.yaml bakes the matching route_set_version");
 
 console.log(`\n========================================`);
 console.log(`${passed} passed, ${failed} failed`);

@@ -14,7 +14,7 @@
       "mdio_pin": "GPIO18",
       "clk": {
         "pin": "GPIO17",
-        "mode": "GPIO17_OUT"
+        "mode": "CLK_OUT"
       },
       "phy_addr": 0
     }
@@ -484,7 +484,7 @@
     {
       "slug": "digital-inputs",
       "title": "Digital Inputs",
-      "body": "The 16 optocoupled digital inputs (IN1–IN16) accept **6–24 V** signals and are isolated from the ESP32 — ground loops on field wiring won't reach the MCU. Pull-down to GND via the field signal asserts the input.\n\nThese pins are currently **reserved for future entity types**:\n\n- Float switch / dry contact binary sensors\n- External trigger inputs\n- Alarm / fault inputs from external equipment\n\nThe pins are defined in the board YAML with `caps: [digital]` and ready for use when the corresponding entity types ship in MajiFlow.\n\n**Wiring tip**: use ≥ 1 kΩ in series with the field signal to clamp the optocoupler current. The board's onboard resistor handles up to 24 V cleanly; higher voltages will saturate the LED."
+      "body": "The 16 optocoupled digital inputs (IN1–IN16) accept **6–24 V** signals and are isolated from the ESP32 — ground loops on field wiring won't reach the MCU. Pull-down to GND via the field signal asserts the input.\n\nThese pins are currently **reserved for future entity types**:\n\n- Float switch / dry contact binary sensors\n- External trigger inputs\n- Alarm / fault inputs from external equipment\n\nThe pins are defined in the board definition with `caps: [digital]` and ready for use when the corresponding entity types ship in MajiFlow.\n\n**Wiring tip**: use ≥ 1 kΩ in series with the field signal to clamp the optocoupler current. The board's onboard resistor handles up to 24 V cleanly; higher voltages will saturate the LED."
     },
     {
       "slug": "self-test",

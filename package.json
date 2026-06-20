@@ -6,6 +6,7 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "gen:firmware-components": "node scripts/gen-firmware-components.mjs",
     "test": "npx tsx test/run-all.ts",
     "test:codegen": "npx tsx test/codegen.test.ts",
     "test:limits": "npx tsx test/limits.test.ts",
@@ -15,7 +16,8 @@
     "test:pinout": "npx tsx test/board-pinout.test.ts",
     "test:confirm": "npx tsx test/command-confirm.test.ts",
     "test:tunables": "npx tsx test/tunable-numbers.test.ts",
-    "test:calibration": "npx tsx test/calibration.test.ts"
+    "test:calibration": "npx tsx test/calibration.test.ts",
+    "test:firmware-components": "npx tsx test/firmware-components.test.ts"
   },
   "private": true,
   "license": "AGPL-3.0-or-later",

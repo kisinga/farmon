@@ -173,6 +173,7 @@ export { parseFrontmatter, parseDocFile, type ParsedDoc } from './docs/frontmatt
 
 // --- Static ---
 export { LOGO_SVG, LOGO_SVG_SMALL } from './static/logo';
+export { FIRMWARE_COMPONENT_FILES, type FirmwareComponentFile } from './static/firmware-components.generated';
 
 // --- Units ---
 export {

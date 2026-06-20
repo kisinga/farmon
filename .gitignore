@@ -31,3 +31,6 @@ maji-server/maji-edge
 
 # Python (legacy/)
 .venv/
+
+# ESPHome compiles the vendored components; ignore the python bytecode cache
+firmware/components/**/__pycache__/

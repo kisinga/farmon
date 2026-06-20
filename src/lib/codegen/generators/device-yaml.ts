@@ -83,20 +83,14 @@ export function generateDeviceYaml(
     });
   }
 
-  // Safe defaults (always)
+  // Safe defaults (always). Slot init + boot valve-close now live in the maji_control
+  // component's setup(); here we only seed the status globals + the persisted clock.
   const initVars = [
-    "for (int i = 0; i < MAX_CONCURRENT_ROUTES; i++) init_slot(i);",
-    "queue_head = 0; queue_count = 0;",
     "id(system_state) = 0;",
     "id(active_slot) = -1;",
-    "for (int i = 0; i < NUM_VALVES; i++) close_valve_hw(i);",
-    "// time_based covers default to restore_mode: NO_RESTORE — they boot at",
-    "// position UNKNOWN, so the close above always fires the close coil for the",
-    "// full close_duration. No stop_valve_hw resync needed here.",
-    "commanded_valve_mask = 0;  // matches the boot-closed state above",
     '// stop_reason intentionally NOT reset — survives reboot',
     'seed_clock_from_persisted();  // restore wall clock from flash before SNTP (no RTC)',
-    `ESP_LOGI("ctrl", "Boot complete — IDLE (%d routes, %d slots)", NUM_ROUTES, MAX_CONCURRENT_ROUTES);`,
+    'ESP_LOGI("ctrl", "Boot complete — IDLE");',
   ].join("\n");
 
   const bootActions: unknown[] = [];
@@ -130,7 +124,7 @@ export function generateDeviceYaml(
   lines.push("# State machine: IDLE -> PREPARING -> RUNNING -> STOPPING -> IDLE");
   lines.push("#                          '-------> FAULT <-------'");
   lines.push("#");
-  lines.push(`# Routes: Defined in packages/routes.h (${m.routes.length} routes, 2 concurrent slots)`);
+  lines.push(`# Routes: ${m.routes.length} routes, 2 concurrent slots — engine in the maji_control component`);
   lines.push(`# API: route_start(route_id)  route_stop(route_id)  stop_all  fault_reset(route_id)  fault_reset_all  queue_clear`);
   lines.push("# =============================================================================");
   lines.push("");
@@ -150,6 +144,7 @@ export function generateDeviceYaml(
   lines.push("  board: !include common/board.yaml");
   lines.push("  hardware: !include packages/hardware.yaml");
   lines.push("  sensors: !include packages/sensors.yaml");
+  lines.push("  route_engine: !include packages/route-engine.yaml");
   lines.push("  control: !include packages/control.yaml");
   lines.push("  mqtt: !include packages/mqtt.yaml");
   lines.push("  coordination: !include packages/coordination.yaml");
@@ -158,6 +153,13 @@ export function generateDeviceYaml(
   if (metadata) {
     lines.push("  metadata: !include packages/metadata.yaml");
   }
+  lines.push("");
+
+  // Vendored coordination components (maji_coord/maji_claims), shipped in the bundle.
+  lines.push("external_components:");
+  lines.push("  - source:");
+  lines.push("      type: local");
+  lines.push("      path: external_components");
   lines.push("");
 
   // UART buses (for Modbus/RS485 devices)
@@ -200,12 +202,10 @@ export function generateDeviceYaml(
   lines.push(`  name: \${device_name}`);
   lines.push(`  friendly_name: \${friendly_name}`);
   lines.push("  includes:");
-  lines.push("    - packages/routes.h");
-  // After routes.h — the evaluator calls try_route_start and reads ROUTES[]/ROUTE_SET_VERSION.
-  lines.push("    - packages/automation-engine.h");
-  // After routes.h — the coordination dispatcher calls extend_deadman/drop_claim.
-  lines.push("    - packages/coordination.h");
-  // Persisted-clock boot seed (no-RTC time across reboots).
+  // Route state machine + watchdog run in the maji_control external component (config in
+  // packages/route-engine.yaml); the runtime automation engine in maji_automations
+  // (config in packages/automation-engine.yaml). Both are vendored external_components.
+  // Persisted-clock boot seed (no-RTC time across reboots) is the one remaining header.
   lines.push("    - packages/time-sync.h");
   lines.push("  on_boot:");
   for (const step of bootSteps) {
@@ -289,17 +289,18 @@ function buildOledDisplay(board: BoardDef, m: Manifest): string {
 
           // Slot info (up to 2 lines)
           int y = 27;
-          for (int s = 0; s < MAX_CONCURRENT_ROUTES && y < 46; s++) {
-            if (slots[s].state >= 1 && slots[s].state <= 3 && slots[s].route_id >= 0) {
-              uint32_t rt = (millis() - slots[s].start_time) / 1000;
+          auto &cs = id(control).state();
+          for (int s = 0; s < maji_ctl::MAX_CONCURRENT_ROUTES && y < 46; s++) {
+            if (cs.slots[s].state >= 1 && cs.slots[s].state <= 3 && cs.slots[s].route_id >= 0) {
+              uint32_t rt = (millis() - cs.slots[s].start_time) / 1000;
               it.printf(0, y, id(font_body), "%s %um%us",
-                        ROUTES[slots[s].route_id].name, rt / 60, rt % 60);
+                        cs.routes[cs.slots[s].route_id].name.c_str(), rt / 60, rt % 60);
               y += 12;
-            } else if (slots[s].state == 4 && slots[s].route_id >= 0) {
+            } else if (cs.slots[s].state == 4 && cs.slots[s].route_id >= 0) {
               const char* faults[] = {"", "NoFlow", "MaxRT", "CtrlLost"};
-              int f = slots[s].fault_code;
+              int f = cs.slots[s].fault_code;
               it.printf(0, y, id(font_body), "F:%s %s",
-                        ROUTES[slots[s].route_id].name,
+                        cs.routes[cs.slots[s].route_id].name.c_str(),
                         (f >= 1 && f <= 3) ? faults[f] : "?");
               y += 12;
             }

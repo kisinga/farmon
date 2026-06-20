@@ -1,18 +1,18 @@
 import type { Manifest } from '@core';
 import type { BoardDef, ExpansionBoardCatalog } from '@core';
-import { generateRoutes } from "./generators/routes";
+import { generateMajiControlConfig } from "./generators/routes";
 import { generateHardware } from "./generators/hardware";
 import { generateSensors } from "./generators/sensors";
 import { generateBoardPackage } from "./generators/board-package";
 import { generateDeviceYaml } from "./generators/device-yaml";
 import { generateControl } from "./generators/control";
 import { generateMqtt } from "./generators/mqtt";
-import { generateAutomationEngineHeader, generateAutomationEngineYaml } from "./generators/automation-engine";
-import { generateCoordination, generateCoordinationHeader } from "./generators/coordination";
+import { generateAutomationEngineConfig } from "./generators/automation-engine";
+import { generateCoordination } from "./generators/coordination";
 import { generateTimeSync, generateTimeSyncHeader } from "./generators/time-sync";
 
 import { collectEntityCodegen } from "./generators/collect";
-import { LOGO_SVG } from '@core';
+import { LOGO_SVG, FIRMWARE_COMPONENT_FILES } from '@core';
 import { type GeneratorId, type SecretsMap, type GenerationMetadata } from './backends/types';
 
 export interface GeneratedFile {
@@ -20,6 +20,14 @@ export interface GeneratedFile {
   description: string;
   content: string;
 }
+
+/**
+ * Pinned ESPHome version. The bundle vendors external_components that bind to ESPHome's
+ * C++ component API, which shifts across releases — an unpinned bump can break the build.
+ * Shipped as requirements.txt and soft-checked in compile.sh. Bump deliberately, with a
+ * compile smoke. Keep in sync with the version a CI compile job installs.
+ */
+const ESPHOME_VERSION = '2026.3.1';
 
 export { type GeneratorId, type SecretsMap, type GenerationMetadata } from './backends/types';
 
@@ -262,29 +270,19 @@ export function generateEsphome(
       content: generateMqtt(m, metadata, board),
     },
     {
-      relativePath: `${deviceDir}/packages/routes.h`,
-      description: "C++ route table + dispatch functions",
-      content: generateRoutes(m),
-    },
-    {
-      relativePath: `${deviceDir}/packages/automation-engine.h`,
-      description: "C++ runtime automation table + generic trigger evaluator",
-      content: generateAutomationEngineHeader(m),
+      relativePath: `${deviceDir}/packages/route-engine.yaml`,
+      description: "Route control engine config (route table + entity bindings for maji_control)",
+      content: generateMajiControlConfig(m),
     },
     {
       relativePath: `${deviceDir}/packages/automation-engine.yaml`,
-      description: "Runtime automation engine: 5s evaluator interval",
-      content: generateAutomationEngineYaml(),
-    },
-    {
-      relativePath: `${deviceDir}/packages/coordination.h`,
-      description: "C++ cross-controller coordination (UDP HMAC, message build/parse, dispatcher)",
-      content: generateCoordinationHeader(m, metadata),
+      description: "Runtime automation engine config (maji_automations table + 5s tick interval)",
+      content: generateAutomationEngineConfig(m),
     },
     {
       relativePath: `${deviceDir}/packages/coordination.yaml`,
-      description: "Cross-controller coordination over UDP (udp: block, on_receive, reading broadcast)",
-      content: generateCoordination(m),
+      description: "Cross-controller coordination over UDP (maji_coord/maji_claims config, on_receive dispatch, reading broadcast)",
+      content: generateCoordination(m, metadata),
     },
     {
       relativePath: `${deviceDir}/packages/time-sync.h`,
@@ -316,7 +314,23 @@ export function generateEsphome(
       description: "One-shot helper: compile / flash / tail logs via ESPHome",
       content: generateCompileScript(dir),
     },
+    {
+      relativePath: `${deviceDir}/requirements.txt`,
+      description: "Pinned ESPHome version for a reproducible build (the bundle's external_components bind to its C++ API)",
+      content: `esphome==${ESPHOME_VERSION}\n`,
+    },
   ];
+
+  // Vendored ESPHome external_components (maji_coord/maji_claims), referenced by the
+  // device YAML's `external_components: source: local`. Source of truth is
+  // firmware/components/**; FIRMWARE_COMPONENT_FILES is the generated browser-shippable mirror.
+  for (const f of FIRMWARE_COMPONENT_FILES) {
+    files.push({
+      relativePath: `${deviceDir}/external_components/${f.path}`,
+      description: `ESPHome external component source (${f.path})`,
+      content: f.content,
+    });
+  }
 
   return files;
 }
@@ -350,9 +364,17 @@ function generateCompileScript(dir: string): string {
     `DEVICE="${device}"`,
     ``,
     `if ! command -v esphome >/dev/null 2>&1; then`,
-    `  echo "esphome not found. Install it with:  pip install esphome" >&2`,
+    `  echo "esphome not found. Install the pinned version with:  pip install -r requirements.txt" >&2`,
     `  echo "(see https://esphome.io/guides/installing_esphome )" >&2`,
     `  exit 1`,
+    `fi`,
+    ``,
+    `# Soft version check — the bundled external_components bind to ESPHome's C++ API.`,
+    `PINNED="${ESPHOME_VERSION}"`,
+    `have="$(esphome version 2>/dev/null | sed -nE 's/^Version:[[:space:]]*([0-9.]+).*/\\1/p')"`,
+    `if [ -n "$have" ] && [ "$have" != "$PINNED" ]; then`,
+    `  echo "WARNING: esphome $have installed, but this bundle was generated for $PINNED." >&2`,
+    `  echo "         If the build fails, run:  pip install -r requirements.txt" >&2`,
     `fi`,
     ``,
     `cmd="\${1:-compile}"`,

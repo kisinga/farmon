@@ -315,7 +315,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
     `# ${board.label} — Board Package`,
     "# =============================================================================",
     "# AUTO-GENERATED from board definition. Do not edit by hand.",
-    `# Board: boards/${board.model.replace("_", "-")}/board.yaml`,
+    `# Board: boards/${board.model.replace("_", "-")}/board.json`,
     "#",
     "# Provides: MCU config, buses, networking, OTA, diagnostics",
     board.peripherals.battery ? "#   + Battery monitoring" : null,

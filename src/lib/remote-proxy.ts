@@ -3,9 +3,9 @@
  *
  * An importing controller drives an actuator wired to a DIFFERENT same-site
  * controller, and reads that controller's sensors, over the LAN UDP coordination
- * lane. The C++ that builds/signs/sends and parses these messages lives in
- * coordination.ts (packages/coordination.h); these helpers emit the ESPHome
- * entities that call into it via the shared `udp:` component `coord_udp`:
+ * lane. The C++ that builds/signs/sends and parses these messages lives in the
+ * vendored maji_coord external component; these helpers emit the ESPHome entities
+ * that call into it (`id(coord).encode_*`) via the shared `udp:` component `coord_udp`:
  *
  *   - switch actuators (pump / dosing / vfd): turning the proxy on sends a
  *     `claim` (the owner runs its relay while a claim is alive); off sends a
@@ -23,7 +23,7 @@
  * needs no cross-controller telemetry.
  *
  * Build/sign details (counter, HMAC over udp_key, `from = this controller`) all
- * live in `build_claim_msg` / `build_release_msg` (coordination.h), so these
+ * live in `id(coord).encode_claim` / `encode_release` (maji_coord), so these
  * emitters only ever name the node id.
  */
 
@@ -38,8 +38,8 @@ const writeMsg = (builder: string, nodeId: string, indent: string): string =>
 ${indent}    id: coord_udp
 ${indent}    data: !lambda |-
 ${indent}      return ${builder}("${nodeId}");`;
-const claimAction = (nodeId: string, indent: string) => writeMsg('build_claim_msg', nodeId, indent);
-const releaseAction = (nodeId: string, indent: string) => writeMsg('build_release_msg', nodeId, indent);
+const claimAction = (nodeId: string, indent: string) => writeMsg('id(coord).encode_claim', nodeId, indent);
+const releaseAction = (nodeId: string, indent: string) => writeMsg('id(coord).encode_release', nodeId, indent);
 
 /**
  * UDP switch proxy — switch-domain remote actuators (pump / dosing / vfd).

@@ -127,12 +127,13 @@ ${header}
   on_value:
     - lambda: |-
         const int SENSOR_IDX = ${idx};
-        for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
-          if (slots[s].state != 2 || slots[s].route_id < 0) continue;
-          if (ROUTES[slots[s].route_id].flow_sensor != SENSOR_IDX) continue;
+        auto &cs = id(control).state();
+        for (int s = 0; s < maji_ctl::MAX_CONCURRENT_ROUTES; s++) {
+          if (cs.slots[s].state != 2 || cs.slots[s].route_id < 0) continue;
+          if (cs.routes[cs.slots[s].route_id].flow_sensor != SENSOR_IDX) continue;
           if (x >= id(flow_threshold_l_min).state) {
             id(${faultId}) = 0;
-          } else if (slots[s].flow_confirmed) {
+          } else if (cs.slots[s].flow_confirmed) {
             id(${faultId}) += 1;
             if (id(${faultId}) == 3) {
               ESP_LOGW("safety", "Sensor fault on ${node.id} — 3 consecutive below-threshold readings");
@@ -140,7 +141,7 @@ ${header}
           }
           // No break — multiple concurrent routes may share this sensor
         }
-        if (derived_system_state() == 0) id(${faultId}) = 0;
+        if (maji_ctl::derived_system_state(cs) == 0) id(${faultId}) = 0;
 
 - platform: integration
   sensor: ${sId}
@@ -175,19 +176,20 @@ ${header}
   on_value:
     - lambda: |-
         const int SENSOR_IDX = ${idx};
-        for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
-          if (slots[s].state != 2 || slots[s].route_id < 0) continue;
-          if (ROUTES[slots[s].route_id].flow_sensor != SENSOR_IDX) continue;
+        auto &cs = id(control).state();
+        for (int s = 0; s < maji_ctl::MAX_CONCURRENT_ROUTES; s++) {
+          if (cs.slots[s].state != 2 || cs.slots[s].route_id < 0) continue;
+          if (cs.routes[cs.slots[s].route_id].flow_sensor != SENSOR_IDX) continue;
           if (x >= id(flow_threshold_l_min).state) {
             id(${faultId}) = 0;
-          } else if (slots[s].flow_confirmed) {
+          } else if (cs.slots[s].flow_confirmed) {
             id(${faultId}) += 1;
             if (id(${faultId}) == 3) {
               ESP_LOGW("safety", "Sensor fault on ${node.id} — 3 consecutive below-threshold readings");
             }
           }
         }
-        if (derived_system_state() == 0) id(${faultId}) = 0;
+        if (maji_ctl::derived_system_state(cs) == 0) id(${faultId}) = 0;
 
 - platform: integration
   sensor: ${sId}

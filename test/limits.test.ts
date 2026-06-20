@@ -16,7 +16,7 @@ const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "def
 const board: BoardDef = loadBoard(path.join(DEFAULTS, "boards/heltec-v3"));
 
 // --- GPIO pin pool (free pins on Heltec V3) ---
-// Must match board.yaml exposed pins — excludes reserved pins
+// Must match the board definition's exposed pins — excludes reserved pins
 // (LoRa: GPIO8/9/10/11/12/13/14, OLED: GPIO21, I2C: GPIO17/18,
 //  Battery: GPIO1/37, LED: GPIO35, Vext: GPIO36)
 const FREE_PINS = [

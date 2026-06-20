@@ -75,7 +75,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
       const lead = i === 0 ? 'if' : 'else if';
       return `  ${lead} (strcmp(key, "${t.key}") == 0) { id(${t.key}).make_call().set_value(value).perform(); }`;
     }),
-    '  record_outcome(command_id, "APPLIED", "");',
+    '  id(control).record_outcome(command_id, "APPLIED", "");',
   ];
 
   // SNTP wall clock — the single `time: sntp` (id: sntp_time) on every device.
@@ -113,7 +113,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     'auto _t = id(sntp_time).now();',
     'long long issued_at = x["issued_at"] | 0LL;',
     `if (id(time_trusted) && issued_at > 0 && (long long)_t.timestamp - issued_at > ${COMMAND_TTL_S}) {`,
-    '  record_outcome(command_id, "REFUSED", "STALE");',
+    '  id(control).record_outcome(command_id, "REFUSED", "STALE");',
     '  return;',
     '}',
     '',
@@ -121,22 +121,21 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     'if (strcmp(action, "route_start") == 0) {',
     `  ${cppTokenArray('RS_TO', ROUTE_START_RESULTS.map(r => r.to))}`,
     `  ${cppTokenArray('RS_REASON', ROUTE_START_RESULTS.map(r => r.reason))}`,
-    '  int rc = try_route_start(route_id, command_id, STOPSPEC_INHERIT, ORIGIN_MANUAL, actor);',
-    `  record_outcome(command_id, rc == 0 ? "APPLIED" : RS_TO[rc], rc == 0 ? "" : RS_REASON[rc]);`,
+    '  int rc = id(control).start_route(route_id, command_id, maji_ctl::StopSpec{}, maji_ctl::ORIGIN_MANUAL, actor);',
+    `  id(control).record_outcome(command_id, rc == 0 ? "APPLIED" : RS_TO[rc], rc == 0 ? "" : RS_REASON[rc]);`,
     '} else if (strcmp(action, "route_stop") == 0) {',
     `  ${cppTokenArray('RST_REASON', ROUTE_STOP_RESULTS.map(r => r.reason))}`,
-    '  int rc = try_route_stop(route_id, command_id, ORIGIN_MANUAL, actor);',
-    `  record_outcome(command_id, rc == 0 ? "APPLIED" : "REFUSED", rc == 0 ? "" : RST_REASON[rc]);`,
+    '  int rc = id(control).stop_route(route_id, command_id, maji_ctl::ORIGIN_MANUAL, actor);',
+    `  id(control).record_outcome(command_id, rc == 0 ? "APPLIED" : "REFUSED", rc == 0 ? "" : RST_REASON[rc]);`,
     '} else if (strcmp(action, "fault_reset") == 0) {',
-    '  int s = find_slot_by_route(route_id);',
-    '  if (s >= 0 && slots[s].state == 4) { init_slot(s); id(system_state) = derived_system_state(); }',
-    '  record_outcome(command_id, "APPLIED", "");',
+    '  id(control).fault_reset(route_id); id(system_state) = id(control).system_state();',
+    '  id(control).record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "stop_all") == 0) {',
-    '  id(btn_stop_all).press(); record_outcome(command_id, "APPLIED", "");',
+    '  id(btn_stop_all).press(); id(control).record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "reset_faults") == 0) {',
-    '  id(btn_reset_faults).press(); record_outcome(command_id, "APPLIED", "");',
+    '  id(btn_reset_faults).press(); id(control).record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "clear_queue") == 0) {',
-    '  id(btn_clear_queue).press(); record_outcome(command_id, "APPLIED", "");',
+    '  id(btn_clear_queue).press(); id(control).record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "node_set") == 0) {',
     '  // Manual claim/release via the dead-man registry the reconciler honours. A pump',
     '  // claim is GUARDED (manual_pump_precheck: source-low / dry-run-unprotectable) and',
@@ -148,26 +147,26 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     '  if (node_id[0] == 0) {',
     '    // no node id — ignore',
     '  } else if (!on) {',
-    '    int k = manual_pump_slot(node_id);',
-    '    drop_claim(node_id, "manual");',
-    '    if (k >= 0) manual_clear_latch(k);',
-    '    record_outcome(command_id, NS_TO[0], NS_REASON[0]);',
+    '    int k = id(control).manual_slot(node_id);',
+    '    id(claims).drop(node_id, "manual");',
+    '    if (k >= 0) id(control).manual_clear_latch(k);',
+    '    id(control).record_outcome(command_id, NS_TO[0], NS_REASON[0]);',
     '  } else {',
-    '    int k = manual_pump_slot(node_id);',
+    '    int k = id(control).manual_slot(node_id);',
     '    if (k >= 0) {',
-    '      int rc = manual_pump_precheck(k);   // 0 ok, 1 source-low, 2 no local flow sensor',
-    '      if (rc == 0) extend_deadman(node_id, "manual", 0);',
-    '      record_outcome(command_id, NS_TO[rc], NS_REASON[rc]);',
-    '    } else if (is_valve_node(node_id)) {',
-    '      extend_deadman(node_id, "manual", 0);',
-    '      record_outcome(command_id, NS_TO[0], NS_REASON[0]);',
+    '      int rc = id(control).manual_precheck(k);   // 0 ok, 1 source-low, 2 no local flow sensor',
+    '      if (rc == 0) id(claims).extend(node_id, "manual");',
+    '      id(control).record_outcome(command_id, NS_TO[rc], NS_REASON[rc]);',
+    '    } else if (id(claims).is_valve_node(node_id)) {',
+    '      id(claims).extend(node_id, "manual");',
+    '      id(control).record_outcome(command_id, NS_TO[0], NS_REASON[0]);',
     '    } else {',
-    '      record_outcome(command_id, NS_TO[3], NS_REASON[3]);  // no local actuator',
+    '      id(control).record_outcome(command_id, NS_TO[3], NS_REASON[3]);  // no local actuator',
     '    }',
     '  }',
     '} else if (strcmp(action, "safety_override") == 0) {',
     '  if (x["on"] | false) id(safety_override).turn_on(); else id(safety_override).turn_off();',
-    '  record_outcome(command_id, "APPLIED", "");',
+    '  id(control).record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "firmware_update") == 0) {',
     '  // OTA pull: fetch + flash the image at `url`, verifying it against `md5` (which',
     '  // arrived over this cert-pinned, TTL-gated lane — the integrity anchor, so the',
@@ -178,13 +177,13 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     '  const char* md5 = x["md5"] | "";',
     '  const char* version = x["version"] | "";',
     '  if (url[0] == 0 || md5[0] == 0) {',
-    '    record_outcome(command_id, "REFUSED", "BAD_PARAMS");',
+    '    id(control).record_outcome(command_id, "REFUSED", "BAD_PARAMS");',
     '  } else if (strcmp(version, id(majiflow_generation_version).state.c_str()) == 0) {',
-    '    record_outcome(command_id, "APPLIED", "ALREADY");',
+    '    id(control).record_outcome(command_id, "APPLIED", "ALREADY");',
     '  } else {',
     '    id(ota_url) = url;',
     '    id(ota_md5) = md5;',
-    '    record_outcome(command_id, "APPLIED", "");  // ack before the flash reboots us',
+    '    id(control).record_outcome(command_id, "APPLIED", "");  // ack before the flash reboots us',
     '    id(do_ota_flash).execute();',
     '  }',
     ...configCases,
@@ -223,25 +222,26 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
       const toks = c.tokens ?? [];
       return `{ ${cppTokenArray('TT', toks)} int v = id(${c.ref}); if (v >= 0 && v < ${toks.length}) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":\\"%s\\"", sep(), TT[v])); }`;
     }
-    return `if (id(${c.ref}).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":\\"%s\\"", sep(), json_esc(id(${c.ref}).state.c_str())));`;
+    return `if (id(${c.ref}).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":\\"%s\\"", sep(), maji_ctl::json_esc(id(${c.ref}).state.c_str())));`;
   };
   // origin/actor come from the per-route attribution (route_origin/route_actor),
   // which outlives the slot — so a finished run still reports who/what is
   // responsible for the route's current (idle) state until the next run rebinds it.
   // state/reason ride the live slot while one exists.
   const routeLine = (i: number): string =>
-    `{ int s = find_slot_by_route(${i}); int st = (s >= 0) ? slots[s].state : 0; ` +
-    `const char* o = (route_origin[${i}] < 3) ? ORIGIN_TOK[route_origin[${i}]] : "SYSTEM"; ` +
-    `const char* ac = route_actor[${i}]; const char* rs = ""; ` +
+    `{ int s = maji_ctl::find_slot_by_route(cs, ${i}); int st = (s >= 0) ? cs.slots[s].state : 0; ` +
+    `const char* o = (cs.route_origin[${i}] < 3) ? ORIGIN_TOK[cs.route_origin[${i}]] : "SYSTEM"; ` +
+    `const char* ac = cs.route_actor[${i}].c_str(); const char* rs = ""; ` +
     `if (s >= 0) { ` +
-    `if (st == 4) { int f = slots[s].fault_code; if (f >= 0 && f < ${NF}) rs = FAULT_TOK[f]; } ` +
-    `else if (st == 3 || st == 0) { int r = slots[s].stop_reason; if (r >= 0 && r < ${NR}) rs = STOP_TOK[r]; } } ` +
+    `if (st == 4) { int f = cs.slots[s].fault_code; if (f >= 0 && f < ${NF}) rs = FAULT_TOK[f]; } ` +
+    `else if (st == 3 || st == 0) { int r = cs.slots[s].stop_reason; if (r >= 0 && r < ${NR}) rs = STOP_TOK[r]; } } ` +
     `put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"id\\":${i},\\"state\\":\\"%s\\",\\"origin\\":\\"%s\\",\\"actor\\":\\"%s\\",\\"reason\\":\\"%s\\"}", sep(), ` +
     `(st >= 0 && st < ${NS}) ? SYS_TOK[st] : "", o, ac, rs)); }`;
 
   const snapshotBody = [
     'auto *mc = id(mqtt_client);',
     'if (!mc->is_connected()) return;',
+    'auto &cs = id(control).state();  // slots / route attribution / outcomes',
     cppTokenArray('SYS_TOK', SYSTEM_STATE_TOKENS),
     cppTokenArray('STOP_TOK', STOP_REASON_TOKENS),
     cppTokenArray('FAULT_TOK', FAULT_TOKENS),
@@ -269,16 +269,16 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     'first = true;',
     ...textCh.map(textLine),
     `{ int rr = (int) esp_reset_reason(); put(snprintf(buf+n, sizeof(buf)-n, "%s\\"reset_reason\\":\\"%s\\"", sep(), (rr >= 0 && rr < ${RESET_REASON_TOKENS.length}) ? RR_TOK[rr] : "UNKNOWN")); }`,
-    'if (id(ip_addr).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"ip\\":\\"%s\\"", sep(), json_esc(id(ip_addr).state.c_str())));',
+    'if (id(ip_addr).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"ip\\":\\"%s\\"", sep(), maji_ctl::json_esc(id(ip_addr).state.c_str())));',
     '// Running firmware version (metadata sensor) — the server confirms an OTA release',
     '// once the device re-reports the version it was told to flash (see reconcileFirmware).',
-    'if (id(majiflow_generation_version).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"fw_version\\":\\"%s\\"", sep(), json_esc(id(majiflow_generation_version).state.c_str())));',
+    'if (id(majiflow_generation_version).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"fw_version\\":\\"%s\\"", sep(), maji_ctl::json_esc(id(majiflow_generation_version).state.c_str())));',
     `put(snprintf(buf+n, sizeof(buf)-n, "},\\"system\\":{\\"state\\":\\"%s\\",\\"queue\\":%d,\\"safety\\":%s},\\"routes\\":[", (id(system_state) >= 0 && id(system_state) < ${NS}) ? SYS_TOK[id(system_state)] : "", (int) id(queue_depth).state, id(safety_override).state ? "true" : "false"));`,
     'first = true;',
     ...m.routes.map((_r, i) => routeLine(i)),
     'put(snprintf(buf+n, sizeof(buf)-n, "],\\"outcomes\\":["));',
     'first = true;',
-    'for (int k = 0; k < MAX_OUTCOMES; k++) { if (g_outcomes[k].command_id[0]) put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"command_id\\":\\"%s\\",\\"result\\":\\"%s\\",\\"reason\\":\\"%s\\"}", sep(), g_outcomes[k].command_id, g_outcomes[k].result, g_outcomes[k].reason)); }',
+    'for (int k = 0; k < maji_ctl::MAX_OUTCOMES; k++) { if (!cs.outcomes[k].command_id.empty()) put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"command_id\\":\\"%s\\",\\"result\\":\\"%s\\",\\"reason\\":\\"%s\\"}", sep(), cs.outcomes[k].command_id.c_str(), cs.outcomes[k].result.c_str(), cs.outcomes[k].reason.c_str())); }',
     'put(snprintf(buf+n, sizeof(buf)-n, "]}"));',
     `mc->publish("${snapshotTopic(site, ctrl)}", buf);`,
   ];
@@ -389,13 +389,13 @@ ${indent(onConnectBody, 8)}
 ${indent(cmdBody, 12)}
   on_message:
     # Retained automation set (packed binary). Delivered on connect (retained
-    # replay) and on every server-side change. The handler validates magic +
-    # route_set_version and memcpy's it into the runtime table.
+    # replay) and on every server-side change. The maji_automations component
+    # validates magic + route_set_version and memcpy's it into the runtime table.
     - topic: "${automationsTopic(site, ctrl)}"
       qos: 1
       then:
         - lambda: |-
-            apply_automation_set((const uint8_t *) x.data(), x.size());
+            id(autos).apply_set((const uint8_t *) x.data(), x.size());
 ${timeBlock}
 interval:
   # Snapshot: publish the whole controller state every update interval while

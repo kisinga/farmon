@@ -14,7 +14,7 @@ import { loadBoard } from "./helpers";
 import { validateAll } from "@core/rules";
 import { generateAll, createTestMetadata, type GeneratedFile } from "@core/codegen";
 import { generateBoardPackage } from "@core/codegen";
-import { generateRoutes } from "@core/codegen";
+import { generateMajiControlConfig } from "@core/codegen";
 import { collectEntityCodegen } from "@core/codegen";
 
 const DEFAULTS = path.resolve(new URL(".", import.meta.url).pathname, "..", "defaults");
@@ -145,7 +145,7 @@ console.log("\nFile generation:");
 const expectedSuffixes = [
   "board.yaml",
   "pump-controller.yaml",
-  "routes.h",
+  "route-engine.yaml",
   "hardware.yaml",
   "sensors.yaml",
   "control.yaml",
@@ -314,12 +314,12 @@ assert(deviceYaml.includes("name: ${device_name}"), "ESPHome name sub");
 // friendly_name "Pump-ctrl" slugs to "pump_ctrl"; the device_name sub hyphenates.
 assert(deviceYaml.includes("device_name: pump-ctrl"), "ESPHome name sub hyphenates hostname");
 assert(!deviceYaml.includes("device_name: pump_ctrl"), "No underscore in device hostname");
-assert(deviceYaml.includes("packages/routes.h"), "Includes routes.h");
+assert(deviceYaml.includes("packages/route-engine.yaml"), "Includes route-engine.yaml");
 assert(deviceYaml.includes("common/board.yaml"), "Includes board package");
 assert(deviceYaml.includes("packages/control.yaml"), "Includes control");
 assert(deviceYaml.includes("display:"), "OLED display block (board has OLED)");
 assert(deviceYaml.includes("GPIO_NUM_21"), "OLED reset in boot (GPIO21)");
-assert(deviceYaml.includes("NUM_ROUTES"), "Boot logs route count");
+assert(deviceYaml.includes("Boot complete"), "Boot log present");
 // Removed fields should NOT appear in substitutions
 assert(!deviceYaml.includes("refill_watchdog_seconds"), "No refill_watchdog_seconds sub");
 assert(!deviceYaml.includes("refill_min_rise_pct"), "No refill_min_rise_pct sub");
@@ -330,115 +330,42 @@ for (const f of flowSensors) {
   assert(deviceYaml.includes(`flow_cal_${n(f, 'id')}: "${n(f, 'flow_cal')}"`), `Per-sensor flow_cal sub for ${n(f, 'id')}`);
 }
 
-// --- routes.h ---
+// --- route-engine.yaml (maji_control config — the route table + bindings) ---
+// The route state machine / watchdog / pump-guard C++ moved to the maji_control
+// external component: behaviour is host-tested (firmware/test/core_test.cpp) and
+// esphome-compile-verified. Here we validate the generated CONFIG — the route data
+// and entity bindings the component snapshots, idx-aligned with its tables.
 
-console.log("\nroutes.h:");
-const routesH = getFile("routes.h");
-assert(routesH.includes(`NUM_ROUTES        = ${manifest.routes.length}`), `NUM_ROUTES = ${manifest.routes.length}`);
-assert(routesH.includes(`NUM_VALVES        = ${valves.length}`), `NUM_VALVES = ${valves.length}`);
-assert(routesH.includes(`NUM_FLOW_SENSORS  = ${flowSensors.length}`), `NUM_FLOW_SENSORS = ${flowSensors.length}`);
-assert(routesH.includes(`NUM_WATER_SOURCES = ${waterSources.length}`), `NUM_WATER_SOURCES = ${waterSources.length}`);
-for (const v of valves) {
-  assert(routesH.includes(`id(${n(v, 'id')}).make_call()`), `Valve ${n(v, 'id')} in dispatch`);
-}
+console.log("\nroute-engine.yaml:");
+const routeEngine = getFile("route-engine.yaml");
+assert(routeEngine.includes("maji_control:"), "Emits the maji_control component config");
+assert(routeEngine.includes("id: control"), "Engine id is 'control'");
+assert(routeEngine.includes("claims_id: claims"), "Binds the maji_claims registry");
+assert(routeEngine.includes("safety_override_id: safety_override"), "Binds the safety override switch");
+assert(routeEngine.includes("flow_watchdog_id: flow_watchdog_s"), "Binds the flow-watchdog tunable");
 for (const r of manifest.routes) {
-  assert(routesH.includes(`"${r.name}"`), `Route "${r.name}" in route table`);
+  assert(routeEngine.includes(`name: "${r.name}"`), `Route "${r.name}" in the table`);
+  assert(routeEngine.includes(`max_runtime_s: ${r.max_runtime_seconds}`), `Route "${r.name}" max_runtime_s = ${r.max_runtime_seconds}`);
 }
-// Architecture: no watchdog strategy dispatch
-assert(!routesH.includes("WD_LEVEL_RISE"), "No WD_LEVEL_RISE define");
-assert(!routesH.includes("WD_RUNTIME"), "No WD_RUNTIME define");
-assert(!routesH.includes("WD_FLOW"), "No WD_FLOW define (removed — flow is unconditional)");
-assert(!routesH.includes("uint8_t     watchdog"), "No watchdog field in struct");
-assert(routesH.includes("max_runtime_s"), "Has max_runtime_s field in struct");
-// Route struct has source_ws field for water source support
-assert(routesH.includes("source_ws"), "Has source_ws field in struct");
-// Concurrent execution support
-assert(routesH.includes("struct RouteSlot"), "Has RouteSlot struct");
-assert(routesH.includes("MAX_CONCURRENT_ROUTES"), "Has MAX_CONCURRENT_ROUTES constant");
-assert(routesH.includes("pump_idx"), "Has pump_idx field in Route struct");
-assert(routesH.includes("queue_push"), "Has queue_push function");
-assert(routesH.includes("queue_pop"), "Has queue_pop function");
-assert(routesH.includes("pump_ref_count"), "Has pump_ref_count function");
-assert(routesH.includes("has_conflict"), "Has conflict detection");
-assert(routesH.includes("conflict_mask"), "Has conflict mask in Route struct");
-assert(routesH.includes("derived_system_state"), "Has derived_system_state function");
-assert(routesH.includes("open_valve_hw"), "Valve dispatch renamed to _hw");
-assert(routesH.includes("close_valve_hw"), "Valve close dispatch renamed to _hw");
-assert(routesH.includes("stop_valve_hw"), "Has cover.stop dispatch for fault resync");
-assert(routesH.includes("commanded_valve_mask"), "Has commanded_valve_mask global");
-assert(routesH.includes("valve_claim_mask"), "Has per-slot valve claim helper");
-assert(routesH.includes("desired_valve_mask"), "Has desired-valve-mask aggregator");
-assert(routesH.includes("reconcile_valves"), "Has level-triggered valve reconciler");
-assert(!routesH.includes("safe_close_mask"), "safe_close_mask removed (replaced by reconciler)");
-assert(!routesH.includes("active_valve_mask"), "active_valve_mask removed (was unused)");
-assert(!routesH.includes("valves_closing"), "valves_closing field removed");
-// Stop on FAULT must be rejected — fault stays registered until fault_reset.
-assert(
-  /state == 0 \|\| slots\[s\]\.state == 3 \|\| slots\[s\]\.state == 4/.test(routesH),
-  "try_route_stop rejects state==4 (FAULT)",
-);
-assert(routesH.includes("get_valve_travel_ms"), "Has per-valve travel time dispatch");
-assert(routesH.includes("get_route_travel_ms"), "Has per-route travel time dispatch");
-assert(routesH.includes("get_max_runtime_s"), "Has per-route max runtime dispatch");
-assert(routesH.includes("DEFAULT_FLOW_THRESHOLD_L_MIN"), "Has manifest-derived flow threshold firmware constant");
-assert(routesH.includes("DEFAULT_FLOW_WATCHDOG_MS"), "Has manifest-derived flow watchdog firmware constant");
-assert(routesH.includes("ROUTES[0].max_runtime_s"), "Max runtime dispatch falls back to route table when HA number is not ready");
-assert(routesH.includes("flow_active_since"), "Route slot tracks sustained flow confirmation window");
-assert(!routesH.includes("api_lost_since"), "No per-slot HA API-loss tracking (HA API dropped for MQTT)");
-
-// --- Reconciler claim semantics (P4.8) ---
-// valve_claim_mask must hold the route's mask during PREPARING/RUNNING and
-// also during STOPPING/FAULT within the depressurize window. This ensures
-// concurrent slots in different states with overlapping valve_masks correctly
-// keep shared valves open until the last claim drops.
-assert(
-  /st == 1 \|\| st == 2/.test(routesH) ||
-  /state == 1 \|\| slots\[s\]\.state == 2/.test(routesH),
-  "valve_claim_mask returns valve_mask in PREPARING/RUNNING",
-);
-assert(
-  /st == 3 \|\| st == 4/.test(routesH) ||
-  /state == 3 \|\| slots\[s\]\.state == 4/.test(routesH),
-  "valve_claim_mask considers STOPPING/FAULT",
-);
-assert(
-  /\(\s*millis\(\)\s*-\s*slots\[s\]\.stop_time\s*\)\s*<\s*DEPRESSURIZE_MS/.test(routesH),
-  "valve_claim_mask gates STOPPING/FAULT branch on depressurize window",
-);
-// desired_valve_mask must union across all slots — verifies multi-slot
-// concurrency (e.g., FAULTed slot's depressurize window OR'd with another
-// slot's RUNNING claim keeps shared valves open).
-assert(
-  /desired_valve_mask[\s\S]{0,200}MAX_CONCURRENT_ROUTES[\s\S]{0,200}\|=\s*valve_claim_mask/.test(routesH),
-  "desired_valve_mask is union of valve_claim_mask across slots",
-);
-// reconcile_valves must diff against commanded and only act on changes —
-// the idempotency property that prevents periodic reissue.
-assert(
-  /uint16_t\s+diff\s*=\s*desired\s*\^\s*commanded_valve_mask/.test(routesH),
-  "reconcile_valves diffs desired ^ commanded (idempotent in steady state)",
-);
-
-// --- Boot-init reboot safety (P4.7, P4.9) ---
-// At boot, slots are reinitialized to IDLE, valves driven closed, and
-// commanded_valve_mask reset to 0 — all in the same boot script. The
-// reconciler's first tick after boot then sees desired = 0, commanded = 0,
-// diff = 0 and emits no phantom commands.
-assert(
-  /init_slot[\s\S]{0,500}close_valve_hw[\s\S]{0,500}commanded_valve_mask\s*=\s*0/.test(deviceYaml),
-  "Boot init: slots reinitialized, valves closed, then commanded_valve_mask = 0",
-);
-assert(
-  /restore_mode\s*[:=]\s*NO_RESTORE|time_based covers default to restore_mode: NO_RESTORE/.test(deviceYaml),
-  "Boot path documents the time_based NO_RESTORE assumption",
-);
+assert(routeEngine.includes("conflict_mask:"), "Route table carries conflict masks");
+assert(routeEngine.includes("pump_idx:"), "Route table carries pump_idx");
+assert(routeEngine.includes("source_tank:"), "Route table carries source_tank");
+assert(routeEngine.includes("runtime_level_ok:"), "Route table carries runtime_level_ok");
+assert(routeEngine.includes("manual_pumps:"), "Emits the manual-pump guard table");
+assert(routeEngine.includes("valves:"), "Emits the valve bindings");
+assert(routeEngine.includes("tanks:"), "Emits the tank bindings");
+// Per-route tunable numbers are bound when the route exposes them.
+assert(routeEngine.includes("max_runtime_id: route_0_max_runtime"), "Binds per-route max-runtime number");
+// Defaults (the old DEFAULT_*_MS firmware constants) ride the config now.
+assert(/flow_watchdog_ms:\s*\d+/.test(routeEngine), "Carries the flow-watchdog default");
+assert(/valve_travel_ms:\s*\d+/.test(routeEngine), "Carries the valve-travel default");
 
 // --- hardware.yaml ---
 
 console.log("\nhardware.yaml:");
 const hw = getFile("hardware.yaml");
 assert(hw.includes("pump_relay"), "Has pump relay");
-assert(hw.includes("pump_ref_count("), "Relay guard uses parametric pump refcount");
+assert(!hw.includes("pump_ref_count"), "Pump relay is engine-driven (no on_turn_on interlock)");
 for (const v of valves) {
   assert(hw.includes(`id: ${n(v, 'id')}_open_pin`), `Valve ${n(v, 'id')} open pin`);
   assert(hw.includes(`interlock:`), `Has interlock`);
@@ -490,14 +417,13 @@ assert(!control.includes("service: fault_reset_all"), "fault_reset_all service r
 assert(!control.includes("service: queue_clear"), "queue_clear service removed (now button)");
 assert(control.includes("interval: 1s"), "Has 1s transition interval");
 assert(control.includes("interval: 2s"), "Has 2s safety interval");
-assert(control.includes("find_slot_by_route"), "Uses slot-based route lookup");
-assert(control.includes("has_conflict"), "Checks conflicts before starting");
-assert(control.includes("reconcile_valves()"), "Calls valve reconciler in 1s interval");
-assert(control.includes("stop_valve_hw"), "Issues stop_cover on fault entry (cover-state resync)");
-assert(control.includes("get_flow_rate(r.flow_sensor)"), "Safety loop samples live route flow");
-assert(control.includes("flow_confirmed = true"), "Safety loop confirms sustained flow before tank-full classification");
-assert(control.includes(": DEFAULT_FLOW_WATCHDOG_MS"), "Safety loop uses firmware SSOT when timing numbers are not ready");
-assert(control.includes(": DEFAULT_FLOW_THRESHOLD_L_MIN"), "Safety loop uses firmware SSOT when flow threshold is not ready");
+// control.yaml is now thin glue — the state machine + watchdog live in the engine.
+assert(control.includes("id(control).tick_1s()"), "1s interval drives the engine");
+assert(control.includes("id(control).tick_2s()"), "2s interval drives the watchdog");
+assert(control.includes("id(control).start_route"), "Route start buttons call the engine");
+assert(control.includes("id(control).stop_all()"), "Stop-all button calls the engine");
+assert(!control.includes("reconcile_valves"), "Valve reconcile moved into the engine");
+assert(!control.includes("get_flow_rate"), "Safety loop moved into the engine");
 assert(!control.includes("flowThresholdFallback"), "Control generator does not duplicate flow-threshold formatting");
 assert(
   !control.includes("api_client_count") && !control.includes("api_lost_since") && !control.includes("api_lost_time"),
@@ -505,7 +431,7 @@ assert(
 );
 assert(!control.includes("safe_close_mask"), "Edge-driven safe_close_mask removed");
 assert(!control.includes("valves_closing"), "valves_closing edge flag removed");
-assert(control.includes("try_route_start"), "Delegates to try_route_start (which queues on conflict)");
+assert(control.includes("id(control).start_route"), "Delegates route start to the engine (which queues on conflict)");
 assert(!control.includes("close_all_valves"), "No close_all_valves script");
 assert(!control.includes("do_prepare_and_run"), "No do_prepare_and_run script");
 assert(!control.includes("id(active_route)"), "No active_route global reference");
@@ -515,20 +441,20 @@ assert(!control.includes("id(active_route)"), "No active_route global reference"
 console.log("\nCross-file consistency:");
 for (const t of tanksWithLevel) {
   assert(
-    sensors.includes(`id: ${n(t, 'id')}_level`) && routesH.includes(`id(${n(t, 'id')}_level)`),
-    `Tank ${n(t, 'id')}: sensors \u2194 routes.h`
+    sensors.includes(`id: ${n(t, 'id')}_level`) && routeEngine.includes(`${n(t, 'id')}_level`),
+    `Tank ${n(t, 'id')}: sensors \u2194 route-engine binding`
   );
 }
 for (const f of flowSensors) {
   assert(
-    sensors.includes(`id: ${n(f, 'id')}`) && routesH.includes(`id(${n(f, 'id')})`),
-    `Flow ${n(f, 'id')}: sensors \u2194 routes.h`
+    sensors.includes(`id: ${n(f, 'id')}`) && routeEngine.includes(n(f, 'id')),
+    `Flow ${n(f, 'id')}: sensors \u2194 route-engine binding`
   );
 }
 for (const v of valves) {
   assert(
-    hw.includes(`id: ${n(v, 'id')}\n`) && routesH.includes(`id(${n(v, 'id')}).make_call()`),
-    `Valve ${n(v, 'id')}: hardware \u2194 routes.h`
+    hw.includes(`id: ${n(v, 'id')}\n`) && routeEngine.includes(n(v, 'id')),
+    `Valve ${n(v, 'id')}: hardware \u2194 route-engine binding`
   );
 }
 
@@ -538,8 +464,7 @@ console.log("\nRoute table logic:");
 const valveIdx = new Map(valves.map((v, i) => [n(v, 'id'), i]));
 for (const route of manifest.routes) {
   const mask = route.valves.reduce((acc, v) => acc | (1 << valveIdx.get(v)!), 0);
-  const maskBin = `0b${mask.toString(2).padStart(valves.length, "0")}`;
-  assert(routesH.includes(maskBin), `Route "${route.name}" valve_mask = ${maskBin}`);
+  assert(routeEngine.includes(`valve_mask: ${mask},`), `Route "${route.name}" valve_mask = ${mask}`);
 }
 
 const pressureRuntimeCases = [
@@ -550,27 +475,15 @@ const pressureRuntimeCases = [
 for (const c of pressureRuntimeCases) {
   const pressureTopo = pumpedPressureTopology(c.sourcePumpRated, c.destPumpRated);
   const pressureManifest = topologyToManifestForController(pressureTopo, pressureTopo.controllers[0]?.id ?? 'default');
-  const pressureRoutesH = generateRoutes(pressureManifest);
+  const pressureConfig = generateMajiControlConfig(pressureManifest);
   const pressureRoute = pressureManifest.routes.find(r => r.source === 'source_tank' && r.destination === 'dest_tank');
   assert(
     pressureRoute?.runtime_level_ok === c.expected,
     `Pressure runtime level checks ${c.expected ? 'enabled' : 'disabled'} when ${c.label}`,
   );
   assert(
-    pressureRoutesH.includes(`0, 0, 20, 90, ${c.expected ? 'true' : 'false'}, "Source Tank > Destination Tank"`),
-    `Generated route table writes runtime_level_ok=${c.expected} when ${c.label}`,
-  );
-}
-
-// Every route has per-route max_runtime and name in the table
-for (const route of manifest.routes) {
-  assert(
-    routesH.includes(`"${route.name}"`),
-    `Route "${route.name}" name in table`
-  );
-  assert(
-    routesH.includes(`${route.max_runtime_seconds}`),
-    `Route "${route.name}" max_runtime_s = ${route.max_runtime_seconds}`
+    pressureConfig.includes(`runtime_level_ok: ${c.expected ? 'true' : 'false'}, name: "Source Tank > Destination Tank"`),
+    `Generated config writes runtime_level_ok=${c.expected} when ${c.label}`,
   );
 }
 
@@ -640,14 +553,12 @@ assert(vfdSensors.includes("number:"), "Has number: section for speed setpoint")
 assert(vfdSensors.includes("button:"), "Has button: section for fault reset");
 assert(vfdSensors.includes("vfd1_fault_reset"), "Has VFD fault reset button");
 
-// --- Routes.h ---
+// --- Route engine (VFD) ---
 
-console.log("\nRoutes.h:");
-const vfdRoutesH = getVfdFile("routes.h");
-assert(vfdRoutesH.includes("pump_ref_count"), "Has pump_ref_count (VFD is isPump)");
-// pump_relay is referenced in control.yaml, not routes.h — check control instead
-const vfdControl = getVfdFile("control.yaml");
-assert(vfdControl.includes("vfd1_relay"), "Control references vfd1_relay");
+console.log("\nRoute engine (VFD):");
+const vfdRouteEngine = getVfdFile("route-engine.yaml");
+assert(vfdRouteEngine.includes("manual_pumps:"), "Emits manual-pump guard table (VFD is isPump)");
+assert(vfdRouteEngine.includes("vfd1_relay"), "Binds the vfd1 pump relay");
 
 // =============================================================================
 // KC868-A16 Board Tests — PCF8574 expander pins + Ethernet
@@ -675,7 +586,7 @@ function getKcFile(suffix: string): string {
 // --- Board definition ---
 
 console.log("Board definition:");
-assert(kcBoard.model === "kc868-a16", `Board model = ${kcBoard.model}`);
+assert(kcBoard.model === "kc868_a16", `Board model = ${kcBoard.model}`);
 assert(kcBoard.pins.length === 39, `${kcBoard.pins.length} pins (32 expander + 7 native)`);
 assert(kcBoard.expanders?.length === 4, "Has 4 PCF8574 expanders");
 assert(!!kcBoard.peripherals.ethernet, "Has Ethernet peripheral");
@@ -694,7 +605,7 @@ assert(kcBoardPkg.includes("ethernet:"), "Has ethernet: section");
 assert(kcBoardPkg.includes("LAN8720"), "Ethernet type = LAN8720");
 assert(kcBoardPkg.includes("mdc_pin: GPIO23"), "Ethernet MDC pin");
 assert(kcBoardPkg.includes("pin: GPIO17"), "Ethernet CLK pin (structured)");
-assert(kcBoardPkg.includes("mode: GPIO17_OUT"), "Ethernet CLK mode (structured)");
+assert(kcBoardPkg.includes("mode: CLK_OUT"), "Ethernet CLK mode (structured, valid esphome enum)");
 assert(!kcBoardPkg.includes("clk_mode"), "No deprecated clk_mode key");
 assert(!kcBoardPkg.includes("wifi:"), "No wifi: section (ethernet board, default transport)");
 assert(!kcBoardPkg.includes("captive_portal"), "No captive_portal (no wifi)");
@@ -925,9 +836,9 @@ assert(
 );
 
 // Routes: remote tanks should use ri_ prefix in get_tank_level
-const pumpRoutes = generateRoutes(pumpManifest);
-assert(pumpRoutes.includes('ri_src_tank'), "Routes dispatch uses ri_src_tank for remote tank level");
-assert(pumpRoutes.includes('ri_dst_tank'), "Routes dispatch uses ri_dst_tank for remote tank level");
+const pumpRoutes = generateMajiControlConfig(pumpManifest);
+assert(pumpRoutes.includes('ri_src_tank'), "route-engine binds ri_src_tank for remote tank level");
+assert(pumpRoutes.includes('ri_dst_tank'), "route-engine binds ri_dst_tank for remote tank level");
 
 // Local hardware should still be generated for pump-ctrl's own nodes
 assert(pumpCollect.switches.some(y => y.includes('pump1_relay')), "Local pump1 relay generated");
@@ -940,9 +851,9 @@ assert(pumpCollect.sensors.some(y => y.includes('id: flow1')), "Local flow senso
 console.log("\nAutomations (runtime engine, not baked):");
 
 // A topology that still carries legacy in-topology automations. Post-cutover they
-// are IGNORED by codegen — automations live in the `automations` collection and
-// reach the device as a retained runtime set (automation-engine.h). The manifest
-// must carry none, so no baked schedule / enable switches / dashboard toggles.
+// are IGNORED by codegen — automations live in the `automations` collection and reach
+// the device as a retained runtime set handled by the maji_automations component. The
+// manifest must carry none, so no baked schedule / enable switches / dashboard toggles.
 const scheduledTopo = parseTopology({
   ...pumpedPressureTopology(true, true),
   automations: [
@@ -965,14 +876,17 @@ const mqttYamlSched = getSched("mqtt.yaml");
 assert(!("automations" in schedManifest), "manifest has no automations field (collection-managed now)");
 assert(![...schedMap.keys()].some((k) => k.endsWith("schedule.yaml")), "no baked schedule.yaml is emitted");
 assert([...schedMap.keys()].some((k) => k.endsWith("automation-engine.yaml")), "automation-engine package is emitted");
-assert([...schedMap.keys()].some((k) => k.endsWith("automation-engine.h")), "automation-engine header is emitted");
+assert(![...schedMap.keys()].some((k) => k.endsWith("automation-engine.h")), "no automation-engine.h header is emitted (logic moved to the maji_automations component)");
+const autoYamlSched = getSched("automation-engine.yaml");
+assert(autoYamlSched.includes("maji_automations:") && /route_set_version:\s*\d+/.test(autoYamlSched),
+  "automation-engine.yaml configures maji_automations with a baked route_set_version");
 
 let mqttOk = true; try { parseYaml(mqttYamlSched); } catch { mqttOk = false; }
 assert(mqttOk, "mqtt.yaml is valid YAML");
 // The baked schedule used to declare sntp_time; mqtt.yaml now emits the single one
 // unconditionally (the engine's time triggers + the command-TTL gate need it).
 assert((mqttYamlSched.match(/id: sntp_time/g) ?? []).length === 1, "mqtt: exactly one sntp_time, emitted unconditionally");
-assert(mqttYamlSched.includes("apply_automation_set"), "mqtt: subscribes to the retained automation set");
+assert(mqttYamlSched.includes("id(autos).apply_set"), "mqtt: subscribes to the retained automation set");
 assert(!mqttYamlSched.includes("auto_time1_enabled"), "mqtt: no baked automation enable-switch dispatch");
 
 // config_set still works (unchanged by the cutover).
