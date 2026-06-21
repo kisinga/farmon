@@ -1,6 +1,6 @@
 import { Injectable, signal, inject } from '@angular/core';
 import type { BoardDef } from '../models/board.model';
-import type { ExpansionBoardCatalog } from '@core';
+import { EASY_MODE_BOARD, type ExpansionBoardCatalog } from '@core';
 import type { BoardListEntry, BoardLoadResult } from '../models/backend-api';
 import { BackendService } from './backend.service';
 import { Cached } from '../stores/collection-store';
@@ -50,6 +50,20 @@ export class BoardService {
    *  (the editor loads it on focus) and the SDK auto-cancels one. */
   expansionDefs(): Promise<ExpansionBoardCatalog> {
     return this._expansion.ensureLoaded();
+  }
+
+  /** Resolve the Easy Mode controller (board def + catalog model) from the board
+   *  list, tolerating the seeded model id ('kc868_a16' vs 'kc868-a16'). Returns
+   *  null when the board isn't in the catalog. Shared by the onboarding stepper
+   *  and lead conversion so both wire against the same controller. */
+  async loadEasyModeBoard(): Promise<{ board: BoardDef; model: string } | null> {
+    await this.ensureLoaded();
+    const list = this.boards();
+    const entry = list.find((b) => b.model === EASY_MODE_BOARD)
+      ?? list.find((b) => b.kind === 'main' && /kc868[-_ ]?a16/i.test(`${b.model} ${b.label}`));
+    if (!entry) return null;
+    const { board } = await this.loadResult(entry.model);
+    return { board, model: entry.model };
   }
 
   /** One board's full def + SVG, cached per model (shared in-flight). */

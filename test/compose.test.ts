@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   parseBoardDef, composeEasyMode, estimateSystem, topologyToManifestForController, parseTopology,
-  createBoardDriver, planWateringAutomations, renderTopologySvg, NODE_REGISTRY,
+  createBoardDriver, planWateringAutomations, renderTopologySvg, NODE_REGISTRY, toStoredTopology,
   type EasyModeProfile, type ComposeResult, type RuleDiagnostic, type Vertical, type SourceKind,
 } from '@core';
 
@@ -81,9 +81,45 @@ const rg = check('gravity farm 1-tank 2-zone',
   { vertical: 'farm', sources: ['borehole'], tanks: 1, zones: 2, conveyance: 'gravity' });
 assert((kinds(rg)['pump'] ?? 0) === 1, 'gravity: only the submersible, no booster', JSON.stringify(kinds(rg)));
 
+// Several tanks come from a composition of group sizes. [n] = one side-by-side
+// bank (head monitored, siblings are capacity off the head, no transfer valves);
+// [1,1,…] = a cascade through transfer valves; [2,1]/[2,2] = a mix.
+const monitoredOf = (r: ComposeResult) => r.topology!.nodes.filter(n => n.kind === 'tank' && (n as Record<string, unknown>)['level_monitored'] === true).length;
+const transfersOf = (r: ComposeResult) => r.topology!.nodes.filter(n => n.kind === 'valve' && /Transfer/.test(String((n as Record<string, unknown>)['name']))).length;
+
+const oneBank = check('one bank farm borehole 3-tank 2-zone',
+  { vertical: 'farm', sources: ['borehole'], tanks: 3, zones: 2, conveyance: 'pump', tankGroups: [3] });
+assert(kinds(oneBank)['tank'] === 3, 'one bank: three tank nodes', JSON.stringify(kinds(oneBank)));
+assert(monitoredOf(oneBank) === 1, 'one bank: only the head is monitored (siblings share a level)', String(monitoredOf(oneBank)));
+assert(transfersOf(oneBank) === 0, 'one bank: no transfer valves between tanks', String(transfersOf(oneBank)));
+
+const cascade = check('cascade farm borehole 3-tank 2-zone',
+  { vertical: 'farm', sources: ['borehole'], tanks: 3, zones: 2, conveyance: 'pump', tankGroups: [1, 1, 1] });
+assert(kinds(cascade)['tank'] === 3, 'cascade: three tank nodes', JSON.stringify(kinds(cascade)));
+assert(monitoredOf(cascade) === 3, 'cascade: every tank monitored for transfer interlocks', String(monitoredOf(cascade)));
+assert(transfersOf(cascade) === 2, 'cascade: a transfer valve per tank pair', String(transfersOf(cascade)));
+const cascOv = Object.values(cascade.topology!.route_overrides);
+assert(cascOv.some(o => o.dest_max_level === 92) && cascOv.some(o => o.source_min_level === 18),
+  'cascade: transfers are level-interlocked (fill cap + draw floor)');
+
+// Mixes: a pair feeding one [2,1], and two pairs in a row [2,2].
+const pairOne = check('pair+one farm borehole 3-tank 2-zone',
+  { vertical: 'farm', sources: ['borehole'], tanks: 3, zones: 2, conveyance: 'pump', tankGroups: [2, 1] });
+assert(kinds(pairOne)['tank'] === 3 && transfersOf(pairOne) === 1, 'pair+one: 3 tanks, one transfer', `${JSON.stringify(kinds(pairOne))} t=${transfersOf(pairOne)}`);
+const twoPairs = check('two pairs farm borehole 4-tank 2-zone',
+  { vertical: 'farm', sources: ['borehole'], tanks: 4, zones: 2, conveyance: 'pump', tankGroups: [2, 2] });
+assert(kinds(twoPairs)['tank'] === 4 && transfersOf(twoPairs) === 1, 'two pairs: 4 tanks, one transfer between banks', `${JSON.stringify(kinds(twoPairs))} t=${transfersOf(twoPairs)}`);
+
+// Custom layout (no recognised groups) seeds a valid starting point but hands off.
+const custom = composeEasyMode({ vertical: 'farm', sources: ['borehole'], tanks: 3, zones: 2, conveyance: 'pump' }, board);
+assert(custom.handoff === 'expert' && !!custom.topology, 'custom: seeds a topology and hands off to the editor', custom.handoff);
+assert(custom.topology!.nodes.filter(n => n.kind === 'tank').length === 3, 'custom: still places all three tanks');
+
+// Tank cap: more than MAX_TANKS hands off to a setup service.
+const tooMany = composeEasyMode({ vertical: 'farm', sources: ['borehole'], tanks: 5, zones: 1, conveyance: 'pump', tankGroups: [5] }, board);
+assert(tooMany.handoff === 'setup_service', 'gate: more than four tanks hands off to setup');
+
 // Scope gates
-const several = composeEasyMode({ vertical: 'farm', sources: ['borehole'], tanks: 2, zones: 2, conveyance: 'pump' }, board);
-assert(several.handoff === 'expert' && several.topology === null, 'several tanks: hands off to the editor (no silent collapse to one)');
 const hSetup = composeEasyMode({ vertical: 'farm', sources: ['borehole'], tanks: 1, zones: 9 }, board);
 assert(hSetup.handoff === 'setup_service', 'gate: nine zones hands off to setup');
 const rMultiNoTank = composeEasyMode({ vertical: 'residential', sources: ['mains', 'borehole'], tanks: 0, zones: 1 }, board);
@@ -203,6 +239,29 @@ const presentKinds = [...new Set(r1.topology!.nodes.map(n => n.kind))];
 assert(presentKinds.every(k => svg1.includes(NODE_REGISTRY.get(k)!.label)), 'svg: legend names every node kind present', presentKinds.join(','));
 assert((svg1.match(/class="pipe"/g) ?? []).length === r1.topology!.pipes.length, 'svg: one pipe path per pipe', `${(svg1.match(/class="pipe"/g) ?? []).length} vs ${r1.topology!.pipes.length}`);
 assert(renderTopologySvg({ nodes: [], pipes: [] }) === '', 'svg: empty topology renders nothing');
+
+// Stored projection: toStoredTopology keeps the persisted fields and drops the
+// transient ones (remoteImports, layout). This is what the stepper and lead
+// conversion save to disk.
+const stored1 = toStoredTopology(r1.topology!);
+assert(
+  stored1.schema === r1.topology!.schema && stored1.controllers === r1.topology!.controllers &&
+  stored1.nodes === r1.topology!.nodes && stored1.pipes === r1.topology!.pipes &&
+  stored1.route_overrides === r1.topology!.route_overrides && stored1.timing === r1.topology!.timing,
+  'toStoredTopology: carries the six persisted fields',
+);
+assert(!('remoteImports' in stored1) && !('layout' in stored1), 'toStoredTopology: drops transient fields');
+
+// Lead conversion core guarantee: re-composing a saved profile WITH a board and
+// a unique controller id yields a fully pin-wired site under that id, ready to
+// flash (the same path the stepper uses, just driven from a stored lead).
+const convId = 'riverside-farm-ab12cd34';
+const conv = composeEasyMode(
+  { vertical: 'farm', sources: ['borehole'], tanks: 1, zones: 3, conveyance: 'pump' },
+  board, undefined, convId,
+);
+assert(conv.topology?.controllers[0]?.id === convId, 'conversion: composes under the given controller id', conv.topology?.controllers[0]?.id);
+assert(!conv.handoff && pinFieldsMissing(conv.topology as never).length === 0, 'conversion: re-composed site is fully pin-wired');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

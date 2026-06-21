@@ -1,8 +1,12 @@
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import type { SiteTopology } from '@core';
 import { LeadsStore } from '../../core/stores/leads.store';
 import { ConfirmService } from '../../core/services/confirm.service';
 import type { LeadEntry } from '../../core/models/backend-api';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
+import { TopologyPreviewComponent } from '../../shared/topology-preview.component';
+import { ConvertLeadDialogComponent } from './convert-lead-dialog.component';
 
 /** "Mon D, YYYY" for an ISO timestamp. */
 function fmtDate(iso: string): string {
@@ -15,14 +19,14 @@ const STATUSES = ['new', 'contacted', 'closed'] as const;
 
 /**
  * Leads (admin). The sales pipeline for enquiries captured by the public pricing
- * estimator — previously stored but never surfaced. Shows each enquiry with the
+ * estimator (previously stored but never surfaced). Shows each enquiry with the
  * configuration the visitor priced, and lets an admin move it new → contacted →
  * closed or delete it.
  */
 @Component({
   selector: 'app-leads-page',
   standalone: true,
-  imports: [SectionHeaderComponent],
+  imports: [RouterLink, SectionHeaderComponent, TopologyPreviewComponent, ConvertLeadDialogComponent],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="content-pane space-y-6">
@@ -41,9 +45,12 @@ const STATUSES = ['new', 'contacted', 'closed'] as const;
             <div class="surface p-5" [class.opacity-60]="status(l) === 'closed'">
               <div class="flex items-start justify-between gap-4 flex-wrap">
                 <div class="min-w-0">
-                  <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-2 flex-wrap">
                     <h3 class="font-semibold text-sm truncate">{{ l.name }}</h3>
                     <span class="badge badge-xs border-0" [class]="badgeClass(status(l))">{{ status(l) }}</span>
+                    @if (convertedSiteId(l); as sid) {
+                      <a class="badge badge-xs border-0 bg-emerald-400/15 text-emerald-300 hover:bg-emerald-400/25" [routerLink]="['/site', sid]">Converted →</a>
+                    }
                   </div>
                   <p class="text-xs text-base-content/60 mt-1">
                     @if (l.phone) { <a class="hover:text-cyan-300" [href]="'tel:' + l.phone">{{ l.phone }}</a> }
@@ -53,6 +60,9 @@ const STATUSES = ['new', 'contacted', 'closed'] as const;
                   <p class="text-[11px] text-base-content/40 mt-0.5">{{ fmt(l.created) }} · via {{ l.source || 'pricing' }}</p>
                 </div>
                 <div class="flex items-center gap-2 shrink-0">
+                  @if (canConvert(l)) {
+                    <button class="btn btn-xs border-0 bg-cyan-400 text-slate-950 hover:bg-cyan-300" (click)="converting.set(l)">Convert</button>
+                  }
                   <select class="select select-bordered select-xs" [value]="status(l)" (change)="setStatus(l, $any($event.target).value)">
                     @for (s of statuses; track s) { <option [value]="s">{{ s }}</option> }
                   </select>
@@ -79,11 +89,22 @@ const STATUSES = ['new', 'contacted', 'closed'] as const;
                   <span>kit {{ kes(est.oneTime) }}</span>
                 </div>
               }
+
+              @if (leadTopology(l); as t) {
+                <details class="mt-3 group">
+                  <summary class="cursor-pointer text-xs font-medium text-cyan-300 hover:text-cyan-200 select-none">View the system they configured</summary>
+                  <app-topology-preview class="mt-2 block" [topology]="t" />
+                </details>
+              }
             </div>
           }
         </div>
       }
     </div>
+
+    @if (converting(); as l) {
+      <app-convert-lead-dialog [lead]="l" (close)="converting.set(null)" />
+    }
   `,
 })
 export class LeadsPageComponent implements OnInit {
@@ -93,6 +114,31 @@ export class LeadsPageComponent implements OnInit {
   protected readonly statuses = STATUSES;
   protected leads = computed(() => this.leadsStore.list());
   protected loading = signal(true);
+  /** The lead whose convert dialog is open, or null. */
+  protected readonly converting = signal<LeadEntry | null>(null);
+
+  /** The site a converted lead links to, or undefined. */
+  protected convertedSiteId(l: LeadEntry): string | undefined {
+    return l.estimate?.convertedSiteId || undefined;
+  }
+
+  /** Whether the lead carries a design to transfer (answers or a snapshot). */
+  private hasDesign(l: LeadEntry): boolean {
+    return !!(l.estimate?.profile || l.estimate?.topology);
+  }
+
+  /** Convert is offered while a lead is open, not already converted, and has a
+   *  design to carry (a contact-only enquiry has nothing to transfer). */
+  protected canConvert(l: LeadEntry): boolean {
+    return this.status(l) !== 'closed' && !this.convertedSiteId(l) && this.hasDesign(l);
+  }
+
+  /** The composed design a lead carries, or null when it has none (older leads,
+   *  or a visitor who priced without describing a site). */
+  protected leadTopology(l: LeadEntry): Pick<SiteTopology, 'nodes' | 'pipes'> | null {
+    const t = l.estimate?.topology;
+    return t && t.nodes?.length ? t : null;
+  }
 
   protected subtitle = computed(() => {
     const all = this.leads();

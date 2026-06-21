@@ -1,29 +1,31 @@
 import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
-  composeEasyMode, estimateSystem, EASY_MODE_BOARD,
-  VERTICALS, SOURCES, PRIORITIES, CONVEYANCES,
+  composeEasyMode, estimateSystem, toStoredTopology,
+  VERTICALS, SOURCES, PRIORITIES, CONVEYANCES, tankLayoutsFor, MAX_TANKS,
   type EasyModeProfile, type ComposeResult, type SystemEstimate, type Vertical, type SourceKind,
-  type Conveyance, type Priority, type BoardDef, type StoredSiteTopology,
+  type Conveyance, type Priority, type BoardDef,
 } from '@core';
 import { SitesStore } from '../../core/stores/sites.store';
 import { BackendService } from '../../core/services/backend.service';
 import { BoardService } from '../../core/services/board.service';
+import { TopologyPreviewComponent } from '../../shared/topology-preview.component';
 
 /**
  * Easy Mode onboarding stepper. Asks a few plain questions, composes a complete
- * topology with composeEasyMode (pins and all), previews it, then creates the
- * site, saves the topology, seeds default watering automations, and opens the
- * editor. Option copy comes from the shared `@core` catalog so it never drifts
- * from the composer. See docs/development/easy-mode-onboarding-spec.md.
+ * topology with composeEasyMode (pins and all), previews it (with the diagram),
+ * then creates the site, saves the topology, and opens the editor. Option copy
+ * comes from the shared `@core` catalog so it never drifts from the composer.
+ * See docs/development/easy-mode-onboarding-spec.md.
  */
 @Component({
   selector: 'app-easy-mode',
   standalone: true,
+  imports: [TopologyPreviewComponent],
   host: { class: 'contents' },
   template: `
     <dialog class="modal modal-open">
-      <div class="modal-box max-w-xl">
+      <div class="modal-box max-w-2xl">
         <h3 class="font-bold text-lg mb-1">Quick setup</h3>
         <p class="text-sm text-base-content/60 mb-4">A few questions and we build your system, ready to flash.</p>
 
@@ -45,7 +47,7 @@ import { BoardService } from '../../core/services/board.service';
               <div class="label-text font-medium mb-1.5">What kind of site is this?</div>
               <div class="flex flex-wrap gap-1.5">
                 @for (o of VERTICALS; track o.value) {
-                  <button class="btn btn-sm" [class.btn-primary]="vertical() === o.value" (click)="vertical.set(o.value)">{{ o.label }}</button>
+                  <button [class]="pill(vertical() === o.value)" (click)="vertical.set(o.value)">{{ o.label }}</button>
                 }
               </div>
               @if (verticalExample(); as ex) { <p class="text-xs text-base-content/50 mt-1">e.g. {{ ex }}</p> }
@@ -55,7 +57,7 @@ import { BoardService } from '../../core/services/board.service';
               <div class="label-text font-medium mb-1.5">Where does your water come from? <span class="opacity-50">(pick all)</span></div>
               <div class="flex flex-wrap gap-1.5">
                 @for (o of SOURCES; track o.value) {
-                  <button class="btn btn-sm" [class.btn-primary]="sources().has(o.value)" (click)="toggleSource(o.value)">{{ o.label }}</button>
+                  <button [class]="pill(sources().has(o.value))" (click)="toggleSource(o.value)">{{ o.label }}</button>
                 }
               </div>
               @if (sources().size > 1) { <p class="text-xs text-base-content/50 mt-1">We'll fill one shared tank from these.</p> }
@@ -64,11 +66,30 @@ import { BoardService } from '../../core/services/board.service';
             <div>
               <div class="label-text font-medium mb-1.5">Do you store water on site?</div>
               <div class="flex flex-wrap gap-1.5">
-                <button class="btn btn-sm" [class.btn-primary]="tanks() === 0" (click)="tanks.set(0)">No</button>
-                <button class="btn btn-sm" [class.btn-primary]="tanks() === 1" (click)="tanks.set(1)">One tank</button>
-                <button class="btn btn-sm" [class.btn-primary]="tanks() === 2" (click)="tanks.set(2)">Several</button>
+                <button [class]="pill(tanks() === 0)" (click)="tanks.set(0)">No</button>
+                <button [class]="pill(tanks() === 1)" (click)="tanks.set(1)">One tank</button>
+                <button [class]="pill(isSeveral())" (click)="setSeveral()">Several</button>
               </div>
-              @if (tanks() === 2) { <p class="text-xs text-base-content/50 mt-1">Several tanks open the editor, where you can lay them out.</p> }
+              @if (isSeveral()) {
+                <div class="mt-2 rounded-lg bg-base-200/60 p-3 space-y-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm">How many tanks?</span>
+                    <button class="btn btn-xs btn-square" (click)="bumpTanks(-1)" [disabled]="(tanks() ?? 2) <= 2">−</button>
+                    <span class="font-mono w-6 text-center">{{ tanks() }}</span>
+                    <button class="btn btn-xs btn-square" (click)="bumpTanks(1)" [disabled]="(tanks() ?? 2) >= MAX_TANKS">+</button>
+                  </div>
+                  <div>
+                    <div class="text-sm mb-1.5">How are they arranged?</div>
+                    <div class="flex flex-wrap gap-1.5">
+                      @for (o of layouts(); track o.label) {
+                        <button [class]="pill(isLayout(o.groups))" (click)="selectLayout(o.groups)">{{ o.label }}</button>
+                      }
+                      <button [class]="pill(isCustom())" (click)="selectLayout(null)">Something else</button>
+                    </div>
+                    @if (isCustom()) { <p class="text-xs text-base-content/50 mt-1">We'll place the tanks and open the editor for you to lay them out.</p> }
+                  </div>
+                </div>
+              }
             </div>
 
             <div>
@@ -82,13 +103,13 @@ import { BoardService } from '../../core/services/board.service';
               @if (zones() > 7) { <p class="text-xs text-warning mt-1">More than seven needs a bigger setup; we'll open the editor.</p> }
             </div>
 
-            @if (tanks() === 1) {
+            @if (showConveyance()) {
               <div>
                 <div class="label-text font-medium mb-1.5">Does the water need a pump to reach where it's used?</div>
                 <div class="text-xs text-base-content/50 mb-1.5">For example it travels far, runs uphill, or needs more pressure than the tank gives on its own.</div>
                 <div class="flex flex-wrap gap-1.5">
                   @for (o of CONVEYANCES; track o.value) {
-                    <button class="btn btn-sm" [class.btn-primary]="conveyance() === o.value" (click)="conveyance.set(o.value)">{{ o.label }}</button>
+                    <button [class]="pill(conveyance() === o.value)" (click)="conveyance.set(o.value)">{{ o.label }}</button>
                   }
                 </div>
               </div>
@@ -98,7 +119,7 @@ import { BoardService } from '../../core/services/board.service';
               <div class="label-text font-medium mb-1.5">What worries you most? <span class="opacity-50">(optional)</span></div>
               <div class="flex flex-wrap gap-1.5">
                 @for (o of PRIORITIES; track o.value) {
-                  <button class="btn btn-sm" [class.btn-primary]="priority() === o.value" (click)="priority.set(o.value)">{{ o.label }}</button>
+                  <button [class]="pill(priority() === o.value)" (click)="priority.set(o.value)">{{ o.label }}</button>
                 }
               </div>
             </div>
@@ -130,6 +151,11 @@ import { BoardService } from '../../core/services/board.service';
           </div>
         } @else if (result(); as r) {
           <div class="space-y-4">
+            <!-- The diagram leads: the design at a glance before the detail. -->
+            @if (r.topology) {
+              <app-topology-preview [topology]="r.topology" />
+            }
+
             @if (handoffCopy(); as h) {
               <div class="alert alert-warning text-sm">{{ r.notes[r.notes.length - 1] }}</div>
               <p class="text-sm font-medium">{{ h.title }}</p>
@@ -143,9 +169,9 @@ import { BoardService } from '../../core/services/board.service';
                   }
                 </div>
                 <div class="grid grid-cols-3 gap-2 text-xs mt-2">
-                  <div>Relays <span class="font-mono">{{ r.budget.relays }}/16</span></div>
-                  <div>Analog <span class="font-mono">{{ r.budget.analog }}/4</span></div>
-                  <div>Pulse <span class="font-mono">{{ r.budget.pulse }}/3</span></div>
+                  <div>Relays <span class="font-mono">{{ r.budget.relays }}/{{ limits().relays }}</span></div>
+                  <div>Analog <span class="font-mono">{{ r.budget.analog }}/{{ limits().analog }}</span></div>
+                  <div>Pulse <span class="font-mono">{{ r.budget.pulse }}/{{ limits().pulse }}</span></div>
                 </div>
               </div>
               @if (wiring().length) {
@@ -157,7 +183,7 @@ import { BoardService } from '../../core/services/board.service';
                 </div>
               }
               @if (boardMissing()) {
-                <p class="text-xs text-warning">Preview only — the exact pins are assigned when you open the editor.</p>
+                <p class="text-xs text-warning">Preview only: the exact pins are assigned when you open the editor.</p>
               }
               @if (r.notes.length) {
                 <ul class="text-xs text-base-content/60 list-disc pl-5 space-y-1">
@@ -199,6 +225,7 @@ export class EasyModeComponent implements OnInit {
   protected readonly SOURCES = SOURCES;
   protected readonly PRIORITIES = PRIORITIES;
   protected readonly CONVEYANCES = CONVEYANCES;
+  protected readonly MAX_TANKS = MAX_TANKS;
 
   protected board = signal<BoardDef | null>(null);
   protected boardModel = signal<string | null>(null);
@@ -212,11 +239,31 @@ export class EasyModeComponent implements OnInit {
   protected name = signal('');
   protected vertical = signal<Vertical | null>(null);
   protected sources = signal<Set<SourceKind>>(new Set());
-  /** 0 = none, 1 = one, 2 = several (one logical tank for now). */
-  protected tanks = signal<0 | 1 | 2 | null>(null);
+  /** Tank count: 0 = none, 1 = one, 2+ = several (laid out per tankGroups). */
+  protected tanks = signal<number | null>(null);
+  /** Chosen layout as group sizes, or null for a custom layout (handed to the
+   *  canvas). Only meaningful when several. */
+  protected tankGroups = signal<number[] | null>(null);
   protected zones = signal(1);
   protected conveyance = signal<Conveyance | null>(null);
   protected priority = signal<Priority | null>(null);
+
+  /** Several = two or more tanks (reveals the count + layout sub-questions). */
+  protected readonly isSeveral = computed(() => (this.tanks() ?? 0) >= 2);
+  /** Conveyance matters whenever there is a tank to draw from (one or several). */
+  protected readonly showConveyance = computed(() => (this.tanks() ?? 0) >= 1);
+  /** The curated layouts for the current tank count. */
+  protected readonly layouts = computed(() => tankLayoutsFor(this.tanks() ?? 0));
+  /** Custom layout chosen: several tanks with no preset selected. */
+  protected readonly isCustom = computed(() => this.isSeveral() && this.tankGroups() === null);
+
+  /** Whether the given preset is the current selection. */
+  protected isLayout(groups: number[]): boolean {
+    return this.tankGroups()?.join(',') === groups.join(',');
+  }
+  protected selectLayout(groups: number[] | null): void {
+    this.tankGroups.set(groups);
+  }
 
   private missingFields(): string[] {
     const m: string[] = [];
@@ -225,8 +272,34 @@ export class EasyModeComponent implements OnInit {
     if (this.sources().size === 0) m.push('a water source');
     if (this.tanks() === null) m.push('whether you store water');
     if (this.zones() < 1) m.push('the number of areas');
-    if (this.tanks() === 1 && this.conveyance() === null) m.push('whether the water needs a pump');
+    if (this.showConveyance() && this.conveyance() === null) m.push('whether the water needs a pump');
     return m;
+  }
+
+  /** Pick "Several": default to two tanks as one bank. */
+  protected setSeveral(): void {
+    if (!this.isSeveral()) { this.tanks.set(2); this.tankGroups.set([2]); }
+  }
+  /** Step the tank count within [2, MAX_TANKS]; reset the layout to one bank for
+   *  the new count (the old grouping no longer sums to it). */
+  protected bumpTanks(d: number): void {
+    const next = Math.min(this.MAX_TANKS, Math.max(2, (this.tanks() ?? 2) + d));
+    this.tanks.set(next);
+    this.tankGroups.set([next]);
+  }
+
+  /** Board pin limits, taken from the live estimate (one source). A defensive
+   *  fallback to the Easy Mode board's known caps covers the moment before the
+   *  estimate exists, so the preview never shows a bare number. */
+  protected readonly limits = computed(() =>
+    this.liveEstimate()?.limits ?? { relays: 16, analog: 4, pulse: 3 },
+  );
+
+  /** One cyan accent for every selected option pill, matching the primary CTA. */
+  protected pill(active: boolean): string {
+    return active
+      ? 'btn btn-sm border-0 bg-cyan-400 text-slate-950 hover:bg-cyan-300'
+      : 'btn btn-sm btn-ghost border border-base-300';
   }
 
   /** One-line example for the selected site type (from the catalog). */
@@ -255,7 +328,7 @@ export class EasyModeComponent implements OnInit {
     }
   });
 
-  /** Auto-assigned pins per actuator/sensor — shown in the preview so wiring is visible before creating. */
+  /** Auto-assigned pins per actuator/sensor, shown in the preview so wiring is visible before creating. */
   protected wiring = computed(() => {
     const out: { name: string; pins: string }[] = [];
     for (const n of this.result()?.topology?.nodes ?? []) {
@@ -281,16 +354,12 @@ export class EasyModeComponent implements OnInit {
 
   async ngOnInit() {
     try {
-      // Resolve the board from the actual catalog rather than a hardcoded id —
-      // the model key can be 'kc868_a16' or 'kc868-a16' depending on seeding.
-      await this.boards.ensureLoaded();
-      const list = this.boards.boards();
-      const entry = list.find(b => b.model === EASY_MODE_BOARD)
-        ?? list.find(b => b.kind === 'main' && /kc868[-_ ]?a16/i.test(`${b.model} ${b.label}`));
-      if (!entry) { this.boardMissing.set(true); return; }
-      this.boardModel.set(entry.model);
-      const { board } = await this.boards.loadResult(entry.model);
-      this.board.set(board);
+      // One shared resolver (also used by lead conversion) so both wire against
+      // the same controller; tolerates the seeded model id variants.
+      const resolved = await this.boards.loadEasyModeBoard();
+      if (!resolved) { this.boardMissing.set(true); return; }
+      this.boardModel.set(resolved.model);
+      this.board.set(resolved.board);
     } catch {
       this.boardMissing.set(true);
     } finally {
@@ -308,7 +377,7 @@ export class EasyModeComponent implements OnInit {
     this.zones.set(Math.max(1, this.zones() + d));
   }
 
-  /** The sizing answers (everything the budget depends on) — no friendlyName, so
+  /** The sizing answers (everything the budget depends on), no friendlyName, so
    *  the live estimate doesn't recompute on site-name keystrokes. */
   private sizingProfile(): EasyModeProfile | null {
     const v = this.vertical();
@@ -318,6 +387,7 @@ export class EasyModeComponent implements OnInit {
       vertical: v,
       sources: [...this.sources()],
       tanks: t,
+      tankGroups: this.tankGroups() ?? undefined,
       zones: this.zones(),
       conveyance: this.conveyance() ?? undefined,
       priority: this.priority() ?? undefined,
@@ -363,16 +433,7 @@ export class EasyModeComponent implements OnInit {
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const { id } = await this.sitesStore.create(slug, name);
       if (r?.topology) {
-        const t = r.topology;
-        const topology: StoredSiteTopology = {
-          schema: t.schema,
-          controllers: t.controllers,
-          nodes: t.nodes,
-          pipes: t.pipes,
-          route_overrides: t.route_overrides,
-          timing: t.timing,
-        };
-        await this.backend.siteSave({ site: { id, friendlyName: name }, topology });
+        await this.backend.siteSave({ site: { id, friendlyName: name }, topology: toStoredTopology(r.topology) });
       }
       this.close.emit();
       this.router.navigate(['/site', id]);

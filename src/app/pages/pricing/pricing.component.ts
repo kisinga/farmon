@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal, type WritableSignal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import type { SiteTopology } from '@core';
+import type { SiteTopology, EasyModeProfile } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { PRICING, SEGMENT_PACKS, estimate, kes, type EstimateInput, type Segment } from './pricing.model';
 import { applyPageSeo } from '../../shared/seo';
@@ -17,7 +17,7 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
  * nav/footer (the app shell hides chrome here, like the landing page).
  *
  * Transparency-first: the estimate is computed and shown live from three plain
- * questions — no form gates the number. Lead capture sits *below* the visible
+ * questions, no form gates the number. Lead capture sits *below* the visible
  * estimate and is consent-gated; the estimate snapshot rides along so followup
  * has context. A honeypot field plus a server-side hook drop bot spam.
  */
@@ -68,7 +68,7 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
           <!-- Everything below is optional fine-tuning, collapsed to keep the page calm. -->
           <details class="group">
             <summary class="cursor-pointer select-none py-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
-              Adjust the details <span class="font-normal text-slate-400">— pumps, sizes, special cases (optional)</span>
+              Adjust the details <span class="font-normal text-slate-400">: pumps, sizes, special cases (optional)</span>
             </summary>
             <div class="mt-4 space-y-5">
 
@@ -163,7 +163,7 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 
         <!-- Live estimate -->
         <div class="lg:col-span-2">
-          <div class="sticky top-24 rounded-2xl bg-slate-950 text-white p-6 shadow-xl">
+          <div class="lg:sticky lg:top-24 rounded-2xl bg-slate-950 text-white p-5 sm:p-6 shadow-xl">
             <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Your plan</p>
             <p class="mt-1 text-sm text-white/55">{{ est().tier }} · {{ est().summary }}</p>
 
@@ -338,7 +338,7 @@ export class PricingComponent {
   protected readonly threePhase = signal(false);
 
   // The framing question. Picks the dashboard a customer would get and the pack we
-  // pitch — never gates what they can buy.
+  // pitch, never gates what they can buy.
   protected readonly segments = [
     { key: 'farm' as Segment, label: 'Farm', blurb: 'Grow more with less' },
     { key: 'property' as Segment, label: 'Property or estate', blurb: 'Bill tenants, protect supply' },
@@ -381,6 +381,9 @@ export class PricingComponent {
 
   /** The composed design from the sizer, kept for the quote document. */
   protected readonly quoteTopology = signal<SiteTopology | null>(null);
+  /** The answers behind that design, kept so the captured lead can be converted
+   *  into a wired site later (re-composed with a real board). */
+  protected readonly quoteProfile = signal<EasyModeProfile | null>(null);
   protected readonly quoting = signal(false);
 
   /** Fill the estimator inputs from the plain-language sizer. The live estimate
@@ -388,6 +391,7 @@ export class PricingComponent {
    *  and the composed design is kept so the quote can embed it. */
   protected applySizing(e: SizedEstimate): void {
     this.quoteTopology.set(e.topology);
+    this.quoteProfile.set(e.profile);
     // Hand-off (e.g. several tanks): only drop the quote; leave the price inputs
     // at their last buildable values rather than zeroing them.
     if (!e.topology) return;
@@ -449,7 +453,10 @@ export class PricingComponent {
         phone: this.phone().trim(),
         email: this.email().trim(),
         consent: this.consent(),
-        estimate: this.est(),
+        // Carry the composed design and the answers behind it (when the visitor
+        // described their site) so follow-up opens the exact system, and an admin
+        // can convert it into a wired site. null otherwise.
+        estimate: { ...this.est(), topology: this.quoteTopology(), profile: this.quoteProfile() },
         hp: this.hp(),
       });
       this.submitState.set('done');

@@ -49,7 +49,7 @@ export interface SiteMetadata {
 // Stored site topology (the JSON blob on disk)
 // ---------------------------------------------------------------------------
 
-import type { TopologyNode, PipeSegment, RouteOverride, UartBus, IoProviderDef, NetworkConfig, Controller } from './topology.types';
+import type { TopologyNode, PipeSegment, RouteOverride, UartBus, IoProviderDef, NetworkConfig, Controller, SiteTopology } from './topology.types';
 
 export interface StoredSiteTopology {
   schema: number;
@@ -63,6 +63,24 @@ export interface StoredSiteTopology {
     flow_confirm: number;
     flow_threshold: number;
     update_interval: number;
+  };
+}
+
+/**
+ * Project a full in-memory `SiteTopology` down to the persisted subset. The
+ * in-memory shape carries transient UI/runtime fields (`remoteImports`,
+ * `layout`) that never belong on disk; this is the single place that mapping
+ * lives, shared by the Easy Mode stepper and lead conversion so the two can't
+ * drift on which fields get saved.
+ */
+export function toStoredTopology(t: SiteTopology): StoredSiteTopology {
+  return {
+    schema: t.schema,
+    controllers: t.controllers,
+    nodes: t.nodes,
+    pipes: t.pipes,
+    route_overrides: t.route_overrides,
+    timing: t.timing,
   };
 }
 

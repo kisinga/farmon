@@ -21,22 +21,27 @@ import { activeGraph } from '../graph/active-graph';
 import { deriveRoutes, type Route } from '../graph/routes';
 import { evaluateConstraints } from '../graph/evaluate-constraints';
 import { evaluateRouteRules } from '../graph/evaluate-route-rules';
-import { SOURCE_META, sourceHasPump, multiSourceNeedsTank, type Vertical, type SourceKind, type Conveyance, type Priority } from './catalog';
+import { SOURCE_META, sourceHasPump, multiSourceNeedsTank, validTankGroups, MAX_TANKS, type Vertical, type SourceKind, type Conveyance, type Priority } from './catalog';
 
-// The profile vocabulary (verticals, sources, …) is owned by the catalog — the
+// The profile vocabulary (verticals, sources, …) is owned by the catalog, the
 // single source of customer-facing copy and the closed answer sets. Re-exported
 // here so `@core` consumers keep importing the types from one place.
-export type { Vertical, SourceKind, Conveyance, Priority } from './catalog';
+export type { Vertical, SourceKind, Conveyance, Priority, TankLayout } from './catalog';
 
 // --- Profile (the resolved answers) ----------------------------------------
 
 export interface EasyModeProfile {
   friendlyName?: string;
   vertical: Vertical;
-  /** One or more sources. Two or more merge at the tank. */
+  /** One or more sources. Two or more merge at the (first) tank. */
   sources: SourceKind[];
-  /** 0 = none, 1 = one. 2+ is treated as one logical tank for now (see notes). */
+  /** Tank count: 0 = none, 1 = one, 2+ = several (laid out per tankGroups). */
   tanks: number;
+  /** How several tanks group into banks that feed each other, as ordered group
+   *  sizes (a composition of `tanks`): [n] = one side-by-side bank, [1,1,…] = a
+   *  full cascade, [2,1] = a pair feeding one. Undefined (with 2+ tanks) means a
+   *  custom layout: Easy Mode places a starting point and hands off to the canvas. */
+  tankGroups?: number[];
   zones: number;
   /** Observed water force. We trust it; the vertical never forces a pump. */
   conveyance?: Conveyance;
@@ -254,6 +259,70 @@ function addFill(b: Builder, supplies: Supply[], tank: TopologyNode, notes: stri
   }
 }
 
+/** A tank bank and the two ends the fill/draw builders attach to. */
+interface TankBank {
+  tanks: TopologyNode[];
+  /** Where the supplies fill (the first group's head). */
+  fillTank: TopologyNode;
+  /** Where the draw side starts (the last group's head). */
+  drawTank: TopologyNode;
+}
+
+/** A starting calibration so a level-monitored tank generates clean firmware; the
+ *  customer sets the real height in the editor. */
+const TANK_CALIBRATION = { level_monitored: true, height_m: 2, pressure_sensor_max_psi: 5 } as const;
+
+/**
+ * Lay out tanks from a composition of group sizes and return the fill/draw ends.
+ *
+ * Each group is a parallel **bank**: a head tank, plus siblings branching off it
+ * as a shared manifold (plain pipes, capacity only — no actuator, so no route).
+ * Fill enters the head and draw leaves the head, so a side-by-side bank reads as
+ * tanks hanging off one header, not a row the water snakes through.
+ *
+ * Groups are chained in **series** by a transfer valve from one head to the next,
+ * which buildRouteOverrides interlocks (fill cap + draw floor) since both heads
+ * are level-monitored. So [n] = one bank, [1,1,…] = a full cascade, [2,1] = a
+ * pair feeding one. Monitoring: every head when there is more than one group (the
+ * transfers and the draw need level); a lone bank monitors its head only when
+ * pump-filled (same rule as a single tank). Siblings are never monitored — a
+ * manifold shares one level.
+ */
+function addTanks(b: Builder, groups: number[], pumpFilled: boolean, notes: string[]): TankBank | null {
+  const sizes = groups.filter(g => g >= 1);
+  const total = sizes.reduce((a, c) => a + c, 0);
+  if (total < 1) return null;
+  const multiGroup = sizes.length > 1;
+  const all: TopologyNode[] = [];
+  const heads: TopologyNode[] = [];
+  let y = 0;
+  sizes.forEach((size, gi) => {
+    const headMonitored = multiGroup || (gi === 0 && pumpFilled);
+    const head = b.add('tank', headMonitored ? { ...TANK_CALIBRATION } : {}, { x: 340, y });
+    heads.push(head); all.push(head);
+    // series transfer in from the previous group's head
+    if (gi > 0) b.chain(heads[gi - 1], b.add('valve', { name: `Transfer ${gi}` }, { x: 480, y: y - 50 }), head);
+    // siblings hang under the head as one manifold bank (capacity only, no valves);
+    // fill and draw both stay on the head, so the bank reads as a column off the
+    // header rather than a row the water snakes through.
+    let prev = head;
+    for (let k = 1; k < size; k++) {
+      const sib = b.add('tank', {}, { x: 340, y: y + k * 90 });
+      b.connect(prev, sib);
+      all.push(sib);
+      prev = sib;
+    }
+    y += size * 100 + 40;
+  });
+  if (all.some(t => (t as Record<string, unknown>)['level_monitored'])) {
+    notes.push('Tank level uses a starting calibration (2 m tank, 5 psi sensor); set your real tank height in the editor.');
+  }
+  if (!multiGroup && total > 1) notes.push(`${total} tanks plumbed side by side as one bank.`);
+  else if (multiGroup && sizes.every(s => s === 1)) notes.push(`${total} tanks cascade one into the next; each transfer stops on level.`);
+  else if (multiGroup) notes.push(`Tanks grouped ${sizes.join(' + ')}, each bank feeding the next.`);
+  return { tanks: all, fillTank: heads[0], drawTank: heads[heads.length - 1] };
+}
+
 function handoff(kind: Handoff, note: string, notes: string[]): ComposeResult {
   return { topology: null, handoff: kind, notes: [...notes, note], diagnostics: [], budget: { relays: 0, analog: 0, pulse: 0 } };
 }
@@ -276,11 +345,10 @@ export function composeEasyMode(input: EasyModeProfile, board?: BoardDef, boardM
   // --- scope gates ---
   if (p.zones > 7) return handoff('setup_service', 'More than seven areas needs a bigger setup.', notes);
   if (p.sources.length === 0) return handoff('expert', 'No water source selected.', notes);
-  // Several tanks: Easy Mode can't guess series-vs-parallel, so it hands the
-  // layout to the editor (where multiple tanks are supported) rather than silently
-  // collapsing to one.
-  if (p.tanks >= 2) {
-    return handoff('expert', 'Several tanks: open the editor to lay them out (side by side, or one feeding another).', notes);
+  // Several tanks are laid out from the chosen groups; beyond MAX_TANKS the board
+  // runs out, so hand off.
+  if (p.tanks > MAX_TANKS) {
+    return handoff('setup_service', `More than ${MAX_TANKS} tanks needs a bigger setup.`, notes);
   }
   // Two or more sources need a shared tank to combine. We never force one against
   // a "no storage" answer; instead we say so and hand off.
@@ -290,6 +358,12 @@ export function composeEasyMode(input: EasyModeProfile, board?: BoardDef, boardM
 
   // --- derived facts ---
   const hasTank = p.tanks >= 1;
+  const tankCount = Math.max(0, Math.floor(p.tanks));
+  // Several tanks with no recognised grouping = a custom layout: build a sensible
+  // starting point (one bank) and hand off to the canvas so an admin arranges it.
+  const groups = validTankGroups(p.tankGroups, tankCount);
+  const customLayout = hasTank && tankCount >= 2 && groups === null;
+  const buildGroups = !hasTank ? [] : (groups ?? [tankCount]);
   const tankPumpFilled = p.sources.some(sourceHasPump);
   const metering = p.vertical === 'water_business';
   const conveyance: Conveyance = p.conveyance ?? 'pump';
@@ -301,26 +375,20 @@ export function composeEasyMode(input: EasyModeProfile, board?: BoardDef, boardM
   // --- supplies ---
   const supplies = addSupplies(b, p.sources);
 
-  // --- tank ---
-  // A pump-filled tank needs level monitoring (stop-at-full, draw dry-run); seed a
-  // starting calibration so firmware generates clean. The customer tunes it later.
-  const tank = hasTank
-    ? b.add('tank', tankPumpFilled ? { level_monitored: true, height_m: 2, pressure_sensor_max_psi: 5 } : {}, { x: 340, y: 60 })
-    : null;
-  if (tank && tankPumpFilled) {
-    notes.push('Tank level uses a starting calibration (2 m tank, 5 psi sensor); set your real tank height in the editor.');
-  }
+  // --- tanks ---
+  // One tank, a side-by-side bank, a cascade, or a mix, from the chosen groups.
+  const bank = hasTank ? addTanks(b, buildGroups, tankPumpFilled, notes) : null;
 
   // --- demand zones ---
   const zones = Array.from({ length: zoneCount }, (_, i) =>
     b.add('endpoint', { name: zoneCount === 1 ? 'House' : `Area ${i + 1}` }, { x: 820, y: i * 110 }));
 
-  // --- fill transfers: supply -> tank ---
-  if (tank) addFill(b, supplies, tank, notes);
+  // --- fill transfers: supply -> first tank ---
+  if (bank) addFill(b, supplies, bank.fillTank, notes);
 
   // --- draw side ---
-  const drawSource = tank ?? supplies[0].exit;
-  const drawSourcePressurized = !tank && (supplies[0].pressurized || supplies[0].hasPump);
+  const drawSource = bank?.drawTank ?? supplies[0].exit;
+  const drawSourcePressurized = !bank && (supplies[0].pressurized || supplies[0].hasPump);
 
   let drawTrunk = drawSource;
   let boosterPresent = false;
@@ -331,8 +399,8 @@ export function composeEasyMode(input: EasyModeProfile, board?: BoardDef, boardM
     boosterPresent = true;
   }
 
-  const drawHasPump = boosterPresent || (!tank && supplies[0].hasPump);
-  const drawProtectedByLevel = !!(tank && tankPumpFilled);
+  const drawHasPump = boosterPresent || (!bank && supplies[0].hasPump);
+  const drawProtectedByLevel = isLevelTank(bank?.drawTank);
   const drawNeedsFlow = drawHasPump && !drawProtectedByLevel;
 
   if (zoneCount === 1) {
@@ -341,7 +409,7 @@ export function composeEasyMode(input: EasyModeProfile, board?: BoardDef, boardM
       last = b.chain(last, b.add('flow_sensor', { name: 'Flow' }, { x: 640, y: 60 }));
     }
     // a pressurized source feeding a zone directly needs a downstream valve
-    if (!tank && supplies[0].pressurized) {
+    if (!bank && supplies[0].pressurized) {
       last = b.chain(last, b.add('valve', { name: 'Shutoff' }, { x: 720, y: 60 }));
     }
     b.connect(last, zones[0]);
@@ -410,6 +478,15 @@ export function composeEasyMode(input: EasyModeProfile, board?: BoardDef, boardM
     return {
       topology, handoff: 'expert', budget, diagnostics,
       notes: [...notes, `This design needs a manual tweak (${errors[0].message}). We'll open it in the editor so you can finish it.`],
+    };
+  }
+
+  // Custom tank layout: the design is valid, but the customer asked to arrange the
+  // tanks themselves. Hand the (wired) starting point to the canvas.
+  if (customLayout) {
+    return {
+      topology, handoff: 'expert', budget, diagnostics,
+      notes: [...notes, "Custom tank layout: your tanks are placed and wired as a starting point. Arrange them on the canvas."],
     };
   }
 

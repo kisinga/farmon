@@ -3,7 +3,7 @@
  *
  * Reuses the site-documentation flow (`assembleSiteDoc`) rather than inventing a
  * PDF pipeline: the composed Easy Mode topology becomes a self-contained,
- * printable HTML document with the system diagram embedded — the visitor uses the
+ * printable HTML document with the system diagram embedded; the visitor uses the
  * doc's own "Save as PDF" (browser print). No server storage, no new dependency.
  *
  * The price is spliced in at this (app) layer so @core's assembler stays
@@ -51,7 +51,7 @@ export async function buildQuoteHtml(input: QuoteInput): Promise<string> {
   const cid = topology.controllers[0]?.id ?? 'controller1';
 
   // Give the single controller a friendly heading (the public estimate has no
-  // site name) and feed the diagram to the per-controller slot — for a single
+  // site name) and feed the diagram to the per-controller slot: for a single
   // controller the assembler renders the diagram there, not in the overview.
   const topo: SiteTopology = {
     ...topology,
@@ -69,7 +69,7 @@ export async function buildQuoteHtml(input: QuoteInput): Promise<string> {
 
   // Splice the price section after the assembler's Overview heading. If the
   // assembler ever changes that markup, fall back to appending before </body> and
-  // warn — never silently drop the price.
+  // warn, never silently drop the price.
   const anchor = '<h2>Overview</h2>';
   const section = priceSection(estimate);
   if (html.includes(anchor)) return html.replace(anchor, `${section}\n${anchor}`);

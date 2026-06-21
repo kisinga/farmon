@@ -299,7 +299,7 @@ export const PLAN_LEVELS: PlanLevel[] = [
   {
     name: 'Enterprise',
     tagline: 'For operators who sell water or run many sites. Talk to us.',
-    price: 'Custom — contact us',
+    price: 'Custom, contact us',
     features: [
       { label: 'All of Scale', status: 'live' },
       { label: 'Uptime SLA', status: 'live' },
