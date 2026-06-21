@@ -204,3 +204,20 @@ export { evaluateConstraints } from './graph/evaluate-constraints';
 export { evaluateRouteRules } from './graph/evaluate-route-rules';
 export { detectConflicts, type ConflictManifest, type RouteConflict, type SharedResource } from './graph/conflicts';
 
+// --- Easy Mode composer (onboarding: profile -> SiteTopology) ---
+export { composeEasyMode, estimateSystem, EASY_MODE_BOARD } from './compose/easy-mode';
+export type {
+  EasyModeProfile, ComposeResult, Handoff, SystemEstimate,
+  Vertical, SourceKind, Conveyance, Priority,
+} from './compose/easy-mode';
+// Question catalog: the SSOT for option copy + answer sets, shared by the
+// onboarding stepper and the public estimator.
+export { VERTICALS, SOURCES, PRIORITIES, CONVEYANCES, multiSourceNeedsTank } from './compose/catalog';
+export type { Choice } from './compose/catalog';
+// Default watering automations (pure planner). Persisted at the deploy step, where
+// the controllers record the automation relation needs already exists.
+export { planWateringAutomations } from './compose/automations';
+// Static topology renderer (feeds the in-page preview and the quote document).
+export { renderTopologySvg } from './topology-svg';
+export type { TopologySvgOptions } from './topology-svg';
+

@@ -1,11 +1,14 @@
 import { Component, computed, inject, signal, type WritableSignal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import type { SiteTopology } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { PRICING, SEGMENT_PACKS, estimate, kes, type EstimateInput, type Segment } from './pricing.model';
 import { applyPageSeo } from '../../shared/seo';
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
 import { MktHeroComponent, MktPlanLevelsComponent } from '../../shared/marketing/ui';
+import { SystemEstimatorComponent, type SizedEstimate } from './system-estimator.component';
+import { buildQuoteHtml, openQuote } from './quote';
 
 type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 
@@ -21,7 +24,7 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 @Component({
   selector: 'app-pricing',
   standalone: true,
-  imports: [RouterLink, MarketingNavComponent, MarketingFooterComponent, MktHeroComponent, MktPlanLevelsComponent],
+  imports: [RouterLink, MarketingNavComponent, MarketingFooterComponent, MktHeroComponent, MktPlanLevelsComponent, SystemEstimatorComponent],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   template: `
     <!-- NAV -->
@@ -59,7 +62,15 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 
         <!-- Questions -->
         <div class="lg:col-span-3 space-y-5">
-          <h2 class="text-xl font-bold tracking-tight">Tell us about your site</h2>
+          <!-- Plain-language sizer (primary): fills the numbers below from a site description. -->
+          <app-system-estimator (sized)="applySizing($event)" />
+
+          <!-- Everything below is optional fine-tuning, collapsed to keep the page calm. -->
+          <details class="group">
+            <summary class="cursor-pointer select-none py-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
+              Adjust the details <span class="font-normal text-slate-400">— pumps, sizes, special cases (optional)</span>
+            </summary>
+            <div class="mt-4 space-y-5">
 
           <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-5">
             <h3 class="font-semibold text-slate-900">What is this site for?</h3>
@@ -146,6 +157,8 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
               </span>
             </label>
           }
+            </div>
+          </details>
         </div>
 
         <!-- Live estimate -->
@@ -213,6 +226,20 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
               </p>
             }
 
+            <!-- Primary CTA: talk to us (scrolls to the lead form). Downloading the
+                 PDF is the secondary action. -->
+            <button type="button" (click)="scrollToContact()"
+                    class="mt-5 w-full rounded-full px-4 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">
+              Contact me about this
+            </button>
+            <button type="button" (click)="downloadQuote()" [disabled]="!quoteTopology() || quoting()"
+                    class="mt-2 w-full rounded-full px-4 py-2.5 text-sm font-semibold ring-1 ring-white/25 text-white hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              {{ quoting() ? 'Preparing…' : 'Download quote (PDF)' }}
+            </button>
+            @if (!quoteTopology()) {
+              <p class="mt-1.5 text-[11px] text-white/40">Describe your site above to include the system design in your quote.</p>
+            }
+
             <p class="mt-4 text-[11px] text-white/40 leading-relaxed">
               An estimate, not a final quote. The real price depends on a site survey, pipe sizes,
               and install. Prices in KES.
@@ -223,7 +250,7 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
     </section>
 
     <!-- LEAD CAPTURE -->
-    <section class="px-5 sm:px-8 pb-20">
+    <section id="quote-lead" class="px-5 sm:px-8 pb-20">
       <div class="max-w-2xl mx-auto rounded-2xl ring-1 ring-slate-200 bg-slate-50 p-7">
         @if (submitState() === 'done') {
           <div class="text-center py-6">
@@ -350,6 +377,48 @@ export class PricingComponent {
   protected packPrice(): string {
     const p = this.est().pack.fromMonthly;
     return p !== null ? 'from ' + kes(p) + ' / mo' : 'on request';
+  }
+
+  /** The composed design from the sizer, kept for the quote document. */
+  protected readonly quoteTopology = signal<SiteTopology | null>(null);
+  protected readonly quoting = signal(false);
+
+  /** Fill the estimator inputs from the plain-language sizer. The live estimate
+   *  (and the lead snapshot that rides with it) then reflect the described site,
+   *  and the composed design is kept so the quote can embed it. */
+  protected applySizing(e: SizedEstimate): void {
+    this.quoteTopology.set(e.topology);
+    // Hand-off (e.g. several tanks): only drop the quote; leave the price inputs
+    // at their last buildable values rather than zeroing them.
+    if (!e.topology) return;
+    this.segment.set(e.segment);
+    this.pumps.set(e.pumps);
+    this.valves.set(e.valves);
+    this.flow.set(e.flow);
+    this.tanks.set(e.tanks);
+  }
+
+  /** Scroll to the lead form (the "contact me" follow-up) and focus the name. */
+  protected scrollToContact(): void {
+    const el = document.getElementById('quote-lead');
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /** Build the printable quote (reusing the documentation flow) and open it for
+   *  the visitor to save as PDF. The design is the one from the sizer; the price
+   *  is the current on-page estimate. */
+  protected async downloadQuote(): Promise<void> {
+    const topology = this.quoteTopology();
+    if (!topology || this.quoting()) return;
+    this.quoting.set(true);
+    try {
+      const html = await buildQuoteHtml({ siteName: 'Your MajiFlow system', topology, estimate: this.est() });
+      openQuote(html);
+    } catch (e) {
+      console.error('Quote generation failed', e);
+    } finally {
+      this.quoting.set(false);
+    }
   }
 
   protected step(sig: WritableSignal<number>, delta: number): void {

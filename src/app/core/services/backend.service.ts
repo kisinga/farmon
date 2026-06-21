@@ -686,7 +686,10 @@ export class BackendService {
     };
   }
 
-  private newControllerId(friendlyName: string): string {
+  /** Mint a globally-unique controller id (the provision PK / MQTT identity).
+   *  Shared by the Expert blank-system flow and Easy Mode, so neither produces a
+   *  colliding id. */
+  newControllerId(friendlyName: string): string {
     const base = this.slugify(friendlyName) || 'controller';
     // Suffix is a slice of a v4 UUID (crypto, secure context) so two controllers
     // sharing a friendly name still get distinct ids — the id is the MQTT username
