@@ -242,30 +242,46 @@ function addSupplies(b: Builder, sources: SourceKind[]): Supply[] {
   });
 }
 
-/** Fill transfers: every supply feeds the tank, each end synthesized from its facts. */
-function addFill(b: Builder, supplies: Supply[], tank: TopologyNode, notes: string[]): void {
-  for (const s of supplies) {
+// Layout bands (left to right). The static renderer uses positions verbatim and
+// bows a pipe only when the target sits to the RIGHT of the source, so every
+// stage steps rightward and a bank's feeder/collector straddle its column.
+const TANK_PITCH = 110;   // vertical gap between tanks in one bank column
+const BANK_X0 = 460;      // x of the first bank's column
+const BANK_DX = 240;      // x step from one bank to the next (series)
+const FILL_X = BANK_X0 - 150;  // fill element (fan apex into bank 0)
+
+/**
+ * Fill the bank: every supply tees off to *each* target tank (a real fan-out
+ * from one fill element, i.e. the common fill header). One fill element per
+ * supply sits upstream of the split: a flow sensor (dry-run on a pumped source),
+ * an isolation valve (pressurised mains), or nothing (gravity/trucked). Distinct
+ * destinations keep the route keys distinct; the shared element upstream means
+ * the bank fills through one metered trunk (serialised, matching one pump).
+ */
+function addFill(b: Builder, supplies: Supply[], targets: TopologyNode[], notes: string[]): void {
+  supplies.forEach((s, i) => {
+    const y = i * 70;
+    let apex = s.exit;
     if (s.hasPump) {
-      // dry-run flow protects the submersible/surface pump
-      b.chain(s.exit, b.add('flow_sensor', { name: `${s.ws['name']} Flow` }, { x: 230, y: 0 }), tank);
+      apex = b.chain(s.exit, b.add('flow_sensor', { name: `${s.ws['name']} Flow` }, { x: FILL_X, y }));
     } else if (s.pressurized) {
-      // pressurized mains needs an isolation valve downstream of the source
-      b.chain(s.exit, b.add('valve', { name: `${s.ws['name']} Valve` }, { x: 230, y: 0 }), tank);
-    } else {
-      // trucked / rainwater: gravity or manual fill, no firmware control
-      b.connect(s.exit, tank);
-      if (s.src === 'trucked') notes.push('Trucked supply is manual: a low-level alert, no auto-refill.');
+      apex = b.chain(s.exit, b.add('valve', { name: `${s.ws['name']} Valve` }, { x: FILL_X, y }));
+    } else if (s.src === 'trucked') {
+      notes.push('Trucked supply is manual: a low-level alert, no auto-refill.');
     }
-  }
+    for (const t of targets) b.connect(apex, t);
+  });
 }
 
-/** A tank bank and the two ends the fill/draw builders attach to. */
+/** A tank bank layout and the ends the fill/draw builders attach to. */
 interface TankBank {
   tanks: TopologyNode[];
-  /** Where the supplies fill (the first group's head). */
-  fillTank: TopologyNode;
-  /** Where the draw side starts (the last group's head). */
+  /** Bank 0's tanks: the supplies fan their fill into every one of these. */
+  fillTargets: TopologyNode[];
+  /** The last bank's monitored representative: the draw originates here. */
   drawTank: TopologyNode;
+  /** x of the last bank's column, so the draw side can be placed to its right. */
+  lastBankX: number;
 }
 
 /** A starting calibration so a level-monitored tank generates clean firmware; the
@@ -273,54 +289,52 @@ interface TankBank {
 const TANK_CALIBRATION = { level_monitored: true, height_m: 2, pressure_sensor_max_psi: 5 } as const;
 
 /**
- * Lay out tanks from a composition of group sizes and return the fill/draw ends.
+ * Lay out tanks from a composition of group sizes (banks) and return the
+ * fill/draw ends. Each bank is a real **parallel manifold**: its tanks share a
+ * common fill header (every tank is teed off the fill apex by addFill / the
+ * incoming transfer) so they fill together and equalise to one level. The draw
+ * is taken from a single **monitored representative** per bank (not a fan-in to
+ * the pump, which would strip the firmware's dry-run floor), so the representative
+ * carries both the fill cap and the draw floor while the rest are equalised
+ * capacity. Banks are chained in **series** by a transfer valve from one bank's
+ * representative into the next bank's tanks. So [n] = one parallel bank,
+ * [1,1,…] = a cascade, [2,1] = a pair feeding one.
  *
- * Each group is a parallel **bank**: a head tank, plus siblings branching off it
- * as a shared manifold (plain pipes, capacity only — no actuator, so no route).
- * Fill enters the head and draw leaves the head, so a side-by-side bank reads as
- * tanks hanging off one header, not a row the water snakes through.
- *
- * Groups are chained in **series** by a transfer valve from one head to the next,
- * which buildRouteOverrides interlocks (fill cap + draw floor) since both heads
- * are level-monitored. So [n] = one bank, [1,1,…] = a full cascade, [2,1] = a
- * pair feeding one. Monitoring: every head when there is more than one group (the
- * transfers and the draw need level); a lone bank monitors its head only when
- * pump-filled (same rule as a single tank). Siblings are never monitored — a
- * manifold shares one level.
+ * Monitoring: one representative per bank (the tanks of a bank share a level).
+ * A multi-bank layout monitors every bank's representative (transfers + draw need
+ * level); a lone bank monitors its representative only when pump-filled, matching
+ * the single-tank rule. No tank→tank pipes, so no bank tank is a serial dead-end.
  */
 function addTanks(b: Builder, groups: number[], pumpFilled: boolean, notes: string[]): TankBank | null {
   const sizes = groups.filter(g => g >= 1);
   const total = sizes.reduce((a, c) => a + c, 0);
   if (total < 1) return null;
-  const multiGroup = sizes.length > 1;
+  const multiBank = sizes.length > 1;
   const all: TopologyNode[] = [];
-  const heads: TopologyNode[] = [];
-  let y = 0;
+  const banks: TopologyNode[][] = [];
   sizes.forEach((size, gi) => {
-    const headMonitored = multiGroup || (gi === 0 && pumpFilled);
-    const head = b.add('tank', headMonitored ? { ...TANK_CALIBRATION } : {}, { x: 340, y });
-    heads.push(head); all.push(head);
-    // series transfer in from the previous group's head
-    if (gi > 0) b.chain(heads[gi - 1], b.add('valve', { name: `Transfer ${gi}` }, { x: 480, y: y - 50 }), head);
-    // siblings hang under the head as one manifold bank (capacity only, no valves);
-    // fill and draw both stay on the head, so the bank reads as a column off the
-    // header rather than a row the water snakes through.
-    let prev = head;
-    for (let k = 1; k < size; k++) {
-      const sib = b.add('tank', {}, { x: 340, y: y + k * 90 });
-      b.connect(prev, sib);
-      all.push(sib);
-      prev = sib;
+    const bankX = BANK_X0 + gi * BANK_DX;
+    const bankTanks = Array.from({ length: size }, (_, k) => {
+      // The representative (k===0) carries the bank's level; the rest equalise.
+      const monitored = k === 0 && (multiBank || pumpFilled);
+      return b.add('tank', monitored ? { ...TANK_CALIBRATION } : {}, { x: bankX, y: k * TANK_PITCH });
+    });
+    banks.push(bankTanks); all.push(...bankTanks);
+    if (gi > 0) {
+      // Series transfer: previous bank's representative fans into this whole bank
+      // through one valve, so this bank is itself a real header (not a dead-end).
+      const v = b.add('valve', { name: `Transfer ${gi}` }, { x: bankX - BANK_DX / 2, y: 0 });
+      b.connect(banks[gi - 1][0], v);
+      for (const t of bankTanks) b.connect(v, t);
     }
-    y += size * 100 + 40;
   });
   if (all.some(t => (t as Record<string, unknown>)['level_monitored'])) {
     notes.push('Tank level uses a starting calibration (2 m tank, 5 psi sensor); set your real tank height in the editor.');
   }
-  if (!multiGroup && total > 1) notes.push(`${total} tanks plumbed side by side as one bank.`);
-  else if (multiGroup && sizes.every(s => s === 1)) notes.push(`${total} tanks cascade one into the next; each transfer stops on level.`);
-  else if (multiGroup) notes.push(`Tanks grouped ${sizes.join(' + ')}, each bank feeding the next.`);
-  return { tanks: all, fillTank: heads[0], drawTank: heads[heads.length - 1] };
+  if (!multiBank && total > 1) notes.push(`${total} tanks share one fill and draw as a single bank.`);
+  else if (multiBank && sizes.every(s => s === 1)) notes.push(`${total} tanks cascade one into the next; each transfer stops on level.`);
+  else if (multiBank) notes.push(`Tanks grouped ${sizes.join(' + ')}, each bank feeding the next.`);
+  return { tanks: all, fillTargets: banks[0], drawTank: banks[banks.length - 1][0], lastBankX: BANK_X0 + (sizes.length - 1) * BANK_DX };
 }
 
 function handoff(kind: Handoff, note: string, notes: string[]): ComposeResult {
@@ -379,21 +393,28 @@ export function composeEasyMode(input: EasyModeProfile, board?: BoardDef, boardM
   // One tank, a side-by-side bank, a cascade, or a mix, from the chosen groups.
   const bank = hasTank ? addTanks(b, buildGroups, tankPumpFilled, notes) : null;
 
-  // --- demand zones ---
-  const zones = Array.from({ length: zoneCount }, (_, i) =>
-    b.add('endpoint', { name: zoneCount === 1 ? 'House' : `Area ${i + 1}` }, { x: 820, y: i * 110 }));
-
-  // --- fill transfers: supply -> first tank ---
-  if (bank) addFill(b, supplies, bank.fillTank, notes);
+  // --- fill: supplies fan into the first bank's tanks ---
+  if (bank) addFill(b, supplies, bank.fillTargets, notes);
 
   // --- draw side ---
+  // Originate from the last bank's monitored representative (or the source itself
+  // when there is no tank). Lay the draw stages to the right of the last bank so
+  // every pipe bows forward in the renderer.
   const drawSource = bank?.drawTank ?? supplies[0].exit;
   const drawSourcePressurized = !bank && (supplies[0].pressurized || supplies[0].hasPump);
+  const drawAnchorX = bank ? bank.lastBankX : BANK_X0;
+  const willBoost = conveyance === 'pump' && !drawSourcePressurized;
+  const trunkX = willBoost ? drawAnchorX + 180 : drawAnchorX;
+  const zoneValveX = trunkX + 170;
+  const zoneX = zoneValveX + 200;
+
+  const zones = Array.from({ length: zoneCount }, (_, i) =>
+    b.add('endpoint', { name: zoneCount === 1 ? 'House' : `Area ${i + 1}` }, { x: zoneX, y: i * 110 }));
 
   let drawTrunk = drawSource;
   let boosterPresent = false;
-  if (conveyance === 'pump' && !drawSourcePressurized) {
-    const booster = b.add('pump', { name: 'Booster Pump' }, { x: 500, y: 60 });
+  if (willBoost) {
+    const booster = b.add('pump', { name: 'Booster Pump' }, { x: drawAnchorX + 180, y: 0 });
     b.connect(drawTrunk, booster);
     drawTrunk = booster;
     boosterPresent = true;
@@ -406,22 +427,22 @@ export function composeEasyMode(input: EasyModeProfile, board?: BoardDef, boardM
   if (zoneCount === 1) {
     let last = drawTrunk;
     if (drawNeedsFlow || metering) {
-      last = b.chain(last, b.add('flow_sensor', { name: 'Flow' }, { x: 640, y: 60 }));
+      last = b.chain(last, b.add('flow_sensor', { name: 'Flow' }, { x: zoneValveX, y: 0 }));
     }
     // a pressurized source feeding a zone directly needs a downstream valve
     if (!bank && supplies[0].pressurized) {
-      last = b.chain(last, b.add('valve', { name: 'Shutoff' }, { x: 720, y: 60 }));
+      last = b.chain(last, b.add('valve', { name: 'Shutoff' }, { x: zoneValveX + 90, y: 0 }));
     }
     b.connect(last, zones[0]);
   } else {
     // fan-out: one valve per branch; dry-run flow on the first branch (after its
     // valve, to satisfy valve-before-flow), or a flow per branch when metering.
     zones.forEach((zone, i) => {
-      const valve = b.add('valve', { name: `${zone['name']} Valve` }, { x: 640, y: i * 110 });
+      const valve = b.add('valve', { name: `${zone['name']} Valve` }, { x: zoneValveX, y: i * 110 });
       b.connect(drawTrunk, valve);
       const wantFlow = metering || (i === 0 && drawNeedsFlow);
       if (wantFlow) {
-        b.chain(valve, b.add('flow_sensor', { name: metering ? `${zone['name']} Flow` : 'Flow' }, { x: 730, y: i * 110 }), zone);
+        b.chain(valve, b.add('flow_sensor', { name: metering ? `${zone['name']} Flow` : 'Flow' }, { x: zoneValveX + 90, y: i * 110 }), zone);
       } else {
         b.connect(valve, zone);
       }

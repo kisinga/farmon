@@ -86,12 +86,27 @@ assert((kinds(rg)['pump'] ?? 0) === 1, 'gravity: only the submersible, no booste
 // [1,1,…] = a cascade through transfer valves; [2,1]/[2,2] = a mix.
 const monitoredOf = (r: ComposeResult) => r.topology!.nodes.filter(n => n.kind === 'tank' && (n as Record<string, unknown>)['level_monitored'] === true).length;
 const transfersOf = (r: ComposeResult) => r.topology!.nodes.filter(n => n.kind === 'valve' && /Transfer/.test(String((n as Record<string, unknown>)['name']))).length;
+const kindById = (r: ComposeResult) => new Map(r.topology!.nodes.map(n => [n.id, n.kind]));
+const nodeOf = (ref: string) => ref.split(':')[0];
+const tankToTankPipes = (r: ComposeResult) => {
+  const k = kindById(r);
+  return r.topology!.pipes.filter(p => k.get(nodeOf(p.from)) === 'tank' && k.get(nodeOf(p.to)) === 'tank').length;
+};
+/** Widest fan into tanks from any single upstream node (the fill header). */
+const fillFanWidth = (r: ComposeResult) => {
+  const k = kindById(r);
+  const out = new Map<string, number>();
+  for (const p of r.topology!.pipes) if (k.get(nodeOf(p.to)) === 'tank') out.set(nodeOf(p.from), (out.get(nodeOf(p.from)) ?? 0) + 1);
+  return Math.max(0, ...out.values());
+};
 
 const oneBank = check('one bank farm borehole 3-tank 2-zone',
   { vertical: 'farm', sources: ['borehole'], tanks: 3, zones: 2, conveyance: 'pump', tankGroups: [3] });
 assert(kinds(oneBank)['tank'] === 3, 'one bank: three tank nodes', JSON.stringify(kinds(oneBank)));
-assert(monitoredOf(oneBank) === 1, 'one bank: only the head is monitored (siblings share a level)', String(monitoredOf(oneBank)));
-assert(transfersOf(oneBank) === 0, 'one bank: no transfer valves between tanks', String(transfersOf(oneBank)));
+assert(monitoredOf(oneBank) === 1, 'one bank: only the representative is monitored (tanks share a level)', String(monitoredOf(oneBank)));
+assert(transfersOf(oneBank) === 0, 'one bank: no transfer valves within a bank', String(transfersOf(oneBank)));
+assert(tankToTankPipes(oneBank) === 0, 'one bank: no tank-to-tank pipes (real fill fan-out, not a chain)', String(tankToTankPipes(oneBank)));
+assert(fillFanWidth(oneBank) === 3, 'one bank: one fill element fans to all three tanks', String(fillFanWidth(oneBank)));
 
 const cascade = check('cascade farm borehole 3-tank 2-zone',
   { vertical: 'farm', sources: ['borehole'], tanks: 3, zones: 2, conveyance: 'pump', tankGroups: [1, 1, 1] });
