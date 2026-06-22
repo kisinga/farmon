@@ -34,6 +34,16 @@ export interface DocRecord {
   body: string;
 }
 
+/** One registered controller, narrowed to what the warranty's covered-devices table shows. */
+export interface SiteDocDevice {
+  deviceId: string;
+  board: string;
+  firmware: string;
+  online: boolean;
+  /** ISO of last contact, or '' if it has never connected. */
+  lastSeen: string;
+}
+
 export interface SiteDocInput {
   siteName: string;
   topo: SiteTopology;
@@ -43,6 +53,13 @@ export interface SiteDocInput {
   boards: Record<string, BoardDef>;
   /** All `docs` rows (node + narrative). Board reference docs come from the board def. */
   docs: DocRecord[];
+  /** Site record id. Present for a real per-site handover; omitted for the public quote
+   *  (which has no site), so the Site details section renders only when this is set. */
+  siteId?: string;
+  /** Commissioning start (ISO), stamped at first live connect; '' until then. */
+  commenceDate?: string;
+  /** Registered controllers for this site, for the warranty's covered-devices table. */
+  devices?: SiteDocDevice[];
 }
 
 /** Stable display order for the per-kind documentation sections. */
@@ -54,11 +71,39 @@ function plural(n: number, one: string): string {
   return `${n} ${one}${n === 1 ? '' : 's'}`;
 }
 
+/** Standard limited-warranty term. One owner of the number the {{warranty_expiry}}
+ *  slot and the Site details table both read. Enterprise deals ride separate terms. */
+const WARRANTY_MONTHS = 12;
+
+const isoDate = (iso: string): string => iso.split('T')[0];
+
+/** commenceDate + WARRANTY_MONTHS as YYYY-MM-DD; '' if commenceDate is empty or unparseable. */
+function warrantyExpiryOf(commenceDate: string): string {
+  const d = new Date(commenceDate);
+  if (isNaN(d.getTime())) return '';
+  d.setMonth(d.getMonth() + WARRANTY_MONTHS);
+  return isoDate(d.toISOString());
+}
+
 export async function assembleSiteDoc(input: SiteDocInput): Promise<string> {
   const { siteName, topo, diagrams, boards, docs } = input;
+  const siteId = input.siteId ?? '';
+  const devices = input.devices ?? [];
+  const commenceDate = input.commenceDate ?? '';
+
+  // Warranty facts, computed once and shared by the Site details table and the
+  // {{commission_date}} / {{warranty_expiry}} slots so the two can never disagree.
+  // warrantyExpiryOf returns '' for an empty or unparseable commence date — that one
+  // check drives both displays, so a bad date degrades instead of throwing.
+  const expiry = warrantyExpiryOf(commenceDate);
+  const commissionDisplay = expiry ? isoDate(commenceDate) : 'Not yet commissioned';
+  const warrantyExpiry = expiry || 'Begins at commissioning';
 
   const routes = deriveRoutes(buildGraph(topo.nodes, topo.pipes));
-  const siteCtx: SiteVarCtx = { siteName, topo, routeCount: routes.length };
+  const siteCtx: SiteVarCtx = {
+    siteName, topo, routeCount: routes.length,
+    commissionDate: commissionDisplay, warrantyExpiry,
+  };
   const sv = siteVars(siteCtx);
 
   const nameOf = new Map(topo.nodes.map(n => [n.id, n.name || n.id]));
@@ -78,6 +123,33 @@ export async function assembleSiteDoc(input: SiteDocInput): Promise<string> {
     counts.flow_sensor ? plural(counts.flow_sensor, 'flow sensor') : '',
     plural(routes.length, 'route'),
   ].filter(Boolean).map(l => `<span class="pill">${escXml(l)}</span>`).join('');
+
+  // --- Site details (handover identity + warranty) ---------------------------
+  // Only for a real site; the public quote passes no siteId and skips this, which
+  // also keeps the <h2>Overview</h2> anchor that quote.ts splices its price into.
+  const siteDetails: string[] = [];
+  if (siteId) {
+    const idRows = [
+      `<tr><th>Site name</th><td>${escXml(siteName)}</td></tr>`,
+      `<tr><th>Site ID</th><td><code>${escXml(siteId)}</code></td></tr>`,
+      `<tr><th>Commissioned</th><td>${escXml(commissionDisplay)}</td></tr>`,
+      `<tr><th>Warranty</th><td>${WARRANTY_MONTHS} months from commissioning · expires ${escXml(warrantyExpiry)}</td></tr>`,
+    ].join('');
+    siteDetails.push(`<h2>Site details</h2><table><tbody>${idRows}</tbody></table>`);
+    if (devices.length) {
+      const dRows = devices.map(d => {
+        const status = d.online ? 'Online' : d.lastSeen ? `Last seen ${isoDate(d.lastSeen)}` : 'Not yet connected';
+        return `<tr><td><code>${escXml(d.deviceId)}</code></td><td><code>${escXml(d.board)}</code></td>`
+          + `<td>${escXml(d.firmware || 'pending')}</td><td>${escXml(status)}</td></tr>`;
+      }).join('');
+      siteDetails.push(
+        '<h3>Controllers covered</h3><table><thead><tr><th>Device ID</th><th>Board</th><th>Firmware</th><th>Status</th></tr></thead>'
+        + `<tbody>${dRows}</tbody></table>`,
+      );
+    } else {
+      siteDetails.push('<p>No controllers registered yet. They appear here once the site is deployed.</p>');
+    }
+  }
 
   // --- Overview --------------------------------------------------------------
   const overview: string[] = ['<h2>Overview</h2>'];
@@ -186,6 +258,7 @@ export async function assembleSiteDoc(input: SiteDocInput): Promise<string> {
     <div class="pills">${pills}</div>
   </div>
 </div>
+${siteDetails.join('\n')}
 ${overview.join('\n')}
 ${controllerSections.join('\n')}
 ${nodeSections.join('\n')}

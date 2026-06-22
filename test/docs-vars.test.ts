@@ -58,7 +58,10 @@ async function run() {
   const board = loadBoard(path.join(DEFAULTS, "boards/heltec-v3"));
   const topo = sampleTopology();
   const routeCount = deriveRoutes(buildGraph(topo.nodes, topo.pipes)).length;
-  const siteCtx: SiteVarCtx = { siteName: "Demo Site", topo, routeCount };
+  const siteCtx: SiteVarCtx = {
+    siteName: "Demo Site", topo, routeCount,
+    commissionDate: "2026-01-01", warrantyExpiry: "2027-01-01",
+  };
 
   // --- vocabulary shape ---
   for (const scope of ["narrative", "board", "node"] as const) {

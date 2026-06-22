@@ -91,7 +91,7 @@ export class BackendService {
         }
       : undefined;
     return {
-      site: { id: r['id'], friendlyName: r['name'], deployment, owners, people },
+      site: { id: r['id'], friendlyName: r['name'], deployment, owners, people, commenceDate: (r['commence_date'] ?? '') as string },
       topology: (r['draft_topology'] ?? null) as SiteFullPayload['topology'],
     };
   }
@@ -561,10 +561,20 @@ export class BackendService {
     }
     const boards = await this.boardDefsForModels(new Set(topo.controllers.map((c) => c.board)));
     const docs = await this.docList();
+    const devices = await this.deviceListForSite(siteId);
     // Lazy: pulls the assembler + micromustache + marked into a dynamic chunk,
     // keeping them out of the initial bundle.
     const { assembleSiteDoc } = await import('@core/docs');
-    return assembleSiteDoc({ siteName: site.friendlyName, topo, diagrams, boards, docs });
+    return assembleSiteDoc({
+      siteName: site.friendlyName,
+      siteId,
+      commenceDate: site.commenceDate ?? '',
+      topo, diagrams, boards, docs,
+      devices: devices.map((d) => ({
+        deviceId: d.deviceId, board: d.boardType, firmware: d.firmwareVersion,
+        online: d.online, lastSeen: d.lastSeen,
+      })),
+    });
   }
 
   /** The site's parsed topology (for offscreen diagram rendering on the admin side). */

@@ -135,7 +135,7 @@ import { SiteProfileModel } from '../../shared/site-profile.model';
               @if (e.fits) {
                 <span class="text-success ml-auto">Fits one controller</span>
               } @else {
-                <span class="text-warning ml-auto">Bigger setup — opens the editor</span>
+                <span class="text-warning ml-auto">Bigger setup: opens the editor</span>
               }
             </div>
           }

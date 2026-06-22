@@ -1,7 +1,7 @@
 # docs-content
 
 The **source of truth** for the non-developer documentation the app shows in every site's
-generated document (operation, troubleshooting, the wiring guide, per-node-kind notes, glossary).
+generated document (operation, maintenance, warranty, troubleshooting, the wiring guide, per-node-kind notes, glossary).
 
 These `.md` files are authoritative; the database `docs` collection is a disposable projection that
 the per-site document assembler reads at view time. Edit the docs **here**, in the repo — never in
@@ -40,7 +40,7 @@ scope-checked (`npm run test:docs` fails on an unknown slot):
 
 - **narrative / wiring / glossary** → site slots: `site_name`, `controller_count`, `tank_count`,
   `pump_count`, `valve_count`, `flow_sensor_count`, `route_count`, `flow_watchdog`, `flow_confirm`,
-  `flow_threshold`, `valve_travel_time`, `update_interval`.
+  `flow_threshold`, `valve_travel_time`, `update_interval`, `commission_date`, `warranty_expiry`.
 - **node** (slug = the kind, e.g. `valve`) → the above **plus** `node_kind`, `node_kind_label`, `node_kind_count`.
 
 Board reference docs are **not** here — they ride inside each board's definition

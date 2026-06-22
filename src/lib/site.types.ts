@@ -43,6 +43,9 @@ export interface SiteMetadata {
    * `owners` so an empty/partial directory never mislabels a co-owner.
    */
   people?: { id: string; name?: string; email?: string }[];
+  /** Hosting/commissioning start (ISO), stamped at first live connect; '' until then.
+   *  Populated by siteLoad; drives the warranty term in the generated handover. */
+  commenceDate?: string;
 }
 
 // ---------------------------------------------------------------------------
