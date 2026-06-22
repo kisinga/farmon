@@ -21,7 +21,7 @@ import { activeGraph } from '../graph/active-graph';
 import { deriveRoutes, type Route } from '../graph/routes';
 import { evaluateConstraints } from '../graph/evaluate-constraints';
 import { evaluateRouteRules } from '../graph/evaluate-route-rules';
-import { SOURCE_META, sourceHasPump, multiSourceNeedsTank, validTankGroups, MAX_TANKS, type Vertical, type SourceKind, type Conveyance, type Priority } from './catalog';
+import { SOURCE_META, sourceHasPump, multiSourceNeedsTank, validTankGroups, type Vertical, type SourceKind, type Conveyance, type Priority } from './catalog';
 
 // The profile vocabulary (verticals, sources, …) is owned by the catalog, the
 // single source of customer-facing copy and the closed answer sets. Re-exported
@@ -359,11 +359,10 @@ export function composeEasyMode(input: EasyModeProfile, board?: BoardDef, boardM
   // --- scope gates ---
   if (p.zones > 7) return handoff('setup_service', 'More than seven areas needs a bigger setup.', notes);
   if (p.sources.length === 0) return handoff('expert', 'No water source selected.', notes);
-  // Several tanks are laid out from the chosen groups; beyond MAX_TANKS the board
-  // runs out, so hand off.
-  if (p.tanks > MAX_TANKS) {
-    return handoff('setup_service', `More than ${MAX_TANKS} tanks needs a bigger setup.`, notes);
-  }
+  // No hard tank-count cap: a side-by-side bank scales cheaply (one shared level),
+  // so it builds at any count, while a big cascade/mix or a "custom" layout runs
+  // out of pins or carries no groups and funnels via the budget / custom handoff
+  // below. We accommodate the count and let the design route itself.
   // Two or more sources need a shared tank to combine. We never force one against
   // a "no storage" answer; instead we say so and hand off.
   if (multiSourceNeedsTank(p.sources) && p.tanks === 0) {

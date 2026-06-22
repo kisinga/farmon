@@ -48,6 +48,9 @@ const STATUSES = ['new', 'contacted', 'closed'] as const;
                   <div class="flex items-center gap-2 flex-wrap">
                     <h3 class="font-semibold text-sm truncate">{{ l.name }}</h3>
                     <span class="badge badge-xs border-0" [class]="badgeClass(status(l))">{{ status(l) }}</span>
+                    @if (l.estimate?.designRequest) {
+                      <span class="badge badge-xs border-0 bg-amber-400/15 text-amber-300" [title]="designReason(l)">Design request</span>
+                    }
                     @if (convertedSiteId(l); as sid) {
                       <a class="badge badge-xs border-0 bg-emerald-400/15 text-emerald-300 hover:bg-emerald-400/25" [routerLink]="['/site', sid]">Converted →</a>
                     }
@@ -88,6 +91,9 @@ const STATUSES = ['new', 'contacted', 'closed'] as const;
                   }
                   <span>kit {{ kes(est.oneTime) }}</span>
                 </div>
+                @if (est.note) {
+                  <p class="mt-2 text-xs text-base-content/70 italic">“{{ est.note }}”</p>
+                }
               }
 
               @if (leadTopology(l); as t) {
@@ -120,6 +126,16 @@ export class LeadsPageComponent implements OnInit {
   /** The site a converted lead links to, or undefined. */
   protected convertedSiteId(l: LeadEntry): string | undefined {
     return l.estimate?.convertedSiteId || undefined;
+  }
+
+  /** Human label for why a design request exceeded Easy Mode (badge tooltip). */
+  protected designReason(l: LeadEntry): string {
+    const map: Record<string, string> = {
+      custom_tanks: 'Custom tank layout',
+      many_areas: 'More areas than one controller',
+      big_system: 'Multi-controller system',
+    };
+    return map[l.estimate?.designReason ?? ''] ?? 'Exceeds Easy Mode';
   }
 
   /** Whether the lead carries a design to transfer (answers or a snapshot). */

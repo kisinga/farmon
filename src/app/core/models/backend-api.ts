@@ -92,6 +92,12 @@ export interface LeadEstimate {
   /** Set when this lead has been converted to a site, so the leads view can link
    *  to it and hide the Convert action. Rides the JSON blob (no schema field). */
   convertedSiteId?: string;
+  /** Set when the described site exceeded Easy Mode: the visitor asked our team to
+   *  design it. `designReason` is the plain trigger (custom_tanks / many_areas /
+   *  big_system); `note` is their optional free-text. */
+  designRequest?: boolean;
+  designReason?: string;
+  note?: string;
 }
 
 /** A captured sales enquiry from the public pricing estimator. */

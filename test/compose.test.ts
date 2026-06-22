@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   parseBoardDef, composeEasyMode, estimateSystem, topologyToManifestForController, parseTopology,
-  createBoardDriver, planWateringAutomations, renderTopologySvg, NODE_REGISTRY, toStoredTopology,
+  createBoardDriver, planWateringAutomations, renderTopologySvg, NODE_REGISTRY, toStoredTopology, tankLayoutsFor,
   type EasyModeProfile, type ComposeResult, type RuleDiagnostic, type Vertical, type SourceKind,
 } from '@core';
 
@@ -130,9 +130,20 @@ const custom = composeEasyMode({ vertical: 'farm', sources: ['borehole'], tanks:
 assert(custom.handoff === 'expert' && !!custom.topology, 'custom: seeds a topology and hands off to the editor', custom.handoff);
 assert(custom.topology!.nodes.filter(n => n.kind === 'tank').length === 3, 'custom: still places all three tanks');
 
-// Tank cap: more than MAX_TANKS hands off to a setup service.
-const tooMany = composeEasyMode({ vertical: 'farm', sources: ['borehole'], tanks: 5, zones: 1, conveyance: 'pump', tankGroups: [5] }, board);
-assert(tooMany.handoff === 'setup_service', 'gate: more than four tanks hands off to setup');
+// Accommodate large counts, funnel accordingly: a side-by-side bank scales (one
+// shared level sensor) and still builds; a big cascade exceeds the analog pins
+// and funnels to a setup service.
+const bigBank = check('big bank farm borehole 6-tank 2-zone',
+  { vertical: 'farm', sources: ['borehole'], tanks: 6, zones: 2, conveyance: 'pump', tankGroups: [6] });
+assert(kinds(bigBank)['tank'] === 6 && monitoredOf(bigBank) === 1 && transfersOf(bigBank) === 0,
+  'big bank: 6 tanks, one sensor, no transfers', JSON.stringify(kinds(bigBank)));
+assert(fillFanWidth(bigBank) === 6, 'big bank: one fill element fans to all six tanks', String(fillFanWidth(bigBank)));
+const bigCascade = composeEasyMode({ vertical: 'farm', sources: ['borehole'], tanks: 6, zones: 1, conveyance: 'pump', tankGroups: [1, 1, 1, 1, 1, 1] }, board);
+assert(bigCascade.handoff === 'setup_service', 'big cascade: six monitored tanks exceed the analog pins, funnels to setup', bigCascade.handoff);
+
+// Layout presets generate for any count (side by side + in series at least).
+assert(tankLayoutsFor(5).some(l => l.groups.length === 1) && tankLayoutsFor(5).some(l => l.groups.every(g => g === 1)),
+  'layouts: count 5 still offers side-by-side and in-series');
 
 // Scope gates
 const hSetup = composeEasyMode({ vertical: 'farm', sources: ['borehole'], tanks: 1, zones: 9 }, board);

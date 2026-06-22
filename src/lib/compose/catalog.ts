@@ -101,9 +101,10 @@ export const CONVEYANCES: ReadonlyArray<Choice<Conveyance>> = toChoices(CONVEYAN
 // feeding one. The composer reads `groups`; this is the SSOT for the count's
 // presets and their copy.
 
-/** Lower and upper bounds on tank count that Easy Mode will lay out. */
+/** Tank-count bounds Easy Mode will accept. Counts above this funnel to a custom
+ *  design rather than being blocked; the input just doesn't climb past it. */
 export const MIN_SEVERAL_TANKS = 2;
-export const MAX_TANKS = 4;
+export const MAX_TANKS = 8;
 
 export interface TankLayout {
   /** Ordered group sizes (a composition of the tank count). */
@@ -113,27 +114,24 @@ export interface TankLayout {
   short: string;
 }
 
-const TANK_LAYOUTS: Record<number, readonly TankLayout[]> = {
-  2: [
-    { groups: [2], label: 'Side by side', short: 'Side by side' },
-    { groups: [1, 1], label: 'One feeds the other', short: 'In series' },
-  ],
-  3: [
-    { groups: [3], label: 'All side by side', short: 'Side by side' },
-    { groups: [1, 1, 1], label: 'One feeds the next', short: 'In series' },
-    { groups: [2, 1], label: 'A pair feeds one', short: 'Pair + one' },
-  ],
-  4: [
-    { groups: [4], label: 'All side by side', short: 'Side by side' },
-    { groups: [1, 1, 1, 1], label: 'One feeds the next', short: 'In series' },
-    { groups: [2, 2], label: 'Two pairs in a row', short: 'Two pairs' },
-  ],
-};
-
-/** The curated one-click layouts for a tank count (MIN..MAX). Anything outside
- *  these is "Custom" (an admin lays it out on the canvas). */
+/**
+ * The one-click layouts offered for a tank count. Side-by-side (one bank) and
+ * one-feeds-the-next (a cascade) apply at any count; a couple of common mixes are
+ * curated for small counts. The composer builds whichever fit one controller and
+ * funnels the rest (a big cascade, or "Something else") to a custom design, so we
+ * can offer these freely without per-count gating here.
+ */
 export function tankLayoutsFor(count: number): readonly TankLayout[] {
-  return TANK_LAYOUTS[count] ?? [];
+  if (count < MIN_SEVERAL_TANKS) return [];
+  const pair = count === 2;
+  const layouts: TankLayout[] = [
+    { groups: [count], label: pair ? 'Side by side' : 'All side by side', short: 'Side by side' },
+    { groups: Array.from({ length: count }, () => 1), label: pair ? 'One feeds the other' : 'One feeds the next', short: 'In series' },
+  ];
+  if (count === 3) layouts.push({ groups: [2, 1], label: 'A pair feeds one', short: 'Pair + one' });
+  if (count === 4) layouts.push({ groups: [2, 2], label: 'Two pairs in a row', short: 'Two pairs' });
+  if (count === 6) layouts.push({ groups: [3, 3], label: 'Two banks of three', short: 'Two threes' });
+  return layouts;
 }
 
 /** Validate a layout against a tank count: every group >= 1 and they sum to the

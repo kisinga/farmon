@@ -164,6 +164,53 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
         <!-- Live estimate -->
         <div class="lg:col-span-2">
           <div class="lg:sticky lg:top-24 rounded-2xl bg-slate-950 text-white p-5 sm:p-6 shadow-xl">
+          @if (designHandoff(); as h) {
+            <!-- EXCEEDS EASY MODE: the same card becomes the design-request, inline. -->
+            @if (submitState() === 'done') {
+              <div class="text-center py-4">
+                <div class="w-12 h-12 mx-auto rounded-full bg-cyan-400/15 text-cyan-300 flex items-center justify-center mb-4">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <p class="text-lg font-bold">Got it. Thank you.</p>
+                <p class="mt-2 text-sm text-white/60">Our team will reach out to design your system with you.</p>
+              </div>
+            } @else {
+              <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Custom system</p>
+              <p class="mt-2 text-2xl font-bold tracking-tight">Let's design this with you</p>
+              <p class="mt-2 text-sm text-white/70 leading-relaxed">{{ h.message }} Share your details and an engineer will tailor it to your site.</p>
+              <p class="mt-3 text-sm text-white/55">Starts around {{ money(est().monthly) }} / month plus a one-time kit. The final figure comes with your design.</p>
+
+              <div class="mt-5 space-y-3">
+                <input type="text" placeholder="Name" [value]="name()" (input)="name.set(inputValue($event))"
+                       class="w-full rounded-lg bg-white/5 ring-1 ring-white/15 text-white placeholder-white/35 px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <input type="tel" placeholder="Phone" [value]="phone()" (input)="phone.set(inputValue($event))"
+                         class="w-full rounded-lg bg-white/5 ring-1 ring-white/15 text-white placeholder-white/35 px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+                  <input type="email" placeholder="Email" [value]="email()" (input)="email.set(inputValue($event))"
+                         class="w-full rounded-lg bg-white/5 ring-1 ring-white/15 text-white placeholder-white/35 px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+                </div>
+                <textarea rows="2" placeholder="Anything else we should know? (optional)" [value]="note()" (input)="note.set(inputValue($event))"
+                          class="w-full rounded-lg bg-white/5 ring-1 ring-white/15 text-white placeholder-white/35 px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 outline-none resize-none"></textarea>
+
+                <!-- Honeypot -->
+                <input type="text" tabindex="-1" autocomplete="off" aria-hidden="true" [value]="hp()" (input)="hp.set(inputValue($event))" class="hidden" />
+
+                <label class="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" [checked]="consent()" (change)="consent.set(isChecked($event))" class="mt-0.5 w-4 h-4 accent-cyan-400" />
+                  <span class="text-xs text-white/60">I agree to be contacted about this design. Give us a phone or email so we can reach you.</span>
+                </label>
+
+                @if (submitState() === 'error') {
+                  <p class="text-sm text-rose-300">{{ errorMsg() }}</p>
+                }
+
+                <button type="button" (click)="submit()" [disabled]="!canSubmit() || submitState() === 'sending'"
+                        class="w-full rounded-full px-4 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  {{ submitState() === 'sending' ? 'Sending…' : 'Request your design' }}
+                </button>
+              </div>
+            }
+          } @else {
             <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Your plan</p>
             <p class="mt-1 text-sm text-white/55">{{ est().tier }} · {{ est().summary }}</p>
 
@@ -244,12 +291,15 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
               An estimate, not a final quote. The real price depends on a site survey, pipe sizes,
               and install. Prices in KES.
             </p>
+          }
           </div>
         </div>
       </div>
     </section>
 
-    <!-- LEAD CAPTURE -->
+    <!-- LEAD CAPTURE (formal quote). The over-Easy-Mode design request is captured
+         inline in the plan card above, so this is hidden then to avoid two forms. -->
+    @if (!designHandoff()) {
     <section id="quote-lead" class="px-5 sm:px-8 pb-20">
       <div class="max-w-2xl mx-auto rounded-2xl ring-1 ring-slate-200 bg-slate-50 p-7">
         @if (submitState() === 'done') {
@@ -308,6 +358,7 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
         }
       </div>
     </section>
+    }
 
     <!-- FOOTER -->
     <app-marketing-footer tagline="Honest pricing. No surprises." />
@@ -384,6 +435,11 @@ export class PricingComponent {
   /** The answers behind that design, kept so the captured lead can be converted
    *  into a wired site later (re-composed with a real board). */
   protected readonly quoteProfile = signal<EasyModeProfile | null>(null);
+  /** Set when the described site exceeds Easy Mode: the result card switches into
+   *  the inline design-request flow with this plain reason. */
+  protected readonly designHandoff = signal<{ reason: string; message: string } | null>(null);
+  /** Optional "anything else?" note on a design request. */
+  protected readonly note = signal('');
   protected readonly quoting = signal(false);
 
   /** Fill the estimator inputs from the plain-language sizer. The live estimate
@@ -392,6 +448,7 @@ export class PricingComponent {
   protected applySizing(e: SizedEstimate): void {
     this.quoteTopology.set(e.topology);
     this.quoteProfile.set(e.profile);
+    this.designHandoff.set(e.handoff);
     // Hand-off (e.g. several tanks): only drop the quote; leave the price inputs
     // at their last buildable values rather than zeroing them.
     if (!e.topology) return;
@@ -455,8 +512,16 @@ export class PricingComponent {
         consent: this.consent(),
         // Carry the composed design and the answers behind it (when the visitor
         // described their site) so follow-up opens the exact system, and an admin
-        // can convert it into a wired site. null otherwise.
-        estimate: { ...this.est(), topology: this.quoteTopology(), profile: this.quoteProfile() },
+        // can convert it into a wired site. For an over-Easy-Mode site, flag it as
+        // a design request with the reason + any note so the admin knows to design.
+        estimate: {
+          ...this.est(),
+          topology: this.quoteTopology(),
+          profile: this.quoteProfile(),
+          designRequest: !!this.designHandoff(),
+          designReason: this.designHandoff()?.reason,
+          note: this.note().trim() || undefined,
+        },
         hp: this.hp(),
       });
       this.submitState.set('done');
