@@ -204,8 +204,8 @@ type snapRun struct {
 	Seq         int64   `json:"seq"`
 	Origin      string  `json:"origin"`
 	Actor       string  `json:"actor"`
-	StartedAt   string  `json:"started_at"`
-	EndedAt     string  `json:"ended_at"`
+	StartedAt   int64   `json:"started_at"` // device wall-clock unix secs (best-effort)
+	EndedAt     int64   `json:"ended_at"`
 	DurationS   int64   `json:"duration_s"`
 	StopReason  string  `json:"stop_reason"`
 	StartLitres float64 `json:"start_litres"`
@@ -422,8 +422,8 @@ func persistRun(app core.App, site, ctrl string, r *snapRun) error {
 	rec.Set("origin", r.Origin)
 	rec.Set("actor", r.Actor)
 	rec.Set("actor_label", resolveActorLabel(app, r.Origin, r.Actor))
-	rec.Set("started_at", r.StartedAt)
-	rec.Set("ended_at", r.EndedAt)
+	rec.Set("started_at", unixToISO(r.StartedAt))
+	rec.Set("ended_at", unixToISO(r.EndedAt))
 	rec.Set("duration_s", r.DurationS)
 	rec.Set("stop_reason", r.StopReason)
 	rec.Set("start_litres", r.StartLitres)
@@ -439,6 +439,16 @@ func persistRun(app core.App, site, ctrl string, r *snapRun) error {
 		return err
 	}
 	return nil
+}
+
+// unixToISO renders a device wall-clock unix-seconds stamp as the RFC3339 text the
+// ledger stores (matching the other ts columns, so the /usage range filter works).
+// 0 (clock never trusted) -> "" so it sorts before any real window.
+func unixToISO(secs int64) string {
+	if secs <= 0 {
+		return ""
+	}
+	return time.Unix(secs, 0).UTC().Format(time.RFC3339)
 }
 
 // HighWaterRun returns the highest persisted run (epoch, seq) for a controller —

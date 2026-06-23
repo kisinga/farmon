@@ -67,8 +67,8 @@ func TestIngestRuns(t *testing.T) {
 
 	// One metered run (Jane) + one unmetered run (no flow sensor) in the outbox.
 	ing(fmt.Sprintf(`{"ts":1,"readings":{},"system":{"state":"IDLE","queue":0,"safety":false},"routes":[],"outcomes":[],"runs":[
-		{"run_id":"100:1","route":0,"epoch":100,"seq":1,"origin":"MANUAL","actor":%q,"started_at":"2026-06-23T10:00:00Z","ended_at":"2026-06-23T10:05:00Z","duration_s":300,"stop_reason":"VOLUME_REACHED","start_litres":1000,"end_litres":1100,"metered":true,"fault":""},
-		{"run_id":"100:2","route":1,"epoch":100,"seq":2,"origin":"SYSTEM","actor":"","started_at":"2026-06-23T11:00:00Z","ended_at":"2026-06-23T11:10:00Z","duration_s":600,"stop_reason":"DURATION_REACHED","start_litres":0,"end_litres":0,"metered":false,"fault":""}
+		{"run_id":"100:1","route":0,"epoch":100,"seq":1,"origin":"MANUAL","actor":%q,"started_at":1700000000,"ended_at":1700000300,"duration_s":300,"stop_reason":"VOLUME_REACHED","start_litres":1000,"end_litres":1100,"metered":true,"fault":""},
+		{"run_id":"100:2","route":1,"epoch":100,"seq":2,"origin":"SYSTEM","actor":"","started_at":1700003600,"ended_at":1700004200,"duration_s":600,"stop_reason":"DURATION_REACHED","start_litres":0,"end_litres":0,"metered":false,"fault":""}
 	]}`, user.Id))
 
 	recs := runsOf()
@@ -101,7 +101,7 @@ func TestIngestRuns(t *testing.T) {
 	// Idempotency: the device keeps re-asserting unacked runs. Re-ingesting the same
 	// outbox (here with run 1 only, as if run 2 isn't acked yet) must not duplicate.
 	ing(`{"ts":2,"readings":{},"system":{"state":"IDLE","queue":0,"safety":false},"routes":[],"outcomes":[],"runs":[
-		{"run_id":"100:1","route":0,"epoch":100,"seq":1,"origin":"MANUAL","actor":"x","started_at":"2026-06-23T10:00:00Z","ended_at":"2026-06-23T10:05:00Z","duration_s":300,"stop_reason":"VOLUME_REACHED","start_litres":1000,"end_litres":1100,"metered":true,"fault":""}
+		{"run_id":"100:1","route":0,"epoch":100,"seq":1,"origin":"MANUAL","actor":"x","started_at":1700000000,"ended_at":1700000300,"duration_s":300,"stop_reason":"VOLUME_REACHED","start_litres":1000,"end_litres":1100,"metered":true,"fault":""}
 	]}`)
 	if recs := runsOf(); len(recs) != 2 {
 		t.Errorf("re-asserted run duplicated: now %d rows", len(recs))
