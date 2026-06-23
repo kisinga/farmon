@@ -38,12 +38,13 @@ func Prune(app core.App, now time.Time) error {
 		{"telemetry_5min", "window", aggCut},
 		{"telemetry_1hr", "window", aggCut},
 		{"state_events", "ts", eventCut},
+		{"config_events", "ts", eventCut},
 		{"commands", "created", commandCut},
 	}
 
 	for _, d := range deletes {
 		_, err := app.DB().
-			NewQuery("DELETE FROM "+d.table+" WHERE "+d.col+" < {:cut}").
+			NewQuery("DELETE FROM " + d.table + " WHERE " + d.col + " < {:cut}").
 			Bind(dbx.Params{"cut": d.cut}).
 			Execute()
 		if err != nil {

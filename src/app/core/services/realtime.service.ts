@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import type { RecordModel, UnsubscribeFunc } from 'pocketbase';
 import type { ControllerSnapshot } from '@core';
 import { BackendService } from './backend.service';
-import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow } from '../models/runtime';
+import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow } from '../models/runtime';
 
 /** Liveness of the PocketBase realtime SSE stream. `connecting` is the idle
  *  state before anything subscribes; the dashboard banner only reacts to
@@ -177,6 +177,28 @@ export class RealtimeService {
     );
   }
 
+  /** Most-recent configuration changes for a site (newest first) — the third
+   *  Activity source: automation create/edit/enable/disable/delete. */
+  async recentConfigEvents(siteId: string, limit = 100): Promise<ConfigEventRow[]> {
+    const res = await this.pb.collection('config_events').getList(1, limit, {
+      filter: this.pb.filter('site = {:s}', { s: siteId }),
+      sort: '-ts',
+      requestKey: `config_events:${siteId}`,
+    });
+    return res.items.map((r) => toConfigEvent(r));
+  }
+
+  /** Live config-change inserts for a site (the log is append-only). Returns an
+   *  unsubscribe function. */
+  subscribeConfigEvents(siteId: string, cb: (row: ConfigEventRow) => void): Promise<UnsubscribeFunc> {
+    this.wireConnection();
+    return this.pb.collection('config_events').subscribe(
+      '*',
+      (e) => { if (e.action === 'create') cb(toConfigEvent(e.record)); },
+      { filter: this.pb.filter('site = {:s}', { s: siteId }) },
+    );
+  }
+
   // --- Cross-site reads for the global alerts center ---------------------------
   // These omit the per-site filter; PocketBase view rules already scope every
   // collection to the rows the signed-in user may see (their sites, or all for
@@ -343,6 +365,23 @@ function toCommandLog(r: RecordModel): CommandLogRow {
     // to ISO 8601 so it parses + sorts identically to the RFC3339 transition
     // timestamps it's merged with in the activity feed (see DashboardStore.activityFor).
     ts: toIso(r['created']),
+  };
+}
+
+/** Map a `config_events` record to a display row carrying raw facts only. `actor`
+ *  is the bare user id (a plain text column, not a relation — robust to superusers
+ *  and to the automation being deleted); the viewer-relative label is resolved
+ *  downstream against the site owner set, the same as commands and transitions. `ts`
+ *  is already RFC3339 (server-stamped), so it sorts identically without normalising. */
+function toConfigEvent(r: RecordModel): ConfigEventRow {
+  return {
+    controller: r['controller'],
+    automation: r['automation'],
+    name: r['name'] || '',
+    change: r['change'],
+    actorId: r['actor'] || undefined,
+    actorName: undefined,
+    ts: r['ts'],
   };
 }
 

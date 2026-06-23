@@ -53,6 +53,10 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 	// Automation write guards: controller-belongs-to-site + per-controller cap.
 	automations.RegisterGuards(app)
 
+	// Automation changes -> append-only config_events rows (the Activity timeline's
+	// third source), attributed to the acting user. Independent of the republish hook.
+	automations.RegisterActivity(app)
+
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		seedAdmin(se.App)
 

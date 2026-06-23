@@ -3,7 +3,7 @@ import type { UnsubscribeFunc } from 'pocketbase';
 import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, bucketReading, channelPriority, type DashboardSpec, type DashboardWidget, type NodeRuntime } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { AuthStore } from '../../core/services/auth.store';
-import type { ShadowRow, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ActivityItem } from '../../core/models/runtime';
+import type { ShadowRow, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, ActivityItem } from '../../core/models/runtime';
 import { resolveOfflineMs } from '../../core/models/alerts';
 import { resolveInitiator, type InitiatorCtx } from './widgets/initiator';
 
@@ -54,6 +54,9 @@ export class DashboardStore implements OnDestroy {
   /** Operator command audit, by record id (a command updates sent→done/failed in
    *  place), for the merged Activity timeline. */
   readonly commands = signal<Map<string, CommandLogRow>>(new Map());
+  /** Configuration changes (automation create/edit/enable/disable/delete) — the
+   *  Activity timeline's third source. Append-only; capped newest-first on update. */
+  readonly configEvents = signal<ConfigEventRow[]>([]);
   /** Presence rows keyed by controller id (== device_id). */
   readonly controllers = signal<Map<string, ControllerRow>>(new Map());
   /** Site-wide telemetry timing (from topology) — the command lifecycle derives a
@@ -92,11 +95,12 @@ export class DashboardStore implements OnDestroy {
    *  three reads are independent, so they fire concurrently — one round-trip of
    *  latency instead of three (it adds up through the Cloudflare proxy). */
   private async resync(siteId: string): Promise<void> {
-    const [{ rows, outcomes }, evts, ctrls, cmds] = await Promise.all([
+    const [{ rows, outcomes }, evts, ctrls, cmds, cfgs] = await Promise.all([
       this.realtime.latest(siteId),
       this.realtime.recentEvents(siteId, 100),
       this.realtime.controllers(siteId),
       this.realtime.recentCommands(siteId, 100),
+      this.realtime.recentConfigEvents(siteId, 100),
     ]);
     const map = new Map<string, ShadowRow>();
     for (const r of rows) map.set(`${r.controller}/${r.sensor}`, r);
@@ -105,6 +109,7 @@ export class DashboardStore implements OnDestroy {
     this.events.set(evts);
     this.controllers.set(new Map(ctrls.map((c) => [c.device_id, c])));
     this.commands.set(new Map(cmds.map((c) => [c.id, c])));
+    this.configEvents.set(cfgs);
   }
 
   async init(siteId: string, spec: DashboardSpec, timing?: SiteTiming, owners: string[] = [], people: { id: string; name?: string; email?: string }[] = []): Promise<void> {
@@ -150,6 +155,11 @@ export class DashboardStore implements OnDestroy {
       this.unsubs.push(
         await this.realtime.subscribeControllers(siteId, (row) => {
           this.controllers.update((m) => new Map(m).set(row.device_id, row));
+        }),
+      );
+      this.unsubs.push(
+        await this.realtime.subscribeConfigEvents(siteId, (row) => {
+          this.configEvents.update((list) => [row, ...list].slice(0, 200));
         }),
       );
 
@@ -268,6 +278,9 @@ export class DashboardStore implements OnDestroy {
       if (isRouteCmd && c.status === 'done') continue;
       items.push(commandToActivity(c, routeName, ctx));
     }
+    for (const cfg of this.configEvents()) {
+      if (cfg.controller === controller) items.push(configEventToActivity(cfg, ctx));
+    }
     // Newest first, by parsed epoch — commands and transitions arrive as ISO strings
     // but with differing precision, so a raw string compare mis-orders them (and
     // would bury one source below the other, dropping it past the 100-item cap).
@@ -369,6 +382,25 @@ function eventToActivity(e: StateEventRow, routeName: (routeId: number) => strin
  *  outcome (APPLIED / the failure reason); the label names the action + target.
  *  The initiator is resolved through the SAME `ctx` rule as a transition. A still-
  *  `sent` command has no outcome badge yet — it fills in when the device reconciles. */
+/** A configuration change → an Activity row. `token` is the change verb (a neutral
+ *  badge — "Enabled" / "Edited" / …); the label names the automation; the initiator
+ *  resolves through the SAME ctx rule as a command/transition. A config edit is an
+ *  operator action, never a device failure, so `ok` is always true and there is no
+ *  AUTOMATION origin (the actor is the human who edited it). */
+function configEventToActivity(c: ConfigEventRow, ctx: InitiatorCtx): ActivityItem {
+  const who = resolveInitiator({ actorId: c.actorId, actorName: c.actorName }, ctx);
+  return {
+    ts: c.ts,
+    kind: 'config',
+    token: c.change.charAt(0).toUpperCase() + c.change.slice(1),
+    label: c.name ? `Automation: ${c.name}` : 'Automation',
+    actor: who.label || undefined,
+    bySupport: who.support,
+    actorTitle: who.title || undefined,
+    ok: true,
+  };
+}
+
 function commandToActivity(c: CommandLogRow, routeName: (routeId: number) => string, ctx: InitiatorCtx): ActivityItem {
   const token = c.status === 'failed' ? (c.result || 'REFUSED') : c.status === 'done' ? 'APPLIED' : '';
   const who = resolveInitiator({ actorId: c.actorId, actorName: c.actorName }, ctx);

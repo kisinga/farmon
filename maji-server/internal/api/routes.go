@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kisinga/majiflow/internal/auth"
+	"github.com/kisinga/majiflow/internal/command"
 	"github.com/kisinga/majiflow/internal/config"
 	"github.com/kisinga/majiflow/internal/telemetry"
 	"github.com/pocketbase/dbx"
@@ -53,26 +53,6 @@ type Publisher interface {
 // It must outlast the gap between publishing the (QoS 1, queued) firmware_update
 // command and an offline device reconnecting to consume it and fetch the image.
 const otaDownloadTTL = 24 * time.Hour
-
-// commandActions mirrors CommandAction in src/lib/codegen-ids.ts.
-var commandActions = map[string]bool{
-	"route_start": true, "route_stop": true, "fault_reset": true,
-	"stop_all": true, "reset_faults": true, "clear_queue": true,
-	"node_set": true, "safety_override": true,
-	"config_set": true,
-}
-
-// routeActions are the commands that require a route_id.
-var routeActions = map[string]bool{
-	"route_start": true, "route_stop": true, "fault_reset": true,
-}
-
-// nodeActions require a node_id (which actuator); onActions require an on bool.
-var nodeActions = map[string]bool{"node_set": true}
-var onActions = map[string]bool{"node_set": true, "safety_override": true}
-
-// configActions require a key (which number entity) + value (the new setpoint).
-var configActions = map[string]bool{"config_set": true}
 
 // readCABlock returns the PEM of the last CERTIFICATE block in the file at path.
 // fullchain.pem holds a single self-signed broker cert, so this returns that cert; the
@@ -231,16 +211,16 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 	// the command (audit), then publish it to the device over MQTT.
 	g.POST("/command", func(e *core.RequestEvent) error {
 		var body struct {
-			Site         string   `json:"site"`
-			Controller   string   `json:"controller"`
-			Action       string   `json:"action"`
-			RouteID      *int     `json:"route_id"`
-			NodeID       string   `json:"node_id"`
-			On           *bool    `json:"on"`
-			Key          string   `json:"key"`
-			Value        *float64 `json:"value"`
-			CommandID    string   `json:"command_id"`
-			Reclaim      bool     `json:"reclaim"`
+			Site       string   `json:"site"`
+			Controller string   `json:"controller"`
+			Action     string   `json:"action"`
+			RouteID    *int     `json:"route_id"`
+			NodeID     string   `json:"node_id"`
+			On         *bool    `json:"on"`
+			Key        string   `json:"key"`
+			Value      *float64 `json:"value"`
+			CommandID  string   `json:"command_id"`
+			Reclaim    bool     `json:"reclaim"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return apis.NewBadRequestError("invalid body", err)
@@ -248,20 +228,23 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		if err := requireSiteAccess(e, body.Site); err != nil {
 			return err
 		}
-		if body.Controller == "" || !commandActions[body.Action] {
-			return apis.NewBadRequestError("controller and a valid action are required", nil)
+		if body.Controller == "" {
+			return apis.NewBadRequestError("controller is required", nil)
 		}
-		if routeActions[body.Action] && body.RouteID == nil {
-			return apis.NewBadRequestError("route_id is required for "+body.Action, nil)
+		// Action + per-action args are validated by the command contract (one source
+		// of truth, mirrored to CommandEnvelope in src/lib/codegen-ids.ts). cmd is
+		// reused below to build the wire envelope, so request → validate → publish
+		// never re-describes the shape.
+		cmd := command.Command{
+			Action:  command.Action(body.Action),
+			RouteID: body.RouteID,
+			NodeID:  body.NodeID,
+			On:      body.On,
+			Key:     body.Key,
+			Value:   body.Value,
 		}
-		if nodeActions[body.Action] && body.NodeID == "" {
-			return apis.NewBadRequestError("node_id is required for "+body.Action, nil)
-		}
-		if onActions[body.Action] && body.On == nil {
-			return apis.NewBadRequestError("on is required for "+body.Action, nil)
-		}
-		if configActions[body.Action] && (body.Key == "" || body.Value == nil) {
-			return apis.NewBadRequestError("key and value are required for "+body.Action, nil)
+		if err := cmd.ValidateOperator(); err != nil {
+			return apis.NewBadRequestError(err.Error(), nil)
 		}
 
 		// Reclaim: a publish-only keepalive that re-asserts an existing hold's
@@ -274,20 +257,17 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			if body.CommandID == "" {
 				return apis.NewBadRequestError("command_id is required for a reclaim", nil)
 			}
-			envelope := map[string]any{
-				"command_id": body.CommandID,
-				"action":     body.Action,
-				"issued_at":  time.Now().Unix(),
-				"actor":      e.Auth.Id,
+			// Reclaim is the node_set hold keepalive — carry only the node fields,
+			// never route_id/key/value even if the body happened to include them.
+			reclaim := command.Command{
+				CommandID: body.CommandID,
+				Action:    cmd.Action,
+				IssuedAt:  time.Now().Unix(),
+				Actor:     e.Auth.Id,
+				NodeID:    body.NodeID,
+				On:        body.On,
 			}
-			if body.NodeID != "" {
-				envelope["node_id"] = body.NodeID
-			}
-			if body.On != nil {
-				envelope["on"] = *body.On
-			}
-			payload, _ := json.Marshal(envelope)
-			if err := pub.Publish(telemetry.CommandTopic(body.Site, body.Controller), payload, false, 1); err != nil {
+			if err := pub.Publish(telemetry.CommandTopic(body.Site, body.Controller), reclaim.Encode(), false, 1); err != nil {
 				return apis.NewApiError(http.StatusBadGateway, "failed to publish reclaim", err)
 			}
 			return e.JSON(http.StatusOK, map[string]any{"command_id": body.CommandID})
@@ -330,31 +310,12 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 
 		// issued_at stamps the command's age so the device can drop a stale one
 		// (queued during an outage) instead of replaying it — see the firmware TTL gate.
-		envelope := map[string]any{
-			"command_id": commandID,
-			"action":     body.Action,
-			"issued_at":  time.Now().Unix(),
-			// The issuing user id — the device stores it on the run's slot and
-			// re-publishes it as the route's origin so the dashboard shows "by <name>".
-			"actor": e.Auth.Id,
-		}
-		if body.RouteID != nil {
-			envelope["route_id"] = *body.RouteID
-		}
-		if body.NodeID != "" {
-			envelope["node_id"] = body.NodeID
-		}
-		if body.On != nil {
-			envelope["on"] = *body.On
-		}
-		if body.Key != "" {
-			envelope["key"] = body.Key
-		}
-		if body.Value != nil {
-			envelope["value"] = *body.Value
-		}
-		payload, _ := json.Marshal(envelope)
-		if err := pub.Publish(telemetry.CommandTopic(body.Site, body.Controller), payload, false, 1); err != nil {
+		// actor (the issuing user id) is stored on the run's slot and re-published as
+		// the route's origin so the dashboard shows "by <name>".
+		cmd.CommandID = commandID
+		cmd.IssuedAt = time.Now().Unix()
+		cmd.Actor = e.Auth.Id
+		if err := pub.Publish(telemetry.CommandTopic(body.Site, body.Controller), cmd.Encode(), false, 1); err != nil {
 			rec.Set("status", "failed")
 			_ = e.App.Save(rec)
 			return apis.NewApiError(http.StatusBadGateway, "failed to publish command", err)
@@ -630,16 +591,16 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			_ = e.App.Save(audit)
 		}
 
-		url := publicBaseURL(cfg, e) + "/api/farmon/firmware/" + rec.Id + "?t=" + token
-		payload, _ := json.Marshal(map[string]any{
-			"command_id": commandID,
-			"action":     "firmware_update",
-			"issued_at":  time.Now().Unix(),
-			"actor":      e.Auth.Id,
-			"version":    rec.GetString("version"),
-			"url":        url,
-			"md5":        rec.GetString("md5"),
-		})
+		url := firmwareBaseURL(cfg, e) + "/api/farmon/firmware/" + rec.Id + "?t=" + token
+		payload := command.Command{
+			CommandID: commandID,
+			Action:    command.FirmwareUpdate,
+			IssuedAt:  time.Now().Unix(),
+			Actor:     e.Auth.Id,
+			Version:   rec.GetString("version"),
+			URL:       url,
+			MD5:       rec.GetString("md5"),
+		}.Encode()
 		if err := pub.Publish(telemetry.CommandTopic(body.Site, body.Controller), payload, false, 1); err != nil {
 			// The command never went out — don't leave the release reading "deployed".
 			// Mark it failed so the UI reflects reality and the admin re-deploys.
@@ -680,23 +641,24 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 	})
 }
 
-// publicBaseURL is the externally-reachable origin the device fetches firmware from.
-// An explicit cfg.HTTPPublicURL wins (the reliable answer behind a TLS-terminating
-// proxy or when the device reaches a different host than the admin). Otherwise it
-// reconstructs the origin from the admin's request — the web app is served by this
-// same server, so its host is usually what the device must reach too — honoring a
-// reverse proxy's X-Forwarded-Proto for the scheme.
-func publicBaseURL(cfg config.Config, e *core.RequestEvent) string {
+// firmwareBaseURL is the origin the DEVICE pulls firmware from — forced to plain HTTP.
+// The image is md5-verified (the md5 rides the cert-pinned MQTT command lane, the
+// integrity anchor), so the download channel itself needs no TLS. And the device's
+// esp32 mbedTLS can't reliably buffer a CDN's 16 KB TLS records on its tight heap, which
+// made OTA-over-HTTPS flaky — so we hand the device an http:// URL and skip TLS entirely.
+// Host comes from cfg.HTTPPublicURL when set (behind a proxy / a different device-facing
+// host), else the admin's request host; the scheme is always http. NOTE: the CDN/edge in
+// front of this host must NOT force-redirect this path to https (see the firmware GET
+// route) or the device follows the 301 back into the TLS path it can't handle.
+func firmwareBaseURL(cfg config.Config, e *core.RequestEvent) string {
+	host := e.Request.Host
 	if cfg.HTTPPublicURL != "" {
-		return strings.TrimRight(cfg.HTTPPublicURL, "/")
+		host = strings.TrimRight(cfg.HTTPPublicURL, "/")
 	}
-	scheme := "https"
-	if p := e.Request.Header.Get("X-Forwarded-Proto"); p != "" {
-		scheme = p
-	} else if e.Request.TLS == nil {
-		scheme = "http"
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:] // strip any scheme so we can force http
 	}
-	return scheme + "://" + e.Request.Host
+	return "http://" + host
 }
 
 // pickTier maps a requested time span to the storage tier that serves it

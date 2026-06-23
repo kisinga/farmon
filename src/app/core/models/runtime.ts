@@ -110,14 +110,28 @@ export interface CommandLogRow {
   ts: string;
 }
 
-/** A unified Activity-timeline row: a device state transition OR an operator
- *  command, merged into one chronological feed. `token` is a badge token the
- *  widget colours via the shared meanings dictionary ('' ⇒ no badge); `label` is
- *  the human line ("route 0" / "Opened Valve 1"); `ok===false` tints the row as a
- *  failure. */
+/** One configuration change from the append-only `config_events` log — today,
+ *  automation create / edit / enable / disable / delete. The third Activity source,
+ *  alongside transitions and commands. `actorId` resolves to a viewer-relative label
+ *  downstream (you / co-owner / Support), the same rule as the other two. */
+export interface ConfigEventRow {
+  controller: string;
+  automation: string;
+  name: string;
+  change: 'added' | 'edited' | 'enabled' | 'disabled' | 'removed';
+  actorId?: string;
+  actorName?: string;
+  ts: string;
+}
+
+/** A unified Activity-timeline row: a device state transition, an operator command,
+ *  OR a configuration change, merged into one chronological feed. `token` is a badge
+ *  token the widget colours via the shared meanings dictionary ('' ⇒ no badge);
+ *  `label` is the human line ("route 0" / "Opened Valve 1"); `ok===false` tints the
+ *  row as a failure. */
 export interface ActivityItem {
   ts: string;
-  kind: 'transition' | 'command';
+  kind: 'transition' | 'command' | 'config';
   token: string;
   label: string;
   detail?: string;
