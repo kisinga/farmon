@@ -36,6 +36,41 @@ export interface TelemetryHistory {
   samples: TelemetryPoint[];
 }
 
+/** One run from the billing-grade usage ledger (the `/usage` facade). Both axes
+ *  ride every run: `duration_s` always, `delivered_l` only when `metered`. */
+export interface UsageRun {
+  run_id: string;
+  controller: string;
+  route: number;
+  started_at: string;
+  ended_at: string;
+  duration_s: number;
+  stop_reason: string;
+  origin: string;
+  actor_label: string;
+  fault: string;
+  metered: boolean;
+  /** Delivered litres (end - start counter). null on an unmetered, time-only run. */
+  delivered_l: number | null;
+}
+
+/** Per-route metering integrity: consecutive metered runs must be continuous
+ *  (one run's end counter == the next's start). `ok=false` means a run was missed
+ *  or water moved while idle; `gap_litres` is the unaccounted volume. */
+export interface UsageContinuity {
+  controller: string;
+  route: number;
+  ok: boolean;
+  gap_litres: number;
+}
+
+/** The `/usage` response: line items, both-axis totals, and continuity per route. */
+export interface UsageReport {
+  runs: UsageRun[];
+  totals: { count: number; litres: number; duration_s: number };
+  continuity: UsageContinuity[];
+}
+
 /** A controller's presence row from the `controllers` collection. `online` is
  *  set server-side on every ingest and cleared by the retained will message;
  *  `last_seen` is the freshness backstop (an abrupt power loss can leave

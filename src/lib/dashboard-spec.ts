@@ -66,6 +66,10 @@ export interface RouteControl {
   /** A plain start will actually stop on "full" (a float valve + flow sensor, or a
    *  pump-safe destination level sensor). Drives the picker's default-run hint. */
   canStopOnFull?: boolean;
+  /** Capacity (litres) of the destination tank, when the dest is a level-monitored
+   *  tank. Lets the run picker derive volume chips (25/50/100% of the tank) instead
+   *  of static values. Undefined for non-tank endpoints. */
+  destCapacityL?: number;
   /** The route's path: the ordered node ids it traverses (source→destination) and
    *  the pipe ids between them. Together these are the route's *participants* — the
    *  elements that become "engaged" while it runs, so the map can light the whole
@@ -246,16 +250,23 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
   // owned by another controller, e.g. a delivery point), so resolve against the
   // whole topology rather than one controller's manifest.
   const nodeName = new Map(topology.nodes.map((n) => [n.id, n.name || n.id]));
+  // Tank capacity (litres), for capacity-derived volume chips in the run picker.
+  // `capacity_l` is lifted onto tank nodes by the topology schema.
+  const nodeCapacity = new Map(
+    topology.nodes.map((n) => [n.id, (n as { capacity_l?: number }).capacity_l]),
+  );
   // One graph for the whole site, to trace each route's pipes along its exact path.
   const tg = buildGraph(topology.nodes, topology.pipes);
   for (const ctrl of topology.controllers) {
     const manifest = topologyToManifestForController(topology, ctrl.id);
     const channels = collectTelemetryChannels(manifest);
-    // A flow sensor emits two channels (rate + cumulative total). The card shows
-    // a `flow` widget — the rate chart, with windowed usage integrated from that
-    // rate — so the device's cumulative-total channel is dropped here.
+    // A flow sensor emits two channels (rate + cumulative total). The card shows a
+    // `flow` widget — the rate chart — so the cumulative-total channel is not given
+    // its own widget. The total is the billing counter: usage/volume now comes from
+    // the runs ledger (the /usage facade) and the live per-run delivered, not a
+    // client-side rate integration.
     for (const ch of channels) {
-      if (ch.role === 'flow_total') continue; // usage is integrated from the rate
+      if (ch.role === 'flow_total') continue; // billing counter, surfaced via the facade — not a widget
       if (ch.role === 'flow') {
         widgets.push({ ...widgetForChannel(ctrl.id, ch), kind: 'flow' });
         continue;
@@ -305,6 +316,7 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
           volumeEligible: routeVolumeEligible(r, manifest.routes),
           levelTarget: r.dest_has_level,
           canStopOnFull: canStopOnFull(r),
+          destCapacityL: r.destination ? nodeCapacity.get(r.destination) : undefined,
           pathNodeIds: seq,
           pipeIds,
         };

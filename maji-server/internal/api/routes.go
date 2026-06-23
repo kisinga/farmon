@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -205,6 +206,136 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			}
 		}
 		return e.JSON(http.StatusOK, map[string]any{"tier": table, "samples": out})
+	})
+
+	// GET /usage?site=&controller=&route=&from=&to= — the billing-grade usage facade.
+	// Reads the immutable runs ledger (NOT the lossy client-side rate integration):
+	// per-run line items on both axes (duration always; delivered litres when metered),
+	// period totals, and a per-route continuity flag. Water only flows while a run is
+	// open, so consecutive metered runs on a route must be continuous (one run's end
+	// counter == the next run's start counter); a break means a run was missed or water
+	// moved while idle — surfaced here rather than silently mis-billed.
+	g.GET("/usage", func(e *core.RequestEvent) error {
+		q := e.Request.URL.Query()
+		site := q.Get("site")
+		if err := requireSiteAccess(e, site); err != nil {
+			return err
+		}
+		from, err := time.Parse(time.RFC3339, q.Get("from"))
+		if err != nil {
+			return apis.NewBadRequestError("invalid 'from' (RFC3339)", nil)
+		}
+		to, err := time.Parse(time.RFC3339, q.Get("to"))
+		if err != nil {
+			return apis.NewBadRequestError("invalid 'to' (RFC3339)", nil)
+		}
+		// Bound on started_at (when the water actually flowed), ordered the same so the
+		// continuity pass sees runs in chronological (≈ seq) order.
+		filter := "site = {:s} && started_at >= {:from} && started_at <= {:to}"
+		params := dbx.Params{
+			"s":    site,
+			"from": from.UTC().Format(time.RFC3339),
+			"to":   to.UTC().Format(time.RFC3339),
+		}
+		if ctrl := q.Get("controller"); ctrl != "" {
+			filter += " && controller = {:c}"
+			params["c"] = ctrl
+		}
+		if rt := q.Get("route"); rt != "" {
+			n, convErr := strconv.Atoi(rt)
+			if convErr != nil {
+				return apis.NewBadRequestError("invalid 'route'", nil)
+			}
+			filter += " && route = {:rt}"
+			params["rt"] = n
+		}
+		recs, err := e.App.FindRecordsByFilter("runs", filter, "started_at", 5000, 0, params)
+		if err != nil {
+			return apis.NewBadRequestError("query failed", err)
+		}
+
+		// Per-route continuity tracker: within one device epoch, this run's start
+		// counter must equal the previous run's end counter. An epoch change (reflash /
+		// board swap) resets the lineage, so it never counts as a gap.
+		type contKey struct {
+			ctrl  string
+			route int
+		}
+		type contState struct {
+			lastEnd   float64
+			lastEpoch int64
+			haveLast  bool
+			ok        bool
+			gapLitres float64
+		}
+		cont := map[contKey]*contState{}
+
+		runs := make([]map[string]any, 0, len(recs))
+		var totalLitres float64
+		var totalDurationS int64
+		for _, r := range recs {
+			metered := r.GetBool("metered")
+			startL := r.GetFloat("start_litres")
+			endL := r.GetFloat("end_litres")
+			epoch := int64(r.GetInt("epoch"))
+			route := r.GetInt("route")
+			item := map[string]any{
+				"run_id":      r.GetString("run_id"),
+				"controller":  r.GetString("controller"),
+				"route":       route,
+				"started_at":  r.GetString("started_at"),
+				"ended_at":    r.GetString("ended_at"),
+				"duration_s":  r.GetInt("duration_s"),
+				"stop_reason": r.GetString("stop_reason"),
+				"origin":      r.GetString("origin"),
+				"actor_label": r.GetString("actor_label"),
+				"fault":       r.GetString("fault"),
+				"metered":     metered,
+			}
+			totalDurationS += int64(r.GetInt("duration_s"))
+			if metered {
+				delivered := endL - startL
+				item["delivered_l"] = delivered
+				totalLitres += delivered
+
+				k := contKey{r.GetString("controller"), route}
+				st := cont[k]
+				if st == nil {
+					st = &contState{ok: true}
+					cont[k] = st
+				}
+				if st.haveLast && epoch == st.lastEpoch && startL != st.lastEnd {
+					st.ok = false
+					st.gapLitres += startL - st.lastEnd
+				}
+				st.lastEnd = endL
+				st.lastEpoch = epoch
+				st.haveLast = true
+			} else {
+				item["delivered_l"] = nil // unmetered: time-billable only
+			}
+			runs = append(runs, item)
+		}
+
+		continuity := make([]map[string]any, 0, len(cont))
+		for k, st := range cont {
+			continuity = append(continuity, map[string]any{
+				"controller": k.ctrl,
+				"route":      k.route,
+				"ok":         st.ok,
+				"gap_litres": st.gapLitres,
+			})
+		}
+
+		return e.JSON(http.StatusOK, map[string]any{
+			"runs": runs,
+			"totals": map[string]any{
+				"count":      len(runs),
+				"litres":     totalLitres,
+				"duration_s": totalDurationS,
+			},
+			"continuity": continuity,
+		})
 	})
 
 	// POST /command {site, controller, action, route_id?} — authorize, record

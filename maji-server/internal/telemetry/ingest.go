@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 
@@ -50,6 +51,13 @@ func CommandTopic(site, ctrl string) string {
 // Mirrors automationsTopic() in src/lib/codegen-ids.ts — keep both in sync.
 func AutomationsTopic(site, ctrl string) string {
 	return "majiflow/" + site + "/" + ctrl + "/automations"
+}
+
+// RunsAckTopic is the retained run-ledger acknowledgement for a controller: a single
+// high-water-mark (epoch, seq) the device uses to drop confirmed runs from its durable
+// outbox. Mirrors runsAckTopic() in src/lib/codegen-ids.ts — keep both in sync.
+func RunsAckTopic(site, ctrl string) string {
+	return "majiflow/" + site + "/" + ctrl + "/runs_ack"
 }
 
 // SetOnline records a controller's online/offline status (retained birth/will).
@@ -184,6 +192,28 @@ type snapOutcome struct {
 	Reason    string `json:"reason"`
 }
 
+// snapRun is one immutable, closed run the device re-asserts in every snapshot
+// (from its durable outbox) until the retained runs_ack high-water-mark reaches it.
+// Both axes ride every record: duration_s is always present (monotonic run timer);
+// the litre boundaries are meaningful only when metered. run_id is the device-minted
+// composite (epoch+seq), the idempotency key.
+type snapRun struct {
+	RunID       string  `json:"run_id"`
+	Route       int     `json:"route"`
+	Epoch       int64   `json:"epoch"`
+	Seq         int64   `json:"seq"`
+	Origin      string  `json:"origin"`
+	Actor       string  `json:"actor"`
+	StartedAt   string  `json:"started_at"`
+	EndedAt     string  `json:"ended_at"`
+	DurationS   int64   `json:"duration_s"`
+	StopReason  string  `json:"stop_reason"`
+	StartLitres float64 `json:"start_litres"`
+	EndLitres   float64 `json:"end_litres"`
+	Metered     bool    `json:"metered"`
+	Fault       string  `json:"fault"`
+}
+
 type controllerSnapshot struct {
 	TS       int64              `json:"ts"`
 	Readings map[string]float64 `json:"readings"`
@@ -195,6 +225,8 @@ type controllerSnapshot struct {
 	} `json:"system"`
 	Routes   []snapRoute   `json:"routes"`
 	Outcomes []snapOutcome `json:"outcomes"`
+	// Runs is the device's durable outbox of closed runs, re-asserted until acked.
+	Runs []snapRun `json:"runs"`
 }
 
 // IngestSnapshot projects one controller snapshot — the single source of truth —
@@ -263,6 +295,24 @@ func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Ti
 	// Command outcomes → reconcile the commands record (idempotent).
 	for _, o := range s.Outcomes {
 		reconcileCommand(app, o.CommandID, o.Result, o.Reason)
+	}
+	// Closed runs → the immutable billing ledger (idempotent on controller+run_id).
+	// The device re-asserts each run every snapshot until the retained runs_ack
+	// high-water-mark passes it, so a dropped QoS-0 snapshot loses nothing. Persist
+	// in (epoch, seq) order and STOP at the first failure: the device always sends a
+	// contiguous run of unacked records, so stopping on a hole keeps the ledger
+	// gap-free and the high-water-mark (MAX epoch,seq) from ever passing an
+	// un-persisted run — which would otherwise drop a billable run.
+	sort.Slice(s.Runs, func(a, b int) bool {
+		if s.Runs[a].Epoch != s.Runs[b].Epoch {
+			return s.Runs[a].Epoch < s.Runs[b].Epoch
+		}
+		return s.Runs[a].Seq < s.Runs[b].Seq
+	})
+	for i := range s.Runs {
+		if err := persistRun(app, site, ctrl, &s.Runs[i]); err != nil {
+			break
+		}
 	}
 	// Running firmware version (from the device's metadata sensor) → confirm an OTA
 	// release once the device reports the version it was told to flash. Version match
@@ -343,6 +393,65 @@ func appendDerivedEvent(app core.App, site, ctrl string, route int, from, to, re
 	rec.Set("actor", actor)
 	rec.Set("actor_label", actorLabel)
 	_ = app.Save(rec)
+}
+
+// persistRun appends one closed run to the billing ledger. Idempotent on
+// (controller, run_id): the device re-asserts a run in every snapshot until the
+// runs_ack high-water-mark confirms it, so a duplicate is a no-op (runs are
+// immutable — never updated). The litre boundaries are meaningful only when metered;
+// an unmetered run is time-billable, so it still lands with metered=false.
+func persistRun(app core.App, site, ctrl string, r *snapRun) error {
+	if r.RunID == "" {
+		return nil
+	}
+	if existing, _ := app.FindFirstRecordByFilter("runs",
+		"controller = {:c} && run_id = {:r}", dbx.Params{"c": ctrl, "r": r.RunID}); existing != nil {
+		return nil // already persisted (a re-asserted run) — a no-op success, not a gap
+	}
+	coll, err := app.FindCollectionByNameOrId("runs")
+	if err != nil {
+		return err
+	}
+	rec := core.NewRecord(coll)
+	rec.Set("site", site)
+	rec.Set("controller", ctrl)
+	rec.Set("route", r.Route)
+	rec.Set("run_id", r.RunID)
+	rec.Set("epoch", r.Epoch)
+	rec.Set("seq", r.Seq)
+	rec.Set("origin", r.Origin)
+	rec.Set("actor", r.Actor)
+	rec.Set("actor_label", resolveActorLabel(app, r.Origin, r.Actor))
+	rec.Set("started_at", r.StartedAt)
+	rec.Set("ended_at", r.EndedAt)
+	rec.Set("duration_s", r.DurationS)
+	rec.Set("stop_reason", r.StopReason)
+	rec.Set("start_litres", r.StartLitres)
+	rec.Set("end_litres", r.EndLitres)
+	rec.Set("metered", r.Metered)
+	rec.Set("fault", r.Fault)
+	if err := app.Save(rec); err != nil {
+		// A failed write just means the high-water-mark won't advance past this run,
+		// so the device keeps re-asserting it next snapshot. Returning the error stops
+		// the caller from persisting later (higher-seq) runs this pass, keeping the
+		// ledger gap-free. Billing never loses a run to a transient error.
+		app.Logger().Error("persist run failed", "controller", ctrl, "run_id", r.RunID, "err", err)
+		return err
+	}
+	return nil
+}
+
+// HighWaterRun returns the highest persisted run (epoch, seq) for a controller —
+// the value published retained on RunsAckTopic so the device can drop every
+// outbox entry at or below it. run_id encodes (epoch, seq), so the lexical max of
+// (epoch, seq) is the monotonic high-water-mark even across epochs.
+func HighWaterRun(app core.App, ctrl string) (epoch, seq int64, ok bool) {
+	recs, err := app.FindRecordsByFilter("runs", "controller = {:c}", "-epoch,-seq", 1, 0,
+		dbx.Params{"c": ctrl})
+	if err != nil || len(recs) == 0 {
+		return 0, 0, false
+	}
+	return int64(recs[0].GetInt("epoch")), int64(recs[0].GetInt("seq")), true
 }
 
 // reconcileCommand moves a command's audit row to its terminal state from the
