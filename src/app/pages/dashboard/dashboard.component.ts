@@ -14,7 +14,7 @@ import { ControllerHealthComponent } from './widgets/controller-health.component
 import { LiveMapComponent } from './canvas/live-map.component';
 import { CONTROLLER_PALETTE } from '../../core/util/site-colors';
 import type { SiteTopology } from '../../core/models/topology.model';
-import type { RouteControl } from '@core';
+import type { RouteControl, StopSpecOverride } from '@core';
 
 /** A widget section as `sections()` produces it. */
 interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
@@ -165,6 +165,7 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
                         [phaseReason]="routePhase(c.controller, r.routeId)?.reason ?? ''"
                         [controllable]="canControl()"
                         (action)="routeCmd(c.controller, $event, r)"
+                        (run)="routeRun(c.controller, $event, r)"
                       />
                     }
                   </div>
@@ -580,6 +581,14 @@ export class DashboardComponent {
   protected async routeCmd(controller: string, action: CommandAction, route: RouteControl): Promise<void> {
     if (!this.canControl()) return;
     await this.lifecycle.dispatch(this.routeKey(controller, route.routeId), controller, action, { route });
+    this.offlineNote(controller);
+  }
+
+  /** A targeted manual run: a route_start carrying the picker's StopSpec (volume /
+   *  level / time). Same lifecycle as a plain start, just with the target attached. */
+  protected async routeRun(controller: string, stopSpec: StopSpecOverride, route: RouteControl): Promise<void> {
+    if (!this.canControl()) return;
+    await this.lifecycle.dispatch(this.routeKey(controller, route.routeId), controller, 'route_start', { route, stopSpec });
     this.offlineNote(controller);
   }
 

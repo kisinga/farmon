@@ -235,14 +235,15 @@ int main() {
           "watchdog: duration target -> clean STOPPING");
   }
 
-  // --- max-runtime backstop -> FAULT ---
+  // --- max-runtime backstop -> clean STOPPING (warning, not a fault) ---
   {
     auto rtIn = [](uint32_t now) { Inputs in = mk_inputs(now); in.route_tunables[0].max_runtime_s = 20; return in; };
     ControlState cs = scenario_state();
     try_route_start(cs, rtIn(1000), 0, "mr1", StopSpec{}, ORIGIN_MANUAL, "");
     tick_1s(cs, rtIn(4001));  // RUNNING
     tick_2s(cs, rtIn(4001 + 20001));  // runtime 20001 > 20s
-    check(cs.slots[0].state == ST_FAULT && cs.slots[0].fault_code == FAULT_MAX_RUNTIME, "watchdog: max-runtime -> FAULT");
+    check(cs.slots[0].state == ST_STOPPING && cs.slots[0].stop_reason == STOP_MAX_RUNTIME &&
+          cs.slots[0].fault_code == FAULT_NONE, "watchdog: max-runtime -> clean STOPPING (warning)");
   }
 
   // --- conflict -> queue -> drain once the holder stops conflicting ---

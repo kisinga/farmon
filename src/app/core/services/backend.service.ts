@@ -648,7 +648,9 @@ export class BackendService {
     siteId: string,
     controller: string,
     action: CommandAction,
-    args: { routeId?: number; nodeId?: string; on?: boolean; key?: string; value?: number; commandId?: string; reclaim?: boolean } = {},
+    args: { routeId?: number; nodeId?: string; on?: boolean; key?: string; value?: number; commandId?: string; reclaim?: boolean;
+      override_mask?: number; ov_source_min_pct?: number; ov_dest_max_pct?: number;
+      ov_max_runtime_min?: number; ov_target_duration_s?: number; ov_target_volume_l?: number } = {},
   ): Promise<string> {
     const res = await this.pb.send<{ command_id?: string }>('/api/farmon/command', {
       // No auto-cancellation: commands fan out concurrently (e.g. a calibration
@@ -666,6 +668,13 @@ export class BackendService {
         on: args.on,
         key: args.key,
         value: args.value,
+        // route_start StopSpec override (server forwards them; absent ⇒ route defaults).
+        override_mask: args.override_mask,
+        ov_source_min_pct: args.ov_source_min_pct,
+        ov_dest_max_pct: args.ov_dest_max_pct,
+        ov_max_runtime_min: args.ov_max_runtime_min,
+        ov_target_duration_s: args.ov_target_duration_s,
+        ov_target_volume_l: args.ov_target_volume_l,
         // A reclaim re-asserts an existing hold's command_id as a publish-only
         // keepalive: the server republishes it (fresh issued_at) to refresh the
         // device dead-man lease, but records no new audit row.

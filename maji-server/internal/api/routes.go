@@ -219,6 +219,12 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			On         *bool    `json:"on"`
 			Key        string   `json:"key"`
 			Value      *float64 `json:"value"`
+			OverrideMask      *int `json:"override_mask"`
+			OvSourceMinPct    *int `json:"ov_source_min_pct"`
+			OvDestMaxPct      *int `json:"ov_dest_max_pct"`
+			OvMaxRuntimeMin   *int `json:"ov_max_runtime_min"`
+			OvTargetDurationS *int `json:"ov_target_duration_s"`
+			OvTargetVolumeL   *int `json:"ov_target_volume_l"`
 			CommandID  string   `json:"command_id"`
 			Reclaim    bool     `json:"reclaim"`
 		}
@@ -242,6 +248,13 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			On:      body.On,
 			Key:     body.Key,
 			Value:   body.Value,
+			// route_start StopSpec override (forwarded verbatim; absent ⇒ route defaults).
+			OverrideMask:      body.OverrideMask,
+			OvSourceMinPct:    body.OvSourceMinPct,
+			OvDestMaxPct:      body.OvDestMaxPct,
+			OvMaxRuntimeMin:   body.OvMaxRuntimeMin,
+			OvTargetDurationS: body.OvTargetDurationS,
+			OvTargetVolumeL:   body.OvTargetVolumeL,
 		}
 		if err := cmd.ValidateOperator(); err != nil {
 			return apis.NewBadRequestError(err.Error(), nil)

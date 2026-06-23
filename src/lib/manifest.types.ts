@@ -91,6 +91,12 @@ export interface Route {
    * number entity for this route.
    */
   dest_has_level: boolean;
+  /**
+   * True when the destination endpoint is a tank fitted with a mechanical float
+   * valve. Lets a metered route detect "full" from the flow drop when the valve
+   * closes (the flow-stall path), independent of a pump-reliable level sensor.
+   */
+  dest_has_float_valve: boolean;
   /** True if level sensors on this route are reliable during pump operation. */
   runtime_level_ok: boolean;
   /** True when this route has a flow sensor and participates in flow watchdog/confirm. */

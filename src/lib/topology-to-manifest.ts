@@ -167,6 +167,7 @@ export function topologyToManifestForController(
 
     const sourceHasLevel = r.sourceKind === 'tank' && !!(nodeMap.get(r.source) as Record<string, unknown> | undefined)?.['level_monitored'];
     const destHasLevel = r.destKind === 'tank' && !!(nodeMap.get(r.destination) as Record<string, unknown> | undefined)?.['level_monitored'];
+    const destHasFloatValve = r.destKind === 'tank' && !!(nodeMap.get(r.destination) as Record<string, unknown> | undefined)?.['float_valve'];
 
     return {
       key: r.key,
@@ -184,6 +185,7 @@ export function topologyToManifestForController(
       dest_max_pct: destHasLevel ? (override.dest_max_level ?? 0) : 0,
       source_has_level: sourceHasLevel,
       dest_has_level: destHasLevel,
+      dest_has_float_valve: destHasFloatValve,
       runtime_level_ok: runtimeLevelOk,
       monitored: r.flowSensors.length > 0,
     };

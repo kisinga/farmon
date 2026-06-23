@@ -17,7 +17,7 @@ import {
   type StateMeaning, type TelemetryRole,
 } from './codegen-ids';
 import { collectTelemetryChannels, type TelemetryChannel } from './telemetry-channels';
-import { collectTunableNumbers, type TunableNumber } from './tunable-numbers';
+import { collectTunableNumbers, routeVolumeEligible, canStopOnFull, type TunableNumber } from './tunable-numbers';
 import { getPressureSensorIds } from './pressure-sensor-shared';
 import { topologyToManifestForController } from './topology-to-manifest';
 import { buildGraph } from './graph/topology-graph';
@@ -58,6 +58,14 @@ export interface RouteControl {
   /** Telemetry sensor id of the route's primary flow sensor, for a live L/min
    *  readout. Undefined for unmonitored routes (no flow sensor). */
   flowSensor?: string;
+  /** A volume target is offerable on a manual run (monitored + no sibling sharing
+   *  the flow sensor). Mirrors `routeVolumeEligible` — the run picker gates on it. */
+  volumeEligible?: boolean;
+  /** A "stop at tank X%" target is offerable (the destination tank is level-monitored). */
+  levelTarget?: boolean;
+  /** A plain start will actually stop on "full" (a float valve + flow sensor, or a
+   *  pump-safe destination level sensor). Drives the picker's default-run hint. */
+  canStopOnFull?: boolean;
   /** The route's path: the ordered node ids it traverses (source→destination) and
    *  the pipe ids between them. Together these are the route's *participants* — the
    *  elements that become "engaged" while it runs, so the map can light the whole
@@ -294,6 +302,9 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
           destination: destId ? nodeName.get(destId) ?? destId : undefined,
           crossesPump: r.crossesPump,
           flowSensor: r.flow_sensor ? flowSensorByNode.get(r.flow_sensor) : undefined,
+          volumeEligible: routeVolumeEligible(r, manifest.routes),
+          levelTarget: r.dest_has_level,
+          canStopOnFull: canStopOnFull(r),
           pathNodeIds: seq,
           pipeIds,
         };

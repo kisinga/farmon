@@ -63,6 +63,17 @@ type Command struct {
 	Key     string   // config_set — the runtime number entity id
 	Value   *float64 // config_set — the new setpoint
 
+	// route_start only: a per-run StopSpec override. OverrideMask selects which
+	// ov_* fields are active (mirrors OVERRIDE_BITS / enum OverrideBit); an unset
+	// field falls through to the route's live tunable on the device. All nil ⇒ the
+	// run uses the route's baked defaults (the pre-targeted-runs behaviour).
+	OverrideMask      *int
+	OvSourceMinPct    *int
+	OvDestMaxPct      *int
+	OvMaxRuntimeMin   *int
+	OvTargetDurationS *int
+	OvTargetVolumeL   *int
+
 	// firmware_update (server-only).
 	Version string
 	URL     string
@@ -82,6 +93,12 @@ type envelope struct {
 	On        *bool    `json:"on,omitempty"`
 	Key       string   `json:"key,omitempty"`
 	Value     *float64 `json:"value,omitempty"`
+	OverrideMask      *int `json:"override_mask,omitempty"`
+	OvSourceMinPct    *int `json:"ov_source_min_pct,omitempty"`
+	OvDestMaxPct      *int `json:"ov_dest_max_pct,omitempty"`
+	OvMaxRuntimeMin   *int `json:"ov_max_runtime_min,omitempty"`
+	OvTargetDurationS *int `json:"ov_target_duration_s,omitempty"`
+	OvTargetVolumeL   *int `json:"ov_target_volume_l,omitempty"`
 	Version   string   `json:"version,omitempty"`
 	URL       string   `json:"url,omitempty"`
 	MD5       string   `json:"md5,omitempty"`
@@ -122,6 +139,12 @@ func (c Command) Encode() []byte {
 		On:        c.On,
 		Key:       c.Key,
 		Value:     c.Value,
+		OverrideMask:      c.OverrideMask,
+		OvSourceMinPct:    c.OvSourceMinPct,
+		OvDestMaxPct:      c.OvDestMaxPct,
+		OvMaxRuntimeMin:   c.OvMaxRuntimeMin,
+		OvTargetDurationS: c.OvTargetDurationS,
+		OvTargetVolumeL:   c.OvTargetVolumeL,
 		Version:   c.Version,
 		URL:       c.URL,
 		MD5:       c.MD5,
