@@ -7,7 +7,7 @@ import { deriveTankCalibration } from '@core';
  * under different ids) will need an adapter to reuse this component for editing.
  */
 export interface CalibrationFieldEdit {
-  field: 'height_m' | 'pressure_elevation_m' | 'pressure_sensor_max_psi' | 'pressure_sensor_output_v';
+  field: 'height_m' | 'pressure_elevation_m';
   value: number | null;
 }
 
@@ -15,19 +15,17 @@ export interface CalibrationFieldEdit {
  * TankCalibrationVisualComponent — the calibration model as a picture.
  *
  * Presentational and service-free, so both the editor (design-time seeds) and the
- * dashboard (live device data) can mount it. It shows three things at a glance:
- *   - a schematic of the tank, its sensor drop, and the live water level
- *   - the empty→full band inside the sensor's 0…max psi range
- *   - the sensor's output voltage inside the board's ADC input range
- * The two bars together ARE the resolution warning: the lit overlap is the usable
- * resolution; a thin lit region turns amber instead of spelling out a sentence.
+ * dashboard (live device data) can mount it. It shows the tank geometry as a
+ * schematic and where the tank's empty→full swing sits inside the sensor's psi
+ * range — the "range used" that drives usable resolution. Sensor voltage is a
+ * separate scaling spec and lives elsewhere; it has no effect on resolution.
  */
 @Component({
   selector: 'app-tank-calibration-visual',
   standalone: true,
   template: `
     <div class="flex flex-col gap-2.5 text-xs">
-      <!-- Schematic + the four model inputs -->
+      <!-- Schematic + the geometry inputs -->
       <div class="flex gap-3">
         <svg viewBox="0 0 72 104" class="shrink-0 w-16 h-24 text-base-content/35" fill="none" stroke="currentColor">
           <g stroke-width="1" stroke-linecap="round" class="text-base-content/25">
@@ -45,34 +43,23 @@ export interface CalibrationFieldEdit {
         </svg>
 
         <div class="flex-1 grid grid-cols-[auto_1fr_auto] items-center gap-x-2 gap-y-1.5 content-center">
-          <span class="text-base-content/60" title="Tank height — the water column">⬍ h</span>
+          <span class="text-base-content/60" title="Tank height — the water column">⬍ height</span>
           <input type="number" min="0" step="0.05" class="input input-xs input-bordered w-full text-right tabular-nums no-spin"
             [value]="heightM() ?? ''" [disabled]="!canEdit()" (input)="emit('height_m', $event)" />
           <span class="text-base-content/40">m</span>
 
-          <span class="text-base-content/60" title="Vertical drop from tank outlet to the sensor">⬇ d</span>
+          <span class="text-base-content/60" title="Vertical drop from tank outlet to the sensor">⬇ drop</span>
           <input type="number" min="0" step="0.05" class="input input-xs input-bordered w-full text-right tabular-nums no-spin"
             [value]="dropM() ?? ''" [disabled]="!canEdit()" (input)="emit('pressure_elevation_m', $event)" />
           <span class="text-base-content/40">m</span>
-
-          <span class="text-base-content/60" title="Sensor full-scale rating">⌁ max</span>
-          <input type="number" min="0" step="0.5" class="input input-xs input-bordered w-full text-right tabular-nums no-spin"
-            [value]="sensorMaxPsi() ?? ''" [disabled]="!canEdit()" (input)="emit('pressure_sensor_max_psi', $event)" />
-          <span class="text-base-content/40">psi</span>
-
-          <span class="text-base-content/60" title="Sensor output voltage at full scale (datasheet)">⚡ out</span>
-          <input type="number" min="0" step="0.1" class="input input-xs input-bordered w-full text-right tabular-nums no-spin"
-            [value]="sensorOutputV() ?? ''" [disabled]="!canEdit()" [attr.placeholder]="boardAdcRangeV()"
-            (input)="emit('pressure_sensor_output_v', $event)" />
-          <span class="text-base-content/40">V</span>
         </div>
       </div>
 
       @if (cal(); as c) {
-        <!-- psi range: empty→full band inside 0…max, live pressure dot if known -->
+        <!-- Where the tank's empty→full swing sits inside the sensor's 0…max psi. -->
         <div class="flex flex-col gap-1">
           <div class="relative h-2 rounded-full bg-base-200">
-            <div class="absolute inset-y-0 rounded-full" [class]="psiOk() ? 'bg-base-content/30' : 'bg-warning/50'"
+            <div class="absolute inset-y-0 rounded-full" [class]="rangeOk() ? 'bg-base-content/30' : 'bg-warning/50'"
               [style.left.%]="pct(c.p_empty_psi)" [style.right.%]="100 - pct(c.p_full_psi)"></div>
             @if (livePressurePsi() !== null && livePressurePsi() !== undefined) {
               <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-primary ring-2 ring-base-100"
@@ -86,24 +73,10 @@ export interface CalibrationFieldEdit {
           </div>
         </div>
 
-        <!-- ADC range: sensor output lit inside the board input range, rest dimmed -->
-        <div class="flex flex-col gap-1">
-          <div class="relative h-2 rounded-full bg-base-200 overflow-hidden">
-            <div class="absolute inset-y-0 left-0 rounded-full" [class]="voltOk() ? 'bg-base-content/30' : 'bg-warning/50'"
-              [style.width.%]="voltUtilPct()"></div>
-          </div>
-          <div class="flex justify-between text-[10px] text-base-content/45 tabular-nums">
-            <span>adc 0</span>
-            <span [class.text-warning]="!voltOk()">sensor reaches {{ voltUtilPct().toFixed(0) }}%</span>
-            <span>{{ boardAdcRangeV() }}V</span>
-          </div>
-        </div>
-
-        <!-- The product: usable resolution. Amber when low — no sentence needed. -->
-        <div class="flex items-center gap-1.5 text-[11px]" [class.text-warning]="!resolutionOk()" [class.text-base-content]="resolutionOk()">
-          <span class="opacity-60">▸ usable resolution</span>
-          <span class="font-semibold tabular-nums">≈ {{ effectivePct().toFixed(0) }}%</span>
-          @if (!resolutionOk()) { <span class="opacity-80">— low</span> }
+        <div class="flex items-center gap-1.5 text-[11px]" [class.text-warning]="!rangeOk()" [class.text-base-content]="rangeOk()">
+          <span class="opacity-60">▸ sensor range used</span>
+          <span class="font-semibold tabular-nums">≈ {{ rangeUsedPct().toFixed(0) }}%</span>
+          @if (!rangeOk()) { <span class="opacity-80">— low, reading sits near sensor noise</span> }
         </div>
       } @else {
         <div class="text-[10px] text-base-content/50">Enter tank height and sensor max to model the calibration.</div>
@@ -118,9 +91,8 @@ export interface CalibrationFieldEdit {
 export class TankCalibrationVisualComponent {
   readonly heightM = input<number | null>(null);
   readonly dropM = input<number | null>(0);
+  /** Sensor full-scale rating (read-only here; edited as a sensor-spec field). */
   readonly sensorMaxPsi = input<number | null>(null);
-  readonly sensorOutputV = input<number | null>(null);
-  readonly boardAdcRangeV = input<number>(3.3);
   readonly canEdit = input(true);
   /** Live overlays (dashboard reuse) — null/undefined in the design-time editor. */
   readonly liveLevelPct = input<number | null>(null);
@@ -131,13 +103,9 @@ export class TankCalibrationVisualComponent {
   /** Stable id for the SVG clipPath, so multiple cards on a page don't collide. */
   readonly uid = input<string>(Math.random().toString(36).slice(2, 8));
 
-  /** Effective-resolution threshold below which the model reads as poor (matches the
-   *  `pressure-resolution` rule's 15%). */
+  /** Range-use below which the reading sits near the sensor's noise floor (matches
+   *  the `pressure-resolution` rule's 15%). */
   private readonly POOR_PCT = 15;
-  /** Voltage-utilisation below this dims the ADC bar to amber — a softer, single-factor
-   *  cue than POOR_PCT (which gates the combined resolution). Half the range = the point
-   *  past which a mismatched sensor is worth flagging on its own. */
-  private readonly LOW_VOLT_PCT = 50;
 
   protected cal = computed(() => {
     const h = this.heightM();
@@ -157,32 +125,18 @@ export class TankCalibrationVisualComponent {
     return Math.max(0, Math.min(100, (psi / max) * 100));
   }
 
-  /** Fraction of the board ADC range the sensor's full output reaches (0..100). */
-  protected voltUtilPct = computed(() => {
-    const range = this.boardAdcRangeV();
-    if (!(range > 0)) return 100;
-    const out = this.sensorOutputV() ?? range;
-    return Math.max(0, Math.min(100, (out / range) * 100));
-  });
-
   /** Fraction of the sensor's psi range the tank's empty→full swing uses (0..100). */
-  protected psiUtilPct = computed(() => {
+  protected rangeUsedPct = computed(() => {
     const c = this.cal();
     const max = this.sensorMaxPsi() ?? 0;
     return c && max > 0 ? (c.working_span_psi / max) * 100 : 0;
   });
 
-  /** Resolution actually usable = psi factor × voltage factor. */
-  protected effectivePct = computed(() => (this.psiUtilPct() * this.voltUtilPct()) / 100);
-
-  protected psiOk = computed(() => {
+  protected rangeOk = computed(() => {
     const c = this.cal();
     const max = this.sensorMaxPsi() ?? 0;
-    // Healthy psi factor unless undersized (full exceeds range) or swing is tiny.
-    return !!c && c.p_full_psi <= max + 0.001 && this.psiUtilPct() >= this.POOR_PCT;
+    return !!c && c.p_full_psi <= max + 0.001 && this.rangeUsedPct() >= this.POOR_PCT;
   });
-  protected voltOk = computed(() => this.voltUtilPct() >= this.LOW_VOLT_PCT);
-  protected resolutionOk = computed(() => this.effectivePct() >= this.POOR_PCT);
 
   protected emit(field: CalibrationFieldEdit['field'], ev: Event): void {
     const input = ev.target;

@@ -174,7 +174,7 @@ export class TankCalibrationComponent {
    *  was written and the divergence clears; topology is just the initial seed. */
   protected baseline = computed<{ height: number; drop: number; maxPsi: number }>(() => {
     const cal = this.cal();
-    const maxPsi = this.deviceVal(cal.rangeMaxKey) ?? cal.sensorMaxPsi;
+    const maxPsi = cal.sensorMaxPsi;
     const de = this.deviceEmpty(), df = this.deviceFull();
     if (de === null || df === null) return { height: cal.tankHeightM, drop: cal.sensorDropM, maxPsi };
     const phys = tankCalibrationToPhysical(de, df);
@@ -256,7 +256,7 @@ export class TankCalibrationComponent {
   /** Aggregate command phase across the calibration's keys (for the status line). */
   protected phase = computed<{ phase: CommandPhase; reason: string } | null>(() => {
     const c = this.controller(), cal = this.cal();
-    for (const key of [cal.calEmptyKey, cal.calFullKey, cal.rangeMaxKey, cal.rangeMinKey]) {
+    for (const key of [cal.calEmptyKey, cal.calFullKey]) {
       const p = this.lifecycle.phaseFor(`${c}/cfg/${key}`);
       if (p) return p;
     }
@@ -300,7 +300,6 @@ export class TankCalibrationComponent {
       await Promise.all([
         write(cal.calEmptyKey, d.p_empty_psi),
         write(cal.calFullKey, d.p_full_psi),
-        write(cal.rangeMaxKey, this.maxPsi()),
       ]);
       this.edits.set({}); // device now drives the display; convergence shows via phase
     } finally {

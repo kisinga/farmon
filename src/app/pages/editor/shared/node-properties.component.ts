@@ -159,8 +159,6 @@ import { TankCalibrationVisualComponent } from '../../../shared/tank-calibration
             [heightM]="$any(node()).height_m ?? null"
             [dropM]="$any(node()).pressure_elevation_m ?? 0"
             [sensorMaxPsi]="$any(node()).pressure_sensor_max_psi ?? null"
-            [sensorOutputV]="$any(node()).pressure_sensor_output_v ?? null"
-            [boardAdcRangeV]="boardAdcRangeV($any(node()), $any(node()).pressure_pin)"
             (editField)="updateField.emit({ nodeId: node().id, field: $event.field, value: $event.value })" />
         </div>
       }
@@ -332,22 +330,11 @@ export class NodePropertiesComponent {
   /** Fields the calibration visual owns and edits, so they drop out of the flat
    *  field list for a level-monitored tank (no duplicate inputs). */
   private static readonly TANK_VISUAL_FIELDS = new Set([
-    'height_m', 'pressure_elevation_m', 'pressure_sensor_max_psi', 'pressure_sensor_output_v',
+    'height_m', 'pressure_elevation_m',
   ]);
 
   protected hiddenForVisual(node: { kind?: string; level_monitored?: unknown }, key: string): boolean {
     return node.kind === 'tank' && node.level_monitored === true
       && NodePropertiesComponent.TANK_VISUAL_FIELDS.has(key);
-  }
-
-  /** The ADC input range of a board pin (PinDef.adc_full_scale_v), defaulting to
-   *  3.3 (a bare ESP32 pin). Feeds the visual's sensor-output → ADC conversion.
-   *  Resolved against the node's OWN controller board, not the active one, so a
-   *  remote-anchored tank reads the right range. */
-  protected boardAdcRangeV(node: { anchorId?: string }, pin: unknown): number {
-    if (typeof pin !== 'string' || !pin) return 3.3;
-    const board = node.anchorId ? this.workspace.boards().get(node.anchorId) : this.editor.board();
-    const def = board?.pins.find(p => p.gpio === pin || p.connector === pin);
-    return def?.adc_full_scale_v ?? 3.3;
   }
 }

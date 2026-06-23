@@ -16,7 +16,6 @@ import type { Manifest } from './manifest.types';
 import { SYSTEM_ENTITY_NAMES, routeEntityNames } from './entity-names';
 import {
   routeSourceMinNumber, routeDestMaxNumber, valveTravelTimeId,
-  pressureSensorRangeMinId, pressureSensorRangeMaxId,
   pressureSensorCalEmptyId, pressureSensorCalFullId,
 } from './codegen-ids';
 import { pressureSensorHaNames } from './pressure-sensor-shared';
@@ -31,7 +30,7 @@ export type TunableField =
   | 'flow_watchdog' | 'flow_confirm' | 'flow_threshold' | 'claim_lease'
   | 'max_runtime' | 'source_min_pct' | 'dest_max_pct'
   | 'target_volume_l' | 'target_duration_s' | 'flow_stall_enable'
-  | 'range_min' | 'range_max' | 'cal_empty' | 'cal_full'
+  | 'cal_empty' | 'cal_full'
   | 'travel_time';
 
 /** One runtime-settable number. `key` is the ESPHome number id == the config_set
@@ -136,8 +135,6 @@ export function collectTunableNumbers(m: Manifest): TunableNumber[] {
       : { p_empty_psi: 0, p_full_psi: maxPsi, working_span_psi: maxPsi };
     const base = { scope: 'node' as const, tier: 'calibration' as const, unit: 'psi', min: 0, max: 200, step: 0.1, nodeId: node.id, nodeName: node.name };
     out.push(
-      { ...base, key: pressureSensorRangeMinId(idn), field: 'range_min', label: names.rangeMin, default: 0 },
-      { ...base, key: pressureSensorRangeMaxId(idn), field: 'range_max', label: names.rangeMax, default: maxPsi },
       { ...base, key: pressureSensorCalEmptyId(idn), field: 'cal_empty', label: names.calEmpty, default: round2(cal.p_empty_psi) },
       { ...base, key: pressureSensorCalFullId(idn),  field: 'cal_full',  label: names.calFull,  default: round2(cal.p_full_psi) },
     );

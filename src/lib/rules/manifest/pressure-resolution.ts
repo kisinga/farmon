@@ -31,14 +31,14 @@ export const pressureResolution: ManifestRule = {
         const height = n['height_m'];
         if (typeof pin !== 'string' || !pin || typeof maxPsi !== 'number' || typeof height !== 'number') return [];
         const elevation = n['pressure_elevation_m'];
-        const sensorV = n['pressure_sensor_output_v'];
+        const vMax = n['pressure_v_max'];
         return [{
           id: n.id,
           name: n.name,
           sensor_max_psi: maxPsi,
           tank_height_m: height,
           elevation_m: typeof elevation === 'number' ? elevation : undefined,
-          sensor_output_v: typeof sensorV === 'number' ? sensorV : undefined,
+          v_max: typeof vMax === 'number' ? vMax : undefined,
           board_adc_range_v: adcRange(pin),
         }];
       });

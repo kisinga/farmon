@@ -39,8 +39,6 @@ export const flowFaultSensorId = (node: { id: string }) => `${node.id}_sensor_fa
 // ---------------------------------------------------------------------------
 
 export const pressureSensorId         = (n: { id: string }) => `${n.id}_pressure`;
-export const pressureSensorRangeMinId = (n: { id: string }) => `${n.id}_range_min`;
-export const pressureSensorRangeMaxId = (n: { id: string }) => `${n.id}_range_max`;
 export const pressureSensorCalEmptyId = (n: { id: string }) => `${n.id}_cal_empty`;
 export const pressureSensorCalFullId  = (n: { id: string }) => `${n.id}_cal_full`;
 export const pressureSensorLevelId    = (n: { id: string }) => `${n.id}_level`;

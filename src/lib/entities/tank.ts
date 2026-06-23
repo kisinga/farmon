@@ -34,7 +34,8 @@ export const TankNodeSchema = z.object({
   pressure_pin: PressureSensorConfigSchema.shape.pin.optional(),
   pressure_elevation_m: PressureSensorConfigSchema.shape.elevation_m.optional(),
   pressure_sensor_max_psi: PressureSensorConfigSchema.shape.sensor_max_psi.optional(),
-  pressure_sensor_output_v: PressureSensorConfigSchema.shape.sensor_output_v.optional(),
+  pressure_v_min: PressureSensorConfigSchema.shape.v_min.optional(),
+  pressure_v_max: PressureSensorConfigSchema.shape.v_max.optional(),
   pressure_pump_rated: PressureSensorConfigSchema.shape.pump_rated.optional(),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
@@ -87,7 +88,8 @@ export const tankDescriptor: NodeDescriptor = {
     { key: 'pressure_pin', label: 'Pressure pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc', hint: 'ADC pin for the tank-mounted pressure sensor. Required when level monitoring is enabled.' },
     { key: 'pressure_elevation_m', label: 'Sensor drop below tank (m)', type: 'number', hint: 'Vertical drop from tank outlet down to sensor. Stays full of water — shifts the empty-tank reading.' },
     { key: 'pressure_sensor_max_psi', label: 'Sensor max (psi)', type: 'number', hint: 'Datasheet full-scale value, e.g. 5 / 10 / 15 / 30 psi.' },
-    { key: 'pressure_sensor_output_v', label: 'Sensor output at full (V)', type: 'number', hint: "Sensor's output voltage at full pressure (datasheet). Leave blank if it matches the board's analog input range; set your sensor's value (e.g. 3.3) when it's lower — the board's ADC range does the conversion." },
+    { key: 'pressure_v_min', label: 'Output at 0 psi (V)', type: 'number', placeholder: '0', hint: "Sensor output voltage at zero pressure (datasheet). 0 for a 0-Vmax sensor; 0.5 for a 0.5-4.5V ratiometric one." },
+    { key: 'pressure_v_max', label: 'Output at full (V)', type: 'number', hint: "Sensor output voltage at full scale (datasheet). Leave blank to assume it swings the board's whole analog input range; set the real value (e.g. 3.3) when it's lower." },
     {
       key: 'pressure_pump_rated',
       label: 'Reading reliable while pump runs',
@@ -98,9 +100,13 @@ export const tankDescriptor: NodeDescriptor = {
 
   codegen: {
     sensors: (node: TankNode, _idx, ctx) => {
-      if (!node.pressure_pin) return '';
+      if (!node.pressure_pin || node.pressure_sensor_max_psi == null) return '';
       return emitPressureSensorYaml(
-        { id: node.id, name: node.name, pin: node.pressure_pin, sensor_output_v: node.pressure_sensor_output_v },
+        {
+          id: node.id, name: node.name, pin: node.pressure_pin,
+          sensor_max_psi: node.pressure_sensor_max_psi,
+          v_min: node.pressure_v_min, v_max: node.pressure_v_max,
+        },
         ctx,
       );
     },

@@ -70,7 +70,6 @@ export type HaEntityKey =
   | 'relay'
   | 'flow' | 'total' | 'sensorFault'
   | 'pressure'
-  | 'rangeMin' | 'rangeMax'
   | 'inletPressure' | 'outletPressure' | 'deltaPressure'
   | 'cover' | 'openCoil' | 'closeCoil' | 'travelTime'
   | 'switch' | 'power' | 'frequency' | 'faultCode' | 'faultReset' | 'speedSetpoint';

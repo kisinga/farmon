@@ -13,8 +13,6 @@ import { z } from 'zod';
 import { GpioPin } from './schemas';
 import {
   pressureSensorId,
-  pressureSensorRangeMinId,
-  pressureSensorRangeMaxId,
   pressureSensorCalEmptyId,
   pressureSensorCalFullId,
   pressureSensorLevelId,
@@ -37,15 +35,16 @@ function cppFloatLiteral(v: number): string {
 }
 
 /**
- * Pin voltage at full sensor output — the divisor that maps the ADC reading onto
- * the sensor's range. Combines the board's analog input range with the sensor's
- * own full-scale output (defaulting to that range). A 0-3.3V sensor on a 0-5V
- * input therefore tops out at 3.3 * 3.3/5 = 2.18V at the pin.
+ * The pin voltages at the sensor's output extremes — the two anchors the codegen
+ * bakes into the linear voltage→pressure map. The board maps its input range onto
+ * ADC_PIN_REF_V, so a sensor output of `v` lands at `v * ADC_PIN_REF_V / range` at
+ * the pin. `vMax` defaults to the board range (sensor swings the whole input); a
+ * non-zero `vMin` handles offset sensors (e.g. 0.5-4.5V ratiometric).
  */
-function adcDivisorVolts(boardAdcRangeV: number, sensorOutputV?: number | null): number {
+function adcPinAnchors(boardAdcRangeV: number, vMin: number, vMax?: number | null): { lo: number; hi: number } {
   const range = boardAdcRangeV > 0 ? boardAdcRangeV : ADC_PIN_REF_V;
-  const sensorV = sensorOutputV ?? range;
-  return sensorV * ADC_PIN_REF_V / range;
+  const k = ADC_PIN_REF_V / range;
+  return { lo: vMin * k, hi: (vMax ?? range) * k };
 }
 
 // ---------------------------------------------------------------------------
@@ -56,16 +55,15 @@ export const PressureSensorConfigSchema = z.object({
   pin: GpioPin,
   /** Vertical drop from tank outlet to sensor, metres. */
   elevation_m: z.number().nonnegative().default(0),
-  /** Sensor full-scale rating, psi. */
+  /** Sensor full-scale rating, psi (datasheet). The 0..max range is baked. */
   sensor_max_psi: z.number().positive(),
-  /**
-   * Sensor's full-scale output voltage (datasheet). Defaults to the board's
-   * analog input range — i.e. the sensor swings the whole input range. Set the
-   * sensor's real value when it is lower than the input range (e.g. a 0-3.3V
-   * sensor on the KC868-A16's 0-5V terminal): scaling and resolution are then
-   * derived from the board's ADC range, so you enter 3.3 — never the pin voltage.
-   */
-  sensor_output_v: z.number().positive().optional(),
+  /** Sensor output voltage at 0 psi (datasheet). 0 for a 0-Vmax sensor; e.g. 0.5
+   *  for a 0.5-4.5V ratiometric one. */
+  v_min: z.number().nonnegative().default(0),
+  /** Sensor output voltage at full scale (datasheet). Defaults to the board's
+   *  analog input range — i.e. the sensor swings the whole input. Enter the real
+   *  value (e.g. 3.3) when it's lower; the board's ADC range does the conversion. */
+  v_max: z.number().positive().optional(),
   /** True if rated for reliable readings during pump operation. */
   pump_rated: z.boolean().default(false),
 });
@@ -79,8 +77,6 @@ export type PressureSensorConfig = z.infer<typeof PressureSensorConfigSchema>;
 export interface PressureSensorCodegenIds {
   sId: string;
   levelId: string;
-  rangeMin: string;
-  rangeMax: string;
   calEmpty: string;
   calFull: string;
 }
@@ -89,8 +85,6 @@ export function getPressureSensorIds(node: { id: string }): PressureSensorCodege
   return {
     sId: pressureSensorId(node),
     levelId: pressureSensorLevelId(node),
-    rangeMin: pressureSensorRangeMinId(node),
-    rangeMax: pressureSensorRangeMaxId(node),
     calEmpty: pressureSensorCalEmptyId(node),
     calFull: pressureSensorCalFullId(node),
   };
@@ -102,8 +96,6 @@ export function getPressureSensorIds(node: { id: string }): PressureSensorCodege
 
 export interface PressureSensorHaNames {
   pressure: string;
-  rangeMin: string;
-  rangeMax: string;
   calEmpty: string;
   calFull: string;
   level: string;
@@ -112,8 +104,6 @@ export interface PressureSensorHaNames {
 export function pressureSensorHaNames(node: { name: string }): PressureSensorHaNames {
   return {
     pressure: `${node.name} Pressure`,
-    rangeMin: `${node.name} Sensor Min (psi)`,
-    rangeMax: `${node.name} Sensor Max (psi)`,
     calEmpty: `${node.name} Cal Empty (psi)`,
     calFull: `${node.name} Cal Full (psi)`,
     level: `${node.name} Level`,
@@ -125,17 +115,22 @@ export function pressureSensorHaNames(node: { name: string }): PressureSensorHaN
 // ---------------------------------------------------------------------------
 
 export function emitPressureSensorYaml(
-  node: { id: string; name: string; pin: string; sensor_output_v?: number | null },
+  node: { id: string; name: string; pin: string; sensor_max_psi: number; v_min?: number | null; v_max?: number | null },
   ctx: CodegenContext,
 ): string {
   const ids = getPressureSensorIds(node);
   const names = pressureSensorHaNames(node);
   const ch = ctx.resolveChannel(node.pin, { purpose: 'adc' });
   const header = formatComponentHeader(ch);
-  // Divisor baked at design time: the board declares its analog input range; the
-  // sensor declares its own full-scale output (default = that range). Fixed by
-  // hardware, so a literal — never a runtime entity.
-  const divisor = cppFloatLiteral(adcDivisorVolts(ch.adcFullScaleV ?? ADC_PIN_REF_V, node.sensor_output_v));
+  // Voltage→pressure is baked at design time: sensor psi range is a datasheet
+  // constant (0..max), and the pin anchors come from the board's input range and
+  // the sensor's v_min/v_max. All literals — no runtime range entities. The
+  // dashboard's cal_empty/cal_full is the only live trim (a second linear fit).
+  const { lo, hi } = adcPinAnchors(ch.adcFullScaleV ?? ADC_PIN_REF_V, node.v_min ?? 0, node.v_max);
+  const span = hi - lo > 0 ? hi - lo : ADC_PIN_REF_V;
+  const xLo = cppFloatLiteral(lo);
+  const spanLit = cppFloatLiteral(span);
+  const maxPsi = cppFloatLiteral(node.sensor_max_psi);
   return `\
 ${header}
   id: ${ids.sId}
@@ -152,10 +147,7 @@ ${header}
         window_size: 5
         send_every: 1
     - lambda: |-
-        float r_min = id(${ids.rangeMin}).state;
-        float r_max = id(${ids.rangeMax}).state;
-        if (std::isnan(r_min) || std::isnan(r_max) || r_max <= r_min) return x;
-        return r_min + (x / ${divisor}) * (r_max - r_min);
+        return ((x - ${xLo}) / ${spanLit}) * ${maxPsi};
 
 - platform: template
   id: ${ids.levelId}
@@ -174,7 +166,8 @@ ${header}
 }
 
 // ---------------------------------------------------------------------------
-// YAML emit — calibration number entities (rangeMin, rangeMax, calEmpty, calFull)
+// YAML emit — field calibration entities (calEmpty, calFull). The sensor's psi
+// range is baked (datasheet constant), so only the two field-cal anchors are live.
 // ---------------------------------------------------------------------------
 
 export function emitPressureCalNumbers(
@@ -189,30 +182,6 @@ export function emitPressureCalNumbers(
   const fmt = (v: number) => v.toFixed(2);
   return {
     number: `\
-- platform: template
-  name: "${names.rangeMin}"
-  id: ${ids.rangeMin}
-  icon: "mdi:tune-vertical"
-  min_value: 0
-  max_value: 200
-  step: 0.1
-  initial_value: 0
-  optimistic: true
-  restore_value: true
-  entity_category: config
-
-- platform: template
-  name: "${names.rangeMax}"
-  id: ${ids.rangeMax}
-  icon: "mdi:tune-vertical"
-  min_value: 0
-  max_value: 200
-  step: 0.1
-  initial_value: ${node.sensor_max_psi}
-  optimistic: true
-  restore_value: true
-  entity_category: config
-
 - platform: template
   name: "${names.calEmpty}"
   id: ${ids.calEmpty}
@@ -269,54 +238,46 @@ export function evaluatePressureSensorUndersized(
 const POOR_PRESSURE_SPAN_PCT = 15;
 
 /**
- * Low *effective* resolution — the product of the two factors that shrink how
- * much of the ADC the tank's empty→full swing actually exercises:
- *   - psi utilisation  = tank working span / sensor psi range
- *   - voltage utilisation = sensor full output / board ADC input range
- * Either alone can look fine; their product is the real resolution. Skips simply
- * undersized sensors (the undersized rule owns those). Board-aware, so it lives
- * behind a manifest rule where the board (and thus the ADC range) is in scope.
+ * Low usable resolution — how much of the sensor's pressure range the tank's
+ * empty→full swing exercises. Sensor noise and accuracy are rated against full
+ * scale, so a tank that swings a tiny slice of a big sensor reads near the noise.
+ * Voltage is deliberately NOT a factor: the ADC has far more steps than a tank
+ * level needs, so voltage utilisation never limits in practice. Skips undersized
+ * sensors (the undersized rule owns those).
  */
 export function evaluatePressureSensorLowResolution(
-  nodes: Array<{
-    id: string; name: string; sensor_max_psi: number;
-    elevation_m?: number; tank_height_m?: number;
-    sensor_output_v?: number | null; board_adc_range_v: number;
-  }>,
+  nodes: Array<{ id: string; name: string; sensor_max_psi: number; elevation_m?: number; tank_height_m?: number }>,
 ): PressureValidationIssue[] {
   return nodes
     .filter(n => typeof n.tank_height_m === 'number')
     .flatMap(n => {
       const tankHeight = n.tank_height_m!;
-      if (tankHeight <= 0 || n.sensor_max_psi <= 0 || n.board_adc_range_v <= 0) return [];
+      if (tankHeight <= 0 || n.sensor_max_psi <= 0) return [];
       const cal = deriveTankCalibration(tankHeight, n.elevation_m ?? 0);
       const recommended = recommendSensorMaxPsi(cal.p_full_psi);
       if (n.sensor_max_psi < recommended) return []; // undersized rule owns this
-      const psiUtil = cal.working_span_psi / n.sensor_max_psi;
-      const sensorV = n.sensor_output_v ?? n.board_adc_range_v;
-      const voltUtil = Math.min(1, sensorV / n.board_adc_range_v);
-      const effectivePct = psiUtil * voltUtil * 100;
-      if (effectivePct >= POOR_PRESSURE_SPAN_PCT) return [];
-      const headTip = (n.elevation_m ?? 0) > 0 ? 'lower the static head, ' : '';
+      const spanPct = (cal.working_span_psi / n.sensor_max_psi) * 100;
+      if (spanPct >= POOR_PRESSURE_SPAN_PCT) return [];
+      const headTip = (n.elevation_m ?? 0) > 0 ? ' (high static head eats the range)' : '';
       return [{
-        message: `Pressure sensor "${n.name}": tank level uses only ${effectivePct.toFixed(0)}% of the sensor's resolution — the level swing spans ${(psiUtil * 100).toFixed(0)}% of the ${n.sensor_max_psi} psi sensor, and the sensor reaches ${(voltUtil * 100).toFixed(0)}% of the board's ${n.board_adc_range_v}V input. Use a closer-ranged sensor, ${headTip}or match the sensor output to the board input for finer readings.`,
+        message: `Pressure sensor "${n.name}": the tank level swings only ${spanPct.toFixed(0)}% of the ${n.sensor_max_psi} psi sensor range${headTip}, so the reading sits near the sensor's noise floor. Use a closer-ranged sensor for finer level resolution.`,
         target: n.id,
       }];
     });
 }
 
 /**
- * Sensor output voltage exceeding the board's analog input range — the sensor
+ * Sensor full-scale output voltage exceeding the board's analog input range — it
  * would clip at full scale (or damage a bare ESP32 pin). An error, not a warning.
  */
 export function evaluatePressureSensorOverRange(
-  nodes: Array<{ id: string; name: string; sensor_output_v?: number | null; board_adc_range_v: number }>,
+  nodes: Array<{ id: string; name: string; v_max?: number | null; board_adc_range_v: number }>,
 ): PressureValidationIssue[] {
   return nodes.flatMap(n => {
-    if (typeof n.sensor_output_v !== 'number' || n.board_adc_range_v <= 0) return [];
-    if (n.sensor_output_v <= n.board_adc_range_v) return [];
+    if (typeof n.v_max !== 'number' || n.board_adc_range_v <= 0) return [];
+    if (n.v_max <= n.board_adc_range_v) return [];
     return [{
-      message: `Pressure sensor "${n.name}": ${n.sensor_output_v}V full-scale output exceeds the board's ${n.board_adc_range_v}V analog input range — readings clip at full scale. Use a sensor within the input range, or condition the signal down.`,
+      message: `Pressure sensor "${n.name}": ${n.v_max}V full-scale output exceeds the board's ${n.board_adc_range_v}V analog input range — readings clip at full scale. Use a sensor within the input range, or condition the signal down.`,
       target: n.id,
     }];
   });

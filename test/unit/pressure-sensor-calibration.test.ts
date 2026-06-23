@@ -109,13 +109,11 @@ console.log('\nShared helper: emitPressureCalNumbers');
     5, // tank height
   );
   const numberSection = components.number ?? '';
-  assert(numberSection.includes('initial_value: 0'), 'rangeMin seeded to 0 (sensor electrical bottom)');
-  assert(numberSection.includes('initial_value: 15'), 'rangeMax seeded to sensor_max_psi (15)');
   assert(numberSection.includes('initial_value: 2.84'), 'calEmpty seeded to ≈ 2.84 psi (PSI_PER_M × elevation)');
   assert(numberSection.includes('initial_value: 9.96'), 'calFull seeded to ≈ 9.96 psi (PSI_PER_M × (elevation + height))');
   assert(numberSection.includes('Tank Pressure Cal Empty (psi)'), 'HA entity label uses psi unit');
-  assert(numberSection.includes('Tank Pressure Sensor Max (psi)'), 'sensor max label uses psi unit');
-  assert(numberSection.includes('max_value: 200'), 'number entity bounds widened to 200 psi');
+  assert(!numberSection.includes('Sensor Min') && !numberSection.includes('Sensor Max'),
+    'sensor psi range is baked, not a runtime entity');
   assert(!numberSection.includes('(bar)'), 'no remaining bar references');
 }
 
@@ -147,10 +145,9 @@ const tankWithPressure: TankNode = {
   };
   const components = tankDescriptor.codegen!.extraComponents!(tankWithPressure, 0, dummyCtx);
   const numberSection = components.number ?? '';
-  assert(numberSection.includes('initial_value: 0'), 'rangeMin seeded to 0');
-  assert(numberSection.includes('initial_value: 15'), 'rangeMax seeded to sensor_max_psi');
   assert(numberSection.includes('initial_value: 2.84'), 'calEmpty seeded from tank height + elevation');
   assert(numberSection.includes('initial_value: 9.96'), 'calFull seeded from tank height + elevation');
+  assert(!numberSection.includes('Sensor Max'), 'sensor range not emitted as a runtime entity');
 }
 
 {
@@ -165,29 +162,35 @@ const tankWithPressure: TankNode = {
   assert(!yaml.includes('unit_of_measurement: "bar"'), 'no bar unit anywhere');
   assert(yaml.includes('Rain Tank Pressure'), 'pressure sensor name preserved');
   assert(yaml.includes('Rain Tank Level'), 'level template name preserved');
-  assert(yaml.includes('x / 3.3f'), 'divisor defaults to 3.3f when board ADC range is unknown');
+  // Range baked (0..15 psi), no runtime r_min/r_max entities; default scaling 0→3.3V.
+  assert(yaml.includes('((x - 0.0f) / 3.3f) * 15.0f'), 'voltage→psi map baked: x/3.3 × 15 psi');
+  assert(!yaml.includes('id(') || !yaml.includes('range_min'), 'no runtime range entity referenced');
 }
 
-// Codegen divisor = sensor output voltage scaled by the board's ADC input range.
-console.log('\nADC scaling divisor:');
+// Voltage→pressure scaling baked from board ADC range + sensor v_min/v_max.
+console.log('\nADC scaling:');
 {
   const ctx5: import('@core').CodegenContext = {
     resolveChannel: () => ({ platform: 'adc', config: 'pin:\n    number: GPIO19', adcFullScaleV: 5 }),
   };
-  // 0-3.3V sensor on a 0-5V board input → 3.3 × 3.3/5 = 2.178V at the pin.
-  const node33 = { ...tankWithPressure, pressure_sensor_output_v: 3.3 };
-  assert(tankDescriptor.codegen!.sensors!(node33, 0, ctx5).includes('x / 2.178f'),
-    '3.3V sensor on a 5V board → divisor 2.178f');
-  // Blank sensor output = swings the full board range → 3.3f (no regression).
-  assert(tankDescriptor.codegen!.sensors!(tankWithPressure, 0, ctx5).includes('x / 3.3f'),
-    'blank sensor output on a 5V board → divisor 3.3f');
+  // 0-3.3V sensor on a 0-5V board → full output reaches 3.3 × 3.3/5 = 2.178V at the pin.
+  const node33 = { ...tankWithPressure, pressure_v_max: 3.3 };
+  assert(tankDescriptor.codegen!.sensors!(node33, 0, ctx5).includes('/ 2.178f) * 15.0f'),
+    '3.3V sensor on a 5V board → span 2.178f');
+  // Offset sensor (0.5-4.5V) on a 5V board → lo 0.33V, hi 2.97V at the pin.
+  const ratio = { ...tankWithPressure, pressure_v_min: 0.5, pressure_v_max: 4.5 };
+  assert(tankDescriptor.codegen!.sensors!(ratio, 0, ctx5).includes('(x - 0.33f) / 2.64f'),
+    '0.5-4.5V sensor → lo 0.33f, span 2.64f');
+  // Blank v_max = swings the full board range → 0→3.3V at the pin.
+  assert(tankDescriptor.codegen!.sensors!(tankWithPressure, 0, ctx5).includes('((x - 0.0f) / 3.3f)'),
+    'blank v_max on a 5V board → span 3.3f');
 }
 
-// Over-range: sensor output beyond the board ADC input range is an error.
+// Over-range: sensor full output beyond the board ADC input range is an error.
 {
-  assert(evaluatePressureSensorOverRange([{ id: 't', name: 'Tank', sensor_output_v: 5, board_adc_range_v: 3.3 }]).length === 1,
+  assert(evaluatePressureSensorOverRange([{ id: 't', name: 'Tank', v_max: 5, board_adc_range_v: 3.3 }]).length === 1,
     'over-range: 5V sensor on a 3.3V input flagged');
-  assert(evaluatePressureSensorOverRange([{ id: 't', name: 'Tank', sensor_output_v: 3.3, board_adc_range_v: 5 }]).length === 0,
+  assert(evaluatePressureSensorOverRange([{ id: 't', name: 'Tank', v_max: 3.3, board_adc_range_v: 5 }]).length === 0,
     'no over-range when sensor output ≤ board range');
 }
 
@@ -250,43 +253,32 @@ assert(undersizedRule.severity === 'warning', 'severity is warning');
   assert(results.length === 0, 'no warning when tank has no pressure sensor config');
 }
 
-// Effective resolution = psi-span utilisation × voltage utilisation. Board-aware,
-// so tested through the shared helper (the `pressure-resolution` manifest rule is a
-// thin wrapper that supplies board_adc_range_v from PinDef.adc_full_scale_v).
-console.log('\nEffective resolution (psi × voltage):');
+// Usable resolution = how much of the sensor's pressure range the tank swing uses.
+// Voltage is NOT a factor (the ADC has far more steps than a level needs).
+console.log('\nUsable resolution (pressure-range only):');
 
 {
-  // 2 m tank, 20 m elevation, 50 psi sensor: ~2.84 psi swing = ~6% of range.
-  // Sensor matches the board's ADC range (voltUtil = 1) → psi factor alone fires.
+  // 2 m tank, 20 m elevation, 50 psi sensor: ~2.84 psi swing = ~6% of range → fires.
   const r = evaluatePressureSensorLowResolution([
-    { id: 't', name: 'Tank', sensor_max_psi: 50, elevation_m: 20, tank_height_m: 2, board_adc_range_v: 3.3 },
+    { id: 't', name: 'Tank', sensor_max_psi: 50, elevation_m: 20, tank_height_m: 2 },
   ]);
-  assert(r.length === 1, 'fires for elevated tank with poor psi-span utilisation');
-  assert(r[0].message.includes('resolution'), 'message explains resolution risk');
+  assert(r.length === 1, 'fires for elevated tank with poor pressure-range use');
+  assert(r[0].message.includes('noise'), 'message explains the near-noise reading');
 }
 
 {
-  // Voltage factor alone: a psi-wise well-sized 15 psi sensor (≈47% span) whose
-  // 1V output reaches only 20% of a 5V board input → 47% × 20% ≈ 9% < 15% → fires.
+  // Well-matched 15 psi sensor on a 5 m tank (~47% span) → no warning, regardless
+  // of any sensor voltage (voltage no longer enters resolution).
   const r = evaluatePressureSensorLowResolution([
-    { id: 't', name: 'Tank', sensor_max_psi: 15, elevation_m: 0, tank_height_m: 5, sensor_output_v: 1, board_adc_range_v: 5 },
+    { id: 't', name: 'Tank', sensor_max_psi: 15, elevation_m: 0, tank_height_m: 5 },
   ]);
-  assert(r.length === 1, 'fires when the sensor reaches only part of the board ADC range');
-  assert(r[0].message.includes("board's 5V input"), 'message names the board input range');
-}
-
-{
-  // Same sensor swinging the full 5V input (no sensor_output_v) → ~47% → no warning.
-  const r = evaluatePressureSensorLowResolution([
-    { id: 't', name: 'Tank', sensor_max_psi: 15, elevation_m: 0, tank_height_m: 5, board_adc_range_v: 5 },
-  ]);
-  assert(r.length === 0, 'no warning when both factors are healthy');
+  assert(r.length === 0, 'no warning when the tank uses a healthy slice of the range');
 }
 
 {
   // Undersized sensor → owned by the undersized rule, resolution stays silent.
   const r = evaluatePressureSensorLowResolution([
-    { id: 't', name: 'Tank', sensor_max_psi: 5, elevation_m: 0, tank_height_m: 5, board_adc_range_v: 5 },
+    { id: 't', name: 'Tank', sensor_max_psi: 5, elevation_m: 0, tank_height_m: 5 },
   ]);
   assert(r.length === 0, 'does not fire when the sensor is already undersized');
 }

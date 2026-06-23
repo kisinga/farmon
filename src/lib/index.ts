@@ -114,7 +114,7 @@ export type { TunableNumber, TunableScope, TunableTier, TunableField } from './t
 export {
   pumpSwitchId, valveCoverId, valveOpenPinId, valveClosePinId, valveTravelTimeId,
   flowSensorId, flowTotalId, flowFaultCountId, flowFaultSensorId,
-  pressureSensorId, pressureSensorRangeMinId, pressureSensorRangeMaxId,
+  pressureSensorId,
   pressureSensorCalEmptyId, pressureSensorCalFullId, pressureSensorLevelId,
   waterSourcePressureId,
   dosingPumpSwitchId, filterInletPressureId, filterOutletPressureId, filterDeltaPressureId,

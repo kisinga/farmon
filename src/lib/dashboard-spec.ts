@@ -134,11 +134,9 @@ export interface CalibrationControl {
   tankHeightM: number;
   sensorDropM: number;
   sensorMaxPsi: number;
-  /** Device `number:` ids written via config_set. */
+  /** Device `number:` ids written via config_set (the two field-cal anchors). */
   calEmptyKey: string;
   calFullKey: string;
-  rangeMinKey: string;
-  rangeMaxKey: string;
   /** Live telemetry ids: level % (published) and raw pressure (published only if
    *  the raw sensor channel is emitted). */
   levelSensor: string;
@@ -335,8 +333,6 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
             sensorMaxPsi: node['pressure_sensor_max_psi'] as number,
             calEmptyKey: ids.calEmpty,
             calFullKey: ids.calFull,
-            rangeMinKey: ids.rangeMin,
-            rangeMaxKey: ids.rangeMax,
             levelSensor: ids.levelId,
             pressureSensor: ids.sId,
           };
