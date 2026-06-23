@@ -10,7 +10,7 @@ import type { ValidationResult, RuleDiagnostic, NetworkConfig, DeploymentMode } 
 import type {
   SiteListEntry, SiteFullPayload, SiteSavePayload,
   TemplateListEntry, Controller,
-  BoardDef, Route, SiteTopology,
+  BoardDef, Route, SiteTopology, EasyModeProfile,
 } from '@core';
 
 export type { ValidationResult, RuleDiagnostic, NetworkConfig };
@@ -72,13 +72,32 @@ export interface AppConfigRecord {
 }
 
 /** The configuration a pricing-page visitor submitted alongside a lead. `tier` and
- *  `monthly` are absent on snapshots captured before the platform-first pricing change. */
+ *  `monthly` are absent on snapshots captured before the platform-first pricing change.
+ *  `topology` is the composed design (when the visitor described their site), absent
+ *  on snapshots captured before Easy Mode.
+ *
+ *  `profile` is the raw Easy Mode answers (the input SSOT); `topology` is the
+ *  snapshot derived from them (what the visitor saw and got in their PDF). Both
+ *  are kept: the snapshot stays faithful even if the composer later changes,
+ *  while the profile lets lead conversion re-run the composer with a real board
+ *  to produce a pin-wired site. Absent on pre-conversion snapshots. */
 export interface LeadEstimate {
   controllers: number;
   oneTime: number;
   monthly?: number;
   tier?: string;
   input: { pumps: number; valves: number; flow: number; tanks: number };
+  topology?: SiteTopology | null;
+  profile?: EasyModeProfile | null;
+  /** Set when this lead has been converted to a site, so the leads view can link
+   *  to it and hide the Convert action. Rides the JSON blob (no schema field). */
+  convertedSiteId?: string;
+  /** Set when the described site exceeded Easy Mode: the visitor asked our team to
+   *  design it. `designReason` is the plain trigger (custom_tanks / many_areas /
+   *  big_system); `note` is their optional free-text. */
+  designRequest?: boolean;
+  designReason?: string;
+  note?: string;
 }
 
 /** A captured sales enquiry from the public pricing estimator. */

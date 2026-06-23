@@ -91,7 +91,7 @@ export class BackendService {
         }
       : undefined;
     return {
-      site: { id: r['id'], friendlyName: r['name'], deployment, owners, people },
+      site: { id: r['id'], friendlyName: r['name'], deployment, owners, people, commenceDate: (r['commence_date'] ?? '') as string },
       topology: (r['draft_topology'] ?? null) as SiteFullPayload['topology'],
     };
   }
@@ -132,10 +132,15 @@ export class BackendService {
     return records.map((r) => this.toCustomerEntry(r));
   }
 
-  /** Create a customer account and email them an invite (a set-password link).
-   *  `invited` is false if the email send failed (e.g. SMTP not configured) — the
-   *  account still exists; use customerInvite to retry. Admin-only server-side. */
-  async customerCreate(input: { name: string; email: string }): Promise<{ customer: CustomerEntry; invited: boolean }> {
+  /** Create a customer account, optionally emailing a set-password invite.
+   *  `invited` is false when the invite was skipped (`invite: false`, e.g. lead
+   *  conversion, which leaves invites to a later admin step) or when the email
+   *  send failed (e.g. SMTP not configured); either way the account exists and
+   *  customerInvite can send it. Admin-only server-side. */
+  async customerCreate(
+    input: { name: string; email: string },
+    opts: { invite?: boolean } = {},
+  ): Promise<{ customer: CustomerEntry; invited: boolean }> {
     const password = this.randomPassword(); // never used by the customer; they set their own via the invite
     const r = await this.pb.collection('users').create({
       name: input.name,
@@ -145,13 +150,15 @@ export class BackendService {
       passwordConfirm: password,
       role: 'customer',
     });
+    const customer = this.toCustomerEntry(r);
+    if (opts.invite === false) return { customer, invited: false };
     let invited = true;
     try {
       await this.pb.collection('users').requestPasswordReset(input.email);
     } catch {
       invited = false;
     }
-    return { customer: this.toCustomerEntry(r), invited };
+    return { customer, invited };
   }
 
   async customerUpdate(id: string, patch: { name: string; email: string }): Promise<void> {
@@ -342,6 +349,16 @@ export class BackendService {
 
   async leadSetStatus(id: string, status: string): Promise<void> {
     await this.pb.collection('leads').update(id, { status });
+  }
+
+  /** Close a lead and record the site it was converted into. The link rides the
+   *  estimate JSON (no dedicated column); the current estimate is merged so its
+   *  snapshot + profile are preserved. */
+  async leadMarkConverted(id: string, siteId: string, estimate: LeadEntry['estimate']): Promise<void> {
+    await this.pb.collection('leads').update(id, {
+      status: 'closed',
+      estimate: { ...(estimate ?? {}), convertedSiteId: siteId },
+    });
   }
 
   async leadDelete(id: string): Promise<void> {
@@ -544,10 +561,20 @@ export class BackendService {
     }
     const boards = await this.boardDefsForModels(new Set(topo.controllers.map((c) => c.board)));
     const docs = await this.docList();
+    const devices = await this.deviceListForSite(siteId);
     // Lazy: pulls the assembler + micromustache + marked into a dynamic chunk,
     // keeping them out of the initial bundle.
     const { assembleSiteDoc } = await import('@core/docs');
-    return assembleSiteDoc({ siteName: site.friendlyName, topo, diagrams, boards, docs });
+    return assembleSiteDoc({
+      siteName: site.friendlyName,
+      siteId,
+      commenceDate: site.commenceDate ?? '',
+      topo, diagrams, boards, docs,
+      devices: devices.map((d) => ({
+        deviceId: d.deviceId, board: d.boardType, firmware: d.firmwareVersion,
+        online: d.online, lastSeen: d.lastSeen,
+      })),
+    });
   }
 
   /** The site's parsed topology (for offscreen diagram rendering on the admin side). */
@@ -686,7 +713,10 @@ export class BackendService {
     };
   }
 
-  private newControllerId(friendlyName: string): string {
+  /** Mint a globally-unique controller id (the provision PK / MQTT identity).
+   *  Shared by the Expert blank-system flow and Easy Mode, so neither produces a
+   *  colliding id. */
+  newControllerId(friendlyName: string): string {
     const base = this.slugify(friendlyName) || 'controller';
     // Suffix is a slice of a v4 UUID (crypto, secure context) so two controllers
     // sharing a friendly name still get distinct ids — the id is the MQTT username

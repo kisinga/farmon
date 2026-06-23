@@ -43,13 +43,16 @@ export interface SiteMetadata {
    * `owners` so an empty/partial directory never mislabels a co-owner.
    */
   people?: { id: string; name?: string; email?: string }[];
+  /** Hosting/commissioning start (ISO), stamped at first live connect; '' until then.
+   *  Populated by siteLoad; drives the warranty term in the generated handover. */
+  commenceDate?: string;
 }
 
 // ---------------------------------------------------------------------------
 // Stored site topology (the JSON blob on disk)
 // ---------------------------------------------------------------------------
 
-import type { TopologyNode, PipeSegment, RouteOverride, UartBus, IoProviderDef, NetworkConfig, Controller } from './topology.types';
+import type { TopologyNode, PipeSegment, RouteOverride, UartBus, IoProviderDef, NetworkConfig, Controller, SiteTopology } from './topology.types';
 
 export interface StoredSiteTopology {
   schema: number;
@@ -63,6 +66,24 @@ export interface StoredSiteTopology {
     flow_confirm: number;
     flow_threshold: number;
     update_interval: number;
+  };
+}
+
+/**
+ * Project a full in-memory `SiteTopology` down to the persisted subset. The
+ * in-memory shape carries transient UI/runtime fields (`remoteImports`,
+ * `layout`) that never belong on disk; this is the single place that mapping
+ * lives, shared by the Easy Mode stepper and lead conversion so the two can't
+ * drift on which fields get saved.
+ */
+export function toStoredTopology(t: SiteTopology): StoredSiteTopology {
+  return {
+    schema: t.schema,
+    controllers: t.controllers,
+    nodes: t.nodes,
+    pipes: t.pipes,
+    route_overrides: t.route_overrides,
+    timing: t.timing,
   };
 }
 

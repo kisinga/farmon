@@ -25,11 +25,23 @@ export class CustomersStore extends CollectionStore<CustomerEntry[]> {
     return [...list].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
   }
 
-  /** Create a customer and email the invite. Returns whether the invite sent. */
-  async create(input: { name: string; email: string }): Promise<{ invited: boolean }> {
-    const { customer, invited } = await this.backend.customerCreate(input);
+  /** Create a customer (optionally emailing the set-password invite) and patch
+   *  the cached list. Returns the new customer and whether the invite sent. */
+  async create(
+    input: { name: string; email: string },
+    opts?: { invite?: boolean },
+  ): Promise<{ customer: CustomerEntry; invited: boolean }> {
+    const { customer, invited } = await this.backend.customerCreate(input, opts);
     this.mutate((list) => this.sorted([...list, customer]));
-    return { invited };
+    return { customer, invited };
+  }
+
+  /** The cached customer with this email (case-insensitive), or undefined.
+   *  Loads the list first so find-or-create during lead conversion is reliable. */
+  async findByEmail(email: string): Promise<CustomerEntry | undefined> {
+    await this.ensureLoaded();
+    const needle = email.trim().toLowerCase();
+    return needle ? this.list().find((c) => c.email.toLowerCase() === needle) : undefined;
   }
 
   async update(id: string, patch: { name: string; email: string }): Promise<void> {

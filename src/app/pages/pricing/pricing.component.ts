@@ -1,11 +1,14 @@
 import { Component, computed, inject, signal, type WritableSignal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import type { SiteTopology, EasyModeProfile } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { PRICING, SEGMENT_PACKS, estimate, kes, type EstimateInput, type Segment } from './pricing.model';
 import { applyPageSeo } from '../../shared/seo';
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
 import { MktHeroComponent, MktPlanLevelsComponent } from '../../shared/marketing/ui';
+import { SystemEstimatorComponent, type SizedEstimate } from './system-estimator.component';
+import { buildQuoteHtml, openQuote } from './quote';
 
 type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 
@@ -14,14 +17,14 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
  * nav/footer (the app shell hides chrome here, like the landing page).
  *
  * Transparency-first: the estimate is computed and shown live from three plain
- * questions — no form gates the number. Lead capture sits *below* the visible
+ * questions, no form gates the number. Lead capture sits *below* the visible
  * estimate and is consent-gated; the estimate snapshot rides along so followup
  * has context. A honeypot field plus a server-side hook drop bot spam.
  */
 @Component({
   selector: 'app-pricing',
   standalone: true,
-  imports: [RouterLink, MarketingNavComponent, MarketingFooterComponent, MktHeroComponent, MktPlanLevelsComponent],
+  imports: [RouterLink, MarketingNavComponent, MarketingFooterComponent, MktHeroComponent, MktPlanLevelsComponent, SystemEstimatorComponent],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   template: `
     <!-- NAV -->
@@ -59,7 +62,15 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 
         <!-- Questions -->
         <div class="lg:col-span-3 space-y-5">
-          <h2 class="text-xl font-bold tracking-tight">Tell us about your site</h2>
+          <!-- Plain-language sizer (primary): fills the numbers below from a site description. -->
+          <app-system-estimator (sized)="applySizing($event)" />
+
+          <!-- Everything below is optional fine-tuning, collapsed to keep the page calm. -->
+          <details class="group">
+            <summary class="cursor-pointer select-none py-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
+              Adjust the details <span class="font-normal text-slate-400">: pumps, sizes, special cases (optional)</span>
+            </summary>
+            <div class="mt-4 space-y-5">
 
           <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-5">
             <h3 class="font-semibold text-slate-900">What is this site for?</h3>
@@ -146,11 +157,60 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
               </span>
             </label>
           }
+            </div>
+          </details>
         </div>
 
         <!-- Live estimate -->
         <div class="lg:col-span-2">
-          <div class="sticky top-24 rounded-2xl bg-slate-950 text-white p-6 shadow-xl">
+          <div class="lg:sticky lg:top-24 rounded-2xl bg-slate-950 text-white p-5 sm:p-6 shadow-xl">
+          @if (designHandoff(); as h) {
+            <!-- EXCEEDS EASY MODE: the same card becomes the design-request, inline. -->
+            @if (submitState() === 'done') {
+              <div class="text-center py-4">
+                <div class="w-12 h-12 mx-auto rounded-full bg-cyan-400/15 text-cyan-300 flex items-center justify-center mb-4">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <p class="text-lg font-bold">Got it. Thank you.</p>
+                <p class="mt-2 text-sm text-white/60">Our team will reach out to design your system with you.</p>
+              </div>
+            } @else {
+              <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Custom system</p>
+              <p class="mt-2 text-2xl font-bold tracking-tight">Let's design this with you</p>
+              <p class="mt-2 text-sm text-white/70 leading-relaxed">{{ h.message }} Share your details and an engineer will tailor it to your site.</p>
+              <p class="mt-3 text-sm text-white/55">Starts around {{ money(est().monthly) }} / month plus a one-time kit. The final figure comes with your design.</p>
+
+              <div class="mt-5 space-y-3">
+                <input type="text" placeholder="Name" [value]="name()" (input)="name.set(inputValue($event))"
+                       class="w-full rounded-lg bg-white/5 ring-1 ring-white/15 text-white placeholder-white/35 px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <input type="tel" placeholder="Phone" [value]="phone()" (input)="phone.set(inputValue($event))"
+                         class="w-full rounded-lg bg-white/5 ring-1 ring-white/15 text-white placeholder-white/35 px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+                  <input type="email" placeholder="Email" [value]="email()" (input)="email.set(inputValue($event))"
+                         class="w-full rounded-lg bg-white/5 ring-1 ring-white/15 text-white placeholder-white/35 px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+                </div>
+                <textarea rows="2" placeholder="Anything else we should know? (optional)" [value]="note()" (input)="note.set(inputValue($event))"
+                          class="w-full rounded-lg bg-white/5 ring-1 ring-white/15 text-white placeholder-white/35 px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 outline-none resize-none"></textarea>
+
+                <!-- Honeypot -->
+                <input type="text" tabindex="-1" autocomplete="off" aria-hidden="true" [value]="hp()" (input)="hp.set(inputValue($event))" class="hidden" />
+
+                <label class="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" [checked]="consent()" (change)="consent.set(isChecked($event))" class="mt-0.5 w-4 h-4 accent-cyan-400" />
+                  <span class="text-xs text-white/60">I agree to be contacted about this design. Give us a phone or email so we can reach you.</span>
+                </label>
+
+                @if (submitState() === 'error') {
+                  <p class="text-sm text-rose-300">{{ errorMsg() }}</p>
+                }
+
+                <button type="button" (click)="submit()" [disabled]="!canSubmit() || submitState() === 'sending'"
+                        class="w-full rounded-full px-4 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  {{ submitState() === 'sending' ? 'Sending…' : 'Request your design' }}
+                </button>
+              </div>
+            }
+          } @else {
             <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Your plan</p>
             <p class="mt-1 text-sm text-white/55">{{ est().tier }} · {{ est().summary }}</p>
 
@@ -213,17 +273,34 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
               </p>
             }
 
+            <!-- Primary CTA: talk to us (scrolls to the lead form). Downloading the
+                 PDF is the secondary action. -->
+            <button type="button" (click)="scrollToContact()"
+                    class="mt-5 w-full rounded-full px-4 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">
+              Contact me about this
+            </button>
+            <button type="button" (click)="downloadQuote()" [disabled]="!quoteTopology() || quoting()"
+                    class="mt-2 w-full rounded-full px-4 py-2.5 text-sm font-semibold ring-1 ring-white/25 text-white hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              {{ quoting() ? 'Preparing…' : 'Download quote (PDF)' }}
+            </button>
+            @if (!quoteTopology()) {
+              <p class="mt-1.5 text-[11px] text-white/40">Describe your site above to include the system design in your quote.</p>
+            }
+
             <p class="mt-4 text-[11px] text-white/40 leading-relaxed">
               An estimate, not a final quote. The real price depends on a site survey, pipe sizes,
               and install. Prices in KES.
             </p>
+          }
           </div>
         </div>
       </div>
     </section>
 
-    <!-- LEAD CAPTURE -->
-    <section class="px-5 sm:px-8 pb-20">
+    <!-- LEAD CAPTURE (formal quote). The over-Easy-Mode design request is captured
+         inline in the plan card above, so this is hidden then to avoid two forms. -->
+    @if (!designHandoff()) {
+    <section id="quote-lead" class="px-5 sm:px-8 pb-20">
       <div class="max-w-2xl mx-auto rounded-2xl ring-1 ring-slate-200 bg-slate-50 p-7">
         @if (submitState() === 'done') {
           <div class="text-center py-6">
@@ -281,6 +358,7 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
         }
       </div>
     </section>
+    }
 
     <!-- FOOTER -->
     <app-marketing-footer tagline="Honest pricing. No surprises." />
@@ -311,7 +389,7 @@ export class PricingComponent {
   protected readonly threePhase = signal(false);
 
   // The framing question. Picks the dashboard a customer would get and the pack we
-  // pitch — never gates what they can buy.
+  // pitch, never gates what they can buy.
   protected readonly segments = [
     { key: 'farm' as Segment, label: 'Farm', blurb: 'Grow more with less' },
     { key: 'property' as Segment, label: 'Property or estate', blurb: 'Bill tenants, protect supply' },
@@ -352,6 +430,58 @@ export class PricingComponent {
     return p !== null ? 'from ' + kes(p) + ' / mo' : 'on request';
   }
 
+  /** The composed design from the sizer, kept for the quote document. */
+  protected readonly quoteTopology = signal<SiteTopology | null>(null);
+  /** The answers behind that design, kept so the captured lead can be converted
+   *  into a wired site later (re-composed with a real board). */
+  protected readonly quoteProfile = signal<EasyModeProfile | null>(null);
+  /** Set when the described site exceeds Easy Mode: the result card switches into
+   *  the inline design-request flow with this plain reason. */
+  protected readonly designHandoff = signal<{ reason: string; message: string } | null>(null);
+  /** Optional "anything else?" note on a design request. */
+  protected readonly note = signal('');
+  protected readonly quoting = signal(false);
+
+  /** Fill the estimator inputs from the plain-language sizer. The live estimate
+   *  (and the lead snapshot that rides with it) then reflect the described site,
+   *  and the composed design is kept so the quote can embed it. */
+  protected applySizing(e: SizedEstimate): void {
+    this.quoteTopology.set(e.topology);
+    this.quoteProfile.set(e.profile);
+    this.designHandoff.set(e.handoff);
+    // Hand-off (e.g. several tanks): only drop the quote; leave the price inputs
+    // at their last buildable values rather than zeroing them.
+    if (!e.topology) return;
+    this.segment.set(e.segment);
+    this.pumps.set(e.pumps);
+    this.valves.set(e.valves);
+    this.flow.set(e.flow);
+    this.tanks.set(e.tanks);
+  }
+
+  /** Scroll to the lead form (the "contact me" follow-up) and focus the name. */
+  protected scrollToContact(): void {
+    const el = document.getElementById('quote-lead');
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /** Build the printable quote (reusing the documentation flow) and open it for
+   *  the visitor to save as PDF. The design is the one from the sizer; the price
+   *  is the current on-page estimate. */
+  protected async downloadQuote(): Promise<void> {
+    const topology = this.quoteTopology();
+    if (!topology || this.quoting()) return;
+    this.quoting.set(true);
+    try {
+      const html = await buildQuoteHtml({ siteName: 'Your MajiFlow system', topology, estimate: this.est() });
+      openQuote(html);
+    } catch (e) {
+      console.error('Quote generation failed', e);
+    } finally {
+      this.quoting.set(false);
+    }
+  }
+
   protected step(sig: WritableSignal<number>, delta: number): void {
     sig.set(Math.min(99, Math.max(0, sig() + delta)));
   }
@@ -380,7 +510,18 @@ export class PricingComponent {
         phone: this.phone().trim(),
         email: this.email().trim(),
         consent: this.consent(),
-        estimate: this.est(),
+        // Carry the composed design and the answers behind it (when the visitor
+        // described their site) so follow-up opens the exact system, and an admin
+        // can convert it into a wired site. For an over-Easy-Mode site, flag it as
+        // a design request with the reason + any note so the admin knows to design.
+        estimate: {
+          ...this.est(),
+          topology: this.quoteTopology(),
+          profile: this.quoteProfile(),
+          designRequest: !!this.designHandoff(),
+          designReason: this.designHandoff()?.reason,
+          note: this.note().trim() || undefined,
+        },
         hp: this.hp(),
       });
       this.submitState.set('done');

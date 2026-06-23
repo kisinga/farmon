@@ -26,6 +26,15 @@ export class LeadsStore extends CollectionStore<LeadEntry[]> {
     this.mutate((list) => list.map((l) => (l.id === id ? { ...l, status } : l)));
   }
 
+  /** Close a lead and link it to the site it became. Patches the cached row so
+   *  the table shows "Converted" without a refetch. */
+  async markConverted(lead: LeadEntry, siteId: string): Promise<void> {
+    await this.backend.leadMarkConverted(lead.id, siteId, lead.estimate);
+    this.mutate((list) => list.map((l) => (l.id === lead.id
+      ? { ...l, status: 'closed', estimate: l.estimate ? { ...l.estimate, convertedSiteId: siteId } : l.estimate }
+      : l)));
+  }
+
   async delete(id: string): Promise<void> {
     await this.backend.leadDelete(id);
     this.mutate((list) => list.filter((l) => l.id !== id));

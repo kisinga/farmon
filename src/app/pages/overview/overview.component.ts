@@ -10,6 +10,7 @@ import type { SiteListEntry } from '../../core/models/backend-api';
 import { HOSTING_DEVICE_CAP } from '@core';
 import { SectionHeaderComponent } from '../editor/shared/section-header.component';
 import { AssignPickerComponent, type AssignItem } from '../../shared/assign-picker/assign-picker.component';
+import { EasyModeComponent } from './easy-mode.component';
 import { siteColor, initials } from '../../core/util/site-colors';
 
 /**
@@ -22,7 +23,7 @@ import { siteColor, initials } from '../../core/util/site-colors';
 @Component({
   selector: 'app-overview',
   standalone: true,
-  imports: [SectionHeaderComponent, AssignPickerComponent],
+  imports: [SectionHeaderComponent, AssignPickerComponent, EasyModeComponent],
   host: { class: 'flex-1 overflow-auto' },
   template: `
     <div class="content-pane space-y-6">
@@ -37,6 +38,13 @@ import { siteColor, initials } from '../../core/util/site-colors';
             </svg>
             Import
           </label>
+          <button class="btn btn-sm rounded-full border-0 bg-emerald-400 text-slate-950 hover:bg-emerald-300 gap-1.5 shadow-lg shadow-emerald-500/20"
+            (click)="showEasy.set(true)">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Quick setup
+          </button>
           <button class="btn btn-sm rounded-full border-0 bg-cyan-400 text-slate-950 hover:bg-cyan-300 gap-1.5 shadow-lg shadow-cyan-500/20"
             (click)="showCreate.set(true)">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -216,6 +224,8 @@ import { siteColor, initials } from '../../core/util/site-colors';
       </dialog>
     }
 
+    @if (showEasy()) { <app-easy-mode (close)="showEasy.set(false)" /> }
+
     <!-- Co-owner assignment dialog (admin): assign any number of customers to this site -->
     @if (ownerModalSite(); as s) {
       <app-assign-picker
@@ -243,6 +253,7 @@ export class OverviewComponent implements OnInit {
   protected entries = computed(() => this.sitesStore.list());
   protected loading = signal(true);
   protected showCreate = signal(false);
+  protected showEasy = signal(false);
   protected renamingId = signal<string | null>(null);
   protected readonly isAdmin = this.auth.isAdmin;
   /** Customers an admin can assign a site to (shared cache with the Customers page). */

@@ -1,0 +1,33 @@
+{
+  "$comment": "DOC ONLY — not read at runtime. Easy Mode's single source of truth lives in code, so this file no longer restates the question copy (it would drift). Where each piece lives: customer-facing option copy + the answer sets in src/lib/compose/catalog.ts; node semantics (ports, defaults, pin needs, safety rules) in the entity registry; the target board id, pin budget, and assembly algorithm in src/lib/compose/easy-mode.ts; safe per-route defaults in the composer (buildRouteOverrides); default watering automations in src/lib/compose/automations.ts. This file records only the v1 capability state and the question/station outline for review. The full contract is docs/development/easy-mode-onboarding-spec.md.",
+  "version": 2,
+
+  "capabilities": { "filter": false, "dosing": false, "vfd": false },
+
+  "questions": [
+    { "id": "vertical",   "fills": "vertical",   "flat": true,  "copy": "catalog.VERTICALS" },
+    { "id": "source",     "fills": "source",     "flat": true,  "multi": true, "copy": "catalog.SOURCES" },
+    { "id": "tanks",      "fills": "tanks",      "flat": true,  "copy": "stepper (No / One tank / Several)" },
+    { "id": "zones",      "fills": "zones",      "flat": true,  "copy": "stepper (number entry)" },
+    { "id": "priority",   "fills": "priority",   "flat": true,  "copy": "catalog.PRIORITIES" },
+    { "id": "conveyance", "fills": "conveyance", "flat": false, "showWhen": "tanks==1", "copy": "catalog.CONVEYANCES" }
+  ],
+
+  "stations": [
+    { "id": "supply.mains",    "when": "mains in source",    "intrinsic": ["water_source"] },
+    { "id": "supply.borehole", "when": "borehole in source", "intrinsic": ["water_source", "pump"] },
+    { "id": "supply.river",    "when": "river in source",    "intrinsic": ["water_source", "pump"] },
+    { "id": "supply.trucked",  "when": "trucked in source",  "intrinsic": ["water_source"] },
+    { "id": "supply.rainwater","when": "rainwater in source","intrinsic": ["water_source"] },
+    { "id": "storage.tank",    "when": "tanks>=1",           "intrinsic": ["tank"] },
+    { "id": "demand.zone",     "when": "zones>=1", "repeat": "zones", "intrinsic": ["endpoint"] }
+  ],
+
+  "assembly": {
+    "shape": "tree",
+    "multiSupplyTanks": true,
+    "fanOut": "demand",
+    "board": "see EASY_MODE_BOARD in src/lib/compose/easy-mode.ts",
+    "budget": "see BOARD_LIMITS in src/lib/compose/easy-mode.ts"
+  }
+}

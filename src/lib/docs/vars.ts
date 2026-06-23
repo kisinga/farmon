@@ -27,6 +27,10 @@ export interface SiteVarCtx {
   topo: SiteTopology;
   /** Route count — the assembler already derives routes, so it passes the count. */
   routeCount: number;
+  /** Commissioning date for display ('Not yet commissioned' before first connect). */
+  commissionDate: string;
+  /** Warranty expiry for display ('Begins at commissioning' before first connect). */
+  warrantyExpiry: string;
 }
 
 /** Context for node-scope variables (per node KIND, not per instance). */
@@ -49,6 +53,8 @@ const SITE_VARS: Record<string, (c: SiteVarCtx) => Scalar> = {
   flow_threshold:    c => c.topo.timing.flow_threshold,
   valve_travel_time: c => c.topo.timing.valve_travel_time,
   update_interval:   c => c.topo.timing.update_interval,
+  commission_date:   c => c.commissionDate,
+  warranty_expiry:   c => c.warrantyExpiry,
 };
 
 const yesno = (v: unknown): string => (v ? 'yes' : 'no');
