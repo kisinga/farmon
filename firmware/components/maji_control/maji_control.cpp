@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 
 namespace esphome {
 namespace maji_control {
@@ -355,7 +356,8 @@ void MajiControl::record_outcome(const std::string &command_id, const std::strin
 
 void MajiControl::meter_load_() {
   meter_pref_ = global_preferences->make_preference<MeterBlob>(METER_BLOB_KEY);
-  MeterBlob b{};
+  auto bp = std::unique_ptr<MeterBlob>(new MeterBlob());  // ~2 KB: heap, not the loop-task stack
+  MeterBlob &b = *bp;
   if (!meter_pref_.load(&b) || b.magic != METER_BLOB_MAGIC) return;  // fresh device / no record
 
   meter_.run_epoch = b.run_epoch;
@@ -411,7 +413,8 @@ void MajiControl::meter_load_() {
 }
 
 void MajiControl::meter_persist_() {
-  MeterBlob b{};
+  auto bp = std::unique_ptr<MeterBlob>(new MeterBlob());  // ~2 KB: heap, not the loop-task stack
+  MeterBlob &b = *bp;
   b.magic = METER_BLOB_MAGIC;
   b.run_epoch = meter_.run_epoch;
   b.run_seq = meter_.run_seq;

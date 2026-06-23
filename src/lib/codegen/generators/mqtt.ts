@@ -257,7 +257,9 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     cppTokenArray('FAULT_TOK', FAULT_TOKENS),
     cppTokenArray('ORIGIN_TOK', ORIGIN_TOKENS),
     cppTokenArray('RR_TOK', RESET_REASON_TOKENS),
-    `char buf[${BUFSZ}];`,
+    // static (not stack): ~${BUFSZ} B, and the snapshot script is mode:single on the one
+    // main loop, so it is never reentrant — keep it off the loop-task stack (overflow safety).
+    `static char buf[${BUFSZ}];`,
     'int n = 0;',
     'bool first = true;',
     'auto sep = [&]() -> const char* { const char* s = first ? "" : ","; first = false; return s; };',
