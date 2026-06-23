@@ -225,6 +225,16 @@ export const eventTopic = (site: string, ctrl: string) =>
 export const snapshotTopic = (site: string, ctrl: string) =>
   `${MQTT_ROOT}/${site}/${ctrl}/state`;
 
+/**
+ *   majiflow/{site}/{ctrl}/runs_ack
+ * Retained "epoch:seq" high-water-mark the server publishes after persisting the
+ * billing runs the device asserts in the snapshot runs[] outbox. The device drops
+ * every run at or below it from its durable outbox. One retained value acks an
+ * arbitrary backlog and survives reconnects. Mirrors RunsAckTopic() in the Go server.
+ */
+export const runsAckTopic = (site: string, ctrl: string) =>
+  `${MQTT_ROOT}/${site}/${ctrl}/runs_ack`;
+
 
 /** Fixed (non-node) telemetry sensor ids the firmware always publishes. */
 export const SYSTEM_STATE_SENSOR = 'system_state';

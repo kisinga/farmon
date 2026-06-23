@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +15,12 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
+
+// AckPublisher is the subset of the broker the run-ack uplink needs (the embedded
+// Mochi server satisfies it). Nil for non-broker callers (tests, replay).
+type AckPublisher interface {
+	Publish(topic string, payload []byte, retain bool, qos byte) error
+}
 
 // ParseStatusTopic extracts site/ctrl from `majiflow/{site}/{ctrl}/status`.
 func ParseStatusTopic(topic string) (site, ctrl string, ok bool) {
@@ -235,7 +242,7 @@ type controllerSnapshot struct {
 // origin label) plus a derived state_events row on any change, and command
 // outcomes → the matching commands record. One server-stamped ts for the whole
 // sample set, so the rollup buckets cleanly. Malformed payloads are ignored.
-func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Time) error {
+func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Time, pub AckPublisher) error {
 	var s controllerSnapshot
 	if err := json.Unmarshal(payload, &s); err != nil {
 		return nil
@@ -312,6 +319,16 @@ func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Ti
 	for i := range s.Runs {
 		if err := persistRun(app, site, ctrl, &s.Runs[i]); err != nil {
 			break
+		}
+	}
+	// Acknowledge persisted runs: publish the retained high-water-mark so the device
+	// drops every confirmed run from its outbox. Only when this snapshot carried runs
+	// (a reconnecting device that re-asserts then gets re-acked), and only the
+	// contiguous max (HighWaterRun, kept gap-free above) so a stalled batch never acks
+	// past an un-persisted, billable run.
+	if pub != nil && len(s.Runs) > 0 {
+		if e, sq, ok := HighWaterRun(app, ctrl); ok {
+			_ = pub.Publish(RunsAckTopic(site, ctrl), []byte(fmt.Sprintf("%d:%d", e, sq)), true, 1)
 		}
 	}
 	// Running firmware version (from the device's metadata sensor) → confirm an OTA

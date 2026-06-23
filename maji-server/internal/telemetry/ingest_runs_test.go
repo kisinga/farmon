@@ -55,7 +55,7 @@ func TestIngestRuns(t *testing.T) {
 
 	now := time.Now()
 	ing := func(payload string) {
-		if err := IngestSnapshot(app, site.Id, "dev1", []byte(payload), now); err != nil {
+		if err := IngestSnapshot(app, site.Id, "dev1", []byte(payload), now, nil); err != nil {
 			t.Fatalf("ingest: %v", err)
 		}
 	}
@@ -146,7 +146,7 @@ func TestIngestRunsGapSafe(t *testing.T) {
 		{"run_id":%q,"route":0,"epoch":200,"seq":2,"metered":true,"start_litres":10,"end_litres":20},
 		{"run_id":"200:3","route":0,"epoch":200,"seq":3,"metered":true,"start_litres":20,"end_litres":30}
 	]}`, tooLong)
-	if err := IngestSnapshot(app, site.Id, "dev1", []byte(payload), time.Now()); err != nil {
+	if err := IngestSnapshot(app, site.Id, "dev1", []byte(payload), time.Now(), nil); err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
 
