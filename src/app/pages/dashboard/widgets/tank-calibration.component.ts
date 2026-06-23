@@ -78,10 +78,10 @@ const SYNC_TOL = 0.05;
             <span class="text-[11px] text-base-content/40 w-7">m</span>
           </span>
 
-          <label [attr.for]="'p-' + cal().nodeId" class="text-[11px] text-base-content/70">Sensor max</label>
+          <span class="text-[11px] text-base-content/70 cursor-help"
+            title="Sensor full-scale rating (datasheet). Baked into the firmware — change it in the editor and re-flash, not here.">Sensor max</span>
           <span class="flex items-center gap-1.5">
-            <input [id]="'p-' + cal().nodeId" type="number" min="0" step="0.5" class="input input-sm input-bordered w-20 text-right tabular-nums no-spin"
-              [value]="maxPsi()" [disabled]="!canEdit()" (input)="edit('maxPsi', $event)" />
+            <span class="w-20 text-right tabular-nums text-sm text-base-content/60">{{ maxPsi() }}</span>
             <span class="text-[11px] text-base-content/40 w-7">psi</span>
           </span>
         </div>
@@ -163,8 +163,9 @@ export class TankCalibrationComponent {
   private lifecycle = inject(CommandLifecycleStore);
   private confirm = inject(ConfirmService);
 
-  /** Physical edits overlaying the topology design values. */
-  private edits = signal<{ height?: number; drop?: number; maxPsi?: number }>({});
+  /** Physical edits overlaying the topology design values. Sensor max is a baked
+   *  spec, not a field edit, so it never appears here. */
+  private edits = signal<{ height?: number; drop?: number }>({});
   protected saving = signal(false);
 
   /** The physical model the editor sits on when there are no edits: the device's
@@ -183,7 +184,7 @@ export class TankCalibrationComponent {
 
   protected height = computed(() => this.edits().height ?? this.baseline().height);
   protected drop = computed(() => this.edits().drop ?? this.baseline().drop);
-  protected maxPsi = computed(() => this.edits().maxPsi ?? this.baseline().maxPsi);
+  protected maxPsi = computed(() => this.baseline().maxPsi);
   protected dirty = computed(() => Object.keys(this.edits()).length > 0);
 
   /** psi anchors implied by the current physical inputs. */
@@ -263,7 +264,7 @@ export class TankCalibrationComponent {
     return null;
   });
 
-  protected edit(field: 'height' | 'drop' | 'maxPsi', ev: Event): void {
+  protected edit(field: 'height' | 'drop', ev: Event): void {
     const v = (ev.target as HTMLInputElement).value;
     this.edits.update((e) => {
       const n = { ...e };
@@ -279,7 +280,7 @@ export class TankCalibrationComponent {
    *  a device that has no (or only a default) calibration yet. */
   protected loadDesign(): void {
     const cal = this.cal();
-    this.edits.set({ height: cal.tankHeightM, drop: cal.sensorDropM, maxPsi: cal.sensorMaxPsi });
+    this.edits.set({ height: cal.tankHeightM, drop: cal.sensorDropM });
   }
 
   /** Write the derived anchors (+ sensor range) via config_set, behind a hard confirm. */
