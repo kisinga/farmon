@@ -127,7 +127,7 @@ export {
 // --- Runtime contract: deployment mode, MQTT topics, command vocabulary ---
 export {
   MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic, identityTopic,
-  snapshotTopic,
+  snapshotTopic, runsAckTopic,
   telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, routeStateSensor, COMMAND_TTL_S,
   routeSourceMinNumber, routeDestMaxNumber, collectConfigSetpoints,
   COORD_MSG, COORD_TYPE, OVERRIDE_BITS,

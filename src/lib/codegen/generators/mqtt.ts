@@ -1,6 +1,6 @@
 import type { Manifest, BoardDef } from '@core';
 import {
-  MQTT_ROOT, commandTopic, automationsTopic, statusTopic, identityTopic, snapshotTopic,
+  MQTT_ROOT, commandTopic, automationsTopic, statusTopic, identityTopic, snapshotTopic, runsAckTopic,
   HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, WIFI_SIGNAL_SENSOR,
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS, ORIGIN_TOKENS,
@@ -217,7 +217,10 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   const SYS_SENSORS = new Set(['system_state', 'queue_depth', 'safety_override']);
   const readingCh = channels.filter(c => !SYS_SENSORS.has(c.sensor) && (c.kind === 'state' || c.kind === 'bool' || c.kind === 'cover'));
   const textCh = channels.filter(c => !SYS_SENSORS.has(c.sensor) && (c.kind === 'enum' || c.kind === 'text'));
-  const BUFSZ = Math.max(2048, (readingCh.length + textCh.length + tunables.length) * 44 + m.routes.length * 192 + 1024);
+  // +runs[]: the billing outbox (maji_meter::OUTBOX_CAP=16) the device re-asserts until
+  // acked. A full outbox would otherwise crowd out the rest of the snapshot; a dropped run
+  // self-heals (FIFO drain over snapshots), but headroom keeps steady state intact.
+  const BUFSZ = Math.max(2048, (readingCh.length + textCh.length + tunables.length) * 44 + m.routes.length * 192 + 1024 + 16 * 150);
 
   const readingLine = (c: TelemetryChannel): string => {
     if (c.kind === 'bool') return `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":%d", sep(), id(${c.ref}).state ? 1 : 0));`;
@@ -286,6 +289,12 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     'put(snprintf(buf+n, sizeof(buf)-n, "],\\"outcomes\\":["));',
     'first = true;',
     'for (int k = 0; k < maji_ctl::MAX_OUTCOMES; k++) { if (!cs.outcomes[k].command_id.empty()) put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"command_id\\":\\"%s\\",\\"result\\":\\"%s\\",\\"reason\\":\\"%s\\"}", sep(), cs.outcomes[k].command_id.c_str(), cs.outcomes[k].result.c_str(), cs.outcomes[k].reason.c_str())); }',
+    // Billing runs: the meter's durable outbox of closed runs, re-asserted until the
+    // retained runs_ack high-water-mark confirms them. meter_runs_json emits the array
+    // body (comma-joined objects); put() clamps the would-be length so a full outbox
+    // truncates safely and drains FIFO over subsequent snapshots.
+    'put(snprintf(buf+n, sizeof(buf)-n, "],\\"runs\\":["));',
+    'put(id(control).meter_runs_json(buf + n, (int) sizeof(buf) - n));',
     'put(snprintf(buf+n, sizeof(buf)-n, "]}"));',
     `mc->publish("${snapshotTopic(site, ctrl)}", buf);`,
   ];
@@ -403,6 +412,15 @@ ${indent(cmdBody, 12)}
       then:
         - lambda: |-
             id(autos).apply_set((const uint8_t *) x.data(), x.size());
+    # Retained billing-run acknowledgement: "epoch:seq" high-water-mark. The device drops
+    # every confirmed run from its durable outbox. Delivered on connect (retained replay)
+    # and after each batch the server persists.
+    - topic: "${runsAckTopic(site, ctrl)}"
+      qos: 1
+      then:
+        - lambda: |-
+            unsigned int e = 0, sq = 0;
+            if (sscanf(x.c_str(), "%u:%u", &e, &sq) == 2) id(control).meter_on_ack(e, sq);
 ${timeBlock}
 interval:
   # Snapshot: publish the whole controller state every update interval while

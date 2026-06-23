@@ -19,8 +19,9 @@ namespace maji_meter {
 
 // Bounded durable outbox. Overflow (a multi-day server outage with many runs) drops the
 // oldest and bumps `dropped` so the shell can raise a loud fault; the durable cumulative
-// counter still captures the period volume, so only per-run attribution is lost.
-static constexpr int OUTBOX_CAP = 32;
+// counter still captures the period volume, so only per-run attribution is lost. Kept
+// small so the shell's fixed NVS blob fits a single flash entry comfortably.
+static constexpr int OUTBOX_CAP = 16;
 
 // A closed run awaiting server acknowledgement. run_id = (epoch, seq): unique per device
 // forever (epoch is a stable lineage stamp; seq is monotonic within a lineage).
