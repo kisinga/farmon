@@ -2,7 +2,7 @@ import { Component, computed, effect, inject, input, signal } from '@angular/cor
 import type { UnsubscribeFunc } from 'pocketbase';
 import {
   parseTopology, listAutomatableRoutes, buildDashboardSpec, MAX_AUTOMATIONS,
-  RUN_TARGET_FIELDS, OVERRIDE_BITS,
+  RUN_TARGET_FIELDS, OVERRIDE_BITS, runTargetMax,
   type SiteTopology, type AutomatableRoute, type NewAutomationRow, type RunTargetField,
 } from '@core';
 import { BackendService } from '../../core/services/backend.service';
@@ -151,7 +151,7 @@ function blankDraft(): NewAutomationRow & { id?: string } {
                     </label>
                     @if (ovOn(d.override_mask, f.bit)) {
                       <div class="flex items-center gap-1.5 shrink-0">
-                        <input type="number" [min]="f.min" [max]="f.max" class="input input-sm input-bordered w-24 text-right" [value]="disp(f, d[f.key])" (input)="set(f.key, toWire(f, num($event)))" />
+                        <input type="number" [min]="f.min" [max]="targetMax(f)" class="input input-sm input-bordered w-24 text-right" [value]="disp(f, d[f.key])" (input)="set(f.key, toWire(f, num($event)))" />
                         <span class="text-xs text-base-content/40 w-7">{{ f.unit }}</span>
                       </div>
                     } @else {
@@ -261,6 +261,11 @@ export class AutomationsManagerComponent {
   protected overrideFields = computed(() =>
     RUN_TARGET_FIELDS.filter((f) => !f.monitoredOnly || this.selectedRoute()?.monitored),
   );
+  /** Display-unit max for a target field, capped at the selected route's tank capacity
+   *  (the same runTargetMax the run picker uses, so the two surfaces never disagree). */
+  protected targetMax(f: RunTargetField): number {
+    return runTargetMax(f, { destCapacityL: this.selectedRoute()?.destCapacityL });
+  }
   protected routeGroups = computed(() => {
     const groups = new Map<string, AutomatableRoute[]>();
     for (const r of this.routes()) {

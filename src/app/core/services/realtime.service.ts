@@ -316,7 +316,7 @@ function explodeSnapshot(controller: string, snap: ControllerSnapshot, ts: strin
     num('safety_override', snap.system.safety ? 1 : 0);
   }
   for (const r of snap.routes ?? []) {
-    rows.push({ controller, sensor: `route_${r.id}_state`, reported: 0, reported_text: r.state, ts, origin: r.origin, actorId: r.actor, actorLabel: r.actorLabel });
+    rows.push({ controller, sensor: `route_${r.id}_state`, reported: 0, reported_text: r.state, ts, origin: r.origin, actorId: r.actor, actorLabel: r.actorLabel, live: r.live });
   }
   return rows;
 }

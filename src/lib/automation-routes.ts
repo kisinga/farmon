@@ -22,6 +22,9 @@ export interface AutomatableRoute {
   monitored: boolean;
   /** Source is a tank with a level reading → a level trigger is available. */
   hasLevelSource: boolean;
+  /** Destination tank capacity (litres), to cap the volume target at the tank — the
+   *  same bound the run picker uses (runTargetMax). Undefined for non-tank dests. */
+  destCapacityL?: number;
 }
 
 /** Every route across every controller, each resolved to its owner + index + version. */
@@ -36,6 +39,7 @@ export function listAutomatableRoutes(topology: SiteTopology): AutomatableRoute[
     }
     const version = routeSetVersion(m);
     m.routes.forEach((r, i) => {
+      const destNode = r.destination ? topology.nodes.find((n) => n.id === r.destination) : undefined;
       out.push({
         controllerId: c.id,
         routeIndex: i,
@@ -44,6 +48,7 @@ export function listAutomatableRoutes(topology: SiteTopology): AutomatableRoute[
         routeSetVersion: version,
         monitored: r.monitored,
         hasLevelSource: r.source_has_level,
+        destCapacityL: (destNode as { capacity_l?: number } | undefined)?.capacity_l,
       });
     });
   }

@@ -235,6 +235,8 @@ void MajiControl::tick_1s(uint32_t wall_epoch) {
     if (!std::isnan(t) && t >= 0.0f) maji_meter::on_reading(meter_, i, (uint32_t) t, 1);
   }
   meter_sync_(wall_epoch, now);
+  // Cache each slot's live progress facts for the snapshot (run_live needs Inputs).
+  for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) live_[s] = maji_ctl::run_live(state_, in, s);
   // Mark the durable state dirty every ~30 s so the counter survives an unclean power
   // loss; ESPHome batches the actual flash write (its preferences flush interval, ~60 s
   // default), so the real worst-case loss is one flush window. Run close/ack save eagerly.

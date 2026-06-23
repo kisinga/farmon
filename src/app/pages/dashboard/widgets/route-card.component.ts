@@ -1,7 +1,8 @@
 import { Component, computed, input, output, signal } from '@angular/core';
-import { describeState, routeLabel, FAULT_MEANINGS, STOP_REASON_MEANINGS, RUN_TARGET_FIELDS, type RouteControl, type CommandPhase, type StopSpecOverride, type RunTargetField } from '@core';
+import { describeState, routeLabel, FAULT_MEANINGS, STOP_REASON_MEANINGS, RUN_TARGET_FIELDS, runTargetMax, runTargetChips, type RouteControl, type CommandPhase, type StopSpecOverride, type RunTargetField } from '@core';
 import { phaseUi } from './command-phase';
 import { formatInitiator } from './initiator';
+import type { RunProgress } from '../run-progress';
 
 /** The command a route card emits when toggled — a subset of CommandAction. */
 export type RouteAction = 'route_start' | 'route_stop' | 'fault_reset';
@@ -33,29 +34,52 @@ interface RouteView {
 }
 
 /**
- * One route, drawn as a `source → destination` pipe that animates when water is
- * flowing. The whole card is the control: click toggles the route (start when
- * idle, stop when running, reset when faulted). Colour + words + the flow
- * animation all track the live state. Presentational — the page wires the state
- * (from the transition log) and the live flow rate, and handles the emitted
- * action.
+ * One route, drawn as a `source → destination` pipe. The whole card is the control
+ * (tap to start/stop/reset) AND, while running, the progress bar: it fills left→right
+ * toward the run's nearest stop target (volume / level / time), with the delivered
+ * amount and goal on the right. Colour + words + the fill all track the live state.
+ * Presentational — the page wires state, flow, and the computed progress.
  */
 @Component({
   selector: 'app-route-card',
   standalone: true,
+  styles: [`
+    @keyframes rc-sweep { 0% { transform: translateX(-120%); } 100% { transform: translateX(420%); } }
+    .rc-sweep { animation: rc-sweep 1.8s ease-in-out infinite; }
+  `],
   template: `
-    <!-- Compact strip: control · source → destination · state/flow, on one row.
-         The morphing control button is the action affordance (play↔stop↔reset);
-         colours, dot and ring all track live state. Folds three per row so the
-         live system map above stays the hero. -->
+    <!-- Compact strip: control · source → destination · progress/flow, on one row.
+         While running the whole surface doubles as the progress bar (fill below the
+         content). The morphing button is the action affordance; colours, dot and ring
+         track live state. -->
     <div class="relative isolate w-full bg-base-100 rounded-xl ring-1 transition-all overflow-hidden"
          [class]="cmd()?.alert ? 'ring-error/60' : view().ring"
          [class.opacity-60]="!online()">
-      <div class="flex items-stretch">
+
+      <!-- progress fill: the card IS the bar while running -->
+      @if (view().running && progress(); as p) {
+        @if (p.pct !== null) {
+          <div class="absolute inset-y-0 left-0 z-0 pointer-events-none transition-[width] ease-linear motion-reduce:transition-none"
+               role="progressbar" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="p.pct"
+               [attr.aria-label]="p.primary + ' ' + p.goal"
+               [class]="p.nearDone ? 'bg-success/15' : 'bg-primary/12'"
+               [style.width.%]="p.pct" [style.transitionDuration]="fillMs() + 'ms'">
+            <div class="absolute inset-y-0 right-0 w-0.5" [class]="p.nearDone ? 'bg-success/50' : 'bg-primary/40'"></div>
+          </div>
+        } @else {
+          <!-- indeterminate (until full): a gentle sweep instead of a fixed fill -->
+          <div class="absolute inset-0 z-0 overflow-hidden pointer-events-none motion-reduce:hidden"
+               role="progressbar" [attr.aria-label]="p.primary + ' ' + p.goal">
+            <div class="absolute inset-y-0 left-0 w-1/3 bg-primary/12 blur-[2px] rc-sweep"></div>
+          </div>
+        }
+      }
+
+      <div class="relative z-10 flex items-stretch">
         <!-- main control: the whole strip is the start/stop/reset affordance -->
         <button
           type="button"
-          class="group flex-1 min-w-0 text-left px-3 py-2 flex items-center gap-3 disabled:cursor-not-allowed"
+          class="group flex-1 min-w-0 text-left px-3 py-2.5 sm:py-2 flex items-center gap-3 disabled:cursor-not-allowed"
           [disabled]="disabled()"
           [title]="title()"
           (click)="action.emit(view().action)">
@@ -76,9 +100,7 @@ interface RouteView {
             <svg class="col-start-1 row-start-1 h-4 w-4 transition-all duration-300 {{ view().glyph === 'reset' ? 'opacity-100 scale-100' : 'opacity-0 scale-50' }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.708L3 8" /><path d="M3 3v5h5" /></svg>
           </span>
 
-          <!-- source → destination + state line. The morphing control IS the action
-               affordance, so no separate Start/Stop label — keeps the strip narrow
-               enough for three per row. -->
+          <!-- source → destination + state line -->
           <span class="min-w-0 flex-1 flex flex-col gap-0.5">
             <span class="flex items-center gap-1 min-w-0 text-[13px] font-bold tracking-tight leading-tight">
               <span class="truncate" [title]="route().source || ''">{{ route().source || '—' }}</span>
@@ -94,54 +116,61 @@ interface RouteView {
             </span>
           </span>
 
-          <!-- live flow rate (running) or an offline marker -->
-          @if (view().running && route().flowSensor && flowRate() !== null) {
+          <!-- right readout: progress (running, with live data) → flow rate → offline -->
+          @if (view().running && progress(); as p) {
+            <span class="shrink-0 text-right leading-tight tabular-nums {{ p.nearDone ? 'text-success' : view().textCls }}">
+              <span class="block text-sm font-bold">{{ p.primary }}</span>
+              <span class="block text-[9px] font-normal text-base-content/45 -mt-0.5">{{ p.goal }}</span>
+            </span>
+          } @else if (view().running && route().flowSensor && flowRate() !== null) {
             <span class="shrink-0 text-right text-sm font-semibold tabular-nums {{ view().textCls }}">{{ flowText() }}<span class="block text-[9px] font-normal text-base-content/40 -mt-0.5">L/min</span></span>
           } @else if (!online()) {
             <span class="shrink-0 text-[10px] text-base-content/40">offline</span>
           }
         </button>
 
-        <!-- run-with-a-target toggle: only while idle + controllable. Plain start
-             (the strip) runs to the route's own stop; this reveals volume/level/time. -->
+        <!-- run-with-a-target toggle: only while idle + controllable. A bigger, full-height
+             hit target (≥44px) for thumbs; plain start (the strip) runs to the route's own stop. -->
         @if (canPick()) {
           <button type="button" (click)="togglePicker()"
             [title]="expanded() ? 'Hide run options' : 'Run with a target (volume / level / time)'"
-            class="shrink-0 px-2 grid place-items-center text-base-content/40 hover:text-base-content transition-colors">
-            <svg class="h-4 w-4 transition-transform" [class.rotate-180]="expanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            [attr.aria-expanded]="expanded()"
+            class="shrink-0 self-stretch min-w-11 grid place-items-center border-l border-base-300/40
+                   text-base-content/40 hover:text-base-content hover:bg-base-200/60 active:bg-base-200 transition-colors">
+            <svg class="h-5 w-5 transition-transform" [class.rotate-180]="expanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
           </button>
         }
       </div>
 
-      <!-- target picker: combine any of the route's targets; the run stops at the
-           first one reached (same model as the automations editor) -->
+      <!-- target picker: combine any of the route's targets; the run stops at the first
+           one reached. Touch-sized controls; the volume target is capped at the tank. -->
       @if (expanded() && canPick()) {
-        <div class="px-3 pb-2.5 pt-1.5 border-t border-base-300/40 flex flex-col gap-1.5">
+        <div class="relative z-10 px-3 pb-3 pt-2 border-t border-base-300/40 flex flex-col gap-2">
           <p class="text-[10px] text-base-content/40 leading-snug">
             Stops at the first target reached.
             {{ route().canStopOnFull ? 'No target → runs until the tank is full.' : 'No target → runs until the time limit.' }}
           </p>
           @for (f of targetFields(); track f.key) {
-            <div class="flex items-center gap-2">
-              <label class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer select-none">
-                <input type="checkbox" class="toggle toggle-xs" [checked]="isOn(f.key)" (change)="toggleField(f.key)" />
-                <span class="text-[12px] truncate">{{ f.label }}</span>
+            <div class="flex items-center gap-2 flex-wrap">
+              <label class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer select-none py-0.5">
+                <input type="checkbox" class="toggle toggle-sm" [checked]="isOn(f.key)" (change)="toggleField(f.key)" />
+                <span class="text-[13px] truncate">{{ f.label }}</span>
               </label>
               @if (isOn(f.key)) {
-                <input type="number" min="0" [value]="val(f.key)" (input)="setVal(f.key, $event)"
-                  class="input input-xs input-bordered w-16 text-right tabular-nums" />
+                <input type="number" min="0" [max]="maxFor(f)" [value]="val(f.key)" (input)="setVal(f.key, $event)"
+                  class="input input-sm input-bordered w-20 text-right tabular-nums" />
                 <span class="text-[10px] text-base-content/40 w-6">{{ f.unit }}</span>
-                <div class="flex gap-1">
-                  @for (c of f.chips || []; track c) {
+                <div class="flex gap-1.5 basis-full sm:basis-auto">
+                  @for (c of chipsFor(f); track c) {
                     <button type="button" (click)="setValDirect(f.key, c)"
-                      class="px-1.5 py-0.5 rounded text-[10px] bg-base-200 hover:bg-base-300 text-base-content/70 tabular-nums">{{ c }}</button>
+                      class="px-2.5 py-1 rounded-md text-[11px] bg-base-200 hover:bg-base-300 active:bg-base-300 text-base-content/70 tabular-nums">{{ c }}</button>
                   }
                 </div>
               }
             </div>
           }
           <button type="button" (click)="runTarget()" [disabled]="!canRun()"
-            class="btn btn-primary btn-xs w-full mt-0.5">Run · {{ runSummary() }}</button>
+            class="btn btn-primary btn-sm w-full mt-0.5">Run · {{ runSummary() }}</button>
         </div>
       }
     </div>
@@ -174,6 +203,12 @@ export class RouteCardComponent {
   });
   /** Live flow rate (L/min) from the route's flow sensor, or null when unknown. */
   readonly flowRate = input<number | null>(null);
+  /** Live progress for the card-as-progress-bar (running only); null ⇒ no live data
+   *  yet (then the flow rate shows). The page computes it (see runProgress). */
+  readonly progress = input<RunProgress | null>(null);
+  /** Fill glide duration (ms), ~ the snapshot interval, so the bar moves continuously
+   *  between updates rather than stepping. */
+  readonly fillMs = input(9000);
   readonly online = input(true);
   /** Live command phase from the lifecycle store; null ⇒ no command in flight (the
    *  state view drives). `pending` ⇒ "Sending…" + spinner; `refused`/`expired` ⇒
@@ -216,6 +251,12 @@ export class RouteCardComponent {
   protected canPick = computed(() =>
     this.view().action === 'route_start' && this.controllable() && this.online() && this.phase() !== 'pending');
 
+  /** Per-route bounds for the picker: volume is capped at the tank's capacity (one
+   *  owner — runTargetMax/runTargetChips — shared with the automations editor). */
+  private targetCtx = computed(() => ({ destCapacityL: this.route().destCapacityL }));
+  protected maxFor(f: RunTargetField): number { return runTargetMax(f, this.targetCtx()); }
+  protected chipsFor(f: RunTargetField): number[] { return runTargetChips(f, this.targetCtx()); }
+
   protected isOn(key: string): boolean { return this.picked().has(key); }
   protected val(key: string): number { return this.values()[key] ?? this.defFor(key); }
   protected num(e: Event): number { return Math.max(0, Number((e.target as HTMLInputElement).value) || 0); }
@@ -234,7 +275,12 @@ export class RouteCardComponent {
   });
 
   private field(key: string): RunTargetField | undefined { return RUN_TARGET_FIELDS.find((f) => f.key === key); }
-  private defFor(key: string): number { const f = this.field(key); return f?.chips?.[1] ?? f?.chips?.[0] ?? f?.min ?? 0; }
+  private defFor(key: string): number {
+    const f = this.field(key);
+    if (!f) return 0;
+    const chips = this.chipsFor(f);
+    return chips[1] ?? chips[0] ?? f.min ?? 0;
+  }
 
   protected togglePicker(): void { this.expanded.update((v) => !v); }
   protected toggleField(key: string): void {
@@ -244,7 +290,11 @@ export class RouteCardComponent {
     this.picked.set(next);
   }
   protected setVal(key: string, e: Event): void { this.setValDirect(key, this.num(e)); }
-  protected setValDirect(key: string, n: number): void { this.values.update((m) => ({ ...m, [key]: n })); }
+  protected setValDirect(key: string, n: number): void {
+    const f = this.field(key);
+    const max = f ? this.maxFor(f) : n; // clamp to the route's real ceiling (tank capacity)
+    this.values.update((m) => ({ ...m, [key]: Math.min(n, max) }));
+  }
 
   /** Build the StopSpec from the picked targets (display → wire via each field's
    *  scale) and emit it. Each active field sets its bit; the device ignores the rest. */

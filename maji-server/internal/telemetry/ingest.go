@@ -191,6 +191,20 @@ type snapRoute struct {
 	// ActorLabel is filled server-side (the resolved display name) and stored in
 	// the controller_state doc so the dashboard shows "by Jane" / "Automation: …".
 	ActorLabel string `json:"actorLabel,omitempty"`
+	// Live is the running run's progress facts (present only while RUNNING). It is
+	// opaque to the server — carried through the shadow so the dashboard can render the
+	// card-as-progress-bar. A pointer so it round-trips exactly (absent stays absent).
+	Live *snapRunLive `json:"live,omitempty"`
+}
+
+// snapRunLive: facts for the live progress bar. The device reports them; the app
+// computes the fraction + labels (so the UX is tunable without reflashing).
+type snapRunLive struct {
+	Del int `json:"del"` // delivered litres (-1 unmetered)
+	Dur int `json:"dur"` // elapsed seconds
+	Tv  int `json:"tv"`  // target volume L (0 none)
+	Td  int `json:"td"`  // target duration s (0 none)
+	Tl  int `json:"tl"`  // target level % (-1 none); the app reads the live dest level itself
 }
 
 type snapOutcome struct {

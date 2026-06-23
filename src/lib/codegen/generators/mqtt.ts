@@ -245,8 +245,13 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     `if (s >= 0) { ` +
     `if (st == 4) { int f = cs.slots[s].fault_code; if (f >= 0 && f < ${NF}) rs = FAULT_TOK[f]; } ` +
     `else if (st == 3 || st == 0) { int r = cs.slots[s].stop_reason; if (r >= 0 && r < ${NR}) rs = STOP_TOK[r]; } } ` +
-    `put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"id\\":${i},\\"state\\":\\"%s\\",\\"origin\\":\\"%s\\",\\"actor\\":\\"%s\\",\\"reason\\":\\"%s\\"}", sep(), ` +
-    `(st >= 0 && st < ${NS}) ? SYS_TOK[st] : "", o, ac, rs)); }`;
+    `put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"id\\":${i},\\"state\\":\\"%s\\",\\"origin\\":\\"%s\\",\\"actor\\":\\"%s\\",\\"reason\\":\\"%s\\"", sep(), ` +
+    `(st >= 0 && st < ${NS}) ? SYS_TOK[st] : "", o, ac, rs)); ` +
+    // While RUNNING, append the live progress facts (the card-as-progress-bar reads them).
+    `if (st == 2) { auto lv = id(control).route_live(s); put(snprintf(buf+n, sizeof(buf)-n, ` +
+    `",\\"live\\":{\\"del\\":%d,\\"dur\\":%u,\\"tv\\":%u,\\"td\\":%u,\\"tl\\":%d}", ` +
+    `(int) lv.delivered_l, (unsigned) lv.elapsed_s, (unsigned) lv.target_vol_l, (unsigned) lv.target_dur_s, (int) lv.target_lvl_pct)); } ` +
+    `put(snprintf(buf+n, sizeof(buf)-n, "}")); }`;
 
   const snapshotBody = [
     'auto *mc = id(mqtt_client);',

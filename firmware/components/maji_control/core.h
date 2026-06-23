@@ -219,6 +219,21 @@ uint16_t effective_max_runtime_s(const ControlState &cs, const Inputs &in, int s
 uint16_t effective_target_duration_s(const ControlState &cs, const Inputs &in, int s);
 uint32_t effective_target_volume_l(const ControlState &cs, const Inputs &in, int s);
 
+// Live run facts for the dashboard's card-as-progress-bar (a RUNNING slot only). The
+// device reports facts; the app computes the fraction + labels (so the UX is tunable
+// without reflashing). Empty/sentinel values when a target/sensor is absent.
+// delivered is the stop-decision basis (float total - volume_at_start), so the bar
+// reaches 100% exactly when the run hits its volume target. Level progress is NOT here:
+// the app already receives the dest tank's level channel and uses it against target_lvl.
+struct RunLive {
+  int32_t delivered_l;    // litres so far; -1 if unmetered
+  uint32_t elapsed_s;     // run elapsed seconds
+  uint32_t target_vol_l;  // effective volume target; 0 if none
+  uint32_t target_dur_s;  // effective duration target; 0 if none
+  int16_t target_lvl_pct; // effective dest-level target; -1 if none
+};
+RunLive run_live(const ControlState &cs, const Inputs &in, int s);
+
 // Pre-start guard. 0 ok, 3 source-low, 4 dest-full. safety_override bypasses.
 int check_precheck(const Inputs &in, uint8_t src_idx, uint8_t src_min, uint8_t dst_idx, uint8_t dst_max);
 

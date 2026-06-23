@@ -111,8 +111,8 @@ export type { AutomatableRoute, NewAutomationRow } from './automation-routes';
 export type { TunableNumber, TunableScope, TunableTier, TunableField } from './tunable-numbers';
 
 // --- Run targets (shared "how a run ends": automation override + manual StopSpec) ---
-export { RUN_TARGET_FIELDS } from './run-targets';
-export type { StopSpecOverride, RunTargetField } from './run-targets';
+export { RUN_TARGET_FIELDS, runTargetMax, runTargetChips } from './run-targets';
+export type { StopSpecOverride, RunTargetField, RouteTargetCtx } from './run-targets';
 
 // --- Codegen IDs ---
 export {
@@ -134,7 +134,7 @@ export {
 } from './codegen-ids';
 export type {
   DeploymentMode, CommandAction, CommandEnvelope, CoordMessage, TelemetryRole, ConfigSetpoint,
-  ControllerSnapshot, RouteSnapshot, CommandOutcome,
+  ControllerSnapshot, RouteSnapshot, RouteLive, CommandOutcome,
 } from './codegen-ids';
 
 // --- Runtime contract: state/fault/reason vocabulary + meanings ---

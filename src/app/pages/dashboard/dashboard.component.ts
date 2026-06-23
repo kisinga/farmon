@@ -7,6 +7,7 @@ import { AuthStore } from '../../core/services/auth.store';
 import { DashboardStore } from './dashboard.store';
 import { TelemetryStore } from './telemetry.store';
 import { CommandLifecycleStore } from './command-lifecycle.store';
+import { runProgress, type RunProgress } from './run-progress';
 import { DashboardCardComponent } from './widgets/dashboard-card.component';
 import { RouteCardComponent } from './widgets/route-card.component';
 import { SiteControlsComponent } from './widgets/site-controls.component';
@@ -160,6 +161,8 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
                         [route]="r"
                         [state]="routeState(c.controller, r.routeId)"
                         [flowRate]="routeFlow(c.controller, r)"
+                        [progress]="routeProgress(c.controller, r)"
+                        [fillMs]="fillMs()"
                         [online]="store.presence(c.controller).online"
                         [phase]="routePhase(c.controller, r.routeId)?.phase ?? null"
                         [phaseReason]="routePhase(c.controller, r.routeId)?.reason ?? ''"
@@ -294,6 +297,12 @@ export class DashboardComponent {
 
   /** Parsed topology, kept for the live map (the card spec is derived separately). */
   protected topology = signal<SiteTopology | null>(null);
+  /** Fill glide for the route progress bar ~ the snapshot interval (held on the
+   *  topology), so the bar moves continuously between updates instead of stepping. */
+  protected fillMs = computed(() => {
+    const secs = (this.topology() as { timing?: { update_interval?: number } } | null)?.timing?.update_interval;
+    return (secs && secs > 0 ? secs : 10) * 1000;
+  });
   /** Live SCADA map vs. the card grid, toggled in the System view header. Defaults
    *  to the map on tablet/desktop but to cards on mobile (the map's pan/zoom is
    *  awkward on a small touch screen); `<640px` is Tailwind's `sm` breakpoint.
@@ -449,6 +458,22 @@ export class DashboardComponent {
   protected routeFlow(controller: string, r: RouteControl): number | null {
     if (!r.flowSensor) return null;
     return this.store.row(controller, r.flowSensor)?.reported ?? null;
+  }
+
+  /** Dest level captured when a level-targeted run is first seen, so the level bar is
+   *  run-relative (0% at start) rather than the tank's absolute fill. Cleared on stop. */
+  private runStartLevel = new Map<string, number>();
+
+  /** Live progress for the card-as-progress-bar: the route's `live` facts (delivered /
+   *  elapsed / targets) against the dest tank's live level. null until the device
+   *  reports live data (then the card shows the flow rate instead). */
+  protected routeProgress(controller: string, r: RouteControl): RunProgress | null {
+    const key = this.routeKey(controller, r.routeId);
+    const live = this.store.routeLive(controller, r.routeId);
+    if (!live) { this.runStartLevel.delete(key); return null; }
+    const destLevel = r.destLevelSensor ? this.store.row(controller, r.destLevelSensor)?.reported ?? null : null;
+    if (live.tl > 0 && destLevel != null && !this.runStartLevel.has(key)) this.runStartLevel.set(key, destLevel);
+    return runProgress(live, destLevel, !!r.canStopOnFull, this.runStartLevel.get(key) ?? null);
   }
 
   private routeKey(controller: string, routeId: number): string {

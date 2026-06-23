@@ -70,6 +70,10 @@ export interface RouteControl {
    *  tank. Lets the run picker derive volume chips (25/50/100% of the tank) instead
    *  of static values. Undefined for non-tank endpoints. */
   destCapacityL?: number;
+  /** Telemetry sensor id of the destination tank's level channel, for the live
+   *  card-as-progress-bar on a "fill to X%" / "until full" run. Undefined when the
+   *  dest is not level-monitored. */
+  destLevelSensor?: string;
   /** The route's path: the ordered node ids it traverses (source→destination) and
    *  the pipe ids between them. Together these are the route's *participants* — the
    *  elements that become "engaged" while it runs, so the map can light the whole
@@ -292,6 +296,9 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
     // node id → flow telemetry sensor, for a route's live flow readout.
     const flowSensorByNode = new Map<string, string>();
     for (const ch of channels) if (ch.role === 'flow' && ch.node) flowSensorByNode.set(ch.node, ch.sensor);
+    // node id → level telemetry sensor, for a route's live fill-to-level progress.
+    const levelSensorByNode = new Map<string, string>();
+    for (const ch of channels) if (ch.role === 'level' && ch.node) levelSensorByNode.set(ch.node, ch.sensor);
     controllers.push({
       controller: ctrl.id,
       name: ctrl.friendlyName ?? ctrl.id,
@@ -317,6 +324,7 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
           levelTarget: r.dest_has_level,
           canStopOnFull: canStopOnFull(r),
           destCapacityL: r.destination ? nodeCapacity.get(r.destination) : undefined,
+          destLevelSensor: r.destination ? levelSensorByNode.get(r.destination) : undefined,
           pathNodeIds: seq,
           pipeIds,
         };

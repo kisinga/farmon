@@ -50,6 +50,34 @@ export interface RunTargetField {
   runTarget?: boolean;
 }
 
+/** Per-route context that tightens a target's bounds to reality. */
+export interface RouteTargetCtx {
+  /** Destination tank capacity (litres). Caps the volume target (you can't pump more
+   *  than the tank holds) and seeds capacity-derived chips. */
+  destCapacityL?: number;
+}
+
+/** The effective max for a target field on a route, in display units: the volume
+ *  target is capped at the destination tank's capacity, within the field's own hard
+ *  bound. One owner so the run picker and the automations editor never disagree. */
+export function runTargetMax(field: RunTargetField, ctx?: RouteTargetCtx): number {
+  if (field.key === 'ov_target_volume_l' && ctx?.destCapacityL && ctx.destCapacityL > 0) {
+    return Math.max(field.min, Math.min(field.max, Math.floor(ctx.destCapacityL)));
+  }
+  return field.max;
+}
+
+/** Quick-pick chips for a target, in display units: the volume target derives
+ *  25/50/100% of the destination tank (when capacity is known), else the static chips. */
+export function runTargetChips(field: RunTargetField, ctx?: RouteTargetCtx): number[] {
+  if (field.key === 'ov_target_volume_l' && ctx?.destCapacityL && ctx.destCapacityL > 0) {
+    const cap = Math.floor(ctx.destCapacityL);
+    // Dedup + drop non-positive, so a tiny tank doesn't yield "0" or repeated chips.
+    return [...new Set([Math.round(cap * 0.25), Math.round(cap * 0.5), cap])].filter((v) => v > 0 && v >= field.min);
+  }
+  return field.chips ?? [];
+}
+
 /** The overridable run targets, in display order (run targets first, then the
  *  safety gates). Bits ← OVERRIDE_BITS (pinned to the firmware enum by
  *  test/override-bits.test.ts); bounds mirror tunable-numbers.ts (in display units). */

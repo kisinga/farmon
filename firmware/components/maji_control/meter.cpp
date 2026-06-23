@@ -58,13 +58,6 @@ bool open_run(MeterState &m, int slot, int route, int flow_sensor, const std::st
   return true;
 }
 
-int64_t open_delivered(const MeterState &m, int slot) {
-  if (slot < 0 || slot >= (int) m.open.size()) return -1;
-  const OpenRun &o = m.open[slot];
-  if (!o.active || o.flow_sensor < 0) return -1;
-  return (int64_t) litres(m, o.flow_sensor) - (int64_t) o.start_litres;
-}
-
 void close_run(MeterState &m, int slot, const std::string &stop_reason, const std::string &fault,
                uint32_t end_epoch, uint32_t now_ms) {
   if (slot < 0 || slot >= (int) m.open.size()) return;

@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MajiFlow demo panel: to scale</title>
+<style>
+  body{margin:0;background:#efece3;color:#2a2a28;font-family:ui-rounded,'Segoe UI',system-ui,sans-serif;}
+  .wrap{max-width:1200px;margin:0 auto;padding:24px 16px 60px;}
+  h1{font-size:22px;margin:0 0 2px;}
+  .sub{color:#6b675e;margin:0 0 14px;font-size:14px;}
+  .paper{background:#fbfaf5;border:1px solid #d9d4c6;border-radius:14px;box-shadow:0 2px 0 #d9d4c6;padding:8px;}
+  svg{font-family:ui-rounded,'Segoe UI',system-ui,sans-serif;}
+  .board{fill:#f4f1e8;stroke:#cfc8b8;stroke-width:2.5;}
+  .route{fill:none;stroke:#9cc6e6;stroke-width:9;stroke-linecap:round;}
+  .route.idle{stroke:#d3dade;}
+  .ret{fill:none;stroke:#b1aa98;stroke-width:3;stroke-dasharray:9 6;}
+  .box{fill:#ffffff;fill-opacity:0.92;stroke:#86a7b8;stroke-width:2;stroke-dasharray:7 4;}
+  .box.dry{stroke:#9a9484;}
+  .ghost{fill:none;stroke:#c2bbab;stroke-width:1.6;stroke-dasharray:4 4;}
+  .lbl{font-size:15px;font-weight:600;fill:#2a2a28;}
+  .cap{font-size:12.5px;fill:#6b675e;}
+  .glyph{fill:none;stroke:#5a564c;stroke-width:2;}
+  .dim{stroke:#b1aa98;stroke-width:1.2;}
+  .dimt{font-size:14px;fill:#8a8576;}
+  .cdim{stroke:#b9b3a3;stroke-width:1;}
+  .cdimt{font-size:12px;fill:#9a9484;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Demo panel, drawn to scale</h1>
+  <p class="sub">1 pixel ≈ 1 mm. Boxes are the real footprints of the actual parts. Portrait, 650 × 950 mm.</p>
+
+  <div class="paper">
+  <svg viewBox="0 0 1200 1075" width="100%" role="img" aria-label="To-scale panel layout">
+    <defs>
+      <marker id="a" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="16" refX="10" refY="8" orient="auto"><path d="M0,1 L13,8 L0,15 Z" fill="#6fb0dc"/></marker>
+      <marker id="r" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="13" refX="8" refY="6.5" orient="auto"><path d="M0,1 L11,6.5 L0,12 Z" fill="#b1aa98"/></marker>
+      <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-opacity="0.15"/></filter>
+    </defs>
+
+    <!-- overall dimension brackets -->
+    <line class="dim" x1="140" y1="50" x2="790" y2="50"/>
+    <line class="dim" x1="140" y1="42" x2="140" y2="58"/><line class="dim" x1="790" y1="42" x2="790" y2="58"/>
+    <text class="dimt" x="465" y="40" text-anchor="middle">650 mm</text>
+    <line class="dim" x1="116" y1="70" x2="116" y2="1020"/>
+    <line class="dim" x1="108" y1="70" x2="124" y2="70"/><line class="dim" x1="108" y1="1020" x2="124" y2="1020"/>
+    <text class="dimt" x="100" y="545" text-anchor="middle" transform="rotate(-90 100 545)">950 mm</text>
+
+    <!-- BOARD -->
+    <rect class="board" x="140" y="70" width="650" height="950" rx="16"/>
+
+    <!-- header -->
+    <rect x="140" y="70" width="650" height="80" rx="16" fill="#2a2a28"/>
+    <rect x="140" y="118" width="650" height="32" fill="#2a2a28"/>
+    <text x="166" y="108" fill="#fbfaf5" font-size="22" font-weight="700">MajiFlow</text>
+    <text x="166" y="134" fill="#9a9484" font-size="13">live water demo  ·  scan to drive from your phone</text>
+    <rect x="730" y="80" width="50" height="50" rx="5" fill="#fff"/>
+    <g fill="#2a2a28"><rect x="735" y="85" width="11" height="11"/><rect x="764" y="85" width="11" height="11"/><rect x="735" y="114" width="11" height="11"/><rect x="751" y="90" width="5" height="5"/><rect x="759" y="101" width="5" height="5"/><rect x="751" y="109" width="5" height="5"/><rect x="765" y="114" width="5" height="5"/></g>
+
+    <!-- ===== pipe routes (under boxes) ===== -->
+    <!-- fill: sump -> fill pump -> fill meter -> tank top -->
+    <path class="route" d="M300 860 C 290 740, 266 690, 258 658" marker-end="url(#a)"/>
+    <path class="route" d="M250 560 C 240 522, 233 492, 230 472" marker-end="url(#a)"/>
+    <path class="route" d="M228 440 C 236 350, 252 240, 282 184" marker-end="url(#a)"/>
+    <!-- distribution: tank bottom -> dist pump -> meter -> split -> valves -> outlets -->
+    <path class="route" d="M332 380 C 400 405, 460 418, 502 430" marker-end="url(#a)"/>
+    <path class="route" d="M600 478 L612 468"/>
+    <path class="route" d="M662 460 L690 460" marker-end="url(#a)"/>
+    <circle cx="692" cy="460" r="6" fill="#6fb0dc"/>
+    <path class="route" d="M692 460 C 710 460, 660 360, 650 324" marker-end="url(#a)"/>
+    <path class="route idle" d="M692 460 C 710 460, 660 556, 650 560"/>
+    <path class="route" d="M681 270 L700 270"/>
+    <path class="route idle" d="M681 600 L700 600"/>
+
+    <!-- return loop -->
+    <path class="ret" d="M722 295 C 722 360, 772 460, 772 620 C 772 900, 772 986, 560 986 C 460 986, 430 986, 416 880" marker-end="url(#r)"/>
+    <path class="ret" d="M722 648 C 760 720, 772 760, 772 820" opacity="0.5"/>
+
+    <!-- catch cups -->
+    <path class="glyph" d="M701 318 L745 318 L740 350 L706 350 Z" stroke="#9cc6e6"/>
+    <path class="glyph" d="M701 648 L745 648 L740 680 L706 680 Z" stroke="#cfd6db"/>
+
+    <!-- ===== components (true-size boxes) ===== -->
+
+    <!-- TANK 150x200 -->
+    <g filter="url(#sh)"><rect class="box" x="250" y="180" width="150" height="200" rx="8"/></g>
+    <rect x="256" y="282" width="138" height="92" rx="4" fill="#7cc0ea" opacity="0.55"/>
+    <rect x="256" y="277" width="138" height="6" fill="#2f86c4" opacity="0.85"/>
+    <circle cx="266" cy="366" r="6" fill="#fff" stroke="#c7642f" stroke-width="2.2"/>
+    <text class="lbl" x="262" y="210">Clear tank</text>
+    <text class="cap" x="262" y="228">150 × 150 × 200</text>
+    <text class="cap" x="262" y="244">4.5 L, level shown</text>
+    <text class="cap" x="276" y="370" font-size="11">level sensor</text>
+    <!-- tank dims -->
+    <line class="cdim" x1="410" y1="180" x2="410" y2="380"/><text class="cdimt" x="420" y="285">200</text>
+    <line class="cdim" x1="250" y1="390" x2="400" y2="390"/><text class="cdimt" x="312" y="404" text-anchor="middle">150</text>
+
+    <!-- FILL PUMP 165x95 -->
+    <g filter="url(#sh)"><rect class="box" x="175" y="560" width="165" height="95" rx="8"/></g>
+    <circle class="glyph" cx="205" cy="608" r="16"/><path d="M193 595 L193 621 L220 608 Z" fill="#6b675e"/>
+    <text class="lbl" x="232" y="600">Fill pump</text>
+    <text class="cap" x="232" y="618">IEIK 12V 5 L/min</text>
+    <text class="cap" x="232" y="634">165 × 95 × 55</text>
+    <line class="cdim" x1="175" y1="665" x2="340" y2="665"/><text class="cdimt" x="257" y="679" text-anchor="middle">165</text>
+    <circle cx="180" cy="560" r="13" fill="#3a9b6e"/><text x="180" y="565" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">3</text>
+
+    <!-- FILL METER 50x30 -->
+    <g filter="url(#sh)"><rect class="box" x="205" y="438" width="50" height="34" rx="6"/></g>
+    <circle class="glyph" cx="230" cy="455" r="9"/><line x1="230" y1="455" x2="238" y2="448" stroke="#2f86c4" stroke-width="2"/>
+    <text class="cap" x="262" y="450">Meter (YF-B5)</text>
+    <text class="cap" x="262" y="466" font-size="11">50 × 30</text>
+
+    <!-- DIST PUMP 165x95 -->
+    <g filter="url(#sh)"><rect class="box" x="435" y="430" width="165" height="95" rx="8"/></g>
+    <circle class="glyph" cx="465" cy="478" r="16"/><path d="M453 465 L453 491 L480 478 Z" fill="#6b675e"/>
+    <text class="lbl" x="492" y="470">Pump</text>
+    <text class="cap" x="492" y="488">IEIK 12V 5 L/min</text>
+    <text class="cap" x="492" y="504">165 × 95 × 55</text>
+    <circle cx="440" cy="430" r="13" fill="#c7642f"/><text x="440" y="435" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">1</text>
+
+    <!-- DIST METER 50x30 -->
+    <g filter="url(#sh)"><rect class="box" x="612" y="445" width="50" height="34" rx="6"/></g>
+    <circle class="glyph" cx="637" cy="462" r="9"/><line x1="637" y1="462" x2="645" y2="455" stroke="#2f86c4" stroke-width="2"/>
+    <text class="cap" x="612" y="498">Meter</text>
+    <circle cx="618" cy="441" r="12" fill="#2f86c4"/><text x="618" y="446" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">2</text>
+
+    <!-- VALVE A 71x85 -->
+    <g filter="url(#sh)"><rect class="box" x="610" y="235" width="71" height="85" rx="8"/></g>
+    <rect class="glyph" x="630" y="248" width="32" height="20" rx="3"/>
+    <path d="M624 296 L645 306 L624 316 Z" fill="#3a9b6e"/><path d="M666 296 L645 306 L666 316 Z" fill="#3a9b6e"/>
+    <text class="cap" x="612" y="225">Valve A · open</text>
+    <text class="cap" x="612" y="335" font-size="11">71 × 85 (w/ actuator)</text>
+
+    <!-- VALVE B 71x85 -->
+    <g filter="url(#sh)"><rect class="box" x="610" y="560" width="71" height="85" rx="8"/></g>
+    <rect class="glyph" x="630" y="573" width="32" height="20" rx="3"/>
+    <path d="M624 621 L645 631 L624 641 Z" fill="#b9b3a3"/><path d="M666 621 L645 631 L666 641 Z" fill="#b9b3a3"/>
+    <text class="cap" x="612" y="550">Valve B · closed</text>
+
+    <!-- OUTLET A -->
+    <g filter="url(#sh)"><rect class="box" x="700" y="245" width="44" height="44" rx="8"/></g>
+    <circle class="glyph" cx="722" cy="267" r="9" stroke="#2f86c4"/><line x1="722" y1="258" x2="722" y2="251" stroke="#2f86c4" stroke-width="2"/>
+    <text class="cap" x="700" y="305" font-size="11">Outlet A</text>
+
+    <!-- OUTLET B -->
+    <g filter="url(#sh)"><rect class="box" x="700" y="575" width="44" height="44" rx="8"/></g>
+    <circle class="glyph" cx="722" cy="597" r="9" stroke="#b9b3a3"/>
+    <text class="cap" x="700" y="635" font-size="11">Outlet B</text>
+
+    <!-- CONTROLLER 200x110 -->
+    <g filter="url(#sh)"><rect class="box dry" x="430" y="690" width="200" height="110" rx="8"/></g>
+    <rect class="glyph" x="452" y="722" width="46" height="34" rx="4"/>
+    <line x1="452" y1="730" x2="444" y2="730" class="glyph"/><line x1="452" y1="746" x2="444" y2="746" class="glyph"/>
+    <line x1="498" y1="730" x2="506" y2="730" class="glyph"/><line x1="498" y1="746" x2="506" y2="746" class="glyph"/>
+    <text class="lbl" x="516" y="726">KC868</text>
+    <text class="cap" x="516" y="744">controller</text>
+    <text class="cap" x="452" y="780">dry zone · 200 × 110 × 60</text>
+    <circle cx="435" cy="690" r="13" fill="#2a2a28"/><text x="435" y="695" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">4</text>
+
+    <!-- PSU on back (ghost) -->
+    <rect class="ghost" x="450" y="818" width="159" height="38" rx="4"/>
+    <text class="cap" x="455" y="842" font-size="11" fill="#9a9484">Power supply — mounted on the BACK (159 × 97 × 38)</text>
+
+    <!-- SUMP 250x150 -->
+    <g filter="url(#sh)"><rect class="box" x="175" y="860" width="250" height="150" rx="8"/></g>
+    <rect x="183" y="930" width="234" height="72" rx="4" fill="#7cc0ea" opacity="0.5"/>
+    <text class="lbl" x="190" y="892">Sump</text>
+    <text class="cap" x="190" y="910">~5 L, source + return</text>
+    <text class="cap" x="190" y="926">sits in base tray</text>
+
+    <!-- ===== right column ===== -->
+    <text x="835" y="86" font-size="16" font-weight="700" fill="#2a2a28">To scale · 1 px = 1 mm</text>
+    <!-- scale bar -->
+    <line class="dim" x1="835" y1="108" x2="1035" y2="108" stroke-width="2"/>
+    <line class="dim" x1="835" y1="101" x2="835" y2="115"/><line class="dim" x1="935" y1="103" x2="935" y2="113"/><line class="dim" x1="1035" y1="101" x2="1035" y2="115"/>
+    <text class="cdimt" x="835" y="130">0</text><text class="cdimt" x="935" y="130" text-anchor="middle">100</text><text class="cdimt" x="1035" y="130" text-anchor="end">200 mm</text>
+
+    <text x="835" y="172" font-size="15" font-weight="700" fill="#2a2a28">Three layers</text>
+    <rect x="835" y="182" width="22" height="22" rx="3" fill="#f4f1e8" stroke="#cfc8b8"/><text x="866" y="198" font-size="13" fill="#2a2a28">Printed board: info + routes</text>
+    <rect x="835" y="212" width="22" height="22" rx="3" class="box"/><text x="866" y="228" font-size="13" fill="#2a2a28">Clear acrylic boxes: real parts</text>
+    <rect x="835" y="242" width="22" height="22" rx="3" fill="#fff" stroke="#9cc6e6" stroke-width="4"/><text x="866" y="258" font-size="13" fill="#2a2a28">Clear 25 mm tube: dyed water</text>
+
+    <text x="835" y="300" font-size="15" font-weight="700" fill="#2a2a28">Four demo moments</text>
+    <circle cx="846" cy="320" r="11" fill="#c7642f"/><text x="846" y="325" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">1</text><text x="866" y="325" font-size="13" fill="#2a2a28">Don't burn the pump</text>
+    <circle cx="846" cy="348" r="11" fill="#2f86c4"/><text x="846" y="353" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">2</text><text x="866" y="353" font-size="13" fill="#2a2a28">Count every litre</text>
+    <circle cx="846" cy="376" r="11" fill="#3a9b6e"/><text x="846" y="381" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">3</text><text x="866" y="381" font-size="13" fill="#2a2a28">Runs itself (auto-fill)</text>
+    <circle cx="846" cy="404" r="11" fill="#2a2a28"/><text x="846" y="409" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">4</text><text x="866" y="409" font-size="13" fill="#2a2a28">Works offline</text>
+
+    <text x="835" y="462" font-size="15" font-weight="700" fill="#2a2a28">Build notes</text>
+    <text class="cap" x="835" y="484">• Tank full ≈ 3 kg → needs a shelf bracket,</text>
+    <text class="cap" x="847" y="500">not adhesive.</text>
+    <text class="cap" x="835" y="520">• Power supply mounts on the back.</text>
+    <text class="cap" x="835" y="540">• Pipes drawn thinner than the real</text>
+    <text class="cap" x="847" y="556">25 mm OD tube.</text>
+    <text class="cap" x="835" y="576">• Depth ~150 mm (tank) · ~15 kg full.</text>
+    <text class="cap" x="835" y="596">• A slim 2 L tank cuts depth to ~100 mm.</text>
+
+    <text x="835" y="648" font-size="15" font-weight="700" fill="#2a2a28">Water path</text>
+    <text class="cap" x="835" y="670">Sump → fill pump → meter → tank →</text>
+    <text class="cap" x="835" y="686">pump → meter → valves → outlets →</text>
+    <text class="cap" x="835" y="702">catch cups → gravity back to sump.</text>
+  </svg>
+  </div>
+
+  <p class="sub" style="margin-top:14px;">Every dashed-edge box is a real part at true size. If two boxes look tight on the board, they will be tight in real life. that's the point of drawing it to scale.</p>
+
+</div>
+</body>
+</html>

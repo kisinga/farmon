@@ -676,6 +676,25 @@ export interface RouteSnapshot {
   /** Filled server-side at ingest: the actor's display name ("Jane" / "Morning").
    *  Absent on the device wire; present in the stored controller_state doc. */
   actorLabel?: string;
+  /** Live run facts, present only while RUNNING — the card-as-progress-bar reads them.
+   *  The device reports facts; the app computes the fill + labels (see runProgress). */
+  live?: RouteLive;
+}
+
+/** A running route's live progress facts (snapshot route `live`). delivered is the
+ *  stop-decision basis so the bar hits 100% exactly when the run stops; level progress
+ *  uses the dest tank's live level (already on the wire), so it is not duplicated here. */
+export interface RouteLive {
+  /** Delivered litres so far; -1 if unmetered. */
+  del: number;
+  /** Elapsed seconds. */
+  dur: number;
+  /** Target volume L; 0 = none. */
+  tv: number;
+  /** Target duration s; 0 = none. */
+  td: number;
+  /** Target level %; -1 = none. */
+  tl: number;
 }
 
 export interface ControllerSnapshot {

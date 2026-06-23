@@ -120,7 +120,7 @@ static void test_overflow() {
   check(m.outbox.front().seq == 6, "overflow: drops the oldest, keeps the newest");
 }
 
-// --- Live progress + JSON serialization ---
+// --- JSON serialization ---
 static void test_serialize() {
   MeterState m;
   m.init(1, 2);
@@ -128,8 +128,7 @@ static void test_serialize() {
   on_reading(m, 0, 0, 450);
   on_reading(m, 0, 22500, 450);  // 50 L
   open_run(m, 0, 0, 0, "MANUAL", "jane", 1700000001u, 5000);
-  on_reading(m, 0, 33750, 450);  // 75 L (25 delivered live)
-  check(open_delivered(m, 0) == 25, "progress: open_delivered = now - start");
+  on_reading(m, 0, 33750, 450);  // 75 L
   close_run(m, 0, "VOLUME_REACHED", "", 1700000301u, 35000);
 
   char buf[512];

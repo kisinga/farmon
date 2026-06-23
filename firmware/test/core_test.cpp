@@ -336,6 +336,37 @@ int main() {
     check(manual_pump_precheck(cs, p, 0) == 0, "manual precheck: safety_override -> 0");
   }
 
+  {
+    // --- run_live: live progress facts for the dashboard card-as-progress-bar ---
+    ControlState cs = scenario_state();  // route 0: dest_tank 1, flow_sensor 0, runtime_level_ok
+    cs.slots[0].route_id = 0;
+    cs.slots[0].state = ST_RUNNING;
+    cs.slots[0].run_start_time = 1000;
+    cs.slots[0].volume_at_start = 10.0f;
+    cs.slots[0].override_mask = OV_VOLUME | OV_DEST_MAX;
+    cs.slots[0].ov_target_volume_l = 40;
+    cs.slots[0].ov_dest_max_pct = 80;
+    Inputs in = mk_inputs(31000);     // elapsed = (31000-1000)/1000 = 30 s
+    in.flow_totals = {60.0f};         // delivered = 60 - 10 = 50 L
+
+    RunLive r = run_live(cs, in, 0);
+    check(r.delivered_l == 50, "run_live: delivered = total - volume_at_start (stop-aligned)");
+    check(r.elapsed_s == 30, "run_live: elapsed seconds");
+    check(r.target_vol_l == 40, "run_live: volume target");
+    check(r.target_dur_s == 0, "run_live: no duration target");
+    check(r.target_lvl_pct == 80, "run_live: echoes the level target (app reads live level itself)");
+
+    // unmetered route (no flow sensor) -> delivered unknown (-1), still has level/duration.
+    cs.routes[0].flow_sensor = 0xFF;
+    cs.slots[0].volume_at_start = -1.0f;
+    check(run_live(cs, in, 0).delivered_l == -1, "run_live: unmetered route -> delivered -1");
+
+    // not running -> all sentinels (idle slot).
+    cs.slots[0].state = ST_IDLE;
+    check(run_live(cs, in, 0).delivered_l == -1 && run_live(cs, in, 0).target_vol_l == 0,
+          "run_live: idle slot is empty");
+  }
+
   printf("\n%d passed, %d failed\n", pass, fail);
   return fail ? 1 : 0;
 }

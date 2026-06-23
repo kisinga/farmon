@@ -110,9 +110,6 @@ uint64_t litres(const MeterState &m, int sensor);
 bool open_run(MeterState &m, int slot, int route, int flow_sensor, const std::string &origin,
               const std::string &actor, uint32_t start_epoch, uint32_t run_start_ms);
 
-// Delivered litres of a slot's open run so far (live progress). -1 if none/unmetered.
-int64_t open_delivered(const MeterState &m, int slot);
-
 // Close a slot's open run (-> IDLE / FAULT / boot-interrupt). No-op if none open. Computes
 // delivered (end - start) and duration (from the monotonic run timer) and enqueues to the
 // outbox (dropping the oldest + bumping `dropped` on overflow). The shell supplies the

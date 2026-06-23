@@ -177,6 +177,34 @@ uint32_t effective_target_volume_l(const ControlState &cs, const Inputs &in, int
                                                  : tun(in, cs.slots[s].route_id).target_volume_l;
 }
 
+RunLive run_live(const ControlState &cs, const Inputs &in, int s) {
+  RunLive r{-1, 0, 0, 0, -1};
+  if (s < 0 || s >= MAX_CONCURRENT_ROUTES || cs.slots[s].state != ST_RUNNING) return r;
+  int rid = cs.slots[s].route_id;
+  if (rid < 0 || rid >= (int) cs.routes.size()) return r;
+  const Route &rt = cs.routes[rid];
+
+  r.elapsed_s = (in.now_ms >= cs.slots[s].run_start_time)
+                    ? (in.now_ms - cs.slots[s].run_start_time) / 1000u
+                    : 0;  // guard the millis() wrap (~49 days uptime)
+  if (rt.flow_sensor != 0xFF && cs.slots[s].volume_at_start >= 0.0f) {
+    float total = at(in.flow_totals, rt.flow_sensor);
+    if (!std::isnan(total)) {
+      float d = total - cs.slots[s].volume_at_start;
+      r.delivered_l = (d > 0.0f) ? (int32_t) d : 0;
+    } else {
+      r.delivered_l = 0;
+    }
+  }
+  r.target_vol_l = effective_target_volume_l(cs, in, s);
+  r.target_dur_s = effective_target_duration_s(cs, in, s);
+  // Level target only counts when it actually gates the run (a runtime-safe dest level).
+  // The app reads the dest tank's live level itself; we only echo the target here.
+  uint8_t dmax = effective_dest_max_pct(cs, in, s);
+  if (dmax > 0 && rt.dest_tank != 0xFF && rt.runtime_level_ok) r.target_lvl_pct = (int16_t) dmax;
+  return r;
+}
+
 int check_precheck(const Inputs &in, uint8_t src_idx, uint8_t src_min, uint8_t dst_idx, uint8_t dst_max) {
   if (in.safety_override) return 0;
   if (src_idx != 0xFF && src_min > 0) {

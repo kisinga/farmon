@@ -119,6 +119,13 @@ class MajiControl : public Component {
   }
   int meter_runs_json(char *buf, int cap) { return maji_meter::serialize_runs(meter_, buf, cap); }
 
+  // Live run facts for the snapshot's per-route progress (card-as-progress-bar). Cached
+  // each tick (run_live needs Inputs, which only the tick builds); the snapshot reads it.
+  const maji_ctl::RunLive &route_live(int slot) const {
+    static const maji_ctl::RunLive kEmpty{-1, 0, 0, 0, -1};
+    return (slot >= 0 && slot < maji_ctl::MAX_CONCURRENT_ROUTES) ? live_[slot] : kEmpty;
+  }
+
  protected:
   // Fill an Inputs from the bound handles (the only place id()/state is read for the kernel).
   maji_ctl::Inputs snapshot_(uint32_t now);
@@ -146,6 +153,7 @@ class MajiControl : public Component {
   int prev_state_[maji_ctl::MAX_CONCURRENT_ROUTES];
   int prev_stop_[maji_ctl::MAX_CONCURRENT_ROUTES];
   uint32_t meter_tick_count_{0};
+  maji_ctl::RunLive live_[maji_ctl::MAX_CONCURRENT_ROUTES];  // per-slot live progress, refreshed each tick
 
   maji_ctl::ControlState state_;
   std::vector<maji_ctl::Route> routes_;

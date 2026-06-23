@@ -3,6 +3,7 @@
  * These mirror the server's wire JSON; meaning is added in the browser via the
  * core meanings dictionary, never decoded here.
  */
+import type { RouteLive } from '@core';
 
 /** A channel's last-known value: numeric `reported` for charts, plus the
  *  human-readable `reported_text` token for categorical channels. For a route's
@@ -20,6 +21,9 @@ export interface ShadowRow {
   actorId?: string;
   /** Server-resolved display name for the actor (used for a co-owner / automation). */
   actorLabel?: string;
+  /** Live run progress facts (route_<id>_state rows, only while RUNNING) — the
+   *  card-as-progress-bar reads them (see runProgress). */
+  live?: RouteLive;
 }
 
 /** One history sample. The raw tier carries `value`; rollup tiers carry avg/min/max. */

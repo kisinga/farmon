@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
-import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, bucketReading, channelPriority, type DashboardSpec, type DashboardWidget, type NodeRuntime } from '@core';
+import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, bucketReading, channelPriority, type DashboardSpec, type DashboardWidget, type NodeRuntime, type RouteLive } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { AuthStore } from '../../core/services/auth.store';
 import type { ShadowRow, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, ActivityItem } from '../../core/models/runtime';
@@ -319,6 +319,12 @@ export class DashboardStore implements OnDestroy {
       return { token: token || e.to, reason: e.reason, ts: e.ts, origin, initiator };
     }
     return token ? { token, reason: '', ts: '', origin, initiator } : undefined;
+  }
+
+  /** The running route's live progress facts (the snapshot route `live` block), or
+   *  undefined when not running / not reported. Drives the card-as-progress-bar. */
+  routeLive(controller: string, routeId: number): RouteLive | undefined {
+    return this.shadow().get(`${controller}/${routeStateSensor(routeId)}`)?.live;
   }
 
   /** The device's latest result for a dispatched command, by `command_id`, shaped
