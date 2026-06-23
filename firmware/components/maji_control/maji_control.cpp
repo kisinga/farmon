@@ -33,7 +33,10 @@ static const char *fault_tok(int i) {
 // --- Fixed POD mirror of the durable MeterState, for ESPPreference (NVS) -----------
 // MeterState holds vectors + std::string, so it can't be stored raw; this bounded blob
 // is the on-flash form. Sizes cap the live state (excess is dropped on save, which only
-// happens past the configured maxima — unreachable on real hardware).
+// happens past the configured maxima — unreachable on real hardware). On ESP32 the
+// preferences backend is NVS; this blob is ~2 KB (OUTBOX_CAP=16), comfortably inside the
+// default ~20 KB+ NVS partition, and ESPHome batches the flash write so frequent saves
+// don't wear flash. (On flash-poor targets, shrink OUTBOX_CAP.)
 static constexpr uint32_t METER_BLOB_KEY = 0x4D455452;   // "METR" — preferences hash
 static constexpr uint32_t METER_BLOB_MAGIC = 0x4D455431; // "MET1" — format/sanity tag
 static constexpr int BLOB_MAX_FLOW = 8;
@@ -70,7 +73,7 @@ struct BlobRun {
 };
 struct MeterBlob {
   uint32_t magic;
-  uint32_t run_epoch, run_seq, acked_epoch, acked_seq, dropped;
+  uint32_t run_epoch, run_seq, acked_epoch, acked_seq, dropped, last_wall;
   uint8_t num_counters, num_open, outbox_count;
   BlobCounter counters[BLOB_MAX_FLOW];
   BlobOpen open[BLOB_MAX_SLOT];
@@ -225,13 +228,15 @@ void MajiControl::tick_1s(uint32_t wall_epoch) {
   // counter from each flow sensor's cumulative total (already litres, units_per_litre=1),
   // then reconcile run open/close from the slot transitions this tick.
   maji_meter::stamp_epoch(meter_, wall_epoch);
+  if (wall_epoch) meter_.last_wall = wall_epoch;  // for a boot-interrupted run's duration
   for (int i = 0; i < (int) flows_.size(); i++) {
     float t = flows_[i].total != nullptr ? flows_[i].total->state : NAN;
     if (!std::isnan(t) && t >= 0.0f) maji_meter::on_reading(meter_, i, (uint32_t) t, 1);
   }
   meter_sync_(wall_epoch, now);
-  // Periodic durable save (~30 s) so the counter survives an unclean power loss; the
-  // flash write itself is batched by the preferences component. Run close/ack save eagerly.
+  // Mark the durable state dirty every ~30 s so the counter survives an unclean power
+  // loss; ESPHome batches the actual flash write (its preferences flush interval, ~60 s
+  // default), so the real worst-case loss is one flush window. Run close/ack save eagerly.
   if (++meter_tick_count_ % 30 == 0) meter_persist_();
 
   // Pump management AFTER tick_1s (a slot that became RUNNING this tick must count).
@@ -358,6 +363,7 @@ void MajiControl::meter_load_() {
   meter_.acked_epoch = b.acked_epoch;
   meter_.acked_seq = b.acked_seq;
   meter_.dropped = b.dropped;
+  meter_.last_wall = b.last_wall;
   for (int i = 0; i < b.num_counters && i < (int) meter_.counters.size(); i++) {
     meter_.counters[i].litres = b.counters[i].litres;
     meter_.counters[i].remainder = b.counters[i].remainder;
@@ -397,11 +403,11 @@ void MajiControl::meter_load_() {
   }
   // A run still OPEN at boot means the controller died mid-run. Close it as interrupted:
   // delivered = restored counter - start (the durable counter survived), so its partial
-  // delivery is still billed. Duration is unknown, so left at 0.
+  // delivery is still billed. now_ms=0 forces close_run's wall-clock duration fallback
+  // (last_wall - start_epoch), the best duration estimate across the reboot.
   for (int s = 0; s < (int) meter_.open.size(); s++)
     if (meter_.open[s].active)
-      maji_meter::close_run(meter_, s, "INTERRUPTED", "", meter_.open[s].start_epoch,
-                            meter_.open[s].run_start_ms);
+      maji_meter::close_run(meter_, s, "INTERRUPTED", "", meter_.last_wall, 0);
 }
 
 void MajiControl::meter_persist_() {
@@ -412,6 +418,7 @@ void MajiControl::meter_persist_() {
   b.acked_epoch = meter_.acked_epoch;
   b.acked_seq = meter_.acked_seq;
   b.dropped = meter_.dropped;
+  b.last_wall = meter_.last_wall;
 
   b.num_counters = (uint8_t) std::min((int) meter_.counters.size(), BLOB_MAX_FLOW);
   for (int i = 0; i < b.num_counters; i++) {

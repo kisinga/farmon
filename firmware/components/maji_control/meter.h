@@ -80,6 +80,8 @@ struct MeterState {
   uint32_t acked_epoch{0};
   uint32_t acked_seq{0};
   uint32_t dropped{0};    // outbox-overflow count (a loud fault signal for the shell)
+  uint32_t last_wall{0};  // last trusted wall-clock secs seen (shell-updated, persisted);
+                          // lets a boot-interrupted run recover a wall-clock duration
 
   void init(int num_flow_sensors, int num_slots);
 };

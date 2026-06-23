@@ -328,7 +328,12 @@ func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Ti
 	// past an un-persisted, billable run.
 	if pub != nil && len(s.Runs) > 0 {
 		if e, sq, ok := HighWaterRun(app, ctrl); ok {
-			_ = pub.Publish(RunsAckTopic(site, ctrl), []byte(fmt.Sprintf("%d:%d", e, sq)), true, 1)
+			topic := RunsAckTopic(site, ctrl)
+			payload := []byte(fmt.Sprintf("%d:%d", e, sq))
+			// Publish off this goroutine: IngestSnapshot runs inside the broker's
+			// OnPublish hook, and re-entering the broker to publish synchronously can
+			// deadlock. The ack is retained, so a fire-and-forget send is fine.
+			go func() { _ = pub.Publish(topic, payload, true, 1) }()
 		}
 	}
 	// Running firmware version (from the device's metadata sensor) → confirm an OTA
@@ -448,10 +453,16 @@ func persistRun(app core.App, site, ctrl string, r *snapRun) error {
 	rec.Set("metered", r.Metered)
 	rec.Set("fault", r.Fault)
 	if err := app.Save(rec); err != nil {
-		// A failed write just means the high-water-mark won't advance past this run,
-		// so the device keeps re-asserting it next snapshot. Returning the error stops
-		// the caller from persisting later (higher-seq) runs this pass, keeping the
-		// ledger gap-free. Billing never loses a run to a transient error.
+		// A concurrent re-assert may have inserted this run between our existence check
+		// and the save (the unique index rejects the dup). That is success, not a gap —
+		// don't break the batch on it.
+		if dup, _ := app.FindFirstRecordByFilter("runs",
+			"controller = {:c} && run_id = {:r}", dbx.Params{"c": ctrl, "r": r.RunID}); dup != nil {
+			return nil
+		}
+		// A real failure: the high-water-mark won't advance past this run, so the device
+		// keeps re-asserting it. Returning the error stops the caller from persisting
+		// later (higher-seq) runs this pass, keeping the ledger gap-free.
 		app.Logger().Error("persist run failed", "controller", ctrl, "run_id", r.RunID, "err", err)
 		return err
 	}

@@ -78,7 +78,11 @@ void close_run(MeterState &m, int slot, const std::string &stop_reason, const st
   r.actor = o.actor;
   r.start_epoch = o.start_epoch;
   r.end_epoch = end_epoch;
-  r.duration_s = (now_ms >= o.run_start_ms) ? (now_ms - o.run_start_ms) / 1000u : 0;
+  // Duration from the monotonic run timer. If now_ms < run_start_ms the timer reset under
+  // us (a reboot, e.g. an interrupted-run close on boot), so fall back to the wall-clock
+  // delta instead of yielding 0.
+  if (now_ms >= o.run_start_ms) r.duration_s = (now_ms - o.run_start_ms) / 1000u;
+  else r.duration_s = (end_epoch > o.start_epoch) ? (end_epoch - o.start_epoch) : 0;
   r.stop_reason = stop_reason;
   r.fault = fault;
   r.metered = (o.flow_sensor >= 0);
@@ -133,7 +137,9 @@ int serialize_runs(const MeterState &m, char *buf, int cap) {
                   r.metered ? "true" : "false");
     if (n >= cap) break;
   }
-  return n;
+  // n is the accumulated would-be length (snprintf semantics) and can exceed cap; clamp
+  // to the bytes actually in buf so a caller's `n +=` can never run past the buffer.
+  return (n < cap) ? n : (cap > 0 ? cap - 1 : 0);
 }
 
 }  // namespace maji_meter

@@ -249,9 +249,25 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			filter += " && route = {:rt}"
 			params["rt"] = n
 		}
-		recs, err := e.App.FindRecordsByFilter("runs", filter, "started_at", 5000, 0, params)
-		if err != nil {
-			return apis.NewBadRequestError("query failed", err)
+		// Paginate so a high-volume period isn't silently capped (billing must not
+		// under-report). maxRuns bounds memory; truncated surfaces the cut to the client.
+		const pageSize = 5000
+		const maxRuns = 100000
+		recs := make([]*core.Record, 0)
+		truncated := false
+		for offset := 0; ; offset += pageSize {
+			page, err := e.App.FindRecordsByFilter("runs", filter, "started_at", pageSize, offset, params)
+			if err != nil {
+				return apis.NewBadRequestError("query failed", err)
+			}
+			recs = append(recs, page...)
+			if len(page) < pageSize {
+				break
+			}
+			if len(recs) >= maxRuns {
+				truncated = true
+				break
+			}
 		}
 
 		// Per-route continuity tracker: within one device epoch, this run's start
@@ -302,6 +318,18 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 				st := cont[k]
 				if st == nil {
 					st = &contState{ok: true}
+					// Seed from the metered run immediately before the window, so a gap
+					// straddling the window start is caught (not just gaps between two
+					// in-window runs).
+					prior, _ := e.App.FindRecordsByFilter("runs",
+						"controller = {:pc} && route = {:pr} && metered = true && started_at < {:pf}",
+						"-started_at", 1, 0,
+						dbx.Params{"pc": k.ctrl, "pr": route, "pf": params["from"]})
+					if len(prior) == 1 {
+						st.lastEnd = prior[0].GetFloat("end_litres")
+						st.lastEpoch = int64(prior[0].GetInt("epoch"))
+						st.haveLast = true
+					}
 					cont[k] = st
 				}
 				if st.haveLast && epoch == st.lastEpoch && startL != st.lastEnd {
@@ -335,6 +363,7 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 				"duration_s": totalDurationS,
 			},
 			"continuity": continuity,
+			"truncated":  truncated,
 		})
 	})
 

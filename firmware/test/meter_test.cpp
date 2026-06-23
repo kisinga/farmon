@@ -82,6 +82,12 @@ static void test_close() {
   // close with no open run on a slot is a no-op (e.g. PREPARING->IDLE never ran).
   close_run(m, 0, "MANUAL", "", 1700000800u, 800000);
   check(m.outbox.size() == 2, "close: no-op when nothing is open");
+
+  // Boot-interrupted close: the monotonic timer reset (now_ms < run_start_ms), so
+  // duration falls back to the wall-clock delta instead of 0.
+  open_run(m, 0, 0, -1, "MANUAL", "u1", 2000, 50000);
+  close_run(m, 0, "INTERRUPTED", "", 2300, 100);
+  check(m.outbox.back().duration_s == 300, "close: reboot (millis reset) uses wall-clock duration");
 }
 
 // --- Ack high-water-mark drops confirmed records, keeps the rest ---
