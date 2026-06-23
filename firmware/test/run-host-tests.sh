@@ -29,6 +29,16 @@ g++ $CXXFLAGS \
 "$OUT/core_test"
 
 echo
+echo "== meter kernel =="
+g++ $CXXFLAGS \
+  -I firmware/components/maji_control \
+  firmware/components/maji_control/core.cpp \
+  firmware/components/maji_control/meter.cpp \
+  firmware/test/meter_test.cpp \
+  -o "$OUT/meter_test"
+"$OUT/meter_test"
+
+echo
 echo "== automation kernel =="
 g++ $CXXFLAGS \
   -I firmware/components/maji_automations \

@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import type { RecordModel, UnsubscribeFunc } from 'pocketbase';
 import type { ControllerSnapshot } from '@core';
 import { BackendService } from './backend.service';
-import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow } from '../models/runtime';
+import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, UsageReport } from '../models/runtime';
 
 /** Liveness of the PocketBase realtime SSE stream. `connecting` is the idle
  *  state before anything subscribes; the dashboard banner only reacts to
@@ -62,6 +62,26 @@ export class RealtimeService {
       outcomes.push(...snapOutcomes(d.controller, snap));
     }
     return { rows, outcomes };
+  }
+
+  /** Billing-grade usage for a site over a period: per-run line items (both axes),
+   *  totals, and per-route continuity, read from the immutable runs ledger via the
+   *  `/usage` facade. This is the authoritative source for delivered water, replacing
+   *  the old client-side rate integration. Optional controller/route narrow scope. */
+  usage(
+    siteId: string,
+    from: Date,
+    to: Date,
+    opts?: { controller?: string; route?: number },
+  ): Promise<UsageReport> {
+    const q = new URLSearchParams({
+      site: siteId,
+      from: from.toISOString(),
+      to: to.toISOString(),
+    });
+    if (opts?.controller) q.set('controller', opts.controller);
+    if (opts?.route != null) q.set('route', String(opts.route));
+    return this.pb.send<UsageReport>(`/api/farmon/usage?${q.toString()}`, { method: 'GET' });
   }
 
   /** Numeric history for a channel; the server picks the tier from the span. */

@@ -2,7 +2,8 @@ import { Component, computed, effect, inject, input, signal } from '@angular/cor
 import type { UnsubscribeFunc } from 'pocketbase';
 import {
   parseTopology, listAutomatableRoutes, buildDashboardSpec, MAX_AUTOMATIONS,
-  type SiteTopology, type AutomatableRoute, type NewAutomationRow,
+  RUN_TARGET_FIELDS, OVERRIDE_BITS,
+  type SiteTopology, type AutomatableRoute, type NewAutomationRow, type RunTargetField,
 } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
@@ -14,24 +15,9 @@ import { AutomationsService, type AutomationRecord } from './automations.service
 
 const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
-/** One overridable run-param. Bits + bounds mirror routes.ts (OV_*) and
- *  tunable-numbers.ts; the editor overlays them onto the route's live defaults. */
-interface OverrideField {
-  key: keyof NewAutomationRow;
-  bit: number;
-  label: string;
-  unit: string;
-  min: number;
-  max: number;
-  monitoredOnly?: boolean;
-}
-const OVERRIDE_FIELDS: OverrideField[] = [
-  { key: 'ov_target_volume_l', bit: 16, label: 'Target volume', unit: 'L', min: 0, max: 100000, monitoredOnly: true },
-  { key: 'ov_target_duration_s', bit: 8, label: 'Run duration', unit: 's', min: 0, max: 7200 },
-  { key: 'ov_max_runtime_min', bit: 4, label: 'Max runtime', unit: 'min', min: 1, max: 120 },
-  { key: 'ov_source_min_pct', bit: 1, label: 'Source min', unit: '%', min: 0, max: 100 },
-  { key: 'ov_dest_max_pct', bit: 2, label: 'Dest max', unit: '%', min: 0, max: 100 },
-];
+// The overridable run targets + their mask bits are owned by RUN_TARGET_FIELDS /
+// OVERRIDE_BITS in @core (shared with the dashboard run picker and pinned to the
+// firmware enum), so the editor never re-hardcodes the bit literals.
 
 /** A blank draft for a new automation (route stamped on save). */
 function blankDraft(): NewAutomationRow & { id?: string } {
@@ -165,7 +151,7 @@ function blankDraft(): NewAutomationRow & { id?: string } {
                     </label>
                     @if (ovOn(d.override_mask, f.bit)) {
                       <div class="flex items-center gap-1.5 shrink-0">
-                        <input type="number" [min]="f.min" [max]="f.max" class="input input-sm input-bordered w-24 text-right" [value]="d[f.key]" (input)="set(f.key, num($event))" />
+                        <input type="number" [min]="f.min" [max]="f.max" class="input input-sm input-bordered w-24 text-right" [value]="disp(f, d[f.key])" (input)="set(f.key, toWire(f, num($event)))" />
                         <span class="text-xs text-base-content/40 w-7">{{ f.unit }}</span>
                       </div>
                     } @else {
@@ -273,7 +259,7 @@ export class AutomationsManagerComponent {
   protected hasRouteTuning = computed(() => this.dash.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));
   protected selectedRoute = computed(() => this.routes().find((r) => r.routeKey === this.draft()?.route_key));
   protected overrideFields = computed(() =>
-    OVERRIDE_FIELDS.filter((f) => !f.monitoredOnly || this.selectedRoute()?.monitored),
+    RUN_TARGET_FIELDS.filter((f) => !f.monitoredOnly || this.selectedRoute()?.monitored),
   );
   protected routeGroups = computed(() => {
     const groups = new Map<string, AutomatableRoute[]>();
@@ -298,7 +284,7 @@ export class AutomationsManagerComponent {
     }
     for (const f of this.overrideFields()) {
       if (!this.ovOn(d.override_mask, f.bit)) continue;
-      const v = Number(d[f.key]);
+      const v = Number(d[f.key]) / (f.scale ?? 1);
       if (Number.isNaN(v) || v < f.min || v > f.max) issues.push(`${f.label} must be ${f.min}–${f.max} ${f.unit}.`);
     }
     return issues;
@@ -348,6 +334,10 @@ export class AutomationsManagerComponent {
     const d = this.draft(); if (!d) return; this.draft.set({ ...d, [key]: val });
   }
   protected num(e: Event): number { return Number((e.target as HTMLInputElement).value) || 0; }
+  /** Wire value → display value (e.g. duration seconds → minutes). */
+  protected disp(f: RunTargetField, wire: number): number { return f.scale ? Math.round(wire / f.scale) : wire; }
+  /** Display value → wire value (the inverse), written back to the draft. */
+  protected toWire(f: RunTargetField, display: number): number { return display * (f.scale ?? 1); }
 
   protected onRoute(key: string): void {
     const r = this.routes().find((x) => x.routeKey === key); const d = this.draft();
@@ -412,9 +402,9 @@ export class AutomationsManagerComponent {
   }
   protected overrideSummary(a: AutomationRecord): string {
     const parts: string[] = [];
-    if (a.override_mask & 16) parts.push(`${a.ov_target_volume_l}L`);
-    if (a.override_mask & 8) parts.push(`${a.ov_target_duration_s}s`);
-    if (a.override_mask & 4) parts.push(`≤${a.ov_max_runtime_min}min`);
+    if (a.override_mask & OVERRIDE_BITS.volume) parts.push(`${a.ov_target_volume_l}L`);
+    if (a.override_mask & OVERRIDE_BITS.duration) parts.push(`${a.ov_target_duration_s}s`);
+    if (a.override_mask & OVERRIDE_BITS.max_runtime) parts.push(`≤${a.ov_max_runtime_min}min`);
     return parts.length ? ` · ${parts.join(' ')}` : '';
   }
 }

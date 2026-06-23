@@ -104,11 +104,13 @@ interval:
   - interval: 1s
     then:
       - lambda: |-
-          id(control).tick_1s();
+          // Pass trusted wall-clock (unix secs, 0 if not yet synced) so the meter can
+          // stamp run timestamps; the control logic ignores it.
+          id(control).tick_1s(id(time_trusted) ? (uint32_t) id(sntp_time).now().timestamp : 0);
 ${PUBLISH_STATUS}
   - interval: 2s
     then:
       - lambda: |-
-          id(control).tick_2s();
+          id(control).tick_2s(id(time_trusted) ? (uint32_t) id(sntp_time).now().timestamp : 0);
 `;
 }

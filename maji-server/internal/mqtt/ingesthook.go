@@ -24,6 +24,7 @@ import (
 type ingestHook struct {
 	mqtt.HookBase
 	app core.App
+	pub telemetry.AckPublisher // the broker itself, for the retained runs_ack uplink
 }
 
 func (h *ingestHook) ID() string { return "maji-ingest" }
@@ -52,7 +53,7 @@ func (h *ingestHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pack
 	if site, ctrl, ok := telemetry.ParseSnapshotTopic(topic); ok {
 		// The single source of truth: project the snapshot into raw history, the
 		// shadow, the derived timeline, and command reconciliation.
-		_ = telemetry.IngestSnapshot(h.app, site, ctrl, pk.Payload, now)
+		_ = telemetry.IngestSnapshot(h.app, site, ctrl, pk.Payload, now, h.pub)
 		return pk, nil
 	}
 

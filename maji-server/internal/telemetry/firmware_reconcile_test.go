@@ -54,7 +54,7 @@ func TestReconcileFirmwareConfirmsRelease(t *testing.T) {
 
 	now := time.Now()
 	ing := func(payload string) {
-		if err := IngestSnapshot(app, site.Id, "dev1", []byte(payload), now); err != nil {
+		if err := IngestSnapshot(app, site.Id, "dev1", []byte(payload), now, nil); err != nil {
 			t.Fatalf("ingest: %v", err)
 		}
 	}

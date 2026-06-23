@@ -37,6 +37,12 @@ export const TankNodeSchema = z.object({
   pressure_v_min: PressureSensorConfigSchema.shape.v_min.optional(),
   pressure_v_max: PressureSensorConfigSchema.shape.v_max.optional(),
   pressure_pump_rated: PressureSensorConfigSchema.shape.pump_rated.optional(),
+  /**
+   * When true, a mechanical float valve throttles the inlet shut as the tank
+   * fills, so a confirmed-then-falling inflow on a metered route reads as "full"
+   * (the flow-stall path). Independent of pressure-based level monitoring.
+   */
+  float_valve: z.boolean().default(false),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
   position: PositionSchema,
@@ -95,6 +101,12 @@ export const tankDescriptor: NodeDescriptor = {
       label: 'Reading reliable while pump runs',
       type: 'toggle',
       hint: 'Tank-mounted sensors read static head and stay reliable during pump operation.',
+    },
+    {
+      key: 'float_valve',
+      label: 'Float valve fitted',
+      type: 'toggle',
+      hint: 'A mechanical float valve closes the inlet when the tank is full. With a flow sensor on the route, the pump can stop on the resulting flow drop even without a level sensor.',
     },
   ],
 

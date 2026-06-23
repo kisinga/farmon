@@ -28,6 +28,14 @@ func TestEncodeGoldenVectors(t *testing.T) {
 			`{"command_id":"cmd0000000000001","action":"route_stop","issued_at":1700000000,"actor":"u1","route_id":0}`,
 		},
 		{
+			// A targeted manual run: override_mask = OV_SOURCE_MIN(1) | OV_VOLUME(16) = 17.
+			// Only the active ov_* fields are sent; the rest stay nil (omitted).
+			"route_start carries a StopSpec override",
+			Command{CommandID: id, Action: RouteStart, IssuedAt: at, Actor: actor, RouteID: iptr(2),
+				OverrideMask: iptr(17), OvSourceMinPct: iptr(20), OvTargetVolumeL: iptr(100)},
+			`{"command_id":"cmd0000000000001","action":"route_start","issued_at":1700000000,"actor":"u1","route_id":2,"override_mask":17,"ov_source_min_pct":20,"ov_target_volume_l":100}`,
+		},
+		{
 			"stop_all carries no args",
 			Command{CommandID: id, Action: StopAll, IssuedAt: at, Actor: actor},
 			`{"command_id":"cmd0000000000001","action":"stop_all","issued_at":1700000000,"actor":"u1"}`,

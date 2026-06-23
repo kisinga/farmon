@@ -5,6 +5,7 @@
 // Decisions back to the hardware. All decision logic lives in core.{h,cpp}; this file
 // is only I/O — read handles -> core -> actuate. See the SHELL CONTRACT in core.h.
 #include "core.h"
+#include "meter.h"
 #include "esphome/core/component.h"
 #include "esphome/core/preferences.h"
 #include "esphome/components/sensor/sensor.h"
@@ -82,8 +83,10 @@ class MajiControl : public Component {
   void dump_config() override;
 
   // --- the two interval ticks (called from generated 1s/2s intervals) ---
-  void tick_1s();
-  void tick_2s();
+  // wall_epoch = trusted unix seconds (0 when time is not yet trusted); the generated
+  // lambda passes it so the meter can stamp run timestamps. The control logic ignores it.
+  void tick_1s(uint32_t wall_epoch = 0);
+  void tick_2s(uint32_t wall_epoch = 0);
 
   // --- command surface (mqtt router + buttons + automations call these) ---
   // Return codes mirror the old try_route_* / NODE_SET vocab so outcomes are unchanged.
@@ -107,6 +110,15 @@ class MajiControl : public Component {
 
   maji_ctl::ControlState &state() { return state_; }  // snapshot builder reads this
 
+  // --- Billing meter (delegates to the pure maji_meter kernel) -----------------
+  // Called by codegen lambdas: the runs_ack subscriber and the snapshot publisher.
+  // Run open/close + counter feed happen inside tick_1s/tick_2s (meter_sync_).
+  void meter_on_ack(uint32_t epoch, uint32_t seq) {
+    maji_meter::on_ack(meter_, epoch, seq);
+    meter_persist_();
+  }
+  int meter_runs_json(char *buf, int cap) { return maji_meter::serialize_runs(meter_, buf, cap); }
+
  protected:
   // Fill an Inputs from the bound handles (the only place id()/state is read for the kernel).
   maji_ctl::Inputs snapshot_(uint32_t now);
@@ -120,6 +132,20 @@ class MajiControl : public Component {
   // Apply kernel outputs to hardware.
   void apply_pumps_(const maji_ctl::Inputs &in);
   void apply_valves_(uint32_t now, uint16_t claim_valve_bits);
+
+  // Reconcile run open/close from the kernel's slot transitions and feed the durable
+  // counter; called at the end of each tick (1s catches ->IDLE, 2s catches ->FAULT).
+  void meter_sync_(uint32_t wall_epoch, uint32_t now);
+  void meter_load_();     // restore MeterState from NVS in setup() + close any interrupted run
+  void meter_persist_();  // serialize MeterState to the fixed NVS blob (flash write is batched)
+
+  maji_meter::MeterState meter_;
+  ESPPreferenceObject meter_pref_;
+  // Pre-tick slot snapshot for the transition diff (prev_stop_ holds the reason before
+  // init_slot wipes it on ->IDLE).
+  int prev_state_[maji_ctl::MAX_CONCURRENT_ROUTES];
+  int prev_stop_[maji_ctl::MAX_CONCURRENT_ROUTES];
+  uint32_t meter_tick_count_{0};
 
   maji_ctl::ControlState state_;
   std::vector<maji_ctl::Route> routes_;

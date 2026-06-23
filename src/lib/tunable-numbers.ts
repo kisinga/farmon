@@ -78,6 +78,17 @@ export function routeVolumeEligible(r: Manifest['routes'][number], routes: Manif
   );
 }
 
+/**
+ * Whether a route can detect a full destination tank and stop cleanly, by either
+ * method the firmware safety monitor supports: flow-stall (a flow sensor plus a
+ * destination float valve that throttles inflow shut when full), OR a destination
+ * level sensor that stays reliable while the pump runs. Single owner for the
+ * flow-stall default, the full-detection lint rule, and the run UI so they agree.
+ */
+export function canStopOnFull(r: Manifest['routes'][number]): boolean {
+  return (!!r.flow_sensor && r.dest_has_float_valve) || (r.dest_has_level && r.runtime_level_ok);
+}
+
 /** Enumerate every runtime-tunable number a controller exposes, in a stable order
  *  (controller, then per-route, then per-sensor). Mirrors the codegen emit
  *  conditions exactly — see the drift-guard test. */

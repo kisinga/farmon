@@ -10,8 +10,7 @@ import {
 } from '@core';
 import type { ShadowRow, TelemetryPoint, ActivityItem } from '../../../core/models/runtime';
 import { formatInitiator } from './initiator';
-import { SPAN_PRESETS, DEFAULT_SPAN_HOURS } from '../telemetry.store';
-import { integrateLiters } from '../flow-usage';
+import { DEFAULT_SPAN_HOURS } from '../telemetry.store';
 import { phaseUi } from './command-phase';
 import { CHART, historyLineOption } from '../../../core/util/chart-theme';
 
@@ -121,12 +120,6 @@ function fmt(n: number): string {
               <div class="flex-1 min-h-[110px] flex flex-col items-center justify-center gap-1.5 text-base-content/25">
                 <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 17l5-5 4 4 8-8"/></svg>
                 <span class="text-[11px]">No flow yet</span>
-              </div>
-            }
-            @if (windowUsed() !== null) {
-              <div class="flex items-baseline justify-between mt-2 pt-2 border-t border-base-300/30">
-                <span class="text-[11px] text-base-content/50">Used · {{ spanLabel() }}</span>
-                <span class="text-lg font-semibold tabular-nums">{{ fmtUsed() }}<span class="text-xs font-normal text-base-content/40 ml-1">L</span></span>
               </div>
             }
           </div>
@@ -352,18 +345,6 @@ export class DashboardCardComponent {
 
   /** Charted kinds show the span selector + history chart (line/flow only). */
   protected isCharted = computed(() => this.widget().kind === 'line' || this.widget().kind === 'flow');
-  protected spanLabel = computed(() =>
-    SPAN_PRESETS.find((p) => p.hours === this.span())?.label ?? `${this.span()}h`,
-  );
-
-  /** Water used over the selected window: the rate series integrated over time
-   *  (see integrateLiters). Reboot-immune — no device counter to reset. null when
-   *  there aren't two usable points to span. */
-  protected windowUsed = computed<number | null>(() => integrateLiters(this.series()));
-  protected fmtUsed = computed(() => {
-    const u = this.windowUsed();
-    return u === null ? '—' : fmt(u);
-  });
 
   protected badge = computed<{ label: string; cls: string }>(() => {
     const w = this.widget();

@@ -225,6 +225,16 @@ export const eventTopic = (site: string, ctrl: string) =>
 export const snapshotTopic = (site: string, ctrl: string) =>
   `${MQTT_ROOT}/${site}/${ctrl}/state`;
 
+/**
+ *   majiflow/{site}/{ctrl}/runs_ack
+ * Retained "epoch:seq" high-water-mark the server publishes after persisting the
+ * billing runs the device asserts in the snapshot runs[] outbox. The device drops
+ * every run at or below it from its durable outbox. One retained value acks an
+ * arbitrary backlog and survives reconnects. Mirrors RunsAckTopic() in the Go server.
+ */
+export const runsAckTopic = (site: string, ctrl: string) =>
+  `${MQTT_ROOT}/${site}/${ctrl}/runs_ack`;
+
 
 /** Fixed (non-node) telemetry sensor ids the firmware always publishes. */
 export const SYSTEM_STATE_SENSOR = 'system_state';
@@ -306,7 +316,15 @@ export const COMMAND_TTL_S = 120;
  * re-publishes it as the route's origin so the dashboard can show "by <name>".
  */
 export type CommandEnvelope = { command_id: string; issued_at: number; actor?: string } & (
-  | { action: 'route_start' | 'route_stop' | 'fault_reset'; route_id: number }
+  | {
+      action: 'route_start' | 'route_stop' | 'fault_reset'; route_id: number;
+      // route_start only: a per-run StopSpec. `override_mask` selects which `ov_*`
+      // fields are active (see OVERRIDE_BITS); an unset field falls through to the
+      // route's baked/live tunable on the device. Absent ⇒ run on the route's
+      // tunables (the pre-targeted-runs behaviour). route_stop / fault_reset ignore them.
+      override_mask?: number; ov_source_min_pct?: number; ov_dest_max_pct?: number;
+      ov_max_runtime_min?: number; ov_target_duration_s?: number; ov_target_volume_l?: number;
+    }
   | { action: 'stop_all' | 'reset_faults' | 'clear_queue' }
   // node_set: claim (on) / release (off) any actuator via the dead-man registry
   // the reconciler already honours — a claim runs a pump / opens a valve, and the
@@ -502,6 +520,21 @@ export const SYSTEM_STATE_TOKENS = [
  *  route-origin telemetry channel. */
 export const ORIGIN_TOKENS = ['SYSTEM', 'MANUAL', 'AUTOMATION'] as const;
 export type OriginToken = (typeof ORIGIN_TOKENS)[number];
+
+/**
+ * StopSpec override-mask bit layout — the single TS owner, mirroring
+ * `enum OverrideBit` in firmware/components/maji_control/core.h. The Go `command`
+ * package and test/override-bits.test.ts pin these against the firmware. Both a
+ * scheduled automation's `override_mask` and a manual targeted run's StopSpec are
+ * built from these; never hardcode the literals (16/8/…) anywhere else.
+ */
+export const OVERRIDE_BITS = {
+  source_min: 1 << 0,
+  dest_max: 1 << 1,
+  max_runtime: 1 << 2,
+  duration: 1 << 3,
+  volume: 1 << 4,
+} as const;
 
 /** Fault code, indexed by the firmware's `fault_code` (0..3). */
 export const FAULT_TOKENS = [

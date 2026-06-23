@@ -1,7 +1,10 @@
 #include "maji_control.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 
 namespace esphome {
 namespace maji_control {
@@ -9,6 +12,73 @@ namespace maji_control {
 static const char *const TAG = "maji_control";
 
 using namespace maji_ctl;
+
+// Wire tokens for the run ledger. Mirror the enums in core.h and the *_TOKENS arrays in
+// codegen-ids.ts (the kernel stays token-agnostic; the shell maps the codes it already
+// holds). Out-of-range -> the safe "NONE"/"SYSTEM" default.
+static const char *origin_tok(int i) {
+  static const char *const T[] = {"SYSTEM", "MANUAL", "AUTOMATION"};
+  return (i >= 0 && i < 3) ? T[i] : "SYSTEM";
+}
+static const char *stop_tok(int i) {
+  static const char *const T[] = {"NONE", "MANUAL", "TANK_FULL", "NO_FLOW", "MAX_RUNTIME",
+                                  "CONTROL_LOST", "SOURCE_LOW", "VOLUME_REACHED", "DURATION_REACHED"};
+  return (i >= 0 && i < 9) ? T[i] : "NONE";
+}
+static const char *fault_tok(int i) {
+  static const char *const T[] = {"NONE", "NO_FLOW", "MAX_RUNTIME", "CONTROL_LOST"};
+  return (i >= 0 && i < 4) ? T[i] : "NONE";
+}
+
+// --- Fixed POD mirror of the durable MeterState, for ESPPreference (NVS) -----------
+// MeterState holds vectors + std::string, so it can't be stored raw; this bounded blob
+// is the on-flash form. Sizes cap the live state (excess is dropped on save, which only
+// happens past the configured maxima — unreachable on real hardware). On ESP32 the
+// preferences backend is NVS; this blob is ~2 KB (OUTBOX_CAP=16), comfortably inside the
+// default ~20 KB+ NVS partition, and ESPHome batches the flash write so frequent saves
+// don't wear flash. (On flash-poor targets, shrink OUTBOX_CAP.)
+static constexpr uint32_t METER_BLOB_KEY = 0x4D455452;   // "METR" — preferences hash
+static constexpr uint32_t METER_BLOB_MAGIC = 0x4D455431; // "MET1" — format/sanity tag
+static constexpr int BLOB_MAX_FLOW = 8;
+static constexpr int BLOB_MAX_SLOT = MAX_CONCURRENT_ROUTES;
+
+static void cpstr(char *dst, size_t cap, const std::string &src) {
+  size_t n = (src.size() < cap - 1) ? src.size() : cap - 1;
+  memcpy(dst, src.data(), n);
+  dst[n] = '\0';
+}
+
+struct BlobCounter {
+  uint64_t litres;
+  uint32_t remainder;
+  uint32_t last_raw;
+  uint8_t seeded;
+};
+struct BlobOpen {
+  uint8_t active;
+  uint32_t epoch, seq;
+  int32_t route, flow_sensor;
+  char origin[16], actor[24];
+  uint32_t start_epoch, run_start_ms;
+  uint64_t start_litres;
+};
+struct BlobRun {
+  uint32_t epoch, seq;
+  int32_t route;
+  char origin[16], actor[24];
+  uint32_t start_epoch, end_epoch, duration_s;
+  char stop_reason[20], fault[16];
+  uint64_t start_litres, end_litres;
+  uint8_t metered;
+};
+struct MeterBlob {
+  uint32_t magic;
+  uint32_t run_epoch, run_seq, acked_epoch, acked_seq, dropped, last_wall;
+  uint8_t num_counters, num_open, outbox_count;
+  BlobCounter counters[BLOB_MAX_FLOW];
+  BlobOpen open[BLOB_MAX_SLOT];
+  BlobRun outbox[maji_meter::OUTBOX_CAP];
+};
 
 void MajiControl::setup() {
   state_.init(routes_, (int) valves_.size());
@@ -19,6 +89,15 @@ void MajiControl::setup() {
   for (auto &v : valves_)
     if (v.cover != nullptr) v.cover->make_call().set_command_close().perform();
   state_.commanded_valve_mask = 0;
+
+  // Billing meter: durable counter + run ledger. Restore from flash (and close any run
+  // left open by a mid-run reboot), then seed the transition-diff baseline.
+  meter_.init((int) flows_.size(), MAX_CONCURRENT_ROUTES);
+  meter_load_();
+  for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
+    prev_state_[s] = state_.slots[s].state;
+    prev_stop_[s] = 0;
+  }
 }
 
 void MajiControl::dump_config() {
@@ -140,10 +219,25 @@ void MajiControl::apply_valves_(uint32_t now, uint16_t claim_valve_bits) {
   state_.commanded_valve_mask = desired;
 }
 
-void MajiControl::tick_1s() {
+void MajiControl::tick_1s(uint32_t wall_epoch) {
   uint32_t now = millis();
   Inputs in = snapshot_(now);
   TickResult tr = maji_ctl::tick_1s(state_, in);
+
+  // Meter: stamp the lineage epoch (once, when time first trusts), feed the durable
+  // counter from each flow sensor's cumulative total (already litres, units_per_litre=1),
+  // then reconcile run open/close from the slot transitions this tick.
+  maji_meter::stamp_epoch(meter_, wall_epoch);
+  if (wall_epoch) meter_.last_wall = wall_epoch;  // for a boot-interrupted run's duration
+  for (int i = 0; i < (int) flows_.size(); i++) {
+    float t = flows_[i].total != nullptr ? flows_[i].total->state : NAN;
+    if (!std::isnan(t) && t >= 0.0f) maji_meter::on_reading(meter_, i, (uint32_t) t, 1);
+  }
+  meter_sync_(wall_epoch, now);
+  // Mark the durable state dirty every ~30 s so the counter survives an unclean power
+  // loss; ESPHome batches the actual flash write (its preferences flush interval, ~60 s
+  // default), so the real worst-case loss is one flush window. Run close/ack save eagerly.
+  if (++meter_tick_count_ % 30 == 0) meter_persist_();
 
   // Pump management AFTER tick_1s (a slot that became RUNNING this tick must count).
   manual_pump_guard_tick(state_, in);
@@ -155,14 +249,47 @@ void MajiControl::tick_1s() {
   apply_valves_(now, in.claim_valve_bits);
 }
 
-void MajiControl::tick_2s() {
+void MajiControl::tick_2s(uint32_t wall_epoch) {
   if (safety_override_ != nullptr && safety_override_->state) return;  // matches old early return
   uint32_t now = millis();
   Inputs in = snapshot_(now);
   WatchdogResult wr = maji_ctl::tick_2s(state_, in);
+  meter_sync_(wall_epoch, now);  // catch RUNNING->FAULT closes set here (1s tick catches ->IDLE)
   for (int i = 0; i < (int) valves_.size() && i < 16; i++)
     if ((wr.fault_resync_valves & (1 << i)) && valves_[i].cover != nullptr)
       valves_[i].cover->make_call().set_command_stop().perform();
+}
+
+// Reconcile the meter against the kernel's slot transitions since the last sync. Opens a
+// run on PREPARING->RUNNING and closes one on active->IDLE (clean) or ->FAULT. prev_stop_
+// carries the STOPPING reason across the tick that wipes it (init_slot on ->IDLE); a fault
+// reason is read live (->FAULT does not wipe). A close with no open run is a kernel no-op.
+void MajiControl::meter_sync_(uint32_t wall_epoch, uint32_t now) {
+  for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
+    int cur = state_.slots[s].state;
+    int prev = prev_state_[s];
+
+    if (prev == ST_PREPARING && cur == ST_RUNNING) {
+      int rid = state_.slots[s].route_id;
+      if (rid >= 0 && rid < (int) state_.routes.size()) {
+        int fs = (state_.routes[rid].flow_sensor != 0xFF) ? (int) state_.routes[rid].flow_sensor : -1;
+        maji_meter::open_run(meter_, s, rid, fs, origin_tok(state_.route_origin[rid]),
+                             state_.route_actor[rid], wall_epoch, state_.slots[s].run_start_time);
+      }
+    }
+    bool was_active = (prev >= ST_PREPARING && prev <= ST_STOPPING);
+    if (was_active && cur == ST_IDLE) {
+      maji_meter::close_run(meter_, s, stop_tok(prev_stop_[s]), "", wall_epoch, now);
+      meter_persist_();
+    } else if (was_active && cur == ST_FAULT) {
+      maji_meter::close_run(meter_, s, stop_tok(state_.slots[s].stop_reason),
+                            fault_tok(state_.slots[s].fault_code), wall_epoch, now);
+      meter_persist_();
+    }
+
+    prev_state_[s] = cur;
+    prev_stop_[s] = state_.slots[s].stop_reason;  // pre-wipe reason for the next ->IDLE
+  }
 }
 
 int MajiControl::start_route(int route_id, const std::string &command_id, const StopSpec &spec,
@@ -224,6 +351,115 @@ bool MajiControl::is_duplicate(const std::string &command_id) {
 void MajiControl::record_outcome(const std::string &command_id, const std::string &result,
                                  const std::string &reason) {
   maji_ctl::record_outcome(state_, command_id, result, reason);
+}
+
+void MajiControl::meter_load_() {
+  meter_pref_ = global_preferences->make_preference<MeterBlob>(METER_BLOB_KEY);
+  MeterBlob b{};
+  if (!meter_pref_.load(&b) || b.magic != METER_BLOB_MAGIC) return;  // fresh device / no record
+
+  meter_.run_epoch = b.run_epoch;
+  meter_.run_seq = b.run_seq;
+  meter_.acked_epoch = b.acked_epoch;
+  meter_.acked_seq = b.acked_seq;
+  meter_.dropped = b.dropped;
+  meter_.last_wall = b.last_wall;
+  for (int i = 0; i < b.num_counters && i < (int) meter_.counters.size(); i++) {
+    meter_.counters[i].litres = b.counters[i].litres;
+    meter_.counters[i].remainder = b.counters[i].remainder;
+    meter_.counters[i].last_raw = b.counters[i].last_raw;
+    meter_.counters[i].seeded = b.counters[i].seeded != 0;
+  }
+  for (int i = 0; i < b.num_open && i < (int) meter_.open.size(); i++) {
+    auto &o = meter_.open[i];
+    o.active = b.open[i].active != 0;
+    o.epoch = b.open[i].epoch;
+    o.seq = b.open[i].seq;
+    o.route = b.open[i].route;
+    o.flow_sensor = b.open[i].flow_sensor;
+    o.origin = b.open[i].origin;
+    o.actor = b.open[i].actor;
+    o.start_epoch = b.open[i].start_epoch;
+    o.run_start_ms = b.open[i].run_start_ms;
+    o.start_litres = b.open[i].start_litres;
+  }
+  meter_.outbox.clear();
+  for (int i = 0; i < b.outbox_count && i < maji_meter::OUTBOX_CAP; i++) {
+    maji_meter::RunRecord r;
+    r.epoch = b.outbox[i].epoch;
+    r.seq = b.outbox[i].seq;
+    r.route = b.outbox[i].route;
+    r.origin = b.outbox[i].origin;
+    r.actor = b.outbox[i].actor;
+    r.start_epoch = b.outbox[i].start_epoch;
+    r.end_epoch = b.outbox[i].end_epoch;
+    r.duration_s = b.outbox[i].duration_s;
+    r.stop_reason = b.outbox[i].stop_reason;
+    r.fault = b.outbox[i].fault;
+    r.start_litres = b.outbox[i].start_litres;
+    r.end_litres = b.outbox[i].end_litres;
+    r.metered = b.outbox[i].metered != 0;
+    meter_.outbox.push_back(r);
+  }
+  // A run still OPEN at boot means the controller died mid-run. Close it as interrupted:
+  // delivered = restored counter - start (the durable counter survived), so its partial
+  // delivery is still billed. now_ms=0 forces close_run's wall-clock duration fallback
+  // (last_wall - start_epoch), the best duration estimate across the reboot.
+  for (int s = 0; s < (int) meter_.open.size(); s++)
+    if (meter_.open[s].active)
+      maji_meter::close_run(meter_, s, "INTERRUPTED", "", meter_.last_wall, 0);
+}
+
+void MajiControl::meter_persist_() {
+  MeterBlob b{};
+  b.magic = METER_BLOB_MAGIC;
+  b.run_epoch = meter_.run_epoch;
+  b.run_seq = meter_.run_seq;
+  b.acked_epoch = meter_.acked_epoch;
+  b.acked_seq = meter_.acked_seq;
+  b.dropped = meter_.dropped;
+  b.last_wall = meter_.last_wall;
+
+  b.num_counters = (uint8_t) std::min((int) meter_.counters.size(), BLOB_MAX_FLOW);
+  for (int i = 0; i < b.num_counters; i++) {
+    b.counters[i].litres = meter_.counters[i].litres;
+    b.counters[i].remainder = meter_.counters[i].remainder;
+    b.counters[i].last_raw = meter_.counters[i].last_raw;
+    b.counters[i].seeded = meter_.counters[i].seeded ? 1 : 0;
+  }
+  b.num_open = (uint8_t) std::min((int) meter_.open.size(), BLOB_MAX_SLOT);
+  for (int i = 0; i < b.num_open; i++) {
+    const auto &o = meter_.open[i];
+    b.open[i].active = o.active ? 1 : 0;
+    b.open[i].epoch = o.epoch;
+    b.open[i].seq = o.seq;
+    b.open[i].route = o.route;
+    b.open[i].flow_sensor = o.flow_sensor;
+    cpstr(b.open[i].origin, sizeof(b.open[i].origin), o.origin);
+    cpstr(b.open[i].actor, sizeof(b.open[i].actor), o.actor);
+    b.open[i].start_epoch = o.start_epoch;
+    b.open[i].run_start_ms = o.run_start_ms;
+    b.open[i].start_litres = o.start_litres;
+  }
+  int oc = std::min((int) meter_.outbox.size(), (int) maji_meter::OUTBOX_CAP);
+  b.outbox_count = (uint8_t) oc;
+  for (int i = 0; i < oc; i++) {
+    const auto &r = meter_.outbox[i];
+    b.outbox[i].epoch = r.epoch;
+    b.outbox[i].seq = r.seq;
+    b.outbox[i].route = r.route;
+    cpstr(b.outbox[i].origin, sizeof(b.outbox[i].origin), r.origin);
+    cpstr(b.outbox[i].actor, sizeof(b.outbox[i].actor), r.actor);
+    b.outbox[i].start_epoch = r.start_epoch;
+    b.outbox[i].end_epoch = r.end_epoch;
+    b.outbox[i].duration_s = r.duration_s;
+    cpstr(b.outbox[i].stop_reason, sizeof(b.outbox[i].stop_reason), r.stop_reason);
+    cpstr(b.outbox[i].fault, sizeof(b.outbox[i].fault), r.fault);
+    b.outbox[i].start_litres = r.start_litres;
+    b.outbox[i].end_litres = r.end_litres;
+    b.outbox[i].metered = r.metered ? 1 : 0;
+  }
+  meter_pref_.save(&b);
 }
 
 }  // namespace maji_control

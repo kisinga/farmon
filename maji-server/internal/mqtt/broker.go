@@ -28,7 +28,9 @@ func Start(app core.App, cfg config.Config) (*Broker, error) {
 	if err := server.AddHook(&deviceAuthHook{app: app}, nil); err != nil {
 		return nil, err
 	}
-	if err := server.AddHook(&ingestHook{app: app}, nil); err != nil {
+	// The Mochi server is itself the Publisher (InlineClient), used for the retained
+	// runs_ack high-water-mark uplink from the ingest path.
+	if err := server.AddHook(&ingestHook{app: app, pub: server}, nil); err != nil {
 		return nil, err
 	}
 

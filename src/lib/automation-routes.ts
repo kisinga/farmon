@@ -9,6 +9,7 @@
 import type { SiteTopology } from './topology.types';
 import { topologyToManifestForController } from './topology-to-manifest';
 import { routeSetVersion } from './automation-wire';
+import type { StopSpecOverride } from './run-targets';
 
 /** A route an automation can target, with everything the UI + the row need. */
 export interface AutomatableRoute {
@@ -49,8 +50,10 @@ export function listAutomatableRoutes(topology: SiteTopology): AutomatableRoute[
   return out;
 }
 
-/** The shape written to the `automations` PocketBase collection. */
-export interface NewAutomationRow {
+/** The shape written to the `automations` PocketBase collection. The `override_mask`
+ *  + `ov_*` stop-condition fields come from StopSpecOverride — the same shape a
+ *  manual targeted run sends — so the two run paths never diverge. */
+export interface NewAutomationRow extends StopSpecOverride {
   site: string;
   controller: string;
   name: string;
@@ -61,12 +64,6 @@ export interface NewAutomationRow {
   time_min: number;
   days_mask: number;
   level_threshold_pct: number;
-  override_mask: number;
-  ov_source_min_pct: number;
-  ov_dest_max_pct: number;
-  ov_max_runtime_min: number;
-  ov_target_duration_s: number;
-  ov_target_volume_l: number;
   enabled: boolean;
 }
 

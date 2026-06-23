@@ -100,7 +100,7 @@ export { confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S,
 export type { ConfirmDescriptor, ConfirmObservation, CommandPhase } from './command-confirm';
 
 // --- Runtime-tunable device numbers (config_set surface; firmware + UI + drift test) ---
-export { collectTunableNumbers, routeVolumeEligible } from './tunable-numbers';
+export { collectTunableNumbers, routeVolumeEligible, canStopOnFull } from './tunable-numbers';
 export {
   AUTOMATION_WIRE_MAGIC, AUTOMATION_HEADER_BYTES, AUTOMATION_RECORD_BYTES, AUTOMATION_ID_BYTES,
   MAX_AUTOMATIONS, routeSetVersion, serializeAutomationSet,
@@ -109,6 +109,10 @@ export type { WireAutomation, TriggerKind } from './automation-wire';
 export { listAutomatableRoutes } from './automation-routes';
 export type { AutomatableRoute, NewAutomationRow } from './automation-routes';
 export type { TunableNumber, TunableScope, TunableTier, TunableField } from './tunable-numbers';
+
+// --- Run targets (shared "how a run ends": automation override + manual StopSpec) ---
+export { RUN_TARGET_FIELDS } from './run-targets';
+export type { StopSpecOverride, RunTargetField } from './run-targets';
 
 // --- Codegen IDs ---
 export {
@@ -123,10 +127,10 @@ export {
 // --- Runtime contract: deployment mode, MQTT topics, command vocabulary ---
 export {
   MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic, identityTopic,
-  snapshotTopic,
+  snapshotTopic, runsAckTopic,
   telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, routeStateSensor, COMMAND_TTL_S,
   routeSourceMinNumber, routeDestMaxNumber, collectConfigSetpoints,
-  COORD_MSG, COORD_TYPE,
+  COORD_MSG, COORD_TYPE, OVERRIDE_BITS,
 } from './codegen-ids';
 export type {
   DeploymentMode, CommandAction, CommandEnvelope, CoordMessage, TelemetryRole, ConfigSetpoint,

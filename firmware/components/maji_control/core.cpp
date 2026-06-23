@@ -361,12 +361,18 @@ WatchdogResult tick_2s(ControlState &cs, const Inputs &in) {
       }
     }
 
-    // Max runtime backstop (faults). Guarded by state==RUNNING so a clean stop wins.
+    // Max runtime backstop. Hitting the time limit is a warning, not a fault: the
+    // run stops cleanly (like SOURCE_LOW / duration) and returns to idle with no
+    // operator reset. The dry-run/no-flow and control-lost paths stay faults.
+    // Guarded by state==RUNNING so an earlier clean stop still wins.
     {
       uint16_t max_rt = effective_max_runtime_s(cs, in, s);
       if (cs.slots[s].state == ST_RUNNING && cs.slots[s].fault_code == 0 &&
-          runtime > ((uint32_t) max_rt * 1000U))
-        cs.slots[s].fault_code = FAULT_MAX_RUNTIME;
+          runtime > ((uint32_t) max_rt * 1000U)) {
+        cs.slots[s].stop_reason = STOP_MAX_RUNTIME;
+        cs.slots[s].state = ST_STOPPING;
+        cs.slots[s].stop_time = now;
+      }
     }
 
     // Act on fault: resync the route's valves, latch FAULT.

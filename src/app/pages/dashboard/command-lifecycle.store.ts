@@ -3,7 +3,7 @@ import { ActivatedRoute } from '@angular/router';
 import {
   confirmDescriptor, HOLD_RECLAIM_MS, graceFloorMs,
   type CommandAction, type CommandPhase, type ConfirmDescriptor, type ConfirmObservation,
-  type RouteControl, type ActuatorControl, type SetpointControl,
+  type RouteControl, type ActuatorControl, type SetpointControl, type StopSpecOverride,
 } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { DashboardStore } from './dashboard.store';
@@ -23,6 +23,10 @@ export interface CommandCtx {
   configKey?: string;
   on?: boolean;
   value?: number;
+  /** route_start only: the per-run StopSpec (volume / duration / level targets). The
+   *  same shape an automation stores, so a manual targeted run and a schedule end
+   *  identically. Absent ⇒ the route's own defaults. */
+  stopSpec?: StopSpecOverride;
   /** Derived sustained-claim grace (ms); computed in dispatch from the site's
    *  telemetry update_interval. Absent ⇒ confirmDescriptor falls back to HOLD_GRACE_MS. */
   graceMs?: number;
@@ -212,9 +216,11 @@ export class CommandLifecycleStore implements OnDestroy {
   }
 
   /** Build the `sendCommand` wire args from the action + ctx. */
-  private wireArgs(action: CommandAction, ctx: CommandCtx): { routeId?: number; nodeId?: string; on?: boolean; key?: string; value?: number } {
+  private wireArgs(action: CommandAction, ctx: CommandCtx): { routeId?: number; nodeId?: string; on?: boolean; key?: string; value?: number } & Partial<StopSpecOverride> {
     switch (action) {
       case 'route_start':
+        // A targeted run rides its StopSpec along; route_stop / fault_reset don't.
+        return { routeId: ctx.route?.routeId, ...ctx.stopSpec };
       case 'route_stop':
       case 'fault_reset':
         return { routeId: ctx.route?.routeId };

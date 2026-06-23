@@ -418,8 +418,8 @@ assert(!control.includes("service: queue_clear"), "queue_clear service removed (
 assert(control.includes("interval: 1s"), "Has 1s transition interval");
 assert(control.includes("interval: 2s"), "Has 2s safety interval");
 // control.yaml is now thin glue — the state machine + watchdog live in the engine.
-assert(control.includes("id(control).tick_1s()"), "1s interval drives the engine");
-assert(control.includes("id(control).tick_2s()"), "2s interval drives the watchdog");
+assert(control.includes("id(control).tick_1s("), "1s interval drives the engine");
+assert(control.includes("id(control).tick_2s("), "2s interval drives the watchdog");
 assert(control.includes("id(control).start_route"), "Route start buttons call the engine");
 assert(control.includes("id(control).stop_all()"), "Stop-all button calls the engine");
 assert(!control.includes("reconcile_valves"), "Valve reconcile moved into the engine");
