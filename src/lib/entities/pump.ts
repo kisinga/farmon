@@ -90,7 +90,7 @@ export const pumpDescriptor: NodeDescriptor = {
 
   sidebarFields: [
     { key: 'pin', label: 'Relay Pin', type: 'pin', placeholder: 'GPIO42', pinCap: 'digital', polarityKey: 'relay_polarity' },
-    { key: 'relay_polarity', label: 'Relay polarity', type: 'select', options: [
+    { key: 'relay_polarity', label: 'Relay polarity', type: 'select', hint: 'Active-low: relay turns ON when the GPIO is LOW (most opto-isolated modules). Active-high: ON when HIGH. Match your module so the load is OFF at power-off.', options: [
       { value: 'active_low', label: 'Active-low (default)' },
       { value: 'active_high', label: 'Active-high' },
     ] },

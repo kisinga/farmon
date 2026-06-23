@@ -10,7 +10,6 @@ import {
   emitPressureSensorYaml,
   emitPressureCalNumbers,
   evaluatePressureSensorUndersized,
-  evaluatePressureSensorElevatedLowResolution,
 } from '../pressure-sensor-shared';
 
 const COLOR = '#14b8a6'; // teal
@@ -35,6 +34,7 @@ export const TankNodeSchema = z.object({
   pressure_pin: PressureSensorConfigSchema.shape.pin.optional(),
   pressure_elevation_m: PressureSensorConfigSchema.shape.elevation_m.optional(),
   pressure_sensor_max_psi: PressureSensorConfigSchema.shape.sensor_max_psi.optional(),
+  pressure_sensor_output_v: PressureSensorConfigSchema.shape.sensor_output_v.optional(),
   pressure_pump_rated: PressureSensorConfigSchema.shape.pump_rated.optional(),
   disabled: z.boolean().optional(),
   ports: z.array(PortSchema).min(1),
@@ -87,6 +87,7 @@ export const tankDescriptor: NodeDescriptor = {
     { key: 'pressure_pin', label: 'Pressure pin', type: 'pin', placeholder: 'GPIO19', pinCap: 'adc', hint: 'ADC pin for the tank-mounted pressure sensor. Required when level monitoring is enabled.' },
     { key: 'pressure_elevation_m', label: 'Sensor drop below tank (m)', type: 'number', hint: 'Vertical drop from tank outlet down to sensor. Stays full of water — shifts the empty-tank reading.' },
     { key: 'pressure_sensor_max_psi', label: 'Sensor max (psi)', type: 'number', hint: 'Datasheet full-scale value, e.g. 5 / 10 / 15 / 30 psi.' },
+    { key: 'pressure_sensor_output_v', label: 'Sensor output at full (V)', type: 'number', hint: "Sensor's output voltage at full pressure (datasheet). Leave blank if it matches the board's analog input range; set your sensor's value (e.g. 3.3) when it's lower — the board's ADC range does the conversion." },
     {
       key: 'pressure_pump_rated',
       label: 'Reading reliable while pump runs',
@@ -99,7 +100,7 @@ export const tankDescriptor: NodeDescriptor = {
     sensors: (node: TankNode, _idx, ctx) => {
       if (!node.pressure_pin) return '';
       return emitPressureSensorYaml(
-        { id: node.id, name: node.name, pin: node.pressure_pin },
+        { id: node.id, name: node.name, pin: node.pressure_pin, sensor_output_v: node.pressure_sensor_output_v },
         ctx,
       );
     },
@@ -154,24 +155,6 @@ export const tankDescriptor: NodeDescriptor = {
           .filter((n): n is typeof n & { sensor_max_psi: number; tank_height_m: number } =>
             typeof n.sensor_max_psi === 'number' && typeof n.tank_height_m === 'number');
         return evaluatePressureSensorUndersized(candidates);
-      },
-    },
-    {
-      id: 'tank-pressure-elevated-low-resolution',
-      severity: 'warning',
-      evaluate: (nodes) => {
-        const candidates = nodes
-          .filter(n => n.kind === 'tank' && (n as TankNode).level_monitored)
-          .map(n => ({
-            id: n.id,
-            name: n.name,
-            sensor_max_psi: (n as TankNode).pressure_sensor_max_psi,
-            elevation_m: (n as TankNode).pressure_elevation_m,
-            tank_height_m: (n as TankNode).height_m,
-          }))
-          .filter((n): n is typeof n & { sensor_max_psi: number; tank_height_m: number } =>
-            typeof n.sensor_max_psi === 'number' && typeof n.tank_height_m === 'number');
-        return evaluatePressureSensorElevatedLowResolution(candidates);
       },
     },
   ],

@@ -40,6 +40,13 @@ export interface ResolvedChannel {
    * Board driver: undefined. Modbus: the modbus component ID.
    */
   controllerId?: string;
+  /**
+   * For `adc` channels: the external voltage at the channel's full-scale (the
+   * analog input range — `PinDef.adc_full_scale_v`, defaulting to 3.3 for a bare
+   * pin). Lets analog entities scale a sensor's real output voltage onto the
+   * channel. Undefined for non-ADC channels.
+   */
+  adcFullScaleV?: number;
 }
 
 // ---------------------------------------------------------------------------

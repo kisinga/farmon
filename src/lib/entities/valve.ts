@@ -79,7 +79,7 @@ export const valveDescriptor: NodeDescriptor = {
   sidebarFields: [
     { key: 'open_pin', label: 'Open Pin', type: 'pin', placeholder: 'GPIO4', pinCap: 'digital', polarityKey: 'coil_polarity' },
     { key: 'close_pin', label: 'Close Pin', type: 'pin', placeholder: 'GPIO5', pinCap: 'digital', polarityKey: 'coil_polarity' },
-    { key: 'coil_polarity', label: 'Coil polarity', type: 'select', options: [
+    { key: 'coil_polarity', label: 'Coil polarity', type: 'select', hint: 'Active-low: coil energises when the GPIO is LOW (most opto-isolated drivers). Active-high: energises when HIGH. Match your driver so the valve is de-energised at power-off.', options: [
       { value: 'active_low', label: 'Active-low (default)' },
       { value: 'active_high', label: 'Active-high' },
     ] },

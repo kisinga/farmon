@@ -34,6 +34,7 @@ import { providerReferences } from "./manifest/provider-references";
 import { pinTransportConsistency } from "./manifest/pin-transport-consistency";
 import { remoteNodes } from "./manifest/remote-nodes";
 import { fullDetectionMethods } from "./manifest/full-detection-methods";
+import { pressureResolution } from "./manifest/pressure-resolution";
 
 // Entity-specific topology rules are registered on NodeDescriptor.rules
 // and collected by the runner via NODE_REGISTRY. No imports needed here.
@@ -57,6 +58,7 @@ export const ALL_MANIFEST_RULES: ManifestRule[] = [
   routeConcurrency,
   timingSanity,
   boardCapacity,
+  pressureResolution,
   providerReferences,
   pinTransportConsistency,
   remoteNodes,

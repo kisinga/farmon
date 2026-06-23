@@ -54,6 +54,14 @@ export function resolveComponentHeader(
   usage: ChannelUsage,
 ): string {
   if (!channelId) return '';
-  const ch = ctx.resolveChannel(channelId, usage);
+  return formatComponentHeader(ctx.resolveChannel(channelId, usage));
+}
+
+/**
+ * The ESPHome component header (`- platform: …` + config) for an already-resolved
+ * channel. Use when the entity also needs other fields off the `ResolvedChannel`
+ * (e.g. `adcFullScaleV`) and so resolves it itself.
+ */
+export function formatComponentHeader(ch: ResolvedChannel): string {
   return `- platform: ${ch.platform}\n  ${ch.config}`;
 }

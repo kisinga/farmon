@@ -33,8 +33,14 @@ export function createBoardDriver(board: BoardDef): IoProviderDriver {
       });
 
       switch (usage.purpose) {
-        case 'adc':
-          return { platform: 'adc', config: `pin:\n    ${pinYaml}\n  attenuation: 12db` };
+        case 'adc': {
+          const pin = board.pins.find(p => p.gpio === channelId || p.connector === channelId);
+          return {
+            platform: 'adc',
+            config: `pin:\n    ${pinYaml}\n  attenuation: 12db`,
+            adcFullScaleV: pin?.adc_full_scale_v ?? 3.3,
+          };
+        }
         case 'pulse_counter':
           return { platform: 'pulse_counter', config: `pin:\n    ${pinYaml}` };
         case 'digital_out':

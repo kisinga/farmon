@@ -2,13 +2,13 @@ import { Component, inject, input, output, signal, computed } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
-import { deriveTankCalibration, recommendSensorMaxPsi } from '@core';
 import type { PinCap, FieldDef } from '@core';
 import type { TopologyNode } from '../../../core/models/topology.model';
 import type { NodeDescriptor } from '../../../core/models/entities.model';
 import { ZodFieldDirective } from '../../../core/utils/field-validation';
 import { FieldErrorComponent } from '../../../shared/field-error/field-error.component';
 import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
+import { TankCalibrationVisualComponent } from '../../../shared/tank-calibration-visual/tank-calibration-visual.component';
 
 /**
  * Editable property panel for the selected topology node: name / controller /
@@ -20,7 +20,7 @@ import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component
 @Component({
   selector: 'app-node-properties',
   standalone: true,
-  imports: [FormsModule, ZodFieldDirective, FieldErrorComponent, ZodInputComponent],
+  imports: [FormsModule, ZodFieldDirective, FieldErrorComponent, ZodInputComponent, TankCalibrationVisualComponent],
   template: `
     <div class="sidebar-section">
       <button class="sidebar-title w-full flex items-center justify-between" (click)="toggleNode()">
@@ -58,8 +58,8 @@ import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component
           (ngModelChange)="updateField.emit({ nodeId: node().id, field: 'disabled', value: !$event })" />
         <!-- Entity-specific fields -->
         @for (field of desc().sidebarFields; track field.key) {
-          @if (isFieldVisible(field, $any(node())) && (!isRemoteNode(node()) || field.type !== 'pin')) {
-          <label class="sidebar-label">{{ field.label }}</label>
+          @if (isFieldVisible(field, $any(node())) && (!isRemoteNode(node()) || field.type !== 'pin') && !hiddenForVisual($any(node()), field.key)) {
+          <label class="sidebar-label">{{ field.label }}@if (field.hint) {<span class="sidebar-info" [title]="field.hint" aria-label="info"> ⓘ</span>}</label>
           <div class="sidebar-control">
             @if (field.type === 'pin') {
               <!-- Hidden mirror control: holds the real pin value, carries the validator -->
@@ -70,10 +70,11 @@ import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component
                 #pinCtrl="ngModel"
                 [ngModel]="$any(node())[field.key] ?? ''"
                 (ngModelChange)="$event" />
-              <!-- Two-step channel selector: transport group → channel -->
-              <div class="flex gap-1"
+              <!-- Two-step channel selector: transport group → channel (stacked so the
+                   channel label, which can include a node name, reads in the narrow panel) -->
+              <div class="flex flex-col gap-1 min-w-0 w-full"
                 [class.pin-invalid]="pinCtrl.touched && pinCtrl.invalid">
-                <select class="select select-xs select-bordered flex-1 font-mono min-w-0"
+                <select class="select select-xs select-bordered w-full font-mono min-w-0"
                   [class.select-warning]="!(pinCtrl.touched && pinCtrl.invalid) && !$any(node())[field.key]"
                   [ngModel]="activeGroup(node().id, field.key, $any(node())[field.key] ?? '', field.pinCap, $any(node()).anchorId)"
                   [ngModelOptions]="{ standalone: true }"
@@ -87,7 +88,7 @@ import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component
                 </select>
                 @if (activeGroupChannels(node().id, field.key, $any(node())[field.key] ?? '', field.pinCap, $any(node()).anchorId); as channels) {
                   @if (channels.length > 1) {
-                    <select class="select select-xs select-bordered flex-1 font-mono min-w-0"
+                    <select class="select select-xs select-bordered w-full font-mono min-w-0"
                       [name]="'ch-' + node().id + '-' + field.key"
                       [ngModelOptions]="{ standalone: true }"
                       [ngModel]="$any(node())[field.key]"
@@ -95,8 +96,11 @@ import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component
                       (blur)="pinCtrl.control.markAsTouched()">
                       <option value="">-- channel --</option>
                       @for (ch of channels; track ch.id) {
-                        <option [value]="ch.id" [disabled]="!!ch.usedBy">
-                          {{ ch.label }}{{ ch.usedBy ? ' (' + ch.usedBy + ')' : '' }}
+                        <!-- This field's own pin shows clean + selectable; others keep
+                             their owner suffix and stay disabled (taken elsewhere). -->
+                        @let isOwn = ch.id === $any(node())[field.key];
+                        <option [value]="ch.id" [disabled]="!!ch.usedBy && !isOwn">
+                          {{ ch.label }}{{ ch.usedBy && !isOwn ? ' (' + ch.usedBy + ')' : '' }}
                         </option>
                       }
                     </select>
@@ -124,11 +128,6 @@ import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component
                   <option [value]="opt.value">{{ opt.label }}</option>
                 }
               </select>
-              @if (field.key === 'relay_polarity' || field.key === 'coil_polarity') {
-                <div class="text-[10px] text-base-content/40 mt-1">
-                  Active-low: relay turns ON when GPIO is LOW (most opto-isolated modules). Active-high: turns ON when GPIO is HIGH. Pick whichever matches your module so the load is OFF at MCU power-off.
-                </div>
-              }
             } @else if (field.type === 'toggle') {
               <input type="checkbox" class="toggle toggle-xs toggle-success"
                 [name]="'tog-' + node().id + '-' + field.key"
@@ -146,67 +145,24 @@ import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component
                 (valueChange)="updateField.emit({ nodeId: node().id, field: field.key, value: $event })" />
             }
           </div>
-          @if (field.hint) {
-            <div class="sidebar-hint">{{ field.hint }}</div>
-          }
           }
         }
       </div>
 
-      <!-- Tank with intrinsic pressure sensor: derived calibration readout. -->
-      @if (node().kind === 'tank') {
-        @if (tankPressureReadout(node()); as r) {
-          <div class="mt-3 pt-3 border-t border-base-300/30">
-            <h4 class="sidebar-title">Derived Calibration</h4>
-            @if (r.cal) {
-              <div class="sidebar-fields">
-                <span class="sidebar-label">P empty</span>
-                <span class="text-xs font-mono">{{ r.cal.p_empty_psi.toFixed(2) }} psi</span>
-                <span class="sidebar-label">P full</span>
-                <span class="text-xs font-mono">{{ r.cal.p_full_psi.toFixed(2) }} psi</span>
-                <span class="sidebar-label">Working span</span>
-                <span class="text-xs font-mono">{{ r.cal.working_span_psi.toFixed(2) }} psi</span>
-                <span class="sidebar-label">Recommended max</span>
-                <span class="text-xs font-mono">≥ {{ r.recommended }} psi</span>
-                <span class="sidebar-label">Sensor utilisation</span>
-                <span class="text-xs font-mono">
-                  swing {{ r.swingPct.toFixed(0) }}%
-                  <span [class.text-warning]="r.swingPct < 30">
-                    @if (r.swingPct < 30) { (low resolution) }
-                  </span>
-                </span>
-                <span class="sidebar-label">Headroom</span>
-                <span class="text-xs font-mono">
-                  {{ r.headroomPct.toFixed(0) }}%
-                  <span [class.text-warning]="r.headroomPct < 30" [class.text-error]="r.headroomPct < 0">
-                    @if (r.headroomPct < 0) { (over range) }
-                    @else if (r.headroomPct < 30) { (tight) }
-                  </span>
-                </span>
-              </div>
-            } @else {
-              <div class="text-[10px] text-base-content/50">
-                Enter tank height and sensor max to derive calibration.
-              </div>
-            }
-          </div>
-        }
-      }
-
-      <!-- Tank with intrinsic pressure sensor calibration readout -->
+      <!-- Tank level monitoring: the calibration model as a picture (schematic +
+           psi/ADC bars + usable resolution), replacing stacked number readouts. -->
       @if (node().kind === 'tank' && $any(node()).level_monitored) {
-        @if (pressureSensorReadout(node()); as r) {
-          <div class="mt-3 pt-3 border-t border-base-300/30">
-            <h4 class="sidebar-title">Sensor Range</h4>
-            <div class="sidebar-fields">
-              <span class="sidebar-label">Max rated</span>
-              <span class="text-xs font-mono">{{ r.sensorMax }} psi</span>
-            </div>
-            <div class="text-[10px] text-base-content/50 mt-1">
-              Tank-mounted pressure sensor calibration. Cal Empty / Cal Full are set from the dashboard.
-            </div>
-          </div>
-        }
+        <div class="mt-3 pt-3 border-t border-base-300/30">
+          <h4 class="sidebar-title">Calibration</h4>
+          <app-tank-calibration-visual
+            [uid]="node().id"
+            [heightM]="$any(node()).height_m ?? null"
+            [dropM]="$any(node()).pressure_elevation_m ?? 0"
+            [sensorMaxPsi]="$any(node()).pressure_sensor_max_psi ?? null"
+            [sensorOutputV]="$any(node()).pressure_sensor_output_v ?? null"
+            [boardAdcRangeV]="boardAdcRangeV($any(node()), $any(node()).pressure_pin)"
+            (editField)="updateField.emit({ nodeId: node().id, field: $event.field, value: $event.value })" />
+        </div>
       }
 
 
@@ -246,12 +202,11 @@ import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component
     .sidebar-fields { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: start; }
     .sidebar-label { font-size: 10px; color: oklch(var(--bc) / 0.5); white-space: nowrap; padding-top: 4px; }
     .sidebar-control { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .sidebar-hint {
-      grid-column: 1 / -1;
-      font-size: 10px; line-height: 1.35;
-      color: oklch(var(--bc) / 0.45);
-      margin: 2px 0 6px;
+    .sidebar-info {
+      cursor: help; font-size: 10px;
+      color: oklch(var(--bc) / 0.3);
     }
+    .sidebar-info:hover { color: oklch(var(--bc) / 0.6); }
   `],
 })
 export class NodePropertiesComponent {
@@ -372,45 +327,27 @@ export class NodePropertiesComponent {
     }
   }
 
-  // --- Tank pressure derived readout ---
+  // --- Tank calibration visual ---
 
-  /**
-   * Compute the derived calibration panel for a tank node with an intrinsic
-   * pressure sensor. Returns null when pressure_sensor_max_psi is missing.
-   */
-  protected tankPressureReadout(node: any): {
-    cal: { p_empty_psi: number; p_full_psi: number; working_span_psi: number } | null;
-    recommended: number;
-    swingPct: number;
-    headroomPct: number;
-  } | null {
-    const sensorMax = Number(node.pressure_sensor_max_psi);
-    if (!Number.isFinite(sensorMax) || sensorMax <= 0) return null;
-    const tankHeight = Number(node.height_m);
-    if (!Number.isFinite(tankHeight) || tankHeight <= 0) {
-      return { cal: null, recommended: 0, swingPct: 0, headroomPct: 0 };
-    }
-    const elevation = Number(node.pressure_elevation_m ?? 0);
-    const cal = deriveTankCalibration(tankHeight, Number.isFinite(elevation) ? elevation : 0);
-    return {
-      cal,
-      recommended: recommendSensorMaxPsi(cal.p_full_psi),
-      swingPct: (cal.working_span_psi / sensorMax) * 100,
-      headroomPct: ((sensorMax - cal.p_full_psi) / sensorMax) * 100,
-    };
+  /** Fields the calibration visual owns and edits, so they drop out of the flat
+   *  field list for a level-monitored tank (no duplicate inputs). */
+  private static readonly TANK_VISUAL_FIELDS = new Set([
+    'height_m', 'pressure_elevation_m', 'pressure_sensor_max_psi', 'pressure_sensor_output_v',
+  ]);
+
+  protected hiddenForVisual(node: { kind?: string; level_monitored?: unknown }, key: string): boolean {
+    return node.kind === 'tank' && node.level_monitored === true
+      && NodePropertiesComponent.TANK_VISUAL_FIELDS.has(key);
   }
 
-  // --- Inline pressure-sensor readout ---
-
-  /**
-   * Minimal readout for inline pressure sensors. In the new model they never
-   * have upstream tank calibration context, so we only show the sensor range.
-   */
-  protected pressureSensorReadout(node: any): {
-    sensorMax: number;
-  } | null {
-    const sensorMax = Number(node.pressure_sensor_max_psi);
-    if (!Number.isFinite(sensorMax) || sensorMax <= 0) return null;
-    return { sensorMax };
+  /** The ADC input range of a board pin (PinDef.adc_full_scale_v), defaulting to
+   *  3.3 (a bare ESP32 pin). Feeds the visual's sensor-output → ADC conversion.
+   *  Resolved against the node's OWN controller board, not the active one, so a
+   *  remote-anchored tank reads the right range. */
+  protected boardAdcRangeV(node: { anchorId?: string }, pin: unknown): number {
+    if (typeof pin !== 'string' || !pin) return 3.3;
+    const board = node.anchorId ? this.workspace.boards().get(node.anchorId) : this.editor.board();
+    const def = board?.pins.find(p => p.gpio === pin || p.connector === pin);
+    return def?.adc_full_scale_v ?? 3.3;
   }
 }

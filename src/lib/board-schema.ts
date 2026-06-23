@@ -25,6 +25,7 @@ const PinDefSchema = z.object({
   connector: z.string(),
   edge: z.enum(['top', 'bottom', 'left', 'right']),
   caps: z.array(PinCapSchema),
+  adc_full_scale_v: z.number().positive().optional(),
   expander: z.string().optional(),
   number: z.number().optional(),
 }) satisfies z.ZodType<PinDef>;

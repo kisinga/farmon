@@ -189,7 +189,9 @@ export {
   pressureSensorHaNames,
   getPressureSensorIds,
   evaluatePressureSensorUndersized,
-  evaluatePressureSensorElevatedLowResolution,
+  evaluatePressureSensorLowResolution,
+  evaluatePressureSensorOverRange,
+  ADC_PIN_REF_V,
 } from './pressure-sensor-shared';
 export type { PressureSensorConfig, PressureSensorCodegenIds, PressureSensorHaNames, PressureValidationIssue } from './pressure-sensor-shared';
 

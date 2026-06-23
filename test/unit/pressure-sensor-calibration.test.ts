@@ -14,6 +14,8 @@ import {
   parseTopology,
   emitPressureCalNumbers,
   emitPressureSensorYaml,
+  evaluatePressureSensorLowResolution,
+  evaluatePressureSensorOverRange,
 } from '../../src/lib/index';
 import type { TankNode } from '../../src/lib/entities/tank';
 
@@ -163,6 +165,30 @@ const tankWithPressure: TankNode = {
   assert(!yaml.includes('unit_of_measurement: "bar"'), 'no bar unit anywhere');
   assert(yaml.includes('Rain Tank Pressure'), 'pressure sensor name preserved');
   assert(yaml.includes('Rain Tank Level'), 'level template name preserved');
+  assert(yaml.includes('x / 3.3f'), 'divisor defaults to 3.3f when board ADC range is unknown');
+}
+
+// Codegen divisor = sensor output voltage scaled by the board's ADC input range.
+console.log('\nADC scaling divisor:');
+{
+  const ctx5: import('@core').CodegenContext = {
+    resolveChannel: () => ({ platform: 'adc', config: 'pin:\n    number: GPIO19', adcFullScaleV: 5 }),
+  };
+  // 0-3.3V sensor on a 0-5V board input → 3.3 × 3.3/5 = 2.178V at the pin.
+  const node33 = { ...tankWithPressure, pressure_sensor_output_v: 3.3 };
+  assert(tankDescriptor.codegen!.sensors!(node33, 0, ctx5).includes('x / 2.178f'),
+    '3.3V sensor on a 5V board → divisor 2.178f');
+  // Blank sensor output = swings the full board range → 3.3f (no regression).
+  assert(tankDescriptor.codegen!.sensors!(tankWithPressure, 0, ctx5).includes('x / 3.3f'),
+    'blank sensor output on a 5V board → divisor 3.3f');
+}
+
+// Over-range: sensor output beyond the board ADC input range is an error.
+{
+  assert(evaluatePressureSensorOverRange([{ id: 't', name: 'Tank', sensor_output_v: 5, board_adc_range_v: 3.3 }]).length === 1,
+    'over-range: 5V sensor on a 3.3V input flagged');
+  assert(evaluatePressureSensorOverRange([{ id: 't', name: 'Tank', sensor_output_v: 3.3, board_adc_range_v: 5 }]).length === 0,
+    'no over-range when sensor output ≤ board range');
 }
 
 // ---------------------------------------------------------------------------
@@ -224,34 +250,45 @@ assert(undersizedRule.severity === 'warning', 'severity is warning');
   assert(results.length === 0, 'no warning when tank has no pressure sensor config');
 }
 
-const elevatedLowResolutionRule = tankDescriptor.rules!.find(r => r.id === 'tank-pressure-elevated-low-resolution')!;
-assert(elevatedLowResolutionRule !== undefined, 'tank-pressure-elevated-low-resolution rule registered');
-assert(elevatedLowResolutionRule.severity === 'warning', 'severity is warning');
+// Effective resolution = psi-span utilisation × voltage utilisation. Board-aware,
+// so tested through the shared helper (the `pressure-resolution` manifest rule is a
+// thin wrapper that supplies board_adc_range_v from PinDef.adc_full_scale_v).
+console.log('\nEffective resolution (psi × voltage):');
 
 {
-  // 2 m tank, 20 m elevation, 50 psi sensor → range/headroom is adequate,
-  // but the useful tank swing is only ≈2.84 psi, about 6% of sensor range.
-  const nodes = [{ ...tankWithPressure, height_m: 2, pressure_elevation_m: 20, pressure_sensor_max_psi: 50 }];
-  const results = elevatedLowResolutionRule.evaluate(nodes, nodes);
-  assert(results.length === 1, 'fires for elevated tank with poor working-span utilisation');
-  assert(results[0].message.includes('Resolution may be poor'), 'message explains resolution risk');
-  assert(results[0].message.includes('pressure reducing/regulating'), 'message mentions pressure regulation option');
+  // 2 m tank, 20 m elevation, 50 psi sensor: ~2.84 psi swing = ~6% of range.
+  // Sensor matches the board's ADC range (voltUtil = 1) → psi factor alone fires.
+  const r = evaluatePressureSensorLowResolution([
+    { id: 't', name: 'Tank', sensor_max_psi: 50, elevation_m: 20, tank_height_m: 2, board_adc_range_v: 3.3 },
+  ]);
+  assert(r.length === 1, 'fires for elevated tank with poor psi-span utilisation');
+  assert(r[0].message.includes('resolution'), 'message explains resolution risk');
 }
 
 {
-  // Same geometry, but 30 psi is undersized for headroom, so the undersized
-  // rule owns the diagnostic rather than emitting two competing warnings.
-  const nodes = [{ ...tankWithPressure, height_m: 2, pressure_elevation_m: 20, pressure_sensor_max_psi: 30 }];
-  const results = elevatedLowResolutionRule.evaluate(nodes, nodes);
-  assert(results.length === 0, 'does not fire when the sensor is already undersized');
+  // Voltage factor alone: a psi-wise well-sized 15 psi sensor (≈47% span) whose
+  // 1V output reaches only 20% of a 5V board input → 47% × 20% ≈ 9% < 15% → fires.
+  const r = evaluatePressureSensorLowResolution([
+    { id: 't', name: 'Tank', sensor_max_psi: 15, elevation_m: 0, tank_height_m: 5, sensor_output_v: 1, board_adc_range_v: 5 },
+  ]);
+  assert(r.length === 1, 'fires when the sensor reaches only part of the board ADC range');
+  assert(r[0].message.includes("board's 5V input"), 'message names the board input range');
 }
 
 {
-  // Low utilisation can happen without elevation too, but this PRV-oriented
-  // rule is specifically about elevated tanks with high empty pressure.
-  const nodes = [{ ...tankWithPressure, height_m: 1, pressure_elevation_m: 0, pressure_sensor_max_psi: 10 }];
-  const results = elevatedLowResolutionRule.evaluate(nodes, nodes);
-  assert(results.length === 0, 'does not fire without elevation offset');
+  // Same sensor swinging the full 5V input (no sensor_output_v) → ~47% → no warning.
+  const r = evaluatePressureSensorLowResolution([
+    { id: 't', name: 'Tank', sensor_max_psi: 15, elevation_m: 0, tank_height_m: 5, board_adc_range_v: 5 },
+  ]);
+  assert(r.length === 0, 'no warning when both factors are healthy');
+}
+
+{
+  // Undersized sensor → owned by the undersized rule, resolution stays silent.
+  const r = evaluatePressureSensorLowResolution([
+    { id: 't', name: 'Tank', sensor_max_psi: 5, elevation_m: 0, tank_height_m: 5, board_adc_range_v: 5 },
+  ]);
+  assert(r.length === 0, 'does not fire when the sensor is already undersized');
 }
 
 // ---------------------------------------------------------------------------

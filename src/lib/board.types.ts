@@ -16,6 +16,14 @@ export interface PinDef {
   connector: string;
   edge: 'top' | 'bottom' | 'left' | 'right';
   caps: PinCap[];
+  /**
+   * For `adc` pins: the external voltage that drives the ADC to full scale —
+   * i.e. the analog input range at the connector. A bare ESP32 pin is 3.3 (and
+   * is assumed when omitted); a board that conditions a wider range down to the
+   * 3.3V pin declares it here (KC868-A16 analog terminals = 5.0). Lets sensor
+   * scaling and resolution be computed from the sensor's real output voltage.
+   */
+  adc_full_scale_v?: number;
   /** For I2C GPIO expander pins: ID of the expander this pin belongs to. */
   expander?: string;
   /** For I2C GPIO expander pins: port number on the expander chip. */
