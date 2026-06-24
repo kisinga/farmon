@@ -126,9 +126,18 @@ export function deriveCapabilities(f: RouteCapabilityFacts): RouteCapabilities {
         volume: f.metered
           ? { available: true }
           : { available: false, reason: 'needs a flow meter' },
-        level: f.destHasLevel
+        // Stop-at-level needs a level reading that stays trustworthy while the
+        // route runs: a pump that disturbs a non-pump-rated sensor invalidates it,
+        // so gate on levelTrusted (presence AND runtime reliability), matching
+        // canStopOnFull above rather than presence alone.
+        level: levelTrusted
           ? { available: true }
-          : { available: false, reason: 'destination has no level sensor' },
+          : {
+              available: false,
+              reason: f.destHasLevel
+                ? 'level sensor is not reliable while the pump runs'
+                : 'destination has no level sensor',
+            },
       }
     : {
         duration: { available: false, reason: NO_ACTUATOR },

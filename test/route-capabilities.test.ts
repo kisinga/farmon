@@ -144,6 +144,32 @@ console.log('==================\n');
   assert(c.targets.duration.available && !c.targets.volume.available && !c.targets.level.available, 'S7: duration only');
 }
 
+// S8: pump -> level-monitored tank whose sensor is NOT pump-rated. The level
+//     reading is disturbed while the pump runs, so stop-at-level must be withheld
+//     even though the tank has a level sensor.
+{
+  const nodes = [tank('src'), tank('T', { level: true })];
+  const r = mkRoute({ key: 'src>T', source: 'src', destination: 'T', destKind: 'tank', crossesPump: true, flowSensors: ['fs'] });
+  const c = routeCapabilities(r, lookup(nodes));
+  assert(!c.runtimeLevelOk, 'S8: level NOT trusted under pump (sensor not pump-rated)');
+  assert(!c.canStopOnFull, 'S8: cannot stop on full (level unreliable under pump, no float)');
+  assert(
+    !c.targets.level.available && c.targets.level.reason === 'level sensor is not reliable while the pump runs',
+    'S8: level target withheld with pump-reliability reason',
+  );
+  assert(c.targets.volume.available, 'S8: volume still offered (metered)');
+}
+
+// S9: gravity valve -> level-monitored, non-pump-rated tank. No pump disturbs the
+//     reading, so stop-at-level IS offered despite the sensor not being pump-rated.
+{
+  const nodes = [tank('src'), tank('T', { level: true })];
+  const r = mkRoute({ key: 'src>T#v1', source: 'src', destination: 'T', destKind: 'tank', valves: ['v1'], flowSensors: ['fs'] });
+  const c = routeCapabilities(r, lookup(nodes));
+  assert(c.runtimeLevelOk, 'S9: gravity route never disturbs the level reading');
+  assert(c.targets.level.available, 'S9: level target offered (no pump in play)');
+}
+
 // ── Order invariance: the read-model is a pure overlay over deriveRoutes ───────
 {
   const DEFAULTS = path.resolve(new URL('.', import.meta.url).pathname, '..', 'defaults');
