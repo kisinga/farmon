@@ -81,48 +81,46 @@ const STATE_CHIP: Record<StateKind, { dot: string; chip: string }> = {
 
             <!-- Offline has no live vitals: don't render empty gauges or stale chips. -->
             @if (isOnline(c.controller)) {
-            <!-- Continuous vitals, one compact row: figure on top, gauge below. The bar reads
-                 at a glance (green/amber/red), the figure is the detail. Each cell tooltips. -->
-            <div class="flex items-start gap-3 pl-3.5">
-              <!-- RAM: free heap as a share of the board's managed-heap total -->
-              <div class="flex-1 min-w-0" [title]="heapTip(c.controller)">
-                <div class="flex items-center gap-1 mb-1 text-[11px]">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+            <!-- Continuous vitals: three identical cells (glyph + figure, then one uniform
+                 horizontal gauge), so the row reads as a grid. Each metric has exactly ONE
+                 visual — the bar. The track is always drawn so all cells align even when a
+                 fill is pending (RAM before the device reports its heap total). -->
+            <div class="grid grid-cols-3 gap-x-4 pl-3.5">
+              <!-- RAM: free heap as a share of the device-reported managed-heap total -->
+              <div class="min-w-0" [title]="heapTip(c.controller)">
+                <div class="flex items-center gap-1.5 mb-1.5 text-[11px]">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/>
                   </svg>
                   <span class="font-semibold tabular-nums truncate text-base-content/80" [class.text-error]="heapLow(c.controller)">{{ heapInline(c.controller) }}</span>
                 </div>
-                @if (heapHasTotal(c.controller)) {
-                  <div class="h-1 rounded-full bg-base-200 overflow-hidden">
+                <div class="h-1 rounded-full bg-base-200 overflow-hidden">
+                  @if (heapHasTotal(c.controller)) {
                     <div class="h-full rounded-full transition-[width] duration-500" [class]="heapBarClass(c.controller)" [style.width.%]="heapPct(c.controller)"></div>
-                  </div>
-                }
+                  }
+                </div>
               </div>
 
-              <!-- WiFi signal bars (hidden on ethernet / unreported) -->
+              <!-- WiFi: one horizontal strength bar (hidden on ethernet / unreported) -->
               @if (wifiText(c.controller); as w) {
-                <div class="flex-1 min-w-0" [title]="'WiFi: ' + w">
-                  <div class="flex items-center gap-1 mb-1 text-[11px]">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                <div class="min-w-0" [title]="'WiFi: ' + w">
+                  <div class="flex items-center gap-1.5 mb-1.5 text-[11px]">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z"/>
                     </svg>
                     <span class="font-semibold tabular-nums truncate text-base-content/80" [class.text-warning]="wifiWeak(c.controller)">{{ wifiDbm(c.controller) }}</span>
                   </div>
-                  <div class="flex items-end gap-0.5 h-2.5">
-                    @for (b of [1, 2, 3, 4]; track b) {
-                      <div class="w-1 rounded-sm transition-colors"
-                           [class]="b <= wifiLevel(c.controller) ? wifiBarClass(c.controller) : 'bg-base-300'"
-                           [style.height.%]="b * 25"></div>
-                    }
+                  <div class="h-1 rounded-full bg-base-200 overflow-hidden">
+                    <div class="h-full rounded-full transition-[width] duration-500" [class]="wifiBarClass(c.controller)" [style.width.%]="wifiPct(c.controller)"></div>
                   </div>
                 </div>
               }
 
               <!-- SoC temperature -->
               @if (tempText(c.controller); as t) {
-                <div class="flex-1 min-w-0" [title]="'Temperature: ' + t">
-                  <div class="flex items-center gap-1 mb-1 text-[11px]">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                <div class="min-w-0" [title]="'Temperature: ' + t">
+                  <div class="flex items-center gap-1.5 mb-1.5 text-[11px]">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/>
                     </svg>
                     <span class="font-semibold tabular-nums truncate text-base-content/80" [class.text-error]="tempHot(c.controller)" [class.text-warning]="tempWarm(c.controller)">{{ t }}</span>
@@ -287,7 +285,7 @@ export class ControllerHealthComponent {
     const dbm = this.wifiRssi(controller);
     return dbm === null ? '' : `${Math.round(dbm)} dBm`;
   }
-  /** Signal strength as filled bars (0-4), the way a phone shows it. */
+  /** Coarse signal band (1-4), 0 when unreported — drives the tone thresholds. */
   protected wifiLevel(controller: string): number {
     const dbm = this.wifiRssi(controller);
     if (dbm === null) return 0;
@@ -296,7 +294,14 @@ export class ControllerHealthComponent {
     if (dbm >= -80) return 2;
     return 1;
   }
-  /** Filled-bar tone: amber once we drop to the weak/fair end, green otherwise. */
+  /** Signal as a gauge fill (0-100) across the usable −90…−50 dBm span, so WiFi
+   *  reads as one horizontal bar like RAM and temp (not a second icon). */
+  protected wifiPct(controller: string): number {
+    const dbm = this.wifiRssi(controller);
+    if (dbm === null) return 0;
+    return Math.max(0, Math.min(100, Math.round(((dbm + 90) / 40) * 100)));
+  }
+  /** Gauge tone: amber once we drop to the weak/fair end, green otherwise. */
   protected wifiBarClass(controller: string): string {
     return this.wifiLevel(controller) <= 1 ? 'bg-warning' : 'bg-success';
   }
