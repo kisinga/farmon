@@ -116,7 +116,7 @@ import { TankCalibrationVisualComponent } from '../../../shared/tank-calibration
                 inputClass="w-full font-mono"
                 [placeholder]="field.placeholder"
                 [min]="0"
-                [value]="$any(node())[field.key]"
+                [value]="prefillValue($any(node()), field.key)"
                 (valueChange)="updateField.emit({ nodeId: node().id, field: field.key, value: $event })" />
             } @else if (field.type === 'select') {
               <select class="select select-xs select-bordered w-full font-mono"
@@ -336,5 +336,28 @@ export class NodePropertiesComponent {
   protected hiddenForVisual(node: { kind?: string; level_monitored?: unknown }, key: string): boolean {
     return node.kind === 'tank' && node.level_monitored === true
       && NodePropertiesComponent.TANK_VISUAL_FIELDS.has(key);
+  }
+
+  /** The value shown in a number field — the node's own value, or a sensible
+   *  prefill so the field is never blank. Sensor voltage defaults: 0 at empty,
+   *  the board's analog input range at full (the "sensor swings the whole input"
+   *  assumption). The prefill is display-only; codegen uses the same defaults. */
+  protected prefillValue(node: Record<string, unknown>, key: string): unknown {
+    const v = node[key];
+    if (v !== undefined && v !== null && v !== '') return v;
+    if (key === 'pressure_v_min') return 0;
+    if (key === 'pressure_v_max') return this.boardAdcRangeForNode(node);
+    return v;
+  }
+
+  /** ADC input range of this node's pressure pin (`PinDef.adc_full_scale_v`,
+   *  default 3.3), resolved against the node's OWN controller board. */
+  private boardAdcRangeForNode(node: Record<string, unknown>): number {
+    const pin = node['pressure_pin'];
+    if (typeof pin !== 'string' || !pin) return 3.3;
+    const anchorId = typeof node['anchorId'] === 'string' ? node['anchorId'] : undefined;
+    const board = anchorId ? this.workspace.boards().get(anchorId) : this.editor.board();
+    const def = board?.pins.find(p => p.gpio === pin || p.connector === pin);
+    return def?.adc_full_scale_v ?? 3.3;
   }
 }

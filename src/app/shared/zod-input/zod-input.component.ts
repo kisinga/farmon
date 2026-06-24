@@ -23,21 +23,40 @@ import type { InputPolicy } from '@core';
   imports: [FormsModule, ZodFieldDirective, CharFilterDirective, FieldErrorComponent],
   template: `
     <div class="flex flex-col">
-      <input
-        [type]="type()"
-        [class]="classes()"
-        [ngModelOptions]="{ standalone: true }"
-        [zodField]="{ schema: schema(), key: fieldKey() }"
-        [charFilter]="policy()"
-        #ctrl="ngModel"
-        [ngModel]="value()"
-        [placeholder]="placeholder() ?? ''"
-        [readonly]="readonly()"
-        [attr.min]="min()"
-        [attr.max]="max()"
-        [attr.step]="step()"
-        (ngModelChange)="onChange($event)" />
-      <app-field-error [control]="ctrl" />
+      <!-- Number inputs carry a STATIC type so Angular binds NumberValueAccessor
+           (control value is a number); a dynamic [type] would fall back to the
+           string accessor and validate as "received string". -->
+      @if (type() === 'number') {
+        <input type="number"
+          [class]="classes()"
+          [ngModelOptions]="{ standalone: true }"
+          [zodField]="{ schema: schema(), key: fieldKey() }"
+          [charFilter]="policy()"
+          #ctrl="ngModel"
+          [ngModel]="value()"
+          [placeholder]="placeholder() ?? ''"
+          [readonly]="readonly()"
+          [attr.min]="min()"
+          [attr.max]="max()"
+          [attr.step]="step()"
+          (ngModelChange)="onChange($event)" />
+        <app-field-error [control]="ctrl" />
+      } @else {
+        <input [type]="type()"
+          [class]="classes()"
+          [ngModelOptions]="{ standalone: true }"
+          [zodField]="{ schema: schema(), key: fieldKey() }"
+          [charFilter]="policy()"
+          #ctrlText="ngModel"
+          [ngModel]="value()"
+          [placeholder]="placeholder() ?? ''"
+          [readonly]="readonly()"
+          [attr.min]="min()"
+          [attr.max]="max()"
+          [attr.step]="step()"
+          (ngModelChange)="onChange($event)" />
+        <app-field-error [control]="ctrlText" />
+      }
       @if (policy()?.hint && showHint()) {
         <span class="text-[10px] text-base-content/40">{{ policy()!.hint }}</span>
       }
