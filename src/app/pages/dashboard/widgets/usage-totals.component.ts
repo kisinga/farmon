@@ -46,12 +46,10 @@ function sumRuns(runs: readonly UsageRun[]): WindowTotals {
  * route moved how much — two routes to the same endpoint (e.g. from different
  * sources) stay separate. Litres sum only metered runs (never a phantom 0 L).
  *
- * Two presentation aids on top of the raw figures:
- *  - a vs-previous-window delta, so the headline number is judgeable ("656 L" alone
- *    can't be read as high or low) — neutral-coloured, since more/less water carries
- *    no inherent good/bad valence, only a "looks normal?" signal;
- *  - a per-route share bar (route litres / window litres) promoting the distribution,
- *    which is usually the actual story (one route can dominate the total).
+ * One presentation aid on top of the raw figures: a vs-previous-window delta, so the
+ * headline number is judgeable ("656 L" alone can't be read as high or low) —
+ * neutral-coloured, since more/less water carries no inherent good/bad valence, only
+ * a "looks normal?" signal.
  *
  * Row membership is every route seen in the loaded ledger, not just the selected
  * window, so a route doesn't disappear (and the card doesn't reflow) when the chosen
@@ -82,21 +80,14 @@ function sumRuns(runs: readonly UsageRun[]): WindowTotals {
             </span>
           }
         </div>
-        <ul class="mt-3 flex flex-col gap-2 border-t border-base-300/30 pt-3">
+        <ul class="mt-3 flex flex-col divide-y divide-base-300/20 border-t border-base-300/30">
           @for (r of routes(); track r.controller + ':' + r.route) {
-            <li class="flex flex-col gap-1" [class.opacity-50]="r.runs === 0">
-              <div class="flex items-center justify-between gap-2 text-xs">
-                <span class="truncate text-base-content/70">{{ r.name }}</span>
-                <span class="shrink-0 tabular-nums text-base-content/55">
-                  {{ r.meteredRuns > 0 ? fmtL(r.litres) : fmtD(r.duration_s) }}
-                  <span class="text-base-content/35">· {{ r.runs }} run{{ r.runs === 1 ? '' : 's' }}</span>
-                </span>
-              </div>
-              <div class="h-1 w-full overflow-hidden rounded-full bg-base-300/30">
-                <div
-                  class="h-full rounded-full bg-primary/50 transition-[width] duration-300 ease-out"
-                  [style.width.%]="r.share * 100"></div>
-              </div>
+            <li class="flex items-center justify-between gap-3 py-2 text-xs" [class.opacity-40]="r.runs === 0">
+              <span class="truncate text-base-content/70">{{ r.name }}</span>
+              <span class="shrink-0 tabular-nums text-base-content/55">
+                {{ r.meteredRuns > 0 ? fmtL(r.litres) : fmtD(r.duration_s) }}
+                <span class="text-base-content/35">· {{ r.runs }} run{{ r.runs === 1 ? '' : 's' }}</span>
+              </span>
             </li>
           }
         </ul>
@@ -178,8 +169,7 @@ export class UsageTotalsComponent {
 
   /** Per-route rows (busiest first, top {@link MAX_ROUTE_ROWS}). Membership is every
    *  route in the loaded ledger so the list is stable across span changes; figures are
-   *  for the selected window, with each route's `share` of the window's total for the
-   *  bar. Idle-in-window routes carry 0 and render dimmed. */
+   *  for the selected window. Idle-in-window routes carry 0 and render dimmed. */
   protected routes = computed(() => {
     const spec = this.spec();
     const label = (controller: string, route: number) =>
@@ -188,22 +178,16 @@ export class UsageTotalsComponent {
     const windowed = new Map(
       rollupUsageByRoute(this.filtered(), label).map((r) => [`${r.controller}:${r.route}`, r]),
     );
-    const total = this.totals();
-    const denom = total.metered > 0 ? total.litres : total.duration;
 
     return rollupUsageByRoute(this.runs(), label)
       .map((base) => {
         const w = windowed.get(`${base.controller}:${base.route}`);
-        const litres = w?.litres ?? 0;
-        const duration_s = w?.duration_s ?? 0;
-        const value = total.metered > 0 ? litres : duration_s;
         return {
           ...base,
-          litres,
-          duration_s,
+          litres: w?.litres ?? 0,
+          duration_s: w?.duration_s ?? 0,
           runs: w?.runs ?? 0,
           meteredRuns: w?.meteredRuns ?? 0,
-          share: denom > 0 ? value / denom : 0,
         };
       })
       .sort((a, b) => b.litres - a.litres || b.duration_s - a.duration_s || a.name.localeCompare(b.name))

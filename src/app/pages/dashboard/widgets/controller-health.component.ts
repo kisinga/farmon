@@ -70,90 +70,119 @@ const STATE_CHIP: Record<StateKind, { dot: string; chip: string }> = {
       <div class="chs-panel dropdown-content z-10 mt-1 w-72 rounded-box bg-base-100 ring-1 ring-base-300/40 shadow-lg p-2">
         <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/40 px-1 pb-1">Controllers</div>
         @for (c of store.spec().controllers; track c.controller) {
-          <div class="px-1 py-1.5 border-b border-base-300/20 last:border-0">
+          <div class="px-1 py-2 border-b border-base-300/20 last:border-0 space-y-2">
+            <!-- Identity + what it's doing right now. Offline tells the truth ("Offline",
+                 dimmed) rather than parroting a stale operational state. -->
             <div class="flex items-center gap-2 text-xs">
               <span class="w-1.5 h-1.5 rounded-full shrink-0" [class]="healthDot(c.controller)"></span>
-              <span class="font-medium truncate flex-1">{{ c.name }}</span>
-              <span class="text-[11px] text-base-content/50 shrink-0 max-w-[45%] truncate">{{ systemLabel(c.controller) }}</span>
+              <span class="font-medium truncate flex-1" [class.text-base-content/45]="!isOnline(c.controller)">{{ c.name }}</span>
+              <span class="text-[11px] shrink-0 max-w-[45%] truncate" [class]="isOnline(c.controller) ? 'text-base-content/50' : 'text-base-content/40 italic'">{{ stateLabel(c.controller) }}</span>
             </div>
-            <!-- Metric strip: each live figure rides its own soft tile so the row reads like a
-                 compact instrument cluster; the icon stays muted, the value carries, and a
-                 warning/error state tints the whole tile. Fuller detail rides the tooltip. -->
-            <div class="flex flex-wrap items-center gap-1.5 mt-1.5 pl-3.5 text-base-content/55">
-              <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 bg-base-200/40 transition-colors hover:bg-base-200/70" [class.text-warning]="heapLow(c.controller)" [title]="heapTip(c.controller)">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+
+            <!-- Offline has no live vitals: don't render empty gauges or stale chips. -->
+            @if (isOnline(c.controller)) {
+            <!-- Continuous vitals as gauges: the bar reads at a glance (green/amber/red by
+                 headroom), the figure is just the detail. Each row carries its tooltip. -->
+            <div class="space-y-1.5 pl-3.5">
+              <!-- RAM headroom -->
+              <div class="flex items-center gap-2 text-[11px]" [title]="heapTip(c.controller)">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/>
                 </svg>
-                <span class="text-[11px] font-semibold tabular-nums leading-none text-base-content/80">{{ heapInline(c.controller) }}</span>
-              </span>
-              <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 bg-base-200/40 transition-colors hover:bg-base-200/70" [title]="'Queue depth: ' + queueText(c.controller)">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"/>
-                </svg>
-                <span class="text-[11px] font-semibold tabular-nums leading-none text-base-content/80">{{ queueText(c.controller) }}</span>
-              </span>
-              <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 bg-base-200/40 transition-colors hover:bg-base-200/70" [title]="'Last stop: ' + lastStopText(c.controller)">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9 9.563C9 9.252 9.252 9 9.563 9h4.874c.311 0 .563.252.563.563v4.874c0 .311-.252.563-.563.563H9.564A.562.562 0 019 14.437V9.564z"/>
-                </svg>
-                <span class="text-[11px] font-semibold leading-none max-w-32 truncate text-base-content/80">{{ lastStopText(c.controller) }}</span>
-              </span>
+                <span class="w-9 shrink-0 text-base-content/45">RAM</span>
+                <div class="flex-1 h-1.5 rounded-full bg-base-200 overflow-hidden">
+                  <div class="h-full rounded-full transition-[width] duration-500" [class]="heapBarClass(c.controller)" [style.width.%]="heapPct(c.controller)"></div>
+                </div>
+                <span class="w-14 shrink-0 text-right font-semibold tabular-nums text-base-content/80" [class.text-error]="heapLow(c.controller)">{{ heapInline(c.controller) }}</span>
+              </div>
+
+              <!-- WiFi signal bars (hidden on ethernet / unreported) -->
               @if (wifiText(c.controller); as w) {
-                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 bg-base-200/40 transition-colors hover:bg-base-200/70" [class.text-warning]="wifiWeak(c.controller)" [title]="'WiFi: ' + w">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                <div class="flex items-center gap-2 text-[11px]" [title]="'WiFi: ' + w">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z"/>
                   </svg>
-                  <span class="text-[11px] font-semibold tabular-nums leading-none text-base-content/80">{{ wifiDbm(c.controller) }}</span>
-                </span>
+                  <span class="w-9 shrink-0 text-base-content/45">WiFi</span>
+                  <div class="flex-1 flex items-end gap-0.5 h-3.5">
+                    @for (b of [1, 2, 3, 4]; track b) {
+                      <div class="w-1 rounded-sm transition-colors"
+                           [class]="b <= wifiLevel(c.controller) ? wifiBarClass(c.controller) : 'bg-base-300'"
+                           [style.height.%]="b * 25"></div>
+                    }
+                  </div>
+                  <span class="w-14 shrink-0 text-right font-semibold tabular-nums text-base-content/80" [class.text-warning]="wifiWeak(c.controller)">{{ wifiDbm(c.controller) }}</span>
+                </div>
               }
-              @if (uptimeText(c.controller); as u) {
-                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 bg-base-200/40 transition-colors hover:bg-base-200/70" [title]="'Uptime: ' + u">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                  </svg>
-                  <span class="text-[11px] font-semibold tabular-nums leading-none text-base-content/80">{{ u }}</span>
-                </span>
-              }
+
+              <!-- SoC temperature -->
               @if (tempText(c.controller); as t) {
-                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 bg-base-200/40 transition-colors hover:bg-base-200/70" [title]="'Temperature: ' + t">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                <div class="flex items-center gap-2 text-[11px]" [title]="'Temperature: ' + t">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/>
                   </svg>
-                  <span class="text-[11px] font-semibold tabular-nums leading-none text-base-content/80">{{ t }}</span>
+                  <span class="w-9 shrink-0 text-base-content/45">Temp</span>
+                  <div class="flex-1 h-1.5 rounded-full bg-base-200 overflow-hidden">
+                    <div class="h-full rounded-full transition-[width] duration-500" [class]="tempBarClass(c.controller)" [style.width.%]="tempPct(c.controller)"></div>
+                  </div>
+                  <span class="w-14 shrink-0 text-right font-semibold tabular-nums text-base-content/80" [class.text-error]="tempHot(c.controller)" [class.text-warning]="tempWarm(c.controller)">{{ t }}</span>
+                </div>
+              }
+            </div>
+
+            <!-- Counts + categorical facts: compact chips, no bar would help these. -->
+            <div class="flex flex-wrap items-center gap-1.5 pl-3.5">
+              @if (uptimeText(c.controller); as u) {
+                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 bg-base-200/40 text-[11px]" [title]="'Uptime: ' + u">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  <span class="font-medium tabular-nums leading-none text-base-content/75">{{ u }}</span>
                 </span>
               }
+              <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 bg-base-200/40 text-[11px]" [title]="'Queue depth: ' + queueText(c.controller)">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"/>
+                </svg>
+                <span class="font-medium tabular-nums leading-none text-base-content/75">Q {{ queueText(c.controller) }}</span>
+              </span>
+              <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 bg-base-200/40 text-[11px]" [title]="'Last stop: ' + lastStopText(c.controller)">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9 9.563C9 9.252 9.252 9 9.563 9h4.874c.311 0 .563.252.563.563v4.874c0 .311-.252.563-.563.563H9.564A.562.562 0 019 14.437V9.564z"/>
+                </svg>
+                <span class="font-medium leading-none max-w-28 truncate text-base-content/75">{{ lastStopText(c.controller) }}</span>
+              </span>
               @if (restartText(c.controller); as r) {
-                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 bg-base-200/40 transition-colors hover:bg-base-200/70"
+                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 bg-base-200/40 text-[11px]"
                       [class.text-error]="restartIsCrash(c.controller)"
                       [class.text-warning]="restartIsBrownout(c.controller)"
                       [title]="restartHint(c.controller)">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
                   </svg>
-                  <span class="text-[11px] font-semibold leading-none">{{ r }}</span>
+                  <span class="font-medium leading-none">{{ r }}</span>
                 </span>
               }
               @if (store.overrideOn(c.controller)) {
-                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-error bg-error/10" title="Safety checks bypassed on this controller">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-error bg-error/10 text-[11px]" title="Safety checks bypassed on this controller">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                   </svg>
-                  <span class="text-[11px] font-semibold leading-none">Override</span>
+                  <span class="font-medium leading-none">Override</span>
                 </span>
               }
               @if (deviceConsoleUrl(c.controller); as url) {
-                <a [href]="url" target="_blank" rel="noopener" class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 ml-auto text-base-content/45 transition-colors hover:bg-primary/10 hover:text-primary"
+                <a [href]="url" target="_blank" rel="noopener" class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 ml-auto text-base-content/45 transition-colors hover:bg-primary/10 hover:text-primary text-[11px]"
                    title="Live logs — opens the controller's built-in console (same network only)">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/>
                   </svg>
-                  <span class="text-[11px] font-semibold leading-none">Logs</span>
+                  <span class="font-medium leading-none">Logs</span>
                 </a>
               }
             </div>
+            }
           </div>
         }
-        <p class="text-[11px] text-base-content/40 px-1 pt-1.5 leading-snug">Live figures; hover for detail. RAM warns under {{ heapWarnKb() }} KB free.</p>
       </div>
     </details>
   `,
@@ -191,8 +220,7 @@ export class ControllerHealthComponent {
     const min = this.heapMin(controller);
     return min !== null ? `${kb(free)} · min ${Math.round(min / 1000)}` : kb(free);
   }
-  protected heapWarnKb(): number { return Math.round(HEAP_WARN_BYTES / 1000); }
-  /** Compact free-RAM figure for the icon strip ("118 KB"); — when online-but-silent, "off" when down. */
+  /** Compact free-RAM figure for the gauge row ("118 KB"); — when online-but-silent, "off" when down. */
   protected heapInline(controller: string): string {
     const free = this.heapFree(controller);
     if (free === null) return this.store.presence(controller).online ? '—' : 'off';
@@ -209,25 +237,57 @@ export class ControllerHealthComponent {
     const free = this.heapFree(controller);
     return free !== null && free < HEAP_WARN_BYTES;
   }
+  /** "Full" reference for the RAM gauge: 4x the warning floor reads ~100% on a healthy box. */
+  private readonly HEAP_FULL_BYTES = HEAP_WARN_BYTES * 4;
+  /** RAM headroom as a 0-100 gauge fill (free heap against the comfortable reference). */
+  protected heapPct(controller: string): number {
+    const free = this.heapFree(controller);
+    if (free === null) return 0;
+    return Math.max(0, Math.min(100, Math.round((free / this.HEAP_FULL_BYTES) * 100)));
+  }
+  /** RAM gauge tone: red below the floor, amber within 2x of it, green above. */
+  protected heapBarClass(controller: string): string {
+    const free = this.heapFree(controller);
+    if (free === null) return 'bg-base-content/20';
+    if (free < HEAP_WARN_BYTES) return 'bg-error';
+    if (free < HEAP_WARN_BYTES * 2) return 'bg-warning';
+    return 'bg-success';
+  }
 
-  /** WiFi signal as "−55 dBm · strong", or '' when the controller never reported
-   *  it (ethernet, older firmware, or not yet seen) so the row hides cleanly. */
-  protected wifiText(controller: string): string {
+  /** Raw WiFi RSSI in dBm, null when never reported (ethernet / older firmware / unseen). */
+  private wifiRssi(controller: string): number | null {
     const dbm = this.store.row(controller, WIFI_SIGNAL_SENSOR)?.reported;
-    if (dbm === undefined || !Number.isFinite(dbm)) return '';
+    return dbm === undefined || !Number.isFinite(dbm) ? null : dbm;
+  }
+  /** WiFi signal as "−55 dBm · strong", or '' when never reported so the row hides cleanly. */
+  protected wifiText(controller: string): string {
+    const dbm = this.wifiRssi(controller);
+    if (dbm === null) return '';
     const quality = dbm >= -60 ? 'strong' : dbm >= -70 ? 'good' : dbm >= -80 ? 'fair' : 'weak';
     return `${Math.round(dbm)} dBm · ${quality}`;
   }
-  /** Compact signal figure for the icon strip ("−55 dBm"); '' when never reported. */
+  /** Compact signal figure for the gauge row ("−55 dBm"); '' when never reported. */
   protected wifiDbm(controller: string): string {
-    const dbm = this.store.row(controller, WIFI_SIGNAL_SENSOR)?.reported;
-    if (dbm === undefined || !Number.isFinite(dbm)) return '';
-    return `${Math.round(dbm)} dBm`;
+    const dbm = this.wifiRssi(controller);
+    return dbm === null ? '' : `${Math.round(dbm)} dBm`;
   }
-  /** WiFi in the weak band (< −80 dBm) — tints the signal icon amber. */
+  /** Signal strength as filled bars (0-4), the way a phone shows it. */
+  protected wifiLevel(controller: string): number {
+    const dbm = this.wifiRssi(controller);
+    if (dbm === null) return 0;
+    if (dbm >= -60) return 4;
+    if (dbm >= -70) return 3;
+    if (dbm >= -80) return 2;
+    return 1;
+  }
+  /** Filled-bar tone: amber once we drop to the weak/fair end, green otherwise. */
+  protected wifiBarClass(controller: string): string {
+    return this.wifiLevel(controller) <= 1 ? 'bg-warning' : 'bg-success';
+  }
+  /** WiFi in the weak band (< −80 dBm) — tints the figure amber. */
   protected wifiWeak(controller: string): boolean {
-    const dbm = this.store.row(controller, WIFI_SIGNAL_SENSOR)?.reported;
-    return dbm !== undefined && Number.isFinite(dbm) && dbm < -80;
+    const dbm = this.wifiRssi(controller);
+    return dbm !== null && dbm < -80;
   }
 
   /** Uptime as a coarse "3d 4h" / "5h 12m" / "8m" string, '' when unreported. */
@@ -240,11 +300,39 @@ export class ControllerHealthComponent {
     return `${m}m`;
   }
 
+  /** Raw SoC temperature in °C, null when unreported. */
+  private tempC(controller: string): number | null {
+    const c = this.store.row(controller, TEMP_SENSOR)?.reported;
+    return c === undefined || !Number.isFinite(c) ? null : c;
+  }
   /** SoC temperature as "48 °C", '' when unreported. */
   protected tempText(controller: string): string {
-    const c = this.store.row(controller, TEMP_SENSOR)?.reported;
-    if (c === undefined || !Number.isFinite(c)) return '';
-    return `${Math.round(c)} °C`;
+    const c = this.tempC(controller);
+    return c === null ? '' : `${Math.round(c)} °C`;
+  }
+  /** Temperature gauge fill (0-100) across a 25-85 °C working band. */
+  protected tempPct(controller: string): number {
+    const t = this.tempC(controller);
+    if (t === null) return 0;
+    return Math.max(0, Math.min(100, Math.round(((t - 25) / (85 - 25)) * 100)));
+  }
+  /** Temperature gauge tone: green while cool, amber when warm, red when hot. */
+  protected tempBarClass(controller: string): string {
+    const t = this.tempC(controller);
+    if (t === null) return 'bg-base-content/20';
+    if (t >= 80) return 'bg-error';
+    if (t >= 60) return 'bg-warning';
+    return 'bg-success';
+  }
+  /** Hot (≥ 80 °C) — tints the figure red. */
+  protected tempHot(controller: string): boolean {
+    const t = this.tempC(controller);
+    return t !== null && t >= 80;
+  }
+  /** Warm (60-80 °C) — tints the figure amber. */
+  protected tempWarm(controller: string): boolean {
+    const t = this.tempC(controller);
+    return t !== null && t >= 60 && t < 80;
   }
 
   /** Why the controller last restarted, as a friendly label — '' when unreported.
@@ -290,8 +378,14 @@ export class ControllerHealthComponent {
   private systemMeaning(controller: string): StateMeaning {
     return describeState(SYSTEM_STATE_MEANINGS, this.store.row(controller, SYSTEM_STATE_SENSOR)?.reported_text ?? 'IDLE');
   }
+  /** Whether the controller is currently reporting (drives the offline empty-state). */
+  protected isOnline(controller: string): boolean { return this.store.presence(controller).online; }
   /** Per-controller operational state label (drill-down). */
   protected systemLabel(controller: string): string { return this.systemMeaning(controller).label; }
+  /** Header status: the live operational state when online, an honest "Offline" otherwise. */
+  protected stateLabel(controller: string): string {
+    return this.isOnline(controller) ? this.systemLabel(controller) : 'Offline';
+  }
   /** Queue depth as text; '—' when never reported. */
   protected queueText(controller: string): string {
     const q = this.store.row(controller, 'queue_depth')?.reported;
