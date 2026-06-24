@@ -218,6 +218,10 @@ assert(
   "Heap reading rides the snapshot — free heap is the binding constraint; watch it fleet-wide",
 );
 assert(
+  /\\"heap_total\\":/.test(mqttYaml) && /heap_caps_get_total_size/.test(mqttYaml),
+  "Managed-heap total rides the snapshot (from heap_caps_get_total_size) — the deterministic, partition-aware RAM-gauge denominator",
+);
+assert(
   /\/state"/.test(mqttYaml) && /\\"routes\\":\[/.test(mqttYaml),
   "One controller snapshot to .../state carries the per-route current run (state + origin + actor)",
 );

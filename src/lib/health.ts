@@ -9,9 +9,15 @@
  * HEAP_MIN_SENSOR and the dashboard reads those same shadow channels — no drift.
  */
 
-/** Telemetry `sensor` segment names for the heap diagnostics (wire + shadow). */
+/** Telemetry `sensor` segment names for the heap diagnostics (wire + shadow).
+ *  `heap_total` is the managed-heap pool size the device reports from
+ *  `heap_caps_get_total_size()` — the deterministic, partition-aware denominator
+ *  for the dashboard's RAM gauge (free-against-total). It's the exact counterpart
+ *  to `heap_free` (= `heap_caps_get_free_size()`); only the chip knows it at
+ *  runtime, so we read it from the device rather than guessing a constant. */
 export const HEAP_FREE_SENSOR = 'heap_free';
 export const HEAP_MIN_SENSOR = 'heap_min';
+export const HEAP_TOTAL_SENSOR = 'heap_total';
 
 /**
  * The other on-device diagnostics the firmware ships alongside heap: wifi signal

@@ -85,7 +85,7 @@ export type { RuntimeState, NodeRuntime, ChannelReading } from './node-runtime';
 
 // --- Device heap health (shared by firmware codegen + dashboard health pill) ---
 export {
-  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, HEAP_CRIT_BYTES,
+  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_TOTAL_SENSOR, HEAP_WARN_BYTES, HEAP_CRIT_BYTES,
   WIFI_SIGNAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR,
   HEALTH_SEVERITY, controllerHealth, worstHealth,
 } from './health';

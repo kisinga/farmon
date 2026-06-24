@@ -1,7 +1,7 @@
 import type { Manifest, BoardDef } from '@core';
 import {
   MQTT_ROOT, commandTopic, automationsTopic, statusTopic, identityTopic, snapshotTopic, runsAckTopic,
-  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, WIFI_SIGNAL_SENSOR,
+  HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_TOTAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, WIFI_SIGNAL_SENSOR,
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS, ORIGIN_TOKENS,
   COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
@@ -279,6 +279,10 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     ...tunables.map(t => `if (!std::isnan(id(${t.key}).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${t.key}\\":%g", sep(), id(${t.key}).state));`),
     `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${HEAP_FREE_SENSOR}\\":%u", sep(), (unsigned) esp_get_free_heap_size()));`,
     `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${HEAP_MIN_SENSOR}\\":%u", sep(), (unsigned) esp_get_minimum_free_heap_size()));`,
+    // Managed-heap pool size — the deterministic, partition-aware denominator for the
+    // dashboard's RAM gauge. Constant for a build, but rides every snapshot so the
+    // gauge needs no out-of-band board lookup. Paired cap with esp_get_free_heap_size.
+    `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${HEAP_TOTAL_SENSOR}\\":%u", sep(), (unsigned) heap_caps_get_total_size(MALLOC_CAP_DEFAULT)));`,
     `if (!std::isnan(id(uptime_sec).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${UPTIME_SENSOR}\\":%g", sep(), id(uptime_sec).state));`,
     `if (!std::isnan(id(esp_temp).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${TEMP_SENSOR}\\":%g", sep(), id(esp_temp).state));`,
     ...(hasWifi ? [`if (!std::isnan(id(wifi_dbm).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${WIFI_SIGNAL_SENSOR}\\":%g", sep(), id(wifi_dbm).state));`] : []),

@@ -1,5 +1,5 @@
 import { Component, computed, inject } from '@angular/core';
-import { controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_WARN_BYTES, WIFI_SIGNAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, type HealthLevel, type StateKind, type StateMeaning } from '@core';
+import { controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_TOTAL_SENSOR, HEAP_WARN_BYTES, WIFI_SIGNAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, type HealthLevel, type StateKind, type StateMeaning } from '@core';
 import { DashboardStore } from '../dashboard.store';
 
 /** `reset_reason` tokens (esp_reset_reason) that mean a firmware fault — the controller
@@ -81,50 +81,55 @@ const STATE_CHIP: Record<StateKind, { dot: string; chip: string }> = {
 
             <!-- Offline has no live vitals: don't render empty gauges or stale chips. -->
             @if (isOnline(c.controller)) {
-            <!-- Continuous vitals as gauges: the bar reads at a glance (green/amber/red by
-                 headroom), the figure is just the detail. Each row carries its tooltip. -->
-            <div class="space-y-1.5 pl-3.5">
-              <!-- RAM headroom -->
-              <div class="flex items-center gap-2 text-[11px]" [title]="heapTip(c.controller)">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/>
-                </svg>
-                <span class="w-9 shrink-0 text-base-content/45">RAM</span>
-                <div class="flex-1 h-1.5 rounded-full bg-base-200 overflow-hidden">
-                  <div class="h-full rounded-full transition-[width] duration-500" [class]="heapBarClass(c.controller)" [style.width.%]="heapPct(c.controller)"></div>
+            <!-- Continuous vitals, one compact row: figure on top, gauge below. The bar reads
+                 at a glance (green/amber/red), the figure is the detail. Each cell tooltips. -->
+            <div class="flex items-start gap-3 pl-3.5">
+              <!-- RAM: free heap as a share of the board's managed-heap total -->
+              <div class="flex-1 min-w-0" [title]="heapTip(c.controller)">
+                <div class="flex items-center gap-1 mb-1 text-[11px]">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/>
+                  </svg>
+                  <span class="font-semibold tabular-nums truncate text-base-content/80" [class.text-error]="heapLow(c.controller)">{{ heapInline(c.controller) }}</span>
                 </div>
-                <span class="w-14 shrink-0 text-right font-semibold tabular-nums text-base-content/80" [class.text-error]="heapLow(c.controller)">{{ heapInline(c.controller) }}</span>
+                @if (heapHasTotal(c.controller)) {
+                  <div class="h-1 rounded-full bg-base-200 overflow-hidden">
+                    <div class="h-full rounded-full transition-[width] duration-500" [class]="heapBarClass(c.controller)" [style.width.%]="heapPct(c.controller)"></div>
+                  </div>
+                }
               </div>
 
               <!-- WiFi signal bars (hidden on ethernet / unreported) -->
               @if (wifiText(c.controller); as w) {
-                <div class="flex items-center gap-2 text-[11px]" [title]="'WiFi: ' + w">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z"/>
-                  </svg>
-                  <span class="w-9 shrink-0 text-base-content/45">WiFi</span>
-                  <div class="flex-1 flex items-end gap-0.5 h-3.5">
+                <div class="flex-1 min-w-0" [title]="'WiFi: ' + w">
+                  <div class="flex items-center gap-1 mb-1 text-[11px]">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z"/>
+                    </svg>
+                    <span class="font-semibold tabular-nums truncate text-base-content/80" [class.text-warning]="wifiWeak(c.controller)">{{ wifiDbm(c.controller) }}</span>
+                  </div>
+                  <div class="flex items-end gap-0.5 h-2.5">
                     @for (b of [1, 2, 3, 4]; track b) {
                       <div class="w-1 rounded-sm transition-colors"
                            [class]="b <= wifiLevel(c.controller) ? wifiBarClass(c.controller) : 'bg-base-300'"
                            [style.height.%]="b * 25"></div>
                     }
                   </div>
-                  <span class="w-14 shrink-0 text-right font-semibold tabular-nums text-base-content/80" [class.text-warning]="wifiWeak(c.controller)">{{ wifiDbm(c.controller) }}</span>
                 </div>
               }
 
               <!-- SoC temperature -->
               @if (tempText(c.controller); as t) {
-                <div class="flex items-center gap-2 text-[11px]" [title]="'Temperature: ' + t">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/>
-                  </svg>
-                  <span class="w-9 shrink-0 text-base-content/45">Temp</span>
-                  <div class="flex-1 h-1.5 rounded-full bg-base-200 overflow-hidden">
+                <div class="flex-1 min-w-0" [title]="'Temperature: ' + t">
+                  <div class="flex items-center gap-1 mb-1 text-[11px]">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0 text-base-content/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/>
+                    </svg>
+                    <span class="font-semibold tabular-nums truncate text-base-content/80" [class.text-error]="tempHot(c.controller)" [class.text-warning]="tempWarm(c.controller)">{{ t }}</span>
+                  </div>
+                  <div class="h-1 rounded-full bg-base-200 overflow-hidden">
                     <div class="h-full rounded-full transition-[width] duration-500" [class]="tempBarClass(c.controller)" [style.width.%]="tempPct(c.controller)"></div>
                   </div>
-                  <span class="w-14 shrink-0 text-right font-semibold tabular-nums text-base-content/80" [class.text-error]="tempHot(c.controller)" [class.text-warning]="tempWarm(c.controller)">{{ t }}</span>
                 </div>
               }
             </div>
@@ -237,13 +242,24 @@ export class ControllerHealthComponent {
     const free = this.heapFree(controller);
     return free !== null && free < HEAP_WARN_BYTES;
   }
-  /** "Full" reference for the RAM gauge: 4x the warning floor reads ~100% on a healthy box. */
-  private readonly HEAP_FULL_BYTES = HEAP_WARN_BYTES * 4;
-  /** RAM headroom as a 0-100 gauge fill (free heap against the comfortable reference). */
+  /** Device-reported managed-heap total (bytes) — the gauge denominator. Null until
+   *  the controller reports it (older firmware), so the bar stays honest rather than
+   *  inventing a total. */
+  private heapTotal(controller: string): number | null {
+    const t = this.store.row(controller, HEAP_TOTAL_SENSOR)?.reported;
+    return typeof t === 'number' && Number.isFinite(t) && t > 0 ? t : null;
+  }
+  /** Whether a proportional RAM bar can be drawn (needs both free + the device total). */
+  protected heapHasTotal(controller: string): boolean {
+    return this.heapFree(controller) !== null && this.heapTotal(controller) !== null;
+  }
+  /** RAM gauge fill (0-100): free heap as a share of the device's managed-heap total,
+   *  so a third-full ESP32 reads as a third-full bar. */
   protected heapPct(controller: string): number {
     const free = this.heapFree(controller);
-    if (free === null) return 0;
-    return Math.max(0, Math.min(100, Math.round((free / this.HEAP_FULL_BYTES) * 100)));
+    const total = this.heapTotal(controller);
+    if (free === null || total === null) return 0;
+    return Math.max(0, Math.min(100, Math.round((free / total) * 100)));
   }
   /** RAM gauge tone: red below the floor, amber within 2x of it, green above. */
   protected heapBarClass(controller: string): string {
