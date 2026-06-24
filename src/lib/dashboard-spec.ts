@@ -317,7 +317,7 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
         // between the same endpoints (different valves) stay distinct — endpoint
         // reachability would conflate them and light up the wrong branch.
         const pipeIds = pipesAlongPath(tg, seq);
-        const caps = manifestRouteCapabilities(r, manifest.routes);
+        const caps = manifestRouteCapabilities(r);
         return {
           routeId: i,
           name: r.name || r.key,

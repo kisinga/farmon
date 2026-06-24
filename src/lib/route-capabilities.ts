@@ -69,10 +69,6 @@ export interface RouteTargets {
 /** The representation-agnostic facts the capability rules consume. Each adapter
  *  resolves these from its route representation, then calls {@link deriveCapabilities}. */
 export interface RouteCapabilityFacts {
-  /** Endpoint (recipient) node id = the last node of the path. SSOT for usage. */
-  endpointId: string;
-  /** Endpoint node kind, when known (graph adapter has it; manifest doesn't). */
-  endpointKind?: TopologyNode['kind'];
   /** How a run actuates. */
   runKind: RunKind;
   /** Has at least one flow sensor on the path. */
@@ -85,8 +81,6 @@ export interface RouteCapabilityFacts {
   runtimeLevelOk: boolean;
   /** Source is a level-monitored tank. */
   sourceHasLevel: boolean;
-  /** Metered AND no concurrent route reads the same meter for the same endpoint. */
-  volumeAttributable: boolean;
 }
 
 /** The full capability view of a route. Pure projection of the facts. */
@@ -126,11 +120,12 @@ export function deriveCapabilities(f: RouteCapabilityFacts): RouteCapabilities {
   const targets: RouteTargets = runnable
     ? {
         duration: { available: true },
-        volume: !f.metered
-          ? { available: false, reason: 'needs a flow meter' }
-          : f.volumeAttributable
-            ? { available: true }
-            : { available: false, reason: 'meter is shared with a concurrent route to this endpoint' },
+        // A metered route can always offer volume: routes that share a meter are
+        // mutually exclusive (one flow per meter, see the conflict_mask), so a run's
+        // delivered volume is never ambiguous.
+        volume: f.metered
+          ? { available: true }
+          : { available: false, reason: 'needs a flow meter' },
         level: f.destHasLevel
           ? { available: true }
           : { available: false, reason: 'destination has no level sensor' },
@@ -161,27 +156,8 @@ function graphRunKind(route: Route): RunKind {
   return route.crossesPump ? 'pump' : route.valves.length > 0 ? 'valve' : 'none';
 }
 
-/**
- * Whether a graph route may expose a volume target: it is metered AND no sibling
- * can read the same meter concurrently for the same endpoint. Keys on the real
- * endpoint node id (`route.destination` is the real endpoint at the graph level),
- * which is the fix for the prior `destination ?? ''` collapse.
- */
-export function routeVolumeAttributable(route: Route, allRoutes: readonly Route[]): boolean {
-  if (!route.monitored) return false;
-  const meter = route.flowSensors[0];
-  if (!meter) return false;
-  return !allRoutes.some(
-    (o) => o.key !== route.key && o.flowSensors[0] === meter && o.destination === route.destination,
-  );
-}
-
 /** Capabilities from the topology graph route + node lookup. Used by SiteModel. */
-export function routeCapabilities(
-  route: Route,
-  nodes: NodeLookup,
-  allRoutes: readonly Route[],
-): RouteCapabilities {
+export function routeCapabilities(route: Route, nodes: NodeLookup): RouteCapabilities {
   const destTank = asTank(nodes(route.destination));
   const sourceTank = asTank(nodes(route.source));
   // Gravity routes never disturb a level reading; pumped routes trust level only
@@ -190,55 +166,27 @@ export function routeCapabilities(
     !route.crossesPump || (tankLevelTrustedUnderPump(sourceTank) && tankLevelTrustedUnderPump(destTank));
 
   return deriveCapabilities({
-    endpointId: route.destination,
-    endpointKind: route.destKind,
     runKind: graphRunKind(route),
     metered: route.monitored,
     destHasLevel: !!destTank?.level_monitored,
     destHasFloatValve: !!destTank?.float_valve,
     runtimeLevelOk,
     sourceHasLevel: !!sourceTank?.level_monitored,
-    volumeAttributable: routeVolumeAttributable(route, allRoutes),
   });
 }
 
 // ── Manifest adapter (firmware route with pre-baked trait facts) ──────────────
 
-/** The real endpoint id for a manifest route: the last path node, not the
- *  `destination` field (which is the dest *tank*, undefined for open endpoints). */
-function manifestEndpointId(route: ManifestRoute): string {
-  const seq = route.nodeSequence;
-  return (seq && seq.length ? seq[seq.length - 1] : route.destination) ?? '';
-}
-
-/** Manifest-route counterpart of {@link routeVolumeAttributable}, keyed on the real
- *  endpoint so distinct open endpoints sharing a meter stay attributable. */
-export function manifestRouteVolumeAttributable(
-  route: ManifestRoute,
-  allRoutes: readonly ManifestRoute[],
-): boolean {
-  if (!route.monitored || !route.flow_sensor) return false;
-  const ep = manifestEndpointId(route);
-  return !allRoutes.some(
-    (o) => o.key !== route.key && o.flow_sensor === route.flow_sensor && manifestEndpointId(o) === ep,
-  );
-}
-
 /** Capabilities from a firmware manifest route. Used by the dashboard spec,
  *  automations, the tunable enumeration, and codegen so all agree with SiteModel. */
-export function manifestRouteCapabilities(
-  route: ManifestRoute,
-  allRoutes: readonly ManifestRoute[],
-): RouteCapabilities {
+export function manifestRouteCapabilities(route: ManifestRoute): RouteCapabilities {
   const runKind: RunKind = route.crossesPump ? 'pump' : route.valves.length > 0 ? 'valve' : 'none';
   return deriveCapabilities({
-    endpointId: manifestEndpointId(route),
     runKind,
     metered: route.monitored,
     destHasLevel: route.dest_has_level,
     destHasFloatValve: route.dest_has_float_valve,
     runtimeLevelOk: route.runtime_level_ok,
     sourceHasLevel: route.source_has_level,
-    volumeAttributable: manifestRouteVolumeAttributable(route, allRoutes),
   });
 }

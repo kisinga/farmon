@@ -48,7 +48,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   restore_value: true
   entity_category: config
   update_interval: never`);
-    if (routeVolumeEligible(r, m.routes)) {
+    if (routeVolumeEligible(r)) {
       targetStopBlocks.push(`\
 - platform: template
   name: "${names.targetVolume.name}"

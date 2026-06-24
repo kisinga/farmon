@@ -71,8 +71,8 @@ const SYS = SYSTEM_ENTITY_NAMES;
  * pipe no longer gets a dead volume entity. The owner keys on the real endpoint node,
  * fixing the prior `destination ?? ''` collapse that hid volume on metered non-tank routes.
  */
-export function routeVolumeEligible(r: Manifest['routes'][number], routes: Manifest['routes']): boolean {
-  return manifestRouteCapabilities(r, routes).targets.volume.available;
+export function routeVolumeEligible(r: Manifest['routes'][number]): boolean {
+  return manifestRouteCapabilities(r).targets.volume.available;
 }
 
 /**
@@ -82,7 +82,7 @@ export function routeVolumeEligible(r: Manifest['routes'][number], routes: Manif
  * rule, and the run UI can never disagree.
  */
 export function canStopOnFull(r: Manifest['routes'][number]): boolean {
-  return manifestRouteCapabilities(r, []).canStopOnFull;
+  return manifestRouteCapabilities(r).canStopOnFull;
 }
 
 /** Enumerate every runtime-tunable number a controller exposes, in a stable order
@@ -115,7 +115,7 @@ export function collectTunableNumbers(m: Manifest): TunableNumber[] {
     }
     // Volume target — clean stop after N litres delivered. Only where the flow
     // sensor isn't shared with a concurrent sibling (see routeVolumeEligible). 0 = off.
-    if (routeVolumeEligible(r, m.routes)) {
+    if (routeVolumeEligible(r)) {
       out.push({ key: `route_${i}_target_volume_l`, scope: 'route', tier: 'tuning', field: 'target_volume_l', label: names.targetVolume.name, unit: 'L', min: 0, max: 100000, step: 1, default: 0, routeIndex: i, routeName });
     }
     if (r.source_has_level) {

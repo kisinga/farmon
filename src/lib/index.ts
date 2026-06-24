@@ -115,17 +115,14 @@ export { RUN_TARGET_FIELDS, runTargetMax, runTargetChips } from './run-targets';
 export type { StopSpecOverride, RunTargetField, RouteTargetCtx } from './run-targets';
 
 // --- Route capabilities (single owner: runnable/trackable/targets/stall/full) ---
-export {
-  deriveCapabilities, routeCapabilities, routeVolumeAttributable,
-  manifestRouteCapabilities, manifestRouteVolumeAttributable,
-} from './route-capabilities';
+export { deriveCapabilities, routeCapabilities, manifestRouteCapabilities } from './route-capabilities';
 export type { RouteCapabilities, RouteCapabilityFacts, RouteTargets, TargetAvailability, RunKind, StallDisposition, NodeLookup } from './route-capabilities';
 // --- Route domain read-model (topology -> Endpoint/RouteModel/SiteModel) ---
 export { Endpoint, RouteModel, SiteModel } from './route-model';
-// --- Usage presentation (durable runs ledger -> feed rows / endpoint rollup / totals) ---
+// --- Usage presentation (durable runs ledger -> feed rows / per-route totals) ---
 export { formatDurationS, formatLitres } from './usage-format';
-export { rollupUsageByEndpoint } from './usage-rollup';
-export type { UsageRunLike, ResolvedEndpoint, EndpointUsage } from './usage-rollup';
+export { rollupUsageByRoute } from './usage-rollup';
+export type { UsageRunLike, RouteUsage } from './usage-rollup';
 
 // --- Codegen IDs ---
 export {

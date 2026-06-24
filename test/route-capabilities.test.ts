@@ -13,7 +13,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import {
-  parseTopology, buildGraph, deriveRoutes, routeCapabilities, routeVolumeAttributable,
+  parseTopology, buildGraph, deriveRoutes, routeCapabilities,
   manifestRouteCapabilities, topologyToManifestForController, SiteModel,
   type Route, type TopologyNode, type SiteTopology,
 } from '@core';
@@ -69,7 +69,7 @@ console.log('==================\n');
 {
   const nodes = [tank('src'), tank('T', { float: true })];
   const r = mkRoute({ key: 'src>T#v1', source: 'src', destination: 'T', destKind: 'tank', valves: ['v1'], flowSensors: ['fs'] });
-  const c = routeCapabilities(r, lookup(nodes), [r]);
+  const c = routeCapabilities(r, lookup(nodes));
   assert(c.runKind === 'valve' && c.runnable, 'S1 gravity+float: runnable as a valve');
   assert(c.metered && c.trackable, 'S1: metered + trackable');
   assert(c.stallDisposition === 'full', 'S1: stall reads as full (float valve)');
@@ -82,7 +82,7 @@ console.log('==================\n');
 {
   const nodes = [tank('src'), tank('T', { float: true })];
   const r = mkRoute({ key: 'src>T#v1', source: 'src', destination: 'T', destKind: 'tank', valves: ['v1'] });
-  const c = routeCapabilities(r, lookup(nodes), [r]);
+  const c = routeCapabilities(r, lookup(nodes));
   assert(!c.metered && !c.trackable, 'S2 float, no meter: not metered, not trackable');
   assert(c.stallDisposition === 'n/a', 'S2: no stall detection without a meter');
   assert(!c.canStopOnFull, 'S2: cannot DETECT full without a meter (float caps it mechanically)');
@@ -93,7 +93,7 @@ console.log('==================\n');
 {
   const nodes = [tank('src'), sink('zone')];
   const r = mkRoute({ key: 'src>zone', source: 'src', destination: 'zone', destKind: 'endpoint', crossesPump: true, flowSensors: ['fs'] });
-  const c = routeCapabilities(r, lookup(nodes), [r]);
+  const c = routeCapabilities(r, lookup(nodes));
   assert(c.runKind === 'pump' && c.runnable, 'S3 pump->open endpoint: runnable as a pump');
   assert(c.stallDisposition === 'flowLost', 'S3: stall reads as flow lost (no float, no level)');
   assert(!c.canStopOnFull, 'S3: cannot stop on full (open endpoint)');
@@ -105,29 +105,30 @@ console.log('==================\n');
 {
   const nodes = [tank('src'), tank('T', { level: true, float: true, pumpRated: true })];
   const r = mkRoute({ key: 'src>T', source: 'src', destination: 'T', destKind: 'tank', crossesPump: true, flowSensors: ['fs'] });
-  const c = routeCapabilities(r, lookup(nodes), [r]);
+  const c = routeCapabilities(r, lookup(nodes));
   assert(c.runtimeLevelOk, 'S4: level trusted under pump (pump-rated sensor)');
   assert(c.stallDisposition === 'levelAuthoritative', 'S4 float+level: level wins over float');
   assert(c.canStopOnFull, 'S4: can stop on full (level)');
   assert(c.targets.level.available && c.targets.volume.available, 'S4: both level and volume offered');
 }
 
-// S5: meter sharing — same endpoint excludes; distinct endpoints stay eligible.
+// S5: meter sharing — routes sharing a meter are mutually exclusive (conflict_mask),
+// so a metered route always offers volume regardless of a meter-sharing sibling
+// (the two House-2-style routes from different sources each get a volume target).
 {
-  const a = mkRoute({ key: 'A>T#v1', source: 'A', destination: 'T', destKind: 'tank', valves: ['v1'], flowSensors: ['fs'] });
-  const b = mkRoute({ key: 'B>T#v2', source: 'B', destination: 'T', destKind: 'tank', valves: ['v2'], flowSensors: ['fs'] });
-  assert(!routeVolumeAttributable(a, [a, b]), 'S5 same endpoint, shared meter: volume NOT attributable');
-
-  const c = mkRoute({ key: 'A>zone1', source: 'A', destination: 'zone1', destKind: 'endpoint', crossesPump: true, flowSensors: ['fs'] });
-  const d = mkRoute({ key: 'A>zone2', source: 'A', destination: 'zone2', destKind: 'endpoint', crossesPump: true, flowSensors: ['fs'] });
-  assert(routeVolumeAttributable(c, [c, d]) && routeVolumeAttributable(d, [c, d]), 'S5 distinct endpoints, shared meter: both attributable');
+  const nodes = [tank('A'), sink('House2')];
+  // A metered route to House 2 from source A; a sibling B>House2 shares the meter,
+  // but shared meters are mutually exclusive (conflict_mask), so volume is offered.
+  const a = mkRoute({ key: 'A>House2', source: 'A', destination: 'House2', destKind: 'endpoint', crossesPump: true, flowSensors: ['fs'] });
+  const c = routeCapabilities(a, lookup(nodes));
+  assert(c.targets.volume.available, 'S5 shared meter, same endpoint: volume STILL offered (routes are mutually exclusive)');
 }
 
 // S6: meter-only pipe — a flow sensor but no actuator.
 {
   const nodes = [tank('src'), sink('outlet')];
   const r = mkRoute({ key: 'src>outlet', source: 'src', destination: 'outlet', destKind: 'endpoint', flowSensors: ['fs'] });
-  const c = routeCapabilities(r, lookup(nodes), [r]);
+  const c = routeCapabilities(r, lookup(nodes));
   assert(c.runKind === 'none' && !c.runnable, 'S6 meter-only: not runnable (no actuator)');
   assert(c.trackable, 'S6: still trackable (has a meter)');
   assert(!c.targets.duration.available && !c.targets.volume.available, 'S6: no run targets when not runnable');
@@ -137,7 +138,7 @@ console.log('==================\n');
 {
   const nodes = [tank('src'), tank('T')];
   const r = mkRoute({ key: 'src>T#v1', source: 'src', destination: 'T', destKind: 'tank', valves: ['v1'] });
-  const c = routeCapabilities(r, lookup(nodes), [r]);
+  const c = routeCapabilities(r, lookup(nodes));
   assert(c.runnable && !c.trackable, 'S7 valve, no sensor: runnable but not trackable');
   assert(c.stallDisposition === 'n/a', 'S7: no stall detection');
   assert(c.targets.duration.available && !c.targets.volume.available && !c.targets.level.available, 'S7: duration only');
@@ -171,7 +172,7 @@ console.log('==================\n');
     const gm = byKey.get(mr.key);
     if (!gm) continue;
     compared++;
-    const mc = manifestRouteCapabilities(mr, manifest.routes);
+    const mc = manifestRouteCapabilities(mr);
     const agree =
       mc.runnable === gm.caps.runnable &&
       mc.metered === gm.caps.metered &&

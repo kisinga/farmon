@@ -5,7 +5,7 @@
  *
  * Usage: npx tsx test/usage.test.ts
  */
-import { formatDurationS, formatLitres, rollupUsageByEndpoint, type UsageRunLike, type ResolvedEndpoint } from '@core';
+import { formatDurationS, formatLitres, rollupUsageByRoute, type UsageRunLike } from '@core';
 
 let passed = 0;
 let failed = 0;
@@ -34,40 +34,26 @@ assert(formatLitres(340) === '340 L', 'litres 340 -> 340 L', formatLitres(340));
 assert(formatLitres(1250) === '1,250 L', 'litres 1250 -> 1,250 L', formatLitres(1250));
 assert(formatLitres(5.25) === '5.3 L', 'litres 5.25 -> 5.3 L (1 dp under 10)', formatLitres(5.25));
 
-// ── rollupUsageByEndpoint ─────────────────────────────────────────────────────
+// ── rollupUsageByRoute ────────────────────────────────────────────────────────
 {
   const runs: UsageRunLike[] = [
     { controller: 'c', route: 0, duration_s: 720, delivered_l: 340, metered: true },
-    { controller: 'c', route: 1, duration_s: 600, delivered_l: 160, metered: true },  // same endpoint as route 0
+    { controller: 'c', route: 0, duration_s: 600, delivered_l: 160, metered: true },  // same route, another run
     { controller: 'c', route: 0, duration_s: 300, delivered_l: null, metered: false }, // unmetered: count + duration only
-    { controller: 'c', route: 2, duration_s: 120, delivered_l: 50, metered: true },    // unresolved route
+    { controller: 'c', route: 1, duration_s: 120, delivered_l: 50, metered: true },    // a different route
   ];
-  const resolve = (_c: string, route: number): ResolvedEndpoint | undefined => {
-    if (route === 0 || route === 1) return { id: 'tankA', name: 'Tank A' };
-    return undefined; // route 2: stale/unresolved
-  };
-  const out = rollupUsageByEndpoint(runs, resolve);
-  const tankA = out.find((e) => e.endpointId === 'tankA');
-  const fallback = out.find((e) => e.endpointId === 'route:c:2');
+  const name = (_c: string, route: number): string => `route ${route}`;
+  const out = rollupUsageByRoute(runs, name);
+  const r0 = out.find((r) => r.route === 0);
+  const r1 = out.find((r) => r.route === 1);
 
-  assert(!!tankA, 'rollup: endpoint Tank A present');
-  assert(tankA!.runs === 3, 'rollup: Tank A folds 3 runs across routes 0+1', String(tankA?.runs));
-  assert(tankA!.meteredRuns === 2, 'rollup: Tank A counts 2 metered runs (unmetered excluded)', String(tankA?.meteredRuns));
-  assert(tankA!.litres === 500, 'rollup: Tank A litres = 340+160 (null not summed)', String(tankA?.litres));
-  assert(tankA!.duration_s === 1620, 'rollup: Tank A duration = 720+600+300', String(tankA?.duration_s));
-  assert(tankA!.attributable === true, 'rollup: Tank A attributable when all routes attributable');
-  assert(!!fallback && fallback.runs === 1 && fallback.litres === 50, 'rollup: unresolved route gets its own bucket (not dropped)');
-}
-{
-  // attributable=false propagates when any contributing route's meter is shared.
-  const runs: UsageRunLike[] = [
-    { controller: 'c', route: 0, duration_s: 60, delivered_l: 10, metered: true },
-    { controller: 'c', route: 1, duration_s: 60, delivered_l: 10, metered: true },
-  ];
-  const resolve = (_c: string, route: number): ResolvedEndpoint =>
-    route === 1 ? { id: 'tankA', name: 'Tank A', attributable: false } : { id: 'tankA', name: 'Tank A', attributable: true };
-  const out = rollupUsageByEndpoint(runs, resolve);
-  assert(out[0].attributable === false, 'rollup: shared-meter route marks the endpoint non-attributable');
+  assert(!!r0 && r0.name === 'route 0', 'rollup: route 0 present with resolved name');
+  assert(r0!.runs === 3, 'rollup: route 0 sums its 3 runs', String(r0?.runs));
+  assert(r0!.meteredRuns === 2, 'rollup: route 0 counts 2 metered runs (unmetered excluded)', String(r0?.meteredRuns));
+  assert(r0!.litres === 500, 'rollup: route 0 litres = 340+160 (null not summed)', String(r0?.litres));
+  assert(r0!.duration_s === 1620, 'rollup: route 0 duration = 720+600+300', String(r0?.duration_s));
+  assert(!!r1 && r1.runs === 1 && r1.litres === 50, 'rollup: route 1 is its own row (not folded with route 0)');
+  assert(out[0].route === 0, 'rollup: sorted by litres desc (route 0 first)');
 }
 
 console.log(`\n${'='.repeat(40)}`);

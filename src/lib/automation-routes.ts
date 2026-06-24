@@ -44,7 +44,7 @@ export function listAutomatableRoutes(topology: SiteTopology): AutomatableRoute[
     }
     const version = routeSetVersion(m);
     m.routes.forEach((r, i) => {
-      const caps = manifestRouteCapabilities(r, m.routes);
+      const caps = manifestRouteCapabilities(r);
       if (!caps.runnable) return; // not runnable (no actuator): not automatable
       const destNode = r.destination ? topology.nodes.find((n) => n.id === r.destination) : undefined;
       out.push({

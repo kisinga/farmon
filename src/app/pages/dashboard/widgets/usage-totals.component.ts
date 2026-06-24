@@ -1,20 +1,19 @@
 import { Component, computed, input, signal } from '@angular/core';
-import { findRoute, rollupUsageByEndpoint, formatDurationS, formatLitres, type DashboardSpec, type ResolvedEndpoint } from '@core';
+import { rollupUsageByRoute, formatDurationS, formatLitres, findRoute, routeLabel, type DashboardSpec } from '@core';
 import { SpanSelectorComponent } from './span-selector.component';
 import type { UsageRun } from '../../../core/models/runtime';
 
 /**
- * Timeframe water-usage totals — restores the "Used · period" counter that was
- * removed with the lossy client-side flow integral (0c51784), now sourced from the
- * durable runs ledger via the totals on each run record.
+ * Per-route water-usage totals over a duration — restores the "Used · period"
+ * counter that was removed with the lossy client-side flow integral (0c51784), now
+ * sourced from the durable runs ledger.
  *
  * Purely presentational: the dashboard store already loads ~30 days of completed
- * runs for the Activity feed, and the span control caps at 30d, so any sub-range is
- * derived here client-side (filter by started_at) with no extra fetch. Totals sum
- * the ledger's per-run figures (litres only from metered runs, never a phantom 0 L);
- * the per-endpoint breakdown uses the shared roll-up keyed on the endpoint node id
- * (capability owner), with the friendly name from the route control and a "shared"
- * flag when the endpoint's meter isn't cleanly attributable (possible double-count).
+ * runs, and the span control caps at 30d, so any sub-range is derived here
+ * client-side (filter by started_at) with no extra fetch. Each row is one route's
+ * total in the window (litres when metered, else time) so an operator sees which
+ * route moved how much — two routes to the same endpoint (e.g. from different
+ * sources) stay separate. Litres sum only metered runs (never a phantom 0 L).
  */
 @Component({
   selector: 'app-usage-totals',
@@ -34,21 +33,17 @@ import type { UsageRun } from '../../../core/models/runtime';
           <span class="text-2xl font-bold tabular-nums">{{ headline() }}</span>
           <span class="text-xs text-base-content/45">{{ secondary() }}</span>
         </div>
-        @if (endpoints().length) {
-          <ul class="mt-3 flex flex-col gap-1.5 border-t border-base-300/30 pt-3">
-            @for (e of endpoints(); track e.endpointId) {
-              <li class="flex items-center justify-between gap-2 text-xs">
-                <span class="truncate text-base-content/70">{{ e.name }}</span>
-                <span class="shrink-0 flex items-center gap-1.5 tabular-nums text-base-content/55">
-                  @if (!e.attributable) {
-                    <span class="text-warning/60" title="A shared meter feeds this endpoint, so the litres may double-count.">shared</span>
-                  }
-                  {{ e.meteredRuns > 0 ? fmtL(e.litres) : fmtD(e.duration_s) }}
-                </span>
-              </li>
-            }
-          </ul>
-        }
+        <ul class="mt-3 flex flex-col gap-1.5 border-t border-base-300/30 pt-3">
+          @for (r of routes(); track r.controller + ':' + r.route) {
+            <li class="flex items-center justify-between gap-2 text-xs">
+              <span class="truncate text-base-content/70">{{ r.name }}</span>
+              <span class="shrink-0 tabular-nums text-base-content/55">
+                {{ r.meteredRuns > 0 ? fmtL(r.litres) : fmtD(r.duration_s) }}
+                <span class="text-base-content/35">· {{ r.runs }} run{{ r.runs === 1 ? '' : 's' }}</span>
+              </span>
+            </li>
+          }
+        </ul>
       }
     </div>
   `,
@@ -56,7 +51,7 @@ import type { UsageRun } from '../../../core/models/runtime';
 export class UsageTotalsComponent {
   /** Completed runs (the store's ~30d ledger fetch). */
   readonly runs = input.required<UsageRun[]>();
-  /** The dashboard spec, for resolving a run's (controller, route) -> endpoint. */
+  /** The dashboard spec, for resolving a run's (controller, route) -> route label. */
   readonly spec = input.required<DashboardSpec>();
 
   /** Selected window in hours (default 7d). Capped at 30d by the span presets, which
@@ -100,19 +95,11 @@ export class UsageTotalsComponent {
     return t.metered > 0 ? `${runs} · ${this.fmtD(t.duration)}` : runs;
   });
 
-  protected endpoints = computed(() => {
+  /** Per-route totals for the window, top 8 by litres. */
+  protected routes = computed(() => {
     const spec = this.spec();
-    // Resolve each (controller, route) once — findRoute is a linear scan.
-    const cache = new Map<string, ResolvedEndpoint | undefined>();
-    return rollupUsageByEndpoint(this.filtered(), (controller, route) => {
-      const key = `${controller}:${route}`;
-      if (cache.has(key)) return cache.get(key);
-      const rc = findRoute(spec, controller, route);
-      const ep: ResolvedEndpoint | undefined = rc?.caps
-        ? { id: rc.caps.endpointId, name: rc.destination ?? rc.caps.endpointId, attributable: rc.caps.volumeAttributable }
-        : undefined;
-      cache.set(key, ep);
-      return ep;
-    }).slice(0, 5);
+    return rollupUsageByRoute(this.filtered(), (controller, route) =>
+      routeLabel(findRoute(spec, controller, route), route),
+    ).slice(0, 8);
   });
 }

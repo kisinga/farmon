@@ -1,6 +1,6 @@
 import type { Manifest } from '@core';
 import { nodesByKind, nodesWithFlag, allNodes, pumpSwitchId, routeVolumeEligible, routeSetVersion } from '@core';
-import { valveCoverId, valveTravelTimeId, pressureSensorLevelId, flowSensorId, flowTotalId, parseRouteKey } from '@core';
+import { valveCoverId, valveTravelTimeId, pressureSensorLevelId, flowSensorId, flowTotalId } from '@core';
 
 // ---------------------------------------------------------------------------
 // Route context — pure computation, platform-agnostic
@@ -54,21 +54,18 @@ export function buildRouteContext(m: Manifest): RouteContext {
   const flowWatchdogMs = m.timing.flow_watchdog * 1000;
   const flowConfirmMs = m.timing.flow_confirm * 1000;
 
-  // Compute conflict masks — routes conflict when they share a flow sensor
-  // but go to different destinations (ambiguous readings).
-  // Same sensor + same destination = safe to run concurrently.
-  const destOf = (r: typeof m.routes[number]) => parseRouteKey(r.key).destination;
+  // Compute conflict masks — routes that share a flow sensor are mutually
+  // exclusive: one meter measures one pipe, so two routes can never push flow
+  // through it at once (a concurrent second flow would make each route's delivered
+  // volume ambiguous). Destination is irrelevant — sharing the meter is the
+  // conflict. This is what lets every metered route offer a volume target.
   const conflictMasks = m.routes.map((r, i) => {
     let mask = 0;
-    // Unmonitored routes (no flow sensor) never conflict — there's no
-    // ambiguous reading to worry about.
+    // Unmonitored routes (no flow sensor) never conflict — nothing to share.
     if (!r.flow_sensor) return mask;
     for (let j = 0; j < m.routes.length; j++) {
       if (i === j) continue;
-      if (!m.routes[j].flow_sensor) continue;
-      if (r.flow_sensor === m.routes[j].flow_sensor && destOf(r) !== destOf(m.routes[j])) {
-        mask |= (1 << j);
-      }
+      if (m.routes[j].flow_sensor === r.flow_sensor) mask |= (1 << j);
     }
     return mask;
   });
@@ -169,7 +166,7 @@ export function generateMajiControlConfig(m: Manifest): string {
       `runtime_level_ok: ${r.runtime_level_ok ? 'true' : 'false'}`, `name: ${JSON.stringify(r.name)}`,
       `max_runtime_id: route_${i}_max_runtime`, `target_duration_id: route_${i}_target_duration_s`,
     ];
-    if (routeVolumeEligible(r, m.routes)) f.push(`target_volume_id: route_${i}_target_volume_l`);
+    if (routeVolumeEligible(r)) f.push(`target_volume_id: route_${i}_target_volume_l`);
     if (r.source_has_level) f.push(`source_min_id: route_${i}_source_min_pct`);
     if (r.dest_has_level) f.push(`dest_max_id: route_${i}_dest_max_pct`);
     if (r.flow_sensor) f.push(`flow_stall_id: route_${i}_flow_stall_enable`);

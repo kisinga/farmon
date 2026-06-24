@@ -88,7 +88,7 @@ export class SiteModel {
     const lookup: NodeLookup = (id) => byId.get(id);
 
     const models = routes.map((route) => {
-      const caps = routeCapabilities(route, lookup, routes);
+      const caps = routeCapabilities(route, lookup);
       const sourceNode = byId.get(route.source);
       const endpointNode = byId.get(route.destination);
       // Both endpoints come from graph nodes, which are built from topology.nodes,

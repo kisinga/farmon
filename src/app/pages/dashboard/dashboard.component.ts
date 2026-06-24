@@ -248,13 +248,6 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
 
         @if (note()) { <div class="text-xs text-base-content/50 mb-3">{{ note() }}</div> }
 
-        @if (showController()) {
-          <section class="mb-6">
-            <h2 class="section-label mb-3">Usage</h2>
-            <app-usage-totals [runs]="store.runs()" [spec]="store.spec()" />
-          </section>
-        }
-
         <!-- Body: the remaining card sections (flow / pressure / activity). The
              valve + tank-level sections live in the System view above (as the map,
              or as cards); only when there's no topology do they fall through here. -->
@@ -286,6 +279,13 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
                 }
               </div>
             </section>
+        }
+
+        @if (showController()) {
+          <section class="mb-6">
+            <h2 class="section-label mb-3">Water usage</h2>
+            <app-usage-totals [runs]="store.runs()" [spec]="store.spec()" />
+          </section>
         }
       }
     </div>
