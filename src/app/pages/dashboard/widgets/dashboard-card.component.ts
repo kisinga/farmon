@@ -198,6 +198,7 @@ function fmt(n: number): string {
                     <div class="min-w-0 flex-1 flex items-center gap-2 text-xs py-1 {{ last ? '' : 'pb-2' }}">
                       <span class="truncate {{ it.ok === false ? 'text-error/90' : 'text-base-content/80' }}">{{ it.label }}</span>
                       @if (it.token) { <span class="shrink-0 {{ tokenClass(it.token) }}">{{ pretty(it.token) }}</span> }
+                      @if (it.metrics) { <span class="shrink-0 text-base-content/55 tabular-nums">· {{ it.metrics }}</span> }
                       @if (it.detail) { <span class="shrink-0 text-base-content/35 truncate hidden sm:inline">· {{ pretty(it.detail) }}</span> }
                       <span class="ml-auto shrink-0 flex items-center gap-2">
                         @if (actorText(it); as at) {

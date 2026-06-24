@@ -258,9 +258,19 @@ export class AutomationsManagerComponent {
   /** Any per-route tunable exists (drives the "Route defaults" disclosure). */
   protected hasRouteTuning = computed(() => this.dash.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));
   protected selectedRoute = computed(() => this.routes().find((r) => r.routeKey === this.draft()?.route_key));
-  protected overrideFields = computed(() =>
-    RUN_TARGET_FIELDS.filter((f) => !f.monitoredOnly || this.selectedRoute()?.monitored),
-  );
+  /** Which override targets this route offers, gated by the single capability owner
+   *  so the editor agrees with the run picker and the firmware: volume only when
+   *  attributable, "stop at level" only with a destination level sensor, source-min
+   *  only with a source level sensor. Duration + max-runtime are always offered. */
+  protected overrideFields = computed(() => {
+    const caps = this.selectedRoute()?.caps;
+    return RUN_TARGET_FIELDS.filter((f) => {
+      if (f.key === 'ov_target_volume_l') return !!caps?.targets.volume.available;
+      if (f.key === 'ov_dest_max_pct') return !!caps?.targets.level.available;
+      if (f.key === 'ov_source_min_pct') return !!caps?.sourceHasLevel;
+      return true;
+    });
+  });
   /** Display-unit max for a target field, capped at the selected route's tank capacity
    *  (the same runTargetMax the run picker uses, so the two surfaces never disagree). */
   protected targetMax(f: RunTargetField): number {

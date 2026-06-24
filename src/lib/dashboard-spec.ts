@@ -17,7 +17,8 @@ import {
   type StateMeaning, type TelemetryRole,
 } from './codegen-ids';
 import { collectTelemetryChannels, type TelemetryChannel } from './telemetry-channels';
-import { collectTunableNumbers, routeVolumeEligible, canStopOnFull, type TunableNumber } from './tunable-numbers';
+import { collectTunableNumbers, type TunableNumber } from './tunable-numbers';
+import { manifestRouteCapabilities, type RouteCapabilities } from './route-capabilities';
 import { getPressureSensorIds } from './pressure-sensor-shared';
 import { topologyToManifestForController } from './topology-to-manifest';
 import { buildGraph } from './graph/topology-graph';
@@ -58,14 +59,17 @@ export interface RouteControl {
   /** Telemetry sensor id of the route's primary flow sensor, for a live L/min
    *  readout. Undefined for unmonitored routes (no flow sensor). */
   flowSensor?: string;
-  /** A volume target is offerable on a manual run (monitored + no sibling sharing
-   *  the flow sensor). Mirrors `routeVolumeEligible` — the run picker gates on it. */
+  /** A volume target is offerable on a manual run (derived from {@link caps}). */
   volumeEligible?: boolean;
-  /** A "stop at tank X%" target is offerable (the destination tank is level-monitored). */
+  /** A "stop at tank X%" target is offerable (derived from {@link caps}). */
   levelTarget?: boolean;
-  /** A plain start will actually stop on "full" (a float valve + flow sensor, or a
-   *  pump-safe destination level sensor). Drives the picker's default-run hint. */
+  /** A plain start will actually stop on "full". Drives the picker's default-run
+   *  hint (derived from {@link caps}). */
   canStopOnFull?: boolean;
+  /** The full capability view from the single owner (runnable / trackable / targets
+   *  with reasons / stall disposition). `volumeEligible`/`levelTarget`/`canStopOnFull`
+   *  above are derived from this; new consumers should read `caps` directly. */
+  caps?: RouteCapabilities;
   /** Capacity (litres) of the destination tank, when the dest is a level-monitored
    *  tank. Lets the run picker derive volume chips (25/50/100% of the tank) instead
    *  of static values. Undefined for non-tank endpoints. */
@@ -313,6 +317,7 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
         // between the same endpoints (different valves) stay distinct — endpoint
         // reachability would conflate them and light up the wrong branch.
         const pipeIds = pipesAlongPath(tg, seq);
+        const caps = manifestRouteCapabilities(r, manifest.routes);
         return {
           routeId: i,
           name: r.name || r.key,
@@ -320,9 +325,10 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
           destination: destId ? nodeName.get(destId) ?? destId : undefined,
           crossesPump: r.crossesPump,
           flowSensor: r.flow_sensor ? flowSensorByNode.get(r.flow_sensor) : undefined,
-          volumeEligible: routeVolumeEligible(r, manifest.routes),
-          levelTarget: r.dest_has_level,
-          canStopOnFull: canStopOnFull(r),
+          volumeEligible: caps.targets.volume.available,
+          levelTarget: caps.targets.level.available,
+          canStopOnFull: caps.canStopOnFull,
+          caps,
           destCapacityL: r.destination ? nodeCapacity.get(r.destination) : undefined,
           destLevelSensor: r.destination ? levelSensorByNode.get(r.destination) : undefined,
           pathNodeIds: seq,

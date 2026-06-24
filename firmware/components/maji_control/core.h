@@ -75,7 +75,7 @@ struct RouteSlot {
   int fault_code{0};
   int stop_reason{0};
   bool flow_confirmed{false};
-  bool tank_full_detected{false};
+  bool flow_stall_detected{false};  // flow confirmed then ceased; reason resolved by dest at stop
   float volume_at_start{0.0f};
   uint8_t override_mask{0};
   uint8_t ov_source_min_pct{0};
@@ -180,6 +180,7 @@ enum Fault { FAULT_NONE = 0, FAULT_NO_FLOW = 1, FAULT_MAX_RUNTIME = 2, FAULT_CON
 enum StopReason {
   STOP_NONE = 0, STOP_MANUAL = 1, STOP_TANK_FULL = 2, STOP_NO_FLOW = 3, STOP_MAX_RUNTIME = 4,
   STOP_CONTROL_LOST = 5, STOP_SOURCE_LOW = 6, STOP_VOLUME_REACHED = 7, STOP_DURATION_REACHED = 8,
+  STOP_FLOW_STALLED = 9,  // flow ceased on an open (non-tank) endpoint: clean stop, warning tier
 };
 static constexpr int FAULT_TO_STOP_OFFSET = 2;
 

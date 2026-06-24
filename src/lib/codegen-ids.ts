@@ -541,10 +541,11 @@ export const FAULT_TOKENS = [
   'NONE', 'NO_FLOW', 'MAX_RUNTIME', 'CONTROL_LOST',
 ] as const;
 
-/** Stop reason, indexed by the firmware's `stop_reason` (0..8). */
+/** Stop reason, indexed by the firmware's `stop_reason` (0..9). APPEND-ONLY: the
+ *  index is the wire value, mirrored to enum StopReason in core.h. */
 export const STOP_REASON_TOKENS = [
   'NONE', 'MANUAL', 'TANK_FULL', 'NO_FLOW', 'MAX_RUNTIME', 'CONTROL_LOST', 'SOURCE_LOW',
-  'VOLUME_REACHED', 'DURATION_REACHED',
+  'VOLUME_REACHED', 'DURATION_REACHED', 'FLOW_STALLED',
 ] as const;
 
 export type SystemStateToken = (typeof SYSTEM_STATE_TOKENS)[number];
@@ -576,6 +577,10 @@ export const STOP_REASON_MEANINGS: Record<StopReasonToken, StateMeaning> = {
   SOURCE_LOW:       { label: 'Source tank low',       kind: 'warn' },
   VOLUME_REACHED:   { label: 'Target volume reached', kind: 'normal' },
   DURATION_REACHED: { label: 'Timed run complete',    kind: 'normal' },
+  // Flow confirmed then ceased on a route with no destination tank (an open
+  // endpoint that can't be "full"): a clean stop, but flagged as a warning since a
+  // flow drop there is loss-of-flow, not a completion. See route-capabilities.ts.
+  FLOW_STALLED:     { label: 'Flow stopped',          kind: 'warn' },
 };
 
 /**

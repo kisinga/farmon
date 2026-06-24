@@ -295,6 +295,9 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			endL := r.GetFloat("end_litres")
 			epoch := int64(r.GetInt("epoch"))
 			route := r.GetInt("route")
+			// This per-run shape is the UsageRun contract; the dashboard's live feed
+			// builds the SAME shape directly from the runs collection (toRun in
+			// src/app/core/services/realtime.service.ts). Keep the two in sync.
 			item := map[string]any{
 				"run_id":      r.GetString("run_id"),
 				"controller":  r.GetString("controller"),

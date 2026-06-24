@@ -20,6 +20,7 @@ import {
 } from './codegen-ids';
 import { pressureSensorHaNames } from './pressure-sensor-shared';
 import { deriveTankCalibration } from './units';
+import { manifestRouteCapabilities } from './route-capabilities';
 
 export type TunableScope = 'controller' | 'route' | 'node';
 /** `calibration` = install-time hardware commissioning (pressure-sensor anchors —
@@ -62,31 +63,26 @@ export interface TunableNumber {
 const SYS = SYSTEM_ENTITY_NAMES;
 
 /**
- * Whether a route may expose a volume target. True only when it's monitored AND
- * no other route can run concurrently on the same flow sensor — i.e. no sibling
- * shares both the flow sensor and the destination. Different-destination siblings
- * are already mutually exclusive via the firmware conflict mask, so they never
- * read the sensor at the same time; same-destination siblings can, which would
- * make the per-route volume delta double-count. Duration targets have no such
- * constraint (they don't read a sensor). Used by both the tunable enumeration and
- * the YAML emission so the two never disagree (drift-guard).
+ * Whether the firmware should expose a volume-target number for a route: it must be
+ * runnable (has an actuator), monitored, and not share its meter with a concurrent
+ * sibling to the same endpoint. Delegates to the single capability owner's
+ * `targets.volume.available`, so the emitted entity, this enumeration, and the
+ * dashboard run picker can never disagree (drift-guard) — and a non-runnable metered
+ * pipe no longer gets a dead volume entity. The owner keys on the real endpoint node,
+ * fixing the prior `destination ?? ''` collapse that hid volume on metered non-tank routes.
  */
 export function routeVolumeEligible(r: Manifest['routes'][number], routes: Manifest['routes']): boolean {
-  if (!r.monitored || !r.flow_sensor) return false;
-  return !routes.some((o) =>
-    o.key !== r.key && o.flow_sensor === r.flow_sensor && (o.destination ?? '') === (r.destination ?? ''),
-  );
+  return manifestRouteCapabilities(r, routes).targets.volume.available;
 }
 
 /**
- * Whether a route can detect a full destination tank and stop cleanly, by either
- * method the firmware safety monitor supports: flow-stall (a flow sensor plus a
- * destination float valve that throttles inflow shut when full), OR a destination
- * level sensor that stays reliable while the pump runs. Single owner for the
- * flow-stall default, the full-detection lint rule, and the run UI so they agree.
+ * Whether a route can detect a full destination tank and stop cleanly (flow-stall
+ * against a float valve, OR a pump-reliable destination level sensor). Delegates to
+ * the single capability owner so the flow-stall default, the full-detection lint
+ * rule, and the run UI can never disagree.
  */
 export function canStopOnFull(r: Manifest['routes'][number]): boolean {
-  return (!!r.flow_sensor && r.dest_has_float_valve) || (r.dest_has_level && r.runtime_level_ok);
+  return manifestRouteCapabilities(r, []).canStopOnFull;
 }
 
 /** Enumerate every runtime-tunable number a controller exposes, in a stable order

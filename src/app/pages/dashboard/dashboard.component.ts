@@ -10,6 +10,7 @@ import { CommandLifecycleStore } from './command-lifecycle.store';
 import { runProgress, type RunProgress } from './run-progress';
 import { DashboardCardComponent } from './widgets/dashboard-card.component';
 import { RouteCardComponent } from './widgets/route-card.component';
+import { UsageTotalsComponent } from './widgets/usage-totals.component';
 import { SiteControlsComponent } from './widgets/site-controls.component';
 import { ControllerHealthComponent } from './widgets/controller-health.component';
 import { LiveMapComponent } from './canvas/live-map.component';
@@ -30,7 +31,7 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [NgTemplateOutlet, DashboardCardComponent, RouteCardComponent, SiteControlsComponent, ControllerHealthComponent, LiveMapComponent],
+  imports: [NgTemplateOutlet, DashboardCardComponent, RouteCardComponent, UsageTotalsComponent, SiteControlsComponent, ControllerHealthComponent, LiveMapComponent],
   providers: [DashboardStore, TelemetryStore, CommandLifecycleStore],
   host: { class: 'flex-1 overflow-auto' },
   template: `
@@ -246,6 +247,13 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
         }
 
         @if (note()) { <div class="text-xs text-base-content/50 mb-3">{{ note() }}</div> }
+
+        @if (showController()) {
+          <section class="mb-6">
+            <h2 class="section-label mb-3">Usage</h2>
+            <app-usage-totals [runs]="store.runs()" [spec]="store.spec()" />
+          </section>
+        }
 
         <!-- Body: the remaining card sections (flow / pressure / activity). The
              valve + tank-level sections live in the System view above (as the map,
@@ -605,6 +613,8 @@ export class DashboardComponent {
   /** Start/stop/fault-reset a route (the route-card emits one of these). */
   protected async routeCmd(controller: string, action: CommandAction, route: RouteControl): Promise<void> {
     if (!this.canControl()) return;
+    // A non-runnable route (no valve, no pump) can't be started — only monitored.
+    if (action === 'route_start' && route.caps && !route.caps.runnable) return;
     await this.lifecycle.dispatch(this.routeKey(controller, route.routeId), controller, action, { route });
     this.offlineNote(controller);
   }
@@ -613,6 +623,7 @@ export class DashboardComponent {
    *  level / time). Same lifecycle as a plain start, just with the target attached. */
   protected async routeRun(controller: string, stopSpec: StopSpecOverride, route: RouteControl): Promise<void> {
     if (!this.canControl()) return;
+    if (route.caps && !route.caps.runnable) return; // no actuator: not runnable
     await this.lifecycle.dispatch(this.routeKey(controller, route.routeId), controller, 'route_start', { route, stopSpec });
     this.offlineNote(controller);
   }

@@ -40,8 +40,10 @@ export interface TelemetryHistory {
   samples: TelemetryPoint[];
 }
 
-/** One run from the billing-grade usage ledger (the `/usage` facade). Both axes
- *  ride every run: `duration_s` always, `delivered_l` only when `metered`. */
+/** One completed run from the durable runs ledger, served two ways that MUST stay
+ *  in sync: the `/usage` facade (totals) and a direct `runs`-collection read (the
+ *  live feed, see `toRun` in realtime.service). Both axes ride every run:
+ *  `duration_s` always, `delivered_l` only when `metered`. */
 export interface UsageRun {
   run_id: string;
   controller: string;
@@ -51,7 +53,13 @@ export interface UsageRun {
   duration_s: number;
   stop_reason: string;
   origin: string;
+  /** Server-resolved display name of the initiator (used as-is for co-owner /
+   *  automation; an outsider becomes "Support"). */
   actor_label: string;
+  /** Raw initiator user id, resolved viewer-relatively (you / co-owner / Support)
+   *  the same way as transitions. Present on runs read live from the `runs`
+   *  collection; the `/usage` facade path leaves it undefined. */
+  actor_id?: string;
   fault: string;
   metered: boolean;
   /** Delivered litres (end - start counter). null on an unmetered, time-only run. */
@@ -73,6 +81,10 @@ export interface UsageReport {
   runs: UsageRun[];
   totals: { count: number; litres: number; duration_s: number };
   continuity: UsageContinuity[];
+  /** Server set this when the window held more runs than the cap (>100k); totals
+   *  then under-report. The dashboard window is short enough to never trip it, but
+   *  model it so a totals widget can surface a hint rather than silently under-count. */
+  truncated?: boolean;
 }
 
 /** A controller's presence row from the `controllers` collection. `online` is
@@ -170,10 +182,13 @@ export interface ConfigEventRow {
  *  row as a failure. */
 export interface ActivityItem {
   ts: string;
-  kind: 'transition' | 'command' | 'config';
+  kind: 'transition' | 'command' | 'config' | 'run';
   token: string;
   label: string;
   detail?: string;
+  /** A completed run's metrics suffix ("12 min" / "12 min · 340 L") for a kind:'run'
+   *  row: duration always, litres only when metered. */
+  metrics?: string;
   /** Resolved initiator for the chip ("you" / a name / an automation's name), the
    *  bare label without a prefix. Present for any attributed row (command or
    *  transition); absent ⇒ no chip. */

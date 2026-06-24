@@ -1,5 +1,5 @@
 import { Component, computed, input, output, signal } from '@angular/core';
-import { describeState, routeLabel, FAULT_MEANINGS, STOP_REASON_MEANINGS, RUN_TARGET_FIELDS, runTargetMax, runTargetChips, type RouteControl, type CommandPhase, type StopSpecOverride, type RunTargetField } from '@core';
+import { describeState, routeLabel, FAULT_MEANINGS, STOP_REASON_MEANINGS, RUN_TARGET_FIELDS, runTargetMax, runTargetChips, type RouteControl, type CommandPhase, type StopSpecOverride, type RunTargetField, type TargetAvailability } from '@core';
 import { phaseUi } from './command-phase';
 import { formatInitiator } from './initiator';
 import type { RunProgress } from '../run-progress';
@@ -150,19 +150,25 @@ interface RouteView {
             Stops at the first target reached.
             {{ route().canStopOnFull ? 'No target → runs until the tank is full.' : 'No target → runs until the time limit.' }}
           </p>
-          @for (f of targetFields(); track f.key) {
+          @for (row of targetRows(); track row.field.key) {
             <div class="flex items-center gap-2 flex-wrap">
-              <label class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer select-none py-0.5">
-                <input type="checkbox" class="toggle toggle-sm" [checked]="isOn(f.key)" (change)="toggleField(f.key)" />
-                <span class="text-[13px] truncate">{{ f.label }}</span>
+              <label class="flex items-center gap-2 flex-1 min-w-0 select-none py-0.5"
+                [class.cursor-pointer]="row.avail.available" [class.opacity-40]="!row.avail.available"
+                [title]="row.avail.available ? '' : (row.avail.reason ?? '')">
+                <input type="checkbox" class="toggle toggle-sm" [checked]="isOn(row.field.key)"
+                  [disabled]="!row.avail.available" (change)="toggleField(row.field.key)" />
+                <span class="text-[13px] truncate">{{ row.field.label }}</span>
+                @if (!row.avail.available && row.avail.reason) {
+                  <span class="text-[10px] text-base-content/40 truncate">· {{ row.avail.reason }}</span>
+                }
               </label>
-              @if (isOn(f.key)) {
-                <input type="number" min="0" [max]="maxFor(f)" [value]="val(f.key)" (input)="setVal(f.key, $event)"
+              @if (row.avail.available && isOn(row.field.key)) {
+                <input type="number" min="0" [max]="maxFor(row.field)" [value]="val(row.field.key)" (input)="setVal(row.field.key, $event)"
                   class="input input-sm input-bordered w-20 text-right tabular-nums" />
-                <span class="text-[10px] text-base-content/40 w-6">{{ f.unit }}</span>
+                <span class="text-[10px] text-base-content/40 w-6">{{ row.field.unit }}</span>
                 <div class="flex gap-1.5 basis-full sm:basis-auto">
-                  @for (c of chipsFor(f); track c) {
-                    <button type="button" (click)="setValDirect(f.key, c)"
+                  @for (c of chipsFor(row.field); track c) {
+                    <button type="button" (click)="setValDirect(row.field.key, c)"
                       class="px-2.5 py-1 rounded-md text-[11px] bg-base-200 hover:bg-base-300 active:bg-base-300 text-base-content/70 tabular-nums">{{ c }}</button>
                   }
                 </div>
@@ -225,7 +231,13 @@ export class RouteCardComponent {
    *  strip) emits `action` with no target and runs to the route's own stop. */
   readonly run = output<StopSpecOverride>();
 
-  protected disabled = computed(() => this.phase() === 'pending' || !this.online() || !this.controllable());
+  /** Whether this route can be commanded at all (has a valve or pump). A monitor-only
+   *  route (a flow sensor but no actuator) shows its state but no Start. Defaults to
+   *  true for pre-caps route literals. */
+  protected runnable = computed(() => this.route().caps?.runnable ?? true);
+
+  protected disabled = computed(() => this.phase() === 'pending' || !this.online() || !this.controllable()
+    || (this.view().action === 'route_start' && !this.runnable()));
 
   // --- Run-with-a-target picker (idle only). Combinable: any subset of the
   //     route's targets; the device stops at the first one reached. Same model
@@ -236,20 +248,27 @@ export class RouteCardComponent {
   /** Per-field display-unit values (minutes for duration; wire scale applied on run). */
   protected values = signal<Record<string, number>>({});
 
-  /** The run targets this route can offer: volume (metered), level (dest tank
-   *  monitored), duration (always). The other override fields are schedule-only. */
-  protected targetFields = computed<RunTargetField[]>(() => {
-    const r = this.route();
-    return RUN_TARGET_FIELDS.filter((f) => {
-      if (!f.runTarget) return false;
-      if (f.key === 'ov_target_volume_l') return !!r.volumeEligible;
-      if (f.key === 'ov_dest_max_pct') return !!r.levelTarget;
-      return true; // duration: always available
-    });
+  /** Every run target with its availability + reason (the single capability owner,
+   *  via route.caps). The picker renders unavailable targets disabled with the reason
+   *  instead of hiding them, so the operator sees *why* a target isn't offered. */
+  protected targetRows = computed<{ field: RunTargetField; avail: TargetAvailability }[]>(() => {
+    const caps = this.route().caps;
+    const availOf = (key: string): TargetAvailability => {
+      if (!caps) return { available: true }; // pre-caps literals: assume offerable
+      if (key === 'ov_target_volume_l') return caps.targets.volume;
+      if (key === 'ov_dest_max_pct') return caps.targets.level;
+      if (key === 'ov_target_duration_s') return caps.targets.duration;
+      return { available: false };
+    };
+    return RUN_TARGET_FIELDS.filter((f) => f.runTarget).map((f) => ({ field: f, avail: availOf(f.key) }));
   });
+  /** The offerable run targets (available subset) — used by the StopSpec builder
+   *  and the run summary. Derived from {@link targetRows} so they never disagree. */
+  protected targetFields = computed<RunTargetField[]>(() =>
+    this.targetRows().filter((r) => r.avail.available).map((r) => r.field));
   /** The picker is offered only while the route is idle, controllable and online. */
   protected canPick = computed(() =>
-    this.view().action === 'route_start' && this.controllable() && this.online() && this.phase() !== 'pending');
+    this.view().action === 'route_start' && this.runnable() && this.controllable() && this.online() && this.phase() !== 'pending');
 
   /** Per-route bounds for the picker: volume is capped at the tank's capacity (one
    *  owner — runTargetMax/runTargetChips — shared with the automations editor). */
@@ -349,6 +368,7 @@ export class RouteCardComponent {
     if (reason) parts.push(describeState(ROUTE_REASONS, reason).label);
     if (!this.online()) parts.push('controller offline');
     else if (!this.controllable()) parts.push('read-only');
+    else if (!this.runnable()) parts.push('no actuator — monitor only');
     else parts.push(`tap to ${v.actionLabel.toLowerCase()}`);
     return parts.join(' · ');
   });

@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import type { RecordModel, UnsubscribeFunc } from 'pocketbase';
 import type { ControllerSnapshot } from '@core';
 import { BackendService } from './backend.service';
-import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, UsageReport } from '../models/runtime';
+import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, UsageReport, UsageRun } from '../models/runtime';
 
 /** Liveness of the PocketBase realtime SSE stream. `connecting` is the idle
  *  state before anything subscribes; the dashboard banner only reacts to
@@ -112,6 +112,27 @@ export class RealtimeService {
       requestKey: `events:${siteId}`,
     });
     return res.items.map((r) => toEvent(r));
+  }
+
+  /** Most-recent completed runs for a site (newest first), read straight from the
+   *  durable `runs` collection — lean (newest-N) and live-subscribable, unlike the
+   *  30d `/usage` facade (which the totals widget still uses for its window). */
+  async recentRuns(siteId: string, limit = 100): Promise<UsageRun[]> {
+    const res = await this.pb.collection('runs').getList(1, limit, {
+      filter: this.pb.filter('site = {:s}', { s: siteId }),
+      sort: '-started_at',
+      requestKey: `runs:${siteId}`,
+    });
+    return res.items.map((r) => toRun(r));
+  }
+
+  /** Live completed-run inserts for a site (the run record is created when the
+   *  device ships it, so this fires exactly when a run lands — no clock-skew join). */
+  async subscribeRuns(siteId: string, cb: (row: UsageRun) => void): Promise<UnsubscribeFunc> {
+    this.wireConnection();
+    return this.pb.collection('runs').subscribe('*', (e) => {
+      if (e.action === 'create') cb(toRun(e.record));
+    }, { filter: this.pb.filter('site = {:s}', { s: siteId }) });
   }
 
   /** Controller presence rows (online + last_seen) for a site. */
@@ -358,6 +379,33 @@ function toEvent(r: RecordModel): StateEventRow {
     origin: r['origin'] || undefined,
     actorId: r['actor'] || undefined,
     actorName: r['actor_label'] || undefined,
+  };
+}
+
+/** Map a `runs` record to a UsageRun. This is the SECOND producer of UsageRun and
+ *  must stay in sync with the `/usage` facade (maji-server/internal/api/routes.go):
+ *  same field names and the same delivered = end - start (metered only) rule. It
+ *  additionally carries the raw initiator id (`actor`) as `actor_id` so the live
+ *  feed can resolve who-ran-it viewer-relatively (the facade path doesn't emit it). */
+function toRun(r: RecordModel): UsageRun {
+  const metered = !!r['metered'];
+  const start = Number(r['start_litres']) || 0;
+  const end = Number(r['end_litres']) || 0;
+  return {
+    run_id: r['run_id'] ?? '',
+    controller: r['controller'] ?? '',
+    route: Number(r['route']) || 0,
+    started_at: r['started_at'] ?? '',
+    ended_at: r['ended_at'] ?? '',
+    duration_s: Number(r['duration_s']) || 0,
+    stop_reason: r['stop_reason'] ?? '',
+    origin: r['origin'] ?? '',
+    actor_label: r['actor_label'] ?? '',
+    actor_id: r['actor'] || undefined,
+    fault: r['fault'] ?? '',
+    metered,
+    // Clamp: a counter rollback / out-of-order re-assert could give end < start.
+    delivered_l: metered ? Math.max(0, end - start) : null,
   };
 }
 

@@ -43,10 +43,10 @@ export interface RunTargetField {
   scale?: number;
   /** Seeded quick-pick values (display units) for the run picker. */
   chips?: number[];
-  /** Hide on routes with no flow sensor (a volume target needs metering). */
-  monitoredOnly?: boolean;
   /** Offered in the dashboard run picker as a "how this run ends" target. The
-   *  others (max runtime, source min) are schedule-only safety gates. */
+   *  others (max runtime, source min) are schedule-only safety gates. Which run
+   *  targets a given route actually offers is decided by the capability owner
+   *  ([route-capabilities.ts]), not a flag here. */
   runTarget?: boolean;
 }
 
@@ -82,7 +82,7 @@ export function runTargetChips(field: RunTargetField, ctx?: RouteTargetCtx): num
  *  safety gates). Bits ← OVERRIDE_BITS (pinned to the firmware enum by
  *  test/override-bits.test.ts); bounds mirror tunable-numbers.ts (in display units). */
 export const RUN_TARGET_FIELDS: RunTargetField[] = [
-  { key: 'ov_target_volume_l',   bit: OVERRIDE_BITS.volume,      label: 'Target volume', unit: 'L',   min: 0, max: 100000, monitoredOnly: true, runTarget: true, chips: [100, 500, 1000] },
+  { key: 'ov_target_volume_l',   bit: OVERRIDE_BITS.volume,      label: 'Target volume', unit: 'L',   min: 0, max: 100000, runTarget: true, chips: [100, 500, 1000] },
   { key: 'ov_target_duration_s', bit: OVERRIDE_BITS.duration,    label: 'Run duration',  unit: 'min', min: 0, max: 120, scale: 60, runTarget: true, chips: [5, 15, 30] },
   { key: 'ov_dest_max_pct',      bit: OVERRIDE_BITS.dest_max,    label: 'Stop at level', unit: '%',   min: 0, max: 100, runTarget: true, chips: [50, 80, 100] },
   { key: 'ov_max_runtime_min',   bit: OVERRIDE_BITS.max_runtime, label: 'Max runtime',   unit: 'min', min: 1, max: 120 },

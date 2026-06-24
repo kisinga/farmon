@@ -236,6 +236,10 @@ void activate_slot(ControlState &cs, int slot, int route_id, const StopSpec &spe
 int try_route_start(ControlState &cs, const Inputs &in, int route_id, const std::string &command_id,
                     const StopSpec &spec, uint8_t origin, const std::string &actor) {
   if (route_id < 0 || route_id >= (int) cs.routes.size()) return 2;
+  // No actuator on the path (no valve, no pump): the route is not runnable — a start
+  // would activate a slot that actuates nothing. Refuse it (REJECTED). Defense in
+  // depth: the app also hides Start for non-runnable routes. See route-capabilities.ts.
+  if (cs.routes[route_id].valve_mask == 0 && cs.routes[route_id].pump_idx == 0xFF) return 2;
   if (is_duplicate_command(cs, command_id, in.now_ms)) return 0;  // idempotent success
   if (find_slot_by_route(cs, route_id) != -1) return 2;           // already active
 
@@ -338,7 +342,7 @@ WatchdogResult tick_2s(ControlState &cs, const Inputs &in) {
         uint32_t age = now - cs.slots[s].last_flow_time;
         if (age > in.flow_watchdog_ms) {
           if (cs.slots[s].flow_confirmed) {
-            if (tun(in, rid).flow_stall_enable) cs.slots[s].tank_full_detected = true;
+            if (tun(in, rid).flow_stall_enable) cs.slots[s].flow_stall_detected = true;
           } else {
             cs.slots[s].fault_code = FAULT_NO_FLOW;  // dry-run protection (always on)
           }
@@ -411,12 +415,16 @@ WatchdogResult tick_2s(ControlState &cs, const Inputs &in) {
       cs.slots[s].stop_time = now;
     }
 
-    // Tank full -> clean stop.
-    if (cs.slots[s].tank_full_detected) {
-      cs.slots[s].stop_reason = STOP_TANK_FULL;
+    // Flow confirmed then ceased -> clean stop, reason by destination. A tank dest
+    // reads as "full" (a float valve throttled the inlet, or it hit level); an open
+    // (non-tank) endpoint, dest_tank == 0xFF, has no "full", so the stall is loss of
+    // flow -> FLOW_STALLED (a warning, still a clean stop). Pump-independent: a
+    // gravity route classifies the same way. See route-capabilities.ts.
+    if (cs.slots[s].flow_stall_detected) {
+      cs.slots[s].stop_reason = (r.dest_tank == 0xFF) ? STOP_FLOW_STALLED : STOP_TANK_FULL;
       cs.slots[s].state = ST_STOPPING;
       cs.slots[s].stop_time = now;
-      cs.slots[s].tank_full_detected = false;
+      cs.slots[s].flow_stall_detected = false;
     }
   }
   return res;

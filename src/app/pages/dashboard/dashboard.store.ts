@@ -1,9 +1,9 @@
 import { Injectable, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
-import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, bucketReading, channelPriority, type DashboardSpec, type DashboardWidget, type NodeRuntime, type RouteLive } from '@core';
+import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, bucketReading, channelPriority, formatDurationS, formatLitres, type DashboardSpec, type DashboardWidget, type NodeRuntime, type RouteLive } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { AuthStore } from '../../core/services/auth.store';
-import type { ShadowRow, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, ActivityItem } from '../../core/models/runtime';
+import type { ShadowRow, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, ActivityItem, UsageRun } from '../../core/models/runtime';
 import { resolveOfflineMs } from '../../core/models/alerts';
 import { resolveInitiator, type InitiatorCtx } from './widgets/initiator';
 
@@ -11,6 +11,11 @@ import { resolveInitiator, type InitiatorCtx } from './widgets/initiator';
  *  read, so this just bounds the map against a long-open page (the device ring is
  *  4 deep, so far fewer are ever live at once). */
 const MAX_TRACKED_OUTCOMES = 100;
+
+/** How far back the totals widget's run fetch reaches. The widget re-windows
+ *  client-side up to this span (the span presets cap at 30d), so every range is
+ *  derivable from one fetch. The activity FEED uses recentRuns (newest-N), not this. */
+const USAGE_TOTALS_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /** Site-wide telemetry timing the dashboard needs at runtime (from topology). */
 export interface SiteTiming {
@@ -57,6 +62,14 @@ export class DashboardStore implements OnDestroy {
   /** Configuration changes (automation create/edit/enable/disable/delete) — the
    *  Activity timeline's third source. Append-only; capped newest-first on update. */
   readonly configEvents = signal<ConfigEventRow[]>([]);
+  /** Completed runs over a 30d window from the `/usage` facade — the source for the
+   *  timeframe-totals widget (it re-windows client-side). Refreshed on resync. */
+  readonly runs = signal<UsageRun[]>([]);
+  /** Newest completed runs from the live `runs` collection — the Activity timeline's
+   *  fourth source. Lean (newest-N) + live (subscribeRuns), so a finished run appears
+   *  at once without the 30d over-fetch, and each carries its own duration + volume +
+   *  initiator id (no fragile event<->run join). */
+  readonly feedRuns = signal<UsageRun[]>([]);
   /** Presence rows keyed by controller id (== device_id). */
   readonly controllers = signal<Map<string, ControllerRow>>(new Map());
   /** Site-wide telemetry timing (from topology) — the command lifecycle derives a
@@ -90,17 +103,24 @@ export class DashboardStore implements OnDestroy {
     });
   }
 
-  /** Pull the current shadow, recent transitions, and presence for a site. Runs
-   *  on init and again on every realtime reconnect to close the offline gap. The
-   *  three reads are independent, so they fire concurrently — one round-trip of
-   *  latency instead of three (it adds up through the Cloudflare proxy). */
+  /** Pull the current shadow, recent transitions/commands/configs, presence, and
+   *  runs (a 30d window for the totals widget + the newest-N for the feed) for a
+   *  site. Runs on init and on every realtime reconnect to close the offline gap.
+   *  The reads are independent, so they fire concurrently — one round-trip of
+   *  latency (it adds up through the Cloudflare proxy). */
   private async resync(siteId: string): Promise<void> {
-    const [{ rows, outcomes }, evts, ctrls, cmds, cfgs] = await Promise.all([
+    const to = new Date();
+    const from = new Date(to.getTime() - USAGE_TOTALS_WINDOW_MS);
+    const [{ rows, outcomes }, evts, ctrls, cmds, cfgs, runs, feedRuns] = await Promise.all([
       this.realtime.latest(siteId),
       this.realtime.recentEvents(siteId, 100),
       this.realtime.controllers(siteId),
       this.realtime.recentCommands(siteId, 100),
       this.realtime.recentConfigEvents(siteId, 100),
+      // 30d window for the totals widget; best-effort (a failure just empties totals).
+      this.realtime.usage(siteId, from, to).then((r) => r.runs).catch(() => [] as UsageRun[]),
+      // Newest-N for the feed's run rows (live-topped-up by subscribeRuns below).
+      this.realtime.recentRuns(siteId, 100).catch(() => [] as UsageRun[]),
     ]);
     const map = new Map<string, ShadowRow>();
     for (const r of rows) map.set(`${r.controller}/${r.sensor}`, r);
@@ -110,6 +130,8 @@ export class DashboardStore implements OnDestroy {
     this.controllers.set(new Map(ctrls.map((c) => [c.device_id, c])));
     this.commands.set(new Map(cmds.map((c) => [c.id, c])));
     this.configEvents.set(cfgs);
+    this.runs.set(runs);
+    this.feedRuns.set(feedRuns);
   }
 
   async init(siteId: string, spec: DashboardSpec, timing?: SiteTiming, owners: string[] = [], people: { id: string; name?: string; email?: string }[] = []): Promise<void> {
@@ -162,6 +184,21 @@ export class DashboardStore implements OnDestroy {
           this.configEvents.update((list) => [row, ...list].slice(0, 200));
         }),
       );
+      try {
+        // A run record is created when the device ships it, so this fires exactly
+        // when a completed run lands — live feed rows, no clock-skew join needed.
+        // Guarded: if the runs subscription can't open, the feed simply isn't live
+        // (recentRuns still backfills on resync) rather than failing the dashboard.
+        this.unsubs.push(
+          await this.realtime.subscribeRuns(siteId, (row) => {
+            // Dedupe by run_id: a create landing during a resync round-trip is also
+            // in the refetched list, so drop any prior copy before prepending.
+            this.feedRuns.update((list) => [row, ...list.filter((r) => r.run_id !== row.run_id)].slice(0, 200));
+          }),
+        );
+      } catch (err) {
+        console.warn('[dashboard] runs subscription unavailable; feed runs refresh on resync only', err);
+      }
 
       this.clock = window.setInterval(() => this.now.set(Date.now()), 15_000);
     } catch (err) {
@@ -265,7 +302,10 @@ export class DashboardStore implements OnDestroy {
     const ctx = this.viewerCtx();
     const items: ActivityItem[] = [];
     for (const e of this.events()) {
-      if (e.controller === controller) items.push(eventToActivity(e, routeName, ctx));
+      // Route completions come from the runs ledger below (carrying their own
+      // duration + volume); only controller-level transitions (route < 0) have no run
+      // row to stand in for them, so keep just those here.
+      if (e.controller === controller && e.route < 0) items.push(eventToActivity(e, routeName, ctx));
     }
     for (const c of this.commands().values()) {
       if (c.controller !== controller) continue;
@@ -280,6 +320,9 @@ export class DashboardStore implements OnDestroy {
     }
     for (const cfg of this.configEvents()) {
       if (cfg.controller === controller) items.push(configEventToActivity(cfg, ctx));
+    }
+    for (const r of this.feedRuns()) {
+      if (r.controller === controller) items.push(runToActivity(r, routeName, ctx));
     }
     // Newest first, by parsed epoch — commands and transitions arrive as ISO strings
     // but with differing precision, so a raw string compare mis-orders them (and
@@ -381,6 +424,31 @@ function eventToActivity(e: StateEventRow, routeName: (routeId: number) => strin
     origin: e.origin,
     bySupport: who.support,
     actorTitle: who.title || undefined,
+  };
+}
+
+/** A completed run (from the durable usage ledger) → an Activity row. Unlike a
+ *  transition it carries its OWN duration + delivered volume (the `metrics` suffix),
+ *  so no fragile join to a transition is needed: the run record is the event. The
+ *  badge is the fault (if any) else the stop reason; litres show only when metered;
+ *  `actor_label` is the server-resolved initiator. Row time is the completion. */
+function runToActivity(r: UsageRun, routeName: (routeId: number) => string, ctx: InitiatorCtx): ActivityItem {
+  const litres = formatLitres(r.delivered_l);
+  const duration = formatDurationS(r.duration_s);
+  // Resolve who ran it through the SAME rule as transitions/commands (you /
+  // co-owner / Support), now that the run carries the initiator id (actor_id).
+  const who = resolveInitiator({ origin: r.origin, actorId: r.actor_id, actorName: r.actor_label }, ctx);
+  return {
+    ts: r.ended_at || r.started_at,
+    kind: 'run',
+    token: r.fault || r.stop_reason || '',
+    label: routeName(r.route),
+    metrics: litres ? `${duration} · ${litres}` : duration,
+    actor: who.label || undefined,
+    origin: r.origin,
+    bySupport: who.support,
+    actorTitle: who.title || undefined,
+    ok: !r.fault,
   };
 }
 

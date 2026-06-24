@@ -9,6 +9,7 @@
 import type { SiteTopology } from './topology.types';
 import { topologyToManifestForController } from './topology-to-manifest';
 import { routeSetVersion } from './automation-wire';
+import { manifestRouteCapabilities, type RouteCapabilities } from './route-capabilities';
 import type { StopSpecOverride } from './run-targets';
 
 /** A route an automation can target, with everything the UI + the row need. */
@@ -25,6 +26,10 @@ export interface AutomatableRoute {
   /** Destination tank capacity (litres), to cap the volume target at the tank — the
    *  same bound the run picker uses (runTargetMax). Undefined for non-tank dests. */
   destCapacityL?: number;
+  /** The full capability view from the single owner — the editor gates which
+   *  override targets it offers on `caps.targets` so it agrees with the run picker
+   *  and the firmware (volume only when attributable, level only with a sensor). */
+  caps: RouteCapabilities;
 }
 
 /** Every route across every controller, each resolved to its owner + index + version. */
@@ -39,6 +44,8 @@ export function listAutomatableRoutes(topology: SiteTopology): AutomatableRoute[
     }
     const version = routeSetVersion(m);
     m.routes.forEach((r, i) => {
+      const caps = manifestRouteCapabilities(r, m.routes);
+      if (!caps.runnable) return; // not runnable (no actuator): not automatable
       const destNode = r.destination ? topology.nodes.find((n) => n.id === r.destination) : undefined;
       out.push({
         controllerId: c.id,
@@ -49,6 +56,7 @@ export function listAutomatableRoutes(topology: SiteTopology): AutomatableRoute[
         monitored: r.monitored,
         hasLevelSource: r.source_has_level,
         destCapacityL: (destNode as { capacity_l?: number } | undefined)?.capacity_l,
+        caps,
       });
     });
   }
