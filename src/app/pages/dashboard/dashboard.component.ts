@@ -34,6 +34,13 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
   imports: [NgTemplateOutlet, DashboardCardComponent, RouteCardComponent, UsageTotalsComponent, SiteControlsComponent, ControllerHealthComponent, LiveMapComponent],
   providers: [DashboardStore, TelemetryStore, CommandLifecycleStore],
   host: { class: 'flex-1 overflow-auto' },
+  styles: [`
+    /* Flow-grid reveal: compositor-only (opacity + transform) so it costs nothing to
+       paint, replays whenever @if re-inserts the grid. No JS, no layout thrash. */
+    @keyframes dash-reveal { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: translateY(0) } }
+    .dash-reveal { animation: dash-reveal 420ms cubic-bezier(0.16, 1, 0.3, 1) }
+    @media (prefers-reduced-motion: reduce) { .dash-reveal { animation: none } }
+  `],
   template: `
     <div class="max-w-6xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6">
       <!-- Top bar: site name + online count on the left; on the right the health
@@ -288,8 +295,26 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
              layout and the Activity log in the Reporting zone below. -->
         <ng-template #cardSection let-section>
           <section class="mb-6">
-            <h2 class="section-label mb-3">{{ section.label }}</h2>
-            <div [class]="gridFor(section.id, section.widgets.length)">
+            <!-- Flow trends collapse by default: the Water-usage chart below is the headline
+                 graph; flow rate is on-demand detail. Section order is unchanged — this only
+                 hides the Flow grid behind its header toggle (same idiom as monitor routes). -->
+            @if (section.id === 'flow') {
+              <button type="button"
+                class="flex items-center gap-2 mb-3 w-full text-left group"
+                [attr.aria-expanded]="flowExpanded()"
+                [attr.aria-label]="(flowExpanded() ? 'Hide' : 'Show') + ' flow rate charts'"
+                [title]="flowExpanded() ? 'Hide flow rate charts' : ('Show ' + section.widgets.length + ' flow rate chart' + (section.widgets.length === 1 ? '' : 's'))"
+                (click)="toggleFlowCharts()">
+                <h2 class="section-label">{{ section.label }}</h2>
+                <span class="text-[11px] tabular-nums text-base-content/35">{{ section.widgets.length }}</span>
+                <span class="grow"></span>
+                <svg class="h-4 w-4 shrink-0 text-base-content/40 transition-transform group-hover:text-base-content/70" [class.rotate-180]="flowExpanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            } @else {
+              <h2 class="section-label mb-3">{{ section.label }}</h2>
+            }
+            @if (section.id !== 'flow' || flowExpanded()) {
+            <div [class]="gridFor(section.id, section.widgets.length) + (section.id === 'flow' ? ' dash-reveal' : '')">
               @for (w of section.widgets; track w.id) {
                 <app-dashboard-card
                   [widget]="w"
@@ -313,6 +338,7 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
                 />
               }
             </div>
+            }
           </section>
         </ng-template>
 
@@ -481,7 +507,7 @@ export class DashboardComponent {
     // header bar + its per-controller panel, so it is intentionally not a section.
     const labels: Record<string, string> = {
       levels: 'Tank levels', valves: 'Valves',
-      flow: 'Flow', pressure: 'Pressure', activity: 'Activity',
+      flow: 'Flow rate history', pressure: 'Pressure', activity: 'Activity',
     };
     const order = ['levels', 'valves', 'flow', 'pressure', 'activity'] as const;
     const byCat = new Map<string, DashboardWidget[]>();
@@ -514,6 +540,16 @@ export class DashboardComponent {
     const v = !this.showMonitorRoutes();
     this.showMonitorRoutes.set(v);
     try { localStorage.setItem(this.monitorKey(), v ? '1' : '0'); } catch { /* private mode */ }
+  }
+
+  /** Flow-rate trend charts collapse by default — the Water-usage chart is the headline
+   *  graph, flow rate is on-demand detail. Remembered per site; section order unchanged. */
+  protected flowExpanded = signal(false);
+  private flowKey(): string { return `mf:trends:flow:${this.siteId}`; }
+  protected toggleFlowCharts(): void {
+    const v = !this.flowExpanded();
+    this.flowExpanded.set(v);
+    try { localStorage.setItem(this.flowKey(), v ? '1' : '0'); } catch { /* private mode */ }
   }
   /** Monitor-only = no actuator to control (a flow meter and/or level, but no valve or
    *  pump). Missing caps (non-spec literals) default to controllable, so nothing hides
@@ -635,6 +671,7 @@ export class DashboardComponent {
     this.siteId = this.route.snapshot.paramMap.get('name') ?? '';
     if (this.siteId) {
       try { this.showMonitorRoutes.set(localStorage.getItem(this.monitorKey()) === '1'); } catch { /* private mode */ }
+      try { this.flowExpanded.set(localStorage.getItem(this.flowKey()) === '1'); } catch { /* private mode */ }
       void this.load();
     }
   }
