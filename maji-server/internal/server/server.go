@@ -74,6 +74,15 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 		// automations collection (DB is source of truth; device is a mirror).
 		automations.Register(se.App, broker.Server)
 
+		// Also re-push the set when a controller reports a new firmware version (a
+		// reflash/OTA): the device boots with an empty in-RAM automation table, and
+		// the set is otherwise published only on a DB change — so a reflash would lose
+		// automations until an operator toggled one. Wired here (not imported by the
+		// telemetry package) to avoid an import cycle. See reconcileFirmware.
+		telemetry.AutomationsRepublisher = func(app core.App, site, ctrl string) error {
+			return automations.PublishForController(app, broker.Server, site, ctrl)
+		}
+
 		// Serve the built SPA when a directory is configured. Prerendered marketing
 		// pages (/, /pricing, /features) resolve to their own index.html; every
 		// other path is an authenticated SPA route, so it falls back to the bare

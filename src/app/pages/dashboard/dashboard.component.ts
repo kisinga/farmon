@@ -129,10 +129,25 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
                  and the buttons stranded across an empty strip. Online state already
                  lives in the page-header pill, so no dot is repeated. Multi-controller
                  sites keep the dot + name + actions on each controller's row below. -->
-            <div class="flex items-center gap-2 mb-3">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
               <span class="w-1 h-3.5 rounded-full bg-primary/70 shrink-0"></span>
               <h2 class="section-label">Routes</h2>
               <span class="grow"></span>
+              @if (monitorCount() > 0 && anyRunnable()) {
+                <button type="button"
+                  class="btn btn-xs btn-ghost gap-1 px-2 text-base-content/50 hover:text-base-content"
+                  [attr.aria-expanded]="showMonitor()"
+                  [attr.aria-label]="(showMonitor() ? 'Hide' : 'Show') + ' monitor-only routes'"
+                  [title]="showMonitor() ? 'Hide monitor-only routes' : ('Show ' + monitorCount() + ' monitor-only route' + (monitorCount() === 1 ? '' : 's') + ' (no actuator to control)')"
+                  (click)="toggleMonitorRoutes()">
+                  @if (showMonitor()) {
+                    <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/></svg>
+                  } @else {
+                    <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  }
+                  <span class="tabular-nums">{{ monitorCount() }}</span>
+                </button>
+              }
               @if (soloController(); as cid) {
                 @if (canControl()) {
                   <ng-container [ngTemplateOutlet]="ctrlActions" [ngTemplateOutletContext]="{ cid }" />
@@ -142,37 +157,55 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
             @if (adminViewing() && !controlEnabled()) {
               <p class="text-[11px] text-base-content/50 -mt-2 mb-3">Viewing read-only — <button type="button" class="link link-primary font-medium" (click)="controlEnabled.set(true)">take control</button> to operate.</p>
             }
-            @for (c of store.spec().controllers; track c.controller) {
-              @if (c.routes.length) {
+            <!-- One route card, reused by the controllable grid and the revealed
+                 monitor-only grid (so their binding can't drift). -->
+            <ng-template #routeCard let-r="r" let-cid="cid">
+              <app-route-card
+                [route]="r"
+                [state]="routeState(cid, r.routeId)"
+                [flowRate]="routeFlow(cid, r)"
+                [progress]="routeProgress(cid, r)"
+                [fillMs]="fillMs()"
+                [online]="store.presence(cid).online"
+                [phase]="routePhase(cid, r.routeId)?.phase ?? null"
+                [phaseReason]="routePhase(cid, r.routeId)?.reason ?? ''"
+                [controllable]="canControl()"
+                (action)="routeCmd(cid, $event, r)"
+                (run)="routeRun(cid, $event, r)"
+              />
+            </ng-template>
+            @for (g of routeGroups(); track g.c.controller) {
+              @if (g.runnable.length || (showMonitor() && g.monitor.length)) {
                 <div class="mb-4 last:mb-0">
                   @if (showController()) {
                     <div class="flex items-center gap-2 mb-2">
-                      <span class="w-2 h-2 rounded-full shrink-0" [class]="store.presence(c.controller).online ? 'bg-success' : 'bg-base-content/30'"
-                        [title]="store.presence(c.controller).online ? 'Online' : ('Offline · ' + lastSeenText(c.controller))"></span>
-                      <span class="text-xs font-semibold text-base-content/60">{{ c.name }}</span>
+                      <span class="w-2 h-2 rounded-full shrink-0" [class]="store.presence(g.c.controller).online ? 'bg-success' : 'bg-base-content/30'"
+                        [title]="store.presence(g.c.controller).online ? 'Online' : ('Offline · ' + lastSeenText(g.c.controller))"></span>
+                      <span class="text-xs font-semibold text-base-content/60">{{ g.c.name }}</span>
                       <span class="grow"></span>
                       @if (canControl()) {
-                        <ng-container [ngTemplateOutlet]="ctrlActions" [ngTemplateOutletContext]="{ cid: c.controller }" />
+                        <ng-container [ngTemplateOutlet]="ctrlActions" [ngTemplateOutletContext]="{ cid: g.c.controller }" />
                       }
                     </div>
                   }
-                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                    @for (r of c.routes; track r.routeId) {
-                      <app-route-card
-                        [route]="r"
-                        [state]="routeState(c.controller, r.routeId)"
-                        [flowRate]="routeFlow(c.controller, r)"
-                        [progress]="routeProgress(c.controller, r)"
-                        [fillMs]="fillMs()"
-                        [online]="store.presence(c.controller).online"
-                        [phase]="routePhase(c.controller, r.routeId)?.phase ?? null"
-                        [phaseReason]="routePhase(c.controller, r.routeId)?.reason ?? ''"
-                        [controllable]="canControl()"
-                        (action)="routeCmd(c.controller, $event, r)"
-                        (run)="routeRun(c.controller, $event, r)"
-                      />
-                    }
-                  </div>
+                  @if (g.runnable.length) {
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      @for (r of g.runnable; track r.routeId) {
+                        <ng-container [ngTemplateOutlet]="routeCard" [ngTemplateOutletContext]="{ r, cid: g.c.controller }" />
+                      }
+                    </div>
+                  }
+                  @if (showMonitor() && g.monitor.length) {
+                    <div class="flex items-center gap-2 mt-3 mb-2">
+                      <span class="text-[11px] font-medium uppercase tracking-wide text-base-content/40 shrink-0">Monitor only</span>
+                      <span class="grow border-t border-base-300/30"></span>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      @for (r of g.monitor; track r.routeId) {
+                        <ng-container [ngTemplateOutlet]="routeCard" [ngTemplateOutletContext]="{ r, cid: g.c.controller }" />
+                      }
+                    </div>
+                  }
                 </div>
               }
             }
@@ -251,41 +284,52 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
         <!-- Body: the remaining card sections (flow / pressure / activity). The
              valve + tank-level sections live in the System view above (as the map,
              or as cards); only when there's no topology do they fall through here. -->
+        <!-- One card section (header + responsive grid), reused by the live-trends
+             layout and the Activity log in the Reporting zone below. -->
+        <ng-template #cardSection let-section>
+          <section class="mb-6">
+            <h2 class="section-label mb-3">{{ section.label }}</h2>
+            <div [class]="gridFor(section.id, section.widgets.length)">
+              @for (w of section.widgets; track w.id) {
+                <app-dashboard-card
+                  [widget]="w"
+                  [dense]="denseSection(section.id)"
+                  [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
+                  [controllerColor]="ctrlColor(w.controller)"
+                  [row]="store.rowFor(w)"
+                  [state]="cardState(w)"
+                  [series]="telemetry.seriesFor(w)"
+                  [span]="telemetry.spanFor(w)"
+                  [items]="store.activityFor(w.controller)"
+                  [actuatable]="isActuatable(w)"
+                  [held]="actuatorHeld(w)"
+                  [phase]="actuatorPhase(w)?.phase ?? null"
+                  [phaseReason]="actuatorPhase(w)?.reason ?? ''"
+                  [actuatorKind]="actuatorFor(w)?.kind ?? ''"
+                  [historyLoaded]="telemetry.loadedFor(w)"
+                  (toggle)="toggleWidgetActuator(w)"
+                  (spanChange)="onSpanChange(w, $event)"
+                  (expand)="onExpand(w)"
+                />
+              }
+            </div>
+          </section>
+        </ng-template>
+
+        <!-- Live trends (flow / pressure). -->
         @for (section of layout(); track section.id) {
-            <section class="mb-6">
-              <h2 class="section-label mb-3">{{ section.label }}</h2>
-              <div [class]="gridFor(section.id, section.widgets.length)">
-                @for (w of section.widgets; track w.id) {
-                  <app-dashboard-card
-                    [widget]="w"
-                    [dense]="denseSection(section.id)"
-                    [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
-                    [controllerColor]="ctrlColor(w.controller)"
-                    [row]="store.rowFor(w)"
-                    [state]="cardState(w)"
-                    [series]="telemetry.seriesFor(w)"
-                    [span]="telemetry.spanFor(w)"
-                    [items]="store.activityFor(w.controller)"
-                    [actuatable]="isActuatable(w)"
-                    [held]="actuatorHeld(w)"
-                    [phase]="actuatorPhase(w)?.phase ?? null"
-                    [phaseReason]="actuatorPhase(w)?.reason ?? ''"
-                    [actuatorKind]="actuatorFor(w)?.kind ?? ''"
-                    [historyLoaded]="telemetry.loadedFor(w)"
-                    (toggle)="toggleWidgetActuator(w)"
-                    (spanChange)="onSpanChange(w, $event)"
-                    (expand)="onExpand(w)"
-                  />
-                }
-              </div>
-            </section>
+          <ng-container [ngTemplateOutlet]="cardSection" [ngTemplateOutletContext]="{ $implicit: section }" />
         }
 
-        @if (showController()) {
+        <!-- Reporting zone: usage summary above the activity detail log. -->
+        @if (hasRoutes()) {
           <section class="mb-6">
             <h2 class="section-label mb-3">Water usage</h2>
             <app-usage-totals [runs]="store.runs()" [spec]="store.spec()" />
           </section>
+        }
+        @for (section of activitySections(); track section.id) {
+          <ng-container [ngTemplateOutlet]="cardSection" [ngTemplateOutletContext]="{ $implicit: section }" />
         }
       }
     </div>
@@ -327,14 +371,20 @@ export class DashboardComponent {
   protected systemSections = computed<DashSection[]>(() =>
     this.sections().filter((section) => DashboardComponent.MAP_ABSORBS.has(section.id)));
 
-  /** The remaining body card-sections (flow, pressure, activity). The absorbed
-   *  sections render in the System view above, so they're dropped here — except
-   *  when there's no topology (no System view), where everything falls through. */
+  /** The live-trend body sections (flow, pressure). The map-absorbed sections render
+   *  in the System view above; `activity` moves down into the Reporting zone with the
+   *  usage totals (it's a look-back log, not a live trend). Without a topology there's
+   *  no System view, so the absorbed sections fall through here (activity still does not). */
   protected layout = computed<DashSection[]>(() => {
-    const secs = this.sections();
+    const secs = this.sections().filter((s) => s.id !== 'activity');
     if (!this.topology()) return secs;
     return secs.filter((section) => !DashboardComponent.MAP_ABSORBS.has(section.id));
   });
+
+  /** The activity log section(s), rendered at the bottom of the Reporting zone
+   *  (below the usage totals: summary above detail). */
+  protected activitySections = computed<DashSection[]>(() =>
+    this.sections().filter((s) => s.id === 'activity'));
 
   /** Building/opening the site documentation. */
   protected docBusy = signal(false);
@@ -456,6 +506,35 @@ export class DashboardComponent {
   // --- Routes (the live control surface) -----------------------------------
   protected hasRoutes = computed(() => this.store.spec().controllers.some((c) => c.routes.length > 0));
 
+  /** Operator's choice to reveal monitor-only (non-controllable) routes. Collapsed by
+   *  default, remembered per site; only surfaced when such routes exist. */
+  protected showMonitorRoutes = signal(false);
+  private monitorKey(): string { return `mf:routes:monitor:${this.siteId}`; }
+  protected toggleMonitorRoutes(): void {
+    const v = !this.showMonitorRoutes();
+    this.showMonitorRoutes.set(v);
+    try { localStorage.setItem(this.monitorKey(), v ? '1' : '0'); } catch { /* private mode */ }
+  }
+  /** Monitor-only = no actuator to control (a flow meter and/or level, but no valve or
+   *  pump). Missing caps (non-spec literals) default to controllable, so nothing hides
+   *  by accident. */
+  private isMonitorOnly(r: RouteControl): boolean { return r.caps !== undefined && !r.caps.runnable; }
+  /** Each controller's routes split into controllable + monitor-only, once per spec
+   *  change (the template reads these instead of re-filtering every change detection). */
+  protected routeGroups = computed(() =>
+    this.store.spec().controllers.map((c) => ({
+      c,
+      runnable: c.routes.filter((r) => !this.isMonitorOnly(r)),
+      monitor: c.routes.filter((r) => this.isMonitorOnly(r)),
+    })));
+  /** Total monitor-only routes across controllers — drives the header toggle + its badge. */
+  protected monitorCount = computed(() => this.routeGroups().reduce((n, g) => n + g.monitor.length, 0));
+  /** Whether any controllable route exists. If none, monitor-only routes show
+   *  unconditionally (hiding them all would leave an empty Routes section). */
+  protected anyRunnable = computed(() => this.routeGroups().some((g) => g.runnable.length > 0));
+  /** Effective reveal state: the operator's toggle, or forced on when there's nothing else. */
+  protected showMonitor = computed(() => this.showMonitorRoutes() || !this.anyRunnable());
+
   /** A route's live state for its card (token + reason + origin; empty when never seen). */
   protected routeState(controller: string, routeId: number): { token: string; reason: string; origin?: string; initiator?: { label: string; support: boolean; title: string } } {
     const s = this.store.routeState(controller, routeId);
@@ -554,7 +633,10 @@ export class DashboardComponent {
 
   constructor() {
     this.siteId = this.route.snapshot.paramMap.get('name') ?? '';
-    if (this.siteId) void this.load();
+    if (this.siteId) {
+      try { this.showMonitorRoutes.set(localStorage.getItem(this.monitorKey()) === '1'); } catch { /* private mode */ }
+      void this.load();
+    }
   }
 
   private async load(): Promise<void> {

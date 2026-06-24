@@ -22,6 +22,13 @@ type AckPublisher interface {
 	Publish(topic string, payload []byte, retain bool, qos byte) error
 }
 
+// AutomationsRepublisher re-pushes a controller's retained automation set to the
+// device. Wired at startup (server.go) to automations.PublishForController — the
+// indirection breaks an import cycle (the automations package imports this one for
+// the topic helpers, so it can't be imported back). Nil for non-broker callers
+// (tests, replay), in which case a firmware-change republish is simply skipped.
+var AutomationsRepublisher func(app core.App, site, ctrl string) error
+
 // ParseStatusTopic extracts site/ctrl from `majiflow/{site}/{ctrl}/status`.
 func ParseStatusTopic(topic string) (site, ctrl string, ok bool) {
 	return parseFour(topic, "status")
@@ -355,7 +362,16 @@ func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Ti
 	// after reboot is the reliable success signal (the pre-reboot command ack can be
 	// lost when the flash reboots the device before the next snapshot publishes).
 	if fw := s.Text["fw_version"]; fw != "" {
-		reconcileFirmware(app, ctrl, fw)
+		// On a version change (a reflash/OTA, or the very first snapshot) re-push the
+		// retained automation set: the device boots with an empty in-RAM automation
+		// table, and the set is otherwise published only on a DB change — so a reflash
+		// would lose automations until an operator toggled one. Off this goroutine:
+		// IngestSnapshot runs inside the broker's OnPublish hook and re-entering the
+		// broker to publish synchronously can deadlock (same reason as the runs_ack
+		// uplink above). The set is retained, so a fire-and-forget send is fine.
+		if reconcileFirmware(app, ctrl, fw) && AutomationsRepublisher != nil {
+			go func() { _ = AutomationsRepublisher(app, site, ctrl) }()
+		}
 	}
 	setControllerOnline(app, ctrl, true, now)
 	return nil
@@ -363,22 +379,26 @@ func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Ti
 
 // reconcileFirmware records the controller's running firmware version and flips any
 // release it was deploying to "confirmed" once the device reports that version.
-// Idempotent — a repeated snapshot with an unchanged version is a no-op.
-func reconcileFirmware(app core.App, ctrl, version string) {
+// Idempotent — a repeated snapshot with an unchanged version is a no-op. Returns
+// true when the recorded version actually transitioned (the reflash/OTA edge, or the
+// first-ever snapshot), so the caller can re-push the retained automation set.
+func reconcileFirmware(app core.App, ctrl, version string) (changed bool) {
 	if c, err := app.FindRecordById("controllers", ctrl); err == nil && c != nil {
 		if c.GetString("firmware_version") != version {
 			c.Set("firmware_version", version)
 			_ = app.Save(c)
+			changed = true
 		}
 	}
 	rec, _ := app.FindFirstRecordByFilter("firmware_releases",
 		"controller = {:c} && version = {:v} && status = 'deployed'",
 		dbx.Params{"c": ctrl, "v": version})
 	if rec == nil {
-		return
+		return changed
 	}
 	rec.Set("status", "confirmed")
 	_ = app.Save(rec)
+	return changed
 }
 
 // resolveActorLabel turns a route's origin+actor (whole ids) into a display label:
