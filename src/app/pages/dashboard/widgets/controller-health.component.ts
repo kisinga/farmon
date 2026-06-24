@@ -68,34 +68,75 @@ const STATE_CHIP: Record<StateKind, { dot: string; chip: string }> = {
             <div class="flex items-center gap-2 text-xs">
               <span class="w-1.5 h-1.5 rounded-full shrink-0" [class]="healthDot(c.controller)"></span>
               <span class="font-medium truncate flex-1">{{ c.name }}</span>
-              <span class="font-mono text-base-content/60 shrink-0">{{ heapText(c.controller) }}</span>
+              <span class="text-[11px] text-base-content/50 shrink-0 max-w-[45%] truncate">{{ systemLabel(c.controller) }}</span>
             </div>
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 pl-3.5 text-[11px] text-base-content/50">
-              <span>{{ systemLabel(c.controller) }}</span>
-              <span>Queue {{ queueText(c.controller) }}</span>
-              <span>Last stop: {{ lastStopText(c.controller) }}</span>
-              @if (store.overrideOn(c.controller)) { <span class="text-error font-medium">Override ON</span> }
-            </div>
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 pl-3.5 text-[11px] text-base-content/50">
-              @if (wifiText(c.controller); as w) { <span title="WiFi signal">{{ w }}</span> }
-              @if (uptimeText(c.controller); as u) { <span title="Uptime">Up {{ u }}</span> }
-              @if (tempText(c.controller); as t) { <span title="Controller temperature">{{ t }}</span> }
-              @if (restartText(c.controller); as rt) {
-                <span [class.text-error]="restartIsCrash(c.controller)"
+            <!-- Metric strip: each figure rides its icon's tooltip; warning states tint the icon. -->
+            <div class="flex items-center gap-3 mt-1.5 pl-3.5 text-base-content/45">
+              <span class="inline-flex" [class.text-warning]="heapLow(c.controller)" [title]="heapTip(c.controller)">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/>
+                </svg>
+              </span>
+              <span class="inline-flex" [title]="'Queue depth: ' + queueText(c.controller)">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"/>
+                </svg>
+              </span>
+              <span class="inline-flex" [title]="'Last stop: ' + lastStopText(c.controller)">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9 9.563C9 9.252 9.252 9 9.563 9h4.874c.311 0 .563.252.563.563v4.874c0 .311-.252.563-.563.563H9.564A.562.562 0 019 14.437V9.564z"/>
+                </svg>
+              </span>
+              @if (wifiText(c.controller); as w) {
+                <span class="inline-flex" [class.text-warning]="wifiWeak(c.controller)" [title]="'WiFi: ' + w">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z"/>
+                  </svg>
+                </span>
+              }
+              @if (uptimeText(c.controller); as u) {
+                <span class="inline-flex" [title]="'Uptime: ' + u">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </span>
+              }
+              @if (tempText(c.controller); as t) {
+                <span class="inline-flex" [title]="'Temperature: ' + t">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/>
+                  </svg>
+                </span>
+              }
+              @if (restartText(c.controller)) {
+                <span class="inline-flex"
+                      [class.text-error]="restartIsCrash(c.controller)"
                       [class.text-warning]="restartIsBrownout(c.controller)"
-                      [class.font-medium]="restartIsCrash(c.controller) || restartIsBrownout(c.controller)"
-                      [title]="restartHint(c.controller)">{{ rt }}</span>
+                      [title]="restartHint(c.controller)">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+                  </svg>
+                </span>
+              }
+              @if (store.overrideOn(c.controller)) {
+                <span class="inline-flex text-error" title="Safety checks bypassed on this controller">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                  </svg>
+                </span>
+              }
+              @if (deviceConsoleUrl(c.controller); as url) {
+                <a [href]="url" target="_blank" rel="noopener" class="inline-flex ml-auto text-base-content/45 hover:text-primary"
+                   title="Live logs — opens the controller's built-in console (same network only)">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/>
+                  </svg>
+                </a>
               }
             </div>
-            @if (deviceConsoleUrl(c.controller); as url) {
-              <div class="mt-0.5 pl-3.5 text-[11px]">
-                <a [href]="url" target="_blank" rel="noopener" class="link link-hover text-base-content/50"
-                   title="Opens the controller's built-in live-log console — same network only">Live logs ↗</a>
-              </div>
-            }
           </div>
         }
-        <p class="text-[11px] text-base-content/40 px-1 pt-1.5 leading-snug">Free RAM. Under {{ heapWarnKb() }} KB shows a warning.</p>
+        <p class="text-[11px] text-base-content/40 px-1 pt-1.5 leading-snug">Hover an icon for the figure. RAM icon warns under {{ heapWarnKb() }} KB free.</p>
       </div>
     </details>
   `,
@@ -134,6 +175,17 @@ export class ControllerHealthComponent {
     return min !== null ? `${kb(free)} · min ${Math.round(min / 1000)}` : kb(free);
   }
   protected heapWarnKb(): number { return Math.round(HEAP_WARN_BYTES / 1000); }
+  /** RAM tooltip: "Free RAM: 118 KB · min 100", presence-aware when unknown. */
+  protected heapTip(controller: string): string {
+    const free = this.heapFree(controller);
+    if (free === null) return this.store.presence(controller).online ? 'Free RAM: unknown' : 'Offline';
+    return `Free RAM: ${this.heapText(controller)}`;
+  }
+  /** Free heap below the warning floor — tints the RAM icon amber. */
+  protected heapLow(controller: string): boolean {
+    const free = this.heapFree(controller);
+    return free !== null && free < HEAP_WARN_BYTES;
+  }
 
   /** WiFi signal as "−55 dBm · strong", or '' when the controller never reported
    *  it (ethernet, older firmware, or not yet seen) so the row hides cleanly. */
@@ -142,6 +194,11 @@ export class ControllerHealthComponent {
     if (dbm === undefined || !Number.isFinite(dbm)) return '';
     const quality = dbm >= -60 ? 'strong' : dbm >= -70 ? 'good' : dbm >= -80 ? 'fair' : 'weak';
     return `${Math.round(dbm)} dBm · ${quality}`;
+  }
+  /** WiFi in the weak band (< −80 dBm) — tints the signal icon amber. */
+  protected wifiWeak(controller: string): boolean {
+    const dbm = this.store.row(controller, WIFI_SIGNAL_SENSOR)?.reported;
+    return dbm !== undefined && Number.isFinite(dbm) && dbm < -80;
   }
 
   /** Uptime as a coarse "3d 4h" / "5h 12m" / "8m" string, '' when unreported. */

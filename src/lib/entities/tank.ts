@@ -35,7 +35,7 @@ export const TankNodeSchema = z.object({
   pressure_elevation_m: PressureSensorConfigSchema.shape.elevation_m.optional(),
   pressure_sensor_max_psi: PressureSensorConfigSchema.shape.sensor_max_psi.optional(),
   pressure_v_min: PressureSensorConfigSchema.shape.v_min.optional(),
-  pressure_v_max: PressureSensorConfigSchema.shape.v_max.optional(),
+  pressure_v_max: PressureSensorConfigSchema.shape.v_max,
   pressure_pump_rated: PressureSensorConfigSchema.shape.pump_rated.optional(),
   /**
    * When true, a mechanical float valve throttles the inlet shut as the tank
