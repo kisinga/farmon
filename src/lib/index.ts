@@ -93,14 +93,14 @@ export type { HealthLevel } from './health';
 
 // --- Dashboard chart spec (derived from the saved topology, in the browser) ---
 export { buildDashboardSpec, routeLabel, findRoute } from './dashboard-spec';
-export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, SetpointControl, CalibrationControl } from './dashboard-spec';
+export type { DashboardSpec, DashboardWidget, WidgetKind, RouteControl, ControllerControls, ActuatorControl, CalibrationControl } from './dashboard-spec';
 
 // --- Command confirmation (desired→reported convergence; one shape, all controls) ---
 export { confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S, GRACE_MARGIN_MS, graceFloorMs } from './command-confirm';
 export type { ConfirmDescriptor, ConfirmObservation, CommandPhase } from './command-confirm';
 
-// --- Runtime-tunable device numbers (config_set surface; firmware + UI + drift test) ---
-export { collectTunableNumbers, routeVolumeEligible, canStopOnFull } from './tunable-numbers';
+// --- Runtime-tunable device numbers (desired-config surface; firmware + UI + drift test) ---
+export { collectTunableNumbers, tunableKvKeys, routeVolumeEligible, canStopOnFull } from './tunable-numbers';
 export {
   AUTOMATION_WIRE_MAGIC, AUTOMATION_HEADER_BYTES, AUTOMATION_RECORD_BYTES, AUTOMATION_ID_BYTES,
   MAX_AUTOMATIONS, routeSetVersion, serializeAutomationSet,
@@ -137,13 +137,13 @@ export {
 // --- Runtime contract: deployment mode, MQTT topics, command vocabulary ---
 export {
   MQTT_ROOT, telemetryTopic, commandTopic, automationsTopic, statusTopic, eventTopic, identityTopic,
-  snapshotTopic, runsAckTopic,
+  snapshotTopic, runsAckTopic, configTopic,
   telemetrySensorId, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, routeStateSensor, COMMAND_TTL_S,
-  routeSourceMinNumber, routeDestMaxNumber, collectConfigSetpoints,
+  routeSourceMinNumber, routeDestMaxNumber,
   COORD_MSG, COORD_TYPE, OVERRIDE_BITS,
 } from './codegen-ids';
 export type {
-  DeploymentMode, CommandAction, CommandEnvelope, CoordMessage, TelemetryRole, ConfigSetpoint,
+  DeploymentMode, CommandAction, CommandEnvelope, CoordMessage, TelemetryRole,
   ControllerSnapshot, RouteSnapshot, RouteLive, CommandOutcome,
 } from './codegen-ids';
 

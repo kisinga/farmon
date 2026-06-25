@@ -24,7 +24,6 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: ${Math.max(1, Math.round(r.max_runtime_seconds / 60))}
   optimistic: true
-  restore_value: true
   entity_category: config
   update_interval: never`);
 
@@ -45,7 +44,6 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: 0
   optimistic: true
-  restore_value: true
   entity_category: config
   update_interval: never`);
     if (routeVolumeEligible(r)) {
@@ -60,7 +58,6 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: 0
   optimistic: true
-  restore_value: true
   entity_category: config
   update_interval: never`);
     }
@@ -77,7 +74,6 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: 1
   optimistic: true
-  restore_value: true
   entity_category: config
   update_interval: never`);
     }
@@ -101,7 +97,6 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: ${r.source_min_pct}
   optimistic: true
-  restore_value: true
   entity_category: config
   update_interval: never`);
     }
@@ -117,7 +112,6 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: ${r.dest_max_pct}
   optimistic: true
-  restore_value: true
   entity_category: config
   update_interval: never`);
     }
@@ -142,7 +136,6 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: ${p.step}
   initial_value: ${p.initial}
   optimistic: true
-  restore_value: true
   entity_category: config
   update_interval: never`);
 

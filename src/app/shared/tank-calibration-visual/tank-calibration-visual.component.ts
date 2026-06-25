@@ -3,8 +3,9 @@ import { deriveTankCalibration } from '@core';
 
 /**
  * A field edit emitted upward, keyed by the tank node's field name. NOTE: these
- * keys are the editor's node schema; the dashboard (which writes via `config_set`
- * under different ids) will need an adapter to reuse this component for editing.
+ * keys are the editor's node schema; the dashboard (which writes desired config to
+ * `controller_config` under different ids) will need an adapter to reuse this
+ * component for editing.
  */
 export interface CalibrationFieldEdit {
   field: 'height_m' | 'pressure_elevation_m';

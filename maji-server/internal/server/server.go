@@ -74,13 +74,24 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 		// automations collection (DB is source of truth; device is a mirror).
 		automations.Register(se.App, broker.Server)
 
-		// Also re-push the set when a controller reports a new firmware version (a
-		// reflash/OTA): the device boots with an empty in-RAM automation table, and
-		// the set is otherwise published only on a DB change — so a reflash would lose
-		// automations until an operator toggled one. Wired here (not imported by the
-		// telemetry package) to avoid an import cycle. See reconcileFirmware.
+		// Republish a controller's retained desired-config message (tunables +
+		// calibration) on any change to the controller_config collection. The
+		// dashboard writes the desired bag; the server recomputes the canonical
+		// payload + sha256 version and re-pushes (the single config write path —
+		// config_set is gone). Same dumb-pipe shape as the automations republish.
+		automations.RegisterConfig(se.App, broker.Server)
+
+		// Re-push the retained sets when a controller reports a new firmware version (a
+		// reflash/OTA) or drifts from the desired config: the device boots with an empty
+		// in-RAM automation table, and both sets are otherwise published only on a DB
+		// change — so a reflash would lose them until an operator toggled something.
+		// Wired here (not imported by the telemetry package) to avoid an import cycle:
+		// the telemetry reconcile loop calls back through these vars. See reconcileConfig.
 		telemetry.AutomationsRepublisher = func(app core.App, site, ctrl string) error {
 			return automations.PublishForController(app, broker.Server, site, ctrl)
+		}
+		telemetry.ConfigRepublisher = func(app core.App, site, ctrl string) error {
+			return automations.PublishConfigForController(app, broker.Server, site, ctrl)
 		}
 
 		// Serve the built SPA when a directory is configured. Prerendered marketing

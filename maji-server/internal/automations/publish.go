@@ -10,7 +10,10 @@
 package automations
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 
 	"github.com/kisinga/majiflow/internal/telemetry"
 	"github.com/pocketbase/dbx"
@@ -160,6 +163,117 @@ func Register(app core.App, pub Publisher) {
 	app.OnRecordAfterCreateSuccess("automations").BindFunc(publish)
 	app.OnRecordAfterUpdateSuccess("automations").BindFunc(publish)
 	app.OnRecordAfterDeleteSuccess("automations").BindFunc(publish)
+}
+
+// --- Desired controller config (tunables + calibration) ---------------------
+//
+// The dashboard writes the desired key→value bag to the controller_config row; the
+// server is the only hasher. CanonicalConfig serializes that bag deterministically
+// and PublishConfigForController stamps the sha256 hex `version` and republishes the
+// retained /config message. The device applies it and echoes `version` back as the
+// snapshot text `config_version`; the reconcile loop re-pushes on a desired-vs-applied
+// mismatch. config_set is gone — this retained message is the only config delivery.
+
+// configMessage is the retained /config wire shape: an opaque server-computed
+// `version` plus the canonical desired-config object the device applies. The device
+// never hashes — it round-trips `version` verbatim as the snapshot `config_version`.
+type configMessage struct {
+	Version string          `json:"version"`
+	Config  json.RawMessage `json:"config"`
+}
+
+// CanonicalConfig renders the desired key→value bag into deterministic JSON — the
+// exact bytes the version hashes over and the `config` member of the retained
+// message. Determinism comes from Go's encoding/json sorting map keys; a nil/empty
+// bag canonicalizes to `{}`. Exported so a Go unit test can pin the canonical bytes
+// (the only hash test needed: the device round-trips the opaque version, so there is
+// no cross-language golden vector). Keep this the single canonicalization point.
+func CanonicalConfig(desired map[string]any) []byte {
+	if desired == nil {
+		desired = map[string]any{}
+	}
+	b, err := json.Marshal(desired)
+	if err != nil {
+		return []byte("{}")
+	}
+	return b
+}
+
+// ConfigVersion is the server-side version: the sha256 hex of the canonical bytes.
+// Computed ONLY here, at publish time; embedded as `version` in the retained
+// message and round-tripped by the device. Exported alongside CanonicalConfig so the
+// canonical-stability unit test pins both halves.
+func ConfigVersion(canonical []byte) string {
+	sum := sha256.Sum256(canonical)
+	return hex.EncodeToString(sum[:])
+}
+
+// EncodeConfig builds the retained /config payload from a desired bag and returns it
+// with the computed version, so the publish path can stamp the version onto the row
+// and emit the same bytes the device sees.
+func EncodeConfig(desired map[string]any) (payload []byte, version string) {
+	canonical := CanonicalConfig(desired)
+	version = ConfigVersion(canonical)
+	payload, err := json.Marshal(configMessage{Version: version, Config: canonical})
+	if err != nil {
+		return canonical, version
+	}
+	return payload, version
+}
+
+// PublishConfigForController recomputes the canonical payload + version for a
+// controller's desired config, stamps the version back onto the row when it moved,
+// and publishes the retained /config message (QoS 1). The DB is the source of truth;
+// last-write-wins on the retained topic. A missing row publishes the empty-config
+// message (a clear), never a zero-length payload.
+func PublishConfigForController(app core.App, pub Publisher, site, ctrl string) error {
+	rec, _ := app.FindFirstRecordByFilter("controller_config",
+		"controller = {:c}", dbx.Params{"c": ctrl})
+
+	var desired map[string]any
+	if rec != nil {
+		// `desired` is stored as opaque JSON; decode to the canonical bag. A malformed
+		// or absent value canonicalizes to {} rather than failing the publish.
+		_ = json.Unmarshal([]byte(rec.GetString("desired")), &desired)
+	}
+
+	payload, version := EncodeConfig(desired)
+
+	// Stamp the freshly-computed version back onto the row (server is the only hasher),
+	// so the reconcile loop can compare it against the device-reported applied_version.
+	if rec != nil && rec.GetString("version") != version {
+		rec.Set("version", version)
+		_ = app.Save(rec)
+	}
+
+	return pub.Publish(telemetry.ConfigTopic(site, ctrl), payload, true, 1)
+}
+
+// RegisterConfig binds the republish hook to every controller_config change. The
+// dashboard writes the desired bag; any create/update republishes the retained
+// /config message with the server-computed version (last-write-wins on the topic,
+// zero reconciliation in the steady state). This generalizes the automations
+// republish: one DB write -> one server recompute -> one retained delivery.
+func RegisterConfig(app core.App, pub Publisher) {
+	publish := func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		site := e.Record.GetString("site")
+		ctrl := e.Record.GetString("controller")
+		if site != "" && ctrl != "" {
+			if err := PublishConfigForController(e.App, pub, site, ctrl); err != nil {
+				e.App.Logger().Error("config republish failed", "site", site, "controller", ctrl, "error", err)
+			}
+		}
+		return nil
+	}
+	app.OnRecordAfterCreateSuccess("controller_config").BindFunc(publish)
+	app.OnRecordAfterUpdateSuccess("controller_config").BindFunc(publish)
+	// Delete clears the retained /config: PublishConfigForController finds no row and
+	// publishes the empty-config message, so a removed (or site-cascade-deleted) row
+	// doesn't strand stale settings on the device's retained topic.
+	app.OnRecordAfterDeleteSuccess("controller_config").BindFunc(publish)
 }
 
 func boolByte(b bool) byte {

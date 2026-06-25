@@ -9,6 +9,12 @@ import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, Command
  *  `disconnected`. */
 export type RealtimeConnection = 'connecting' | 'connected' | 'disconnected';
 
+/** The explicit storage tier the client requests from `/telemetry`. The server
+ *  validates exactly these three table names and serves them verbatim (no span
+ *  inference — pickTier is gone). The chart reads `telemetry_5min` for the bulk and a
+ *  short `telemetry_raw` tail for the live edge. */
+export type TelemetryTier = 'telemetry_raw' | 'telemetry_5min' | 'telemetry_1hr';
+
 /**
  * RealtimeService — the runtime telemetry I/O gateway: shadow + history reads
  * over the `/api/farmon` endpoints, and live shadow/transition updates over
@@ -84,23 +90,31 @@ export class RealtimeService {
     return this.pb.send<UsageReport>(`/api/farmon/usage?${q.toString()}`, { method: 'GET' });
   }
 
-  /** Numeric history for a channel; the server picks the tier from the span. */
+  /** Numeric history for a channel from an EXPLICIT storage tier. The client always
+   *  picks the tier (server pickTier is gone): the chart reads the `telemetry_5min`
+   *  rollup for the bulk and a short `telemetry_raw` tail for the live edge, then
+   *  merges them raw-wins-at-seam (see TelemetryStore). `requestKey` defaults to null
+   *  so the two concurrent fetches for one widget never auto-cancel each other. */
   history(
     siteId: string,
     controller: string,
     sensor: string,
     from: Date,
     to: Date,
+    tier: TelemetryTier,
+    requestKey: string | null = null,
   ): Promise<TelemetryHistory> {
     const q = new URLSearchParams({
       site: siteId,
       controller,
       sensor,
+      tier,
       from: from.toISOString(),
       to: to.toISOString(),
     });
     return this.pb.send<TelemetryHistory>(`/api/farmon/telemetry?${q.toString()}`, {
       method: 'GET',
+      requestKey,
     });
   }
 
@@ -424,7 +438,6 @@ function toCommandLog(r: RecordModel): CommandLogRow {
     routeId: r['route_id'] ?? undefined,
     nodeId: r['node_id'] || undefined,
     on: typeof r['node_on'] === 'boolean' ? r['node_on'] : undefined,
-    configKey: r['config_key'] || undefined,
     status: r['status'] ?? 'sent',
     result: r['result'] || '',
     actorId: r['issued_by'] || undefined,

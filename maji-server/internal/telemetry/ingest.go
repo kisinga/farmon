@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -28,6 +29,14 @@ type AckPublisher interface {
 // the topic helpers, so it can't be imported back). Nil for non-broker callers
 // (tests, replay), in which case a firmware-change republish is simply skipped.
 var AutomationsRepublisher func(app core.App, site, ctrl string) error
+
+// ConfigRepublisher re-pushes a controller's retained desired-config message
+// (tunables + calibration) to the device. Wired at startup (server.go) to
+// automations.PublishConfigForController — same import-cycle-breaking indirection as
+// AutomationsRepublisher. The reconcile loop calls it when the device's reported
+// config_version drifts from the server-computed version (desired-vs-applied compare).
+// Nil for non-broker callers (tests, replay), in which case reconcile is a no-op.
+var ConfigRepublisher func(app core.App, site, ctrl string) error
 
 // ParseStatusTopic extracts site/ctrl from `majiflow/{site}/{ctrl}/status`.
 func ParseStatusTopic(topic string) (site, ctrl string, ok bool) {
@@ -65,6 +74,15 @@ func CommandTopic(site, ctrl string) string {
 // Mirrors automationsTopic() in src/lib/codegen-ids.ts — keep both in sync.
 func AutomationsTopic(site, ctrl string) string {
 	return "majiflow/" + site + "/" + ctrl + "/automations"
+}
+
+// ConfigTopic is the retained desired-config topic for a controller — the single
+// server-owned tunables+calibration message the device converges to. The payload's
+// embedded `version` (server-computed sha256) is the opaque token the device echoes
+// back as the snapshot text `config_version`. Mirrors configTopic() in
+// src/lib/codegen-ids.ts — keep both in sync.
+func ConfigTopic(site, ctrl string) string {
+	return "majiflow/" + site + "/" + ctrl + "/config"
 }
 
 // RunsAckTopic is the retained run-ledger acknowledgement for a controller: a single
@@ -361,44 +379,123 @@ func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Ti
 	// release once the device reports the version it was told to flash. Version match
 	// after reboot is the reliable success signal (the pre-reboot command ack can be
 	// lost when the flash reboots the device before the next snapshot publishes).
+	// This is now PURELY the deployed→confirmed flip: the reflash-republish special
+	// case has been collapsed into reconcileConfig's desired-vs-applied compare below.
 	if fw := s.Text["fw_version"]; fw != "" {
-		// On a version change (a reflash/OTA, or the very first snapshot) re-push the
-		// retained automation set: the device boots with an empty in-RAM automation
-		// table, and the set is otherwise published only on a DB change — so a reflash
-		// would lose automations until an operator toggled one. Off this goroutine:
-		// IngestSnapshot runs inside the broker's OnPublish hook and re-entering the
-		// broker to publish synchronously can deadlock (same reason as the runs_ack
-		// uplink above). The set is retained, so a fire-and-forget send is fine.
-		if reconcileFirmware(app, ctrl, fw) && AutomationsRepublisher != nil {
-			go func() { _ = AutomationsRepublisher(app, site, ctrl) }()
-		}
+		reconcileFirmware(app, ctrl, fw)
 	}
+
+	// Desired-vs-applied reconcile (the generalized republish, replacing the old
+	// fw-change special case). The device round-trips the opaque server-computed
+	// config version as the snapshot text config_version; when it lags the version the
+	// server last published (a reflash boots with an empty config + automation table,
+	// or a desired-config edit raced the device), re-push the retained sets so the
+	// device converges. Runs off this goroutine: IngestSnapshot executes synchronously
+	// inside the broker's OnPublish hook, so re-entering the broker to publish here
+	// would deadlock (same reason as the runs_ack uplink above). The sets are retained,
+	// so a fire-and-forget send is fine.
+	reconcileConfig(app, site, ctrl, s.Text["config_version"])
+
 	setControllerOnline(app, ctrl, true, now)
 	return nil
 }
 
 // reconcileFirmware records the controller's running firmware version and flips any
 // release it was deploying to "confirmed" once the device reports that version.
-// Idempotent — a repeated snapshot with an unchanged version is a no-op. Returns
-// true when the recorded version actually transitioned (the reflash/OTA edge, or the
-// first-ever snapshot), so the caller can re-push the retained automation set.
-func reconcileFirmware(app core.App, ctrl, version string) (changed bool) {
+// Idempotent — a repeated snapshot with an unchanged version is a no-op. The
+// reflash-republish piggyback is gone (collapsed into reconcileConfig): this now only
+// keeps the running version current and performs the deployed→confirmed release flip.
+func reconcileFirmware(app core.App, ctrl, version string) {
 	if c, err := app.FindRecordById("controllers", ctrl); err == nil && c != nil {
 		if c.GetString("firmware_version") != version {
 			c.Set("firmware_version", version)
 			_ = app.Save(c)
-			changed = true
 		}
 	}
 	rec, _ := app.FindFirstRecordByFilter("firmware_releases",
 		"controller = {:c} && version = {:v} && status = 'deployed'",
 		dbx.Params{"c": ctrl, "v": version})
 	if rec == nil {
-		return changed
+		return
 	}
 	rec.Set("status", "confirmed")
 	_ = app.Save(rec)
-	return changed
+}
+
+// configReconcileGate debounces the desired-vs-applied republish so a lagging device
+// (whose config_version hasn't yet caught up because the apply round-trip is in
+// flight) isn't re-pushed on every snapshot interval. Keyed by controller, it holds
+// the server version we last republished toward plus when; we skip a re-push for the
+// same target within the boot-debounce window, and clear once the device confirms.
+var (
+	configReconcileMu   sync.Mutex
+	configReconcileSeen = map[string]configReconcileState{}
+)
+
+type configReconcileState struct {
+	version string    // the server version we last republished toward
+	at      time.Time // when we last republished (debounce anchor)
+}
+
+// configReconcileDebounce bounds how often a still-converging controller is
+// re-pushed: long enough to cover the publish→apply→next-snapshot round trip, short
+// enough that a genuinely-stuck device is retried.
+const configReconcileDebounce = 30 * time.Second
+
+// reconcileConfig compares the device-reported config version (the opaque token it
+// round-trips from the retained /config message) against the version the server last
+// computed for this controller's desired config, and re-pushes the retained config +
+// automation sets when they differ. The persisted applied_version is updated to what
+// the device reports (so the dashboard can show converged/pending). Republishes off
+// the broker goroutine (never synchronously — see the caller) and debounces a device
+// that is still applying, so an in-flight apply isn't re-pushed every interval.
+func reconcileConfig(app core.App, site, ctrl, applied string) {
+	rec, _ := app.FindFirstRecordByFilter("controller_config",
+		"controller = {:c}", dbx.Params{"c": ctrl})
+	// No desired config for this controller yet → nothing to converge to.
+	if rec == nil {
+		return
+	}
+	want := rec.GetString("version")
+
+	// Record what the device reports as applied (idempotent), so the dashboard reflects
+	// convergence without waiting for a republish.
+	if rec.GetString("applied_version") != applied {
+		rec.Set("applied_version", applied)
+		_ = app.Save(rec)
+	}
+
+	// Converged: the device is on the server's current version. Clear any debounce
+	// marker so a future drift re-pushes immediately.
+	if applied == want {
+		configReconcileMu.Lock()
+		delete(configReconcileSeen, ctrl)
+		configReconcileMu.Unlock()
+		return
+	}
+
+	// Drift. Debounce: skip if we already re-pushed toward this same version recently
+	// (the apply is likely still in flight). A new target version, a stuck device past
+	// the window, or a first sighting falls through to republish.
+	now := time.Now()
+	configReconcileMu.Lock()
+	st, ok := configReconcileSeen[ctrl]
+	if ok && st.version == want && now.Sub(st.at) < configReconcileDebounce {
+		configReconcileMu.Unlock()
+		return
+	}
+	configReconcileSeen[ctrl] = configReconcileState{version: want, at: now}
+	configReconcileMu.Unlock()
+
+	// Re-push both retained sets: a reflash empties the in-RAM automation table along
+	// with the config, so converging config also re-asserts automations. Off-goroutine
+	// (caller runs inside the broker OnPublish hook); the sets are retained.
+	if ConfigRepublisher != nil {
+		go func() { _ = ConfigRepublisher(app, site, ctrl) }()
+	}
+	if AutomationsRepublisher != nil {
+		go func() { _ = AutomationsRepublisher(app, site, ctrl) }()
+	}
 }
 
 // resolveActorLabel turns a route's origin+actor (whole ids) into a display label:

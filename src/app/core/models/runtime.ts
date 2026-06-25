@@ -153,7 +153,6 @@ export interface CommandLogRow {
   routeId?: number;
   nodeId?: string;
   on?: boolean;
-  configKey?: string;
   status: string;
   result: string;
   actorId?: string;

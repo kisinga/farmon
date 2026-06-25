@@ -12,7 +12,7 @@ import {
   confirmDescriptor, HOLD_GRACE_MS, HOLD_RECLAIM_MS, CLAIM_LEASE_FLOOR_S, COMMAND_TTL_S,
   GRACE_MARGIN_MS, graceFloorMs,
   type ConfirmObservation,
-  type RouteControl, type ActuatorControl, type SetpointControl,
+  type RouteControl, type ActuatorControl,
 } from "@core";
 
 let passed = 0;
@@ -25,10 +25,6 @@ function assert(condition: boolean, name: string, detail?: string) {
 const TTL_MS = COMMAND_TTL_S * 1000;
 const route: RouteControl = { routeId: 0, name: "R" };
 const pump: ActuatorControl = { id: "pump1", name: "Pump", kind: "pump", reportedSensor: "pump1_relay" };
-const setpoint: SetpointControl = {
-  key: "route_0_source_min_pct", routeId: 0, routeName: "R", field: "source_min_pct",
-  label: "Source min", default: 20, min: 0, max: 100, unit: "%",
-};
 /** Build an observation with sane defaults (online, fresh). */
 function obs(o: Partial<ConfirmObservation> = {}): ConfirmObservation {
   return { ageMs: 0, online: true, ...o };
@@ -58,15 +54,13 @@ function obs(o: Partial<ConfirmObservation> = {}): ConfirmObservation {
   assert(d.classify(obs({ reportedText: "FAULT" })).phase === "pending", "fault_reset still FAULT → pending");
 }
 
-// --- config_set (numeric convergence, no event) ----------------------------
-{
-  const d = confirmDescriptor("config_set", { setpoint, value: 40 });
-  assert(d.sensor === setpoint.key, "config_set watches the setpoint sensor");
-  assert(d.classify(obs({ reported: 40 })).phase === "confirmed", "config_set reported==value → confirmed");
-  assert(d.classify(obs({ reported: 40.4 })).phase === "confirmed", "config_set rounds (40.4≈40) → confirmed");
-  assert(d.classify(obs({ reported: 38 })).phase === "pending", "config_set reported!=value → pending");
-  assert(d.classify(obs({ reported: 38, ageMs: TTL_MS + 1 })).phase === "expired", "config_set past TTL → expired");
-}
+// --- No per-command tunable convergence (config_set is gone) ----------------
+// Runtime tunables + calibration are no longer a one-shot operator command: the
+// dashboard writes the desired config to the DB and the server delivers it retained,
+// so config convergence is the server's desired-vs-applied config_version reconcile,
+// NOT a per-command confirmation here. `config_set` is removed from the CommandAction
+// union (codegen-ids.ts) — confirmDescriptor("config_set", ...) is now a compile error,
+// so there is intentionally no descriptor case (and no test) for it.
 
 // --- Dead-man (sustained node_set on) — THE regression guard ---------------
 {

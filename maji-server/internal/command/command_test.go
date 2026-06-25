@@ -2,9 +2,8 @@ package command
 
 import "testing"
 
-func iptr(v int) *int         { return &v }
-func bptr(v bool) *bool       { return &v }
-func fptr(v float64) *float64 { return &v }
+func iptr(v int) *int   { return &v }
+func bptr(v bool) *bool { return &v }
 
 // Golden vectors: the EXACT bytes the firmware decodes. They pin Encode to the
 // CommandEnvelope union in src/lib/codegen-ids.ts — a key rename or a dropped field
@@ -56,11 +55,6 @@ func TestEncodeGoldenVectors(t *testing.T) {
 			`{"command_id":"cmd0000000000001","action":"safety_override","issued_at":1700000000,"actor":"u1","on":true}`,
 		},
 		{
-			"config_set carries key+value",
-			Command{CommandID: id, Action: ConfigSet, IssuedAt: at, Actor: actor, Key: "route_0_source_min_pct", Value: fptr(40)},
-			`{"command_id":"cmd0000000000001","action":"config_set","issued_at":1700000000,"actor":"u1","key":"route_0_source_min_pct","value":40}`,
-		},
-		{
 			"firmware_update carries version+url+md5",
 			Command{CommandID: id, Action: FirmwareUpdate, IssuedAt: at, Actor: actor, Version: "1.2.3", URL: "http://host/x", MD5: "abc"},
 			`{"command_id":"cmd0000000000001","action":"firmware_update","issued_at":1700000000,"actor":"u1","version":"1.2.3","url":"http://host/x","md5":"abc"}`,
@@ -81,7 +75,6 @@ func TestValidateOperator(t *testing.T) {
 		{Action: StopAll},
 		{Action: NodeSet, NodeID: "v1", On: bptr(false)},
 		{Action: SafetyOverride, On: bptr(true)},
-		{Action: ConfigSet, Key: "k", Value: fptr(0)},
 	}
 	for _, c := range ok {
 		if err := c.ValidateOperator(); err != nil {
@@ -92,12 +85,10 @@ func TestValidateOperator(t *testing.T) {
 	bad := []Command{
 		{Action: FirmwareUpdate, Version: "1"}, // server-only, not operator-allowed
 		{Action: "bogus"},
-		{Action: RouteStart},                // missing route_id
-		{Action: NodeSet, On: bptr(true)},   // missing node_id
-		{Action: NodeSet, NodeID: "v1"},     // missing on
-		{Action: SafetyOverride},            // missing on
-		{Action: ConfigSet, Key: "k"},       // missing value
-		{Action: ConfigSet, Value: fptr(1)}, // missing key
+		{Action: RouteStart},              // missing route_id
+		{Action: NodeSet, On: bptr(true)}, // missing node_id
+		{Action: NodeSet, NodeID: "v1"},   // missing on
+		{Action: SafetyOverride},          // missing on
 	}
 	for _, c := range bad {
 		if err := c.ValidateOperator(); err == nil {
