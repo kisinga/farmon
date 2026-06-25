@@ -5,6 +5,7 @@ package server
 import (
 	"errors"
 	"os"
+	"time"
 
 	"github.com/kisinga/majiflow/internal/alerts"
 	"github.com/kisinga/majiflow/internal/api"
@@ -18,10 +19,16 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 	"github.com/pocketbase/pocketbase/tools/router"
+	"github.com/pocketbase/pocketbase/tools/subscriptions"
 
 	// Side-effect import: registers the Go migrations that define collections.
 	_ "github.com/kisinga/majiflow/migrations"
 )
+
+// realtimeKeepaliveInterval must stay well under the shortest idle timeout in the
+// path. Cloudflare reaps a proxied SSE stream after ~100s of silence; a quiet
+// dashboard then reconnects and re-syncs, which is the bulk of the idle CPU churn.
+const realtimeKeepaliveInterval = 25 * time.Second
 
 // New builds a configured PocketBase application for the given mode. The caller
 // is responsible for invoking app.Start().
@@ -67,6 +74,7 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 
 		go telemetry.RunScheduler(se.App)
 		go alerts.RunSweeper(se.App)
+		go keepRealtimeAlive(se.App)
 
 		api.Register(se, cfg, broker.Server)
 
@@ -116,4 +124,23 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 	})
 
 	return app
+}
+
+// keepRealtimeAlive pushes a no-op event through every connected realtime (SSE)
+// client on an interval so the stream is never idle long enough for a proxy to
+// reap it (see realtimeKeepaliveInterval). PocketBase writes to an SSE stream only
+// when an event matches a subscription, so an idle dashboard sends zero bytes and
+// Cloudflare cuts it; the client reconnects and re-syncs — pure churn. The event
+// name matches no subscription, so the JS SDK ignores it client-side; the bytes
+// alone keep the connection warm. Fire-and-forget like RunScheduler/RunSweeper:
+// the goroutine lives for the process. Send() is a no-op on a discarded client.
+func keepRealtimeAlive(app core.App) {
+	ticker := time.NewTicker(realtimeKeepaliveInterval)
+	defer ticker.Stop()
+	msg := subscriptions.Message{Name: "PB_KEEPALIVE", Data: []byte("{}")}
+	for range ticker.C {
+		for _, client := range app.SubscriptionsBroker().Clients() {
+			client.Send(msg)
+		}
+	}
 }

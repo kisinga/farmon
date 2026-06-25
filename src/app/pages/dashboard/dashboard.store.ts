@@ -17,6 +17,11 @@ const MAX_TRACKED_OUTCOMES = 100;
  *  derivable from one fetch. The activity FEED uses recentRuns (newest-N), not this. */
 const USAGE_TOTALS_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+/** Floor between reconnect gap-fills. A proxy idle-timeout (Cloudflare cuts an idle
+ *  SSE after ~60-100s) reconnects the stream on a loop; this coalesces any rapid
+ *  double-fire so a flapping link can't restorm the fetch. */
+const RESYNC_DEBOUNCE_MS = 15_000;
+
 /** Site-wide telemetry timing the dashboard needs at runtime (from topology). */
 export interface SiteTiming {
   /** Snapshot publish cadence (seconds); drives the command-lifecycle grace floor. */
@@ -88,6 +93,7 @@ export class DashboardStore implements OnDestroy {
   private unsubs: UnsubscribeFunc[] = [];
   private clock = 0;
   private siteId = '';
+  private lastResyncAt = 0;
 
   constructor() {
     // The SDK auto-reconnects after a dropped stream; when it does, re-pull the
@@ -97,7 +103,7 @@ export class DashboardStore implements OnDestroy {
     effect(() => {
       const c = this.realtime.connection();
       if (c === 'connected' && prev === 'disconnected' && this.siteId) {
-        void this.resync(this.siteId).catch(() => {});
+        void this.resync(this.siteId, true).catch(() => {});
       }
       prev = c;
     });
@@ -108,17 +114,20 @@ export class DashboardStore implements OnDestroy {
    *  site. Runs on init and on every realtime reconnect to close the offline gap.
    *  The reads are independent, so they fire concurrently — one round-trip of
    *  latency (it adds up through the Cloudflare proxy). */
-  private async resync(siteId: string): Promise<void> {
-    const to = new Date();
-    const from = new Date(to.getTime() - USAGE_TOTALS_WINDOW_MS);
-    const [{ rows, outcomes }, evts, ctrls, cmds, cfgs, runs, feedRuns] = await Promise.all([
+  private async resync(siteId: string, gap = false): Promise<void> {
+    // A reconnect gap-fill only re-pulls LIVE state (the few seconds a dropped SSE
+    // could have missed); a full sync (init) also pulls the slow/heavy bits. The
+    // SSE gets cut on a ~60-100s proxy idle-timeout loop, so re-pulling the 30d
+    // usage totals + config feed on every reconnect was the bulk of the churn.
+    const now = Date.now();
+    if (gap && now - this.lastResyncAt < RESYNC_DEBOUNCE_MS) return;
+    this.lastResyncAt = now;
+
+    const [{ rows, outcomes }, evts, ctrls, cmds, feedRuns] = await Promise.all([
       this.realtime.latest(siteId),
       this.realtime.recentEvents(siteId, 100),
       this.realtime.controllers(siteId),
       this.realtime.recentCommands(siteId, 100),
-      this.realtime.recentConfigEvents(siteId, 100),
-      // 30d window for the totals widget; best-effort (a failure just empties totals).
-      this.realtime.usage(siteId, from, to).then((r) => r.runs).catch(() => [] as UsageRun[]),
       // Newest-N for the feed's run rows (live-topped-up by subscribeRuns below).
       this.realtime.recentRuns(siteId, 100).catch(() => [] as UsageRun[]),
     ]);
@@ -129,9 +138,21 @@ export class DashboardStore implements OnDestroy {
     this.events.set(evts);
     this.controllers.set(new Map(ctrls.map((c) => [c.device_id, c])));
     this.commands.set(new Map(cmds.map((c) => [c.id, c])));
-    this.configEvents.set(cfgs);
-    this.runs.set(runs);
     this.feedRuns.set(feedRuns);
+
+    // Slow-changing + heavy: the config-event feed and the 30d usage totals don't
+    // move during a brief drop, so they ride init only, never a reconnect gap-fill.
+    if (!gap) {
+      const to = new Date();
+      const from = new Date(to.getTime() - USAGE_TOTALS_WINDOW_MS);
+      const [cfgs, runs] = await Promise.all([
+        this.realtime.recentConfigEvents(siteId, 100),
+        // 30d window for the totals widget; best-effort (a failure just empties totals).
+        this.realtime.usage(siteId, from, to).then((r) => r.runs).catch(() => [] as UsageRun[]),
+      ]);
+      this.configEvents.set(cfgs);
+      this.runs.set(runs);
+    }
   }
 
   async init(siteId: string, spec: DashboardSpec, timing?: SiteTiming, owners: string[] = [], people: { id: string; name?: string; email?: string }[] = []): Promise<void> {

@@ -9,7 +9,7 @@
  * the UI layer decides *how*. Categorical widgets carry the meanings dictionary
  * so the renderer prettifies wire tokens without decoding them.
  */
-import type { SiteTopology } from './topology.types';
+import type { SiteTopology, TopologyNode } from './topology.types';
 import {
   SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR,
   SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS,
@@ -78,6 +78,12 @@ export interface RouteControl {
    *  card-as-progress-bar on a "fill to X%" / "until full" run. Undefined when the
    *  dest is not level-monitored. */
   destLevelSensor?: string;
+  /** The route's delivery endpoint — the last node of its path. `endpointId` is the
+   *  stable attribution anchor usage rolls up on; `endpointKind` lets a consumer tell
+   *  a real consumption point (`'endpoint'`) from a staging tank, so "water used" can
+   *  count only delivery and exclude tank-to-tank fills/transfers. */
+  endpointId?: string;
+  endpointKind?: TopologyNode['kind'];
   /** The route's path: the ordered node ids it traverses (source→destination) and
    *  the pipe ids between them. Together these are the route's *participants* — the
    *  elements that become "engaged" while it runs, so the map can light the whole
@@ -242,6 +248,9 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
   const nodeCapacity = new Map(
     topology.nodes.map((n) => [n.id, (n as { capacity_l?: number }).capacity_l]),
   );
+  // node id → kind, so a route can report whether its endpoint is a consumption
+  // point or a staging tank (the "water used" vs "water moved" distinction).
+  const nodeKind = new Map(topology.nodes.map((n) => [n.id, n.kind]));
   // One graph for the whole site, to trace each route's pipes along its exact path.
   const tg = buildGraph(topology.nodes, topology.pipes);
   for (const ctrl of topology.controllers) {
@@ -310,6 +319,8 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
           caps,
           destCapacityL: r.destination ? nodeCapacity.get(r.destination) : undefined,
           destLevelSensor: r.destination ? levelSensorByNode.get(r.destination) : undefined,
+          endpointId: destId,
+          endpointKind: destId ? nodeKind.get(destId) : undefined,
           pathNodeIds: seq,
           pipeIds,
         };

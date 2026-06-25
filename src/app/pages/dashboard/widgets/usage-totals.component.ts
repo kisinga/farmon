@@ -53,6 +53,32 @@ function bucketLabel(t: Date, intraday: boolean): string {
     : t.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
 
+/** Which figure the widget tells. `used` answers "how much water reached each
+ *  consumption endpoint" — deliveries only, merged by endpoint; `moved` answers "how
+ *  much flowed along each route" — all throughput, including tank-to-tank fills. */
+type UsageMode = 'used' | 'moved';
+
+/** A run's series bucket for the given mode: which stack it joins (`key`) and how the
+ *  stack is labelled. `null` excludes the run from this mode — `used` drops anything
+ *  that isn't a delivery to a real endpoint (a tank-fill is movement, not use), so its
+ *  total is net consumption, not the inflated route throughput. Sibling routes to one
+ *  endpoint merge under the endpoint id; `moved` keeps every route distinct. */
+function runGroup(
+  spec: DashboardSpec,
+  mode: UsageMode,
+  r: UsageRun,
+): { key: string; label: string } | null {
+  const route = findRoute(spec, r.controller, r.route);
+  if (mode === 'moved') {
+    return { key: `${r.controller}:${r.route}`, label: routeLabel(route, r.route) };
+  }
+  if (route?.endpointKind !== 'endpoint') return null;
+  return {
+    key: route.endpointId ?? `${r.controller}:${r.route}`,
+    label: route.destination ?? routeLabel(route, r.route),
+  };
+}
+
 /**
  * Water-usage summary over a duration — sourced from the durable runs ledger (restores
  * the counter dropped with the lossy client-side flow integral, 0c51784).
@@ -74,13 +100,33 @@ function bucketLabel(t: Date, intraday: boolean): string {
   imports: [SpanSelectorComponent, NgxEchartsDirective],
   template: `
     <div class="rounded-xl border border-base-300/40 bg-base-100 p-4">
-      <div class="flex items-center justify-between gap-2">
-        <h3 class="text-sm font-semibold text-base-content/70">Water used</h3>
-        <app-span-selector [span]="span()" (spanChange)="span.set($event)" />
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-baseline gap-1.5">
+          <h3 class="text-sm font-semibold text-base-content/70">{{ title() }}</h3>
+          <span class="text-[0.7rem] text-base-content/40">{{ subtitle() }}</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <div class="join">
+            <button type="button"
+              class="join-item btn btn-xs {{ mode() === 'used' ? 'btn-primary' : 'btn-ghost' }}"
+              (click)="mode.set('used')">Used</button>
+            <button type="button"
+              class="join-item btn btn-xs {{ mode() === 'moved' ? 'btn-primary' : 'btn-ghost' }}"
+              (click)="mode.set('moved')">Moved</button>
+          </div>
+          <app-span-selector [span]="span()" (spanChange)="span.set($event)" />
+        </div>
       </div>
 
       @if (totals().count === 0) {
-        <p class="py-10 text-center text-xs text-base-content/40">No runs in this period.</p>
+        @if (hasMovedOnly()) {
+          <p class="py-10 text-center text-xs text-base-content/40">
+            No water delivered to an endpoint here — only transfers.
+            <button type="button" class="link link-hover font-medium" (click)="mode.set('moved')">See Moved</button>.
+          </p>
+        } @else {
+          <p class="py-10 text-center text-xs text-base-content/40">No runs in this period.</p>
+        }
       } @else {
         <div class="mt-3 flex items-end justify-between gap-3">
           <div class="flex items-baseline gap-1.5">
@@ -112,6 +158,25 @@ export class UsageTotalsComponent {
    *  matches the store's run-fetch window, so every range is derivable client-side. */
   protected span = signal(24 * 7);
 
+  /** Used (delivered, by endpoint) by default; toggle to Moved (throughput, by route). */
+  protected mode = signal<UsageMode>('used');
+
+  protected title = computed(() => (this.mode() === 'used' ? 'Water used' : 'Water moved'));
+  protected subtitle = computed(() => (this.mode() === 'used' ? 'by endpoint' : 'by route'));
+
+  /** The current mode's per-run grouping resolver (null = run excluded from the mode). */
+  private group = computed(() => {
+    const spec = this.spec();
+    const mode = this.mode();
+    return (r: UsageRun) => runGroup(spec, mode, r);
+  });
+
+  /** "Used" is empty only because every windowed run was a transfer/fill — there's
+   *  movement to show, just no delivery. Drives the nudge to Moved instead of a blank. */
+  protected hasMovedOnly = computed(
+    () => this.mode() === 'used' && this.totals().count === 0 && this.filtered().length > 0,
+  );
+
   /** Label shown in the delta tooltip ("vs previous 24h"). */
   protected spanLabel = computed(
     () => SPAN_PRESETS.find((p) => p.hours === this.span())?.label ?? `${this.span()}h`,
@@ -137,8 +202,20 @@ export class UsageTotalsComponent {
     });
   }
 
-  protected totals = computed(() => sumRuns(this.filtered()));
-  private prevTotals = computed(() => sumRuns(this.prevFiltered()));
+  /** Window runs that count for the current mode: `used` drops staging (tank-fills),
+   *  `moved` keeps all. Totals, the delta, and the chart all read this one set, so the
+   *  whole widget switches mode coherently from a single filter. */
+  private scoped = computed(() => {
+    const g = this.group();
+    return this.filtered().filter((r) => g(r) !== null);
+  });
+  private prevScoped = computed(() => {
+    const g = this.group();
+    return this.prevFiltered().filter((r) => g(r) !== null);
+  });
+
+  protected totals = computed(() => sumRuns(this.scoped()));
+  private prevTotals = computed(() => sumRuns(this.prevScoped()));
 
   /** Litres lead when any run was metered; otherwise time leads (so an all-unmetered
    *  period reads "1.2 h" rather than a misleading "0 L"). */
@@ -182,8 +259,8 @@ export class UsageTotalsComponent {
    *  when metered, run minutes otherwise; routes past {@link MAX_SERIES} fold into one
    *  "Other" bar so the legend stays legible. */
   protected chart = computed<EChartsOption>(() => {
-    const spec = this.spec();
-    const runs = this.filtered();
+    const group = this.group();
+    const runs = this.scoped();
     const useLitres = this.totals().metered > 0;
     const unit = useLitres ? 'L' : 'min';
     const valOf = (r: UsageRun): number =>
@@ -199,16 +276,17 @@ export class UsageTotalsComponent {
     const intraday = bucketMs < 24 * 3_600_000;
     const labels = Array.from({ length: n }, (_, i) => bucketLabel(new Date(start + i * bucketMs), intraday));
 
-    // Rank routes by their window total, keep the top few, fold the rest into "Other".
-    const label = (controller: string, route: number) => routeLabel(findRoute(spec, controller, route), route);
-    const byRoute = new Map<string, { name: string; total: number }>();
+    // Rank series (endpoints in `used`, routes in `moved`) by their window total, keep
+    // the top few, fold the rest into "Other".
+    const byKey = new Map<string, { name: string; total: number }>();
     for (const r of runs) {
-      const key = `${r.controller}:${r.route}`;
-      const e = byRoute.get(key) ?? { name: label(r.controller, r.route), total: 0 };
+      const g = group(r);
+      if (!g) continue;
+      const e = byKey.get(g.key) ?? { name: g.label, total: 0 };
       e.total += valOf(r);
-      byRoute.set(key, e);
+      byKey.set(g.key, e);
     }
-    const ranked = [...byRoute.entries()].sort((a, b) => b[1].total - a[1].total);
+    const ranked = [...byKey.entries()].sort((a, b) => b[1].total - a[1].total);
     const topKeys = ranked.slice(0, MAX_SERIES).map(([k]) => k);
     const isTop = new Set(topKeys);
     const hasOther = ranked.length > MAX_SERIES;
@@ -220,15 +298,16 @@ export class UsageTotalsComponent {
     for (const r of runs) {
       const t = Date.parse(r.started_at);
       if (!Number.isFinite(t)) continue;
+      const g = group(r);
+      if (!g) continue;
       const bi = Math.min(n - 1, Math.max(0, Math.floor((t - start) / bucketMs)));
-      const key = `${r.controller}:${r.route}`;
-      const bucket = bucketsByKey.get(isTop.has(key) ? key : '__other');
+      const bucket = bucketsByKey.get(isTop.has(g.key) ? g.key : '__other');
       if (bucket) bucket[bi] += valOf(r);
     }
 
     const round = (v: number) => Math.round(v * 10) / 10;
     const series: EChartsOption['series'] = topKeys.map((k, i) => ({
-      name: byRoute.get(k)!.name,
+      name: byKey.get(k)!.name,
       type: 'bar',
       stack: 'usage',
       barMaxWidth: 28,
